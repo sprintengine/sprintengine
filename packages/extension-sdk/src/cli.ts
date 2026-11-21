@@ -1,33 +1,37 @@
 #!/usr/bin/env node
 // sprintengine-extension — packaging and signing CLI for SprintEngine Studio
-// capability module authors. Runs without repo access: everything it needs
+// extension authors. Runs without repo access: everything it needs
 // ships in the @sprintengine/extension-sdk tarball.
 //
 //   init             create an extension project from one of the templates
 //   add              add a part (main, mcp, settings, door) to an extension project
 //   keygen           generate an ed25519 signing keypair (private key PEM)
-//   pack             validate a module directory and assemble an installable copy
-//   sign             write a detached ed25519 signature into manifest.json
-//   verify           check a module directory the way the studio will
+//   pack             validate an extension folder and assemble an installable copy
+//   sign             write extension.sig, a detached ed25519 signature, beside extension.json
+//   verify           check an extension folder the way the studio will
 //   plugin scaffold  create a plugin bundle skeleton
 //   plugin pack      validate and assemble an installable plugin bundle
 //   plugin sign      write a detached ed25519 signature into plugin.json
 //   plugin verify    check a plugin bundle the way the studio will
 //
-// sign/verify operate on the VALIDATED manifest shape (the same shape the app
-// verifies), and sign writes that normalized manifest back to disk so the
-// signed bytes on disk are exactly what the app checks. sign also records the
-// digest of every file the module ships (`files`), so the signature covers the
-// code; the app trusts a module by its publisher key only when those match.
+// sign records the sha256 of every file the extension ships, extension.json
+// included, in extension.sig and signs those digests, so the signature covers
+// the declaration and the code together; the app trusts an extension by its
+// publisher key only when the folder matches them exactly.
 
-import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { checkHostApiCompatibility, HOST_API_VERSION } from './host-api.js'
-import { BUNDLED_MODULE_IDS, type CapabilityManifest } from './index.js'
-import { parseThirdPartyModuleManifest, type ThirdPartyManifestIssue } from './manifest-validate.js'
+import {
+  EXTENSION_MANIFEST_FILENAME,
+  EXTENSION_SIGNATURE_FILENAME,
+  EXTENSION_SURFACE_POINTS,
+  parseExtensionManifest,
+  type ExtensionManifest,
+} from './extension-manifest.js'
+import type { ThirdPartyManifestIssue } from './manifest-validate.js'
 import { computeModuleFileDigestsSync, moduleFileDigestIssuesSync } from './module-files.js'
 import {
   MARKETPLACE_COMPONENT_KINDS,
@@ -44,7 +48,15 @@ import {
   computeMarketplacePluginComponentsWithDigestsSync,
   marketplaceComponentDigestMismatchIssuesSync,
 } from './plugin-component-digests.js'
-import { generateModuleSigningKeyPair, signManifest, verifyModuleSignature } from './signing.js'
+import {
+  generateModuleSigningKeyPair,
+  parseExtensionSignature,
+  signExtensionFiles,
+  signManifest,
+  verifyExtensionSignature,
+  verifyModuleSignature,
+  type ExtensionSignature,
+} from './signing.js'
 
 const USAGE = `sprintengine-extension — pack, sign, and verify SprintEngine Studio extensions
 
@@ -52,15 +64,15 @@ Usage:
   sprintengine-extension init <dir> --template <id> [--with <part,...>] [--id <module-id>] [--name <name>] [--sdk-tarball <file>] [--force]
   sprintengine-extension add <part>... [--project <dir>] [--force]
   sprintengine-extension keygen [--out <file>] [--force]
-  sprintengine-extension pack <module-dir> [--out <dir>] [--force] [--allow-reserved-id]
-  sprintengine-extension sign <module-dir> --key <private-key.pem>
-  sprintengine-extension verify <module-dir>
+  sprintengine-extension pack <extension-dir> [--out <dir>] [--force]
+  sprintengine-extension sign <extension-dir> --key <private-key.pem>
+  sprintengine-extension verify <extension-dir>
   sprintengine-extension plugin scaffold <plugin-id> [--out <dir>] [--component <kind>]... [--force]
   sprintengine-extension plugin pack <plugin-dir> [--out <dir>] [--force]
   sprintengine-extension plugin sign <plugin-dir> --key <private-key.pem>
   sprintengine-extension plugin verify <plugin-dir>
 
-init creates an extension project in <dir> from a template: the module, its
+init creates an extension project in <dir> from a template: the extension, its
 build and dev-loop scripts, and the agent instructions that send whichever agent
 works on it to the extension guide. --id defaults to the folder name, --name to the id title-cased;
 --sdk-tarball depends on a local SDK tarball instead of the npm release. Run it
@@ -68,35 +80,34 @@ with an unknown --template to list the templates. --with adds parts on top of
 the template, as add does.
 
 add puts a part into an existing project (--project, default the current
-folder): main (src/main.ts, entry.main and its build), mcp (MCP tools from
-entry.main), settings (a Settings section), door (a full-page surface). It
-copies the part's files and test, merges its entry, permissions and dependsOn
-into module/manifest.json and plugin.json, adds its build script, and wires
-its registration into src/renderer.tsx or src/main.ts. A part that needs an
-entry the project lacks brings that entry too. Run it with no part to list
-them.
+folder): main (src/main.ts, the worker, and its build), mcp (MCP tools served
+by the worker), settings (a Settings section), door (a full-page surface). It
+copies the part's files and test, merges what it contributes, its permissions
+and the tier it needs into extension/extension.json, adds its build script,
+and wires a worker part into src/main.ts. A part that needs the worker brings
+it too. Run it with no part to list them.
 
 keygen writes an ed25519 private key (PKCS#8 PEM) to --out
 (default module-signing.key); a leading ~ is your home folder, on Windows too.
-Keep it out of the module directory and out of version control; sign derives
+Keep it out of the extension's folder and out of version control; sign derives
 the public key from it.
 
-pack validates <module-dir>/manifest.json and copies the module into --out
-(default packed/<id>) as an installable module directory. node_modules, .git,
-and key files (*.key, *.pem) are never copied.
+pack validates <extension-dir>/extension.json, checks that every file it names
+is there, and copies the extension into --out (default packed/<id>) as an
+installable folder. node_modules, .git, key files (*.key, *.pem) and symbolic
+links are never copied.
 
-sign validates manifest.json, records the sha256 of every file the module ships
-in its "files" field (everything pack copies, manifest.json aside), signs the
-normalized manifest with --key, and writes it back to manifest.json. Sign
-again after any change to the module's files.
+sign validates extension.json, records the sha256 of every file the extension
+ships (everything pack copies, extension.json included) in extension.sig, and
+signs those digests with --key. Sign again after any change to its files.
 
-verify validates manifest.json, checks its signature, and checks that the files
-pack would copy are exactly the ones "files" lists, byte for byte: exit 0 with
-the signer fingerprint when all of that holds, exit 1 when the module is
-unsigned, carries no "files", or was changed after signing.
+verify validates extension.json, checks extension.sig's signature, and checks
+that the files pack would copy are exactly the ones it lists, byte for byte:
+exit 0 with the signer fingerprint when all of that holds, exit 1 when the
+extension is unsigned or was changed after signing.
 
-plugin scaffold creates plugin.json plus component placeholders for mcp, skills
-and module by default. Pass --component repeatedly to scaffold
+plugin scaffold creates plugin.json plus component placeholders for mcp and
+skills by default. Pass --component repeatedly to scaffold
 only the kinds you want.
 
 plugin sign writes component file digests into the normalized plugin.json bundle
@@ -114,21 +125,40 @@ function fail(message: string, issues?: CliIssue[]): never {
   process.exit(1)
 }
 
-function readManifest(moduleDir: string): { manifestPath: string; manifest: CapabilityManifest } {
-  const manifestPath = join(moduleDir, 'manifest.json')
+function readManifest(extensionDir: string): { manifestPath: string; manifest: ExtensionManifest } {
+  const manifestPath = join(extensionDir, EXTENSION_MANIFEST_FILENAME)
   if (!existsSync(manifestPath)) {
-    fail(`No manifest.json in ${moduleDir}.`)
+    fail(`No ${EXTENSION_MANIFEST_FILENAME} in ${extensionDir}.`)
   }
-  const result = parseThirdPartyModuleManifest(readFileSync(manifestPath, 'utf8'))
+  // The author's check: engines.studio must cover every field the manifest uses.
+  const result = parseExtensionManifest(readFileSync(manifestPath, 'utf8'), { authoring: true })
   if (!result.ok) {
-    fail(`Invalid module manifest at ${manifestPath}:`, result.issues)
+    fail(`Invalid extension manifest at ${manifestPath}:`, result.issues)
   }
-  // The studio refuses a module built for a host API it does not provide, so
-  // the author hears it here rather than from a module that never loads.
-  const hostApi = checkHostApiCompatibility(result.manifest)
-  if (!hostApi.ok)
-    fail(`Invalid module manifest at ${manifestPath}:`, [{ path: 'engines.hostApi', message: hostApi.message }])
   return { manifestPath, manifest: result.manifest }
+}
+
+/** Every file extension.json names: the worker, each surface's entry, the images. */
+function declaredFiles(manifest: ExtensionManifest): Array<{ path: string; file: string }> {
+  const files: Array<{ path: string; file: string }> = []
+  if (manifest.main) files.push({ path: 'main', file: manifest.main })
+  for (const point of EXTENSION_SURFACE_POINTS) {
+    manifest.contributes[point].forEach((surface, index) =>
+      files.push({ path: `contributes.${point}[${index}].entry`, file: surface.entry }),
+    )
+  }
+  if (manifest.icon) files.push({ path: 'icon', file: manifest.icon })
+  if (manifest.cover) files.push({ path: 'cover', file: manifest.cover })
+  manifest.screenshots?.forEach((file, index) => files.push({ path: `screenshots[${index}]`, file }))
+  return files
+}
+
+function readSignature(extensionDir: string): ExtensionSignature | null {
+  const path = join(extensionDir, EXTENSION_SIGNATURE_FILENAME)
+  if (!existsSync(path)) return null
+  const parsed = parseExtensionSignature(readFileSync(path, 'utf8'))
+  if (!parsed.ok) fail(`${path}: ${parsed.message}`)
+  return parsed.signature
 }
 
 function readPluginAuthoringManifest(pluginDir: string): {
@@ -191,9 +221,6 @@ function pluginComponentsFromKinds(kinds: MarketplaceComponentKind[], id: string
         break
       case 'skills':
         components.skills = { path: `skills/${id}` }
-        break
-      case 'module':
-        components.module = { path: 'module' }
         break
     }
   }
@@ -304,43 +331,32 @@ function keygen(args: string[]): void {
   writeFileSync(outPath, keyPair.privateKeyPem, { mode: 0o600 })
   console.log(`Wrote ed25519 private key to ${outPath}`)
   console.log(`Public key fingerprint: ${keyPair.fingerprint}`)
-  console.log('Keep this key out of the module directory and out of version control.')
+  console.log("Keep this key out of the extension's folder and out of version control.")
 }
 
 function pack(args: string[]): void {
   const { values, positionals } = parseArgs({
     args,
-    options: { out: { type: 'string' }, force: { type: 'boolean' }, 'allow-reserved-id': { type: 'boolean' } },
+    options: { out: { type: 'string' }, force: { type: 'boolean' } },
     allowPositionals: true,
   })
-  const moduleDir = positionals[0]
-  if (!moduleDir) fail(`pack requires a module directory.\n\n${USAGE}`)
-  const sourceDir = resolve(moduleDir)
+  const extensionDir = positionals[0]
+  if (!extensionDir) fail(`pack requires an extension folder.\n\n${USAGE}`)
+  const sourceDir = resolve(extensionDir)
   const { manifest } = readManifest(sourceDir)
 
-  if (BUNDLED_MODULE_IDS.includes(manifest.id) && values['allow-reserved-id'] !== true) {
-    fail(
-      `id "${manifest.id}" is a reserved id, publisher-locked to the first-party signing key — ` +
-        `the app only installs it when the manifest is signed by a first-party marketplace publisher. ` +
-        `Choose a different module id, or pass --allow-reserved-id if you are the first-party publisher.`,
-    )
-  }
-  const missingEntries: ThirdPartyManifestIssue[] = []
-  for (const [key, relPath] of Object.entries(manifest.entry ?? {})) {
-    if (typeof relPath === 'string' && !existsSync(join(sourceDir, relPath))) {
-      missingEntries.push({ path: `entry.${key}`, message: `declared file "${relPath}" does not exist.` })
-    }
-  }
-  if (missingEntries.length > 0) {
-    fail(`Module entry files are missing in ${sourceDir}:`, missingEntries)
-  }
+  const missing: ThirdPartyManifestIssue[] = declaredFiles(manifest)
+    .filter(({ file }) => !existsSync(join(sourceDir, file)))
+    .map(({ path, file }) => ({ path, message: `names "${file}", which does not exist.` }))
+  if (missing.length > 0) fail(`Files extension.json names are missing in ${sourceDir}:`, missing)
 
   // A pack whose files no longer match the signed digests would install as
-  // tampered; say so here, where re-signing is one command away.
-  if (manifest.files) {
-    const drift = moduleFileDigestIssuesSync(sourceDir, manifest.files, { walk: 'pack' })
+  // tampered; say so here, where signing again is one command away.
+  const signature = readSignature(sourceDir)
+  if (signature) {
+    const drift = moduleFileDigestIssuesSync(sourceDir, signature.files, { walk: 'pack' })
     if (drift.length > 0) {
-      fail(`Module files changed after signing in ${sourceDir}; run \`sprintengine-extension sign\` again:`, drift)
+      fail(`Files changed after signing in ${sourceDir}; run \`sprintengine-extension sign\` again:`, drift)
     }
   }
 
@@ -348,33 +364,32 @@ function pack(args: string[]): void {
   if (existsSync(outDir) && !values.force) {
     fail(`${outDir} already exists. Pass --force to overwrite it.`)
   }
-  if (outDir === sourceDir || outDir.startsWith(sourceDir + '/')) {
-    fail('The pack output directory must be outside the module directory.')
+  if (isInsideOrEqual(sourceDir, outDir)) {
+    fail('The pack output directory must be outside the extension folder.')
   }
 
   const skipped: string[] = []
   cpSync(sourceDir, outDir, {
     recursive: true,
     force: true,
+    verbatimSymlinks: true,
     filter: (src) => {
       const name = basename(src)
       if (name === 'node_modules' || name === '.git') return false
+      if (lstatSync(src).isSymbolicLink()) {
+        skipped.push(`${relative(sourceDir, src)} (a symbolic link)`)
+        return false
+      }
       if (name.endsWith('.key') || name.endsWith('.pem')) {
-        skipped.push(name)
+        skipped.push(`${name} (key material)`)
         return false
       }
       return true
     },
   })
-  for (const name of skipped) {
-    console.warn(`Skipped ${name}: key material is never packed into a module.`)
-  }
-  const signedNote = !manifest.signature
-    ? 'UNSIGNED — run `sprintengine-extension sign` before distributing'
-    : manifest.files
-      ? 'signed'
-      : 'signed WITHOUT file digests — run `sprintengine-extension sign` again before distributing'
-  console.log(`Packed ${manifest.id} (${signedNote}) to ${outDir}`)
+  for (const name of skipped) console.warn(`Skipped ${name}: never packed into an extension.`)
+  const signedNote = signature ? 'signed' : 'UNSIGNED — run `sprintengine-extension sign` before distributing'
+  console.log(`Packed ${manifest.id} ${manifest.version} (${signedNote}) to ${outDir}`)
 }
 
 function signCommand(args: string[]): void {
@@ -383,74 +398,63 @@ function signCommand(args: string[]): void {
     options: { key: { type: 'string' } },
     allowPositionals: true,
   })
-  const moduleDir = positionals[0]
-  if (!moduleDir) fail(`sign requires a module directory.\n\n${USAGE}`)
+  const extensionDir = positionals[0]
+  if (!extensionDir) fail(`sign requires an extension folder.\n\n${USAGE}`)
   if (!values.key) fail('sign requires --key <private-key.pem> (create one with `sprintengine-extension keygen`).')
-  const keyPath = resolve(values.key)
+  const keyPath = resolve(expandHome(values.key))
   if (!existsSync(keyPath)) fail(`Signing key not found: ${keyPath}`)
 
-  const moduleRoot = resolve(moduleDir)
-  const { manifestPath, manifest } = readManifest(moduleRoot)
+  const root = resolve(extensionDir)
+  const { manifest } = readManifest(root)
   // The pack view: node_modules, .git and key files are left out here exactly
   // as pack leaves them out, so the packed copy matches what was signed.
-  const digests = computeModuleFileDigestsSync(moduleRoot, { walk: 'pack' })
-  if (!digests.ok) fail(`Module files in ${moduleRoot} cannot be signed:`, digests.issues)
-  const unlistedEntries: ThirdPartyManifestIssue[] = []
-  for (const [key, relPath] of Object.entries(manifest.entry ?? {})) {
-    if (typeof relPath === 'string' && digests.files[relPath] === undefined) {
-      unlistedEntries.push({ path: `entry.${key}`, message: `declared file "${relPath}" is not in the module.` })
-    }
-  }
-  if (unlistedEntries.length > 0) fail(`Module entry files are missing in ${moduleRoot}:`, unlistedEntries)
-  // Sign the validated manifest minus any prior signature (re-signing replaces
-  // it), with the digests just taken in place of any earlier ones.
-  const { signature: _prior, files: _priorFiles, ...declared } = manifest
-  const unsigned: CapabilityManifest = { ...declared, files: digests.files }
-  let signature
+  const digests = computeModuleFileDigestsSync(root, { walk: 'pack' })
+  if (!digests.ok) fail(`Files in ${root} cannot be signed:`, digests.issues)
+  const missing: ThirdPartyManifestIssue[] = declaredFiles(manifest)
+    .filter(({ file }) => digests.files[file] === undefined)
+    .map(({ path, file }) => ({ path, message: `names "${file}", which is not in the extension.` }))
+  if (missing.length > 0) fail(`Files extension.json names are missing in ${root}:`, missing)
+  let signature: ExtensionSignature
   try {
-    signature = signManifest(unsigned, readFileSync(keyPath, 'utf8'))
+    signature = signExtensionFiles(digests.files, readFileSync(keyPath, 'utf8'))
   } catch (error) {
     fail(`Could not sign with ${keyPath}: ${error instanceof Error ? error.message : 'unknown error'}`)
   }
-  const signed: CapabilityManifest = { ...unsigned, signature }
-  writeFileSync(manifestPath, JSON.stringify(signed, null, 2) + '\n')
-  const { fingerprint } = verifyModuleSignature(signed)
-  console.log(`Signed ${manifest.id} and ${Object.keys(digests.files).length} file(s); wrote ${manifestPath}`)
+  const signaturePath = join(root, EXTENSION_SIGNATURE_FILENAME)
+  writeFileSync(signaturePath, JSON.stringify(signature, null, 2) + '\n')
+  const { fingerprint } = verifyExtensionSignature(signature)
+  console.log(`Signed ${manifest.id} and ${Object.keys(digests.files).length} file(s); wrote ${signaturePath}`)
   console.log(`Signer fingerprint: ${fingerprint}`)
 }
 
 function verifyCommand(args: string[]): void {
   const { positionals } = parseArgs({ args, allowPositionals: true })
-  const moduleDir = positionals[0]
-  if (!moduleDir) fail(`verify requires a module directory.\n\n${USAGE}`)
-  const { manifest } = readManifest(resolve(moduleDir))
-  if (!manifest.signature) {
+  const extensionDir = positionals[0]
+  if (!extensionDir) fail(`verify requires an extension folder.\n\n${USAGE}`)
+  const root = resolve(extensionDir)
+  const { manifest } = readManifest(root)
+  const signature = readSignature(root)
+  if (!signature) {
     fail(
       `${manifest.id} is unsigned. The app will show it as 'unsigned'; sign it with \`sprintengine-extension sign\`.`,
     )
   }
-  const { valid, fingerprint } = verifyModuleSignature(manifest)
+  const { valid, fingerprint } = verifyExtensionSignature(signature)
   if (!valid) {
     fail(
-      `${manifest.id} has an INVALID signature (manifest changed after signing, or wrong key). ` +
-        'The app will refuse to trust it. Re-sign the module.',
+      `${manifest.id} has an INVALID signature (extension.sig changed after signing, or wrong key). ` +
+        'The app will refuse to trust it. Sign it again.',
     )
   }
-  if (!manifest.files) {
-    fail(
-      `${manifest.id} is signed, but its manifest carries no "files" digests, so the signature does not cover its ` +
-        'code and the app will not trust it by its publisher key. Sign it again with `sprintengine-extension sign`.',
-    )
-  }
-  const drift = moduleFileDigestIssuesSync(resolve(moduleDir), manifest.files, { walk: 'pack' })
+  const drift = moduleFileDigestIssuesSync(root, signature.files, { walk: 'pack', label: 'signed digests' })
   if (drift.length > 0) {
     fail(
-      `${manifest.id} does not match the file digests its manifest signs (changed after signing?). ` +
+      `${manifest.id} does not match the file digests extension.sig signs (changed after signing?). ` +
         'The app will refuse it as tampered. Sign it again with `sprintengine-extension sign`.',
       drift,
     )
   }
-  console.log(`${manifest.id}: signature valid; ${Object.keys(manifest.files).length} file(s) match`)
+  console.log(`${manifest.id}: signature valid; ${Object.keys(signature.files).length} file(s) match`)
   console.log(`Signer fingerprint: ${fingerprint}`)
 }
 
@@ -519,21 +523,6 @@ function pluginScaffold(args: string[]): void {
       `---\nname: ${id}\ndescription: ${displayName} skill placeholder.\n---\n\nDescribe when and how this skill should be used.\n`,
     )
   }
-  if (components.module) {
-    const moduleDir = join(outDir, components.module.path)
-    mkdirSync(moduleDir, { recursive: true })
-    writeJson(join(moduleDir, 'manifest.json'), {
-      id: componentId(id, 'module'),
-      displayName: `${displayName} Module`,
-      version: 1,
-      defaultEnabled: false,
-      permissions: ['network'],
-      engines: { hostApi: HOST_API_VERSION },
-      entry: { main: 'main.cjs' },
-    })
-    writeFileSync(join(moduleDir, 'main.cjs'), 'exports.registerMain = () => {}\n')
-  }
-
   console.log(`Scaffolded marketplace plugin ${id} at ${outDir}`)
   console.log(`Registry entry "provides": ${JSON.stringify(providesForComponents(components))}`)
   console.log(

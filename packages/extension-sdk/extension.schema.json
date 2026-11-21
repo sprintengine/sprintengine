@@ -1,0 +1,815 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sprintengine.dev/schemas/extension.schema.json",
+  "type": "object",
+  "title": "SprintEngine Studio extension manifest",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "maxLength": 2048,
+      "description": "JSON Schema URL for editor completion. Studio ignores it.",
+      "x-since": "0.13.0"
+    },
+    "manifestVersion": {
+      "const": 1,
+      "description": "The manifest format. Always `1`.",
+      "x-since": "0.13.0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "Extension id, kebab-case. Studio installs it under `<publisher>.<id>`, the publisher derived from where it came from (`local` for a folder). Ids starting `studio-` or `sprintengine-` install only from Studio’s own catalogue.",
+      "x-since": "0.13.0",
+      "examples": [
+        "notes"
+      ]
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+      "description": "The extension’s version, semver.",
+      "x-since": "0.13.0",
+      "examples": [
+        "1.0.0"
+      ]
+    },
+    "engines": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "studio": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^>=(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$",
+          "description": "The oldest Studio it runs on, as `>=x.y.z`: at least the newest “since” of any field it uses.",
+          "x-since": "0.13.0",
+          "examples": [
+            ">=0.13.0"
+          ]
+        }
+      },
+      "required": [
+        "studio"
+      ],
+      "description": "The Studio versions it runs on.",
+      "x-since": "0.13.0"
+    },
+    "tier": {
+      "type": "string",
+      "maxLength": 16,
+      "enum": [
+        "content",
+        "declarative",
+        "ui",
+        "worker"
+      ],
+      "description": "The most authority it needs, least first: `content`, `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.",
+      "x-since": "0.13.0",
+      "examples": [
+        "ui"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Display name.",
+      "x-since": "0.13.0",
+      "examples": [
+        "Notes"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 512,
+      "description": "One or two sentences shown with the name.",
+      "x-since": "0.13.0"
+    },
+    "icon": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Pp][Nn][Gg]|\\.[Ss][Vv][Gg]|\\.[Jj][Pp][Gg]|\\.[Jj][Pp][Ee][Gg]|\\.[Ww][Ee][Bb][Pp])$",
+      "description": "A square image shown beside the name.",
+      "x-since": "0.13.0",
+      "examples": [
+        "assets/icon.png"
+      ]
+    },
+    "cover": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Pp][Nn][Gg]|\\.[Ss][Vv][Gg]|\\.[Jj][Pp][Gg]|\\.[Jj][Pp][Ee][Gg]|\\.[Ww][Ee][Bb][Pp])$",
+      "description": "A wide image for its listing.",
+      "x-since": "0.13.0"
+    },
+    "screenshots": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Pp][Nn][Gg]|\\.[Ss][Vv][Gg]|\\.[Jj][Pp][Gg]|\\.[Jj][Pp][Ee][Gg]|\\.[Ww][Ee][Bb][Pp])$"
+      },
+      "description": "Images of it at work, for its listing.",
+      "x-since": "0.13.0"
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9.+()-]+(?: (?:OR|AND|WITH) [A-Za-z0-9.+()-]+)*$",
+      "description": "Its licence, as an SPDX expression.",
+      "x-since": "0.13.0",
+      "examples": [
+        "MIT"
+      ]
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^https:\\/\\/[^\\s]+$",
+      "description": "Where its source lives.",
+      "x-since": "0.13.0"
+    },
+    "homepage": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^https:\\/\\/[^\\s]+$",
+      "description": "Its home page.",
+      "x-since": "0.13.0"
+    },
+    "permissions": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "string",
+        "maxLength": 64,
+        "enum": [
+          "filesystem:read-workspace",
+          "filesystem:write-workspace",
+          "filesystem:read-home",
+          "process:spawn",
+          "network",
+          "ipc:workspace-read",
+          "ipc:workspace-write",
+          "ipc:settings",
+          "ipc:invoke",
+          "module:bridge",
+          "backlog.read",
+          "backlog.write",
+          "backlog.link.open",
+          "scheduled-agents.manage",
+          "agents:companion",
+          "agents:generate",
+          "storage",
+          "conversation:read",
+          "conversation:operate",
+          "conversation:bypass",
+          "chat:draft",
+          "secrets",
+          "github",
+          "mcp:tools",
+          "usage:read",
+          "conversation:read-all"
+        ]
+      },
+      "description": "What it asks the person to allow. `content` and `declarative` extensions hold none.",
+      "x-since": "0.13.0",
+      "x-tier": "ui",
+      "examples": [
+        [
+          "storage"
+        ]
+      ]
+    },
+    "main": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss]|\\.[Cc][Jj][Ss])$",
+      "description": "The worker’s entry: a module whose `activate(studio)` (its default export, or a named `activate`) registers what it serves. Worker tier only, and required by it.",
+      "x-since": "0.13.0",
+      "x-tier": "worker",
+      "examples": [
+        "dist/main.js"
+      ]
+    },
+    "background": {
+      "type": "boolean",
+      "description": "`true` keeps the worker running while the extension is on.",
+      "x-since": "0.13.0",
+      "x-tier": "worker"
+    },
+    "contributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "title": "CommandContribution",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
+                "description": "Command id, unique among this extension’s commands. Without `action`, running the command calls the worker method of this name (`registerMethods`, access `operate`).",
+                "x-since": "0.13.0",
+                "examples": [
+                  "notes.clear"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "description": "Title in the command palette and in menus.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "Clear notes"
+                ]
+              },
+              "when": {
+                "type": "string",
+                "maxLength": 16,
+                "enum": [
+                  "global",
+                  "workspace"
+                ],
+                "description": "Where the command is offered. `workspace` hides it while no workspace is open. Defaults to `global`.",
+                "x-since": "0.13.0"
+              },
+              "action": {
+                "type": "string",
+                "maxLength": 64,
+                "enum": [
+                  "app.settings.open",
+                  "commandPalette.open",
+                  "search.everywhere",
+                  "search.goToFile",
+                  "chat.new",
+                  "workspace.history.back",
+                  "workspace.history.forward",
+                  "workspace.sidebar.toggle",
+                  "panel.files.toggle",
+                  "panel.editor.toggle",
+                  "panel.git.toggle",
+                  "panel.backlog.toggle",
+                  "git.refresh",
+                  "git.fetch",
+                  "terminal.new",
+                  "usage.show"
+                ],
+                "description": "A Studio command this command runs. A command with an `action` is declarative and runs no extension code; one without needs the worker tier.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "panel.backlog.toggle"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ]
+          },
+          "description": "Command palette entries.",
+          "x-since": "0.13.0",
+          "x-tier": "declarative"
+        },
+        "menus": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "title": "MenuContribution",
+            "additionalProperties": false,
+            "properties": {
+              "where": {
+                "type": "string",
+                "maxLength": 32,
+                "enum": [
+                  "backlog.item",
+                  "file",
+                  "notification"
+                ],
+                "description": "The menu: a backlog item’s, a file’s in the Files tree, or one of this extension’s own notifications.",
+                "x-since": "0.13.0"
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
+                "description": "A command this extension contributes. Its title is the menu item’s label, and it runs with the item it was picked on.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "notes.clear"
+                ]
+              }
+            },
+            "required": [
+              "where",
+              "command"
+            ]
+          },
+          "description": "Items in Studio’s own menus.",
+          "x-since": "0.13.0",
+          "x-tier": "declarative"
+        },
+        "topBarItems": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "title": "TopBarItemContribution",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "description": "Id, unique among this extension’s top bar items.",
+                "x-since": "0.13.0"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "The button’s name and tooltip.",
+                "x-since": "0.13.0"
+              },
+              "icon": {
+                "type": "string",
+                "maxLength": 32,
+                "enum": [
+                  "extension",
+                  "chat",
+                  "branch",
+                  "folder",
+                  "schedule",
+                  "spark",
+                  "lock",
+                  "settings",
+                  "check",
+                  "warning",
+                  "copy",
+                  "notes"
+                ],
+                "description": "The button’s glyph. Defaults to `extension`.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "notes"
+                ]
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
+                "description": "A contributed command the button runs. Give `command` or `door`, not both.",
+                "x-since": "0.13.0"
+              },
+              "door": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "description": "A contributed door the button opens.",
+                "x-since": "0.13.0"
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ]
+          },
+          "description": "Buttons in the top bar.",
+          "x-since": "0.13.0",
+          "x-tier": "declarative"
+        },
+        "panels": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "title": "PanelContribution",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "description": "Id, unique within this point.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "notes"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "What Studio calls it.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "Notes"
+                ]
+              },
+              "icon": {
+                "type": "string",
+                "maxLength": 32,
+                "enum": [
+                  "extension",
+                  "chat",
+                  "branch",
+                  "folder",
+                  "schedule",
+                  "spark",
+                  "lock",
+                  "settings",
+                  "check",
+                  "warning",
+                  "copy",
+                  "notes"
+                ],
+                "description": "Glyph beside the title. Defaults to `extension`.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "notes"
+                ]
+              },
+              "entry": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
+                "description": "What the panel draws, as a tab in a workspace’s pane. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "dist/notes.js"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "entry"
+            ]
+          },
+          "description": "Pane tabs, offered by the pane’s + menu.",
+          "x-since": "0.13.0",
+          "x-tier": "ui"
+        },
+        "doors": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "title": "DoorContribution",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "description": "Id, unique within this point.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "notes"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "What Studio calls it.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "Notes"
+                ]
+              },
+              "icon": {
+                "type": "string",
+                "maxLength": 32,
+                "enum": [
+                  "extension",
+                  "chat",
+                  "branch",
+                  "folder",
+                  "schedule",
+                  "spark",
+                  "lock",
+                  "settings",
+                  "check",
+                  "warning",
+                  "copy",
+                  "notes"
+                ],
+                "description": "Glyph beside the title. Defaults to `extension`.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "notes"
+                ]
+              },
+              "entry": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
+                "description": "What the door draws when it is open. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "dist/notes.js"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "entry"
+            ]
+          },
+          "description": "Full-window surfaces, opened from the Extensions drawer.",
+          "x-since": "0.13.0",
+          "x-tier": "ui"
+        },
+        "settingsSections": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "title": "SettingsSectionContribution",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "description": "Id, unique within this point.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "notes"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "What Studio calls it.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "Notes"
+                ]
+              },
+              "icon": {
+                "type": "string",
+                "maxLength": 32,
+                "enum": [
+                  "extension",
+                  "chat",
+                  "branch",
+                  "folder",
+                  "schedule",
+                  "spark",
+                  "lock",
+                  "settings",
+                  "check",
+                  "warning",
+                  "copy",
+                  "notes"
+                ],
+                "description": "Glyph beside the title. Defaults to `extension`.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "notes"
+                ]
+              },
+              "entry": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
+                "description": "What the section draws in Settings. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "dist/notes.js"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "entry"
+            ]
+          },
+          "description": "Sections in Settings.",
+          "x-since": "0.13.0",
+          "x-tier": "ui"
+        },
+        "mcpTools": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "title": "McpToolContribution",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "description": "The tool’s name on Studio’s MCP server. The worker serves it with `registerMcpTools`; a tool it registers that is not declared here is refused.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "notes_search"
+                ]
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "description": "What agents are told the tool does.",
+                "x-since": "0.13.0"
+              },
+              "access": {
+                "type": "string",
+                "maxLength": 16,
+                "enum": [
+                  "read",
+                  "operate"
+                ],
+                "description": "`read` changes nothing; `operate` may, and agents are asked before it runs where their settings say so.",
+                "x-since": "0.13.0"
+              }
+            },
+            "required": [
+              "name",
+              "description",
+              "access"
+            ]
+          },
+          "description": "Tools agents reach through Studio’s MCP server. Needs the `mcp:tools` permission.",
+          "x-since": "0.13.0",
+          "x-tier": "worker"
+        },
+        "themes": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for app color themes; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "terminalThemes": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for terminal color themes; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "iconThemes": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for file icon themes; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "syntaxes": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for syntax highlighting; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "fonts": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for font families; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "snippets": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for editor snippets; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "keybindings": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for keyboard shortcuts; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "statusBarItems": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for status bar items; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "settings": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for declared settings; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "customEditors": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for custom editors; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "newFiles": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for new file templates; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "events": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for events delivered to the worker; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "hooks": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for hooks the worker runs around Studio actions; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "sidecars": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for background processes; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "agentProviders": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for agent providers; must be empty.",
+          "x-since": "0.13.0"
+        },
+        "skills": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for agent skills (a plugin bundle carries them for now); must be empty.",
+          "x-since": "0.13.0"
+        },
+        "mcpServers": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for MCP server definitions (a plugin bundle carries them for now); must be empty.",
+          "x-since": "0.13.0"
+        },
+        "providers": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Reserved for model providers (the provider folder carries them for now); must be empty.",
+          "x-since": "0.13.0"
+        }
+      },
+      "description": "What it adds to Studio. Every point defaults to empty.",
+      "x-since": "0.13.0"
+    }
+  },
+  "required": [
+    "manifestVersion",
+    "id",
+    "version",
+    "engines",
+    "tier",
+    "name"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "tier": {
+            "const": "worker"
+          }
+        },
+        "required": [
+          "tier"
+        ]
+      },
+      "then": {
+        "required": [
+          "main"
+        ]
+      }
+    }
+  ]
+}

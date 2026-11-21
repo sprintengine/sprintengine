@@ -1,40 +1,10 @@
-// Module-owned skills (WP-D). A capability module can ship agent skills in its
-// own tree and hand them to the host; the host then treats them exactly as it
-// treats the skills the app bundles — same install fan-out, same managed
-// manifest, same `spawnSkillId` resolution at the launch boundary.
+// The app's skill installer, as a module reaches it: whether one of the app's
+// skills is present in a workspace (`getSkillStatus`) and making it so
+// (`ensureSkillInstalled`).
 //
-// Node-free on purpose: these shapes are shared by the module host
-// (MainHost.registerSkills), the main-process skill registry
-// (src/main/builtin-skills.ts) and the SDK mirror in packages/extension-sdk —
-// src/shared cannot import src/main (TS6307).
-
-/**
- * Where a skill must land in a workspace.
- *
- * - `'agents'` — the harness-neutral `.agents/skills/<id>` directory only.
- *   Enough for a skill an agent discovers by reading the directory.
- * - `'all-native'` — additionally every installed CLI plugin's own native
- *   skill directory (`.claude/skills`, `.codex/skills`, …). Required when the
- *   skill is invoked by name in a prompt, because a CLI resolves an invocation
- *   only against its own directory.
- */
-export type ModuleSkillTargetPolicy = 'agents' | 'all-native'
-
-/**
- * One skill a module ships. `sourceDir` is the directory holding the skill's
- * `SKILL.md` (and any `agents/` sidecars), relative to the module root; the
- * host resolves it and refuses anything that escapes the root. A module with
- * no root on disk (a bundled module) passes an absolute path instead.
- *
- * `id` is the invocation name and must not collide with a built-in skill or
- * with a skill another module already registered.
- */
-export type ModuleSkillRegistration = {
-  id: string
-  sourceDir: string
-  targetPolicy: ModuleSkillTargetPolicy
-  description: string
-}
+// Node-free on purpose: these shapes are shared by the module host, the
+// main-process skill registry (src/main/builtin-skills.ts) and the SDK mirror
+// in packages/extension-sdk — src/shared cannot import src/main (TS6307).
 
 /**
  * Every status the host's skill installer answers with, so a module can switch
@@ -43,7 +13,7 @@ export type ModuleSkillRegistration = {
  * - `installed` — present and current (written by this app, or nothing to write).
  * - `updated` — `ensureSkillInstalled` replaced an older copy it had written.
  * - `missing` — not in the workspace yet (`getSkillStatus` only; `ensure…` installs it).
- * - `update-available` — present, but older than the copy the module ships
+ * - `update-available` — present, but older than the copy the app ships
  *   (`getSkillStatus` only; `ensure…` updates it).
  * - `local` — a copy the app did not write is in the way; it is left alone.
  * - `modified` — the app's copy was edited by hand; it is left alone.

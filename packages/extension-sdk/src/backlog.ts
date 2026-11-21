@@ -1,5 +1,5 @@
 // The Backlog write API: change, create and annotate Backlog items from a
-// module's `entry.main` or renderer, outside a Backlog action the person
+// extension's worker or renderer, outside a Backlog action the person
 // picked. Every write goes through the app's own Backlog service, in the same
 // per-project lane its other writers use, so ids, file names and frontmatter
 // follow the app's rules and two writers never race. A module never writes an
@@ -77,7 +77,7 @@ export type ModuleBacklogCreated = {
 export type ModuleBacklogLinkInput = Omit<BacklogItemLink, 'moduleId'> & { moduleId?: string }
 
 /**
- * The Backlog for a module's `entry.main`, obtained via
+ * The Backlog for an extension's worker, obtained via
  * `getBacklogService(host)`. `itemId` is a `BacklogItemView.id` (the item's
  * logical path, `backlog/…`). Expected failures come back as results, never
  * throws. Reads need the `backlog.read` permission and writes `backlog.write`;
@@ -109,9 +109,8 @@ const backlogModuleServiceToken: ServiceToken<ModuleBacklogRegistry> = { key: 'b
 
 /**
  * The scoped Backlog service for `host`'s module; closes over `host.moduleId`
- * like `getModuleStorage`. Provided by the agent-runtime core: declare
- * `dependsOn: ['agent-runtime']` (or resolve inside handlers) so registration
- * order cannot race the provider. `host.supports('backlog-write')` says
+ * like `getModuleStorage`. Provided by Studio's agent runtime, which starts
+ * ahead of every extension's worker. `host.supports('backlog-write')` says
  * whether this host has it.
  */
 export function getBacklogService(host: MainHost): ModuleBacklogService {

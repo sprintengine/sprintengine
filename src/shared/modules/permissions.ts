@@ -1,6 +1,6 @@
-// Tier 2 third-party capability modules: the permission vocabulary.
+// The permission vocabulary an extension's extension.json asks from.
 //
-// A third-party module declares, in its manifest, the capabilities it needs. In
+// An extension declares, in its manifest, the capabilities it needs. In
 // the v1 security model (signing + trusted publisher, in-process execution),
 // this list is install-time DISCLOSURE shown before you trust a
 // module, not a runtime-enforced cage. Runtime enforcement (a permission broker)
@@ -52,8 +52,8 @@
 // manifest written before the split keeps working, but a module that only
 // talks to itself declares `module:bridge` and its consent prompt stops saying
 // "any of the app's internal APIs".
-// Unknown scopes stay forward-compatible: they validate structurally and are
-// surfaced verbatim as unrecognized.
+// extension.json refuses a scope outside this vocabulary; a bundle's
+// plugin.json may still carry one, which is surfaced verbatim as unrecognized.
 
 export type CapabilityPermission =
   | 'filesystem:read-workspace'

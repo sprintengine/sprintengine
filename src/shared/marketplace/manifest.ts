@@ -1,7 +1,7 @@
 // Extension marketplace bundle + registry contracts.
 //
 // A marketplace plugin is a thin bundle over primitives the studio already owns:
-// MCP configs, skill packs and capability modules. The
+// MCP configs and skill packs. The
 // bundle manifest validator lives in the published SDK so authoring tools and
 // the app cannot drift on the signing-critical plugin.json shape, including
 // component file digests. This module re-exports that plugin contract and adds
@@ -24,7 +24,7 @@ import type {
 // inline entry cannot express a server the app would reject.
 import { normalizeMcpServerConfig } from '../mcp/normalize-server'
 import {
-  validateThirdPartyModuleManifest as validateSdkThirdPartyModuleManifest,
+  validateBundleBaseManifest,
   type ThirdPartyManifestIssue,
 } from '../../../packages/extension-sdk/src/manifest-validate'
 import {
@@ -343,7 +343,7 @@ function validateInlineMcp(
   return servers.length === value.servers.length ? { servers } : undefined
 }
 
-// Same shape the SDK module-manifest probe enforces for entry ids; an inline
+// Same shape the SDK bundle manifest probe enforces for entry ids; an inline
 // CLI's pluginId is a plugin-registry directory name, so it obeys the same
 // lowercase id grammar.
 const INLINE_CLI_PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
@@ -386,15 +386,15 @@ function validateMarketplaceEntry(
   const startIssues = issues.length
 
   // signature is optional here; the SDK probe validates its shape when present.
-  const moduleProbe = validateSdkThirdPartyModuleManifest({
+  const baseProbe = validateBundleBaseManifest({
     id: value.id,
     displayName: value.name,
     version: value.latest,
     permissions: [],
     signature: value.signature,
   })
-  if (!moduleProbe.ok) {
-    pushSdkIssues(issues, moduleProbe.issues, path, { displayName: 'name', version: 'latest' })
+  if (!baseProbe.ok) {
+    pushSdkIssues(issues, baseProbe.issues, path, { displayName: 'name', version: 'latest' })
   }
 
   const publisher = validatePublisher(value.publisher, `${path}.publisher`, issues)
@@ -470,24 +470,24 @@ function validateMarketplaceEntry(
   // an unknown key would otherwise be silently dropped.
   const skills = value.skills !== undefined ? validateSkills(value.skills, `${path}.skills`, issues) : undefined
 
-  if (!moduleProbe.ok || !publisher || !provides || category === undefined || issues.length > startIssues) {
+  if (!baseProbe.ok || !publisher || !provides || category === undefined || issues.length > startIssues) {
     return undefined
   }
 
   const entry: MarketplacePluginEntry = {
-    id: moduleProbe.manifest.id,
-    name: moduleProbe.manifest.displayName,
+    id: baseProbe.manifest.id,
+    name: baseProbe.manifest.displayName,
     publisher,
     summary: (value.summary as string).trim(),
     category,
     icon: (value.icon as string).trim(),
-    latest: moduleProbe.manifest.version,
+    latest: baseProbe.manifest.version,
     provides,
   }
   if (categories && categories.length > 0) entry.categories = categories
   if (tags && tags.length > 0) entry.tags = tags
   if (source !== undefined) entry.source = source
-  if (moduleProbe.manifest.signature) entry.signature = moduleProbe.manifest.signature as ModuleSignature
+  if (baseProbe.manifest.signature) entry.signature = baseProbe.manifest.signature as ModuleSignature
   if (mcp) entry.mcp = mcp
   if (cli) entry.cli = cli
   if (skills && skills.length > 0) entry.skills = skills

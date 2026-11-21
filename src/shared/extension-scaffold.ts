@@ -3,8 +3,6 @@
 // templates (packages/extension-sdk/src/scaffold.ts). Renderer-safe: types and
 // pure helpers only.
 
-import { BUNDLED_MODULE_IDS } from './modules/manifest'
-
 /**
  * The template every project starts from. The person describes the extension
  * in their own words, and the extension guide has the agent add the surfaces
@@ -47,10 +45,12 @@ export function extensionIdFromName(name: string, options: { typing?: boolean } 
  */
 export function extensionIdProblem(id: string): string | null {
   if (id === '') return 'Name the extension.'
-  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id) || id.endsWith('-')) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || id.length > 63) {
     return 'Use lowercase letters, digits and hyphens, starting with a letter or digit.'
   }
-  if (BUNDLED_MODULE_IDS.includes(id)) return `"${id}" belongs to a part of the studio; choose another name.`
+  if (id.startsWith('studio-') || id.startsWith('sprintengine-')) {
+    return `Ids starting "studio-" or "sprintengine-" are Studio’s own; choose another name.`
+  }
   return null
 }
 

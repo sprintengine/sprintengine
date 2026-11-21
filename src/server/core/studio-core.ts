@@ -196,8 +196,7 @@ export type StudioCoreOptions = {
   /**
    * What a desktop's Studio is extended with (`extensions`): given, the core
    * holds the marketplace, the CLI catalogue, the extension scaffold and the
-   * hosted feeds, and a card's `install.module` goes through its marketplace.
-   * The shell adds Studio's own plugin in a workspace, which it installs, and
+   * hosted feeds. The shell adds Studio's own plugin in a workspace, which it installs, and
    * is told when what is installed changes. Absent (a server on a WSL or SSH
    * machine), none of it is served.
    */
@@ -350,8 +349,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   })
   // The agent CLIs on this machine and what they are set up with, served by
   // every Studio (`agent-runtimes`, `agent-setup`).
-  // What a desktop's Studio is extended with, built before the agents so a
-  // card's `install.module` goes through the same marketplace a window's does.
+  // What a desktop's Studio is extended with.
   const extensions = options.extensions
     ? createStudioExtensions({
         paths: platform.paths,
@@ -363,14 +361,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   const agents = createStudioAgents(platform, {
     agentLaunchSettings,
     ...(options.agentServices ? { services: options.agentServices } : {}),
-    ...(options.agentSkills || extensions
-      ? {
-          skills: {
-            ...options.agentSkills,
-            ...(extensions ? { marketplace: extensions.marketplace.cardMarketplace } : {}),
-          },
-        }
-      : {}),
+    ...(options.agentSkills ? { skills: options.agentSkills } : {}),
   })
 
   // The authoritative workspace registry. Routing lives in the record, so no

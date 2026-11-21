@@ -14,7 +14,6 @@ import {
   MARKETPLACE_CANONICAL_SOURCE,
   MARKETPLACE_COMPONENT_KINDS,
   MARKETPLACE_EXTRA_HOSTS_ENV,
-  hasCodeBearingComponent,
   isMarketplaceSourceHostAllowed,
   parseMarketplaceExtraHosts,
   parseMarketplacePluginAuthoringManifest,
@@ -57,13 +56,6 @@ export type MarketplacePluginDownloadOptions = {
    * nothing rather than something nobody reviewed.
    */
   commitSha?: string
-  /**
-   * Let an unsigned bundle carrying module code through the unsigned gate.
-   * Only ever derived in main from a trust grant for a GitHub-URL install the
-   * person explicitly trusted (trust-tokens.ts); the registry path never sets
-   * it, and a renderer cannot.
-   */
-  allowUnsignedCode?: boolean
   stagingRoot?: string
   fetcher?: MarketplacePluginDownloadFetch
   timeoutMs?: number
@@ -236,24 +228,6 @@ export async function downloadMarketplacePluginBundle(
         issues: [{ path: 'signature', message: 'Invalid signature.' }],
       }
     }
-    // Unsigned bundles are permitted only when they carry no code component: an
-    // unsigned module must never become load-eligible, so gate on signature
-    // presence (id-trust would otherwise promote an unsigned manifest to
-    // 'trusted' and slip a code component past the classification check). The
-    // one exception is a GitHub-URL install the person explicitly trusted as
-    // code, which main alone can ask for.
-    if (!manifest.signature && hasCodeBearingComponent(manifest.components) && options.allowUnsignedCode !== true) {
-      await rm(stage, { recursive: true, force: true })
-      return {
-        ok: false,
-        sourceUrl,
-        classification: 'unsigned',
-        trust,
-        message: 'Downloaded plugin bundle is unsigned.',
-        issues: [{ path: 'signature', message: 'signature is required.' }],
-      }
-    }
-
     const mismatch = registryMismatchIssues(options.entry, manifest)
     if (mismatch.length > 0) {
       await rm(stage, { recursive: true, force: true })
@@ -386,8 +360,9 @@ function resolveDownloadedManifest(source: string, trustContext: ModuleTrustCont
       trust: classifySignedManifestTrust(resolved.manifest, trustContext),
     }
   }
-  // A bundle built for an older Studio is refused for that, whatever else is
-  // true of it — "unsigned" would send its author looking in the wrong place.
+  // A bundle declaring a kind Studio no longer installs is refused for that,
+  // whatever else is true of it — "unsigned" would send its author looking in
+  // the wrong place.
   const retired = retiredMarketplaceComponentIssue(resolved.issues)
   if (retired) {
     return { ok: false, classification: 'invalid', message: retired.message, issues: resolved.issues }

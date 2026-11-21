@@ -1,4 +1,4 @@
-// Declared methods: what a module's `entry.main` serves its window code (and
+// Declared methods: what an extension's worker serves its window code (and
 // any client the person granted it) over the Studio protocol's `extension.read`
 // and `extension.operate`, typed by a contract per method. The app imports these
 // from here (src/shared/modules/methods.ts), so the host and the SDK cannot

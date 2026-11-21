@@ -1,10 +1,9 @@
-// One extension repository on GitHub, at one commit, answering the calls an
+// One plugin repository on GitHub, at one commit, answering the calls an
 // install from its URL makes — in GitHub's own response shapes: the
 // repository object, the `application/vnd.github.sha` commit body, contents
-// listings with their `download_url`s, and the raw bytes. Laid out the way the
-// SDK's templates scaffold a repository: plugin.json at the root naming a
-// module/ folder whose manifest carries its `files` digests. Tests use it so
-// nothing reaches the network.
+// listings with their `download_url`s, and the raw bytes. plugin.json sits at
+// the root naming a skills/ folder. Tests use it so nothing reaches the
+// network.
 
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
@@ -20,41 +19,21 @@ export function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex')
 }
 
-export const RENDERER = 'export default function register() {}\n'
+export const SKILL = '---\nname: notes\ndescription: Keep notes beside the code.\n---\n\n# Notes\n'
 
-export function moduleManifest(options: { files?: boolean } = {}): string {
-  return `${JSON.stringify(
-    {
-      id: 'notes-ext',
-      displayName: 'Notes',
-      version: 1,
-      publisher: 'Acme',
-      summary: 'Notes, an extension for SprintEngine Studio.',
-      defaultEnabled: false,
-      source: 'third-party',
-      engines: { hostApi: 3 },
-      permissions: ['storage'],
-      entry: { renderer: 'dist/renderer.mjs' },
-      ...(options.files === false ? {} : { files: { 'dist/renderer.mjs': sha256(RENDERER) } }),
-    },
-    null,
-    2,
-  )}\n`
-}
-
-// plugin.json exactly as the templates scaffold it: unsigned, no component
-// digests, pointing at module/.
+// plugin.json as an author writes it: unsigned, no component digests,
+// pointing at one skill folder.
 export const PLUGIN_JSON = `${JSON.stringify(
   {
     id: 'notes-ext',
     displayName: 'Notes',
     version: 1,
     publisher: 'Acme',
-    summary: 'Notes, an extension for SprintEngine Studio.',
+    summary: 'Notes, a plugin for SprintEngine Studio.',
     defaultEnabled: false,
     source: 'third-party',
     permissions: ['storage'],
-    components: { module: { path: 'module' } },
+    components: { skills: { path: 'skills/notes' } },
   },
   null,
   2,
@@ -63,13 +42,19 @@ export const PLUGIN_JSON = `${JSON.stringify(
 export function extensionRepo(overrides: Record<string, string | null> = {}): Record<string, string> {
   const files: Record<string, string | null> = {
     'plugin.json': PLUGIN_JSON,
-    'module/manifest.json': moduleManifest(),
-    'module/dist/renderer.mjs': RENDERER,
-    'src/renderer.tsx': '// the source the bundle was built from; never fetched\n',
+    'skills/notes/SKILL.md': SKILL,
     'README.md': '# Notes\n',
     ...overrides,
   }
   return Object.fromEntries(Object.entries(files).filter((entry): entry is [string, string] => entry[1] !== null))
+}
+
+// An extension's repository: extension.json at the root, no plugin.json.
+export function extensionJsonRepo(): Record<string, string> {
+  return {
+    'extension.json': `${JSON.stringify({ id: 'notes-ext', name: 'Notes', version: '1.0.0' }, null, 2)}\n`,
+    'README.md': '# Notes\n',
+  }
 }
 
 export type Served = { requests: string[]; fetcher: MarketplacePluginDownloadFetch }

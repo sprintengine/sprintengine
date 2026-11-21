@@ -20,97 +20,45 @@ import type {
 } from '../../shared/marketplace'
 import {
   MARKETPLACE_COMPONENT_KINDS,
-  hasCodeBearingComponent,
   resolveOptionallySignedManifest,
   retiredMarketplaceComponentIssue,
 } from '../../shared/marketplace'
-import { LIVE_ENABLED_MODULE_IDS, type CapabilityManifest, type ModuleFileDigests } from '../../shared/modules/manifest'
-import { parseThirdPartyModuleManifest } from '../../shared/modules/third-party-manifest'
 import { marketplaceComponentDigestMismatchIssuesSync } from '../../../packages/extension-sdk/src/plugin-component-digests'
 import { normalizeMcpClients, normalizeMcpServerConfig, type McpConfigService } from '../mcp-config-service'
 import { installSkillDirectory } from '../skills/install'
 import {
-  classifyModuleTrust,
   classifySignedManifestTrust,
   isLoadEligible,
-  isSignedByTrustedPublisher,
-  moduleContentFingerprint,
   type ModuleTrust,
   type ModuleTrustContext,
 } from './module-signature'
-import { defaultUserModuleRoot, installModuleFolder as installCapabilityModuleFolder } from './user-module-registry'
 import { isRecord } from '../../shared/records'
 import { withObservedUnsignedDigests } from '../marketplace/unsigned-component-digests'
 
 const DEFAULT_MCP_CLIENTS: McpClientTarget[] = ['codex', 'claude-code']
 const DEFAULT_SKILL_HARNESSES: SkillHarness[] = ['agents']
 
-// The component kinds a bundle can install. Agent CLIs are not among them:
-// they ship with the app, and an extension may not add or replace one.
-type BundleComponentKind = Exclude<MarketplaceComponentKind, 'cli'>
-const BUNDLE_COMPONENT_KINDS = MARKETPLACE_COMPONENT_KINDS.filter(
-  (kind): kind is BundleComponentKind => (kind as string) !== 'cli',
-)
-
-type ComponentPath = { kind: BundleComponentKind; path: string }
+type ComponentPath = { kind: MarketplaceComponentKind; path: string }
 
 export type MarketplacePluginInstallerServices = {
   trustContext: () => ModuleTrustContext
   mcpConfigService: McpConfigService
-  moduleRoot?: () => string
-  installModuleFolder?: typeof installCapabilityModuleFolder
 }
 
 type ResolvedComponent =
-  | { kind: 'mcp'; path: string; servers: McpServerConfig[] }
-  | { kind: 'skills'; path: string; installedDirName: string }
-  // `verifiedInstall` is the content fingerprint a trusted publisher's bundle
-  // signature vouches for (see bundleVouchedModuleInstall), when it does.
-  | { kind: 'module'; path: string; id: string; trust: ModuleTrust; verifiedInstall?: string }
+  { kind: 'mcp'; path: string; servers: McpServerConfig[] } | { kind: 'skills'; path: string; installedDirName: string }
 
 type ResolvedInstallPlan = {
   components: ResolvedComponent[]
   trust: ModuleTrust
 }
 
-/**
- * Install-time facts the CALLER knows and the bundle cannot state about itself.
- * Not part of `MarketplacePluginInstallInput`, deliberately: that type crosses
- * IPC from the renderer, and `requireTrustedModuleComponents` is derived in main
- * from the download's own classification — a renderer that could set it could
- * also clear it.
- */
-export type MarketplacePluginInstallOptions = {
-  /**
-   * G1. The bundle verified as `verified` — signed by a publisher listed in
-   * `trusted-publishers.json` — so any module it carries must ALSO be signed by
-   * one, and the install refuses the bundle outright otherwise.
-   *
-   * Why the inner manifest and not just the bundle: `verified` installs skip
-   * the trust prompt entirely (see installFlow.ts), and the thing that decides
-   * whether a module's code loads at launch is `classifyModuleTrust` on the
-   * MODULE manifest, not on the bundle. A first-party bundle wrapping a module
-   * signed by somebody else — or by nobody — would install silently and then
-   * either sit awaiting a trust toggle nobody was told about, or, for a
-   * reserved id, be rejected by the module registry after the fact. Both are a
-   * first-party install that quietly did not do what it said.
-   */
-  requireTrustedModuleComponents?: boolean
-  /**
-   * An unsigned bundle carrying module code may install. Derived in main from
-   * a trust grant for a GitHub-URL install the person trusted as code
-   * (marketplace/trust-tokens.ts); the registry path never sets it.
-   */
-  allowUnsignedCode?: boolean
-}
-
 export async function installMarketplacePlugin(
   input: MarketplacePluginInstallInput,
   services: MarketplacePluginInstallerServices,
-  options: MarketplacePluginInstallOptions = {},
 ): Promise<MarketplacePluginInstallResult> {
   const installed: MarketplacePluginInstalledComponent[] = []
-  const preflight = await buildInstallPlan(input, services.trustContext(), options)
+  const preflight = await buildInstallPlan(input, services.trustContext())
   if (!preflight.ok) return preflight.result
 
   const { manifest, plan } = preflight
@@ -131,7 +79,6 @@ export async function installMarketplacePlugin(
     trust: plan.trust.status,
     loadEligible: isLoadEligible(plan.trust.status),
     installed,
-    restartRequired: installRequiresRestart(installed),
     ...(nextMcpSettings ? { mcpSettings: nextMcpSettings } : {}),
   }
 }
@@ -160,25 +107,9 @@ export async function readBundleMcpServers(
   }
 }
 
-/**
- * G7. A module's `entry.main` is loaded once, at app launch, for every module
- * outside `LIVE_ENABLED_MODULE_IDS` — so an install that landed one has not
- * actually put it in the app yet, and saying a flat "Installed." sends the
- * person looking for a door that is not there until they relaunch. Computed
- * here, from the components that were really written, so the answer travels
- * with the result rather than being guessed at by the surface.
- *
- * Only module components: an MCP server and a skill both take effect
- * immediately.
- */
-function installRequiresRestart(installed: MarketplacePluginInstalledComponent[]): boolean {
-  return installed.some((component) => component.kind === 'module' && !LIVE_ENABLED_MODULE_IDS.includes(component.id))
-}
-
 async function buildInstallPlan(
   input: MarketplacePluginInstallInput,
   trustContext: ModuleTrustContext,
-  options: MarketplacePluginInstallOptions,
 ): Promise<
   | { ok: true; manifest: MarketplacePluginAuthoringManifest; plan: ResolvedInstallPlan }
   | { ok: false; result: MarketplacePluginInstallResult }
@@ -198,7 +129,7 @@ async function buildInstallPlan(
 
   const resolvedManifest = resolveOptionallySignedManifest(manifestSource.source)
   if (!resolvedManifest.ok) {
-    // A bundle built for an older Studio is refused for that, by name.
+    // A bundle declaring a kind Studio no longer installs is refused for that, by name.
     const retired = retiredMarketplaceComponentIssue(resolvedManifest.issues)
     return failure(retired?.message ?? 'plugin.json is invalid.', undefined, resolvedManifest.issues)
   }
@@ -216,23 +147,6 @@ async function buildInstallPlan(
       },
     )
   }
-  // Mirror the download gate (defense in depth): an unsigned module must never
-  // install unless the person trusted it as code, so a bypassed download cannot
-  // slip code past this point. Unsigned mcp/skills-only bundles are permitted
-  // (loadEligible false). Gate on signature presence so id-trust cannot promote
-  // an unsigned code component.
-  if (!manifest.signature && hasCodeBearingComponent(manifest.components) && options.allowUnsignedCode !== true) {
-    return failure(
-      'Plugin bundle is unsigned and cannot be installed.',
-      undefined,
-      [{ path: 'signature', message: 'signature is required.' }],
-      {
-        trust: trust.status,
-        loadEligible: false,
-      },
-    )
-  }
-
   // Agent CLIs ship with the app. A bundle that still names one is refused
   // whole rather than installed without it and called a success.
   if ((manifest.components as Record<string, unknown>).cli !== undefined) {
@@ -265,7 +179,7 @@ async function buildInstallPlan(
     const resolved = await resolveComponent(bundleRoot.path, component)
     if (!resolved.ok) return failure(resolved.message, component.kind)
 
-    const prepared = await prepareComponent(resolved.path, component.kind, input, manifest, trustContext, options)
+    const prepared = await prepareComponent(resolved.path, component.kind, input)
     if (!prepared.ok) return failure(prepared.message, component.kind, prepared.issues)
     resolvedComponents.push(prepared.component)
   }
@@ -292,8 +206,6 @@ async function installComponent(
         return await installMcpComponent(component, input, services.mcpConfigService, installed)
       case 'skills':
         return await installSkillComponent(component, input, installed)
-      case 'module':
-        return await installModuleComponent(component, services, installed)
     }
   } catch (error) {
     return {
@@ -402,52 +314,10 @@ async function installSkillComponent(
   }
 }
 
-async function installModuleComponent(
-  component: Extract<ResolvedComponent, { kind: 'module' }>,
-  services: MarketplacePluginInstallerServices,
-  installed: MarketplacePluginInstalledComponent[],
-): Promise<
-  { ok: true; installed: MarketplacePluginInstalledComponent } | { ok: false; result: MarketplacePluginInstallResult }
-> {
-  const installer = services.installModuleFolder ?? installCapabilityModuleFolder
-  const result = await installer(
-    component.path,
-    (services.moduleRoot ?? defaultUserModuleRoot)(),
-    withVerifiedInstall(services.trustContext(), component.id, component.verifiedInstall),
-  )
-  if (!result.ok) {
-    return componentFailure('module', result.message, installed, result.rejected.issues)
-  }
-  if (result.trust.status === 'invalid') {
-    return componentFailure(
-      'module',
-      `Extension "${result.id}" has an invalid signature and was not accepted.`,
-      installed,
-    )
-  }
-  // No trust mutation here: this runs mid-bundle, while a later component can
-  // still fail and roll every file back. The receipt carries the trust identity
-  // instead, and the lifecycle records the marketplace grant against
-  // `manifestFp` only once the whole install has succeeded.
-  return {
-    ok: true,
-    installed: {
-      kind: 'module',
-      id: result.id,
-      trustStatus: result.trust.status,
-      manifestFp: result.manifestFp,
-      message: `Installed with trust status ${result.trust.status}; load eligible: ${isLoadEligible(result.trust.status) ? 'yes' : 'no'}.`,
-    },
-  }
-}
-
 async function prepareComponent(
   path: string,
-  kind: BundleComponentKind,
+  kind: MarketplaceComponentKind,
   input: MarketplacePluginInstallInput,
-  manifest: MarketplacePluginAuthoringManifest,
-  trustContext: ModuleTrustContext,
-  options: MarketplacePluginInstallOptions,
 ): Promise<
   { ok: true; component: ResolvedComponent } | { ok: false; message: string; issues?: MarketplaceManifestIssue[] }
 > {
@@ -456,8 +326,6 @@ async function prepareComponent(
       return prepareMcpComponent(path, input)
     case 'skills':
       return prepareSkillComponent(path)
-    case 'module':
-      return prepareModuleComponent(path, trustContext, manifest, options)
   }
 }
 
@@ -511,135 +379,6 @@ async function prepareSkillComponent(
     }
   }
   return { ok: true, component: { kind: 'skills', path, installedDirName: basename(path) } }
-}
-
-async function prepareModuleComponent(
-  path: string,
-  trustContext: ModuleTrustContext,
-  bundleManifest: MarketplacePluginAuthoringManifest,
-  options: MarketplacePluginInstallOptions,
-): Promise<
-  { ok: true; component: ResolvedComponent } | { ok: false; message: string; issues?: MarketplaceManifestIssue[] }
-> {
-  const manifest = await readText(join(path, 'manifest.json'), 'module manifest')
-  if (!manifest.ok)
-    return { ok: false, message: 'No manifest.json found in module component.', issues: manifest.issues }
-
-  const parsed = parseThirdPartyModuleManifest(manifest.source)
-  if (!parsed.ok) return { ok: false, message: 'Module component manifest is invalid.', issues: parsed.issues }
-
-  const verifiedInstall = bundleVouchedModuleInstall(bundleManifest, parsed.manifest, trustContext)
-  const trust = classifyModuleTrust(
-    parsed.manifest,
-    path,
-    withVerifiedInstall(trustContext, parsed.manifest.id, verifiedInstall),
-  )
-  if (trust.status === 'invalid') {
-    return {
-      ok: false,
-      message: trust.tampered
-        ? `Extension "${parsed.manifest.id}" does not match the file digests its manifest signs and cannot be installed.`
-        : `Extension "${parsed.manifest.id}" has an invalid signature and cannot be installed.`,
-      issues: trust.tampered ? trust.issues : [{ path: 'signature', message: 'Invalid signature.' }],
-    }
-  }
-  // A signed module is what the install prompt's grant is recorded for. A
-  // grant covers a module's code only through its own `files` digests (and a
-  // key only through those or a trusted publisher's bundle), so a signed module
-  // without them would be granted and then never load. Refused here, where its
-  // publisher can be told to sign it again.
-  if (parsed.manifest.signature && !parsed.manifest.files && !verifiedInstall) {
-    return {
-      ok: false,
-      message:
-        `Extension "${parsed.manifest.id}" lists no digests of its code, so it could never be trusted. ` +
-        'Its publisher must sign it with `sprintengine-extension sign`, which records them.',
-      issues: [{ path: 'files', message: 'the module manifest carries no file digests.' }],
-    }
-  }
-  // G1. A first-party (verified) bundle installs with no trust prompt at all,
-  // so the module inside it has to earn the same standing on its own: signed by
-  // a publisher in trusted-publishers.json, which is what makes
-  // `classifyModuleTrust` say 'trusted' rather than 'signed' or 'unsigned'.
-  // Refused here, in preflight, so nothing has been written yet and the caller
-  // rolls back exactly as it does for any other preflight failure.
-  if (options.requireTrustedModuleComponents && trust.status !== 'trusted') {
-    return {
-      ok: false,
-      message:
-        `Extension "${parsed.manifest.id}" is inside a verified first-party plugin, so its own manifest must be ` +
-        `signed by a trusted publisher; this one is ${trust.status}. ` +
-        'A first-party module manifest must be signed by a trusted publisher.',
-      issues: [
-        {
-          path: 'signature',
-          message: `module manifest trust is "${trust.status}"; a verified bundle requires "trusted".`,
-        },
-      ],
-    }
-  }
-  // The trust prompt discloses the BUNDLE manifest's permissions (see the
-  // header of src/renderer/src/components/settings/installFlow.ts), but the
-  // trust decision ultimately covers the inner module. A module declaring
-  // scopes its bundle never disclosed would make the grant authorize access
-  // the user never saw — refuse the bundle rather than install past it.
-  const disclosed = new Set<string>(bundleManifest.permissions ?? [])
-  const undisclosed = (parsed.manifest.permissions ?? []).filter((permission) => !disclosed.has(permission))
-  if (undisclosed.length > 0) {
-    return {
-      ok: false,
-      message: `Extension "${parsed.manifest.id}" declares permissions its plugin bundle does not disclose: ${undisclosed.join(', ')}.`,
-      issues: undisclosed.map((permission) => ({
-        path: 'permissions',
-        message: `"${permission}" is declared by the module manifest but not by plugin.json.`,
-      })),
-    }
-  }
-  return {
-    ok: true,
-    component: {
-      kind: 'module',
-      path,
-      id: parsed.manifest.id,
-      trust,
-      ...(verifiedInstall ? { verifiedInstall } : {}),
-    },
-  }
-}
-
-// A bundle signed by a trusted publisher signs a digest of every file in its
-// module component, and buildInstallPlan has already held the bundle to them
-// exactly. That vouches for the module's code even when the module's own
-// manifest predates `files` — the first-party modules are shipped that way —
-// so it is recorded as a verified install of that content. The digests come
-// from the signed plugin.json, not from the disk. Any other bundle vouches for
-// nothing here: its module earns trust by its own `files` or by a grant.
-function bundleVouchedModuleInstall(
-  bundleManifest: MarketplacePluginAuthoringManifest,
-  moduleManifest: CapabilityManifest,
-  trustContext: ModuleTrustContext,
-): string | undefined {
-  const component = bundleManifest.components.module
-  if (!component?.files || !isSignedByTrustedPublisher(bundleManifest, trustContext)) return undefined
-  const prefix = `${component.path}/`
-  const files: ModuleFileDigests = {}
-  for (const file of component.files) {
-    if (!file.path.startsWith(prefix)) return undefined
-    const relativePath = file.path.slice(prefix.length)
-    if (relativePath !== 'manifest.json') files[relativePath] = file.sha256
-  }
-  return moduleContentFingerprint(moduleManifest, files)
-}
-
-function withVerifiedInstall(
-  trustContext: ModuleTrustContext,
-  moduleId: string,
-  verifiedInstall: string | undefined,
-): ModuleTrustContext {
-  if (!verifiedInstall) return trustContext
-  const installs = new Map(trustContext.verifiedModuleInstalls ?? [])
-  installs.set(moduleId, verifiedInstall)
-  return { ...trustContext, verifiedModuleInstalls: installs }
 }
 
 function extractMcpServers(
@@ -725,7 +464,7 @@ async function resolveComponent(
 }
 
 function componentPaths(components: MarketplacePluginComponents): ComponentPath[] {
-  return BUNDLE_COMPONENT_KINDS.map((kind) =>
+  return MARKETPLACE_COMPONENT_KINDS.map((kind) =>
     components[kind] ? { kind, path: components[kind]!.path } : null,
   ).filter((component): component is ComponentPath => component !== null)
 }

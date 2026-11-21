@@ -24,9 +24,6 @@
     "resources/marketplace/*.ts",
     "resources/hooks/*.mjs",
     "packages/extension-sdk/src/cli.ts",
-    // The SDK's `./testing/register` entry: a module's tests load it with
-    // `node --import`, so nothing in this repository imports it.
-    "packages/extension-sdk/src/testing-register.ts",
     "packages/extension-sdk/drift/*.ts",
     // The standalone Studio server, bundled by scripts/build-server.mjs.
     "src/server/main.ts",

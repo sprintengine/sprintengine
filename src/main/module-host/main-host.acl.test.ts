@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 
+import type { ExtensionMcpToolContribution } from '../../../packages/extension-sdk/src/extension-manifest'
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import type { McpToolRegistration } from '../../shared/modules/mcp-tools'
 import { createMainKernel, createServiceToken, THIRD_PARTY_SERVICE_KEYS, type ServiceToken } from './main-host'
@@ -26,9 +27,20 @@ const otherThirdParty: CapabilityManifest = {
   source: 'third-party',
 }
 
+// The MCP tools acme-deck's extension.json declares: all its worker may register.
+const DECLARED_TOOLS: Record<string, readonly ExtensionMcpToolContribution[]> = {
+  'acme-deck': [
+    { name: 'acme_deck_list', description: 'Lists the deck.', access: 'read' },
+    { name: 'acme_write', description: 'Writes a card.', access: 'operate' },
+  ],
+}
+
 function kernelWith(...manifests: CapabilityManifest[]) {
   const byId = new Map(manifests.map((manifest) => [manifest.id, manifest]))
-  return createMainKernel({ resolveModuleManifest: (id) => byId.get(id) })
+  return createMainKernel({
+    resolveModuleManifest: (id) => byId.get(id),
+    resolveDeclaredMcpTools: (id) => DECLARED_TOOLS[id],
+  })
 }
 
 function tool(name: string, extra: Partial<McpToolRegistration> = {}): McpToolRegistration {
@@ -266,16 +278,40 @@ test('a third-party module needs mcp:tools to register MCP tools', () => {
   )
 })
 
-test('third-party MCP tools mutate unless they say they do not', () => {
+test('an extension registers only the MCP tools its extension.json declares', () => {
+  const kernel = kernelWith(thirdParty, bundled)
+  assert.throws(
+    () => kernel.hostFor('acme-deck').registerMcpTools([tool('acme_deck_list'), tool('acme_secret')]),
+    /MCP tool "acme_secret" from extension "acme-deck" is not declared in its extension.json/,
+  )
+  assert.deepEqual(kernel.mcpToolRegistrations(), [], 'a refused batch lands none of its tools')
+  // A first-party module declares nothing and is not held to a list.
+  kernel.hostFor('bundled').registerMcpTools([tool('bundled_list')])
+  assert.deepEqual(
+    kernel.mcpToolRegistrations().map((entry) => entry.registration.name),
+    ['bundled_list'],
+  )
+})
+
+test("a declared MCP tool takes the manifest's description and access over the worker's", () => {
   const kernel = kernelWith(thirdParty, bundled)
   kernel
     .hostFor('acme-deck')
-    .registerMcpTools([tool('acme_write'), tool('acme_read', { mutates: false }), tool('acme_set', { mutates: true })])
-  kernel.hostFor('bundled').registerMcpTools([tool('bundled_read')])
-  const mutates = Object.fromEntries(
-    kernel.mcpToolRegistrations().map((entry) => [entry.registration.name, entry.registration.mutates]),
+    .registerMcpTools([
+      tool('acme_deck_list', { description: 'Deletes everything.', mutates: true }),
+      tool('acme_write', { description: 'Harmless.', mutates: false }),
+    ])
+  kernel.hostFor('bundled').registerMcpTools([tool('bundled_read', { description: 'Reads.' })])
+  const served = Object.fromEntries(
+    kernel
+      .mcpToolRegistrations()
+      .map((entry) => [entry.registration.name, [entry.registration.description, entry.registration.mutates]]),
   )
-  assert.deepEqual(mutates, { acme_write: true, acme_read: false, acme_set: true, bundled_read: undefined })
+  assert.deepEqual(served, {
+    acme_deck_list: ['Lists the deck.', false],
+    acme_write: ['Writes a card.', true],
+    bundled_read: ['Reads.', undefined],
+  })
 })
 
 test('MainHost no longer hands out ipcMain or launch contributions', () => {

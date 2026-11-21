@@ -32,7 +32,7 @@ buildSync({
  * starters with automations (2026-09-30), and what remains is inline agent-CLI
  * rows; the one signed capability module (Reviews) was dropped at host API 2.
  *
- * The signature gate is still the whole trust story for anything code-bearing,
+ * The signature gate is still the whole trust story for a verified bundle,
  * so rather than delete the tests that cover it, they build their own signed
  * bundle: a throwaway ed25519 key signs a probe plugin inside the copied
  * registry, and the key's fingerprint is added to that copy's
@@ -302,8 +302,8 @@ function testRegistryHoldsOnlyWhatAMarketplaceCannotCarry(): void {
       .sort()
       .join('+')
     assert.ok(
-      ['cli', 'module'].includes(names),
-      `${plugin.id} provides "${names}"; the registry carries agent CLIs and signed capability modules — anything a Claude marketplace can list belongs in one`
+      names === 'cli',
+      `${plugin.id} provides "${names}"; the registry carries agent CLIs — anything a Claude marketplace can list belongs in one`
     )
     kinds.set(names, (kinds.get(names) ?? 0) + 1)
   }
@@ -443,8 +443,8 @@ function testRetiredAutomationComponentIsRefused(): void {
   assert.match(result.stderr, /Automation components are no longer supported/)
 }
 
-function testUnsignedBundleMayNotCarryCode(): void {
-  const root = copySeedRegistry('unsigned-code-registry')
+function testBundleMayNotCarryAnExtension(): void {
+  const root = copySeedRegistry('bundled-extension-registry')
   const pluginRoot = addUnsignedProbeBundle(root)
   writeUnsignedProbeManifest(pluginRoot, {
     ...readUnsignedProbeComponents(pluginRoot),
@@ -453,7 +453,8 @@ function testUnsignedBundleMayNotCarryCode(): void {
 
   const result = runVerifier(root)
   assert.equal(result.status, 1)
-  assert.match(result.stderr, /may not carry a module or cli component/)
+  assert.match(result.stderr, /components\.module/)
+  assert.match(result.stderr, /A bundle no longer carries an extension/)
 }
 
 function testInlineIconMustMatchTheCommittedMark(): void {
@@ -619,7 +620,7 @@ try {
   testUnclaimedPayloadDirFails()
   testUnsignedPayloadIsDigestChecked()
   testRetiredAutomationComponentIsRefused()
-  testUnsignedBundleMayNotCarryCode()
+  testBundleMayNotCarryAnExtension()
   testInlineIconMustMatchTheCommittedMark()
   testSchemaInvalidRegistryFailsClearly()
   testTamperedPluginFailsThroughCliVerify()

@@ -270,7 +270,7 @@ export type ModuleConversationResult<T = object> =
   ({ ok: true } & T) | { ok: false; code: ModuleConversationErrorCode; message: string }
 
 /**
- * Chat conversations for a module's `entry.main`, obtained via
+ * Chat conversations for an extension's worker, obtained via
  * `getConversationService(host)`. A module reaches only the conversations it
  * created, never the user's own chats and never another module's.
  *

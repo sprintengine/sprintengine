@@ -1,60 +1,75 @@
 # Which surface
 
-Pick the smallest surface that does the job. `extension.create` takes a
-`template` that starts from one of these, and `parts` (`main`, `mcp`,
-`settings`, `door`) add more; in an existing project,
+Pick the smallest surface and the lowest tier that do the job.
+`extension.create` takes a `template` that starts from one of these, and
+`parts` (`main`, `mcp`, `settings`, `door`) add more; in an existing project,
 `npx sprintengine-extension add <part>` does the same.
 
-| The idea needs… | API (renderer unless noted) | Permission | Template |
+## What extension.json adds
+
+| The idea needs… | In extension.json | Tier | Template |
 | --- | --- | --- | --- |
-| A command in the palette | `registerCommand` | — | blank |
-| A page of its own, opened from the Extensions drawer | `registerGlobalSurface({ id, label, Icon, Component })` + `@sprintengine/extension-sdk/surface`; its count with `registerDoorBadge({ rowId: id })` | per data read | global-surface |
-| Tell the person something happened | main: `host.notify({ severity, title, target })` (the bell, for warnings and errors; `target` opens your door); renderer: `host.toast({ tone, message })` (transient) | — | — |
-| A panel inside a workspace | `registerPanel` + a `registerWorkspaceType` whose layout places it | per data read | panel |
-| A new kind of workspace, with a setup step | `registerWorkspaceType({ creationStep, createWorkspace })` | `storage` for its state | workspace-type |
-| One control in the top bar | `registerTopBarItem` | — | top-bar-item |
-| Options in Settings | `registerSettingsSection` (values readable via `getModuleAppState`, in the renderer and in main) | `storage` to read them elsewhere | settings-section |
-| An action on a Backlog item | `registerBacklogItemAction` | `backlog.*` if it reads/writes more | backlog-action |
-| Reading or changing Backlog items (a board, a quick-add) | renderer: `listBacklogItems`, `createBacklogItem`, `updateBacklogStatus`, …; main: `getBacklogService(host)` | `backlog.read` / `backlog.write` | — |
-| Token usage and cost across agent sessions | main: `getUsageService(host)`; renderer: `queryUsage` | `usage:read` | — |
-| Reading the person's own chats (standups, prompt coaching) | main: `getActivityService(host)` | `conversation:read-all` (broad) | — |
-| An action on files in the Files tree | `registerFileAction` | — | file-action |
-| A pick-and-close dialog over the workspace | `registerModalSurface({ launcher })` | — | — |
-| Tools agents call | main: `host.registerMcpTools` | `mcp:tools` | mcp-tools |
-| An agent doing work in a chat | main: `getConversationService(host)` | `conversation:operate` (or `:read`) | chat-companion |
-| Hand the person a prepared chat | `host.openChat({ workspaceId, prompt, name, dedupeKey })` | `chat:draft` (`conversation:operate` to send it) | backlog-action |
-| Ask a model one question (summary, digest, JSON), no chat | main: `getTextGenerationService(host).generate` | `agents:generate` | — |
-| A background agent returning validated JSON | main: `getCompanionAgentsService(host)`, `runStructured({ tools: 'none' })` | `agents:companion` | — |
-| An agent that runs on a schedule | main: `getScheduledAgentsService(host)` (`tag`, `onRun` to trace runs) | `scheduled-agents.manage`, `dependsOn: ["scheduled-agents"]` | — |
-| Calling an API with a key | main: `getSecretsService(host).fetchWithSecret` | `secrets` | — |
-| Calling GitHub as the user | main: `getGitHubService(host).request` / `.graphql` (read-only) / `.download` (logs) | `github` | — |
-| A workspace's branch and GitHub remote | `host.getWorkspaceGitInfo(workspaceId)` (renderer or main) | `ipc:workspace-read` | — |
-| Saving data | renderer: `get/setModuleAppState`, `get/setWorkspaceModuleState`; main: `getModuleStorage(host)` (`list({ prefix })`, `getMany`, `watch`), `host.getModuleDataDir()` past 1 MB | `storage` | panel |
-| Renderer ↔ main | main `host.registerMethods<Contract>({ … })`, renderer `host.methods<Contract>().read` / `.operate`; main → renderer `host.emit` / `host.subscribe` | `module:bridge` | chat-companion |
-| Skills agents can use | main: `host.registerSkills`, `host.ensureSkillInstalled`, `host.getSkillStatus` | — | — |
-| Files inside the module (HTML, WASM) | `host.getAssetUrl('runtime/index.html')`; main: `host.getAssetPath('dist/worker.cjs')` | — | — |
+| A palette entry for one of Studio's own commands | `commands[]` with an `action` | `declarative` | settings-section |
+| A palette entry that runs your code | `commands[]` without `action`, served by a worker method of the same name | `worker` | backlog-action |
+| An item in a Backlog item's menu | `menus[]` `where: "backlog.item"`, naming a contributed command | `declarative` (`worker` for your code) | backlog-action |
+| An item in a file's menu in the Files tree | `menus[]` `where: "file"` | as above | file-action |
+| An action on one of your own bell rows | `menus[]` `where: "notification"` | as above | — |
+| A button in the top bar | `topBarItems[]` with a `command` or a `door` | `declarative` | top-bar-item |
+| A tab in a workspace's pane | `panels[]` with an `entry` | `ui` | panel, blank |
+| A page of its own, with a row in the Extensions drawer | `doors[]` with an `entry` | `ui` | door |
+| Options in Settings | `settingsSections[]` with an `entry` | `ui` | settings-section |
+| Tools agents call | `mcpTools[]`, served by the worker; `mcp:tools` | `worker` | mcp-tools |
+| Work with no window open, Node, or a service only the worker has | `main` | `worker` | chat-companion |
+
+A command's context tells the worker how it ran (`where`), the workspace, and
+what the menu was opened on: `backlogItemIds` or `filePaths`
+(`ExtensionCommandContext`). A top bar item has no drawing of its own: Studio
+draws the button from its `title` and `icon`, and it runs a command or opens a
+door. A cluster of controls belongs in a door.
+
+## What the code reaches
+
+| The idea needs… | API (`studio` in a surface, or the worker's) | Permission |
+| --- | --- | --- |
+| Tell the person something went wrong | worker: `studio.notify({ severity, title, target })` (the bell; `target` opens your door) | — |
+| Say "done" | surface: `studio.toast({ tone, message })` (transient) | — |
+| Open one of your doors | surface: `studio.openGlobalSurface(id)` | — |
+| Reading or changing Backlog items | surface: `listBacklogItems`, `createBacklogItem`, `updateBacklogStatus`, …; worker: `getBacklogService(studio)` | `backlog.read` / `backlog.write` |
+| Token usage and cost across agent sessions | worker: `getUsageService(studio)`; surface: `queryUsage` | `usage:read` |
+| Reading the person's own chats (standups, prompt coaching) | worker: `getActivityService(studio)` | `conversation:read-all` (broad) |
+| An agent doing work in a chat | worker: `getConversationService(studio)` | `conversation:operate` (or `:read`) |
+| Hand the person a prepared chat | surface: `studio.openChat({ workspaceId, prompt, name, dedupeKey })` | `chat:draft` (`conversation:operate` to send it) |
+| Ask a model one question (summary, digest, JSON), no chat | worker: `getTextGenerationService(studio).generate` | `agents:generate` |
+| A background agent returning validated JSON | worker: `getCompanionAgentsService(studio)`, `runStructured({ tools: 'none' })` | `agents:companion` |
+| An agent that runs on a schedule | worker: `getScheduledAgentsService(studio)` (`tag`, `onRun` to trace runs) | `scheduled-agents.manage` |
+| Calling an API with a key | worker: `getSecretsService(studio).fetchWithSecret` | `secrets` |
+| Calling GitHub as the person | worker: `getGitHubService(studio).request` / `.graphql` (read-only) / `.download` (logs) | `github` |
+| The workspaces, and a workspace's branch and GitHub remote | `listWorkspaces`, `watchWorkspaces`, `getWorkspaceGitInfo(workspaceId)` | `ipc:workspace-read` |
+| Saving data | surface: `get/setModuleAppState`, `get/setWorkspaceModuleState`; worker: `getModuleStorage(studio)` (`list({ prefix })`, `getMany`, `watch`), `studio.getModuleDataDir()` past 1 MB | `storage` |
+| A surface asking the worker | worker `studio.registerMethods<Contract>({ … })`, surface `studio.methods<Contract>().read` / `.operate`; worker → surface `studio.emit` / `studio.subscribe` | `module:bridge` |
+| Files inside the extension (HTML, WASM, images) | surface: `studio.getAssetUrl('runtime/index.html')`; worker: `studio.getAssetPath('dist/worker.cjs')` | — |
 
 The details are in the `api-renderer`, `api-main`, `conversations`, `brokers`
-and `ui-kit` topics.
+and `styling` topics.
 
 ## Agents are chats
 
 Studio drives agents as chats. An extension starts, prompts, watches and stops
-its **own** chats through `getConversationService(host)` in `entry.main`, or
-opens one for the person with `host.openChat` in the renderer (a draft by
+its **own** chats through `getConversationService(studio)` in the worker, or
+opens one for the person with `studio.openChat` in a surface (a draft by
 default: the person reads and sends it). It never drives the person's own chats
-or another module's; reading the person's chats is the separate, read-only
-`getActivityService(host)` behind the broad `conversation:read-all` (the
+or another extension's; reading the person's chats is the separate, read-only
+`getActivityService(studio)` behind the broad `conversation:read-all` (the
 `api-main` topic). A question with one answer (a summary, a digest, a
-classification) needs no chat at all: `getTextGenerationService(host)`. Read
+classification) needs no chat at all: `getTextGenerationService(studio)`. Read
 what an agent answered with `chats.reply(ref)`, never by joining streamed
 text deltas. There is no API to spawn a terminal agent, run a CLI in a
 pane, or inject into another session — do not look for one, and do not shell
-out to an agent CLI from `entry.main` to get around it. See the
+out to an agent CLI from the worker to get around it. See the
 `conversations` topic.
 
 ## Ask the host first
 
-Before relying on a capability, ask the host: `host.supports('conversations')`,
+Before relying on a capability, ask: `studio.supports('conversations')`,
 `'chat.open'`, `'secrets'`, `'github'`, `'storage'`, `'mcp-tools'`, … A host
 without it answers `false`; degrade with a message instead of throwing.

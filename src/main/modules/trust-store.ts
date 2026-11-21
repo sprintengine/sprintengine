@@ -2,10 +2,11 @@ import { existsSync, readFileSync } from 'fs'
 import { mkdir, rename, writeFile } from 'fs/promises'
 import { join } from 'path'
 
-// Record of the third-party modules the user has trusted, keyed by module id to
-// the *manifest fingerprint* that was trusted (see module-signature.ts). Binding
-// trust to content means reinstalling a different manifest under the same id
-// does not inherit trust. Persisted in userData as a JSON object {id: fp}; a
+// Record of what the person has trusted: an installed extension's install key
+// to the content fingerprint of the files they trusted, and a bundle or
+// provider manifest's id to its manifest fingerprint (see module-signature.ts).
+// Binding trust to content means reinstalling different bytes under the same
+// key does not inherit trust. Persisted in userData as a JSON object {id: fp}; a
 // missing/malformed file means "nothing trusted" — the safe default.
 
 const FILE_NAME = 'trusted-modules.json'

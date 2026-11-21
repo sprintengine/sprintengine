@@ -63,7 +63,6 @@ import {
   pruneRetiredBuiltinSkillCopies,
   BUILTIN_SKILLS_RESOURCE_DIR,
   findBuiltinSkill,
-  findModuleSkill,
   resolveSkillById,
 } from './builtin-skills'
 import { SprintEngineAuthBridge } from './auth-service'
@@ -709,8 +708,6 @@ export function createAppServices(
         bundledSkillPluginDir: (skillId) =>
           Object.hasOwn(agentIntegrationSkillPluginDirs, skillId) ? agentIntegrationSkillPluginDirs[skillId]! : null,
         skillSourceDir: (skillId) => {
-          const moduleSkill = findModuleSkill(skillId)
-          if (moduleSkill) return moduleSkill.sourceDir
           const root = getBundledResourceDir(BUILTIN_SKILLS_RESOURCE_DIR)
           return findBuiltinSkill(skillId) && root ? join(root, skillId) : null
         },
@@ -864,7 +861,7 @@ export function createAppServices(
         agentServices,
         // What the shell adds to the agents' skills and cards: the token its
         // store keeps, git once the window is up, its window focus and its
-        // Trash. A card's `install.module` goes through the core's marketplace.
+        // Trash.
         agentSkills: {
           resolveGitHubToken: () => githubTokenStore.resolveToken(),
           whenGitMayRun: Promise.all([app.whenReady(), bootJobsGate]),

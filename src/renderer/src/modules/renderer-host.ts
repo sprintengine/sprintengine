@@ -23,7 +23,7 @@ import type { ColorSchemeWatcher, ModuleColorScheme } from './color-scheme-watch
 import type { WorkspaceListSource } from './workspace-list-watch'
 import type { ModuleFocusTabInput, ModuleTabFocuser } from './workspace-tabs'
 import type { WorkspaceRunGlyph, WorkspaceRunGlyphProviderInput } from '../utils/workspaceRunGlyph'
-import { HOST_API_VERSION, hostSupports, type HostCapability } from '../../../shared/modules/host-api'
+import { hostSupports, type HostCapability } from '../../../shared/modules/host-api'
 import type {
   ModuleChatRuntimeOption,
   ModuleOpenChatInput,
@@ -900,9 +900,12 @@ export type ActiveWorkspaceSource = {
   subscribe(onChange: () => void): () => void
 }
 
+// The window's host: what the app's own modules register through, and the
+// source of the `studio` an extension's surfaces are handed (a narrower view,
+// the SDK's RendererHost, picked in extension-surfaces.ts). The register calls
+// are the shell's own; an extension declares its contributions in
+// extension.json and the loader registers them on its behalf.
 export type RendererHost = {
-  /** The host API this app provides; see shared/modules/host-api.ts. */
-  readonly hostApiVersion: number
   /**
    * This module's id: the one its manifest declares, which every scoped call
    * is stamped with — the module its `methods` calls reach, the `source`
@@ -1648,7 +1651,6 @@ export function createRendererHost(): RendererKernel {
     hostFor(moduleId, manifest) {
       const moduleName = manifest?.displayName?.trim() || moduleId
       return {
-        hostApiVersion: HOST_API_VERSION,
         moduleId,
         supports(capability) {
           // Opening a chat needs the shell's opener, which a window registers

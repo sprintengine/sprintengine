@@ -1,14 +1,12 @@
 {
   "id": "panel",
   "title": "Panel",
-  "summary": "A notes panel in a workspace of its own, saved in module app state.",
+  "summary": "A notes panel in a workspace's pane, saved in the extension's app state.",
   "permissions": [
     "storage"
   ],
   "capabilities": [
     "panel",
-    "workspace-type",
-    "command",
     "storage"
   ]
 }

@@ -37,6 +37,7 @@ test('secret-store', async () => {
     await testEncryptedWriteStatusAndClear()
     await testSessionFallbackWhenEncryptionUnavailable()
     await testEnvironmentStatusUsesDescriptorEnv()
+    await testUserProviderNeverReadsTheEnvironment()
     await testResolveSecretReturnsMainOnlyValue()
     await testStorageFailureIsRedacted()
     await testExpectedFailuresAreExplicit()
@@ -109,6 +110,32 @@ test('secret-store', async () => {
     assert.equal(status.status.source, 'environment')
     assert.equal(status.status.persistence, 'environment')
     assert.doesNotMatch(JSON.stringify(status), /sk-env-secret/)
+  }
+
+  // Only a provider that ships with Studio has its auth.env read. A user
+  // provider's key comes from Settings, whatever the environment holds.
+  async function testUserProviderNeverReadsTheEnvironment(): Promise<void> {
+    const userProvider: LoadedConversationProvider = { ...provider, source: 'user' }
+    const store = createStore({
+      files: createMemoryFiles(),
+      encryptionAvailable: true,
+      env: { OPENAI_API_KEY: 'sk-env-secret' },
+      providerById: (id) => (id === 'openai-compatible' ? userProvider : undefined),
+    })
+
+    const status = await store.getStatus('openai-compatible')
+    assert.equal(status.ok, true)
+    if (!status.ok) return
+    assert.equal(status.status.configured, false)
+    assert.equal(status.status.source, 'none')
+    assert.deepEqual(await store.resolveSecret('openai-compatible'), {
+      ok: false,
+      message: 'Conversation provider secret is not configured.',
+    })
+
+    await store.setSecret('openai-compatible', 'sk-settings-secret')
+    const resolved = await store.resolveSecret('openai-compatible')
+    assert.equal(resolved.ok && resolved.value, 'sk-settings-secret')
   }
 
   async function testResolveSecretReturnsMainOnlyValue(): Promise<void> {

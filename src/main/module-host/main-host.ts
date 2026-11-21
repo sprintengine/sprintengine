@@ -27,19 +27,14 @@ import {
   type ModuleNotificationDelivery,
   type ModuleNotifyInput,
 } from '../../shared/modules/notifications'
-import type {
-  EnsureSkillInstalledResult,
-  ModuleSkillRegistration,
-  ModuleSkillStatusResult,
-} from '../../shared/modules/skills'
-import { HOST_API_VERSION, hostSupports, type HostCapability } from '../../shared/modules/host-api'
+import type { EnsureSkillInstalledResult, ModuleSkillStatusResult } from '../../shared/modules/skills'
+import { hostSupports, type HostCapability } from '../../shared/modules/host-api'
+import type { ExtensionMcpToolContribution } from '../../../packages/extension-sdk/src/extension-manifest'
 import {
   ensureSkillInstalled as ensureSkillInstalledOnDisk,
   getSkillStatus as getSkillStatusOnDisk,
-  registerModuleSkills,
-  unregisterModuleSkills,
 } from '../builtin-skills'
-import { resolveContainedPath, resolveModuleSkillDirectory } from '../modules/entry-containment'
+import { resolveContainedPath } from '../modules/entry-containment'
 import type { ModuleUsageRegistry } from '../../shared/modules/activity-service'
 import type { ModuleBacklogRegistry } from '../../shared/modules/backlog-service'
 
@@ -131,16 +126,11 @@ export type McpToolContribution = {
 }
 
 /**
- * The process-wide skill registry the kernel writes module skills into. The
- * real one lives in src/main/builtin-skills.ts beside the skills the app
- * bundles, so a module skill and a built-in skill resolve through one lookup
- * at the launch boundary. Injectable so the kernel's own tests can watch the
- * host surface without touching the filesystem.
+ * The app's skill installer, as a module reaches it (src/main/builtin-skills.ts).
+ * Injectable so the kernel's own tests can watch the host surface without
+ * touching the filesystem.
  */
 export type ModuleSkillHostRegistry = {
-  /** `sourceDir` on each registration is already absolute and root-checked. */
-  register(moduleId: string, registrations: readonly ModuleSkillRegistration[]): void
-  unregister(moduleId: string): void
   ensureInstalled(workspaceRoot: string, skillId: string): Promise<EnsureSkillInstalledResult>
   /** The same check, read only: nothing is written to the workspace. */
   getStatus(workspaceRoot: string, skillId: string): Promise<ModuleSkillStatusResult>
@@ -211,8 +201,6 @@ const METHOD_PERMISSIONS: ReadonlySet<string> = new Set(['module:bridge', 'ipc:i
 export const CHAT_RUNTIMES_SERVICE_KEY = 'core.chat-runtimes'
 
 const defaultSkillRegistry: ModuleSkillHostRegistry = {
-  register: registerModuleSkills,
-  unregister: unregisterModuleSkills,
   ensureInstalled: ensureSkillInstalledOnDisk,
   getStatus: getSkillStatusOnDisk,
 }
@@ -220,8 +208,6 @@ const defaultSkillRegistry: ModuleSkillHostRegistry = {
 export type MainHost = {
   /** The module currently registering. Useful for diagnostics and ownership. */
   readonly moduleId: string
-  /** The host API this app provides; see shared/modules/host-api.ts. */
-  readonly hostApiVersion: number
   /** Whether this host provides `capability` now; false for names it does not know. */
   supports(capability: HostCapability): boolean
   /**
@@ -261,22 +247,9 @@ export type MainHost = {
    */
   registerMcpTools(tools: McpToolRegistration[]): void
   /**
-   * Contribute agent skills this module ships. Each `sourceDir` is relative to
-   * the module root and must stay inside it; a module with no root on disk
-   * passes an absolute path. Registrations are owned exactly as MCP tools
-   * are: an id a built-in skill or another module already holds
-   * is a registration error, the whole batch is validated before any of it
-   * lands, and unloading the module takes its skills with it.
-   *
-   * A registered skill is a skill: the launch boundary's `spawnSkillId`
-   * resolves it, and `targetPolicy: 'all-native'` fans it out into every
-   * installed CLI's native skill directory the way a built-in does.
-   */
-  registerSkills(skills: ModuleSkillRegistration[]): void
-  /**
-   * Make a skill present in a workspace now, rather than at the next spawn —
-   * how a module pre-installs the skill an agent will be told to invoke. Works
-   * for this module's own skills and for the app's. Never throws; an unknown
+   * Make one of the app's skills present in a workspace now, rather than at
+   * the next spawn — how a module pre-installs the skill an agent will be told
+   * to invoke. Never throws; an unknown
    * id answers `{ ok: false, status: 'unknown-skill' }`.
    */
   ensureSkillInstalled(workspaceRoot: string, skillId: string): Promise<EnsureSkillInstalledResult>
@@ -384,8 +357,6 @@ export type MainKernel = {
    * not provide is null.
    */
   hostServicesFor(moduleId: string): ModuleHostServicesOutcome
-  /** skill id -> owning module id, for diagnostics and collision reports. */
-  ownedSkills(): ReadonlyMap<string, string>
   /** Module-contributed Studio gateway tools, in registration order. */
   mcpToolRegistrations(): ReadonlyArray<McpToolContribution>
   startupHooks(): ReadonlyArray<StartupHook>
@@ -511,6 +482,8 @@ export type MainKernelOptions = {
    * still match. Bundled modules have none and resolve nothing.
    */
   resolveModuleVerifiedFiles?: (moduleId: string) => ModuleFileDigests | undefined
+  /** The MCP tools an installed extension's extension.json declares, which are all it may register. */
+  resolveDeclaredMcpTools?: (moduleId: string) => readonly ExtensionMcpToolContribution[] | undefined
 }
 
 // Flood bounds: a module may emit at most this many notifications per window;
@@ -588,9 +561,6 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       ? (reader as ModuleAppStateReader)
       : undefined
   }
-  // Skill ids per module, so unregisterModule can drop them without asking the
-  // registry to scan. The registry is the truth; this is the kernel's receipt.
-  const skillIdsByModule = new Map<string, Set<string>>()
   const skillRegistry = options.skillRegistry ?? defaultSkillRegistry
   const now = options.now ?? Date.now
   const recent: ModuleNotificationDelivery[] = []
@@ -1104,7 +1074,6 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       },
       registerMethods: (batch) => (refuseRetired(), live.registerMethods(batch)),
       registerMcpTools: (tools) => (refuseRetired(), live.registerMcpTools(tools)),
-      registerSkills: (skills) => (refuseRetired(), live.registerSkills(skills)),
       watchModuleAppState: (cb) => (refuseRetired(), live.watchModuleAppState(cb)),
       onStartup: (hook) => (refuseRetired(), live.onStartup(hook)),
       onShutdownBegin: (hook) => (refuseRetired(), live.onShutdownBegin(hook)),
@@ -1123,7 +1092,6 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   function scopedHostFor(moduleId: string, load: ModuleLoad): MainHost {
     return {
       moduleId,
-      hostApiVersion: HOST_API_VERSION,
       supports: (capability) => {
         if (capability === 'electron-main') return options.electronMain ?? true
         // A bell row needs a client to reach: true only where delivery is wired.
@@ -1142,6 +1110,18 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         const thirdParty = isThirdParty(moduleId)
         if (thirdParty && !options.resolveModuleManifest?.(moduleId)?.permissions?.includes('mcp:tools')) {
           throw new Error(`Extension "${moduleId}" must declare the "mcp:tools" permission to register MCP tools.`)
+        }
+        // An extension serves only the tools its extension.json declares, and
+        // what agents are told of each is the manifest's, not the code's.
+        const declared = thirdParty ? (options.resolveDeclaredMcpTools?.(moduleId) ?? []) : null
+        if (declared) {
+          for (const tool of tools) {
+            if (!declared.some((entry) => entry.name === tool.name)) {
+              throw new Error(
+                `MCP tool "${tool.name}" from extension "${moduleId}" is not declared in its extension.json (contributes.mcpTools).`,
+              )
+            }
+          }
         }
         // Validate the whole batch before landing any of it: a module whose
         // registerMain fails on a collision must not leave half its tools
@@ -1179,26 +1159,12 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
           batch.set(wire, tool.name)
         }
         for (const tool of tools) {
-          const registration = thirdParty ? { ...tool, mutates: tool.mutates !== false } : tool
+          const entry = declared?.find((candidate) => candidate.name === tool.name)
+          const registration = entry
+            ? { ...tool, description: entry.description, mutates: entry.access === 'operate' }
+            : tool
           mcpTools.set(tool.name, { owner: moduleId, registration })
         }
-      },
-      registerSkills(skills) {
-        // Resolve every path before any of it lands: a batch that escapes the
-        // module root on its third skill must not leave the first two behind,
-        // exactly as with MCP tool names.
-        const resolved = skills.map((skill) => ({
-          ...skill,
-          sourceDir: resolveModuleSkillDirectory(
-            options.resolveModuleRoot?.(moduleId) ?? null,
-            skill.sourceDir,
-            `Extension "${moduleId}" skill "${skill.id}" sourceDir`,
-          ),
-        }))
-        skillRegistry.register(moduleId, resolved)
-        const owned = skillIdsByModule.get(moduleId) ?? new Set<string>()
-        for (const skill of resolved) owned.add(skill.id)
-        skillIdsByModule.set(moduleId, owned)
       },
       ensureSkillInstalled(workspaceRoot, skillId) {
         return skillRegistry.ensureInstalled(workspaceRoot, skillId)
@@ -1351,7 +1317,6 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     for (const [serviceKey, entry] of [...services]) {
       if (entry.moduleId === moduleId) services.delete(serviceKey)
     }
-    if (skillIdsByModule.delete(moduleId)) skillRegistry.unregister(moduleId)
     for (const stop of appStateWatches.get(moduleId) ?? []) stop()
     appStateWatches.delete(moduleId)
     // After its hooks, which may still say goodbye through it.
@@ -1364,8 +1329,6 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       [...(methods.get(moduleId) ?? [])].map(([name, registration]) => ({ name, access: registration.access })),
     callModuleMethod,
     hostServicesFor,
-    ownedSkills: () =>
-      new Map([...skillIdsByModule].flatMap(([owner, ids]) => [...ids].map((id) => [id, owner] as const))),
     mcpToolRegistrations: () =>
       [...mcpTools.values()].map(({ owner, registration }) => ({
         moduleId: owner,

@@ -1,6 +1,7 @@
 import type { RegisteredModalSurfaceLauncher, SurfaceIconComponent } from '../../../modules/renderer-host'
 import type { WorkspacePaneTabKind } from '../../../../../shared/workspace'
 import { copy } from '../../../../../shared/copy'
+import { ExtensionsGlyph } from '../../AppIcons'
 
 // The kinds the workspace pane can open, in the order the "+" menu and the
 // empty-state launcher list them. A kind whose module is disabled is absent
@@ -36,7 +37,12 @@ export type PaneKindDefinition = {
   Glyph: SurfaceIconComponent
   // Set when picking the kind opens a modal surface rather than a pane tab.
   modalSurfaceId?: string
+  // Set when the kind is an installed extension's panel: the tab it opens.
+  extensionPanel?: { key: string; panel: string }
 }
+
+/** An installed extension's panel, as the "+" menu offers it. */
+export type ExtensionPanelRow = { key: string; panel: string; title: string; Glyph: SurfaceIconComponent }
 
 export function TerminalGlyph({ className }: { className?: string }) {
   return (
@@ -206,6 +212,8 @@ export const STATIC_PANE_KINDS: readonly PaneKindDefinition[] = [
 // proposed), and an empty one would have nothing to pick from.
 const TAB_ONLY_PANE_KINDS: readonly PaneKindDefinition[] = [
   { kind: 'document', label: copy.workspace.pane.paneKinds.document, letter: '', Glyph: DocumentGlyph },
+  // An extension's panel: its tab carries the panel's own title.
+  { kind: 'extension', label: 'Extension', letter: '', Glyph: ExtensionsGlyph },
 ]
 
 // The list one pane offers: the shell's own kinds, then the rows modules
@@ -220,6 +228,7 @@ const TAB_ONLY_PANE_KINDS: readonly PaneKindDefinition[] = [
 export function composePaneKinds(
   launchers: readonly RegisteredModalSurfaceLauncher[],
   moduleEnabled: (moduleId: string) => boolean,
+  extensionPanels: readonly ExtensionPanelRow[] = [],
 ): PaneKindDefinition[] {
   const kinds = STATIC_PANE_KINDS.filter((definition) => !definition.moduleId || moduleEnabled(definition.moduleId))
   const taken = new Set(kinds.map((definition) => definition.letter))
@@ -234,6 +243,19 @@ export function composePaneKinds(
       moduleId: launcher.moduleId,
       Glyph: launcher.Glyph,
       modalSurfaceId: launcher.surfaceId,
+    })
+  }
+  // An extension's panels come last, with no letter: the shell's keys and the
+  // app's own modules' keep theirs.
+  for (const row of extensionPanels) {
+    if (!moduleEnabled(row.key)) continue
+    kinds.push({
+      kind: `extension:${row.key}:${row.panel}`,
+      label: row.title,
+      letter: '',
+      moduleId: row.key,
+      Glyph: row.Glyph,
+      extensionPanel: { key: row.key, panel: row.panel },
     })
   }
   return kinds

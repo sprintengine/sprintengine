@@ -5,7 +5,6 @@ import type {
   ModuleResolutionError,
   ModuleResolutionErrorCode,
 } from './manifest'
-import { HOST_API_VERSION, checkHostApiCompatibility } from './host-api'
 
 export type ModuleResolutionOptions = {
   /**
@@ -151,21 +150,12 @@ export function resolveModuleEnablement(
 }
 
 // Each reason says what the user can do about it: trusting fixes an untrusted
-// module, nothing the user does fixes a tampered one, and an incompatible one
-// needs a different build of the module or of the app.
+// extension, and nothing the user does fixes a tampered one.
 function ineligibleMessage(manifest: CapabilityManifest, reason: ModuleResolutionErrorCode): string {
   const id = manifest.id
   switch (reason) {
     case 'invalid_signature':
       return `Extension "${id}" has an invalid signature and will not load.`
-    case 'incompatible_host_api': {
-      // The check's own words say which side to update, and for a retired
-      // host API what replaced it and what to rebuild against.
-      const compatibility = checkHostApiCompatibility(manifest)
-      return compatibility.ok
-        ? `Extension "${id}" was built for a different host API than this app provides (${HOST_API_VERSION}); update the extension or the app to enable it.`
-        : `Extension "${id}" will not load. ${compatibility.message}`
-    }
     default:
       return `Extension "${id}" is not trusted yet; trust it in Settings → Extensions to enable.`
   }

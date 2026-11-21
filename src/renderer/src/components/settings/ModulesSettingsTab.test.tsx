@@ -1,15 +1,13 @@
 // @vitest-environment jsdom
 //
 // Settings → Extensions, driven the way a person does: review and trust,
-// the one switch, the glyphs and what they name, the details, Update only
-// where Studio can really update, the restart line, the filters, the folded
-// built-ins, and uninstall through the one channel that handles any install.
+// the one switch, the glyphs and what they name, the details (what its
+// extension.json declares), the restart line, the filters, the folded
+// built-ins, install from a folder, and uninstall through the Studio.
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import type { MarketplacePluginUninstallInput, MarketplaceUpdateStatesResult } from '../../../../shared/electron-api'
-import { HOST_API_VERSION } from '../../../../shared/modules/host-api'
 import type { CapabilityManifest, ThirdPartyModuleView } from '../../../../shared/modules/manifest'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { ConfirmDialogProvider } from '../ui/ConfirmDialog'
@@ -24,14 +22,6 @@ adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 
 const registry = {
   getWorkspaceTypeModule: () => null,
-  getGlobalSurfaces: () => [{ moduleId: 'decision-log', id: 'decisions', label: 'Decisions' }],
-  getWorkspaceTypes: () => [],
-  getModalSurfaces: () => [],
-  getModuleCommands: () => [{ moduleId: 'decision-log' }, { moduleId: 'decision-log' }],
-  getSettingsSections: () => [],
-  getTopBarItems: () => [],
-  getBacklogItemActions: () => [],
-  getFileActions: () => [],
 }
 
 vi.mock('../../modules', async (importOriginal) => ({
@@ -49,7 +39,7 @@ vi.mock('../../studio/moduleLifecycle', () => ({
       enableCalls.push([id, enabled])
       return setEnabledAnswer
     },
-    install: async () => ({ ok: false, message: 'not here' }),
+    install: async () => installAnswer,
     setTrust: async (id: string, trusted: boolean) => {
       trustCalls.push([id, trusted])
       return { ok: true }
@@ -64,31 +54,54 @@ vi.mock('../../studio/moduleLifecycle', () => ({
 
 vi.mock('../../modules/third-party-loader', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../modules/third-party-loader')>()),
-  getThirdPartyRendererLoadState: (id: string) => (id === 'decision-log' ? { status: 'loaded' } : undefined),
+  getThirdPartyRendererLoadState: (id: string) => (id === 'local.decision-log' ? { status: 'loaded' } : undefined),
 }))
+
+type Contributes = ThirdPartyModuleView['extension']['contributes']
 
 function module(
   id: string,
   displayName: string,
-  overrides: Partial<Omit<ThirdPartyModuleView, 'manifest' | 'launch'>> & {
+  overrides: Partial<Omit<ThirdPartyModuleView, 'manifest' | 'launch' | 'extension'>> & {
     manifest?: Partial<CapabilityManifest>
     launch?: Partial<ThirdPartyModuleView['launch']>
+    contributes?: Partial<Contributes>
   } = {},
 ): ThirdPartyModuleView {
-  const { manifest, launch, ...rest } = overrides
+  const { manifest, launch, contributes, ...rest } = overrides
+  const [publisher, extensionId] = id.split('.') as [string, string]
   return {
     trust: 'trusted',
     trustedVia: 'grant',
-    origin: { kind: 'folder' },
     mcpTools: [],
+    extension: {
+      manifestVersion: 1,
+      id: extensionId,
+      version: '1.0.0',
+      engines: { studio: '>=0.13.0' },
+      tier: 'worker',
+      name: displayName,
+      permissions: [...(manifest?.permissions ?? [])],
+      main: 'dist/main.cjs',
+      contributes: {
+        commands: [],
+        menus: [],
+        topBarItems: [],
+        panels: [],
+        doors: [],
+        settingsSections: [],
+        mcpTools: [],
+        ...contributes,
+      },
+    },
     ...rest,
     manifest: {
       id,
       displayName,
-      version: 1,
+      version: '1.0.0',
+      publisher,
       defaultEnabled: true,
       source: 'third-party',
-      engines: { hostApi: HOST_API_VERSION },
       ...manifest,
     },
     launch: {
@@ -102,7 +115,7 @@ function module(
   }
 }
 
-const INSIGHTS = module('insights', 'Insights', {
+const INSIGHTS = module('acme.insights', 'Insights', {
   trust: 'unsigned',
   launch: { status: 'blocked_unsigned', mainLoaded: false },
   manifest: {
@@ -110,89 +123,73 @@ const INSIGHTS = module('insights', 'Insights', {
     permissions: ['conversation:operate', 'filesystem:read-home', 'ipc:invoke', 'storage'],
   },
 })
-const SIGNED = module('kanban', 'Task Board', {
+const SIGNED = module('acme.kanban', 'Task Board', {
   trust: 'signed',
+  fingerprint: 'f'.repeat(64),
   launch: { status: 'blocked_signed', mainLoaded: false },
   manifest: { permissions: ['backlog.read'] },
 })
-const DECISION_LOG = module('decision-log', 'Decision Log', {
-  mcpTools: ['decisions.record', 'decisions.search'],
+const DECISION_LOG = module('local.decision-log', 'Decision Log', {
+  mcpTools: ['decisions_record', 'decisions_search'],
   manifest: { summary: 'Durable decisions.', permissions: ['mcp:tools', 'storage', 'ipc:invoke'] },
+  contributes: {
+    doors: [{ id: 'decisions', title: 'Decisions', icon: 'notes', entry: 'dist/decisions.js' }],
+    commands: [
+      { id: 'decisions.record', title: 'Record a decision' },
+      { id: 'decisions.backlog', title: 'Open Backlog', action: 'panel.backlog.toggle' },
+    ],
+    mcpTools: [
+      { name: 'decisions_record', description: 'Record one.', access: 'operate' },
+      { name: 'decisions_search', description: 'Search them.', access: 'read' },
+    ],
+  },
 })
-const PR_RADAR = module('pr-radar', 'PR Radar', {
-  origin: { kind: 'github', pluginId: 'weather', repo: 'acme/pr-radar' },
+const PR_RADAR = module('acme.pr-radar', 'PR Radar', {
+  fingerprint: 'e'.repeat(64),
   launch: { mainLoaded: false },
-  manifest: { publisher: 'acme', permissions: ['github'] },
+  manifest: { permissions: ['github'] },
 })
-const WEATHER = module('weather-deck', 'Weather Deck', {
-  origin: { kind: 'marketplace', pluginId: 'weather' },
-  manifest: { publisher: 'acme', version: 3, engines: { hostApi: HOST_API_VERSION + 1 } },
-  launch: { status: 'blocked_host_api', mainLoaded: false },
-})
-const TAMPERED = module('tampered', 'Tampered', {
+const TAMPERED = module('acme.tampered', 'Tampered', {
   trust: 'invalid',
   launch: { status: 'blocked_invalid', mainLoaded: false },
 })
 
-const UPDATES: MarketplaceUpdateStatesResult = {
-  ok: true,
-  checked: true,
-  registryState: 'ok',
-  registrySource: 'network',
-  stale: false,
-  fetchedAt: '2026-10-09T00:00:00.000Z',
-  entries: [
-    {
-      id: 'weather',
-      displayName: 'Weather Deck',
-      availability: { state: 'update-available', installedVersion: 3, latestVersion: 4 },
-    },
-  ],
-} as MarketplaceUpdateStatesResult
-
 let installed: ThirdPartyModuleView[] = []
+let installAnswer:
+  { ok: true; moduleId: string; trust: 'unsigned'; strippedLinks: string[] } | { ok: false; message: string } = {
+  ok: false,
+  message: 'not here',
+}
+let openDirAnswer: string | null = null
 const enableCalls: Array<[string, boolean | null]> = []
 let setEnabledAnswer: { ok: true; module: null } | { ok: false; message: string } = { ok: true, module: null }
 const trustCalls: Array<[string, boolean]> = []
 const uninstallCalls: string[] = []
-const pluginUninstallCalls: MarketplacePluginUninstallInput[] = []
 const restartApp = vi.fn(async () => ({ restarting: false }))
 let root: Root | null = null
 let host: HTMLElement | null = null
 
 beforeEach(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-  installed = [INSIGHTS, SIGNED, DECISION_LOG, PR_RADAR, WEATHER, TAMPERED]
+  installed = [INSIGHTS, SIGNED, DECISION_LOG, PR_RADAR, TAMPERED]
+  installAnswer = { ok: false, message: 'not here' }
+  openDirAnswer = null
   trustCalls.length = 0
   enableCalls.length = 0
   setEnabledAnswer = { ok: true, module: null }
   uninstallCalls.length = 0
-  pluginUninstallCalls.length = 0
   restartApp.mockClear()
   ;(window as unknown as { api: unknown }).api = {
     listThirdPartyModules: async () => ({ modules: installed, rejected: [] }),
-    readMarketplacePluginUpdateStates: async () => UPDATES,
-    uninstallMarketplacePlugin: async (input: MarketplacePluginUninstallInput) => {
-      pluginUninstallCalls.push(input)
-      const removed = installed.filter(
-        (candidate) => candidate.origin?.kind !== 'folder' && candidate.origin?.pluginId === input.pluginId,
-      )
-      installed = installed.filter((candidate) => !removed.includes(candidate))
-      return {
-        ok: true,
-        id: input.pluginId,
-        removed: removed.map((candidate) => ({ kind: 'module', id: candidate.manifest.id })),
-        mcpSettings: { syncEnabled: true, servers: {} },
-      }
-    },
+    openDir: async () => openDirAnswer,
     restartApp,
     clipboardWriteText: async () => undefined,
   }
   useWorkspaceStore.setState((state) => ({
     appSettings: {
       ...state.appSettings,
-      modules: { 'decision-log': true, 'other-ext': false },
-      moduleSettings: { 'module:decision-log': { theme: 'dark' } },
+      modules: { 'local.decision-log': true, 'acme.other-ext': false },
+      moduleSettings: { 'module:local.decision-log': { theme: 'dark' } },
     },
   }))
 })
@@ -282,8 +279,8 @@ test('review asks for the unsigned answer before it trusts and turns on in one s
   expect(trust.disabled).toBe(false)
   await click(trust)
 
-  expect(trustCalls).toEqual([['insights', true]])
-  expect(useWorkspaceStore.getState().appSettings.modules.insights).toBe(true)
+  expect(trustCalls).toEqual([['acme.insights', true]])
+  expect(useWorkspaceStore.getState().appSettings.modules['acme.insights']).toBe(true)
   expect(modal()).toBeNull()
 })
 
@@ -303,7 +300,7 @@ test('an installed extension has one switch, its state in words, and no trust sw
   expect(row.textContent).toContain('Running')
   expect(rowOf('PR Radar').textContent).toContain('Starts after restart')
   await click(switches[0])
-  expect(useWorkspaceStore.getState().appSettings.modules['decision-log']).toBe(false)
+  expect(useWorkspaceStore.getState().appSettings.modules['local.decision-log']).toBe(false)
 })
 
 test('sensitive access is one glyph per scope, named in full, listed on hover', async () => {
@@ -353,48 +350,37 @@ test('the name opens the details: what it adds, its access with ids, and the fac
   expect(document.activeElement?.textContent).toBe('Decision Log')
 })
 
-test('an untrusted extension’s details offer Review and trust, and claim nothing about what it adds', async () => {
+test('an untrusted extension’s details offer Review and trust, and say what it declares before any code runs', async () => {
+  installed = installed.map((candidate) =>
+    candidate === INSIGHTS
+      ? {
+          ...INSIGHTS,
+          extension: {
+            ...INSIGHTS.extension,
+            contributes: {
+              ...INSIGHTS.extension.contributes,
+              panels: [{ id: 'usage', title: 'Usage', entry: 'dist/usage.js' }],
+            },
+          },
+        }
+      : candidate,
+  )
   await mount()
   await click(button('Insights'))
   const details = document.querySelector('[aria-label="Insights details"]')!
-  expect(details.querySelector('section[aria-label="Adds"]')).toBeNull()
+  expect([...details.querySelectorAll('section[aria-label="Adds"] li')].map((li) => li.textContent)).toEqual([
+    'Usage panel',
+  ])
   expect(details.textContent).toContain('Not trusted')
   expect(button('Review and trust', details)).toBeTruthy()
 })
 
-test('an untrusted extension built for an older host API says it needs updating and offers no Review', async () => {
-  // Trusting it would not let it run: the host refuses it before trust is
-  // asked, and the trust write then failed with signing advice that does not
-  // apply. The row says what would help instead.
-  installed = [
-    ...installed,
-    module('old-api', 'Old Api', {
-      trust: 'unsigned',
-      manifest: { engines: { hostApi: HOST_API_VERSION - 1 } },
-      launch: { status: 'blocked_host_api', mainLoaded: false },
-    }),
-  ]
+test('a signed extension’s details name its key; a publisher’s own reads as its publisher', async () => {
   await mount()
-  const row = rowOf('Old Api')
-  expect(row.textContent).toContain('Needs updating')
-  expect(row.textContent).toContain(`It needs updating to host API ${HOST_API_VERSION}`)
-  expect(button('Review Old Api', row)).toBeUndefined()
-  await click(button('Old Api'))
-  const details = document.querySelector('[aria-label="Old Api details"]')!
-  expect(button('Review and trust', details)).toBeUndefined()
-  // Nothing to review, so it is not counted or listed as waiting on one.
-  expect(list('Needs review')!.contains(row)).toBe(false)
-  expect(list('Installed')!.contains(row)).toBe(true)
-  expect(panel().querySelector('[role="radio"][aria-label^="Needs review"]')?.textContent).toContain('3')
-})
-
-test('Update appears only for a marketplace install with a newer version, labelled with it', async () => {
-  await mount()
-  const weather = rowOf('Weather Deck')
-  expect(weather.textContent).toContain('Built for a newer version of Studio.')
-  expect(button('Update to v4', weather)).toBeTruthy()
-  // Same registry entry id, but installed from GitHub: no update path here.
-  expect(buttons(rowOf('PR Radar')).some((candidate) => /Update/.test(candidate.textContent ?? ''))).toBe(false)
+  await click(button('PR Radar'))
+  const details = document.querySelector('[aria-label="PR Radar details"]')!
+  expect(details.textContent).toContain('Signed by acme')
+  expect(details.textContent).not.toContain('Local build')
 })
 
 test('the restart line names what waits on the next launch and offers one primary action', async () => {
@@ -481,25 +467,32 @@ test('a module added from a folder is uninstalled by the Studio, and forgotten h
   expect(document.body.textContent).toContain('Work it saved in your projects stays')
   await click(confirm)
 
-  expect(uninstallCalls).toEqual(['decision-log'])
-  expect(pluginUninstallCalls).toHaveLength(0)
+  expect(uninstallCalls).toEqual(['local.decision-log'])
   const settings = useWorkspaceStore.getState().appSettings
-  expect(settings.modules).toEqual({ 'other-ext': false })
-  expect(settings.moduleSettings?.['module:decision-log']).toBeUndefined()
+  expect(settings.modules).toEqual({ 'acme.other-ext': false })
+  expect(settings.moduleSettings?.['module:local.decision-log']).toBeUndefined()
   expect(rowOf('PR Radar')).toBeTruthy()
   expect(panel().textContent).not.toContain('Decision Log')
 })
 
-test('a module a plugin put in place is uninstalled with its plugin, carrying the MCP settings', async () => {
+test('a folder install that left symbolic links out says which', async () => {
+  openDirAnswer = '/Users/dev/extensions/notes'
+  installAnswer = { ok: true, moduleId: 'local.notes', trust: 'unsigned', strippedLinks: ['dist/shared.js'] }
   await mount()
-  await click(button('More for Weather Deck'))
-  await click([...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === 'Uninstall'))
-  const confirm = buttons(modal()!).find((candidate) => candidate.textContent?.trim() === 'Uninstall')
-  await click(confirm)
+  await click(button('Install', panel()))
+  await click(
+    [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.trim() === 'From a folder'),
+  )
+  expect(panel().textContent).toContain('Symbolic links were left out: dist/shared.js.')
+})
 
-  expect(uninstallCalls).toHaveLength(0)
-  expect(pluginUninstallCalls).toHaveLength(1)
-  expect(pluginUninstallCalls[0]?.pluginId).toBe('weather')
-  expect(pluginUninstallCalls[0]?.mcpSettings).toBeDefined()
-  expect(panel().textContent).not.toContain('Weather Deck')
+test('a folder the Studio refuses says why', async () => {
+  openDirAnswer = '/Users/dev/extensions/notes'
+  installAnswer = { ok: false, message: 'It needs Studio 9.0.0 or newer.' }
+  await mount()
+  await click(button('Install', panel()))
+  await click(
+    [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.trim() === 'From a folder'),
+  )
+  expect(panel().textContent).toContain('It needs Studio 9.0.0 or newer.')
 })

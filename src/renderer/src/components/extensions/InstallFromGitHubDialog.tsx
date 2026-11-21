@@ -8,9 +8,8 @@
 // and nothing of its own about trust. The install sends back the one-time
 // token that review came with, which installs exactly that commit.
 //
-// Unsigned code is allowed here, and only here: the review asks for an
-// explicit "I trust this code" before the install button does anything, and
-// main refuses the install without it too.
+// A repository holding an extension (extension.json) is refused by main with
+// a sentence saying how to install it instead: clone it and add its folder.
 
 import React, { useCallback, useEffect, useState, type JSX } from 'react'
 
@@ -20,11 +19,10 @@ import type {
   MarketplacePluginRegistryInstallResult,
   McpSettings,
 } from '../../../../shared/electron-api'
-import { installAndActivateRendererModules } from '../../modules'
 import { installNeedsWorkspace, trustReviewFromVerify } from '../settings/installFlow'
 import { GhostButton, InlineNotice, Input, LinkButton, PrimaryButton, Spinner, TruncatedText } from '../ui'
 import { Modal, ModalBody, ModalFooter, ModalHeader } from '../ui/Modal'
-import { ExtensionTrustReview, trustCodeRequired, trustReviewReady } from './ExtensionTrustReview'
+import { ExtensionTrustReview } from './ExtensionTrustReview'
 import { isImeKey } from '../../utils/imeKey'
 import { extensionsApi, windowHasStudio } from '../../studio/extensions'
 import { copy as appCopy } from '../../../../shared/copy'
@@ -34,7 +32,7 @@ type Phase =
   | { kind: 'resolving' }
   | { kind: 'review'; preview: GithubExtensionPreview; trustToken: string }
   | { kind: 'installing'; preview: GithubExtensionPreview }
-  | { kind: 'installed'; preview: GithubExtensionPreview; updated: boolean; restartRequired: boolean }
+  | { kind: 'installed'; preview: GithubExtensionPreview; updated: boolean }
   | { kind: 'failed'; message: string; issues?: string[]; skillSource?: boolean }
 
 const CHANGE_LABEL: Record<GithubExtensionReviewChange, string> = {
@@ -90,15 +88,12 @@ export function InstallFromGitHubDialog({
 }: InstallFromGitHubDialogProps): JSX.Element {
   const [url, setUrl] = useState(initialUrl)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
-  const [trustCode, setTrustCode] = useState(false)
 
-  // A fresh open is a fresh review: never another repository's disclosure,
-  // never a trust answer given to something else.
+  // A fresh open is a fresh review: never another repository's disclosure.
   useEffect(() => {
     if (!open) return
     setUrl(initialUrl)
     setPhase({ kind: 'idle' })
-    setTrustCode(false)
   }, [open, initialUrl])
 
   const resolve = useCallback(async (): Promise<void> => {
@@ -109,7 +104,6 @@ export function InstallFromGitHubDialog({
       return
     }
     setPhase({ kind: 'resolving' })
-    setTrustCode(false)
     try {
       const result = await extensionsApi.resolveGithubExtension({ url: value })
       setPhase(
@@ -132,14 +126,11 @@ export function InstallFromGitHubDialog({
     const { preview, trustToken } = phase
     setPhase({ kind: 'installing', preview })
     try {
-      const result = await installAndActivateRendererModules(() =>
-        extensionsApi.installGithubExtension({
-          trustToken,
-          ...(trustCode ? { trustCode: true } : {}),
-          ...(workspaceRoot ? { workspaceRoot } : {}),
-          ...(mcpSettings ? { mcpSettings } : {}),
-        }),
-      )
+      const result = await extensionsApi.installGithubExtension({
+        trustToken,
+        ...(workspaceRoot ? { workspaceRoot } : {}),
+        ...(mcpSettings ? { mcpSettings } : {}),
+      })
       if (!result.ok) {
         // The token is spent either way, so a retry starts from a fresh review.
         setPhase({
@@ -149,17 +140,12 @@ export function InstallFromGitHubDialog({
         })
         return
       }
-      setPhase({
-        kind: 'installed',
-        preview,
-        updated: result.updated,
-        restartRequired: result.restartRequired === true,
-      })
+      setPhase({ kind: 'installed', preview, updated: result.updated })
       onInstalled?.(result)
     } catch (error) {
       setPhase({ kind: 'failed', message: error instanceof Error ? error.message : String(error) })
     }
-  }, [phase, trustCode, workspaceRoot, mcpSettings, onInstalled])
+  }, [phase, workspaceRoot, mcpSettings, onInstalled])
 
   const review = phase.kind === 'review' ? trustReviewFromVerify(phase.preview.verify) : null
   const workspaceBlocked = phase.kind === 'review' && installNeedsWorkspace(phase.preview.provides) && !workspaceRoot
@@ -246,8 +232,6 @@ export function InstallFromGitHubDialog({
               {...review}
               sourceUrl={phase.preview.origin.url}
               publisher={phase.preview.publisher}
-              trustCode={trustCode}
-              onTrustCodeChange={setTrustCode}
             />
             {workspaceBlocked ? (
               <InlineNotice tone="warn">{appCopy.extensions.installFromGitHubDialog.itAddsMCPServersOr}</InlineNotice>
@@ -265,7 +249,6 @@ export function InstallFromGitHubDialog({
         {phase.kind === 'installed' ? (
           <p role="status" className="text-body leading-5 text-[color:var(--text-default)]">
             {`${phase.updated ? 'Updated' : 'Installed'} ${phase.preview.displayName}.`}
-            {phase.restartRequired ? ' Restart SprintEngine Studio to use it.' : ''}
           </p>
         ) : null}
       </ModalBody>
@@ -283,17 +266,9 @@ export function InstallFromGitHubDialog({
               <PrimaryButton
                 size="md"
                 onClick={() => void install()}
-                disabled={
-                  phase.kind !== 'review' || workspaceBlocked || !review || !trustReviewReady(review, trustCode)
-                }
+                disabled={phase.kind !== 'review' || workspaceBlocked || !review}
               >
-                {phase.kind === 'installing'
-                  ? 'Installing…'
-                  : phase.preview.installed
-                    ? 'Update'
-                    : review && trustCodeRequired(review)
-                      ? 'Trust and install'
-                      : 'Install'}
+                {phase.kind === 'installing' ? 'Installing…' : phase.preview.installed ? 'Update' : 'Install'}
               </PrimaryButton>
             ) : (
               <PrimaryButton

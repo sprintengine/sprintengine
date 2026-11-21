@@ -1,16 +1,27 @@
 {
   "id": "settings",
   "title": "Settings section",
-  "summary": "A section in Settings whose values the rest of the window half reads with getModuleAppState.",
-  "requires": ["renderer"],
-  "permissions": ["storage"],
-  "dependsOn": [],
-  "entry": {},
-  "scripts": {},
-  "devDependencies": {},
-  "register": {
-    "in": "renderer",
-    "import": "import { registerSettings } from './settings'",
-    "call": "registerSettings(host)"
+  "summary": "A section in Settings whose values the rest of the extension reads with getModuleAppState.",
+  "requires": [],
+  "permissions": [
+    "storage"
+  ],
+  "contributes": {
+    "settingsSections": [
+      {
+        "id": "settings",
+        "title": "{{displayName}}",
+        "icon": "settings",
+        "entry": "dist/settings.js"
+      }
+    ]
+  },
+  "scripts": {
+    "build:ui": "node scripts/build-ui.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   }
 }

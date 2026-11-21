@@ -3,8 +3,6 @@
 // where Update is offered, what a filter keeps — is asserted without
 // rendering anything.
 
-import type { MarketplaceUpdateStatesResult } from '../../../../shared/electron-api'
-import { HOST_API_MIN_SUPPORTED, HOST_API_VERSION } from '../../../../shared/modules/host-api'
 import type {
   CapabilityManifest,
   ModuleEnablementOverrides,
@@ -38,20 +36,10 @@ export const RUN_STATE_LABEL: Record<ExtensionRunState, string> = {
 }
 
 export type ExtensionProblem =
-  // Built for a host API this app does not provide. `direction` says which way.
-  | { kind: 'host-api'; direction: 'older' | 'newer' | 'unknown' }
   // A tampered or invalid signature: it can never be trusted as installed.
   | { kind: 'invalid' }
   // It was loaded and failed, this session.
   | { kind: 'error'; message: string }
-
-export function hostApiDirection(manifest: Pick<CapabilityManifest, 'engines'>): 'older' | 'newer' | 'unknown' {
-  const hostApi = manifest.engines?.hostApi
-  if (typeof hostApi !== 'number' || !Number.isInteger(hostApi)) return 'unknown'
-  if (hostApi > HOST_API_VERSION) return 'newer'
-  if (hostApi < HOST_API_MIN_SUPPORTED) return 'older'
-  return 'unknown'
-}
 
 /** Why a module cannot run as installed, whatever its trust, or null. */
 export function moduleProblem(
@@ -60,9 +48,6 @@ export function moduleProblem(
   contributionError?: string,
 ): ExtensionProblem | null {
   if (module.trust === 'invalid' || module.launch.status === 'blocked_invalid') return { kind: 'invalid' }
-  if (module.launch.status === 'blocked_host_api') {
-    return { kind: 'host-api', direction: hostApiDirection(module.manifest) }
-  }
   if (module.trust !== 'trusted') return null
   if (module.launch.status === 'launch_error') {
     return { kind: 'error', message: module.launch.message ?? copy.settings.extensionsModel.itsMainEntryFailedAt }
@@ -78,12 +63,6 @@ export function moduleProblem(
 
 export function problemText(problem: ExtensionProblem): string {
   switch (problem.kind) {
-    case 'host-api':
-      return problem.direction === 'older'
-        ? `Built for an older version of Studio. It needs updating to host API ${HOST_API_VERSION}: the “Host API version” section of the extension SDK’s README (@sprintengine/extension-sdk) says how. If an agent made it, ask an agent to update it.`
-        : problem.direction === 'newer'
-          ? 'Built for a newer version of Studio.'
-          : 'Doesn’t say which version of Studio it’s built for.'
     case 'invalid':
       return 'Its signature doesn’t match its files, so it can’t be trusted.'
     case 'error':
@@ -149,39 +128,31 @@ export function restartBannerTitle(waiting: readonly Pick<ThirdPartyModuleView, 
 
 // ── Identity ─────────────────────────────────────────────────────────────
 
-export function sourceLabel(module: Pick<ThirdPartyModuleView, 'origin'>): string | null {
-  switch (module.origin?.kind) {
-    case 'marketplace':
-      return 'Marketplace'
-    case 'github':
-      return 'GitHub'
-    case 'folder':
-      return 'Local build'
-    default:
-      return null
-  }
+/** Where it came from: its publisher, which Studio derived from the install (`local` for a folder). */
+export function sourceLabel(module: Pick<ThirdPartyModuleView, 'manifest'>): string | null {
+  return module.manifest.publisher === 'local' ? 'Local build' : null
 }
 
-/** Whether the installed manifest carries a signature that checked out. */
-export function isSigned(module: Pick<ThirdPartyModuleView, 'trust' | 'manifest'>): boolean {
+/** Whether it carries an extension.sig that checked out: a signer's key fingerprint is known. */
+export function isSigned(module: Pick<ThirdPartyModuleView, 'trust' | 'fingerprint'>): boolean {
   if (module.trust === 'signed') return true
-  if (module.trust === 'trusted') return Boolean(module.manifest.signature)
+  if (module.trust === 'trusted') return Boolean(module.fingerprint)
   return false
 }
 
-export function signatureLabel(module: Pick<ThirdPartyModuleView, 'trust' | 'manifest'>): string {
+export function signatureLabel(module: Pick<ThirdPartyModuleView, 'trust' | 'fingerprint'>): string {
   if (module.trust === 'invalid') return 'Invalid signature'
   return isSigned(module) ? 'Signed' : 'Unsigned'
 }
 
-// The publisher the SDK's scaffold writes into every new module. It names no
-// one, so a row that printed it would be reading out a placeholder.
-const SCAFFOLD_PUBLISHER = 'Local developer'
+// A folder install's publisher. It names no one, so a row that printed it
+// would be reading out a placeholder; the source says "Local build" instead.
+const LOCAL_PUBLISHER = 'local'
 
-/** Who published it, when the manifest names someone. */
+/** Who published it, when Studio knows someone. */
 export function publisherName(manifest: Pick<CapabilityManifest, 'publisher'>): string | null {
   const publisher = manifest.publisher?.trim()
-  return publisher && publisher !== SCAFFOLD_PUBLISHER ? publisher : null
+  return publisher && publisher !== LOCAL_PUBLISHER ? publisher : null
 }
 
 /** "acme · GitHub · Signed" — publisher, source and signature, each when known. */
@@ -203,38 +174,12 @@ export function accessItems(permissions: readonly string[] | undefined): {
   return { care: care.map(item), standard: standard.map(item) }
 }
 
-// ── Update ───────────────────────────────────────────────────────────────
-
-export type ExtensionUpdate = { pluginId: string; latestVersion: number }
-
-/**
- * An update Studio can actually install: the module came from the marketplace
- * and the registry lists a newer version of the bundle it came in. A GitHub or
- * folder install, or a registry that could not be read, offers nothing.
- */
-export function marketplaceUpdateFor(
-  module: Pick<ThirdPartyModuleView, 'origin'>,
-  states: MarketplaceUpdateStatesResult | null,
-): ExtensionUpdate | null {
-  if (module.origin?.kind !== 'marketplace' || !states?.ok || !states.checked) return null
-  const pluginId = module.origin.pluginId
-  const entry = states.entries.find((candidate) => candidate.id === pluginId)
-  if (!entry || entry.availability.state !== 'update-available') return null
-  return { pluginId, latestVersion: entry.availability.latestVersion }
-}
-
 // ── Filter ───────────────────────────────────────────────────────────────
 
 export type ExtensionFilter = 'all' | 'review' | 'on' | 'off'
 
-/**
- * Whether an extension waits on the person's trust decision. One built for
- * another host API does not: the host refuses it before trust is asked, so it
- * offers no Review, says it needs updating, and sits under Installed rather
- * than swelling the Needs review count with something nobody can review.
- */
-export const needsReview = (module: ThirdPartyModuleView): boolean =>
-  module.trust !== 'trusted' && module.launch.status !== 'blocked_host_api'
+/** Whether an extension waits on the person's trust decision. */
+export const needsReview = (module: ThirdPartyModuleView): boolean => module.trust !== 'trusted'
 
 export function matchesQuery(query: string, ...parts: Array<string | null | undefined>): boolean {
   const needle = query.trim().toLowerCase()

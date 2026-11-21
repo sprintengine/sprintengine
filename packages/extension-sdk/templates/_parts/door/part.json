@@ -1,16 +1,25 @@
 {
   "id": "door",
   "title": "Door",
-  "summary": "A full-page surface drawn with the host's door shell, with its own row in the Extensions drawer.",
-  "requires": ["renderer"],
+  "summary": "A full-window surface with its own row in the Extensions drawer.",
+  "requires": [],
   "permissions": [],
-  "dependsOn": [],
-  "entry": {},
-  "scripts": {},
-  "devDependencies": {},
-  "register": {
-    "in": "renderer",
-    "import": "import { registerDoor } from './door'",
-    "call": "registerDoor(host)"
+  "contributes": {
+    "doors": [
+      {
+        "id": "door",
+        "title": "{{displayName}}",
+        "icon": "extension",
+        "entry": "dist/door.js"
+      }
+    ]
+  },
+  "scripts": {
+    "build:ui": "node scripts/build-ui.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   }
 }

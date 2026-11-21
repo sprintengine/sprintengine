@@ -34,8 +34,8 @@ import type { StudioPaths } from '../platform/studio-paths'
 // the agent CLIs' plugin catalogue, Studio's own plugin in a workspace,
 // building an extension, and the hosted feeds. The same domain in process and
 // out of process; nothing here needs Electron. The agents' `extension.*` and
-// `plugin.*` tools and a card's `install.module` go through it too, so a
-// window, a tool and a card reach one marketplace and one scaffold.
+// `plugin.*` tools go through it too, so a window and a tool reach one
+// marketplace and one scaffold.
 
 export type StudioExtensions = {
   readonly marketplace: StudioMarketplace

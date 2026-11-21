@@ -1,33 +1,21 @@
-// Security-critical trust primitives shared by the two defense-in-depth gates
-// that decide whether a marketplace bundle may proceed: the download/stage path
-// (src/main/marketplace/plugin-download.ts) and the installer preflight
-// (src/main/modules/plugin-bundle-installer.ts). Both rules live here once so
-// the enforcement points cannot silently drift — e.g. a future code-bearing
-// kind must be added in a single place, not one gate only.
+// How the two gates that decide whether a marketplace bundle may proceed read
+// its plugin.json: the download/stage path (src/main/marketplace/plugin-download.ts)
+// and the installer preflight (src/main/modules/plugin-bundle-installer.ts).
+// The rule lives here once so the two cannot drift.
 
 import {
   parseMarketplacePluginAuthoringManifest,
   parseMarketplacePluginManifest,
   type MarketplaceManifestIssue,
   type MarketplacePluginAuthoringManifest,
-  type MarketplacePluginComponents,
 } from './manifest'
-
-// A code-bearing component executes arbitrary code once loaded — a module —
-// so an unsigned bundle carrying one must never be permitted to proceed unless
-// the person trusted it as code (a GitHub-URL install, and only that). MCP and
-// skills components are declarative and may stage unsigned (load-ineligible).
-// Agent CLIs are not a bundle component at all: they ship with the app.
-export function hasCodeBearingComponent(components: MarketplacePluginComponents): boolean {
-  return components.module !== undefined
-}
 
 export type OptionallySignedManifestResult =
   { ok: true; manifest: MarketplacePluginAuthoringManifest } | { ok: false; issues: MarketplaceManifestIssue[] }
 
 // Resolve a plugin.json under the optionally-signed contract: a signed manifest
 // is validated strictly; a manifest whose only defect is a missing signature is
-// accepted as unsigned so the kind-aware gate can decide whether to permit it;
+// accepted as unsigned, which installs only on the person's approval;
 // anything else (a present-but-malformed signature, structural errors) is
 // rejected. Trust classification is layered on top by the download path, not
 // decided here.

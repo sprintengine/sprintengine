@@ -1,57 +1,51 @@
 # Troubleshooting
 
 Start with `npm run check` and `node scripts/validate.mjs`: most problems show
-up there first, with the app's own validators.
+up there first, with the validator Studio itself runs.
 
-## Studio does not list the module
+## Studio does not list the extension
 
 | Check | Fix |
 | --- | --- |
-| Is it installed where Studio looks? `ls ~/.sprintengine/extensions/<id>/manifest.json` (or `$SPRINTENGINE_USER_EXTENSION_ROOT` if Studio was started with it) | `npm run dev:install` |
-| Does the folder name equal the manifest `id`? | `dev:install` names it from the id |
-| Does the manifest validate? | `node scripts/validate.mjs` |
+| Is it installed where Studio looks? `ls ~/.sprintengine/extensions/local.<id>/extension.json` (or under `$SPRINTENGINE_USER_EXTENSION_ROOT` if Studio was started with it) | `npm run dev:install` |
+| Is the folder named for its install key, `local.<id>`? | `dev:install` names it from the id |
+| Does extension.json validate? | `node scripts/validate.mjs` |
+| Does its id start `studio-` or `sprintengine-`? | Those install only from Studio's own catalogue; choose another id |
 | Is Settings → Extensions showing an older list? | Close and reopen Settings; the list rescans the folder |
 
 ## Listed, but not running
 
 | Studio shows | Cause | Fix |
 | --- | --- | --- |
-| Needs trust / unsigned / signed | Not trusted yet — or trusted before the last rebuild | Trust it. Every `dev:install` changes the fingerprint |
-| Invalid / tampered | Files in the folder do not match `files`, or the manifest changed after signing | `npm run dev:install` (it rewrites `files` and signs again when it can). Never edit the installed copy |
-| Needs a newer Studio (`host_api_too_new`) | `engines.hostApi` is newer than this Studio | Update Studio, or build against the SDK version it ships |
-| Built for an older host (`host_api_too_old`) | The SDK the module was built with is older than this Studio loads | Depend on `@sprintengine/extension-sdk` 3, set `"engines": { "hostApi": 3 }`, rebuild |
-| No host API (`host_api_missing`) | `engines` missing or not an integer | Add `"engines": { "hostApi": 3 }` |
-| Disabled | `defaultEnabled: false` and never turned on, or a `dependsOn` module is off | Turn it on; turn on the dependency |
-| A load error | `registerRenderer`/`registerMain` threw, rejected or took over 10 s; or an id clash | Read the error text; `npm test` reproduces most registration failures |
-| Trusted, main entry not running | `entry.main` loads at startup only | Restart Studio |
-| Old code still running | The renderer already evaluated this module id this session | Restart Studio |
+| Needs trust / unsigned | Not trusted yet — or trusted before the last rebuild | Trust it. Every `dev:install` of a new build is new contents |
+| Invalid / tampered | Files in the folder do not match `extension.sig` | `npm run dev:install` (it signs the installed copy again when it can, and drops a stale signature when it cannot). Never edit the installed copy |
+| Needs a newer Studio | `engines.studio` asks for a Studio newer than this one | Update Studio, or use only fields this Studio reads (their "Since", in the `manifest` topic) |
+| Off | Never turned on | Turn it on in Settings → Extensions |
+| A load error | `activate` threw or rejected; a ui entry failed to import | Read the error text; `npm test` reproduces most of them |
 
 ## Running, but something is missing
 
 | Symptom | Cause |
 | --- | --- |
-| A panel never appears | Nothing places it: add it to a workspace type's layout |
-| No row for my door | `registerGlobalSurface` needs both `label` and `Icon` for the Extensions drawer to list it |
-| Unstyled markup | Tailwind classes you wrote (see the `ui-kit` topic) |
-| "…is provided by the host at runtime; mark it external" | The bundle inlined `./ui` or `./surface`; fix the esbuild `--external` flags |
-| Failed to resolve module specifier "@sprintengine/extension-sdk" | The SDK root was left external in the renderer build; bundle it |
-| Cannot find module '…' from entry.main | A dependency left external in the main build; bundle it |
-| `registerMain` throws: needs the "module:bridge" permission | Declare `module:bridge` to declare methods |
-| Smoke test: "… needs "storage"" (or another permission) | The module resolves a service or calls a host method whose permission the manifest does not declare. Declare it (and in `plugin.json`) |
-| Smoke test: "… is resolved while registering, so "dependsOn" must include …" | Add that module to `dependsOn`, or resolve the service inside the handler that uses it |
-| Smoke test: `door "…" renders` fails | The component threw while rendering; the error follows the line. In tests a render is a server render, so `document`/`window` in render (not in an effect) and `useSyncExternalStore` without its third argument fail too |
-| A test cannot import `@sprintengine/extension-sdk/ui` ("provided by the host at runtime") | Run it through `npm test`, which loads `@sprintengine/extension-sdk/testing/register` first, or call `installTestingKit()` before importing the component |
-| A call answers `extension_unavailable` | The main entry is not running on that Studio: switched off, refused, failed to load (see Settings), or not loaded yet (restart) |
+| A panel is not offered | It is offered by a workspace pane's + menu; check `contributes.panels` and the tier (`ui` or above) |
+| A surface stays blank | `mount` threw, drew outside `root`, or the entry is not the bundle you think; open it again after `npm run dev:install` |
+| Studio says a surface is slow to open | It never calls `studio.ready()`, or calls it late |
+| Unstyled markup | Utility classes you wrote compile to nothing (the `styling` topic) |
+| Failed to resolve module specifier "react" (or anything else) | The ui entry imports something at runtime; bundle it whole (`npm run build:ui`) |
+| Cannot find module '…' from the worker | A dependency left external in the worker build; bundle it |
+| `activate` throws: needs the "module:bridge" permission | Declare `module:bridge` to declare methods |
+| A command does nothing | It has no `action`, and the worker has no `operate` method of its name |
+| MCP tool rejected at registration | Declare it in `contributes.mcpTools` and `mcp:tools`; or a name another extension already holds |
+| MCP tool answers "extension disabled" | Turn the extension on |
+| Smoke test: "… needs "storage"" (or another permission) | The worker resolves a service or calls a method whose permission extension.json does not declare. Declare it |
+| A call answers `extension_unavailable` | The worker is not running on that Studio: switched off, refused or failed to load (see Settings) |
 | A call answers `extension_method_unknown` | No method of that name, or it is declared with the other access (`read` vs `operate`) |
 | A call answers `invalid_params` | Your own params validator refused what was sent; the message is yours |
-| `openChat` → `permission_missing` | Declare `conversation:operate` |
+| `openChat` → `permission_missing` | Declare `chat:draft`, or `conversation:operate` to send |
 | `openChat` → `workspace_folder_missing` | Chats need a workspace with a folder |
 | `openChat` → `unavailable` | This window cannot open chats; try the main window |
-| Conversation service → `not_owned` | The chat was not created by this module |
-| `requireService` throws at startup | The provider loads after you: add `dependsOn`, or resolve it inside the handler |
-| `host.supports('…')` is false | This Studio (or its providing module) does not offer it; degrade with a message |
-| MCP tool answers "module disabled" | Turn the module on |
-| MCP tool rejected at registration | Declare `mcp:tools`; or a name another module already holds |
+| Conversation service → `not_owned` | The chat was not created by this extension |
+| `studio.supports('…')` is false | This Studio (or its providing module) does not offer it; degrade with a message |
 | Secrets → `origin_not_allowed` | The URL's origin was not in `allowedOrigins` when the secret was set; set it again with the origin |
 | GitHub → `not_signed_in` | The person is not signed in to GitHub in Studio |
 
@@ -59,15 +53,18 @@ up there first, with the app's own validators.
 
 | Symptom | Fix |
 | --- | --- |
-| `validate`/`dev:install`: "cannot digest module files" | The installed SDK is too old to write the `files` map Studio requires. Update it |
-| `validate`: stale `files` warning | Normal between builds; `dev:install` rewrites it. Commit the rewritten manifest before publishing |
+| `validate`: "is not a field Studio knows" | A misspelt or unknown key in extension.json; the path names it |
+| `validate`: "cannot carry what this manifest declares" | Raise `tier`, or drop what needs the higher tier |
+| `validate`: `engines.studio` must be at least … | Raise it to the version named: the newest "Since" of the fields you use |
+| `validate`: a file extension.json names does not exist | `npm run build` first; check the `entry` path matches `src/<name>.tsx` |
 | `validate`: key material in the project | Move the key to `~/.sprintengine/keys/` and rotate it if it was ever committed |
-| `npm test`: "contributed nothing" | `registerRenderer`/`registerMain` registered nothing — check the export name |
-| `npm test`: "needs the … permission" | Add it to both manifests, or stop using the service |
-| Smoke test cannot load a package | Something in the bundle is external that should not be (see above) |
+| `validate`: `sprintengine-extension verify` refused it | `extension/extension.sig` no longer matches the build; sign again or delete it |
+| `npm test`: a ui entry "imports …" | Something in the bundle is external that should not be |
+| `npm test`: a command has no operate method | Register it with `registerMethods`, access `operate`, under the command's id |
+| `npm test`: a declared MCP tool is not registered | Serve it from `activate` with `registerMcpTools` |
 
 ## Reading Studio's side
 
-The person can open Settings → Extensions for the module's status line and load
-error. Ask them to copy it to you verbatim; do not guess from a screenshot of
-the drawer.
+The person can open Settings → Extensions for the extension's status line and
+load error. Ask them to copy it to you verbatim; do not guess from a
+screenshot of the drawer.

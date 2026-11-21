@@ -18,7 +18,7 @@ test('addThirdPartyModuleFromFolder', async () => {
         {
           install: async () => {
             installs += 1
-            return { ok: true, moduleId: 'x', trust: 'unsigned' }
+            return { ok: true, moduleId: 'x', trust: 'unsigned', strippedLinks: [] }
           },
         },
       ),
@@ -34,14 +34,38 @@ test('addThirdPartyModuleFromFolder', async () => {
         {
           install: async (folder) => {
             selected = folder
-            return { ok: true, moduleId: 'acme.compass', trust: 'unsigned' }
+            return { ok: true, moduleId: 'local.compass', trust: 'unsigned', strippedLinks: [] }
           },
         },
       ),
-      { status: 'installed', id: 'acme.compass', trust: 'unsigned' },
+      { status: 'installed', id: 'local.compass', trust: 'unsigned', strippedLinks: [] },
       'a selected folder is installed through the Studio and keeps its trust classification',
     )
     assert.equal(selected, '/extensions/compass')
+
+    assert.deepEqual(
+      await addThirdPartyModuleFromFolder(
+        { openDir: async () => '/extensions/linked' },
+        {
+          install: async () => ({
+            ok: true,
+            moduleId: 'local.linked',
+            trust: 'unsigned',
+            strippedLinks: ['dist/shared.js', 'node_modules'],
+          }),
+        },
+      ),
+      { status: 'installed', id: 'local.linked', trust: 'unsigned', strippedLinks: ['dist/shared.js', 'node_modules'] },
+      'the symbolic links left out of the copy come back for the install review to name',
+    )
+    assert.deepEqual(
+      await addThirdPartyModuleFromFolder(
+        { openDir: async () => '/extensions/older-studio' },
+        { install: async () => ({ ok: true, moduleId: 'local.older', trust: 'unsigned' }) as never },
+      ),
+      { status: 'installed', id: 'local.older', trust: 'unsigned', strippedLinks: [] },
+      'a Studio that reports no links reads as none stripped',
+    )
 
     assert.deepEqual(
       await addThirdPartyModuleFromFolder(
@@ -50,11 +74,11 @@ test('addThirdPartyModuleFromFolder', async () => {
           install: async () => ({
             ok: false,
             message: '',
-            issues: [{ path: 'manifest.json', message: 'No valid module manifest was found.' }],
+            issues: [{ path: 'id', message: '"notes" must match its folder "local.other".' }],
           }),
         },
       ),
-      { status: 'failed', message: 'No valid module manifest was found.' },
+      { status: 'failed', message: '"notes" must match its folder "local.other".' },
       'manifest validation failures return the Studio’s explanation',
     )
   }

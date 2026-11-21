@@ -7,18 +7,14 @@ import { afterAll, test, vi } from 'vitest'
 
 import { connectToStudio } from '../../packages/agent-sdk/src/node'
 import type { StudioClient } from '../../packages/client-runtime/src/public'
-import { validateThirdPartyModuleManifest } from '../../packages/extension-sdk/src/manifest-validate'
 import type { ModuleMethodContracts } from '../../packages/extension-sdk/src/methods'
-import { generateModuleSigningKeyPair, signManifest } from '../../packages/extension-sdk/src/signing'
 import type { StudioModuleEvent, StudioModuleSummary } from '../../packages/studio-protocol/src/public'
 import { createConversationLaunchService } from '../main/conversation-launch-service'
 import { ConversationRuntime } from '../main/conversation-runtime'
 import { readModuleOverridesSync } from '../main/module-host/enablement-store'
 import { loadMainModules } from '../main/module-host/load-modules'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from '../main/modules/agent-runtime-module'
-import { applyHostApiGate } from '../main/modules/host-api-gate'
 import { createModuleLifecycle, liveModuleIds } from '../main/modules/module-lifecycle'
-import { computeModuleFileDigestsSync } from '../main/modules/module-signature'
 import {
   planThirdPartyMainModules,
   readThirdPartyMainLaunchSnapshot,
@@ -39,10 +35,10 @@ import { createStudioModuleHub } from '../server/rpc/studio-modules'
 import { OWNER_TOKEN, pairFakeClient, startTestServer } from '../server/rpc/studio-rpc.test-helper'
 import type { ConversationEvent, ConversationEventType } from '../shared/conversation-runtime'
 import { emptyAgentLaunchSettings } from '../shared/launch-settings'
-import { HOST_API_VERSION } from '../shared/modules/host-api'
 import type { CapabilityManifest } from '../shared/modules/manifest'
 import { emptyWorkspaceRegistryFile, toWorkspaceRegistryRecord } from '../shared/workspace-registry'
 import { createSecretCipherStandIn } from '../../tests/stubs/secret-cipher'
+import { extensionManifest, newExtensionSigner, writeExtensionFolder } from '../../tests/extension-folder'
 
 vi.mock('electron', () => import('../../tests/stubs/electron'))
 
@@ -52,8 +48,9 @@ vi.mock('electron', () => import('../../tests/stubs/electron'))
 //   window: Settings' lifecycle calls, a module's renderer host
 //     ─ owner socket ─ router ─ module hub ─ lifecycle and kernel ─ disk
 //
-// An extension built for host API 2 and signed by a test key (never the
-// release key) is installed from a folder and trusted through the server; at
+// An extension signed by a test key (never the release key) is installed
+// from a folder, under its install key `local.<id>`, and trusted through the
+// server; at
 // the server's next start it runs: the window calls its declared methods and
 // hears its events. Switched off, it is gone at once: its calls are refused
 // `extension_unavailable`, the list says it is not running and declares nothing,
@@ -68,7 +65,7 @@ vi.mock('electron', () => import('../../tests/stubs/electron'))
 //
 // The server is composed as the Studio's out-of-process one composes its
 // modules (server-modules.ts) over a scratch data folder and module root:
-// discovery, the trust and host-API gates, the agent runtime, the kernel, the
+// discovery, the trust gate, the agent runtime, the kernel, the
 // hub and the lifecycle. The chats beneath the agent runtime (the workspace
 // registry and bus, the launch service, the conversation runtime) outlive
 // each start, as the core and its chat logs do, with a stand-in provider as
@@ -89,40 +86,29 @@ afterAll(async () => {
   rmSync(scratch, { recursive: true, force: true })
 })
 
-const ID = 'acme-deck'
+/** A folder install's key: `local.<id>`. */
+const ID = 'local.acme-deck'
 
-/** An extension as its author ships it, at host API 2, signed as `sprintengine-extension sign` signs by a test key. */
+/**
+ * An extension as its author ships it: a worker-tier extension.json and its
+ * worker, signed as `sprintengine-extension sign` signs, by a key made for
+ * this test (never the release key).
+ */
 function writeSigned(folder: string, manifestFields: Record<string, unknown>, main: string): void {
-  mkdirSync(join(folder, 'dist'), { recursive: true })
-  writeFileSync(join(folder, 'dist', 'main.cjs'), main)
-  const digests = computeModuleFileDigestsSync(folder)
-  assert.ok(digests.ok, 'the extension’s files are digested')
-  const manifest = {
-    version: 1,
-    defaultEnabled: true,
-    engines: { hostApi: HOST_API_VERSION },
-    entry: { main: 'dist/main.cjs' },
-    ...manifestFields,
-    files: digests.files,
-  }
-  // Signed over the manifest as the validator reads it, by a key made for
-  // this test: never the release key.
-  const validated = validateThirdPartyModuleManifest(manifest)
-  assert.ok(validated.ok, 'the manifest is valid')
-  const signer = generateModuleSigningKeyPair()
-  writeFileSync(
-    join(folder, 'manifest.json'),
-    JSON.stringify({ ...manifest, signature: signManifest(validated.manifest, signer.privateKeyPem) }),
-  )
+  writeExtensionFolder(folder, {
+    manifest: extensionManifest(manifestFields),
+    files: { 'dist/main.cjs': main },
+    signer: newExtensionSigner(),
+  })
 }
 
 /** The deck: declared methods, an event on each card. */
 function writeSignedExtension(): void {
   writeSigned(
     source,
-    { id: ID, displayName: 'Deck', permissions: ['module:bridge'] },
+    { id: 'acme-deck', name: 'Deck', permissions: ['module:bridge'] },
     `const cards = []
-exports.registerMain = (host) => {
+exports.activate = (host) => {
   host.registerMethods({
     'cards.list': { access: 'read', params: () => ({ ok: true, params: {} }), handler: () => ({ ok: true, result: cards }) },
     'cards.add': {
@@ -241,7 +227,6 @@ async function startServer() {
     discoverUserModulesSync(moduleRoot, readModuleTrustContextSync(dataDir)),
     { electronMain: false },
   )
-  applyHostApiGate(thirdParty.ineligible, thirdParty.modules)
   const hub = createStudioModuleHub()
   const byId = new Map<string, CapabilityManifest>(
     [AGENT_RUNTIME_MANIFEST, ...thirdParty.modules.map((module) => module.manifest)].map((manifest) => [
@@ -261,6 +246,7 @@ async function startServer() {
     overrides: readModuleOverridesSync(dataDir),
     moduleRoots: thirdParty.moduleRoots,
     moduleVerifiedFiles: thirdParty.verifiedFiles,
+    moduleMcpTools: thirdParty.mcpTools,
     ineligible: thirdParty.ineligible,
     launchErrors: thirdParty.launchErrors,
     deliverModuleEvent: (event) => hub.deliverEvent(event),
@@ -334,12 +320,16 @@ test('an extension is installed, trusted, called, heard, switched off and on aga
   let changes = 0
   settings.subscribe('extension.changed', {}, { onPayload: () => void changes++ })
   const installed = await lifecycle.install(source)
-  assert.deepEqual(installed, { ok: true, moduleId: ID, trust: 'signed' }, 'a test key is not a trusted publisher')
+  assert.deepEqual(
+    installed,
+    { ok: true, moduleId: ID, trust: 'signed', strippedLinks: [] },
+    'a test key is not a trusted publisher',
+  )
   const listedInstalled = await settings.request('extension.installed', {})
   assert.deepEqual(
-    listedInstalled.modules.map((module) => [module.manifest.id, module.trust, module.origin?.kind]),
-    [[ID, 'signed', 'folder']],
-    'the server lists what is on its disk, with its trust and where it came from',
+    listedInstalled.modules.map((module) => [module.manifest.id, module.manifest.publisher, module.trust]),
+    [[ID, 'local', 'signed']],
+    'the server lists what is on its disk, under its install key, with its trust',
   )
   assert.deepEqual(await lifecycle.setTrust(ID, true), { ok: true })
   for (let tries = 0; changes < 2 && tries < 100; tries++) await new Promise((resolve) => setTimeout(resolve, 10))
@@ -366,7 +356,7 @@ test('an extension is installed, trusted, called, heard, switched off and on aga
   // The window's renderer half of the extension, calling its own server.
   const renderer = createRendererHost()
   renderer.setModuleMethodCaller((call) => callModuleMethod(client, call))
-  const manifest = { id: ID, displayName: 'Deck', version: 1, defaultEnabled: true, source: 'third-party' }
+  const manifest = { id: ID, displayName: 'Deck', version: '1.0.0', defaultEnabled: true, source: 'third-party' }
   const deck = renderer.hostFor(ID, manifest as CapabilityManifest).methods<{
     'cards.list': { access: 'read'; params: Record<string, never>; result: string[] }
     'cards.add': { access: 'operate'; params: { title: string }; result: { count: number } }
@@ -441,8 +431,8 @@ test('only an owner changes what runs: a paired client granted modules may list,
   assert.deepEqual(readModuleOverridesSync(dataDir), {}, 'nothing it asked for was written')
 })
 
-const CHAT_ID = 'acme-chat'
-const SNOOP_ID = 'acme-snoop'
+const CHAT_ID = 'local.acme-chat'
+const SNOOP_ID = 'local.acme-snoop'
 
 /**
  * An extension that drives a chat of its own through the conversation
@@ -451,7 +441,7 @@ const SNOOP_ID = 'acme-snoop'
  * passing on each call's command id. `chat.sendThenFail` sends without it and
  * then throws, as a handler with a bug past its send would.
  */
-const CHAT_MAIN = `exports.registerMain = (host) => {
+const CHAT_MAIN = `exports.activate = (host) => {
   const chats = host.requireService({ key: 'conversation.module-service' })
   const followed = new Set()
   const follow = (ref) => {
@@ -500,7 +490,7 @@ const CHAT_MAIN = `exports.registerMain = (host) => {
 `
 
 /** An extension that declares no chat permission and tries to send to another extension's chat as that extension. */
-const SNOOP_MAIN = `exports.registerMain = (host) => {
+const SNOOP_MAIN = `exports.activate = (host) => {
   host.registerMethods({
     'chat.sendAs': {
       access: 'operate',
@@ -526,7 +516,7 @@ type ChatMethods = {
 function methodsOn<Cs extends ModuleMethodContracts>(client: StudioClient, id: string) {
   const renderer = createRendererHost()
   renderer.setModuleMethodCaller((call) => callModuleMethod(client, call))
-  const manifest = { id, displayName: id, version: 1, defaultEnabled: true, source: 'third-party' }
+  const manifest = { id, displayName: id, version: '1.0.0', defaultEnabled: true, source: 'third-party' }
   return renderer.hostFor(id, manifest as CapabilityManifest).methods<Cs>()
 }
 
@@ -535,15 +525,10 @@ test('an extension drives a chat through its server, and a retried call sends on
   const snoopSource = join(scratch, 'source', 'snoop')
   writeSigned(
     chatSource,
-    {
-      id: CHAT_ID,
-      displayName: 'Chat',
-      permissions: ['module:bridge', 'conversation:operate'],
-      dependsOn: ['agent-runtime'],
-    },
+    { id: 'acme-chat', name: 'Chat', permissions: ['module:bridge', 'conversation:operate'] },
     CHAT_MAIN,
   )
-  writeSigned(snoopSource, { id: SNOOP_ID, displayName: 'Snoop', permissions: ['module:bridge'] }, SNOOP_MAIN)
+  writeSigned(snoopSource, { id: 'acme-snoop', name: 'Snoop', permissions: ['module:bridge'] }, SNOOP_MAIN)
   const { turns } = chats()
 
   // ── Installed and trusted through the server, running at its next start ──
@@ -553,7 +538,7 @@ test('an extension drives a chat through its server, and a retried call sends on
     [chatSource, CHAT_ID],
     [snoopSource, SNOOP_ID],
   ] as const) {
-    assert.deepEqual(await settings.install(folder), { ok: true, moduleId: id, trust: 'signed' })
+    assert.deepEqual(await settings.install(folder), { ok: true, moduleId: id, trust: 'signed', strippedLinks: [] })
     assert.deepEqual(await settings.setTrust(id, true), { ok: true })
   }
   await first.stop()
@@ -632,4 +617,43 @@ test('an extension drives a chat through its server, and a retried call sends on
   // The kernel refuses the call (main-host.ts says why in the server's log); the window hears that it failed.
   assert.equal(snooped.ok, false, JSON.stringify(snooped))
   assert.deepEqual(turns, ['hello', 'twice', 'long', 'once'])
+})
+
+test('a trust grant holds for the bytes trusted: an edited extension needs trusting again', async () => {
+  const notesSource = join(scratch, 'source', 'notes')
+  const notesId = 'local.acme-notes'
+  writeExtensionFolder(notesSource, {
+    manifest: extensionManifest({ id: 'acme-notes', name: 'Notes' }),
+    files: { 'dist/main.cjs': 'exports.activate = () => {}\n' },
+  })
+  const first = await startServer()
+  const settings = moduleLifecycleOver(async () => windowOn(first.path))
+  assert.deepEqual(await settings.install(notesSource), {
+    ok: true,
+    moduleId: notesId,
+    trust: 'unsigned',
+    strippedLinks: [],
+  })
+  assert.deepEqual(await settings.setTrust(notesId, true), { ok: true })
+  await first.stop()
+
+  const trustOf = async (path: string) =>
+    (await (await windowOn(path)).request('extension.installed', {})).modules.find(
+      (module) => module.manifest.id === notesId,
+    )
+  const second = await startServer()
+  const trusted = await trustOf(second.path)
+  assert.deepEqual(trusted && [trusted.trust, trusted.trustedVia], ['trusted', 'grant'])
+  assert.equal((await listed(await windowOn(second.path)))?.id, ID, 'the deck still runs beside it')
+  await second.stop()
+
+  // Its worker changes on disk after it was trusted: the grant named other bytes.
+  writeFileSync(join(moduleRoot, notesId, 'dist', 'main.cjs'), 'exports.activate = () => { /* changed */ }\n')
+  const third = await startServer()
+  const edited = await trustOf(third.path)
+  assert.deepEqual(edited && [edited.trust, edited.trustedVia], ['unsigned', undefined])
+  const notes = (await (await windowOn(third.path)).request('extension.list', {})).modules.find(
+    (module) => module.id === notesId,
+  )
+  assert.equal(notes?.running, false, 'an extension no longer trusted does not run')
 })

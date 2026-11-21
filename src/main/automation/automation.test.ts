@@ -2961,6 +2961,14 @@ test('automation', async () => {
           registrationOf('weather_deck_forecast', 'second'),
         ]),
       ],
+      // What each extension.json declares: a third-party module serves only these.
+      moduleMcpTools: {
+        'first-owner': [{ name: 'weather_deck_forecast', description: 'test tool first', access: 'read' }],
+        'second-owner': [
+          { name: 'second_owner_extra', description: 'test tool extra', access: 'read' },
+          { name: 'weather_deck_forecast', description: 'test tool second', access: 'read' },
+        ],
+      },
     })
     assert.deepEqual(report.loaded, ['first-owner'], 'first registration wins')
     assert.equal(report.errors.length, 1)
@@ -3038,7 +3046,14 @@ test('automation', async () => {
       },
       registerMain: (host) => host.registerMcpTools([forecastTool]),
     }
-    const { kernel, report } = loadMainModules({ modules: [fixtureModule] })
+    const { kernel, report } = loadMainModules({
+      modules: [fixtureModule],
+      moduleMcpTools: {
+        'weather-deck': [
+          { name: 'weather_deck_forecast', description: 'Forecast from the fixture module.', access: 'read' },
+        ],
+      },
+    })
     assert.deepEqual(report.loaded, ['weather-deck'])
 
     let moduleEnabled = true
@@ -3217,6 +3232,25 @@ test('automation', async () => {
   ): ThirdPartyModuleView {
     return {
       manifest: { id, displayName: `Module ${id}`, version: 3, defaultEnabled: true, source: 'third-party' },
+      extension: {
+        manifestVersion: 1,
+        id: id,
+        version: '1.0.0',
+        engines: { studio: '>=0.13.0' },
+        tier: 'worker',
+        name: `Module ${id}`,
+        permissions: [],
+        main: 'dist/main.cjs',
+        contributes: {
+          commands: [],
+          menus: [],
+          topBarItems: [],
+          panels: [],
+          doors: [],
+          settingsSections: [],
+          mcpTools: [],
+        },
+      },
       trust,
       launch: { status: 'blocked_unsigned', hasMainEntry: true, expectedToLoad: false, ...launch },
     }
@@ -3390,7 +3424,14 @@ test('automation', async () => {
       permissions: ['mcp:tools' as const],
     }
     const fixtureModule: CapabilityModule = { manifest, registerMain: (host) => host.registerMcpTools([forecastTool]) }
-    const { kernel } = loadMainModules({ modules: [fixtureModule] })
+    const { kernel } = loadMainModules({
+      modules: [fixtureModule],
+      moduleMcpTools: {
+        'weather-deck': [
+          { name: 'weather_deck_forecast', description: 'Forecast from the fixture module.', access: 'read' },
+        ],
+      },
+    })
 
     // The one resolver, behind both surfaces — the production wiring. Feeding the
     // gateway and `extension.status` separate literals would agree by construction.
@@ -3563,14 +3604,14 @@ test('automation', async () => {
       schemaVersion: 1 as const,
       plugins: [
         {
-          id: 'weather-module',
+          id: 'weather-skills',
           name: 'Weather',
           publisher: { name: 'Acme', verified: true },
-          summary: 'Local forecasts in a panel.',
+          summary: 'Local forecasts for an agent.',
           category: 'Insight',
           icon: 'cloud',
           latest: 3,
-          provides: ['module'] as MarketplaceComponentKind[],
+          provides: ['skills'] as MarketplaceComponentKind[],
           source: 'https://example.test/weather.zip',
           tags: ['forecast'],
         },
@@ -3613,14 +3654,15 @@ test('automation', async () => {
     }
     assert.equal(listed.total, 2)
     assert.equal(listed.source, 'bundled', 'the read discloses where the index came from')
-    assert.equal(listed.plugins.find((plugin) => plugin.id === 'weather-module')?.signed, false)
+    assert.equal(listed.plugins.find((plugin) => plugin.id === 'weather-skills')?.signed, false)
 
-    const modulesOnly = await tool(tools, 'marketplace.list').handler({ provides: 'module' })
+    const skillsOnly = await tool(tools, 'marketplace.list').handler({ provides: 'skills' })
     assert.deepEqual(
-      (modulesOnly.structuredContent as { plugins: Array<{ id: string }> }).plugins.map((plugin) => plugin.id),
-      ['weather-module'],
-      'the module-first facet is a provides filter over the same index',
+      (skillsOnly.structuredContent as { plugins: Array<{ id: string }> }).plugins.map((plugin) => plugin.id),
+      ['weather-skills'],
+      'a provides filter over the same index',
     )
+    assert.equal((await tool(tools, 'marketplace.list').handler({ provides: 'module' })).isError, true)
     const searched = await tool(tools, 'marketplace.list').handler({ query: 'RAILWAY' })
     assert.deepEqual(
       (searched.structuredContent as { plugins: Array<{ id: string }> }).plugins.map((plugin) => plugin.id),

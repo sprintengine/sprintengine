@@ -1,299 +1,284 @@
 import assert from 'node:assert/strict'
-import { createHash, generateKeyPairSync, sign } from 'crypto'
-import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { basename, join } from 'path'
 
-import type { CapabilityManifest } from '../../shared/modules/manifest'
-import { canonicalManifestPayload } from '../../shared/modules/third-party-manifest'
-import { manifestFingerprint, type ModuleTrustContext } from './module-signature'
+import { validateExtensionManifest } from '../../../packages/extension-sdk/src/extension-manifest'
+import {
+  extensionManifest,
+  HELLO_MOUNT_SOURCE,
+  newExtensionSigner,
+  signExtensionFolder,
+  writeExtensionFolder,
+} from '../../../tests/extension-folder'
+import { capabilityManifestOf } from '../../shared/modules/third-party-manifest'
+import { extensionContentSync, type ModuleTrustContext } from './module-signature'
 import { collectThirdPartyRendererEntries, rendererEntryView } from './third-party-renderer-entries'
 import { discoverUserModules, type InstalledModule } from './user-module-registry'
 import { test } from 'vitest'
 
-test('third-party-renderer-entries', async () => {
-  const EMPTY_TRUST: ModuleTrustContext = { trustedModules: new Map() }
-  const ABSOLUTE_PATH_PATTERN = /(^|[\s'"])(?:\/[\w.-]|[A-Za-z]:\\)/
+const EMPTY_TRUST: ModuleTrustContext = { trustedModules: new Map() }
+const ABSOLUTE_PATH_PATTERN = /(^|[\s'"])(?:\/[\w.-]|[A-Za-z]:\\)/
 
-  async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-    const dir = await mkdtemp(join(tmpdir(), 'mc-renderer-entries-'))
-    try {
-      return await fn(dir)
-    } finally {
-      await rm(dir, { recursive: true, force: true })
-    }
+// A ui-tier extension with one panel drawn by `dist/panel.js`.
+const PANEL_MANIFEST = (id: string, overrides: Record<string, unknown> = {}) =>
+  extensionManifest({
+    id,
+    tier: 'ui',
+    main: undefined,
+    contributes: { panels: [{ id: 'board', title: 'Board', entry: 'dist/panel.js' }] },
+    ...overrides,
+  })
+
+async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
+  const dir = await mkdtemp(join(tmpdir(), 'mc-renderer-entries-'))
+  try {
+    return await fn(dir)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
   }
+}
 
-  async function writeModule(
-    root: string,
-    id: string,
-    manifest: Record<string, unknown>,
-    files: Record<string, string> = {},
-  ): Promise<void> {
-    const dir = join(root, id)
-    await mkdir(dir, { recursive: true })
-    // The manifest lists its files' digests, as `sprintengine-extension sign`
-    // writes them, so a grant for it covers the bundle being served.
-    const digests = Object.fromEntries(
-      Object.entries(files).map(([name, content]) => [name, createHash('sha256').update(content).digest('hex')]),
-    )
-    await writeFile(
-      join(dir, 'manifest.json'),
-      JSON.stringify({
-        id,
-        displayName: `Module ${id}`,
-        version: 1,
-        engines: { hostApi: 3 },
-        files: digests,
-        ...manifest,
+function writePanelExtension(
+  root: string,
+  id: string,
+  files: Record<string, string> = { 'dist/panel.js': HELLO_MOUNT_SOURCE },
+): string {
+  return writeExtensionFolder(join(root, `local.${id}`), { manifest: PANEL_MANIFEST(id), files })
+}
+
+// The grant Settings → Extensions records: the content the folder holds now.
+function grantsFor(...folders: string[]): ModuleTrustContext {
+  return {
+    trustedModules: new Map(
+      folders.map((folder) => {
+        const content = extensionContentSync(folder)
+        assert.ok(content.ok)
+        return [basename(folder), content.fingerprint]
       }),
+    ),
+  }
+}
+
+// Only trusted extensions are servable; signed-pending, unsigned, and invalid
+// stay blocked with their existing statuses.
+test('only a trusted extension’s entries are served', async () => {
+  await withTempDir(async (root) => {
+    const approved = writePanelExtension(root, 'approved')
+    writePanelExtension(root, 'unapproved')
+    signExtensionFolder(writePanelExtension(root, 'pending'), newExtensionSigner())
+    const tampered = writePanelExtension(root, 'tampered')
+    signExtensionFolder(tampered, newExtensionSigner())
+    await writeFile(join(tampered, 'dist', 'panel.js'), 'export function mount() { /* evil */ }\n')
+
+    const { modules } = await discoverUserModules(root, grantsFor(approved))
+    const statuses = Object.fromEntries(modules.map((module) => [module.key, module.trust.status]))
+    assert.deepEqual(statuses, {
+      'local.approved': 'trusted',
+      'local.pending': 'signed',
+      'local.tampered': 'invalid',
+      'local.unapproved': 'unsigned',
+    })
+
+    const served = await collectThirdPartyRendererEntries(modules)
+    assert.deepEqual(
+      served.entries.map((entry) => entry.id),
+      ['local.approved'],
     )
-    for (const [name, content] of Object.entries(files)) {
-      await writeFile(join(dir, name), content)
+    assert.deepEqual(served.entries[0]!.entries, { 'dist/panel.js': HELLO_MOUNT_SOURCE })
+    assert.equal(served.entries[0]!.extension.id, 'approved')
+    assert.equal(served.entries[0]!.manifest.id, 'local.approved')
+    assert.equal(served.entries[0]!.assetOrigin, undefined)
+    assert.deepEqual(served.failures, {}, 'trust-blocked extensions are not serving failures')
+
+    const views = Object.fromEntries(modules.map((module) => [module.key, rendererEntryView(module)]))
+    assert.equal(views['local.approved']!.availability, 'available')
+    assert.equal(views['local.pending']!.availability, 'blocked')
+    assert.equal(views['local.unapproved']!.availability, 'blocked')
+    assert.equal(views['local.tampered']!.availability, 'blocked')
+  })
+})
+
+test('each distinct entry is served once, whichever surfaces share it', async () => {
+  await withTempDir(async (root) => {
+    const folder = writeExtensionFolder(join(root, 'local.shared'), {
+      manifest: PANEL_MANIFEST('shared', {
+        contributes: {
+          panels: [{ id: 'board', title: 'Board', entry: 'dist/panel.js' }],
+          doors: [{ id: 'room', title: 'Room', entry: 'dist/panel.js' }],
+          settingsSections: [{ id: 'prefs', title: 'Prefs', entry: 'dist/settings.mjs' }],
+        },
+      }),
+      files: { 'dist/panel.js': HELLO_MOUNT_SOURCE, 'dist/settings.mjs': 'export function mount() {}\n' },
+    })
+    const { modules } = await discoverUserModules(root, grantsFor(folder))
+    const served = await collectThirdPartyRendererEntries(modules)
+    assert.deepEqual(Object.keys(served.entries[0]!.entries), ['dist/panel.js', 'dist/settings.mjs'])
+  })
+})
+
+// A trusted extension with no window code is still served, with no entries,
+// so the window registers its commands, menus and top bar items.
+test('a trusted code-free extension is served with no entries', async () => {
+  await withTempDir(async (root) => {
+    const folder = writeExtensionFolder(join(root, 'local.aliases'), {
+      manifest: extensionManifest({
+        id: 'aliases',
+        tier: 'declarative',
+        permissions: undefined,
+        main: undefined,
+        contributes: { commands: [{ id: 'backlog.toggle', title: 'Toggle backlog', action: 'panel.backlog.toggle' }] },
+      }),
+      files: {},
+    })
+    const { modules } = await discoverUserModules(root, grantsFor(folder))
+    assert.equal(rendererEntryView(modules[0]!).availability, 'none')
+    const served = await collectThirdPartyRendererEntries(modules)
+    assert.deepEqual(
+      served.entries.map((entry) => [entry.id, entry.entries]),
+      [['local.aliases', {}]],
+    )
+  })
+})
+
+// An entry escaping the extension's folder is rejected with an explicit error
+// that never leaks an absolute path. Manifest validation already rejects ".."
+// and absolute paths, so this exercises the defense-in-depth containment layer
+// with constructed InstalledModule fixtures, as if a crafted manifest slipped
+// past parsing.
+test('an entry outside the extension’s folder is never served', async () => {
+  await withTempDir(async (root) => {
+    await writeFile(join(root, 'escape.js'), 'export {}')
+    const moduleRoot = join(root, 'local.crafted')
+    const validated = validateExtensionManifest(PANEL_MANIFEST('crafted'))
+    assert.ok(validated.ok)
+    const escapingEntries: Record<string, string> = {
+      traversal: '../escape.js',
+      'nested-traversal': 'nested/../../escape.js',
+      absolute: join(root, 'escape.js'),
+      'module-root-itself': '.',
     }
-  }
 
-  // Sign the normalized (post-parse) manifest shape and write it back so the
-  // reparsed manifest's canonical payload matches the signed bytes.
-  async function writeSignedModule(
-    root: string,
-    id: string,
-    manifest: Record<string, unknown>,
-    files: Record<string, string> = {},
-  ): Promise<CapabilityManifest> {
-    await writeModule(root, id, manifest, files)
-    const { modules } = await discoverUserModules(root, EMPTY_TRUST)
-    const parsed = modules.find((module) => module.manifest.id === id)?.manifest
-    assert.ok(parsed, `fixture module "${id}" must parse`)
-    const { publicKey, privateKey } = generateKeyPairSync('ed25519')
-    const signature = sign(null, Buffer.from(canonicalManifestPayload(parsed), 'utf8'), privateKey).toString('base64')
-    const signed: CapabilityManifest = {
-      ...parsed,
-      signature: {
-        algorithm: 'ed25519',
-        publicKey: publicKey.export({ type: 'spki', format: 'der' }).toString('base64'),
-        signature,
-      },
-    }
-    await writeFile(join(root, id, 'manifest.json'), JSON.stringify(signed))
-    return signed
-  }
-
-  async function trustOf(root: string, id: string): Promise<ModuleTrustContext> {
-    const { modules } = await discoverUserModules(root, EMPTY_TRUST)
-    const manifest = modules.find((module) => module.manifest.id === id)?.manifest
-    assert.ok(manifest, `fixture module "${id}" must parse`)
-    return { trustedModules: new Map([[id, manifestFingerprint(manifest)]]) }
-  }
-
-  // Only trusted modules are servable; signed-pending, unsigned, and invalid
-  // stay blocked with their existing statuses.
-  async function testTrustGateMatrix(): Promise<void> {
-    await withTempDir(async (root) => {
-      const bundle = { 'renderer.js': 'export function registerRenderer() {}' }
-      const entry = { entry: { renderer: 'renderer.js' } }
-      await writeModule(root, 'approved', entry, bundle)
-      await writeModule(root, 'unapproved', entry, bundle)
-      await writeSignedModule(root, 'pending', entry, bundle)
-      const tamperTarget = await writeSignedModule(root, 'tampered', entry, bundle)
-      await writeFile(
-        join(root, 'tampered', 'manifest.json'),
-        JSON.stringify({ ...tamperTarget, displayName: 'Evil module' }),
-      )
-
-      const trust = await trustOf(root, 'approved')
-      const { modules } = await discoverUserModules(root, trust)
-      const statuses = Object.fromEntries(modules.map((module) => [module.manifest.id, module.trust.status]))
-      assert.deepEqual(statuses, {
-        approved: 'trusted',
-        pending: 'signed',
-        tampered: 'invalid',
-        unapproved: 'unsigned',
-      })
-
-      const served = await collectThirdPartyRendererEntries(modules)
-      assert.deepEqual(
-        served.entries.map((served) => served.id),
-        ['approved'],
-      )
-      assert.equal(served.entries[0].code, 'export function registerRenderer() {}')
-      assert.deepEqual(served.failures, {}, 'trust-blocked modules are not serving failures')
-
-      const views = Object.fromEntries(modules.map((module) => [module.manifest.id, rendererEntryView(module)]))
-      assert.equal(views.approved.availability, 'available')
-      assert.equal(views.pending.availability, 'blocked')
-      assert.equal(views.unapproved.availability, 'blocked')
-      assert.equal(views.tampered.availability, 'blocked')
-    })
-  }
-
-  // entry.renderer escaping the module root is rejected with an explicit error
-  // that never leaks an absolute path. Manifest validation already rejects ".."
-  // and absolute entry strings at parse time (isSafeRelativePath), so this
-  // exercises the defense-in-depth containment layer with constructed
-  // InstalledModule fixtures, as if a crafted manifest slipped past parsing.
-  async function testContainment(): Promise<void> {
-    await withTempDir(async (root) => {
-      await writeFile(join(root, 'escape.js'), 'export {}')
-      const moduleRoot = join(root, 'crafted')
-      await mkdir(moduleRoot, { recursive: true })
-      const escapingEntries: Record<string, string> = {
-        traversal: '../escape.js',
-        'nested-traversal': 'nested/../../escape.js',
-        absolute: join(root, 'escape.js'),
-        'module-root-itself': '.',
+    for (const [id, entry] of Object.entries(escapingEntries)) {
+      const extension = {
+        ...validated.manifest,
+        contributes: { ...validated.manifest.contributes, panels: [{ id: 'board', title: 'Board', entry }] },
       }
-
-      for (const [id, renderer] of Object.entries(escapingEntries)) {
-        const crafted: InstalledModule = {
-          manifest: {
-            id,
-            displayName: `Crafted ${id}`,
-            version: 1,
-            defaultEnabled: true,
-            source: 'third-party',
-            engines: { hostApi: 3 },
-            entry: { renderer },
-          },
-          moduleRoot,
-          trust: { status: 'trusted' },
-        }
-        const view = rendererEntryView(crafted)
-        assert.equal(view.availability, 'error', `${id} entry must be rejected`)
-        assert.equal(view.message, 'entry.renderer must resolve inside the module root.')
-        assert.doesNotMatch(view.message ?? '', ABSOLUTE_PATH_PATTERN)
-
-        const served = await collectThirdPartyRendererEntries([crafted])
-        assert.deepEqual(served.entries, [], `${id} entry is never served, even for a trusted module`)
-        assert.equal(served.failures[id], 'entry.renderer must resolve inside the module root.')
+      const crafted: InstalledModule = {
+        key: id,
+        publisher: 'local',
+        manifest: capabilityManifestOf(id, 'local', extension),
+        extension,
+        moduleRoot,
+        trust: { status: 'trusted', verifiedFiles: { [entry]: 'a'.repeat(64) } },
       }
-    })
-  }
-
-  // The parser front line: a manifest declaring ".." or absolute entry paths is
-  // rejected before it ever becomes an installed module.
-  async function testManifestValidationRejectsEscapingEntries(): Promise<void> {
-    await withTempDir(async (root) => {
-      await writeModule(root, 'traversal', { entry: { renderer: '../escape.js' } })
-      await writeModule(root, 'absolute', { entry: { renderer: join(root, 'escape.js') } })
-      const { modules, rejected } = await discoverUserModules(root, EMPTY_TRUST)
-      assert.deepEqual(modules, [])
-      assert.equal(rejected.length, 2)
-      for (const rejection of rejected) {
-        assert.match(rejection.issues[0].message, /safe relative path/)
-      }
-    })
-  }
-
-  // Content-bound trust: tampering with a trusted module's manifest removes it
-  // from the servable set (invalid when signed; trust-void when unsigned).
-  async function testTamperRemovesFromServableSet(): Promise<void> {
-    await withTempDir(async (root) => {
-      const signed = await writeSignedModule(
-        root,
-        'demo',
-        { entry: { renderer: 'renderer.js' } },
-        { 'renderer.js': 'export {}' },
-      )
-      const trust = await trustOf(root, 'demo')
-
-      const before = await discoverUserModules(root, trust)
-      assert.equal(before.modules[0].trust.status, 'trusted')
-      assert.equal((await collectThirdPartyRendererEntries(before.modules)).entries.length, 1)
-
-      // Tamper a signed field on disk: permissions escalation under a trusted id.
-      await writeFile(
-        join(root, 'demo', 'manifest.json'),
-        JSON.stringify({ ...signed, permissions: ['process:spawn'] }),
-      )
-      const after = await discoverUserModules(root, trust)
-      assert.equal(after.modules[0].trust.status, 'invalid')
-      const served = await collectThirdPartyRendererEntries(after.modules)
-      assert.deepEqual(served.entries, [], 'a tampered manifest is no longer servable')
-      assert.equal(rendererEntryView(after.modules[0]).availability, 'blocked')
-    })
-  }
-
-  async function testMissingBundleAndNoEntry(): Promise<void> {
-    await withTempDir(async (root) => {
-      await writeModule(root, 'missing-bundle', { entry: { renderer: 'renderer.js' } })
-      await writeModule(root, 'manifest-only', {})
-      const trust = await trustOf(root, 'missing-bundle')
-      const { modules } = await discoverUserModules(root, trust)
-
-      const missing = modules.find((module) => module.manifest.id === 'missing-bundle')!
-      const view = rendererEntryView(missing)
-      assert.equal(view.availability, 'error')
-      assert.equal(view.message, 'entry.renderer bundle file is missing.')
+      const view = rendererEntryView(crafted)
+      assert.equal(view.availability, 'error', `${id} entry must be rejected`)
+      assert.equal(view.message, 'entry must resolve inside the module root.')
       assert.doesNotMatch(view.message ?? '', ABSOLUTE_PATH_PATTERN)
 
-      const manifestOnly = modules.find((module) => module.manifest.id === 'manifest-only')!
-      assert.equal(rendererEntryView(manifestOnly).availability, 'none')
+      const served = await collectThirdPartyRendererEntries([crafted])
+      assert.deepEqual(served.entries, [], `${id} entry is never served, even for a trusted extension`)
+      assert.equal(served.failures[id], 'entry must resolve inside the module root.')
+    }
+  })
+})
 
-      const served = await collectThirdPartyRendererEntries(modules)
-      assert.deepEqual(served.entries, [])
-      assert.equal(served.failures['missing-bundle'], 'entry.renderer bundle file is missing.')
-      assert.equal('manifest-only' in served.failures, false)
+// The parser front line: a manifest declaring ".." or absolute entry paths is
+// rejected before it ever becomes an installed extension.
+test('discovery rejects a manifest whose entry escapes its folder', async () => {
+  await withTempDir(async (root) => {
+    const escaping = (id: string, entry: string) =>
+      writeExtensionFolder(join(root, `local.${id}`), {
+        manifest: PANEL_MANIFEST(id, { contributes: { panels: [{ id: 'board', title: 'Board', entry }] } }),
+        files: {},
+      })
+    escaping('traversal', '../escape.js')
+    escaping('absolute', '/tmp/escape.js')
+    const { modules, rejected } = await discoverUserModules(root, EMPTY_TRUST)
+    assert.deepEqual(modules, [])
+    assert.equal(rejected.length, 2)
+    for (const rejection of rejected) {
+      assert.equal(rejection.issues[0]!.path, 'contributes.panels[0].entry')
+      assert.match(rejection.issues[0]!.message, /relative path inside the extension/)
+    }
+  })
+})
+
+// Content-bound trust: changing a trusted extension's files removes it from
+// the servable set (the grant names other content now).
+test('a changed file takes a granted extension out of the served set', async () => {
+  await withTempDir(async (root) => {
+    const folder = writePanelExtension(root, 'demo')
+    const trust = grantsFor(folder)
+
+    const before = await discoverUserModules(root, trust)
+    assert.equal(before.modules[0]!.trust.status, 'trusted')
+    assert.equal((await collectThirdPartyRendererEntries(before.modules)).entries.length, 1)
+
+    await writeFile(
+      join(folder, 'extension.json'),
+      JSON.stringify(PANEL_MANIFEST('demo', { permissions: ['network'] })),
+    )
+    const after = await discoverUserModules(root, trust)
+    assert.equal(after.modules[0]!.trust.status, 'unsigned')
+    const served = await collectThirdPartyRendererEntries(after.modules)
+    assert.deepEqual(served.entries, [], 'changed content is no longer servable')
+    assert.equal(rendererEntryView(after.modules[0]!).availability, 'blocked')
+  })
+})
+
+test('a missing entry is a serving failure; an untrusted extension with no entries is none', async () => {
+  await withTempDir(async (root) => {
+    const missing = writePanelExtension(root, 'missing-entry', {})
+    writeExtensionFolder(join(root, 'local.content-only'), {
+      manifest: extensionManifest({ id: 'content-only', tier: 'content', permissions: undefined, main: undefined }),
+      files: {},
     })
-  }
+    const { modules } = await discoverUserModules(root, grantsFor(missing))
 
-  // What `extension.rendererEntries` serves: only the trusted entries, each with
-  // the private origin its assets are served at in this Studio's windows.
-  async function testKernelIpcSurface(): Promise<void> {
-    await withTempDir(async (root) => {
-      await writeModule(root, 'approved', { entry: { renderer: 'renderer.js' } }, { 'renderer.js': 'export {}' })
-      await writeModule(root, 'unapproved', { entry: { renderer: 'renderer.js' } }, { 'renderer.js': 'export {}' })
-      const trust = await trustOf(root, 'approved')
-      const { modules } = await discoverUserModules(root, trust)
-      const result = await collectThirdPartyRendererEntries(modules, trust, (id) => `module-asset://${id}.test`)
-      assert.deepEqual(
-        result.entries.map((entry) => [entry.id, entry.assetOrigin]),
-        [['approved', 'module-asset://approved.test']],
-      )
-    })
-  }
+    const missingModule = modules.find((module) => module.key === 'local.missing-entry')!
+    const view = rendererEntryView(missingModule)
+    assert.equal(view.availability, 'error')
+    assert.equal(view.message, 'The window entry dist/panel.js is missing.')
+    assert.doesNotMatch(view.message ?? '', ABSOLUTE_PATH_PATTERN)
 
-  // A trusted module built for a host API this app does not provide is not
-  // sent, and says so; trusting it would not help.
-  async function testHostApiGate(): Promise<void> {
-    await withTempDir(async (root) => {
-      const bundle = { 'renderer.js': 'export function registerRenderer() {}' }
-      await writeModule(root, 'future', { entry: { renderer: 'renderer.js' }, engines: { hostApi: 99 } }, bundle)
-      await writeModule(root, 'current', { entry: { renderer: 'renderer.js' } }, bundle)
-      const trust: ModuleTrustContext = {
-        trustedModules: new Map([
-          ...(await trustOf(root, 'future')).trustedModules,
-          ...(await trustOf(root, 'current')).trustedModules,
-        ]),
-      }
-      const { modules } = await discoverUserModules(root, trust)
-      const served = await collectThirdPartyRendererEntries(modules)
-      assert.deepEqual(
-        served.entries.map((entry) => entry.id),
-        ['current'],
-      )
-      assert.deepEqual(served.failures, {}, 'an incompatible module is blocked, not a serving failure')
-      const future = modules.find((module) => module.manifest.id === 'future')
-      assert.ok(future)
-      assert.equal(future.trust.status, 'trusted')
-      const view = rendererEntryView(future)
-      assert.equal(view.availability, 'blocked')
-      assert.match(view.message ?? '', /host API 99/)
-    })
-  }
+    const contentOnly = modules.find((module) => module.key === 'local.content-only')!
+    assert.equal(contentOnly.trust.status, 'unsigned')
+    assert.equal(rendererEntryView(contentOnly).availability, 'none')
 
-  async function main(): Promise<void> {
-    await testTrustGateMatrix()
-    await testContainment()
-    await testManifestValidationRejectsEscapingEntries()
-    await testTamperRemovesFromServableSet()
-    await testMissingBundleAndNoEntry()
-    await testKernelIpcSurface()
-    await testHostApiGate()
-    console.log('third-party-renderer-entries tests passed')
-  }
+    const served = await collectThirdPartyRendererEntries(modules)
+    assert.deepEqual(served.entries, [])
+    assert.equal(served.failures['local.missing-entry'], 'The window entry dist/panel.js is missing.')
+    assert.equal('local.content-only' in served.failures, false)
+  })
+})
 
-  const suiteRun = main()
+test('an entry that changed after verification is not served', async () => {
+  await withTempDir(async (root) => {
+    const folder = writePanelExtension(root, 'swapped')
+    const { modules } = await discoverUserModules(root, grantsFor(folder))
+    await writeFile(join(folder, 'dist', 'panel.js'), 'export function mount() { /* swapped */ }\n')
+    const served = await collectThirdPartyRendererEntries(modules)
+    assert.deepEqual(served.entries, [])
+    assert.equal(
+      served.failures['local.swapped'],
+      'A window entry changed after the extension was verified, so it was not served.',
+    )
+  })
+})
 
-  await suiteRun
+// What `extension.rendererEntries` serves: only the trusted entries, each with
+// the private origin its assets are served at in this Studio's windows.
+test('each served extension carries its asset origin', async () => {
+  await withTempDir(async (root) => {
+    const approved = writePanelExtension(root, 'approved')
+    writePanelExtension(root, 'unapproved')
+    const { modules } = await discoverUserModules(root, grantsFor(approved))
+    const result = await collectThirdPartyRendererEntries(modules, (id) => `module-asset://${id}.test`)
+    assert.deepEqual(
+      result.entries.map((entry) => [entry.id, entry.assetOrigin]),
+      [['local.approved', 'module-asset://local.approved.test']],
+    )
+  })
 })

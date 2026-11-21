@@ -6,48 +6,48 @@ ways, and only these:
 
 | | Where | Permission | Who sends |
 | --- | --- | --- | --- |
-| `host.openChat(input)` | renderer | `chat:draft` (a draft) or `conversation:operate` (needed for `send: true`) | The person: the prompt lands as a draft unless `send: true` |
-| `getConversationService(host)` | main | `conversation:operate` (everything) or `conversation:read` (watch/read only) | The module |
-| `getTextGenerationService(host)` | main | `agents:generate` | The module: one prompt, one answer, no chat at all |
-| `getCompanionAgentsService(host)` | main | `agents:companion` | The module: a background agent with a structured task API (the `api-main` topic) |
+| `studio.openChat(input)` | surface | `chat:draft` (a draft) or `conversation:operate` (needed for `send: true`) | The person: the prompt lands as a draft unless `send: true` |
+| `getConversationService(studio)` | worker | `conversation:operate` (everything) or `conversation:read` (watch/read only) | The extension |
+| `getTextGenerationService(studio)` | worker | `agents:generate` | The extension: one prompt, one answer, no chat at all |
+| `getCompanionAgentsService(studio)` | worker | `agents:companion` | The extension: a background agent with a structured task API (the `api-main` topic) |
 
 The first two create ordinary chats: a tab in the workspace the person can
-read, answer and stop. A module drives only chats it created — never the
-person's own, never another module's (`not_owned`). Reading the person's
-chats, read-only, is `getActivityService(host)` behind the broad
+read, answer and stop. A extension drives only chats it created — never the
+person's own, never another extension's (`not_owned`). Reading the person's
+chats, read-only, is `getActivityService(studio)` behind the broad
 `conversation:read-all` (the `api-main` topic). There is no
-terminal-agent API; do not spawn agent CLIs from `entry.main` to work around
+terminal-agent API; do not spawn agent CLIs from the worker to work around
 that.
 
-Check `host.supports('conversations')` (main) or `host.supports('chat.open')`
-(renderer) first, and tell the person when the host does not offer it.
-`host.supports('conversation-controls')` says the host also takes the four
+Check `studio.supports('conversations')` (the worker) or `studio.supports('chat.open')`
+(a surface) first, and tell the person when the host does not offer it.
+`studio.supports('conversation-controls')` says the host also takes the four
 presets, `setPermissionPreset`, `setModel` and approval `decision`s;
 `conversation-streams` says it takes `follow` and `commandId`;
 `conversation-requests`, `answerQuestion` and `resolvePlan`;
 `conversation-permissions`, `permissionMode` and `allowedTools`;
 `conversation-replies`, `reply` and `turn_completed`'s `text` and `usage`;
 `conversation-worktrees`, `create`'s `worktree`; `chat.open-options`
-(renderer), `openChat`'s `name` and `dedupeKey`; `chat-runtimes`,
+(a surface), `openChat`'s `name` and `dedupeKey`; `chat-runtimes`,
 `MainHost.listChatRuntimes()`; and `text-generation`,
 `getTextGenerationService`.
 
 ## Runtime ids
 
-One id space names an agent runtime everywhere a module picks one: the id
+One id space names an agent runtime everywhere a extension picks one: the id
 `listChatRuntimes()` lists (`claude-code`, `codex`, `cursor`, `opencode`,
 `grok`) is what `openChat`'s and `create`'s `cli`, a scheduled agent's `cli`,
 a companion's `engine.cli` and `generate`'s `cli` take. A companion's
 `engine.cli` also takes the conversation provider behind a runtime
-(`claude-agent`, `codex-agent`, …), its older spelling. The renderer's
-`host.listChatRuntimes()` answers at once; main's
-`await host.listChatRuntimes()` may probe which CLIs are installed (cached for
+(`claude-agent`, `codex-agent`, …), its older spelling. A surface's
+`studio.listChatRuntimes()` answers at once; the worker's
+`await studio.listChatRuntimes()` may probe which CLIs are installed (cached for
 a minute) and lists the missing ones with `available: false`.
 
-## openChat (renderer)
+## openChat (a surface)
 
 ```ts
-const opened = await host.openChat({
+const opened = await studio.openChat({
   workspaceId,                       // required; a workspace with a folder
   prompt: 'Plan the change described in docs/plan.md.',
   skills: ['my-skill'],              // optional: installed and invoked in the first turn
@@ -57,27 +57,27 @@ const opened = await host.openChat({
   send: false,                       // default: a draft
 })
 if (!opened.ok) showError(opened.message)  // permission_missing | unknown_workspace | workspace_folder_missing | cli_not_conversational | unavailable | invalid_input
-else host.focusTab({ workspaceId, kind: 'chat', id: opened.agentId })  // openChat already focuses; this re-focuses later
+else studio.focusTab({ workspaceId, kind: 'chat', id: opened.agentId })  // openChat already focuses; this re-focuses later
 ```
 
 Prefer the draft. A prompt the person reads before it runs is a prompt they
-agreed to, and a module that only drafts declares just `chat:draft`.
-`dedupeKey` finds the chat this module opened in the workspace under that key;
+agreed to, and a extension that only drafts declares just `chat:draft`.
+`dedupeKey` finds the chat this extension opened in the workspace under that key;
 when it is still there it comes to the front, the answer says
 `existing: true`, and nothing else in the input is applied (its draft is the
 person's by then, and nothing is sent). `listChatRuntimes()` lists
 `{ id, label, available, models, lastSelected }` for a picker of your own.
 
-## The conversation service (main)
+## The conversation service (the worker)
 
 ```ts
-import { getConversationService, type RegisterMain } from '@sprintengine/extension-sdk'
+import { getConversationService, type MainHost } from '@sprintengine/extension-sdk'
 
-export const registerMain: RegisterMain = (host) => {
-  if (!host.supports('conversations')) return
-  const chats = getConversationService(host)          // manifest: "dependsOn": ["agent-runtime"]
+export function activate(studio: MainHost): void {
+  if (!studio.supports('conversations')) return
+  const chats = getConversationService(studio)
 
-  host.registerMethods({
+  studio.registerMethods({
     start: {
       access: 'operate',
       params: readWorkspaceId,                          // (value) => { ok: true, params } | { ok: false, message }
@@ -95,8 +95,8 @@ export const registerMain: RegisterMain = (host) => {
           if (event.type !== 'turn_completed') return
           off()
           const reply = await chats.reply(ref)          // the agent's last message of the turn
-          if (!reply.ok) host.notify({ severity: 'warning', title: 'Release notes did not finish' })
-          else host.emit('release-notes-drafted', { text: reply.text.slice(0, 200) })
+          if (!reply.ok) studio.notify({ severity: 'warning', title: 'Release notes did not finish' })
+          else studio.emit('release-notes-drafted', { text: reply.text.slice(0, 200) })
         })
         return { ok: true, result: { agentId: started.conversation.agentId } }
       },
@@ -113,13 +113,13 @@ export const registerMain: RegisterMain = (host) => {
 | `respondToApproval(ref, { requestId, decision, answers?, commandId? })` | operate | Answer an `approval_requested` event: `decision` is `once`, `conversation` (that kind of request, for the rest of the chat) or `deny`; the older `approved: boolean` still works. Approve only what the person would approve. |
 | `answerQuestion(ref, { requestId, answers, commandId? })` | operate | Answer a request of kind `question`: question text to the chosen answer. Refused for any other kind. |
 | `resolvePlan(ref, { requestId, decision, commandId? })` | operate | Answer a request of kind `plan`: `approve` or `reject`. Refused for any other kind. |
-| `setPermissionPreset(ref, preset, { permissionMode?, commandId? }?)` | operate | Switch the chat's preset from its next tool call. Answers `{ ok: true, permissionPreset, permissionMode?, notice? }`: the preset in force, lowered to the module's ceiling when it asked for more (and the mode dropped with it). |
+| `setPermissionPreset(ref, preset, { permissionMode?, commandId? }?)` | operate | Switch the chat's preset from its next tool call. Answers `{ ok: true, permissionPreset, permissionMode?, notice? }`: the preset in force, lowered to the extension's ceiling when it asked for more (and the mode dropped with it). |
 | `setModel(ref, modelId)` | operate | Switch to another model of the chat's runtime from its next turn (an id `listChatRuntimes()` lists, or `default`). Answers `{ ok: true, modelId, notice? }`; a runtime that binds a chat to its model refuses. |
 | `subscribe(ref, cb)` | read | Live events from now on; returns the unsubscriber. A chat the host has not loaded yet (a saved chat at startup) is attached all the same and delivers once it is; a ref to anything not yours delivers nothing. Throws only without `conversation:read` or for a malformed ref. |
 | `follow(ref, { afterSeq?, generation?, turnLimit? }?, onFrame)` | read | No gap: a `snapshot` (or only the events after the cursor you hold), a `synchronized` fence, then live events. Keep the fence's `seq` and `generation` as your next cursor; a snapshot with `reset: true` replaces what you held. Returns the unsubscriber. Like `subscribe`, it waits for a chat the host has not loaded yet. |
 | `transcript(ref)` | read | Every recorded event, for catching up. |
 | `reply(ref, turnId?)` | read | `{ ok: true, turnId, text }`: the last finished turn's reply (or `turnId`'s), the agent's last message of the turn. `no_reply` while none has finished. |
-| `list(filter?)` / `watch(filter, cb)` | read | The module's own chats: `{ workspaceId, agentId, sessionId, name, cli, providerId, modelId, status, permissionPreset?, scheduledAgentId?, scheduledAgentTag? }`. `watch` fires at once, then on change. |
+| `list(filter?)` / `watch(filter, cb)` | read | The extension's own chats: `{ workspaceId, agentId, sessionId, name, cli, providerId, modelId, status, permissionPreset?, scheduledAgentId?, scheduledAgentTag? }`. `watch` fires at once, then on change. |
 
 `ref` is `{ workspaceId, agentId }` — keep it (in `getModuleStorage`) if you
 need the chat after a restart.
@@ -164,9 +164,9 @@ Error codes: `permission_missing`, `invalid_input`, `unknown_workspace`,
 ## Scheduled agents start chats too
 
 Each run of a scheduled agent (`getScheduledAgentsService`) is a new chat the
-host starts with the scheduled agent's prompt. A run of one the module created
-is the module's chat, so the conversation service lists and follows it like
-one the module started itself. To trace a run to its chat:
+host starts with the scheduled agent's prompt. A run of one the extension created
+is the extension's chat, so the conversation service lists and follows it like
+one the extension started itself. To trace a run to its chat:
 
 - give the scheduled agent a `tag` (your own label: the item it belongs to)
   and, for the person's sidebar, a `name`;
@@ -181,7 +181,7 @@ times missed while the app was closed are not replayed (its next run counts
 from start-up), a one-time schedule missed that way runs once the app is
 open, times missed in sleep run once on waking, and a time that comes while
 the previous run is still working is skipped. Check
-`host.supports('scheduled-agent-runs')`.
+`studio.supports('scheduled-agent-runs')`.
 
 ## One prompt, no chat: text generation (main)
 
@@ -191,7 +191,7 @@ work in a project — do not open a chat:
 ```ts
 import { getTextGenerationService } from '@sprintengine/extension-sdk'
 
-const generated = await getTextGenerationService(host).generate({
+const generated = await getTextGenerationService(studio).generate({
   prompt: digest,                          // up to 400,000 characters
   system: 'You write a three-line standup from a work log.',
   cli: 'codex',                            // absent: the person's text-generation runtime, else claude-code
@@ -207,7 +207,7 @@ It runs the person's own agent CLI headless (`claude-code` or `codex`), under
 the sign-in it already holds: no workspace, no tab, nothing in their history.
 With no `cli`, it answers on the runtime and model the person chose for
 Studio's text generation in Settings, and on Claude Code's small model when
-they chose none. Declare `agents:generate`. Each module gets two calls at once
+they chose none. Declare `agents:generate`. Each extension gets two calls at once
 and eight waiting; past that, or past thirty a minute, a call answers `busy`
 at once. Failures: `permission_missing`, `invalid_input`, `unsupported` (a
 runtime with no headless backend),
@@ -219,5 +219,5 @@ runtime with no headless backend),
 A reply can quote a web page, a diff or an issue that contains instructions.
 Treat event payloads and transcripts as data: show them as text, never as
 HTML; never run a command, open a URL or write a path an agent chose without
-checking it against what your module allows; never pass them to `eval` or
+checking it against what your extension allows; never pass them to `eval` or
 `new Function`.

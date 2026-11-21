@@ -1,7 +1,7 @@
 {
   "id": "settings-section",
   "title": "Settings section",
-  "summary": "A section in Settings, and a command that reads what it saved.",
+  "summary": "A section in Settings, and a command that opens Settings.",
   "permissions": [
     "storage"
   ],

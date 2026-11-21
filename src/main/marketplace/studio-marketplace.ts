@@ -18,10 +18,7 @@ import { SKILL_PACK_HARNESSES } from '../../shared/skill-harnesses'
 import type { SkillHarness } from '../../shared/skills'
 import { writeDiagnosticLog } from '../diagnostics-service'
 import type { McpConfigService } from '../mcp-config-service'
-import { forgetModules } from '../modules/forget-modules'
 import { readModuleTrustContextSync } from '../modules/trust-context'
-import { setModuleTrust } from '../modules/trust-store'
-import { defaultUserModuleRoot } from '../modules/user-module-registry'
 import { githubReviewChanges, resolveGithubExtension } from './github-extension-source'
 import {
   defaultMarketplacePluginStagingRoot,
@@ -32,7 +29,6 @@ import {
   createMarketplacePluginLifecycleService,
   defaultMarketplacePluginInstallStorePath,
   readMarketplacePluginInstallReceipt as readInstallReceipt,
-  readMarketplacePluginInstallReceipts,
   type MarketplacePluginInstallReceipt,
   type MarketplacePluginLifecycleInstallInput,
 } from './plugin-lifecycle'
@@ -50,15 +46,13 @@ import { readMarketplaceUpdateStates } from './update-detection'
 // Studio protocol): its registry, each installed entry against it, reviewing
 // an entry or a GitHub repository, and installing, updating and uninstalling
 // what was reviewed. The same steps in process and out of process, over the
-// data folder and the module root the Studio's kernel reads. Nothing here
+// data folder the Studio's kernel reads. Nothing here
 // needs Electron.
 //
 // The approval is the review's: a review discloses what installing would do
 // and issues a one-time token pinned to exactly that, and an install spends
 // it whatever happens next. The client names an entry, never the entry
 // itself; the Studio resolves it from its own registry (or from the token).
-// A card's `install.module` goes through the same lifecycle
-// (`cardMarketplace`): same trust gate, same receipts, same rollback.
 
 type MarketplaceRegistryReader = {
   read(input?: MarketplaceRegistryReadInput): Promise<MarketplaceRegistryReadResult>
@@ -78,15 +72,6 @@ export type StudioMarketplaceDeps = {
   fetcher?: MarketplacePluginDownloadFetch
 }
 
-/** What a card's `install.module` needs of the marketplace. */
-export type StudioCardMarketplaceSource = {
-  readMarketplaceRegistry(): Promise<MarketplaceRegistryReadResult>
-  listMarketplaceReceipts(): ReturnType<typeof readMarketplacePluginInstallReceipts>
-  installMarketplaceEntry(
-    input: MarketplacePluginLifecycleInstallInput,
-  ): Promise<MarketplacePluginRegistryInstallResult>
-}
-
 export type StudioMarketplace = {
   read(input?: MarketplaceRegistryReadInput): Promise<MarketplaceRegistryReadResult>
   updateStates(input?: MarketplaceRegistryReadInput): Promise<MarketplaceUpdateStatesResult>
@@ -96,8 +81,6 @@ export type StudioMarketplace = {
   uninstall(input: MarketplacePluginUninstallInput): Promise<MarketplacePluginUninstallResult>
   resolveGithub(url: string): Promise<GithubExtensionResolveResult>
   installGithub(input: GithubExtensionInstallInput): Promise<MarketplacePluginRegistryInstallResult>
-  /** The same lifecycle, for a card's `install.module`. */
-  readonly cardMarketplace: StudioCardMarketplaceSource
 }
 
 /** The registry client a Studio reads its marketplace through. */
@@ -151,13 +134,6 @@ export function createStudioMarketplace(deps: StudioMarketplaceDeps): StudioMark
         receiptStorePath: defaultMarketplacePluginInstallStorePath(deps.dataDir()),
         stagingRoot: defaultMarketplacePluginStagingRoot(deps.dataDir()),
         resolveSkillHarnesses: () => resolveInstalledSkillHarnesses(),
-        // The trust the review already took, written through the one trust-store
-        // writer `extension.setTrust` uses, so a trusted install does not land
-        // behind a second, identical switch in Settings.
-        setModuleTrust: async (id, manifestFp) => {
-          const { result, previous } = await setModuleTrust(deps.dataDir(), id, manifestFp)
-          return { ...result, previous }
-        },
         log: marketplaceLog,
         ...fetcher,
       }),
@@ -227,10 +203,7 @@ export function createStudioMarketplace(deps: StudioMarketplaceDeps): StudioMark
   ): Promise<GithubExtensionResolveResult> {
     const resolved = await resolveGithubExtension(url, { trustContext, ...fetcher })
     if (!resolved.ok) return resolved
-    const verify = await pipeline().verifier.verify(resolved.entry, {
-      allowUnsignedCode: true,
-      requireModuleFileDigests: true,
-    })
+    const verify = await pipeline().verifier.verify(resolved.entry)
     if (verify.classification === 'invalid' || !verify.pin) {
       return {
         ok: false,
@@ -240,14 +213,12 @@ export function createStudioMarketplace(deps: StudioMarketplaceDeps): StudioMark
     }
     const classification = verify.classification
     const receipt = installed ?? (await readInstallReceipt(receiptStorePath(), resolved.entry.id))
-    const unsignedCode = classification === 'unsigned' && verify.codeBearing === true
     const trustToken = issueTrustToken({
       entryId: resolved.entry.id,
       source: 'github',
       pin: verify.pin,
       entry: resolved.entry,
       github: resolved.origin,
-      allowUnsignedCode: unsignedCode,
     })
     return {
       ok: true,
@@ -297,8 +268,6 @@ export function createStudioMarketplace(deps: StudioMarketplaceDeps): StudioMark
           {
             registryReader: registry(),
             receiptStorePath: receiptStorePath(),
-            moduleRoot: defaultUserModuleRoot,
-            trustContext,
           },
           input ?? {},
         )
@@ -345,21 +314,13 @@ export function createStudioMarketplace(deps: StudioMarketplaceDeps): StudioMark
 
     // The other end of an install. It takes the same envelope install does,
     // because removing an MCP component writes the CLI configs and needs the
-    // workspace and settings to do it. A module it took out leaves nothing
-    // under its id, as one `extension.uninstall` removes does.
+    // workspace and settings to do it.
     async uninstall(input) {
       try {
         const envelope = installEnvelope(input, deps.openWorkspaceRoots())
         if (!envelope.ok) return { ok: false, message: envelope.message }
         const result = await pipeline().lifecycle.uninstall({ ...envelope.value, pluginId: input.pluginId })
-        const removedModules = (result.removed ?? []).filter((component) => component.kind === 'module')
-        if (removedModules.length > 0) {
-          await forgetModules(
-            deps.dataDir(),
-            removedModules.map((component) => component.id),
-          )
-          changed()
-        }
+        if (result.ok) changed()
         return result
       } catch (error) {
         return { ok: false, message: formatError(error) }
@@ -391,29 +352,10 @@ export function createStudioMarketplace(deps: StudioMarketplaceDeps): StudioMark
         if (!envelope.ok) return { ok: false, message: envelope.message }
         const grant = consumeTrustToken(input.trustToken, named.entryId)
         if (!grant?.entry) return { ok: false, message: APPROVAL_SPENT }
-        // Unsigned code installs only on the person's own "I trust this code",
-        // said at the review this token came from.
-        if (grant.allowUnsignedCode && input.trustCode !== true) {
-          return {
-            ok: false,
-            classification: 'unsigned',
-            message: 'This extension runs unsigned code. Review it again and confirm you trust the code to install it.',
-          }
-        }
         return installed(await pipeline().lifecycle.install({ ...envelope.value, entry: grant.entry, grant }))
       } catch (error) {
         return { ok: false, message: formatError(error) }
       }
-    },
-
-    cardMarketplace: {
-      readMarketplaceRegistry: () => read(),
-      listMarketplaceReceipts: () => readMarketplacePluginInstallReceipts(receiptStorePath()),
-      installMarketplaceEntry: async (input) => {
-        const result = await pipeline().lifecycle.install(input)
-        if (result.ok) changed()
-        return result
-      },
     },
   }
 }

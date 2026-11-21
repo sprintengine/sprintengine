@@ -519,20 +519,23 @@ test('the installed list names a folder Studio could not read by its place only 
   const hub = createStudioModuleHub()
   const rejected = [
     {
-      path: '/Users/dev/Library/Application Support/SprintEngine/modules/acme-broken/manifest.json',
+      path: '/Users/dev/.sprintengine/extensions/local.broken/extension.json',
       issues: [{ path: 'id', message: 'missing' }],
     },
     {
-      path: 'C:\\Users\\dev\\AppData\\Roaming\\SprintEngine\\modules\\acme-windows\\manifest.json',
+      path: 'C:\\Users\\dev\\.sprintengine\\extensions\\local.windows\\extension.json',
       issues: [
         {
           path: '',
           message:
-            "ENOENT: no such file or directory, open 'C:\\Users\\dev\\AppData\\Roaming\\SprintEngine\\modules\\acme-windows\\manifest.json'",
+            "ENOENT: no such file or directory, open 'C:\\Users\\dev\\.sprintengine\\extensions\\local.windows\\extension.json'",
         },
       ],
     },
-    { path: '/Users/dev/modules/acme-folder/', issues: [{ path: '', message: 'see /Users/dev/elsewhere/notes.txt' }] },
+    {
+      path: '/Users/dev/.sprintengine/extensions/acme-folder/',
+      issues: [{ path: '', message: 'see /Users/dev/elsewhere/notes.txt' }],
+    },
   ]
   hub.serveLifecycleFrom({
     list: () => [],
@@ -553,10 +556,10 @@ test('the installed list names a folder Studio could not read by its place only 
   assert.deepEqual(seen, {
     modules: [],
     rejected: [
-      { path: 'acme-broken', issues: [{ path: 'id', message: 'missing' }] },
+      { path: 'local.broken', issues: [{ path: 'id', message: 'missing' }] },
       {
-        path: 'acme-windows',
-        issues: [{ path: '', message: "ENOENT: no such file or directory, open 'acme-windows\\manifest.json'" }],
+        path: 'local.windows',
+        issues: [{ path: '', message: "ENOENT: no such file or directory, open 'local.windows\\extension.json'" }],
       },
       { path: 'acme-folder', issues: [{ path: '', message: 'Studio could not read this folder.' }] },
     ],

@@ -24,7 +24,7 @@ export type ModuleSecretFetchResult =
   | { ok: false; code: ModuleSecretsError; message: string }
 
 /**
- * Secrets for a module's `entry.main`, obtained via `getSecretsService(host)`
+ * Secrets for an extension's worker, obtained via `getSecretsService(host)`
  * and scoped to that module. A stored value can only leave the host inside a
  * `fetchWithSecret` request to one of the origins it was stored with. Declare
  * the `secrets` permission.
@@ -150,7 +150,7 @@ export type ModuleGitHubDownloadResponse =
   | Extract<ModuleGitHubResponse, { ok: false }>
 
 /**
- * The GitHub API with the user's sign-in, for a module's `entry.main`,
+ * The GitHub API with the user's sign-in, for an extension's worker,
  * obtained via `getGitHubService(host)`. The host attaches the token; the
  * module never sees it. Declare the `github` permission.
  */

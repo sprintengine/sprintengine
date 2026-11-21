@@ -8,21 +8,12 @@ import { dirname, join } from 'node:path'
 import type { McpSettings, SkillHarness } from '../../shared/electron-api'
 import type { MarketplacePluginEntry, MarketplacePluginManifest } from '../../shared/marketplace'
 import { canonicalManifestPayload, validateMarketplacePluginManifest } from '../../shared/marketplace'
-import {
-  canonicalManifestPayload as canonicalModulePayload,
-  validateThirdPartyModuleManifest,
-} from '../../shared/modules/third-party-manifest'
 import type { PluginManifest, PluginMcpConfigFormat } from '../../shared/plugin-manifest'
 import { createMcpConfigService, type PluginLookup } from '../mcp-config-service'
-import { loadMainModules } from '../module-host/load-modules'
 import { verifyModuleSignature, type ModuleTrustContext } from '../modules/module-signature'
-import { planThirdPartyMainModules } from '../modules/third-party-main-loader'
-import { readTrustedModulesSync, setModuleTrust } from '../modules/trust-store'
-import { discoverUserModules, installModuleFolder } from '../modules/user-module-registry'
 import {
   createMarketplacePluginLifecycleService,
   readMarketplacePluginInstallReceipts,
-  readVerifiedModuleInstallsSync,
   type MarketplacePluginLifecycleServices,
 } from './plugin-lifecycle'
 import { createMarketplacePluginVerifier } from './plugin-verify'
@@ -37,7 +28,6 @@ test('plugin-lifecycle', async () => {
   type BundleComponents = {
     mcp?: { path: string; id: string }
     skills?: { path: string; name: string }
-    module?: { path: string; id: string }
   }
 
   type Signer = {
@@ -129,57 +119,13 @@ test('plugin-lifecycle', async () => {
     }
   }
 
-  const MODULE_MAIN_SOURCE = 'exports.registerMain = () => {}\n'
-
-  function unsignedModuleManifest(id: string, version = 1): Record<string, unknown> {
-    const validated = validateThirdPartyModuleManifest({
-      id,
-      displayName: `${id} Module`,
-      version,
-      defaultEnabled: true,
-      permissions: ['network'],
-      entry: { main: 'main.cjs' },
-    })
-    assert.equal(validated.ok, true)
-    if (!validated.ok) throw new Error('test module manifest did not validate')
-    return validated.manifest
-  }
-
-  // Signed as `sprintengine-extension sign` signs, with the digests of the
-  // module's files — or, with `undigested`, the way the first-party modules
-  // were signed before `files` existed, which only a trusted publisher's bundle
-  // can vouch for.
-  function signedModuleManifest(
-    id: string,
-    signer: Signer,
-    version = 1,
-    options: { undigested?: boolean } = {},
-  ): Record<string, unknown> {
-    const unsigned = {
-      id,
-      displayName: `${id} Module`,
-      version,
-      defaultEnabled: true,
-      permissions: ['network'],
-      entry: { main: 'main.cjs' },
-      ...(options.undigested ? {} : { files: { 'main.cjs': sha256Hex(MODULE_MAIN_SOURCE) } }),
-    }
-    const validated = validateThirdPartyModuleManifest(unsigned)
-    assert.equal(validated.ok, true)
-    if (!validated.ok) throw new Error('test module manifest did not validate')
-    return {
-      ...validated.manifest,
-      signature: signPayload(canonicalModulePayload(validated.manifest), signer),
-    }
-  }
-
   async function writeBundle(
     root: string,
     folder: string,
     components: BundleComponents,
     signer: Signer,
     version: number,
-    options: { unsigned?: boolean; undigestedModule?: boolean } = {},
+    options: { unsigned?: boolean } = {},
   ): Promise<{
     files: Map<string, string>
     entry: MarketplacePluginEntry
@@ -218,20 +164,6 @@ test('plugin-lifecycle', async () => {
         `---\nname: ${components.skills.name}\ndescription: ${components.skills.name} v${version}.\n---\n`,
       )
     }
-    if (components.module) {
-      files.set(
-        `${components.module.path}/manifest.json`,
-        `${JSON.stringify(
-          options.unsigned
-            ? unsignedModuleManifest(components.module.id, version)
-            : signedModuleManifest(components.module.id, signer, version, { undigested: options.undigestedModule }),
-          null,
-          2,
-        )}\n`,
-      )
-      files.set(`${components.module.path}/main.cjs`, MODULE_MAIN_SOURCE)
-    }
-
     const signed = signedPluginManifest(components, files, signer, version)
     // An unsigned bundle is the same authoring manifest with the signature
     // stripped; the download/installer decide trust from signature presence.
@@ -312,18 +244,16 @@ test('plugin-lifecycle', async () => {
   async function approve(
     services: MarketplacePluginLifecycleServices,
     entry: MarketplacePluginEntry,
-    options: { unsignedCodeFromGithub?: boolean } = {},
   ): Promise<TrustGrant> {
     const verified = await createMarketplacePluginVerifier({
       trustContext: services.trustContext,
       stagingRoot: services.stagingRoot,
       fetcher: services.fetcher,
       packagedResourceResolver: services.packagedResourceResolver,
-    }).verify(entry, { allowUnsignedCode: options.unsignedCodeFromGithub === true })
+    }).verify(entry)
     return {
       entryId: entry.id,
-      source: options.unsignedCodeFromGithub ? 'github' : 'registry',
-      allowUnsignedCode: options.unsignedCodeFromGithub === true,
+      source: 'registry',
       entry,
       pin: verified.pin ?? { manifestSha256: 'unverified', componentDigests: {} },
     }
@@ -336,42 +266,24 @@ test('plugin-lifecycle', async () => {
   ): Promise<{
     services: MarketplacePluginLifecycleServices
     workspaceRoot: string
-    moduleRoot: string
     receiptStorePath: string
   }> {
     const workspaceRoot = join(temp, 'workspace')
-    const moduleRoot = join(temp, 'modules')
     const receiptStorePath = join(temp, 'marketplace-installs.json')
     await mkdir(workspaceRoot, { recursive: true })
     const lookupPlugin: PluginLookup = (id) =>
       id === 'codex' ? { manifest: mcpPluginManifest(id, 'codex') } : undefined
     return {
       workspaceRoot,
-      moduleRoot,
       receiptStorePath,
       services: {
         mcpConfigService: createMcpConfigService({ lookupPlugin, homeDir: () => join(temp, 'home') }),
-        // What the app reads: the receipts are where a verified install's
-        // vouching for its module's code lives (see readModuleTrustContextSync).
-        trustContext: () => ({
-          ...trustContext,
-          verifiedModuleInstalls: readVerifiedModuleInstallsSync(receiptStorePath),
-        }),
-        moduleRoot: () => moduleRoot,
+        trustContext: () => trustContext,
         receiptStorePath,
         stagingRoot: join(temp, 'staging'),
         fetcher,
       },
     }
-  }
-
-  // A module step that writes the replacement module and then reports failure:
-  // the last component of an update failing after files have changed, which is
-  // what the rollback has to undo.
-  const failAfterWritingModule: typeof installModuleFolder = async (srcDir, root, ctx) => {
-    const written = await installModuleFolder(srcDir, root, ctx)
-    if (!written.ok) return written
-    return { ok: false, message: 'module install exploded', rejected: { path: srcDir, issues: [] } }
   }
 
   async function testVerifiedRegistryInstallFansOutAndRecordsReceipt(): Promise<void> {
@@ -380,18 +292,13 @@ test('plugin-lifecycle', async () => {
       const components: BundleComponents = {
         mcp: { path: 'mcp/server.json', id: 'registry-mcp-v1' },
         skills: { path: 'skills/registry-skill-v1', name: 'registry-skill-v1' },
-        module: { path: 'module', id: 'registry-module-v1' },
       }
-      // The module inside signs no digests of its own, as the first-party
-      // modules were signed: the verified bundle's digests vouch for its code,
-      // recorded on the receipt the next discovery reads.
-      const bundle = await writeBundle(temp, 'verified-plugin', components, signer, 1, { undigestedModule: true })
+      const bundle = await writeBundle(temp, 'verified-plugin', components, signer, 1)
       const folders = new Map([['verified-plugin', bundle.files]])
-      const { services, workspaceRoot, moduleRoot, receiptStorePath } = await createServices(
-        temp,
-        createGithubFetcher(folders),
-        { trustedModules: new Map(), trustedKeyFingerprints: new Set([bundle.fingerprint]) },
-      )
+      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
+        trustedModules: new Map(),
+        trustedKeyFingerprints: new Set([bundle.fingerprint]),
+      })
       const lifecycle = createMarketplacePluginLifecycleService(services)
       const mcpSettings: McpSettings = { syncEnabled: false, servers: {} }
 
@@ -411,19 +318,6 @@ test('plugin-lifecycle', async () => {
       assert.equal(result.updated, false)
       assert.match(await readFile(join(workspaceRoot, '.codex', 'config.toml'), 'utf8'), /registry-mcp-v1/)
       assert.equal(existsSync(join(workspaceRoot, '.agents', 'skills', 'registry-skill-v1', 'SKILL.md')), true)
-      assert.equal(existsSync(join(moduleRoot, 'registry-module-v1', 'manifest.json')), true)
-
-      const modules = await discoverUserModules(moduleRoot, services.trustContext())
-      assert.equal(modules.modules[0]?.manifest.id, 'registry-module-v1')
-      assert.equal(modules.modules[0].trust.status, 'trusted')
-      const planned = planThirdPartyMainModules(modules)
-      const loaded = loadMainModules({
-        modules: planned.modules,
-        ineligible: planned.ineligible,
-        launchErrors: planned.launchErrors,
-      })
-      assert.deepEqual(loaded.report.loaded, ['registry-module-v1'])
-      assert.deepEqual(loaded.report.errors, [])
 
       const receipts = JSON.parse(await readFile(receiptStorePath, 'utf8')) as { plugins: Record<string, unknown> }
       assert.ok(receipts.plugins['registry-plugin'])
@@ -517,40 +411,6 @@ test('plugin-lifecycle', async () => {
         plugins: Record<string, { classification?: unknown }>
       }
       assert.equal(receipts.plugins['registry-plugin']?.classification, 'unsigned')
-    })
-  }
-
-  async function testUnsignedModuleBearingBundleHardBlocksEvenWithTrust(): Promise<void> {
-    await withTempDir(async (temp) => {
-      const signer = generateKeyPairSync('ed25519')
-      const components: BundleComponents = {
-        mcp: { path: 'mcp/server.json', id: 'unsigned-mcp' },
-        module: { path: 'module', id: 'unsigned-module' },
-      }
-      const bundle = await writeBundle(temp, 'unsigned-module-plugin', components, signer, 1, { unsigned: true })
-      const folders = new Map([['unsigned-module-plugin', bundle.files]])
-      const { services, workspaceRoot, moduleRoot, receiptStorePath } = await createServices(
-        temp,
-        createGithubFetcher(folders),
-        { trustedModules: new Map() },
-      )
-      const lifecycle = createMarketplacePluginLifecycleService(services)
-
-      const result = await lifecycle.install({
-        entry: bundle.entry,
-        workspaceRoot,
-        mcpSettings: { syncEnabled: false, servers: {} },
-        mcpClients: ['codex'],
-        grant: await approve(services, bundle.entry),
-      })
-      assert.equal(result.ok, false)
-      if (result.ok) return
-      assert.equal(result.classification, 'unsigned')
-      assert.match(result.message, /unsigned/i)
-      assert.doesNotMatch(result.message, /requires trust approval/)
-      assert.equal(existsSync(join(workspaceRoot, '.codex', 'config.toml')), false)
-      assert.equal(existsSync(join(moduleRoot, 'unsigned-module')), false)
-      assert.equal(existsSync(receiptStorePath), false)
     })
   }
 
@@ -746,7 +606,6 @@ test('plugin-lifecycle', async () => {
         {
           mcp: { path: 'mcp/server.json', id: 'registry-mcp-v1' },
           skills: { path: 'skills/registry-skill-v1', name: 'registry-skill-v1' },
-          module: { path: 'module', id: 'registry-module-v1' },
         },
         signer,
         1,
@@ -757,7 +616,6 @@ test('plugin-lifecycle', async () => {
         {
           mcp: { path: 'mcp/server.json', id: 'registry-mcp-v2' },
           skills: { path: 'skills/registry-skill-v2', name: 'registry-skill-v2' },
-          module: { path: 'module', id: 'registry-module-v2' },
         },
         signer,
         2,
@@ -766,11 +624,10 @@ test('plugin-lifecycle', async () => {
         ['plugin-v1', v1.files],
         ['plugin-v2', v2.files],
       ])
-      const { services, workspaceRoot, moduleRoot, receiptStorePath } = await createServices(
-        temp,
-        createGithubFetcher(folders),
-        { trustedModules: new Map(), trustedKeyFingerprints: new Set([v1.fingerprint, v2.fingerprint]) },
-      )
+      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
+        trustedModules: new Map(),
+        trustedKeyFingerprints: new Set([v1.fingerprint, v2.fingerprint]),
+      })
       const lifecycle = createMarketplacePluginLifecycleService(services)
       const installed = await lifecycle.install({
         entry: v1.entry,
@@ -798,8 +655,6 @@ test('plugin-lifecycle', async () => {
       assert.match(codexConfig, /registry-mcp-v2/)
       assert.equal(existsSync(join(workspaceRoot, '.agents', 'skills', 'registry-skill-v1')), false)
       assert.equal(existsSync(join(workspaceRoot, '.agents', 'skills', 'registry-skill-v2', 'SKILL.md')), true)
-      assert.equal(existsSync(join(moduleRoot, 'registry-module-v1')), false)
-      assert.equal(existsSync(join(moduleRoot, 'registry-module-v2', 'manifest.json')), true)
 
       const uninstalled = await lifecycle.uninstall({
         pluginId: 'registry-plugin',
@@ -813,7 +668,6 @@ test('plugin-lifecycle', async () => {
       const afterUninstallConfig = await readFile(join(workspaceRoot, '.codex', 'config.toml'), 'utf8')
       assert.doesNotMatch(afterUninstallConfig, /registry-mcp-v2/)
       assert.equal(existsSync(join(workspaceRoot, '.agents', 'skills', 'registry-skill-v2')), false)
-      assert.equal(existsSync(join(moduleRoot, 'registry-module-v2')), false)
       const receipts = JSON.parse(await readFile(receiptStorePath, 'utf8')) as { plugins: Record<string, unknown> }
       assert.equal(receipts.plugins['registry-plugin'], undefined)
     })
@@ -865,78 +719,59 @@ test('plugin-lifecycle', async () => {
     })
   }
 
+  // An update whose last component fails after an earlier copy was replaced:
+  // the skill copy in the first harness is v2 by then, and the second harness
+  // cannot be written. The rollback puts v1 back and keeps its receipt.
   async function testFailedUpdateRollsBackReplacementAndKeepsReceipt(): Promise<void> {
     await withTempDir(async (temp) => {
       const signer = generateKeyPairSync('ed25519')
-      const v1 = await writeBundle(
-        temp,
-        'plugin-v1',
-        {
-          mcp: { path: 'mcp/server.json', id: 'registry-mcp' },
-          skills: { path: 'skills/registry-skill', name: 'registry-skill' },
-          module: { path: 'module', id: 'registry-module' },
-        },
-        signer,
-        1,
-      )
-      const v2 = await writeBundle(
-        temp,
-        'plugin-v2',
-        {
-          mcp: { path: 'mcp/server.json', id: 'registry-mcp' },
-          skills: { path: 'skills/registry-skill', name: 'registry-skill' },
-          module: { path: 'module', id: 'registry-module' },
-        },
-        signer,
-        2,
-      )
+      const components: BundleComponents = {
+        mcp: { path: 'mcp/server.json', id: 'registry-mcp' },
+        skills: { path: 'skills/registry-skill', name: 'registry-skill' },
+      }
+      const v1 = await writeBundle(temp, 'plugin-v1', components, signer, 1)
+      const v2 = await writeBundle(temp, 'plugin-v2', components, signer, 2)
       const folders = new Map([
         ['plugin-v1', v1.files],
         ['plugin-v2', v2.files],
       ])
-      const { services, workspaceRoot, moduleRoot, receiptStorePath } = await createServices(
-        temp,
-        createGithubFetcher(folders),
-        { trustedModules: new Map(), trustedKeyFingerprints: new Set([v1.fingerprint, v2.fingerprint]) },
-      )
+      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
+        trustedModules: new Map(),
+        trustedKeyFingerprints: new Set([v1.fingerprint, v2.fingerprint]),
+      })
       const lifecycle = createMarketplacePluginLifecycleService(services)
       const installed = await lifecycle.install({
         entry: v1.entry,
         workspaceRoot,
         mcpSettings: { syncEnabled: false, servers: {} },
         mcpClients: ['codex'],
-        skillHarnesses: ['agents'],
+        skillHarnesses: ['claude'],
       })
       assert.equal(installed.ok, true, JSON.stringify(installed))
       if (!installed.ok) return
 
-      // The last component to install fails, after the module was replaced.
-      services.installModuleFolder = failAfterWritingModule
+      // The agents harness dir is a file, so nothing can be written under it.
+      await mkdir(join(workspaceRoot, '.agents'), { recursive: true })
+      await writeFile(join(workspaceRoot, '.agents', 'skills'), 'not a directory', 'utf8')
 
       const updated = await lifecycle.update({
         entry: v2.entry,
         workspaceRoot,
         mcpSettings: installed.mcpSettings,
         mcpClients: ['codex'],
-        skillHarnesses: ['agents'],
+        skillHarnesses: ['claude', 'agents'],
       })
       assert.equal(updated.ok, false)
       if (updated.ok) return
       assert.equal(updated.updated, true)
-      assert.match(updated.message, /module install exploded/)
+      assert.equal(updated.component, 'skills')
 
       const codexConfig = await readFile(join(workspaceRoot, '.codex', 'config.toml'), 'utf8')
       assert.match(codexConfig, /registry-mcp/)
       assert.match(
-        await readFile(join(workspaceRoot, '.agents', 'skills', 'registry-skill', 'SKILL.md'), 'utf8'),
+        await readFile(join(workspaceRoot, '.claude', 'skills', 'registry-skill', 'SKILL.md'), 'utf8'),
         /registry-skill v1/,
       )
-      const moduleManifest = JSON.parse(
-        await readFile(join(moduleRoot, 'registry-module', 'manifest.json'), 'utf8'),
-      ) as {
-        version?: unknown
-      }
-      assert.equal(moduleManifest.version, 1)
 
       const receipts = JSON.parse(await readFile(receiptStorePath, 'utf8')) as {
         plugins: Record<string, { version?: unknown }>
@@ -947,11 +782,9 @@ test('plugin-lifecycle', async () => {
 
   async function testReceiptStoreValidationRejectsMalformedAndUnsafeState(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot, receiptStorePath, moduleRoot } = await createServices(
-        temp,
-        createGithubFetcher(new Map()),
-        { trustedModules: new Map() },
-      )
+      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(new Map()), {
+        trustedModules: new Map(),
+      })
       const lifecycle = createMarketplacePluginLifecycleService(services)
 
       await mkdir(dirname(receiptStorePath), { recursive: true })
@@ -964,7 +797,7 @@ test('plugin-lifecycle', async () => {
       assert.equal(malformed.ok, false)
       assert.match(malformed.message, /receipt store is invalid/)
 
-      const outsidePath = join(moduleRoot, '..', 'outside')
+      const outsidePath = join(workspaceRoot, '.agents', 'outside')
       await mkdir(outsidePath, { recursive: true })
       await writeFile(
         receiptStorePath,
@@ -979,7 +812,7 @@ test('plugin-lifecycle', async () => {
                 sourceUrl: 'https://example.test/registry-plugin',
                 classification: 'verified',
                 installedAt: new Date().toISOString(),
-                components: [{ kind: 'module', id: '../outside' }],
+                components: [{ kind: 'skills', id: '../outside' }],
               },
             },
           },
@@ -996,54 +829,6 @@ test('plugin-lifecycle', async () => {
       assert.equal(unsafe.ok, false)
       assert.match(unsafe.message, /components\[0\]\.id/)
       assert.equal(existsSync(outsidePath), true)
-    })
-  }
-
-  // A store written before modules became extensions names module components
-  // by an install root this build no longer reads. It is removed unread: none
-  // of its receipts may uninstall, vouch for or claim a folder under the new
-  // root, even one with the same id.
-  async function testReceiptStoreFromBeforeExtensionsIsRemovedUnread(): Promise<void> {
-    await withTempDir(async (temp) => {
-      const { services, workspaceRoot, receiptStorePath, moduleRoot } = await createServices(
-        temp,
-        createGithubFetcher(new Map()),
-        { trustedModules: new Map() },
-      )
-      const lifecycle = createMarketplacePluginLifecycleService(services)
-      const folderInstall = join(moduleRoot, 'notes')
-      await mkdir(folderInstall, { recursive: true })
-      await writeFile(join(folderInstall, 'manifest.json'), '{}\n', 'utf8')
-      const before = {
-        schemaVersion: 1,
-        plugins: {
-          'notes-bundle': {
-            id: 'notes-bundle',
-            displayName: 'Notes',
-            version: 1,
-            sourceUrl: 'https://example.test/notes-bundle',
-            classification: 'verified',
-            installedAt: new Date().toISOString(),
-            components: [{ kind: 'module', id: 'notes', trustStatus: 'trusted', manifestFp: 'sha256-old' }],
-          },
-        },
-      }
-      await mkdir(dirname(receiptStorePath), { recursive: true })
-      await writeFile(receiptStorePath, `${JSON.stringify(before, null, 2)}\n`, 'utf8')
-
-      assert.equal(readVerifiedModuleInstallsSync(receiptStorePath).size, 0, 'it vouches for nothing')
-      for (const pluginId of ['notes-bundle', 'notes']) {
-        const uninstalled = await lifecycle.uninstall({
-          pluginId,
-          workspaceRoot,
-          mcpSettings: { syncEnabled: false, servers: {} },
-        })
-        assert.equal(uninstalled.ok, false, pluginId)
-        assert.match(uninstalled.message, /is not installed/, pluginId)
-      }
-      assert.equal(existsSync(folderInstall), true, 'the folder installed under the new root is left alone')
-      assert.equal(existsSync(receiptStorePath), false, 'the old store is removed')
-      assert.deepEqual(await readMarketplacePluginInstallReceipts(receiptStorePath), { ok: true, receipts: [] })
     })
   }
 
@@ -1371,21 +1156,20 @@ test('plugin-lifecycle', async () => {
   async function testUpdateAvailabilitySettlesThroughRegistryUpdate(): Promise<void> {
     await withTempDir(async (temp) => {
       const signer = generateKeyPairSync('ed25519')
-      const components: BundleComponents = { module: { path: 'module', id: 'update-module' } }
+      const components: BundleComponents = { skills: { path: 'skills/update-skill', name: 'update-skill' } }
       const bundleV1 = await writeBundle(temp, 'update-plugin-v1', components, signer, 1)
       const bundleV2 = await writeBundle(temp, 'update-plugin-v2', components, signer, 2)
       const folders = new Map([
         ['update-plugin-v1', bundleV1.files],
         ['update-plugin-v2', bundleV2.files],
       ])
-      const { services, workspaceRoot, moduleRoot, receiptStorePath } = await createServices(
-        temp,
-        createGithubFetcher(folders),
-        { trustedModules: new Map(), trustedKeyFingerprints: new Set([bundleV1.fingerprint]) },
-      )
+      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
+        trustedModules: new Map(),
+        trustedKeyFingerprints: new Set([bundleV1.fingerprint]),
+      })
       const lifecycle = createMarketplacePluginLifecycleService(services)
 
-      const installed = await lifecycle.install({ entry: bundleV1.entry, workspaceRoot })
+      const installed = await lifecycle.install({ entry: bundleV1.entry, workspaceRoot, skillHarnesses: ['agents'] })
       assert.equal(installed.ok, true, JSON.stringify(installed))
 
       // The registry override env var is the fixture seam: the client reads the
@@ -1403,12 +1187,7 @@ test('plugin-lifecycle', async () => {
             ? new Response(JSON.stringify({ schemaVersion: 1, plugins: [bundleV2.entry] }))
             : new Response('not found', { status: 404 }),
       })
-      const updateStateServices = {
-        registryReader,
-        receiptStorePath,
-        moduleRoot: () => moduleRoot,
-        trustContext: services.trustContext,
-      }
+      const updateStateServices = { registryReader, receiptStorePath }
 
       const before = await readMarketplaceUpdateStates(updateStateServices)
       assert.equal(before.ok && before.checked, true)
@@ -1421,7 +1200,7 @@ test('plugin-lifecycle', async () => {
         },
       ])
 
-      const updated = await lifecycle.update({ entry: bundleV2.entry, workspaceRoot })
+      const updated = await lifecycle.update({ entry: bundleV2.entry, workspaceRoot, skillHarnesses: ['agents'] })
       assert.equal(updated.ok, true, JSON.stringify(updated))
       if (!updated.ok) return
       assert.equal(updated.updated, true)
@@ -1448,7 +1227,7 @@ test('plugin-lifecycle', async () => {
   async function testUpdateWithInvalidSignatureIsBlocked(): Promise<void> {
     await withTempDir(async (temp) => {
       const signer = generateKeyPairSync('ed25519')
-      const components: BundleComponents = { module: { path: 'module', id: 'update-module' } }
+      const components: BundleComponents = { skills: { path: 'skills/update-skill', name: 'update-skill' } }
       const bundleV1 = await writeBundle(temp, 'tamper-plugin-v1', components, signer, 1)
       const bundleV2 = await writeBundle(temp, 'tamper-plugin-v2', components, signer, 2)
       // The served v2 bundle and its registry entry carry a signature that no
@@ -1464,19 +1243,19 @@ test('plugin-lifecycle', async () => {
         ['tamper-plugin-v1', bundleV1.files],
         ['tamper-plugin-v2', bundleV2.files],
       ])
-      const { services, workspaceRoot, moduleRoot, receiptStorePath } = await createServices(
-        temp,
-        createGithubFetcher(folders),
-        { trustedModules: new Map(), trustedKeyFingerprints: new Set([bundleV1.fingerprint]) },
-      )
+      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
+        trustedModules: new Map(),
+        trustedKeyFingerprints: new Set([bundleV1.fingerprint]),
+      })
       const lifecycle = createMarketplacePluginLifecycleService(services)
 
-      const installed = await lifecycle.install({ entry: bundleV1.entry, workspaceRoot })
+      const installed = await lifecycle.install({ entry: bundleV1.entry, workspaceRoot, skillHarnesses: ['agents'] })
       assert.equal(installed.ok, true, JSON.stringify(installed))
 
       const blocked = await lifecycle.update({
         entry: bundleV2.entry,
         workspaceRoot,
+        skillHarnesses: ['agents'],
         grant: await approve(services, bundleV2.entry),
       })
       assert.equal(blocked.ok, false)
@@ -1489,10 +1268,10 @@ test('plugin-lifecycle', async () => {
       assert.equal(receipts.ok, true)
       if (!receipts.ok) return
       assert.equal(receipts.receipts[0]?.version, 1)
-      const installedManifest = JSON.parse(
-        await readFile(join(moduleRoot, 'update-module', 'manifest.json'), 'utf8'),
-      ) as { version: number }
-      assert.equal(installedManifest.version, 1)
+      assert.match(
+        await readFile(join(workspaceRoot, '.agents', 'skills', 'update-skill', 'SKILL.md'), 'utf8'),
+        /update-skill v1/,
+      )
     })
   }
 
@@ -1503,7 +1282,7 @@ test('plugin-lifecycle', async () => {
     await withTempDir(async (temp) => {
       const originalSigner = generateKeyPairSync('ed25519')
       const differentSigner = generateKeyPairSync('ed25519')
-      const components: BundleComponents = { module: { path: 'module', id: 'update-module' } }
+      const components: BundleComponents = { skills: { path: 'skills/update-skill', name: 'update-skill' } }
       const bundleV1 = await writeBundle(temp, 'rekey-plugin-v1', components, originalSigner, 1)
       const bundleV2 = await writeBundle(temp, 'rekey-plugin-v2', components, differentSigner, 2)
       const folders = new Map([
@@ -1511,19 +1290,18 @@ test('plugin-lifecycle', async () => {
         ['rekey-plugin-v2', bundleV2.files],
       ])
       // Only the ORIGINAL publisher key is trusted.
-      const { services, workspaceRoot, moduleRoot, receiptStorePath } = await createServices(
-        temp,
-        createGithubFetcher(folders),
-        { trustedModules: new Map(), trustedKeyFingerprints: new Set([bundleV1.fingerprint]) },
-      )
+      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
+        trustedModules: new Map(),
+        trustedKeyFingerprints: new Set([bundleV1.fingerprint]),
+      })
       const lifecycle = createMarketplacePluginLifecycleService(services)
 
-      const installed = await lifecycle.install({ entry: bundleV1.entry, workspaceRoot })
+      const installed = await lifecycle.install({ entry: bundleV1.entry, workspaceRoot, skillHarnesses: ['agents'] })
       assert.equal(installed.ok, true, JSON.stringify(installed))
       if (!installed.ok) return
       assert.equal(installed.classification, 'verified')
 
-      const reprompted = await lifecycle.update({ entry: bundleV2.entry, workspaceRoot })
+      const reprompted = await lifecycle.update({ entry: bundleV2.entry, workspaceRoot, skillHarnesses: ['agents'] })
       assert.equal(reprompted.ok, false)
       if (reprompted.ok) return
       assert.equal(reprompted.classification, 'community')
@@ -1534,82 +1312,22 @@ test('plugin-lifecycle', async () => {
       const granted = await lifecycle.update({
         entry: bundleV2.entry,
         workspaceRoot,
+        skillHarnesses: ['agents'],
         grant: await approve(services, bundleV2.entry),
       })
       assert.equal(granted.ok, true, JSON.stringify(granted))
       if (!granted.ok) return
       assert.equal(granted.updated, true)
       assert.equal(granted.classification, 'community')
-      // The updated module must not silently load under the old grant.
+      // The re-keyed bundle does not ride the old key's trust.
       assert.equal(granted.loadEligible, false)
-      const modules = await discoverUserModules(moduleRoot, services.trustContext())
-      assert.equal(modules.modules[0]?.manifest.version, 2)
-      assert.equal(modules.modules[0].trust.status, 'signed')
-    })
-
-    // Same walk with the trust store wired: re-approving the re-keyed update at
-    // the prompt IS the trust decision for the NEW manifest, so the module ends
-    // trusted — bound to the new fingerprint, never inheriting the old grant.
-    await withTempDir(async (temp) => {
-      const originalSigner = generateKeyPairSync('ed25519')
-      const differentSigner = generateKeyPairSync('ed25519')
-      const components: BundleComponents = { module: { path: 'module', id: 'update-module' } }
-      const bundleV1 = await writeBundle(temp, 'rekey-plugin-v1', components, originalSigner, 1)
-      const bundleV2 = await writeBundle(temp, 'rekey-plugin-v2', components, differentSigner, 2)
-      const folders = new Map([
-        ['rekey-plugin-v1', bundleV1.files],
-        ['rekey-plugin-v2', bundleV2.files],
-      ])
-      const { services, workspaceRoot, moduleRoot } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
-      })
-      const userDataDir = join(temp, 'userdata')
-      useRealTrustStore(services, userDataDir)
-      // Only the original publisher key is trusted, so v1 installs verified.
-      services.trustContext = () => ({
-        trustedModules: readTrustedModulesSync(userDataDir),
-        trustedKeyFingerprints: new Set([bundleV1.fingerprint]),
-        verifiedModuleInstalls: readVerifiedModuleInstallsSync(services.receiptStorePath),
-      })
-      const lifecycle = createMarketplacePluginLifecycleService(services)
-
-      const installed = await lifecycle.install({ entry: bundleV1.entry, workspaceRoot })
-      assert.equal(installed.ok, true, JSON.stringify(installed))
-      // A verified install grants nothing: it is already load-eligible.
-      assert.equal(readTrustedModulesSync(userDataDir).has('update-module'), false)
-
-      const granted = await lifecycle.update({
-        entry: bundleV2.entry,
-        workspaceRoot,
-        grant: await approve(services, bundleV2.entry),
-      })
-      assert.equal(granted.ok, true, JSON.stringify(granted))
-      if (!granted.ok) return
-      const component = granted.installed.find((installedComponent) => installedComponent.kind === 'module')
-      assert.equal(readTrustedModulesSync(userDataDir).get('update-module'), component?.manifestFp)
-      const modules = await discoverUserModules(moduleRoot, services.trustContext())
-      assert.equal(modules.modules[0]?.manifest.version, 2)
-      assert.equal(modules.modules[0].trust.status, 'trusted')
+      assert.match(
+        await readFile(join(workspaceRoot, '.agents', 'skills', 'update-skill', 'SKILL.md'), 'utf8'),
+        /update-skill v2/,
+      )
     })
   }
 
-  // Wire the REAL trust store (the one the Settings toggle writes) behind the
-  // lifecycle's trust seam, and read trust back the way the app does — so these
-  // tests prove the grant against the file module loading actually consults.
-  function useRealTrustStore(services: MarketplacePluginLifecycleServices, userDataDir: string): void {
-    services.trustContext = () => ({
-      trustedModules: readTrustedModulesSync(userDataDir),
-      verifiedModuleInstalls: readVerifiedModuleInstallsSync(services.receiptStorePath),
-    })
-    services.setModuleTrust = async (id, manifestFp) => {
-      const { result, previous } = await setModuleTrust(userDataDir, id, manifestFp)
-      return { ...result, previous }
-    }
-  }
-
-  // The install prompt's trust decision IS the module trust decision: a signed
-  // module installed from a community bundle loads without a second, identical
-  // toggle in Settings → Extensions, and uninstalling takes the grant back with it.
   // M-F3: the install is bound to what the prompt showed. The source is swapped
   // for different content after the approval — same entry, same id — and the
   // install refuses rather than writing an MCP server nobody reviewed.
@@ -1778,167 +1496,21 @@ test('plugin-lifecycle', async () => {
     })
   }
 
-  // The GitHub-URL lane (workstream E) through the same lifecycle: unsigned
-  // module code installs only on a grant that says the person trusted it as
-  // code, and that approval becomes the module's trust decision.
-  async function testUnsignedCodeInstallsOnlyOnAGithubCodeGrant(): Promise<void> {
+  // A receipt that cannot be written undoes the install: nothing the bundle
+  // added is left behind without a receipt to remove it by.
+  async function testFailedReceiptWriteRollsBackTheInstall(): Promise<void> {
     await withTempDir(async (temp) => {
       const signer = generateKeyPairSync('ed25519')
-      const components: BundleComponents = { module: { path: 'module', id: 'github-module' } }
-      const bundle = await writeBundle(temp, 'github-plugin', components, signer, 1, { unsigned: true })
-      const folders = new Map([['github-plugin', bundle.files]])
-      const { services, workspaceRoot, moduleRoot } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
-      })
-      const userDataDir = join(temp, 'userdata')
-      useRealTrustStore(services, userDataDir)
-      const lifecycle = createMarketplacePluginLifecycleService(services)
-
-      // A registry-style approval does not reach unsigned code.
-      const refused = await lifecycle.install({
-        entry: bundle.entry,
-        workspaceRoot,
-        grant: await approve(services, bundle.entry),
-      })
-      assert.equal(refused.ok, false)
-      assert.equal(existsSync(join(moduleRoot, 'github-module')), false)
-
-      const grant = await approve(services, bundle.entry, { unsignedCodeFromGithub: true })
-      const installed = await lifecycle.install({ entry: bundle.entry, workspaceRoot, grant })
-      assert.equal(installed.ok, true, JSON.stringify(installed))
-      if (!installed.ok) return
-      assert.equal(installed.classification, 'unsigned')
-      const component = installed.installed.find((candidate) => candidate.kind === 'module')
-      assert.equal(component?.trustStatus, 'unsigned')
-      assert.equal(readTrustedModulesSync(userDataDir).get('github-module'), component?.manifestFp)
-    })
-  }
-
-  async function testCommunityModuleInstallGrantsTrustAndUninstallRevokes(): Promise<void> {
-    await withTempDir(async (temp) => {
-      const signer = generateKeyPairSync('ed25519')
-      const components: BundleComponents = { module: { path: 'module', id: 'granted-module' } }
-      const bundle = await writeBundle(temp, 'granted-plugin', components, signer, 1)
+      const components: BundleComponents = {
+        mcp: { path: 'mcp/server.json', id: 'receiptless-mcp' },
+        skills: { path: 'skills/receiptless-skill', name: 'receiptless-skill' },
+      }
+      const bundle = await writeBundle(temp, 'receiptless-plugin', components, signer, 1)
       bundle.entry.publisher.verified = false
-      const folders = new Map([['granted-plugin', bundle.files]])
-      const { services, workspaceRoot, moduleRoot } = await createServices(temp, createGithubFetcher(folders), {
+      const folders = new Map([['receiptless-plugin', bundle.files]])
+      const { services, workspaceRoot } = await createServices(temp, createGithubFetcher(folders), {
         trustedModules: new Map(),
       })
-      const userDataDir = join(temp, 'userdata')
-      useRealTrustStore(services, userDataDir)
-      const lifecycle = createMarketplacePluginLifecycleService(services)
-
-      const result = await lifecycle.install({
-        entry: bundle.entry,
-        workspaceRoot,
-        grant: await approve(services, bundle.entry),
-      })
-
-      assert.equal(result.ok, true, JSON.stringify(result))
-      if (!result.ok) return
-      assert.equal(result.classification, 'community')
-      const component = result.installed.find((installed) => installed.kind === 'module')
-      assert.equal(component?.trustStatus, 'signed')
-      assert.match(component?.message ?? '', /Installed and trusted/)
-      // Fingerprint-bound: the entry is the installed manifest's identity, not a
-      // blanket grant for the id.
-      assert.equal(readTrustedModulesSync(userDataDir).get('granted-module'), component?.manifestFp)
-
-      // The real load path, not just the store: discovery classifies the module
-      // trusted and the main-process loader takes it.
-      const modules = await discoverUserModules(moduleRoot, services.trustContext())
-      assert.equal(modules.modules[0]?.manifest.id, 'granted-module')
-      assert.equal(modules.modules[0].trust.status, 'trusted')
-      const planned = planThirdPartyMainModules(modules)
-      const loaded = loadMainModules({
-        modules: planned.modules,
-        ineligible: planned.ineligible,
-        launchErrors: planned.launchErrors,
-      })
-      assert.deepEqual(loaded.report.loaded, ['granted-module'])
-
-      const uninstalled = await lifecycle.uninstall({ pluginId: bundle.entry.id, workspaceRoot })
-      assert.equal(uninstalled.ok, true, JSON.stringify(uninstalled))
-      assert.equal(existsSync(join(moduleRoot, 'granted-module')), false)
-      // An orphaned grant would silently re-trust the same bytes later.
-      assert.equal(readTrustedModulesSync(userDataDir).has('granted-module'), false)
-    })
-  }
-
-  // G3. Settings → Extensions knows a module's id, never the id of the bundle that
-  // installed it — those need not match — so an uninstall named by the module id
-  // has to reach the receipt that owns it and take the whole bundle out. An id
-  // nothing installed is refused by name rather than reported as a success.
-  async function testUninstallResolvesAModuleIdToItsOwningReceipt(): Promise<void> {
-    await withTempDir(async (temp) => {
-      const signer = generateKeyPairSync('ed25519')
-      const components: BundleComponents = { module: { path: 'module', id: 'granted-module' } }
-      const bundle = await writeBundle(temp, 'granted-plugin', components, signer, 1)
-      bundle.entry.publisher.verified = false
-      const folders = new Map([['granted-plugin', bundle.files]])
-      const { services, workspaceRoot, moduleRoot } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
-      })
-      const userDataDir = join(temp, 'userdata')
-      useRealTrustStore(services, userDataDir)
-      const lifecycle = createMarketplacePluginLifecycleService(services)
-
-      const installed = await lifecycle.install({
-        entry: bundle.entry,
-        workspaceRoot,
-        grant: await approve(services, bundle.entry),
-      })
-      assert.equal(installed.ok, true, JSON.stringify(installed))
-      assert.equal(existsSync(join(moduleRoot, 'granted-module')), true)
-
-      // Neither an unrelated id nor a component id that is not a module resolves.
-      const unknown = await lifecycle.uninstall({ pluginId: 'not-a-thing', workspaceRoot })
-      assert.equal(unknown.ok, false)
-      if (!unknown.ok) assert.match(unknown.message, /not-a-thing is not installed/)
-
-      // The module's own id — what the Settings row carries — removes the bundle.
-      const removed = await lifecycle.uninstall({ pluginId: 'granted-module', workspaceRoot })
-      assert.equal(removed.ok, true, JSON.stringify(removed))
-      if (!removed.ok) return
-      assert.equal(removed.id, bundle.entry.id, 'the receipt that owns the module is the one that was removed')
-      assert.notEqual(bundle.entry.id, 'granted-module', 'the bundle id and its module id really do differ here')
-      assert.equal(existsSync(join(moduleRoot, 'granted-module')), false)
-      assert.equal(readTrustedModulesSync(userDataDir).has('granted-module'), false)
-
-      // And the receipt is gone with it, so a re-install is an install and not an
-      // update of something that is no longer there.
-      const receipts = await readMarketplacePluginInstallReceipts(services.receiptStorePath)
-      assert.equal(receipts.ok, true)
-      if (receipts.ok)
-        assert.deepEqual(
-          receipts.receipts.map((receipt) => receipt.id),
-          [],
-        )
-
-      // A second uninstall is refused rather than silently succeeding.
-      const again = await lifecycle.uninstall({ pluginId: 'granted-module', workspaceRoot })
-      assert.equal(again.ok, false)
-    })
-  }
-
-  // The grant is transactional with the receipt: if the receipt cannot be
-  // written, the files roll back and the trust store ends exactly as it started,
-  // including a fingerprint the user had trusted before this install.
-  async function testFailedReceiptWriteLeavesTrustStoreUnchanged(): Promise<void> {
-    await withTempDir(async (temp) => {
-      const signer = generateKeyPairSync('ed25519')
-      const components: BundleComponents = { module: { path: 'module', id: 'granted-module' } }
-      const bundle = await writeBundle(temp, 'granted-plugin', components, signer, 1)
-      bundle.entry.publisher.verified = false
-      const folders = new Map([['granted-plugin', bundle.files]])
-      const { services, workspaceRoot, moduleRoot } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
-      })
-      const userDataDir = join(temp, 'userdata')
-      useRealTrustStore(services, userDataDir)
-      // A grant this install must not clobber: some other manifest under the
-      // same id that the user trusted earlier.
-      await setModuleTrust(userDataDir, 'granted-module', 'a'.repeat(64))
 
       // Make only the receipt write fail: the store file is missing (an empty
       // store, as on a first install) inside a directory nothing may write to.
@@ -1952,123 +1524,33 @@ test('plugin-lifecycle', async () => {
         const result = await lifecycle.install({
           entry: bundle.entry,
           workspaceRoot,
+          mcpSettings: { syncEnabled: false, servers: {} },
+          mcpClients: ['codex'],
+          skillHarnesses: ['agents'],
           grant: await approve(services, bundle.entry),
         })
 
         assert.equal(result.ok, false, JSON.stringify(result))
         if (result.ok) return
         assert.match(result.message, /Could not write marketplace plugin install receipt/)
-        assert.equal(existsSync(join(moduleRoot, 'granted-module')), false, 'the rolled-back install left no module')
-        assert.equal(readTrustedModulesSync(userDataDir).get('granted-module'), 'a'.repeat(64))
+        assert.equal(existsSync(join(workspaceRoot, '.agents', 'skills', 'receiptless-skill')), false)
+        assert.doesNotMatch(await readFile(join(workspaceRoot, '.codex', 'config.toml'), 'utf8'), /receiptless-mcp/)
       } finally {
         await chmod(receiptDir, 0o700)
       }
     })
   }
 
-  // Undoing a failed update is not an uninstall: the snapshot puts the trusted
-  // module back, so the trust its files still match must survive the rollback.
-  async function testFailedUpdateKeepsThePreviousModuleTrust(): Promise<void> {
-    await withTempDir(async (temp) => {
-      const signer = generateKeyPairSync('ed25519')
-      const v1: BundleComponents = { module: { path: 'module', id: 'granted-module' } }
-      const bundleV1 = await writeBundle(temp, 'granted-plugin-v1', v1, signer, 1)
-      bundleV1.entry.publisher.verified = false
-      // v2's module step writes the replacement module and then fails, so the
-      // update fails with the replacement module already written.
-      const v2: BundleComponents = { module: { path: 'module', id: 'granted-module' } }
-      const bundleV2 = await writeBundle(temp, 'granted-plugin-v2', v2, signer, 2)
-      bundleV2.entry.publisher.verified = false
-      const folders = new Map([
-        ['granted-plugin-v1', bundleV1.files],
-        ['granted-plugin-v2', bundleV2.files],
-      ])
-      const { services, workspaceRoot, moduleRoot } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
-      })
-      const userDataDir = join(temp, 'userdata')
-      useRealTrustStore(services, userDataDir)
-      const lifecycle = createMarketplacePluginLifecycleService(services)
-
-      const first = await lifecycle.install({
-        entry: bundleV1.entry,
-        workspaceRoot,
-        grant: await approve(services, bundleV1.entry),
-      })
-      assert.equal(first.ok, true, JSON.stringify(first))
-      const trustedFingerprint = readTrustedModulesSync(userDataDir).get('granted-module')
-      assert.ok(trustedFingerprint, 'the first install granted trust')
-
-      services.installModuleFolder = failAfterWritingModule
-      const failed = await lifecycle.update({
-        entry: bundleV2.entry,
-        workspaceRoot,
-        grant: await approve(services, bundleV2.entry),
-      })
-
-      assert.equal(failed.ok, false, JSON.stringify(failed))
-      if (failed.ok) return
-      assert.equal(failed.component, 'module')
-      const modules = await discoverUserModules(moduleRoot, services.trustContext())
-      assert.equal(modules.modules[0]?.manifest.version, 1, 'the previous module was restored')
-      assert.equal(readTrustedModulesSync(userDataDir).get('granted-module'), trustedFingerprint)
-      assert.equal(modules.modules[0].trust.status, 'trusted')
-    })
-  }
-
-  // A trust store that will not write is never reported as a clean trust
-  // decision: the install says so on the component, and an uninstall that cannot
-  // withdraw the grant fails loudly instead of leaving an entry that would
-  // silently re-trust the same bytes later.
-  async function testTrustWriteFailuresAreSurfacedNotSwallowed(): Promise<void> {
-    await withTempDir(async (temp) => {
-      const signer = generateKeyPairSync('ed25519')
-      const components: BundleComponents = { module: { path: 'module', id: 'granted-module' } }
-      const bundle = await writeBundle(temp, 'granted-plugin', components, signer, 1)
-      bundle.entry.publisher.verified = false
-      const folders = new Map([['granted-plugin', bundle.files]])
-      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
-      })
-      services.setModuleTrust = async () => ({ ok: false, message: 'disk is full' })
-      const lifecycle = createMarketplacePluginLifecycleService(services)
-
-      const result = await lifecycle.install({
-        entry: bundle.entry,
-        workspaceRoot,
-        grant: await approve(services, bundle.entry),
-      })
-      assert.equal(result.ok, true, JSON.stringify(result))
-      if (!result.ok) return
-      const component = result.installed.find((installed) => installed.kind === 'module')
-      assert.match(component?.message ?? '', /recording trust failed \(disk is full\)/)
-
-      const uninstalled = await lifecycle.uninstall({ pluginId: bundle.entry.id, workspaceRoot })
-      assert.equal(uninstalled.ok, false)
-      if (uninstalled.ok) return
-      assert.match(uninstalled.message, /could not withdraw its trust: disk is full/)
-      // The receipt survives a failed uninstall, so retrying it is possible.
-      const receipts = JSON.parse(await readFile(receiptStorePath, 'utf8')) as { plugins: Record<string, unknown> }
-      assert.ok(receipts.plugins['registry-plugin'])
-    })
-  }
-
   async function main(): Promise<void> {
     await testVerifiedRegistryInstallFansOutAndRecordsReceipt()
-    await testTrustWriteFailuresAreSurfacedNotSwallowed()
     await testCommunityBundleRequiresTrustGrant()
     await testInstallRefusesContentThatChangedAfterApproval()
     await testInlineMcpRefusesServersThatWereNotReviewed()
     await testUpdateRefusesAnOlderVersion()
     await testUnknownSkillHarnessesWriteNothing()
-    await testUnsignedCodeInstallsOnlyOnAGithubCodeGrant()
-    await testCommunityModuleInstallGrantsTrustAndUninstallRevokes()
-    await testUninstallResolvesAModuleIdToItsOwningReceipt()
-    await testFailedReceiptWriteLeavesTrustStoreUnchanged()
-    await testFailedUpdateKeepsThePreviousModuleTrust()
+    await testFailedReceiptWriteRollsBackTheInstall()
     await testUnsignedMcpSkillsBundleRoutesThroughTrust()
     await testUnsignedSkillsOnlyBundleRoutesThroughTrust()
-    await testUnsignedModuleBearingBundleHardBlocksEvenWithTrust()
     await testInlineMcpEntryRoutesThroughTrustAndSyncs()
     await testDigestMismatchedRegistryInstallDoesNotFanOut()
     await testSkillInstallFailureRollsBackResidue()
@@ -2079,7 +1561,6 @@ test('plugin-lifecycle', async () => {
     await testReceiptWithAnUnsupportedComponentKindIsRejected()
     await testFailedUpdateRollsBackReplacementAndKeepsReceipt()
     await testReceiptStoreValidationRejectsMalformedAndUnsafeState()
-    await testReceiptStoreFromBeforeExtensionsIsRemovedUnread()
     await testClaudePluginRequiresTrustGrant()
     await testClaudePluginInstallsSkillsIntoClaudeHarnessAndUninstalls()
     await testClaudePluginDefaultFanOutUsesResolvedHarnesses()

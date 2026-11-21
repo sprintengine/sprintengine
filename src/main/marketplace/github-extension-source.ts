@@ -17,14 +17,16 @@ import {
   isMarketplaceSourceHostAllowed,
   parseMarketplaceExtraHosts,
   resolveOptionallySignedManifest,
+  retiredMarketplaceComponentIssue,
 } from '../../shared/marketplace'
 import { readStudioEnv } from '../../shared/studio-env'
 import { isSignedByTrustedPublisher, type ModuleTrustContext } from '../modules/module-signature'
 import type { MarketplacePluginDownloadFetch } from './plugin-download'
 
 // "Install extension from GitHub…": any repository a person pastes, as long as
-// it carries a SprintEngine plugin.json (the SDK's bundle manifest) at the
-// root — or at the path the URL names. This file turns the URL into a
+// it carries a SprintEngine plugin.json (the SDK's bundle manifest: MCP servers
+// and skills) at the root — or at the path the URL names. An extension
+// (extension.json) installs from a folder on this machine, not from here. This file turns the URL into a
 // registry-shaped entry pinned to one commit, so the rest of the way is the
 // marketplace's own: verify reads and discloses it (plugin-verify.ts), a trust
 // token carries it (trust-tokens.ts), and the lifecycle installs it at that
@@ -134,6 +136,10 @@ export const CLAUDE_PLUGIN_REPOSITORY_MESSAGE =
   'This repository is an agent-CLI plugin (it has .claude-plugin/), not a SprintEngine extension. ' +
   'Add it as a skill source instead: Extensions → Skills → + → “Add skill source from GitHub…”.'
 
+export const EXTENSION_REPOSITORY_MESSAGE =
+  'This repository is an extension (it has extension.json), and installing an extension from GitHub is not ' +
+  'available yet. Clone the repository, then install its folder from Settings → Extensions → Add from folder.'
+
 /**
  * Resolve a pasted URL to an entry pinned to one commit: the ref (the default
  * branch unless the URL named one) → its commit → the listing at that commit →
@@ -195,6 +201,9 @@ export async function resolveGithubExtension(
     const entries = contentsEntries(listing.body)
     const pluginJson = entries.find((entry) => entry.name === 'plugin.json' && entry.type === 'file')
     if (!pluginJson) {
+      if (entries.some((entry) => entry.name === 'extension.json' && entry.type === 'file')) {
+        return { ok: false, message: EXTENSION_REPOSITORY_MESSAGE }
+      }
       if (entries.some((entry) => entry.name === '.claude-plugin' && entry.type === 'dir')) {
         return { ok: false, message: CLAUDE_PLUGIN_REPOSITORY_MESSAGE, skillSource: true }
       }
@@ -202,7 +211,7 @@ export async function resolveGithubExtension(
         ok: false,
         message:
           `${label} has no plugin.json ${parsed.path ? `in ${parsed.path}` : 'at its root'}, so it is not a ` +
-          'SprintEngine extension. An extension repository keeps plugin.json at the top, naming its module/ folder.',
+          'SprintEngine plugin. A plugin repository keeps plugin.json at the top, naming its MCP and skills folders.',
       }
     }
     if (!pluginJson.download_url || !isAllowedHost(pluginJson.download_url)) {
@@ -220,9 +229,10 @@ export async function resolveGithubExtension(
     }
     const resolved = resolveOptionallySignedManifest(manifestSource.body)
     if (!resolved.ok) {
+      const retired = retiredMarketplaceComponentIssue(resolved.issues)
       return {
         ok: false,
-        message: `${label}’s plugin.json is not a valid SprintEngine plugin manifest.`,
+        message: retired?.message ?? `${label}’s plugin.json is not a valid SprintEngine plugin manifest.`,
         issues: resolved.issues,
       }
     }

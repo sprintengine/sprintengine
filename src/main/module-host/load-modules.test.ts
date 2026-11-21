@@ -3,8 +3,13 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { CapabilityManifest } from '../../shared/modules/manifest'
-import { computeModuleFileDigestsSync } from '../modules/module-signature'
+import { computeModuleFileDigestsSync } from '../../../packages/extension-sdk/src/signing'
+import {
+  capabilityManifestOf,
+  parseExtensionManifest,
+  type ExtensionManifest,
+} from '../../shared/modules/third-party-manifest'
+import { extensionManifest } from '../../../tests/extension-folder'
 import { planThirdPartyMainModules } from '../modules/third-party-main-loader'
 import type { InstalledModule } from '../modules/user-module-registry'
 import { loadMainModules, type CapabilityModule } from './load-modules'
@@ -24,6 +29,7 @@ test('load-modules', async () => {
     testDisabledModuleNeverRegisters()
     testProvideServicesSeedsBeforeModules()
     testCrossModuleServiceWiring()
+    testAppModulesStartBeforeEveryExtension()
     testThrowingModuleIsIsolated()
     testDuplicateMethodIsReportedNotFatal()
     testLifecycleAndSidecarsCollected()
@@ -38,9 +44,36 @@ test('load-modules', async () => {
     await testThirdPartyPathSafetyAndBadEntriesAreLaunchErrors()
     testRejectedThirdPartyManifestIsLaunchError()
     await testTrustedThirdPartyRegistrationThrowIsIsolated()
-    await testThirdPartyIneligibleDependencyCascades()
+    await testThirdPartyWorkerServesOnlyItsDeclaredMcpTools()
 
     console.log('module-host tests passed')
+  }
+
+  // An extension declares no dependencies, and its install key sorts before
+  // a built-in id like `scheduled-agents`; its activate may still resolve a
+  // service any of the app's modules provides.
+  function testAppModulesStartBeforeEveryExtension(): void {
+    const token = createServiceToken<{ ping(moduleId: string): string }>('scheduled-agents.module-service')
+    const order: string[] = []
+    const provider: CapabilityModule = {
+      manifest: { id: 'zz-scheduled', displayName: 'Provider', version: 1, defaultEnabled: true },
+      registerMain: (host) => {
+        order.push('zz-scheduled')
+        host.provideService(token, () => ({ ping: (moduleId: string) => `pong ${moduleId}` }))
+      },
+    }
+    let answer = ''
+    const extension: CapabilityModule = {
+      manifest: { id: 'local.aaa', displayName: 'Aaa', version: '1.0.0', defaultEnabled: true, source: 'third-party' },
+      registerMain: (host) => {
+        order.push('local.aaa')
+        answer = host.requireService(token).ping(host.moduleId)
+      },
+    }
+    const { report } = loadMainModules({ modules: [extension, provider] })
+    assert.deepEqual(report.errors, [])
+    assert.deepEqual(order, ['zz-scheduled', 'local.aaa'])
+    assert.equal(answer, 'pong local.aaa')
   }
 
   function testEnabledModulesRegisterInDependencyOrder(): void {
@@ -268,7 +301,7 @@ test('load-modules', async () => {
     await ready
     assert.deepEqual(report.loaded, [])
     assert.equal(report.errors.length, 1)
-    assert.match(report.errors[0]!.message, /did not settle within/)
+    assert.match(report.errors[0]!.message, /^Extension "hung" did not finish starting within 0.005s\.$/)
     assert.equal(kernel.startupHooks().length, 0)
     await kernel.runStartup()
     assert.equal(registeredHook, false)
@@ -367,15 +400,23 @@ test('load-modules', async () => {
     const moduleRoot = await createThirdPartyModuleRoot('trusted')
     await writeFile(
       join(moduleRoot, 'main.cjs'),
-      "exports.registerMain = (host) => host.registerMethods({ ping: { access: 'read', params: (v) => ({ ok: true, params: v }), handler: () => ({ ok: true, result: 'pong' }) } })\n",
+      "exports.activate = (host) => host.registerMethods({ ping: { access: 'read', params: (v) => ({ ok: true, params: v }), handler: () => ({ ok: true, result: 'pong' }) } })\n",
+    )
+    const defaultRoot = await createThirdPartyModuleRoot('default')
+    await writeFile(
+      join(defaultRoot, 'main.cjs'),
+      "module.exports.default = (host) => host.registerMethods({ ping: { access: 'read', params: (v) => ({ ok: true, params: v }), handler: () => ({ ok: true, result: 'pong' }) } })\n",
     )
     const planned = planThirdPartyMainModules({
-      modules: [installedThirdPartyModule({ id: 'trusted', moduleRoot, trust: 'trusted', main: 'main.cjs' })],
+      modules: [
+        installedThirdPartyModule({ id: 'trusted', moduleRoot, trust: 'trusted', main: 'main.cjs' }),
+        installedThirdPartyModule({ id: 'default', moduleRoot: defaultRoot, trust: 'trusted', main: 'main.cjs' }),
+      ],
       rejected: [],
     })
     const { report } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
 
-    assert.deepEqual(report.loaded, ['trusted'])
+    assert.deepEqual(report.loaded, ['local.default', 'local.trusted'])
     assert.deepEqual(report.manifestOnly, [])
     assert.deepEqual(report.errors, [])
   }
@@ -405,25 +446,25 @@ test('load-modules', async () => {
     assert.deepEqual(
       report.errors.map((error) => ({ id: error.id, message: error.message })),
       [
-        { id: 'invalid', message: 'Extension "invalid" has an invalid signature and will not load.' },
+        { id: 'local.invalid', message: 'Extension "local.invalid" has an invalid signature and will not load.' },
         {
-          id: 'signed',
-          message: 'Extension "signed" is not trusted yet; trust it in Settings → Extensions to enable.',
+          id: 'local.signed',
+          message: 'Extension "local.signed" is not trusted yet; trust it in Settings → Extensions to enable.',
         },
         {
-          id: 'unsigned',
-          message: 'Extension "unsigned" is not trusted yet; trust it in Settings → Extensions to enable.',
+          id: 'local.unsigned',
+          message: 'Extension "local.unsigned" is not trusted yet; trust it in Settings → Extensions to enable.',
         },
       ],
     )
   }
 
   async function testThirdPartyPathSafetyAndBadEntriesAreLaunchErrors(): Promise<void> {
-    const missingEntryRoot = await createThirdPartyModuleRoot('manifest-only')
+    const codeFreeRoot = await createThirdPartyModuleRoot('code-free')
     const escapedRoot = await createThirdPartyModuleRoot('escaped')
     const badExportRoot = await createThirdPartyModuleRoot('bad-export')
     const importFailureRoot = await createThirdPartyModuleRoot('import-failure')
-    await writeFile(join(badExportRoot, 'main.cjs'), 'exports.registerMain = 42\n')
+    await writeFile(join(badExportRoot, 'main.cjs'), 'exports.activate = 42\n')
     await writeFile(join(importFailureRoot, 'main.cjs'), "require('./missing.cjs')\n")
     const good: CapabilityModule = {
       manifest: { id: 'good', displayName: 'Good', version: 1, defaultEnabled: true },
@@ -431,7 +472,7 @@ test('load-modules', async () => {
     }
     const planned = planThirdPartyMainModules({
       modules: [
-        installedThirdPartyModule({ id: 'manifest-only', moduleRoot: missingEntryRoot, trust: 'trusted' }),
+        installedThirdPartyModule({ id: 'code-free', moduleRoot: codeFreeRoot, trust: 'trusted' }),
         installedThirdPartyModule({ id: 'escaped', moduleRoot: escapedRoot, trust: 'trusted', main: '../outside.cjs' }),
         installedThirdPartyModule({ id: 'bad-export', moduleRoot: badExportRoot, trust: 'trusted', main: 'main.cjs' }),
         installedThirdPartyModule({
@@ -449,17 +490,20 @@ test('load-modules', async () => {
     })
 
     assert.deepEqual(report.loaded, ['good'])
-    assert.deepEqual(report.manifestOnly, ['manifest-only'])
+    assert.deepEqual(report.manifestOnly, ['local.code-free'])
     assert.equal(report.errors.length, 3)
     assert.equal(
-      report.errors.find((error) => error.id === 'escaped')?.message,
-      'entry.main must resolve inside the module root.',
+      report.errors.find((error) => error.id === 'local.escaped')?.message,
+      'main must resolve inside the module root.',
     )
     assert.equal(
-      report.errors.find((error) => error.id === 'bad-export')?.message,
-      'entry.main must export a callable registerMain(host).',
+      report.errors.find((error) => error.id === 'local.bad-export')?.message,
+      'main must export activate(studio), as a named export or its default.',
     )
-    assert.match(report.errors.find((error) => error.id === 'import-failure')?.message ?? '', /Cannot find module/)
+    assert.match(
+      report.errors.find((error) => error.id === 'local.import-failure')?.message ?? '',
+      /Cannot find module/,
+    )
   }
 
   function testRejectedThirdPartyManifestIsLaunchError(): void {
@@ -467,8 +511,8 @@ test('load-modules', async () => {
       modules: [],
       rejected: [
         {
-          path: 'broken/manifest.json',
-          issues: [{ path: 'entry.main', message: 'must be a safe relative path inside the module.' }],
+          path: 'local.broken/extension.json',
+          issues: [{ path: 'main', message: 'is required by the worker tier.' }],
         },
       ],
     })
@@ -482,15 +526,15 @@ test('load-modules', async () => {
     assert.deepEqual(report.manifestOnly, [])
     assert.deepEqual(report.errors, [
       {
-        id: 'broken/manifest.json',
-        message: 'entry.main: must be a safe relative path inside the module.',
+        id: 'local.broken/extension.json',
+        message: 'main: is required by the worker tier.',
       },
     ])
   }
 
   async function testTrustedThirdPartyRegistrationThrowIsIsolated(): Promise<void> {
     const badRoot = await createThirdPartyModuleRoot('bad')
-    await writeFile(join(badRoot, 'main.cjs'), "exports.registerMain = () => { throw new Error('boom') }\n")
+    await writeFile(join(badRoot, 'main.cjs'), "exports.activate = () => { throw new Error('boom') }\n")
     const good: CapabilityModule = {
       manifest: { id: 'good', displayName: 'Good', version: 1, defaultEnabled: true },
       registerMain: (host) => host.registerMethods({ ping: answering('pong') }),
@@ -503,46 +547,63 @@ test('load-modules', async () => {
 
     assert.deepEqual(report.loaded, ['good'])
     assert.equal(report.errors.length, 1)
-    assert.equal(report.errors[0].id, 'bad')
+    assert.equal(report.errors[0].id, 'local.bad')
     assert.equal(report.errors[0].message, 'boom')
   }
 
-  async function testThirdPartyIneligibleDependencyCascades(): Promise<void> {
-    const dependencyRoot = await createThirdPartyModuleRoot('dependency')
-    const dependentRoot = await createThirdPartyModuleRoot('dependent')
-    await writeFile(join(dependencyRoot, 'main.cjs'), "throw new Error('dependency must not import')\n")
-    await writeFile(join(dependentRoot, 'main.cjs'), 'exports.registerMain = () => undefined\n')
+  // The plan carries each extension's declared MCP tools to the kernel: a
+  // worker serves those, described as its extension.json describes them, and
+  // one that registers anything else fails to start.
+  async function testThirdPartyWorkerServesOnlyItsDeclaredMcpTools(): Promise<void> {
+    const registering = (name: string) =>
+      `exports.activate = (host) => host.registerMcpTools([{ name: '${name}', description: 'from code', mutates: false, inputSchema: { type: 'object' }, handler: async () => ({ content: [] }) }])\n`
+    const declaredRoot = await createThirdPartyModuleRoot('declared')
+    const undeclaredRoot = await createThirdPartyModuleRoot('undeclared')
+    await writeFile(join(declaredRoot, 'main.cjs'), registering('notes_write'))
+    await writeFile(join(undeclaredRoot, 'main.cjs'), registering('notes_secret'))
+    const mcpTools = [{ name: 'notes_write', description: 'Writes a note.', access: 'operate' as const }]
     const planned = planThirdPartyMainModules({
       modules: [
         installedThirdPartyModule({
-          id: 'dependency',
-          moduleRoot: dependencyRoot,
-          trust: 'unsigned',
-          main: 'main.cjs',
-        }),
-        installedThirdPartyModule({
-          id: 'dependent',
-          moduleRoot: dependentRoot,
+          id: 'declared',
+          moduleRoot: declaredRoot,
           trust: 'trusted',
           main: 'main.cjs',
-          dependsOn: ['dependency'],
+          mcpTools,
+        }),
+        installedThirdPartyModule({
+          id: 'undeclared',
+          moduleRoot: undeclaredRoot,
+          trust: 'trusted',
+          main: 'main.cjs',
+          mcpTools,
         }),
       ],
       rejected: [],
     })
+    assert.deepEqual(planned.mcpTools, { 'local.declared': mcpTools, 'local.undeclared': mcpTools })
+    const { kernel, report } = loadMainModules({
+      modules: planned.modules,
+      ineligible: planned.ineligible,
+      moduleMcpTools: planned.mcpTools,
+    })
 
-    const { report } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
-
-    assert.deepEqual(report.loaded, [])
+    assert.deepEqual(report.loaded, ['local.declared'])
+    assert.deepEqual(report.errors, [
+      {
+        id: 'local.undeclared',
+        message:
+          'MCP tool "notes_secret" from extension "local.undeclared" is not declared in its extension.json (contributes.mcpTools).',
+      },
+    ])
     assert.deepEqual(
-      report.errors.map((error) => ({ id: error.id, message: error.message })),
-      [
-        {
-          id: 'dependency',
-          message: 'Extension "dependency" is not trusted yet; trust it in Settings → Extensions to enable.',
-        },
-        { id: 'dependent', message: 'Extension "dependent" requires "dependency", which is not enabled.' },
-      ],
+      kernel.mcpToolRegistrations().map((entry) => ({
+        owner: entry.moduleId,
+        name: entry.registration.name,
+        description: entry.registration.description,
+        mutates: entry.registration.mutates,
+      })),
+      [{ owner: 'local.declared', name: 'notes_write', description: 'Writes a note.', mutates: true }],
     )
   }
 
@@ -550,31 +611,41 @@ test('load-modules', async () => {
     return mkdtemp(join(tmpdir(), `mc-third-party-${id}-`))
   }
 
+  // An extension installed from a folder as `local.<id>`: a worker when it
+  // names a main, a code-free declarative one otherwise.
   function installedThirdPartyModule(options: {
     id: string
     moduleRoot: string
     trust: InstalledModule['trust']['status']
     main?: string
-    dependsOn?: string[]
+    mcpTools?: ExtensionManifest['contributes']['mcpTools']
   }): InstalledModule {
-    const manifest: CapabilityManifest = {
-      id: options.id,
-      displayName: options.id,
-      version: 1,
-      defaultEnabled: true,
-      source: 'third-party',
-      permissions: ['module:bridge'],
-    }
-    if (options.main) manifest.entry = { main: options.main }
-    if (options.dependsOn) manifest.dependsOn = options.dependsOn
-    // A trusted module is one whose files were verified; the loader holds the
-    // folder to those digests again before it requires the entry.
+    const source = options.main
+      ? extensionManifest({
+          id: options.id,
+          main: options.main,
+          permissions: options.mcpTools ? ['module:bridge', 'mcp:tools'] : ['module:bridge'],
+          ...(options.mcpTools ? { contributes: { mcpTools: options.mcpTools } } : {}),
+        })
+      : extensionManifest({ id: options.id, tier: 'declarative', permissions: undefined, main: undefined })
+    // The validator would refuse a main like `../outside.cjs`; the loader's own
+    // containment is what is under test, so the main is set after validation.
+    const parsed = parseExtensionManifest(JSON.stringify({ ...source, ...(options.main ? { main: 'main.cjs' } : {}) }))
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.issues))
+    const extension: ExtensionManifest = options.main ? { ...parsed.manifest, main: options.main } : parsed.manifest
+    const key = `local.${options.id}`
+    // A trusted extension is one whose files were verified; the loader holds
+    // the folder to those digests again before it requires the worker.
+    const scan = computeModuleFileDigestsSync(options.moduleRoot)
     return {
-      manifest,
+      key,
+      publisher: 'local',
+      manifest: capabilityManifestOf(key, 'local', extension),
+      extension,
       moduleRoot: options.moduleRoot,
       trust:
         options.trust === 'trusted'
-          ? { status: 'trusted', via: 'grant', verifiedFiles: computeModuleFileDigestsSync(options.moduleRoot).files }
+          ? { status: 'trusted', via: 'grant', verifiedFiles: scan.files }
           : { status: options.trust },
     }
   }

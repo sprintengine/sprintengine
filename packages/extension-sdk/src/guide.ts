@@ -29,24 +29,28 @@ export const EXTENSION_GUIDE_TOPICS: readonly ExtensionGuideTopic[] = [
   },
   {
     id: 'surfaces',
-    summary: 'Which API adds what to Studio (panel, door, command, MCP tool, chat, …), and its permission.',
+    summary:
+      'Which contribution or API adds what to Studio (panel, door, command, menu, MCP tool, chat, …), and its tier and permission.',
   },
-  { id: 'manifest', summary: 'module/manifest.json and plugin.json, field by field.' },
+  { id: 'manifest', summary: 'extension.json, field by field: tiers, contributions, ids, versions, paths.' },
   { id: 'permissions', summary: 'Every permission, what it allows, and which the host enforces.' },
   {
     id: 'rules',
-    summary: 'The mistakes that cost earlier extensions time: styling, bundle shape, trust, storage, untrusted input.',
+    summary: 'The mistakes that cost earlier extensions time: bundle shape, styling, trust, storage, untrusted input.',
   },
-  { id: 'api-renderer', summary: 'The renderer host: contributions, module state, openChat.' },
-  { id: 'api-main', summary: 'The main host: services, storage, IPC, notifications, MCP tools, skills.' },
+  { id: 'api-renderer', summary: 'The `studio` a surface’s mount is handed: the window, state, chats, ready().' },
+  {
+    id: 'api-main',
+    summary: 'The worker’s activate(studio): methods, commands, MCP tools, services, storage, notifications.',
+  },
   { id: 'conversations', summary: "The extension's own chats, and one-shot text generation." },
-  { id: 'brokers', summary: 'API keys and GitHub through the host, never a token in the module.' },
-  { id: 'ui-kit', summary: '@sprintengine/extension-sdk/ui and /surface, theme tokens, styling your own CSS.' },
+  { id: 'brokers', summary: 'API keys and GitHub through the host, never a token in the extension.' },
+  { id: 'styling', summary: 'Drawing a surface yourself: React or plain DOM, the --sem-* properties, your own CSS.' },
   {
     id: 'troubleshooting',
-    summary: 'Studio does not list, trust or run the module: what it shows, the cause, the fix.',
+    summary: 'Studio does not list, trust or run the extension: what it shows, the cause, the fix.',
   },
-  { id: 'publishing', summary: 'Signing, installing from GitHub, and the marketplace.' },
+  { id: 'publishing', summary: 'Signing with extension.sig, packing, and handing an extension to others.' },
 ]
 
 /**

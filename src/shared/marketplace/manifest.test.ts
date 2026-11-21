@@ -28,7 +28,6 @@ test('manifest', async () => {
     components: {
       mcp: { path: 'mcp/server.json', files: [{ path: 'mcp/server.json', sha256: VALID_DIGEST }] },
       skills: { path: 'skills/pack', files: [{ path: 'skills/pack/SKILL.md', sha256: VALID_DIGEST }] },
-      module: { path: 'module', files: [{ path: 'module/manifest.json', sha256: VALID_DIGEST }] },
     },
   }
 
@@ -44,7 +43,7 @@ test('manifest', async () => {
         icon: 'icons/dev-helper.svg',
         latest: 1,
         source: 'https://github.com/sprintengine/studio-releases/plugins/dev-helper',
-        provides: ['mcp', 'skills', 'module'],
+        provides: ['mcp', 'skills'],
         signature: VALID_SIGNATURE,
       },
     ],
@@ -120,7 +119,6 @@ test('manifest', async () => {
       assert.deepEqual(result.manifest.permissions, ['network', 'ipc:settings'])
       assert.equal(result.manifest.components.mcp?.path, 'mcp/server.json')
       assert.equal(result.manifest.components.skills?.path, 'skills/pack')
-      assert.equal(result.manifest.components.module?.path, 'module')
       // Agent CLIs ship with the app; a bundle cannot carry one.
       assert.equal((result.manifest.components as Record<string, unknown>).cli, undefined)
       assert.deepEqual(result.manifest.components.mcp?.files, [{ path: 'mcp/server.json', sha256: VALID_DIGEST }])
@@ -200,7 +198,7 @@ test('manifest', async () => {
       const entry = result.marketplace.plugins[0]
       assert.equal(result.marketplace.schemaVersion, 1)
       assert.equal(entry.publisher.verified, true)
-      assert.deepEqual(entry.provides, ['mcp', 'skills', 'module'])
+      assert.deepEqual(entry.provides, ['mcp', 'skills'])
       // Legacy singular category parses and no widened fields are invented.
       assert.equal(entry.category, 'dev-tools')
       assert.equal(entry.categories, undefined)
@@ -531,7 +529,7 @@ test('manifest', async () => {
   }
 
   function testAutomationIsARetiredComponentKind(): void {
-    assert.deepEqual([...MARKETPLACE_COMPONENT_KINDS], ['mcp', 'skills', 'module'])
+    assert.deepEqual([...MARKETPLACE_COMPONENT_KINDS], ['mcp', 'skills'])
     // A bundle built for an older Studio says why it is refused, not just that
     // the kind is unknown.
     const bundle = validateMarketplacePluginManifest({
@@ -565,7 +563,31 @@ test('manifest', async () => {
       )
   }
 
+  // An extension ships as a folder with its own extension.json, never inside a
+  // bundle, and a bundle that still names one is told so. A registry row that
+  // says it provides one is not a row this Studio reads.
+  function testABundleNoLongerCarriesAnExtension(): void {
+    const bundle = validateMarketplacePluginManifest({
+      ...VALID_PLUGIN,
+      components: {
+        ...VALID_PLUGIN.components,
+        module: { path: 'module', files: [{ path: 'module/manifest.json', sha256: VALID_DIGEST }] },
+      },
+    })
+    assert.equal(bundle.ok, false)
+    if (!bundle.ok) {
+      assert.deepEqual(issuePaths(bundle.issues), ['components.module'])
+      assert.match(bundle.issues[0]?.message ?? '', /A bundle no longer carries an extension/)
+    }
+    assertRejectsAt(
+      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_MARKETPLACE.plugins[0], provides: ['module'] }] },
+      'plugins[0].provides[0]',
+      validateMarketplaceIndex,
+    )
+  }
+
   testValidPluginManifest()
+  testABundleNoLongerCarriesAnExtension()
   testPluginMissingRequiredFields()
   testPluginRejectsInvalidComponentCases()
   testPluginAuthoringManifestAllowsDraftWithoutDigests()

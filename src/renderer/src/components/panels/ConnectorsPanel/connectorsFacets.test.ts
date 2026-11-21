@@ -91,16 +91,16 @@ test('connectorsFacets', async () => {
     assert.equal(stripe.canLaunch, false)
   }
 
-  // A module entry IS listed in the Plugins catalogue (D10); a cli-only entry has
-  // its own canvas and is dropped from this one.
+  // A skills entry is listed in the Plugins catalogue; a cli-only entry has its
+  // own canvas and is dropped from this one.
   {
     const entries = buildConnectorEntries([
-      plugin({ id: 'theme-pack', provides: ['module'] }),
+      plugin({ id: 'review-skills', provides: ['skills'] }),
       plugin({ id: 'cli-only', provides: ['cli'] }),
     ])
     assert.deepEqual(
       entries.map((entry) => entry.id),
-      ['theme-pack'],
+      ['review-skills'],
     )
   }
 
@@ -236,74 +236,34 @@ test('connectorsFacets', async () => {
   }
 
   // --- registry entries by kind ---------------------------------
-  // The Plugins catalogue lists mcp, skills and module entries (D10); cli entries
-  // keep their own canvas. Same normalized row shape from one builder.
+  // The Plugins catalogue lists mcp and skills entries; cli entries keep their
+  // own canvas. Same normalized row shape from one builder.
   {
-    const roadmapModule = plugin({ id: 'roadmap-module', name: 'Roadmap', provides: ['module'] })
+    const reviewSkills = plugin({ id: 'review-skills', name: 'Review', provides: ['skills'] })
     const cursorCli = plugin({ id: 'cursor-cli', name: 'Cursor', provides: ['cli'] })
-    const stack = plugin({ id: 'full-stack', name: 'Full stack', provides: ['mcp', 'skills', 'module', 'cli'] })
-    const all = [plugin(), roadmapModule, cursorCli, stack]
+    const stack = plugin({ id: 'full-stack', name: 'Full stack', provides: ['mcp', 'skills', 'cli'] })
+    const all = [plugin(), reviewSkills, cursorCli, stack]
 
     assert.deepEqual(
-      registryEntriesForKinds(all, ['module']).map((entry) => entry.id),
-      ['roadmap-module', 'full-stack'],
+      registryEntriesForKinds(all, ['skills']).map((entry) => entry.id),
+      ['stripe-mcp', 'review-skills', 'full-stack'],
     )
     assert.deepEqual(
       registryEntriesForKinds(all, ['cli']).map((entry) => entry.id),
       ['cursor-cli', 'full-stack'],
     )
-    // The catalogue path is the same builder with mcp/skills/module: a
-    // module-only plugin is listed, a cli-only one is not.
+    // The catalogue path is the same builder with mcp/skills: a cli-only one is
+    // not listed.
     assert.deepEqual(
       buildConnectorEntries(all).map((entry) => entry.id),
-      ['stripe-mcp', 'roadmap-module', 'full-stack'],
+      ['stripe-mcp', 'review-skills', 'full-stack'],
     )
     // Kind entries are never launchable and keep the registry install route.
-    const [moduleEntry] = registryEntriesForKinds(all, ['module'])
-    assert.equal(moduleEntry.canLaunch, false)
-    assert.equal(moduleEntry.source, 'registry')
-    assert.ok(moduleEntry.plugin)
-  }
-
-  // --- module-first card copy + launch exclusion --------------------
-  // A module entry's row fields come straight from the index entry, whose
-  // name/summary ARE the module manifest's displayName + summary (the shared
-  // authoring projection derives them) — the card leads with what the module
-  // adds, never bundle mechanics. Module-only plugins never reach the Featured
-  // (launchable) rail, never count toward it, and never enter the connector grid.
-  {
-    const calendar = plugin({
-      id: 'sprintengine-calendar',
-      name: 'Calendar',
-      summary: 'Adds a calendar workspace type: time-block notes and schedule Backlog items.',
-      category: 'Productivity',
-      provides: ['module'],
-    })
-    const [entry] = registryEntriesForKinds([calendar], ['module'])
-    assert.equal(entry.name, 'Calendar')
-    assert.equal(entry.summary, 'Adds a calendar workspace type: time-block notes and schedule Backlog items.')
-    assert.deepEqual(entry.componentLabels, ['Module'])
-    assert.equal(entry.canLaunch, false)
-    assert.equal(entry.canLaunch, false, 'a module-only plugin is never launchable')
-    // Listed, never launchable: install still gates launch.
-    const calendarRows = buildConnectorEntries([calendar])
-    assert.deepEqual(
-      calendarRows.map((row) => row.id),
-      ['sprintengine-calendar'],
-    )
-    assert.equal(calendarRows[0].canLaunch, false)
-    assert.deepEqual(calendarRows[0].componentLabels, ['Module'])
-    // A cli-only plugin still keeps to its own canvas.
-    assert.deepEqual(buildConnectorEntries([plugin({ id: 'cursor-only', name: 'Cursor', provides: ['cli'] })]), [])
-    // A mixed bundle (mcp + module) is listed once, and its row
-    // never launches from the registry side — install still gates launch.
-    const mixed = plugin({ id: 'suite', name: 'Suite', provides: ['mcp', 'module'] })
-    const gridRows = buildConnectorEntries([mixed])
-    assert.deepEqual(
-      gridRows.map((row) => row.id),
-      ['suite'],
-    )
-    assert.equal(gridRows[0].canLaunch, false)
+    const [skillsEntry] = registryEntriesForKinds([reviewSkills], ['skills'])
+    assert.equal(skillsEntry.canLaunch, false)
+    assert.equal(skillsEntry.source, 'registry')
+    assert.ok(skillsEntry.plugin)
+    assert.deepEqual(skillsEntry.componentLabels, ['Skill pack'])
   }
 
   console.log('connectors-facets guard passed')

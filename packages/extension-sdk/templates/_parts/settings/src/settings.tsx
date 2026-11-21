@@ -1,37 +1,54 @@
-import type { RendererHost, SettingsSectionProps } from '@sprintengine/extension-sdk'
-import { Field, Input } from '@sprintengine/extension-sdk/ui'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
+import { createRoot } from 'react-dom/client'
 
-function SettingsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-      <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
-      <circle cx="16" cy="7" r="2" />
-      <circle cx="10" cy="17" r="2" />
-    </svg>
-  )
-}
+import type { ExtensionMount, ExtensionMountStudio } from '@sprintengine/extension-sdk'
 
-function Settings({ values, setValue }: SettingsSectionProps) {
+const NAME = '{{displayName}}'
+
+// A section in Settings, declared in extension.json
+// (`contributes.settingsSections`, id "settings"). It saves into the
+// extension's app state, so the rest of the extension reads the value with
+// `studio.getModuleAppState('label')`, a worker included ("storage" permission).
+export function Settings({ studio }: { studio: ExtensionMountStudio }) {
+  const subscribe = useCallback((onChange: () => void) => studio.watchModuleAppState(() => onChange()), [studio])
+  const readLabel = useCallback(() => studio.getModuleAppState<string>('label') ?? '', [studio])
+  const label = useSyncExternalStore(subscribe, readLabel, readLabel)
+
+  useEffect(() => studio.ready(), [studio])
+
   return (
-    <Field label="Label" htmlFor="{{id}}-label" help="Shown wherever {{displayName}} names itself.">
-      <Input
-        id="{{id}}-label"
-        value={typeof values.label === 'string' ? values.label : ''}
-        onChange={(event) => setValue('label', event.target.value || undefined)}
+    <label
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--sem-space-xs)',
+        fontFamily: 'var(--sem-font-family-ui)',
+        fontSize: 'var(--sem-font-size-body)',
+        color: 'var(--sem-color-text-default)',
+      }}
+    >
+      Label
+      <input
+        value={label}
+        onChange={(event) => studio.setModuleAppState('label', event.target.value || undefined)}
+        style={{
+          font: 'inherit',
+          color: 'inherit',
+          padding: 'var(--sem-space-xs) var(--sem-space-sm)',
+          border: '1px solid var(--sem-color-border-default)',
+          borderRadius: 'var(--sem-radius-control)',
+          background: 'var(--sem-color-bg-surface-raised)',
+        }}
       />
-    </Field>
+      <span style={{ color: 'var(--sem-color-text-muted)', fontSize: 'var(--sem-font-size-meta)' }}>
+        Shown wherever {NAME} names itself.
+      </span>
+    </label>
   )
 }
 
-// A section in Settings. Its values are saved in the module's own settings
-// namespace — the keys `host.getModuleAppState` reads — so the rest of the
-// window half reads them with no wiring of its own ("storage" permission).
-export function registerSettings(host: RendererHost): void {
-  host.registerSettingsSection({
-    id: '{{id}}-settings',
-    label: '{{displayName}}',
-    description: 'How {{displayName}} behaves.',
-    icon: SettingsIcon,
-    Component: Settings,
-  })
+export const mount: ExtensionMount = (root, studio) => {
+  const view = createRoot(root)
+  view.render(<Settings studio={studio} />)
+  return () => view.unmount()
 }

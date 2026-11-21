@@ -1,5 +1,5 @@
 // Per-installed-entry update detection: compares what is installed
-// (install receipts + directly installed user modules) against the registry's
+// (the install receipts) against the registry's
 // `latest`, through the pure shared detector. Honest failure is part of the
 // contract — a registry that cannot be read yields `unknown` on every entry,
 // never "up to date".
@@ -10,15 +10,11 @@ import type {
   MarketplaceUpdateStatesResult,
 } from '../../shared/electron-api'
 import { marketplaceUpdateAvailability, type MarketplaceUpdateStateEntry } from '../../shared/marketplace'
-import type { ModuleTrustContext } from '../modules/module-signature'
-import { discoverUserModules } from '../modules/user-module-registry'
 import { readMarketplacePluginInstallReceipts } from './plugin-lifecycle'
 
 export type MarketplaceUpdateStatesServices = {
   registryReader: { read(input?: MarketplaceRegistryReadInput): Promise<MarketplaceRegistryReadResult> }
   receiptStorePath: string
-  moduleRoot: () => string
-  trustContext: () => ModuleTrustContext
 }
 
 type InstalledEntry = { id: string; displayName: string; installedVersion: number }
@@ -33,11 +29,6 @@ export async function readMarketplaceUpdateStates(
   // Receipts are the authoritative installed set for marketplace installs;
   // their version is pinned to the registry `latest` that was installed.
   const installed: InstalledEntry[] = []
-  const claimedIds = new Set<string>()
-  // Module folders a receipt owns (its `module` components): their lifecycle
-  // is the receipt's, so they must not surface as a second entry under the
-  // component's own id.
-  const receiptOwnedModuleIds = new Set<string>()
   for (const receipt of receiptsRead.receipts) {
     // An extension installed from a GitHub URL updates from its repository
     // (a new `marketplace.resolveGithub` review), not the registry: a registry entry
@@ -45,23 +36,6 @@ export async function readMarketplaceUpdateStates(
     if (receipt.source?.kind !== 'github') {
       installed.push({ id: receipt.id, displayName: receipt.displayName, installedVersion: receipt.version })
     }
-    claimedIds.add(receipt.id)
-    for (const component of receipt.components) {
-      if (component.kind === 'module') receiptOwnedModuleIds.add(component.id)
-    }
-  }
-
-  // Directly installed user modules (folder installs, local dev builds) have
-  // no receipt; their on-disk manifest version is the installed version. This
-  // is the population where `ahead-of-registry` actually occurs. Deliberately
-  // not gated on trust or enablement — a disabled or unapproved module still
-  // has an honest update state.
-  const discovered = await discoverUserModules(services.moduleRoot(), services.trustContext())
-  for (const module of discovered.modules) {
-    const id = module.manifest.id
-    if (claimedIds.has(id) || receiptOwnedModuleIds.has(id)) continue
-    claimedIds.add(id)
-    installed.push({ id, displayName: module.manifest.displayName, installedVersion: module.manifest.version })
   }
 
   const registry = await services.registryReader.read(input)

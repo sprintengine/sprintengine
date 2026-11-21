@@ -107,7 +107,6 @@ test('module-notifications', async () => {
       version: 1,
       defaultEnabled: true,
       source: 'third-party',
-      entry: { main: 'main.cjs' },
     }
     return { manifest }
   }
@@ -121,7 +120,6 @@ test('module-notifications', async () => {
         version: 1,
         defaultEnabled: true,
         source: 'third-party',
-        entry: { main: 'main.cjs' },
       },
       registerMain: () => {
         throw new Error('exploded reading /Users/someone/.sprintengine/modules/broken-module/main.cjs')

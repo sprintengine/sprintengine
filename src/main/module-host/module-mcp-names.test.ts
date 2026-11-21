@@ -20,7 +20,6 @@ function manifest(id: string): CapabilityManifest {
     defaultEnabled: true,
     source: 'third-party',
     permissions: ['mcp:tools'],
-    engines: { hostApi: 3 },
   }
 }
 
@@ -37,9 +36,23 @@ function tool(name: string, answer = name): McpToolRegistration {
   }
 }
 
+// Every name these tests register, declared as extension.json would, so what
+// is exercised here is the naming rules rather than the declaration rule.
+const DECLARED = [
+  'backlog_list',
+  'workspace.create',
+  'terminal_run',
+  'decisions.record',
+  'decisions_record',
+  'notes.add',
+  'notes_add',
+  'handoff_latest',
+].map((name) => ({ name, description: name, access: 'read' as const }))
+
 function kernel() {
   return createMainKernel({
     resolveModuleManifest: (id) => manifest(id),
+    resolveDeclaredMcpTools: () => DECLARED,
     coreMcpToolNames: () => CORE,
   })
 }

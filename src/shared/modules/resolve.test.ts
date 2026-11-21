@@ -23,7 +23,6 @@ test('resolve', async () => {
     testIneligibleUntrusted()
     testIneligibleCascadesToDependents()
     testIneligibleInvalidSignature()
-    testIneligibleIncompatibleHostApi()
 
     console.log('module-resolve tests passed')
   }
@@ -71,32 +70,6 @@ test('resolve', async () => {
       result.errors.some((e) => e.id === 'tampered' && e.code === 'invalid_signature'),
       true,
     )
-  }
-
-  function testIneligibleIncompatibleHostApi(): void {
-    const result = resolveModuleEnablement(
-      [manifest('old-build', { source: 'third-party' })],
-      {},
-      { ineligible: { 'old-build': 'incompatible_host_api' } },
-    )
-    assert.deepEqual(result.order, [])
-    const error = result.errors.find((e) => e.id === 'old-build')
-    assert.equal(error?.code, 'incompatible_host_api')
-    assert.match(error?.message ?? '', /does not say which host API it was built for/)
-    assert.doesNotMatch(error?.message ?? '', /not trusted/, 'trusting would not fix it, so it does not say so')
-
-    // One built for an older host API is told what to rebuild against.
-    const old = resolveModuleEnablement(
-      [manifest('ipc-build', { source: 'third-party', engines: { hostApi: 1 } })],
-      {},
-      { ineligible: { 'ipc-build': 'incompatible_host_api' } },
-    )
-    const refused = old.errors.find((e) => e.id === 'ipc-build')
-    assert.match(
-      refused?.message ?? '',
-      /^Extension "ipc-build" will not load\. The extension was built for host API 1/,
-    )
-    assert.match(refused?.message ?? '', /Rebuild it against @sprintengine\/extension-sdk 3\./)
   }
 
   function testDefaultsAndExplicitDisable(): void {

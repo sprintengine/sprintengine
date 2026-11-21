@@ -8,26 +8,36 @@
 // the command line and one made from the app are the same project.
 //
 // A template is a folder holding `template.json` (what the picker shows) and
-// the project files. `templates/_shared/` holds the files every project gets —
-// the dev-loop scripts, the smoke test, the agent instructions — and a
-// template's own file of the same path wins over the shared one. Text files
-// carry `{{placeholder}}` tokens (see `placeholderValues`), and a file named
-// `gitignore` is written as `.gitignore`: npm drops dot-gitignore files from a
-// published tarball, so the template cannot ship one under its real name.
+// the project files, among them `extension/extension.json`. `templates/_shared/`
+// holds the files every project gets — the dev-loop scripts, the smoke test,
+// the agent instructions — and a template's own file of the same path wins
+// over the shared one. Text files carry `{{placeholder}}` tokens (see
+// `placeholderValues`), and a file named `gitignore` is written as
+// `.gitignore`: npm drops dot-gitignore files from a published tarball, so the
+// template cannot ship one under its real name.
 
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { BUNDLED_MODULE_IDS } from './index.js'
+import {
+  EXTENSION_MANIFEST_FIELDS,
+  EXTENSION_MANIFEST_SINCE,
+  isReservedExtensionId,
+  requiredExtensionTier,
+  validateExtensionManifest,
+  type ExtensionContributions,
+  type ExtensionTier,
+} from './extension-manifest.js'
+import { EXTENSION_TIERS, tierRank } from './manifest-schema.js'
 
 export type ModuleTemplateInfo = {
   id: string
   title: string
   summary: string
-  /** The permissions the template's manifest declares, as the consent prompt will show them. */
+  /** The permissions the template's extension.json declares, as the consent prompt will show them. */
   permissions: string[]
-  /** What the template contributes or relies on (e.g. 'panel', 'conversations'), for a picker's tags. */
+  /** What the template contributes or relies on (e.g. 'panel', 'worker'), for a picker's tags. */
   capabilities: string[]
 }
 
@@ -35,15 +45,15 @@ export type ScaffoldModuleOptions = {
   /** The project folder. Created when missing; must be empty unless `force`. */
   dir: string
   templateId: string
-  /** The module id: lowercase letters, digits and hyphens, and not a reserved bundled id. */
+  /** The extension id: kebab-case, and not one Studio keeps for its own (`studio-…`, `sprintengine-…`). */
   id: string
   /**
    * The name people see. Quotes, backslashes, braces, angle brackets, `$` and
    * backticks are dropped and an apostrophe becomes a typographic one (see
-   * `sanitizeDisplayText`); an empty result falls back to the id, title-cased.
+   * `sanitizeDisplayText`); it is cut to 64 characters, and an empty result
+   * falls back to the id, title-cased.
    */
   displayName: string
-  publisher?: string
   /** The SDK version the project depends on, as `^<sdkVersion>`. */
   sdkVersion: string
   /** A local SDK tarball to depend on instead of the npm release; copied into the project's `vendor/`. */
@@ -78,20 +88,22 @@ export type ScaffoldModuleResult =
 const SHARED_TEMPLATE_DIR = '_shared'
 const TEMPLATE_MANIFEST = 'template.json'
 const SDK_PACKAGE = '@sprintengine/extension-sdk'
-const DEFAULT_PUBLISHER = 'Local developer'
+/** Where a project keeps its manifest: `extension/` is the folder Studio installs. */
+const MANIFEST_PATH = 'extension/extension.json'
+const MAX_DISPLAY_NAME = 64
 
-// The same id rule the manifest validator applies, so a scaffolded project's
+// The id rule extension.json holds an id to, so a scaffolded project's
 // manifest validates the moment it is written.
-const MODULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
+const EXTENSION_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
-// The picker order: the empty starting point first, then the surfaces a person
-// is most likely to be asking for. A template missing here sorts after these.
+// The picker order: the smallest starting point first, then the surfaces a
+// person is most likely to be asking for. A template missing here sorts after
+// these.
 const TEMPLATE_ORDER = [
   'blank',
   'panel',
-  'global-surface',
+  'door',
   'chat-companion',
-  'workspace-type',
   'top-bar-item',
   'settings-section',
   'backlog-action',
@@ -135,7 +147,8 @@ function readTemplateInfo(templateDir: string): ModuleTemplateInfo {
     id !== basename(templateDir) ||
     typeof title !== 'string' ||
     typeof summary !== 'string' ||
-    !isStringArray(permissions) ||
+    !Array.isArray(permissions) ||
+    !permissions.every((entry) => typeof entry === 'string') ||
     !isStringArray(capabilities)
   ) {
     // A template ships inside this package; a malformed one is a packaging bug,
@@ -144,7 +157,7 @@ function readTemplateInfo(templateDir: string): ModuleTemplateInfo {
       `${path} must be { id (the folder name), title, summary, permissions: string[], capabilities: string[] }.`,
     )
   }
-  return { id, title, summary, permissions: [...permissions], capabilities: [...capabilities] }
+  return { id, title, summary, permissions: [...(permissions as string[])], capabilities: [...capabilities] }
 }
 
 function templateDirs(templatesRoot: string): string[] {
@@ -200,19 +213,35 @@ function displayNameFromId(id: string): string {
 export function sanitizeDisplayText(value: string): string {
   return value
     .replace(/\s+/g, ' ')
-    .replace(/'/g, '\u2019')
+    .replace(/'/g, '’')
     .replace(/["`\\{}<>$\u0000-\u001f\u007f]/g, '')
     .trim()
+}
+
+/** A display name extension.json takes: sanitized and at most 64 characters, else the id title-cased. */
+function displayNameFor(name: string, id: string): string {
+  return sanitizeDisplayText(name).slice(0, MAX_DISPLAY_NAME).trim() || displayNameFromId(id).slice(0, MAX_DISPLAY_NAME)
+}
+
+/**
+ * What an extension's MCP tool names start with: its id with underscores, as
+ * tool names take only lower-case letters, digits and underscores, starting
+ * with a letter. Kept short enough that a tool's own name fits after it.
+ */
+function mcpToolPrefix(id: string): string {
+  const base = id.replace(/-/g, '_').slice(0, 40).replace(/_+$/, '')
+  return /^[a-z]/.test(base) ? base : `ext_${base}`
 }
 
 function placeholderValues(options: ScaffoldModuleOptions, template: ModuleTemplateInfo): Record<string, string> {
   return {
     id: options.id,
-    displayName: sanitizeDisplayText(options.displayName) || displayNameFromId(options.id),
-    publisher: sanitizeDisplayText(options.publisher ?? '') || DEFAULT_PUBLISHER,
+    displayName: displayNameFor(options.displayName, options.id),
     sdkVersion: options.sdkVersion,
+    studioVersion: EXTENSION_MANIFEST_SINCE,
     templateId: template.id,
     templateTitle: sanitizeDisplayText(template.title),
+    toolPrefix: mcpToolPrefix(options.id),
   }
 }
 
@@ -224,26 +253,25 @@ function isEmptyDir(dir: string): boolean {
   return readdirSync(dir).length === 0
 }
 
+/** Why an id cannot be an extension's, or null when it can. */
+function extensionIdProblem(id: string): string | null {
+  if (!EXTENSION_ID_PATTERN.test(id) || id.length > 63 || id === 'constructor' || id === 'prototype') {
+    return `"${id}" is not an extension id: use lowercase letters and digits, in words joined by single hyphens (1–63 characters).`
+  }
+  if (isReservedExtensionId(id)) {
+    return `"${id}" is kept for Studio’s own extensions (ids starting studio- or sprintengine-); choose another id.`
+  }
+  return null
+}
+
 /**
  * Create an extension project in `options.dir` from a template: the template's
- * files with the module id, name and SDK version filled in, and the shared
+ * files with the extension id, name and SDK version filled in, and the shared
  * dev-loop files. Expected failures come back as a result, never a throw.
  */
 export async function scaffoldModuleProject(options: ScaffoldModuleOptions): Promise<ScaffoldModuleResult> {
-  if (!MODULE_ID_PATTERN.test(options.id)) {
-    return {
-      ok: false,
-      code: 'invalid_id',
-      message: `"${options.id}" is not a module id: use lowercase letters, digits and hyphens (1–63 characters), starting with a letter or digit.`,
-    }
-  }
-  if (BUNDLED_MODULE_IDS.includes(options.id)) {
-    return {
-      ok: false,
-      code: 'invalid_id',
-      message: `"${options.id}" is reserved for a module that ships with SprintEngine Studio; choose another id.`,
-    }
-  }
+  const idProblem = extensionIdProblem(options.id)
+  if (idProblem) return { ok: false, code: 'invalid_id', message: idProblem }
 
   const templatesRoot = resolve(options.templatesRoot ?? defaultTemplatesRoot())
   const templateDir = join(templatesRoot, options.templateId)
@@ -270,10 +298,8 @@ export async function scaffoldModuleProject(options: ScaffoldModuleOptions): Pro
   // a project behind.
   if (options.parts && options.parts.length > 0) {
     try {
-      const templateManifest = JSON.parse(readFileSync(join(templateDir, 'module', 'manifest.json'), 'utf8')) as {
-        entry?: Record<string, string>
-      }
-      const planned = planParts(join(templatesRoot, PARTS_DIR), options.parts, templateManifest.entry ?? {})
+      const templateManifest = JSON.parse(readFileSync(join(templateDir, MANIFEST_PATH), 'utf8')) as RawManifest
+      const planned = planParts(join(templatesRoot, PARTS_DIR), options.parts, templateManifest)
       if (!planned.ok) return planned
     } catch (error) {
       return { ok: false, code: 'io_error', message: error instanceof Error ? error.message : String(error) }
@@ -373,51 +399,60 @@ function dependOnTarball(packageJson: string, spec: string): string {
 //
 // A part is a folder under `templates/_parts/<id>/` holding `part.json` and
 // the files it adds (placeholders as in a template). Adding one copies its
-// files, merges its entry, permissions and `dependsOn` into
-// module/manifest.json and plugin.json, adds its scripts and devDependencies
-// to package.json, and wires its registration into the entry it extends by
-// inserting an import and a call at the top of `registerRenderer` /
-// `registerMain`. A part that needs an entry the project lacks brings that
-// entry first (`renderer`, `main`).
+// files, merges its contributions, permissions and `main` into
+// extension/extension.json and raises `tier` to what the result needs, adds
+// its scripts and devDependencies to package.json, and wires its registration
+// into the worker by inserting an import and a call at the top of `activate`
+// in src/main.ts. A part that needs the worker brings it first (`main`).
 //
-// The build composes on its own: `npm run build` runs `build:renderer` and
-// `build:main` when they exist, so adding `main` is adding its script.
+// The build composes on its own: `npm run build` runs `build:ui` and
+// `build:main` when they exist, and build:ui builds every surface
+// extension.json names, so adding a door is adding its contribution.
 
 const PARTS_DIR = '_parts'
 const PART_MANIFEST = 'part.json'
 // The order parts are listed and applied in.
-const PART_ORDER = ['renderer', 'main', 'mcp', 'settings', 'door']
-const ENTRY_KINDS = ['renderer', 'main'] as const
-type EntryKind = (typeof ENTRY_KINDS)[number]
-const ENTRY_SOURCES: Record<EntryKind, string> = { renderer: 'src/renderer.tsx', main: 'src/main.ts' }
-const ENTRY_FUNCTIONS: Record<EntryKind, string> = { renderer: 'registerRenderer', main: 'registerMain' }
+const PART_ORDER = ['main', 'mcp', 'settings', 'door']
+const WORKER_SOURCE = 'src/main.ts'
+const CONTRIBUTION_POINTS = Object.keys(
+  (EXTENSION_MANIFEST_FIELDS.fields.contributes!.node as { fields: Record<string, unknown> }).fields,
+)
+
+type ContributionPoint = keyof ExtensionContributions
+type RawManifest = Record<string, unknown> & {
+  id?: unknown
+  name?: unknown
+  tier?: unknown
+  main?: unknown
+  permissions?: unknown
+  contributes?: Record<string, unknown>
+}
 
 export type ModulePartInfo = {
   id: string
   title: string
   summary: string
-  /** The entries it needs (`renderer`, `main`); added first when the project lacks them. */
+  /** The parts it needs (`main`); added first when the project lacks them. */
   requires: string[]
-  /** The permissions it adds to the manifest. */
+  /** The permissions it adds to extension.json. */
   permissions: string[]
 }
 
 type PartDefinition = ModulePartInfo & {
-  hidden: boolean
-  /** Added only when the project has a renderer (the main entry's bridge). */
-  permissionsWithRenderer: string[]
-  dependsOn: string[]
-  entry: Partial<Record<EntryKind, string>>
+  /** The worker entry it adds (`main` only). */
+  main?: string
+  contributes: Partial<Record<ContributionPoint, Array<Record<string, unknown>>>>
   scripts: Record<string, string>
   devDependencies: Record<string, string>
-  register?: { in: EntryKind; import: string; call: string }
+  register?: { import: string; call: string }
   dir: string
 }
 
-export type ModulePartsFailureCode = 'unknown_part' | 'already_present' | 'not_a_project' | 'file_exists' | 'io_error'
+export type ModulePartsFailureCode =
+  'unknown_part' | 'already_present' | 'not_a_project' | 'file_exists' | 'invalid_manifest' | 'io_error'
 
 export type AddModulePartsOptions = {
-  /** The project folder: the one holding package.json and module/manifest.json. */
+  /** The project folder: the one holding package.json and extension/extension.json. */
   dir: string
   /** Part ids (`listModuleParts`). */
   parts: readonly string[]
@@ -430,7 +465,7 @@ export type AddModulePartsOptions = {
 export type AddModulePartsResult =
   | {
       ok: true
-      /** The parts added, in order, including entries a part needed. */
+      /** The parts added, in order, including the worker a part needed. */
       added: string[]
       /** Every file written or changed, relative to the project. */
       files: string[]
@@ -448,29 +483,36 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   )
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function readPart(dir: string): PartDefinition {
   const path = join(dir, PART_MANIFEST)
   const raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
   const strings = (value: unknown): value is string[] =>
     Array.isArray(value) && value.every((entry) => typeof entry === 'string')
   const register = raw.register as PartDefinition['register'] | undefined
+  const contributes = raw.contributes
   if (
     raw.id !== basename(dir) ||
     typeof raw.title !== 'string' ||
     typeof raw.summary !== 'string' ||
     !strings(raw.requires) ||
     !strings(raw.permissions) ||
-    !strings(raw.dependsOn) ||
-    !isStringRecord(raw.entry) ||
+    (raw.main !== undefined && typeof raw.main !== 'string') ||
+    !isPlainRecord(contributes) ||
+    !Object.entries(contributes).every(
+      ([point, items]) =>
+        CONTRIBUTION_POINTS.includes(point) && Array.isArray(items) && items.every((item) => isPlainRecord(item)),
+    ) ||
     !isStringRecord(raw.scripts) ||
     !isStringRecord(raw.devDependencies) ||
-    (raw.permissionsWithRenderer !== undefined && !strings(raw.permissionsWithRenderer)) ||
-    (register !== undefined &&
-      (!ENTRY_KINDS.includes(register.in) || typeof register.import !== 'string' || typeof register.call !== 'string'))
+    (register !== undefined && (typeof register.import !== 'string' || typeof register.call !== 'string'))
   ) {
     // Parts ship inside this package; a malformed one is a packaging bug.
     throw new Error(
-      `${path} must be { id (the folder name), title, summary, requires, permissions, dependsOn, entry, scripts, devDependencies, register? }.`,
+      `${path} must be { id (the folder name), title, summary, requires, permissions, main?, contributes, scripts, devDependencies, register? }.`,
     )
   }
   return {
@@ -479,10 +521,8 @@ function readPart(dir: string): PartDefinition {
     summary: raw.summary,
     requires: [...raw.requires],
     permissions: [...raw.permissions],
-    hidden: raw.hidden === true,
-    permissionsWithRenderer: strings(raw.permissionsWithRenderer) ? [...raw.permissionsWithRenderer] : [],
-    dependsOn: [...raw.dependsOn],
-    entry: { ...raw.entry },
+    ...(typeof raw.main === 'string' ? { main: raw.main } : {}),
+    contributes: contributes as PartDefinition['contributes'],
     scripts: { ...raw.scripts },
     devDependencies: { ...raw.devDependencies },
     ...(register ? { register: { ...register } } : {}),
@@ -509,53 +549,65 @@ const partRank = (id: string): number => {
 /** The parts `init --with` and `sprintengine-extension add` take, in order. */
 export function listModuleParts(templatesRoot: string = defaultTemplatesRoot()): ModulePartInfo[] {
   return [...readParts(join(templatesRoot, PARTS_DIR)).values()]
-    .filter((part) => !part.hidden)
     .sort((a, b) => partRank(a.id) - partRank(b.id) || a.id.localeCompare(b.id))
     .map(({ id, title, summary, requires, permissions }) => ({ id, title, summary, requires, permissions }))
 }
 
+/** The id a contribution is known by within its point (an MCP tool's is its name). */
+function contributionKey(item: Record<string, unknown>): string {
+  return String(item.id ?? item.name ?? `${String(item.where)} ${String(item.command)}`)
+}
+
 /**
  * The parts to apply, in order, for `requested` on a project whose manifest
- * declares `entry`: each requested part after the entries it needs. Refuses an
- * unknown part, and an entry part the project already has.
+ * is `manifest`: each requested part after the parts it needs. Refuses an
+ * unknown part, a worker the project already has, and a contribution whose id
+ * the project already uses.
  */
 function planParts(
   partsRoot: string,
   requested: readonly string[],
-  entry: Record<string, string>,
+  manifest: RawManifest,
 ): { ok: true; plan: PartDefinition[] } | { ok: false; code: 'unknown_part' | 'already_present'; message: string } {
   const parts = readParts(partsRoot)
-  const known = [...parts.values()].filter((part) => !part.hidden).map((part) => part.id)
+  const known = [...parts.keys()].sort((a, b) => partRank(a) - partRank(b))
   const plan: PartDefinition[] = []
-  const has = new Set<string>(ENTRY_KINDS.filter((kind) => entry[kind] !== undefined))
+  let hasWorker = manifest.main !== undefined
   const add = (id: string, explicit: boolean): string | null => {
     const part = parts.get(id)
-    if (!part || (explicit && part.hidden)) return `There is no "${id}" part; the parts are ${known.join(', ')}.`
+    if (!part) return `There is no "${id}" part; the parts are ${known.join(', ')}.`
     if (plan.includes(part)) return null
-    const entryKinds = ENTRY_KINDS.filter((kind) => part.entry[kind] !== undefined)
-    if (entryKinds.some((kind) => has.has(kind))) {
-      // An entry the project has already satisfies a part that needs it.
+    if (part.main !== undefined && hasWorker) {
+      // A worker the project has already satisfies a part that needs one.
       if (!explicit) return null
-      const kind = entryKinds[0]!
-      return `The project already has entry.${kind} (${ENTRY_SOURCES[kind]}); the "${id}" part adds one.`
+      return `The project already has a worker (main in ${MANIFEST_PATH}); the "${id}" part adds one.`
     }
     for (const needed of part.requires) {
-      if (has.has(needed)) continue
+      if (needed === 'main' && hasWorker) continue
       const problem = add(needed, false)
       if (problem) return problem
     }
     plan.push(part)
-    for (const kind of entryKinds) has.add(kind)
+    if (part.main !== undefined) hasWorker = true
     return null
   }
   const ordered = [...new Set(requested)].sort((a, b) => partRank(a) - partRank(b))
   for (const id of ordered) {
     const problem = add(id, true)
-    if (problem) {
-      return {
-        ok: false,
-        code: parts.has(id) && !parts.get(id)!.hidden ? 'already_present' : 'unknown_part',
-        message: problem,
+    if (problem) return { ok: false, code: parts.has(id) ? 'already_present' : 'unknown_part', message: problem }
+  }
+  const contributes = isPlainRecord(manifest.contributes) ? manifest.contributes : {}
+  for (const part of plan) {
+    for (const [point, items] of Object.entries(part.contributes)) {
+      const existing = Array.isArray(contributes[point]) ? (contributes[point] as unknown[]) : []
+      const taken = new Set(existing.filter(isPlainRecord).map(contributionKey))
+      const clash = (items ?? []).find((item) => taken.has(contributionKey(item)))
+      if (clash) {
+        return {
+          ok: false,
+          code: 'already_present',
+          message: `${MANIFEST_PATH} already has "${contributionKey(clash)}" in contributes.${point}; the "${part.id}" part adds one.`,
+        }
       }
     }
   }
@@ -564,30 +616,24 @@ function planParts(
 
 /**
  * Insert `importLine` after the source's imports and `call` as the first
- * statement of its `registerRenderer` / `registerMain`. Null when the entry
- * function is not one of the shapes the templates write.
+ * statement of its `activate`. Null when `activate` is not one of the shapes
+ * the templates write.
  */
-function wireRegistration(source: string, kind: EntryKind, importLine: string, call: string): string | null {
-  const fn = ENTRY_FUNCTIONS[kind]
+function wireRegistration(source: string, importLine: string, call: string): string | null {
   const opening = [
-    new RegExp(
-      `^export\\s+(?:const|let)\\s+${fn}\\b[^=\\n]*=\\s*(?:async\\s*)?\\(\\s*(\\w*)[^)]*\\)\\s*(?::[^=\\n]*)?=>\\s*\\{[ \\t]*$`,
-      'm',
-    ),
-    new RegExp(`^export\\s+(?:async\\s+)?function\\s+${fn}\\s*\\(\\s*(\\w*)[^)]*\\)[^{\\n]*\\{[ \\t]*$`, 'm'),
+    /^export\s+(?:async\s+)?function\s+activate\s*\(\s*(\w*)[^)]*\)[^{\n]*\{[ \t]*$/m,
+    /^export\s+(?:const|let)\s+activate\b[^=\n]*=\s*(?:async\s*)?\(\s*(\w*)[^)]*\)\s*(?::[^=\n]*)?=>\s*\{[ \t]*$/m,
   ]
     .map((pattern) => pattern.exec(source))
     .find((match) => match !== null)
-  if (!opening) return null
+  if (!opening || !opening[1]) return null
   const lines = source.split('\n')
   const openingLine = source.slice(0, opening.index).split('\n').length - 1
-  // An entry that took no host yet (the renderer part's) is given one.
-  const param = opening[1] || 'host'
-  if (!opening[1]) lines[openingLine] = lines[openingLine]!.replace(/\(\s*\)/, '(host)')
+  const param = opening[1]
   const nextLine = lines.slice(openingLine + 1).find((line) => line.trim() !== '')
   const nextIndent = /^\s*/.exec(nextLine ?? '')?.[0] ?? ''
   const indent = nextIndent.length > 0 && nextLine?.trim() !== '}' ? nextIndent : '  '
-  lines.splice(openingLine + 1, 0, `${indent}${call.replace(/\bhost\b/g, param)}`)
+  lines.splice(openingLine + 1, 0, `${indent}${call.replace(/\bstudio\b/g, param)}`)
 
   if (!lines.some((line) => line.trim() === importLine.trim())) {
     let lastImport = -1
@@ -614,15 +660,8 @@ function wireRegistration(source: string, kind: EntryKind, importLine: string, c
   return lines.join('\n')
 }
 
-function displayNameOf(manifest: { id: string; displayName?: unknown }): string {
-  return (
-    (typeof manifest.displayName === 'string' && sanitizeDisplayText(manifest.displayName)) ||
-    displayNameFromId(manifest.id)
-  )
-}
-
 // `additions` the record lacks, placed before `anchor` (the `build` script, so
-// a part's `build:main` sits beside `build:renderer`), the rest kept in order.
+// a part's `build:main` sits beside `build:ui`), the rest kept in order.
 function withScripts(record: Record<string, string> | undefined, additions: Record<string, string>, anchor: string) {
   const missing = Object.entries(additions).filter(([key]) => record?.[key] === undefined)
   const entries = Object.entries(record ?? {})
@@ -631,65 +670,127 @@ function withScripts(record: Record<string, string> | undefined, additions: Reco
   return Object.fromEntries(entries)
 }
 
-function unionInto(list: string[] | undefined, additions: readonly string[]): string[] {
-  const result = [...(list ?? [])]
+function unionInto(list: unknown, additions: readonly string[]): string[] {
+  const result = Array.isArray(list) ? list.filter((entry): entry is string => typeof entry === 'string') : []
   for (const entry of additions) if (!result.includes(entry)) result.push(entry)
   return result
 }
 
+/** The manifest's keys in the order the format lists them, anything else after. */
+function inFieldOrder(manifest: RawManifest): RawManifest {
+  const order = Object.keys(EXTENSION_MANIFEST_FIELDS.fields)
+  const keys = Object.keys(manifest).sort((a, b) => {
+    const left = order.indexOf(a)
+    const right = order.indexOf(b)
+    return (left === -1 ? order.length : left) - (right === -1 ? order.length : right)
+  })
+  const out: RawManifest = {}
+  for (const key of keys) out[key] = manifest[key]
+  if (isPlainRecord(manifest.contributes)) {
+    const contributes: Record<string, unknown> = {}
+    const points = Object.keys(manifest.contributes).sort(
+      (a, b) => CONTRIBUTION_POINTS.indexOf(a) - CONTRIBUTION_POINTS.indexOf(b),
+    )
+    for (const point of points) contributes[point] = manifest.contributes[point]
+    out.contributes = contributes
+  }
+  return out
+}
+
+function isTier(value: unknown): value is ExtensionTier {
+  return typeof value === 'string' && (EXTENSION_TIERS as readonly string[]).includes(value)
+}
+
 /**
- * Add parts to an existing extension project: their files, manifest entry,
- * permissions and `dependsOn`, build scripts and devDependencies, and the
- * call that registers them. Expected failures come back as a result, never a
- * throw.
+ * Add parts to an existing extension project: their files, contributions,
+ * permissions and worker, the tier that carries them, build scripts and
+ * devDependencies, and the call that registers them in the worker. Expected
+ * failures come back as a result, never a throw; nothing is written unless
+ * the whole addition can be.
  */
 export async function addModuleParts(options: AddModulePartsOptions): Promise<AddModulePartsResult> {
   const dir = resolve(options.dir)
   const templatesRoot = resolve(options.templatesRoot ?? defaultTemplatesRoot())
-  const manifestPath = join(dir, 'module', 'manifest.json')
-  const pluginPath = join(dir, 'plugin.json')
+  const manifestPath = join(dir, MANIFEST_PATH)
   const packagePath = join(dir, 'package.json')
   if (!existsSync(manifestPath) || !existsSync(packagePath)) {
     return {
       ok: false,
       code: 'not_a_project',
-      message: `${dir} is not an extension project: it needs package.json and module/manifest.json.`,
+      message: `${dir} is not an extension project: it needs package.json and ${MANIFEST_PATH}.`,
     }
   }
   try {
-    type Manifest = {
-      id: string
-      displayName?: string
-      publisher?: string
-      permissions?: string[]
-      dependsOn?: string[]
-      entry?: Record<string, string>
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as RawManifest
+    if (!isPlainRecord(manifest)) {
+      return { ok: false, code: 'invalid_manifest', message: `${MANIFEST_PATH} must be a JSON object.` }
     }
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Manifest
-    const plugin = existsSync(pluginPath)
-      ? (JSON.parse(readFileSync(pluginPath, 'utf8')) as { permissions?: string[]; dependsOn?: string[] })
-      : null
     const pkg = JSON.parse(readFileSync(packagePath, 'utf8')) as {
       scripts?: Record<string, string>
       devDependencies?: Record<string, string>
     }
-    const planned = planParts(join(templatesRoot, PARTS_DIR), options.parts, manifest.entry ?? {})
+    const planned = planParts(join(templatesRoot, PARTS_DIR), options.parts, manifest)
     if (!planned.ok) return planned
 
+    const id = typeof manifest.id === 'string' ? manifest.id : ''
     const values: Record<string, string> = {
-      id: manifest.id,
-      displayName: displayNameOf(manifest),
-      publisher: sanitizeDisplayText(manifest.publisher ?? '') || DEFAULT_PUBLISHER,
+      id,
+      displayName: displayNameFor(typeof manifest.name === 'string' ? manifest.name : '', id),
+      toolPrefix: mcpToolPrefix(id),
     }
-    // Every file first, so a clash leaves the project untouched.
-    const copies: Array<{ relativePath: string; source: string }> = []
+    const fill = <T>(value: T): T => JSON.parse(fillPlaceholders(JSON.stringify(value), values)) as T
+
+    // The manifest first, and validated, so a part that would leave it invalid
+    // leaves the project untouched.
+    const merged: RawManifest = { ...manifest }
+    const contributes: Record<string, unknown> = isPlainRecord(manifest.contributes) ? { ...manifest.contributes } : {}
+    for (const part of planned.plan) {
+      if (part.main !== undefined && merged.main === undefined) merged.main = part.main
+      if (part.permissions.length > 0) merged.permissions = unionInto(merged.permissions, part.permissions)
+      for (const [point, items] of Object.entries(fill(part.contributes))) {
+        const existing = Array.isArray(contributes[point]) ? (contributes[point] as unknown[]) : []
+        contributes[point] = [...existing, ...(items ?? [])]
+      }
+    }
+    merged.contributes = contributes
+    const lists = Object.fromEntries(
+      CONTRIBUTION_POINTS.map((point) => [point, Array.isArray(contributes[point]) ? contributes[point] : []]),
+    ) as unknown as ExtensionContributions
+    const required = requiredExtensionTier({
+      ...(typeof merged.main === 'string' ? { main: merged.main } : {}),
+      permissions: unionInto(merged.permissions, []),
+      contributes: lists,
+    })
+    if (!isTier(merged.tier) || tierRank(merged.tier) < tierRank(required)) merged.tier = required
+    const ordered = inFieldOrder(merged)
+    const checked = validateExtensionManifest(ordered, { authoring: true })
+    if (!checked.ok) {
+      return {
+        ok: false,
+        code: 'invalid_manifest',
+        message: `${MANIFEST_PATH} would not be valid with ${options.parts.join(', ')}:\n${checked.issues
+          .map((issue) => `  - ${issue.path || 'extension.json'}: ${issue.message}`)
+          .join('\n')}`,
+      }
+    }
+
+    // Every file next, so a clash leaves the project untouched. A file that is
+    // already there with the same content is not a clash.
+    const copies: Array<{ relativePath: string; content: string }> = []
     for (const part of planned.plan) {
       for (const path of walkFiles(part.dir)) {
         if (path === PART_MANIFEST) continue
-        copies.push({ relativePath: projectPath(path), source: join(part.dir, path) })
+        copies.push({
+          relativePath: projectPath(path),
+          content: fillPlaceholders(readFileSync(join(part.dir, path), 'utf8'), values),
+        })
       }
     }
-    const clashes = copies.filter((copy) => existsSync(join(dir, copy.relativePath))).map((copy) => copy.relativePath)
+    const toWrite = copies.filter((copy) => {
+      const target = join(dir, copy.relativePath)
+      return !existsSync(target) || readFileSync(target, 'utf8') !== copy.content
+    })
+    const clashes = toWrite.filter((copy) => existsSync(join(dir, copy.relativePath))).map((copy) => copy.relativePath)
     if (clashes.length > 0 && !options.force) {
       return {
         ok: false,
@@ -699,41 +800,31 @@ export async function addModuleParts(options: AddModulePartsOptions): Promise<Ad
     }
 
     const files = new Set<string>()
-    for (const copy of copies) {
+    for (const copy of toWrite) {
       const target = join(dir, copy.relativePath)
       mkdirSync(dirname(target), { recursive: true })
-      writeFileSync(target, fillPlaceholders(readFileSync(copy.source, 'utf8'), values))
+      writeFileSync(target, copy.content)
       files.add(copy.relativePath)
     }
 
     const notes: string[] = []
     for (const part of planned.plan) {
-      manifest.entry = { ...manifest.entry, ...part.entry }
-      manifest.permissions = unionInto(manifest.permissions, part.permissions)
-      if (part.dependsOn.length > 0) manifest.dependsOn = unionInto(manifest.dependsOn, part.dependsOn)
       pkg.scripts = withScripts(pkg.scripts, part.scripts, 'build')
       pkg.devDependencies = { ...part.devDependencies, ...pkg.devDependencies }
       if (part.register) {
-        const sourcePath = ENTRY_SOURCES[part.register.in]
-        const absolute = join(dir, sourcePath)
+        const absolute = join(dir, WORKER_SOURCE)
         const wired = existsSync(absolute)
-          ? wireRegistration(readFileSync(absolute, 'utf8'), part.register.in, part.register.import, part.register.call)
+          ? wireRegistration(readFileSync(absolute, 'utf8'), part.register.import, part.register.call)
           : null
         if (wired === null) {
           notes.push(
-            `Call ${part.register.call} from ${ENTRY_FUNCTIONS[part.register.in]} in ${sourcePath}, ` +
-              `after \`${part.register.import}\`; it could not be wired in automatically.`,
+            `Call ${part.register.call} from activate in ${WORKER_SOURCE}, after \`${part.register.import}\`; ` +
+              'it could not be wired in automatically.',
           )
         } else {
           writeFileSync(absolute, wired)
-          files.add(sourcePath)
+          files.add(WORKER_SOURCE)
         }
-      }
-    }
-    // The bridge permission follows the renderer, whichever was added first.
-    if (manifest.entry?.renderer) {
-      for (const part of planned.plan) {
-        manifest.permissions = unionInto(manifest.permissions, part.permissionsWithRenderer)
       }
     }
     pkg.devDependencies = Object.fromEntries(
@@ -744,13 +835,7 @@ export async function addModuleParts(options: AddModulePartsOptions): Promise<Ad
       writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
       files.add(relativePath)
     }
-    writeJson(manifestPath, manifest, 'module/manifest.json')
-    if (plugin) {
-      // The bundle discloses what the module declares, or an install refuses it.
-      plugin.permissions = unionInto(plugin.permissions, manifest.permissions ?? [])
-      if (manifest.dependsOn) plugin.dependsOn = unionInto(plugin.dependsOn, manifest.dependsOn)
-      writeJson(pluginPath, plugin, 'plugin.json')
-    }
+    writeJson(manifestPath, ordered, MANIFEST_PATH)
     writeJson(packagePath, pkg, 'package.json')
 
     return { ok: true, added: planned.plan.map((part) => part.id), files: [...files].sort(), notes }

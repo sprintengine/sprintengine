@@ -22,7 +22,7 @@ import {
 import type { Workspace } from '../../../../shared/workspace'
 import { hasComponentTab, toggleComponentTab } from '../../utils/modelRegistry'
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import { getRendererHost, selectModuleEnabled } from '../../modules'
+import { getRendererHost, onThirdPartyRendererModulesLoaded, selectModuleEnabled } from '../../modules'
 import { ModuleContributionBoundary } from '../../modules/ModuleContributionBoundary'
 import { copy } from '../../../../shared/copy'
 
@@ -50,12 +50,18 @@ export function BandActions({
   onViewMenuOpened,
 }: BandActionsProps) {
   const moduleOverrides = useWorkspaceStore((state) => state.appSettings.modules)
+  // A batch of extensions landing or leaving (installed, uninstalled, trust
+  // granted or revoked) changes what is enabled without changing the switches.
+  const [moduleRegistryGeneration, setModuleRegistryGeneration] = React.useState(0)
+  React.useEffect(() => onThirdPartyRendererModulesLoaded(() => setModuleRegistryGeneration((n) => n + 1)), [])
   // Module-contributed top-bar controls, gated on live enablement so a module
   // toggle adds/removes its control without a reload (registry references are
-  // stable; the memo recomputes only when enablement changes).
+  // stable; the memo recomputes when enablement or the extensions change).
   const moduleTopBarItems = React.useMemo(
     () => getRendererHost().getTopBarItems((moduleId) => selectModuleEnabled(moduleOverrides, moduleId)),
-    [moduleOverrides],
+    // moduleRegistryGeneration is the signal, not an input the body reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [moduleOverrides, moduleRegistryGeneration],
   )
   // The active workspace type's top-bar view set, from the registry and gated by
   // module enablement (was VIEWS_FOR_MODE). getWorkspaceType returns a stable

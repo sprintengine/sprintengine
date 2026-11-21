@@ -330,7 +330,7 @@
     },
     {
       "name": "marketplace.list",
-      "sha256": "92cb04063b0099c17b578cb4b8ee61c93959d08bd124778d91b78386b501cf8c"
+      "sha256": "81239b0918786438c38a21c9ae30d92f33b058dc27e206d6f8ffc38e7850339b"
     },
     {
       "name": "schedule.list",
@@ -390,11 +390,11 @@
     },
     {
       "name": "extension.create",
-      "sha256": "1be4dc035e087e34fc446943a11de1fbaf6a7d7326ce6fc7607d3e9289938ac5"
+      "sha256": "e06e26708280d7b57d46e7465c62203157e2cde6102ed5cf4ecb65a9d0166a6e"
     },
     {
       "name": "extension.guide",
-      "sha256": "d6bb69259ba8d02d647bd64953abb142169d868513da0796753153e98e946a8b"
+      "sha256": "c3f829431abf23c3bdb8c0dd398d802f9ee2739761eabfe621124012212f6c77"
     },
     {
       "name": "plugin.search",
@@ -768,7 +768,7 @@
     },
     {
       "name": "marketplace.list",
-      "sha256": "92cb04063b0099c17b578cb4b8ee61c93959d08bd124778d91b78386b501cf8c"
+      "sha256": "81239b0918786438c38a21c9ae30d92f33b058dc27e206d6f8ffc38e7850339b"
     },
     {
       "name": "schedule.list",
@@ -828,11 +828,11 @@
     },
     {
       "name": "extension.create",
-      "sha256": "1be4dc035e087e34fc446943a11de1fbaf6a7d7326ce6fc7607d3e9289938ac5"
+      "sha256": "e06e26708280d7b57d46e7465c62203157e2cde6102ed5cf4ecb65a9d0166a6e"
     },
     {
       "name": "extension.guide",
-      "sha256": "d6bb69259ba8d02d647bd64953abb142169d868513da0796753153e98e946a8b"
+      "sha256": "c3f829431abf23c3bdb8c0dd398d802f9ee2739761eabfe621124012212f6c77"
     },
     {
       "name": "plugin.search",
@@ -930,7 +930,7 @@
     },
     {
       "name": "marketplace.list",
-      "sha256": "92cb04063b0099c17b578cb4b8ee61c93959d08bd124778d91b78386b501cf8c"
+      "sha256": "81239b0918786438c38a21c9ae30d92f33b058dc27e206d6f8ffc38e7850339b"
     },
     {
       "name": "artifacts.list",

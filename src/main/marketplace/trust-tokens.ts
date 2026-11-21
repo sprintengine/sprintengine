@@ -26,11 +26,6 @@ export type TrustGrant = {
   entryId: string
   source: TrustSource
   pin: TrustPin
-  // Unsigned module code may install only from a URL the person typed, and
-  // only after they said so in as many words: true only when the issuer asked
-  // for it AND the source is 'github'. The registry path keeps refusing
-  // unsigned code whatever a token says.
-  allowUnsignedCode: boolean
   // The entry the disclosure was read from, resolved in main. The install
   // uses this rather than reading the registry again, so a registry refresh
   // between the prompt and the click cannot change what gets installed.
@@ -45,7 +40,6 @@ export type IssueTrustTokenInput = {
   entryId: string
   source: TrustSource
   pin: TrustPin
-  allowUnsignedCode?: boolean
   entry?: MarketplacePluginEntry
   github?: GithubExtensionOrigin
 }
@@ -94,7 +88,6 @@ export function createTrustTokenStore(options: { now?: () => number; ttlMs?: num
           entryId: input.entryId,
           source: input.source,
           pin: { ...input.pin, componentDigests: { ...input.pin.componentDigests } },
-          allowUnsignedCode: input.allowUnsignedCode === true && input.source === 'github',
           ...(input.entry ? { entry: input.entry } : {}),
           ...(input.github && input.source === 'github' ? { github: { ...input.github } } : {}),
         },

@@ -3,7 +3,7 @@ import type { VersionControlProviderId, VersionControlProviderProbe } from '../.
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { forceCliModelRefresh } from '../../store/cliModelDiscovery'
 import type { ChatListView } from '../../store/slices/settingsSlice'
-import { getRendererHost, selectModuleEnabled } from '../../modules'
+import { getRendererHost, onThirdPartyRendererModulesLoaded, selectModuleEnabled } from '../../modules'
 import type { RegisteredSettingsSection } from '../../modules/renderer-host'
 import { AgentBrowserSettings } from './AgentBrowserSettings'
 import { AgentNotificationsSetting } from './AgentNotificationsSetting'
@@ -723,9 +723,15 @@ export default function SettingsPanel({
   // Module-contributed sections render after every built-in tab, in the
   // registry's stable order (order hint, then id). Disabling a module drops
   // its section reactively; persisted values stay in the module namespace.
+  // A batch of extensions landing or leaving (installed, uninstalled, trust
+  // granted or revoked) changes what is enabled without changing the switches.
+  const [moduleRegistryGeneration, setModuleRegistryGeneration] = useState(0)
+  useEffect(() => onThirdPartyRendererModulesLoaded(() => setModuleRegistryGeneration((n) => n + 1)), [])
   const moduleSections = useMemo(
     () => getRendererHost().getSettingsSections((moduleId) => selectModuleEnabled(moduleEnablement, moduleId)),
-    [moduleEnablement],
+    // moduleRegistryGeneration is the signal, not an input the body reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [moduleEnablement, moduleRegistryGeneration],
   )
   const visibleSettingsTabs = useMemo(
     (): SettingsTabDescriptor[] => [

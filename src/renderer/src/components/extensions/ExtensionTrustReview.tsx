@@ -2,7 +2,7 @@ import type { JSX } from 'react'
 
 import type { MarketplaceMcpServerDisclosure } from '../../../../shared/electron-api'
 import type { CapabilityPermission } from '../../../../shared/modules/permissions'
-import { Badge, Checkbox, InlineNotice, TruncatedText } from '../ui'
+import { Badge, TruncatedText } from '../ui'
 import { PermissionChips } from '../settings/ThirdPartyModuleList'
 import { copy as appCopy } from '../../../../shared/copy'
 
@@ -29,30 +29,10 @@ export type ExtensionTrustReviewData = {
   commitSha?: string
   // The signer's key fingerprint (sha256 of the public key), when signed.
   keyFingerprint?: string
-  // The bundle carries a module: code that runs inside the app.
-  codeBearing?: boolean
 }
 
 export type ExtensionTrustReviewProps = ExtensionTrustReviewData & {
   publisher?: { name: string; verified: boolean }
-  // The "I trust this code" answer, for unsigned code. Required before an
-  // install can go ahead whenever `trustCodeRequired` says so; the surface
-  // owns the state so its install button can read it.
-  trustCode?: boolean
-  onTrustCodeChange?: (next: boolean) => void
-}
-
-/**
- * Unsigned code asks for a second, explicit answer: nobody can say who wrote
- * it, and it runs with the app's access. The install action stays disabled
- * until the box is ticked.
- */
-export function trustCodeRequired(review: Pick<ExtensionTrustReviewData, 'classification' | 'codeBearing'>): boolean {
-  return review.classification === 'unsigned' && review.codeBearing === true
-}
-
-export function trustReviewReady(review: ExtensionTrustReviewData, trustCode: boolean): boolean {
-  return !trustCodeRequired(review) || trustCode
 }
 
 const CLASSIFICATION_LABEL: Record<ExtensionTrustReviewData['classification'], string> = {
@@ -62,12 +42,6 @@ const CLASSIFICATION_LABEL: Record<ExtensionTrustReviewData['classification'], s
 }
 
 function reviewCopy(review: ExtensionTrustReviewData): { heading: string; body: string } {
-  if (trustCodeRequired(review)) {
-    return {
-      heading: appCopy.extensions.extensionTrustReview.unsignedCodeReviewBeforeTrusting,
-      body: appCopy.extensions.extensionTrustReview.unsignedCodeThatRunsWith,
-    }
-  }
   const inlineMcp = !review.sourceUrl && (review.mcpServers?.length ?? 0) > 0
   if (inlineMcp) {
     return {
@@ -144,18 +118,6 @@ export function ExtensionTrustReview(props: ExtensionTrustReviewProps): JSX.Elem
 
       {props.files?.length ? <TrustFileListing files={props.files} /> : null}
       {servers.length > 0 ? <McpServerListing servers={servers} /> : null}
-
-      {trustCodeRequired(props) ? (
-        <>
-          <InlineNotice tone="warn">{appCopy.extensions.extensionTrustReview.unsignedCodeCanReadAnd}</InlineNotice>
-          <Checkbox
-            checked={props.trustCode === true}
-            onChange={(next) => props.onTrustCodeChange?.(next)}
-            disabled={!props.onTrustCodeChange}
-            label={appCopy.extensions.extensionTrustReview.iTrustThisCodeAnd}
-          />
-        </>
-      ) : null}
     </div>
   )
 }

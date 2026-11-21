@@ -179,7 +179,6 @@ test('plugin-verify', async () => {
         },
       ])
       assert.equal(result.keyFingerprint, fixture.fingerprint)
-      assert.equal(result.codeBearing, undefined)
       assert.deepEqual(result.pin, {
         manifestSha256: sha256Hex(`${JSON.stringify(fixture.manifest, null, 2)}\n`),
         componentDigests: { 'mcp/server.json': sha256Hex(mcpComponentSource()) },

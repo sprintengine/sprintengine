@@ -1,16 +1,11 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { buildSync } from 'esbuild'
-
-import { parseThirdPartyModuleManifest } from '../../shared/modules/third-party-manifest'
 import type { MarketplaceComponentKind, MarketplacePluginEntry } from '../../shared/marketplace'
-import { classifySignedManifestTrust, verifyModuleSignature } from '../modules/module-signature'
 import {
   generateModuleSigningKeyPair,
   publicKeyFingerprint,
@@ -531,13 +526,14 @@ test('plugin-download', async () => {
     })
   }
 
-  async function testUnsignedCodeBearingBundleRejectedAndRemovesStage(): Promise<void> {
+  async function testBundledExtensionRejectedAndRemovesStage(): Promise<void> {
     await withTempDir(async (dir) => {
-      // Declare a module (code-bearing) component alongside mcp; the unsigned gate
-      // must block before staging is exposed. The module dir is not listed by the
-      // fetcher because the kind gate rejects before component resolution.
+      // An extension ships as a folder with an extension.json, never inside a
+      // bundle: a plugin.json still naming one is refused with the reason before
+      // staging is exposed. The module dir is not listed by the fetcher because
+      // the manifest is refused before component resolution.
       const fixture = createUnsignedFixture({
-        provides: ['mcp', 'module'],
+        provides: ['mcp'],
         components: {
           mcp: {
             path: 'mcp/server.json',
@@ -558,9 +554,10 @@ test('plugin-download', async () => {
 
       assert.equal(result.ok, false)
       if (result.ok) return
-      assert.equal(result.classification, 'unsigned')
-      assert.match(result.message, /unsigned/i)
-      assert.deepEqual(await readdir(stagingRoot), [])
+      assert.equal(result.classification, 'invalid')
+      assert.ok(result.issues?.some((issue) => issue.path === 'components.module'))
+      assert.match(result.message, /A bundle no longer carries an extension/)
+      assert.deepEqual(await readdir(stagingRoot).catch(() => []), [])
     })
   }
 
@@ -723,60 +720,6 @@ test('plugin-download', async () => {
       assert.equal(result.classification, 'verified')
       assert.equal(result.sourceUrl, source)
     })
-  }
-
-  function testCliAndAppRejectSameTamperedModuleBytes(): void {
-    const workDir = mkdtempSync(join(tmpdir(), 'mc-marketplace-cli-verify-'))
-    try {
-      const cliBundle = join(workDir, 'sprintengine-extension.cjs')
-      buildSync({
-        entryPoints: [join(process.cwd(), 'packages/extension-sdk/src/cli.ts')],
-        bundle: true,
-        platform: 'node',
-        format: 'cjs',
-        outfile: cliBundle,
-      })
-
-      const moduleDir = join(workDir, 'module')
-      mkdirSync(moduleDir)
-      writeFileSync(
-        join(moduleDir, 'manifest.json'),
-        JSON.stringify(
-          {
-            id: 'marketplace-download-fixture',
-            displayName: 'Marketplace Download Fixture',
-            version: 1,
-            permissions: ['network'],
-            engines: { hostApi: 3 },
-          },
-          null,
-          2,
-        ),
-      )
-      const keyPath = join(workDir, 'signing.key')
-      assert.equal(spawnSync(process.execPath, [cliBundle, 'keygen', '--out', keyPath], { encoding: 'utf8' }).status, 0)
-      assert.equal(
-        spawnSync(process.execPath, [cliBundle, 'sign', moduleDir, '--key', keyPath], { encoding: 'utf8' }).status,
-        0,
-      )
-
-      const manifestPath = join(moduleDir, 'manifest.json')
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
-      manifest.displayName = 'Tampered Download Fixture'
-      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
-
-      const cliVerify = spawnSync(process.execPath, [cliBundle, 'verify', moduleDir], { encoding: 'utf8' })
-      assert.equal(cliVerify.status, 1)
-      assert.match(cliVerify.stderr, /INVALID signature/)
-
-      const parsed = parseThirdPartyModuleManifest(readFileSync(manifestPath, 'utf8'))
-      assert.equal(parsed.ok, true)
-      if (!parsed.ok) return
-      assert.equal(verifyModuleSignature(parsed.manifest).valid, false)
-      assert.equal(classifySignedManifestTrust(parsed.manifest, { trustedModules: new Map() }).status, 'invalid')
-    } finally {
-      rmSync(workDir, { recursive: true, force: true })
-    }
   }
 
   // --- Claude Code plugin sources: bundled snapshot content ---------
@@ -1109,63 +1052,6 @@ test('plugin-download', async () => {
     })
   }
 
-  // Unsigned module code stages only when main asks for it (a GitHub-URL
-  // install the person trusted as code), and is still refused otherwise.
-  async function testUnsignedCodeStagesOnlyWhenAllowed(): Promise<void> {
-    await withTempDir(async (dir) => {
-      const moduleManifest = `${JSON.stringify({ id: 'unsigned-module', displayName: 'Unsigned', version: 1 }, null, 2)}\n`
-      const fixture = createUnsignedFixture({
-        provides: ['module'],
-        components: {
-          module: {
-            path: 'module',
-            files: [{ path: 'module/manifest.json', sha256: sha256Hex(moduleManifest) }],
-          },
-        },
-      })
-      const pluginJson = `${JSON.stringify(fixture.manifest, null, 2)}\n`
-      const apiModule =
-        'https://api.github.com/repos/sprintengine/studio-releases/contents/plugins/downloaded-plugin/module?ref=main'
-      const rawModule =
-        'https://raw.githubusercontent.com/sprintengine/studio-releases/main/plugins/downloaded-plugin/module/manifest.json'
-      const fetcher: MarketplacePluginDownloadFetch = async (url) => {
-        if (url === API_ROOT) {
-          return jsonResponse([
-            { type: 'file', path: 'plugins/downloaded-plugin/plugin.json', download_url: RAW_PLUGIN },
-            { type: 'dir', path: 'plugins/downloaded-plugin/module', url: apiModule },
-          ])
-        }
-        if (url === apiModule) {
-          return jsonResponse([
-            { type: 'file', path: 'plugins/downloaded-plugin/module/manifest.json', download_url: rawModule },
-          ])
-        }
-        if (url === RAW_PLUGIN) return textResponse(pluginJson)
-        if (url === rawModule) return textResponse(moduleManifest)
-        return new Response('not found', { status: 404 })
-      }
-      const refused = await downloadMarketplacePluginBundle({
-        entry: fixture.entry,
-        trustContext: { trustedModules: new Map() },
-        stagingRoot: join(dir, 'staging'),
-        fetcher,
-      })
-      assert.equal(refused.ok, false)
-
-      const allowed = await downloadMarketplacePluginBundle({
-        entry: fixture.entry,
-        trustContext: { trustedModules: new Map() },
-        stagingRoot: join(dir, 'staging'),
-        fetcher,
-        allowUnsignedCode: true,
-      })
-      assert.equal(allowed.ok, true, allowed.ok ? '' : allowed.message)
-      if (!allowed.ok) return
-      assert.equal(allowed.classification, 'unsigned')
-      assert.deepEqual(Object.keys(allowed.pin.componentDigests), ['module/manifest.json'])
-    })
-  }
-
   async function main(): Promise<void> {
     await testVerifiedFirstPartyDownloadStagesBundle()
     await testUnavailableGithubSourceFallsBackToPackagedSeedBundle()
@@ -1176,14 +1062,13 @@ test('plugin-download', async () => {
     await testDownloadedComponentDigestMismatchBlocksAndRemovesStage()
     await testTamperedPluginSignatureBlocksAndRemovesStage()
     await testUnsignedMcpOnlyBundleStagesAsUnsigned()
-    await testUnsignedCodeBearingBundleRejectedAndRemovesStage()
+    await testBundledExtensionRejectedAndRemovesStage()
     await testRetiredAutomationComponentRejected()
     await testUnsignedBundleUnderSignedRegistryEntryRejected()
     await testRejectsNonHttpsSourceBeforeFetch()
     await testRejectsNonAllowlistedSourceHostBeforeFetch()
     await testForeignPerFileDownloadUrlRejectedMidDownload()
     await testNonCanonicalOwnerGithubSourceDownloads()
-    testCliAndAppRejectSameTamperedModuleBytes()
     await testClaudePluginBundledContentStagesSkills()
     await testClaudePluginWithoutBundledContentRefusedHonestly()
     await testClaudePluginMetadataOnlySkillsSurfaced()
@@ -1193,7 +1078,6 @@ test('plugin-download', async () => {
     await testClaudePluginRefOverridePinsBundledContent()
     await testBranchSourceResolvesToACommitAndPinsTheStage()
     await testRefsAreCheckedAndCommitLookupFallsBackToSeed()
-    await testUnsignedCodeStagesOnlyWhenAllowed()
     console.log('marketplace plugin download tests passed')
   }
 

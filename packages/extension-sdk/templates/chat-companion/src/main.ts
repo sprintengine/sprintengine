@@ -1,26 +1,30 @@
-import { getConversationService, type RegisterMain } from '@sprintengine/extension-sdk'
+import { getConversationService, type MainHost } from '@sprintengine/extension-sdk'
 
 import { CHANGED_TOPIC, readNothing, readStartRequest, readStopRequest, type CompanionMethods } from './protocol'
 
 const OPENING_PROMPT =
   "Read this project's README and its main entry point, then summarise in five bullet points what it does and how it is built. Do not change any files."
 
-// Chats a module starts are real chats: they open as tabs in the workspace,
-// run on the agent runtime the person last chose (unless `cli` says which),
-// and the person can read and answer them like any other. The conversation
-// service only ever shows this module its own chats.
-export const registerMain: RegisterMain = (host) => {
-  // An older host, or one whose chat runtime is off: say so once, rather than
-  // failing the module's load at the first call.
-  if (!host.supports('conversations')) {
-    host.notify({
+// The worker: Studio loads extension/dist/main.cjs with require and calls
+// `activate` with a `studio` for this extension. It serves the methods the
+// panel calls (`registerMethods`, which needs "module:bridge").
+//
+// Chats an extension starts are real chats: they open as tabs in the
+// workspace, run on the agent runtime the person last chose (unless `cli`
+// says which), and the person can read and answer them like any other. The
+// conversation service only ever shows this extension its own chats.
+export function activate(studio: MainHost): void {
+  // A Studio whose chat runtime is off: say so once, rather than failing at
+  // the first call.
+  if (!studio.supports('conversations')) {
+    studio.notify({
       severity: 'warning',
       title: '{{displayName}} cannot start chats here',
-      body: 'This version of SprintEngine Studio does not offer chats to extensions.',
+      body: 'Chats are not available to extensions in this Studio right now.',
     })
     return
   }
-  const conversations = getConversationService(host)
+  const conversations = getConversationService(studio)
 
   // Started below, once per command id: a retried call passes the same
   // `commandId` on, so the conversation service finds the chat the first made.
@@ -43,7 +47,7 @@ export const registerMain: RegisterMain = (host) => {
       finished = true
       stop?.()
       if (event.type === 'turn_failed') {
-        host.notify({
+        studio.notify({
           severity: 'warning',
           title: 'Project summary did not finish',
           body: 'Open it from {{displayName}}.',
@@ -54,7 +58,7 @@ export const registerMain: RegisterMain = (host) => {
     return { ok: true as const, result: { conversation: started.conversation } }
   }
 
-  host.registerMethods<CompanionMethods>({
+  studio.registerMethods<CompanionMethods>({
     list: { access: 'read', params: readNothing, handler: () => ({ ok: true, result: conversations.list() }) },
     start: {
       access: 'operate',
@@ -75,8 +79,8 @@ export const registerMain: RegisterMain = (host) => {
   // event is a signal, not state: a window opened later reads through
   // the `list` method and never needs an old event.
   let stopWatching = () => {}
-  host.onStartup(() => {
-    stopWatching = conversations.watch(undefined, () => host.emit(CHANGED_TOPIC))
+  studio.onStartup(() => {
+    stopWatching = conversations.watch(undefined, () => studio.emit(CHANGED_TOPIC))
   })
-  host.onShutdown(() => stopWatching())
+  studio.onShutdown(() => stopWatching())
 }

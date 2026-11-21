@@ -1,40 +1,35 @@
-import type { RendererHost } from '@sprintengine/extension-sdk'
-import { EmptyState } from '@sprintengine/extension-sdk/ui'
-import { GlobalSurfaceShell, useSurfaceBackNav } from '@sprintengine/extension-sdk/surface'
+import { useEffect } from 'react'
+import { createRoot } from 'react-dom/client'
 
-function DoorIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-      <rect x="4" y="4" width="16" height="16" rx="2" />
-      <path d="M9 4v16" />
-    </svg>
-  )
-}
+import type { ExtensionMount, ExtensionMountStudio } from '@sprintengine/extension-sdk'
 
-function Door() {
-  const { onBack, canGoBack } = useSurfaceBackNav()
+const NAME = '{{displayName}}'
+
+// A door: a full-window surface with its own row in the Extensions drawer,
+// declared in extension.json (`contributes.doors`, id "door"). Studio draws the
+// row and the window around it; everything inside the element `mount` is
+// handed is this extension's.
+export function Door({ studio }: { studio: ExtensionMountStudio }) {
+  useEffect(() => studio.ready(), [studio])
   return (
-    <GlobalSurfaceShell
-      ariaLabel="{{displayName}}"
-      bar={{ title: '{{displayName}}' }}
-      onBack={onBack}
-      canGoBack={canGoBack}
+    <div
+      style={{
+        height: '100%',
+        padding: 'var(--sem-space-lg)',
+        background: 'var(--sem-color-bg-surface)',
+        fontFamily: 'var(--sem-font-family-ui)',
+        fontSize: 'var(--sem-font-size-body)',
+        color: 'var(--sem-color-text-default)',
+      }}
     >
-      <EmptyState title="Nothing here yet" body="This is {{displayName}}’s door. Draw what IDEA.md describes." />
-    </GlobalSurfaceShell>
+      <h2 style={{ marginTop: 0, color: 'var(--sem-color-text-primary)' }}>Nothing here yet</h2>
+      <p style={{ color: 'var(--sem-color-text-muted)' }}>This is {NAME}’s door. Draw what IDEA.md describes.</p>
+    </div>
   )
 }
 
-// A door: a full-page surface the shell mounts over the workspace area. With a
-// `label` and an `Icon` the shell gives it a row in the Extensions drawer and
-// a tile on the Extensions home. Its id must be unique across every installed
-// module, so it starts with the module id.
-export function registerDoor(host: RendererHost): void {
-  host.registerGlobalSurface({
-    id: '{{id}}-door',
-    label: '{{displayName}}',
-    Icon: DoorIcon,
-    railPlacement: 'inline',
-    Component: Door,
-  })
+export const mount: ExtensionMount = (root, studio) => {
+  const view = createRoot(root)
+  view.render(<Door studio={studio} />)
+  return () => view.unmount()
 }

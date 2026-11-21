@@ -1,36 +1,39 @@
 // Your tests, in TypeScript: `npm test` bundles test/*.test.ts and runs them
-// with `node --test` (see AGENTS.md). Drive the source with the SDK's fakes.
+// with `node --test` (see AGENTS.md). Drive the worker with the SDK's fake
+// main host, handing it `manifest` from ./manifest, and run the command the
+// way Studio does: its method, with what the menu was picked on.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import type { BacklogItemActionContext, BacklogItemView } from '@sprintengine/extension-sdk'
-import { createFakeRendererHost } from '@sprintengine/extension-sdk/testing'
+import { createFakeMainHost } from '@sprintengine/extension-sdk/testing'
 
-import manifest from '../module/manifest.json'
-import { registerRenderer } from '../src/renderer'
+import { activate } from '../src/main'
+import { manifest } from './manifest'
 
-function contextFor(item: Partial<BacklogItemView>): BacklogItemActionContext {
-  return {
+test('planning an item starts a chat that names it', async () => {
+  const main = createFakeMainHost({ manifest })
+  main.services.backlog.seed('ws-app', [{ title: 'Fix the login page' }])
+  const [item] = main.services.backlog.items('ws-app')
+  activate(main.host)
+
+  const answer = await main.methods.operate('plan-in-chat', {
+    where: 'backlog.item',
     workspaceId: 'ws-app',
-    item: { title: 'Ship the importer', relativePath: 'backlog/ship-the-importer.md', status: 'ready', ...item },
-  } as BacklogItemActionContext
-}
-
-test('a closed item cannot be planned', async () => {
-  const fake = createFakeRendererHost({ manifest })
-  await registerRenderer(fake.host)
-  const [action] = fake.registrations.backlogItemActions
-  assert.equal(action?.getState?.(contextFor({ status: 'completed' })), 'disabled')
-  assert.equal(action?.getState?.(contextFor({ status: 'ready' })), 'enabled')
+    backlogItemIds: [item!.id],
+  })
+  assert.ok(answer.ok, JSON.stringify(answer))
+  const [chat] = main.services.conversations.all()
+  assert.match(String(chat?.events.find((event) => event.type === 'user_message')?.payload?.text), /Fix the login page/)
+  assert.deepEqual(main.undeclared, [], 'everything it used is declared in extension/extension.json')
 })
 
-test('planning opens a draft chat that names the item', async () => {
-  const fake = createFakeRendererHost({ manifest })
-  await registerRenderer(fake.host)
-  await fake.registrations.backlogItemActions[0]?.run(contextFor({}))
-  assert.equal(fake.openedChats.length, 1)
-  assert.match(fake.openedChats[0]?.prompt ?? '', /"Ship the importer" \(backlog\/ship-the-importer\.md\)/)
-  assert.notEqual(fake.openedChats[0]?.send, true, 'a draft: the person sends it')
-  assert.deepEqual(fake.undeclared, [])
+test('run without an item, it says what to do', async () => {
+  const main = createFakeMainHost({ manifest })
+  activate(main.host)
+  assert.deepEqual(await main.methods.operate('plan-in-chat', { where: 'palette', workspaceId: 'ws-app' }), {
+    ok: false,
+    code: 'invalid_params',
+    message: 'Pick at least one Backlog item.',
+  })
 })

@@ -1,3 +1,4 @@
+import type { ExtensionMcpToolContribution } from '../../../packages/extension-sdk/src/extension-manifest'
 import type { ModuleEventEnvelope } from '../../shared/modules/events'
 import type {
   CapabilityManifest,
@@ -85,7 +86,7 @@ async function settleRegistration(id: string, pending: PromiseLike<unknown>, tim
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
-      () => reject(new Error(`Extension "${id}" registerMain did not settle within ${timeoutMs / 1000}s.`)),
+      () => reject(new Error(`Extension "${id}" did not finish starting within ${timeoutMs / 1000}s.`)),
       timeoutMs,
     )
   })
@@ -139,6 +140,8 @@ export function loadMainModules(options: {
   coreMcpToolNames?: () => Iterable<string>
   /** Verified file digests per third-party module id, for `MainHost.getAssetPath`. */
   moduleVerifiedFiles?: Record<string, ModuleFileDigests>
+  /** The MCP tools each installed extension declares (`contributes.mcpTools`). */
+  moduleMcpTools?: Record<string, readonly ExtensionMcpToolContribution[]>
 }): LoadMainModulesResult {
   const { modules, overrides = {}, provideServices, ineligible, launchErrors = [] } = options
   const registerTimeoutMs = options.registerTimeoutMs ?? REGISTER_MAIN_TIMEOUT_MS
@@ -163,6 +166,7 @@ export function loadMainModules(options: {
     ...(options.skillRegistry ? { skillRegistry: options.skillRegistry } : {}),
     ...(options.coreMcpToolNames ? { coreMcpToolNames: options.coreMcpToolNames } : {}),
     resolveModuleVerifiedFiles: (moduleId) => options.moduleVerifiedFiles?.[moduleId],
+    resolveDeclaredMcpTools: (moduleId) => options.moduleMcpTools?.[moduleId],
   })
   const hostScope = kernel.hostFor('@host')
   provideServices?.(hostScope)
@@ -205,7 +209,14 @@ export function loadMainModules(options: {
     notifyLoadError(loadError)
   }
 
-  for (const id of resolution.order) {
+  // The app's own modules first, in dependency order, then every installed
+  // extension: an extension's activate may resolve any service the app's
+  // modules provide, and declares no dependencies to order it after them.
+  const appFirst = [
+    ...resolution.order.filter((id) => byId.get(id)?.manifest.source !== 'third-party'),
+    ...resolution.order.filter((id) => byId.get(id)?.manifest.source === 'third-party'),
+  ]
+  for (const id of appFirst) {
     const module = byId.get(id)
     if (!module) continue
     if (!module.registerMain) {

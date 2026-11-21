@@ -15,7 +15,7 @@ a private data structure, and changing one is not a local edit.**
 | ------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------ | ----------------------------------------------- |
 | Tailnet transport — a paired phone or Studio reaching this one                        | `TAILNET_TRANSPORT_VERSION` (integer)   | current only (3)                                 | `src/main/automation/tailnet/tailnet-routes.ts` |
 | MCP                                                                                   | dated strings, newest first             | every entry in the list                          | `src/shared/mcp/protocol.ts`                    |
-| Extension host API — an installed extension built against `@sprintengine/extension-sdk` | `HOST_API_VERSION` (integer)            | `HOST_API_MIN_SUPPORTED` .. current              | `src/shared/modules/host-api.ts`                |
+| Extension manifest — an installed extension's `extension.json`                       | `engines.studio` (`>=x.y.z`)            | every manifest up to `STUDIO_EXTENSION_VERSION`  | `packages/extension-sdk/src/extension-manifest.ts` |
 | Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)     | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current       | `packages/studio-protocol/src/handshake.ts`     |
 | Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`) | current only (one version of slack when 2 ships) | `src/renderer/src/web/embed/embedProtocol.ts`   |
 
@@ -206,68 +206,86 @@ and nothing a capability flag cannot describe should ship without one.
 
 ## The extension host API
 
-An extension is compiled against `@sprintengine/extension-sdk` and runs inside
-whatever Studio later loads it, so the contract between them — the `MainHost`
-and `RendererHost` members, the services behind the SDK's `get*Service`
-helpers, the manifest fields — is a wire in the sense of this file, even though
-nothing crosses a network.
+An extension is a folder with an `extension.json` at its root, built against
+`@sprintengine/extension-sdk` and run by whatever Studio later loads it, so the
+contract between them — the manifest's fields, the `mount(root, studio)` a
+panel, door or settings section exports, the `activate(studio)` its worker
+exports, the `studio` objects (the SDK's `RendererHost` and `MainHost`) and
+the services behind the SDK's `get*Service` helpers — is a wire in the sense of
+this file, even though nothing crosses a network.
 
-- **The version.** `HOST_API_VERSION = 3`, `HOST_API_MIN_SUPPORTED = 3`. Host
-  API 2 (2026-11-12) replaced host API 1's IPC channels (`MainHost.registerIpc`,
-  `RendererHost.invoke`) with declared methods served over the Studio protocol
-  (`registerMethods`, `methods()`, then `module.read` / `module.operate`), with
-  no shim. Host API 3 (2026-11-18) is the same contract under the SDK's new
-  name: `@sprintengine/module-sdk` became `@sprintengine/extension-sdk` (its CLI
-  `sprintengine-module` became `sprintengine-extension`), and a window half
-  imports `@sprintengine/extension-sdk/ui` and `/surface` at runtime, which the
-  host provides under that name only. So a module built for host API 1 or 2 is
-  refused: Settings and the bell say to rebuild it against
-  `@sprintengine/extension-sdk` 3. Both numbers are declared
-  once, in `packages/extension-sdk/src/host-api.ts`, and re-exported for app
-  code by `src/shared/modules/host-api.ts`, so the app, the SDK and the
-  `sprintengine-extension` CLI cannot disagree about them. The drift guard
-  (`npm run test:sdk:drift`) pins the two sides anyway.
-- **The declaration.** A third-party manifest must carry
-  `"engines": { "hostApi": <n> }`. First-party modules ship with the host they
-  run on and may omit it.
-- **The window.** A module loads when `HOST_API_MIN_SUPPORTED <= n <=
-HOST_API_VERSION`. `checkHostApiCompatibility` is the one check; it is
-  applied when modules are planned at startup (`src/main/modules/host-api-gate.ts`),
-  when renderer entries are served (`third-party-renderer-entries.ts`), when a
-  module's state is shown (`src/shared/modules/resolve.ts`, as
-  `incompatible_host_api` rather than "not trusted"), and by the CLI's `sign`,
-  `verify` and `pack`. A refusal names both numbers and which side to update —
-  the same rule as the integer wires above.
-- **Unlike the integer wires, the window is not one version wide by rule.** An
-  extension is not a peer that updates alongside the app; raise
-  `HOST_API_MIN_SUPPORTED` only when the host genuinely stops providing
-  something older modules were promised, and say so in the SDK's
-  `CHANGELOG.md`.
-- **Capabilities.** `host.supports(name)` answers what the running host
+- **The manifest.** `extension.json` (`manifestVersion: 1`) is validated by
+  one strict validator in the SDK, which the app, the CLI and the templates all
+  run (`validateExtensionManifest`). Unknown keys are refused at every level, a
+  contribution point above the extension's `tier` fails, and the points held
+  for later formats must be empty. A field table drives the validator, the JSON
+  Schema the SDK ships (`extension.schema.json`) and the reference in
+  `packages/extension-sdk/guide/manifest.md`, so the three cannot disagree.
+- **The version.** Each field carries the Studio release that first reads it.
+  extension.json is read from Studio 0.13.0 (`EXTENSION_MANIFEST_SINCE`). An
+  extension declares the oldest Studio it runs on as `engines.studio`
+  (`>=x.y.z`); the author's check holds that to the newest field it uses, and
+  a Studio refuses one asking for more than it reads
+  (`STUDIO_EXTENSION_VERSION`), naming both versions. There is no host API
+  integer any more.
+- **Adding to the format.** A new field, contribution point, icon or command
+  action is additive: it gets its own `since`, and an extension that uses it
+  raises `engines.studio` to match. Changing what a field means, or removing
+  one, is a new `manifestVersion`.
+- **Capabilities.** `studio.supports(name)` answers what the running host
   provides now, from the table in `src/shared/modules/host-api.ts`
-  (`hostSupports`). The names are the SDK's `HostCapability` union:
-  `conversations`, `conversation-controls`, `conversation-streams`,
-  `conversation-requests`, `conversation-permissions`, `chat.open`, `companion-agents`,
-  `scheduled-agents`, `secrets`, `github`, `storage`, `mcp-tools`, `skills`,
-  `module-assets`, `notifications`, `companion-tools`, `conversation-replies`,
-  `text-generation`, `conversation-worktrees`, `chat-runtimes`,
-  `scheduled-agent-runs`, `chat.open-options` (a renderer's, answered live
-  like `chat.open`), and `electron-main`, which the main host
-  answers itself: true in the desktop's own main process, false where a
-  module's main half runs in the Studio server out of process.
-- **`requires.hostCapabilities`.** An optional manifest field (added with
-  `electron-main`, no version bump): a module whose `entry.main` cannot run
-  without a capability names it, and a host that lacks it loads the module
-  manifest-only (its renderer half still loads). The validator keeps names it
-  does not know, since a host that does not know a name does not support it.
-  A capability joins the table in the same change that makes it real, and an
-  unknown name answers `false`. As on the tailnet, an additive feature ships as
-  a capability with no version bump.
-- **When to bump.** Removing or changing a host member, a service method or a
-  manifest field that a module built for the current version may use. Adding
-  an optional member, a service, a capability or a permission is additive.
-  `scripts/release/sdk-release-check.mjs` (run by `npm run test:release`) checks
-  that the version quoted here matches the source.
+  (`hostSupports`). An unknown name answers `false`, so an extension may probe
+  for capabilities newer than its SDK. A capability joins the table in the
+  same change that makes it real.
+- **Install keys.** An extension is installed under `<publisher>.<id>`, the
+  publisher derived from where it came from (`local` for a folder). The key is
+  the extension's id on the Studio protocol (`extension.*`'s `moduleId`), its
+  folder under the extensions root, and the namespace of what the shell
+  registers for it.
+- **Signatures.** `extension.sig` beside the manifest holds the sha256 of every
+  file the extension ships (extension.json included) and an ed25519 signature
+  over them. Until approvals replace it, it is the trust gate: an extension
+  signed by a trusted publisher key runs; any other runs once the person
+  trusts its content as installed.
+
+### extension.json replaces manifest.json (no compatibility)
+
+The extension format changed at once, with nothing bridging the two (owner
+ruling: there are no users yet). A folder with a `manifest.json` is not an
+extension: Studio does not read it, installs nothing from it and says only
+that `extension.json` is missing. Gone with it: `engines.hostApi`,
+`HOST_API_VERSION` and its gate (`incompatible_host_api`, `blocked_host_api`),
+`requires.hostCapabilities`, `entry.main` / `entry.renderer` / `entry.preload`,
+`files` and `signature` inside the manifest, `publisher`, `displayName`,
+`defaultEnabled`, `dependsOn`, `conflictsWith`, `category`; the window's
+`registerRenderer` and every UI `register*` call (panels, workspace types,
+Backlog and file actions, link providers, notification actions, commands,
+Settings sections, nav entries, door badges, top bar items, global and modal
+surfaces), `openWorkspace`, `openModalSurface`, `setSurfaceView`; the worker's
+`registerMain` and `registerSkills`; and the window-shared React, UI kit and
+door shell (`@sprintengine/extension-sdk/ui` and `/surface`). A worker keeps
+`registerMethods` and `registerMcpTools`; the tools it registers must be
+declared in `contributes.mcpTools`. A plugin bundle no longer carries an
+extension: its `module` component is refused, and the bundle carries MCP
+servers and skills only.
+
+The Studio protocol changed with it, in place: `extension.rendererEntries`
+answers each extension's `extension` (its manifest) and `entries` (the source
+of each surface's bundle, by path) instead of one `code` bundle and a
+`firstPartySigned` stamp; `extension.installed` answers each extension's
+`extension` and drops `origin`; `extension.install` answers `strippedLinks`,
+the symbolic links left out of the copy; `extension.uninstall` no longer names
+a plugin that owns the extension; a module's `version` is an integer for the
+app's own modules and a semver string for an extension. With the bundle's
+`module` component go the marketplace's module-only fields: a review's
+`codeBearing`, a GitHub install's `trustCode`, an installed component's
+`trustStatus` and `manifestFp`, and an install's `restartRequired`. A GitHub
+repository holding an extension.json is refused with a sentence saying to
+install its folder. A provider in the user's provider folder may no longer
+name `auth.env`: its key is entered in Settings, and an environment variable
+is read only for the providers that ship with Studio. A client and a Studio
+on either side of the change see each other's extensions as broken or absent,
+and nothing says more than that.
 
 ## The phone's reads are Studio protocol methods
 
@@ -632,8 +650,10 @@ source list and an update check, asked or pushed, show such a client only
 those. A plugin's
 install and uninstall, a bundle's lint (it runs the bundle's own script) and a
 card's Go are an owner's. A Studio without the desktop's shell beside it (on a
-WSL or SSH machine) answers a card's `install.module` and an installed skill's
-removal to the Trash in words. A window that meets a Studio without
+WSL or SSH machine) answers an installed skill's removal to the Trash in
+words. The `install.module` card verb is gone with extension.json:
+extensions install from a folder, so a card naming it is refused as a verb
+this build does not implement. A window that meets a Studio without
 `agent-skills` says the Studio is older. The desktop's own windows reach all
 of them only this way: their window IPC is gone.
 `environment-readiness` (2026-11-12) adds `environment.readiness`, under

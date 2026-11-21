@@ -19,8 +19,6 @@ function kernelWith(options: MainKernelOptions = {}) {
 test('getSkillStatus reads through the skill registry and writes nothing', async () => {
   const calls: string[] = []
   const skillRegistry: ModuleSkillHostRegistry = {
-    register() {},
-    unregister() {},
     async ensureInstalled(root, id) {
       calls.push(`ensure:${root}:${id}`)
       return { ok: true, status: 'installed' }

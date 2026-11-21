@@ -1,22 +1,21 @@
 // Your tests, in TypeScript: `npm test` bundles test/*.test.ts and runs them
-// with `node --test` (see AGENTS.md). Drive the source with the SDK's fakes.
+// with `node --test` (see AGENTS.md). Drive the source with the SDK's fakes,
+// handing them `manifest` from ./manifest.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { createFakeMainHost } from '@sprintengine/extension-sdk/testing'
 
-import manifest from '../module/manifest.json'
-import { registerMain } from '../src/main'
-
-const prefix = manifest.id.replace(/-/g, '_')
+import { activate } from '../src/main'
+import { manifest } from './manifest'
 
 test('an agent can count words', async () => {
   const fake = createFakeMainHost({ manifest })
-  await registerMain(fake.host)
-  const result = await fake.tools.call(`${prefix}_word_count`, { text: 'one two\nthree' })
+  activate(fake.host)
+  const result = await fake.tools.call('{{toolPrefix}}_word_count', { text: 'one two\nthree' })
   assert.deepEqual(result.structuredContent, { words: 3, lines: 2, characters: 13 })
-  const refused = await fake.tools.call(`${prefix}_word_count`, { text: 42 })
+  const refused = await fake.tools.call('{{toolPrefix}}_word_count', { text: 42 })
   assert.equal(refused.isError, true)
 })
 
@@ -25,8 +24,17 @@ test('an agent can list the open workspaces', async () => {
     manifest,
     workspaces: [{ id: 'ws-docs', name: 'Docs', folderPath: '/Users/dev/docs', mode: 'standard' }],
   })
-  await registerMain(fake.host)
-  const result = await fake.tools.call(`${prefix}_open_workspaces`)
+  activate(fake.host)
+  const result = await fake.tools.call('{{toolPrefix}}_open_workspaces')
   assert.equal(result.content[0]?.type === 'text' && result.content[0].text, 'Docs — /Users/dev/docs')
-  assert.deepEqual(fake.undeclared, [], 'everything it used is declared in module/manifest.json')
+  assert.deepEqual(fake.undeclared, [], 'everything it used is declared in extension/extension.json')
+})
+
+test('extension.json declares every tool the worker serves, read-only', () => {
+  const fake = createFakeMainHost({ manifest })
+  activate(fake.host)
+  assert.deepEqual(
+    fake.tools.list().map((tool) => [tool.name, tool.mutates]),
+    manifest.contributes.mcpTools.map((tool) => [tool.name, false]),
+  )
 })

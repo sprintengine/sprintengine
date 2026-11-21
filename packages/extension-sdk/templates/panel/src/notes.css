@@ -1,0 +1,46 @@
+/* The panel's own stylesheet. It sits in Studio's document, so every selector
+   starts with the extension id, and colours, spacing and type come from
+   Studio's --sem-* custom properties, which follow the theme. Studio's own
+   class names are not a contract: style only what you drew. */
+
+.ext-{{id}}-notes {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  background: var(--sem-color-bg-surface);
+  color: var(--sem-color-text-default);
+  font-family: var(--sem-font-family-ui);
+  font-size: var(--sem-font-size-body);
+}
+
+.ext-{{id}}-notes__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--sem-space-sm) var(--sem-space-md);
+  border-bottom: 1px solid var(--sem-color-border-subtle);
+}
+
+.ext-{{id}}-notes__state {
+  color: var(--sem-color-text-muted);
+  font-size: var(--sem-font-size-meta);
+}
+
+.ext-{{id}}-notes__text {
+  flex: 1;
+  min-height: 0;
+  margin: var(--sem-space-md);
+  padding: var(--sem-space-sm);
+  border: 1px solid var(--sem-color-border-subtle);
+  border-radius: var(--sem-radius-control);
+  background: var(--sem-color-bg-surface-raised);
+  color: inherit;
+  font: inherit;
+  resize: none;
+}
+
+.ext-{{id}}-notes__text:focus {
+  outline: none;
+  box-shadow: var(--sem-focus-ring);
+}

@@ -107,16 +107,10 @@ test('an install names its entry and the approval its review issued, never the e
     'invalid_params',
   )
   assert.equal(
-    refusal(parseStudioMethodParams('marketplace.installGithub', { commandId: 'c', trustCode: true })),
+    refusal(parseStudioMethodParams('marketplace.installGithub', { commandId: 'c' })),
     'invalid_params',
     'a GitHub install without its approval',
   )
-  const github = parseStudioMethodParams('marketplace.installGithub', {
-    commandId: 'c',
-    trustToken: 't',
-    trustCode: 'yes',
-  })
-  assert.equal(refusal(github), 'invalid_params', '"I trust this code" is a yes or a no')
   assert.equal(refusal(parseStudioMethodParams('marketplace.uninstall', { commandId: 'c' })), 'invalid_params')
   assert.equal(refusal(parseStudioMethodParams('marketplace.resolveGithub', { url: '   ' })), 'invalid_params')
   assert.equal(refusal(parseStudioMethodParams('marketplace.read', { forceRefresh: 'yes' })), 'invalid_params')

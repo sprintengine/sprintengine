@@ -207,7 +207,10 @@ export class ProviderSecretStore {
     const auth = owner.manifest.auth
     if (!auth) return { ok: false, message: 'Conversation provider does not declare a secret.' }
 
-    const envName = auth.env?.trim() || null
+    // The environment is read only for a provider that ships with Studio. The
+    // registry refuses a user provider that names a variable; this keeps one
+    // that reached here some other way from reading it.
+    const envName = owner.source === 'bundled' ? auth.env?.trim() || null : null
     return {
       ok: true,
       providerId: normalizedProviderId,

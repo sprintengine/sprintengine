@@ -2,8 +2,8 @@ node_modules/
 packed/
 # What `npm run build:test` bundles from test/*.test.ts.
 test/.build/
-# module/dist is NOT ignored: an install from GitHub reads the built module at a
-# commit, so the build is committed with the manifest that describes it.
+# extension/dist is NOT ignored: extension/ is the folder Studio installs,
+# build included, so the repository holds exactly what you ship.
 *.key
 *.pem
 *.tgz.tmp

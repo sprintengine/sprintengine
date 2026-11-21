@@ -1,67 +1,67 @@
-# Renderer API (`entry.renderer`)
+# The surface's `studio`
 
-`export const registerRenderer: RegisterRenderer = (host) => { … }` runs once,
-when Studio loads the module into a window (each window loads it). Register
-everything there; components get `host` by closure (every template uses a
-`createX(host)` factory for that). Types: `RendererHost` in
-`@sprintengine/extension-sdk`.
+Each panel, door and settings section in extension.json names an `entry`: an
+ESM bundle exporting `mount`. Studio imports it when the surface first opens
+and calls it with an element to draw in and a `studio` object:
 
-Registration may be async (return a promise); Studio waits up to 10 seconds,
-and a rejection or a timeout is a load error, the same as a throw. Registering
-the same id twice, or an id another module holds, is a load error too, and it
-turns off the module's other contributions — keep ids prefixed with the module
-id.
+```ts
+import type { ExtensionMount } from '@sprintengine/extension-sdk'
+
+export const mount: ExtensionMount = (root, studio) => {
+  // draw into root …
+  studio.ready()
+  return () => {
+    // … and undo it when the surface closes
+  }
+}
+```
+
+`mount` may be async. What it returns, if anything, is a cleanup function
+Studio calls when the surface closes. `root` is Studio's; draw inside it and
+nowhere else (the `styling` topic). Types: `ExtensionMount`,
+`ExtensionMountStudio`, `RendererHost` in `@sprintengine/extension-sdk`.
+
+`studio` is the window's API (`RendererHost`) plus two members for this one
+surface:
+
+| Member | Notes |
+| --- | --- |
+| `surface` | `{ point, id, workspaceId? }`: which contribution this is (`panels`, `doors` or `settingsSections`, and its id in extension.json), and for a panel, the workspace it was opened in. |
+| `ready()` | Say the surface has drawn its content. Studio measures the time from opening to this call. Call it once, after the first meaningful paint. |
+
+The surface adds nothing to Studio at runtime: what it contributes is declared
+in extension.json. It draws, and it reaches Studio through `studio`.
 
 ## Identity and capabilities
 
 | Member | Notes |
 | --- | --- |
-| `moduleId` | Your manifest id: the module your `methods()` calls reach, the `source` your bell rows are filed under. |
-| `hostApiVersion` | The host API Studio provides. |
-| `supports(capability)` | `'conversations'`, `'chat.open'`, `'storage'`, `'secrets'`, `'github'`, `'module-assets'`, `'toast'`, `'notifications'`, `'open-external'`, … Unknown names answer `false`. Check before relying on a newer capability. |
-| `getAssetUrl(relativePath)` | A stable `studio-module:` URL for a file inside the installed module (no leading slash, no `..`). The way to reach HTML, images, WASM: the bundle itself runs from a blob URL, so relative URLs do not resolve. |
-
-## Contributions
-
-| Method | What appears | Gone when the module is off? |
-| --- | --- | --- |
-| `registerCommand({ id, title, category, scopes, run, availability?, defaultKeybindings? })` | Command palette entry, id namespaced `<moduleId>.<id>`. `scopes: ['global']` for anywhere; `panel:<moduleId>` while a workspace of your type is active. `run(context)` gets `{ activeWorkspaceId, activeWorkspaceMode }` of the window it ran in — "this workspace". | yes |
-| `registerPanel(componentId, Component)` | Nothing by itself: a panel shows only where a layout tab names it (`component: componentId`). Pair with a workspace type. Props: `{ workspaceId }`. | yes |
-| `registerWorkspaceType(definition)` | A workspace kind in the creation hub. `createTemplate()` returns the layout; `openOnFirstLoad` opens a folderless one on first load; `creationStep` adds a setup page; `createWorkspace(request, create)` owns creation (mint with `create.createWorkspace()`, roll back with `create.removeWorkspace(id)`); `supervisors` mount render-nothing background components; `deriveRunGlyph` sets the sidebar status; `rowActions` add row menu items. | yes |
-| `openWorkspace(typeId)` | Create or focus the module's zero-config workspace type. Use from a command so people can reopen it. | — |
-| `registerGlobalSurface({ id, label, Icon, Component, views?, railPlacement?, onOpen? })` | A full-page "door". With `label` + `Icon`, the shell lists it in the Extensions drawer and on the Extensions home: that row is how people open it. `views` splits it into several rows. | shows a "not installed" door |
-| `registerModalSurface({ id, label, Component, launcher? })` | A dialog floated over the window. `launcher: { label, letter, Glyph }` adds a row to each workspace pane's "+" menu, the one trigger the shell draws; the body gets `{ workspaceId }`. | closes |
-| `openGlobalSurface(id)` / `openModalSurface(id)` | Open one of THIS module's surfaces from your own trigger (a nav row, a panel button, a command). `false` for an id you did not register, or while the module is off. | — |
-| `registerTopBarItem({ id, order, Component })` | One compact control in the top bar. | yes |
-| `registerSidebarNavEntry({ id, order, Component })` | Your own drawing of a door's Extensions drawer row: `id` must be one of your global surfaces' ids, and the row replaces that door's generic row (and its view rows). `Component` gets `{ collapsed, badge }` — wear `badge` with the kit's `SidebarNavButton`. Its click calls `openGlobalSurface(id)`. An entry naming none of your surfaces is not drawn. Most doors need none. | yes |
-| `registerDoorBadge({ rowId, getWaitingCount, subscribe, notificationSource? })` | A waiting count on your door's drawer row: `rowId` is one of your surface ids (the first row of a surface with views). Your unread bell rows that `target` the door add to it; `notificationSource: host.moduleId` files your untargeted rows there too (automatic when you have one door). | yes |
-| `registerSettingsSection({ id, label, icon, Component })` | A Settings section. `Component` gets `{ values, setValue }`; values live in the module's settings namespace, which `getModuleAppState(key)` also reads. | yes |
-| `registerBacklogItemAction({ id, label, category, run, isVisible?, getState?, order? })` | A Backlog item menu action. `run(context)` gets `{ workspaceId, workspaceRoot, item, readSource, updateStatus, addLink, updateModuleMetadata }`. | yes |
-| `registerBacklogLinkProvider({ moduleId, targetKinds, resolveLinkStatus, openLink? })` | Resolves the status of links your module adds to items. | yes |
-| `registerFileAction({ id, label, run, getLabel?, isVisible?, getState? })` | A Files-tree menu action over the selection: `{ workspaceId, workspaceRoot, entries: [{ name, path, isDir }] }`. | yes |
-| `registerNotificationActionProvider({ source: host.moduleId, resolveActions })` | Extra actions on the bell rows your `entry.main` sent with `notify` (the row's Open comes from its `target`). An installed module may register no other `source`. | yes |
+| `moduleId` | Your install key, `<publisher>.<id>` (`local.<id>` for a folder install): the extension your `methods()` calls reach and your bell rows are filed under. |
+| `supports(capability)` | `'conversations'`, `'chat.open'`, `'storage'`, `'secrets'`, `'github'`, `'module-assets'`, `'toast'`, `'notifications'`, `'open-external'`, … Unknown names answer `false`. Check before relying on one. |
+| `getAssetUrl(relativePath)` | A stable URL for a file inside the installed extension (no leading slash, no `..`). The way to reach HTML, images, WASM: the bundle runs from a blob URL, so relative URLs do not resolve. |
+| `openGlobalSurface(id)` | Open one of your doors (`contributes.doors`) as if it had been picked in the Extensions drawer. `false` for an id that is not yours, or while the extension is off. |
 
 ## Feedback, links and the window
 
 | Method | Notes |
 | --- | --- |
-| `toast({ tone, message, detail?, action? })` | Transient feedback in the app's toast region, under your module's name. `tone`: `neutral`, `accent`, `good`, `warn`, `error`. One optional `action: { label, run }`; pressing it dismisses the toast. Returns a dismisser. Leaves on its own — anything the person must find again goes to the bell (`notify` in main). Throws on an empty message; shows nothing while the module is off or the window has no toast region (`supports('toast')`). |
+| `toast({ tone, message, detail?, action? })` | Transient feedback in the app's toast region, under your extension's name. `tone`: `neutral`, `accent`, `good`, `warn`, `error`. One optional `action: { label, run }`; pressing it dismisses the toast. Returns a dismisser. Leaves on its own — anything the person must find again goes to the bell (`notify` in the worker). Throws on an empty message; shows nothing while the extension is off or the window has no toast region (`supports('toast')`). |
 | `openExternal(url)` | Opens an absolute http(s) URL in the system browser through the app's own link path. Resolves `{ ok: true }` or `{ ok: false, code: 'invalid_url' \| 'unavailable' \| 'failed', message }`; never throws. Do not `window.open`. |
 | `getActiveWorkspaceId()` / `watchActiveWorkspace(cb)` | The workspace this window is showing, or `null`. `watch` fires at once, then on change; returns the unsubscriber. |
-| `setSurfaceView(surfaceId, viewId \| null)` | Say which of your surface's `views` is showing (call it when your own rail moves, and with `null` on unmount) so exactly that drawer row reads selected. `false` for a surface or view that is not yours. |
+| `watchColorScheme(cb)` | `'light' \| 'dark'` for a runtime you host (an editor, a chart library); ordinary styling uses the `--sem-*` properties. |
 
-From `entry.main`, `host.notify({ severity, title, body?, target? })` is the
+From the worker, `studio.notify({ severity, title, body?, target? })` is the
 bell: see the `api-main` topic.
 
 ## Chats
 
 | Method | Notes |
 | --- | --- |
-| `openChat({ workspaceId, prompt?, skills?, cli?, model?, send?, name?, dedupeKey? })` | Opens and focuses a new chat in the workspace. Default `send: false`: the prompt is a draft the person sends. `name` titles the chat; `dedupeKey` focuses the chat this module already opened under that key (`existing: true`) instead of opening another. Resolves `{ ok: true, agentId, existing? }` or `{ ok: false, code, message }` (`permission_missing`, `unknown_workspace`, `workspace_folder_missing`, `cli_not_conversational`, `unavailable`, `invalid_input`) — never throws for those. A draft needs `chat:draft` (or `conversation:operate`); `send: true` needs `conversation:operate`. `name`/`dedupeKey`: `supports('chat.open-options')`. |
+| `openChat({ workspaceId, prompt?, skills?, cli?, model?, send?, name?, dedupeKey? })` | Opens and focuses a new chat in the workspace. Default `send: false`: the prompt is a draft the person sends. `name` titles the chat; `dedupeKey` focuses the chat this extension already opened under that key (`existing: true`) instead of opening another. Resolves `{ ok: true, agentId, existing? }` or `{ ok: false, code, message }` (`permission_missing`, `unknown_workspace`, `workspace_folder_missing`, `cli_not_conversational`, `unavailable`, `invalid_input`) — never throws for those. A draft needs `chat:draft` (or `conversation:operate`); `send: true` needs `conversation:operate`. `name`/`dedupeKey`: `supports('chat.open-options')`. |
 | `listChatRuntimes()` | `[{ id, label, available, models, lastSelected }]` for a picker; pass `id` as `cli`. |
 | `focusTab({ workspaceId, kind: 'chat' \| 'file', id })` | Focus a chat by agent id (from `openChat` or the conversation service) or a file by workspace-relative path. |
 
-For chats the module drives itself (send, watch, stop), use the main-side
+For chats the extension drives itself (send, watch, stop), use the worker's
 conversation service: the `conversations` topic.
 
 ## Workspaces and files
@@ -78,27 +78,28 @@ conversation service: the `conversations` topic.
 | `createBacklogItem(id, input)`, `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`, `updateBacklogModuleMetadata` | `backlog.write` | Writes through the app's Backlog service; result-shaped. Never write item files. |
 | `queryUsage(query)` | `usage:read` | Token usage of every agent session on the machine (twin of `getUsageService`). |
 
+A panel's workspace is `studio.surface.workspaceId`.
+
 ## State
 
 | Method | Permission | Use for |
 | --- | --- | --- |
-| `getModuleAppState(key)` / `setModuleAppState(key, value)` / `watchModuleAppState(cb)` | `storage` | The module's own small settings-like values; synchronous, safe to read in render; pair with `useSyncExternalStore`. `set` returns `false` when not stored. `entry.main` reads the same values with `MainHost.getModuleAppState` (read-only). |
-| `getWorkspaceModuleState(id)` / `setWorkspaceModuleState(id, value)` | `storage` | The module's entry on one workspace, saved and synced with it. `undefined` = unknown yet. |
-| `watchColorScheme(cb)` | — | `'light' \| 'dark'` for a runtime you host (Monaco, a chart); ordinary UI uses theme tokens. |
+| `getModuleAppState(key)` / `setModuleAppState(key, value)` / `watchModuleAppState(cb)` | `storage` | The extension's own small settings-like values, shared by every surface and window; synchronous, safe to read in render; pair with `useSyncExternalStore`. `set` returns `false` when not stored. The worker reads the same values with its `getModuleAppState` (read-only). A settings section is a surface that writes here. |
+| `getWorkspaceModuleState(id)` / `setWorkspaceModuleState(id, value)` | `storage` | The extension's entry on one workspace, saved and synced with it. `undefined` = unknown yet. |
 
-Larger data, or data `entry.main` writes: `getModuleStorage(host)` in main,
-reached from the renderer through your own declared method.
+Larger data, or data the worker writes: `getModuleStorage(studio)` in the
+worker, reached from a surface through your own declared method.
 
-## Talking to entry.main
+## Talking to the worker
 
 ```ts
-// methods.ts, imported by both halves
+// src/methods.ts, imported by both sides
 export type NotesMethods = {
   'notes.list': { access: 'read'; params: Record<string, never>; result: string[] }
   'notes.save': { access: 'operate'; params: { text: string }; result: { count: number } }
 }
-// main
-host.registerMethods<NotesMethods>({
+// the worker's activate(studio)
+studio.registerMethods<NotesMethods>({
   'notes.list': {
     access: 'read',
     params: () => ({ ok: true, params: {} }),
@@ -110,12 +111,12 @@ host.registerMethods<NotesMethods>({
     handler: ({ text }) => ({ ok: true, result: { count: save(text) } }),
   },
 })
-host.emit('changed')                       // push a signal to every window
-// renderer
-const methods = host.methods<NotesMethods>()
+studio.emit('changed')                     // push a signal to every surface
+// a surface's mount(root, studio)
+const methods = studio.methods<NotesMethods>()
 const saved = await methods.operate('notes.save', { text })
-if (!saved.ok) host.toast({ title: saved.message, tone: 'error' })
-useEffect(() => host.subscribe('changed', () => void reload()), [])
+if (!saved.ok) studio.toast({ tone: 'error', message: saved.message })
+const stop = studio.subscribe('changed', () => void reload())
 ```
 
 - A `read` method changes nothing; an `operate` one does, and runs once per
@@ -123,7 +124,7 @@ useEffect(() => host.subscribe('changed', () => void reload()), [])
   `context.commandId`). `read` offers only read methods, `operate` only
   operate ones. Declaring methods needs `module:bridge`.
 - A call never throws. Besides your own `{ ok: false, code }`, the host
-  answers `extension_unavailable` (your module is not running there),
+  answers `extension_unavailable` (the worker is not running there),
   `extension_method_unknown`, `invalid_params` (your validator refused),
   `scope_required` or `unavailable` (a handler threw, or no connection).
 - Events are signals, not state: nothing is replayed, so read the current

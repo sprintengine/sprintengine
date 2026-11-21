@@ -31,7 +31,7 @@ import { STUDIO_AGENT_SKILLS_CAPABILITY } from './handshake.js'
 // and detaching a bundle is `files:write`. Owner-only, each with its reason in
 // the table: a plugin's install and uninstall (it writes the hooks and MCP
 // servers the CLIs run), a bundle's lint (it runs the bundle's own script)
-// and a card's Go (it installs modules, plugins and MCP servers in one press).
+// and a card's Go (it installs plugins and MCP servers in one press).
 //
 // Folders. A client that is not an owner names folders only inside the ones
 // the Studio knows, checked on the path each one resolves to (a design library
@@ -1093,23 +1093,6 @@ export type CardAction =
   // them would be carrying facts that go stale the moment the marketplace is
   // republished, and a stale commitSha installs the wrong bytes.
   | { verb: 'install.plugin'; source: string; id: string }
-  // A capability module from the app's OWN signed marketplace registry — the
-  // one `readMarketplaceRegistry` reads, not a Claude marketplace a source
-  // points at. `id` is the registry entry's id, and the executor resolves it
-  // there before anything is downloaded.
-  //
-  // It carries no `source` for the reason `install.plugin` carries one: there
-  // is exactly one registry, it ships with the app, and a card that could name
-  // another would be a card choosing where this machine's code comes from.
-  //
-  // A module is code that runs in-process, so the executor honours this verb
-  // ONLY for a `verified` entry — signed by a publisher in
-  // `trusted-publishers.json`. Everything else needs the trust prompt, which is
-  // a disclosure a person reads and answers; R4's "Go goes" removes the card's
-  // own ceremony and does not repeal somebody else's gate (the same rule
-  // `require.cli` follows). Such a card is refused by name, pointing at
-  // Extensions → Plugins where the disclosure lives.
-  | { verb: 'install.module'; id: string }
   // Open a chat with the named tools attached and the prompt sent. Two lists and
   // not one because the composer draft keeps them apart (newChatDraft.ts:
   // `skills: WorkspaceSkill[]` beside `mcpServers: AgentComposerConnector[]`),
@@ -1822,8 +1805,7 @@ function cardRun(value: Record<string, unknown>): StudioParsed<CardRunInput> {
 const WRITES_PLUGIN =
   'It writes a plugin into the agent CLIs on this machine: hooks and MCP servers they run on their own.'
 const RUNS_BUNDLE_SCRIPT = "It runs the bundle's own script on this machine."
-const RUNS_A_CARD =
-  'It installs modules, plugins, skills and MCP servers on this machine and clones repositories, in one press.'
+const RUNS_A_CARD = 'It installs plugins, skills and MCP servers on this machine and clones repositories, in one press.'
 
 type Scope = 'providers:read' | 'files:read' | 'files:write' | 'settings:write' | 'environment:maintain'
 const held = (scope: Scope, mutation = false) =>
