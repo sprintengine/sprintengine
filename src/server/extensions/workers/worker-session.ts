@@ -6,12 +6,7 @@ import { EXTENSION_HOST_REFUSALS } from '../../../../packages/extension-sdk/src/
 import type { CliPermissionPreset } from '../../../shared/cli-permission-preset'
 import { isLooserCliPermissionPreset } from '../../../shared/cli-permission-preset'
 import type { MainHost } from '../../../main/module-host/main-host'
-import {
-  currentInvoker,
-  ownerInvoker,
-  runAsInvoker,
-  type ExtensionInvoker,
-} from '../../../main/module-host/extension-invocation'
+import { ownerInvoker, runAsInvoker, type ExtensionInvoker } from '../../../main/module-host/extension-invocation'
 import {
   WORKER_HOST_METHODS,
   type WorkerArg,
@@ -56,8 +51,9 @@ import type { WorkerCall } from './worker-process'
 // What a call hands back that can be called (an unsubscriber, a companion's
 // handle) stays here as a handle; the worker calls it by number, and each
 // call passes the gate again as whoever the worker serves then. What the
-// worker hands Studio to call back (a listener) is called back as whoever
-// registered it (boundToRegistrant, as the host's services already do), in an
+// worker hands Studio to call back (a listener, a validator, wherever it sits
+// in an argument) is called back as whoever the call that handed it over ran
+// as, never as whoever Studio happens to be serving when it calls, in an
 // invocation of its own.
 
 const ENDED_REMEMBERED = 4096
@@ -218,14 +214,17 @@ export function createWorkerSession(deps: WorkerSessionDeps): WorkerSession {
     return { ok: true, invoker: heldToAll(invoker, [...invocations.values()]) }
   }
 
-  function listener(id: number): (...args: unknown[]) => unknown {
+  /**
+   * A function the worker handed over, wherever it sat in the call that
+   * carried it: called back as `registrant`, whoever that call ran as, and
+   * never as whoever the host happens to be serving when it calls.
+   */
+  function listener(id: number, registrant: ExtensionInvoker): (...args: unknown[]) => unknown {
     const known = listeners.get(id)
     if (known) return known
-    // Called back by the host as whoever registered it (the host binds it so);
-    // that is who this delivery's invocation is for.
     const made = (...args: unknown[]): unknown => {
       if (!open) return undefined
-      const invoker = currentInvoker()
+      const invoker = registrant
       // Registered by a background extension's own work: delivered as that work.
       const delivered =
         deps.background && invoker === ownWork && activation !== null && invocations.has(activation)
@@ -240,7 +239,7 @@ export function createWorkerSession(deps: WorkerSessionDeps): WorkerSession {
     return made
   }
 
-  function decodeArgs(args: readonly WorkerArg[]): unknown[] {
+  function decodeArgs(args: readonly WorkerArg[], registrant: ExtensionInvoker): unknown[] {
     if (!Array.isArray(args)) throw new Error('A host call carries its arguments as a list.')
     return args.map((arg) => {
       let value = (arg as { value?: unknown } | null)?.value
@@ -249,7 +248,7 @@ export function createWorkerSession(deps: WorkerSessionDeps): WorkerSession {
         if (typeof callback !== 'number' || !Array.isArray(path))
           throw new Error('A callback is sent by its number and place.')
         if (path.length === 0) {
-          value = listener(callback)
+          value = listener(callback, registrant)
           continue
         }
         // Only the argument's own plain objects and lists are walked: a path
@@ -267,7 +266,7 @@ export function createWorkerSession(deps: WorkerSessionDeps): WorkerSession {
         }
         const last = path[path.length - 1]!
         if (!ownPlace(parent, last)) throw new Error('A callback names no place in its argument.')
-        ;(parent as Record<string | number, unknown>)[last] = listener(callback)
+        ;(parent as Record<string | number, unknown>)[last] = listener(callback, registrant)
       }
       return value
     })
@@ -370,7 +369,7 @@ export function createWorkerSession(deps: WorkerSessionDeps): WorkerSession {
       const resolved = invokerFor(message.invocation)
       if (!resolved.ok) return { ok: false, error: resolved.error }
       try {
-        const args = decodeArgs(message.args)
+        const args = decodeArgs(message.args, resolved.invoker)
         const result = await runAsInvoker(resolved.invoker, () => dispatch(message, args))
         if (typeof result === 'function' || isCapability(result)) return { ok: true, handle: keep(result) }
         return { ok: true, value: result }

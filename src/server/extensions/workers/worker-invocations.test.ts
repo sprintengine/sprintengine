@@ -326,3 +326,84 @@ test('a listener registered while the worker activates hears its first delivery'
   }
   assert.deepEqual(seen, [{ agentId: 'agent-1' }])
 })
+
+// A companion service that keeps a function it was handed inside an options
+// object, and calls it later, during someone else's call.
+function keepingCompanions() {
+  let kept: ((phase: string) => unknown) | undefined
+  return {
+    attach: (_moduleId: string, spec: { workspaceId: string; agentId: string }) => ({
+      workspaceId: spec.workspaceId,
+      agentId: spec.agentId,
+      status: () => 'absent',
+      onStatus: () => () => undefined,
+      onEvent: () => () => undefined,
+      interrupt: () => undefined,
+      dispose: () => undefined,
+      respondToApproval: async () => ({ ok: true }),
+      runStructured: async (options: { onPhase?: (phase: string) => unknown }) => {
+        kept = options.onPhase
+        return 1
+      },
+      send: async () => {
+        await kept?.('late')
+      },
+    }),
+  }
+}
+
+const KEEPER = `
+let guide = null
+let heard = null
+const read = (handler) => ({ access: 'read', params: (value) => ({ ok: true, params: value }), handler })
+exports.activate = (studio) => {
+  studio.registerMethods({
+    // The device's call: hands Studio a function inside an options object.
+    register: read(async () => {
+      const companions = studio.requireService({ key: 'companion-agents.module-service' })
+      guide = await companions.attach(studio.moduleId, {
+        workspaceId: 'ws-1', agentId: 'guide', name: 'Guide', workspaceRoot: '/Users/dev/project', systemPrompt: 'Help.',
+      })
+      await guide.runStructured({
+        prompt: 'Rate it',
+        validate: async () => ({ ok: true, value: 1 }),
+        onPhase: async () => {
+          const answer = await studio.getWorkspaceGitInfo('ws-1')
+          heard = answer.ok ? 'ok' : answer.code
+        },
+      })
+      return { ok: true, result: null }
+    }),
+    // The person's call: Studio calls the kept function back during it.
+    fire: read(async () => {
+      await guide.send('go')
+      return { ok: true, result: heard }
+    }),
+  })
+}
+`
+
+test('a function handed over inside an argument is called back as whoever handed it over, not whoever Studio serves then', async () => {
+  harness = startWorkerHarness(
+    [{ id: 'keeper', main: KEEPER, permissions: ['agents:companion', 'workspace:read'] }],
+    {},
+    { 'companion-agents.module-service': keepingCompanions() },
+  )
+  const companionDevice: ExtensionInvoker = {
+    principal: studioPrincipal({ owner: false, permissions: ['extension:read', 'conversation:create'] }),
+    permissionCeiling: 'auto',
+    label: 'this device',
+  }
+  const ask = (method: string, invoker: ExtensionInvoker) =>
+    harness!.load.kernel.callModuleMethod({
+      moduleId: 'local.keeper',
+      method,
+      access: 'read',
+      params: {},
+      clientId: invoker.label,
+      invoker,
+    })
+  assert.deepEqual(await ask('register', companionDevice), { ok: true, answer: { ok: true, result: null } })
+  // The device holds no `workspace:read`: the call back is the device's, even during the person's call.
+  assert.deepEqual(await ask('fire', ownerInvoker()), { ok: true, answer: { ok: true, result: 'not_permitted' } })
+})
