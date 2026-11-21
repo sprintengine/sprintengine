@@ -4,14 +4,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { createFakeRendererHost } from '@sprintengine/extension-sdk/testing'
+import { createElement } from 'react'
 
-import manifest from '../module/manifest.json'
-import { registerRenderer } from '../src/renderer'
+import { createFakeRendererHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
+
+import { Settings } from '../src/settings'
+import { manifest } from './manifest'
 
 test('the section shows what was saved', async () => {
-  const fake = createFakeRendererHost({ manifest, appState: { label: 'Night shift' } })
-  await registerRenderer(fake.host)
-  assert.match(await fake.render.settings('{{id}}-settings'), /Night shift/)
-  assert.deepEqual(fake.undeclared, [])
+  const renderer = createFakeRendererHost({ manifest, appState: { label: 'Night shift' } })
+  const studio = renderer.studio({ point: 'settingsSections', id: 'settings' })
+  assert.match(await renderToHtml(createElement(Settings, { studio })), /Night shift/)
+  assert.deepEqual(renderer.undeclared, [])
 })

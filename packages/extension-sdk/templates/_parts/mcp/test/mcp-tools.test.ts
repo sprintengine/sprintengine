@@ -6,12 +6,12 @@ import { test } from 'node:test'
 
 import { createFakeMainHost } from '@sprintengine/extension-sdk/testing'
 
-import manifest from '../module/manifest.json'
-import { registerMain } from '../src/main'
+import { activate } from '../src/main'
+import { manifest } from './manifest'
 
 test('an agent can ask which extension this is', async () => {
   const fake = createFakeMainHost({ manifest })
-  await registerMain(fake.host)
-  const result = await fake.tools.call(`${manifest.id.replace(/-/g, '_')}_about`)
-  assert.deepEqual(result.structuredContent, { moduleId: manifest.id, hostApiVersion: 3 })
+  await activate(fake.host)
+  const result = await fake.tools.call('{{toolPrefix}}_about')
+  assert.deepEqual(result.structuredContent, { extension: `local.${manifest.id}` })
 })

@@ -1,19 +1,19 @@
-// The door, rendered against the SDK's fake renderer host and the
-// pass-through kit. `npm test` bundles test/*.test.ts and runs them with
-// `node --test`.
+// The door, rendered against the SDK's fake renderer host. `npm test` bundles
+// test/*.test.ts and runs them with `node --test`.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { createFakeRendererHost } from '@sprintengine/extension-sdk/testing'
+import { createElement } from 'react'
 
-import manifest from '../module/manifest.json'
-import { registerRenderer } from '../src/renderer'
+import { createFakeRendererHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
 
-test('the door renders in the host’s shell', async () => {
-  const fake = createFakeRendererHost({ manifest })
-  await registerRenderer(fake.host)
-  const html = await fake.render.surface('{{id}}-door')
-  assert.match(html, /data-kit="GlobalSurfaceShell"/)
-  assert.match(html, /Nothing here yet/)
+import { Door } from '../src/door'
+import { manifest } from './manifest'
+
+test('the door renders', async () => {
+  const renderer = createFakeRendererHost({ manifest })
+  const studio = renderer.studio({ point: 'doors', id: 'door' })
+  assert.match(await renderToHtml(createElement(Door, { studio })), /Nothing here yet/)
+  assert.deepEqual(renderer.undeclared, [])
 })

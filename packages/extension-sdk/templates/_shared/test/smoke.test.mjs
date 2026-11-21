@@ -1,16 +1,16 @@
-// Smoke test: the BUILT module loads the way SprintEngine Studio loads it,
-// registers something, declares the permissions and dependencies the calls
-// it makes need, and everything it registers renders. Run `npm run build`
-// first (`npm run check` does, in order).
+// Smoke test: the BUILT extension loads the way SprintEngine Studio loads it.
+// Run `npm run build` first (`npm run check` does, in order).
 //
-// It loads module/dist exactly as installed — the renderer bundle as ESM, the
-// main bundle as CommonJS — against the SDK's fake hosts
-// (`@sprintengine/extension-sdk/testing`), which hold a module to the host's
-// rules: the permissions the host checks are refused without their
-// declaration, storage keeps the host's key pattern and size cap, and the
-// renderer → main bridge needs "module:bridge". `@sprintengine/extension-sdk/ui`
-// and `/surface` resolve to a kit that draws what it is given, so a door that
-// throws while rendering fails here instead of in the app.
+// - extension/extension.json passes the SDK's own validator, held as an
+//   author's tools hold it (`engines.studio` covers every field it uses).
+// - Each panel's, door's and settings section's entry exists, loads as a
+//   module with nothing beside it (Studio imports the file on its own, so it
+//   must carry everything it imports) and exports `mount`.
+// - The worker (`main`) loads with require, exports `activate`, and activates
+//   against the SDK's fake main host, which holds it to Studio's rules: every
+//   command without an `action` has an `operate` method of the same name,
+//   every MCP tool extension.json declares is served, and nothing is used
+//   that extension.json does not declare.
 //
 // Your own tests are TypeScript, in test/*.test.ts: `npm test` builds them
 // with esbuild (`npm run build:test`) and runs them beside this file.
@@ -20,129 +20,96 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
-import {
-  checkHostApiCompatibility,
-  dependsOnReaches,
-  moduleServiceRequirement,
-  validateThirdPartyModuleManifest,
-} from '@sprintengine/extension-sdk'
-import { createFakeMainHost, createFakeRendererHost, installTestingKit } from '@sprintengine/extension-sdk/testing'
+import { EXTENSION_SURFACE_POINTS, validateExtensionManifest } from '@sprintengine/extension-sdk'
+import { createFakeMainHost } from '@sprintengine/extension-sdk/testing'
 
-installTestingKit()
+const extensionDir = fileURLToPath(new URL('../extension/', import.meta.url))
+const raw = JSON.parse(readFileSync(join(extensionDir, 'extension.json'), 'utf8'))
+const validated = validateExtensionManifest(raw, { authoring: true })
+const manifest = validated.ok ? validated.manifest : undefined
 
-const projectDir = fileURLToPath(new URL('..', import.meta.url))
-const moduleDir = join(projectDir, 'module')
-const raw = JSON.parse(readFileSync(join(moduleDir, 'manifest.json'), 'utf8'))
+const POINT_NAMES = { panels: 'panel', doors: 'door', settingsSections: 'settings section' }
 
 const undeclaredMessage = (uses) =>
   uses
     .map(
       (use) =>
         `${use.what} needs ${use.needs.length > 1 ? 'one of ' : ''}${use.needs.map((p) => `"${p}"`).join(', ')}` +
-        (use.checked ? ' (the host refuses it without)' : ' (declare it: the person is told what the module does)'),
+        (use.checked ? ' (Studio refuses it without)' : ' (declare it: the person is told what the extension does)'),
     )
     .join('\n')
 
-/** Read the built entry and check it is bundled the way the host loads it. */
-function builtEntry(kind) {
-  const entry = raw.entry?.[kind]
-  const path = join(moduleDir, entry)
-  assert.ok(existsSync(path), `${entry} is missing — run \`npm run build\` first.`)
-  const source = readFileSync(path, 'utf8')
-  assert.ok(
-    !source.includes('is provided by the host at runtime'),
-    `${entry} bundled a host-provided package instead of leaving it external. Check the esbuild --external flags.`,
-  )
-  // The installed module has no node_modules, and the host answers only the
-  // host-provided specifiers: the SDK's own root must be bundled in.
-  assert.ok(
-    !/(from|require\()\s*["']@sprintengine\/extension-sdk["']/.test(source),
-    `${entry} imports "@sprintengine/extension-sdk" at runtime; bundle it (do not mark the root specifier external).`,
-  )
-  return { entry, path, source }
+/** A built file, read; fails with what to run when it is missing. */
+function built(file) {
+  const path = join(extensionDir, file)
+  assert.ok(existsSync(path), `extension/${file} is missing: run \`npm run build\` first.`)
+  return { path, source: readFileSync(path, 'utf8') }
 }
 
-test('the manifest is one the app accepts', () => {
-  const result = validateThirdPartyModuleManifest(raw)
-  assert.ok(result.ok, JSON.stringify(result.ok ? [] : result.issues, null, 2))
-  assert.deepEqual(checkHostApiCompatibility({ ...raw, source: 'third-party' }), { ok: true })
-  assert.equal(raw.source, 'third-party')
+test('extension.json is one Studio accepts', () => {
+  assert.ok(validated.ok, JSON.stringify(validated.ok ? [] : validated.issues, null, 2))
 })
 
-// The main half, loaded once and shared with the renderer's method calls.
-let main
-
-if (raw.entry?.main) {
-  test('entry.main loads, registers, and declares what it uses', async () => {
-    const { entry, path, source } = builtEntry('main')
-    assert.ok(!/require\(["']react/.test(source), `${entry} requires React; entry.main runs in the main process.`)
-    const loaded = createRequire(import.meta.url)(path)
-    assert.equal(typeof loaded.registerMain, 'function', `${entry} must export registerMain(host).`)
-
-    main = createFakeMainHost({ manifest: raw })
-    await loaded.registerMain(main.host)
-
-    // Declaring methods without "module:bridge" throws from registerMain above.
-    const contributed =
-      main.methods.declared().length + main.tools.list().length + main.skills.registered.length + main.sidecars.length
-    assert.ok(contributed > 0, `registering ${entry} contributed nothing.`)
-
-    // A service resolved while registering must have its provider loaded
-    // first; one resolved later (in a handler) need not.
-    for (const key of main.resolved) {
-      const requirement = moduleServiceRequirement(key)
-      if (!requirement) continue
-      assert.ok(
-        dependsOnReaches(raw.dependsOn, requirement.providedBy),
-        `${key} (${requirement.via}) is resolved while registering, so "dependsOn" must include ` +
-          `"${requirement.providedBy}" — or resolve it inside the handler that uses it.`,
-      )
-    }
-    assert.equal(main.undeclared.length, 0, undeclaredMessage(main.undeclared))
-  })
+for (const point of EXTENSION_SURFACE_POINTS) {
+  for (const surface of manifest?.contributes[point] ?? []) {
+    test(`${POINT_NAMES[point]} "${surface.id}": ${surface.entry} loads on its own and exports mount`, async () => {
+      const { source } = built(surface.entry)
+      // A data: URL resolves no import, as the module Studio makes of the file
+      // resolves none: an import left in the bundle fails here.
+      let loaded
+      try {
+        loaded = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
+      } catch (error) {
+        assert.fail(
+          `${surface.entry} does not load on its own, as Studio loads it: bundle everything it imports. ` +
+            `(${error instanceof Error ? error.message : error})`,
+        )
+      }
+      assert.equal(typeof loaded.mount, 'function', `${surface.entry} must export mount(root, studio).`)
+    })
+  }
 }
 
-if (raw.entry?.renderer) {
-  let renderer
-
-  test('entry.renderer loads and registers', async () => {
-    const { entry, path } = builtEntry('renderer')
-    const loaded = await import(pathToFileURL(path).href)
-    assert.equal(typeof loaded.registerRenderer, 'function', `${entry} must export registerRenderer(host).`)
-    renderer = createFakeRendererHost(main ? { manifest: raw, main } : { manifest: raw })
-    await loaded.registerRenderer(renderer.host)
-    const contributed = Object.values(renderer.registrations).some((registered) =>
-      Array.isArray(registered) ? registered.length > 0 : registered.size > 0,
+if (manifest?.main) {
+  test(`the worker (${manifest.main}) activates and serves what extension.json declares`, async () => {
+    const { path, source } = built(manifest.main)
+    assert.ok(!/require\(["']react/.test(source), `${manifest.main} requires React; the worker has no window.`)
+    const loaded = createRequire(import.meta.url)(path)
+    const activate = typeof loaded.activate === 'function' ? loaded.activate : loaded.default
+    assert.equal(
+      typeof activate,
+      'function',
+      `${manifest.main} must export activate(studio), named or as its default export.`,
     )
-    assert.ok(contributed, `registering ${entry} contributed nothing.`)
-  })
 
-  test('everything entry.renderer registered renders', async (t) => {
-    assert.ok(renderer, 'entry.renderer did not load (see above).')
-    const { registrations, render } = renderer
-    const targets = [
-      ...registrations.globalSurfaces.map((surface) => [`door "${surface.id}"`, () => render.surface(surface.id)]),
-      ...registrations.modalSurfaces.map((surface) => [`modal "${surface.id}"`, () => render.modal(surface.id)]),
-      ...[...registrations.panels.keys()].map((id) => [`panel "${id}"`, () => render.panel(id)]),
-      ...registrations.settingsSections.map((section) => [
-        `settings section "${section.id}"`,
-        () => render.settings(section.id),
-      ]),
-      ...registrations.topBarItems.map((item) => [`top-bar item "${item.id}"`, () => render.topBar(item.id)]),
-      ...registrations.sidebarNavEntries.map((item) => [`sidebar entry "${item.id}"`, () => render.navEntry(item.id)]),
-    ]
-    for (const [label, draw] of targets) {
-      await t.test(`${label} renders`, async () => {
-        const html = await draw()
-        assert.ok(html.length > 0, `${label} rendered nothing.`)
-      })
+    const main = createFakeMainHost({ manifest })
+    try {
+      await activate(main.host)
+      await main.startup()
+
+      const methods = main.methods.declared()
+      for (const command of manifest.contributes.commands.filter((entry) => entry.action === undefined)) {
+        const method = methods.find((entry) => entry.name === command.id)
+        assert.ok(
+          method,
+          `command "${command.id}" has no action, so running it calls the worker's "${command.id}" method; activate registers none.`,
+        )
+        assert.equal(
+          method.access,
+          'operate',
+          `"${command.id}" must be an operate method: a command may change things.`,
+        )
+      }
+      const served = main.tools.list().map((tool) => tool.name)
+      for (const tool of manifest.contributes.mcpTools) {
+        assert.ok(served.includes(tool.name), `MCP tool "${tool.name}" is declared, but activate does not serve it.`)
+      }
+      assert.equal(main.undeclared.length, 0, undeclaredMessage(main.undeclared))
+    } finally {
+      await main.shutdown()
+      main.dispose()
     }
-  })
-
-  test('entry.renderer uses only what the manifest declares', () => {
-    assert.ok(renderer, 'entry.renderer did not load (see above).')
-    assert.equal(renderer.undeclared.length, 0, undeclaredMessage(renderer.undeclared))
   })
 }

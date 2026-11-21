@@ -7,22 +7,19 @@ import {
   checkSdkRelease,
   checkSdkReleaseTree,
   distTagForVersion,
-  hostApiClaims,
-  hostApiFromSource,
+  manifestSinceFromSource,
 } from './sdk-release-check.mjs'
 
-const HOST_API_SOURCE = 'export const HOST_API_VERSION = 2\n\nexport const HOST_API_MIN_SUPPORTED = 1\n'
+const MANIFEST_SOURCE = "/** The first Studio that reads extension.json. */\nexport const EXTENSION_MANIFEST_SINCE = '0.13.0'\n"
+const COMPATIBILITY = 'extension.json is read from Studio 0.13.0 (`EXTENSION_MANIFEST_SINCE`).'
 const CHANGELOG = '# Changelog\n\n## 1.2.0-beta.3\n\n- Things.\n\n## 1.1.0 — 2026-09-10\n'
 
 function inputs(overrides = {}) {
   return {
     packageVersion: '1.2.0-beta.3',
     changelog: CHANGELOG,
-    hostApiSource: HOST_API_SOURCE,
-    docs: [
-      { path: 'docs/compatibility.md', text: '`HOST_API_VERSION = 2`, `HOST_API_MIN_SUPPORTED = 1`', required: true },
-    ],
-    templateManifests: [{ path: 'templates/panel/module/manifest.json', json: { engines: { hostApi: 2 } } }],
+    manifestSource: MANIFEST_SOURCE,
+    compatibility: COMPATIBILITY,
     ...overrides,
   }
 }
@@ -59,37 +56,20 @@ test('an Unreleased heading on top blocks the release', () => {
   assert.match(result.problems.join('\n'), /does not name a version/)
 })
 
-test('host API numbers are read from the source and every quote is held to them', () => {
-  assert.deepEqual(hostApiFromSource(HOST_API_SOURCE), { version: 2, minSupported: 1 })
-  assert.deepEqual(hostApiClaims('a\n`HOST_API_VERSION = 3` and HOST_API_MIN_SUPPORTED = 1'), [
-    { name: 'HOST_API_VERSION', value: 3, line: 2 },
-    { name: 'HOST_API_MIN_SUPPORTED', value: 1, line: 2 },
-  ])
+test('the first Studio that reads extension.json is read from the source', () => {
+  assert.equal(manifestSinceFromSource(MANIFEST_SOURCE), '0.13.0')
+  assert.equal(manifestSinceFromSource('export const EXTENSION_MANIFEST_SINCE = SOMETHING'), null)
+  const missing = checkSdkRelease(inputs({ manifestSource: 'export const OTHER = 1\n' }))
+  assert.match(missing.problems.join('\n'), /EXTENSION_MANIFEST_SINCE is not a semver string literal/)
+})
+
+test('the compatibility doc must name that Studio, and the constant', () => {
   const stale = checkSdkRelease(
-    inputs({ docs: [{ path: 'docs/compatibility.md', text: 'HOST_API_VERSION = 1', required: true }] }),
+    inputs({ compatibility: 'extension.json is read from Studio 0.12.0 (`EXTENSION_MANIFEST_SINCE`).' }),
   )
-  assert.match(stale.problems.join('\n'), /docs\/compatibility\.md:1: says HOST_API_VERSION = 1, and host-api\.ts declares 2/)
-})
-
-test('the compatibility doc must quote the host API version at all', () => {
-  const silent = checkSdkRelease(inputs({ docs: [{ path: 'docs/compatibility.md', text: 'nothing', required: true }] }))
-  assert.match(silent.problems.join('\n'), /does not quote HOST_API_VERSION = 2/)
-  const optional = checkSdkRelease(inputs({ docs: [{ path: 'README.md', text: 'nothing', required: false }] }))
-  assert.equal(optional.ok, true)
-})
-
-test('a template built for another host API blocks the release', () => {
-  const result = checkSdkRelease(
-    inputs({ templateManifests: [{ path: 'templates/blank/module/manifest.json', json: { engines: { hostApi: 1 } } }] }),
-  )
-  assert.match(result.problems.join('\n'), /templates\/blank\/module\/manifest\.json: engines\.hostApi is 1/)
-})
-
-test('a floor above the version is refused', () => {
-  const result = checkSdkRelease(
-    inputs({ hostApiSource: 'export const HOST_API_VERSION = 1\nexport const HOST_API_MIN_SUPPORTED = 2\n', docs: [], templateManifests: [] }),
-  )
-  assert.match(result.problems.join('\n'), /HOST_API_MIN_SUPPORTED \(2\) is above HOST_API_VERSION \(1\)/)
+  assert.match(stale.problems.join('\n'), /does not say that extension\.json is read from Studio 0\.13\.0/)
+  const unnamed = checkSdkRelease(inputs({ compatibility: 'extension.json is read from Studio 0.13.0.' }))
+  assert.equal(unnamed.ok, false)
 })
 
 test('a pushed tag must name the package version exactly', () => {

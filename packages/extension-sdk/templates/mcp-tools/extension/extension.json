@@ -1,0 +1,31 @@
+{
+  "$schema": "../node_modules/@sprintengine/extension-sdk/extension.schema.json",
+  "manifestVersion": 1,
+  "id": "{{id}}",
+  "version": "0.1.0",
+  "engines": {
+    "studio": ">={{studioVersion}}"
+  },
+  "tier": "worker",
+  "name": "{{displayName}}",
+  "description": "{{displayName}}, an extension for SprintEngine Studio.",
+  "permissions": [
+    "mcp:tools",
+    "ipc:workspace-read"
+  ],
+  "main": "dist/main.cjs",
+  "contributes": {
+    "mcpTools": [
+      {
+        "name": "{{toolPrefix}}_word_count",
+        "description": "Count the words, lines and characters in a piece of text.",
+        "access": "read"
+      },
+      {
+        "name": "{{toolPrefix}}_open_workspaces",
+        "description": "List the workspaces open in SprintEngine Studio, with the folder each one works in.",
+        "access": "read"
+      }
+    ]
+  }
+}

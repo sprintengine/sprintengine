@@ -1,29 +1,23 @@
 // Your tests, in TypeScript. `npm test` bundles test/*.test.ts with esbuild
-// (`npm run build:test`, into test/.build) and runs them with `node --test`,
-// after `@sprintengine/extension-sdk/testing/register` has routed the host's UI
-// kit to a stand-in that renders in Node. Import the module's source directly
-// and drive it with the SDK's fake hosts.
+// (`npm run build:test`, into test/.build) and runs them with `node --test`.
+// Import the source directly and drive it with the SDK's fake hosts; hand them
+// `manifest` from ./manifest, the validated extension.json.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { createFakeRendererHost } from '@sprintengine/extension-sdk/testing'
+import { createElement } from 'react'
 
-import manifest from '../module/manifest.json'
-import { registerRenderer } from '../src/renderer'
+import { createFakeRendererHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
 
-test('the command says hello with the host API version', async () => {
-  const fake = createFakeRendererHost({ manifest })
-  await registerRenderer(fake.host)
-  assert.deepEqual(
-    fake.registrations.commands.map((command) => command.id),
-    ['say-hello'],
-  )
+import { Hello } from '../src/hello'
+import { manifest } from './manifest'
 
-  // The command runs in a window; give it one that records what it shows.
-  const shown: string[] = []
-  Object.assign(globalThis, { window: { alert: (message: string) => shown.push(message) } })
-  await fake.runCommand('say-hello')
-  assert.deepEqual(shown, ['{{displayName}} is running on host API 3.'])
-  assert.deepEqual(fake.undeclared, [], 'everything it used is declared in module/manifest.json')
+test('the panel says hello, and says which extension it is', async () => {
+  const renderer = createFakeRendererHost({ manifest })
+  const studio = renderer.studio({ point: 'panels', id: 'hello', workspaceId: 'ws-app' })
+  const html = await renderToHtml(createElement(Hello, { studio }))
+  assert.match(html, /Hello from/)
+  assert.ok(html.includes(`local.${manifest.id}`), html)
+  assert.deepEqual(renderer.undeclared, [], 'everything it used is declared in extension/extension.json')
 })

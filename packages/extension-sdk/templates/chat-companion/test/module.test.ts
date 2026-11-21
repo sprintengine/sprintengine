@@ -1,20 +1,22 @@
 // Your tests, in TypeScript: `npm test` bundles test/*.test.ts and runs them
 // with `node --test` (see AGENTS.md). Drive the source with the SDK's fakes:
-// the main half against a fake host whose chats you can make the agent answer
-// in, the window half against a fake renderer that calls its methods.
+// the worker against a fake main host whose chats you can make the agent
+// answer in, the panel against a fake renderer that calls the worker's methods.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { createFakeMainHost, createFakeRendererHost } from '@sprintengine/extension-sdk/testing'
+import { createElement } from 'react'
 
-import manifest from '../module/manifest.json'
-import { registerMain } from '../src/main'
-import { registerRenderer } from '../src/renderer'
+import { createFakeMainHost, createFakeRendererHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
+
+import { CompanionPanel } from '../src/companion'
+import { activate } from '../src/main'
+import { manifest } from './manifest'
 
 test('starting a summary opens a chat, and its end is announced', async () => {
   const main = createFakeMainHost({ manifest })
-  await registerMain(main.host)
+  activate(main.host)
   await main.startup()
 
   const answer = await main.methods.operate('start', { workspaceId: 'ws-app' })
@@ -31,11 +33,12 @@ test('starting a summary opens a chat, and its end is announced', async () => {
     'windows are told to read again',
   )
   assert.deepEqual(main.undeclared, [])
+  await main.shutdown()
 })
 
 test('a turn that fails says so in the bell', async () => {
   const main = createFakeMainHost({ manifest })
-  await registerMain(main.host)
+  activate(main.host)
   const answer = await main.methods.operate('start', { workspaceId: 'ws-app' })
   assert.ok(answer.ok, JSON.stringify(answer))
   const started = answer.result as { conversation: { workspaceId: string; agentId: string } }
@@ -48,7 +51,7 @@ test('a turn that fails says so in the bell', async () => {
 
 test('a bad request is answered, not thrown', async () => {
   const main = createFakeMainHost({ manifest })
-  await registerMain(main.host)
+  activate(main.host)
   assert.deepEqual(await main.methods.operate('start', {}), {
     ok: false,
     code: 'invalid_params',
@@ -56,12 +59,12 @@ test('a bad request is answered, not thrown', async () => {
   })
 })
 
-test('the door renders, and calls the main half’s methods', async () => {
+test('the panel draws, and reaches the worker’s methods', async () => {
   const main = createFakeMainHost({ manifest })
-  await registerMain(main.host)
-  const renderer = createFakeRendererHost({ main })
-  await registerRenderer(renderer.host)
-  assert.match(await renderer.render.surface('{{id}}'), /None yet/)
-  assert.deepEqual(await renderer.host.methods().read('list', {}), { ok: true, result: [] })
+  activate(main.host)
+  const renderer = createFakeRendererHost({ manifest, main })
+  const studio = renderer.studio({ point: 'panels', id: 'chats', workspaceId: 'ws-app' })
+  assert.match(await renderToHtml(createElement(CompanionPanel, { studio })), /Summarise this project/)
+  assert.deepEqual(await studio.methods().read('list', {}), { ok: true, result: [] })
   assert.deepEqual(renderer.undeclared, [])
 })

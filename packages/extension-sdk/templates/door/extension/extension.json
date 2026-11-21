@@ -1,0 +1,25 @@
+{
+  "$schema": "../node_modules/@sprintengine/extension-sdk/extension.schema.json",
+  "manifestVersion": 1,
+  "id": "{{id}}",
+  "version": "0.1.0",
+  "engines": {
+    "studio": ">={{studioVersion}}"
+  },
+  "tier": "ui",
+  "name": "{{displayName}}",
+  "description": "{{displayName}}, an extension for SprintEngine Studio.",
+  "permissions": [
+    "ipc:workspace-read"
+  ],
+  "contributes": {
+    "doors": [
+      {
+        "id": "workspaces",
+        "title": "{{displayName}}",
+        "icon": "folder",
+        "entry": "dist/workspaces.js"
+      }
+    ]
+  }
+}

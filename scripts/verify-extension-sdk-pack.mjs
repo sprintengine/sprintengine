@@ -2,21 +2,24 @@
 // Acceptance check for @sprintengine/extension-sdk:
 // 1. The package builds standalone and `npm pack` produces a tarball.
 // 2. The packed d.ts public surface contains no `any`.
-// 3. The committed external fixture project compiles against the tarball
-//    types only, including public provider-registration exports.
-// 4. Every entry point in the `exports` map resolves from the tarball, every
+// 3. Every entry point in the `exports` map resolves from the tarball, every
 //    name it exports can be imported through the package, and no exported
-//    declaration leans on a type the package does not export.
-// 5. The host-bridged subpaths (`/ui`, `/surface`) stay bare imports when a
-//    module is bundled with the documented externals, for the host's import
-//    map to answer (D6).
-// 6. The testing subpaths (`/testing`, `/testing/kit`) load from the tarball
-//    in plain Node: a fake host answers, and a door importing `/ui` and
-//    `/surface` renders through the pass-through kit.
+//    declaration leans on a type the package does not export. The subpaths
+//    the SDK no longer has stay gone, and `./extension.schema.json` ships.
+// 4. The committed external fixture, an extension.json project, compiles
+//    against the tarball types only.
+// 5. The fixture builds the way the templates build an extension: each
+//    surface a self-contained ESM bundle, the worker CommonJS. Run against
+//    the tarball's own validator and fakes in plain Node, its manifest
+//    validates, its worker serves what the manifest declares, and its probe
+//    panel mounts and says it is ready.
 
 import { execSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
+
+import { buildSync } from 'esbuild'
 
 const repoRoot = process.cwd()
 const sdkDir = join(repoRoot, 'packages', 'extension-sdk')
@@ -52,17 +55,25 @@ console.log('public surface contains no `any`')
 
 run(`npm install --no-save --no-package-lock --no-audit --no-fund ../${tarball}`, fixtureDir)
 
-// Every entry point must be reachable the way a module author reaches it:
+// Every entry point must be reachable the way an extension author reaches it:
 // through the INSTALLED package's `exports` map, with declarations and code
-// behind it. The bridged subpaths are required by name as well.
+// behind it. The JSON Schema is the one entry with neither: a plain file.
 const installedDir = join(fixtureDir, 'node_modules', '@sprintengine', 'extension-sdk')
 const installedManifest = JSON.parse(readFileSync(join(installedDir, 'package.json'), 'utf8'))
-const entryPoints = Object.entries(installedManifest.exports ?? {})
-for (const subpath of ['.', './ui', './surface', './testing', './testing/kit']) {
+const SCHEMA_SUBPATH = './extension.schema.json'
+for (const subpath of ['.', './signing', './scaffold', './guide', './testing', SCHEMA_SUBPATH]) {
   if (!installedManifest.exports?.[subpath]) {
     throw new Error(`packed @sprintengine/extension-sdk does not export "${subpath}".`)
   }
 }
+// An extension bundles its own UI: the host-bridged kit and its testing
+// stand-ins are gone, and must not come back by accident.
+for (const subpath of ['./ui', './surface', './testing/kit', './testing/register']) {
+  if (installedManifest.exports?.[subpath]) {
+    throw new Error(`packed @sprintengine/extension-sdk still exports "${subpath}", which the SDK no longer has.`)
+  }
+}
+const entryPoints = Object.entries(installedManifest.exports ?? {}).filter(([subpath]) => subpath !== SCHEMA_SUBPATH)
 for (const [subpath, entry] of entryPoints) {
   if (!entry?.types || !entry?.default) {
     throw new Error(`packed @sprintengine/extension-sdk exports "${subpath}" without both types and default.`)
@@ -76,6 +87,16 @@ for (const [subpath, entry] of entryPoints) {
   }
 }
 console.log(`every entry point resolves from the tarball: ${entryPoints.map(([subpath]) => subpath).join(', ')}`)
+
+// The schema an editor checks extension.json against, resolved through the
+// exports map from the fixture as a tool would reach it.
+const fixtureRequire = createRequire(join(fixtureDir, 'package.json'))
+const schemaPath = fixtureRequire.resolve('@sprintengine/extension-sdk/extension.schema.json')
+const schema = JSON.parse(readFileSync(schemaPath, 'utf8'))
+if (typeof schema.$schema !== 'string' || schema.type !== 'object' || typeof schema.properties !== 'object') {
+  throw new Error(`${SCHEMA_SUBPATH} in the tarball is not the extension.json JSON Schema.`)
+}
+console.log(`${SCHEMA_SUBPATH} ships and resolves through the exports map`)
 
 // A declaration the emitted .d.ts keeps without `export` is one an exported
 // declaration refers to (tsc drops the rest), so it is a type a module author
@@ -130,8 +151,8 @@ const probeImports = entryPoints.map(([subpath, entry], index) => {
   const names = declaredNames(join(installedDir, entry.types))
   if (subpath === '.' && names.length === 0) throw new Error('the root entry point declares no exports.')
   probedNames += names.length
-  // Aliased per entry point: the testing kit exports the names `/ui` and
-  // `/surface` export, and one file cannot import a name twice.
+  // Aliased per entry point: two entry points may export the same name, and
+  // one file cannot import a name twice.
   const aliased = names.map((name) => `${name} as entry${index}_${name}`)
   return names.length > 0 ? `import type { ${aliased.join(', ')} } from '${specifier}'` : ''
 })
@@ -140,9 +161,8 @@ writeFileSync(
   `// Generated by scripts/verify-extension-sdk-pack.mjs; removed after the check.\n${probeImports.filter(Boolean).join('\n')}\n`,
 )
 
-// Typechecks src/ui-bridge.ts among the rest: components from both subpaths
-// and `DiffEditor` from `@monaco-editor/react`, written as a module author
-// would write them. Also compiles the export probe written above.
+// Typechecks the fixture's extension (worker, surfaces, its own test against
+// the fakes) and the export probe written above.
 try {
   run('npx tsc -p tsconfig.json', fixtureDir)
 } finally {
@@ -150,78 +170,108 @@ try {
 }
 console.log(`every exported name (${probedNames}) imports through its entry point`)
 
-// The other half of the contract: bundled with the documented externals, none
-// of the host-provided specifiers may be inlined — the throwing stub must
-// never reach a module's bundle, and the bare imports must survive for the
-// host's import map to answer.
-const HOST_EXTERNALS = [
-  'react',
-  'react-dom',
-  'react-dom/client',
-  'react/jsx-runtime',
-  '@monaco-editor/react',
-  '@sprintengine/extension-sdk/ui',
-  '@sprintengine/extension-sdk/surface',
-]
-const bundlePath = join(fixtureDir, 'ui-bridge.bundle.mjs')
-run(
-  `npx esbuild src/ui-bridge.ts --bundle --format=esm --platform=browser ` +
-    `${HOST_EXTERNALS.map((specifier) => `--external:${specifier}`).join(' ')} ` +
-    `--outfile=${bundlePath}`,
-  fixtureDir,
+// Build the fixture as the templates build an extension: each surface a
+// self-contained ESM bundle (Studio imports its text as a blob module, which
+// can resolve no import), the worker CommonJS for Node's require.
+const buildDir = join(fixtureDir, 'node_modules', '.fixture-build')
+rmSync(buildDir, { recursive: true, force: true })
+mkdirSync(buildDir, { recursive: true })
+const fixtureManifest = JSON.parse(readFileSync(join(fixtureDir, 'extension', 'extension.json'), 'utf8'))
+const surfaces = ['panels', 'doors', 'settingsSections'].flatMap((point) =>
+  (fixtureManifest.contributes?.[point] ?? []).map((surface) => ({ point, ...surface })),
 )
-const bundle = readFileSync(bundlePath, 'utf8')
-rmSync(bundlePath, { force: true })
-for (const specifier of [
-  '@sprintengine/extension-sdk/ui',
-  '@sprintengine/extension-sdk/surface',
-  '@monaco-editor/react',
-]) {
-  if (!new RegExp(`from ?["']${specifier.replace(/[/@]/g, '\\$&')}["']`).test(bundle)) {
-    throw new Error(`bundling the fixture did not leave "${specifier}" as a bare import.`)
+for (const surface of surfaces) {
+  const name = surface.entry.replace(/^dist\//, '').replace(/\.m?js$/, '')
+  const outfile = join(buildDir, `${name}.mjs`)
+  buildSync({
+    absWorkingDir: fixtureDir,
+    entryPoints: [join('src', `${name}.ts`)],
+    bundle: true,
+    format: 'esm',
+    platform: 'browser',
+    target: 'chrome130',
+    outfile,
+    logLevel: 'warning',
+  })
+  const source = readFileSync(outfile, 'utf8')
+  if (/^\s*import\b|\bfrom\s*["'][^"']+["']/m.test(source)) {
+    throw new Error(`${surface.entry} imports something at runtime; a surface bundle must hold everything it uses.`)
   }
+  surface.built = outfile
 }
-if (bundle.includes('is provided by the host at runtime')) {
-  throw new Error('the throwing runtime stub was inlined into the module bundle despite --external.')
-}
-console.log('a module bundled with the documented externals keeps the bridged specifiers bare')
+const workerPath = join(buildDir, 'main.cjs')
+buildSync({
+  absWorkingDir: fixtureDir,
+  entryPoints: [join('src', 'main.ts')],
+  bundle: true,
+  format: 'cjs',
+  platform: 'node',
+  target: 'node22',
+  external: ['electron'],
+  outfile: workerPath,
+  logLevel: 'warning',
+})
+console.log(`the fixture builds: ${surfaces.map((surface) => surface.entry).join(', ')} and ${fixtureManifest.main}`)
 
-// The testing kit is a Node runtime, not just declarations: run it from the
-// installed tarball the way a module's own test does.
-const testingProbe = join(fixtureDir, 'testing-probe.mjs')
-const testingDoor = join(fixtureDir, 'testing-door.mjs')
+// The built fixture against the tarball's own validator and fakes, in plain
+// Node, the way a scaffolded project's smoke test runs. The probe panel is
+// mounted into a small stand-in document: it is plain DOM, and it must draw
+// its 200 rows and say it is ready.
+const runtimeProbe = join(fixtureDir, 'runtime-probe.mjs')
 writeFileSync(
-  testingDoor,
-  [
-    "import { createElement } from 'react'",
-    "import { EmptyState } from '@sprintengine/extension-sdk/ui'",
-    "import { GlobalSurfaceShell } from '@sprintengine/extension-sdk/surface'",
-    "export const Door = () => createElement(GlobalSurfaceShell, { ariaLabel: 'Probe' }, createElement(EmptyState, { title: 'Probe door' }))",
-    '',
-  ].join('\n'),
-)
-writeFileSync(
-  testingProbe,
-  [
+  runtimeProbe,
+  `${[
     "import assert from 'node:assert/strict'",
-    "import { createElement } from 'react'",
-    "import { getModuleStorage } from '@sprintengine/extension-sdk'",
-    "import { createFakeMainHost, installTestingKit, renderToHtml } from '@sprintengine/extension-sdk/testing'",
-    "const fake = createFakeMainHost({ moduleId: 'probe', permissions: ['storage'] })",
-    "assert.equal((await getModuleStorage(fake.host).set({ key: 'Bad Key', value: 1 })).code, 'invalid_key')",
-    'installTestingKit()',
-    "const { Door } = await import('./testing-door.mjs')",
-    'const html = await renderToHtml(createElement(Door))',
-    'assert.match(html, /Probe door/)',
-    '',
-  ].join('\n'),
+    "import { readFileSync } from 'node:fs'",
+    "import { createRequire } from 'node:module'",
+    "import { pathToFileURL } from 'node:url'",
+    "import { validateExtensionManifest } from '@sprintengine/extension-sdk'",
+    "import { createFakeMainHost, createFakeRendererHost } from '@sprintengine/extension-sdk/testing'",
+    `const surfaces = ${JSON.stringify(surfaces)}`,
+    "const result = validateExtensionManifest(JSON.parse(readFileSync('extension/extension.json', 'utf8')), { authoring: true })",
+    'assert.ok(result.ok, JSON.stringify(result.ok ? [] : result.issues))',
+    'const { manifest } = result',
+    `const worker = createRequire(import.meta.url)(${JSON.stringify(workerPath)})`,
+    'const activate = worker.activate ?? worker.default',
+    "assert.equal(typeof activate, 'function', 'the worker exports activate')",
+    'const main = createFakeMainHost({ manifest })',
+    'await activate(main.host)',
+    'const declared = main.methods.declared()',
+    'for (const command of manifest.contributes.commands.filter((command) => !command.action)) {',
+    "  assert.ok(declared.some((method) => method.name === command.id && method.access === 'operate'), command.id)",
+    '}',
+    'const tools = main.tools.list().map((tool) => tool.name)',
+    'for (const tool of manifest.contributes.mcpTools) assert.ok(tools.includes(tool.name), tool.name)',
+    'assert.deepEqual(main.undeclared, [])',
+    'const element = (tag) => ({',
+    '  tag, children: [], style: {}, textContent: "", attributes: {},',
+    '  setAttribute(name, value) { this.attributes[name] = value },',
+    '  append(...nodes) { this.children.push(...nodes) },',
+    '  replaceChildren(...nodes) { this.children = nodes },',
+    '  remove() {},',
+    '})',
+    "const root = { ...element('div'), ownerDocument: { createElement: element } }",
+    'const renderer = createFakeRendererHost({ manifest, main })',
+    'for (const surface of surfaces) {',
+    '  const entry = await import(pathToFileURL(surface.built).href)',
+    "  assert.equal(typeof entry.mount, 'function', surface.entry)",
+    "  if (surface.id !== 'probe') continue",
+    "  const close = await renderer.mount(entry, { point: surface.point, id: surface.id, workspaceId: 'ws-app' }, root)",
+    "  assert.equal(root.children.at(-1).children.length, 200, 'the probe draws 200 rows')",
+    "  assert.deepEqual(renderer.readied.map((ready) => ready.id), ['probe'])",
+    '  close()',
+    '}',
+    'assert.deepEqual(renderer.undeclared, [])',
+  ].join('\n')}\n`,
 )
 try {
-  run('node testing-probe.mjs', fixtureDir)
+  run('node runtime-probe.mjs', fixtureDir)
 } finally {
-  rmSync(testingProbe, { force: true })
-  rmSync(testingDoor, { force: true })
+  rmSync(runtimeProbe, { force: true })
+  rmSync(buildDir, { recursive: true, force: true })
 }
-console.log('the testing kit runs from the tarball: a fake host answers and a door renders through the kit')
+console.log(
+  "the built fixture runs on the tarball's fakes: the worker serves what it declares, the probe draws and is ready",
+)
 
 console.log('extension-sdk pack verification passed')

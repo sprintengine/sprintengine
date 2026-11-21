@@ -11,8 +11,6 @@
 // example, run-glyph providers receive a minimal input view rather than the
 // shell's internal workspace shape). Every narrowing is listed in README.md.
 
-import type { ComponentType, LazyExoticComponent } from 'react'
-
 import type { UsageQuery, UsageQueryResult } from './activity.js'
 import type {
   BacklogWatchOptions,
@@ -41,25 +39,14 @@ export type ModuleSignature = {
 }
 
 /**
- * Code entry points, relative to the module root. `entry.main` runs in the
- * main process for trusted modules; `entry.renderer` is loaded into the
- * renderer for trusted modules. `entry.preload` is reserved and NOT loaded in
- * v1 — declare it only for forward compatibility.
- */
-export type ModuleEntry = {
-  main?: string
-  preload?: string
-  renderer?: string
-}
-
-/**
- * sha256 digests of a module's own files: POSIX path relative to the module
- * root → lowercase hex. Covers every regular file under the root except
- * `manifest.json` itself, and nothing else — a file on disk that is not listed
- * is as much a mismatch as a listed file whose bytes changed.
+ * sha256 digests of an extension's own files: POSIX path relative to its root
+ * → lowercase hex. Covers every regular file under the root but
+ * `extension.sig`, and nothing else — a file on disk that is not listed is as
+ * much a mismatch as a listed file whose bytes changed.
  */
 export type ModuleFileDigests = Record<string, string>
 
+/** A plugin bundle's base manifest (`plugin.json`). An extension's own is `ExtensionManifest`. */
 export type CapabilityManifest = {
   id: string
   displayName: string
@@ -79,154 +66,15 @@ export type CapabilityManifest = {
   source?: ModuleSource
   /** Permission scopes requested (install-time disclosure, not runtime enforcement). */
   permissions?: string[]
-  /**
-   * The host API this module was built against (`HOST_API_VERSION` of the SDK
-   * it compiled with). Required for third-party modules; the host refuses one
-   * built for an API it does not provide.
-   */
-  engines?: { hostApi: number }
-  /**
-   * What the host must provide for `entry.main` to run at all. A module that
-   * names `electron-main` is loaded manifest-only (its renderer half still
-   * loads) wherever the host does not support it.
-   */
-  requires?: { hostCapabilities?: HostCapability[] }
-  entry?: ModuleEntry
-  /**
-   * Digests of every file the module ships. `sprintengine-extension sign` writes
-   * them, so the signature covers the code and not only the declaration; the
-   * app trusts a module by its publisher key only when they match the files
-   * on disk exactly.
-   */
-  files?: ModuleFileDigests
   signature?: ModuleSignature
 }
 
 /** Trust classification: only 'trusted' modules are eligible to execute code. */
 export type ModuleTrustStatus = 'trusted' | 'signed' | 'unsigned' | 'invalid'
 
-/** Reserved bundled module ids a third-party module may not claim. */
-export const BUNDLED_MODULE_IDS: readonly string[] = [
-  'agent-runtime',
-  'backlog',
-  'canvas',
-  'design',
-  // Retired but still reserved (Design Wizard, deleted 2026-09-08) — like
-  // 'switchboard' below, the id stays claimed so nothing can impersonate it.
-  'design-wizard',
-  'dev-tools',
-  'git',
-  'memory-graph',
-  'switchboard',
-  // RESERVED, never bundled: the Sprint Engine ships as an out-of-tree module
-  // that installs under this id, so the name is claimed here and nothing else
-  // can take it.
-  'sprint-engine',
-  'review',
-  // Retired but still reserved: Automations became scheduled agents 2026-09-30.
-  'automations',
-  'scheduled-agents',
-  // Retired but still reserved (the hosted mobile relay, removed 2026-09-27).
-  'mobile-relay',
-  // Retired but still reserved (voice dictation, removed 2026-10-09).
-  'voice-dictation',
-]
-
 // ── Permissions (install-time disclosure vocabulary) ─────────────────────────
 
-export type CapabilityPermission =
-  | 'filesystem:read-workspace'
-  | 'filesystem:write-workspace'
-  | 'filesystem:read-home'
-  | 'process:spawn'
-  | 'network'
-  | 'ipc:workspace-read'
-  | 'ipc:workspace-write'
-  | 'ipc:settings'
-  | 'ipc:invoke'
-  // Your own declared methods alone (`MainHost.registerMethods`, called by
-  // your window code through `RendererHost.methods`), split out of
-  // `ipc:invoke`, which still allows them for manifests written before the split.
-  | 'module:bridge'
-  | 'backlog.read'
-  | 'backlog.write'
-  | 'backlog.link.open'
-  // Create and manage the module's own scheduled agents through the SDK's
-  // scoped service. Disclosure-level like every other scope: the service does
-  // not runtime-check it.
-  | 'scheduled-agents.manage'
-  // Attach workspace-bound background (companion) agents through the SDK's
-  // Companion Agents service. Unlike the disclosure-only scopes above, the
-  // companion service checks this one explicitly at attach time.
-  | 'agents:companion'
-  // Send prompts to the person's own agent CLI in the background and read the
-  // answers, with no chat, workspace or tools (`getTextGenerationService`).
-  // Checked on every call.
-  | 'agents:generate'
-  // Persist the module's own data through the SDK's scoped storage service
-  // (host-placed: `modules/<id>/` in the project's store in the person's home,
-  // or per-user app data).
-  | 'storage'
-  // Read the conversations the module started through the SDK's scoped
-  // conversation service: their events, transcripts and list.
-  | 'conversation:read'
-  // Start, prompt, interrupt and stop the module's own conversations, and open
-  // a chat in the renderer (`RendererHost.openChat`). Implies read.
-  | 'conversation:operate'
-  // Run those conversations on `bypass`, and let them use named tools
-  // without asking (`allowedTools`). Without it a module's chats go no looser
-  // than `auto`, whatever it asks for.
-  | 'conversation:bypass'
-  // Open a chat with a prompt drafted in its composer for the person to read
-  // and send (`RendererHost.openChat` without `send`). Nothing more: sending,
-  // reading or driving a chat is `conversation:*`'s.
-  | 'chat:draft'
-  // Store secrets the host sends only to origins the module named, never
-  // handing the value back (the SDK's scoped secrets service).
-  | 'secrets'
-  // Call the GitHub API with the user's sign-in through the SDK's GitHub
-  // service; the host attaches the token and never hands it over.
-  | 'github'
-  // Contribute tools to the Studio MCP gateway (`MainHost.registerMcpTools`).
-  | 'mcp:tools'
-  // ── Backlog, usage and activity services ──
-  // See token usage of every agent session on this machine (`getUsageService`).
-  | 'usage:read'
-  // Read every Studio chat on this machine, read-only (`getActivityService`).
-  // A broad scope: the consent prompt flags it.
-  | 'conversation:read-all'
-  | (string & {})
-
-export const KNOWN_CAPABILITY_PERMISSIONS: readonly string[] = [
-  'filesystem:read-workspace',
-  'filesystem:write-workspace',
-  'filesystem:read-home',
-  'process:spawn',
-  'network',
-  'ipc:workspace-read',
-  'ipc:workspace-write',
-  'ipc:settings',
-  'ipc:invoke',
-  // Your own declared methods, split out of `ipc:invoke`.
-  'module:bridge',
-  'backlog.read',
-  'backlog.write',
-  'backlog.link.open',
-  'scheduled-agents.manage',
-  'agents:companion',
-  'agents:generate',
-  'storage',
-  'conversation:read',
-  'conversation:operate',
-  'conversation:bypass',
-  'chat:draft',
-  'secrets',
-  'github',
-  'mcp:tools',
-  // Backlog, usage and activity services.
-  'usage:read',
-  'conversation:read-all',
-]
+export { KNOWN_CAPABILITY_PERMISSIONS, type CapabilityPermission } from './permissions.js'
 
 // ── Notifications ────────────────────────────────────────────────────────────
 
@@ -471,35 +319,7 @@ export type McpToolRegistration = {
   handler: (args: Record<string, unknown>, context?: McpConnectionContext) => Promise<McpToolResult>
 }
 
-// ── Skills a module ships ────────────────────────────────────────────────────
-
-/**
- * Where a skill must land in a workspace.
- *
- * - `'agents'` — the harness-neutral `.agents/skills/<id>` directory only.
- *   Enough for a skill an agent discovers by reading the directory.
- * - `'all-native'` — additionally every installed CLI plugin's own native
- *   skill directory (`.claude/skills`, `.codex/skills`, …). Required when the
- *   skill is invoked by name in a prompt, because a CLI resolves an invocation
- *   only against its own directory.
- */
-export type ModuleSkillTargetPolicy = 'agents' | 'all-native'
-
-/**
- * One skill your module ships. `sourceDir` is the directory holding the
- * skill's `SKILL.md` (plus its `agents/` sidecars, when it has them), relative
- * to your module root; the host resolves it and refuses a path that escapes
- * the root.
- *
- * `id` is the invocation name and must not collide with a built-in skill or
- * with a skill another module already registered.
- */
-export type ModuleSkillRegistration = {
-  id: string
-  sourceDir: string
-  targetPolicy: ModuleSkillTargetPolicy
-  description: string
-}
+// ── Skills in a workspace ────────────────────────────────────────────────────
 
 /**
  * Every status the host's skill installer answers with, so you can switch on
@@ -551,11 +371,14 @@ export type EnsureSkillInstalledResult = {
 /** What `getSkillStatus` answers: the same shape, read without writing anything. */
 export type ModuleSkillStatusResult = EnsureSkillInstalledResult
 
+/**
+ * The `studio` object the worker's `activate` is handed: what it may ask of
+ * Studio, and the two things it registers at runtime, its methods and the
+ * handlers of the MCP tools its extension.json declares.
+ */
 export type MainHost = {
-  /** The module currently registering; stamped by the host. */
+  /** Your install key (`<publisher>.<id>`); stamped by the host. */
   readonly moduleId: string
-  /** The host API this app provides (`HOST_API_VERSION` of the SDK it was built with). */
-  readonly hostApiVersion: number
   /**
    * Whether the running host provides `capability` now. False for names it
    * does not know, so a module may probe for capabilities newer than its SDK.
@@ -588,33 +411,21 @@ export type MainHost = {
     methods: ModuleMethodRegistrations<Cs>,
   ): void
   /**
-   * Contribute MCP tools to the Studio gateway, owned by this module's id. A
-   * tool name another module already registered, or one that collides with a
-   * core gateway tool (see `McpToolRegistration` for the rule), is a
-   * registration error naming the conflict (the whole batch is rejected). Availability follows the module's enablement
-   * live: a disabled module's tools stay listed on the gateway and answer
-   * calls with an actionable enable error instead of running. An MCP tool is
-   * agent-reachable capability: declare the `mcp:tools` permission, without
-   * which the host refuses the registration.
+   * Serve the MCP tools your extension.json declares (`contributes.mcpTools`)
+   * on Studio's MCP server. A tool your manifest does not declare is refused,
+   * and the manifest's `description` and `access` are what agents see, whatever
+   * the registration says. A tool name another extension already registered,
+   * or one that collides with a core gateway tool (see `McpToolRegistration`
+   * for the rule), is a registration error naming the conflict (the whole
+   * batch is rejected). Availability follows the extension's enablement live:
+   * a disabled extension's tools stay listed and answer calls with an
+   * actionable enable error instead of running.
    */
   registerMcpTools(tools: McpToolRegistration[]): void
   /**
-   * Contribute agent skills your module ships. Each `sourceDir` is relative to
-   * your module root and must stay inside it. Registrations are owned exactly
-   * as IPC channels and MCP tools are: an id a built-in skill or another
-   * module already holds is a registration error, the whole batch is validated
-   * before one skill of it lands, and unloading your module takes its skills
-   * with it.
-   *
-   * A registered skill is a skill: an agent launched with `skill: { id }`
-   * resolves it, and `targetPolicy: 'all-native'` fans it out into every
-   * installed CLI's native skill directory the way a built-in does.
-   */
-  registerSkills(skills: ModuleSkillRegistration[]): void
-  /**
    * Make a skill present in a workspace now, rather than at the next agent
    * launch — how you pre-install the skill an agent will be told to invoke.
-   * Works for your own skills and for the app's. Never throws; an unknown id
+   * Works for the app's own skills. Never throws; an unknown id
    * answers `{ ok: false, status: 'unknown-skill' }`.
    */
   ensureSkillInstalled(workspaceRoot: string, skillId: string): Promise<EnsureSkillInstalledResult>
@@ -733,13 +544,6 @@ export type MainHost = {
    */
   emit(topic: string, payload?: unknown): void
 }
-
-/**
- * The export contract of `entry.main`: `export function registerMain(host) { … }`.
- * It may be async: the host waits for the returned promise (bounded) before it
- * counts the module as loaded, and a rejection fails the module alone.
- */
-export type RegisterMain = (host: MainHost) => void | Promise<void>
 
 // ── Workspace service (host-provided, consumed via the service bridge) ────────
 
@@ -1349,313 +1153,9 @@ export function getModuleStorage(host: MainHost): ModuleStorageService {
   }
 }
 
-// ── Renderer host (entry.renderer) ───────────────────────────────────────────
+// ── The window's studio (a ui entry's `mount`) ──────────────────────────────
 
-/**
- * Props passed to a contributed workspace panel. (The app may pass additional
- * shell-internal props not in the v1 SDK surface.)
- */
-export type WorkspacePanelProps = {
-  workspaceId: string
-}
-
-/** Eager component or React.lazy() wrapper; both render the same way. */
-export type WorkspacePanelComponent =
-  ComponentType<WorkspacePanelProps> | LazyExoticComponent<ComponentType<WorkspacePanelProps>>
-
-export type WorkspaceTypeIconComponent = ComponentType<{ className?: string }>
-
-export type WorkspaceTypeTopBarView = {
-  component: string
-  name: string
-}
-
-export type PreviewSlot = {
-  x: number
-  y: number
-  w: number
-  h: number
-  type: 'agent' | 'editor' | 'explorer'
-  label: string
-}
-
-// A conservative subset of the FlexLayout JSON model the app's workspace
-// layouts use. Anything expressible here is a valid app layout; the app
-// accepts more (borders, extra attributes) than the SDK exposes in v1.
-export type LayoutTabJson = {
-  type: 'tab'
-  id?: string
-  name?: string
-  component?: string
-  config?: unknown
-}
-
-export type LayoutTabSetJson = {
-  type: 'tabset'
-  id?: string
-  weight?: number
-  enableTabStrip?: boolean
-  children: LayoutTabJson[]
-}
-
-export type LayoutRowJson = {
-  type: 'row'
-  id?: string
-  weight?: number
-  children: Array<LayoutRowJson | LayoutTabSetJson>
-}
-
-export type LayoutGlobalJson = {
-  tabSetEnableDrop?: boolean
-  tabEnableClose?: boolean
-}
-
-export type WorkspaceLayoutJson = {
-  global?: LayoutGlobalJson
-  layout: LayoutRowJson
-}
-
-export type WorkspaceLayoutTemplate = {
-  id: string
-  name: string
-  description: string
-  previewSlots: PreviewSlot[]
-  layout: WorkspaceLayoutJson
-}
-
-/**
- * A supervisor is a render-nothing React component the shell mounts for your
- * workspace type — the home for background renderer logic (auto-run loops,
- * pollers, sync). Lifecycle: `'global'` mounts one instance in the primary
- * window while your module is enabled (whether or not one of your workspaces
- * is open); `'all-windows'` mounts one instance per window. Unmounted when
- * the module is disabled. The shell mounts supervisors inside a crash
- * boundary and a display:none host: a throw is contained (logged, supervisor
- * unmounted) and returned markup is never shown — return null. A
- * supervisor may only touch published SDK surfaces — its power is exactly
- * what the rest of the SDK exposes.
- */
-export type WorkspaceTypeSupervisorScope = 'global' | 'all-windows'
-
-export type WorkspaceTypeSupervisorComponent = ComponentType | LazyExoticComponent<ComponentType>
-
-export type WorkspaceTypeSupervisor = {
-  Component: WorkspaceTypeSupervisorComponent
-  scope: WorkspaceTypeSupervisorScope
-}
-
-/**
- * The published, stable subset of the shell's sidebar-status vocabulary. The
- * app's own vocabulary is wider and grows; module glyphs stick to this core
- * so a compiled module never emits a state the running shell can't draw.
- */
-export type WorkspaceRunGlyphState =
-  'todo' | 'ready' | 'in_progress' | 'paused' | 'needs_input' | 'done' | 'failed' | 'archived'
-
-/** The sidebar row's one status slot: lifecycle state, liveness, plain label. */
-export type WorkspaceRunGlyph = {
-  state: WorkspaceRunGlyphState
-  /** Adds the live pulse — only while something is actually running. */
-  live: boolean
-  /** Plain-language status, e.g. "2 scheduled today" or "Waiting on a reply". */
-  label: string
-}
-
-/**
- * The read view a run-glyph provider derives from. Deliberately minimal: the
- * provider owns its module's state and consults it synchronously (e.g. a
- * cache its supervisor maintains); the shell supplies only the identity.
- */
-export type WorkspaceRunGlyphInput = {
-  mode: string
-}
-
-/** Confirm copy for a type-contributed sidebar row action. */
-export type WorkspaceTypeRowActionConfirm = {
-  title: string
-  body: string
-  confirmLabel: string
-  cancelLabel?: string
-}
-
-/**
- * The workspace fields a type's sidebar status hooks may read. The shell
- * passes a richer row; this is identity plus the module bag.
- */
-export type WorkspaceTypeSidebarWorkspace = {
-  id: string
-  name: string
-  mode: string
-  moduleState?: Record<string, unknown>
-}
-
-/**
- * Extra context-menu item on a sidebar row of this type. Gone with the
- * module; never a disabled core row. `confirm` opens the shell's confirm
- * modal before `run`.
- */
-export type WorkspaceTypeRowAction = {
-  id: string
-  label: string
-  variant?: 'danger'
-  isVisible?: (workspace: WorkspaceTypeSidebarWorkspace) => boolean
-  confirm?: (workspace: { name: string }) => WorkspaceTypeRowActionConfirm
-  run: (workspaceId: string) => void | Promise<void>
-}
-
-/**
- * A module-owned config step in the workspace-creation hub. One step per type
- * (v1): the hub renders it as the flow's one config page after the shared
- * name/folder fields, holds the value for the pane's lifetime only (nothing
- * persists shell-side), and hands it to `createTemplate(context)` on create.
- * A throwing Component degrades to the type's zero-config flow with an inline
- * notice — it never blocks the hub.
- */
-export type WorkspaceCreationStepProps = {
-  value: unknown
-  setValue: (value: unknown) => void
-}
-
-export type WorkspaceCreationStepComponent =
-  ComponentType<WorkspaceCreationStepProps> | LazyExoticComponent<ComponentType<WorkspaceCreationStepProps>>
-
-export type WorkspaceTypeCreationStep = {
-  id: string
-  /** Page title in the hub pane. */
-  heading: string
-  /** One-line page subtitle. */
-  description?: string
-  Component: WorkspaceCreationStepComponent
-  /** Gates the Create button; absent means the step never blocks creation. */
-  isReady?: (value: unknown) => boolean
-  /** Footer hint while isReady is false, e.g. "Name a city to forecast." */
-  blockedHint?: string
-}
-
-/** Context handed to `createTemplate` on create. */
-export type WorkspaceTypeCreateContext = {
-  /** The module creation step's collected value; undefined without a step. */
-  stepValue?: unknown
-}
-
-/**
- * What the creation hub hands your type's async create hook.
- * `createTemplate` is synchronous by design — it answers "what layout?" — so a
- * type whose creation is real orchestration (probe a source, materialize it on
- * disk, roll back on failure) puts that work in `createWorkspace` instead.
- */
-export type WorkspaceTypeCreateRequest = {
-  /** The name field's value, untrimmed. Empty means the user named nothing. */
-  name: string
-  /** The materialized folder. The hub creates/opens it before calling. */
-  folderPath: string
-  /** The creation step's collected value; undefined without a step. */
-  stepValue?: unknown
-  /**
-   * Write back into your creation step's value. Your step owns that page's
-   * body, and the step value is the state both halves share — so a hook that
-   * fails puts the reason here and the step renders it, rather than throwing
-   * prose at a generic error surface.
-   */
-  setStepValue: (value: unknown) => void
-}
-
-/**
- * The shell capabilities an async create hook may use. Deliberately two: mint
- * this type's workspace, and take it back.
- */
-export type WorkspaceTypeCreateHost = {
-  /**
-   * Create the workspace from your `createTemplate` and return its id — the
-   * same row the zero-config path would have made. `name` overrides the
-   * request's (use it for your own fallback); the step value reaches
-   * `createTemplate` either way.
-   */
-  createWorkspace(input?: { name?: string }): string
-  /** Remove a workspace this hook created. The rollback half of the pair. */
-  removeWorkspace(workspaceId: string): void
-}
-
-/**
- * A contributed workspace type.
- */
-export type WorkspaceTypeDefinition = {
-  id: string
-  label: string
-  description: string
-  icon: WorkspaceTypeIconComponent
-  accentToken?: string
-  searchTerms?: string[]
-  createTemplate(context?: WorkspaceTypeCreateContext): WorkspaceLayoutTemplate
-  /**
-   * Open once after this type's first enabled, trusted renderer load. Creates
-   * a folderless workspace from createTemplate, or focuses an existing one.
-   * Only zero-config types (no creationStep/createWorkspace hook) support this.
-   * Closing it does not reopen it on the next launch; use host.openWorkspace
-   * in an explicit command to let users reopen it. Newly installed/trusted
-   * renderer-only modules load immediately; main/preload modules and updates
-   * to already evaluated code require a restart.
-   */
-  openOnFirstLoad?: boolean
-  /**
-   * Own this type's create action. When present the hub calls this instead of
-   * creating the workspace itself: resolve to mean "created, close the hub";
-   * reject to leave the hub open with the create still available. Call
-   * `host.createWorkspace()` to mint the row (that is what runs
-   * `createTemplate`) and `host.removeWorkspace(id)` to roll it back — a
-   * create that fails after minting must not leave an empty workspace behind.
-   * Absent ⇒ the hub creates from `createTemplate` directly.
-   */
-  createWorkspace?(request: WorkspaceTypeCreateRequest, host: WorkspaceTypeCreateHost): Promise<void>
-  topBarViews?: {
-    label: string
-    views: WorkspaceTypeTopBarView[]
-  }
-  /**
-   * Background renderer components the shell mounts for this type (see
-   * WorkspaceTypeSupervisor). Useful together with the live-runtime surfaces —
-   * a supervisor with nothing observable is a no-op.
-   */
-  supervisors?: WorkspaceTypeSupervisor[]
-  /**
-   * Sidebar status for workspaces of this type. Called for workspaces whose
-   * mode equals this type's id (the mode's own provider always wins the
-   * dispatch); return null for "no run signal" — the shell falls back to its
-   * recency text. Note: while your type ships this hook, collapsed sidebar
-   * rows defer their terminal-derived attention dot to your provider — a
-   * null return reads as "genuinely resting", so return a `needs_input`
-   * glyph when your module wants the user's attention. Synchronous — derive
-   * from module state you already hold, not from IPC.
-   */
-  deriveRunGlyph?(workspace: WorkspaceRunGlyphInput): WorkspaceRunGlyph | null
-  /**
-   * Label for this type's create control (picker, hub). Absent ⇒ `label`.
-   * When `createWorkspace` is present, that control runs the hook instead of
-   * minting from `createTemplate`.
-   */
-  createLabel?: string
-  /** Glyph beside the sidebar row title for workspaces of this type. */
-  RowMark?: WorkspaceTypeIconComponent
-  /** Extra context-menu items on this type's sidebar rows. */
-  rowActions?: WorkspaceTypeRowAction[]
-  /** The type's config step in the creation hub (one per type in v1). */
-  creationStep?: WorkspaceTypeCreationStep
-  creationStepsId?: string
-  pickerOrder?: number
-  /**
-   * Keep the type registered (so its runtime workspaces still resolve, render,
-   * and get created programmatically) but withhold those workspaces from the
-   * normal workspace rail — Projects list, keyboard switch targets, and
-   * command-palette results. For a type whose own door surface took over
-   * finding and steering the workspaces, so listing them again under one
-   * project would claim they belong there. Hidden means hidden from
-   * DISCOVERY: the workspace stays in the store, in window assignments, and
-   * explicitly activatable. The rail analog of `hiddenFromPicker`.
-   */
-  hiddenFromRail?: boolean
-}
-
-// ── Backlog contributions ────────────────────────────────────────────────────
+// ── Backlog views ────────────────────────────────────────────────────────────
 
 export type BacklogItemStatus = 'idea' | 'ready' | 'in_progress' | 'needs_input' | 'completed' | 'archived'
 // `pending` is lifecycle-neutral: the work is recorded but has not started.
@@ -1710,470 +1210,6 @@ export type BacklogItemView = {
   modifiedAt: number
 }
 
-export type BacklogItemActionCategory = 'execute' | 'analyze' | 'transform' | 'publish' | 'review' | 'organize'
-
-export type BacklogItemActionContext = {
-  workspaceId: string
-  workspaceRoot: string
-  item: BacklogItemView
-  readSource(): Promise<string>
-  updateStatus(status: BacklogItemStatus): Promise<void>
-  addLink(link: BacklogItemLink): Promise<void>
-  updateModuleMetadata(moduleId: string, value: unknown): Promise<void>
-}
-
-export type BacklogItemActionState = 'enabled' | 'disabled'
-
-export type BacklogItemAction = {
-  id: string
-  label: string
-  category: BacklogItemActionCategory
-  /**
-   * Position within the Backlog menus — the row's right-click menu and the
-   * detail header's More-actions menu — sorted by `order` then label. It does
-   * not earn a header button; those belong to the shell.
-   */
-  order?: number
-  isVisible?: (context: BacklogItemActionContext) => boolean
-  getState?: (context: BacklogItemActionContext) => BacklogItemActionState
-  run: (context: BacklogItemActionContext) => void | Promise<void>
-}
-
-export type BacklogLinkProviderInput = {
-  workspaceId: string
-  workspaceRoot: string
-  item: BacklogItemView
-  link: BacklogItemLink
-}
-
-export type BacklogLinkProvider = {
-  /** Must equal the registering module's id. */
-  moduleId: string
-  /** Link target kinds this provider owns; a kind has exactly one owner. */
-  targetKinds: string[]
-  resolveLinkStatus(input: BacklogLinkProviderInput): Promise<BacklogResolvedLink>
-  openLink?(input: BacklogLinkProviderInput): Promise<void | boolean>
-}
-
-// ── File Explorer actions ────────────────────────────────────────────────────
-
-/**
- * One selected Files-tree row as handed to `registerFileAction` callbacks.
- * Directories, git-deleted rows and ordinary files all appear; visibility is
- * the action's to decide.
- */
-export type FileActionEntry = {
-  name: string
-  path: string
-  isDir: boolean
-  gitDeleted?: boolean
-}
-
-export type FileActionContext = {
-  workspaceId: string
-  workspaceRoot: string
-  entries: readonly FileActionEntry[]
-}
-
-export type FileActionState = 'enabled' | 'disabled'
-
-/**
- * A Files-tree context-menu action. Sibling of `BacklogItemAction`: the
- * explorer renders enabled-module contributions under a heading named for
- * the module, gone entirely when the module is absent — never a disabled
- * core row. Sorted by `order` then label within the group.
- */
-export type FileAction = {
-  id: string
-  label: string
-  order?: number
-  /** Selection-aware display label; falls back to `label` when absent. */
-  getLabel?: (context: FileActionContext) => string
-  isVisible?: (context: FileActionContext) => boolean
-  getState?: (context: FileActionContext) => FileActionState
-  run: (context: FileActionContext) => void | Promise<void>
-}
-
-// ── Commands ─────────────────────────────────────────────────────────────────
-
-export type CommandScope =
-  | 'global'
-  | 'workspace'
-  | 'workspace-navigation'
-  | 'editor'
-  | 'terminal'
-  | 'panel'
-  // Open scope family: `panel:<moduleId>` is active while a workspace whose
-  // mode belongs to that module is active — the shell derives it from the
-  // workspace-type registry, so your module's commands can gate on "my
-  // workspace is active" without a shell enum change. A module that registers
-  // the workspace type `weather-deck` gates its commands on
-  // `panel:weather-deck`.
-  | (string & {})
-
-export type CommandAvailability =
-  | 'always'
-  | 'activeWorkspace'
-  | 'activeFile'
-  | 'memoryGraphEnabled'
-  | 'canvasEnabled'
-  | 'backlogEnabled'
-  | 'gitPanelActive'
-  | 'terminalActive'
-  | 'diagnosticsEnabled'
-  // Open at the type level so new shell conditions never break a compiled
-  // module; an unknown condition reads as unsatisfied (fail closed). Prefer
-  // an availability predicate for module-specific gating.
-  | (string & {})
-
-/**
- * The published context view a module availability predicate is evaluated
- * against. Deliberately tiny — extended only by demonstrated need; anything a
- * module knows about its own state it checks inside the predicate itself.
- */
-export type ModuleCommandContext = {
-  activeWorkspaceId: string | null
-  activeWorkspaceMode: string | null
-}
-
-/**
- * A command contributed by a module. The registered id is namespaced
- * `<moduleId>.<id>`; the handler callback travels with the definition.
- */
-export type ModuleCommandDefinition = {
-  /** Bare command id; the registered id becomes `<moduleId>.<id>`. */
-  id: string
-  title: string
-  /** Grouping label in the palette and Shortcuts settings. */
-  category: string
-  /**
-   * `panel:<moduleId>` gates on "a workspace whose mode belongs to my module
-   * is active" — derived by the shell from the workspace-type registry.
-   */
-  scopes: readonly CommandScope[]
-  defaultKeybindings?: readonly string[]
-  /**
-   * Either shell availability preconditions, or a predicate over the
-   * published `ModuleCommandContext` view — "offer this only when…" without
-   * a shell enum change. With no context wired (early boot) a
-   * predicate-gated command is unavailable, never a silent no-op.
-   */
-  availability?: readonly CommandAvailability[] | ((context: ModuleCommandContext) => boolean)
-  allowInEditableTarget?: boolean
-  /**
-   * The handler. It receives the `ModuleCommandContext` the availability
-   * predicate was judged on, from the window the command ran in — so "this
-   * workspace" is `context.activeWorkspaceId`. A zero-argument handler is
-   * still valid (`supports('command-context')` says whether the host passes it).
-   */
-  run: (context: ModuleCommandContext) => void | Promise<void>
-}
-
-// ── Settings sections ────────────────────────────────────────────────────────
-
-export type SettingsSectionProps = {
-  values: Readonly<Record<string, unknown>>
-  /** Persist one value in the module's namespace; `undefined` deletes the key. */
-  setValue: (key: string, value: unknown) => void
-}
-
-export type SettingsSectionComponent =
-  ComponentType<SettingsSectionProps> | LazyExoticComponent<ComponentType<SettingsSectionProps>>
-
-/** Icons follow the house glyph pattern: 24×24 viewBox, currentColor strokes. */
-export type SettingsSectionIconComponent = ComponentType<{ className?: string }>
-
-export type SettingsSectionDefinition = {
-  id: string
-  label: string
-  description?: string
-  icon: SettingsSectionIconComponent
-  Component: SettingsSectionComponent
-  order?: number
-}
-
-// ── Sidebar nav entries ──────────────────────────────────────────────────────
-
-/**
- * A drawer row's count, as the host derived it: your door badge's waiting
- * count plus your unread bell rows filed under the door. Draw it with the
- * kit's `SidebarNavButton` `badge` prop so it reads like every other row's.
- */
-export type SidebarNavEntryBadge = {
-  count: number
-  tone: 'neutral' | 'accent' | 'good' | 'warn' | 'error'
-  /** The count's full accessible name ("Task Board: 2 waiting on you"). */
-  label: string
-  /** The same without the place ("2 waiting on you"), for a row that already names itself. */
-  detail?: string
-}
-
-export type SidebarNavEntryRenderProps = {
-  /** The sidebar is collapsed to the icon rail; render icon-only with a tooltip. */
-  collapsed: boolean
-  /**
-   * The count the host derived for your row, or null/absent for none. The host
-   * counts so the row and the app rail's Extensions square above it agree;
-   * wear this rather than drawing a count of your own.
-   */
-  badge?: SidebarNavEntryBadge | null
-}
-
-export type SidebarNavEntryComponent =
-  ComponentType<SidebarNavEntryRenderProps> | LazyExoticComponent<ComponentType<SidebarNavEntryRenderProps>>
-
-/**
- * Your own drawing of a door's row. Installed doors live in the Extensions
- * drawer; a nav entry whose `id` is the id of a global surface YOUR module
- * registered is drawn there AS that door's row, in place of the generic
- * label-and-glyph one (and in place of its view rows, if it has views). An
- * entry whose id names no surface of yours is not drawn. The component owns
- * its open action and its reading of selected, and is handed `collapsed` and
- * the host's `badge`. Shown only while your module is enabled, so the toggle
- * adds/removes the row without a reload. Most doors need no nav entry: a
- * `label` and `Icon` on the surface already give it a row.
- */
-export type SidebarNavEntryDefinition = {
-  /** The id of the global surface this row is the door of. */
-  id: string
-  /** Sort key among nav entries; lower first, ties on id. */
-  order: number
-  Component: SidebarNavEntryComponent
-}
-
-/**
- * A waiting count your module contributes for one of its doors' Extensions
- * drawer rows. The shell merges it with that row's unread bell news; the
- * contribution is gone with the module, so a count with no row never appears.
- */
-export type DoorBadgeContribution = {
-  /**
-   * The id of one of YOUR global surfaces: its Extensions drawer row wears the
-   * count (the first row, for a surface with `views`). A row id another
-   * module's surface holds counts nothing.
-   */
-  rowId: string
-  /** Live items on this door waiting on the operator. Not a React hook. */
-  getWaitingCount(): number
-  subscribe(onChange: () => void): () => void
-  /**
-   * Set it to your module id to file your untargeted `notify` rows under this
-   * door (a module with one door gets that by default; one with several says
-   * which here). A row with a `target` is filed under its target's door.
-   */
-  notificationSource?: string
-}
-
-// ── Top bar items ────────────────────────────────────────────────────────────
-
-export type TopBarItemComponent = ComponentType | LazyExoticComponent<ComponentType>
-
-/**
- * A control your module contributes to the app's top bar (the title-strip
- * control cluster). The item is a self-contained zero-prop component that owns
- * its full behavior — state, tooltip, action — exactly like the shell's own
- * controls; the host only owns placement and gating. The bar shows it only
- * while your module is enabled and orders contributed items by `order`, so the
- * toggle adds/removes the control without a reload. The top bar is dense:
- * contribute a single compact control (an icon button), not a cluster.
- */
-export type TopBarItemDefinition = {
-  id: string
-  /** Sort key among contributed top-bar items; lower renders first, ties break on id. */
-  order: number
-  Component: TopBarItemComponent
-}
-
-// ── Global door surfaces ─────────────────────────────────────────────────────
-
-export type GlobalSurfaceComponent = ComponentType | LazyExoticComponent<ComponentType>
-
-/** The glyph the shell's chrome draws when it names your surface. */
-export type SurfaceIconComponent = ComponentType<{ className?: string }>
-
-/**
- * Where your door's own rail goes while the door is open.
- *
- *   `sidebar` (the default) — your rail REPLACES the app sidebar's column for
- *   the length of the visit. Right when the rail is a list the person walks
- *   and is the navigation while your surface is open.
- *
- *   `inline` — your rail renders inside the card region beside your canvas and
- *   the sidebar column keeps whatever it was showing. Right when the column
- *   ALREADY holds the navigation that reached you: taking it would delete the
- *   very list the person is navigating with.
- */
-export type SurfaceRailPlacement = 'sidebar' | 'inline'
-
-/**
- * One row of the shell's Extensions drawer, for a surface that is several
- * destinations to the person rather than one. A surface with no `views` (the
- * common case) contributes a single row named by its own `label` and `Icon`.
- * You own each row's name, glyph and how the surface lands on it; the shell
- * owns only where the rows sit.
- */
-export type SurfaceViewDefinition = {
-  /**
-   * Unique within your surface. Publish it with
-   * `host.setSurfaceView(surfaceId, id)` while the surface is showing this
-   * view (and `null` as it unmounts), so exactly one of your rows reads
-   * selected.
-   */
-  id: string
-  /** The row's label and accessible name. Non-empty; sentence case. */
-  label: string
-  /** The row's glyph; the shell sizes it via className. */
-  Icon: SurfaceIconComponent
-  /**
-   * Land the surface on this view. Runs BEFORE the shell opens the surface, so
-   * a deep-link latch set here is drained by your surface as it mounts. This
-   * replaces `onOpen` for a view row: a view IS a target, so there is no stale
-   * latch to discard.
-   */
-  open: () => void
-}
-
-/**
- * The full-page surface behind a top-level door. A global surface is a
- * first-class extension point: it is instance-global, needs no workspace
- * type, panel, or project scope, and owns its own data and layout. With a
- * `label` and `Icon` it gets a row in the Extensions drawer (and a tile on the
- * Extensions home); the shell mounts the surface over the workspace card
- * region when that row — or your own `openGlobalSurface(id)` — opens it,
- * gated on your module's live enablement. The component is zero-prop,
- * eager or `React.lazy()`. While your module is uninstalled or disabled, the
- * shell renders an explicit "not installed" door in its place and keeps the
- * user's spot; re-enabling restores the surface without a reload.
- *
- * Everything but `id` and `Component` is optional, and every optional field is
- * about PRESENTATION — how the shell's own chrome names and places your
- * surface (Extensions drawer ruling, 2026-09-05). A door that draws its own
- * row through `registerSidebarNavEntry` can omit them all, as it always could.
- */
-export type GlobalSurfaceDefinition = {
-  /** Matches the id the door opens. Non-empty; unique across all modules. */
-  id: string
-  /**
-   * Your surface's user-facing name — the drawer row's label, the door bar's
-   * fallback title, and the "not installed" explainer's heading. Decoupled
-   * from the id. Non-empty when given; omit it if your own nav-entry component
-   * names the surface instead.
-   */
-  label?: string
-  /** The glyph for chrome that names your surface. Optional for the same reason `label` is. */
-  Icon?: SurfaceIconComponent
-  /**
-   * Called just before the shell opens your surface from a PLAIN opener — a
-   * rail glyph, a drawer row, a history step — one landing on your default
-   * view. Discard stale deep-link latches here. Deep-link openers dispatch
-   * their own state and bypass this.
-   */
-  onOpen?: () => void
-  /** The drawer rows your one surface offers, when it is more than one destination. */
-  views?: readonly SurfaceViewDefinition[]
-  /** Where your door's rail goes. Defaults to `sidebar`. */
-  railPlacement?: SurfaceRailPlacement
-  Component: GlobalSurfaceComponent
-}
-
-// ── Modal surfaces ───────────────────────────────────────────────────────────
-
-export type ModalSurfaceIconComponent = ComponentType<{ className?: string }>
-
-/**
- * A modal surface your module contributes — a pick-and-close task floated over
- * work that stays put. The shell mounts your body inside its own modal shell
- * over whatever the window is showing: it owns the modal chrome (width step,
- * flat scrim — never a backdrop blur — focus trap, Escape/scrim close, and a
- * title bar carrying `label` and the one close), and your component owns only
- * the body, zero-prop, eager or `React.lazy()`. While your module is disabled
- * an open modal closes; re-enabling restores it without a reload.
- *
- * **You open it.** The shell renders no trigger for a modal surface. It used to
- * put a glyph button for each one in the sidebar footer's settings cluster
- * (doors→modals, 2026-09-01); the Extensions-drawer ruling of 2026-09-05 sent
- * every destination the shell's own chrome offers back to being a DOOR, and
- * took the cluster with it — a modal is now reached from inside the content it
- * floats over (a pane launcher, a row action, a notification's Open), which is
- * the shape a modal is for. Contribute the trigger yourself from wherever that
- * is, and call `openModalSurface(id)`.
- *
- * **Except one trigger the shell does draw for you.** `launcher` puts your
- * surface's row in the workspace pane's kind list — the strip's "+" menu and
- * the pane's empty-state launcher, beside Browser, Terminal and Diff — which
- * is where a workspace-scoped modal is reached for. Picking it opens your
- * modal and hands your body the workspace it was picked in.
- *
- * `order` and `Icon` are what the retired cluster read, and they are optional
- * for that reason: nothing renders them today. They are kept rather than
- * deleted so a module that already declares them still compiles, and so a
- * future trigger surface has the fields it would need.
- */
-export type ModalSurfaceDefinition = {
-  /** Non-empty; unique across all modules. */
-  id: string
-  /** Sort key among registered modal surfaces; lower first, ties break on id. Nothing renders this today. */
-  order?: number
-  /** The dialog's accessible name and its bar title. Non-empty; sentence case. */
-  label: string
-  /** A glyph for chrome that names this surface. Nothing renders this today. */
-  Icon?: ModalSurfaceIconComponent
-  /**
-   * Called just before the shell opens this modal from a plain opener — one
-   * landing on the surface's default view. Discard stale deep-link latches
-   * here. Deep-link openers dispatch their own state and bypass this.
-   */
-  onOpen?: () => void
-  /**
-   * Contribute your surface's row to the workspace pane's kind list. Omit it
-   * and the shell draws no trigger at all — you open the modal yourself from
-   * wherever makes sense.
-   */
-  launcher?: ModalSurfaceLauncher
-  /** The modal body. */
-  Component: ModalSurfaceComponent
-}
-
-/**
- * What the shell hands a modal body: the workspace its opener acted from, when
- * the opener had one (the pane row passes the workspace it was picked in; a
- * command or a notification passes none). A modal floats over the window
- * rather than mounting inside a workspace card, so this is what tells your
- * surface which workspace it is acting on — do not fall back to "the active
- * one", which can change under an open modal.
- *
- * A zero-prop component still satisfies `ModalSurfaceComponent`, so ignore the
- * prop if your surface is app-level.
- */
-export type ModalSurfaceComponentProps = {
-  workspaceId?: string
-}
-
-export type ModalSurfaceComponent =
-  ComponentType<ModalSurfaceComponentProps> | LazyExoticComponent<ComponentType<ModalSurfaceComponentProps>>
-
-/**
- * The pane row your modal surface contributes. The workspace pane lists the
- * kinds a workspace can open — Browser, Terminal, Files, Diff, Git, Backlog —
- * and this appends yours, in the "+" menu and in the pane's empty-state
- * launcher, drawn exactly like the shell's own.
- */
-export type ModalSurfaceLauncher = {
-  /** The row's name, e.g. "Reviews". Non-empty; sentence case. */
-  label: string
-  /**
-   * The key that opens your row while the menu or the launcher has focus.
-   * EXACTLY one character (uppercased by the host); anything else is a
-   * registration error. The shell's own kinds win a collision: a letter
-   * already taken by a built-in row (B, T, F, D, G, L) — or by a module row
-   * registered before yours — leaves your row with its label and glyph and no
-   * shortcut at all, rather than stealing a key the person already knows.
-   */
-  letter: string
-  /** The row's mark, in both the menu and the launcher card. */
-  Glyph: ModalSurfaceIconComponent
-}
-
 // ── Live runtime surfaces (renderer) ─────────────────────────────────────────
 
 export type WorkspaceFileWatchEvent = {
@@ -2190,45 +1226,6 @@ export type ModuleFocusTabInput = {
   kind: 'chat' | 'file'
   /** A chat's agent id (from `openChat` or the conversation service), or a workspace-relative file path. */
   id: string
-}
-
-// ── Notification Open actions (renderer) ─────────────────────────────────────
-
-/**
- * The subset of a bell row a notification-action provider may read. The shell
- * passes a richer in-app notification; extra fields stay unpublished.
- */
-export type NotificationActionView = {
-  workspaceId?: string
-  navigationTarget?: { kind: string; ref: string }
-  /** The row's title (your `notify` title, for one of your rows). */
-  title?: string
-  /** The row's body text (your `notify` body; empty when you sent none). */
-  message?: string
-  /** The `target` your `notify` named, on one of your rows. */
-  surfaceTarget?: ModuleNotificationTarget
-}
-
-export type NotificationActionContext = {
-  notification: NotificationActionView
-  /** Shell capability: switch the active workspace in the current window. */
-  revealWorkspace(workspaceId: string): void
-}
-
-export type NotificationAction = {
-  id: string
-  label: string
-  isVisible?(context: NotificationActionContext): boolean
-  run(context: NotificationActionContext): void | Promise<void>
-}
-
-export type NotificationActionProvider = {
-  /**
-   * Your module id (`host.moduleId`): your `MainHost.notify` rows are filed
-   * under it, and an installed module may register no other source.
-   */
-  source: string
-  resolveActions(context: NotificationActionContext): NotificationAction[]
 }
 
 // ── Toasts, links and window context (renderer) ──────────────────────────────
@@ -2263,117 +1260,33 @@ export type ModuleOpenExternalResult =
 
 // ── Renderer host registration contract ──────────────────────────────────────
 
+/**
+ * The `studio` object an extension's window code is handed: what its
+ * panels, doors and settings sections may ask of Studio. What it adds to Studio
+ * is declared in extension.json, not registered here.
+ */
 export type RendererHost = {
-  /** The host API this app provides (`HOST_API_VERSION` of the SDK it was built with). */
-  readonly hostApiVersion: number
-  /**
-   * Your module id, as your manifest declares it — the module your `methods`
-   * calls reach and the `source` your bell rows are filed under. Absent on a
-   * host older than `supports('module-id')`.
-   */
+  /** Your install key (`<publisher>.<id>`): the extension your `methods` calls reach and your bell rows are filed under. */
   readonly moduleId: string
   /**
    * Whether the running host provides `capability` now. False for names it
-   * does not know, so a module may probe for capabilities newer than its SDK.
+   * does not know, so an extension may probe for capabilities newer than its SDK.
    */
   supports(capability: HostCapability): boolean
   /**
-   * Stable URL for a file packaged inside this trusted module (e.g. runtime/index.html).
+   * Stable URL for a file packaged inside this trusted extension (e.g. runtime/index.html).
    * Inside packaged HTML, relative resources, WebAssembly, workers and IndexedDB share a stable,
-   * separate module origin. No leading slash, traversal, query or fragment in the path.
-   * Available in Studio builds supporting module assets; trust/enablement is checked
-   * on every request. Assets must be files under the installed module root (128 MiB max).
+   * separate origin. No leading slash, traversal, query or fragment in the path.
+   * Trust and enablement are checked on every request. Assets must be files
+   * under the installed extension's folder (128 MiB max).
    */
   getAssetUrl(relativePath: string): string
-  registerPanel(componentId: string, component: WorkspacePanelComponent): void
-  registerWorkspaceType(definition: WorkspaceTypeDefinition): void
   /**
-   * Create or focus a workspace of a type registered by this module. The type
-   * must be enabled and zero-config (no creationStep/createWorkspace hook).
-   * Creates from createTemplate with no folder and the type's label as name;
-   * reuses an existing workspace of this type. Returns its id after opening.
-   */
-  openWorkspace(typeId: string): Promise<string>
-  registerBacklogItemAction(action: BacklogItemAction): void
-  registerBacklogLinkProvider(provider: BacklogLinkProvider): void
-  /**
-   * Contribute a Files-tree context-menu action. The explorer renders
-   * enabled-module contributions under a heading named for this module, sorted
-   * by `order` then label. Duplicate ids are a registration error. The row is
-   * absent — not disabled — when this module is off.
-   */
-  registerFileAction(action: FileAction): void
-  /**
-   * Contribute actions for your own bell rows: register with
-   * `source: host.moduleId` and the actions you return appear on every
-   * `MainHost.notify` row your module sent, beside the Open its `target`
-   * gives it. One provider per source; a duplicate, or (for an installed
-   * module) a source other than your own id, is a registration error.
-   */
-  registerNotificationActionProvider(provider: NotificationActionProvider): void
-  registerCommand(definition: ModuleCommandDefinition): void
-  registerSettingsSection(definition: SettingsSectionDefinition): void
-  /**
-   * Draw your own row for one of your doors: the entry whose `id` is one of
-   * your global surfaces' ids replaces that door's generic row in the
-   * Extensions drawer, and is handed `collapsed` and the host's `badge`
-   * (`supports('sidebar-nav-entries')`). Registered once at boot; shown only
-   * while your module is enabled.
-   */
-  registerSidebarNavEntry(definition: SidebarNavEntryDefinition): void
-  /**
-   * Contribute the waiting count your door's drawer row wears: `rowId` is the
-   * id of one of your global surfaces. The shell adds your unread bell rows
-   * filed under the door, and the app rail's Extensions square sums the rows
-   * (`supports('door-badges')`). Gone with the module. Duplicate `rowId` is a
-   * registration error.
-   */
-  registerDoorBadge(contribution: DoorBadgeContribution): void
-  /**
-   * Contribute a control to the app's top bar. Registered once at boot; the
-   * bar filters by your module's enablement and orders by `order`, so
-   * toggling your module shows/hides the control without a reload. An id
-   * already claimed by another module is a registration error, reported as a
-   * module load error that gates off your module's other contributions.
-   */
-  registerTopBarItem(definition: TopBarItemDefinition): void
-  /**
-   * Contribute a door: the full-page surface behind an Extensions drawer row
-   * (from its `label` and `Icon`, or your own nav entry with the same id).
-   * Registered once at boot; the shell gates the mount on
-   * your module's enablement, so the toggle swaps the page for the explicit
-   * "not installed" door (and back) without a reload. An id already claimed
-   * by another module is a registration error, reported as a module load
-   * error that gates off your module's other contributions.
-   */
-  registerGlobalSurface(definition: GlobalSurfaceDefinition): void
-  /**
-   * Contribute a modal surface: a body the shell mounts in its modal shell,
-   * floated over whatever the window is showing. Registered once at boot; the
-   * mount gates on your module's enablement, so the toggle closes an open
-   * modal and restores it on re-enable without a reload. An id already
-   * claimed by another module is a registration error, reported as a module
-   * load error that gates off your module's other contributions.
-   *
-   * Declare `launcher` to put your surface's row in the workspace pane's kind
-   * list; a malformed one (empty label, a `letter` that is not exactly one
-   * character, a missing Glyph) is a registration error too.
-   */
-  registerModalSurface(definition: ModalSurfaceDefinition): void
-  /**
-   * Open one of THIS module's global surfaces — the page a
-   * `registerGlobalSurface` with the same id contributed — as if its door had
-   * been picked. A module may only open surfaces it registered: false for an
-   * id that is not yours, not registered, or while your module is disabled.
+   * Open one of your doors (`contributes.doors`) as if it had been picked in
+   * the Extensions drawer. False for an id that is not one of yours, or while
+   * your extension is off.
    */
   openGlobalSurface(id: string): boolean
-  /**
-   * Open one of THIS module's modal surfaces over whatever the window is
-   * showing — the trigger you draw yourself from a panel, a row action or a
-   * command. A module may only open surfaces it registered: false for an id
-   * that is not yours, not registered, or while your module is disabled.
-   */
-  openModalSurface(id: string): boolean
   /**
    * The workspace's Backlog items as read-only views. Declare the
    * `backlog.read` permission; the host checks it. Change items with the
@@ -2601,14 +1514,6 @@ export type RendererHost = {
    */
   watchActiveWorkspace(cb: (workspaceId: string | null) => void): () => void
   /**
-   * Say which of your surface's `views` it is showing, so exactly that drawer
-   * row reads selected — including after the person moved with your own rail.
-   * Pass `null` as the surface unmounts. False for a surface that is not
-   * yours, a view id it does not declare, or while your module is disabled
-   * (`supports('surface-view')`).
-   */
-  setSurfaceView(surfaceId: string, viewId: string | null): boolean
-  /**
    * Open an http(s) URL in the system browser through the app's own link
    * path — never in the app's window. Anything but an absolute http(s) URL
    * (no credentials) is refused as `invalid_url` before it leaves your code.
@@ -2616,18 +1521,85 @@ export type RendererHost = {
    */
   openExternal(url: string): Promise<ModuleOpenExternalResult>
   /**
-   * Call the methods your own `entry.main` declared with
+   * Call the methods your worker (`main`) declared with
    * `MainHost.registerMethods`, typed by your contract:
    * `host.methods<Board>().read('cards.list', { column: 'todo' })`. `read`
    * offers the methods declared `read`, `operate` the ones declared
    * `operate`; a call never names another module. Calls travel over the
    * window's Studio connection to the server your module runs on, and never
    * throw: your handler's refusals and the host's (`extension_unavailable`,
-   * `extension_method_unknown`, `invalid_params`, …) are answers. Replaces host
-   * API 1's `invoke`.
+   * `extension_method_unknown`, `invalid_params`, …) are answers.
    */
   methods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(): ModuleMethodsClient<Cs>
 }
+
+// ── Entry contract ───────────────────────────────────────────────────────────
+// What an extension's code exports. A ui contribution's `entry` exports
+// `mount`; the worker's `main` exports `activate`. Studio calls them; an
+// extension never registers its panels, doors, commands or menus itself, it
+// declares them in extension.json.
+
+/** Which contribution a `mount` draws, and where. */
+export type ExtensionSurface = {
+  point: 'panels' | 'doors' | 'settingsSections'
+  /** The contribution's id in extension.json. */
+  id: string
+  /** The workspace a panel was opened in; absent for doors and settings sections. */
+  workspaceId?: string
+}
+
+/** The `studio` a `mount` is handed: the window's API, and this one surface. */
+export type ExtensionMountStudio = RendererHost & {
+  readonly surface: ExtensionSurface
+  /**
+   * Say the surface has drawn its content. Studio measures how long a surface
+   * takes from being opened to this call; call it once, after the first
+   * meaningful paint of your content.
+   */
+  ready(): void
+}
+
+/** What `mount` may hand back: a function Studio calls when the surface closes. */
+export type ExtensionMountCleanup = () => void
+
+/**
+ * A ui `entry`'s export: draw into `root`, which Studio owns, and return a
+ * cleanup function if anything outlives the DOM you drew.
+ */
+export type ExtensionMount = (
+  root: HTMLElement,
+  studio: ExtensionMountStudio,
+) => void | ExtensionMountCleanup | Promise<void | ExtensionMountCleanup>
+
+/**
+ * The worker's export (`main`), as its default export or a named `activate`:
+ * register the methods and MCP tools the extension serves.
+ */
+export type ExtensionActivate = (studio: MainHost) => void | Promise<void>
+
+/**
+ * What a command without an `action` is called with: it runs the worker
+ * method named by the command's id (`registerMethods`, access `operate`),
+ * with this as its params. `where` says how it was run; the menu it was
+ * picked from adds what it was picked on.
+ */
+export type ExtensionCommandContext = {
+  where: 'palette' | 'topBar' | 'backlog.item' | 'file' | 'notification'
+  /** The workspace the window was showing, or the one the item or file belongs to. */
+  workspaceId: string | null
+  /** `backlog.item`: the items the menu was opened on, the anchor row first. */
+  backlogItemIds?: string[]
+  /** `file`: the files and folders the menu was opened on, relative to the workspace's folder. */
+  filePaths?: string[]
+  /** `notification`: the bell row the menu was opened on. */
+  notification?: { title: string; body?: string; emittedAt: number }
+}
+
+/** A ui `entry` module's shape. */
+export type ExtensionUiEntry = { mount: ExtensionMount }
+
+/** The worker module's shape. */
+export type ExtensionWorkerEntry = { activate: ExtensionActivate } | { default: ExtensionActivate }
 
 // ── File-drop drag-and-drop contract ─────────────────────────────────────────
 // The payload the Backlog panel and Files tree put on a drag (and the terminal
@@ -2785,22 +1757,9 @@ export const THEME_TOKENS = [
 
 export type ThemeToken = (typeof THEME_TOKENS)[number]
 
-/**
- * The export contract of `entry.renderer`: `export function registerRenderer(host) { … }`.
- * It may be async: the host waits for the returned promise (bounded) before it
- * counts the module as loaded, and a rejection fails the module alone.
- */
-export type RegisterRenderer = (host: RendererHost) => void | Promise<void>
+// ── Host capabilities, conversations, brokered credentials ───────────────────
 
-// ── Host API version, conversations, brokered credentials ────────────────────
-
-export {
-  HOST_API_MIN_SUPPORTED,
-  HOST_API_VERSION,
-  checkHostApiCompatibility,
-  type HostApiCompatibility,
-  type HostCapability,
-} from './host-api.js'
+export { type HostCapability } from './host-api.js'
 
 export {
   getConversationService,
@@ -2891,20 +1850,63 @@ export {
   type ModuleSecretsService,
 } from './brokers.js'
 
-// ── Manifest validation + canonical signing payload ──────────────────────────
-// Pure (no Node APIs) and safe in any runtime. The ed25519 sign/verify
-// functions, and the walk that digests a module folder, need node:crypto and
-// node:fs and live behind the `./signing` subpath export.
+// ── extension.json ───────────────────────────────────────────────────────────
+// Pure (no Node APIs) and safe in any runtime. The ed25519 sign/verify of
+// extension.sig, and the walk that digests an extension's folder, need
+// node:crypto and node:fs and live behind the `./signing` subpath export.
 
+export {
+  EXTENSION_COMMAND_ACTIONS,
+  EXTENSION_ICONS,
+  EXTENSION_MANIFEST_FIELDS,
+  EXTENSION_MANIFEST_FILENAME,
+  EXTENSION_MANIFEST_SINCE,
+  EXTENSION_MENU_PLACES,
+  EXTENSION_RESERVED_POINTS,
+  EXTENSION_SIGNATURE_FILENAME,
+  EXTENSION_SURFACE_POINTS,
+  EXTENSION_TIERS,
+  LOCAL_EXTENSION_PUBLISHER,
+  STUDIO_EXTENSION_VERSION,
+  compareStudioVersions,
+  extensionInstallKey,
+  extensionManifestJsonSchema,
+  extensionManifestReference,
+  isExtensionInstallKey,
+  isReservedExtensionId,
+  isReservedExtensionPublisher,
+  isSafeExtensionPath,
+  parseExtensionInstallKey,
+  parseExtensionManifest,
+  requiredExtensionTier,
+  studioReadsManifest,
+  validateExtensionManifest,
+  type ExtensionCommandAction,
+  type ExtensionCommandContribution,
+  type ExtensionContributions,
+  type ExtensionIcon,
+  type ExtensionManifest,
+  type ExtensionManifestResult,
+  type ExtensionManifestValidationOptions,
+  type ExtensionMcpToolContribution,
+  type ExtensionMenuContribution,
+  type ExtensionMenuPlace,
+  type ExtensionSurfaceContribution,
+  type ExtensionSurfacePoint,
+  type ExtensionTier,
+  type ExtensionTopBarItemContribution,
+  type ManifestIssue,
+} from './extension-manifest.js'
+
+// The base of a plugin bundle's plugin.json, and the path rules every package
+// format shares.
 export {
   canonicalManifestPayload,
   compareModuleFileDigests,
   isPackExcludedPath,
-  parseThirdPartyModuleManifest,
+  parseBundleBaseManifest,
+  validateBundleBaseManifest,
   validateCapabilityPermissions,
-  validateModuleFileDigests,
-  validateThirdPartyModuleManifest,
-  type ModuleFileDigestsValidation,
   type PermissionValidationIssue,
   type PermissionValidationResult,
   type ThirdPartyManifestIssue,
@@ -2913,8 +1915,8 @@ export {
 
 // ── Marketplace plugin bundle authoring ─────────────────────────────────────
 // A marketplace plugin is a signed bundle manifest (`plugin.json`) that points
-// at existing primitives: MCP configs, skill directories, capability modules,
-// and BYO-CLI plugin folders. The app re-exports these helpers from its shared
+// at existing primitives: MCP configs and skill directories. An extension
+// ships as an extension.json of its own, never inside a bundle. The app re-exports these helpers from its shared
 // marketplace module, so SDK authors and the studio verify the same shape.
 
 export {

@@ -1,67 +1,27 @@
+// The walk that digests an extension's folder: what `sign` records in
+// extension.sig, and what Studio checks again before it loads the code. Every
+// file counts, extension.json included; only extension.sig is left out.
+
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, test } from 'vitest'
+import { test } from 'vitest'
 
-import {
-  compareModuleFileDigests,
-  validateModuleFileDigests,
-  validateThirdPartyModuleManifest,
-} from '../src/manifest-validate.js'
+import { compareModuleFileDigests, isPackExcludedPath } from '../src/manifest-validate.js'
 import { computeModuleFileDigestsSync, moduleFileDigestIssuesSync } from '../src/signing.js'
 
 const DIGEST = 'a'.repeat(64)
-const temps: string[] = []
 
-afterEach(() => {
-  for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true })
-})
-
-function tempModule(files: Record<string, string>): string {
+function tempExtension(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), 'sdk-module-files-'))
-  temps.push(root)
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(join(root, path, '..'), { recursive: true })
     writeFileSync(join(root, path), content)
   }
   return root
 }
-
-test('a files map of safe paths and sha256 digests validates, sorted', () => {
-  const result = validateModuleFileDigests({ 'dist/main.cjs': DIGEST, 'README.md': DIGEST })
-  assert.deepEqual(result, { ok: true, files: { 'README.md': DIGEST, 'dist/main.cjs': DIGEST } })
-})
-
-test('a files map naming a path a module cannot ship is refused', () => {
-  for (const path of ['../escape.cjs', '/etc/passwd', 'dist/./main.cjs', 'dist\\main.cjs', 'manifest.json']) {
-    const result = validateModuleFileDigests({ [path]: DIGEST })
-    assert.equal(result.ok, false, path)
-  }
-  for (const path of ['node_modules/x/index.js', '.git/HEAD', 'signing.key', 'certs/tls.pem']) {
-    const result = validateModuleFileDigests({ [path]: DIGEST })
-    assert.equal(result.ok, false, path)
-  }
-})
-
-test('a files map with a digest that is not lowercase sha256 hex is refused', () => {
-  for (const digest of ['A'.repeat(64), 'a'.repeat(63), 42, null]) {
-    assert.equal(validateModuleFileDigests({ 'main.cjs': digest }).ok, false, String(digest))
-  }
-  assert.equal(validateModuleFileDigests(['main.cjs']).ok, false)
-})
-
-test('the manifest validator keeps files only when the manifest has them', () => {
-  const base = { id: 'demo', displayName: 'Demo', version: 1 }
-  const without = validateThirdPartyModuleManifest(base)
-  assert.ok(without.ok)
-  if (without.ok) assert.equal('files' in without.manifest, false)
-  const withFiles = validateThirdPartyModuleManifest({ ...base, files: { 'main.cjs': DIGEST } })
-  assert.ok(withFiles.ok)
-  if (withFiles.ok) assert.deepEqual(withFiles.manifest.files, { 'main.cjs': DIGEST })
-  assert.equal(validateThirdPartyModuleManifest({ ...base, files: { '../x': DIGEST } }).ok, false)
-})
 
 test('comparison is an exact set: missing, changed and unlisted files all count', () => {
   const issues = compareModuleFileDigests(
@@ -75,16 +35,34 @@ test('comparison is an exact set: missing, changed and unlisted files all count'
   ])
 })
 
-test('the walk digests every file but the root manifest', () => {
-  const root = tempModule({ 'manifest.json': '{}', 'dist/main.cjs': 'x', 'dist/manifest.json': '{}' })
+test('the walk digests every file but extension.sig, extension.json included', () => {
+  const root = tempExtension({
+    'extension.json': '{}',
+    'extension.sig': '{}',
+    'dist/main.cjs': 'x',
+    'dist/extension.sig': 'a nested one is just a file',
+  })
   const result = computeModuleFileDigestsSync(root)
-  assert.ok(result.ok)
-  assert.deepEqual(Object.keys(result.files), ['dist/main.cjs', 'dist/manifest.json'])
+  assert.ok(result.ok, result.ok ? '' : JSON.stringify(result.issues))
+  assert.deepEqual(Object.keys(result.files), ['dist/extension.sig', 'dist/main.cjs', 'extension.json'])
+  assert.match(result.files['extension.json']!, /^[a-f0-9]{64}$/)
   assert.deepEqual(moduleFileDigestIssuesSync(root, result.files), [])
 })
 
+test('a changed or added file is a mismatch against the digests it is held to', () => {
+  const root = tempExtension({ 'extension.json': '{}', 'dist/main.cjs': 'x' })
+  const before = computeModuleFileDigestsSync(root)
+  assert.ok(before.ok)
+  writeFileSync(join(root, 'extension.json'), '{"id":"changed"}')
+  writeFileSync(join(root, 'dist', 'extra.js'), 'y')
+  assert.deepEqual(
+    moduleFileDigestIssuesSync(root, before.files).map((issue) => issue.path),
+    ['files.extension.json', 'files.dist/extra.js'],
+  )
+})
+
 test('the pack walk leaves out what pack leaves out; the installed walk refuses it', () => {
-  const root = tempModule({ 'main.cjs': 'x', 'node_modules/dep/index.js': 'y', '.git/HEAD': 'z', 'dev.pem': 'k' })
+  const root = tempExtension({ 'main.cjs': 'x', 'node_modules/dep/index.js': 'y', '.git/HEAD': 'z', 'dev.pem': 'k' })
   const packView = computeModuleFileDigestsSync(root, { walk: 'pack' })
   assert.ok(packView.ok)
   assert.deepEqual(Object.keys(packView.files), ['main.cjs'])
@@ -96,9 +74,25 @@ test('the pack walk leaves out what pack leaves out; the installed walk refuses 
       ['files..git', 'files.dev.pem', 'files.node_modules'],
     )
   }
+  for (const path of ['node_modules/x/index.js', '.git/HEAD', 'signing.key', 'certs/tls.pem']) {
+    assert.equal(isPackExcludedPath(path), true, path)
+  }
+  assert.equal(isPackExcludedPath('dist/keys.js'), false)
 })
 
-test('a missing module folder is an issue, not an empty module', () => {
+test('a symbolic link is refused, never followed', () => {
+  const root = tempExtension({ 'extension.json': '{}' })
+  const outside = tempExtension({ 'secret.js': 'x' })
+  symlinkSync(join(outside, 'secret.js'), join(root, 'linked.js'))
+  const result = computeModuleFileDigestsSync(root, { walk: 'pack' })
+  assert.equal(result.ok, false)
+  if (!result.ok)
+    assert.deepEqual(result.issues, [
+      { path: 'files.linked.js', message: 'is a symbolic link; an extension ships regular files only.' },
+    ])
+})
+
+test('a missing extension folder is an issue, not an empty extension', () => {
   const result = computeModuleFileDigestsSync(join(tmpdir(), 'sdk-module-files-does-not-exist'))
   assert.equal(result.ok, false)
 })

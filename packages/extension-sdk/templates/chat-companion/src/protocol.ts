@@ -4,10 +4,10 @@ import type {
   ModuleMethodParsed,
 } from '@sprintengine/extension-sdk'
 
-// The contract between this module's two halves. entry.main declares the
-// methods (`host.registerMethods<CompanionMethods>`), the renderer calls them
-// (`host.methods<CompanionMethods>()`), and entry.main pushes `CHANGED_TOPIC`
-// (`host.emit`) when the renderer should read again. A `read` method changes
+// The contract between the worker and the panel. The worker declares the
+// methods (`studio.registerMethods<CompanionMethods>`), the panel calls them
+// (`studio.methods<CompanionMethods>()`), and the worker pushes `CHANGED_TOPIC`
+// (`studio.emit`) when the panel should read again. A `read` method changes
 // nothing; an `operate` one does, and is carried out once per command id.
 
 export const CHANGED_TOPIC = 'conversations-changed'

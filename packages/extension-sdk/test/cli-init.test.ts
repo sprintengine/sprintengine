@@ -59,9 +59,10 @@ describe('sprintengine-extension init', () => {
     assert.equal(run.status, 0, run.stderr)
     assert.match(run.stdout, /Created focus-notes from the panel template/)
 
-    const manifest = readJson(join(dir, 'module', 'manifest.json'))
+    const manifest = readJson(join(dir, 'extension', 'extension.json'))
     assert.equal(manifest.id, 'focus-notes')
-    assert.equal(manifest.displayName, 'Focus Notes')
+    assert.equal(manifest.name, 'Focus Notes')
+    assert.equal(existsSync(join(dir, 'plugin.json')), false)
     const pkg = readJson(join(dir, 'package.json')) as { devDependencies: Record<string, string> }
     assert.equal(pkg.devDependencies['@sprintengine/extension-sdk'], `^${SDK_VERSION}`)
     assert.equal(existsSync(join(dir, '.gitignore')), true)
@@ -84,9 +85,9 @@ describe('sprintengine-extension init', () => {
       tarball,
     ])
     assert.equal(run.status, 0, run.stderr)
-    const manifest = readJson(join(dir, 'module', 'manifest.json'))
+    const manifest = readJson(join(dir, 'extension', 'extension.json'))
     assert.equal(manifest.id, 'pomodoro')
-    assert.equal(manifest.displayName, 'Pomodoro timer')
+    assert.equal(manifest.name, 'Pomodoro timer')
     const pkg = readJson(join(dir, 'package.json')) as { devDependencies: Record<string, string> }
     assert.equal(pkg.devDependencies['@sprintengine/extension-sdk'], 'file:vendor/sprintengine-extension-sdk-9.9.9.tgz')
     assert.equal(existsSync(join(dir, 'vendor', 'sprintengine-extension-sdk-9.9.9.tgz')), true)
@@ -101,11 +102,11 @@ describe('sprintengine-extension init', () => {
     const unknown = runCli(['init', join(workDir, 'unknown'), '--template', 'spreadsheet'])
     assert.equal(unknown.status, 1)
     assert.match(unknown.stderr, /no "spreadsheet" template/)
-    assert.match(unknown.stderr, /global-surface {2,}/)
+    assert.match(unknown.stderr, /door {2,}/)
     assert.equal(existsSync(join(workDir, 'unknown')), false)
   })
 
-  test('refuses a folder with files in it unless --force, and a reserved id', () => {
+  test('refuses a folder with files in it unless --force, and an id Studio keeps for itself', () => {
     const dir = join(workDir, 'occupied')
     mkdirSync(dir)
     writeFileSync(join(dir, 'notes.txt'), 'mine')
@@ -117,9 +118,9 @@ describe('sprintengine-extension init', () => {
     assert.equal(forced.status, 0, forced.stderr)
     assert.equal(readFileSync(join(dir, 'notes.txt'), 'utf8'), 'mine')
 
-    const reserved = runCli(['init', join(workDir, 'reserved'), '--template', 'blank', '--id', 'backlog'])
+    const reserved = runCli(['init', join(workDir, 'reserved'), '--template', 'blank', '--id', 'studio-notes'])
     assert.equal(reserved.status, 1)
-    assert.match(reserved.stderr, /reserved/)
+    assert.match(reserved.stderr, /kept for Studio’s own extensions/)
   })
 
   test('carries no skill: its agent instructions send the agent to the extension guide', () => {
@@ -134,27 +135,33 @@ describe('sprintengine-extension init', () => {
 
   test('--with adds parts on top of the template', () => {
     const dir = join(workDir, 'composed')
-    const run = runCli(['init', dir, '--template', 'global-surface', '--with', 'main,mcp', '--with', 'settings'])
+    const run = runCli(['init', dir, '--template', 'door', '--with', 'main,mcp', '--with', 'settings'])
     assert.equal(run.status, 0, run.stderr)
-    assert.match(run.stdout, /from the global-surface template with main, mcp, settings/)
-    const manifest = readJson(join(dir, 'module', 'manifest.json')) as {
-      entry: Record<string, string>
+    assert.match(run.stdout, /from the door template with main, mcp, settings/)
+    const manifest = readJson(join(dir, 'extension', 'extension.json')) as {
+      tier: string
+      main: string
       permissions: string[]
-      dependsOn: string[]
+      contributes: Record<string, Array<{ id?: string; name?: string }>>
     }
-    assert.deepEqual(manifest.entry, { renderer: 'dist/renderer.mjs', main: 'dist/main.cjs' })
+    assert.equal(manifest.tier, 'worker')
+    assert.equal(manifest.main, 'dist/main.cjs')
     assert.deepEqual(manifest.permissions, ['ipc:workspace-read', 'module:bridge', 'mcp:tools', 'storage'])
-    assert.deepEqual(manifest.dependsOn, ['agent-runtime'])
-    const plugin = readJson(join(dir, 'plugin.json')) as { permissions: string[] }
-    assert.deepEqual(plugin.permissions, manifest.permissions, 'the bundle discloses the same')
+    assert.deepEqual(
+      manifest.contributes.settingsSections?.map((section) => section.id),
+      ['settings'],
+    )
+    assert.deepEqual(
+      manifest.contributes.mcpTools?.map((tool) => tool.name),
+      ['composed_about'],
+    )
     const pkg = readJson(join(dir, 'package.json')) as { scripts: Record<string, string> }
     assert.match(pkg.scripts['build:main'] ?? '', /esbuild src\/main\.ts/)
     const main = readFileSync(join(dir, 'src', 'main.ts'), 'utf8')
     assert.match(main, /import \{ registerTools \} from '\.\/mcp-tools'/)
-    assert.match(main, /=> \{\n {2}registerTools\(host\)\n/)
-    assert.match(readFileSync(join(dir, 'src', 'renderer.tsx'), 'utf8'), /registerSettings\(host\)/)
-    for (const test of ['test/main.test.ts', 'test/mcp-tools.test.ts', 'test/settings.test.ts']) {
-      assert.equal(existsSync(join(dir, test)), true, `${test} comes with its part`)
+    assert.match(main, /export function activate\(studio: MainHost\): void \{\n {2}registerTools\(studio\)\n/)
+    for (const file of ['src/settings.tsx', 'test/main.test.ts', 'test/mcp-tools.test.ts', 'test/settings.test.ts']) {
+      assert.equal(existsSync(join(dir, file)), true, `${file} comes with its part`)
     }
   })
 
@@ -163,23 +170,31 @@ describe('sprintengine-extension init', () => {
     assert.equal(runCli(['init', dir, '--template', 'mcp-tools']).status, 0)
     const added = runCli(['add', 'door', '--project', dir])
     assert.equal(added.status, 0, added.stderr)
-    assert.match(added.stdout, /Added renderer, door/)
-    const manifest = readJson(join(dir, 'module', 'manifest.json')) as {
-      entry: Record<string, string>
+    assert.match(added.stdout, /Added door/)
+    const manifest = readJson(join(dir, 'extension', 'extension.json')) as {
+      tier: string
       permissions: string[]
+      contributes: Record<string, Array<{ id?: string }>>
     }
-    assert.deepEqual(manifest.entry, { main: 'dist/main.cjs', renderer: 'dist/renderer.mjs' })
-    assert.deepEqual(manifest.permissions, ['mcp:tools', 'ipc:workspace-read'], 'no bridge: main registers no channels')
-    assert.match(readFileSync(join(dir, 'src', 'renderer.tsx'), 'utf8'), /registerDoor\(host\)/)
-    const pkg = readJson(join(dir, 'package.json')) as { devDependencies: Record<string, string> }
-    assert.ok(pkg.devDependencies.react && pkg.devDependencies['react-dom'], 'a renderer brings React')
+    assert.equal(manifest.tier, 'worker', 'a door does not lower the tier')
+    assert.deepEqual(manifest.permissions, ['mcp:tools', 'ipc:workspace-read'])
+    assert.deepEqual(
+      manifest.contributes.doors?.map((door) => door.id),
+      ['door'],
+    )
+    const pkg = readJson(join(dir, 'package.json')) as {
+      scripts: Record<string, string>
+      devDependencies: Record<string, string>
+    }
+    assert.ok(pkg.devDependencies.react && pkg.devDependencies['react-dom'], 'a surface brings React')
+    assert.equal(pkg.scripts['build:ui'], 'node scripts/build-ui.mjs')
 
     const again = runCli(['add', 'main', '--project', dir])
     assert.equal(again.status, 1)
-    assert.match(again.stderr, /already has entry\.main/)
+    assert.match(again.stderr, /already has a worker/)
     const clash = runCli(['add', 'door', '--project', dir])
     assert.equal(clash.status, 1)
-    assert.match(clash.stderr, /already in the project: src\/door\.tsx/)
+    assert.match(clash.stderr, /already has "door" in contributes\.doors/)
     const unknown = runCli(['add', 'spreadsheet', '--project', dir])
     assert.equal(unknown.status, 1)
     assert.match(unknown.stderr, /no "spreadsheet" part/)
@@ -188,5 +203,21 @@ describe('sprintengine-extension init', () => {
     assert.equal(none.status, 1)
     assert.match(none.stderr, /door {2,}/)
     assert.equal(runCli(['add', 'door', '--project', join(workDir, 'nowhere')]).status, 1)
+  })
+
+  test('add refuses to write over a file the project changed', () => {
+    const dir = join(workDir, 'blank-then-settings')
+    assert.equal(runCli(['init', dir, '--template', 'blank']).status, 0)
+    mkdirSync(join(dir, 'src'), { recursive: true })
+    writeFileSync(join(dir, 'src', 'settings.tsx'), '// mine\n')
+    const clash = runCli(['add', 'settings', '--project', dir])
+    assert.equal(clash.status, 1)
+    assert.match(clash.stderr, /already in the project: src\/settings\.tsx/)
+    assert.equal(readFileSync(join(dir, 'src', 'settings.tsx'), 'utf8'), '// mine\n')
+    assert.equal(
+      (readJson(join(dir, 'extension', 'extension.json')).contributes as Record<string, unknown>).settingsSections,
+      undefined,
+      'a refused part leaves extension.json as it was',
+    )
   })
 })

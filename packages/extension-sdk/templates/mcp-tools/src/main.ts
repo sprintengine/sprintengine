@@ -1,22 +1,22 @@
-import { WorkspaceContextToken, type McpToolResult, type RegisterMain } from '@sprintengine/extension-sdk'
+import { WorkspaceContextToken, type MainHost, type McpToolResult } from '@sprintengine/extension-sdk'
 
 const text = (value: string): McpToolResult => ({ content: [{ type: 'text', text: value }] })
 const failure = (value: string): McpToolResult => ({ content: [{ type: 'text', text: value }], isError: true })
 
-// The main entry runs in Studio's main process (Node, no window). Tools
-// registered here join the Studio MCP gateway that every agent in every
-// workspace is connected to, so an agent can call them by name.
+// The worker: Studio loads extension/dist/main.cjs with require and calls
+// `activate` with a `studio` for this extension. Tools it serves join Studio's
+// MCP server, which every agent in every workspace is connected to, so an
+// agent can call them by name. Needs the "mcp:tools" permission.
 //
-// Tool names are a public contract: prefix them with the module id and keep
-// them stable. A tool from an installed module counts as changing state
-// unless it says `mutates: false` — say so on every read-only tool, so a
-// paired device on the read scope can call it.
-export const registerMain: RegisterMain = (host) => {
-  const prefix = host.moduleId.replace(/-/g, '_')
-
-  host.registerMcpTools([
+// Each tool is declared in extension.json (`contributes.mcpTools`): its name,
+// what agents are told it does, and its access (`read` changes nothing). A
+// tool served here that extension.json does not declare is refused, and the
+// manifest's description and access are what agents see. Tool names are a
+// public contract: they start with the extension id, and stay stable.
+export function activate(studio: MainHost): void {
+  studio.registerMcpTools([
     {
-      name: `${prefix}_word_count`,
+      name: '{{toolPrefix}}_word_count',
       description: 'Count the words, lines and characters in a piece of text.',
       inputSchema: {
         type: 'object',
@@ -35,14 +35,13 @@ export const registerMain: RegisterMain = (host) => {
       },
     },
     {
-      name: `${prefix}_open_workspaces`,
+      name: '{{toolPrefix}}_open_workspaces',
       description: 'List the workspaces open in SprintEngine Studio, with the folder each one works in.',
       inputSchema: { type: 'object', properties: {} },
       mutates: false,
       handler: async () => {
-        // Resolved per call, not at registration: the service's provider may
-        // register after this module does.
-        const workspaces = await host.requireService(WorkspaceContextToken).list()
+        // Resolved per call, when the tool runs.
+        const workspaces = await studio.requireService(WorkspaceContextToken).list()
         if (workspaces.length === 0) return text('No workspaces are open.')
         return {
           ...text(workspaces.map((w) => `${w.name} — ${w.folderPath ?? '(no folder)'}`).join('\n')),

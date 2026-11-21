@@ -9,15 +9,13 @@
 //   refusals of a declared method's call. `methods.read` / `methods.operate`
 //   call the module's declared methods the way its renderer would and
 //   `tools.call` calls its MCP tools the way an agent would.
-// - `createFakeRendererHost` is a `RendererHost` that records every
-//   registration, toast and opened link, and renders a registered door, panel,
-//   modal, settings section or top-bar item to HTML; `methods`, `subscribe`, the
-//   module app state, the Backlog and usage reach a fake main host when given
-//   one.
-// - `installTestingKit` routes `@sprintengine/extension-sdk/ui`, `/surface` and
-//   `@monaco-editor/react` to a pass-through kit (`./testing/kit`) whose
-//   components draw their props and children, so a built renderer bundle loads
-//   and renders in Node, and a door that throws on render fails its test.
+// - `createFakeRendererHost` is the window's `studio` (a `RendererHost`) that
+//   records every toast and opened link; `studio(surface)` is what one
+//   `mount` is handed, and `mount` runs a ui entry against a root you give
+//   it. `methods`, `subscribe`, the extension's app state, the Backlog and
+//   usage reach a fake main host when given one.
+// - `renderToHtml` renders a React tree in Node, for an extension whose
+//   surfaces draw with React.
 //
 // A host method or service added to the SDK lands here too: the method on the
 // fake host (its permission in MAIN_METHOD_PERMISSIONS or
@@ -26,28 +24,22 @@
 // until the fake hosts implement every method, and a test fails until every
 // capability is known.
 //
-// Node only (it uses `node:module` hooks); never import it from module code.
+// Node only; never import it from extension code.
 
 import { existsSync, rmSync } from 'node:fs'
-import { registerHooks } from 'node:module'
-import { dirname, isAbsolute, resolve as resolvePath } from 'node:path'
+import { dirname, resolve as resolvePath } from 'node:path'
 
-import { HOST_API_VERSION } from './host-api.js'
 import { jsonValueProblem } from './json-value.js'
 import { isModuleMethodName, MODULE_METHOD_MAX_CHARS } from './methods.js'
 import type { HostCapability } from './host-api.js'
 import type {
-  BacklogItemAction,
   BacklogItemView,
-  BacklogLinkProvider,
-  DoorBadgeContribution,
-  FileAction,
-  GlobalSurfaceDefinition,
+  ExtensionMountStudio,
+  ExtensionSurface,
   MainHost,
   McpConnectionMetadata,
   McpToolRegistration,
   McpToolResult,
-  ModalSurfaceDefinition,
   ModuleCallAnswer,
   ModuleColorScheme,
   ModuleMethodAccess,
@@ -55,29 +47,19 @@ import type {
   ModuleMethodContracts,
   ModuleMethodRegistration,
   ModuleMethodsClient,
-  ModuleCommandContext,
-  ModuleCommandDefinition,
   ModuleFocusTabInput,
   ModuleNotificationTarget,
   ModuleNotifyInput,
   ModuleOpenExternalResult,
-  ModuleSkillRegistration,
   ModuleSkillStatus,
   ModuleSkillStatusResult,
   ModuleToastInput,
   ModuleToastTone,
   ModuleWorkspaceView,
-  NotificationActionProvider,
   RendererHost,
   ServiceToken,
-  SettingsSectionDefinition,
-  SidebarNavEntryBadge,
-  SidebarNavEntryDefinition,
   SidecarSpec,
-  TopBarItemDefinition,
   WorkspaceFileWatchEvent,
-  WorkspacePanelComponent,
-  WorkspaceTypeDefinition,
 } from './index.js'
 import type { ModuleChatRuntimeOption, ModuleOpenChatInput, ModuleOpenChatResult } from './conversation.js'
 import { moduleServiceRequirement } from './services.js'
@@ -92,7 +74,7 @@ import {
   type FakeUsage,
   type FakeWorkspaces,
 } from './testing-services.js'
-import type { ComponentType, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 export type {
   FakeActivity,
@@ -158,23 +140,17 @@ const KNOWN_CAPABILITIES: readonly HostCapability[] = [
   'github',
   'storage',
   'mcp-tools',
-  'skills',
   'module-assets',
   'notifications',
   // Backlog, usage and activity services.
   'backlog-write',
   'usage',
   'activity',
-  // Shell surfaces and the renderer host.
-  'sidebar-nav-entries',
-  'door-badges',
+  // The window's studio.
   'toast',
   'module-id',
-  'command-context',
   'active-workspace',
-  'surface-view',
   'open-external',
-  'ui-kit-extras',
   'chart-tokens',
   'electron-main',
   // Main-host plumbing: settings, workspaces, storage, GitHub, skills, MCP.
@@ -192,16 +168,27 @@ const KNOWN_CAPABILITIES: readonly HostCapability[] = [
   'main-app-state',
 ]
 
-/** What a fake host is told about the module: its id and the permissions its manifest declares. */
+/** The parts of extension.json a fake host reads. */
+export type FakeExtensionManifest = {
+  id: string
+  permissions?: readonly string[]
+  contributes?: {
+    doors?: ReadonlyArray<{ id: string }>
+    mcpTools?: ReadonlyArray<{ name: string; description: string; access: 'read' | 'operate' }>
+  }
+}
+
+/** What a fake host is told about the extension: its install key and the permissions its manifest declares. */
 export type FakeModuleIdentity = {
+  /** The install key. Default: `local.<manifest id>`, as a folder install names it. */
   moduleId?: string
   permissions?: readonly string[]
-  /** A module manifest (`module/manifest.json`, parsed) to read the id and permissions from instead. */
-  manifest?: { id: string; permissions?: readonly string[] }
+  /** The extension's manifest (`extension.json`, parsed) to read the id, permissions and contributions from. */
+  manifest?: FakeExtensionManifest
 }
 
 function identityOf(options: FakeModuleIdentity): { moduleId: string; permissions: Set<string> } {
-  const moduleId = options.moduleId ?? options.manifest?.id
+  const moduleId = options.moduleId ?? (options.manifest ? `local.${options.manifest.id}` : undefined)
   if (!moduleId) throw new Error('A fake host needs a moduleId (or a manifest with an id).')
   return { moduleId, permissions: new Set(options.permissions ?? options.manifest?.permissions ?? []) }
 }
@@ -326,7 +313,7 @@ export type FakeMainHostOptions = FakeModuleIdentity & {
    * provides (`requireService` throws, `getService` answers undefined).
    */
   services?: Record<string, object | null>
-  /** Skill ids the app ships, which `ensureSkillInstalled` answers for besides the module's own. */
+  /** Skill ids the app ships, which `ensureSkillInstalled` answers for. */
   builtinSkills?: readonly string[]
   /** The clock every fake stamps with. Default: `Date.now`. */
   now?: () => number
@@ -376,7 +363,6 @@ export type FakeMainHost = {
   /** Every `notify`, validated as the host validates it. */
   notifications: ModuleNotifyInput[]
   skills: {
-    registered: ModuleSkillRegistration[]
     ensured: Array<{ workspaceRoot: string; skillId: string }>
     /**
      * Put a skill in a state in a workspace, for `getSkillStatus` and
@@ -599,7 +585,6 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     emitted: [],
     notifications: [],
     skills: {
-      registered: [],
       ensured: [],
       setStatus(workspaceRoot, skillId, status) {
         skillStatuses.set(skillKey(workspaceRoot, skillId), status)
@@ -642,8 +627,7 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
       fake.undeclared.push({ what: method, needs, checked: CHECKED_MAIN_METHODS.has(method) })
     }
   }
-  const knownSkill = (skillId: string): boolean =>
-    fake.skills.registered.some((skill) => skill.id === skillId) || builtinSkills.has(skillId)
+  const knownSkill = (skillId: string): boolean => builtinSkills.has(skillId)
   // What the installer would find, without writing anything.
   function skillStatus(workspaceRoot: string, skillId: string): ModuleSkillStatusResult {
     if (typeof workspaceRoot !== 'string' || !workspaceRoot.trim()) {
@@ -680,7 +664,6 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
 
   const host: MainHost = {
     moduleId,
-    hostApiVersion: HOST_API_VERSION,
     supports: (capability) => capabilities.has(capability),
     async listChatRuntimes() {
       return structuredClone(chatRuntimes)
@@ -727,22 +710,22 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
           throw new Error(`MCP tool "${tool.name}" is registered twice by module "${moduleId}".`)
         names.add(tool.name)
       }
-      // A third-party tool that does not say `mutates: false` counts as a change.
-      for (const tool of batch) tools.set(tool.name, { ...tool, mutates: tool.mutates !== false })
-    },
-    registerSkills(batch) {
-      const ids = new Set(fake.skills.registered.map((skill) => skill.id))
-      for (const skill of batch) {
-        const parts = typeof skill.sourceDir === 'string' ? skill.sourceDir.split(/[\\/]/) : ['..']
-        if (!skill.sourceDir || isAbsolute(skill.sourceDir) || parts.includes('..')) {
-          throw new Error(`Extension "${moduleId}" skill "${skill.id}" sourceDir must stay inside the module root.`)
+      // The manifest declares every tool, and its words and access are what agents see.
+      const declared = options.manifest?.contributes?.mcpTools
+      for (const tool of batch) {
+        if (declared && !declared.some((entry) => entry.name === tool.name)) {
+          throw new Error(`MCP tool "${tool.name}" is not declared in extension.json (contributes.mcpTools).`)
         }
-        if (ids.has(skill.id) || builtinSkills.has(skill.id)) {
-          throw new Error(`Skill "${skill.id}" is already registered.`)
-        }
-        ids.add(skill.id)
       }
-      fake.skills.registered.push(...batch.map((skill) => ({ ...skill })))
+      for (const tool of batch) {
+        const entry = declared?.find((candidate) => candidate.name === tool.name)
+        tools.set(
+          tool.name,
+          entry
+            ? { ...tool, description: entry.description, mutates: entry.access === 'operate' }
+            : { ...tool, mutates: tool.mutates !== false },
+        )
+      }
     },
     async ensureSkillInstalled(workspaceRoot, skillId) {
       fake.skills.ensured.push({ workspaceRoot, skillId })
@@ -873,34 +856,6 @@ async function runAll(hooks: ReadonlyArray<() => unknown>): Promise<void> {
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
-/** The specifiers the host answers at runtime, which `installTestingKit` routes to the pass-through kit. */
-export const HOST_PROVIDED_SPECIFIERS: readonly string[] = [
-  '@sprintengine/extension-sdk/ui',
-  '@sprintengine/extension-sdk/surface',
-  '@monaco-editor/react',
-]
-
-let kitInstalled = false
-
-/**
- * Route the host-provided specifiers to `@sprintengine/extension-sdk/testing/kit`
- * for every later `import` and `require` in this process, so a built renderer
- * bundle loads in Node and its components render with a kit that draws. Call
- * it before importing the bundle. Idempotent.
- */
-export function installTestingKit(): void {
-  if (kitInstalled) return
-  kitInstalled = true
-  const kit = new URL('./testing-kit.js', import.meta.url).href
-  const routed = new Set(HOST_PROVIDED_SPECIFIERS)
-  registerHooks({
-    resolve(specifier, context, nextResolve) {
-      if (routed.has(specifier)) return { url: kit, format: 'module', shortCircuit: true }
-      return nextResolve(specifier, context)
-    },
-  })
-}
-
 /**
  * Render a React tree to HTML in Node, waiting for `lazy` components and
  * Suspense to settle. Rejects with the error when a component throws, so a
@@ -932,12 +887,6 @@ export async function renderToHtml(node: ReactNode): Promise<string> {
   return chunks.join('').replaceAll('<!-- -->', '')
 }
 
-// A registered component is a plain component or a `lazy` one; both render.
-async function renderComponent(component: unknown, props: object): Promise<string> {
-  const { createElement } = await import('react')
-  return renderToHtml(createElement(component as ComponentType<object>, props))
-}
-
 // ── The renderer host ────────────────────────────────────────────────────────
 
 export type FakeRendererHostOptions = FakeModuleIdentity & {
@@ -966,23 +915,6 @@ export type FakeRendererHostOptions = FakeModuleIdentity & {
   now?: () => number
 }
 
-/** Everything the module registered, by kind. */
-export type FakeRendererRegistrations = {
-  panels: Map<string, WorkspacePanelComponent>
-  workspaceTypes: WorkspaceTypeDefinition[]
-  backlogItemActions: BacklogItemAction[]
-  backlogLinkProviders: BacklogLinkProvider[]
-  fileActions: FileAction[]
-  notificationActionProviders: NotificationActionProvider[]
-  commands: ModuleCommandDefinition[]
-  settingsSections: SettingsSectionDefinition[]
-  sidebarNavEntries: SidebarNavEntryDefinition[]
-  doorBadges: DoorBadgeContribution[]
-  topBarItems: TopBarItemDefinition[]
-  globalSurfaces: GlobalSurfaceDefinition[]
-  modalSurfaces: ModalSurfaceDefinition[]
-}
-
 /** A toast the module showed, as the toast region got it (trimmed and clipped). */
 export type FakeToast = {
   tone: ModuleToastTone
@@ -995,21 +927,21 @@ export type FakeToast = {
 }
 
 export type FakeRendererHost = {
-  /** Hand this to `registerRenderer`. */
+  /** The window's studio, as every surface of the extension shares it. */
   host: RendererHost
   permissions: Set<string>
-  registrations: FakeRendererRegistrations
   /** Every host method called, with its arguments, in order. */
   calls: Array<{ method: string; args: unknown[] }>
   openedChats: ModuleOpenChatInput[]
   focusedTabs: ModuleFocusTabInput[]
-  openedSurfaces: Array<{ kind: 'global' | 'modal' | 'workspace'; id: string }>
+  /** The doors `openGlobalSurface` opened, by id. */
+  openedDoors: string[]
+  /** Every surface that called `ready()`, in order. */
+  readied: ExtensionSurface[]
   /** Every toast shown, in order (none while `supports('toast')` is false). */
   toasts: FakeToast[]
   /** Every URL `openExternal` handed to the system browser, normalised. */
   openedUrls: string[]
-  /** The view each of the module's surfaces last said it shows (`setSurfaceView`), by surface id. */
-  surfaceViews: Record<string, string | null>
   /** Host methods used without a permission that covers them. A clean module leaves this empty. */
   undeclared: FakeUndeclaredUse[]
   /**
@@ -1033,21 +965,17 @@ export type FakeRendererHost = {
   setColorScheme(scheme: ModuleColorScheme): void
   /** Deliver a change to a `watchWorkspaceFile` watch. */
   changeWorkspaceFile(workspaceId: string, relativePath: string, event: WorkspaceFileWatchEvent): void
-  /** Render what the module registered, to HTML. Rejects when a component throws. */
-  render: {
-    surface(id: string): Promise<string>
-    modal(id: string, props?: { workspaceId?: string }): Promise<string>
-    panel(componentId: string, props?: { workspaceId?: string }): Promise<string>
-    settings(id: string): Promise<string>
-    topBar(id: string): Promise<string>
-    navEntry(id: string, props?: { collapsed?: boolean; badge?: SidebarNavEntryBadge | null }): Promise<string>
-  }
+  /** The studio one surface's `mount` is handed: the window's, with that surface and its `ready()`. */
+  studio(surface: ExtensionSurface): ExtensionMountStudio
   /**
-   * Run a registered command as the palette would: refused when its
-   * `availability` says no, and handed the `ModuleCommandContext` (this
-   * window's active workspace and its mode, overridable with `context`).
+   * Run a ui entry's `mount` into `root` (from your DOM of choice) as Studio
+   * does when the surface opens. Resolves to what closing it runs.
    */
-  runCommand(id: string, context?: Partial<ModuleCommandContext>): Promise<void>
+  mount(
+    entry: { mount: (root: HTMLElement, studio: ExtensionMountStudio) => unknown },
+    surface: ExtensionSurface,
+    root: HTMLElement,
+  ): Promise<() => void>
 }
 
 // Permissions for renderer host methods: disclosure for most, and checked by
@@ -1186,33 +1114,16 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
   const fileWatchers = new Set<{ key: string; cb: (event: WorkspaceFileWatchEvent) => void }>()
   let nextChat = 1
 
-  const registrations: FakeRendererRegistrations = {
-    panels: new Map(),
-    workspaceTypes: [],
-    backlogItemActions: [],
-    backlogLinkProviders: [],
-    fileActions: [],
-    notificationActionProviders: [],
-    commands: [],
-    settingsSections: [],
-    sidebarNavEntries: [],
-    doorBadges: [],
-    topBarItems: [],
-    globalSurfaces: [],
-    modalSurfaces: [],
-  }
-
   const fake: FakeRendererHost = {
     host: undefined as unknown as RendererHost,
     permissions,
-    registrations,
     calls: [],
     openedChats: [],
     focusedTabs: [],
-    openedSurfaces: [],
+    openedDoors: [],
+    readied: [],
     toasts: [],
     openedUrls: [],
-    surfaceViews: {},
     undeclared: [],
     services: { workspaces: world.workspaces, backlog: world.backlog.handle, usage: world.usage.handle },
     appState: () => world.appState.all(),
@@ -1247,57 +1158,25 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
         if (watcher.key === `${workspaceId}\u0000${relativePath}`) watcher.cb(event)
       }
     },
-    render: {
-      surface: (id) => renderComponent(find(registrations.globalSurfaces, id, 'global surface').Component, {}),
-      modal: (id, props = {}) =>
-        renderComponent(find(registrations.modalSurfaces, id, 'modal surface').Component, props),
-      panel(componentId, props = {}) {
-        const component = registrations.panels.get(componentId)
-        if (!component) throw new Error(`No panel "${componentId}" is registered.`)
-        return renderComponent(component, { workspaceId: props.workspaceId ?? workspaces[0]?.id ?? 'ws-app' })
-      },
-      settings: (id) =>
-        renderComponent(find(registrations.settingsSections, id, 'settings section').Component, {
-          values: world.appState.all(),
-          setValue(key: string, value: unknown) {
-            world.appState.set(key, value)
-          },
-        }),
-      topBar: (id) => renderComponent(find(registrations.topBarItems, id, 'top-bar item').Component, {}),
-      navEntry: (id, props = {}) =>
-        renderComponent(find(registrations.sidebarNavEntries, id, 'sidebar nav entry').Component, {
-          collapsed: props.collapsed ?? false,
-          badge: props.badge ?? null,
-        }),
-    },
-    async runCommand(id, overrides) {
-      const command = find(registrations.commands, id, 'command')
-      const context: ModuleCommandContext = {
-        activeWorkspaceId,
-        activeWorkspaceMode: workspaces.find((workspace) => workspace.id === activeWorkspaceId)?.mode ?? null,
-        ...overrides,
+    studio(surface) {
+      let readied = false
+      return {
+        ...fake.host,
+        surface: { ...surface },
+        ready() {
+          if (readied) return
+          readied = true
+          fake.readied.push({ ...surface })
+        },
       }
-      const { availability } = command
-      const available =
-        typeof availability === 'function'
-          ? availability(context)
-          : !availability?.includes('activeWorkspace') || context.activeWorkspaceId !== null
-      if (!available) throw new Error(`Command "${id}" is not available here, so the palette would not offer it.`)
-      // An older host calls the handler with nothing.
-      if (capabilities.has('command-context')) await command.run(context)
-      else await (command.run as () => void | Promise<void>)()
+    },
+    async mount(entry, surface, root) {
+      if (typeof entry?.mount !== 'function') throw new Error('A ui entry must export mount(root, studio).')
+      const cleanup = await entry.mount(root, fake.studio(surface))
+      return typeof cleanup === 'function' ? (cleanup as () => void) : () => {}
     },
   }
 
-  function find<T extends { id: string }>(list: readonly T[], id: string, kind: string): T {
-    const found = list.find((entry) => entry.id === id)
-    if (!found) {
-      throw new Error(
-        `No ${kind} "${id}" is registered; the module registered ${list.map((entry) => entry.id).join(', ') || 'none'}.`,
-      )
-    }
-    return found
-  }
   function record(method: string, args: unknown[], needsOverride?: readonly string[]): void {
     fake.calls.push({ method, args })
     const needs = needsOverride ?? RENDERER_METHOD_PERMISSIONS[method]
@@ -1306,11 +1185,6 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
         fake.undeclared.push({ what: method, needs, checked: CHECKED_RENDERER_METHODS.has(method) })
       }
     }
-  }
-  function registerUnique<T extends { id: string }>(list: T[], definition: T, kind: string): void {
-    if (list.some((entry) => entry.id === definition.id))
-      throw new Error(`${kind} "${definition.id}" is already registered.`)
-    list.push(definition)
   }
   const resolveWorkspace = (id: string): ModuleWorkspaceView | null => {
     const found = workspaces.find((workspace) => workspace.id === id)
@@ -1327,100 +1201,17 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
     (world.backlog.registry[method] as (moduleId: string, ...rest: unknown[]) => Promise<T>)(moduleId, ...args)
 
   const host: RendererHost = {
-    hostApiVersion: HOST_API_VERSION,
     moduleId,
     supports: (capability) => capabilities.has(capability),
     getAssetUrl(relativePath) {
       record('getAssetUrl', [relativePath])
       return `module-asset://${moduleId}/${validateAssetPath(relativePath, moduleId).map(encodeURIComponent).join('/')}`
     },
-    registerPanel(componentId, component) {
-      record('registerPanel', [componentId, component])
-      if (registrations.panels.has(componentId)) throw new Error(`Panel "${componentId}" is already registered.`)
-      registrations.panels.set(componentId, component)
-    },
-    registerWorkspaceType(definition) {
-      record('registerWorkspaceType', [definition])
-      registerUnique(registrations.workspaceTypes, definition, 'Workspace type')
-    },
-    async openWorkspace(typeId) {
-      record('openWorkspace', [typeId])
-      if (!registrations.workspaceTypes.some((type) => type.id === typeId)) {
-        throw new Error(`Workspace type "${typeId}" is not registered by module "${moduleId}".`)
-      }
-      fake.openedSurfaces.push({ kind: 'workspace', id: typeId })
-      return `ws-${typeId}`
-    },
-    registerBacklogItemAction(action) {
-      record('registerBacklogItemAction', [action])
-      registerUnique(registrations.backlogItemActions, action, 'Backlog action')
-    },
-    registerBacklogLinkProvider(provider) {
-      record('registerBacklogLinkProvider', [provider])
-      registrations.backlogLinkProviders.push(provider)
-    },
-    registerFileAction(action) {
-      record('registerFileAction', [action])
-      registerUnique(registrations.fileActions, action, 'File action')
-    },
-    registerNotificationActionProvider(provider) {
-      record('registerNotificationActionProvider', [provider])
-      // An installed module's bell rows are filed under its own id, the only source it may claim.
-      if (provider.source !== moduleId) {
-        throw new Error(
-          `Extension "${moduleId}" may only register a notification action provider for its own rows (source "${moduleId}"); got "${provider.source}".`,
-        )
-      }
-      if (registrations.notificationActionProviders.some((existing) => existing.source === provider.source)) {
-        throw new Error(
-          `Notification action provider for source "${provider.source}" is already registered by module "${moduleId}".`,
-        )
-      }
-      registrations.notificationActionProviders.push(provider)
-    },
-    registerCommand(definition) {
-      record('registerCommand', [definition])
-      registerUnique(registrations.commands, definition, 'Command')
-    },
-    registerSettingsSection(definition) {
-      record('registerSettingsSection', [definition])
-      registerUnique(registrations.settingsSections, definition, 'Settings section')
-    },
-    registerSidebarNavEntry(definition) {
-      record('registerSidebarNavEntry', [definition])
-      registerUnique(registrations.sidebarNavEntries, definition, 'Sidebar nav entry')
-    },
-    registerDoorBadge(contribution) {
-      record('registerDoorBadge', [contribution])
-      const rowId = typeof contribution.rowId === 'string' ? contribution.rowId.trim() : ''
-      if (!rowId) throw new Error('Door badge row id must be a non-empty string.')
-      if (registrations.doorBadges.some((existing) => existing.rowId === rowId)) {
-        throw new Error(`Door badge for row "${rowId}" is already registered by module "${moduleId}".`)
-      }
-      registrations.doorBadges.push({ ...contribution, rowId })
-    },
-    registerTopBarItem(definition) {
-      record('registerTopBarItem', [definition])
-      registerUnique(registrations.topBarItems, definition, 'Top-bar item')
-    },
-    registerGlobalSurface(definition) {
-      record('registerGlobalSurface', [definition])
-      registerUnique(registrations.globalSurfaces, definition, 'Global surface')
-    },
-    registerModalSurface(definition) {
-      record('registerModalSurface', [definition])
-      registerUnique(registrations.modalSurfaces, definition, 'Modal surface')
-    },
     openGlobalSurface(id) {
       record('openGlobalSurface', [id])
-      if (!registrations.globalSurfaces.some((surface) => surface.id === id)) return false
-      fake.openedSurfaces.push({ kind: 'global', id })
-      return true
-    },
-    openModalSurface(id) {
-      record('openModalSurface', [id])
-      if (!registrations.modalSurfaces.some((surface) => surface.id === id)) return false
-      fake.openedSurfaces.push({ kind: 'modal', id })
+      const doors = options.manifest?.contributes?.doors
+      if (doors && !doors.some((door) => door.id === id)) return false
+      fake.openedDoors.push(id)
       return true
     },
     async listBacklogItems(workspaceId) {
@@ -1665,21 +1456,6 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
       return () => {
         activeWorkspaceWatchers.delete(cb)
       }
-    },
-    setSurfaceView(surfaceId, viewId) {
-      record('setSurfaceView', [surfaceId, viewId])
-      const id = typeof surfaceId === 'string' ? surfaceId.trim() : ''
-      const surface = registrations.globalSurfaces.find((entry) => entry.id === id)
-      if (!surface) return false
-      if (viewId === null) {
-        fake.surfaceViews[surface.id] = null
-        return true
-      }
-      const wanted = typeof viewId === 'string' ? viewId.trim() : ''
-      const view = surface.views?.find((candidate) => candidate.id === wanted)
-      if (!view) return false
-      fake.surfaceViews[surface.id] = view.id
-      return true
     },
     async openExternal(url): Promise<ModuleOpenExternalResult> {
       record('openExternal', [url])

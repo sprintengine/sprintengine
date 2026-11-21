@@ -1,122 +1,178 @@
-# Main-process API (`entry.main`)
+# The worker (`main`)
 
-`export const registerMain: RegisterMain = (host) => { … }` runs once, in
-Studio's main process (Node, no window), after the module is trusted and
-enabled. It may be async; Studio waits up to 10 seconds. Only use a main entry
-when the idea needs Node, a service only main has, or work with no window
-open — a renderer-only module is simpler, installs without a restart, and
-asks for less trust.
+The worker is the extension's background code: `main` in extension.json, a
+CommonJS bundle Studio loads with Node's `require`. It exports `activate`, as a
+named export or its default, and Studio calls it with a `studio` object once
+the extension is trusted and on. `background: true` in extension.json keeps it
+running while the extension is on.
 
-Bundle it as one CommonJS entry file with `electron` external and everything
-else bundled: the installed module has no `node_modules`. The entry is one
-file, but it may start worker threads from other files the module ships —
-build each worker as its own CommonJS bundle into `module/dist/` and start it
-with `new Worker(host.getAssetPath('dist/worker.cjs'))`. Every file is in
-`files` and signed with the rest, and `getAssetPath` resolves only a file whose
-bytes still match. A new or rebuilt main entry loads only after a Studio
-restart.
+```ts
+import type { MainHost } from '@sprintengine/extension-sdk'
 
-## The host
+export function activate(studio: MainHost): void {
+  studio.registerMethods({ /* … */ })
+}
+```
+
+`activate` may be async. It registers what the worker serves: its methods
+(the surfaces call them, and so does every command without an `action`) and
+the handlers of the MCP tools extension.json declares. Everything else the
+extension adds is declared in extension.json. Types: `MainHost`,
+`ExtensionActivate`, `ExtensionCommandContext` in
+`@sprintengine/extension-sdk`.
+
+Use a worker only when the idea needs Node, a service only the worker has, a
+command that runs your code, MCP tools, or work with no window open. It takes
+the `worker` tier, the most the person is asked to allow.
+
+Bundle it as one CommonJS file with `electron` external and everything else
+bundled: the installed extension has no `node_modules` (the template's
+`build:main` does this). It may start worker threads from other files it
+ships: build each as its own CommonJS bundle into `extension/dist/` and start
+it with `new Worker(studio.getAssetPath('dist/thread.cjs'))`.
+
+## Commands
+
+A command in extension.json without an `action` runs the worker method of the
+same name. Declare it with `registerMethods`, access `operate`. Its params are
+an `ExtensionCommandContext`: `where` it ran from (`palette`, `topBar`,
+`backlog.item`, `file`, `notification`), the `workspaceId`, and what the menu
+was opened on (`backlogItemIds`, `filePaths`, `notification`).
+
+```ts
+import type { ExtensionCommandContext, MainHost, ModuleMethodParsed } from '@sprintengine/extension-sdk'
+
+const readContext = (value: unknown): ModuleMethodParsed<ExtensionCommandContext> =>
+  typeof value === 'object' && value !== null && 'where' in value
+    ? { ok: true, params: value as ExtensionCommandContext }
+    : { ok: false, message: 'Run it from a menu.' }
+
+export function activate(studio: MainHost): void {
+  studio.registerMethods({
+    'add-to-backlog': {
+      access: 'operate',
+      params: readContext,
+      handler: async ({ workspaceId, filePaths = [] }) => {
+        // …
+        return { ok: true, result: null }
+      },
+    },
+  })
+}
+```
+
+The smoke test fails when a command without an `action` has no `operate`
+method of its name.
+
+## `studio`
 
 | Member | Notes |
 | --- | --- |
-| `moduleId`, `hostApiVersion`, `supports(capability)` | Identity; ask `supports` before using a newer capability. |
-| `listChatRuntimes()` | `Promise<[{ id, label, available, models, lastSelected }]>`: the agent runtimes a chat can run on, as the renderer lists them, with missing ones `available: false`. `id` is the runtime id every `cli` takes. May probe (cached a minute). `supports('chat-runtimes')`. |
-| `registerMethods<Contract>(methods)` | Methods the renderer calls with `host.methods<Contract>()`: each `{ access: 'read' \| 'operate', params, handler }`. `params` validates what was sent (`{ ok: true, params }` or `{ ok: false, message }`, answered `invalid_params`); the handler gets `(params, { clientId, commandId? })` and answers `{ ok: true, result }` (JSON) or `{ ok: false, code, message }`. Names: a lower-case letter, then letters, digits, dots, dashes. Needs `module:bridge`. Host API 1's `registerIpc` is gone. |
-| `emit(topic, payload?)` | Push a signal to your renderer's `host.subscribe(topic, cb)` in every window. No replay. |
-| `registerMcpTools(tools)` | Tools on the Studio MCP gateway every agent is connected to. Needs `mcp:tools`. |
-| `registerSkills(skills)` / `ensureSkillInstalled(root, id)` / `getSkillStatus(root, id)` | Ship skills (folders with SKILL.md) inside the module, put them in a workspace, or check without writing (below). |
-| `getModuleAppState(key)` / `watchModuleAppState(cb)` | Your Settings section's values (your module app state), read-only, with no window open. `storage`. |
+| `moduleId`, `supports(capability)` | Your install key (`local.<id>` for a folder install); ask `supports` before using a capability. |
+| `listChatRuntimes()` | `Promise<[{ id, label, available, models, lastSelected }]>`: the agent runtimes a chat can run on, with missing ones `available: false`. `id` is the runtime id every `cli` takes. May probe (cached a minute). `supports('chat-runtimes')`. |
+| `registerMethods<Contract>(methods)` | Methods the surfaces call with `studio.methods<Contract>()`, and the methods your commands run: each `{ access: 'read' \| 'operate', params, handler }`. `params` validates what was sent (`{ ok: true, params }` or `{ ok: false, message }`, answered `invalid_params`); the handler gets `(params, { clientId, commandId? })` and answers `{ ok: true, result }` (JSON) or `{ ok: false, code, message }`. Names: a lower-case letter, then letters, digits, dots, dashes. Needs `module:bridge`. |
+| `emit(topic, payload?)` | Push a signal to `studio.subscribe(topic, cb)` in every surface. No replay. |
+| `registerMcpTools(tools)` | Serve the MCP tools extension.json declares (`contributes.mcpTools`). A tool not declared there is refused; the declaration's `description` and `access` are what agents see. Needs `mcp:tools`. |
+| `ensureSkillInstalled(root, id)` / `getSkillStatus(root, id)` | Put one of Studio's own skills in a workspace, or check without writing (below). |
+| `getModuleAppState(key)` / `watchModuleAppState(cb)` | Your extension's app state (what its surfaces and its settings section write), read-only, with no window open. `storage`. |
 | `getWorkspaceGitInfo(workspaceId)` | `{ ok, branch, remotes: [{ name, url, github? }] }`, read by git from the workspace's folder. Checked: `ipc:workspace-read`. |
 | `getModuleDataDir()` | A private directory under user data for data past the 1 MB value limit; removed at uninstall. `storage`. |
-| `getAssetPath(relative)` | Absolute path of a file your module ships (a worker, WASM, a data table); verified files only. |
-| `notify({ severity, title, body?, target? })` | A row in the bell of every open window, under the module's display name. The bell is for what went wrong: only `warning` and `error` reach it, and an `info` notify files nothing (say routine news with `toast` from the renderer). `target: { surfaceId, viewId? }` (one of your own doors) gives the row an Open that lands there and counts it on that door's drawer row. Dropped: an identical repeat within 10 s, or more than 20 rows in 10 s — fold a burst into one row. Rows sent before a window opens are kept (last 50). Add actions from the renderer with `registerNotificationActionProvider({ source: host.moduleId })`. `supports('notifications')` is false where no window can show it. |
+| `getAssetPath(relative)` | Absolute path of a file your extension ships (a worker thread, WASM, a data table); verified files only. |
+| `notify({ severity, title, body?, target? })` | A row in the bell of every open window, under the extension's name. The bell is for what went wrong: only `warning` and `error` reach it, and an `info` notify files nothing (say routine news with `toast` from a surface). `target: { surfaceId }` (one of your own doors) gives the row an Open that lands there. Dropped: an identical repeat within 10 s, or more than 20 rows in 10 s — fold a burst into one row. Rows sent before a window opens are kept (last 50). A `notification` menu item in extension.json adds a command to your rows. `supports('notifications')` is false where no window can show it. |
 | `onStartup(hook)` / `onShutdownBegin(hook)` / `onShutdown(hook)` | Start watchers on startup; stop loops at shutdown begin; release everything at shutdown. |
 | `requireService(token)` / `getService(token)` | Host services by token (below). `requireService` throws when absent. |
-| `provideService(token, factory)` | Offer a service to modules that depend on yours. |
-| `registerSidecar(spec)` | A declaration only; the host does not spawn third-party sidecars. |
+| `provideService(token, factory)` | Offer a service under a token of your own. |
+| `registerSidecar(spec)` | A declaration only; the host does not spawn an extension's sidecars. |
 
 ## Services
 
-Each helper closes over `host.moduleId`, so a module only ever reaches its own
-data. Call a helper at the top of `registerMain` only when the manifest's
-`dependsOn` guarantees the provider loaded first; otherwise call it inside the
-handler that needs it.
+Each helper closes over `studio.moduleId`, so an extension only ever reaches
+its own data.
 
-| Helper / token | Permission | `dependsOn` | What |
-| --- | --- | --- | --- |
-| `getConversationService(host)` | `conversation:read` / `conversation:operate` | `agent-runtime` | The module's own chats — the `conversations` topic |
-| `getModuleStorage(host)` | `storage` | `agent-runtime` | JSON key-value store, per workspace (`workspaceRoot`) or global; 1 MB per value; atomic writes |
-| `getSecretsService(host)` | `secrets` | — | API keys the host holds and sends only to named origins — the `brokers` topic |
-| `getGitHubService(host)` | `github` | — | GitHub API calls with the user's sign-in — the `brokers` topic |
-| `getScheduledAgentsService(host)` | `scheduled-agents.manage` | `scheduled-agents` | Create/list/update/remove/run the module's own scheduled agents, and hear when they change (`onChanged`) and when one starts a chat (`onRun`) |
-| `getCompanionAgentsService(host)` | `agents:companion` | `agent-runtime` | A workspace-bound background agent with a structured `runStructured` task API |
-| `getTextGenerationService(host)` | `agents:generate` | — (resolve in handlers) | One prompt answered by the person's own Claude Code or Codex with no chat or workspace — the `conversations` topic |
-| `host.requireService(WorkspaceContextToken)` | `ipc:workspace-read` | — (resolve in handlers) | `get(id)`, and `list()` of open workspaces `{ id, name, folderPath, mode, open }`; `list({ includeClosed: true })` adds the ones closed on this machine (`open: false`, `closedAt`) |
-| `host.requireService(WorkspaceServiceToken)` | `ipc:workspace-write` | — (resolve in handlers) | `create({ name, folderPath })` a workspace |
-| `getBacklogService(host)` | `backlog.read` / `backlog.write` | `agent-runtime` | List, locate, create and change Backlog items through the app — below |
-| `getUsageService(host)` | `usage:read` | `agent-runtime` | Token usage of every agent session on the machine — below |
-| `getActivityService(host)` | `conversation:read-all` | `agent-runtime` | The person's Studio chats and prompts, read-only — below |
+| Helper / token | Permission | What |
+| --- | --- | --- |
+| `getConversationService(studio)` | `conversation:read` / `conversation:operate` | The extension's own chats — the `conversations` topic |
+| `getModuleStorage(studio)` | `storage` | JSON key-value store, per workspace (`workspaceRoot`) or global; 1 MB per value; atomic writes |
+| `getSecretsService(studio)` | `secrets` | API keys the host holds and sends only to named origins — the `brokers` topic |
+| `getGitHubService(studio)` | `github` | GitHub API calls with the person's sign-in — the `brokers` topic |
+| `getScheduledAgentsService(studio)` | `scheduled-agents.manage` | Create/list/update/remove/run the extension's own scheduled agents, and hear when they change (`onChanged`) and when one starts a chat (`onRun`) |
+| `getCompanionAgentsService(studio)` | `agents:companion` | A workspace-bound background agent with a structured `runStructured` task API |
+| `getTextGenerationService(studio)` | `agents:generate` | One prompt answered by the person's own Claude Code or Codex with no chat or workspace — the `conversations` topic |
+| `studio.requireService(WorkspaceContextToken)` | `ipc:workspace-read` | `get(id)`, and `list()` of open workspaces `{ id, name, folderPath, mode, open }`; `list({ includeClosed: true })` adds the ones closed on this machine (`open: false`, `closedAt`) |
+| `studio.requireService(WorkspaceServiceToken)` | `ipc:workspace-write` | `create({ name, folderPath })` a workspace |
+| `getBacklogService(studio)` | `backlog.read` / `backlog.write` | List, locate, create and change Backlog items through the app — below |
+| `getUsageService(studio)` | `usage:read` | Token usage of every agent session on the machine — below |
+| `getActivityService(studio)` | `conversation:read-all` | The person's Studio chats and prompts, read-only — below |
 
-## Settings in `entry.main`
+## Settings in the worker
 
-What your Settings section writes (`setValue`) and what the renderer writes
-with `setModuleAppState` is one namespace, and `entry.main` reads it with
-`host.getModuleAppState(key)` — the value the person chose, persisted, with no
-window open. `host.watchModuleAppState(cb)` hears it change. Read-only from
+What your settings section and your other surfaces write with
+`setModuleAppState` is one namespace, and the worker reads it with
+`studio.getModuleAppState(key)` — the value the person chose, persisted, with no
+window open. `studio.watchModuleAppState(cb)` hears it change. Read-only from
 main; no second store and no IPC sync step.
 
 ```ts
-const every = host.getModuleAppState<number>('pollMinutes') ?? 15
-const stop = host.watchModuleAppState((values) => reschedule(Number(values.pollMinutes ?? 15)))
-host.onShutdown(stop)
+const every = studio.getModuleAppState<number>('pollMinutes') ?? 15
+const stop = studio.watchModuleAppState((values) => reschedule(Number(values.pollMinutes ?? 15)))
+studio.onShutdown(stop)
 ```
 
 ## MCP tools
 
+Declare each tool in extension.json, then serve it from `activate`:
+
+```json
+"permissions": ["mcp:tools"],
+"contributes": {
+  "mcpTools": [{ "name": "wordcount_count", "description": "Count the words in a piece of text.", "access": "read" }]
+}
+```
+
 ```ts
-host.registerMcpTools([
+studio.registerMcpTools([
   {
-    name: 'wordcount.count',
+    name: 'wordcount_count',
     description: 'Count the words in a piece of text.',
     inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
-    mutates: false,
     handler: async (args) => ({ content: [{ type: 'text', text: String(String(args.text).split(/\s+/).length) }] }),
   },
 ])
 ```
 
-- Names are a public contract: keep them stable, in a family of your own
-  named for the module (`decisions.record`, `decisions_list`). The gateway
-  serves names verbatim; clients without dots write `a_b` for `a.b`, so names
-  are compared in that form. A name that matches a core tool
-  (`backlog_list` vs `backlog.list`), falls in a shell family (`browser`,
-  `canvas`, `editor`, `tour`, `terminal`) or matches another module's tool is a
-  registration error naming the conflict. Keep out of the core families too
-  (`agent`, `backlog`, `cli`, `conversation`, `extension`, `local_server`,
-  `marketplace`, `module`, `pull_request`, `schedule`, `tailnet`, `workspace`, `worktree`,
-  `studio`, `sprintengine`, `app`): new core tools land there.
+- A tool the worker registers that extension.json does not declare is
+  refused. The declaration's `description` is what agents are told, and its
+  `access` decides whether the tool counts as changing anything (`operate`) or
+  only reading (`read`), whatever the registration says.
+- Tool names are lower-case letters, digits and underscores. They are a public
+  contract: keep them stable, in a family of your own named for the extension
+  (`decisions_record`, `decisions_list`). The gateway serves names verbatim. A
+  name that matches a core tool (`backlog_list`), falls in a shell family
+  (`browser`, `canvas`, `editor`, `tour`, `terminal`) or matches another
+  extension's tool is a registration error naming the conflict. Keep out of
+  the core families too (`agent`, `backlog`, `cli`, `conversation`,
+  `extension`, `local_server`, `marketplace`, `module`, `pull_request`,
+  `schedule`, `tailnet`, `workspace`, `worktree`, `studio`, `sprintengine`,
+  `app`): new core tools land there.
 - `context.metadata` says who is calling. `verified: true` means a launch token
   or the tailnet proved it; a chat Studio launched is always `studio-agent`,
   verified, with `workspaceId` and `agentId`, and `agentName` / `cliId` when
   the launch recorded them. Anything else declared its identity: never label
   that as verified authorship.
-- A third-party tool counts as changing state unless it declares
-  `mutates: false`. Declare it on every read-only tool.
 - `args` comes from an agent: validate every field; return `isError: true`
   with a sentence the agent can act on rather than throwing.
-- While the module is disabled its tools stay listed and answer with an
-  "enable the module" error.
+- While the extension is off its tools stay listed and answer with an
+  "enable the extension" error.
 
 ## Scheduled agents
 
 A scheduled agent is a prompt and a cron schedule: each time the schedule
 comes round, a new chat starts in `folderPath` with the prompt as its first
 message, on the CLI, model, permissions, skills, MCP servers and worktree
-setting recorded. `getScheduledAgentsService(host).create(draft)` validates
+setting recorded. `getScheduledAgentsService(studio).create(draft)` validates
 the draft (a cron that does not parse, or never comes round, is refused with
 the reason) and answers `{ ok: true, agent }` with `agent.nextRunAt`. The
-module sees and changes only the ones it created; the person sees them in the
+extension sees and changes only the ones it created; the person sees them in the
 sidebar with their own, and can close them.
 
 Give each a `name` (its sidebar title; absent, the prompt's first line) and a
@@ -130,7 +186,7 @@ still working is skipped. `supports('scheduled-agent-runs')`.
 
 ## Companion agents and their tools
 
-`getCompanionAgentsService(host).attach(spec)` gives a background agent bound
+`getCompanionAgentsService(studio).attach(spec)` gives a background agent bound
 to a workspace; `runStructured({ prompt, validate, tools? })` runs one task
 and returns validated JSON. The agent asks before every tool it uses, and
 `tools` decides the answer:
@@ -144,35 +200,35 @@ and returns validated JSON. The agent asks before every tool it uses, and
   refused without it).
 
 `engine: { cli, model }` takes a runtime id (`claude-code`) or a provider id
-(`claude-agent`). `supports('companion-tools')`; an older host approves every
+(`claude-agent`). `supports('companion-tools')`; a host without it approves every
 tool call whatever `tools` says, so do not feed it untrusted text there.
 
 ## Backlog, usage and activity
 
-**Backlog.** `getBacklogService(host)`: `list`, `getLocation`, `create`,
+**Backlog.** `getBacklogService(studio)`: `list`, `getLocation`, `create`,
 `updateStatus`, `updateTriage`, `addLink`, `updateModuleMetadata`. `itemId` is
 a `BacklogItemView.id`. Writes go through the app's Backlog service in the
 project's mutation lane; `create` uses the app's create path and answers
 `{ id, relativePath, path, numericId, displayId }`. Never write an item's file
 yourself, and never derive the Backlog root: `getLocation` answers it.
 
-**Usage.** `getUsageService(host).query({ from, to, groupBy })` sums tokens
+**Usage.** `getUsageService(studio).query({ from, to, groupBy })` sums tokens
 (`input`, `output`, `cacheRead`, `cacheWrite`) and requests over Studio chats
 and terminal Claude Code / Codex sessions, each request once. `groupBy`:
 `day`, `model`, `provider`, `workspace`, `session`. Tokens only — price them
 yourself. The first query waits for the first read of the logs; `onChanged`
 says when to query again. Do not read `~/.claude` or `~/.codex` yourself.
 
-**Activity.** `getActivityService(host)`: `listChats({ from?, to?,
+**Activity.** `getActivityService(studio)`: `listChats({ from?, to?,
 workspaceId? })` and `prompts({ from, to, workspaceId?, limit? })` — the
 person's messages with the tail of each reply, never tool output. Open
 workspaces only. `conversation:read-all` is flagged broad in the consent
-prompt; ask for it only when reading the person's chats is the module's point.
+prompt; ask for it only when reading the person's chats is the extension's point.
 
 ## Storage
 
 ```ts
-const storage = getModuleStorage(host)
+const storage = getModuleStorage(studio)
 const saved = await storage.get({ key: 'state', workspaceRoot })   // { ok, value, found } | { ok: false, code, message }
 await storage.set({ key: 'state', value: { count: 1 }, workspaceRoot })
 const { keys } = await storage.list({ workspaceRoot, prefix: 'decision.' })  // one record family
@@ -181,38 +237,25 @@ const stop = storage.watch({ workspaceRoot }, ({ keys }) => refresh(keys))  // o
 ```
 
 Keys match `^[a-z0-9][a-z0-9._-]{0,63}$`. Omit `workspaceRoot` for the
-module's global store. The host decides where files go (`modules/<id>/` in
+extension's global store. The host decides where files go (`modules/<id>/` in
 the project's store in the person's home, or app data); never write your own
-files in the home folder or the workspace for module state. Workspace keys are
+files in the home folder or the workspace for its state. Workspace keys are
 not in the project's folder, so they never show in its `git status` and do not
 travel with a clone.
 
 Past the 1 MB value limit (caches, indexes, blobs), use
-`host.getModuleDataDir()`: a directory of your own under the app's user data,
-created on demand and removed when the module is uninstalled. Lay it out
+`studio.getModuleDataDir()`: a directory of your own under the app's user data,
+created on demand and removed when the extension is uninstalled. Lay it out
 however you like; it is per machine and never synced.
 
 ## Skills
 
-Ship skill folders inside the module — `module/skills/<id>/SKILL.md` (plus any
-`agents/` sidecars) — and register them with `sourceDir: 'skills/<id>'`,
-relative to the module root (the `module/` folder). Editing a skill file is a
-change under `module/` like any other: rebuild, re-sign, re-trust.
-
-A registered skill reaches a chat in two ways, and only these:
-
-- **A launch that names it** — `create({ skills: ['<id>'] })`, a scheduled
-  agent's `skills`, an `openChat` that attaches it: the host installs it into
-  that chat's folder first.
-- **A copy already in the workspace** — `ensureSkillInstalled(root, id)` writes
-  it (`'all-native'`: into `.agents/skills` and every installed CLI's own skill
-  directory; `'agents'`: `.agents/skills` only). Those copies stay, so every new
-  chat in that workspace finds it, including ones the person starts.
-
-Registering alone writes nothing to any workspace: an `all-native` skill does
-not reach new chats on its own until one of the above has run there.
-`getSkillStatus(root, id)` answers the same question as `ensureSkillInstalled`
-without writing, for a door that shows "installed in this project". Both answer
-with `ModuleSkillStatus` (`installed`, `updated`, `missing`, `update-available`,
-`local`, `modified`, `delivered-at-launch`, `missing-source`,
-`missing-workspace`, `unknown-skill`, `install-failed`).
+An extension does not ship skills yet: `contributes.skills` is reserved and
+must be empty (a plugin bundle carries skills for now). The worker can still
+put one of Studio's own skills in a workspace before it starts a chat that
+uses it. `ensureSkillInstalled(root, id)` writes it; `getSkillStatus(root, id)`
+answers the same question without writing, for a door that shows "installed
+in this project". Both never throw and answer a `ModuleSkillStatus`
+(`installed`, `updated`, `missing`, `update-available`, `local`, `modified`,
+`delivered-at-launch`, `missing-source`, `missing-workspace`, `unknown-skill`,
+`install-failed`).

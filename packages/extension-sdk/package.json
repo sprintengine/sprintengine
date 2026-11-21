@@ -1,7 +1,7 @@
 {
   "name": "@sprintengine/extension-sdk",
-  "version": "3.0.0-beta.1",
-  "description": "Contract types, templates and authoring CLI for building SprintEngine Studio extensions: manifest and host API version, MainHost/RendererHost contributions, chat conversations with the app's agents, brokered secrets and GitHub access, Automations providers, notifications, and signing.",
+  "version": "4.0.0-beta.1",
+  "description": "Contract types, templates and authoring CLI for building SprintEngine Studio extensions: the extension.json manifest and its JSON Schema, the mount/activate entry contract, chat conversations with the app's agents, brokered secrets and GitHub access, notifications, and signing.",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -27,14 +27,6 @@
       "types": "./dist/signing.d.ts",
       "default": "./dist/signing.js"
     },
-    "./ui": {
-      "types": "./dist/ui.d.ts",
-      "default": "./dist/ui.js"
-    },
-    "./surface": {
-      "types": "./dist/surface.d.ts",
-      "default": "./dist/surface.js"
-    },
     "./scaffold": {
       "types": "./dist/scaffold.d.ts",
       "default": "./dist/scaffold.js"
@@ -47,14 +39,7 @@
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
     },
-    "./testing/kit": {
-      "types": "./dist/testing-kit.d.ts",
-      "default": "./dist/testing-kit.js"
-    },
-    "./testing/register": {
-      "types": "./dist/testing-register.d.ts",
-      "default": "./dist/testing-register.js"
-    }
+    "./extension.schema.json": "./extension.schema.json"
   },
   "bin": {
     "sprintengine-extension": "./dist/cli.js"
@@ -63,6 +48,7 @@
     "dist",
     "guide",
     "templates",
+    "extension.schema.json",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

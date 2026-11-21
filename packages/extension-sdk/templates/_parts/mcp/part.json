@@ -1,16 +1,26 @@
 {
   "id": "mcp",
   "title": "MCP tools",
-  "summary": "Tools any agent in a workspace can call through the Studio MCP gateway, registered from entry.main.",
-  "requires": ["main"],
-  "permissions": ["mcp:tools"],
-  "dependsOn": [],
-  "entry": {},
+  "summary": "Tools any agent in a workspace can call through Studio's MCP server, declared in extension.json and served by the worker.",
+  "requires": [
+    "main"
+  ],
+  "permissions": [
+    "mcp:tools"
+  ],
+  "contributes": {
+    "mcpTools": [
+      {
+        "name": "{{toolPrefix}}_about",
+        "description": "Say which extension this is.",
+        "access": "read"
+      }
+    ]
+  },
   "scripts": {},
   "devDependencies": {},
   "register": {
-    "in": "main",
     "import": "import { registerTools } from './mcp-tools'",
-    "call": "registerTools(host)"
+    "call": "registerTools(studio)"
   }
 }

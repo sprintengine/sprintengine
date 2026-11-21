@@ -2,24 +2,24 @@
 
 An extension never holds an API key or a token. It hands a secret to the host
 once, and afterwards asks the host to make the request that needs it; for
-GitHub, the host uses the person's own sign-in. Both live in `entry.main`.
-Check `host.supports('secrets')` / `host.supports('github')` first.
+GitHub, the host uses the person's own sign-in. Both live in the worker.
+Check `studio.supports('secrets')` / `studio.supports('github')` first.
 
 ## Secrets (`secrets` permission)
 
 ```ts
-import { getSecretsService, type RegisterMain } from '@sprintengine/extension-sdk'
+import { getSecretsService, type MainHost } from '@sprintengine/extension-sdk'
 
-export const registerMain: RegisterMain = (host) => {
-  const secrets = getSecretsService(host)
+export function activate(studio: MainHost): void {
+  const secrets = getSecretsService(studio)
 
   const text = (name: string) => (value: unknown) =>
     typeof value === 'string' && value.length > 0
       ? { ok: true as const, params: value }
       : { ok: false as const, message: `Give a ${name}.` }
 
-  host.registerMethods({
-    // The renderer collects the key in a password field and sends it once.
+  studio.registerMethods({
+    // A surface collects the key in a password field and sends it once.
     'key.set': {
       access: 'operate',
       params: text('key'),
@@ -55,9 +55,9 @@ export const registerMain: RegisterMain = (host) => {
   `delete(name)` removes it. Show "Key saved" rather than the key.
 - Redirects are refused and responses are size-capped; `body` is text — parse
   it yourself, and treat it as untrusted input.
-- Names are per module; another module cannot read or use yours.
+- Names are per extension; another extension cannot read or use yours.
 
-Never put a key in the manifest, the bundle, module app state, module storage
+Never put a key in extension.json, the bundle, app state, storage
 or a settings value: all of those are readable files.
 
 ## GitHub (`github` permission)
@@ -65,7 +65,7 @@ or a settings value: all of those are readable files.
 ```ts
 import { getGitHubService } from '@sprintengine/extension-sdk'
 
-const github = getGitHubService(host)
+const github = getGitHubService(studio)
 const { signedIn, login } = await github.status()
 if (!signedIn) return { ok: false, message: 'Sign in to GitHub in Studio first.' }
 
@@ -138,6 +138,6 @@ off** — anywhere else is `redirect_not_allowed`. Bodies are capped (16 MiB).
 
 ## When not to use a broker
 
-Plain unauthenticated `fetch` from `entry.main` is ordinary Node code; declare
-`network`. The brokers exist so a credential never sits in module memory,
+Plain unauthenticated `fetch` from the worker is ordinary Node code; declare
+`network`. The brokers exist so a credential never sits in extension memory,
 files or logs.

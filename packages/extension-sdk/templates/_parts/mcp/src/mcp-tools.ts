@@ -1,23 +1,23 @@
 import type { MainHost } from '@sprintengine/extension-sdk'
 
-// Tools on the Studio MCP gateway that every agent in every workspace is
-// connected to, registered from registerMain (src/main.ts). Needs the
-// "mcp:tools" permission.
+// Tools on Studio's MCP server, which every agent in every workspace is
+// connected to, served from the worker's `activate` (src/main.ts). Each one is
+// declared in extension.json (`contributes.mcpTools`) with what agents are
+// told it does and its access; a tool served here that is not declared there
+// is refused. Needs the "mcp:tools" permission.
 //
-// Tool names are a public contract: prefix them with the module id and keep
-// them stable. A tool counts as changing state unless it says
-// `mutates: false` — say so on every read-only tool.
-export function registerTools(host: MainHost): void {
-  const prefix = host.moduleId.replace(/-/g, '_')
-  host.registerMcpTools([
+// Tool names are a public contract: they start with the extension id, and
+// stay stable.
+export function registerTools(studio: MainHost): void {
+  studio.registerMcpTools([
     {
-      name: `${prefix}_about`,
-      description: 'Say which extension this is and which host API it runs on.',
+      name: '{{toolPrefix}}_about',
+      description: 'Say which extension this is.',
       inputSchema: { type: 'object', properties: {} },
       mutates: false,
       handler: async () => ({
-        content: [{ type: 'text', text: `{{displayName}} (${host.moduleId}), host API ${host.hostApiVersion}.` }],
-        structuredContent: { moduleId: host.moduleId, hostApiVersion: host.hostApiVersion },
+        content: [{ type: 'text', text: `{{displayName}} (${studio.moduleId}).` }],
+        structuredContent: { extension: studio.moduleId },
       }),
     },
   ])

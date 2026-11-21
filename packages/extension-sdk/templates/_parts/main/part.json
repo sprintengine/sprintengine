@@ -1,15 +1,15 @@
 {
   "id": "main",
-  "title": "Main entry",
-  "summary": "src/main.ts, built to entry.main: Node in Studio's main process, for services, MCP tools, and the methods the window half (or a client granted them) calls.",
+  "title": "Worker",
+  "summary": "src/main.ts, built to main: Node in Studio's background, for services, MCP tools, the commands extension.json declares without an action, and the methods its surfaces call.",
   "requires": [],
-  "permissions": ["module:bridge"],
-  "dependsOn": ["agent-runtime"],
-  "entry": {
-    "main": "dist/main.cjs"
-  },
+  "permissions": [
+    "module:bridge"
+  ],
+  "main": "dist/main.cjs",
+  "contributes": {},
   "scripts": {
-    "build:main": "esbuild src/main.ts --bundle --format=cjs --platform=node --target=node22 --external:electron --outfile=module/dist/main.cjs"
+    "build:main": "esbuild src/main.ts --bundle --format=cjs --platform=node --target=node22 --external:electron --outfile=extension/dist/main.cjs"
   },
   "devDependencies": {}
 }

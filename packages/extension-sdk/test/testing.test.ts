@@ -1,13 +1,12 @@
-// `@sprintengine/extension-sdk/testing`: the fake hosts hold a module to the
-// host's rules, and the pass-through kit renders a door in Node.
+// `@sprintengine/extension-sdk/testing`: the fake hosts hold an extension to
+// the host's rules, read what its extension.json declares, and run a ui
+// entry's `mount` the way Studio does.
 
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { buildSync } from 'esbuild'
-import { createElement, lazy } from 'react'
+import { createElement } from 'react'
 import { describe, test } from 'vitest'
 
 import { getActivityService, getUsageService } from '../src/activity.js'
@@ -20,12 +19,12 @@ import {
   getScheduledAgentsService,
   WorkspaceContextToken,
   WorkspaceServiceToken,
+  type ExtensionMountStudio,
   type ScheduledAgentDraft,
 } from '../src/index.js'
 import { MODULE_SERVICE_REQUIREMENTS } from '../src/services.js'
 import { createFakeMainHost, createFakeRendererHost, renderToHtml } from '../src/testing.js'
 import { SERVICE_FAKES } from '../src/testing-services.js'
-import * as kit from '../src/testing-kit.js'
 
 const ROOT = '/Users/dev/projects/app'
 
@@ -199,6 +198,45 @@ describe('createFakeMainHost', () => {
       content: [{ type: 'text', text: 'n:ws-app' }],
     })
     await assert.rejects(fake.tools.call('nope'), /No MCP tool "nope"/)
+  })
+
+  test('MCP tools are the ones extension.json declares, described as it describes them', async () => {
+    const handler = async () => ({ content: [{ type: 'text' as const, text: 'ok' }] })
+    const fake = createFakeMainHost({
+      manifest: {
+        id: 'notes',
+        permissions: ['mcp:tools'],
+        contributes: {
+          mcpTools: [
+            { name: 'notes_search', description: 'Search the notes.', access: 'read' },
+            { name: 'notes_clear', description: 'Clear the notes.', access: 'operate' },
+          ],
+        },
+      },
+    })
+    assert.equal(fake.host.moduleId, 'local.notes', 'a folder install names it local.<id>')
+    assert.throws(
+      () =>
+        fake.host.registerMcpTools([
+          { name: 'notes_search', description: 'x', inputSchema: {}, handler },
+          { name: 'notes_secret', description: 'x', inputSchema: {}, handler },
+        ]),
+      /"notes_secret" is not declared in extension\.json/,
+    )
+    assert.deepEqual(fake.tools.list(), [], 'a refused batch registers none of it')
+    fake.host.registerMcpTools([
+      { name: 'notes_search', description: 'Whatever the code says', inputSchema: {}, mutates: true, handler },
+      { name: 'notes_clear', description: 'Whatever the code says', inputSchema: {}, mutates: false, handler },
+    ])
+    assert.deepEqual(
+      fake.tools.list().map((tool) => [tool.name, tool.description, tool.mutates]),
+      [
+        ['notes_search', 'Search the notes.', false],
+        ['notes_clear', 'Clear the notes.', true],
+      ],
+      'the manifest’s description and access win',
+    )
+    assert.deepEqual(await fake.tools.call('notes_search'), { content: [{ type: 'text', text: 'ok' }] })
   })
 
   test('conversations: owned chats, events, presets capped, retries answered once', async () => {
@@ -402,7 +440,53 @@ describe('createFakeMainHost', () => {
 })
 
 describe('createFakeRendererHost', () => {
-  test('records registrations, renders a door with the kit, and calls the main fake’s methods', async () => {
+  test('a mount draws into the root it is given, says ready once, and its cleanup is handed back', async () => {
+    const renderer = createFakeRendererHost({ manifest: { id: 'notes', contributes: { doors: [{ id: 'notes' }] } } })
+    assert.equal(renderer.host.moduleId, 'local.notes', 'a folder install names it local.<id>')
+    const root = { textContent: '' } as unknown as HTMLElement
+    let closed = 0
+    const entry = {
+      mount(target: HTMLElement, studio: ExtensionMountStudio) {
+        target.textContent = `${studio.surface.point}:${studio.surface.id}`
+        studio.ready()
+        studio.ready()
+        return () => void (closed += 1)
+      },
+    }
+    const close = await renderer.mount(entry, { point: 'doors', id: 'notes' }, root)
+    assert.equal(root.textContent, 'doors:notes')
+    assert.deepEqual(renderer.readied, [{ point: 'doors', id: 'notes' }], 'ready counts once per surface')
+    close()
+    assert.equal(closed, 1)
+
+    // A mount that hands back nothing still closes.
+    const quiet = await renderer.mount(
+      { mount: () => undefined },
+      { point: 'panels', id: 'x', workspaceId: 'ws-app' },
+      root,
+    )
+    quiet()
+    await assert.rejects(renderer.mount({} as never, { point: 'panels', id: 'x' }, root), /must export mount/)
+  })
+
+  test('the studio a surface is handed is the window’s, with that surface on it', async () => {
+    const renderer = createFakeRendererHost({ manifest: { id: 'notes', permissions: ['storage'] } })
+    const studio = renderer.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
+    assert.deepEqual(studio.surface, { point: 'panels', id: 'notes', workspaceId: 'ws-app' })
+    assert.equal(studio.moduleId, 'local.notes')
+    assert.equal(studio.setModuleAppState('draft', 'x'), true)
+    assert.equal(renderer.host.getModuleAppState('draft'), 'x')
+    assert.deepEqual(renderer.readied, [], 'nothing is ready until it says so')
+  })
+
+  test('openGlobalSurface opens only a door extension.json contributes', () => {
+    const renderer = createFakeRendererHost({ manifest: { id: 'notes', contributes: { doors: [{ id: 'board' }] } } })
+    assert.equal(renderer.host.openGlobalSurface('board'), true)
+    assert.equal(renderer.host.openGlobalSurface('someone-else'), false)
+    assert.deepEqual(renderer.openedDoors, ['board'])
+  })
+
+  test('calls the main fake’s methods, hears its events, and an openChat chat is the extension’s own', async () => {
     const main = createFakeMainHost({ moduleId: 'notes', permissions: ['module:bridge', 'conversation:operate'] })
     main.host.registerMethods({
       list: {
@@ -412,33 +496,7 @@ describe('createFakeRendererHost', () => {
       },
     })
     const renderer = createFakeRendererHost({ main })
-    const Door = () =>
-      createElement(
-        kit.GlobalSurfaceShell,
-        { ariaLabel: 'Notes', bar: { title: 'Notes' } },
-        createElement(kit.SurfaceCanvasState, { kind: 'empty', glyph: null, title: 'Nothing yet' }),
-      )
-    renderer.host.registerGlobalSurface({
-      id: 'notes',
-      label: 'Notes',
-      Component: lazy(async () => ({ default: Door })),
-    })
-    renderer.host.registerCommand({
-      id: 'notes.open',
-      title: 'Open notes',
-      category: 'Notes',
-      scopes: ['global'],
-      run() {
-        renderer.host.openGlobalSurface('notes')
-      },
-    })
-
-    const html = await renderer.render.surface('notes')
-    assert.match(html, /data-kit="GlobalSurfaceShell"/)
-    assert.match(html, /Nothing yet/)
-    await renderer.runCommand('notes.open')
-    assert.deepEqual(renderer.openedSurfaces, [{ kind: 'global', id: 'notes' }])
-
+    assert.equal(renderer.host.moduleId, 'notes', 'given only the main half, it is the same extension')
     assert.deepEqual(await renderer.host.methods().read('list', {}), { ok: true, result: ['First note'] })
     const heard: unknown[] = []
     renderer.host.subscribe('changed', (payload) => heard.push(payload))
@@ -447,19 +505,20 @@ describe('createFakeRendererHost', () => {
 
     const opened = await renderer.host.openChat({ workspaceId: 'ws-app', prompt: 'Draft', send: false })
     assert.ok(opened.ok)
-    assert.equal(main.services.conversations.all().length, 1, 'an openChat chat is the module’s own')
+    assert.equal(main.services.conversations.all().length, 1, 'an openChat chat is the extension’s own')
+
+    const alone = createFakeRendererHost({ moduleId: 'notes', permissions: ['module:bridge'] })
+    const unavailable = await alone.host.methods().read('list', {})
+    assert.equal(!unavailable.ok && unavailable.code, 'extension_unavailable')
   })
 
-  test('a component that throws fails the render', async () => {
-    const renderer = createFakeRendererHost({ moduleId: 'notes' })
-    renderer.host.registerTopBarItem({
-      id: 'timer',
-      order: 1,
-      Component: () => {
-        throw new Error('timer exploded')
-      },
-    })
-    await assert.rejects(renderer.render.topBar('timer'), /timer exploded/)
+  test('renderToHtml draws a React surface in Node, and a component that throws fails it', async () => {
+    const Notes = ({ count }: { count: number }) => createElement('p', null, 'Notes: ', String(count))
+    assert.equal(await renderToHtml(createElement(Notes, { count: 3 })), '<p>Notes: 3</p>')
+    const Broken = () => {
+      throw new Error('timer exploded')
+    }
+    await assert.rejects(renderToHtml(createElement(Broken)), /timer exploded/)
   })
 
   test('disclosure permissions used without being declared are reported', async () => {
@@ -476,77 +535,6 @@ describe('createFakeRendererHost', () => {
         ['openChat', true],
       ],
     )
-  })
-})
-
-describe('the pass-through kit', () => {
-  test('draws text props, elements, nested rows, and nothing for a closed drawer', async () => {
-    const html = await renderToHtml(
-      createElement(
-        'main',
-        null,
-        createElement(kit.EmptyState, { title: 'No boards', body: createElement('em', null, 'Make one') }),
-        createElement(kit.SurfaceRail, {
-          label: 'Boards',
-          rows: [{ id: 'a', title: 'Alpha', stateLine: 'Open' }],
-          selectedId: null,
-          onSelect() {},
-          newAffordance: { label: 'New board', onActivate() {} },
-        }),
-        createElement(kit.Drawer, { open: false, onClose() {}, title: 'Hidden', ariaLabel: 'Hidden' }, 'secret'),
-      ),
-    )
-    assert.match(html, /No boards/)
-    assert.match(html, /<em>Make one<\/em>/)
-    assert.match(html, /Alpha/)
-    assert.match(html, /New board/)
-    assert.doesNotMatch(html, /secret/)
-  })
-
-  test('installTestingKit routes the host-provided specifiers, so a built bundle renders in Node', () => {
-    // Built the way the package ships (ESM beside each other), into the repo
-    // so `react` resolves from its node_modules, and run in a child process
-    // so the resolve hook does not outlive the test.
-    const out = join(process.cwd(), 'node_modules', '.cache', 'sprintengine', 'testing-kit-check')
-    rmSync(out, { recursive: true, force: true })
-    mkdirSync(out, { recursive: true })
-    const sdk = join(process.cwd(), 'packages', 'extension-sdk', 'src')
-    buildSync({
-      entryPoints: [join(sdk, 'testing.ts'), join(sdk, 'testing-kit.ts')],
-      outdir: out,
-      bundle: true,
-      splitting: true,
-      format: 'esm',
-      platform: 'node',
-      packages: 'external',
-      outExtension: { '.js': '.js' },
-      logLevel: 'silent',
-    })
-    writeFileSync(join(out, 'package.json'), '{"type":"module"}\n')
-    writeFileSync(
-      join(out, 'door.mjs'),
-      [
-        "import { createElement } from 'react'",
-        "import { EmptyState } from '@sprintengine/extension-sdk/ui'",
-        "import { GlobalSurfaceShell } from '@sprintengine/extension-sdk/surface'",
-        'export const Door = () => createElement(GlobalSurfaceShell, { ariaLabel: "Door" }, createElement(EmptyState, { title: "Rendered in Node" }))',
-      ].join('\n'),
-    )
-    writeFileSync(
-      join(out, 'run.mjs'),
-      [
-        "import { createElement } from 'react'",
-        "import { installTestingKit, renderToHtml } from './testing.js'",
-        'installTestingKit()',
-        "const { Door } = await import('./door.mjs')",
-        'console.log(await renderToHtml(createElement(Door)))',
-      ].join('\n'),
-    )
-    const run = spawnSync(process.execPath, [join(out, 'run.mjs')], { encoding: 'utf8' })
-    rmSync(out, { recursive: true, force: true })
-    assert.equal(run.status, 0, run.stderr)
-    assert.match(run.stdout, /data-kit="GlobalSurfaceShell"/)
-    assert.match(run.stdout, /Rendered in Node/)
   })
 })
 
@@ -841,15 +829,15 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
     assert.throws(() => assets.host.getAssetPath('README.md'), /not among module "pulse"'s verified files/)
     assert.throws(() => assets.host.getAssetPath('../package.json'), /module-relative file path/)
 
-    fake.host.registerSkills([{ id: 'pulse-guide', sourceDir: 'skills/pulse-guide', description: 'Guide' }])
-    assert.deepEqual(await fake.host.getSkillStatus(ROOT, 'pulse-guide'), { ok: false, status: 'missing' })
-    assert.deepEqual(await fake.host.ensureSkillInstalled(ROOT, 'pulse-guide'), { ok: true, status: 'installed' })
-    assert.deepEqual(await fake.host.getSkillStatus(ROOT, 'pulse-guide'), { ok: true, status: 'installed' })
-    fake.skills.setStatus(ROOT, 'pulse-guide', 'update-available')
-    assert.deepEqual(await fake.host.ensureSkillInstalled(ROOT, 'pulse-guide'), { ok: true, status: 'updated' })
-    fake.skills.setStatus(ROOT, 'pulse-guide', 'modified')
-    assert.deepEqual(await fake.host.ensureSkillInstalled(ROOT, 'pulse-guide'), { ok: true, status: 'modified' })
-    assert.equal((await fake.host.getSkillStatus(ROOT, 'nobody')).status, 'unknown-skill')
+    const skilled = createFakeMainHost({ moduleId: 'pulse', builtinSkills: ['pulse-guide'] })
+    assert.deepEqual(await skilled.host.getSkillStatus(ROOT, 'pulse-guide'), { ok: false, status: 'missing' })
+    assert.deepEqual(await skilled.host.ensureSkillInstalled(ROOT, 'pulse-guide'), { ok: true, status: 'installed' })
+    assert.deepEqual(await skilled.host.getSkillStatus(ROOT, 'pulse-guide'), { ok: true, status: 'installed' })
+    skilled.skills.setStatus(ROOT, 'pulse-guide', 'update-available')
+    assert.deepEqual(await skilled.host.ensureSkillInstalled(ROOT, 'pulse-guide'), { ok: true, status: 'updated' })
+    skilled.skills.setStatus(ROOT, 'pulse-guide', 'modified')
+    assert.deepEqual(await skilled.host.ensureSkillInstalled(ROOT, 'pulse-guide'), { ok: true, status: 'modified' })
+    assert.equal((await skilled.host.getSkillStatus(ROOT, 'nobody')).status, 'unknown-skill')
   })
 
   test('notify keeps a valid target, refuses a malformed one and clips as the host clips', () => {
@@ -862,10 +850,7 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
 
   test('the fakes support every capability HostCapability names', () => {
     const source = readFileSync(join(process.cwd(), 'packages', 'extension-sdk', 'src', 'host-api.ts'), 'utf8')
-    const union = source.slice(
-      source.indexOf('export type HostCapability'),
-      source.indexOf('export type HostApiCompatibility'),
-    )
+    const union = source.slice(source.indexOf('export type HostCapability'))
     const named = [...union.matchAll(/^\s*\|\s*'([^']+)'/gm)].map((match) => match[1]!)
     assert.ok(named.length > 30, `found only ${named.length} capabilities; is the scan broken?`)
     const main = createFakeMainHost({ moduleId: 'probe' }).host
@@ -879,7 +864,7 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
 })
 
 describe('createFakeRendererHost: toasts, links and the window', () => {
-  test('toasts, links, the active workspace, surface views and the command context', async () => {
+  test('toasts, links and the active workspace', async () => {
     const renderer = createFakeRendererHost({
       moduleId: 'board',
       workspaces: [
@@ -909,72 +894,11 @@ describe('createFakeRendererHost: toasts, links and the window', () => {
     renderer.setActiveWorkspace(null)
     assert.deepEqual(active, ['ws-app', 'ws-board', null])
 
-    renderer.host.registerGlobalSurface({
-      id: 'board',
-      label: 'Board',
-      views: [{ id: 'lanes', label: 'Lanes' }],
-      Component: () => null,
-    })
-    assert.equal(renderer.host.setSurfaceView('board', 'lanes'), true)
-    assert.equal(renderer.host.setSurfaceView('board', 'missing'), false)
-    assert.equal(renderer.host.setSurfaceView('someone-else', null), false)
-    assert.deepEqual(renderer.surfaceViews, { board: 'lanes' })
-
-    const contexts: unknown[] = []
-    renderer.host.registerCommand({
-      id: 'refresh',
-      title: 'Refresh',
-      category: 'Board',
-      scopes: ['global'],
-      availability: (context) => context.activeWorkspaceMode === 'board',
-      run: (context) => void contexts.push(context),
-    })
-    await assert.rejects(renderer.runCommand('refresh'), /not available/)
-    renderer.setActiveWorkspace('ws-board')
-    await renderer.runCommand('refresh')
-    assert.deepEqual(contexts, [{ activeWorkspaceId: 'ws-board', activeWorkspaceMode: 'board' }])
-
     const older = createFakeRendererHost({ moduleId: 'board', capabilities: ['notifications'] })
     older.host.toast({ tone: 'good', message: 'Nobody sees this' })
     assert.deepEqual(older.toasts, [])
     const unavailable = await older.host.openExternal('https://example.com')
     assert.equal(!unavailable.ok && unavailable.code, 'unavailable')
-  })
-
-  test('a notification provider is for the module’s own rows, and a door badge row is claimed once', () => {
-    const renderer = createFakeRendererHost({ moduleId: 'board' })
-    assert.throws(
-      () => renderer.host.registerNotificationActionProvider({ source: 'backlog', resolveActions: () => [] }),
-      /only register a notification action provider for its own rows/,
-    )
-    renderer.host.registerNotificationActionProvider({ source: 'board', resolveActions: () => [] })
-    const badge = { rowId: 'board', getWaitingCount: () => 2, subscribe: () => () => {} }
-    renderer.host.registerDoorBadge(badge)
-    assert.throws(() => renderer.host.registerDoorBadge(badge), /already registered/)
-  })
-})
-
-describe('the pass-through kit: board, menu, input and Markdown components', () => {
-  test('draws the newer components with their text', async () => {
-    const html = await renderToHtml(
-      createElement(
-        kit.BoardLane,
-        { label: 'Ready', count: 1, flipKey: 'a' },
-        createElement(kit.TaskCard, { tone: 'accent', identifier: 'MC-240', title: 'Ship it' }),
-        createElement(kit.SafeMarkdown, { text: '**Before** Friday' }),
-        createElement(kit.ContextMenu, { x: 1, y: 2, ariaLabel: 'Card', onClose() {} }, [
-          createElement(kit.MenuItem, { key: 'a', onClick() {} }, 'Archive'),
-          createElement(kit.MenuDivider, { key: 'b' }),
-        ]),
-        createElement(kit.Toggle, { checked: true, onChange() {}, ariaLabel: 'Auto' }),
-        createElement(kit.Chip, null, 'Pinned'),
-      ),
-    )
-    for (const text of ['data-kit="BoardLane"', 'MC-240', 'Ship it', 'Before', 'Archive', 'data-kit="MenuDivider"']) {
-      assert.match(html, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
-    }
-    assert.match(html, /data-kit="Toggle" data-checked="true"/)
-    assert.match(html, /Pinned/)
   })
 })
 

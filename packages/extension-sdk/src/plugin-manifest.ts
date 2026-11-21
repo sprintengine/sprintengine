@@ -1,27 +1,30 @@
 // Marketplace plugin bundle manifest: validator + authoring helpers.
 //
 // A marketplace plugin is a thin bundle over primitives the studio already
-// owns. It reuses the capability module manifest validator and canonical
-// signing payload so the app and authoring CLI sign/verify the same normalized
+// owns: MCP server entries and skill folders. It reuses the bundle base
+// manifest validator and canonical signing payload so the app and authoring CLI sign/verify the same normalized
 // plugin.json shape, including the bundle `components` declaration and signed
 // component file digests.
 
 import type { CapabilityManifest, CapabilityPermission, ModuleSignature } from './index.js'
 import {
   isSafeManifestRelativePath,
-  validateThirdPartyModuleManifest as validateSdkThirdPartyModuleManifest,
+  validateBundleBaseManifest,
   type ThirdPartyManifestIssue,
 } from './manifest-validate.js'
 
-export type MarketplaceComponentKind = 'mcp' | 'skills' | 'module'
+export type MarketplaceComponentKind = 'mcp' | 'skills'
 
-export const MARKETPLACE_COMPONENT_KINDS: readonly MarketplaceComponentKind[] = ['mcp', 'skills', 'module']
+export const MARKETPLACE_COMPONENT_KINDS: readonly MarketplaceComponentKind[] = ['mcp', 'skills']
 
-// A kind older bundles declared and this Studio no longer installs: automations
-// became scheduled agents, which an extension creates at runtime through the
-// SDK's scheduled-agents service rather than ships as a file. Named here so a
-// bundle carrying one is refused with the reason, not as an unknown kind.
+// Kinds a bundle no longer carries, named so a bundle declaring one is
+// refused with the reason, not as an unknown kind. Automations became
+// scheduled agents, which an extension creates at runtime through the SDK's
+// scheduled-agents service. An extension's code ships as an extension.json of
+// its own, never inside a bundle.
 const RETIRED_COMPONENT_KINDS: Readonly<Record<string, string>> = {
+  module:
+    'A bundle no longer carries an extension. Ship the extension as a folder with an extension.json at its root instead.',
   automation:
     'Automation components are no longer supported — this plugin was built for an older Studio. An extension creates scheduled agents at runtime instead.',
 }
@@ -49,9 +52,8 @@ export type MarketplacePluginComponents = {
   [K in MarketplaceComponentKind]?: MarketplaceComponent
 }
 
-// `files` is a module manifest's own digest map; a bundle's digests live per
-// component, so the top-level field has no meaning on plugin.json.
-export type MarketplacePluginAuthoringManifest = Omit<CapabilityManifest, 'signature' | 'files'> & {
+// A bundle's digests live per component.
+export type MarketplacePluginAuthoringManifest = Omit<CapabilityManifest, 'signature'> & {
   components: MarketplacePluginComponents
   permissions: CapabilityPermission[]
   signature?: ModuleSignature
@@ -218,16 +220,16 @@ function validateMarketplacePluginManifestBase(
     return { ok: false, issues: [{ path: '', message: 'Plugin manifest must be a JSON object.' }] }
   }
 
-  const moduleResult = validateSdkThirdPartyModuleManifest(value)
-  if (!moduleResult.ok) pushSdkIssues(issues, moduleResult.issues)
+  const baseResult = validateBundleBaseManifest(value)
+  if (!baseResult.ok) pushSdkIssues(issues, baseResult.issues)
   if (requireSignature && value.signature === undefined) {
     issues.push({ path: 'signature', message: 'signature is required.' })
   }
 
   const components = validateComponents(value.components, issues, requireSignature)
-  if (issues.length > 0 || !moduleResult.ok || !components) return { ok: false, issues }
+  if (issues.length > 0 || !baseResult.ok || !components) return { ok: false, issues }
 
-  const { files: _files, ...base } = moduleResult.manifest
+  const base = baseResult.manifest
   return {
     ok: true,
     manifest: {

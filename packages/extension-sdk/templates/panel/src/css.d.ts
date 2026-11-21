@@ -1,4 +1,5 @@
-// esbuild's `--loader:.css=text` turns a CSS import into its text.
+// The build (scripts/build-ui.mjs, and `npm run build:test`) loads a CSS
+// import as its text.
 declare module '*.css' {
   const text: string
   export default text

@@ -1,5 +1,94 @@
 # Changelog
 
+## 4.0.0-beta.1
+
+An extension is a declarative `extension.json` now, not a `manifest.json` and
+`register*` calls. There are no users of the old format yet, so it is gone
+with no compatibility path: nothing migrates it, nothing reads it, and an
+extension built against 3.x must be rewritten to this one.
+
+### extension.json
+
+- An extension is a folder with `extension.json` at its root. It says what the
+  extension is (`id`, `version`, `name`, images), the oldest Studio it runs on
+  (`engines.studio`, `>=0.13.0` at least: `EXTENSION_MANIFEST_SINCE`), the
+  most authority it needs (`tier`: `content`, `declarative`, `ui` or
+  `worker`), its `permissions`, its worker (`main`) and what it adds to Studio
+  (`contributes`: `commands`, `menus`, `topBarItems`, `panels`, `doors`,
+  `settingsSections`, `mcpTools`). Other point names are reserved and must be
+  empty.
+- `validateExtensionManifest(raw, { authoring })` and `parseExtensionManifest`
+  are the one validator, used by Studio, the CLI and the templates. Unknown
+  keys are refused at every level. A contribution above the tier, a menu or
+  top bar item naming nothing the extension contributes, an MCP tool without
+  `mcp:tools`, or an unsafe path fails. With `authoring: true`,
+  `engines.studio` must cover the newest field the manifest uses.
+- The package ships the JSON Schema as `extension.schema.json`
+  (`@sprintengine/extension-sdk/extension.schema.json`), and the guide's
+  `manifest` topic carries the field reference, both generated from the
+  validator's field table.
+- Studio installs an extension under its install key, `<publisher>.<id>`;
+  a folder install is `local.<id>`. `extensionInstallKey`,
+  `parseExtensionInstallKey` and `isReservedExtensionId` (`studio-*`,
+  `sprintengine-*`) say how.
+
+### Code
+
+- A panel, door or settings section names an `entry`: a self-contained ESM
+  bundle exporting `mount(root, studio)`, which draws into `root`, calls
+  `studio.ready()` once drawn, and may return a cleanup. Studio imports it as
+  a blob module and shares no React or UI kit with it, so it bundles what it
+  draws with. Style with Studio's `--sem-*` CSS custom properties.
+- The worker is `main`: a CommonJS bundle exporting `activate(studio)`, named
+  or as its default. It registers its methods (`registerMethods`) and serves
+  the MCP tools extension.json declares (`registerMcpTools`; a tool not
+  declared is refused, and the declaration's description and access win). A
+  command without an `action` runs the worker method of its name with an
+  `ExtensionCommandContext`.
+- New types: `ExtensionMount`, `ExtensionMountStudio`, `ExtensionSurface`,
+  `ExtensionActivate`, `ExtensionCommandContext`, `ExtensionUiEntry`,
+  `ExtensionWorkerEntry`, `ExtensionManifest` and its contribution types.
+- Removed: `RegisterMain`, `RegisterRenderer`, every `register*` on
+  `RendererHost` and the contribution types they took, `openWorkspace`,
+  `openModalSurface`, `setSurfaceView`, `MainHost.registerSkills`,
+  `hostApiVersion`, `HOST_API_VERSION`, `HOST_API_MIN_SUPPORTED`,
+  `checkHostApiCompatibility`, `validateThirdPartyModuleManifest` (the bundle
+  base is `validateBundleBaseManifest`), and the `./ui`, `./surface`,
+  `./testing/kit` and `./testing/register` exports. Workspace types are gone.
+- A plugin bundle (`plugin.json`) no longer carries a `module` component; one
+  that names it is refused.
+
+### Signing
+
+- A signature is `extension.sig` beside extension.json: the sha256 of every
+  file in the folder (extension.json included), the signer's public key and
+  an ed25519 signature over the digests (`signExtensionFiles`,
+  `verifyExtensionSignature`, `parseExtensionSignature`,
+  `extensionContentFingerprint`). extension.json carries no `files` or
+  `signature`, and the build never rewrites it.
+- `sprintengine-extension pack`, `sign` and `verify` work on an extension
+  folder.
+
+### Templates and testing
+
+- Templates: `blank`, `panel`, `door` (was `global-surface`),
+  `chat-companion`, `top-bar-item`, `settings-section`, `backlog-action`,
+  `file-action`, `mcp-tools`. `workspace-type` is gone. Parts: `main`, `mcp`,
+  `settings`, `door`; `add` merges a part's contributions and permissions into
+  extension.json and raises `tier` when it must.
+- A project keeps the installable folder in `extension/` (`extension.json`,
+  `extension/dist/`). `build:ui` bundles each ui entry from `src/<name>.tsx`,
+  React included; `build:main` builds the worker. `dev:install` copies
+  `extension/` to `~/.sprintengine/extensions/local.<id>/` and signs the
+  installed copy when a key is at hand.
+- `createFakeMainHost({ manifest })` and `createFakeRendererHost({ manifest,
+  main })` take the parsed extension.json; the install key defaults to
+  `local.<id>`. The renderer fake has `studio(surface)`, `mount(entry,
+  surface, root)`, `readied` and `openedDoors`; `registrations`, `render.*`,
+  `runCommand` and `installTestingKit` are gone. `renderToHtml` stays.
+- The guide's `ui-kit` topic is now `styling`: drawing a surface yourself,
+  with the `--sem-*` properties.
+
 ## 3.0.0-beta.1
 
 Host API 3: the SDK is renamed. Modules are called extensions everywhere

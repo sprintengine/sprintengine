@@ -1,166 +1,128 @@
 #!/usr/bin/env node
-// Side-load the built module into SprintEngine Studio on this machine.
+// Install the built extension into SprintEngine Studio on this machine.
 //
-//   node scripts/dev-install.mjs [--project <dir>] [--key <private-key.pem>] [--no-sign] [--no-install]
+//   node scripts/dev-install.mjs [--project <dir>] [--key <private-key.pem>] [--no-sign]
 //
 // Run it after `npm run build` (`npm run dev:install` does both). It:
 //
-// 1. validates module/manifest.json with the SDK's validator and host API check;
-// 2. writes the manifest's `files` map — the sha256 of every file in module/,
-//    manifest.json aside — when it no longer matches module/. The app holds an
-//    installed module to exactly those bytes and will not load one without
-//    them. A manifest that already describes module/ is left byte for byte as
-//    it is, so rebuilding unchanged code leaves git clean;
-// 3. signs the manifest when a key is at hand (--key, $SPRINTENGINE_SIGNING_KEY,
-//    or ~/.sprintengine/keys/<id>.key) and the signature is missing or no
-//    longer covers it, so what you try is what you would ship. With no key the
-//    module installs unsigned and Studio asks you to trust it;
-// 4. copies module/ into $SPRINTENGINE_USER_EXTENSION_ROOT (default
-//    ~/.sprintengine/extensions)/<id>, swapping the old copy out in one step.
+// 1. validates extension/extension.json with the SDK's validator and checks
+//    every file it names was built;
+// 2. copies extension/ into $SPRINTENGINE_USER_EXTENSION_ROOT (default
+//    ~/.sprintengine/extensions)/local.<id>, the folder a folder install
+//    lives in, replacing the copy that was there. Symbolic links,
+//    node_modules, .git and key files are never copied;
+// 3. signs the installed copy when a key is at hand (--key,
+//    $SPRINTENGINE_SIGNING_KEY, or ~/.sprintengine/keys/<id>.key), writing its
+//    extension.sig. Studio trusts an extension signed by a publisher key the
+//    person trusts. With no key it installs unsigned, and Studio waits for the
+//    person to trust it in Settings → Extensions.
 //
-// `--no-install` stops after step 3. `npm run build` ends with it, so after
-// every build module/manifest.json describes module/ exactly, and the
-// repository can be committed as it stands — a GitHub install reads module/
-// at a commit and refuses one its manifest does not describe. That is why the
-// digests are written by the build and not only by dev:install or sign: a
-// commit made after any build is installable. Because the manifest is written
-// only when the digests changed, it shows as modified in git exactly when
-// module/dist did.
-//
-// Every rebuild changes the digests, and trust is granted to exact contents,
-// so Studio asks again after each install — see the skill's pitfalls.md.
-//
-// Step 2 uses the SDK's own digest walk, the one `sprintengine-extension sign`
-// records, so an unsigned install carries the same map a signed one would.
+// The project's own extension/ is never written: a signature for publishing is
+// `npx sprintengine-extension sign extension --key <file>`.
 
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, renameSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join, relative } from 'node:path'
+import { join, relative } from 'node:path'
 
 import {
-  computeFileDigests,
-  digestDrift,
+  declaredFiles,
+  extensionDirOf,
   fail,
   flagValue,
   loadSdk,
-  moduleDirOf,
   projectDirFrom,
-  readJson,
+  readManifest,
 } from './module-tools.mjs'
 
 const argv = process.argv.slice(2)
 const projectDir = projectDirFrom(argv)
-const moduleDir = moduleDirOf(projectDir)
-const manifestPath = join(moduleDir, 'manifest.json')
+const extensionDir = extensionDirOf(projectDir)
 const { sdk, signing, cliPath } = await loadSdk(projectDir)
-
-if (!existsSync(manifestPath)) fail(`No module manifest at ${relative(projectDir, manifestPath)}.`)
 
 // ── 1. Validate ──────────────────────────────────────────────────────────────
 
-let raw = readJson(manifestPath)
-const validated = sdk.validateThirdPartyModuleManifest(raw)
-if (!validated.ok) fail(`${relative(projectDir, manifestPath)} is not a valid module manifest:`, validated.issues)
-const { id } = validated.manifest
-const hostApi = sdk.checkHostApiCompatibility({ ...raw, source: 'third-party' })
-if (!hostApi.ok) fail(hostApi.message)
-for (const [key, path] of Object.entries(validated.manifest.entry ?? {})) {
-  if (!existsSync(join(moduleDir, path))) fail(`entry.${key} (${path}) does not exist. Run \`npm run build\` first.`)
+const manifest = readManifest(sdk, projectDir)
+if (sdk.isReservedExtensionId(manifest.id)) {
+  fail(`id "${manifest.id}" is kept for Studio’s own extensions (studio-…, sprintengine-…); choose another.`)
+}
+for (const { path, file } of declaredFiles(sdk, manifest)) {
+  if (!existsSync(join(extensionDir, file)))
+    fail(`${path}: extension/${file} does not exist. Run \`npm run build\` first.`)
 }
 
-// ── 2. Record the file digests ───────────────────────────────────────────────
+// ── 2. Copy ──────────────────────────────────────────────────────────────────
 
-const files = computeFileDigests(moduleDir, signing)
-const digestsChanged = raw.files === undefined || digestDrift(raw.files, files).length > 0
+const root = process.env.SPRINTENGINE_USER_EXTENSION_ROOT || join(homedir(), '.sprintengine', 'extensions')
+const installKey = sdk.extensionInstallKey(sdk.LOCAL_EXTENSION_PUBLISHER, manifest.id)
+const dest = join(root, installKey)
+const staging = join(root, `.${installKey}.installing-${process.pid}`)
+mkdirSync(root, { recursive: true })
+rmSync(staging, { recursive: true, force: true })
 
-// ── 3. Sign, when there is a key ─────────────────────────────────────────────
+const skipped = []
+cpSync(extensionDir, staging, {
+  recursive: true,
+  filter: (source) => {
+    const path = relative(extensionDir, source).split('\\').join('/')
+    if (path === '') return true
+    if (lstatSync(source).isSymbolicLink()) {
+      skipped.push(`${path} (a symbolic link)`)
+      return false
+    }
+    if (sdk.isPackExcludedPath(path)) {
+      skipped.push(path)
+      return false
+    }
+    return true
+  },
+})
+for (const path of skipped) console.warn(`Skipped ${path}: never installed.`)
 
-const defaultKey = join(homedir(), '.sprintengine', 'keys', `${id}.key`)
+const discard = (message, issues) => {
+  rmSync(staging, { recursive: true, force: true })
+  fail(message, issues)
+}
+const walk = signing.computeModuleFileDigestsSync(staging, { walk: 'installed' })
+if (!walk.ok) discard('The copy holds files an install cannot carry:', walk.issues)
+
+// ── 3. Sign ──────────────────────────────────────────────────────────────────
+
+const defaultKey = join(homedir(), '.sprintengine', 'keys', `${manifest.id}.key`)
 const keyPath = argv.includes('--no-sign')
   ? undefined
   : (flagValue(argv, '--key') ??
-    process.env.SPRINTENGINE_SIGNING_KEY ??
+    (process.env.SPRINTENGINE_SIGNING_KEY || undefined) ??
     (existsSync(defaultKey) ? defaultKey : undefined))
 
-const writeManifest = (value) => writeFileSync(manifestPath, `${JSON.stringify(value, null, 2)}\n`)
-
-if (keyPath === undefined && raw.signature && digestsChanged) {
-  // A signature over the old files would read as tampered, which the app
-  // refuses outright; an unsigned module can at least be trusted by hand.
+const signaturePath = join(staging, 'extension.sig')
+const run = (args) => spawnSync(process.execPath, [cliPath, ...args], { encoding: 'utf8' })
+if (keyPath !== undefined) {
+  if (!existsSync(keyPath)) discard(`Signing key not found: ${keyPath}`)
+  rmSync(signaturePath, { force: true })
+  const signed = run(['sign', staging, '--key', keyPath])
+  if (signed.status !== 0) discard(`Signing failed:\n${signed.stderr}`)
+} else if (existsSync(signaturePath) && run(['verify', staging]).status !== 0) {
+  // A signature over other files reads as tampered, which Studio refuses
+  // outright; unsigned, the person can at least trust it by hand.
   console.warn(
-    'warning: the module changed since it was signed and there is no key to sign it again; installing it unsigned.',
+    'warning: extension.sig does not match this build and there is no key to sign it again; installing unsigned.',
   )
-  const { signature: _stale, ...unsigned } = raw
-  raw = unsigned
-}
-// Written only when module/ changed: an unchanged rebuild leaves the committed
-// manifest exactly as it was.
-if (digestsChanged) writeManifest({ ...raw, files })
-
-// A signature that still covers the manifest (the same files, nothing edited
-// since) is kept; signing again would only churn the file.
-const signatureCurrent =
-  !digestsChanged && raw.signature !== undefined && signing.verifyModuleSignature(raw).valid === true
-if (keyPath !== undefined && !signatureCurrent) {
-  if (!existsSync(keyPath)) fail(`Signing key not found: ${keyPath}`)
-  const signed = spawnSync(process.execPath, [cliPath, 'sign', moduleDir, '--key', keyPath], { stdio: 'inherit' })
-  if (signed.status !== 0) fail('Signing failed (see above).')
-  const after = readJson(manifestPath)
-  if (after.engines?.hostApi === undefined && raw.engines?.hostApi !== undefined) {
-    fail(
-      'This @sprintengine/extension-sdk signs without "engines.hostApi", and the app refuses a module without it. Update the SDK.',
-    )
-  }
+  rmSync(signaturePath, { force: true })
 }
 
-if (argv.includes('--no-install')) {
-  const state = readJson(manifestPath).signature ? 'signed' : 'unsigned'
-  console.log(
-    digestsChanged
-      ? `Recorded ${Object.keys(files).length} file digest(s) in module/manifest.json (${state}).`
-      : `module/manifest.json already describes module/ (${Object.keys(files).length} file(s), ${state}); left as it was.`,
-  )
-  process.exit(0)
-}
-
-// ── 4. Install ───────────────────────────────────────────────────────────────
-
-const modulesRoot = process.env.SPRINTENGINE_USER_EXTENSION_ROOT ?? join(homedir(), '.sprintengine', 'extensions')
-const dest = join(modulesRoot, id)
-const staging = join(modulesRoot, `.${id}.installing-${process.pid}`)
-mkdirSync(modulesRoot, { recursive: true })
-rmSync(staging, { recursive: true, force: true })
-cpSync(moduleDir, staging, {
-  recursive: true,
-  filter: (source) => !sdk.isPackExcludedPath(relative(moduleDir, source).split('\\').join('/')),
-})
-
-// What landed must be exactly what the manifest lists, or the app refuses it.
-const installed = readJson(join(staging, 'manifest.json'))
-const drift = digestDrift(installed.files ?? {}, computeFileDigests(staging, signing))
-if (drift.length > 0) {
-  rmSync(staging, { recursive: true, force: true })
-  fail(
-    `The installed copy does not match its "files" digests (did something write to module/ meanwhile?):\n  ${drift.join('\n  ')}`,
-  )
-}
+// ── Swap the copy in ─────────────────────────────────────────────────────────
 
 rmSync(dest, { recursive: true, force: true })
 renameSync(staging, dest)
 
-const signedNote = installed.signature ? 'signed' : 'unsigned'
+const state = existsSync(join(dest, 'extension.sig')) ? 'signed' : 'unsigned'
 console.log(
-  `Installed ${id} v${installed.version} (${signedNote}, ${Object.keys(installed.files).length} file(s)) at ${dest}`,
+  `Installed ${manifest.id} ${manifest.version} (${state}, ${Object.keys(walk.files).length} file(s)) at ${dest}`,
 )
 console.log('')
 console.log(
-  `Next, in SprintEngine Studio: Settings → Extensions → ${basename(dest)} → trust it (it asks again after every rebuild).`,
+  state === 'signed'
+    ? 'Studio trusts it if you trust the key that signed it; otherwise trust it in Settings → Extensions.'
+    : `Next, in SprintEngine Studio: Settings → Extensions → ${manifest.name} → trust it. Each new build asks again.`,
 )
-if (installed.entry?.main) {
-  console.log('This module has an entry.main: restart Studio to load the new build.')
-} else {
-  console.log(
-    'Renderer-only: a first install starts as soon as you trust it; restart to pick up a rebuild of code already loaded.',
-  )
-}

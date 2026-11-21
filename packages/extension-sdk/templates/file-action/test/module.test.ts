@@ -1,34 +1,41 @@
 // Your tests, in TypeScript: `npm test` bundles test/*.test.ts and runs them
-// with `node --test` (see AGENTS.md). Drive the source with the SDK's fakes.
+// with `node --test` (see AGENTS.md). Drive the worker with the SDK's fake
+// main host, handing it `manifest` from ./manifest, and run the command the
+// way Studio does: its method, with what the menu was picked on.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import type { FileActionContext } from '@sprintengine/extension-sdk'
-import { createFakeRendererHost } from '@sprintengine/extension-sdk/testing'
+import { createFakeMainHost } from '@sprintengine/extension-sdk/testing'
 
-import manifest from '../module/manifest.json'
-import { registerRenderer } from '../src/renderer'
+import { activate, itemTitle } from '../src/main'
+import { manifest } from './manifest'
 
-test('copies each selected path relative to the project', async () => {
-  const fake = createFakeRendererHost({ manifest })
-  await registerRenderer(fake.host)
-  const [action] = fake.registrations.fileActions
-  const context: FileActionContext = {
+test('the picked files become one Backlog item', async () => {
+  const main = createFakeMainHost({ manifest })
+  activate(main.host)
+  const answer = await main.methods.operate('add-to-backlog', {
+    where: 'file',
     workspaceId: 'ws-app',
-    workspaceRoot: '/Users/dev/projects/app',
-    entries: [
-      { name: 'index.ts', path: '/Users/dev/projects/app/src/index.ts', isDir: false },
-      { name: 'docs', path: '/Users/dev/projects/app/docs', isDir: true },
-    ],
-  }
-  assert.equal(action?.getLabel?.(context), 'Copy 2 relative paths')
-
-  const copied: string[] = []
-  Object.defineProperty(globalThis, 'navigator', {
-    value: { clipboard: { writeText: async (text: string) => void copied.push(text) } },
-    configurable: true,
+    filePaths: ['src/login.ts', 'README.md'],
   })
-  await action?.run(context)
-  assert.deepEqual(copied, ['src/index.ts\ndocs'])
+  assert.ok(answer.ok, JSON.stringify(answer))
+  const [item] = main.services.backlog.items('ws-app')
+  assert.equal(item?.title, 'Look at 2 files')
+  assert.match(item?.sourceContent ?? '', /src\/login\.ts/)
+  assert.deepEqual(main.undeclared, [], 'everything it used is declared in extension/extension.json')
+})
+
+test('the title names a single file', () => {
+  assert.equal(itemTitle(['docs/setup.md']), 'Look at docs/setup.md')
+})
+
+test('run without a file, it says what to do', async () => {
+  const main = createFakeMainHost({ manifest })
+  activate(main.host)
+  assert.deepEqual(await main.methods.operate('add-to-backlog', { where: 'palette', workspaceId: 'ws-app' }), {
+    ok: false,
+    code: 'invalid_params',
+    message: 'Pick at least one file.',
+  })
 })

@@ -1,0 +1,33 @@
+{
+  "$schema": "../node_modules/@sprintengine/extension-sdk/extension.schema.json",
+  "manifestVersion": 1,
+  "id": "{{id}}",
+  "version": "0.1.0",
+  "engines": {
+    "studio": ">={{studioVersion}}"
+  },
+  "tier": "ui",
+  "name": "{{displayName}}",
+  "description": "{{displayName}}, an extension for SprintEngine Studio.",
+  "permissions": [
+    "storage"
+  ],
+  "contributes": {
+    "topBarItems": [
+      {
+        "id": "timer",
+        "title": "Focus timer",
+        "icon": "schedule",
+        "door": "timer"
+      }
+    ],
+    "doors": [
+      {
+        "id": "timer",
+        "title": "Focus timer",
+        "icon": "schedule",
+        "entry": "dist/timer.js"
+      }
+    ]
+  }
+}
