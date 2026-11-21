@@ -5,6 +5,7 @@ import type { DesktopWorkspace } from "../../api/tailnetWorkspaces";
 import { DEFAULT_MODEL_ID, modelLabel, type ChatLink } from "./conversationLogic";
 import { cliForChatProvider } from "./launchLogic";
 import { copy } from "../../../../src/shared/copy";
+import { formatTimestamp } from "../../components/formatTimestamp";
 
 // Where it lived first; the launch rules need it too, without importing this file.
 export { cliForChatProvider };
@@ -780,4 +781,120 @@ export function chatLaunchAvailability(
   if (!offers.operate)
     return { available: false, reason: `This phone may read chats on ${machine} but not start them. Pair again with chat control.` };
   return { available: true };
+}
+
+// ── A desktop's chats as a last-known list ──────────────────────────────────
+//
+// A desktop whose list cannot be read keeps the chats it last listed, and the
+// list says so: which desktop, why (it no longer takes this phone, or it is
+// not answering), and how old its chats here are. Its rows used to vanish
+// behind one "unavailable, check the tailnet" line, which was also the wrong
+// advice for a pairing the desktop had dropped.
+
+/** Why a desktop's chats are a last-known list. */
+export type ChatListStaleKind = "signed-out" | "not-answering";
+
+/** A desktop whose newest list read failed, and since when its chats here date. */
+export interface ChatListStale {
+  deviceId: string;
+  desktopName: string;
+  kind: ChatListStaleKind;
+  /** When its chats were last listed here; null when they never have been. */
+  since: number | null;
+}
+
+/** The codes a desktop refuses a pairing with: it no longer takes this phone. */
+const SIGNED_OUT_CODES = new Set(["unauthorized", "revoked", "peer_mismatch"]);
+
+/**
+ * Refusals that are the answer about the chats rather than a failure to read
+ * them, as the desktop app reads them: a pairing that may not read them, or a
+ * desktop that does not serve them, lists none, and that list is current.
+ */
+const ANSWERED_CODES = new Set([
+  "conversations_unsupported",
+  "scope_required",
+  "owner_required",
+  "forbidden",
+  "outdated",
+  "unknown_method",
+]);
+
+/**
+ * What a failed list read means: null for a refusal that is itself the answer
+ * (the desktop lists none), else whether it refused this phone or did not answer.
+ */
+export function chatListFailureKind(error: unknown): ChatListStaleKind | null {
+  const code = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : null;
+  if (typeof code === "string" && ANSWERED_CODES.has(code)) return null;
+  return typeof code === "string" && SIGNED_OUT_CODES.has(code) ? "signed-out" : "not-answering";
+}
+
+/**
+ * A row from a last-known list, drawn as claiming no live work: a turn that
+ * was running when the desktop stopped answering would otherwise wear
+ * "Working" and its clock for as long as the desktop stays away, and keep the
+ * list polling every few seconds a desktop that cannot answer.
+ */
+export function lastKnownChatRow(row: ChatListRow): ChatListRow {
+  const { phase, backgroundWork } = row.thread;
+  const live =
+    phase === "running" || phase === "starting" || phase === "waiting_for_approval" || phase === "waiting_for_input";
+  if (!live && !backgroundWork) return row;
+  return { ...row, thread: { ...row.thread, phase: live ? "idle" : phase, backgroundWork: undefined } };
+}
+
+/**
+ * The line the list says for one desktop whose chats are last-known: why, and
+ * how old the chats kept for it are. With none kept (`since` null, as on a
+ * launch whose first read failed) it says only why.
+ */
+export function chatListStaleWords(stale: ChatListStale, now: number): string {
+  const words = copy.phone.conversations.chatListStale;
+  const name = stale.desktopName.trim() || words.thisDesktop;
+  const lead = stale.kind === "signed-out" ? words.signedOut(name) : words.notAnswering(name);
+  if (stale.since === null) return lead;
+  return `${lead} ${words.chatsFrom(formatTimestamp(new Date(stale.since).toISOString(), now))}`;
+}
+
+/** How often the list in front re-reads while nothing works. */
+export const CHAT_LIST_SLOW_POLL_MS = 3 * 60_000;
+/** The longest a desktop that keeps failing waits between polled reads. */
+export const CHAT_LIST_SLOW_POLL_MAX_MS = 30 * 60_000;
+
+/** How long after a failed read a poll asks that desktop again: doubled for each failure in a row. */
+export function chatListSlowPollMs(failures: number): number {
+  if (failures <= 0) return CHAT_LIST_SLOW_POLL_MS;
+  return Math.min(CHAT_LIST_SLOW_POLL_MS * 2 ** failures, CHAT_LIST_SLOW_POLL_MAX_MS);
+}
+
+/**
+ * Whether a poll asks this desktop now. One that answered last time is asked
+ * on every poll; one that keeps failing waits out its own backoff, so a quiet
+ * desktop does not slow the others and is not asked every few seconds while
+ * another desktop's chat works. A person's own asking (focus, foreground,
+ * pull to refresh) asks every desktop.
+ */
+export function chatListPollDue(history: { askedAt: number; failures: number } | undefined, now: number): boolean {
+  if (!history || history.failures <= 0) return true;
+  return now - history.askedAt >= chatListSlowPollMs(history.failures);
+}
+
+/** How long a desktop's chat list may take before the read lands without it, as not answering. */
+export const CHAT_LIST_READ_TIMEOUT_MS = 20_000;
+
+/**
+ * A list read held to a bound: the read's own answer, or, once the bound
+ * passes, a `timeout` failure (`chatListFailureKind`: not answering). The
+ * request itself is not cancelled; the list just stops waiting for it.
+ */
+export function chatListWithin<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(Object.assign(new Error(copy.phone.conversations.chatListStale.didNotAnswer), { code: "timeout" })),
+      ms,
+    );
+  });
+  return Promise.race([work, bound]).finally(() => clearTimeout(timer));
 }

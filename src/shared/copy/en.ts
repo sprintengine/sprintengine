@@ -2711,6 +2711,15 @@ export const en = {
         agent: 'Agent',
         runs: 'Runs',
       },
+      // mobile/src/features/conversations/conversationListLogic.ts
+      chatListStale: {
+        thisDesktop: 'This desktop',
+        signedOut: (desktop: unknown) => `${desktop} no longer accepts this phone.`,
+        notAnswering: (desktop: unknown) => `${desktop} is not answering.`,
+        chatsFrom: (ago: unknown) => `Its chats here are from ${ago}.`,
+        pairAgain: 'Pair again',
+        didNotAnswer: 'The desktop did not answer in time.',
+      },
       // mobile/src/features/conversations/ConversationsScreen.tsx
       conversationsScreen: {
         snoozed: 'Snoozed',
@@ -6407,6 +6416,24 @@ export const en = {
         needsApproval: 'Needs approval',
         failed: 'Failed',
         done: 'Done',
+      },
+      // src/renderer/src/components/workspace/remoteBand/remoteListFreshness.ts
+      remoteListFreshness: {
+        signedOut: 'Signed out',
+        notPaired: 'Not paired',
+        oldPairing: 'Old pairing',
+        pairedAgainSince: (machine: unknown) =>
+          `${machine} was paired again since this chat was opened here; open it from the list to follow it over the new pairing.`,
+        outOfDate: 'Out of date',
+        notAnswering: 'Not answering',
+        pairAgain: 'pair again',
+        pairAgainWith: (machine: unknown) => `Pair again with ${machine} in Settings`,
+        refusedThisDevice: (machine: unknown) => `${machine} no longer accepts this device.`,
+        noLongerPaired: (machine: unknown) => `${machine} is no longer paired with this device.`,
+        shareNoProtocol: (machine: unknown) => `${machine} runs a Studio this app cannot read; update one of them.`,
+        isNotAnswering: (machine: unknown) => `${machine} is not answering.`,
+        readAt: (ago: unknown) => `This is its list of chats from ${ago}.`,
+        readEarlier: 'This is its list of chats from an earlier read.',
       },
     },
     // src/renderer/src/components/workspace/RootErrorBoundary.tsx

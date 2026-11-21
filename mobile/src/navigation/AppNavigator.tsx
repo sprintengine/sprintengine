@@ -147,6 +147,7 @@ export function AppNavigator() {
             }
             onOpenScheduled={() => navigation.navigate("Scheduled")}
             onOpenSettings={() => navigation.navigate("SettingsHome")}
+            onPairAgain={() => navigation.navigate("Pairing")}
           />
         )}
       </HomeStack.Screen>

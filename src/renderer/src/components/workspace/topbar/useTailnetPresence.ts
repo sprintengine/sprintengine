@@ -26,6 +26,12 @@ export type TailnetPresence = {
   status: TailnetRemoteStatus | null
   live: TailnetLiveState
   mesh: MeshConnection[]
+  /**
+   * Whether `mesh` has been read at all: until it has, an empty list says
+   * nothing about which machines are paired, and a chat opened from one
+   * must not read as no longer paired.
+   */
+  meshListed: boolean
   /** Requests this machine made that are still waiting to be answered (phase 3). Main owns the wait. */
   meshRequests: readonly MeshPairRequestView[]
   /** connectionId → main's last reachability answer for that machine (phase 4). */
@@ -44,6 +50,7 @@ const INITIAL_PRESENCE: TailnetPresence = {
   status: null,
   live: EMPTY_LIVE_STATE,
   mesh: [],
+  meshListed: false,
   meshRequests: [],
   meshReachability: new Map(),
 }
@@ -97,7 +104,7 @@ function startPresence(): (() => void) | null {
     void tailnetApi
       .meshListConnections()
       .then((connections) => {
-        if (!cancelled) updatePresence(() => ({ mesh: connections }))
+        if (!cancelled) updatePresence(() => ({ mesh: connections, meshListed: true }))
       })
       .catch(() => {})
   }
