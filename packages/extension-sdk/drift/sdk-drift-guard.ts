@@ -330,9 +330,10 @@ expectType<IsExact<AppMainHost['watchModuleAppState'], SdkMainHost['watchModuleA
 type WorkerAsks = 'getModuleAppState' | 'provideService'
 expectType<Extends<Omit<AppMainHost, WorkerAsks>, Omit<SdkMainHost, WorkerAsks>>>()
 // Host parity: the worker's host carries exactly the members the SDK
-// publishes, no more. A surface's `studio` is built in its frame
+// publishes, no more, but for `provideService`, which only Studio's own parts
+// use. A surface's `studio` is built in its frame
 // (server/extensions/frames/frame-bootstrap.ts), from EXTENSION_FRAME_METHODS.
-expectType<IsExact<keyof AppMainHost, keyof SdkMainHost>>()
+expectType<IsExact<Exclude<keyof AppMainHost, 'provideService'>, keyof SdkMainHost>>()
 // The module-owned event channel: the emit half on MainHost, the envelope a
 // surface hears as `push`.
 expectType<IsExact<AppModuleEventEnvelope, SdkModuleEventEnvelope>>()

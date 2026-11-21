@@ -255,7 +255,6 @@ export const EXTENSION_MAIN_HOST_METHODS: Readonly<Record<string, ExtensionHostR
   getWorkspaceGitInfo: need('workspace:read', 'workspace:read', 'answer'),
   getModuleAppState: need('settings:own', 'extension:read', 'throw'),
   watchModuleAppState: need('settings:own', 'extension:read', 'throw'),
-  provideService: need(null, null, 'throw'),
   getService: need(null, null, 'throw'),
   requireService: need(null, null, 'throw'),
   onStartup: need(null, null, 'throw'),

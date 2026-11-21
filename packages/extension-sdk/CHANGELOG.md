@@ -45,6 +45,24 @@ extension built against 3.x must be rewritten to this one.
   declared is refused, and the declaration's description and access win). A
   command without an `action` runs the worker method of its name with an
   `ExtensionCommandContext`.
+- The worker runs in a Node process of its own, one per extension, with a
+  clean environment and its output in the extension's log. It starts when
+  something needs it and is stopped after five idle minutes, unless
+  extension.json says `background: true`; a listener lasts only while it runs.
+  Every call into Studio crosses to Studio's process, so these answer
+  promises now: `MainHost.getModuleAppState`, a conversation service's
+  `list`, a companion's `attach` and `status`. A companion's validator may
+  answer a promise. Bundle the worker with nothing external.
+- Work a call into the worker sets going (a timer, say) may call Studio only
+  while that call lasts; after it ends Studio refuses it. Only a
+  `background: true` worker's own work, from `activate` and its startup hooks
+  on, may call at any time.
+- `MainHost.provideService` is gone: a worker cannot provide a service from
+  its process. `createFakeMainHost` no longer offers it.
+- `contributes.mcpTools[].inputSchema` declares a tool's parameters, listed
+  before the worker has ever run; the schema the worker registers must take
+  no more than it.
+- `HostCapability` drops `electron-main`: a worker never runs where Electron is.
 - New types: `ExtensionMount`, `ExtensionMountStudio`, `ExtensionSurface`,
   `ExtensionActivate`, `ExtensionCommandContext`, `ExtensionUiEntry`,
   `ExtensionWorkerEntry`, `ExtensionManifest` and its contribution types.

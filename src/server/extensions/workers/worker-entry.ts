@@ -300,9 +300,6 @@ function createStudio(start: WorkerInitMessage): Record<string, unknown> {
     getWorkspaceGitInfo: (workspaceId: unknown) => hostCall({ host: 'getWorkspaceGitInfo' }, [workspaceId]),
     getModuleAppState: (key: unknown) => hostCall({ host: 'getModuleAppState' }, [key]),
     watchModuleAppState: (cb: unknown) => unsubscriber({ host: 'watchModuleAppState' }, [cb]),
-    provideService: () => {
-      throw new Error('An extension’s worker cannot provide a service: it runs in a process of its own.')
-    },
     getService: (token: unknown) => resolveService(token, false),
     requireService: (token: unknown) => resolveService(token, true),
     onStartup: (hook: Hook) => void startupHooks.push(hook),

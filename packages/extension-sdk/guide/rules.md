@@ -5,7 +5,7 @@ fixes follow.
 
 1. **Bundle everything.** A ui entry is one ESM file Studio imports as a blob
    module: nothing beside it resolves, so it holds every import, React
-   included. The worker is one CommonJS file with only `electron` external.
+   included. The worker is one CommonJS file with nothing external.
    The template's `build:ui` and `build:main` do this.
 2. **Declare, don't register.** Commands, menus, top bar items, panels, doors,
    settings sections and MCP tools are listed in extension.json. Code draws a
@@ -42,8 +42,10 @@ external. Studio shares no React and no component kit with extensions: a
 surface brings what it draws with. The smoke test fails on a bundle that still
 imports something.
 
-**The worker is CommonJS with only `electron` external.** The installed folder
-has no `node_modules`; anything left external is missing at load. `react` has
+**The worker is CommonJS with nothing external.** It runs as plain Node in a
+process of its own, where `electron` is never there to require, and the
+installed folder has no `node_modules`; anything left external is missing at
+load. `react` has
 no business in the worker. Worker threads are fine: bundle each as its own
 CommonJS file in `extension/dist/` and start it with
 `new Worker(studio.getAssetPath('dist/thread.cjs'))` (not a path you build

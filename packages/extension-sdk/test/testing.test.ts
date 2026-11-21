@@ -103,8 +103,8 @@ describe('createFakeMainHost', () => {
       /requires service "github.module-service", which no enabled module provides/,
     )
     assert.equal(fake.host.getService({ key: 'github.module-service' }), undefined)
-    const own = fake.host.provideService({ key: 'notes.index' }, () => ({ size: 3 }))
-    assert.equal(fake.host.requireService({ key: 'notes.index' }), own)
+    // A worker provides no service of its own: its process is its own.
+    assert.equal('provideService' in fake.host, false)
   })
 
   test('declared methods need no permission, are called by access, and are refused as the host refuses', async () => {

@@ -479,7 +479,6 @@ export type MainHost = {
    * drops it too. A surface writes them with `settings.set`.
    */
   watchModuleAppState(cb: (values: Readonly<Record<string, unknown>>) => void): () => void
-  provideService<T>(token: ServiceToken<T>, factory: (host: MainHost) => T): T
   getService<T>(token: ServiceToken<T>): T | undefined
   requireService<T>(token: ServiceToken<T>): T
   onStartup(hook: StartupHook): void
