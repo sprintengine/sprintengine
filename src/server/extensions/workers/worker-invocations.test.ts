@@ -407,3 +407,45 @@ test('a function handed over inside an argument is called back as whoever handed
   // The device holds no `workspace:read`: the call back is the device's, even during the person's call.
   assert.deepEqual(await ask('fire', ownerInvoker()), { ok: true, answer: { ok: true, result: 'not_permitted' } })
 })
+
+test('an object an argument holds twice crosses with its functions in both places', async () => {
+  const companions = {
+    attach: (_moduleId: string, spec: { workspaceId: string; agentId: string }) => ({
+      ...COMPANIONS.attach(_moduleId, spec),
+      runStructured: async (options: { first: { ping: () => unknown }; second: { ping: () => unknown } }) => {
+        await options.first.ping()
+        await options.second.ping()
+        return 'both'
+      },
+    }),
+  }
+  const main = `
+const read = (handler) => ({ access: 'read', params: (value) => ({ ok: true, params: value }), handler })
+exports.activate = (studio) => studio.registerMethods({
+  twice: read(async () => {
+    const companions = studio.requireService({ key: 'companion-agents.module-service' })
+    const guide = await companions.attach(studio.moduleId, {
+      workspaceId: 'ws-1', agentId: 'guide', name: 'Guide', workspaceRoot: '/Users/dev/project', systemPrompt: 'Help.',
+    })
+    let pings = 0
+    const shared = { ping: () => { pings += 1 } }
+    const answer = await guide.runStructured({ prompt: 'x', validate: async () => ({ ok: true, value: 1 }), first: shared, second: shared })
+    return { ok: true, result: { answer, pings } }
+  }),
+})
+`
+  harness = startWorkerHarness(
+    [{ id: 'sharer', main, permissions: ['agents:companion'] }],
+    {},
+    { 'companion-agents.module-service': companions },
+  )
+  const answer = await harness.load.kernel.callModuleMethod({
+    moduleId: 'local.sharer',
+    method: 'twice',
+    access: 'read',
+    params: {},
+    clientId: 'test',
+    invoker: ownerInvoker(),
+  })
+  assert.deepEqual(answer, { ok: true, answer: { ok: true, result: { answer: 'both', pings: 2 } } })
+})

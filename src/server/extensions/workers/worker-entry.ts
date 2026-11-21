@@ -89,7 +89,9 @@ function isPlain(value: unknown): value is Record<string, unknown> | unknown[] {
 /** An argument as it crosses: functions, at any depth of plain objects and lists, become callback numbers. */
 function encodeArg(arg: unknown): WorkerArg {
   const found: NonNullable<WorkerArg['callbacks']> = []
-  const seen = new Set<object>()
+  // The objects on the way down to here: only one of them seen again is a
+  // cycle. An object the argument holds twice is walked, and copied, twice.
+  const above = new Set<object>()
   const walk = (value: unknown, path: Array<string | number>): unknown => {
     if (typeof value === 'function') {
       const id = nextCallback++
@@ -97,12 +99,16 @@ function encodeArg(arg: unknown): WorkerArg {
       found.push({ path, callback: id })
       return null
     }
-    if (!isPlain(value) || seen.has(value)) return value
-    seen.add(value)
-    if (Array.isArray(value)) return value.map((item, index) => walk(item, [...path, index]))
-    const copy: Record<string, unknown> = {}
-    for (const [key, item] of Object.entries(value)) copy[key] = walk(item, [...path, key])
-    return copy
+    if (!isPlain(value) || above.has(value)) return value
+    above.add(value)
+    try {
+      if (Array.isArray(value)) return value.map((item, index) => walk(item, [...path, index]))
+      const copy: Record<string, unknown> = {}
+      for (const [key, item] of Object.entries(value)) copy[key] = walk(item, [...path, key])
+      return copy
+    } finally {
+      above.delete(value)
+    }
   }
   const value = walk(arg, [])
   return found.length > 0 ? { value, callbacks: found } : { value }
