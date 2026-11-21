@@ -302,7 +302,11 @@ if (!serverHost)
 // A module copied into the drop-in folder while Studio runs is listed at once,
 // not after a reload. Out of process the server watches (server-modules.ts).
 if (!serverHost) {
-  const stopWatchingModules = watchUserModuleRoot(defaultUserModuleRoot(), () => services.moduleHub.deliverChanged())
+  // A worker whose extension was removed from the folder (and its approval with it) stops.
+  const stopWatchingModules = watchUserModuleRoot(defaultUserModuleRoot(), () => {
+    extensionWorkers.workers.reconcile()
+    services.moduleHub.deliverChanged()
+  })
   app.once('will-quit', stopWatchingModules)
 }
 // Automation server ← Scheduled agents module: resolved per tool call so a live

@@ -255,7 +255,11 @@ export function createServerModules(deps: {
       if (current) void current.ready.then(() => current.kernel.runStartup())
       // A module copied into the drop-in folder while Studio runs is listed
       // at once, not after a reload.
-      stopWatchingModules ??= watchUserModuleRoot(defaultUserModuleRoot(), () => hub.deliverChanged())
+      // A worker whose extension was removed from the folder (and its approval with it) stops.
+      stopWatchingModules ??= watchUserModuleRoot(defaultUserModuleRoot(), () => {
+        workers.reconcile()
+        hub.deliverChanged()
+      })
     },
     shutdownBegin: () => load?.kernel.runShutdownBegin() ?? Promise.resolve(),
     shutdown: async () => {
