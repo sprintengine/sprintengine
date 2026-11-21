@@ -1,18 +1,18 @@
 # SprintEngine Studio Marketplace Plugin Author Guide
 
 Marketplace plugins are signed bundles over extension primitives the studio
-already supports. The three component kinds (`MARKETPLACE_COMPONENT_KINDS`) are
-`mcp`, `skills` and `module`; an `automation` component is no longer accepted,
-because an extension schedules agents at runtime instead
-(`getScheduledAgentsService`). There is no `cli` kind: agent CLIs
+already supports. The two component kinds (`MARKETPLACE_COMPONENT_KINDS`) are
+`mcp` and `skills`. An extension is not a component: it ships as a folder
+with an `extension.json` of its own, and a bundle naming a `module` component
+is refused. An `automation` component is not accepted either, because an
+extension schedules agents at runtime instead (`getScheduledAgentsService`). There is no `cli` kind: agent CLIs
 ship with the app, and no bundle adds or replaces one. A marketplace submission
 is accepted only when the registry entry, `plugin.json`, declared component
 files, and ed25519 signature all validate through the same code paths the app
 uses.
 
 The same `plugin.json` is also what a **GitHub install** reads, from the root of
-a repository — see "Publishing from GitHub instead" at the end. A module you
-build from a template (`sprintengine-extension init`) already has that layout.
+a repository — see "Publishing from GitHub instead" at the end.
 
 Registry pull requests target the standalone `sprintengine/studio-releases`
 repository layout:
@@ -70,13 +70,7 @@ After scaffold, edit:
 
 Declare real permissions in `plugin.json`. Permissions are install-time
 disclosure, not a runtime sandbox. See
-[`docs/extension-authors/permissions.md`](../module-authors/permissions.md).
-
-A `module` component is a capability module folder. Its `manifest.json` must
-declare `"engines": { "hostApi": 3 }` and carry a `files` map (every file's
-sha256, written by `sprintengine-extension sign`); sign the module before you sign
-the bundle, because signing the module rewrites its manifest and the bundle's
-digests cover it. A bundle whose signed module has no `files` is refused.
+[`docs/extension-authors/permissions.md`](../extension-authors/permissions.md).
 
 ## 2. Create A Signing Key
 
@@ -232,33 +226,20 @@ the exact shared-validator path, and tampered signatures fail through
 
 ## Publishing from GitHub instead
 
-A registry listing is not the only way in. Anyone can install an extension
+A registry listing is not the only way in. Anyone can install a bundle
 straight from its repository URL (the Extensions door's **Install extension
-from GitHub…**). The repository layout:
-
-```text
-plugin.json            at the repository root; components.module.path = "module"
-module/manifest.json   with "engines" and "files" ("signature" if signed)
-module/dist/…          the built bundles, committed
-```
+from GitHub…**), with `plugin.json` at the repository root and the component
+files it names beside it.
 
 - Studio resolves the default branch to a commit, reads `plugin.json` at the
   repository root at that commit, shows the name, publisher, permissions, MCP
-  servers and signing, and installs the components it names — for a module,
-  only the `module/` folder.
-- **Signed** (a valid module signature over `files`, and a signed bundle):
-  installs through the normal trust prompt, showing your key's fingerprint.
-- **Unsigned** is allowed from GitHub, unlike the registry. Studio warns that
-  nobody vouches for the code, and a bundle with module code needs an explicit
-  "I trust this code" choice before it installs. The module's `files` map is
-  still required: it is what the installed folder is held to, and an unsigned
-  module without one is refused with that reason.
+  servers and signing, and installs the components it names.
+- **Signed** bundles install through the normal trust prompt, showing your
+  key's fingerprint.
+- **Unsigned** is allowed from GitHub, unlike the registry, with a warning
+  that nobody vouches for it.
 - **Invalid** signatures (anything changed after signing) are refused.
 - Updates re-resolve the commit and ask again when the permissions, the MCP
   disclosure or the signing change.
 - A repository with a `.claude-plugin/` folder is an agent skill source, not a
   Studio extension; add it from the Skills path.
-
-Commit the rebuilt `module/dist/` together with the `module/manifest.json`
-its build produced: a module whose files do not match its `files` is refused as
-tampered.

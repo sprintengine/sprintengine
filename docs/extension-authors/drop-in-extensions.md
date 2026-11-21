@@ -1,34 +1,38 @@
-# Drop-in extensions: modules and conversation providers
+# Drop-in extensions and conversation providers
 
-SprintEngine Studio picks up two kinds of extension from per-user folders,
+SprintEngine Studio picks up two kinds of addition from per-user folders,
 discovered on launch. Both folders are created (and seeded with a README) the
 first time the app runs — including on a packaged install — so there is always
 a discoverable place to drop things.
 
 | Kind | Folder | Manifest | Surfaced in |
 | --- | --- | --- | --- |
-| **Capability module** | `~/.sprintengine/extensions/<id>/` | `manifest.json` | Settings → Extensions, the Extensions door |
+| **Extension** | `~/.sprintengine/extensions/<publisher>.<id>/` | `extension.json` | Settings → Extensions, the Extensions door |
 | **Conversation provider** | `~/.sprintengine/plugins/<id>/` | `plugin.json` with `"kind": "provider"` | Settings → Providers |
 
-In both cases the folder name must equal the manifest `id`. Agent CLIs are not
-drop-in: they ship with the app, and nothing a user installs adds or replaces
-one. A provider in the plugins folder that reuses any built-in id is refused
-with the reason, and the built-in one stays.
+An extension's folder is named for its install key, `<publisher>.<id>`; one
+installed from a folder is `local.<id>`. A provider's folder name must equal
+its manifest `id`. Agent CLIs are not drop-in: they ship with the app, and
+nothing a user installs adds or replaces one. A provider in the plugins folder
+that reuses any built-in id is refused with the reason, and the built-in one
+stays.
 
-The module root can be relocated with the `SPRINTENGINE_USER_EXTENSION_ROOT`
+The extension root can be relocated with the `SPRINTENGINE_USER_EXTENSION_ROOT`
 environment variable (the dev harness and a template's `dev:install` honour
 it); providers always resolve under `~/.sprintengine/plugins`.
 
-## Capability modules
+## Extensions
 
-A capability module extends the app itself — main-process services and IPC,
-renderer panels, workspace types, commands, Backlog and Files actions,
-settings sections, sidebar doors, top-bar controls, modal surfaces, MCP tools
-agents can call, chats of its own with the app's agents, Backlog reads and
-writes through the app's Backlog service, and read-only views of the person's
-own activity (token usage, their chats) — through the `MainHost` /
-`RendererHost` contracts. Modules are trust-gated: only modules
-the user has trusted execute code.
+An extension adds to Studio what its `extension.json` declares: commands,
+items in the Backlog, Files and notification menus, top bar buttons, panels in
+a workspace's pane, doors in the Extensions drawer, settings sections, and MCP
+tools agents can call. Its code is optional and comes in two kinds: a ui
+entry per panel, door or settings section (an ESM bundle exporting
+`mount(root, studio)`), and a worker (`main`, a CommonJS bundle exporting
+`activate(studio)`) that serves its commands, methods and tools and reaches
+the host's services — chats of its own with the app's agents, Backlog reads
+and writes, token usage, the person's own activity. Extensions are
+trust-gated: only an extension the user has trusted runs code.
 
 - Author against [`@sprintengine/extension-sdk`](../../packages/extension-sdk/README.md).
   The fastest start is a template:
@@ -40,138 +44,104 @@ the user has trusted execute code.
   makes the project, and `extension.guide` is the manual it builds from.
   Templates combine: `init … --with main,mcp,settings,door`, or
   `sprintengine-extension add <part>` in an existing project.
-- Test without the app. `@sprintengine/extension-sdk/testing` has fake main and
-  renderer hosts that keep this app's rules (the permissions it checks,
-  storage's limits, chat ownership, the `module:bridge` that declaring methods needs) and a UI kit
-  stand-in that renders in Node; a scaffolded project runs its TypeScript
-  tests and a smoke test that renders every registered surface on
+- **One strict manifest.** `extension.json` is validated by
+  `validateExtensionManifest`, the same code in the app and the SDK. A key it
+  does not know is refused at every level. `tier` (`content`, `declarative`,
+  `ui`, `worker`) is the most authority the extension needs, and anything
+  above it fails. `engines.studio` is the oldest Studio it runs on; an
+  extension asking for a newer one than this app is refused with a message
+  saying so — never shown as merely "not trusted". extension.json is read from
+  Studio 0.13.0 (`EXTENSION_MANIFEST_SINCE`).
+- **Surfaces bring their own drawing.** A ui entry is imported as a blob
+  module into Studio's window, so it bundles everything it imports, React
+  included; Studio shares no React or UI kit with it. It styles with Studio's
+  `--sem-*` CSS custom properties and calls `studio.ready()` once drawn, and
+  Studio measures the time from opening to that call.
+- **Commands without an `action` run worker code.** Studio calls the worker
+  method of the command's name (access `operate`) with an
+  `ExtensionCommandContext`: where it ran and what it was picked on. Menu items
+  and top bar items run a contributed command, or a top bar item opens a
+  contributed door.
+- Test without the app. `@sprintengine/extension-sdk/testing` has fake hosts
+  that keep this app's rules (the permissions it checks, storage's limits, chat
+  ownership, the `module:bridge` that declaring methods needs, the MCP tools
+  extension.json declares); a scaffolded project runs its TypeScript tests and
+  a smoke test that loads the built extension the way the app does on
   `npm run check`. See the SDK README's "Testing".
-- Declare the host API the module was built for: `"engines": { "hostApi": 3 }`.
-  A module without it, or built for a host API this app does not load, is
-  refused with a message saying which side to update — never shown as merely
-  "not trusted".
-- A module built for an older host API is refused until it is rebuilt against
-  `@sprintengine/extension-sdk` 3 with `"engines": { "hostApi": 3 }`.
-  A module an agent wrote can be handed to an agent with this guide to update.
 - What runs is the Studio server's to change: Settings installs a folder,
   trusts it, switches it on or off and uninstalls it through the server
   (`extension.install`, `extension.setTrust`, `extension.setEnabled`,
   `extension.uninstall`, each an owner's), and `extension.list` says what runs there
-  and the methods each declares. An installed or newly trusted extension
-  loads at the server's next start; switching one off unloads its main half
-  at once (its methods, tools, services and sidecars go, and its calls are
-  refused `extension_unavailable`), and switching it back on loads it again.
-  Loading again runs `registerMain` again in the same process, with a new
-  host; the entry file itself is not evaluated again, so anything kept at the
-  file's top level survives the switch. Keep state inside `registerMain`, and
-  release timers, watchers and handles in `onShutdown`: once its shutdown
-  hooks have run, the host a switched-off extension was given drops its
-  `emit` and `notify` calls, refuses its registrations, and refuses every
-  call to the host's services, both through the host (`requireService`,
-  `getModuleDataDir`, ...) and through any service it was handed before
-  (secrets, storage, chats, backlog, usage, workspace), which then throws.
-  Switched on again, its new host hands out services that work. A file
-  changed on disk since the server started is refused rather than loaded; an
-  updated extension runs from the next start.
-- Validate, sign, and pack with the bundled `sprintengine-extension` CLI. `sign`
-  records the sha256 of every file the module ships in the manifest's `files`
-  field, so the signature covers the code, not only the manifest.
-- **`files` is required.** A module whose manifest lists no `files` does not
-  load, signed or not. A template's `npm run build` (when the files changed)
-  and `npm run dev:install` write it for an unsigned local build (and sign
-  when your key is at
-  `~/.sprintengine/keys/<id>.key`) before copying `module/` here.
-- Install the packed folder by dropping it into `~/.sprintengine/extensions/<id>/`,
-  or from **Settings → Extensions → "Install a module from a folder"**, then grant
-  trust. A folder with a symbolic link, `node_modules`, `.git` or key files in it
-  is refused; `pack` leaves those out.
-- Trust covers the files as well as the manifest. A publisher key vouches for a
-  module only when its signed `files` match the folder exactly — a signed
-  manifest without them is not trusted by key — and a grant you give binds to
-  the manifest's fingerprint, which covers its `files`. A changed, missing or
-  extra file is refused as tampered, when the app lists modules and again
-  immediately before it runs `entry.main`.
+  and the methods each declares. Switching an extension off unloads its worker
+  (its methods, tools, services and sidecars go, and its calls are refused
+  `extension_unavailable`), and switching it back on activates it again.
+  Keep state inside `activate`, and release timers, watchers and handles in
+  `onShutdown`: once its shutdown hooks have run, the `studio` a
+  switched-off extension was given drops its `emit` and `notify` calls and
+  refuses every call to the host's services.
+- Sign, verify and pack with the bundled `sprintengine-extension` CLI. `sign`
+  writes `extension.sig` beside extension.json: the sha256 of every file the
+  extension ships (extension.json included) and an ed25519 signature over
+  them, so the signature covers the code and the declaration together.
+- Install a folder from **Settings → Extensions**, or with a template's
+  `npm run dev:install`, which copies the project's `extension/` folder to
+  `~/.sprintengine/extensions/local.<id>/` and signs the copy when your key is
+  at `~/.sprintengine/keys/<id>.key`. Symbolic links are left out of the
+  copy, and Settings names them; a folder with `node_modules`, `.git` or key
+  files in it is refused, and `pack` leaves those out. A newly installed
+  extension without a worker appears as soon as it is trusted; one with a
+  worker starts, surfaces and all, with the next start of Studio.
+- **Trust binds to contents.** An unsigned extension waits for the person to
+  trust it, and the grant binds to its content fingerprint (the digests of
+  every file), so different bytes under the same install key never inherit it.
+  An `extension.sig` from a publisher key the person trusts makes it trusted.
+  A changed, missing or extra file after signing is refused as tampered.
+- Ids starting `studio-` or `sprintengine-` install only from Studio's own
+  catalogue.
 - Permissions are install-time disclosure — see [permissions.md](./permissions.md).
-- **What a person sees of a module.** A door (`registerGlobalSurface` with a
-  `label` and `Icon`) is a row in the Extensions drawer; the module's
-  `registerDoorBadge({ rowId: <surface id> })` count and its unread bell rows
-  are worn on that row and summed on the app rail's Extensions square, and a
-  `registerSidebarNavEntry` under the same id draws the row in the module's
-  own component. `MainHost.notify` is a row in the bell of every window, under
-  the module's display name, whose `target` opens the module's own door; a
-  window that opens later files the rows it missed. `RendererHost.toast` is a
+- **What a person sees of an extension.** Each door is a row in the
+  Extensions drawer. The worker's `notify` is a row in the bell of every
+  window, under the extension's name, whose `target` opens one of its doors; a
+  window that opens later files the rows it missed. A surface's `toast` is a
   transient report in the window's toast region. Notifications reach the
-  windows through the same client bus as module events, so they work
+  windows through the same client bus as extension events, so they work
   unchanged when the server runs in a process of its own.
-- **`entry.main` may run without Electron.** When Studio runs its server in a
-  process of its own, a module's main half runs there: a Node process with no
-  Electron APIs, where `host.supports('electron-main')` is false. A module
-  that cannot live without them declares
-  `"requires": { "hostCapabilities": ["electron-main"] }` and loads only where
-  that is true; elsewhere it loads manifest-only and Settings says
-  "skipped: needs electron-main". A main half that requires `electron` without
-  declaring it is refused at the require, with the same words.
+- **The worker may run without Electron.** When Studio runs its server in a
+  process of its own, an extension's worker runs there: a Node process with no
+  Electron APIs, where `studio.supports('electron-main')` is false. Build it
+  with `electron` external, and check before you use it.
 
-### Installing from GitHub
+### Creating a workspace from the worker
 
-A module published in a GitHub repository installs from its URL: the
-Extensions door's **Install extension from GitHub…**, or **Add from GitHub** in
-Settings → Extensions. The repository must carry:
-
-```
-plugin.json            at the root; components.module.path = "module"
-module/manifest.json   with "engines", "files" (and "signature" if signed)
-module/dist/…          the built bundles, committed
-```
-
-Studio resolves the default branch to a commit, reads `plugin.json` at the
-repository root at that commit, and shows the name, publisher, permissions and
-whether the module is signed before anything installs. Only `module/` is
-installed. A signed module installs through the normal trust prompt. An
-**unsigned** module is allowed, with a warning that nobody vouches for its code
-and an explicit "I trust this code" choice the install cannot proceed without;
-its `files` are still required, since they are what the installed folder is
-held to. An invalid signature is refused. An update resolves the commit again
-and asks again when the permissions, the disclosed MCP servers or the signing
-change. A repository with a `.claude-plugin/` folder is an agent skill source,
-not a Studio extension: add it from the Skills path.
-
-### Creating a workspace from a module
-
-A module's `entry.main` can create workspaces programmatically through the
-always-on core, the same flow the UI uses:
+A worker can create workspaces through the always-on core, the same flow the
+UI uses:
 
 ```ts
 import { WorkspaceServiceToken } from '@sprintengine/extension-sdk'
 
-const workspaces = host.requireService(WorkspaceServiceToken)
+const workspaces = studio.requireService(WorkspaceServiceToken)
 const result = await workspaces.create({ name: 'Scratch', folderPath: '/abs/path' })
 // { ok: true, workspaceId } | { ok: false, code, message }
 ```
 
 The promise resolves only after the workspace is confirmed on the
-workspace-sync bus, so a returned id is always a real workspace.
+workspace-sync bus, so a returned id is always a real workspace. Declare
+`ipc:workspace-write`.
 
-### Developing a first-party module locally
+### Trusting your own key while developing
 
-A handful of module ids are **reserved** (`BUNDLED_MODULE_IDS`): the app
-installs one only when its `manifest.json` is signed by a key whose
-fingerprint is listed in `resources/marketplace/trusted-publishers.json`. That
-is what stops anyone shadowing a first-party module — and it also means a
-contributor building the app from source cannot install their own build of
-one, because they do not hold the release signing key.
-
-`resources/marketplace/trusted-publishers.dev.json` is the way through. It has
-the same shape as `trusted-publishers.json`, it is gitignored, and its
-fingerprints are unioned into the trusted set **only when the app is not
-packaged** (`src/main/marketplace/trusted-publishers.ts`). A packaged build
-never reads it, and neither does the registry verifier
-(`npm run verify:marketplace-registry` opens `trusted-publishers.json` by name),
-so a dev key can never become a signing authority for anybody else.
+`resources/marketplace/trusted-publishers.dev.json` lets a contributor building
+the app from source trust a key of their own. It has the same shape as
+`trusted-publishers.json`, it is gitignored, and its fingerprints are unioned
+into the trusted set **only when the app is not packaged**
+(`src/main/marketplace/trusted-publishers.ts`). A packaged build never reads
+it, and neither does the registry verifier (`npm run verify:marketplace-registry`
+opens `trusted-publishers.json` by name), so a dev key can never become a
+signing authority for anybody else.
 
 ```bash
 # once
-sprintengine-extension keygen --out ~/.config/sprintengine/keys/my-dev.key
+sprintengine-extension keygen --out ~/.sprintengine/keys/my-dev.key
 # prints: Public key fingerprint: <fingerprint>
 
 cat > resources/marketplace/trusted-publishers.dev.json <<'JSON'
@@ -190,109 +160,18 @@ cat > resources/marketplace/trusted-publishers.dev.json <<'JSON'
 JSON
 ```
 
-The `name` must equal the `publisher.name` on the registry entry you are
-standing in for. Then build the module, sign the inner module manifest
-(`sprintengine-extension sign`, which records its file digests) and then the
-bundle `plugin.json` (`sprintengine-extension plugin sign`, which digests the
-module's signed manifest among its files) with that key, install, and restart
-the app. The order matters: signing the module rewrites its manifest, which the
-bundle's digests cover.
+Then build the extension, sign it (`sprintengine-extension sign extension
+--key …`, or `npm run dev:install` with the key at
+`~/.sprintengine/keys/<id>.key`), install it, and restart the app.
 
-### Shipping skills with a module
+### Skills and MCP servers
 
-Skills are not a closed set the app compiles in. A module can carry its own
-skill directories and register them at startup:
-
-```ts
-host.registerSkills([
-  {
-    id: 'review-guide',
-    sourceDir: 'skills/review-guide',      // relative to the module root
-    targetPolicy: 'all-native',            // or 'agents'
-    description: 'Walk a human reviewer through a code change.',
-  },
-])
-```
-
-`sourceDir` must stay inside the module root (the `module/` folder of a
-project: ship the skill as `module/skills/<id>/SKILL.md` and register
-`sourceDir: 'skills/<id>'`) — the host resolves it and rejects anything that
-escapes. The skill's files are module files: they are in `files`, covered by
-the signature, and editing one means rebuilding and re-trusting. An `id` a built-in skill or another module
-already owns is a registration error, and unloading the module unregisters its
-skills.
-
-From then on the skill is a skill: an agent launched with that skill id gets it
-copied into the workspace before it starts, `targetPolicy: 'all-native'` fans
-it out into every installed CLI's own skill directory (`.claude/skills`,
-`.codex/skills`, …) rather than only `.agents/skills`, and the copy carries the
-same managed manifest as the app's own skills, so a hand-edited copy is never
-overwritten.
-
-To put one in a workspace ahead of time — a skill an agent will be told to
-invoke, or one the user should see listed — call
-`host.ensureSkillInstalled(workspaceRoot, skillId)`. It never throws and
-answers `{ ok, status, message? }`; `status: 'unknown-skill'` means nothing
-answers to that id. `host.getSkillStatus(workspaceRoot, skillId)` asks the same
-question without writing anything. `status` is a `ModuleSkillStatus`:
-`installed`, `updated`, `missing`, `update-available`, `local`, `modified`,
-`delivered-at-launch` (a built-in skill the launch hands its CLI as a plugin,
-so nothing is written), `missing-source`, `missing-workspace`, `unknown-skill`
-or `install-failed`.
-
-Registering a skill writes nothing to any workspace. An `all-native` skill
-reaches a chat when that chat's launch names it, or when
-`ensureSkillInstalled` has already put it in the workspace — after which every
-new chat there finds it in its CLI's own skill directory, the person's included.
-
-### Publishing a module to the marketplace
-
-Folder install (above) is the developer loop. To let other users discover and
-install your module from the Extensions door's **Plugins** view, publish it to
-the marketplace registry as a signed plugin bundle:
-
-1. **Sign the module.** `sprintengine-extension keygen` once, then build, then
-   `sprintengine-extension sign <module-dir> --key <key.pem>` and
-   `sprintengine-extension verify <module-dir>`. `sign` records a digest of every
-   file the module ships; sign again after every build. Keep the private key
-   out of the module directory and out of version control. The marketplace
-   takes signed module bundles only (GitHub installs are where unsigned code
-   is allowed, behind a warning).
-2. **Wrap it in a plugin bundle.**
-   `sprintengine-extension plugin scaffold <plugin-id> --component module`, replace
-   the `module/` placeholder with your packed module
-   (`sprintengine-extension pack <module-dir> --out <staging>`), and fill in
-   `plugin.json` — id, displayName, summary, category, and the same
-   `permissions` your module manifest declares (they are what the install
-   trust prompt shows).
-3. **Sign and check the bundle.**
-   `sprintengine-extension plugin sign <plugin-dir> --key <key.pem>` writes
-   per-component file digests into `plugin.json` and signs it — component
-   bytes can't change afterwards without failing verification. Then
-   `sprintengine-extension plugin verify <plugin-dir>` runs the exact check the app
-   runs at install.
-4. **Open a registry PR.** Add `plugins/<plugin-id>/` (your signed bundle), an
-   `icons/<plugin-id>.svg`, and a `marketplace.json` entry whose
-   `name`/`latest`/`provides`/`signature` match your `plugin.json`
-   byte-for-byte, with a `source` URL on an allowlisted HTTPS host
-   (`github.com`, `api.github.com`, `raw.githubusercontent.com`, plus anything
-   `SPRINTENGINE_MARKETPLACE_EXTRA_HOSTS` adds). Registry CI runs the same
-   verifier the app build runs (`verify:marketplace-registry`). The full
-   command walkthrough, including the registry-entry shape, lives in
-   [`docs/plugin-authors/README.md`](../plugin-authors/README.md). Registry
-   entries reach the app through the published catalogue snapshot — the app's
-   bundled index is generated from it, so listing follows the next snapshot
-   release rather than the PR merge alone.
-
-What users then see: your module in the Extensions door's **Plugins** view,
-carrying a `Module` component chip inside its source and category group (card
-copy comes from your module's `displayName` + `summary` — say what it adds:
-workspace type, panels, commands), a trust prompt listing the REAL
-permissions from your verified manifest at install time, and the module in
-Settings → Extensions once installed. Signed community bundles install through
-that trust prompt; a publisher key fingerprint listed in
-`trusted-publishers.json` installs without one; unsigned module bundles are
-rejected from the marketplace.
+An extension does not carry skills or MCP server definitions yet: those
+points of `contributes` are reserved and must be empty. A marketplace plugin
+bundle carries them (see [`docs/plugin-authors/README.md`](../plugin-authors/README.md)).
+An extension's worker serves MCP tools of its own through `contributes.mcpTools`
+and `registerMcpTools`, and can put one of Studio's own skills in a workspace
+with `ensureSkillInstalled`.
 
 ## Conversation providers
 
