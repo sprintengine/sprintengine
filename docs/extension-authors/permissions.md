@@ -18,6 +18,8 @@ against two things:
    may, and the chats an extension starts for it run no looser than the
    agent's own preset. Work the extension does on its own (a startup hook, a
    timer it set while starting, a sidecar) runs as the person who approved it.
+   A listener it hands Studio runs as whoever was calling when it handed it
+   over: one registered while serving a device stays held to that device.
 
 A call goes through only when both hold. So an extension never lets a paired
 device or an agent do something that device or agent could not do itself: a

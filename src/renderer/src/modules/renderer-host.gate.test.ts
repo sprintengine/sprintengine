@@ -20,6 +20,10 @@ test('an approved ui extension with no permissions is refused the workspace, its
   await assert.rejects(host.listWorkspaces(), /"workspace:read"/)
   await assert.rejects(host.getWorkingRoot('ws-1'), /"workspace:read"/)
   assert.throws(() => host.watchWorkspaces(() => {}), /"workspace:read"/)
+  // An async method refuses with a rejected promise, never a throw.
+  const watched = host.watchWorkspaceFile('ws-1', 'notes.md', () => {})
+  assert.ok(watched instanceof Promise)
+  await assert.rejects(watched, /"workspace:read"/)
   assert.throws(() => host.getWorkspaceModuleState('ws-1'), /"storage:own"/)
   assert.throws(() => host.setWorkspaceModuleState('ws-1', {}), /"storage:own"/)
   assert.throws(() => host.getModuleAppState('key'), /"settings:own"/)

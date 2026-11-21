@@ -18,8 +18,9 @@
 // as the extension's own grant (extension-host-gate.ts). AsyncLocalStorage
 // follows the handler's own async work (awaits, timers, promises it starts),
 // which is exactly the work done on the invoker's behalf. What the host calls
-// back later (a listener the extension registered, at any time) runs outside
-// any invocation, as the person's (`detachedFromInvocation`).
+// back later (a listener the extension registered) runs on behalf of whoever
+// was invoking when it was registered, and as the person's own work when
+// nothing was (`boundToRegistrant`).
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 
@@ -55,13 +56,19 @@ export function runAsInvoker<T>(invoker: ExtensionInvoker, handler: () => T): T 
 }
 
 /**
- * `listener` as the host calls it back: outside any invocation, as the
- * extension's own work. A resource made during an invocation (a child
- * process's stream, a timer the service starts lazily) would otherwise carry
- * that invocation into every later event it delivers, to whoever registered.
+ * `listener` as the host calls it back: on behalf of whoever was invoking the
+ * extension's code when it handed the listener over, and as the extension's
+ * own work (the person) when nothing was. Fixed at registration, never taken
+ * from where the host happens to deliver: a resource made during one
+ * invocation (a child process's stream, a timer a service starts lazily)
+ * carries that invocation into every later event it delivers, to whoever
+ * registered, and a listener registered during a device's call must stay held
+ * to that device.
  */
-export function detachedFromInvocation<A extends unknown[], R>(listener: (...args: A) => R): (...args: A) => R {
-  return (...args: A) => storage.exit(() => listener(...args))
+export function boundToRegistrant<A extends unknown[], R>(listener: (...args: A) => R): (...args: A) => R {
+  const registrant = storage.getStore()
+  return (...args: A) =>
+    registrant ? storage.run(registrant, () => listener(...args)) : storage.exit(() => listener(...args))
 }
 
 /** Who invoked the extension code running now; the person when nothing did (its own work). */

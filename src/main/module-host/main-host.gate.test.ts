@@ -83,6 +83,7 @@ function setup(approved: () => readonly string[] | null = () => reader.permissio
             status: () => 'idle',
             send: async (message: string) => void calls.push(`send:${message}`),
             secret: () => 'a member the table does not know',
+            dispose: () => void calls.push('dispose'),
           }
         },
       }) as never,
@@ -334,21 +335,60 @@ test('what a service hands back is held to the gate at each call, as whoever cal
   assert.deepEqual(calls, ['attach:local.reader', 'send:from the person'])
 })
 
-test('what the host calls back runs as the extension’s own work, not as whoever registered it', () => {
-  const { kernel, listeners } = setup()
-  const chats = kernel
-    .hostFor('local.reader')
-    .requireService(serviceTokens.ConversationModuleServiceToken) as unknown as {
-    subscribe(moduleId: string, ref: unknown, cb: () => void): () => void
-  }
-  const agent: ExtensionInvoker = {
+type Subscribing = { subscribe(moduleId: string, ref: unknown, cb: () => void): () => void }
+type GitHub = { request(moduleId: string): Promise<{ ok: boolean; code?: string }> }
+
+test('what the host calls back runs as whoever registered it: a device’s listener stays held to that device', async () => {
+  const { kernel, calls, listeners } = setup()
+  const host = kernel.hostFor('local.reader')
+  const chats = host.requireService(serviceTokens.ConversationModuleServiceToken) as unknown as Subscribing
+  const github = host.requireService(serviceTokens.GitHubModuleServiceToken) as unknown as GitHub
+  // A device that may read chats, and nothing more.
+  const reader: ExtensionInvoker = {
     principal: studioPrincipal({ owner: false, permissions: ['conversation:read'] }),
     permissionCeiling: 'auto',
-    label: 'the agent',
+    label: 'the device "android-phone"',
   }
+  const answers: Array<Promise<{ ok: boolean; code?: string }>> = []
+  runAsInvoker(reader, () => chats.subscribe('local.reader', {}, () => answers.push(github.request('local.reader'))))
+  // Delivered from wherever the host is when the event comes: the person's own work here.
+  listeners[0]!()
+  const refused = await answers[0]!
+  assert.equal(refused.code, 'not_permitted', 'the GitHub sign-in is not the device’s to use')
+  assert.equal(calls.includes('github:local.reader'), false)
+})
+
+test('a listener the extension registers as its own work runs as the person, wherever it is delivered from', async () => {
+  const { kernel, calls, listeners } = setup()
+  const host = kernel.hostFor('local.reader')
+  const chats = host.requireService(serviceTokens.ConversationModuleServiceToken) as unknown as Subscribing
+  const github = host.requireService(serviceTokens.GitHubModuleServiceToken) as unknown as GitHub
   const heard: string[] = []
-  runAsInvoker(agent, () => chats.subscribe('local.reader', {}, () => heard.push(currentInvoker().label)))
-  // A resource made during the agent's call delivers later, still inside its context.
-  runAsInvoker(agent, () => listeners[0]!())
+  const answers: Array<Promise<{ ok: boolean }>> = []
+  // As in activate: nobody invoked it.
+  chats.subscribe('local.reader', {}, () => {
+    heard.push(currentInvoker().label)
+    answers.push(github.request('local.reader'))
+  })
+  // A resource made during a device's call delivers it, still inside that call's context.
+  runAsInvoker(DEVICE, () => listeners[0]!())
   assert.deepEqual(heard, ['you'])
+  assert.equal((await answers[0]!).ok, true)
+  assert.ok(calls.includes('github:local.reader'))
+})
+
+test('ending a companion needs what driving it needs; a device that cannot cannot end it', () => {
+  const { kernel, calls } = setup()
+  const companions = kernel
+    .hostFor('local.reader')
+    .requireService(serviceTokens.CompanionAgentsModuleServiceToken) as unknown as {
+    attach(moduleId: string): { dispose(): void }
+  }
+  const handle = companions.attach('local.reader')
+  assert.throws(
+    () => runAsInvoker(DEVICE, () => handle.dispose()),
+    /"companion-agents\.module-service\.attach\.dispose" .*needs "conversation:create"/,
+  )
+  handle.dispose()
+  assert.deepEqual(calls, ['attach:local.reader', 'dispose'])
 })

@@ -640,7 +640,6 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     // Every caller of `use` throws its refusal (an async method's becomes its rejection).
     if (!covered(method, requirement)) void refuseUndeclared(moduleId, method, { ...requirement, refusal: 'throw' })
   }
-  // A service as the host hands it to an extension: each method through the gate.
   // A service as the host hands it to an extension: each method through the
   // gate, and what a method hands back that can be called too (its row under
   // `returns`), as the host does.

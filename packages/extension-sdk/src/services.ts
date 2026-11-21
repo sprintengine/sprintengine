@@ -16,7 +16,8 @@
 // So an extension never lets a paired device or an agent do what that device
 // or agent could not do itself. Work an extension does on its own (a startup
 // hook, a timer it set while starting, a sidecar) runs as the person who
-// approved it.
+// approved it; a listener it hands Studio runs as whoever was calling when it
+// handed it over.
 //
 // `refusal` is how a refused call is told: `answer`, the method's own failure
 // shape (`{ ok: false, code, message }`) with code `not_permitted` or
@@ -26,7 +27,10 @@
 // What a method hands back that can be called (a companion's handle, the
 // function that stops a watch) is a host method too, with a row of its own
 // under `returns`: by the method, then the member (`attach` → `send`), with
-// `()` for a function (`watch` → `()`, `attach` → `onStatus.()`). It is
+// `()` for a function (`watch` → `()`, `attach` → `onStatus.()`). A function
+// that only stops the extension's own listening (a watch's, a subscription's)
+// needs nothing of whoever calls it; anything that stops or changes what the
+// caller could not touch needs what touching it needs. It is
 // checked at each call, as whoever set that call off, while the extension is
 // approved; a callable without a row is refused.
 //
@@ -134,10 +138,12 @@ export const EXTENSION_HOST_SERVICES: readonly ExtensionHostService[] = [
     returns: {
       attach: {
         ...each(['status', 'onStatus', 'onEvent'], need('agents:companion', 'conversation:read', 'throw')),
-        ...each(['onStatus.()', 'onEvent.()', 'dispose'], need('agents:companion', null, 'throw')),
+        // Ending it stops a running task, so it needs what driving it needs.
+        ...each(['interrupt', 'dispose'], need('agents:companion', 'conversation:create', 'throw')),
+        // Stopping its own listening changes nothing.
+        ...each(['onStatus.()', 'onEvent.()'], need('agents:companion', null, 'throw')),
         ...each(['runStructured', 'send'], need('agents:companion', 'conversation:create', 'reject')),
         respondToApproval: need('agents:companion', 'conversation:create', 'answer'),
-        interrupt: need('agents:companion', 'conversation:create', 'throw'),
       },
     },
   },
@@ -282,7 +288,7 @@ export const EXTENSION_RENDERER_METHODS: Readonly<Record<string, ExtensionRender
   watchWorkspaces: inWindow(['workspace:read'], 'throw'),
   getWorkingRoot: inWindow(['workspace:read'], 'reject'),
   getWorkspaceGitInfo: inWindow(['workspace:read'], 'answer'),
-  watchWorkspaceFile: inWindow(['workspace:read'], 'throw'),
+  watchWorkspaceFile: inWindow(['workspace:read'], 'reject'),
   getWorkspaceModuleState: inWindow(['storage:own'], 'throw'),
   setWorkspaceModuleState: inWindow(['storage:own'], 'throw'),
   getModuleAppState: inWindow(['settings:own'], 'throw'),

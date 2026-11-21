@@ -43,7 +43,7 @@ import {
   extensionHostService,
   type ExtensionHostRequirement,
 } from '../../../packages/extension-sdk/src/services'
-import { currentInvoker, detachedFromInvocation, runAsInvoker, type ExtensionInvoker } from './extension-invocation'
+import { boundToRegistrant, currentInvoker, runAsInvoker, type ExtensionInvoker } from './extension-invocation'
 import {
   ExtensionHostRefusal,
   gateExtensionHostCall,
@@ -1039,9 +1039,10 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
             `Extension "${moduleId}" called service "${key}" as module "${String(args[0])}": a module reaches it only as itself.`,
           )
         }
-        // What it hands the host to call back later is called back as its
-        // own work, never as whoever set this call off.
-        const handed = args.map((arg) => (typeof arg === 'function' ? detachedFromInvocation(arg as never) : arg))
+        // What it hands the host to call back later is called back on behalf
+        // of whoever set this call off (the person, for its own work), never
+        // as whoever the host happens to be serving when it delivers.
+        const handed = args.map((arg) => (typeof arg === 'function' ? boundToRegistrant(arg as never) : arg))
         return guardResult(fn.apply(self, handed), place)
       }
     }
@@ -1197,7 +1198,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       watchModuleAppState: (cb) => (
         refuseRetired(),
         enforce('watchModuleAppState'),
-        live.watchModuleAppState(detachedFromInvocation(cb))
+        live.watchModuleAppState(boundToRegistrant(cb))
       ),
       onStartup: (hook) => (refuseRetired(), live.onStartup(hook)),
       onShutdownBegin: (hook) => (refuseRetired(), live.onShutdownBegin(hook)),
