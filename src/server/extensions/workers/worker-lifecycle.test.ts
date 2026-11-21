@@ -327,3 +327,25 @@ test('a call during an idle stop waits for the old process to finish, and the ca
   const answered = await second
   assert.ok(answered.ok && answered.answer.ok)
 })
+
+test('a worker that stops between starting and taking a call answers that it is unavailable, not a crash', async () => {
+  harness = startWorkerHarness([
+    worker('brief', {
+      main: `${PING}exports.activate = ((activate) => (studio) => {
+        activate(studio)
+        studio.registerMcpTools([{ name: 'brief_ping', description: 'x', inputSchema: { type: 'object' }, handler: async () => ({ content: [] }) }])
+      })(exports.activate)\n`,
+      permissions: ['tools:contribute'],
+      mcpTools: [{ name: 'brief_ping', description: 'Ping.', access: 'read' }],
+    }),
+  ])
+  const workers = harness.workers as unknown as { ensure: (id: string) => Promise<{ session: unknown }> }
+  const started = workers.ensure.bind(harness.workers)
+  // As if it exited the moment it was ready.
+  workers.ensure = async (id) => Object.assign(await started(id), { session: null })
+  const answer = await ping('brief')
+  assert.equal(!answer.ok && answer.code, 'extension_unavailable')
+  const tool = harness.load.kernel.mcpToolRegistrations().find((entry) => entry.registration.name === 'brief_ping')!
+  const result = await tool.registration.handler({}, undefined)
+  assert.match(JSON.stringify(result.content), /extension_unavailable/)
+})

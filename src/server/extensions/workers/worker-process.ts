@@ -20,7 +20,7 @@ import {
 // entry (worker-entry.ts) with Node's flags cleared and the environment
 // scrubbed (worker-env.ts), its output written to the extension's log, and
 // every call into it answered or timed out. What it may do, who it serves and
-// when it starts and stops are decided above this (worker-bridge.ts,
+// when it starts and stops are decided above this (worker-session.ts,
 // worker-manager.ts).
 
 /** Where the worker entry was built: beside this file's bundle, unpacked when the app is an archive. */

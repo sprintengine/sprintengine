@@ -144,6 +144,9 @@ const SERVICE_SHAPES: Record<string, WorkerServiceShape> = Object.fromEntries(
   ]),
 )
 
+const stoppedMeanwhile = (moduleId: string): string =>
+  `Extension "${moduleId}"'s worker stopped before it could take the call.`
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -268,9 +271,13 @@ export class ExtensionWorkers implements KernelWorkerPort {
         code: 'extension_method_unknown',
         message: `Extension "${request.moduleId}" declares "${request.method}" as ${access === 'operate' ? 'an operate' : 'a read'} method: call it with extension.${access}.`,
       }
+    // It may have stopped between starting and now.
+    const session = entry.session
+    if (!session)
+      return { ok: false, code: 'extension_unavailable', message: entry.message ?? stoppedMeanwhile(request.moduleId) }
     let answer: unknown
     try {
-      answer = await entry.session!.run(
+      answer = await session.run(
         {
           kind: 'method',
           name: request.method,
@@ -663,8 +670,11 @@ export class ExtensionWorkers implements KernelWorkerPort {
       }
       if (!entry.tools.has(name))
         return toolError('tool_unavailable', `Extension "${moduleId}"'s worker did not register the tool "${name}".`)
+      // It may have stopped between starting and now.
+      const session = entry.session
+      if (!session) return toolError('extension_unavailable', entry.message ?? stoppedMeanwhile(moduleId))
       try {
-        const result = (await entry.session!.run(
+        const result = (await session.run(
           { kind: 'tool', name, args: args ?? {}, context: (context ?? {}) as Record<string, unknown> },
           currentInvoker(),
         )) as McpToolResult
