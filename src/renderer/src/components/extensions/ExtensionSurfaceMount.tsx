@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
 
 import { THEME_TOKENS } from '../../../../../packages/extension-sdk/src/index'
-import { desktopExtensionFrameUrl, EXTENSION_FRAME_PATH_PREFIX } from '../../../../shared/extension-frames'
+import { desktopExtensionFrameUrl, EXTENSION_FRAME_HOST_PATH_PREFIX } from '../../../../shared/extension-frames'
 import { extensionSurfaceId } from '../../../../shared/modules/extension-ids'
 import type { ExtensionSurfacePoint } from '../../../../shared/modules/third-party-manifest'
 import { sanitizeEntryMessage } from '../../../../shared/modules/entry-messages'
@@ -19,8 +19,9 @@ import { EmptyState } from '../ui/EmptyState'
 // sandboxed frame of its own: `allow-scripts` and nothing else, so its code
 // runs in an opaque origin with no reach into this window. Its document comes
 // from the window's Studio (`extension.frame`); a desktop window stages it
-// with its shell (`studio-ext://frame/<hash>`), a browser tab loads it from
-// its Studio's own path (`ext-frame/<hash>`). The frame's host calls go
+// with its shell (`studio-ext://frame/<hash>`), a browser tab loads it inside
+// Studio's wrapper document (`ext-frame-host/<hash>`), whose policy admits
+// that one document and nothing else, so the frame cannot navigate anywhere. The frame's host calls go
 // through the bridge (extension-frame-host.ts) to that Studio, which checks
 // each as the extension and as this window's connection.
 
@@ -48,8 +49,14 @@ export function ExtensionSurfaceMount({
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   // What the frame's `load` does: set by the effect for the frame it opened.
   const onFrameLoad = useRef<() => void>(() => undefined)
-  const [src, setSrc] = useState<string | null>(null)
+  // `wrapped`: a browser tab's frame sits in Studio's wrapper document
+  // (`/ext-frame-host/<hash>`), whose policy lets the frame load its own
+  // document and nothing else. The extension's window is the wrapper's child.
+  const [src, setSrc] = useState<{ url: string; wrapped: boolean } | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
+  // Bumped to draw the surface again: its document was built before the
+  // extension's access grew (`frame_outdated`).
+  const [generation, setGeneration] = useState(0)
   // Re-read when the set changes: a surface whose extension was uninstalled
   // or lost its approval is gone, and its frame with it.
   useSyncExternalStore(subscribeExtensionSurfaces, extensionSurfacesVersion, extensionSurfacesVersion)
@@ -67,21 +74,46 @@ export function ExtensionSurfaceMount({
       if (!closed) setFailure(sanitizeEntryMessage(error instanceof Error ? error.message : String(error), DRAW_FAILED))
     }
     const host = loaded.host
-    // A frame loads its document once. A second load is the frame leaving it
-    // (`location.href`, a refresh), which the window cannot see into: the
-    // page now there would inherit the bridge. Studio closes the surface.
-    let loads = 0
-    onFrameLoad.current = () => {
-      loads += 1
-      if (loads < 2 || closed) return
+    // A frame leaves its document only to go nowhere: the desktop shell and a
+    // tab's wrapper refuse the navigation before any request leaves. Should
+    // one still unload it, the bootstrap says so first (`leaving`), and a
+    // second load of its document is the backstop: the page now there would
+    // inherit the bridge, so Studio closes the surface.
+    const left = () => {
+      if (closed) return
       bridge.dispose()
       fail(new Error(LEFT_ITS_DOCUMENT))
     }
+    let loads = 0
+    const documentLoaded = () => {
+      loads += 1
+      if (loads >= 2) left()
+    }
+    let wrapped = false
+    onFrameLoad.current = () => {
+      if (!wrapped) return documentLoaded()
+      // The wrapper's own load waits for the frame inside it, which has loaded once.
+      const inner = frameRef.current?.contentDocument?.querySelector('iframe')
+      if (!inner) return left()
+      documentLoaded()
+      inner.addEventListener('load', documentLoaded)
+    }
+    const surfaceWindow = (): Window | null => {
+      const outer = frameRef.current?.contentWindow ?? null
+      return wrapped ? ((outer?.frames[0] as Window | undefined) ?? null) : outer
+    }
+    let frameHash = ''
     const bridge = createExtensionFrameHost({
-      source: () => frameRef.current?.contentWindow ?? null,
-      post: (message) => frameRef.current?.contentWindow?.postMessage(message, '*'),
+      source: surfaceWindow,
+      post: (message) => surfaceWindow()?.postMessage(message, '*'),
       ...(workspaceId ? { workspaceId } : {}),
-      call: (method, params) => extensionsApi.extensionCall({ moduleId: extensionKey, method, params }),
+      call: async (method, params) => {
+        const answer = await extensionsApi.extensionCall({ moduleId: extensionKey, frame: frameHash, method, params })
+        if (answer.ok || answer.code !== 'frame_outdated') return answer
+        // Drawn before the extension's access grew: draw it again from the extension as it is now.
+        if (!closed) setGeneration((value) => value + 1)
+        return { ok: false, code: 'unavailable', message: answer.message }
+      },
       client: {
         toast: (params) => {
           host.toast({
@@ -115,6 +147,7 @@ export function ExtensionSurfaceMount({
         paintAt ??= at
       },
       onFailed: fail,
+      onLeaving: left,
     })
     const receive = (event: MessageEvent) => bridge.receive(event)
     window.addEventListener('message', receive)
@@ -129,16 +162,21 @@ export function ExtensionSurfaceMount({
     void extensionsApi
       .extensionFrame({ moduleId: extensionKey, point, id, ...(theme ? { theme } : {}) })
       .then(async (document) => {
+        frameHash = document.hash
         const stage = window.api?.stageExtensionFrame
         if (stage) {
           if (!(await stage(document.hash, document.html))) throw new Error('This window could not hold the frame.')
-          return desktopExtensionFrameUrl(document.hash)
+          return { url: desktopExtensionFrameUrl(document.hash), wrapped: false }
         }
         // Relative to the page, as the tab reaches its Studio (web/webLocation.ts).
-        return new URL(`.${EXTENSION_FRAME_PATH_PREFIX}${document.hash}`, window.location.href).toString()
+        wrapped = true
+        return {
+          url: new URL(`.${EXTENSION_FRAME_HOST_PATH_PREFIX}${document.hash}`, window.location.href).toString(),
+          wrapped: true,
+        }
       })
-      .then((url) => {
-        if (!closed) setSrc(url)
+      .then((next) => {
+        if (!closed) setSrc(next)
       }, fail)
     return () => {
       closed = true
@@ -147,7 +185,7 @@ export function ExtensionSurfaceMount({
       themes.disconnect()
       stopEvents()
     }
-  }, [loaded, extensionKey, point, id, workspaceId])
+  }, [loaded, extensionKey, point, id, workspaceId, generation])
 
   if (!loaded) {
     return (
@@ -162,10 +200,13 @@ export function ExtensionSurfaceMount({
       {failure ? <EmptyState title={DRAW_FAILED} body={failure} /> : null}
       {src && !failure ? (
         <iframe
+          key={src.url}
           ref={frameRef}
-          src={src}
+          src={src.url}
           onLoad={() => onFrameLoad.current()}
-          sandbox="allow-scripts"
+          // The wrapper is Studio's own document, which runs no script (its
+          // policy); the extension's frame inside it carries the sandbox.
+          {...(src.wrapped ? {} : { sandbox: 'allow-scripts' })}
           title={loaded.contribution.title}
           data-extension={extensionKey}
           data-extension-surface={`${point}/${id}`}

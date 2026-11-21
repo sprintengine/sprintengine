@@ -492,11 +492,12 @@ export type MainKernelOptions = {
   /** Folders a frame's `files.*` may never reach, even inside a workspace (Studio's data, the installed extensions). */
   frameFileExclusions?: () => readonly string[]
   /**
-   * What an extension's frame calls are held to: its approval's permissions as
-   * they stand now, or null when it is not an approved, switched-on
+   * What an extension's frame calls are held to (extension-frame-grant.ts):
+   * its approval's permissions as they stand now, pinned to those its
+   * document was built under, or null when it is not an approved, switched-on
    * extension. Absent (tests), the extensions the kernel was started with.
    */
-  resolveFrameGrant?: (moduleId: string) => readonly string[] | null
+  resolveFrameGrant?: (moduleId: string, frame: string) => { grant: readonly string[]; outdated: boolean } | null
 }
 
 // Flood bounds: a module may emit at most this many notifications per window;
@@ -634,15 +635,16 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   const frameCalls = createExtensionFrameCalls({
     // The approvals as they stand now where the server says so; otherwise
     // (tests) the extensions this kernel was started with.
-    grantOf: (moduleId) => {
-      if (options.resolveFrameGrant) return options.resolveFrameGrant(moduleId)
+    grantOf: (moduleId, frame) => {
+      if (options.resolveFrameGrant) return options.resolveFrameGrant(moduleId, frame)
       const present = options.isModulePresent
         ? options.isModulePresent(moduleId)
         : options.resolveModuleManifest?.(moduleId) !== undefined
       if (!isThirdParty(moduleId) || !present) return null
-      return options.resolveExtensionGrant
+      const grant = options.resolveExtensionGrant
         ? options.resolveExtensionGrant(moduleId)
         : (options.resolveModuleManifest?.(moduleId)?.permissions ?? [])
+      return grant === null ? null : { grant, outdated: false }
     },
     service: (key) => services.get(key)?.value,
     callModuleMethod: (request) => callModuleMethod(request),

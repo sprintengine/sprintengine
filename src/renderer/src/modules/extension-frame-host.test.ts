@@ -17,6 +17,7 @@ function harness(answers: Record<string, StudioExtensionCallAnswer> = {}) {
   const called: string[] = []
   const toasts: unknown[] = []
   const ready: number[] = []
+  const left: boolean[] = []
   let clock = 0
   const host = createExtensionFrameHost({
     source: () => frame,
@@ -36,12 +37,13 @@ function harness(answers: Record<string, StudioExtensionCallAnswer> = {}) {
     onReady: (at) => ready.push(at),
     onPaint: () => undefined,
     onFailed: () => undefined,
+    onLeaving: () => void left.push(true),
     now: () => clock,
   })
   const send = (data: unknown, source: MessageEventSource = frame) =>
     host.receive({ source, data } as unknown as MessageEvent)
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
-  return { host, posted, called, toasts, ready, send, settle, tick: (ms: number) => (clock += ms) }
+  return { host, posted, called, toasts, ready, left, send, settle, tick: (ms: number) => (clock += ms) }
 }
 
 test('the frame is answered hello with the theme and its workspace; a stranger is not heard', () => {
@@ -133,4 +135,15 @@ test('a cancel counts only for a call still waiting, and is forgotten once the c
     [7, 8],
     'the id is answered again once reused',
   )
+})
+
+test('a frame whose document unloads loses the bridge at once', async () => {
+  const { posted, called, left, send, settle } = harness()
+  send({ se: 1, kind: 'evt', event: 'leaving' })
+  assert.deepEqual(left, [true])
+  send({ se: 1, kind: 'req', id: 1, method: 'workspace.list', params: {} })
+  send({ se: 1, kind: 'evt', event: 'ready' })
+  await settle()
+  assert.deepEqual(called, [])
+  assert.deepEqual(posted, [])
 })

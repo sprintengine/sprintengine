@@ -75,7 +75,8 @@ seconds, each at most 64 KiB.
 `files.*` reach only files inside a workspace's folder: a path is relative to
 the folder, and a file is found by its real path, so a link out of the folder
 is refused rather than followed, as is a file with a second name (a hard
-link). Nothing is written under a `.git` folder. Text files only, up to 4 MiB.
+link). Some tools hard-link the files they install (pnpm's store, some build
+caches), so `files.read` refuses those too. Nothing is written under a `.git` folder. Text files only, up to 4 MiB.
 A project's files can run code (its scripts, its tools' settings), so the
 approval of an extension holding `workspace-files:write` says it has full
 access to the person's account.

@@ -118,13 +118,20 @@ test('a frame names its extension, the surface and, when it has one, the clientâ
   )
 })
 
-test('a host call names its extension and a frame method, keeps its params as they came, and carries a commandId', () => {
-  const call = { moduleId: 'local.a', method: 'files.read', params: { workspaceId: 'w', path: 'a.md' } }
+test('a host call names its extension, the frame document it came from and a frame method, keeps its params as they came, and carries a commandId', () => {
+  const call = {
+    moduleId: 'local.a',
+    frame: 'f'.repeat(64),
+    method: 'files.read',
+    params: { workspaceId: 'w', path: 'a.md' },
+  }
   assert.deepEqual(parseStudioMethodParams('extension.call', { ...call, commandId: 'c1', extra: true }), {
     ok: true,
     params: { ...call, commandId: 'c1' },
   })
   assert.equal(refusal(parseStudioMethodParams('extension.call', call)), 'invalid_params')
+  const { frame: _frame, ...unnamed } = call
+  assert.equal(refusal(parseStudioMethodParams('extension.call', { ...unnamed, commandId: 'c' })), 'invalid_params')
   assert.equal(
     refusal(parseStudioMethodParams('extension.call', { ...call, method: '../x', commandId: 'c' })),
     'invalid_params',

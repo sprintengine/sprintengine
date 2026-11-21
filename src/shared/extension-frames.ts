@@ -51,6 +51,15 @@ export function desktopExtensionFrameUrl(hash: string): string {
 /** A frame document's path on the Studio server's web listener. */
 export const EXTENSION_FRAME_PATH_PREFIX = '/ext-frame/'
 
+/**
+ * The wrapper document a browser tab frames an extension's document in, on
+ * the Studio's own origin: its policy's `frame-src` names that one document,
+ * so the frame inside cannot be navigated anywhere else, whoever starts it.
+ * The page's own `frame-src` cannot do that: it admits the preview pane's
+ * ports.
+ */
+export const EXTENSION_FRAME_HOST_PATH_PREFIX = '/ext-frame-host/'
+
 /** A frame document's hash: sha256 of its bytes, hex. */
 export const EXTENSION_FRAME_HASH_PATTERN = /^[0-9a-f]{64}$/u
 
@@ -73,6 +82,8 @@ export const EXTENSION_FRAME_EVENTS = {
   paint: 'paint',
   /** frame → host: the entry failed to load or to mount. */
   failed: 'failed',
+  /** frame → host: the frame's document is unloading (`pagehide`); the host drops the bridge. */
+  leaving: 'leaving',
 } as const
 
 /**

@@ -2384,6 +2384,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
           ok: true as const,
           result: await modules.frameCall({
             moduleId: params.moduleId,
+            frame: params.frame,
             method: params.method,
             params: params.params,
             clientId: grant.clientId,

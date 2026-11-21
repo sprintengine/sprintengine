@@ -96,7 +96,9 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
   })
   return `${PRELUDE};(function (C) {
   var E = C.events
-  var parent = window.parent
+  // The window that drew the frame: its parent on desktop; in a browser tab
+  // the frame sits in Studio's wrapper document, so the window is the top.
+  var host = window.top
   var nextId = 1
   var pending = new Map()
   var listeners = { theme: new Set(), push: new Set() }
@@ -106,7 +108,7 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
   var readied = false
   function post(message) {
     message.se = C.protocol
-    try { parent.postMessage(message, '*') } catch (_) {}
+    try { host.postMessage(message, '*') } catch (_) {}
   }
   function failure(code, message, retryable) {
     var error = new Error(String(message || 'The host call failed.'))
@@ -222,7 +224,7 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     }).catch(fail)
   }
   window.addEventListener('message', function (event) {
-    if (event.source !== parent) return
+    if (event.source !== host) return
     var message = event.data
     if (!message || message.se !== C.protocol) return
     if (message.kind === 'res') {
@@ -246,6 +248,9 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
       })
     }).observe({ type: 'paint', buffered: true })
   } catch (_) {}
+  // Registered before the extension's code runs, so nothing it does comes
+  // first: the window drops the bridge as soon as this document unloads.
+  window.addEventListener('pagehide', function () { post({ kind: 'evt', event: E.leaving, payload: {} }) })
   post({ kind: 'evt', event: E.ready, payload: {} })
 })(${config})
 `

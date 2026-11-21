@@ -32,7 +32,7 @@
 // `workspace-files:*` and the caller's `filesystem:*`.
 
 import { constants, type Stats } from 'node:fs'
-import { lstat, open, readdir, readlink, realpath, stat, type FileHandle } from 'node:fs/promises'
+import { lstat, open, readdir, readlink, realpath, stat, unlink, type FileHandle } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
 /** The largest file `files.read` answers, and the most `files.write` writes. */
@@ -302,12 +302,18 @@ export async function writeExtensionFile(
     if (created) {
       // The new file is where the check said, under the folder it checked.
       const now = await descriptorPath(handle, target).catch(() => '')
-      if (dirname(now) !== folder) {
-        const where = await stat(dirname(now)).catch(() => null)
-        if (!where || where.dev !== folderChecked.dev || where.ino !== folderChecked.ino)
-          throw new ExtensionFileRefusal('not_permitted', `${shown} moved while it was made, so nothing was written.`)
+      try {
+        if (dirname(now) !== folder) {
+          const where = await stat(dirname(now)).catch(() => null)
+          if (!where || where.dev !== folderChecked.dev || where.ino !== folderChecked.ino)
+            throw new ExtensionFileRefusal('not_permitted', `${shown} moved while it was made, so nothing was written.`)
+        }
+        contained(now, root, forbidden, shown)
+      } catch (error) {
+        // The empty file the open made, where the swapped folder pointed, is taken away again.
+        if (now) await unlink(now).catch(() => undefined)
+        throw error
       }
-      contained(now, root, forbidden, shown)
     } else await handle.truncate(0)
     await handle.write(bytes, 0, bytes.byteLength, 0)
     return { size: bytes.byteLength, created }

@@ -102,3 +102,32 @@ test('the cache keeps the newest documents within its bounds', () => {
   assert.equal(cache.get('a'), undefined)
   assert.equal(cache.get('c'), 'C')
 })
+
+test('a browser tab’s wrapper admits the one document and nothing else, and runs no script', () => {
+  const cache = createExtensionFrameCache()
+  const html = documentFor()
+  const hash = extensionFrameHash(html)
+  cache.put(hash, html)
+  const route = createExtensionFrameRoute(cache)
+  const served = respond(route, `/ext-frame-host/${hash}`)
+  assert.equal(served.answer.status, 200)
+  const policy = served.answer.headers!['Content-Security-Policy']!
+  assert.match(policy, new RegExp(`frame-src http://127\\.0\\.0\\.1:4791/ext-frame/${hash}(;|$)`))
+  assert.match(policy, /default-src 'none'/)
+  assert.doesNotMatch(policy, /script-src/)
+  assert.match(
+    String(served.answer.body),
+    new RegExp(`<iframe sandbox="allow-scripts" src="\\.\\./ext-frame/${hash}">`),
+  )
+  assert.equal(respond(route, `/ext-frame-host/${'0'.repeat(64)}`).answer.status, 404, 'never built here')
+  assert.equal(respond(route, `/ext-frame-host/${hash}`, false).answer.status, 401)
+})
+
+test('the frame’s bootstrap answers the window that drew it, and says when its document unloads', () => {
+  const html = documentFor()
+  assert.match(html, /var host = window\.top/)
+  assert.ok(
+    html.indexOf("addEventListener('pagehide'") < html.indexOf('event: E.ready'),
+    'before the extension can run',
+  )
+})

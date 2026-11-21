@@ -47,6 +47,8 @@ export type ExtensionFrameHostOptions = {
   onReady: (atEpochMs: number) => void
   onPaint: (atEpochMs: number) => void
   onFailed: (message: string) => void
+  /** The frame's document is unloading: whatever loads next must not inherit the bridge. */
+  onLeaving?: () => void
   now?: () => number
 }
 
@@ -157,6 +159,9 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
         } else if (message.event === EXTENSION_FRAME_EVENTS.paint) {
           const at = epoch(message.payload)
           if (at !== null) options.onPaint(at)
+        } else if (message.event === EXTENSION_FRAME_EVENTS.leaving) {
+          alive = false
+          options.onLeaving?.()
         } else if (message.event === EXTENSION_FRAME_EVENTS.failed) {
           const words = (message.payload as { message?: unknown } | null)?.message
           options.onFailed(typeof words === 'string' ? words.slice(0, 500) : 'The extension could not draw this.')

@@ -34,6 +34,8 @@ import { moduleEventPayloadProblem } from '../../shared/modules/events'
 /** One frame call, as the router hands it over. */
 export type ExtensionFrameCallRequest = {
   moduleId: string
+  /** The hash of the frame document the call came from. */
+  frame: string
   method: string
   params: unknown
   clientId: string
@@ -44,13 +46,14 @@ export type ExtensionFrameCallRequest = {
 
 export type ExtensionFrameCallDeps = {
   /**
-   * The permissions an extension's approval holds now, read at each call: null
-   * when it is not an installed extension that is approved as it is and
-   * switched on. Read from the approvals and the switches as they stand, not
-   * as they stood when the kernel started, so one installed or approved
-   * during the session is served at once and one revoked is refused at once.
+   * What a frame's calls are held to, read at each call: null when the
+   * extension is not installed, approved as it is and switched on; else the
+   * permissions both its approval now and the approval its document was built
+   * under hold, and whether the document is outdated (its approval grew since,
+   * or this server did not build it). Read from the approvals and switches as
+   * they stand, not as they stood when the kernel started.
    */
-  grantOf(moduleId: string): readonly string[] | null
+  grantOf(moduleId: string, frame: string): { grant: readonly string[]; outdated: boolean } | null
   /** A service the host's parts provide, by key. */
   service(key: string): unknown
   callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome>
@@ -210,11 +213,20 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
         code: 'unknown_method',
         message: `"${request.method}" is not a host method a frame may call.`,
       }
+    const held = deps.grantOf(request.moduleId, request.frame)
+    // A document built before the extension's access grew uses none of it:
+    // the client draws the surface again from the extension as it is now.
+    if (held?.outdated)
+      return {
+        ok: false,
+        code: 'frame_outdated',
+        message: `This surface of extension "${request.moduleId}" was drawn before it changed; it is drawn again.`,
+      }
     const decision = gateExtensionHostCall({
       extensionId: request.moduleId,
       method: request.method,
       requirement,
-      grant: deps.grantOf(request.moduleId),
+      grant: held ? held.grant : null,
       invoker: request.invoker,
     })
     if (!decision.ok) return { ok: false, code: decision.code, message: decision.message }

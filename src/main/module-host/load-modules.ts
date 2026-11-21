@@ -156,7 +156,7 @@ export function loadMainModules(options: {
   /** Folders a frame's `files.*` never reaches: see `MainKernelOptions.frameFileExclusions`. */
   frameFileExclusions?: () => readonly string[]
   /** What frame calls are held to: see `MainKernelOptions.resolveFrameGrant`. */
-  resolveFrameGrant?: (moduleId: string) => readonly string[] | null
+  resolveFrameGrant?: (moduleId: string, frame: string) => { grant: readonly string[]; outdated: boolean } | null
 }): LoadMainModulesResult {
   const { modules, overrides = {}, provideServices, ineligible, launchErrors = [] } = options
   const registerTimeoutMs = options.registerTimeoutMs ?? REGISTER_MAIN_TIMEOUT_MS

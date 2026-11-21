@@ -420,7 +420,7 @@ const frameCall = (
   params: unknown,
   moduleId = 'acme.board',
   commandId = `fc${(nextCommand += 1)}`,
-) => request('extension.call', { moduleId, method, params, commandId })
+) => request('extension.call', { moduleId, frame: 'a'.repeat(64), method, params, commandId })
 
 test('a frame’s Backlog and usage calls reach the services under its extension’s id, their answers as results', async () => {
   const { hub, calls } = hubWithServices()

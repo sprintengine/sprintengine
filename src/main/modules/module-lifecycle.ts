@@ -26,6 +26,7 @@ import type { ThirdPartyLaunchSession } from './third-party-main-loader'
 import { toThirdPartyModuleView } from './third-party-module-view'
 import { collectExtensionContributions, readExtensionSurfaceEntry } from './extension-surface-entries'
 import { isExtensionRunnable } from './module-signature'
+import { pinExtensionFrame } from './extension-frame-grant'
 import { readExtensionStandingContextSync } from './extension-standing-context'
 import { accessGrowth, extensionAccess, writeExtensionApproval } from './extension-approvals'
 import { discoverUserModules, installModuleFolder } from './user-module-registry'
@@ -210,6 +211,8 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
       })
       const hash = extensionFrameHash(html)
       extensionFrameDocuments.put(hash, html)
+      // What this document's calls may use at most: what the approval held now.
+      pinExtensionFrame(hash, moduleId, standingContext().approvals.get(moduleId)?.access.permissions ?? [])
       return { ok: true, hash, html }
     },
 

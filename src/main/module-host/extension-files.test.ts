@@ -163,11 +163,7 @@ test('a folder above the file swapped for a link out between the check and the o
     ),
     'not_permitted',
   )
-  assert.equal(
-    readFileSync(join(create.outside, 'docs', 'new.md'), 'utf8'),
-    '',
-    'nothing was written into the file made outside',
-  )
+  assert.equal(existsSync(join(create.outside, 'docs', 'new.md')), false, 'the empty file made outside is taken away')
 })
 
 test('a search does not read a folder that is now a link out', async () => {

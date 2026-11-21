@@ -159,7 +159,18 @@ export type StudioExtensionFrameRequest = {
 }
 
 /** One host call a frame made: the extension, the frame method and its params. */
-export type StudioExtensionCall = { moduleId: string; method: string; params?: unknown }
+export type StudioExtensionCall = {
+  moduleId: string
+  /**
+   * The hash of the frame document the call came from (`extension.frame`). A
+   * call is held to what was approved when that document was built, and one
+   * from a document built before the extension's access changed is refused
+   * `frame_outdated`: the client draws the surface again.
+   */
+  frame: string
+  method: string
+  params?: unknown
+}
 
 /** What a host call came to: the method's result, or why it was refused or failed. */
 export type StudioExtensionCallAnswer = { ok: true; result: unknown } | { ok: false; code: string; message: string }
@@ -432,12 +443,15 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
     capability: STUDIO_EXTENSION_FRAMES_CAPABILITY,
     params: (value) => {
       if (!moduleId(value.moduleId)) return studioParamsRefused('"moduleId" is the extension\'s install key.')
+      if (typeof value.frame !== 'string' || !/^[0-9a-f]{64}$/u.test(value.frame))
+        return studioParamsRefused('"frame" is the hash of the frame document the call came from.')
       if (typeof value.method !== 'string' || !/^[a-z][a-zA-Z.]{0,63}$/u.test(value.method))
         return studioParamsRefused('"method" is a frame method\'s name.')
       const command = commandIdOf(value)
       if (!command.ok) return command
       return studioParams({
         moduleId: value.moduleId,
+        frame: value.frame,
         method: value.method,
         ...(value.params === undefined ? {} : { params: value.params }),
         commandId: command.params,

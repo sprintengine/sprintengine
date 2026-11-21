@@ -13,7 +13,8 @@ import { extensionManifest, HELLO_MOUNT_SOURCE, writeExtensionFolder } from '../
 import { EXTENSION_FRAME_THEMES } from '../../shared/extension-frame-themes.generated'
 import { extensionFrameDocuments } from '../../server/extensions/frames/frame-cache'
 import { extensionFrameHash } from '../../server/extensions/frames/frame-document'
-import { writeExtensionApproval } from './extension-approvals'
+import { createExtensionApprovalReader, writeExtensionApproval } from './extension-approvals'
+import { createExtensionFrameGrant } from './extension-frame-grant'
 import { approvalOf } from './extension-approvals.test-helper'
 
 // The lifecycle's own rules: which switches apply at once, how a module is
@@ -191,6 +192,9 @@ test('an approved extension’s surface is drawn from its verified entry, in the
   assert.ok(frame.ok)
   assert.equal(frame.hash, extensionFrameHash(frame.html))
   assert.equal(extensionFrameDocuments.get(frame.hash), frame.html)
+  // Its calls are held to what the approval held when it was built.
+  const grant = createExtensionFrameGrant({ approvals: createExtensionApprovalReader(dataDir), dataDir })
+  assert.deepEqual(grant('local.deck', frame.hash), { grant: ['storage:own'], outdated: false })
   assert.ok(frame.html.includes(JSON.stringify(HELLO_MOUNT_SOURCE).slice(1, 20)), 'the entry is in the document')
   assert.ok(frame.html.includes(`--bg-app:${EXTENSION_FRAME_THEMES.nord!.tokens['--bg-app']}`), 'drawn in nord')
   assert.equal((await lifecycle.frame({ moduleId: 'local.deck', point: 'doors', id: 'nope' })).ok, false)
