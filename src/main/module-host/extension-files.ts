@@ -251,6 +251,13 @@ export async function writeExtensionFile(
     throw new ExtensionFileRefusal('invalid_params', 'A file Studio writes for an extension is at most 4 MiB.')
   const parts = partsOf(path)
   const shown = parts.join('/')
+  // Named as a .git folder: refused before anything is looked up, whatever
+  // the file system makes of the case.
+  if (parts.some((part) => part.toLowerCase() === '.git'))
+    throw new ExtensionFileRefusal(
+      'not_permitted',
+      `${shown} is in a .git folder, which Studio does not write for an extension.`,
+    )
   const { root, forbidden } = await realRoot(scope)
   // The folder it goes in, by its real path, inside the workspace.
   let folder: string
