@@ -46,6 +46,7 @@ const LEGACY_CHAT_TO_CHAT_TOOLS = new Set([
   'conversation.interrupt',
   'subagent.start',
   'subagent.status',
+  'subagent.resume',
   'subagent.cancel',
 ])
 const LEGACY_CHAT_LIFECYCLE_TOOLS = new Set([

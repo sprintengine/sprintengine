@@ -1345,6 +1345,18 @@ chat beneath stays mounted and hidden, since a queued message lives in its view.
   rewind or checkpoint revert, and its preset cannot be raised past its parent's,
   which the runtime refuses by any path (`subagentPresetCeiling`). A row reads its
   live status, so a person's follow-up does not say Done.
+- Its parent can give one that has ended another task (`subagent.resume`), so a
+  second review round goes to the reviewer that did the first and keeps what it
+  read. It is the chat's ordinary send to a resting chat, as Studio's message:
+  the CLI picks up its own session (Claude Code's session id, Codex's thread
+  with the model and sandbox named again), on the model, effort, preset and
+  read-only mode its record holds. It stays one row, which leads with its round
+  ("Round 2 · Done in 40s") on the desktop, a paired desktop (`round` on the
+  `conversation-subagents` row), the browser and the phone; its parent's
+  `subagent.status` answers that round's result. One still working or waiting
+  on the person is refused `subagent_busy`, and one on a CLI whose chats cannot
+  resume their session `resume_unsupported`. It counts toward its parent's four
+  running sub-agents only while its round runs.
 - An agent a chat's CLI spawned is a lane, read through its owner's session as a
   conversation (`laneTranscript`). What it asks the person is answered in the
   normal dock.

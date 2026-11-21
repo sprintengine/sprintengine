@@ -54,8 +54,10 @@ card in `src/renderer/src/components/panels/agentChat/fileView/FileViewCard.tsx`
 
 **Sub-agents** (a chat's agents as chats of their own): `src/main/subagent-lifecycle.ts`,
 `src/main/automation/subagent-tools.ts`; in the view `src/renderer/src/components/panels/agentChat/SubagentChatHost.tsx`
-and `subagentStatus.tsx`. Doc: `docs/conversations.md` ("Subagents as full chats").
-Tests: `src/main/automation/subagent-tools.test.ts`.
+and `subagentStatus.tsx`; the list's rows in `chatSubagents.tsx`. A finished one is given another
+task in its same CLI session with `subagent.resume`, and its row counts the rounds. Doc: `docs/conversations.md`
+("Subagents as full chats"). Tests: `src/main/automation/subagent-tools.test.ts`,
+`src/server/core/subagent-resume.test.ts` (a resume end to end, through the host and the runtime).
 
 **Plugin offers in a chat** (`plugin.offer`): `src/main/automation/plugin-tools.ts`,
 `src/renderer/src/components/panels/agentChat/pluginOffer/PluginOfferCard.tsx`.

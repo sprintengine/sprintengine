@@ -9,6 +9,13 @@
   the end of its turn. `isStudioCompactionReason` reads it and `auto-compact`
   alike. A reader built before it takes the message for Studio's with no
   reason, as for any reason it does not know.
+- **`round` and `roundStartedAt` on a `ConversationSubagent`**: a sub-agent
+  its parent gave another task in the same session (`subagent.resume`) says
+  which round it is on (2 for the first resume) and when that round was sent;
+  its `status` and `endedAt` are that round's. Both are absent for a sub-agent
+  on its first task. A reader built before them drops them and draws the row
+  as it did, timing the round from the task's start; a desktop built before
+  them never resumes one.
 
 ## 0.3.0
 

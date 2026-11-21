@@ -31,6 +31,13 @@ test("a subagent chat says how it stands in the desktop's words", () => {
   assert.equal(chatSubagentName(subagent({ title: " ", task: "" })), "Subagent");
 });
 
+test("a resumed subagent is one row that says its round, timed from that round", () => {
+  const resumed = (over) => subagent({ round: 2, roundStartedAt: 100_000, ...over });
+  assert.deepEqual(chatSubagentStatus(resumed({ status: "starting" }), 112_000), { text: "Round 2 · Working · 12s", tone: "working" });
+  assert.deepEqual(chatSubagentStatus(resumed({ status: "completed", endedAt: 140_000 }), 0), { text: "Round 2 · Done in 40s", tone: "quiet" });
+  assert.deepEqual(chatSubagentStatus(resumed({ status: "needs_input" }), 0), { text: "Round 2 · Waiting on you", tone: "waiting" });
+});
+
 test("a subagent opens as a chat of its own, on its parent's machine", () => {
   const parent = { workspaceId: "ws", agentId: "parent", title: "Main", phase: "idle", updatedAt: 0, createdAt: 0, providerId: "claude-agent", modelId: "default", turnCount: 3, lastSeq: 40, host: { id: "ssh:build-box", kind: "ssh", label: "build-box", color: "teal" } };
   const thread = subagentThread(subagent({ status: "needs_input", sessionId: "s1", permissionPreset: "manual" }), parent);

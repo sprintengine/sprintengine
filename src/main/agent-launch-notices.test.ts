@@ -989,6 +989,33 @@ test('a parent that heard the end from its wait gets no notice saying the same',
   assert.equal(h.notices.pendingCount(CHAT_PARENT), 0)
 })
 
+test('a resumed sub-agent is linked once, and its round on a new session is dismissed by the chat', async () => {
+  const h = harness({
+    chats: [chat({ status: 'active' })],
+    readSubagentResult: async () => ({ text: 'Round 1.', truncated: false }),
+  })
+  h.notices.link({ parent: CHAT_PARENT, child: REVIEWER })
+  h.notices.onConversationEvent(reviewerTurnEnd())
+  await settle()
+  assert.equal(h.notices.pendingCount(CHAT_PARENT), 1)
+
+  // Resumed: linked again, and its round runs on a session of its own.
+  h.notices.link({ parent: CHAT_PARENT, child: { ...REVIEWER, sessionId: 'chat-reviewer-2' } })
+  const round = (type: ConversationEvent['type']) =>
+    chatEvent(type, { sessionId: 'chat-reviewer-3', workspaceId: 'ws-1', agentId: 'agent-reviewer' })
+  h.notices.onConversationEvent(round('turn_started'))
+  h.notices.onConversationEvent(round('turn_completed'))
+  await settle()
+  assert.equal(h.notices.pendingCount(CHAT_PARENT), 2, 'one notice for each round, not two for the second')
+
+  // The parent's wait heard the round end: named by the session it ran on,
+  // which is not one it was linked under, it is found by the chat.
+  h.notices.dismiss('chat-reviewer-3')
+  assert.equal(h.notices.pendingCount(CHAT_PARENT), 2)
+  h.notices.dismiss('chat-reviewer-3', { workspaceId: 'ws-1', agentId: 'agent-reviewer' })
+  assert.equal(h.notices.pendingCount(CHAT_PARENT), 1)
+})
+
 test("a sub-agent's whole result is kept across a restart, marked as a sub-agent's", async () => {
   const storage = memoryStorage()
   const result = 'r'.repeat(19_000)

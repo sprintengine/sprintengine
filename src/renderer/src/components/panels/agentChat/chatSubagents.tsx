@@ -38,6 +38,11 @@ export type StudioSubagent = {
   sessionId?: string
   /** When the turn a person's follow-up started began, for one working again after it ended. */
   workingSince?: number
+  /**
+   * Which task its parent has it on, from the second (`subagent.resume`), and
+   * when that one was sent: its status and end are that round's.
+   */
+  round?: { n: number; startedAt: number }
 }
 
 /** A sub-agent's current session: a follow-up to a rested one starts a new one, so it may have several. */
@@ -71,6 +76,9 @@ export function useStudioSubagents(workspaceId: string, agentId: string): Studio
         endedAt: agent.subagentEnd?.at ?? null,
         error: agent.subagentEnd?.error ?? null,
         ...(summary?.turnStartedAt !== undefined ? { workingSince: summary.turnStartedAt } : {}),
+        ...(agent.subagentRound && agent.subagentRound.n > 1
+          ? { round: { n: agent.subagentRound.n, startedAt: agent.subagentRound.startedAt } }
+          : {}),
       })
     }
     return list.sort((a, b) => a.startedAt - b.startedAt)
@@ -96,20 +104,32 @@ export function studioSubagentsOf(named: readonly MeshSubagent[]): StudioSubagen
     error: subagent.error ?? null,
     providerId: subagent.providerId,
     sessionId: subagent.sessionId ?? `remote:${subagent.agentId}`,
+    ...(subagent.round !== undefined && subagent.roundStartedAt !== undefined
+      ? { round: { n: subagent.round, startedAt: subagent.roundStartedAt } }
+      : {}),
   }))
 }
 
 /** How it is doing, in words: working and for how long, waiting on the person, or how it ended. */
 export function SubagentStatusWords({ subagent }: { subagent: StudioSubagent }): JSX.Element {
-  const { status, startedAt, endedAt, workingSince } = subagent
+  const { status, endedAt, workingSince, round } = subagent
+  // A resumed one is timed from its round, and says which round it is on.
+  const startedAt = round?.startedAt ?? subagent.startedAt
+  const lead = round ? `${copy.panels.agentChat.chatSubagents.round(round.n)} · ` : ''
   if (status === 'needs_input')
-    return <span className="text-[color:var(--tone-warn)]">{copy.panels.agentChat.chatSubagents.waitingOnYou}</span>
+    return (
+      <span className="text-[color:var(--tone-warn)]">
+        {lead}
+        {copy.panels.agentChat.chatSubagents.waitingOnYou}
+      </span>
+    )
   if (!subagentEnded(status)) {
     // A task that ended and is working again has no clock of its task's to
     // count; its follow-up has one where its session here says so.
     const since = endedAt === null ? startedAt : workingSince
     return (
       <span className="text-[color:var(--accent-primary)]">
+        {lead}
         {copy.panels.agentChat.chatSubagents.working}
         {since !== undefined ? ' · ' : ''}
         {since !== undefined ? <LiveElapsed startedAt={since} /> : null}
@@ -118,9 +138,25 @@ export function SubagentStatusWords({ subagent }: { subagent: StudioSubagent }):
   }
   const took = endedAt === null ? undefined : formatStepDuration(Math.max(0, endedAt - startedAt))
   if (status === 'failed')
-    return <span className="text-[color:var(--tone-error)]">{took ? `Failed after ${took}` : 'Failed'}</span>
-  if (status === 'stopped') return <span>{took ? `Stopped after ${took}` : 'Stopped'}</span>
-  return <span>{took ? `Done in ${took}` : 'Done'}</span>
+    return (
+      <span className="text-[color:var(--tone-error)]">
+        {lead}
+        {took ? `Failed after ${took}` : 'Failed'}
+      </span>
+    )
+  if (status === 'stopped')
+    return (
+      <span>
+        {lead}
+        {took ? `Stopped after ${took}` : 'Stopped'}
+      </span>
+    )
+  return (
+    <span>
+      {lead}
+      {took ? `Done in ${took}` : 'Done'}
+    </span>
+  )
 }
 
 /**

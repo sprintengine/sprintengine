@@ -172,6 +172,7 @@ const DEVICE_TOOLS: Readonly<Record<string, typeof LOCAL | readonly TailnetScope
   'conversation.interrupt': LOCAL,
   'subagent.start': LOCAL,
   'subagent.status': LOCAL,
+  'subagent.resume': LOCAL,
   'subagent.cancel': LOCAL,
   'extension.create': LOCAL,
   'extension.guide': LOCAL,

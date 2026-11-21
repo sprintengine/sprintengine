@@ -8,6 +8,8 @@ import {
 } from '../../main/automation/conversation-chat-tools'
 import { createSubagentTools } from '../../main/automation/subagent-tools'
 import { LAUNCH_NOTICE_ORIGIN } from '../../main/agent-launch-notices'
+import { SUBAGENT_TASK_ORIGIN } from '../../main/conversation-launch-service'
+import { randomUUID } from 'node:crypto'
 import { createConversationPullRequestTools } from '../../main/automation/conversation-pull-request-tools'
 import { listPluginRegistryEntries } from '../../main/plugin-registry-instance'
 import { readDiscoveredCliModelCatalogs } from '../../main/model-discovery/service'
@@ -98,7 +100,7 @@ export type StudioGatewayOptions = Pick<
    */
   linkLaunchedAgent?: ConversationToolsDeps['linkLaunchedAgent']
   /** Drop the notice a sub-agent's end would send, its parent having heard from a `wait`. */
-  dismissLaunchNotice?: (childSessionId: string) => void
+  dismissLaunchNotice?: (childSessionId: string, chat?: { workspaceId: string; agentId: string }) => void
 }
 
 export type StudioGateway = ReturnType<typeof createStudioGateway>
@@ -159,6 +161,10 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       ...(options.linkLaunchedAgent ? { linkLaunchedAgent: options.linkLaunchedAgent } : {}),
       ...(options.dismissLaunchNotice ? { dismissNotice: options.dismissLaunchNotice } : {}),
       subagents: core.subagents,
+      // A resumed sub-agent's next task goes as its first did: Studio's
+      // message, through the send that resumes a resting chat.
+      sendTask: subagentTaskSender(core),
+      providerResumes: (providerId) => core.conversations.getProviderCapabilities(providerId)?.resume === true,
       chats: {
         ...chats,
         // A sub-agent runs here, beside the chat that started it.
@@ -471,6 +477,28 @@ function studioChatControl(core: StudioCore): ConversationChatControl {
         return { ok: true, events: read.page.events, hasMore: read.page.hasMore, before: read.page.beforeCursor }
       return { ok: true, events: read.events, hasMore: false, before: null }
     },
+  }
+}
+
+/** Who a sub-agent's later tasks come from, as the command's client: Studio itself. */
+const SUBAGENT_TASK_CLIENT_ID = 'studio-subagent-tasks'
+
+/**
+ * A sub-agent's next task (`subagent.resume`), sent through its chat's host as
+ * any message to it is: a resting one is resumed on its record's model,
+ * effort, preset and held mode, in its CLI's own session.
+ */
+function subagentTaskSender(core: StudioCore) {
+  let host: ReturnType<StudioCore['createConversationHost']> | null = null
+  const hostOf = () => (host ??= core.createConversationHost({ origin: SUBAGENT_TASK_ORIGIN }))
+  return async (
+    chat: { workspaceId: string; agentId: string },
+    message: string,
+  ): Promise<{ ok: true } | { ok: false; message: string }> => {
+    const key = hostOf().resolveKey(chat.workspaceId, chat.agentId)
+    if (!key) return { ok: false, message: 'The sub-agent has no folder on this machine any more.' }
+    const sent = await hostOf().command(key, SUBAGENT_TASK_CLIENT_ID, randomUUID(), { kind: 'send', message })
+    return sent.ok ? { ok: true } : { ok: false, message: sent.message ?? 'The sub-agent did not take the task.' }
   }
 }
 

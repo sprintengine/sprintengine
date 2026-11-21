@@ -27,25 +27,30 @@ export function subagentEnded(status: ConversationSubagentStatus): boolean {
  * How a subagent chat stands, in the desktop's words (`SubagentStatusWords`):
  * "Waiting on you" in the warn tone, "Working · 42s" in the accent while it
  * runs, then "Done in 1m 4s", "Failed after 9s" (error ink) or "Stopped after
- * 3m".
+ * 3m". One its parent resumed leads with its round ("Round 2 · Done in 40s")
+ * and is timed from that round.
  */
 export function chatSubagentStatus(
-  subagent: Pick<ConversationSubagent, "status" | "startedAt" | "endedAt">,
+  subagent: Pick<ConversationSubagent, "status" | "startedAt" | "endedAt" | "round" | "roundStartedAt">,
   now: number,
 ): { text: string; tone: SubagentTone } {
-  const { status, startedAt, endedAt } = subagent;
-  if (status === "needs_input") return { text: "Waiting on you", tone: "waiting" };
+  const { status, endedAt } = subagent;
+  const resumed = subagent.round !== undefined && subagent.roundStartedAt !== undefined;
+  const startedAt = resumed ? subagent.roundStartedAt! : subagent.startedAt;
+  const lead = resumed ? `${copy.panels.agentChat.chatSubagents.round(subagent.round!)} · ` : "";
+  const words = (text: string, tone: SubagentTone) => ({ text: `${lead}${text}`, tone });
+  if (status === "needs_input") return words("Waiting on you", "waiting");
   if (!subagentEnded(status)) {
     // A task that ended and works again on a follow-up has no clock of its
     // task's to count.
     return endedAt === undefined
-      ? { text: `Working · ${formatElapsed(now - startedAt)}`, tone: "working" }
-      : { text: "Working", tone: "working" };
+      ? words(`Working · ${formatElapsed(now - startedAt)}`, "working")
+      : words("Working", "working");
   }
   const took = endedAt === undefined ? undefined : formatDuration(Math.max(0, endedAt - startedAt));
-  if (status === "failed") return { text: took ? `Failed after ${took}` : "Failed", tone: "failed" };
-  if (status === "stopped") return { text: took ? `Stopped after ${took}` : "Stopped", tone: "quiet" };
-  return { text: took ? `Done in ${took}` : "Done", tone: "quiet" };
+  if (status === "failed") return words(took ? `Failed after ${took}` : "Failed", "failed");
+  if (status === "stopped") return words(took ? `Stopped after ${took}` : "Stopped", "quiet");
+  return words(took ? `Done in ${took}` : "Done", "quiet");
 }
 
 /** What a subagent chat is called on its row and its screen. */
