@@ -4,7 +4,6 @@
 // declares its poller sidecar here (background workers come later).
 
 import {
-  createServiceToken,
   getCompanionAgentsService,
   getConversationService,
   getGitHubService,
@@ -21,7 +20,6 @@ import {
 
 import { readCommandContext, readNothing, type Outlook, type WeatherMethods } from './methods'
 
-const forecastService = createServiceToken<{ refresh(): Promise<void> }>('weather-deck.forecast')
 
 // The tool extension.json declares under contributes.mcpTools. Its
 // description and access there are what agents see.
@@ -79,9 +77,6 @@ export function activate(studio: MainHost): void {
       },
     },
   })
-  studio.provideService(forecastService, () => ({
-    refresh: async () => undefined,
-  }))
   studio.registerMcpTools([forecastTool])
   // The skill the forecaster chats and the scheduled refresh invoke.
   studio.registerMethods({

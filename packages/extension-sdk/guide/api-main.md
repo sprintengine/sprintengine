@@ -114,7 +114,6 @@ method of its name.
 | `notify({ severity, title, body?, target? })` | A row in the bell of every open window, under the extension's name. The bell is for what went wrong: only `warning` and `error` reach it, and an `info` notify files nothing (say routine news with `toast` from a surface). `target: { surfaceId }` (one of your own doors) gives the row an Open that lands there. Dropped: an identical repeat within 10 s, or more than 20 rows in 10 s — fold a burst into one row. Rows sent before a window opens are kept (last 50). A `notification` menu item in extension.json adds a command to your rows. `supports('notifications')` is false where no window can show it. `notifications:show`. |
 | `onStartup(hook)` / `onShutdownBegin(hook)` / `onShutdown(hook)` | Start watchers on startup; stop loops at shutdown begin; release everything at shutdown. |
 | `requireService(token)` / `getService(token)` | Host services by token (below). `requireService` throws when absent. |
-| `provideService(token, factory)` | Offer a service under a token of your own. |
 | `registerSidecar(spec)` | A declaration only; the host does not spawn an extension's sidecars. |
 
 ## Services
