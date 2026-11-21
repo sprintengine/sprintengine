@@ -91,11 +91,13 @@ export function compactionLabel(entry: CompactionEntry): string {
         : `${formatTokenCount(entry.preTokens)} → ${formatTokenCount(entry.postTokens)} tokens`
   const trigger = entry.beforeCacheExpiry
     ? 'automatically, before the cache expired'
-    : entry.trigger === 'auto'
-      ? 'automatically'
-      : entry.trigger === 'manual'
-        ? 'on request'
-        : undefined
+    : entry.askedByAgent
+      ? 'at the agent’s request'
+      : entry.trigger === 'auto'
+        ? 'automatically'
+        : entry.trigger === 'manual'
+          ? 'on request'
+          : undefined
   return ['Context compacted', trigger, tokens].filter(Boolean).join(' · ')
 }
 

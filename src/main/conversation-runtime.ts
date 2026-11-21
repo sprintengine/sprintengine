@@ -75,6 +75,7 @@ import type {
 } from '../shared/conversation-runtime'
 import {
   CONVERSATION_SESSION_NOT_FOUND,
+  isStudioCompactionReason,
   readConversationMessageOrigin,
   runsTurnMode,
 } from '../shared/conversation-runtime'
@@ -3034,7 +3035,7 @@ export class ConversationRuntime {
     if (
       event.type === 'user_message' &&
       endedTurnId &&
-      readConversationMessageOrigin(event.payload?.origin)?.reason === 'auto-compact'
+      isStudioCompactionReason(readConversationMessageOrigin(event.payload?.origin)?.reason)
     )
       (session.quietTurnIds ??= new Set()).add(endedTurnId)
     if (

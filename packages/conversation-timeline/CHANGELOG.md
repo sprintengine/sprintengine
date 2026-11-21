@@ -24,6 +24,11 @@
 
 ### Added
 
+- A compaction entry, and its row, say `askedByAgent` when its turn's message
+  was Studio's `/compact` at the chat's agent's request (`origin.reason`
+  `agent-compact`); the message is drawn by the divider alone, as an
+  `auto-compact` one is.
+
 - **`deriveConversationRows`** (`conversationRows.ts`): a projected
   conversation as one flat list of rows for a narrow screen (messages,
   thinking, runs of steps, agent cards, each turn's work behind one line, its

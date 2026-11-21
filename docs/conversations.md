@@ -928,6 +928,27 @@ is audited. Nothing new crosses the wire: a paired device lists the chat under
 its new project from `workspace.list`, which the folder change moves, and its
 next message to the chat starts the session in the new folder there.
 
+**`conversation.compact`** `{}` (2026-11-21) lets a chat's own agent compact
+its chat, for an agent about to end a turn and wait longer than its prompt
+cache lasts (a CI run, a review): the turn that wakes it then re-reads a
+summary rather than the whole conversation uncached. It takes no arguments and
+acts on the calling chat only (`launchingAgentOf`). An agent asks from inside
+its turn, and a CLI runs `/compact` as a turn of its own, so the request is
+held (`compactsWhenTurnEnds: true`) until that turn completes, and after the
+same grace an agent's own settle waits, sent as the auto compaction's is: the
+CLI's `/compact`, as Studio's message (`origin.reason` `agent-compact`), drawn
+as the compaction divider alone, "at the agent's request"
+(`conversation-self-compact.ts`, `sendStudioCompaction`); like the auto
+compaction's, its turn neither badges the chat nor notifies. It is let go when the turn fails or is stopped, a
+message reaches the chat or waits to go in, a new turn starts, or the session
+closes; work the turn left running in the background does not hold it back.
+Claude Code and Codex chats compact; another CLI is refused as
+`cannot_compact`, and an agent in a terminal as `not_a_chat`. It is an
+agent's tool and never a paired device's (`localOnlyGatewayToolReason`), and
+is audited. The new reason is additive: a client built before it reads the
+message as Studio's with no reason, and draws it as a Studio message
+(`/compact`) above the divider.
+
 Beyond its marks, a paired desktop or the phone manages a chat here as it
 manages one of its own, each part a method of this desktop's Studio
 (`chat-lifecycle`, 2026-10-25, on the protocol since 2026-11-13), by the

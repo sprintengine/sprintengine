@@ -1,6 +1,7 @@
 // The chat's timeline: which rows a projected conversation turns into, and
 // how resolved approvals are grouped.
 
+import { isStudioCompactionReason } from './protocol.js'
 import {
   type TranscriptAgentMessage,
   type TranscriptToolEntry,
@@ -436,9 +437,10 @@ export function deriveConversationTimelineRows(
     const entry = entries[index]
     if (!entry) continue
     if (entry.kind === 'user') {
-      // Studio's own `/compact` before a cache expired is said by the
-      // compaction's divider, not by a message nobody wrote.
-      if (entry.origin?.reason !== 'auto-compact') rows.push({ kind: 'user', id: `user:${entry.id}`, entry })
+      // Studio's own `/compact` (before a cache expired, or at the agent's
+      // request) is said by the compaction's divider, not by a message
+      // nobody wrote.
+      if (!isStudioCompactionReason(entry.origin?.reason)) rows.push({ kind: 'user', id: `user:${entry.id}`, entry })
       continue
     }
     if (entry.kind === 'compaction') {

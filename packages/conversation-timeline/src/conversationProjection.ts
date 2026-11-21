@@ -262,6 +262,9 @@ type CompactionEntry = {
   // prompt cache expired: the turn's message was its own `/compact`
   // (`origin.reason` 'auto-compact').
   beforeCacheExpiry?: true
+  // The chat's own agent asked for it (`conversation.compact`), and Studio
+  // sent `/compact` once its turn ended (`origin.reason` 'agent-compact').
+  askedByAgent?: true
   preTokens?: number
   postTokens?: number
   createdAt: number
@@ -1309,6 +1312,9 @@ export function projectConversation(
           ...(trigger === 'manual' || trigger === 'auto' ? { trigger } : {}),
           ...(turnId && eventUserTurns.get(turnId)?.origin?.reason === 'auto-compact'
             ? { beforeCacheExpiry: true as const }
+            : {}),
+          ...(turnId && eventUserTurns.get(turnId)?.origin?.reason === 'agent-compact'
+            ? { askedByAgent: true as const }
             : {}),
           ...(readNumber(event.payload, 'preTokens') !== undefined
             ? { preTokens: readNumber(event.payload, 'preTokens') }

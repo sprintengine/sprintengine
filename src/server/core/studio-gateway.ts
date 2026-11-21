@@ -128,6 +128,8 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       permissionModesOf: (cli) => listPluginRegistryEntries().find((entry) => entry.id === cli)?.permissionModes ?? [],
       lifecycle: core.conversationLifecycle,
       moveChat: core.conversationMove.move,
+      // A chat's agent compacting its own chat once its turn ends.
+      compactOwnChat: core.selfCompact.request,
       // A paired device moves a chat only into this machine's own projects.
       deviceMayName: async (folder) => (await confineToRoots(folder, ownWorkspaceFolders(core))).ok,
       ...(options.linkLaunchedAgent ? { linkLaunchedAgent: options.linkLaunchedAgent } : {}),

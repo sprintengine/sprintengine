@@ -9,6 +9,7 @@
 // difference is an option here (`ConversationRowsOptions`), never a reading of
 // the events of its own.
 
+import { isStudioCompactionReason } from './protocol.js'
 import type {
   ConversationProjection,
   TranscriptAgentMessage,
@@ -147,6 +148,8 @@ export type ConversationRow =
       trigger?: 'manual' | 'auto'
       /** Studio compacted the idle chat itself, just before its prompt cache expired. */
       beforeCacheExpiry?: true
+      /** The chat's own agent asked for it, to be done once its turn ended. */
+      askedByAgent?: true
       preTokens?: number
       postTokens?: number
     }
@@ -429,6 +432,7 @@ export function deriveConversationRows(
         id: entry.id,
         ...(entry.trigger ? { trigger: entry.trigger } : {}),
         ...(entry.beforeCacheExpiry ? { beforeCacheExpiry: true as const } : {}),
+        ...(entry.askedByAgent ? { askedByAgent: true as const } : {}),
         ...(entry.preTokens !== undefined ? { preTokens: entry.preTokens } : {}),
         ...(entry.postTokens !== undefined ? { postTokens: entry.postTokens } : {}),
       })
@@ -483,7 +487,7 @@ export function deriveConversationRows(
       )
         turnSince = Math.min(turnSince ?? Infinity, entry.createdAt)
       // Studio's own `/compact` is said by the divider its compaction draws.
-      if (entry.origin?.reason === 'auto-compact') continue
+      if (isStudioCompactionReason(entry.origin?.reason)) continue
       const at = entry.createdAt ?? 0
       if (entry.origin) {
         rows.push({

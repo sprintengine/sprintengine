@@ -113,6 +113,7 @@ const DEVICE_TOOLS: Readonly<Record<string, typeof LOCAL | readonly TailnetScope
 
   // Never to a device, whatever it holds (tailnet-scopes.ts says why for each).
   'agent.launch': LOCAL,
+  'conversation.compact': LOCAL,
   'backlog.work': LOCAL,
   'terminal.list': LOCAL,
   'terminal.read': LOCAL,
