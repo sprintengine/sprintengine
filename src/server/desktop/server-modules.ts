@@ -228,7 +228,6 @@ export function createServerModules(deps: {
         launchErrors: thirdParty.launchErrors,
         deliverModuleEvent: (event) => hub.deliverEvent(event),
         deliverModuleNotification: (notification) => hub.deliverNotification(notification),
-        electronMain: false,
         // A module tool that would shadow one of the gateway's own is refused
         // at registration, naming the tool it collides with.
         coreMcpToolNames: () => nextGateway.coreToolNames(),

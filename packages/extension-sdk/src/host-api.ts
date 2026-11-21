@@ -59,10 +59,6 @@ export type HostCapability =
   | 'module-id'
   // `--chart-1` … `--chart-8` and `--chart-other` in THEME_TOKENS.
   | 'chart-tokens'
-  // The worker runs in the desktop's own main process, where `electron` can be
-  // required. False wherever it runs in the Studio server, a Node process with
-  // no Electron APIs.
-  | 'electron-main'
   // ── Worker plumbing: settings, workspaces, storage, GitHub, skills, MCP ──
   // `MainHost.getSkillStatus`: is a skill present, without writing it.
   | 'skill-status'

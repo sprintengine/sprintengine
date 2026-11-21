@@ -579,8 +579,6 @@ export class ExtensionWorkers implements KernelWorkerPort {
     const { spec, host } = entry
     const supports: Record<string, boolean> = {}
     for (const capability of [...HOST_CAPABILITIES, 'notifications']) supports[capability] = host.supports(capability)
-    // Its code runs in a Node process of its own: never where Electron is.
-    supports['electron-main'] = false
     let dataDir: { ok: true; path: string } | { ok: false; error: WorkerError }
     try {
       dataDir = { ok: true, path: host.getModuleDataDir() }

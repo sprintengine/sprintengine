@@ -76,11 +76,11 @@ test('a worker waiting for a place reads Waiting to start, not Running', () => {
   const waiting = view({ launch: { waiting: 'Waiting to start: 16 extensions already run in the background.' } })
   expect(runState(waiting, true, undefined)).toBe('waiting')
   expect(RUN_STATE_LABEL.waiting).toBe('Waiting to start')
-  expect(runState(waiting, false, undefined)).toBe('stopping')
+  expect(runState(waiting, false, undefined)).toBe('off')
 })
 
-test('turning a loaded main entry off says it stops at the next restart; an unloaded one is just Off', () => {
-  expect(runState(view(), false, undefined)).toBe('stopping')
+test('turning a worker off reads Off at once: it stops then, not at the next restart', () => {
+  expect(runState(view(), false, undefined)).toBe('off')
   expect(runState(view({ launch: { mainLoaded: false } }), false, undefined)).toBe('off')
 })
 

@@ -259,7 +259,6 @@ async function startServer() {
     deliverModuleEvent: (event) => hub.deliverEvent(event),
     extensionApprovals: thirdParty.approvals,
     currentApprovals: approvals,
-    electronMain: false,
     onKernel: bind,
   })
   await load.ready

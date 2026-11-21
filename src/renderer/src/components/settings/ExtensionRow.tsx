@@ -41,7 +41,7 @@ export function ExtensionStateLabel({ state }: { state: ExtensionRunState }): JS
   const glyph =
     state === 'running' || state === 'on' ? (
       <LifecycleGlyph state="done" live={false} />
-    ) : state === 'pending' || state === 'stopping' ? (
+    ) : state === 'pending' ? (
       <RefreshIcon className="icon-sm shrink-0 text-[color:var(--text-muted)]" />
     ) : state === 'failed' ? (
       <LifecycleGlyph state="failed" live={false} />

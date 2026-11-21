@@ -142,7 +142,8 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
           // default (on) never brings an uninstalled extension back.
           await refreshThirdPartyRendererModules()
           forgetModules(result.removedModuleIds)
-          if (module.launch.mainLoaded) {
+          // Only an extension with a worker had one to stop.
+          if (module.launch.hasMainEntry && module.launch.mainLoaded) {
             showToast({
               tone: 'neutral',
               title: copy.settings.useThirdPartyExtensions.uninstalled(name),

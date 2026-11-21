@@ -111,8 +111,7 @@ may do (the `permissions` reference).
   windows through the same client bus as extension events, so they work
   unchanged when the server runs in a process of its own.
 - **The worker runs in a Node process of its own**, forked by the Studio
-  server, with no Electron APIs (`studio.supports('electron-main')` is always
-  false) and a clean environment. It starts when something needs it and is
+  server, with no Electron APIs and a clean environment. It starts when something needs it and is
   stopped after five idle minutes, unless extension.json says
   `background: true`. Bundle everything into it.
 

@@ -474,12 +474,6 @@ export type ModuleMethodCallOutcome =
   | { ok: false; code: 'extension_unavailable' | 'extension_method_unknown' | 'invalid_params'; message: string }
 
 export type MainKernelOptions = {
-  /**
-   * Whether a module's main half runs where `electron` can be required: true
-   * in the desktop's own main process (the default), false in the Studio
-   * server out of process. What `host.supports('electron-main')` answers.
-   */
-  electronMain?: boolean
   /** Sends one module event to every client following `extension.events`. Absent in tests. */
   deliverModuleEvent?: (event: ModuleEventEnvelope) => void
   /**
@@ -1226,7 +1220,6 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     return {
       moduleId,
       supports: (capability) => {
-        if (capability === 'electron-main') return options.electronMain ?? true
         // A bell row needs a client to reach: true only where delivery is wired.
         if (capability === 'notifications') return options.deliverModuleNotification !== undefined
         return hostSupports(capability)

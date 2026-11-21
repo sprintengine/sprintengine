@@ -25,18 +25,16 @@ export function isApproved(module: Pick<ThirdPartyModuleView, 'approval'>): bool
  * - `running` — its code is loaded in this session (Running);
  * - `on` — on, with no code of its own to run (On);
  * - `pending` — on, but its main entry waits on the next launch (Starts after restart);
- * - `stopping` — turned off, but its main entry stays loaded until the next launch (Stops after restart);
  * - `off` — off (Off);
  * - `waiting` — on, but its worker waits for a place: too many already run (Waiting to start), with why as a notice;
  * - `failed` — it could not start (Couldn't start), with the reason as a notice.
  */
-export type ExtensionRunState = 'running' | 'on' | 'pending' | 'stopping' | 'off' | 'waiting' | 'failed'
+export type ExtensionRunState = 'running' | 'on' | 'pending' | 'off' | 'waiting' | 'failed'
 
 export const RUN_STATE_LABEL: Record<ExtensionRunState, string> = {
   running: 'Running',
   on: 'On',
   pending: 'Starts after restart',
-  stopping: 'Stops after restart',
   off: 'Off',
   waiting: 'Waiting to start',
   failed: 'Couldn’t start',
@@ -81,10 +79,10 @@ const hasRendererEntry = (module: ThirdPartyModuleView): boolean =>
   Boolean(module.launch.rendererEntry && module.launch.rendererEntry.availability !== 'none')
 
 /**
- * The state word for an APPROVED module. Main code loads once, at launch, so a
- * main entry turned on since reads "Starts after restart" and one turned off
- * reads "Stops after restart" until the next launch; renderer contributions
- * follow the switch live.
+ * The state word for an APPROVED module. What a server holds of the installed
+ * extensions is read once, at launch, so a worker approved since reads
+ * "Starts after restart"; switching one off stops its worker at once, and
+ * renderer contributions follow the switch live.
  */
 export function runState(
   module: ThirdPartyModuleView,
@@ -94,7 +92,8 @@ export function runState(
 ): ExtensionRunState {
   if (moduleProblem(module, rendererLoadState, contributionError)) return 'failed'
   const mainLoaded = module.launch.mainLoaded === true
-  if (!enabled) return module.launch.hasMainEntry && mainLoaded ? 'stopping' : 'off'
+  // Switched off, a worker stops at once.
+  if (!enabled) return 'off'
   if (module.launch.hasMainEntry && module.launch.waiting) return 'waiting'
   if (module.launch.hasMainEntry) return mainLoaded ? 'running' : 'pending'
   if (hasRendererEntry(module)) return rendererLoadState?.status === 'loaded' ? 'running' : 'pending'

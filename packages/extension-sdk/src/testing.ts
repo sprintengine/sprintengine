@@ -149,7 +149,6 @@ const KNOWN_CAPABILITIES: readonly HostCapability[] = [
   'activity',
   'module-id',
   'chart-tokens',
-  'electron-main',
   // Main-host plumbing: settings, workspaces, storage, GitHub, skills, MCP.
   'skill-status',
   'mcp-verified-identity',

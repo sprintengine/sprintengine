@@ -134,8 +134,6 @@ export function loadMainModules(options: {
   skillRegistry?: ModuleSkillHostRegistry
   /** Async registerMain bound override, for tests. */
   registerTimeoutMs?: number
-  /** False in the Studio server out of process: see `MainKernelOptions.electronMain`. */
-  electronMain?: boolean
   /** The gateway's own tool names: see `MainKernelOptions.coreMcpToolNames`. */
   coreMcpToolNames?: () => Iterable<string>
   /** Verified file digests per third-party module id, for `MainHost.getAssetPath`. */
@@ -170,7 +168,6 @@ export function loadMainModules(options: {
   )
 
   const kernel = createMainKernel({
-    ...(options.electronMain === undefined ? {} : { electronMain: options.electronMain }),
     deliverModuleEvent: options.deliverModuleEvent,
     ...(options.deliverModuleNotification ? { deliverModuleNotification: options.deliverModuleNotification } : {}),
     now: options.now,
