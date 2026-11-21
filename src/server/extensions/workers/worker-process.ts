@@ -50,6 +50,11 @@ export type WorkerProcessOptions = {
   onHostCall: (message: WorkerHostCallMessage) => Promise<Omit<WorkerHostAnswerMessage, 't' | 'id'>>
   /** Its startup hooks have run. */
   onStarted?: () => void
+  /**
+   * The process as soon as it is forked, before it is ready: what Studio
+   * calls back while it activates (a listener's first delivery) goes through it.
+   */
+  onSpawn?: (process: WorkerProcess) => void
   readyTimeoutMs?: number
   callTimeoutMs?: number
   /** Stops a start still under way. */
@@ -232,6 +237,7 @@ export function startWorkerProcess(options: WorkerProcessOptions): Promise<Worke
     exited: () => exited,
   }
 
+  options.onSpawn?.(handle)
   return new Promise<WorkerProcess>((resolve, reject) => {
     let settled = false
     const fail = (error: Error): void => {

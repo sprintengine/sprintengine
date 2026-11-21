@@ -469,6 +469,10 @@ export class ExtensionWorkers implements KernelWorkerPort {
         log: (stream, line) => entry.log(`[${stream}] ${line}`),
         onHostCall: (message) => created.hostCall(message),
         onStarted: () => created.activationStarted(),
+        // A listener it registers while it activates hears its first delivery then.
+        onSpawn: (spawned) => {
+          proc = spawned
+        },
         readyTimeoutMs: this.options.readyTimeoutMs ?? WORKER_READY_TIMEOUT_MS,
         signal,
         ...(this.options.execPath ? { execPath: this.options.execPath } : {}),

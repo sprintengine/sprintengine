@@ -285,3 +285,44 @@ test('a companion’s structured run crosses: its validator and its phases are c
   })
   assert.deepEqual(answer, { ok: true, answer: { ok: true, result: { score: 30, phases: ['running', 'retrying'] } } })
 })
+
+// A watch answers its current value as it is registered: a worker that
+// registers one while it activates hears that first delivery.
+const WATCHER = `
+let seen = null
+const read = (handler) => ({ access: 'read', params: (value) => ({ ok: true, params: value }), handler })
+exports.activate = (studio) => {
+  studio.requireService({ key: 'conversation.module-service' }).watch(studio.moduleId, undefined, (list) => {
+    seen = list
+  })
+  studio.registerMethods({ seen: read(async () => ({ ok: true, result: seen })) })
+}
+`
+
+test('a listener registered while the worker activates hears its first delivery', async () => {
+  const conversations = {
+    watch: (_moduleId: string, _filter: unknown, listener: (list: unknown[]) => void) => {
+      listener([{ agentId: 'agent-1' }])
+      return () => undefined
+    },
+  }
+  harness = startWorkerHarness(
+    [{ id: 'watcher', main: WATCHER, permissions: ['conversation:own'] }],
+    {},
+    { 'conversation.module-service': conversations },
+  )
+  let seen: unknown = null
+  for (let tries = 0; seen === null && tries < 50; tries++) {
+    const answer = await harness.load.kernel.callModuleMethod({
+      moduleId: 'local.watcher',
+      method: 'seen',
+      access: 'read',
+      params: {},
+      clientId: 'test',
+      invoker: ownerInvoker(),
+    })
+    if (answer.ok && answer.answer.ok) seen = answer.answer.result
+    if (seen === null) await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  assert.deepEqual(seen, [{ agentId: 'agent-1' }])
+})
