@@ -555,6 +555,7 @@ test('the installed list names a folder Studio could not read by its place only 
     installed: async () => ({ modules: [], rejected }),
     contributions: async () => ({ extensions: [], failures: {} }),
     frame: async () => ({ ok: false, message: 'none' }),
+    content: async () => ({ ok: false, message: 'none' }),
     reportRegistry: () => ({ ok: true }),
   })
   const owner = await caller(hub)
@@ -587,6 +588,7 @@ test('a change to what runs is an owner’s: a paired client holding extensions:
     installed: async () => ({ modules: [], rejected: [] }),
     contributions: async () => ({ extensions: [], failures: {} }),
     frame: async () => ({ ok: false, message: 'none' }),
+    content: async () => ({ ok: false, message: 'none' }),
     reportRegistry: () => ({ ok: true }),
   })
   const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['extensions:operate']))
@@ -614,6 +616,7 @@ test('the window’s module report is an owner’s: a paired client holding exte
     installed: async () => ({ modules: [], rejected: [] }),
     contributions: async () => ({ extensions: [], failures: {} }),
     frame: async () => ({ ok: false, message: 'none' }),
+    content: async () => ({ ok: false, message: 'none' }),
     reportRegistry: (snapshot) => (reported.push(snapshot), { ok: true }),
   })
   const snapshot = { modules: [] }

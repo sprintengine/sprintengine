@@ -19,6 +19,7 @@ import { scheduledAgentsRendererModule } from './scheduled-agents-module'
 import { createRendererHost, type RendererModule } from './renderer-host'
 import { filesApi } from '../studio/files'
 import { gitApi } from '../studio/git'
+import { setContributedSyntaxes } from '../lib/highlight/contributedSyntaxes'
 import { extensionsApi } from '../studio/extensions'
 import { watchWindowStudio, windowHasStudio, windowStudioState } from '../studio/windowStudioClient'
 import { copy } from '../../../shared/copy'
@@ -544,6 +545,16 @@ async function loadRendererModuleBatch(refresh: boolean): Promise<void> {
       drawsFrames,
     )
     thirdPartyRendererManifests = [...kept, ...loaded]
+    // The languages they contribute: data, so every served extension's join
+    // and leave at once, each while it is switched on.
+    setContributedSyntaxes(
+      served.extensions.map((entry) => ({
+        extensionId: entry.id,
+        extensionName: entry.extension.name,
+        syntaxes: entry.extension.contributes.syntaxes,
+      })),
+      (id) => rendererHost.isModuleEnabled(id),
+    )
     if (loaded.length > 0 || kept.length !== before.length || kept.some((manifest, i) => manifest !== before[i])) {
       // The memoized enabled-set is keyed per overrides object; the universe just
       // changed, so any set resolved before it is stale.

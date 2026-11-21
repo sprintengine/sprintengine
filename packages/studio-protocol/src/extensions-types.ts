@@ -283,6 +283,33 @@ export type ExtensionFrameDocument = {
   html: string
 }
 
+// ── What a content extension adds ───────────────────────────────────────────
+
+/** What `extension.content` serves. */
+export type StudioExtensionContentKind = 'syntax'
+
+/** `extension.content`'s params: an extension, a kind, and the contribution's id in its extension.json. */
+export type StudioExtensionContentRequest = { moduleId: string; kind: StudioExtensionContentKind; id: string }
+
+/** A language configuration, as the editor reads it. */
+export type LanguageConfigurationView = {
+  comments?: { lineComment?: string; blockComment?: [string, string] }
+  brackets?: Array<[string, string]>
+  autoClosingPairs?: Array<{ open: string; close: string }>
+  surroundingPairs?: Array<{ open: string; close: string }>
+}
+
+/**
+ * One piece of a content extension, checked on the server that serves it: a
+ * syntax's TextMate grammar (only the keys a TextMate engine reads) and its
+ * language configuration.
+ */
+export type ExtensionContent = {
+  kind: 'syntax'
+  grammar: Record<string, unknown> & { scopeName: string }
+  configuration?: LanguageConfigurationView
+}
+
 /** Which build a window's module registry was taken in. */
 export type ModuleBuildChannel = 'development' | 'production'
 

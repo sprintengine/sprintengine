@@ -16,6 +16,8 @@ import {
   type ExtensionManifest,
 } from '../../shared/modules/third-party-manifest'
 import { classifyExtension, type ExtensionStanding, type ExtensionStandingContext } from './module-signature'
+import { resolveContainedPath } from './entry-containment'
+import { contentFileIssues } from './extension-content'
 import { readStudioEnv } from '../../shared/studio-env'
 
 // Discovery and install of extensions under
@@ -269,6 +271,26 @@ export async function installModuleFolder(
   if (isReservedExtensionId(extension.id)) {
     const message = `"${extension.id}" is an id only Studio’s own catalogue installs; choose another id.`
     return { ok: false, rejected: { path: manifestPath, issues: [{ path: 'id', message }] }, message }
+  }
+
+  // Content is checked as Studio will check it when it serves it: a grammar
+  // that would never highlight is refused here, where the author can fix it.
+  const contentIssues = await contentFileIssues(extension, async (path, maxBytes) => {
+    try {
+      const file = resolveContainedPath(srcDir, path, path)
+      const info = await lstat(file)
+      if (!info.isFile() || info.size > maxBytes) return null
+      return await readFile(file, 'utf8')
+    } catch {
+      return null
+    }
+  })
+  if (contentIssues.length > 0) {
+    return {
+      ok: false,
+      rejected: { path: manifestPath, issues: contentIssues },
+      message: 'A file the extension’s extension.json names is not one Studio can use.',
+    }
   }
 
   const key = extensionInstallKey(LOCAL_EXTENSION_PUBLISHER, extension.id)

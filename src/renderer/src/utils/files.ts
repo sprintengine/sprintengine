@@ -1,3 +1,5 @@
+import { PROTECTED_LANGUAGES, contributedSyntaxForFile } from '../lib/highlight/contributedSyntaxes'
+
 const IMAGE_EXTENSIONS = new Set(['apng', 'avif', 'bmp', 'gif', 'ico', 'jpeg', 'jpg', 'png', 'svg', 'webp'])
 
 function fileExtension(filename: string): string {
@@ -8,7 +10,18 @@ export function isImageFile(filename: string): boolean {
   return IMAGE_EXTENSIONS.has(fileExtension(filename))
 }
 
+/**
+ * The editor's language for a file: one an extension contributes that claims
+ * its name or suffix (contributedSyntaxes.ts), else Studio's own. Studio's
+ * languages that drive completions and diagnostics are never replaced.
+ */
 export function detectLanguage(filename: string): string {
+  const builtin = builtinLanguage(filename)
+  if (PROTECTED_LANGUAGES.has(builtin)) return builtin
+  return contributedSyntaxForFile(filename)?.language ?? builtin
+}
+
+function builtinLanguage(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() ?? ''
   const map: Record<string, string> = {
     ts: 'typescript',

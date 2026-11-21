@@ -2375,6 +2375,13 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         ? { ok: true, result: { hash: built.hash, html: built.html } }
         : refuse('extension_unavailable', built.message)
     },
+    // What a content extension adds, read and checked here, served as data.
+    'extension.content': async (params) => {
+      const lifecycle = options.modules?.lifecycle()
+      if (!lifecycle) return unserved('extension.content')
+      const answer = await lifecycle.content(params)
+      return answer.ok ? { ok: true, result: answer.content } : refuse('extension_unavailable', answer.message)
+    },
     'extension.call': ({ commandId, ...params }, { grant, voice }) => {
       const modules = options.modules
       if (!modules) return unserved('extension.call')

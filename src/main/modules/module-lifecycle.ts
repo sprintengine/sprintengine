@@ -7,9 +7,11 @@ import type {
   StudioModulesMethodMap,
   StudioModuleSummary,
   ExtensionContributionsResult,
+  StudioExtensionContentRequest,
   StudioExtensionFrameRequest,
   ThirdPartyModuleListResult,
 } from '../../../packages/studio-protocol/src/public'
+import { readExtensionContent, type ContentAnswer } from './extension-content'
 import { EXTENSION_FRAME_THEMES } from '../../shared/extension-frame-themes.generated'
 import { extensionFrameDocuments } from '../../server/extensions/frames/frame-cache'
 import { buildExtensionFrameDocument, extensionFrameHash } from '../../server/extensions/frames/frame-document'
@@ -112,6 +114,8 @@ export type ModuleLifecycle = {
   uninstall(moduleId: string): Promise<Answer<'extension.uninstall'>>
   installed(): Promise<ThirdPartyModuleListResult>
   contributions(): Promise<ExtensionContributionsResult>
+  /** One piece of what an extension adds, checked, or why it is not served here. */
+  content(request: StudioExtensionContentRequest): Promise<ContentAnswer>
   /** One surface's frame document, or why it is not drawn here. */
   frame(
     request: StudioExtensionFrameRequest,
@@ -186,6 +190,16 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     async contributions() {
       const { modules } = await discoverUserModules(deps.moduleRoot(), standingContext())
       return collectExtensionContributions(modules)
+    },
+
+    async content(request) {
+      const target = await installed(request.moduleId)
+      if (!target || readModuleOverridesSync(deps.dataDir)[request.moduleId] === false)
+        return {
+          ok: false,
+          message: `Extension "${request.moduleId}" is not available here: it is not installed, or switched off.`,
+        }
+      return readExtensionContent(target, request)
     },
 
     async frame({ moduleId, point, id, theme }) {

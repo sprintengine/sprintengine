@@ -62,6 +62,9 @@ function blank(): Api {
     drawsExtensionFrames: async () => true,
     extensionFrame: async () => ({ hash: '', html: '' }),
     extensionCall: async () => ({ ok: false, code: 'unavailable', message: NONE }),
+    extensionContent: async () => {
+      throw new Error(NONE)
+    },
     onExtensionEvents: () => () => undefined,
     onThirdPartyModulesChanged: () => () => undefined,
     setModuleRegistrySnapshot: async () => ({ ok: true }),

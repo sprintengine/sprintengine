@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added (content extensions)
+
+- **`extension.content`** `{ moduleId, kind: 'syntax', id }` (`extensions:read`,
+  under `extension-host`) answers one piece of what an extension adds as
+  data the Studio read and checked: a syntax's TextMate grammar (only the keys
+  a TextMate engine reads) and its language configuration. Refused
+  `extension_unavailable` when the extension is not installed, switched off,
+  may not run, or its file fails the checks.
+- `ExtensionContributionsView` carries `syntaxes`, `keybindings`,
+  `statusBarItems` and `settings`.
+
 ### Changed (extension surfaces run in frames)
 
 - New capability **`extension-frames`**: a client draws an extension's panels,

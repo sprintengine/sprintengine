@@ -2,8 +2,10 @@ import {
   STUDIO_EXTENSIONS_CAPABILITY,
   STUDIO_EXTENSION_FRAMES_CAPABILITY,
   STUDIO_EXTENSION_HOST_CAPABILITY,
+  type ExtensionContent,
   type ExtensionContributionsResult,
   type ExtensionFrameDocument,
+  type StudioExtensionContentRequest,
   type StudioExtensionCall,
   type StudioExtensionCallAnswer,
   type StudioExtensionFrameRequest,
@@ -94,6 +96,8 @@ export type ExtensionsApi = {
   extensionFrame(request: StudioExtensionFrameRequest): Promise<ExtensionFrameDocument>
   /** One host call a frame made, as this window's connection; never throws. */
   extensionCall(call: StudioExtensionCall): Promise<StudioExtensionCallAnswer>
+  /** One piece of what a content extension adds (a syntax's grammar), checked by the Studio. */
+  extensionContent(request: StudioExtensionContentRequest): Promise<ExtensionContent>
   /** Hear one extension's worker events, across reconnects. */
   onExtensionEvents(moduleId: string, cb: (event: StudioModuleEvent) => void): () => void
   /** What is installed or trusted on the Studio changed. */
@@ -202,6 +206,7 @@ export const extensionsApi: ExtensionsApi = {
       () => call(STUDIO_EXTENSION_FRAMES_CAPABILITY, 'extension.call', { ...request, commandId: commandId() }),
       (message) => ({ ok: false, code: 'unavailable', message }),
     ),
+  extensionContent: (request) => modules('extension.content', request),
   onExtensionEvents: (moduleId, cb) =>
     followWindowStudioPush({
       topic: 'extension.events',

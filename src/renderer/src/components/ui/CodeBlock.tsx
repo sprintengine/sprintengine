@@ -1,4 +1,4 @@
-import React, { Component, memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { Component, memo, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ChevronDownIcon } from '../AppIcons'
 import { GhostButton, IconButton } from './Buttons'
 import { LinkButton } from './LinkButton'
@@ -17,6 +17,7 @@ import {
   normalizeCodeLanguage,
   type CodeLine,
 } from '../../lib/highlight/codeHighlight'
+import { contributedSyntaxesVersion, subscribeContributedSyntaxes } from '../../lib/highlight/contributedSyntaxes'
 import '../../../../../design-system/components/code-block/component.css'
 import { copy as appCopy } from '../../../../shared/copy'
 
@@ -79,6 +80,9 @@ const TokenLine = memo(function TokenLine({ line }: { line: CodeLine }) {
 })
 
 function HighlightedSource({ code, language, streaming }: { code: string; language: string; streaming?: boolean }) {
+  // An extension's language arriving (or leaving) after the block was drawn
+  // draws it again in that language.
+  useSyncExternalStore(subscribeContributedSyntaxes, contributedSyntaxesVersion, contributedSyntaxesVersion)
   const normalized = normalizeCodeLanguage(language)
   const tokenizer = useRef<{ language: string; value: IncrementalCodeTokenizer } | null>(null)
   const [ready, setReady] = useState<string | null>(null)

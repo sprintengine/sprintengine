@@ -1,6 +1,13 @@
 import { createHighlighterCore, type HighlighterCore, type GrammarState, type ThemedToken } from 'shiki/core'
 import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
 
+import {
+  PROTECTED_LANGUAGES,
+  contributedSyntax,
+  contributedSyntaxContent,
+  contributedSyntaxForFence,
+} from './contributedSyntaxes'
+
 const languages = {
   typescript: () => import('shiki/langs/typescript.mjs'),
   tsx: () => import('shiki/langs/tsx.mjs'),
@@ -58,19 +65,31 @@ const aliases: Record<string, string> = {
   docker: 'dockerfile',
   make: 'makefile',
 }
-export function normalizeCodeLanguage(language = ''): Language | null {
+/**
+ * The language a fence names: one of Studio's, or a language an extension
+ * contributes (contributedSyntaxes.ts), which wins over Studio's own except
+ * where Studio's drives more than colour.
+ */
+export function normalizeCodeLanguage(language = ''): string | null {
   const name = language.toLowerCase().trim()
   const normalized = aliases[name] ?? name
-  return Object.hasOwn(languages, normalized) ? (normalized as Language) : null
+  const builtin = Object.hasOwn(languages, normalized) ? (normalized as Language) : null
+  if (builtin && PROTECTED_LANGUAGES.has(builtin)) return builtin
+  return contributedSyntaxForFence(name)?.language ?? builtin
 }
 
-const THEME = 'semantic-code'
+/** The theme every block is tokenized in: each colour a `--sem-syntax-*` role, so a theme change needs no new pass. */
+export const CODE_THEME = 'semantic-code'
+const THEME = CODE_THEME
 export const HIGHLIGHT_LINE_LIMIT = 2000
 let highlighter: Promise<HighlighterCore> | undefined
 const loads = new Map<string, Promise<HighlighterCore>>()
-export function loadCodeLanguage(language: Language): Promise<HighlighterCore> {
+export function loadCodeLanguage(language: string): Promise<HighlighterCore> {
   let promise = loads.get(language)
   if (promise) return promise
+  const contributed = Object.hasOwn(languages, language) ? undefined : contributedSyntax(language)
+  if (!Object.hasOwn(languages, language) && !contributed)
+    return Promise.reject(new Error(`No grammar for ${language}.`))
   highlighter ??= createHighlighterCore({
     themes: [
       {
@@ -94,9 +113,18 @@ export function loadCodeLanguage(language: Language): Promise<HighlighterCore> {
     engine: createOnigurumaEngine(import('shiki/wasm')),
   })
   promise = highlighter.then(async (engine) => {
-    await engine.loadLanguage(languages[language])
+    if (contributed) {
+      // An extension's grammar, as its Studio checked and served it, under
+      // the language's own name so it never takes the place of Studio's.
+      const { grammar } = await contributedSyntaxContent(contributed)
+      await engine.loadLanguage({ ...grammar, name: language, scopeName: grammar.scopeName } as never)
+    } else {
+      await engine.loadLanguage(languages[language as Language])
+    }
     return engine
   })
+  // A grammar that failed to load is tried again the next time.
+  promise.catch(() => loads.delete(language))
   loads.set(language, promise)
   return promise
 }
@@ -127,7 +155,7 @@ export class IncrementalCodeTokenizer {
   private state: GrammarState | undefined
   constructor(
     private engine: HighlighterCore,
-    private language: Language,
+    private language: string,
   ) {}
 
   update(code: string, complete: boolean): CodeLine[] {
