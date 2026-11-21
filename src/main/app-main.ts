@@ -20,7 +20,7 @@ import type { ExtensionStandingContext } from './modules/module-signature'
 import { createExtensionApprovalReader } from './modules/extension-approvals'
 import { createExtensionFrameGrant } from './modules/extension-frame-grant'
 import { readExtensionStandingContextSync } from './modules/extension-standing-context'
-import { planInstalledExtensions } from '../server/extensions/extension-plan'
+import { planInstalledExtensions, readInstalledStanding } from '../server/extensions/extension-plan'
 import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
 import { resolveWorkerEntryPath } from '../server/extensions/workers/worker-process'
 import { join } from 'node:path'
@@ -136,6 +136,7 @@ const extensionWorkers = createExtensionWorkers({
   entryPath: resolveWorkerEntryPath(),
   logDir: join(app.getPath('logs'), 'extensions'),
   approvals: extensionApprovals,
+  installed: () => readInstalledStanding(defaultUserModuleRoot(), app.getPath('userData')),
   toolsChanged: () => services.automationService?.notifyToolsListChanged(),
   stateChanged: () => services.moduleHub.deliverChanged(),
 })

@@ -7,7 +7,7 @@ import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from '../../main/mod
 import { createModuleLifecycle, liveModuleIds } from '../../main/modules/module-lifecycle'
 import type { ExtensionRunView } from '../../main/modules/third-party-module-view'
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
-import { planInstalledExtensions } from '../extensions/extension-plan'
+import { planInstalledExtensions, readInstalledStanding } from '../extensions/extension-plan'
 import { createExtensionWorkers } from '../extensions/workers/worker-manager'
 import { resolveWorkerEntryPath } from '../extensions/workers/worker-process'
 import { join } from 'node:path'
@@ -94,6 +94,7 @@ export function createServerModules(deps: {
     entryPath: resolveWorkerEntryPath(),
     logDir: join(platform.paths.logsDir(), 'extensions'),
     approvals,
+    installed: () => readInstalledStanding(defaultUserModuleRoot(), dataDir),
     toolsChanged: () => gateway?.notifyToolsListChanged(),
     stateChanged: () => hub.deliverChanged(),
   })

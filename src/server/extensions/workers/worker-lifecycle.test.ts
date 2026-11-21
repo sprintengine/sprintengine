@@ -249,3 +249,37 @@ test('a worker that serves a tool its extension.json does not declare does not s
   assert.equal(result.isError, true)
   assert.match(result.content[0]!.type === 'text' ? result.content[0]!.text : '', /not declared in its extension.json/)
 })
+
+test('a background worker whose folder was removed or changed stops, stays stopped, and its tools leave the gateway', async () => {
+  const tools = (id: string) => [{ name: `${id}_ping`, description: 'Ping.', access: 'read' as const }]
+  harness = startWorkerHarness([
+    worker('removed', { background: true, permissions: ['tools:contribute'], mcpTools: tools('removed') }),
+    worker('changed', { background: true, permissions: ['tools:contribute'], mcpTools: tools('changed') }),
+  ])
+  await until(
+    () => ['local.removed', 'local.changed'].every((id) => harness!.workers.status(id)?.state === 'running'),
+    10_000,
+    'both to start',
+  )
+  const pids = ['local.removed', 'local.changed'].map((id) => harness!.workers.status(id)!.pid!)
+  const listed = () =>
+    harness!.load.kernel
+      .mcpToolRegistrations()
+      .map((tool) => tool.registration.name)
+      .sort()
+  assert.deepEqual(listed(), ['changed_ping', 'removed_ping'])
+  const changesBefore = harness.toolsChanged()
+
+  // Their approvals stand as they were: only what is installed changed.
+  harness.installed.delete('local.removed')
+  harness.installed.set('local.changed', { runnable: false, fingerprint: null })
+  harness.workers.reconcile()
+  await until(() => pids.every((pid) => !alive(pid)), 5_000, 'both processes to exit')
+  assert.match(harness.workers.status('local.removed')?.message ?? '', /no longer installed/)
+  assert.match(harness.workers.status('local.changed')?.message ?? '', /waits for your approval/)
+  assert.deepEqual(listed(), [], 'their tools leave the gateway')
+  assert.ok(harness.toolsChanged() > changesBefore, 'MCP clients are told')
+  await new Promise((resolve) => setTimeout(resolve, 700))
+  assert.equal(harness.workers.status('local.removed')?.state, 'stopped', 'and neither is restarted')
+  assert.equal(harness.workers.status('local.changed')?.state, 'stopped')
+})

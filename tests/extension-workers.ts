@@ -19,7 +19,11 @@ import { approvedContext } from '../src/main/modules/extension-approvals.test-he
 import { discoverUserModulesSync } from '../src/main/modules/user-module-registry'
 import type { ModuleNotifyInput } from '../src/shared/modules/notifications'
 import { planInstalledExtensions } from '../src/server/extensions/extension-plan'
-import { ExtensionWorkers, type ExtensionWorkersOptions } from '../src/server/extensions/workers/worker-manager'
+import {
+  ExtensionWorkers,
+  type ExtensionWorkersOptions,
+  type InstalledStanding,
+} from '../src/server/extensions/workers/worker-manager'
 
 export type TestExtension = {
   id: string
@@ -40,6 +44,8 @@ export type WorkerHarness = {
   workers: ExtensionWorkers
   /** The approvals the workers hold each extension to, by install key; change them to revoke one. */
   approvals: Map<string, { fingerprint: string }>
+  /** The extensions as installed now, as discovery would find them; change them to remove or change one. */
+  installed: Map<string, InstalledStanding>
   /** Bell rows rung for an extension. */
   bell: Array<{ moduleId: string; input: ModuleNotifyInput }>
   toolsChanged: () => number
@@ -87,6 +93,9 @@ export function startWorkerHarness(
   }
   const context = approvedContext(folders)
   const approvals = new Map([...context.approvals].map(([key, record]) => [key, { fingerprint: record.fingerprint }]))
+  const installed = new Map<string, InstalledStanding>(
+    [...approvals].map(([key, { fingerprint }]) => [key, { runnable: true, fingerprint }]),
+  )
   const bell: WorkerHarness['bell'] = []
   let toolsChanged = 0
   let kernelRef: LoadMainModulesResult['kernel'] | null = null
@@ -95,6 +104,7 @@ export function startWorkerHarness(
     entryPath: workerEntryForTests(),
     logDir,
     approvals: () => approvals,
+    installed: () => installed,
     gate: (moduleId, method) => kernelRef!.gateHostMethod(moduleId, method),
     toolNameProblem: (moduleId, names) => kernelRef!.mcpToolNameProblem(moduleId, names),
     notify: (moduleId, input) => {
@@ -124,6 +134,7 @@ export function startWorkerHarness(
     load,
     workers,
     approvals,
+    installed,
     bell,
     toolsChanged: () => toolsChanged,
     logDir,

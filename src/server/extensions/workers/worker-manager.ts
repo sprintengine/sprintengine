@@ -66,6 +66,9 @@ export type WorkerExtensionSpec = {
   declaredTools: readonly ExtensionMcpToolContribution[]
 }
 
+/** An installed extension as discovery finds it: whether it may run as it is, and the approval it runs under. */
+export type InstalledStanding = { runnable: boolean; fingerprint: string | null }
+
 export type WorkerRunState = 'idle' | 'waiting' | 'starting' | 'running' | 'restarting' | 'errored' | 'stopped'
 
 export type WorkerStatus = { state: WorkerRunState; message?: string; pid?: number }
@@ -76,6 +79,12 @@ export type ExtensionWorkersOptions = {
   logDir: string
   /** The approvals as they stand now, by extension id. */
   approvals: () => ReadonlyMap<string, { fingerprint: string }>
+  /**
+   * The installed extensions as discovery finds them now, read when what is
+   * installed may have changed: whether each may run as it is, and the
+   * fingerprint it is approved under. Absent (tests), the approvals alone decide.
+   */
+  installed?: () => ReadonlyMap<string, InstalledStanding>
   gate: (moduleId: string, method: string) => { ok: true } | { ok: false; code: string; message: string }
   toolNameProblem: (moduleId: string, names: readonly string[]) => string | null
   /** A bell row under the extension's name (the kernel's emitNotification). */
@@ -214,6 +223,8 @@ export class ExtensionWorkers implements KernelWorkerPort {
   mcpTools(): ReadonlyArray<{ moduleId: string; registration: McpToolRegistration }> {
     const tools: Array<{ moduleId: string; registration: McpToolRegistration }> = []
     for (const entry of this.entries.values()) {
+      // Stopped for good this run (removed, unapproved, changed): its tools leave the gateway.
+      if (entry.state === 'stopped') continue
       for (const declared of entry.spec.declaredTools) {
         let handler = entry.handlers.get(declared.name)
         if (!handler)
@@ -341,10 +352,27 @@ export class ExtensionWorkers implements KernelWorkerPort {
 
   /** Stop every worker whose approval is gone or changed since it was loaded. */
   reconcile(): void {
+    const installed = this.options.installed?.()
+    let toolsLeft = false
     for (const entry of this.entries.values()) {
-      const why = this.approvalProblem(entry)
-      if (why && entry.state !== 'stopped') void this.stop(entry, 'stopped', why)
+      if (entry.state === 'stopped') continue
+      const why = this.approvalProblem(entry) ?? (installed ? this.installProblem(entry, installed) : null)
+      if (!why) continue
+      void this.stop(entry, 'stopped', why)
+      if (entry.spec.declaredTools.length > 0) toolsLeft = true
     }
+    if (toolsLeft) this.options.toolsChanged?.()
+  }
+
+  /** Why the extension as installed now is not the one its worker was started as, or null. */
+  private installProblem(entry: Entry, installed: ReadonlyMap<string, InstalledStanding>): string | null {
+    const id = entry.spec.extensionId
+    const standing = installed.get(id)
+    if (!standing) return `Extension "${id}" is no longer installed, so its worker stopped.`
+    if (!standing.runnable) return `Extension "${id}" changed and waits for your approval, so its worker stopped.`
+    if (standing.fingerprint !== entry.spec.fingerprint)
+      return `Extension "${id}" changed since its worker started, so the worker stopped. Restart Studio to run it as it is now.`
+    return null
   }
 
   /** The running worker, started when it is not. */

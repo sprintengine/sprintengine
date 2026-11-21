@@ -2,8 +2,13 @@ import type { ExtensionMcpToolContribution } from '../../../packages/extension-s
 import type { ModuleFileDigests, ModuleResolutionErrorCode } from '../../shared/modules/manifest'
 import type { CapabilityModule, MainModuleLoadError } from '../../main/module-host/load-modules'
 import { isExtensionRunnable } from '../../main/modules/module-signature'
-import type { InstalledModule, ModuleRejection } from '../../main/modules/user-module-registry'
-import type { ExtensionWorkers } from './workers/worker-manager'
+import { readExtensionStandingContextSync } from '../../main/modules/extension-standing-context'
+import {
+  discoverUserModulesSync,
+  type InstalledModule,
+  type ModuleRejection,
+} from '../../main/modules/user-module-registry'
+import type { ExtensionWorkers, InstalledStanding } from './workers/worker-manager'
 
 // The installed extensions as one Studio server's module kernel loads them.
 //
@@ -95,4 +100,23 @@ export function planInstalledExtensions(
     })
   }
   return plan
+}
+
+/**
+ * The installed extensions as discovery finds them now, for the workers to
+ * hold what runs against: whether each may run as it is, and the approval it
+ * is approved under. Reads and digests every folder, so it is read when
+ * something changed, not per call.
+ */
+export function readInstalledStanding(moduleRoot: string, dataDir: string): Map<string, InstalledStanding> {
+  const { modules } = discoverUserModulesSync(moduleRoot, readExtensionStandingContextSync(dataDir))
+  return new Map(
+    modules.map((module) => [
+      module.key,
+      {
+        runnable: isExtensionRunnable(module.standing),
+        fingerprint: module.standing.approval.state === 'approved' ? module.standing.approval.fingerprint : null,
+      },
+    ]),
+  )
 }
