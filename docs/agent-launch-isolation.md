@@ -65,11 +65,10 @@ launch:
   merges with the project's and the person's own, and wins over a same-named
   one. The file is owner-only, because a server's environment can hold a
   secret.
-- `--settings '<json>'` carries the status line, which no plugin can declare,
-  and the knowledge-activity hook when the workspace opted into it. A second
-  `--settings` replaces the first outright (measured on the same version), so
-  both ride one document; its hooks fire beside the project's and every
-  plugin's.
+- `--settings '<json>'` carries the status line, which no plugin can declare.
+  A second `--settings` replaces the first outright (measured on the same
+  version), so everything rides one document; its hooks fire beside the
+  project's and every plugin's.
 
 A plugin skill is invoked by its bare name (`/backlog`) whenever no other command
 claims that name, and always as `/sprintengine-backlog:backlog`, so the invocations
@@ -218,9 +217,9 @@ app writes or carrying its tag, the gateway entry that runs the app's bridge,
 plugin and skill copies carrying its provenance marker — and nothing the
 repository has committed. A file the removal leaves empty is deleted when the
 app created it, or when the scan found it in a repository and git does not
-track it. A workspace's knowledge-activity opt-in is moved into the project's
-store first, so the choice survives. The pass is skipped while another Studio
-runs, since its sessions may still read those files.
+track it. The knowledge-activity hook an older build wrote for the retired
+knowledge graph goes the same way, and is not written again. The pass is
+skipped while another Studio runs, since its sessions may still read those files.
 
 A launch also tidies the workspace it starts in, which reaches worktrees and
 folders that are not workspaces: the Claude-family gateway and its approval in
@@ -235,7 +234,7 @@ Every path the main process writes for agent integration, and where it is now.
 | Was                                                                                                                                                       | Read by                               | Now                                                                                                                                                                                                                                  |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `.claude/settings.local.json` → agent-state hooks, status line, `extraKnownMarketplaces`, `enabledPlugins`                                                | Claude family                         | `--plugin-dir` and `--settings`, every platform. Written only when this build's plugin copy failed.                                                                                                                                  |
-| `.claude/settings.local.json` → knowledge-activity hook; `.sprintengine/hooks/knowledge-activity.mjs`, `installed.json`; `.sprintengine/knowledge-trace/` | Claude family                         | `--settings`; the opt-in and the trace in the project's store (`~/.sprintengine/workspaces/<project>/`), the trace moved there with the rest of `.sprintengine/`. A workspace on a WSL machine keeps the in-repository registration. |
+| `.claude/settings.local.json` → knowledge-activity hook; `.sprintengine/hooks/knowledge-activity.mjs`, `installed.json`; `.sprintengine/knowledge-trace/` | Claude family                         | Nothing: the retired knowledge graph's hook is removed, not moved; a leftover `knowledge-trace/` goes to the store's `legacy/`.                                                                                                      |
 | `.sprintengine/studio-plugin/`, `.sprintengine/hooks/agent-state.mjs`, `status-line.mjs`                                                                  | Claude family, every command-hook CLI | Not written (the launcher runs the shipped reporter); the plugin copy only when this build's failed.                                                                                                                                 |
 | `.mcp.json` → gateway; `enabledMcpjsonServers`                                                                                                            | Claude family, Grok                   | The Claude plugin's `.mcp.json`; Grok's `~/.grok/config.toml`.                                                                                                                                                                       |
 | `.mcp.json` → the person's synced servers                                                                                                                 | Claude family                         | `--mcp-config <file>`.                                                                                                                                                                                                               |
@@ -272,8 +271,7 @@ choice, not pollution.
 - **WSL launches** keep the workspace writers for every CLI but the Claude
   family: the per-launch channels above name files on this machine, and a
   Linux CLI would need them written inside the distribution by its Studio, as
-  the Claude plugin copy already is. The knowledge-activity hook of a
-  workspace inside a distribution stays in its settings for the same reason.
+  the Claude plugin copy already is.
 - **Connector launches** keep writing their worktree's MCP config: the
   connector-only server set is the isolation they promise, and the worktree's
   own exclude keeps it out of git.

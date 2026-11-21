@@ -36,7 +36,7 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * machine-wide idle policy; the launch settings, which name the programs
  * each CLI and MCP server runs here and hold the MCP servers' keys; and what
  * writes the programs and hooks the agent CLIs run (an MCP sync, an adopted
- * configuration, the memory activity hook); a plugin's install and
+ * configuration); a plugin's install and
  * uninstall (its hooks and MCP servers), a design bundle's lint (it runs the
  * bundle's own script) and a card's Go (modules, plugins and MCP servers in
  * one press); an extension's code fetched, reviewed, installed, updated or
@@ -92,8 +92,6 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'skillPlugins.uninstall',
   'textGeneration.chatTitle',
   'mcp.sync',
-  'memoryActivity.install',
-  'memoryActivity.uninstall',
   // What extensions run here: installed, trusted, switched on or off;
   // reviewed, installed, updated or removed from a marketplace or GitHub;
   // and a new extension project written on this disk.

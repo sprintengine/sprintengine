@@ -16,7 +16,7 @@ import { chatHandoffStart, createConversationTerminalHandoff } from '../../main/
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import type { AgentLaunchSettingsStore } from '../../main/launch-settings-store'
 import { createLaunchedAgentRegistration, withLaunchedAgentRegistration } from '../../main/launched-agent-registration'
-import { resolveMemoryRoot } from '../../main/memory-graph'
+import { resolveKnowledgeRoot } from '../../main/knowledge-root'
 import { getPluginRegistry } from '../../main/plugin-registry-instance'
 import { declaredPermissionModes, declaredPermissionPresets } from '../../main/plugin-render'
 import { powerActivity } from '../../main/power-activity'
@@ -310,7 +310,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
       return (plugin && declaredPermissionModes(plugin.manifest).find((own) => own.id === mode)?.level) ?? null
     },
     cliResumesSessions: (cli) => cliResumeCapabilities(cli).resumeSession,
-    resolveKnowledgeRoot: (input) => resolveMemoryRoot(input.workspaceRoot, input.relativeRoot),
+    resolveKnowledgeRoot: (input) => resolveKnowledgeRoot(input.workspaceRoot, input.relativeRoot),
     terminal: {
       list: () => runtime.sessions.listTerminals(),
       spawn: (payload) => runtime.sessions.spawnTerminal(headlessTerminalViewer(), payload),

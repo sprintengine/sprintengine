@@ -674,18 +674,6 @@ export const COMMAND_REGISTRY = [
     availability: ['activeWorkspace', 'canvasEnabled'],
     handlerPath: { kind: 'workspace-manager', handler: "togglePaneKind(windowActiveWorkspaceId, 'canvas')" },
   }),
-  // The Knowledge Graph has no rail glyph (the rail is reserved for the
-  // navigational core: Files / Git / Backlog), so this
-  // command — surfaced in the palette and the View menu — is its entry point.
-  // It ships unbound; users can bind it in Shortcuts settings.
-  command({
-    id: 'panel.knowledge-graph.toggle',
-    title: appCopy.commands.commandRegistry.toggleKnowledgeGraph,
-    category: 'panel',
-    scopes: ['workspace'],
-    availability: ['activeWorkspace', 'memoryGraphEnabled'],
-    handlerPath: { kind: 'app-menu', command: 'panel.knowledge-graph.toggle' },
-  }),
   command({
     id: 'git.worktrees.open',
     title: appCopy.commands.commandRegistry.gitManageWorktrees,

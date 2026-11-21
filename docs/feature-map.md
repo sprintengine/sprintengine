@@ -78,6 +78,14 @@ Tests: `src/main/conversation-import/conversation-import-service.test.ts`.
 the view `src/renderer/src/components/panels/TerminalView.tsx`. Wire: `terminals.*` (owners only,
 `packages/studio-protocol/src/terminals.ts`). Tests: `src/main/agent-launch-service.test.ts`.
 
+**Project knowledge folder** (Settings ▸ Knowledge; the folder a launch points its agent at): the setting
+`projectKnowledgeRoots` in `src/renderer/src/store/slices/knowledgeSlice.ts` and
+`src/renderer/src/components/settings/ProjectKnowledgeList.tsx`; resolved by `src/main/knowledge-root.ts`
+and `src/shared/project-knowledge.ts`, and named to the agent in the host-context document's knowledge
+section (`src/shared/host-context/document.ts`). Wire: `knowledge.resolveRoot` (`agent-setup`,
+`packages/studio-protocol/src/agent-setup.ts`). Tests: `src/shared/host-context/document.test.ts`,
+`src/renderer/src/store/slices/knowledgeSlice.test.ts`.
+
 ## The MCP gateway (agents' tools)
 
 **Studio's MCP server**: dispatch in `src/main/automation/mcp-dispatch.ts`, the socket in

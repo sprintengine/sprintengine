@@ -1122,7 +1122,7 @@ export function cleanupTerminalStartupScript(scriptPath: string | undefined): vo
 // ── Host context ────────────────────────────────────────────────────────────
 //
 // Everything the host wants the agent to know that is NOT the user's request —
-// today: an attached design system, and the project's Knowledge Graph. It used
+// today: an attached design system, and the project's knowledge folder. It used
 // to be two sentences the RENDERER pasted after the user's prompt, which meant
 // the model could not tell host from user, a resumed session was never told at
 // all, and a headless launch got only half of it. It is built here instead,
@@ -1158,9 +1158,10 @@ export type HostContextDelivery = {
  *
  * The design-system predicate is unchanged from the renderer's: the document
  * carries a design section when and only when `<executionRoot>/design-system/`
- * exists — deliberately KG-independent, so a repo with a design system and no
- * knowledge graph still gets told. A failed write degrades to no context rather
- * than to an empty flag: `--append-system-prompt-file ""` is worse than silence.
+ * exists — deliberately independent of the knowledge folder, so a repo with a
+ * design system and no knowledge folder still gets told. A failed write
+ * degrades to no context rather than to an empty flag:
+ * `--append-system-prompt-file ""` is worse than silence.
  *
  * `onHost` is a WSL launch's: the document is not written here but added to
  * `files` under the server's launch directory `dir` (with its paths as Linux
@@ -1170,8 +1171,8 @@ export function resolveHostContextDelivery(input: {
   cwd: string
   sessionId: string
   cli: AgentCli
-  memoryRootPath?: string
-  memoryRelativeRoot?: string
+  knowledgeRootPath?: string
+  knowledgeRelativeRoot?: string
   onHost?: { dir: string; files: HostLaunchFile[] }
   /** The session is an agent bound to a workspace, so it can call the editor tools. */
   editorTools?: boolean
@@ -1182,15 +1183,15 @@ export function resolveHostContextDelivery(input: {
   const attached = designSystemAttached(bundlePath)
   const document = buildHostContextDocument({
     ...(attached ? { designSystem: { bundlePath } } : {}),
-    // `memoryRootPath` is set only when the configured root actually resolved,
+    // `knowledgeRootPath` is set only when the configured root actually resolved,
     // so its presence IS the ok/not-ok the shared builder asks for — the same
     // pair the launch already carries into the session env.
-    ...(input.memoryRootPath || input.memoryRelativeRoot
+    ...(input.knowledgeRootPath || input.knowledgeRelativeRoot
       ? {
           knowledge: {
-            ok: Boolean(input.memoryRootPath),
-            ...(input.memoryRootPath ? { rootPath: input.memoryRootPath } : {}),
-            ...(input.memoryRelativeRoot ? { relativeRoot: input.memoryRelativeRoot } : {}),
+            ok: Boolean(input.knowledgeRootPath),
+            ...(input.knowledgeRootPath ? { rootPath: input.knowledgeRootPath } : {}),
+            ...(input.knowledgeRelativeRoot ? { relativeRoot: input.knowledgeRelativeRoot } : {}),
           },
         }
       : {}),
@@ -1202,7 +1203,7 @@ export function resolveHostContextDelivery(input: {
   })
   if (!document || mode === 'prompt') return { mode, document, filePath: null }
   if (input.onHost) {
-    const hostDocument = normalizeTextPaths(document, 'wsl', [input.cwd, input.memoryRootPath]) ?? document
+    const hostDocument = normalizeTextPaths(document, 'wsl', [input.cwd, input.knowledgeRootPath]) ?? document
     const base = `${input.onHost.dir}/host-context-${hostContextSessionKey(input.sessionId, input.cwd)}`
     if (contextInjectionWritesPluginDir(injection)) {
       input.onHost.files.push(
@@ -1439,7 +1440,7 @@ function buildWslShellScript(
   cliRuntime?: CliRuntimeSettings,
   cliPermissionPreset: CliPermissionSetting = 'none',
   cliModel?: string,
-  memoryRootPath?: string,
+  knowledgeRootPath?: string,
   managedMcpEnv?: Record<string, string>,
   providerLaunchEnv?: Record<string, string>,
   cliReasoning?: string,
@@ -1449,7 +1450,7 @@ function buildWslShellScript(
   onPlan?: (plan: PlannedAgentLaunch) => void,
   launchSkills: readonly string[] = [],
 ): string {
-  const shellInitialPrompt = normalizeTextPaths(initialPrompt, 'wsl', [cwd, memoryRootPath])
+  const shellInitialPrompt = normalizeTextPaths(initialPrompt, 'wsl', [cwd, knowledgeRootPath])
   return [
     wslPidFileLine(scriptPath, host),
     buildUserShellStartup(),
@@ -1544,8 +1545,8 @@ export function getShellLaunchConfig(
   cliRuntimes?: Partial<Record<AgentCli, Partial<CliRuntimeSettings>>>,
   cliPermissionPreset: CliPermissionSetting = 'none',
   cliModel?: string,
-  memoryRootPath?: string,
-  memoryRelativeRoot?: string,
+  knowledgeRootPath?: string,
+  knowledgeRelativeRoot?: string,
   managedMcpEnv?: Record<string, string>,
   cliAuthToken?: string,
   cliReasoning?: string,
@@ -1586,7 +1587,7 @@ export function getShellLaunchConfig(
   const integration = launchHost.kind === 'wsl' ? undefined : hostContextOptions.integration
 
   // The host's own context for this launch (an attached design system, the
-  // project's Knowledge Graph), built here so EVERY
+  // project's knowledge folder), built here so EVERY
   // launcher gets the same document — interactive, mobile, and the headless
   // AgentLaunchService all arrive at this function. The manifest's
   // `contextInjection` decides the channel; only the prompt fallback touches
@@ -1598,8 +1599,8 @@ export function getShellLaunchConfig(
     cwd,
     sessionId,
     cli,
-    ...(memoryRootPath ? { memoryRootPath } : {}),
-    ...(memoryRelativeRoot ? { memoryRelativeRoot } : {}),
+    ...(knowledgeRootPath ? { knowledgeRootPath } : {}),
+    ...(knowledgeRelativeRoot ? { knowledgeRelativeRoot } : {}),
     ...(onHost ? { onHost } : {}),
     ...(hostContextOptions.editorTools ? { editorTools: true } : {}),
   })
@@ -1628,19 +1629,19 @@ export function getShellLaunchConfig(
     secretToken: cliAuthToken,
     ...hostContextRenderInputs(hostContext, launchHost.kind === 'posix' ? null : launchHost.kind, [
       cwd,
-      memoryRootPath,
+      knowledgeRootPath,
     ]),
   })
 
   if (launchHost.kind === 'windows') {
     const windowsCwd = wslToWindowsPath(cwd)
     const windowsHostContext = {
-      ...hostContextRenderInputs(hostContext, 'windows', [cwd, memoryRootPath]),
+      ...hostContextRenderInputs(hostContext, 'windows', [cwd, knowledgeRootPath]),
       ...integrationRenderInputs(integration),
     }
     const shellInitialPrompt = normalizeTextPaths(launchPrompt, 'windows', [
       cwd,
-      memoryRootPath,
+      knowledgeRootPath,
       hostContext.filePath ?? undefined,
     ])
     if (!isWindowsPath(windowsCwd)) {
@@ -1705,11 +1706,11 @@ export function getShellLaunchConfig(
         cliRuntime,
         cliPermissionPreset,
         cliModel,
-        memoryRootPath,
+        knowledgeRootPath,
         managedMcpEnv,
         providerLaunchEnv,
         cliReasoning,
-        hostContextRenderInputs(hostContext, 'wsl', [cwd, memoryRootPath]),
+        hostContextRenderInputs(hostContext, 'wsl', [cwd, knowledgeRootPath]),
         launchHost,
         launchPlanOptions(launchHost, sessionId, cwd, onHost),
         (plan) => {

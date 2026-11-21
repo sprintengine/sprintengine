@@ -20,7 +20,6 @@ test('workspace-sync-service', async () => {
       layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
       agents: {},
       worktreeState: { containerPath: null, entries: {}, updatedAt: null },
-      memory: { relativeRoot: null },
       editorState: { openFiles: [], activeFilePath: null },
       createdAt: 1,
     }
@@ -346,7 +345,6 @@ test('only Mark unread’s own command may move the visit clock back', () => {
     layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
     agents: {},
     worktreeState: { containerPath: null, entries: {}, updatedAt: null },
-    memory: { relativeRoot: null },
     editorState: { openFiles: [], activeFilePath: null },
     createdAt: 1,
     lastVisitedAt: 9_000,
@@ -419,7 +417,6 @@ test("main's own title carries the lock and never outranks a person's rename", (
     layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
     agents: {},
     worktreeState: { containerPath: null, entries: {}, updatedAt: null },
-    memory: { relativeRoot: null },
     editorState: { openFiles: [], activeFilePath: null },
     createdAt: 1,
   }
@@ -485,7 +482,6 @@ test('a field main clears reaches every window as cleared, though events travel 
     layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
     agents: { 'agent-1': agent },
     worktreeState: { containerPath: null, entries: {}, updatedAt: null },
-    memory: { relativeRoot: null },
     editorState: { openFiles: [], activeFilePath: null },
   } as unknown as Workspace
   const registry = createWorkspaceRegistryService({

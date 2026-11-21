@@ -172,8 +172,8 @@ export const STUDIO_AGENT_RUNTIMES_CAPABILITY = 'agent-runtimes' as const
 export const STUDIO_AGENT_SETTINGS_CAPABILITY = 'agent-settings' as const
 
 /**
- * What a Studio's agents are set up with beyond their CLIs: `memory.*`,
- * `memoryActivity.*`, `mcp.sync`, `agentConfig.*`, `builtinSkills.*` and
+ * What a Studio's agents are set up with beyond their CLIs:
+ * `knowledge.resolveRoot`, `mcp.sync`, `agentConfig.*`, `builtinSkills.*` and
  * `areaSkills.*`, with their streams. Offered where the Studio holds those
  * services.
  */

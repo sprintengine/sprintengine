@@ -103,7 +103,6 @@ beforeAll(async () => {
     layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
     agents: {},
     worktreeState: { containerPath: null, entries: {}, updatedAt: null },
-    memory: { relativeRoot: null },
     editorState: { openFiles: [], activeFilePath: null },
     createdAt: 1,
   }

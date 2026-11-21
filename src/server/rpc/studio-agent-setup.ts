@@ -9,7 +9,7 @@ import { isMachinePath } from '../../shared/machine-paths'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioRequestContext } from './studio-rpc-types'
 
-// The router's answers to `memory.*`, `memoryActivity.*`, `mcp.sync`,
+// The router's answers to `knowledge.resolveRoot`, `mcp.sync`,
 // `agentConfig.*`, `builtinSkills.*` and `areaSkills.*`: each method's domain
 // call, once the router has held the grant to the method's scope. The rule of
 // their own: a workspace folder a client that is not an owner names must be
@@ -53,7 +53,7 @@ export function createStudioAgentSetupHandlers(options: StudioAgentSetupHandlerO
 
   /**
    * Answer from the domain about a workspace the asker may name, or why not.
-   * A knowledge root under it is held to the same rule, resolved: a relative
+   * A knowledge folder under it is held to the same rule, resolved: a relative
    * root may climb (`../notes`), and it must not climb out of what the asker
    * may name.
    */
@@ -75,63 +75,14 @@ export function createStudioAgentSetupHandlers(options: StudioAgentSetupHandlerO
   }
 
   return {
-    'memory.resolveRoot': ({ workspaceFolder, relativeRoot }, asking) =>
+    'knowledge.resolveRoot': ({ workspaceFolder, relativeRoot }, asking) =>
       about(
-        'memory.resolveRoot',
+        'knowledge.resolveRoot',
         workspaceFolder,
         asking,
-        (domain) => domain.resolveMemoryRoot(workspaceFolder, relativeRoot),
+        (domain) => domain.resolveKnowledgeRoot(workspaceFolder, relativeRoot),
         relativeRoot,
       ),
-    'memory.index': ({ workspaceFolder, relativeRoot }, asking) =>
-      about(
-        'memory.index',
-        workspaceFolder,
-        asking,
-        (domain) => domain.indexMemory(workspaceFolder, relativeRoot),
-        relativeRoot,
-      ),
-    'memory.readPreview': ({ workspaceFolder, relativeRoot, relativePath }, asking) =>
-      about(
-        'memory.readPreview',
-        workspaceFolder,
-        asking,
-        (domain) => domain.readMemoryPreview(workspaceFolder, relativeRoot, relativePath),
-        relativeRoot,
-      ),
-    'memoryActivity.install': ({ workspaceFolder, memoryRelativeRoot }, asking) =>
-      about(
-        'memoryActivity.install',
-        workspaceFolder,
-        asking,
-        (domain) => domain.installMemoryActivity(workspaceFolder, memoryRelativeRoot),
-        memoryRelativeRoot,
-      ),
-    'memoryActivity.uninstall': ({ workspaceFolder }, asking) =>
-      about('memoryActivity.uninstall', workspaceFolder, asking, (domain) =>
-        domain.uninstallMemoryActivity(workspaceFolder),
-      ),
-    'memoryActivity.startWatching': ({ workspaceFolder, memoryRelativeRoot }, asking) =>
-      about(
-        'memoryActivity.startWatching',
-        workspaceFolder,
-        asking,
-        async (domain) => {
-          await domain.startMemoryActivityWatching(workspaceFolder, memoryRelativeRoot)
-          return {}
-        },
-        memoryRelativeRoot,
-      ),
-    'memoryActivity.status': ({ workspaceFolder }, asking) =>
-      about('memoryActivity.status', workspaceFolder, asking, (domain) => domain.memoryActivityStatus(workspaceFolder)),
-    'memoryActivity.synapses': ({ workspaceFolder }, asking) =>
-      about('memoryActivity.synapses', workspaceFolder, asking, (domain) => ({
-        synapses: domain.memoryActivitySynapses(workspaceFolder),
-      })),
-    'memoryActivity.isInstalled': ({ workspaceFolder }, asking) =>
-      about('memoryActivity.isInstalled', workspaceFolder, asking, async (domain) => ({
-        installed: await domain.memoryActivityInstalled(workspaceFolder),
-      })),
     'mcp.sync': ({ commandId: _commandId, ...input }, asking) =>
       about('mcp.sync', input.workspaceRoot, asking, (domain) => domain.syncMcp(input)),
     'agentConfig.detect': async (input) =>

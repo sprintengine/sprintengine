@@ -10,127 +10,38 @@ import {
 import type { McpClientTarget, McpSettings, McpTransport } from './agents.js'
 import { STUDIO_AGENT_SETUP_CAPABILITY } from './handshake.js'
 
-// What a Studio's agents are set up with beyond their CLIs: the project
-// knowledge graph and the activity agents leave in it (`memory.*`,
-// `memoryActivity.*`), the MCP servers written into each CLI's config
+// What a Studio's agents are set up with beyond their CLIs: the project's
+// knowledge folder, the one an agent is told about at launch
+// (`knowledge.resolveRoot`), the MCP servers written into each CLI's config
 // (`mcp.sync`), configuration adopted from a CLI already on the machine
 // (`agentConfig.*`), and the skills Studio ships (`builtinSkills.*`,
 // `areaSkills.*`). Offered as `agent-setup` where the Studio holds these
 // services (a desktop, in process).
 //
-// Grants. Reading a project's knowledge, its activity and what a skill would
+// Grants. Resolving a project's knowledge folder and what a skill would
 // install is `files:read`, about a folder a client that is not an owner may
 // name only inside the ones Studio knows; a folder on an SSH machine is
 // refused in words for now. What can run is `providers:read`. Switching
 // Studio's own area skills is `settings:write`. What writes the programs and
 // hooks the agent CLIs run on this machine (an MCP sync, an adopted
-// configuration, the activity hook) is an owner's.
+// configuration) is an owner's.
 //
 // `src/shared` re-exports each type under the name the app has always used.
 
 /** Which agent harness a skill targets. */
 export type SkillHarness = 'claude' | 'codex' | 'cursor' | 'gemini' | 'opencode' | 'grok' | 'agents'
 
-// ── Memory ──────────────────────────────────────────────────────────────────
+// ── Knowledge ───────────────────────────────────────────────────────────────
 
-export type MemoryGraphNodeKind = 'markdown' | 'image' | 'text' | 'asset'
-
-export type MemoryGraphNode = {
-  id: string
-  path: string
-  relativePath: string
-  name: string
-  kind: MemoryGraphNodeKind
-  extension: string
-  sizeBytes: number
-  degree: number
-  inboundDegree: number
-  group: string
-  title?: string
-  type?: string
-  tags?: string[]
-  related?: string[]
-}
-
-export type MemoryGraphEdge = {
-  id: string
-  source: string
-  target: string
-  sourcePath: string
-  targetPath: string
-}
-
-export type MemoryUnresolvedLink = {
-  sourcePath: string
-  href: string
-  resolvedRelativePath: string | null
-  reason: 'missing' | 'outside-root'
-}
-
-export type MemoryRootStatus =
+/** A project's knowledge folder, resolved: where it is, or why it is not there. */
+export type KnowledgeRootStatus =
   | { ok: true; rootPath: string; relativeRoot: string }
   | {
       ok: false
-      status: 'missing-workspace' | 'invalid-relative-path' | 'missing-memory-root' | 'inaccessible'
+      status: 'missing-workspace' | 'invalid-relative-path' | 'missing-knowledge-root' | 'inaccessible'
       relativeRoot: string | null
       message: string
     }
-
-export type MemoryGraphIndexResult =
-  | {
-      ok: true
-      rootPath: string
-      relativeRoot: string
-      nodes: MemoryGraphNode[]
-      edges: MemoryGraphEdge[]
-      groups: string[]
-      unresolvedLinks: MemoryUnresolvedLink[]
-      indexedAt: number
-    }
-  | Extract<MemoryRootStatus, { ok: false }>
-
-export type MemoryPreviewResult =
-  | { ok: true; node: MemoryGraphNode; previewKind: 'markdown' | 'text'; content: string }
-  | { ok: true; node: MemoryGraphNode; previewKind: 'image'; dataUrl: string }
-  | { ok: true; node: MemoryGraphNode; previewKind: 'unsupported'; message: string }
-  | { ok: false; message: string }
-
-export type MemoryActivityEvent = {
-  workspaceRoot: string
-  sessionId: string
-  nodeId: string
-  prevNodeId: string | null
-  tool: string
-  ts: number
-  synapseCount: number
-}
-
-export type MemoryActivitySynapse = {
-  src: string
-  dst: string
-  count: number
-  lastTs: number
-}
-
-export type MemoryActivityStatus = {
-  workspaceRoot: string | null
-  isInstalled: boolean
-  isWatching: boolean
-  sessionsRecorded: number
-  totalEvents: number
-  eventsToday: number
-  lastEventAt: number | null
-}
-
-export type MemoryActivityInstallResult =
-  { ok: true; settingsPath: string; hookScriptPath: string } | { ok: false; message: string }
-
-export type MemoryActivityUninstallResult = { ok: true } | { ok: false; message: string }
-
-export type MemoryActivitySynapsesPayload = {
-  workspaceRoot: string
-  synapses: MemoryActivitySynapse[]
-}
 
 // ── MCP ───────────────────────────────────────────────────────────────────
 
@@ -340,54 +251,15 @@ export type StudioAreaSkillChoices = {
 type Commanded<T> = { commandId: string } & T
 
 /**
- * A project's knowledge root: the workspace's folder and the root's path
+ * A project's knowledge folder: the workspace's folder and the folder's path
  * inside it. A folder, held to the ones Studio knows for a client that is not
  * an owner, as a file's is; not a workspace's address.
  */
-export type MemoryRootParams = { workspaceFolder: string | null; relativeRoot: string | null }
+export type KnowledgeRootParams = { workspaceFolder: string | null; relativeRoot: string | null }
 
 /** Refused `not_found`: a workspace a client that is not an owner may not name. */
 export type StudioAgentSetupMethodMap = {
-  'memory.resolveRoot': { params: MemoryRootParams; result: MemoryRootStatus; errors: 'not_found' }
-  /** Every note and link under the root. */
-  'memory.index': { params: MemoryRootParams; result: MemoryGraphIndexResult; errors: 'not_found' }
-  'memory.readPreview': {
-    params: MemoryRootParams & { relativePath: string }
-    result: MemoryPreviewResult
-    errors: 'not_found'
-  }
-  /** Install the hook that records which notes agents read, and start following it. */
-  'memoryActivity.install': {
-    params: Commanded<{ workspaceFolder: string; memoryRelativeRoot: string }>
-    result: MemoryActivityInstallResult
-    errors: 'not_found'
-  }
-  'memoryActivity.uninstall': {
-    params: Commanded<{ workspaceFolder: string }>
-    result: MemoryActivityUninstallResult
-    errors: 'not_found'
-  }
-  /** Follow an installed hook's log; nothing when there is none. */
-  'memoryActivity.startWatching': {
-    params: { workspaceFolder: string; memoryRelativeRoot: string }
-    result: Record<string, never>
-    errors: 'not_found'
-  }
-  'memoryActivity.status': {
-    params: { workspaceFolder: string | null }
-    result: MemoryActivityStatus
-    errors: 'not_found'
-  }
-  'memoryActivity.synapses': {
-    params: { workspaceFolder: string }
-    result: { synapses: MemoryActivitySynapse[] }
-    errors: 'not_found'
-  }
-  'memoryActivity.isInstalled': {
-    params: { workspaceFolder: string }
-    result: { installed: boolean }
-    errors: 'not_found'
-  }
+  'knowledge.resolveRoot': { params: KnowledgeRootParams; result: KnowledgeRootStatus; errors: 'not_found' }
   /** Write (or, without `write`, preview) each CLI's MCP config in a workspace. */
   'mcp.sync': { params: Commanded<McpSyncInput>; result: McpSyncResult; errors: 'not_found' }
   /** What another CLI already on this machine is set up with: names only, never a secret's value. */
@@ -411,14 +283,6 @@ export type StudioAgentSetupMethodMap = {
 export type StudioAgentSetupMethod = keyof StudioAgentSetupMethodMap
 
 export type StudioAgentSetupTopicMap = {
-  /** Each note an agent moved to, as the hook records it, in every workspace followed. */
-  'memoryActivity.events': { params: Record<string, never>; payload: MemoryActivityEvent; stream: 'push' }
-  'memoryActivity.statusChanged': { params: Record<string, never>; payload: MemoryActivityStatus; stream: 'push' }
-  'memoryActivity.synapsesChanged': {
-    params: Record<string, never>
-    payload: MemoryActivitySynapsesPayload
-    stream: 'push'
-  }
   /** The person's area-skill choices, after each change. */
   'areaSkills.changed': { params: Record<string, never>; payload: StudioAreaSkillChoices; stream: 'push' }
 }
@@ -465,7 +329,7 @@ function commanded<P>(
   }
 }
 
-function memoryRoot(value: Record<string, unknown>): StudioParsed<MemoryRootParams> {
+function knowledgeRoot(value: Record<string, unknown>): StudioParsed<KnowledgeRootParams> {
   if (value.workspaceFolder !== null && !folder(value.workspaceFolder))
     return refuse('"workspaceFolder" is the workspace\'s folder, or null.')
   if (value.relativeRoot !== null && value.relativeRoot !== undefined && !relative(value.relativeRoot))
@@ -476,24 +340,11 @@ function memoryRoot(value: Record<string, unknown>): StudioParsed<MemoryRootPara
   })
 }
 
-function workspace(value: Record<string, unknown>): StudioParsed<{ workspaceFolder: string }> {
-  return folder(value.workspaceFolder)
-    ? studioParams({ workspaceFolder: value.workspaceFolder })
-    : refuse('"workspaceFolder" is the workspace\'s folder.')
-}
-
 /** The workspace an owner's write names, in the shape its service takes. */
 function ownersWorkspace(value: Record<string, unknown>): StudioParsed<{ workspaceRoot: string }> {
   return folder(value.workspaceRoot)
     ? studioParams({ workspaceRoot: value.workspaceRoot })
     : refuse('"workspaceRoot" is the workspace\'s folder.')
-}
-
-function hook(value: Record<string, unknown>): StudioParsed<{ workspaceFolder: string; memoryRelativeRoot: string }> {
-  const at = workspace(value)
-  if (!at.ok) return at
-  if (!folder(value.memoryRelativeRoot)) return refuse('"memoryRelativeRoot" is the knowledge root inside it.')
-  return studioParams({ ...at.params, memoryRelativeRoot: value.memoryRelativeRoot })
 }
 
 function areaSkill(value: unknown): value is StudioAreaSkillId {
@@ -523,7 +374,7 @@ function mcpSync(value: Record<string, unknown>): StudioParsed<McpSyncInput> {
 // ── The table ───────────────────────────────────────────────────────────────
 
 const WRITES_AGENT_PROGRAMS =
-  'It writes what the agent CLIs on this machine run: their MCP servers, the configuration adopted into them, or a hook.'
+  'It writes what the agent CLIs on this machine run: their MCP servers or the configuration adopted into them.'
 
 const held = (scope: 'files:read' | 'providers:read' | 'settings:write', mutation = false) =>
   ({ scope, mutation, capability: STUDIO_AGENT_SETUP_CAPABILITY }) as const
@@ -531,30 +382,7 @@ const owners = (scope: 'files:read' | 'settings:write') =>
   ({ ...held(scope, true), owner: WRITES_AGENT_PROGRAMS }) as const
 
 export const STUDIO_AGENT_SETUP_METHODS: StudioMethodTable<StudioAgentSetupMethodMap> = {
-  'memory.resolveRoot': { ...held('files:read'), params: memoryRoot },
-  'memory.index': { ...held('files:read'), params: memoryRoot },
-  'memory.readPreview': {
-    ...held('files:read'),
-    params: (value) => {
-      const root = memoryRoot(value)
-      if (!root.ok) return root
-      return relative(value.relativePath) && value.relativePath
-        ? studioParams({ ...root.params, relativePath: value.relativePath })
-        : refuse('"relativePath" is a note\'s path under the root.')
-    },
-  },
-  'memoryActivity.install': { ...owners('files:read'), params: commanded(hook) },
-  'memoryActivity.uninstall': { ...owners('files:read'), params: commanded(workspace) },
-  'memoryActivity.startWatching': { ...held('files:read'), params: hook },
-  'memoryActivity.status': {
-    ...held('files:read'),
-    params: (value) =>
-      value.workspaceFolder === null || value.workspaceFolder === undefined
-        ? studioParams({ workspaceFolder: null })
-        : workspace(value),
-  },
-  'memoryActivity.synapses': { ...held('files:read'), params: workspace },
-  'memoryActivity.isInstalled': { ...held('files:read'), params: workspace },
+  'knowledge.resolveRoot': { ...held('files:read'), params: knowledgeRoot },
   'mcp.sync': { ...owners('settings:write'), params: commanded(mcpSync) },
   'agentConfig.detect': {
     ...held('providers:read'),
@@ -616,8 +444,5 @@ const push = (scope: 'files:read' | 'providers:read') =>
   ({ scope, capability: STUDIO_AGENT_SETUP_CAPABILITY, push: true, params: studioNoParams }) as const
 
 export const STUDIO_AGENT_SETUP_TOPICS: StudioTopicTable<StudioAgentSetupTopicMap> = {
-  'memoryActivity.events': push('files:read'),
-  'memoryActivity.statusChanged': push('files:read'),
-  'memoryActivity.synapsesChanged': push('files:read'),
   'areaSkills.changed': push('providers:read'),
 }

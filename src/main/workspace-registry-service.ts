@@ -306,9 +306,6 @@ export function createWorkspaceRegistryService(options: WorkspaceRegistryService
         if (event.payload.patch.folderPath !== undefined) {
           stamp(event.payload.workspaceId, 'folderPath', event.payload.editedAt)
         }
-        if (event.payload.patch.memory !== undefined) {
-          stamp(event.payload.workspaceId, 'memory', event.payload.editedAt)
-        }
         if (event.payload.patch.settledAt !== undefined) {
           stamp(event.payload.workspaceId, 'settledAt', event.payload.editedAt)
         }
@@ -444,7 +441,6 @@ export function createWorkspaceRegistryService(options: WorkspaceRegistryService
       layoutModel: instantiated.layout,
       agents: rekeyTemplateAgents(input.agents, instantiated.agentIds),
       worktreeState: { containerPath: null, entries: {}, updatedAt: null },
-      memory: { relativeRoot: null },
       editorState: { openFiles: [], activeFilePath: null },
       createdAt,
       ...(input.imported
@@ -791,7 +787,6 @@ function stampedFieldsForCommand(command: WorkspaceSyncCommand): [WorkspaceRegis
     case 'workspace.update_fields': {
       const fields: [WorkspaceRegistryStampedField, number][] = []
       if (command.payload.patch.folderPath !== undefined) fields.push(['folderPath', command.payload.editedAt])
-      if (command.payload.patch.memory !== undefined) fields.push(['memory', command.payload.editedAt])
       if (command.payload.patch.settledAt !== undefined) fields.push(['settledAt', command.payload.editedAt])
       if (command.payload.patch.settledOverride !== undefined) {
         fields.push(['settledOverride', command.payload.editedAt])

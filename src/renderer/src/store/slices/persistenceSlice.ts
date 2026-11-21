@@ -8,7 +8,6 @@ import type {
 } from '../../../../shared/workspace'
 import { defaultEditorState, normalizeAgentCli, normalizeAgentState } from './agentsSlice'
 import { hideNavRailTabStrip, healRetiredRailLayout, stripSettingsTabsFromLayout } from './layoutSlice'
-import { normalizeWorkspaceMemoryConfig } from './memorySlice'
 import {
   defaultAppSettings,
   normalizeAppSettings,
@@ -399,21 +398,6 @@ export function migratePersistedWorkspaceState(persisted: unknown, version: numb
     const current = migrationState
     current.appSettings = normalizeAppSettings(current.appSettings, state.workspaces)
   }
-  if (version < 35) {
-    mapMigrationWorkspaces(migrationState, (ws) => ({
-      ...ws,
-      memory: normalizeWorkspaceMemoryConfig(ws.memory),
-    }))
-  }
-  if (version < 36) {
-    // Re-run memory normalization so the bumped GRAPH_SETTINGS_VERSION
-    // upgrades layout numerics (link distance, node size, forces) on
-    // workspaces that pre-date the tighter defaults.
-    mapMigrationWorkspaces(migrationState, (ws) => ({
-      ...ws,
-      memory: normalizeWorkspaceMemoryConfig(ws.memory),
-    }))
-  }
   if (version < 39) {
     const current = migrationState
     current.appSettings = normalizeAppSettings(current.appSettings, state.workspaces)
@@ -475,9 +459,9 @@ export function migratePersistedWorkspaceState(persisted: unknown, version: numb
   // with the Design Wizard (2026-09-08); the tab component itself is stripped
   // from persisted layouts by stripRetiredModuleTabsFromLayout.
   if (version < 54) {
-    // Files / Git / Knowledge Graph are now exclusive strip-less switches that
-    // share one left pane; the sidebar PanelRail carries their selection chrome,
-    // so the FlexLayout tab strip on a nav-only tabset is redundant. Stamp
+    // Files / Git / the knowledge graph were then exclusive strip-less switches
+    // sharing one left pane; the sidebar PanelRail carried their selection
+    // chrome, so the FlexLayout tab strip on a nav-only tabset is redundant. Stamp
     // enableTabStrip: false onto existing layouts' nav-only tabsets without
     // touching mixed tabsets (those self-heal on the next rail toggle).
     mapMigrationWorkspaces(migrationState, (ws) => {

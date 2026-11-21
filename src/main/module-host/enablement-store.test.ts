@@ -41,12 +41,12 @@ test('enablement-store', async () => {
 
   async function testRoundTrip(): Promise<void> {
     const dir = await mkdtemp(join(tmpdir(), 'sprintengine-enablement-'))
-    const write = await writeModuleOverrides(dir, { 'memory-graph': false, git: true })
+    const write = await writeModuleOverrides(dir, { canvas: false, git: true })
     assert.equal(write.ok, true)
-    assert.deepEqual(readModuleOverridesSync(dir), { 'memory-graph': false, git: true })
+    assert.deepEqual(readModuleOverridesSync(dir), { canvas: false, git: true })
 
     const onDisk = JSON.parse(await readFile(moduleEnablementPath(dir), 'utf8'))
-    assert.deepEqual(onDisk, { 'memory-graph': false, git: true })
+    assert.deepEqual(onDisk, { canvas: false, git: true })
   }
 
   async function testWriteNormalizes(): Promise<void> {

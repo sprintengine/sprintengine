@@ -42,6 +42,13 @@ with no shim, and Studio no longer loads a module built for host API 1.
 - Templates, the `main` part (now with `src/methods.ts` and `module:bridge`
   always) and the guides use declared methods.
 
+### Removed
+
+- The `memoryGraphEnabled` command availability: the knowledge graph panel it
+  gated is gone. `memory-graph` stays a reserved module id. A module that
+  names the condition still compiles, since the union is open, and reads it as
+  unsatisfied.
+
 ### Added
 
 - `ScheduledAgentView.waiting`: why the machine a scheduled agent lives on

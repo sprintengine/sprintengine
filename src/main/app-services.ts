@@ -8,7 +8,6 @@ import { basename, dirname, join } from 'path'
 import { existsSync } from 'fs'
 import { buildAgentStateReporterCommand, buildLauncherHookCommand } from './agent-state'
 import { LAUNCH_FILES_DIR, prepareLaunchIntegration, pruneLaunchFiles } from './integrations/launch-integration'
-import { knowledgeActivityLaunchCommand } from './memory-activity'
 import { gitTracksPath } from './skills/studio-plugin'
 import {
   ensureAgentIntegrationHome,
@@ -590,9 +589,6 @@ export function createAppServices(
               ? [{ path: workspace.folderPath, hostId: 'local' }]
               : [],
           ),
-      migrateKnowledgeActivity: async (repo) => {
-        await knowledgeActivityLaunchCommand(repo)
-      },
       deadline: Date.now() + BOOT_REPOSITORY_CLEANUP_BUDGET_MS - 250,
       stop: () => otherInstanceRunning(home),
     })
@@ -716,7 +712,6 @@ export function createAppServices(
         },
         skill: (skillId) => resolveSkillById(skillId),
         homeDir: () => homedir(),
-        knowledgeActivityCommand: (workspaceRoot) => knowledgeActivityLaunchCommand(workspaceRoot),
         gitTracks: (path) => gitTracksPath(dirname(path), basename(path)),
         warn: (message) => {
           void writeDiagnosticLog({ level: 'warning', title: 'Launch integration', message, source: 'terminal' })

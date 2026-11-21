@@ -21,14 +21,7 @@ import type {
   GitStatusSnapshot as SharedGitStatusSnapshot,
   GitWorktreeEntry as SharedGitWorktreeEntry,
   GitWorktreeOperationResult as SharedGitWorktreeOperationResult,
-  MemoryActivityEvent as SharedMemoryActivityEvent,
-  MemoryActivityStatus as SharedMemoryActivityStatus,
-  MemoryActivitySynapse as SharedMemoryActivitySynapse,
-  MemoryGraphEdge as SharedMemoryGraphEdge,
-  MemoryGraphIndexResult as SharedMemoryGraphIndexResult,
-  MemoryGraphNode as SharedMemoryGraphNode,
-  MemoryPreviewResult as SharedMemoryPreviewResult,
-  MemoryRootStatus as SharedMemoryRootStatus,
+  KnowledgeRootStatus as SharedKnowledgeRootStatus,
   SprintEngineAuthState as SharedSprintEngineAuthState,
   SessionActivity as SharedSessionActivity,
   AgentPhase as SharedAgentPhase,
@@ -41,14 +34,7 @@ import type {
 } from '../../shared/electron-api'
 
 declare global {
-  type MemoryGraphNode = SharedMemoryGraphNode
-  type MemoryGraphEdge = SharedMemoryGraphEdge
-  type MemoryRootStatus = SharedMemoryRootStatus
-  type MemoryGraphIndexResult = SharedMemoryGraphIndexResult
-  type MemoryPreviewResult = SharedMemoryPreviewResult
-  type MemoryActivityEvent = SharedMemoryActivityEvent
-  type MemoryActivitySynapse = SharedMemoryActivitySynapse
-  type MemoryActivityStatus = SharedMemoryActivityStatus
+  type KnowledgeRootStatus = SharedKnowledgeRootStatus
   type AgentCli = SharedAgentCli
   type AppUpdateState = SharedAppUpdateState
   type SessionActivity = SharedSessionActivity

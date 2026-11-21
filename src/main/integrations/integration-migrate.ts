@@ -77,7 +77,7 @@ export function splitCommandLine(command: string): string[] | null {
 
 export type LegacyHookCommand = {
   /** Which launcher target the script was. */
-  target: Extract<LauncherTarget, 'agent-state' | 'status-line' | 'knowledge-activity'>
+  target: Extract<LauncherTarget, 'agent-state' | 'status-line'>
   /** Variables set in front (a WSL command's own). */
   env: Record<string, string>
   /** The Node the command ran; null for a bare `node`. */
@@ -88,7 +88,6 @@ export type LegacyHookCommand = {
 const LEGACY_SCRIPT_TARGETS: ReadonlyArray<[RegExp, LegacyHookCommand['target']]> = [
   [/(?:^|\/)\.sprintengine\/hooks\/agent-state\.mjs$/u, 'agent-state'],
   [/(?:^|\/)\.sprintengine\/hooks\/status-line\.mjs$/u, 'status-line'],
-  [/(?:^|\/)\.sprintengine\/hooks\/knowledge-activity\.mjs$/u, 'knowledge-activity'],
 ]
 
 /** A hook command from before the launcher, taken apart; null for anything else. */
@@ -339,8 +338,6 @@ export async function migrateLedgerEntry(entry: IntegrationLedgerEntry, context:
           value.statusLine.command = next
           return true
         })
-      case 'knowledge-activity-hook':
-        return await rewriteJson(entry.path, (value) => migrateJsonCommands(value.hooks, context))
       case 'mcp-gateway':
         if (entry.path.endsWith('.toml'))
           return await rewriteText(entry.path, (text) => migrateCodexGatewayBlock(text, context))

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Removed (the knowledge graph)
+
+- **`memory.index`, `memory.readPreview` and `memoryActivity.*`** (with the
+  `memoryActivity.events`, `.statusChanged` and `.synapsesChanged` streams)
+  leave `agent-setup`, with their shapes (`MemoryGraph*`,
+  `MemoryPreviewResult`, `MemoryActivity*`): the knowledge graph they drew and
+  the hook that recorded which notes agents read are gone from Studio.
+- **`memory.resolveRoot` is `knowledge.resolveRoot`**, its result
+  `KnowledgeRootStatus` (`MemoryRootStatus` before; the missing folder's status
+  is `missing-knowledge-root`) and its params `KnowledgeRootParams`. It is what
+  stays: where a project's knowledge folder is, the folder a launch names to
+  its agent.
+- **`TerminalSpawnMetadata.memoryRootPath` and `.memoryRelativeRoot`**
+  (`terminal.open`) are `knowledgeRootPath` and `knowledgeRelativeRoot`.
+- Not additive, and not behind a capability: no client outside this
+  repository called them.
+
 ### Added (files a chat's agent showed, saved from the chat)
 
 - **`file-views`** (`STUDIO_FILE_VIEWS_CAPABILITY`, `file-views.ts`):

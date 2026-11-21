@@ -28,10 +28,6 @@ export type CommandAvailability =
   | 'always'
   | 'activeWorkspace'
   | 'activeFile'
-  // The memory-graph capability module is enabled, so the Knowledge Graph
-  // panel component is registered and a toggle can actually mount it. The
-  // panel has no rail glyph; the palette/menu toggle is its only entry point.
-  | 'memoryGraphEnabled'
   // The canvas capability module is enabled, so the pane can actually mount a
   // Canvas tab. Without it the toggle would open a tab that renders the
   // unavailable surface, which is a worse answer than not offering the command.

@@ -7,7 +7,6 @@ import { defaultAgent } from '../../../shared/agent-state'
 import type { TerminalSessionSnapshot } from '../../../shared/electron-api'
 import type { WorkspaceSyncCommand, WorkspaceSyncEvent } from '../../../shared/workspace-sync'
 import type { Workspace } from '../../../shared/workspace'
-import { defaultWorkspaceMemoryConfig } from './slices/memorySlice'
 import { defaultWorkspaceWorktreeState } from './slices/worktreesSlice'
 
 vi.mock('../studio/terminals', () => import('../studio/terminals.double'))
@@ -61,7 +60,6 @@ async function harness(
       templateId: 'test',
       agents,
       layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
-      memory: defaultWorkspaceMemoryConfig(),
       worktreeState: defaultWorkspaceWorktreeState(),
       editorState: { openFiles: [], activeFilePath: null },
       createdAt: 1,

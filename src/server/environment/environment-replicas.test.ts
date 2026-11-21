@@ -30,7 +30,6 @@ function workspace(id: string, folderPath: string | null, extra: Partial<Workspa
     layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
     agents: {},
     worktreeState: { containerPath: null, entries: {}, updatedAt: null },
-    memory: { relativeRoot: null },
     editorState: { openFiles: [], activeFilePath: null },
     createdAt: 1,
     ...extra,

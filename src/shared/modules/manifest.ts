@@ -1,8 +1,8 @@
 // Capability module system — shared contracts.
 //
 // A "capability module" is a self-describing unit that owns one feature end to
-// end (git, the editor, the backlog, the memory graph, …) and contributes to
-// the extension surfaces it needs. This file holds the process-agnostic types so
+// end (git, the editor, the backlog, …) and contributes to the extension
+// surfaces it needs. This file holds the process-agnostic types so
 // the main, preload, and renderer hosts all speak the same vocabulary.
 //
 // See docs/module-authors/drop-in-extensions.md for the author-facing contract.
@@ -52,6 +52,8 @@ export const BUNDLED_MODULE_IDS: readonly string[] = [
   'design-wizard',
   'dev-tools',
   'git',
+  // RETIRED, still reserved: the knowledge graph panel was removed 2026-11-21.
+  // Same rule as 'switchboard'.
   'memory-graph',
   // RETIRED, still reserved (see 'design-wizard' above).
   'switchboard',

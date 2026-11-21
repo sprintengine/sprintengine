@@ -168,7 +168,7 @@ type CliThemeSelectionSpec = {
  *
  * `promptInjection` says how the USER's request gets in; this says how
  * everything the HOST wants the agent to know gets in without pretending to be
- * the user (an attached design system, the project's knowledge graph).
+ * the user (an attached design system, the project's knowledge folder).
  *
  * - `argv` — the CLI takes an out-of-band flag. `args` are substituted
  *   templates spread into LAUNCH and RESUME argv as `contextArgs`, so a resumed

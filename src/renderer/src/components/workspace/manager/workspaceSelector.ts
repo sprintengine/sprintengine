@@ -33,7 +33,6 @@ export function workspaceManagerWorkspaceFieldsEqual(left: Workspace, right: Wor
     // acts (the sidebar's cross-workspace drop, the terminal kill paths).
     layoutMeshSignature(left) === layoutMeshSignature(right) &&
     left.worktreeState === right.worktreeState &&
-    left.memory === right.memory &&
     left.editorState === right.editorState &&
     left.fileExplorerState === right.fileExplorerState &&
     left.moduleState === right.moduleState &&
