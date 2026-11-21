@@ -116,3 +116,21 @@ test('a cancelled call is not answered, readiness is reported, and nothing is se
   host.sendTheme()
   assert.deepEqual(posted, [])
 })
+
+test('a cancel counts only for a call still waiting, and is forgotten once the call is answered', async () => {
+  const { posted, send, settle } = harness()
+  send({ se: 1, kind: 'cancel', id: 7 })
+  send({ se: 1, kind: 'req', id: 7, method: 'workspace.list', params: {} })
+  await settle()
+  assert.equal(posted.length, 1, 'a cancel sent before its call does not swallow the answer')
+  send({ se: 1, kind: 'req', id: 8, method: 'workspace.list', params: {} })
+  send({ se: 1, kind: 'cancel', id: 8 })
+  await settle()
+  send({ se: 1, kind: 'req', id: 8, method: 'workspace.list', params: {} })
+  await settle()
+  assert.deepEqual(
+    posted.map((message) => message.id),
+    [7, 8],
+    'the id is answered again once reused',
+  )
+})

@@ -64,6 +64,10 @@ type Envelope = { kind?: unknown; id?: unknown; method?: unknown; params?: unkno
 export function createExtensionFrameHost(options: ExtensionFrameHostOptions): ExtensionFrameHost {
   const budget = createExtensionFrameBudget()
   const now = options.now ?? Date.now
+  // The calls waiting for the Studio, and those of them the frame gave up on:
+  // a cancel counts only for a call still waiting, and both forget an id once
+  // it is answered.
+  const waiting = new Set<number>()
   const cancelled = new Set<number>()
   let alive = true
 
@@ -71,6 +75,7 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
     if (alive) options.post({ se: EXTENSION_FRAME_PROTOCOL, ...message })
   }
   const answer = (id: number, outcome: { result: unknown } | { code: string; message: string }) => {
+    waiting.delete(id)
     if (cancelled.delete(id)) return
     if ('result' in outcome) post({ kind: 'res', id, result: outcome.result })
     else
@@ -133,11 +138,12 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
         return
       }
       if (message.kind === 'req' && id !== null && typeof message.method === 'string') {
+        waiting.add(id)
         void request(id, message.method, message.params).catch((error: unknown) =>
           answer(id, { code: 'unavailable', message: error instanceof Error ? error.message : String(error) }),
         )
       } else if (message.kind === 'cancel' && id !== null) {
-        cancelled.add(id)
+        if (waiting.has(id)) cancelled.add(id)
       } else if (message.kind === 'evt') {
         if (message.event === EXTENSION_FRAME_EVENTS.ready) {
           post({

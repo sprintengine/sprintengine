@@ -340,7 +340,6 @@ if (typeof window !== 'undefined') {
         // A module's renderer half calls its own declared methods over the
         // same client: `extension.read` and `extension.operate`.
         rendererHost.setModuleMethodCaller(windowModuleMethodCaller())
-        // And the host's services (the Backlog's writes, the usage query).
         rendererHost.setModuleEventSource((cb) =>
           followWindowStudioPush({
             topic: 'extension.events',

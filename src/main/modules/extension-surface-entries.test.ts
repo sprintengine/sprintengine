@@ -27,7 +27,7 @@ import { test } from 'vitest'
  * entry read as a frame would read it: the entries by path, or the
  * extension's failure.
  */
-async function collectThirdPartyRendererEntries(modules: readonly InstalledModule[]) {
+async function offeredAndDrawn(modules: readonly InstalledModule[]) {
   const contributions = collectExtensionContributions(modules)
   const failures: Record<string, string> = { ...contributions.failures }
   const entries: Array<(typeof contributions.extensions)[number] & { entries: Record<string, string> }> = []
@@ -105,7 +105,7 @@ test('only an approved extension’s entries are served', async () => {
       'local.unapproved': ['unsigned', 'pending'],
     })
 
-    const served = await collectThirdPartyRendererEntries(modules)
+    const served = await offeredAndDrawn(modules)
     assert.deepEqual(
       served.entries.map((entry) => entry.id),
       ['local.approved'],
@@ -136,7 +136,7 @@ test('each distinct entry is served once, whichever surfaces share it', async ()
       files: { 'dist/panel.js': HELLO_MOUNT_SOURCE, 'dist/settings.mjs': 'export function mount() {}\n' },
     })
     const { modules } = await discoverUserModules(root, grantsFor(folder))
-    const served = await collectThirdPartyRendererEntries(modules)
+    const served = await offeredAndDrawn(modules)
     assert.deepEqual(Object.keys(served.entries[0]!.entries), ['dist/panel.js', 'dist/settings.mjs'])
   })
 })
@@ -157,7 +157,7 @@ test('an approved code-free extension is served with no entries', async () => {
     })
     const { modules } = await discoverUserModules(root, grantsFor(folder))
     assert.equal(rendererEntryView(modules[0]!).availability, 'none')
-    const served = await collectThirdPartyRendererEntries(modules)
+    const served = await offeredAndDrawn(modules)
     assert.deepEqual(
       served.entries.map((entry) => [entry.id, entry.entries]),
       [['local.aliases', {}]],
@@ -205,7 +205,7 @@ test('an entry outside the extension’s folder is never served', async () => {
       assert.equal(view.message, 'entry must resolve inside the module root.')
       assert.doesNotMatch(view.message ?? '', ABSOLUTE_PATH_PATTERN)
 
-      const served = await collectThirdPartyRendererEntries([crafted])
+      const served = await offeredAndDrawn([crafted])
       assert.deepEqual(served.entries, [], `${id} entry is never served, even for an approved extension`)
       assert.equal(served.failures[id], 'entry must resolve inside the module root.')
     }
@@ -242,7 +242,7 @@ test('a changed file takes an approved extension out of the served set', async (
 
     const before = await discoverUserModules(root, approvals)
     assert.equal(before.modules[0]!.standing.approval.state, 'approved')
-    assert.equal((await collectThirdPartyRendererEntries(before.modules)).entries.length, 1)
+    assert.equal((await offeredAndDrawn(before.modules)).entries.length, 1)
 
     await writeFile(
       join(folder, 'extension.json'),
@@ -250,7 +250,7 @@ test('a changed file takes an approved extension out of the served set', async (
     )
     const after = await discoverUserModules(root, approvals)
     assert.equal(after.modules[0]!.standing.approval.state, 'pending')
-    const served = await collectThirdPartyRendererEntries(after.modules)
+    const served = await offeredAndDrawn(after.modules)
     assert.deepEqual(served.entries, [], 'changed content is no longer servable')
     assert.equal(rendererEntryView(after.modules[0]!).availability, 'blocked')
   })
@@ -275,7 +275,7 @@ test('a missing entry is a serving failure; a content-only extension with no ent
     assert.equal(contentOnly.standing.approval.state, 'not-needed')
     assert.equal(rendererEntryView(contentOnly).availability, 'none')
 
-    const served = await collectThirdPartyRendererEntries(modules)
+    const served = await offeredAndDrawn(modules)
     // Content needs no approval: it is served, with nothing to run.
     assert.deepEqual(
       served.entries.map((entry) => [entry.id, entry.entries]),
@@ -291,7 +291,7 @@ test('an entry that changed after verification is not served', async () => {
     const folder = writePanelExtension(root, 'swapped')
     const { modules } = await discoverUserModules(root, grantsFor(folder))
     await writeFile(join(folder, 'dist', 'panel.js'), 'export function mount() { /* swapped */ }\n')
-    const served = await collectThirdPartyRendererEntries(modules)
+    const served = await offeredAndDrawn(modules)
     assert.deepEqual(served.entries, [])
     assert.equal(
       served.failures['local.swapped'],

@@ -277,8 +277,8 @@ export type ModuleRegistryEntry = {
 }
 
 /**
- * The module registry a window resolved, window halves included, which the
- * Studio's `module.*` agent tools report from. Valid for the window's session.
+ * The module registry a window resolved, extensions' contributions included,
+ * which the Studio's `extension.*` agent tools report from. Valid for the window's session.
  */
 export type ModuleRegistrySnapshot = {
   /** Epoch ms the window captured it at. */

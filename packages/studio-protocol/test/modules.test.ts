@@ -85,7 +85,7 @@ test('a method name is a lower-case word, then letters, digits, dots and dashes,
   assert.equal(isStudioModuleMethodName(`a${'b'.repeat(STUDIO_MODULE_METHOD_MAX_CHARS)}`), false)
 })
 
-// ── The host's services a module's window half calls ──────────────────────
+// ── An extension's frames ─────────────────────────────────────────────────
 
 test('a frame’s document and its host calls are offered under extension-frames, read under extensions:read', () => {
   for (const method of ['extension.frame', 'extension.call'] as const) {

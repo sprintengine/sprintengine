@@ -62,7 +62,6 @@ export * from './access-types.js'
 export * from './web-devices.js'
 export * from './tailnet.js'
 export * from './tailnet-types.js'
-// The host's services a module's window half calls on its server.
 // What a Studio's machine has and lacks for the work it runs on its own.
 export * from './readiness.js'
 export * from './environment-access.js'

@@ -44,8 +44,9 @@ A refused call answers, in the method's own failure shape where it has one
 
 The table of every host method and what it needs is
 `packages/extension-sdk/src/services.ts` (`EXTENSION_HOST_SERVICES`,
-`EXTENSION_MAIN_HOST_METHODS`, `EXTENSION_RENDERER_METHODS`). Studio's gate
-reads it, and so do the fake hosts in `@sprintengine/extension-sdk/testing`.
+`EXTENSION_MAIN_HOST_METHODS`, and a surface's `EXTENSION_FRAME_METHODS`).
+Studio's gate reads it, and so do the fake hosts in
+`@sprintengine/extension-sdk/testing`.
 
 ## Approval
 
