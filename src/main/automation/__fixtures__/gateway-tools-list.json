@@ -202,11 +202,15 @@
     },
     {
       "name": "subagent.start",
-      "sha256": "72a3ab9b00d3fd32a6a7adc9a9490280cf00c7d7e651713c4a178290accd90ec"
+      "sha256": "860779e77b3d3fccc5c92829c327b54b6cc70f399bfb303fffebb5727b1819e2"
     },
     {
       "name": "subagent.status",
-      "sha256": "5fae4d0ac3820d466ece3e32dc6e65e632330810a1417f66a480ff95d09111cf"
+      "sha256": "147a567320361c7d963d4f62b5875e5b0a0dfea65ebb7ff39119c65c3c890bd5"
+    },
+    {
+      "name": "subagent.resume",
+      "sha256": "bed477515fa741ab977158efe25a91b84e6b032ebe577e6f5498e974368af161"
     },
     {
       "name": "subagent.cancel",
@@ -648,11 +652,15 @@
     },
     {
       "name": "subagent.start",
-      "sha256": "72a3ab9b00d3fd32a6a7adc9a9490280cf00c7d7e651713c4a178290accd90ec"
+      "sha256": "860779e77b3d3fccc5c92829c327b54b6cc70f399bfb303fffebb5727b1819e2"
     },
     {
       "name": "subagent.status",
-      "sha256": "5fae4d0ac3820d466ece3e32dc6e65e632330810a1417f66a480ff95d09111cf"
+      "sha256": "147a567320361c7d963d4f62b5875e5b0a0dfea65ebb7ff39119c65c3c890bd5"
+    },
+    {
+      "name": "subagent.resume",
+      "sha256": "bed477515fa741ab977158efe25a91b84e6b032ebe577e6f5498e974368af161"
     },
     {
       "name": "subagent.cancel",

@@ -8,9 +8,12 @@ import type { ConversationEvent, ConversationSessionSummary } from '../shared/co
  * A sub-agent runs for one task. When its first turn ends the outcome goes on
  * its record (`AgentState.subagentEnd`) and its session rests, as a settled
  * chat's does, keeping the transcript. The record is what every window and a
- * restart read, so nothing here has to survive on its own. The parent may send
+ * restart read, so nothing here has to survive on its own. A person may send
  * it a follow-up, which resumes it as any resting chat, and the outcome and
- * result stay the first turn's.
+ * result stay the task's. Its parent may give it another task in the same CLI
+ * session (`subagent.resume`): a round, which clears the end and is recorded
+ * as one (`AgentState.subagentRound`), and whose own end and result are then
+ * the sub-agent's.
  *
  * It also goes with its parent: a parent's interrupted turn stops the
  * sub-agents it has running, and a parent removed from its workspace takes its
@@ -27,6 +30,8 @@ export type SubagentEnd = NonNullable<AgentState['subagentEnd']>
 
 export type SubagentResult = { text: string; truncated: boolean }
 
+export type SubagentRound = NonNullable<AgentState['subagentRound']>
+
 type ChatRef = { workspaceId: string; agentId: string }
 
 export type SubagentLifecycleDeps = {
@@ -35,6 +40,8 @@ export type SubagentLifecycleDeps = {
   /** Every workspace on record, for what a restart has to tidy. */
   workspaceIds(): string[]
   writeEnd(chat: ChatRef, end: SubagentEnd): void
+  /** Start a round: its end is cleared and the round written, in one change of the record. */
+  writeRound(chat: ChatRef, round: SubagentRound): void
   removeAgent(chat: ChatRef): void
   session(chat: ChatRef): ConversationSessionSummary | undefined
   interrupt(sessionId: string): Promise<unknown>
@@ -60,6 +67,13 @@ export type SubagentLifecycle = {
   onStopped(listener: (chat: ChatRef) => void): void
   /** Its first message never went: it failed before it began. */
   fail(chat: ChatRef, message: string): void
+  /**
+   * Its parent gave it another task (`subagent.resume`): the round after the
+   * last, now, so it reads as starting until its session takes the task, and
+   * its next end is this round's. Answers the round, or null for one that is
+   * not an ended sub-agent.
+   */
+  beginRound(chat: ChatRef, task: string): SubagentRound | null
   /** Its final reply, read from its transcript. Null while it has none. */
   result(chat: ChatRef): Promise<SubagentResult | null>
 }
@@ -207,16 +221,30 @@ export function createSubagentLifecycle(deps: SubagentLifecycleDeps): SubagentLi
     }
   }
 
+  function beginRound(chat: ChatRef, task: string): SubagentRound | null {
+    const agent = agentOf(chat)
+    if (!agent?.subagentOf || !agent.subagentEnd) return null
+    const round: SubagentRound = {
+      n: (agent.subagentRound?.n ?? 1) + 1,
+      startedAt: now(),
+      ...(task ? { task } : {}),
+    }
+    deps.writeRound(chat, round)
+    return round
+  }
+
   async function result(chat: ChatRef): Promise<SubagentResult | null> {
     const agent = agentOf(chat)
     const events = await deps.readEvents(chat, RESULT_READ_TURNS)
-    // The result is the task's, not a later follow-up's.
+    // The result is the task's, not a later follow-up's; after a resume, the
+    // latest round's, and never an earlier round's reply when it has none.
     const until = agent?.subagentEnd?.at ?? Number.POSITIVE_INFINITY
+    const from = agent?.subagentRound?.startedAt ?? Number.NEGATIVE_INFINITY
     // Loaded with a read, as conversation.read loads it: it brings the export's
     // Markdown parser, which the server bundle checks for at start.
     const { chatMessagesOf } = await import('./automation/conversation-chat-read')
     const { messages } = chatMessagesOf(
-      events.filter((event) => event.createdAt <= until),
+      events.filter((event) => event.createdAt >= from && event.createdAt <= until),
       SUBAGENT_RESULT_MAX_CHARS,
     )
     const last = messages[messages.length - 1]
@@ -232,6 +260,7 @@ export function createSubagentLifecycle(deps: SubagentLifecycleDeps): SubagentLi
     stop,
     onStopped: (listener) => void stoppedListeners.add(listener),
     fail: (chat, message) => end(chat, 'failed', now(), message),
+    beginRound,
     result,
   }
 }

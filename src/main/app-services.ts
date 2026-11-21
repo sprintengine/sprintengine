@@ -1489,7 +1489,8 @@ export function createAppServices(
           ? {
               linkLaunchedAgent: (link: Parameters<typeof coreTerminals.launchNotices.link>[0]) =>
                 coreTerminals.launchNotices.link(link),
-              dismissLaunchNotice: (sessionId: string) => coreTerminals.launchNotices.dismiss(sessionId),
+              dismissLaunchNotice: (sessionId: string, chat?: { workspaceId: string; agentId: string }) =>
+                coreTerminals.launchNotices.dismiss(sessionId, chat),
             }
           : {}),
         appTools: desktopGatewayTools({

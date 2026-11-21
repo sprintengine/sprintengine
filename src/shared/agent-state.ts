@@ -94,10 +94,18 @@ export type AgentState = {
   /** A sub-agent started read-only: `conversationMode` asks its CLI for its read-only mode. */
   subagentReadOnly?: true
   /**
-   * How a sub-agent's task ended, written once when it does (subagent-lifecycle.ts).
-   * Absent while it runs. A follow-up sent to it later changes nothing here.
+   * How a sub-agent's task ended, written when it does (subagent-lifecycle.ts).
+   * Absent while it runs. A follow-up a person sends it later changes nothing
+   * here; `subagent.resume` clears it, and the round it starts writes its own.
    */
   subagentEnd?: { at: number; status: 'completed' | 'failed' | 'stopped'; error?: string }
+  /**
+   * The task its parent gave it last, when that was not its first: each
+   * `subagent.resume` is a round of the same session (round 2 is the first
+   * resume), with when it was sent and its first line. Absent for one only
+   * ever given its first task.
+   */
+  subagentRound?: { n: number; startedAt: number; task?: string }
   /** Selected context skills apply to every turn until explicitly removed. */
   conversationSkills?: string[]
   cliSessionId?: string

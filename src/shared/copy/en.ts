@@ -968,6 +968,8 @@ export const en = {
       chatSubagents: {
         waitingOnYou: 'Waiting on you',
         working: 'Working',
+        // A sub-agent its parent resumed: one row, saying which task it is on.
+        round: (round: number) => `Round ${round}`,
       },
       // src/renderer/src/components/panels/agentChat/ChatViewErrorBoundary.tsx
       chatViewErrorBoundary: {

@@ -609,6 +609,8 @@ const AGENT_LAUNCHING_GATEWAY_TOOLS = new Set([
   // made with: the same hand-off as making it. Pausing starts nothing.
   'schedule.resume',
   'subagent.start',
+  // Hands a sub-agent that ended a new prompt, which it then acts on alone.
+  'subagent.resume',
   'terminal.create',
   'workspace.create',
 ])

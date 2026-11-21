@@ -584,6 +584,14 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     writeEnd: ({ workspaceId, agentId }, subagentEnd) => {
       workspaceSyncService.updateWorkspaceAgent(workspaceId, agentId, { subagentEnd }, 'system')
     },
+    writeRound: ({ workspaceId, agentId }, subagentRound) => {
+      workspaceSyncService.updateWorkspaceAgent(
+        workspaceId,
+        agentId,
+        { subagentEnd: undefined, subagentRound },
+        'system',
+      )
+    },
     removeAgent: ({ workspaceId, agentId }) => {
       workspaceSyncService.updateWorkspaceAgent(workspaceId, agentId, null, 'system')
     },

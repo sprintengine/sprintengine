@@ -33,3 +33,17 @@ test('at rest, an ended sub-agent reads as how it ended', () => {
   expect(subagentLiveStatusOf(ended, session({ lastTurnEndedAt: 6 }))).toBe('completed')
   expect(subagentLiveStatusOf(ended, undefined)).toBe('completed')
 })
+
+test('a round its parent just sent reads as starting until the session takes it, then as the session says', () => {
+  const resumed = { subagentRound: { n: 2, startedAt: 100 } }
+  // The session the last round left at rest, or none listed after a restart.
+  expect(subagentStatusOf(resumed, session({ status: 'stopped', lastTurnEndedAt: 50 }))).toBe('starting')
+  expect(subagentStatusOf(resumed, undefined)).toBe('starting')
+  expect(subagentStatusOf(resumed, session({ status: 'active', phase: 'running', turnStartedAt: 120 } as never))).toBe(
+    'working',
+  )
+  expect(subagentStatusOf(resumed, session({ phase: 'waiting_for_input' } as never))).toBe('needs_input')
+  expect(subagentStatusOf(resumed, session({ lastTurnEndedAt: 150 }))).toBe('completed')
+  // Its end, once written, is the round's.
+  expect(subagentStatusOf({ ...resumed, subagentEnd: { at: 150, status: 'failed' } }, undefined)).toBe('failed')
+})
