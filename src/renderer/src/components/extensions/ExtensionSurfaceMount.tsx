@@ -34,6 +34,7 @@ type ExtensionSurfaceMountProps = {
 }
 
 const DRAW_FAILED = 'The extension could not draw this.'
+const LEFT_ITS_DOCUMENT = 'It tried to load another page in its place, so Studio closed it.'
 
 const now = () => performance.timeOrigin + performance.now()
 
@@ -45,6 +46,8 @@ export function ExtensionSurfaceMount({
   className,
 }: ExtensionSurfaceMountProps): ReactElement {
   const frameRef = useRef<HTMLIFrameElement | null>(null)
+  // What the frame's `load` does: set by the effect for the frame it opened.
+  const onFrameLoad = useRef<() => void>(() => undefined)
   const [src, setSrc] = useState<string | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   // Re-read when the set changes: a surface whose extension was uninstalled
@@ -64,6 +67,16 @@ export function ExtensionSurfaceMount({
       if (!closed) setFailure(sanitizeEntryMessage(error instanceof Error ? error.message : String(error), DRAW_FAILED))
     }
     const host = loaded.host
+    // A frame loads its document once. A second load is the frame leaving it
+    // (`location.href`, a refresh), which the window cannot see into: the
+    // page now there would inherit the bridge. Studio closes the surface.
+    let loads = 0
+    onFrameLoad.current = () => {
+      loads += 1
+      if (loads < 2 || closed) return
+      bridge.dispose()
+      fail(new Error(LEFT_ITS_DOCUMENT))
+    }
     const bridge = createExtensionFrameHost({
       source: () => frameRef.current?.contentWindow ?? null,
       post: (message) => frameRef.current?.contentWindow?.postMessage(message, '*'),
@@ -151,6 +164,7 @@ export function ExtensionSurfaceMount({
         <iframe
           ref={frameRef}
           src={src}
+          onLoad={() => onFrameLoad.current()}
           sandbox="allow-scripts"
           title={loaded.contribution.title}
           data-extension={extensionKey}

@@ -1,5 +1,5 @@
 // The script that runs first in every extension frame, before the extension's
-// code: it fences the frame (no navigation, no popups, no peer connections),
+// code: it keeps links, forms, popups and peer connections from leaving the frame,
 // builds the frozen `studio` a surface's `mount` is handed, speaks the
 // envelope to the window that drew it, and loads the entry.
 //
@@ -56,10 +56,10 @@ export function inlineJson(value: unknown): string {
 }
 
 const PRELUDE = `'use strict'
-// A frame is a document, never a browsing context: it does not navigate.
-if (window.navigation && typeof window.navigation.addEventListener === 'function') {
-  window.navigation.addEventListener('navigate', function (event) { if (event.cancelable) event.preventDefault() })
-}
+// Leaving the document is stopped outside it, where a frame cannot undo it:
+// the desktop shell refuses the navigation, and the window closes a surface
+// whose frame loads a second document. Links and forms here are only kept
+// from starting one.
 // The policy has no directive for peer connections, which would be a way out.
 ;['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel'].forEach(function (name) {
   try { Object.defineProperty(window, name, { value: undefined, writable: false, configurable: false }) } catch (_) {}
