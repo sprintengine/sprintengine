@@ -4,6 +4,7 @@ import { test } from 'vitest'
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import type { ModuleMethodParsed } from '../../shared/modules/methods'
 import { createMainKernel, type ModuleMethodCallRequest } from './main-host'
+import { ownerInvoker } from './extension-invocation'
 
 // A module's declared methods: registered as a batch, called by module id,
 // name and access, refused in the host's words when the module or the method
@@ -14,7 +15,7 @@ function manifest(id: string, overrides: Partial<CapabilityManifest> = {}): Capa
 }
 
 const MANIFESTS: Record<string, CapabilityManifest> = {
-  deck: manifest('deck', { source: 'third-party', permissions: ['module:bridge'] }),
+  deck: manifest('deck', { source: 'third-party', permissions: [] }),
   legacy: manifest('legacy', { source: 'third-party', permissions: ['ipc:invoke'] }),
   quiet: manifest('quiet', { source: 'third-party', permissions: ['network'] }),
   first: manifest('first', { source: 'bundled' }),
@@ -34,6 +35,7 @@ function kernel(active?: (id: string) => boolean) {
 }
 
 const call = (overrides: Partial<ModuleMethodCallRequest>): ModuleMethodCallRequest => ({
+  invoker: ownerInvoker(),
   moduleId: 'deck',
   method: 'forecast',
   access: 'read',
@@ -124,10 +126,10 @@ test('a result that is not JSON is the handler’s failure, not an answer', asyn
   await assert.rejects(k.callModuleMethod(call({ method: 'when' })), /not JSON/)
 })
 
-test('a third-party module needs module:bridge (or the broad ipc:invoke) to declare methods; a bundled one does not', () => {
+test('an extension’s own methods need no permission', () => {
   const k = kernel()
   const one = { ping: { access: 'read' as const, params: anything, handler: () => ({ ok: true as const, result: 1 }) } }
-  assert.throws(() => k.hostFor('quiet').registerMethods(one), /module:bridge/)
+  k.hostFor('quiet').registerMethods(one)
   k.hostFor('legacy').registerMethods(one)
   k.hostFor('first').registerMethods(one)
 })

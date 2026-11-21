@@ -23,7 +23,7 @@ import { installElectronRequireGuard } from './electron-require-guard'
 const scratch = mkdtempSync(join(tmpdir(), 'se-electron-guard-'))
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
-function trustedExtension(id: string, worker: string): InstalledModule {
+function approvedExtension(id: string, worker: string): InstalledModule {
   const key = `local.${id}`
   const moduleRoot = writeExtensionFolder(join(scratch, key), {
     manifest: extensionManifest({ id }),
@@ -39,11 +39,11 @@ function trustedExtension(id: string, worker: string): InstalledModule {
     manifest: capabilityManifestOf(key, 'local', parsed.manifest),
     extension: parsed.manifest,
     moduleRoot,
-    trust: {
-      status: 'trusted',
-      via: 'grant',
+    standing: {
+      signature: 'unsigned',
+      approval: { state: 'approved', fingerprint: 'sha256-test' },
       verifiedFiles: content.files,
-      contentFingerprint: content.fingerprint,
+      contentDigest: content.fingerprint,
     },
   }
 }
@@ -67,7 +67,7 @@ test('a module that requires electron from its own folder is refused by name; co
 })
 
 test('a require of electron during activate is reported as needing electron-main, not as a crash', () => {
-  const reaching = trustedExtension(
+  const reaching = approvedExtension(
     'reaches-for-electron',
     "exports.activate = (studio) => { studio.onStartup(() => undefined); require('electron') }\n",
   )

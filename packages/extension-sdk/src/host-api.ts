@@ -58,7 +58,7 @@ export type HostCapability =
   | 'backlog-write'
   // `getUsageService` and the renderer's `queryUsage` (permission `usage:read`).
   | 'usage'
-  // `getActivityService` (permission `conversation:read-all`).
+  // `getActivityService` (permission `conversation:read`).
   | 'activity'
   // ── The window's studio object ──
   // `RendererHost.toast(...)`; true once the window's toast region is wired.

@@ -36,8 +36,8 @@ test('getSkillStatus reads through the skill registry and writes nothing', async
   assert.deepEqual(calls, ['status:/Users/dev/acme:decision-log'])
 })
 
-test('getWorkspaceGitInfo needs ipc:workspace-read from a third-party module', async () => {
-  const permissions: Record<string, string[]> = { 'pr-radar': ['ipc:workspace-read'], sloppy: [] }
+test('getWorkspaceGitInfo needs workspace:read from a third-party module', async () => {
+  const permissions: Record<string, string[]> = { 'pr-radar': ['workspace:read'], sloppy: [] }
   const kernel = kernelWith({
     resolveModuleManifest: (id) =>
       id in permissions
@@ -68,7 +68,7 @@ test('getWorkspaceGitInfo needs ipc:workspace-read from a third-party module', a
     remotes: [],
   })
   const refused = await kernel.hostFor('sloppy').getWorkspaceGitInfo('ws-1')
-  assert.equal(refused.ok === false && refused.code, 'permission_missing')
+  assert.equal(refused.ok === false && refused.code, 'not_permitted')
   assert.deepEqual(asked, ['ws-1'], 'a refused module never reaches the reader')
 })
 

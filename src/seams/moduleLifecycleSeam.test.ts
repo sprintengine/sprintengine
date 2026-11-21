@@ -21,7 +21,7 @@ import {
   thirdPartyLaunchSession,
 } from '../main/modules/third-party-main-loader'
 import { createModuleRegistryMirror } from '../main/modules/registry-mirror'
-import { readModuleTrustContextSync } from '../main/modules/trust-context'
+import { readExtensionStandingContextSync } from '../main/modules/extension-standing-context'
 import { discoverUserModulesSync } from '../main/modules/user-module-registry'
 import { createWorkspaceRegistryService } from '../main/workspace-registry-service'
 import { createInMemoryWorkspaceRegistryStore } from '../main/workspace-registry-store'
@@ -49,8 +49,8 @@ vi.mock('electron', () => import('../../tests/stubs/electron'))
 //     ─ owner socket ─ router ─ module hub ─ lifecycle and kernel ─ disk
 //
 // An extension signed by a test key (never the release key) is installed
-// from a folder, under its install key `local.<id>`, and trusted through the
-// server; at
+// from a folder, under its install key `local.<id>`, and approved through the
+// server (the signature is a badge; approving names the fingerprint shown); at
 // the server's next start it runs: the window calls its declared methods and
 // hears its events. Switched off, it is gone at once: its calls are refused
 // `extension_unavailable`, the list says it is not running and declares nothing,
@@ -65,7 +65,7 @@ vi.mock('electron', () => import('../../tests/stubs/electron'))
 //
 // The server is composed as the Studio's out-of-process one composes its
 // modules (server-modules.ts) over a scratch data folder and module root:
-// discovery, the trust gate, the agent runtime, the kernel, the
+// discovery, the approval gate, the agent runtime, the kernel, the
 // hub and the lifecycle. The chats beneath the agent runtime (the workspace
 // registry and bus, the launch service, the conversation runtime) outlive
 // each start, as the core and its chat logs do, with a stand-in provider as
@@ -106,7 +106,7 @@ function writeSigned(folder: string, manifestFields: Record<string, unknown>, ma
 function writeSignedExtension(): void {
   writeSigned(
     source,
-    { id: 'acme-deck', name: 'Deck', permissions: ['module:bridge'] },
+    { id: 'acme-deck', name: 'Deck', permissions: [] },
     `const cards = []
 exports.activate = (host) => {
   host.registerMethods({
@@ -224,7 +224,7 @@ const chats = () => (sharedChats ??= createChats())
 /** One start of the server: what is on disk now, loaded, and served on a socket of its own. */
 async function startServer() {
   const thirdParty = planThirdPartyMainModules(
-    discoverUserModulesSync(moduleRoot, readModuleTrustContextSync(dataDir)),
+    discoverUserModulesSync(moduleRoot, readExtensionStandingContextSync(dataDir)),
     { electronMain: false },
   )
   const hub = createStudioModuleHub()
@@ -255,7 +255,7 @@ async function startServer() {
   await load.ready
   const manifests = thirdParty.modules.map((module) => module.manifest)
   hub.serveCallsFrom((request) => load.kernel.callModuleMethod(request))
-  hub.serveHostServicesFrom((moduleId) => load.kernel.hostServicesFor(moduleId))
+  hub.serveHostServicesFrom((moduleId, invoker) => load.kernel.hostServicesFor(moduleId, invoker))
   hub.serveLifecycleFrom(
     createModuleLifecycle({
       dataDir,
@@ -310,30 +310,34 @@ async function heard(events: StudioModuleEvent[], count: number): Promise<Studio
   return events
 }
 
-test('an extension is installed, trusted, called, heard, switched off and on again through its server', async () => {
+test('an extension is installed, approved, called, heard, switched off and on again through its server', async () => {
   writeSignedExtension()
 
-  // ── Installed and trusted through the server ────────────────────────────
+  // ── Installed and approved through the server ───────────────────────────
   const first = await startServer()
   const settings = await windowOn(first.path)
   const lifecycle = moduleLifecycleOver(async () => settings)
   let changes = 0
   settings.subscribe('extension.changed', {}, { onPayload: () => void changes++ })
   const installed = await lifecycle.install(source)
-  assert.deepEqual(
-    installed,
-    { ok: true, moduleId: ID, trust: 'signed', strippedLinks: [] },
-    'a test key is not a trusted publisher',
-  )
+  assert.ok(installed.ok && installed.approval.state === 'pending', 'a signature approves nothing')
   const listedInstalled = await settings.request('extension.installed', {})
   assert.deepEqual(
-    listedInstalled.modules.map((module) => [module.manifest.id, module.manifest.publisher, module.trust]),
+    listedInstalled.modules.map((module) => [module.manifest.id, module.manifest.publisher, module.signature]),
     [[ID, 'local', 'signed']],
-    'the server lists what is on its disk, under its install key, with its trust',
+    'the server lists what is on its disk, under its install key, with its signature',
   )
-  assert.deepEqual(await lifecycle.setTrust(ID, true), { ok: true })
+  const shown = listedInstalled.modules[0]!.approval
+  assert.ok(shown.state === 'pending')
+  assert.deepEqual(installed.approval, shown, 'the install and the list name the same fingerprint')
+  assert.equal(
+    (await lifecycle.approve(ID, 'sha256-not-what-was-shown')).ok,
+    false,
+    'approving a fingerprint the person was not shown is refused',
+  )
+  assert.deepEqual(await lifecycle.approve(ID, shown.fingerprint), { ok: true })
   for (let tries = 0; changes < 2 && tries < 100; tries++) await new Promise((resolve) => setTimeout(resolve, 10))
-  assert.equal(changes, 2, 'each install and trust is told to the windows following module.changed')
+  assert.equal(changes, 2, 'each install and approval is told to the windows following module.changed')
   assert.equal(await listed(settings), undefined, 'what is installed loads at the next start')
   await first.stop()
 
@@ -421,7 +425,7 @@ test('only an owner changes what runs: a paired client granted modules may list,
   const lifecycle = moduleLifecycleOver(async () => paired)
   for (const refused of [
     await lifecycle.setEnabled(ID, false),
-    await lifecycle.setTrust(ID, false),
+    await lifecycle.approve(ID, 'sha256-anything'),
     await lifecycle.uninstall(ID),
     await lifecycle.install(source),
   ]) {
@@ -523,23 +527,20 @@ function methodsOn<Cs extends ModuleMethodContracts>(client: StudioClient, id: s
 test('an extension drives a chat through its server, and a retried call sends once', async () => {
   const chatSource = join(scratch, 'source', 'chat')
   const snoopSource = join(scratch, 'source', 'snoop')
-  writeSigned(
-    chatSource,
-    { id: 'acme-chat', name: 'Chat', permissions: ['module:bridge', 'conversation:operate'] },
-    CHAT_MAIN,
-  )
-  writeSigned(snoopSource, { id: 'acme-snoop', name: 'Snoop', permissions: ['module:bridge'] }, SNOOP_MAIN)
+  writeSigned(chatSource, { id: 'acme-chat', name: 'Chat', permissions: ['conversation:own'] }, CHAT_MAIN)
+  writeSigned(snoopSource, { id: 'acme-snoop', name: 'Snoop', permissions: ['conversation:own'] }, SNOOP_MAIN)
   const { turns } = chats()
 
-  // ── Installed and trusted through the server, running at its next start ──
+  // ── Installed and approved through the server, running at its next start ──
   const first = await startServer()
   const settings = moduleLifecycleOver(async () => windowOn(first.path))
   for (const [folder, id] of [
     [chatSource, CHAT_ID],
     [snoopSource, SNOOP_ID],
   ] as const) {
-    assert.deepEqual(await settings.install(folder), { ok: true, moduleId: id, trust: 'signed', strippedLinks: [] })
-    assert.deepEqual(await settings.setTrust(id, true), { ok: true })
+    const installedNow = await settings.install(folder)
+    assert.ok(installedNow.ok && installedNow.moduleId === id && installedNow.approval.state === 'pending')
+    assert.deepEqual(await settings.approve(id, installedNow.approval.fingerprint), { ok: true })
   }
   await first.stop()
 
@@ -619,7 +620,7 @@ test('an extension drives a chat through its server, and a retried call sends on
   assert.deepEqual(turns, ['hello', 'twice', 'long', 'once'])
 })
 
-test('a trust grant holds for the bytes trusted: an edited extension needs trusting again', async () => {
+test('an approval holds for the bytes approved: an edited extension needs approving again', async () => {
   const notesSource = join(scratch, 'source', 'notes')
   const notesId = 'local.acme-notes'
   writeExtensionFolder(notesSource, {
@@ -628,32 +629,28 @@ test('a trust grant holds for the bytes trusted: an edited extension needs trust
   })
   const first = await startServer()
   const settings = moduleLifecycleOver(async () => windowOn(first.path))
-  assert.deepEqual(await settings.install(notesSource), {
-    ok: true,
-    moduleId: notesId,
-    trust: 'unsigned',
-    strippedLinks: [],
-  })
-  assert.deepEqual(await settings.setTrust(notesId, true), { ok: true })
+  const notesInstalled = await settings.install(notesSource)
+  assert.ok(notesInstalled.ok && notesInstalled.moduleId === notesId && notesInstalled.approval.state === 'pending')
+  assert.deepEqual(await settings.approve(notesId, notesInstalled.approval.fingerprint), { ok: true })
   await first.stop()
 
-  const trustOf = async (path: string) =>
+  const approvalOf = async (path: string) =>
     (await (await windowOn(path)).request('extension.installed', {})).modules.find(
       (module) => module.manifest.id === notesId,
     )
   const second = await startServer()
-  const trusted = await trustOf(second.path)
-  assert.deepEqual(trusted && [trusted.trust, trusted.trustedVia], ['trusted', 'grant'])
+  const approved = await approvalOf(second.path)
+  assert.equal(approved?.approval.state, 'approved')
   assert.equal((await listed(await windowOn(second.path)))?.id, ID, 'the deck still runs beside it')
   await second.stop()
 
-  // Its worker changes on disk after it was trusted: the grant named other bytes.
+  // Its worker changes on disk after it was approved: the approval named other bytes.
   writeFileSync(join(moduleRoot, notesId, 'dist', 'main.cjs'), 'exports.activate = () => { /* changed */ }\n')
   const third = await startServer()
-  const edited = await trustOf(third.path)
-  assert.deepEqual(edited && [edited.trust, edited.trustedVia], ['unsigned', undefined])
+  const edited = await approvalOf(third.path)
+  assert.equal(edited?.approval.state, 'pending')
   const notes = (await (await windowOn(third.path)).request('extension.list', {})).modules.find(
     (module) => module.id === notesId,
   )
-  assert.equal(notes?.running, false, 'an extension no longer trusted does not run')
+  assert.equal(notes?.running, false, 'an extension no longer approved does not run')
 })

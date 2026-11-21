@@ -8,7 +8,8 @@
 import type { BacklogItemLink, BacklogItemStatus, BacklogItemView, MainHost, ServiceToken } from './index.js'
 
 export type ModuleBacklogErrorCode =
-  | 'permission_missing'
+  | 'not_permitted'
+  | 'approval_required'
   | 'invalid_input'
   | 'unknown_workspace'
   | 'workspace_folder_missing'
@@ -80,7 +81,7 @@ export type ModuleBacklogLinkInput = Omit<BacklogItemLink, 'moduleId'> & { modul
  * The Backlog for an extension's worker, obtained via
  * `getBacklogService(host)`. `itemId` is a `BacklogItemView.id` (the item's
  * logical path, `backlog/…`). Expected failures come back as results, never
- * throws. Reads need the `backlog.read` permission and writes `backlog.write`;
+ * throws. Reads need the `backlog:read` permission and writes `backlog:operate`;
  * the host checks both on every call.
  */
 export type ModuleBacklogService = {

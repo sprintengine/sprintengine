@@ -3,6 +3,7 @@ import type {
   StudioModuleEvent,
   StudioModuleNotification,
 } from '../../../packages/studio-protocol/src/public'
+import type { ExtensionInvoker } from '../../main/module-host/extension-invocation'
 import type { ModuleHostServicesOutcome } from '../../main/module-host/main-host'
 import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 
@@ -19,15 +20,17 @@ import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 //
 // So are the host's services a module's window half calls (the Backlog's
 // writes, the usage query): the router asks `hostServices` for the calling
-// module's, which the kernel answers once it exists (`serveHostServicesFrom`),
-// `extension_unavailable` for a module not running here.
+// module's, as the connection that sent the call, which the kernel answers
+// once it exists (`serveHostServicesFrom`), `extension_unavailable` for a
+// module not running here. Each call is held to the extension's approval and
+// to that connection's own grant.
 //
 // What runs here (`extension.list`, and the owner's `extension.setEnabled`,
-// `.install`, `.setTrust`, `.uninstall`) is the lifecycle's, served once the
+// `.install`, `.approve`, `.uninstall`) is the lifecycle's, served once the
 // kernel exists (`serveLifecycleFrom`).
 //
-// What is installed or trusted here changing (the lifecycle's install, trust
-// and uninstall, a marketplace install) is told to every connection following
+// What is installed or approved here changing (the lifecycle's install,
+// approval and uninstall, a marketplace install) is told to every connection following
 // `extension.changed` (`deliverChanged`), so its windows list and load the
 // extensions again.
 //
@@ -43,6 +46,8 @@ export type StudioModuleCallRequest = {
   clientId: string
   /** An operate's command id, namespaced by the client. */
   commandId?: string
+  /** The connection that sent it, on whose behalf the handler runs. */
+  invoker: ExtensionInvoker
 }
 
 /** The module's answer, or the host's refusal before the module heard the call. */
@@ -56,9 +61,9 @@ export type StudioModules = {
   /** Where calls are served from: the kernel, once it exists. */
   serveCallsFrom(serve: (request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>): void
   /** The host's services, as the module named reaches them here; `extension_unavailable` before a kernel. */
-  hostServices(moduleId: string): ModuleHostServicesOutcome
+  hostServices(moduleId: string, invoker: ExtensionInvoker): ModuleHostServicesOutcome
   /** Where host services are read from: the kernel, once it exists. */
-  serveHostServicesFrom(read: (moduleId: string) => ModuleHostServicesOutcome): void
+  serveHostServicesFrom(read: (moduleId: string, invoker: ExtensionInvoker) => ModuleHostServicesOutcome): void
   /** What lists and changes the modules that run here; null before a kernel is wired. */
   lifecycle(): ModuleLifecycle | null
   serveLifecycleFrom(lifecycle: ModuleLifecycle): void
@@ -68,9 +73,9 @@ export type StudioModules = {
   deliverNotification(notification: StudioModuleNotification): void
   /** Hear each event from now on; returns the unsubscriber. */
   onEvent(listener: (event: StudioModuleEvent) => void): () => void
-  /** What is installed or trusted here changed, to every listener. */
+  /** What is installed or approved here changed, to every listener. */
   deliverChanged(): void
-  /** Hear each change of what is installed or trusted; returns the unsubscriber. */
+  /** Hear each change of what is installed or approved; returns the unsubscriber. */
   onChanged(listener: () => void): () => void
   /** Hear each bell row from now on; returns the unsubscriber. */
   onNotification(listener: (notification: StudioModuleNotification) => void): () => void
@@ -86,7 +91,7 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
   const changedListeners = new Set<(value: null) => void>()
   let readRecent: () => ReadonlyArray<StudioModuleNotification> = () => []
   let serve: ((request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>) | null = null
-  let readHostServices: ((moduleId: string) => ModuleHostServicesOutcome) | null = null
+  let readHostServices: ((moduleId: string, invoker: ExtensionInvoker) => ModuleHostServicesOutcome) | null = null
   let lifecycle: ModuleLifecycle | null = null
 
   function each<T>(listeners: Set<(value: T) => void>, value: T, what: string): void {
@@ -115,14 +120,14 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
     serveCallsFrom(next) {
       serve = next
     },
-    hostServices(moduleId) {
+    hostServices(moduleId, invoker) {
       if (!readHostServices)
         return {
           ok: false,
           code: 'extension_unavailable',
           message: `Extension "${moduleId}" is not running on this Studio: its extensions have not loaded.`,
         }
-      return readHostServices(moduleId)
+      return readHostServices(moduleId, invoker)
     },
     serveHostServicesFrom(read) {
       readHostServices = read

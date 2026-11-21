@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Settings → Extensions, driven the way a person does: review and trust,
+// Settings → Extensions, driven the way a person does: review and approve,
 // the one switch, the glyphs and what they name, the details (what its
 // extension.json declares), the restart line, the filters, the folded
 // built-ins, install from a folder, and uninstall through the Studio.
@@ -31,7 +31,7 @@ vi.mock('../../modules', async (importOriginal) => ({
   refreshThirdPartyRendererModules: async () => {},
 }))
 
-// What runs on the window's Studio is changed through it (`extension.setTrust`,
+// What runs on the window's Studio is changed through it (`extension.approve`,
 // `extension.uninstall`); this stands in for the window's connection.
 vi.mock('../../studio/moduleLifecycle', () => ({
   windowModuleLifecycle: () => ({
@@ -40,8 +40,8 @@ vi.mock('../../studio/moduleLifecycle', () => ({
       return setEnabledAnswer
     },
     install: async () => installAnswer,
-    setTrust: async (id: string, trusted: boolean) => {
-      trustCalls.push([id, trusted])
+    approve: async (id: string, fingerprint: string) => {
+      approveCalls.push([id, fingerprint])
       return { ok: true }
     },
     uninstall: async (id: string) => {
@@ -71,8 +71,8 @@ function module(
   const { manifest, launch, contributes, ...rest } = overrides
   const [publisher, extensionId] = id.split('.') as [string, string]
   return {
-    trust: 'trusted',
-    trustedVia: 'grant',
+    approval: { state: 'approved', fingerprint: 'sha256-ok' },
+    signature: 'unsigned',
     mcpTools: [],
     extension: {
       manifestVersion: 1,
@@ -105,7 +105,7 @@ function module(
       ...manifest,
     },
     launch: {
-      status: 'trusted_executable',
+      status: 'runs_worker',
       hasMainEntry: true,
       expectedToLoad: true,
       mainLoaded: true,
@@ -116,22 +116,23 @@ function module(
 }
 
 const INSIGHTS = module('acme.insights', 'Insights', {
-  trust: 'unsigned',
-  launch: { status: 'blocked_unsigned', mainLoaded: false },
+  approval: { state: 'pending', fingerprint: 'sha256-insights' },
+  launch: { status: 'awaiting_approval', mainLoaded: false },
   manifest: {
     summary: 'Usage and equivalent API cost across your chats, and prompt coaching every morning.',
-    permissions: ['conversation:operate', 'filesystem:read-home', 'ipc:invoke', 'storage'],
+    permissions: ['conversation:own', 'conversation:read', 'github:api', 'storage:own'],
   },
 })
 const SIGNED = module('acme.kanban', 'Task Board', {
-  trust: 'signed',
-  fingerprint: 'f'.repeat(64),
-  launch: { status: 'blocked_signed', mainLoaded: false },
-  manifest: { permissions: ['backlog.read'] },
+  approval: { state: 'pending', fingerprint: 'sha256-kanban', growth: ['the "backlog:operate" permission'] },
+  signature: 'signed',
+  signer: 'f'.repeat(64),
+  launch: { status: 'awaiting_approval', mainLoaded: false },
+  manifest: { permissions: ['backlog:read', 'backlog:operate'] },
 })
 const DECISION_LOG = module('local.decision-log', 'Decision Log', {
   mcpTools: ['decisions_record', 'decisions_search'],
-  manifest: { summary: 'Durable decisions.', permissions: ['mcp:tools', 'storage', 'ipc:invoke'] },
+  manifest: { summary: 'Durable decisions.', permissions: ['tools:contribute', 'storage:own', 'conversation:read'] },
   contributes: {
     doors: [{ id: 'decisions', title: 'Decisions', icon: 'notes', entry: 'dist/decisions.js' }],
     commands: [
@@ -145,25 +146,28 @@ const DECISION_LOG = module('local.decision-log', 'Decision Log', {
   },
 })
 const PR_RADAR = module('acme.pr-radar', 'PR Radar', {
-  fingerprint: 'e'.repeat(64),
+  signature: 'signed',
+  signer: 'e'.repeat(64),
   launch: { mainLoaded: false },
-  manifest: { permissions: ['github'] },
+  manifest: { permissions: ['github:api'] },
 })
 const TAMPERED = module('acme.tampered', 'Tampered', {
-  trust: 'invalid',
+  approval: { state: 'unavailable' },
+  signature: 'invalid',
   launch: { status: 'blocked_invalid', mainLoaded: false },
 })
 
 let installed: ThirdPartyModuleView[] = []
 let installAnswer:
-  { ok: true; moduleId: string; trust: 'unsigned'; strippedLinks: string[] } | { ok: false; message: string } = {
+  | { ok: true; moduleId: string; approval: { state: 'pending'; fingerprint: string }; strippedLinks: string[] }
+  | { ok: false; message: string } = {
   ok: false,
   message: 'not here',
 }
 let openDirAnswer: string | null = null
 const enableCalls: Array<[string, boolean | null]> = []
 let setEnabledAnswer: { ok: true; module: null } | { ok: false; message: string } = { ok: true, module: null }
-const trustCalls: Array<[string, boolean]> = []
+const approveCalls: Array<[string, string]> = []
 const uninstallCalls: string[] = []
 const restartApp = vi.fn(async () => ({ restarting: false }))
 let root: Root | null = null
@@ -174,7 +178,7 @@ beforeEach(() => {
   installed = [INSIGHTS, SIGNED, DECISION_LOG, PR_RADAR, TAMPERED]
   installAnswer = { ok: false, message: 'not here' }
   openDirAnswer = null
-  trustCalls.length = 0
+  approveCalls.length = 0
   enableCalls.length = 0
   setEnabledAnswer = { ok: true, module: null }
   uninstallCalls.length = 0
@@ -248,50 +252,52 @@ test('the page is Extensions, with Browse marketplace and an Install menu, and s
   expect(buttons().some((candidate) => (candidate.textContent?.trim() ?? '').endsWith('…'))).toBe(false)
 })
 
-test('untrusted extensions come first under Needs review, each with Review and no switch', async () => {
+test('extensions waiting for approval come first under Needs review, each with Review and no switch', async () => {
   await mount()
   const review = list('Needs review')!
   expect([...review.querySelectorAll(':scope > li')].length).toBe(3)
   expect(review.querySelectorAll('[role="switch"]').length).toBe(0)
   expect(button('Review Insights', review)).toBeTruthy()
-  // An invalid signature can never be trusted: words, and no Review.
+  // An invalid signature can never be approved: words, and no Review.
   const tampered = rowOf('Tampered')
-  expect(tampered.textContent).toContain('Can’t be trusted')
+  expect(tampered.textContent).toContain('Can’t be approved')
   expect(button('Review Tampered', tampered)).toBeUndefined()
 })
 
-test('review asks for the unsigned answer before it trusts and turns on in one step', async () => {
+test('review says the code runs with full access, and approves the fingerprint it showed and turns on in one step', async () => {
   await mount()
   await click(button('Review Insights'))
   const dialog = modal()!
-  expect(dialog.textContent).toContain('Trust Insights?')
+  expect(dialog.textContent).toContain('Approve Insights?')
+  expect(dialog.textContent).toContain('on this machine with full access')
+  expect(dialog.textContent).toContain('its own code is not limited')
   expect(dialog.textContent).toContain('Needs care')
   expect(dialog.textContent).toContain('Runs chats with your agents')
   expect(dialog.textContent).toContain('Starts, messages and stops chats')
   expect(dialog.querySelector('ul[aria-label="Also"]')?.textContent).toContain('Saves its own data')
   expect(dialog.textContent).toContain('Starts after a restart')
-  const trust = button('Trust and turn on', dialog)!
-  expect(trust.disabled).toBe(true)
+  // A signature is a badge, not a gate: no box to tick.
+  expect(dialog.querySelector('input[type="checkbox"]')).toBeNull()
+  const approve = button('Approve and turn on', dialog)!
+  expect(approve.disabled).toBe(false)
+  await click(approve)
 
-  const box = dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!
-  expect(box.closest('label')?.textContent).toBe('I trust this unsigned code')
-  await click(box)
-  expect(trust.disabled).toBe(false)
-  await click(trust)
-
-  expect(trustCalls).toEqual([['acme.insights', true]])
+  expect(approveCalls).toEqual([['acme.insights', 'sha256-insights']])
   expect(useWorkspaceStore.getState().appSettings.modules['acme.insights']).toBe(true)
   expect(modal()).toBeNull()
 })
 
-test('a signed extension needs no unsigned answer', async () => {
+test('an update that asks for more says what is new before it is approved again', async () => {
   await mount()
   await click(button('Review Task Board'))
-  expect(modal()!.querySelector('input[type="checkbox"]')).toBeNull()
-  expect(button('Trust and turn on', modal()!)!.disabled).toBe(false)
+  const dialog = modal()!
+  expect(dialog.textContent).toContain('Approve Task Board again?')
+  expect(dialog.querySelector('section[aria-label="New in this version"]')?.textContent).toContain(
+    'the "backlog:operate" permission',
+  )
 })
 
-test('an installed extension has one switch, its state in words, and no trust switch', async () => {
+test('an installed extension has one switch, its state in words, and no approval switch', async () => {
   await mount()
   const row = rowOf('Decision Log')
   const switches = row.querySelectorAll('[role="switch"]')
@@ -307,17 +313,17 @@ test('sensitive access is one glyph per scope, named in full, listed on hover', 
   await mount()
   const glyphs = rowOf('Insights').querySelector('[role="img"][aria-label^="Insights needs care"]') as HTMLElement
   expect(glyphs.getAttribute('aria-label')).toBe(
-    'Insights needs care: Runs chats with your agents, Reads your home folder, Broad access to Studio',
+    'Insights needs care: Runs chats with your agents, Reads all your chats, Uses your GitHub sign-in',
   )
   expect(glyphs.querySelectorAll('svg').length).toBe(3)
   // The row never carries the consent sentences themselves.
-  expect(rowOf('Insights').textContent).not.toContain('internal APIs')
+  expect(rowOf('Insights').textContent).not.toContain('including what you and the agents wrote')
   await act(async () => {
     glyphs.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }))
     await new Promise((resolve) => setTimeout(resolve, 260))
   })
   const tip = document.querySelector('[role="tooltip"]')
-  expect(tip?.textContent).toContain('Reads your home folder')
+  expect(tip?.textContent).toContain('Reads all your chats')
   expect(tip?.querySelectorAll('li').length).toBe(3)
 })
 
@@ -338,10 +344,10 @@ test('the name opens the details: what it adds, its access with ids, and the fac
     '2 commands',
     '2 agent tools',
   ])
-  expect(details.textContent).toContain('ipc:invoke')
+  expect(details.textContent).toContain('conversation:read')
   expect(details.textContent).toContain('Unsigned')
   expect(details.textContent).toContain('Local build')
-  expect(button('Revoke trust', details)).toBeTruthy()
+  expect(details.textContent).toContain('By you')
   // Escape closes it and hands focus back to the name.
   await act(async () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -350,7 +356,7 @@ test('the name opens the details: what it adds, its access with ids, and the fac
   expect(document.activeElement?.textContent).toBe('Decision Log')
 })
 
-test('an untrusted extension’s details offer Review and trust, and say what it declares before any code runs', async () => {
+test('an unapproved extension’s details offer Review and approve, and say what it declares before any code runs', async () => {
   installed = installed.map((candidate) =>
     candidate === INSIGHTS
       ? {
@@ -371,8 +377,8 @@ test('an untrusted extension’s details offer Review and trust, and say what it
   expect([...details.querySelectorAll('section[aria-label="Adds"] li')].map((li) => li.textContent)).toEqual([
     'Usage panel',
   ])
-  expect(details.textContent).toContain('Not trusted')
-  expect(button('Review and trust', details)).toBeTruthy()
+  expect(details.textContent).toContain('Not approved')
+  expect(button('Review and approve', details)).toBeTruthy()
 })
 
 test('a signed extension’s details name its key; a publisher’s own reads as its publisher', async () => {
@@ -477,13 +483,34 @@ test('a module added from a folder is uninstalled by the Studio, and forgotten h
 
 test('a folder install that left symbolic links out says which', async () => {
   openDirAnswer = '/Users/dev/extensions/notes'
-  installAnswer = { ok: true, moduleId: 'local.notes', trust: 'unsigned', strippedLinks: ['dist/shared.js'] }
+  installAnswer = {
+    ok: true,
+    moduleId: 'local.notes',
+    approval: { state: 'pending', fingerprint: 'sha256-notes' },
+    strippedLinks: ['dist/shared.js'],
+  }
   await mount()
   await click(button('Install', panel()))
   await click(
     [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.trim() === 'From a folder'),
   )
   expect(panel().textContent).toContain('Symbolic links were left out: dist/shared.js.')
+})
+
+test('a folder install that waits for approval opens its review at once', async () => {
+  openDirAnswer = '/Users/dev/extensions/insights'
+  installAnswer = {
+    ok: true,
+    moduleId: 'acme.insights',
+    approval: { state: 'pending', fingerprint: 'sha256-insights' },
+    strippedLinks: [],
+  }
+  await mount()
+  await click(button('Install', panel()))
+  await click(
+    [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.trim() === 'From a folder'),
+  )
+  expect(modal()?.textContent).toContain('Approve Insights?')
 })
 
 test('a folder the Studio refuses says why', async () => {

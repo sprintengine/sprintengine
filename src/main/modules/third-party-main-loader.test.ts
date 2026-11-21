@@ -7,7 +7,8 @@ import { afterEach, test } from 'vitest'
 
 import { extensionManifest, HELLO_MOUNT_SOURCE, writeExtensionFolder } from '../../../tests/extension-folder'
 import { loadMainModules } from '../module-host/load-modules'
-import { extensionContentSync } from './module-signature'
+import { approvedContext } from './extension-approvals.test-helper'
+import type { ExtensionStandingContext } from './module-signature'
 import { planThirdPartyMainModules } from './third-party-main-loader'
 import { discoverUserModulesSync } from './user-module-registry'
 
@@ -30,24 +31,22 @@ function writeExtension(
   temps.push(root)
   const key = `local.${id}`
   const moduleRoot = writeExtensionFolder(join(root, key), {
-    manifest: options.manifest ?? extensionManifest({ id, permissions: ['module:bridge'] }),
+    manifest: options.manifest ?? extensionManifest({ id, permissions: [] }),
     files: options.files ?? { 'dist/main.cjs': options.main ?? PING_WORKER },
   })
   return { root, moduleRoot, key }
 }
 
 // The grant Settings → Extensions records: the folder's content fingerprint.
-function grantFor(moduleRoot: string, key: string): ReadonlyMap<string, string> {
-  const content = extensionContentSync(moduleRoot)
-  assert.ok(content.ok)
-  return new Map([[key, content.fingerprint]])
+function grantFor(moduleRoot: string, key: string): ExtensionStandingContext {
+  return approvedContext({ [key]: moduleRoot })
 }
 
-function planFor(root: string, trustedModules: ReadonlyMap<string, string>) {
-  return planThirdPartyMainModules(discoverUserModulesSync(root, { trustedModules }))
+function planFor(root: string, context: ExtensionStandingContext) {
+  return planThirdPartyMainModules(discoverUserModulesSync(root, context))
 }
 
-test('a trusted extension whose files are unchanged loads its worker', () => {
+test('an approved extension whose files are unchanged loads its worker', () => {
   const { root, moduleRoot, key } = writeExtension('steady')
   const planned = planFor(root, grantFor(moduleRoot, key))
   assert.deepEqual(planned.moduleRoots, { [key]: moduleRoot })
@@ -75,10 +74,10 @@ test('a worker that exports no activate fails to load, by name', () => {
   assert.match(report.errors.find((error) => error.id === key)?.message ?? '', /must export activate/)
 })
 
-test('an untrusted extension is planned ineligible and its worker never runs', () => {
-  const { root, key } = writeExtension('untrusted', { main: 'throw new Error("ran")\n' })
-  const planned = planFor(root, new Map())
-  assert.equal(planned.ineligible[key], 'untrusted')
+test('an extension waiting for approval is planned ineligible and its worker never runs', () => {
+  const { root, key } = writeExtension('unapproved', { main: 'throw new Error("ran")\n' })
+  const planned = planFor(root, { approvals: new Map() })
+  assert.equal(planned.ineligible[key], 'unapproved')
   assert.deepEqual(planned.verifiedFiles, {})
   const { report } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
   assert.deepEqual(report.loaded, [])
@@ -107,9 +106,9 @@ test('an extension below the worker tier is listed with no worker to run', () =>
 test('the plan carries each extension’s declared MCP tools', () => {
   const tools = [{ name: 'notes_search', description: 'Search the notes.', access: 'read' }]
   const { root, key } = writeExtension('notes', {
-    manifest: extensionManifest({ id: 'notes', permissions: ['mcp:tools'], contributes: { mcpTools: tools } }),
+    manifest: extensionManifest({ id: 'notes', permissions: ['tools:contribute'], contributes: { mcpTools: tools } }),
   })
-  const planned = planFor(root, new Map())
+  const planned = planFor(root, { approvals: new Map() })
   assert.deepEqual(planned.mcpTools, { [key]: tools })
 })
 
@@ -117,7 +116,7 @@ test('folders discovery rejected become launch errors', () => {
   const root = mkdtempSync(join(tmpdir(), 'mc-main-loader-'))
   temps.push(root)
   writeExtensionFolder(join(root, 'not-a-key'))
-  const planned = planFor(root, new Map())
+  const planned = planFor(root, { approvals: new Map() })
   assert.equal(planned.modules.length, 0)
   assert.equal(planned.launchErrors.length, 1)
   assert.match(planned.launchErrors[0]?.message ?? '', /not an install key/)

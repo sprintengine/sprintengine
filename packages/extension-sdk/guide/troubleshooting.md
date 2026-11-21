@@ -17,7 +17,7 @@ up there first, with the validator Studio itself runs.
 
 | Studio shows | Cause | Fix |
 | --- | --- | --- |
-| Needs trust / unsigned | Not trusted yet — or trusted before the last rebuild | Trust it. Every `dev:install` of a new build is new contents |
+| Needs approval | Not approved yet — or approved before the last rebuild, or the rebuild asks for more | Approve it. Every `dev:install` of a new build is new contents |
 | Invalid / tampered | Files in the folder do not match `extension.sig` | `npm run dev:install` (it signs the installed copy again when it can, and drops a stale signature when it cannot). Never edit the installed copy |
 | Needs a newer Studio | `engines.studio` asks for a Studio newer than this one | Update Studio, or use only fields this Studio reads (their "Since", in the `manifest` topic) |
 | Off | Never turned on | Turn it on in Settings → Extensions |
@@ -33,15 +33,16 @@ up there first, with the validator Studio itself runs.
 | Unstyled markup | Utility classes you wrote compile to nothing (the `styling` topic) |
 | Failed to resolve module specifier "react" (or anything else) | The ui entry imports something at runtime; bundle it whole (`npm run build:ui`) |
 | Cannot find module '…' from the worker | A dependency left external in the worker build; bundle it |
-| `activate` throws: needs the "module:bridge" permission | Declare `module:bridge` to declare methods |
 | A command does nothing | It has no `action`, and the worker has no `operate` method of its name |
-| MCP tool rejected at registration | Declare it in `contributes.mcpTools` and `mcp:tools`; or a name another extension already holds |
+| MCP tool rejected at registration | Declare it in `contributes.mcpTools` and `tools:contribute`; or a name another extension already holds |
 | MCP tool answers "extension disabled" | Turn the extension on |
-| Smoke test: "… needs "storage"" (or another permission) | The worker resolves a service or calls a method whose permission extension.json does not declare. Declare it |
+| Smoke test: "… needs "storage:own"" (or another permission) | The worker calls a method whose permission extension.json does not ask for. Ask for it |
+| A call answers or throws `not_permitted` | Your extension was not approved for what it needs, or whoever set the call off (a paired device, another app, an agent) may not do it themselves. The message says which |
+| A call answers or throws `approval_required` | The extension is not approved as it is now (an update waiting for approval, or uninstalled while running) |
 | A call answers `extension_unavailable` | The worker is not running on that Studio: switched off, refused or failed to load (see Settings) |
 | A call answers `extension_method_unknown` | No method of that name, or it is declared with the other access (`read` vs `operate`) |
 | A call answers `invalid_params` | Your own params validator refused what was sent; the message is yours |
-| `openChat` → `permission_missing` | Declare `chat:draft`, or `conversation:operate` to send |
+| `openChat` → `not_permitted` | Declare `chat:draft`, or `conversation:own` to send |
 | `openChat` → `workspace_folder_missing` | Chats need a workspace with a folder |
 | `openChat` → `unavailable` | This window cannot open chats; try the main window |
 | Conversation service → `not_owned` | The chat was not created by this extension |

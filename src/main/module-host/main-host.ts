@@ -37,6 +37,19 @@ import {
 import { resolveContainedPath } from '../modules/entry-containment'
 import type { ModuleUsageRegistry } from '../../shared/modules/activity-service'
 import type { ModuleBacklogRegistry } from '../../shared/modules/backlog-service'
+import { EXTENSION_PERMISSIONS } from '../../../packages/extension-sdk/src/permissions'
+import {
+  EXTENSION_MAIN_HOST_METHODS,
+  extensionHostService,
+  type ExtensionHostRequirement,
+} from '../../../packages/extension-sdk/src/services'
+import { boundToRegistrant, currentInvoker, runAsInvoker, type ExtensionInvoker } from './extension-invocation'
+import {
+  ExtensionHostRefusal,
+  gateExtensionHostCall,
+  refuseExtensionHostCall,
+  type ExtensionHostDecision,
+} from './extension-host-gate'
 
 // Main-process host kernel. Replaces the static, central wiring in
 // app-services.ts / register-*-ipc.ts with registries that capability modules
@@ -191,10 +204,6 @@ function isCapability(value: unknown): value is object {
   )
 }
 
-// The declarations that let a third-party module serve methods to clients:
-// its own scope, and the broad legacy one it was split out of.
-const METHOD_PERMISSIONS: ReadonlySet<string> = new Set(['module:bridge', 'ipc:invoke'])
-
 // The app-internal service behind `MainHost.listChatRuntimes` (the agent
 // runtime module provides it, as ChatRuntimesToken). A host method rather than
 // a published token: every module may read it, with no permission to declare.
@@ -225,8 +234,8 @@ export type MainHost = {
    * a lower-case letter, then letters, digits, dots and dashes: the module id
    * is their namespace. The whole batch is validated before any of it lands,
    * a name this module already declares is an error, and unloading the module
-   * takes its methods with it. A third-party module must declare
-   * `module:bridge` (or the broad `ipc:invoke`).
+   * takes its methods with it. An extension's own methods need no
+   * permission.
    */
   registerMethods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(
     methods: ModuleMethodRegistrations<Cs>,
@@ -241,7 +250,7 @@ export type MainHost = {
    * of a disabled-but-registered module stay listed and answer an actionable
    * enable error instead of running.
    *
-   * A third-party module must declare `mcp:tools`, and its tools are treated
+   * An extension must hold `tools:contribute`, and its tools are treated
    * as mutating unless they say `mutates: false`: an undeclared write is the
    * mistake that costs, so the default errs toward the audited, gated scope.
    */
@@ -274,8 +283,8 @@ export type MainHost = {
   getAssetPath(relativePath: string): string
   /**
    * A workspace's checked-out branch and remotes (with `owner/repo` for a
-   * GitHub one), read by git from the workspace's folder. A third-party
-   * module must declare `ipc:workspace-read`. Never throws.
+   * GitHub one), read by git from the workspace's folder. An extension must
+   * hold `workspace:read`. Never throws.
    */
   getWorkspaceGitInfo(workspaceId: string): Promise<ModuleWorkspaceGitInfoResult>
   /**
@@ -352,11 +361,11 @@ export type MainKernel = {
   /**
    * The host's services a module's window half calls on this server (the
    * protocol's `extensionBacklog.*` and `extensionUsage.query`), for a module that
-   * runs here: its main half loaded, or its manifest alone. Each service
-   * checks the module's own permission on every call; one this Studio does
-   * not provide is null.
+   * runs here: its main half loaded, or its manifest alone. Every call passes
+   * the host's gate, held to the extension's approval and to `invoker`, the
+   * connection that sent it; one this Studio does not provide is null.
    */
-  hostServicesFor(moduleId: string): ModuleHostServicesOutcome
+  hostServicesFor(moduleId: string, invoker: ExtensionInvoker): ModuleHostServicesOutcome
   /** Module-contributed Studio gateway tools, in registration order. */
   mcpToolRegistrations(): ReadonlyArray<McpToolContribution>
   startupHooks(): ReadonlyArray<StartupHook>
@@ -408,6 +417,8 @@ export type ModuleMethodCallRequest = {
   clientId: string
   /** An operate's command id, already namespaced by the client. */
   commandId?: string
+  /** Who sent it: the handler runs on their behalf. Never assumed: a caller names it. */
+  invoker: ExtensionInvoker
 }
 
 /** The host's services a module's window half reaches, each null where this Studio does not provide it. */
@@ -484,6 +495,12 @@ export type MainKernelOptions = {
   resolveModuleVerifiedFiles?: (moduleId: string) => ModuleFileDigests | undefined
   /** The MCP tools an installed extension's extension.json declares, which are all it may register. */
   resolveDeclaredMcpTools?: (moduleId: string) => readonly ExtensionMcpToolContribution[] | undefined
+  /**
+   * The permissions an extension's approval holds now, read at every call: null
+   * when it is not approved as it is (an update waiting for approval, an
+   * uninstall). Absent (tests), its manifest's permissions.
+   */
+  resolveExtensionGrant?: (moduleId: string) => readonly string[] | null
 }
 
 // Flood bounds: a module may emit at most this many notifications per window;
@@ -573,12 +590,6 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   let started = false
 
   function registerMethods(moduleId: string, batch: ModuleMethodRegistrations): void {
-    if (
-      isThirdParty(moduleId) &&
-      !options.resolveModuleManifest?.(moduleId)?.permissions?.some((permission) => METHOD_PERMISSIONS.has(permission))
-    ) {
-      throw new Error(`Extension "${moduleId}" needs the "module:bridge" permission to declare methods.`)
-    }
     if (batch === null || typeof batch !== 'object' || Array.isArray(batch)) {
       throw new Error(`Extension "${moduleId}" declares its methods as an object of name to method.`)
     }
@@ -609,7 +620,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     methods.set(moduleId, next)
   }
 
-  function hostServicesFor(moduleId: string): ModuleHostServicesOutcome {
+  function hostServicesFor(moduleId: string, invoker: ExtensionInvoker): ModuleHostServicesOutcome {
     const present = options.isModulePresent
       ? options.isModulePresent(moduleId)
       : options.resolveModuleManifest?.(moduleId) !== undefined
@@ -624,10 +635,59 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     return {
       ok: true,
       services: {
-        backlog: typeof backlog?.create === 'function' ? backlog : null,
-        usage: typeof usage?.query === 'function' ? usage : null,
+        backlog:
+          typeof backlog?.create === 'function'
+            ? gatedRegistry(moduleId, 'backlog.module-service', backlog, invoker)
+            : null,
+        usage:
+          typeof usage?.query === 'function' ? gatedRegistry(moduleId, 'usage.module-service', usage, invoker) : null,
       },
     }
+  }
+
+  // A host service as a window half's call reaches it over the Studio
+  // protocol: each method through the gate, as the connection that sent it.
+  // The window half names its own module first, as the worker's helpers do.
+  // The module id is the client's word, so naming one of the app's own
+  // modules is no way around the gate: their calls still need of the
+  // connection what the method needs of any invoker.
+  function gatedRegistry<T extends object>(moduleId: string, key: string, registry: T, invoker: ExtensionInvoker): T {
+    const methods = extensionHostService(key)?.methods ?? {}
+    const thirdParty = isThirdParty(moduleId)
+    const gated: Record<string, unknown> = {}
+    for (const name of memberNames(registry)) {
+      const member: unknown = Reflect.get(registry, name, registry)
+      if (typeof member !== 'function' || typeof name !== 'string') continue
+      gated[name] = (...args: unknown[]) => {
+        const requirement = methods[name]
+        const decision = thirdParty
+          ? gate(moduleId, `${key}.${name}`, requirement, invoker)
+          : gateExtensionHostCall({
+              extensionId: moduleId,
+              method: `${key}.${name}`,
+              requirement,
+              grant: EXTENSION_PERMISSIONS,
+              invoker,
+            })
+        if (!decision.ok) return refuseExtensionHostCall(requirement, decision)
+        return (member as (...given: unknown[]) => unknown).apply(registry, args)
+      }
+    }
+    return gated as T
+  }
+
+  /** The host's gate, for an extension; the app's own modules pass. */
+  function gate(
+    moduleId: string,
+    method: string,
+    requirement: ExtensionHostRequirement | undefined,
+    invoker: ExtensionInvoker = currentInvoker(),
+  ): ExtensionHostDecision {
+    if (!isThirdParty(moduleId)) return { ok: true }
+    const grant = options.resolveExtensionGrant
+      ? options.resolveExtensionGrant(moduleId)
+      : (options.resolveModuleManifest?.(moduleId)?.permissions ?? [])
+    return gateExtensionHostCall({ extensionId: moduleId, method, requirement, grant, invoker })
   }
 
   async function callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome> {
@@ -655,8 +715,20 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         message: `Extension "${request.moduleId}" declares "${request.method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with extension.${registration.access}.`,
       }
     }
-    const parsed = registration.params(request.params)
-    if (!parsed.ok) {
+    // Everything the extension's code does for this call runs as whoever sent
+    // it: its params validator as well as its handler, since either may call
+    // into the host.
+    const ran = await runAsInvoker(request.invoker, async () => {
+      const parsed = registration.params(request.params)
+      if (!parsed.ok) return { parsed }
+      const context: ModuleMethodContext = {
+        clientId: request.clientId,
+        ...(request.commandId === undefined ? {} : { commandId: request.commandId }),
+      }
+      return { parsed, answer: await registration.handler(parsed.params, context) }
+    })
+    if (!ran.parsed.ok) {
+      const parsed = ran.parsed
       return {
         ok: false,
         code: 'invalid_params',
@@ -666,11 +738,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
             : `Extension "${request.moduleId}" refused the params of "${request.method}".`,
       }
     }
-    const context: ModuleMethodContext = {
-      clientId: request.clientId,
-      ...(request.commandId === undefined ? {} : { commandId: request.commandId }),
-    }
-    const answer = await registration.handler(parsed.params, context)
+    const answer = ran.answer
     if (answer?.ok === true) {
       const problem = answer.result === undefined ? null : moduleEventPayloadProblem(answer.result, 'result')
       if (problem)
@@ -912,73 +980,108 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   // A guarded stand-in for a service, or for what one hands back: every
   // callable reached through it checks the load and, where `pinned`, that
   // its first argument is the module itself.
+  //
+  // For a Studio service, every callable is also a host method with a row in
+  // the table and passes the host's gate at each call, as whoever invoked the
+  // code calling it then and while the extension is approved: the service's
+  // own methods (`methods`), and what they hand back (`returns`, by the path
+  // from the method: `attach.send`, and `()` for a function, as `watch.()`).
+  // A callable without a row is refused. A service another extension provides
+  // is that extension's, and is not Studio's to gate.
   function guardedServiceView(moduleId: string, key: string, root: object, load: ModuleLoad, pinned: boolean) {
     const readOnly = (): never => {
       throw new Error(`Extension "${moduleId}" cannot change service "${key}".`)
     }
-    // One guarded stand-in per member and the object it is called on, so a
-    // member read twice is the same one (a class's method is shared by every
-    // instance, and each instance's is its own); kept apart by whether its
-    // first argument is held to the module.
-    const guarded = new WeakMap<object, Map<boolean, WeakMap<object, unknown>>>()
+    const service = extensionHostService(key)
+    // Where a callable sits: its path, and whether the gate holds it (a Studio service).
+    type Place = { path: string; gated: boolean }
+    const rowOf = (path: string): ExtensionHostRequirement | undefined => {
+      const [method, ...rest] = path.split('.')
+      if (!service || !method) return undefined
+      if (rest.length === 0) return Object.hasOwn(service.methods, method) ? service.methods[method] : undefined
+      const returned = service.returns?.[method]
+      const member = rest.join('.')
+      return returned && Object.hasOwn(returned, member) ? returned[member] : undefined
+    }
+    // One guarded stand-in per member, the object it is called on, its place
+    // and whether its first argument is held to the module, so a member read
+    // twice is the same one (a class's method is shared by every instance,
+    // and each instance's is its own).
+    const guarded = new WeakMap<object, Map<string, WeakMap<object, unknown>>>()
     const unbound = {}
-    const cacheFor = (self: unknown, pinFirst: boolean): WeakMap<object, unknown> => {
+    const cacheFor = (self: unknown, place: Place, pinFirst: boolean): WeakMap<object, unknown> => {
       const owner = typeof self === 'object' && self !== null ? self : unbound
-      let byPinning = guarded.get(owner)
-      if (!byPinning) guarded.set(owner, (byPinning = new Map()))
-      let cache = byPinning.get(pinFirst)
-      if (!cache) byPinning.set(pinFirst, (cache = new WeakMap()))
+      let byPlace = guarded.get(owner)
+      if (!byPlace) guarded.set(owner, (byPlace = new Map()))
+      const slot = `${place.gated ? 'g' : 'u'}\u0000${place.path}\u0000${pinFirst ? 1 : 0}`
+      let cache = byPlace.get(slot)
+      if (!cache) byPlace.set(slot, (cache = new WeakMap()))
       return cache
     }
     const live = () => {
       if (load.retired()) throw new Error(switchedOff(moduleId, `no longer reaches service "${key}"`))
     }
+    const child = (place: Place, member: string): Place => ({
+      path: place.path ? `${place.path}.${member}` : member,
+      gated: place.gated,
+    })
 
-    function guardFunction(fn: (...given: unknown[]) => unknown, self: unknown, pinFirst: boolean): unknown {
+    function guardFunction(fn: (...given: unknown[]) => unknown, self: unknown, place: Place, pinFirst: boolean) {
       return (...args: unknown[]) => {
         live()
+        if (place.gated) {
+          const requirement = rowOf(place.path)
+          const decision = gate(moduleId, `${key}.${place.path}`, requirement)
+          if (!decision.ok) return refuseExtensionHostCall(requirement, decision)
+        }
         if (pinFirst && args[0] !== moduleId) {
           throw new Error(
             `Extension "${moduleId}" called service "${key}" as module "${String(args[0])}": a module reaches it only as itself.`,
           )
         }
-        return guardResult(fn.apply(self, args))
+        // What it hands the host to call back later is called back on behalf
+        // of whoever set this call off (the person, for its own work), never
+        // as whoever the host happens to be serving when it delivers.
+        const handed = args.map((arg) => (typeof arg === 'function' ? boundToRegistrant(arg as never) : arg))
+        return guardResult(fn.apply(self, handed), place)
       }
     }
 
-    // What a call hands back: a capability is guarded, data is passed through.
-    function guardResult(result: unknown): unknown {
-      if (result instanceof Promise) return result.then(guardResult)
-      if (typeof result === 'function') return guardMember(result, undefined, false)
-      if (isCapability(result)) return guardMember(result, undefined, false)
+    // What a call at `place` hands back: a capability is guarded, data is passed through.
+    function guardResult(result: unknown, place: Place): unknown {
+      if (result instanceof Promise) return result.then((settled) => guardResult(settled, place))
+      if (typeof result === 'function')
+        return guardMember(result, undefined, { ...place, path: `${place.path}.()` }, false)
+      if (isCapability(result)) return guardMember(result, undefined, place, false)
       return result
     }
 
-    function guardMember(member: unknown, self: unknown, pinFirst: boolean): unknown {
+    function guardMember(member: unknown, self: unknown, place: Place, pinFirst: boolean): unknown {
       if (member === null || (typeof member !== 'object' && typeof member !== 'function')) return member
-      const cache = cacheFor(self, pinFirst)
+      const cache = cacheFor(self, place, pinFirst)
       const known = cache.get(member)
       if (known !== undefined) return known
       const made =
         typeof member === 'function'
-          ? guardFunction(member as (...given: unknown[]) => unknown, self, pinFirst)
-          : facadeOf(member, false)
+          ? guardFunction(member as (...given: unknown[]) => unknown, self, place, pinFirst)
+          : facadeOf(member, place, false)
       cache.set(member, made)
       return made
     }
 
-    function facadeOf(target: object, pinFirst: boolean): object {
+    function facadeOf(target: object, place: Place, pinFirst: boolean): object {
       const facade = Object.create(null) as Record<PropertyKey, unknown>
       for (const property of memberNames(target)) {
+        const at = child(place, String(property))
         Object.defineProperty(facade, property, {
           enumerable: true,
           get: () => {
             const member: unknown = Reflect.get(target, property, target)
-            if (typeof member === 'function') return guardMember(member, target, pinFirst)
-            // An object the service holds is reached through a facade of its
-            // own, whatever it holds; a value or a list is read as it is now.
+            if (typeof member === 'function') return guardMember(member, target, at, pinFirst)
+            // An object it holds is reached through a facade of its own,
+            // whatever it holds; a value or a list is read as it is now.
             if (member !== null && typeof member === 'object' && !Array.isArray(member) && !ArrayBuffer.isView(member))
-              return guardMember(member, target, false)
+              return guardMember(member, target, at, false)
             return member
           },
           set: readOnly,
@@ -988,7 +1091,8 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     }
 
     // A service that is itself a function is that function, guarded.
-    return typeof root === 'function' ? guardMember(root, undefined, pinned) : facadeOf(root, pinned)
+    const top: Place = { path: '', gated: service !== undefined }
+    return typeof root === 'function' ? guardMember(root, undefined, top, pinned) : facadeOf(root, top, pinned)
   }
 
   // A module asset by path: the same refusals `moduleAssetUrl` makes, then
@@ -1044,21 +1148,38 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     const refuseUse = (): void => {
       if (retired()) throw new Error(switchedOff(moduleId, "no longer reaches the host's services"))
     }
+    // The host's gate for one of its own methods (EXTENSION_MAIN_HOST_METHODS).
+    const enforce = (name: keyof typeof EXTENSION_MAIN_HOST_METHODS): void => {
+      const decision = gate(moduleId, name, EXTENSION_MAIN_HOST_METHODS[name])
+      if (!decision.ok) throw new ExtensionHostRefusal(decision.code, decision.message)
+    }
     const host: MainHost = {
       ...live,
-      listChatRuntimes: async () => (refuseUse(), live.listChatRuntimes()),
-      ensureSkillInstalled: async (root, skillId) => (refuseUse(), live.ensureSkillInstalled(root, skillId)),
-      getSkillStatus: async (root, skillId) => (refuseUse(), live.getSkillStatus(root, skillId)),
-      getModuleDataDir: () => (refuseUse(), live.getModuleDataDir()),
+      listChatRuntimes: async () => (refuseUse(), enforce('listChatRuntimes'), live.listChatRuntimes()),
+      ensureSkillInstalled: async (root, skillId) => (
+        refuseUse(),
+        enforce('ensureSkillInstalled'),
+        live.ensureSkillInstalled(root, skillId)
+      ),
+      getSkillStatus: async (root, skillId) => (
+        refuseUse(),
+        enforce('getSkillStatus'),
+        live.getSkillStatus(root, skillId)
+      ),
+      getModuleDataDir: () => (refuseUse(), enforce('getModuleDataDir'), live.getModuleDataDir()),
       getAssetPath: (relativePath) => (refuseUse(), live.getAssetPath(relativePath)),
       getModuleAppState<T = unknown>(key: string): T | undefined {
         refuseUse()
+        enforce('getModuleAppState')
         return live.getModuleAppState<T>(key)
       },
-      getWorkspaceGitInfo: async (workspaceId) =>
-        retired()
-          ? { ok: false, code: 'unavailable', message: switchedOff(moduleId, "no longer reads a workspace's git") }
-          : live.getWorkspaceGitInfo(workspaceId),
+      async getWorkspaceGitInfo(workspaceId) {
+        if (retired())
+          return { ok: false, code: 'unavailable', message: switchedOff(moduleId, "no longer reads a workspace's git") }
+        const decision = gate(moduleId, 'getWorkspaceGitInfo', EXTENSION_MAIN_HOST_METHODS.getWorkspaceGitInfo)
+        if (!decision.ok) return { ok: false, code: decision.code, message: decision.message }
+        return live.getWorkspaceGitInfo(workspaceId)
+      },
       // The factory is handed this host, as it always was: the guarded one.
       provideService<T>(token: ServiceToken<T>, factory: (host: MainHost) => T): T {
         refuseRetired()
@@ -1072,18 +1193,30 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         refuseUse()
         return live.requireService(token)
       },
-      registerMethods: (batch) => (refuseRetired(), live.registerMethods(batch)),
-      registerMcpTools: (tools) => (refuseRetired(), live.registerMcpTools(tools)),
-      watchModuleAppState: (cb) => (refuseRetired(), live.watchModuleAppState(cb)),
+      registerMethods: (batch) => (refuseRetired(), enforce('registerMethods'), live.registerMethods(batch)),
+      registerMcpTools: (tools) => (refuseRetired(), enforce('registerMcpTools'), live.registerMcpTools(tools)),
+      watchModuleAppState: (cb) => (
+        refuseRetired(),
+        enforce('watchModuleAppState'),
+        live.watchModuleAppState(boundToRegistrant(cb))
+      ),
       onStartup: (hook) => (refuseRetired(), live.onStartup(hook)),
       onShutdownBegin: (hook) => (refuseRetired(), live.onShutdownBegin(hook)),
       onShutdown: (hook) => (refuseRetired(), live.onShutdown(hook)),
-      registerSidecar: (spec, lifecycle) => (refuseRetired(), live.registerSidecar(spec, lifecycle)),
+      registerSidecar: (spec, lifecycle) => (
+        refuseRetired(),
+        enforce('registerSidecar'),
+        live.registerSidecar(spec, lifecycle)
+      ),
       notify: (input) => {
-        if (!retired()) live.notify(input)
+        if (retired()) return
+        enforce('notify')
+        live.notify(input)
       },
       emit: (topic, payload) => {
-        if (!retired()) live.emit(topic, payload)
+        if (retired()) return
+        enforce('emit')
+        live.emit(topic, payload)
       },
     }
     return host
@@ -1108,9 +1241,6 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       },
       registerMcpTools(tools) {
         const thirdParty = isThirdParty(moduleId)
-        if (thirdParty && !options.resolveModuleManifest?.(moduleId)?.permissions?.includes('mcp:tools')) {
-          throw new Error(`Extension "${moduleId}" must declare the "mcp:tools" permission to register MCP tools.`)
-        }
         // An extension serves only the tools its extension.json declares, and
         // what agents are told of each is the manifest's, not the code's.
         const declared = thirdParty ? (options.resolveDeclaredMcpTools?.(moduleId) ?? []) : null
@@ -1200,14 +1330,6 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         }
       },
       async getWorkspaceGitInfo(workspaceId) {
-        const permissions = options.resolveModuleManifest?.(moduleId)?.permissions
-        if (isThirdParty(moduleId) && !permissions?.includes('ipc:workspace-read')) {
-          return {
-            ok: false,
-            code: 'permission_missing',
-            message: `Extension "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
-          }
-        }
         const reader = services.get(WORKSPACE_GIT_INFO_SERVICE_KEY)?.value as
           { read?: (workspaceId: string) => Promise<ModuleWorkspaceGitInfoResult> } | undefined
         if (typeof reader?.read !== 'function') {

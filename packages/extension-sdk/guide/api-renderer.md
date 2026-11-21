@@ -57,7 +57,7 @@ bell: see the `api-main` topic.
 
 | Method | Notes |
 | --- | --- |
-| `openChat({ workspaceId, prompt?, skills?, cli?, model?, send?, name?, dedupeKey? })` | Opens and focuses a new chat in the workspace. Default `send: false`: the prompt is a draft the person sends. `name` titles the chat; `dedupeKey` focuses the chat this extension already opened under that key (`existing: true`) instead of opening another. Resolves `{ ok: true, agentId, existing? }` or `{ ok: false, code, message }` (`permission_missing`, `unknown_workspace`, `workspace_folder_missing`, `cli_not_conversational`, `unavailable`, `invalid_input`) — never throws for those. A draft needs `chat:draft` (or `conversation:operate`); `send: true` needs `conversation:operate`. `name`/`dedupeKey`: `supports('chat.open-options')`. |
+| `openChat({ workspaceId, prompt?, skills?, cli?, model?, send?, name?, dedupeKey? })` | Opens and focuses a new chat in the workspace. Default `send: false`: the prompt is a draft the person sends. `name` titles the chat; `dedupeKey` focuses the chat this extension already opened under that key (`existing: true`) instead of opening another. Resolves `{ ok: true, agentId, existing? }` or `{ ok: false, code, message }` (`not_permitted`, `unknown_workspace`, `workspace_folder_missing`, `cli_not_conversational`, `unavailable`, `invalid_input`) — never throws for those. A draft needs `chat:draft` (or `conversation:own`); `send: true` needs `conversation:own`. `name`/`dedupeKey`: `supports('chat.open-options')`. |
 | `listChatRuntimes()` | `[{ id, label, available, models, lastSelected }]` for a picker; pass `id` as `cli`. |
 | `focusTab({ workspaceId, kind: 'chat' \| 'file', id })` | Focus a chat by agent id (from `openChat` or the conversation service) or a file by workspace-relative path. |
 
@@ -68,14 +68,14 @@ conversation service: the `conversations` topic.
 
 | Method | Permission | Notes |
 | --- | --- | --- |
-| `getWorkspace(id)` | `ipc:workspace-read` | `{ id, name, folderPath, mode }` or `null` ("not resolvable yet" — retry, never treat as deleted). |
-| `listWorkspaces()` / `watchWorkspaces(cb)` | `ipc:workspace-read` | `watch` fires at once with the current list, then on change. |
-| `getWorkspaceGitInfo(workspaceId)` | `ipc:workspace-read` (checked) | `{ ok, branch, remotes: [{ name, url, github? }] }` from git in the workspace's working root; SSH aliases for github.com resolved. Never throws. |
-| `getWorkingRoot(id)` | `ipc:workspace-read` | Where live work happens (a worktree, for worktree-backed workspaces). |
-| `watchWorkspaceFile(id, relativePath, cb)` | `filesystem:read-workspace` | Content now, then debounced on change; resolves to the unsubscriber. |
-| `listBacklogItems(id)` / `watchBacklogItems(id, cb, { onError })` | `backlog.read` | Item views (with `numericId`, `displayId`, `epic`, `modifiedAt`). `onError` hears a folderless workspace or an unreadable Backlog; the watch stays open. |
-| `getBacklogLocation(id)` | `backlog.read` | `{ root, isDefault, exists }` of the workspace's Backlog. |
-| `createBacklogItem(id, input)`, `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`, `updateBacklogModuleMetadata` | `backlog.write` | Writes through the app's Backlog service; result-shaped. Never write item files. |
+| `getWorkspace(id)` | `workspace:read` | `{ id, name, folderPath, mode }` or `null` ("not resolvable yet" — retry, never treat as deleted). |
+| `listWorkspaces()` / `watchWorkspaces(cb)` | `workspace:read` | `watch` fires at once with the current list, then on change. |
+| `getWorkspaceGitInfo(workspaceId)` | `workspace:read` (checked) | `{ ok, branch, remotes: [{ name, url, github? }] }` from git in the workspace's working root; SSH aliases for github.com resolved. Never throws. |
+| `getWorkingRoot(id)` | `workspace:read` | Where live work happens (a worktree, for worktree-backed workspaces). |
+| `watchWorkspaceFile(id, relativePath, cb)` | `workspace:read` | Content now, then debounced on change; resolves to the unsubscriber. |
+| `listBacklogItems(id)` / `watchBacklogItems(id, cb, { onError })` | `backlog:read` | Item views (with `numericId`, `displayId`, `epic`, `modifiedAt`). `onError` hears a folderless workspace or an unreadable Backlog; the watch stays open. |
+| `getBacklogLocation(id)` | `backlog:read` | `{ root, isDefault, exists }` of the workspace's Backlog. |
+| `createBacklogItem(id, input)`, `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`, `updateBacklogModuleMetadata` | `backlog:operate` | Writes through the app's Backlog service; result-shaped. Never write item files. |
 | `queryUsage(query)` | `usage:read` | Token usage of every agent session on the machine (twin of `getUsageService`). |
 
 A panel's workspace is `studio.surface.workspaceId`.
@@ -84,8 +84,8 @@ A panel's workspace is `studio.surface.workspaceId`.
 
 | Method | Permission | Use for |
 | --- | --- | --- |
-| `getModuleAppState(key)` / `setModuleAppState(key, value)` / `watchModuleAppState(cb)` | `storage` | The extension's own small settings-like values, shared by every surface and window; synchronous, safe to read in render; pair with `useSyncExternalStore`. `set` returns `false` when not stored. The worker reads the same values with its `getModuleAppState` (read-only). A settings section is a surface that writes here. |
-| `getWorkspaceModuleState(id)` / `setWorkspaceModuleState(id, value)` | `storage` | The extension's entry on one workspace, saved and synced with it. `undefined` = unknown yet. |
+| `getModuleAppState(key)` / `setModuleAppState(key, value)` / `watchModuleAppState(cb)` | `storage:own` | The extension's own small settings-like values, shared by every surface and window; synchronous, safe to read in render; pair with `useSyncExternalStore`. `set` returns `false` when not stored. The worker reads the same values with its `getModuleAppState` (read-only). A settings section is a surface that writes here. |
+| `getWorkspaceModuleState(id)` / `setWorkspaceModuleState(id, value)` | `storage:own` | The extension's entry on one workspace, saved and synced with it. `undefined` = unknown yet. |
 
 Larger data, or data the worker writes: `getModuleStorage(studio)` in the
 worker, reached from a surface through your own declared method.
@@ -122,7 +122,7 @@ const stop = studio.subscribe('changed', () => void reload())
 - A `read` method changes nothing; an `operate` one does, and runs once per
   command id (a retry gets the first answer; the handler sees it as
   `context.commandId`). `read` offers only read methods, `operate` only
-  operate ones. Declaring methods needs `module:bridge`.
+  operate ones. Declaring methods needs no permission.
 - A call never throws. Besides your own `{ ok: false, code }`, the host
   answers `extension_unavailable` (the worker is not running there),
   `extension_method_unknown`, `invalid_params` (your validator refused),

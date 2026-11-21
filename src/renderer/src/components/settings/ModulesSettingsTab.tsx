@@ -51,7 +51,7 @@ import {
   RejectedFolders,
   type ExtensionActions,
 } from './ThirdPartyModuleList'
-import { TrustReviewDialog } from './TrustReviewDialog'
+import { ApprovalReviewDialog } from './ApprovalReviewDialog'
 import { useThirdPartyExtensions } from './useThirdPartyExtensions'
 import { copy as appCopy } from '../../../../shared/copy'
 
@@ -61,7 +61,7 @@ import { copy as appCopy } from '../../../../shared/copy'
 // The page title and two header actions; a restart line when an extension
 // waits on the next launch; the search and the filter; then the extensions a
 // person installed — the ones that need review before anything else, then the
-// trusted ones with their one switch — and the built-in modules folded away
+// approved ones with their one switch — and the built-in modules folded away
 // below. Short, factual labels and nothing explaining the page to itself.
 
 // "Later" holds for the rest of the session, for the extensions it was
@@ -227,6 +227,15 @@ export function ModulesSettingsTab(): JSX.Element {
   const [builtInExpanded, setBuiltInExpanded] = useState(false)
   const [installFromGitHub, setInstallFromGitHub] = useState(false)
   const [reviewing, setReviewing] = useState<ThirdPartyModuleView | null>(null)
+  // A folder just installed that waits for approval opens its review at once.
+  const { awaitingReview, clearAwaitingReview, modules: installedModules } = extensions
+  useEffect(() => {
+    if (!awaitingReview) return
+    const installed = installedModules.find((candidate) => candidate.manifest.id === awaitingReview)
+    if (!installed) return
+    clearAwaitingReview()
+    setReviewing(installed)
+  }, [awaitingReview, clearAwaitingReview, installedModules])
   const [detailsFor, setDetailsFor] = useState<string | null>(null)
   const [restartDismissed, setRestartDismissed] = useState<string | null>(restartDismissedFor)
   const ids = { review: useId(), installed: useId(), builtIn: useId(), builtInList: useId() }
@@ -278,10 +287,6 @@ export function ModulesSettingsTab(): JSX.Element {
       setReviewing(module)
     },
     onSetEnabled: setModuleEnabled,
-    onRevokeTrust: (module) => {
-      setDetailsFor(null)
-      void extensions.revokeTrust(module)
-    },
     onUninstall: extensions.uninstall
       ? (module) => {
           setDetailsFor(null)
@@ -459,7 +464,7 @@ export function ModulesSettingsTab(): JSX.Element {
         </section>
       ) : null}
 
-      <TrustReviewDialog
+      <ApprovalReviewDialog
         module={reviewing}
         icon={reviewing ? <ExtensionMark module={reviewing} doorIcon={null} size={40} /> : null}
         meta={
@@ -473,9 +478,9 @@ export function ModulesSettingsTab(): JSX.Element {
         standard={reviewAccess.standard}
         busy={reviewing !== null && extensions.pendingId === reviewing.manifest.id}
         onCancel={() => setReviewing(null)}
-        onTrust={() => {
+        onApprove={() => {
           if (!reviewing) return
-          void extensions.trustAndEnable(reviewing).then((ok) => {
+          void extensions.approveAndEnable(reviewing).then((ok) => {
             if (ok) setReviewing(null)
           })
         }}

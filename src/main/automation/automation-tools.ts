@@ -3132,28 +3132,29 @@ function registeredModuleReport(
     installed: true,
     enabled: entry.enabled,
     absence: entry.absence,
-    ...(view ? { trust: view.trust, launch: thirdPartyLaunchReport(view) } : {}),
+    ...(view ? { approval: view.approval.state, signature: view.signature, launch: thirdPartyLaunchReport(view) } : {}),
   }
 }
 
 // Installed on disk, absent from the renderer registry: the module never
-// loaded, so everything reported about it comes from main's own trust and
+// loaded, so everything reported about it comes from main's own approval and
 // launch classification.
 function installedOnlyModuleReport(view: ThirdPartyModuleView): Record<string, unknown> {
   const id = view.manifest.id
+  const runs = view.approval.state === 'approved' || view.approval.state === 'not-needed'
   const absence =
-    view.trust === 'invalid'
+    view.signature === 'invalid'
       ? { reason: 'invalid_signature', message: `Extension "${id}" has an invalid signature and will not load.` }
-      : view.trust === 'trusted'
+      : runs
         ? {
             reason: 'not_loaded',
             message:
               view.launch.message ??
-              `Extension "${id}" is installed and trusted but registered nothing in the running app.`,
+              `Extension "${id}" is installed and approved but registered nothing in the running app.`,
           }
         : {
-            reason: 'untrusted',
-            message: `Extension "${id}" is installed but not trusted yet (Settings → Extensions).`,
+            reason: 'unapproved',
+            message: `Extension "${id}" is installed but waits for your approval (Settings → Extensions).`,
           }
   return {
     id,
@@ -3167,7 +3168,8 @@ function installedOnlyModuleReport(view: ThirdPartyModuleView): Record<string, u
     installed: true,
     enabled: false,
     absence,
-    trust: view.trust,
+    approval: view.approval.state,
+    signature: view.signature,
     launch: thirdPartyLaunchReport(view),
   }
 }

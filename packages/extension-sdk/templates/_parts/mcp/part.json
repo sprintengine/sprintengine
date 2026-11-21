@@ -6,7 +6,7 @@
     "main"
   ],
   "permissions": [
-    "mcp:tools"
+    "tools:contribute"
   ],
   "contributes": {
     "mcpTools": [

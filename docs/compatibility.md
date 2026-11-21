@@ -244,9 +244,55 @@ this file, even though nothing crosses a network.
   registers for it.
 - **Signatures.** `extension.sig` beside the manifest holds the sha256 of every
   file the extension ships (extension.json included) and an ed25519 signature
-  over them. Until approvals replace it, it is the trust gate: an extension
-  signed by a trusted publisher key runs; any other runs once the person
-  trusts its content as installed.
+  over them. It is a badge: a signature by a trusted publisher key shows as
+  verified. A signature its files do not match keeps the extension from
+  running; no signature lets one run.
+- **Permissions and approvals.** `permissions` is a closed vocabulary
+  (`EXTENSION_PERMISSIONS`), and every host method an extension can call has a
+  row in the SDK's table (`EXTENSION_HOST_SERVICES`,
+  `EXTENSION_MAIN_HOST_METHODS`): the permission the extension's approval must
+  hold, and what whoever invoked it must hold, in the Studio protocol's
+  permission names. Studio's gate checks both on every call and answers
+  `not_permitted` or `approval_required`. Anything above the `content` tier
+  runs only once the person approved its fingerprint (permissions, tier,
+  worker, background, and the content of its files); an update keeps the
+  approval when it asks for no more. Adding a method adds its row; changing a
+  row's requirement is a change to what an approved extension may do, and is
+  said here.
+
+### Permissions checked at the host; approvals replace trust (no compatibility)
+
+The permission vocabulary changed at once (owner ruling: there are no users
+yet), and nothing maps the old names: `filesystem:*`, `process:spawn`,
+`network`, `ipc:*`, `module:bridge`, `backlog.*`, `scheduled-agents.manage`,
+`storage`, `secrets`, `github`, `mcp:tools` and `conversation:operate` /
+`conversation:read-all` are refused by the validator. Their places are taken
+by `workspace:read`, `workspace:operate`, `backlog:read`, `backlog:operate`,
+`schedules:own`, `storage:own`, `settings:own`, `secrets:own`,
+`notifications:show`, `github:api`, `tools:contribute`, `conversation:own`
+and `conversation:read` (every chat, read only). An extension's own methods
+need no permission. The services' refusal code `permission_missing` is gone;
+a refused call answers `not_permitted` or `approval_required`.
+
+The trust store (`trusted-modules.json`) is gone, and nothing reads it:
+earlier grants approve nothing, and every extension above `content` waits for
+the person's approval once. Approvals live in `extension-approvals.json` in
+the data folder. A bundle's or a provider's signed manifest is trusted only by
+a trusted publisher key; the person's grant of a manifest is gone with the
+store.
+
+On the Studio protocol: `extension.setTrust` is gone, and
+`extension.approve {moduleId, fingerprint, commandId}` (an owner's) takes its
+place; it is refused when the extension changed since the fingerprint was
+shown. `extension.install` answers `approval` (`not-needed`, `pending` with
+the `fingerprint` to approve, or `approved` when an update kept it) instead of
+`trust`. `extension.installed` answers each extension's `approval` and
+`signature` (`verified`, `signed`, `unsigned` or `invalid`) and `signer`
+instead of `trust`, `fingerprint` and `trustedVia`; its launch statuses are
+`runs_worker`, `runs_without_worker`, `awaiting_approval`, `blocked_invalid`
+and `launch_error`, and the resolver's `untrusted` is `unapproved`. A client
+and a Studio on either side of the change see each other's extensions as
+broken or waiting, and nothing says more than that.
 
 ### extension.json replaces manifest.json (no compatibility)
 
@@ -887,7 +933,7 @@ Studio are one build.
 `extension-host` (2026-11-18) is the `modules` capability renamed, with
 everything it offered: modules are called extensions everywhere a person or a
 client reads it. Its methods are `extension.read`, `.operate`, `.list`,
-`.setEnabled`, `.install`, `.setTrust`, `.uninstall`, `.installed`,
+`.setEnabled`, `.install`, `.setTrust` (since replaced by `.approve`), `.uninstall`, `.installed`,
 `.rendererEntries`, `.setAppState` and `.reportRegistry`, its streams
 `extension.events`, `.notifications` and `.changed`, the host services
 `extensionBacklog.*` and `extensionUsage.query`, under the scopes

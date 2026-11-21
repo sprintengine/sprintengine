@@ -16,8 +16,9 @@ import { ScheduledAgentsServiceToken } from './module-host/service-tokens'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from './modules/agent-runtime-module'
 import type { CapabilityManifest } from '../shared/modules/manifest'
 import { SCHEDULED_AGENTS_MANIFEST, scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
-import { isLoadEligible, type ModuleTrustContext } from './modules/module-signature'
-import { readModuleTrustContextSync } from './modules/trust-context'
+import { isExtensionRunnable, type ExtensionStandingContext } from './modules/module-signature'
+import { createExtensionApprovalReader } from './modules/extension-approvals'
+import { readExtensionStandingContextSync } from './modules/extension-standing-context'
 import {
   planThirdPartyMainModules,
   readThirdPartyMainLaunchSnapshot,
@@ -134,7 +135,7 @@ const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
 const moduleOverrides = readModuleEnablementOverrides()
 
 const thirdPartyMainLoad = planThirdPartyMainModules(
-  discoverUserModulesSync(defaultUserModuleRoot(), readModuleTrustContext()),
+  discoverUserModulesSync(defaultUserModuleRoot(), readExtensionStanding()),
 )
 // Live-resolved main enablement, kept in step with the renderer's overrides (see
 // recomputeMainEnablement below). A module with no main runtime of its own — one
@@ -186,6 +187,9 @@ const moduleLoad = loadMainModules({
   // What `getAssetPath` resolves: the files each module was verified with.
   moduleVerifiedFiles: thirdPartyMainLoad.verifiedFiles,
   moduleMcpTools: thirdPartyMainLoad.mcpTools,
+  // What each extension runs under; its calls are refused once that approval is gone.
+  extensionApprovals: thirdPartyMainLoad.approvals,
+  currentApprovals: createExtensionApprovalReader(app.getPath('userData')),
   ineligible: thirdPartyMainLoad.ineligible,
   launchErrors: thirdPartyMainLoad.launchErrors,
   // Module events reach every client following the Studio's `extension.events`
@@ -203,7 +207,7 @@ services.moduleHub.readRecentFrom(() => moduleLoad.kernel.recentNotifications())
 // A module's declared methods, called over the Studio RPC's `extension.read` and `extension.operate`.
 services.moduleHub.serveCallsFrom((request) => moduleLoad.kernel.callModuleMethod(request))
 // The host's services a module's window half calls: `extensionBacklog.*` and `extensionUsage.query`.
-services.moduleHub.serveHostServicesFrom((moduleId) => moduleLoad.kernel.hostServicesFor(moduleId))
+services.moduleHub.serveHostServicesFrom((moduleId, invoker) => moduleLoad.kernel.hostServicesFor(moduleId, invoker))
 // The manifest universe the enablement gate resolves against — every main module
 // present on this channel, so a module and its dependencies (scheduled agents,
 // agent-runtime) all resolve. Recompute mirrors the renderer's
@@ -332,12 +336,12 @@ void app.whenReady().then(() => {
     MODULE_ASSET_SCHEME,
     createModuleAssetHandler({
       assetOrigin: moduleAssetOrigin,
-      discoverModules: () => discoverUserModules(defaultUserModuleRoot(), readModuleTrustContext()),
+      discoverModules: () => discoverUserModules(defaultUserModuleRoot(), readExtensionStanding()),
       isEnabled: (installed, modules) => {
-        const trusted = modules.filter((module) => isLoadEligible(module.trust.status))
+        const runnable = modules.filter((module) => isExtensionRunnable(module.standing))
         const manifests = [
           ...mainModuleManifests.filter((manifest) => !modules.some((module) => module.manifest.id === manifest.id)),
-          ...trusted.map((module) => module.manifest),
+          ...runnable.map((module) => module.manifest),
         ]
         return resolveModuleEnablement(manifests, readModuleEnablementOverrides()).order.includes(installed.manifest.id)
       },
@@ -375,8 +379,8 @@ function readModuleEnablementOverrides(): Record<string, boolean> {
   }
 }
 
-function readModuleTrustContext(): ModuleTrustContext {
-  return readModuleTrustContextSync(app.getPath('userData'))
+function readExtensionStanding(): ExtensionStandingContext {
+  return readExtensionStandingContextSync(app.getPath('userData'))
 }
 
 // Everything above ran synchronously during entry evaluation: module

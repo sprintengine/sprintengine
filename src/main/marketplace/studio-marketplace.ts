@@ -18,7 +18,7 @@ import { SKILL_PACK_HARNESSES } from '../../shared/skill-harnesses'
 import type { SkillHarness } from '../../shared/skills'
 import { writeDiagnosticLog } from '../diagnostics-service'
 import type { McpConfigService } from '../mcp-config-service'
-import { readModuleTrustContextSync } from '../modules/trust-context'
+import { readExtensionStandingContextSync } from '../modules/extension-standing-context'
 import { githubReviewChanges, resolveGithubExtension } from './github-extension-source'
 import {
   defaultMarketplacePluginStagingRoot,
@@ -111,7 +111,7 @@ const marketplaceLog: MarketplaceInstallLog = (event, detail) => {
 const APPROVAL_SPENT = 'Your approval for this extension expired or was already used. Review it again to install.'
 
 export function createStudioMarketplace(deps: StudioMarketplaceDeps): StudioMarketplace {
-  const trustContext = () => readModuleTrustContextSync(deps.dataDir())
+  const trustContext = () => readExtensionStandingContextSync(deps.dataDir())
   const fetcher = deps.fetcher ? { fetcher: deps.fetcher } : {}
   // Built when first needed: a Studio nobody installs on pays for neither.
   let built:

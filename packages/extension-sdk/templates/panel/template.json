@@ -3,7 +3,7 @@
   "title": "Panel",
   "summary": "A notes panel in a workspace's pane, saved in the extension's app state.",
   "permissions": [
-    "storage"
+    "settings:own"
   ],
   "capabilities": [
     "panel",

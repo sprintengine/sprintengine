@@ -30,7 +30,7 @@ export function extensionManifest(overrides: Record<string, unknown> = {}): Reco
     tier: 'worker',
     name: 'Demo',
     description: 'A demo.',
-    permissions: ['storage'],
+    permissions: ['storage:own'],
     main: 'dist/main.cjs',
     ...overrides,
   }

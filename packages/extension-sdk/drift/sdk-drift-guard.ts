@@ -39,7 +39,6 @@ import type {
 } from '../../../src/shared/scheduled-agents'
 import type { ScheduledAgentsModuleRegistry as AppScheduledAgentsModuleRegistry } from '../../../src/main/scheduled-agents/service'
 import type { CapabilityPermission as AppCapabilityPermission } from '../../../src/shared/modules/permissions'
-import { KNOWN_CAPABILITY_PERMISSIONS as APP_KNOWN_CAPABILITY_PERMISSIONS } from '../../../src/shared/modules/permissions'
 import { isStudioModuleMethodName } from '../../studio-protocol/src/modules'
 import type { ModuleEventEnvelope as AppModuleEventEnvelope } from '../../../src/shared/modules/events'
 import type { FileDropPayload as AppFileDropPayload } from '../../../src/renderer/src/utils/terminalDrop'
@@ -177,7 +176,6 @@ import type {
   WorkspaceFileWatchEvent as SdkWorkspaceFileWatchEvent,
 } from '../src/index'
 import {
-  KNOWN_CAPABILITY_PERMISSIONS as SDK_KNOWN_CAPABILITY_PERMISSIONS,
   SPRINTENGINE_FILE_DROP_MIME as SDK_FILE_DROP_MIME,
   WorkspaceContextToken as SdkWorkspaceContextToken,
   WorkspaceServiceToken as SdkWorkspaceServiceToken,
@@ -202,7 +200,12 @@ import type { BacklogItem as AppBacklogItem } from '../../../src/shared/backlog/
 import type * as appRendererHost from '../../../src/renderer/src/modules/renderer-host'
 import type * as appNotifications from '../../../src/shared/modules/notifications'
 // The published service table and the testing kit (see the end of this file).
-import { MODULE_SERVICE_REQUIREMENTS as SDK_MODULE_SERVICE_REQUIREMENTS } from '../src/services'
+import {
+  EXTENSION_HOST_SERVICES as SDK_EXTENSION_HOST_SERVICES,
+  EXTENSION_MAIN_HOST_METHODS as SDK_EXTENSION_MAIN_HOST_METHODS,
+} from '../src/services'
+import { EXTENSION_PERMISSIONS as SDK_EXTENSION_PERMISSIONS } from '../src/permissions'
+import { isStudioPermission } from '../../studio-protocol/src/permissions'
 import {
   MODULE_METHOD_MAX_CHARS as SDK_MODULE_METHOD_MAX_CHARS,
   isModuleMethodName as sdkIsModuleMethodName,
@@ -580,11 +583,6 @@ expectType<Extends<AppCompanionAgentEvent, SdkCompanionAgentEvent>>()
 expectType<IsExact<keyof AppCompanionAgentEvent, keyof SdkCompanionAgentEvent>>()
 
 // Mirrored value exports must stay identical (run via test:sdk:drift).
-assert.deepEqual(
-  [...SDK_KNOWN_CAPABILITY_PERMISSIONS],
-  [...APP_KNOWN_CAPABILITY_PERMISSIONS],
-  'KNOWN_CAPABILITY_PERMISSIONS drifted between SDK and app',
-)
 assert.equal(SDK_FILE_DROP_MIME, APP_FILE_DROP_MIME, 'SPRINTENGINE_FILE_DROP_MIME drifted between SDK and app')
 // A method name the SDK lets a module declare is one the protocol carries, and no other.
 assert.equal(SDK_MODULE_METHOD_MAX_CHARS, 100)
@@ -721,22 +719,33 @@ const sdkPackageJson = JSON.parse(
 
 // ── The service table and the testing kit ────────────────────────────────────
 //
-// MODULE_SERVICE_REQUIREMENTS is what a scaffolded project's smoke test and
-// the `/testing` fakes check a module against: one row per service a
-// third-party module may resolve. It must cover the host's allow-list exactly,
-// and name only permissions the host knows.
+// EXTENSION_HOST_SERVICES is what the host's gate checks every call against,
+// and what the `/testing` fakes apply: one row per service an extension may
+// resolve. It must cover the host's allow-list exactly, and name only
+// permissions extension.json may ask for, and of an invoker only the Studio
+// protocol's permissions (or `owner`).
 assert.deepEqual(
-  SDK_MODULE_SERVICE_REQUIREMENTS.map((requirement) => requirement.key).sort(),
+  SDK_EXTENSION_HOST_SERVICES.map((service) => service.key).sort(),
   [...APP_THIRD_PARTY_SERVICE_KEYS].sort(),
-  'MODULE_SERVICE_REQUIREMENTS must have one row per service on the host’s third-party allow-list',
+  'EXTENSION_HOST_SERVICES must have one row per service on the host’s third-party allow-list',
 )
-for (const requirement of SDK_MODULE_SERVICE_REQUIREMENTS) {
-  for (const permission of requirement.permissions) {
+const allRequirements = [
+  ...SDK_EXTENSION_HOST_SERVICES.flatMap((service) =>
+    Object.entries(service.methods).map(([name, requirement]) => [`${service.key}.${name}`, requirement] as const),
+  ),
+  ...Object.entries(SDK_EXTENSION_MAIN_HOST_METHODS),
+]
+for (const [name, requirement] of allRequirements) {
+  if (requirement.extension !== null)
     assert.ok(
-      APP_KNOWN_CAPABILITY_PERMISSIONS.includes(permission),
-      `MODULE_SERVICE_REQUIREMENTS names "${permission}" for ${requirement.key}, which the host does not know`,
+      (SDK_EXTENSION_PERMISSIONS as readonly string[]).includes(requirement.extension),
+      `${name} needs "${requirement.extension}" of an extension, which extension.json cannot ask for`,
     )
-  }
+  if (requirement.invoker !== null && requirement.invoker !== 'owner')
+    assert.ok(
+      isStudioPermission(requirement.invoker),
+      `${name} needs "${requirement.invoker}" of an invoker, which no principal holds`,
+    )
 }
 for (const subpath of ['./testing', './extension.schema.json']) {
   assert.ok(sdkPackageJson.exports[subpath], `@sprintengine/extension-sdk is missing the "${subpath}" export`)

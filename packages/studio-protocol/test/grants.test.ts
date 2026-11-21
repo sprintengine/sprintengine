@@ -109,7 +109,7 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'extension.install',
   'extension.reportRegistry',
   'extension.setEnabled',
-  'extension.setTrust',
+  'extension.approve',
   'extension.uninstall',
   'conversationImport.import',
   'conversationImport.scan',

@@ -146,7 +146,7 @@ describe('sprintengine-extension init', () => {
     }
     assert.equal(manifest.tier, 'worker')
     assert.equal(manifest.main, 'dist/main.cjs')
-    assert.deepEqual(manifest.permissions, ['ipc:workspace-read', 'module:bridge', 'mcp:tools', 'storage'])
+    assert.deepEqual(manifest.permissions, ['workspace:read', 'tools:contribute', 'settings:own'])
     assert.deepEqual(
       manifest.contributes.settingsSections?.map((section) => section.id),
       ['settings'],
@@ -177,7 +177,7 @@ describe('sprintengine-extension init', () => {
       contributes: Record<string, Array<{ id?: string }>>
     }
     assert.equal(manifest.tier, 'worker', 'a door does not lower the tier')
-    assert.deepEqual(manifest.permissions, ['mcp:tools', 'ipc:workspace-read'])
+    assert.deepEqual(manifest.permissions, ['tools:contribute', 'workspace:read'])
     assert.deepEqual(
       manifest.contributes.doors?.map((door) => door.id),
       ['door'],

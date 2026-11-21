@@ -156,32 +156,25 @@
         "type": "string",
         "maxLength": 64,
         "enum": [
-          "filesystem:read-workspace",
-          "filesystem:write-workspace",
-          "filesystem:read-home",
-          "process:spawn",
-          "network",
-          "ipc:workspace-read",
-          "ipc:workspace-write",
-          "ipc:settings",
-          "ipc:invoke",
-          "module:bridge",
-          "backlog.read",
-          "backlog.write",
-          "backlog.link.open",
-          "scheduled-agents.manage",
-          "agents:companion",
-          "agents:generate",
-          "storage",
+          "workspace:read",
+          "workspace:operate",
           "conversation:read",
-          "conversation:operate",
+          "backlog:read",
+          "backlog:operate",
+          "providers:read",
+          "usage:read",
+          "storage:own",
+          "settings:own",
+          "secrets:own",
+          "notifications:show",
+          "conversation:own",
           "conversation:bypass",
           "chat:draft",
-          "secrets",
-          "github",
-          "mcp:tools",
-          "usage:read",
-          "conversation:read-all"
+          "schedules:own",
+          "agents:generate",
+          "agents:companion",
+          "github:api",
+          "tools:contribute"
         ]
       },
       "description": "What it asks the person to allow. `content` and `declarative` extensions hold none.",
@@ -189,7 +182,7 @@
       "x-tier": "ui",
       "examples": [
         [
-          "storage"
+          "storage:own"
         ]
       ]
     },
@@ -668,7 +661,7 @@
               "access"
             ]
           },
-          "description": "Tools agents reach through Studio’s MCP server. Needs the `mcp:tools` permission.",
+          "description": "Tools agents reach through Studio’s MCP server. Needs the `tools:contribute` permission.",
           "x-since": "0.13.0",
           "x-tier": "worker"
         },

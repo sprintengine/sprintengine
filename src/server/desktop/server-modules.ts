@@ -12,7 +12,8 @@ import {
   thirdPartyLaunchSession,
   recordThirdPartyMainLaunchReport,
 } from '../../main/modules/third-party-main-loader'
-import { readModuleTrustContextSync } from '../../main/modules/trust-context'
+import { readExtensionStandingContextSync } from '../../main/modules/extension-standing-context'
+import { createExtensionApprovalReader } from '../../main/modules/extension-approvals'
 import { defaultUserModuleRoot, discoverUserModulesSync } from '../../main/modules/user-module-registry'
 import { watchUserModuleRoot } from '../../main/modules/user-module-watch'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
@@ -32,7 +33,7 @@ import { installElectronRequireGuard } from './electron-require-guard'
 // services.
 //
 // What runs here is changed through the Studio RPC (`extension.setEnabled`,
-// `.install`, `.setTrust`, `.uninstall`, main/modules/module-lifecycle.ts):
+// `.install`, `.approve`, `.uninstall`, main/modules/module-lifecycle.ts):
 // enablement applies live where a module can load live; what is installed
 // and trusted is read at the next start. The marketplace installs here too
 // (`marketplace.*`, the core's extensions).
@@ -80,9 +81,9 @@ export function createServerModules(deps: {
           message: `Extension "${request.moduleId}" is not running on this Studio.`,
         },
   )
-  hub.serveHostServicesFrom((moduleId) =>
+  hub.serveHostServicesFrom((moduleId, invoker) =>
     load
-      ? load.kernel.hostServicesFor(moduleId)
+      ? load.kernel.hostServicesFor(moduleId, invoker)
       : { ok: false, code: 'extension_unavailable', message: `Extension "${moduleId}" is not running on this Studio.` },
   )
   let load: LoadMainModulesResult | null = null
@@ -153,7 +154,7 @@ export function createServerModules(deps: {
       // Workers run here without Electron: one that requires it is refused at
       // the require and reported as skipped.
       const thirdParty = planThirdPartyMainModules(
-        discoverUserModulesSync(defaultUserModuleRoot(), readModuleTrustContextSync(dataDir)),
+        discoverUserModulesSync(defaultUserModuleRoot(), readExtensionStandingContextSync(dataDir)),
         { electronMain: false },
       )
       installElectronRequireGuard(() => Object.values(thirdParty.moduleRoots))
@@ -196,6 +197,9 @@ export function createServerModules(deps: {
         moduleRoots: thirdParty.moduleRoots,
         moduleVerifiedFiles: thirdParty.verifiedFiles,
         moduleMcpTools: thirdParty.mcpTools,
+        // What each extension runs under; its calls are refused once that approval is gone.
+        extensionApprovals: thirdParty.approvals,
+        currentApprovals: createExtensionApprovalReader(dataDir),
         ineligible: thirdParty.ineligible,
         launchErrors: thirdParty.launchErrors,
         deliverModuleEvent: (event) => hub.deliverEvent(event),

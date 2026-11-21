@@ -91,9 +91,9 @@ export const CompanionAgentsModuleServiceToken = createServiceToken<CompanionAge
   'companion-agents.module-service',
 )
 // The moduleId-scoped conversation registry: chats a module creates, drives
-// and reads, checked per call against `conversation:read` /
-// `conversation:operate` and the chat's owner. Key mirrors the private token
-// behind the SDK's getConversationService helper.
+// and reads, held to the chat's owner (`conversation:own` is the host's gate,
+// extension-host-gate.ts). Key mirrors the private token behind the SDK's
+// getConversationService helper.
 export const ConversationModuleServiceToken =
   createServiceToken<ModuleConversationRegistry>('conversation.module-service')
 // Headless text generation per module (`agents:generate`): one prompt, no
@@ -106,17 +106,17 @@ export const TextGenerationModuleServiceToken = createServiceToken<ModuleTextGen
 // lists them: what MainHost.listChatRuntimes answers. App-internal; the host
 // method is a module's way to it.
 export const ChatRuntimesToken = createServiceToken<() => Promise<ModuleChatRuntimeOption[]>>(CHAT_RUNTIMES_SERVICE_KEY)
-// Per-module brokered secrets (`secrets` permission). Key mirrors the private
+// Per-module brokered secrets (`secrets:own` permission). Key mirrors the private
 // token behind the SDK's getSecretsService helper.
 export const ModuleSecretsServiceToken = createServiceToken<ModuleSecretsRegistry>('module-secrets.module-service')
-// The signed-in user's GitHub, brokered per module (`github` permission). Key
+// The signed-in user's GitHub, brokered per module (`github:api` permission). Key
 // mirrors the private token behind the SDK's getGitHubService helper.
 export const GitHubModuleServiceToken = createServiceToken<ModuleGitHubRegistry>('github.module-service')
 // ── Backlog, usage and activity services ──
 // Each key mirrors the private token behind its SDK helper
-// (getBacklogService, getUsageService, getActivityService); each registry
-// checks its permission on every call (`backlog.read`/`backlog.write`,
-// `usage:read`, `conversation:read-all`).
+// (getBacklogService, getUsageService, getActivityService); the host's gate
+// checks their permissions on every call (`backlog:read`/`backlog:operate`,
+// `usage:read`, `conversation:read`).
 export const BacklogModuleServiceToken = createServiceToken<ModuleBacklogRegistry>('backlog.module-service')
 export const UsageModuleServiceToken = createServiceToken<ModuleUsageRegistry>('usage.module-service')
 export const ActivityModuleServiceToken = createServiceToken<ModuleActivityRegistry>('activity.module-service')

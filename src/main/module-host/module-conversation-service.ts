@@ -7,13 +7,11 @@
 // or another module's, is answered `not_owned` — the same answer as a ref
 // naming nothing, so a module cannot probe for chats it may not see.
 //
-// Permissions are read per call from the module's declared list, never cached:
-// `conversation:read` covers subscribe, transcript, list and watch;
-// `conversation:operate` covers everything and implies read. The calls that
-// answer a result say `permission_missing`; the ones that cannot (subscribe,
-// follow, list, watch) throw, since calling them without the permission is a
-// mistake in the module and not a state of the world. A malformed ref or
-// cursor is the same kind of mistake. A chat that is not known yet is not:
+// Whether an extension may call a method at all is the host's gate
+// (extension-host-gate.ts): its approval must hold `conversation:own`, and
+// whoever invoked it what the method needs. A malformed ref or cursor is a
+// mistake in the module and throws where a call has no failure shape. A chat
+// that is not known yet is not a mistake:
 // `subscribe` and `follow` attach to it and deliver from the moment it is
 // known to be the module's (a saved chat whose workspace the host has not
 // loaded at startup), and a ref naming nothing of the module's delivers
@@ -21,7 +19,7 @@
 //
 // A module picks any of the four presets for its chats, up to a ceiling:
 // `auto`, or `bypass` for a module that declared `conversation:bypass`, so the
-// consent prompt says so before the person trusts it. A preset above the
+// approval says so before the person approves it. A preset above the
 // ceiling is lowered to it rather than refused, as the tool-caller cap lowers
 // one, and the answer names the preset in force. A preset left out takes the
 // person's own default, which is theirs to choose and is not capped here.
@@ -95,7 +93,7 @@ import {
 } from '../../../packages/conversation-protocol/src/public'
 import { redactEvent } from '../companion-agent-service'
 import type { ConversationLaunchRequest, ConversationLaunchResult } from '../conversation-launch-service'
-import { clampToModuleToolCaller } from './module-tool-caller'
+import { clampToInvoker } from './extension-invocation'
 
 /** A workspace as the service reads it: its folder and its agent records. */
 export type ModuleConversationWorkspace = {
@@ -159,8 +157,8 @@ export type ModuleConversationDeps = {
   getCliRuntimes?: () => ConversationCliRuntimeOverrides | undefined
   /**
    * The loosest preset a chat started now may run on, or null when uncapped:
-   * the ceiling of the agent whose MCP tool call into the module is running
-   * (module-tool-caller.ts). Read at each `create`.
+   * the ceiling of whoever invoked the module's code that is running
+   * (extension-invocation.ts). Read at each `create`.
    */
   getCallerPermissionCeiling?: () => CliPermissionPreset | null
   newCommandId?: () => string
@@ -350,22 +348,10 @@ function actionError(error: unknown): Failure {
 export function createConversationModuleRegistry(deps: ModuleConversationDeps): ModuleConversationModuleRegistry {
   const newCommandId = deps.newCommandId ?? (() => randomUUID())
 
-  // ── Permissions and ownership ───────────────────────────────────────────
+  // ── Ceiling and ownership ───────────────────────────────────────────
 
   function declared(moduleId: string): readonly string[] {
     return deps.getModulePermissions(moduleId) ?? []
-  }
-  function canOperate(moduleId: string): boolean {
-    return declared(moduleId).includes('conversation:operate')
-  }
-  function canRead(moduleId: string): boolean {
-    return canOperate(moduleId) || declared(moduleId).includes('conversation:read')
-  }
-  function missing(moduleId: string, permission: 'conversation:read' | 'conversation:operate'): Failure {
-    return failure('permission_missing', `Extension "${moduleId}" must declare the "${permission}" permission.`)
-  }
-  function requireRead(moduleId: string): void {
-    if (!canRead(moduleId)) throw new Error(missing(moduleId, 'conversation:read').message)
   }
   // A preset the module asked for, lowered to its own ceiling and then to the
   // ceiling of the agent whose tool call into the module is running, if any:
@@ -376,7 +362,7 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
   ): ModuleConversationPermissionPreset | undefined {
     const ceiling = moduleConversationCeiling(declared(moduleId))
     const own = requested && isLooserCliPermissionPreset(requested, ceiling) ? ceiling : requested
-    return clampToModuleToolCaller(own, deps.getCallerPermissionCeiling?.() ?? null)
+    return clampToInvoker(own, deps.getCallerPermissionCeiling?.() ?? null)
   }
 
   // Whether a module may name tools its chats use without asking: only one
@@ -544,8 +530,8 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
     }
     if (input.allowedTools?.length && !mayAllowTools(moduleId)) {
       return failure(
-        'permission_missing',
-        `Extension "${moduleId}" must declare "conversation:bypass" to let a chat use tools without asking.`,
+        'not_permitted',
+        `Extension "${moduleId}" must be approved for "conversation:bypass" to let a chat use tools without asking.`,
       )
     }
     const worktree = input.worktree
@@ -675,7 +661,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
   function refreshWatchers(onlyModule?: string): void {
     for (const watcher of watchers) {
       if (onlyModule && watcher.moduleId !== onlyModule) continue
-      if (!canRead(watcher.moduleId)) continue
       const list = listOwned(watcher.moduleId, watcher.filter)
       const serialized = JSON.stringify(list)
       if (serialized === watcher.last) continue
@@ -693,9 +678,9 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
     if (listeners && listeners.size > 0) {
       const redacted = redactEvent(event)
       for (const subscriber of [...listeners]) {
-        // Read live: a permission narrowed, or a chat's record gone, stops the
+        // Read live: a chat's record gone stops the
         // stream at the next event.
-        if (!canRead(subscriber.moduleId) || !findOwned(subscriber.moduleId, subscriber.ref)) continue
+        if (!findOwned(subscriber.moduleId, subscriber.ref)) continue
         try {
           subscriber.cb(redacted)
         } catch {
@@ -737,7 +722,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
     moduleId: string,
     ref: ModuleConversationRef,
   ): Promise<ModuleConversationResult<{ events: ModuleConversationEvent[] }>> {
-    if (!canRead(moduleId)) return missing(moduleId, 'conversation:read')
     if (!isRef(ref)) return notOwned(ref)
     const owned = findOwned(moduleId, ref)
     if (!owned) return notOwned(ref)
@@ -759,7 +743,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
   function forModule(moduleId: string): ModuleConversationService {
     return {
       async create(input: ModuleConversationCreateInput) {
-        if (!canOperate(moduleId)) return missing(moduleId, 'conversation:operate')
         if (typeof input !== 'object' || input === null) return failure('invalid_input', 'create takes an object.')
         if (input.commandId !== undefined && !isCommandId(input.commandId)) return badCommandId()
         if (input.commandId === undefined) return createNow(moduleId, input)
@@ -781,7 +764,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
       },
 
       async send(ref, input) {
-        if (!canOperate(moduleId)) return missing(moduleId, 'conversation:operate')
         if (!isRef(ref)) return failure('invalid_input', 'A conversation ref names its workspaceId and agentId.')
         if (typeof input?.message !== 'string' || (!input.message.trim() && !input.attachments?.length)) {
           return failure('invalid_input', '"message" is required.')
@@ -811,7 +793,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
       },
 
       async interrupt(ref, options) {
-        if (!canOperate(moduleId)) return missing(moduleId, 'conversation:operate')
         if (!isRef(ref) || !findOwned(moduleId, ref)) return notOwned(ref)
         if (options?.commandId !== undefined && !isCommandId(options.commandId)) return badCommandId()
         const live = liveSession(ref)
@@ -825,7 +806,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
       },
 
       async respondToApproval(ref, input) {
-        if (!canOperate(moduleId)) return missing(moduleId, 'conversation:operate')
         if (!isRef(ref) || !findOwned(moduleId, ref)) return notOwned(ref)
         if (typeof input?.requestId !== 'string') return failure('invalid_input', '"requestId" is required.')
         if (input.decision !== undefined && !APPROVAL_DECISIONS.has(input.decision)) {
@@ -871,7 +851,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
       },
 
       async answerQuestion(ref, input) {
-        if (!canOperate(moduleId)) return missing(moduleId, 'conversation:operate')
         if (!isRef(ref) || !findOwned(moduleId, ref)) return notOwned(ref)
         if (typeof input?.requestId !== 'string') return failure('invalid_input', '"requestId" is required.')
         if (!isAnswers(input.answers)) {
@@ -882,7 +861,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
       },
 
       async resolvePlan(ref, input) {
-        if (!canOperate(moduleId)) return missing(moduleId, 'conversation:operate')
         if (!isRef(ref) || !findOwned(moduleId, ref)) return notOwned(ref)
         if (typeof input?.requestId !== 'string') return failure('invalid_input', '"requestId" is required.')
         if (input.decision !== 'approve' && input.decision !== 'reject') {
@@ -893,7 +871,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
       },
 
       async setPermissionPreset(ref, preset, options) {
-        if (!canOperate(moduleId)) return missing(moduleId, 'conversation:operate')
         if (!isRef(ref)) return notOwned(ref)
         if (!isPermissionPreset(preset)) {
           return failure('invalid_input', 'The preset must be "none", "manual", "auto" or "bypass".')
@@ -948,7 +925,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
       },
 
       async setModel(ref, modelId, options) {
-        if (!canOperate(moduleId)) return missing(moduleId, 'conversation:operate')
         if (!isRef(ref)) return notOwned(ref)
         if (typeof modelId !== 'string' || !modelId.trim()) return failure('invalid_input', 'A model id is required.')
         if (options?.commandId !== undefined && !isCommandId(options.commandId)) return badCommandId()
@@ -985,7 +961,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
       },
 
       async stop(ref) {
-        if (!canOperate(moduleId)) return missing(moduleId, 'conversation:operate')
         if (!isRef(ref) || !findOwned(moduleId, ref)) return notOwned(ref)
         const live = liveSession(ref)
         if (!live) return { ok: true }
@@ -993,7 +968,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
       },
 
       subscribe(ref, cb) {
-        requireRead(moduleId)
         if (!isRef(ref)) throw new Error('A conversation ref names its workspaceId and agentId.')
         // Attached whether or not the chat is known yet: at startup a saved
         // chat's workspace may not be loaded, and a subscribe made then would
@@ -1016,7 +990,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
       },
 
       follow(ref, options, onFrame) {
-        requireRead(moduleId)
         if (!isRef(ref)) throw new Error('A conversation ref names its workspaceId and agentId.')
         const cursor = followCursor(options)
         if (typeof cursor === 'string') throw new Error(cursor)
@@ -1052,9 +1025,9 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
             },
             (frame) => {
               if (!open) return
-              // Read live, as `subscribe` reads it: a permission narrowed, or a
-              // chat's record gone, ends the stream with a sentence.
-              if (!canRead(moduleId) || !findOwned(moduleId, followed)) {
+              // Read live, as `subscribe` reads it: a chat's record gone ends
+              // the stream with a sentence.
+              if (!findOwned(moduleId, followed)) {
                 close()
                 deliver({ type: 'error', message: 'This conversation is no longer readable by this module.' })
                 return
@@ -1070,7 +1043,7 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
         // as `subscribe` attaches to it. Until then the follow delivers
         // nothing, which is also all a ref to another's chat ever gets.
         function retry(): void {
-          if (!open || !canRead(moduleId)) return
+          if (!open) return
           const known = findOwned(moduleId, followed)
           if (!known) return
           pendingFollows.delete(retry)
@@ -1090,7 +1063,6 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
       transcript: (ref) => transcriptFor(moduleId, ref),
 
       async reply(ref, turnId) {
-        if (!canRead(moduleId)) return missing(moduleId, 'conversation:read')
         if (turnId !== undefined && (typeof turnId !== 'string' || !turnId.trim())) {
           return failure('invalid_input', '"turnId" must be a turn id when provided.')
         }
@@ -1100,12 +1072,10 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
       },
 
       list(filter) {
-        requireRead(moduleId)
         return listOwned(moduleId, filter)
       },
 
       watch(filter, cb) {
-        requireRead(moduleId)
         const list = listOwned(moduleId, filter)
         const watcher: Watcher = { moduleId, filter, cb, last: JSON.stringify(list) }
         watchers.add(watcher)

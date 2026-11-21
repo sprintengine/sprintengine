@@ -27,7 +27,7 @@ import {
   type ObjectNode,
   type SchemaNode,
 } from './manifest-schema.js'
-import { KNOWN_CAPABILITY_PERMISSIONS, type CapabilityPermission } from './permissions.js'
+import { EXTENSION_PERMISSIONS, type ExtensionPermission } from './permissions.js'
 
 export { EXTENSION_TIERS, type ExtensionTier, type ManifestIssue } from './manifest-schema.js'
 
@@ -414,7 +414,7 @@ const CONTRIBUTES: ObjectNode = {
           },
         },
       },
-      doc: 'Tools agents reach through Studio’s MCP server. Needs the `mcp:tools` permission.',
+      doc: 'Tools agents reach through Studio’s MCP server. Needs the `tools:contribute` permission.',
       since: V1,
       tier: 'worker',
     },
@@ -521,12 +521,12 @@ export const EXTENSION_MANIFEST_FIELDS: ObjectNode = {
         kind: 'array',
         max: 32,
         unique: { key: String, label: 'permission' },
-        items: { kind: 'string', max: 64, enum: KNOWN_CAPABILITY_PERMISSIONS },
+        items: { kind: 'string', max: 64, enum: EXTENSION_PERMISSIONS },
       },
       doc: 'What it asks the person to allow. `content` and `declarative` extensions hold none.',
       since: V1,
       tier: 'ui',
-      example: ['storage'],
+      example: ['storage:own'],
     },
     main: {
       node: pathNode(SCRIPT_EXTENSIONS),
@@ -589,7 +589,7 @@ export type ExtensionManifest = {
   license?: string
   repository?: string
   homepage?: string
-  permissions: CapabilityPermission[]
+  permissions: ExtensionPermission[]
   main?: string
   background?: boolean
   contributes: ExtensionContributions
@@ -682,20 +682,8 @@ function crossFieldIssues(manifest: ExtensionManifest, options: ExtensionManifes
       issues.push({ path: `${path}.door`, message: `names no contributed door: ${item.door}.` })
     }
   })
-  // A command without an action runs the worker method of its id, and the
-  // worker declares methods only under the method permission.
-  if (
-    contributes.commands.some((command) => command.action === undefined) &&
-    !manifest.permissions.some((permission) => permission === 'module:bridge' || permission === 'ipc:invoke')
-  ) {
-    issues.push({
-      path: 'contributes.commands',
-      message:
-        'a command without an action needs the "module:bridge" permission, under which its worker method is declared.',
-    })
-  }
-  if (contributes.mcpTools.length > 0 && !manifest.permissions.includes('mcp:tools')) {
-    issues.push({ path: 'contributes.mcpTools', message: 'needs the "mcp:tools" permission.' })
+  if (contributes.mcpTools.length > 0 && !manifest.permissions.includes('tools:contribute')) {
+    issues.push({ path: 'contributes.mcpTools', message: 'needs the "tools:contribute" permission.' })
   }
   const engine = manifest.engines.studio.slice(2)
   if (compareStudioVersions(engine, EXTENSION_MANIFEST_SINCE) < 0) {
@@ -746,7 +734,7 @@ export function validateExtensionManifest(
   const contributes = { ...EMPTY_CONTRIBUTIONS(), ...pickKnownPoints(cleaned.contributes) }
   const manifest = {
     ...cleaned,
-    permissions: (cleaned.permissions as CapabilityPermission[] | undefined) ?? [],
+    permissions: (cleaned.permissions as ExtensionPermission[] | undefined) ?? [],
     contributes,
   } as ExtensionManifest
   const crossIssues = crossFieldIssues(manifest, options)

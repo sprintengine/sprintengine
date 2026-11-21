@@ -534,7 +534,7 @@ async function loadRendererModuleBatch(refresh: boolean): Promise<void> {
     const served = await extensionsApi.listThirdPartyRendererEntries()
     const { loadThirdPartyRendererEntries, reconcileThirdPartyRendererEntries, rendererEntriesForRefresh } =
       await import('./third-party-loader')
-    // What the Studio no longer serves (uninstalled, untrusted) leaves first.
+    // What the Studio no longer serves (uninstalled, not approved) leaves first.
     const before = thirdPartyRendererManifests
     const kept = reconcileThirdPartyRendererEntries(before, served)
     const loaded = await loadThirdPartyRendererEntries(

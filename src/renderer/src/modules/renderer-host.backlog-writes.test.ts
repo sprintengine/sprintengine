@@ -12,7 +12,7 @@ import {
   type ModuleServiceMethod,
 } from './renderer-host'
 
-// The Backlog write methods, `queryUsage`, the `backlog.read` check and the
+// The Backlog write methods, `queryUsage`, the `backlog:read` check and the
 // watch's error channel on the renderer host.
 
 const thirdParty = (permissions: string[]): CapabilityManifest => ({
@@ -44,7 +44,7 @@ test('each Backlog write is its protocol method, naming the calling module, and 
   const { kernel, calls } = hostWithServices(async ({ method }) =>
     method === 'extensionBacklog.create' ? { ok: true, id: 'backlog/unfiled/x.md', numericId: 3 } : { ok: true },
   )
-  const host = kernel.hostFor('task-board', thirdParty(['backlog.write']))
+  const host = kernel.hostFor('task-board', thirdParty(['backlog:operate', 'backlog:read']))
   const link = { id: 'l', type: 'external' as const, label: 'L', target: { kind: 'url', id: 'u' } }
   assert.deepEqual(await host.createBacklogItem('ws-1', { title: 'X' }), {
     ok: true,
@@ -83,7 +83,7 @@ test('queryUsage is moduleUsage.query', async () => {
 })
 
 test('a call answers in the service’s words, never a throw, with no caller wired', async () => {
-  const host = createRendererHost().hostFor('task-board', thirdParty(['backlog.write']))
+  const host = createRendererHost().hostFor('task-board', thirdParty(['backlog:operate', 'usage:read']))
   const noCaller = await host.updateBacklogStatus('ws-1', 'backlog/a.md', 'ready')
   assert.equal(noCaller.ok ? null : noCaller.code, 'backlog_unavailable')
   const usage = await host.queryUsage({ from: 0, to: 1 })
@@ -116,20 +116,20 @@ test('a disabled Backlog module refuses writes without asking the server', async
   const { kernel, calls } = hostWithServices(async () => ({ ok: true }))
   kernel.hostFor('backlog').provideBacklogReader({ list: async () => [], watch: () => () => {} })
   kernel.setModuleEnablementResolver((moduleId) => moduleId !== 'backlog')
-  const result = await kernel.hostFor('task-board', thirdParty(['backlog.write'])).createBacklogItem('ws-1', {
+  const result = await kernel.hostFor('task-board', thirdParty(['backlog:operate'])).createBacklogItem('ws-1', {
     title: 'X',
   })
   assert.deepEqual(result, { ok: false, code: 'backlog_unavailable', message: 'Backlog is turned off.' })
   assert.equal(calls.length, 0)
 })
 
-test('a third-party module must declare backlog.read to list or watch', async () => {
+test('a third-party module must be approved for backlog:read to list or watch', async () => {
   const kernel = createRendererHost()
   kernel.hostFor('backlog').provideBacklogReader({ list: async () => [], watch: () => () => {} })
   const undeclared = kernel.hostFor('task-board', thirdParty([]))
-  await assert.rejects(() => undeclared.listBacklogItems('ws-1'), /"backlog\.read" permission/)
-  assert.throws(() => undeclared.watchBacklogItems('ws-1', () => {}), /"backlog\.read" permission/)
-  const declared = kernel.hostFor('task-board', thirdParty(['backlog.read']))
+  await assert.rejects(() => undeclared.listBacklogItems('ws-1'), /not approved for "backlog:read"/)
+  assert.throws(() => undeclared.watchBacklogItems('ws-1', () => {}), /not approved for "backlog:read"/)
+  const declared = kernel.hostFor('task-board', thirdParty(['backlog:read']))
   assert.deepEqual(await declared.listBacklogItems('ws-1'), [])
   // The app's own modules declare nothing and are not held to the list.
   assert.deepEqual(await kernel.hostFor('git').listBacklogItems('ws-1'), [])
@@ -148,7 +148,7 @@ test('watch errors reach onError through the kernel, and stop while the Backlog 
   let enabled = true
   kernel.setModuleEnablementResolver((moduleId) => moduleId !== 'backlog' || enabled)
   const heard: string[] = []
-  kernel.hostFor('task-board', thirdParty(['backlog.read'])).watchBacklogItems('ws-1', () => {}, {
+  kernel.hostFor('task-board', thirdParty(['backlog:read'])).watchBacklogItems('ws-1', () => {}, {
     onError: (error) => heard.push(error.code),
   })
   raise?.({ code: 'scan_failed', message: 'unreadable' })
@@ -158,7 +158,7 @@ test('watch errors reach onError through the kernel, and stop while the Backlog 
 
   // A throwing onError is contained like a throwing callback.
   enabled = true
-  kernel.hostFor('task-board', thirdParty(['backlog.read'])).watchBacklogItems('ws-1', () => {}, {
+  kernel.hostFor('task-board', thirdParty(['backlog:read'])).watchBacklogItems('ws-1', () => {}, {
     onError: () => {
       throw new Error('module bug')
     },

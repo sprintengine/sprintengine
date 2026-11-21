@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { errorMessage } from '../../../../shared/errors'
 import type { ModuleManifestIssue, ThirdPartyModuleView } from '../../../../shared/modules/manifest'
-import { getRendererHost, onThirdPartyRendererModulesLoaded, refreshThirdPartyRendererModules } from '../../modules'
+import { onThirdPartyRendererModulesLoaded, refreshThirdPartyRendererModules } from '../../modules'
 import { showToast } from '../../store/toastStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
@@ -13,7 +13,7 @@ import { extensionsApi, windowHasStudio } from '../../studio/extensions'
 import { copy } from '../../../../shared/copy'
 
 // Settings → Extensions, the third-party half. It lists what is installed,
-// and installs, trusts, revokes and uninstalls through the window's Studio
+// and installs, approves and uninstalls through the window's Studio
 // (`extension.*`), which owns what runs there. The page and its rows only
 // render what this hands them.
 
@@ -24,6 +24,10 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   const [installing, setInstalling] = useState(false)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [message, setMessage] = useState<ActionResult | null>(null)
+  // An install that waits for approval: the page opens its review once listed,
+  // so installing asks once, there and then.
+  const [awaitingReview, setAwaitingReview] = useState<string | null>(null)
+  const clearAwaitingReview = useCallback(() => setAwaitingReview(null), [])
   const forgetModules = useWorkspaceStore((state) => state.forgetModules)
   const { confirm: confirmDialog } = useConfirmDialog()
   const [lifecycle] = useState(() => windowModuleLifecycle())
@@ -47,7 +51,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   useEffect(() => {
     void load()
   }, [load])
-  // A renderer batch that landed after the first list (trust granted, a slow
+  // A renderer batch that landed after the first list (an approval, a slow
   // boot) changes what the rows say about running.
   useEffect(() => onThirdPartyRendererModulesLoaded(() => void load()), [load])
   // What is installed changed under the window: an install elsewhere, or a
@@ -70,26 +74,29 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
           })
         }
         await load()
+        if (result.approval?.state === 'pending' && result.id) setAwaitingReview(result.id)
       }
     } finally {
       setInstalling(false)
     }
   }, [lifecycle, load])
 
-  // Trust and turn on, in one step: the review is the consent, and a trusted
-  // module left off would make the person find a second switch for the same
-  // decision. Trust is still written first and on its own, so a failed grant
-  // never turns anything on.
-  const trustAndEnable = useCallback(
+  // Approve and turn on, in one step: the review is the consent, and an
+  // approved extension left off would make the person find a second switch
+  // for the same decision. The approval is written first and on its own, so a
+  // refused one never turns anything on. It names the fingerprint the review
+  // showed: an extension that changed since is refused, not approved unseen.
+  const approveAndEnable = useCallback(
     async (module: ThirdPartyModuleView): Promise<boolean> => {
-      if (!lifecycle) return false
+      if (!lifecycle || module.approval.state !== 'pending') return false
       const id = module.manifest.id
       setPendingId(id)
       setMessage(null)
       try {
-        const result = await lifecycle.setTrust(id, true)
+        const result = await lifecycle.approve(id, module.approval.fingerprint)
         if (!result.ok) {
-          setMessage({ tone: 'error', text: result.message ?? `Couldn’t trust ${module.manifest.displayName}.` })
+          setMessage({ tone: 'error', text: result.message || `Couldn’t approve ${module.manifest.displayName}.` })
+          await load()
           return false
         }
         onSetEnabled(id, true)
@@ -97,50 +104,13 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
         await load()
         return true
       } catch (error) {
-        setMessage({ tone: 'error', text: errorMessage(error, 'Couldn’t update trust.') })
+        setMessage({ tone: 'error', text: errorMessage(error, 'Couldn’t approve it.') })
         return false
       } finally {
         setPendingId(null)
       }
     },
     [lifecycle, load, onSetEnabled],
-  )
-
-  const revokeTrust = useCallback(
-    async (module: ThirdPartyModuleView) => {
-      if (!lifecycle) return
-      const id = module.manifest.id
-      // Revoking unloads the module's workspace types on next launch: name the
-      // workspaces that would lose their surface (nothing on disk is touched,
-      // and trusting it again brings them back).
-      const kernel = getRendererHost()
-      const affected = useWorkspaceStore
-        .getState()
-        .workspaces.filter((workspace) => kernel.getWorkspaceTypeModule(workspace.mode) === id)
-      if (affected.length > 0) {
-        const confirmed = await confirmDialog({
-          title: copy.settings.useThirdPartyExtensions.revokeTrustIn(module.manifest.displayName),
-          body: copy.settings.useThirdPartyExtensions.theseWorkspacesStopWorkingUntil(
-            affected.map((workspace) => workspace.name).join(', '),
-          ),
-          confirmLabel: copy.settings.useThirdPartyExtensions.revokeTrust,
-          tone: 'danger',
-        })
-        if (!confirmed) return
-      }
-      setPendingId(id)
-      setMessage(null)
-      try {
-        const result = await lifecycle.setTrust(id, false)
-        if (!result.ok) setMessage({ tone: 'error', text: result.message ?? 'Couldn’t update trust.' })
-        // Its window code is no longer served: what it added leaves now.
-        await refreshThirdPartyRendererModules()
-        await load()
-      } finally {
-        setPendingId(null)
-      }
-    },
-    [confirmDialog, lifecycle, load],
   )
 
   const canUninstall = lifecycle !== null
@@ -207,8 +177,9 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
     message,
     dismissMessage: () => setMessage(null),
     installFromFolder,
-    trustAndEnable,
-    revokeTrust,
+    approveAndEnable,
+    awaitingReview,
+    clearAwaitingReview,
     uninstall: canUninstall ? uninstall : null,
     reveal: typeof window.api.revealThirdPartyModule === 'function' ? reveal : null,
     reload: load,

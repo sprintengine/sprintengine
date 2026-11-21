@@ -26,7 +26,7 @@ import { copy } from '../../../../shared/copy'
 // name with publisher · source · signature, one warning glyph per scope that
 // needs care, its whole summary (it wraps; a one-line summary was the row's
 // most-read text cut in half), and at the trailing edge either Review (not
-// trusted yet) or its state word and the one switch. The name opens the
+// approved yet) or its state word and the one switch. The name opens the
 // details; so does a click anywhere on the row that is not one of its
 // controls. Everything rarer lives in the ⋯ menu and the details.
 
@@ -71,13 +71,13 @@ export type ExtensionDetailsProps = {
   module: ThirdPartyModuleView
   titleId: string
   icon: React.ReactNode
-  /** The state word, or the untrusted mark. */
+  /** The state word, or the mark of one waiting for approval. */
   status: React.ReactNode
   adds: ExtensionContribution[] | null
   care: AccessItem[]
   standard: AccessItem[]
   facts: Array<{ term: string; description: React.ReactNode }>
-  /** The footer: trust, files, uninstall. */
+  /** The footer: approve, files, uninstall. */
   actions: React.ReactNode
 }
 
@@ -330,10 +330,10 @@ export function InstalledTrailing({
   )
 }
 
-export function CannotTrustTrailing(): JSX.Element {
+export function CannotApproveTrailing(): JSX.Element {
   return (
     <span className="whitespace-nowrap text-meta text-[color:var(--tone-error)]">
-      {copy.settings.extensionRow.canTBeTrusted}
+      {copy.settings.extensionRow.canTBeApproved}
     </span>
   )
 }

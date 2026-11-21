@@ -2,10 +2,16 @@
 // so the module never holds it. The SDK mirrors these shapes by hand and the
 // drift guard pins the two together.
 
-// ── Secrets (permission `secrets`) ───────────────────────────────────────────
+// ── Secrets (permission `secrets:own`) ───────────────────────────────────────────
 
 export type ModuleSecretsError =
-  'permission_missing' | 'invalid_name' | 'not_set' | 'origin_not_allowed' | 'network_error' | 'storage_unavailable'
+  | 'not_permitted'
+  | 'approval_required'
+  | 'invalid_name'
+  | 'not_set'
+  | 'origin_not_allowed'
+  | 'network_error'
+  | 'storage_unavailable'
 
 export type ModuleSecretFetchInit = {
   method?: string
@@ -39,7 +45,7 @@ export type ModuleSecretsRegistry = {
   ) => ReturnType<ModuleSecretsService[K]>
 }
 
-// ── GitHub (permission `github`) ─────────────────────────────────────────────
+// ── GitHub (permission `github:api`) ─────────────────────────────────────────────
 
 /** The media types a request may ask GitHub for (`accept`); anything else is refused. */
 export type ModuleGitHubMediaType =
@@ -67,7 +73,8 @@ export type ModuleGitHubRequest = {
 }
 
 export type ModuleGitHubErrorCode =
-  | 'permission_missing'
+  | 'not_permitted'
+  | 'approval_required'
   | 'not_signed_in'
   | 'invalid_route'
   | 'invalid_query'

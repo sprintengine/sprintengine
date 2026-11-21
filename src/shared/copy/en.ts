@@ -757,14 +757,12 @@ export const en = {
     // src/renderer/src/modules/renderer-host.ts
     rendererHost: {
       theBacklogModuleIsDisabled: 'Backlog is turned off.',
-      moduleMustDeclareTheIpc: (moduleId: unknown) =>
-        `Extension "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
       workspaceGitInformationIsNot: 'Workspace git information is not available yet.',
       theWorkspaceSGitInformation: "The workspace's git information could not be read.",
       moduleDoesNotDeclareThe: (moduleId: unknown) =>
-        `Extension "${moduleId}" does not declare the "conversation:operate" permission, so it cannot open a chat and send its prompt.`,
+        `Extension "${moduleId}" was not approved for "conversation:own", so it cannot open a chat and send its prompt.`,
       moduleDeclaresNeitherChatDraft: (moduleId: unknown) =>
-        `Extension "${moduleId}" declares neither "chat:draft" nor "conversation:operate", so it cannot open a chat.`,
+        `Extension "${moduleId}" was approved for neither "chat:draft" nor "conversation:own", so it cannot open a chat.`,
       thisWindowCannotOpenA: 'This window cannot open a chat yet.',
       onlyAnAbsoluteHttpS: 'Only an absolute http(s) URL can be opened.',
       thisWindowCannotOpenLinks: 'This window cannot open links yet.',
@@ -3606,7 +3604,7 @@ export const en = {
       review: (name: unknown) => `Review ${name}`,
       review2: 'Review',
       enable: (name: unknown) => `Enable ${name}`,
-      canTBeTrusted: 'Can’t be trusted',
+      canTBeApproved: 'Can’t be approved',
     },
     // src/renderer/src/components/settings/extensionsInstalled.ts
     extensionsInstalled: {
@@ -4138,22 +4136,22 @@ export const en = {
     },
     // src/renderer/src/components/settings/ThirdPartyModuleList.tsx
     thirdPartyModuleList: {
-      trusted: 'Trusted',
-      signed: 'Signed',
-      unsigned: 'Unsigned',
+      approved: 'Approved',
+      contentOnly: 'Content only',
+      needsApproval: 'Needs approval',
+      cannotBeApproved: 'Can’t be approved',
       invalidSignature: 'Invalid signature',
       noSpecialAccess: 'No special access.',
       updateToV: 'Update to v',
       details: 'Details',
       turnOff: 'Turn off',
       turnOn: 'Turn on',
-      reviewAndTrust: 'Review and trust',
+      reviewAndApprove: 'Review and approve',
       updateToV2: (latestVersion: unknown) => `Update to v${latestVersion}`,
       showFiles: 'Show files',
       copyId: 'Copy id',
-      revokeTrust: 'Revoke trust',
       uninstall: 'Uninstall',
-      notTrusted: 'Not trusted',
+      notApproved: 'Not approved',
       noExtensionsInstalled: 'No extensions installed',
     },
     // src/renderer/src/components/settings/TicketTrackerSection.tsx
@@ -4166,16 +4164,17 @@ export const en = {
     ticketTrackersTab: {
       ticketTrackers: 'Ticket trackers',
     },
-    // src/renderer/src/components/settings/TrustReviewDialog.tsx
-    trustReviewDialog: {
-      trust: (displayName: unknown) => `Trust ${displayName}?`,
+    // src/renderer/src/components/settings/ApprovalReviewDialog.tsx
+    approvalReviewDialog: {
+      approve: (displayName: unknown) => `Approve ${displayName}?`,
+      approveAgain: (displayName: unknown) => `Approve ${displayName} again?`,
+      newInThisVersion: 'New in this version',
       needsCare: 'Needs care',
       also: 'Also',
       access: 'Access',
-      iTrustThisUnsignedCode: 'I trust this unsigned code',
       startsAfterARestart: 'Starts after a restart',
       cancel: 'Cancel',
-      trustAndTurnOn: 'Trust and turn on',
+      approveAndTurnOn: 'Approve and turn on',
     },
     // src/renderer/src/components/settings/UpdateChannelSettings.tsx
     updateChannelSettings: {
@@ -4196,10 +4195,6 @@ export const en = {
     },
     // src/renderer/src/components/settings/useThirdPartyExtensions.ts
     useThirdPartyExtensions: {
-      revokeTrustIn: (displayName: unknown) => `Revoke trust in ${displayName}?`,
-      theseWorkspacesStopWorkingUntil: (join: unknown) =>
-        `These workspaces stop working until you trust it again. Files stay on disk: ${join}.`,
-      revokeTrust: 'Revoke trust',
       uninstallingPluginsNeedsANewer: 'Uninstalling plugins needs a newer build.',
       uninstall: (name: unknown) => `Uninstall ${name}?`,
       uninstall2: 'Uninstall',

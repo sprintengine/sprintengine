@@ -91,7 +91,13 @@ test('installedInventoryUpdates', async () => {
   const api: Record<string, unknown> = {
     platform: 'darwin',
     listThirdPartyModules: async () => ({
-      modules: [{ manifest: { ...acmeKitManifest, version: installedVersion }, trust: 'trusted' }],
+      modules: [
+        {
+          manifest: { ...acmeKitManifest, version: installedVersion },
+          approval: { state: 'approved', fingerprint: 'sha256-test' },
+          signature: 'unsigned',
+        },
+      ],
       rejected: [],
     }),
     pluginsList: async () => ({

@@ -3,8 +3,7 @@
   "title": "Files action",
   "summary": "A Files tree menu entry whose command the worker runs: it notes the picked files in the Backlog.",
   "permissions": [
-    "module:bridge",
-    "backlog.write"
+    "backlog:operate"
   ],
   "capabilities": [
     "files",

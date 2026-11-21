@@ -80,6 +80,7 @@ import { createStudioExtensionsHandlers } from './studio-extensions'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import { createStudioArtifactsHandlers } from './studio-artifacts'
 import { createStudioAccessHandlers, type StudioAccessDomain } from './studio-access'
+import type { ExtensionInvoker } from '../../main/module-host/extension-invocation'
 import { createStudioWebDevicesHandlers, type StudioWebDevicesDomain } from './studio-web-devices'
 import { createStudioTailnetHandlers, type StudioTailnetDomain } from './studio-tailnet'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
@@ -854,6 +855,18 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     return Promise.resolve(work(terminals)).then((result) => ({ ok: true as const, result }))
   }
   /**
+   * The connection, as an extension's host calls see whoever set them off:
+   * what its grant carries, and its ceiling for the chats the extension
+   * starts for it (extension-invocation.ts).
+   */
+  function extensionInvokerOf(grant: StudioGrant): ExtensionInvoker {
+    return {
+      principal: studioGrantPrincipal(grant),
+      permissionCeiling: grant.ceiling,
+      label: grant.owner ? 'you' : `"${grant.name}"`,
+    }
+  }
+  /**
    * A module method's call, as the hub answers it. A refusal before the module
    * heard the call (not running here, no such method, params it refused) is
    * the protocol's; the module's own answer is the result, its refusals included.
@@ -873,6 +886,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       params: params.params,
       clientId: grant.clientId,
       ...(commandId === undefined ? {} : { commandId }),
+      invoker: extensionInvokerOf(grant),
     })
     return outcome.ok ? { ok: true, result: outcome.answer } : refuse(outcome.code, outcome.message)
   }
@@ -896,13 +910,14 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   function moduleService<K extends keyof ModuleHostServices, A extends { ok: boolean }>(
     method: StudioMethod,
     moduleId: string,
+    grant: StudioGrant,
     service: K,
     missing: A,
     work: (served: NonNullable<ModuleHostServices[K]>) => Promise<A>,
   ): Promise<{ ok: true; result: A } | Refused<'unavailable' | 'extension_unavailable'>> | Refused<'unavailable'> {
     const modules = options.modules
     if (!modules) return unserved(method)
-    const found = modules.hostServices(moduleId)
+    const found = modules.hostServices(moduleId, extensionInvokerOf(grant))
     if (!found.ok) return Promise.resolve(refuse(found.code, found.message))
     const served = found.services[service]
     if (!served) return Promise.resolve({ ok: true as const, result: missing })
@@ -927,7 +942,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   ) {
     return once(
       keptId(method, context.grant, params.commandId),
-      () => Promise.resolve(moduleService(method, params.moduleId, 'backlog', BACKLOG_MISSING, work)),
+      () => Promise.resolve(moduleService(method, params.moduleId, context.grant, 'backlog', BACKLOG_MISSING, work)),
       context.voice,
       method,
       moduleRefusedBefore,
@@ -938,7 +953,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     M extends
       | 'extension.setEnabled'
       | 'extension.install'
-      | 'extension.setTrust'
+      | 'extension.approve'
       | 'extension.uninstall'
       | 'extension.setAppState'
       | 'extension.reportRegistry',
@@ -2373,8 +2388,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       ),
     'extension.install': ({ path, commandId }, context) =>
       lifecycleCommand('extension.install', context, commandId, (lifecycle) => lifecycle.install(path)),
-    'extension.setTrust': ({ moduleId, trusted, commandId }, context) =>
-      lifecycleCommand('extension.setTrust', context, commandId, (lifecycle) => lifecycle.setTrust(moduleId, trusted)),
+    'extension.approve': ({ moduleId, fingerprint, commandId }, context) =>
+      lifecycleCommand('extension.approve', context, commandId, (lifecycle) =>
+        lifecycle.approve(moduleId, fingerprint),
+      ),
     'extension.uninstall': ({ moduleId, commandId }, context) =>
       lifecycleCommand('extension.uninstall', context, commandId, (lifecycle) => lifecycle.uninstall(moduleId)),
     // The installed extensions and their window halves, read now; what a
@@ -2402,10 +2419,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       ),
 
     // The host's services a module's window half calls, under its own id;
-    // the service checks the module's permission. A write is carried out
+    // the host's gate holds it to the extension's approval and to this
+    // connection's grant. A write is carried out
     // once per command id.
-    'extensionBacklog.location': ({ moduleId, workspaceId }) =>
-      moduleService('extensionBacklog.location', moduleId, 'backlog', BACKLOG_MISSING, (backlog) =>
+    'extensionBacklog.location': ({ moduleId, workspaceId }, { grant }) =>
+      moduleService('extensionBacklog.location', moduleId, grant, 'backlog', BACKLOG_MISSING, (backlog) =>
         backlog.getLocation(moduleId, workspaceId),
       ),
     'extensionBacklog.create': (params, context) =>
@@ -2428,8 +2446,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       backlogWrite('extensionBacklog.updateModuleMetadata', params, context, (backlog) =>
         backlog.updateModuleMetadata(params.moduleId, params.workspaceId, params.itemId, params.value),
       ),
-    'extensionUsage.query': ({ moduleId, query }) =>
-      moduleService('extensionUsage.query', moduleId, 'usage', USAGE_MISSING, (usage) => usage.query(moduleId, query)),
+    'extensionUsage.query': ({ moduleId, query }, { grant }) =>
+      moduleService('extensionUsage.query', moduleId, grant, 'usage', USAGE_MISSING, (usage) =>
+        usage.query(moduleId, query),
+      ),
     // ── Scheduled agents ───────────────────────────────────────────────────
 
     ...createStudioSchedulesHandlers({

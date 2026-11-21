@@ -2,7 +2,7 @@ import { app, shell, type IpcMain, type IpcMainInvokeEvent } from 'electron'
 
 import type { ThirdPartyModuleRevealResult } from '../../shared/modules/manifest'
 import { isModuleIdSegment } from '../modules/forget-modules'
-import { readModuleTrustContextSync } from '../modules/trust-context'
+import { readExtensionStandingContextSync } from '../modules/extension-standing-context'
 import { defaultUserModuleRoot, discoverUserModules } from '../modules/user-module-registry'
 import { assertAppSender } from './ipc-sender'
 
@@ -19,7 +19,7 @@ export function registerThirdPartyModuleIpc(ipcMain: IpcMain): void {
       if (!isModuleIdSegment(id)) return { ok: false, message: 'A module id is required.' }
       const { modules } = await discoverUserModules(
         defaultUserModuleRoot(),
-        readModuleTrustContextSync(app.getPath('userData')),
+        readExtensionStandingContextSync(app.getPath('userData')),
       )
       const target = modules.find((module) => module.manifest.id === id)
       if (!target) return { ok: false, message: `Extension "${id}" is not installed.` }

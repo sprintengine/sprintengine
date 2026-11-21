@@ -6,20 +6,21 @@ import type { StudioClient } from '../../../../packages/client-runtime/src/publi
 import { windowStudioClient, windowStudioIsAnotherMachine } from './windowStudioClient'
 
 // What runs on the window's Studio, changed from Settings: switching a module
-// on or off, installing an extension from a folder, trusting it, and
+// on or off, installing an extension from a folder, approving it, and
 // uninstalling one added from a folder. Each is an owner's command
-// (`extension.setEnabled`, `.install`, `.setTrust`, `.uninstall`) under a command
+// (`extension.setEnabled`, `.install`, `.approve`, `.uninstall`) under a command
 // id made for the call. None throws: a refusal, Studio's or the connection's,
 // is an answer the caller shows.
 
-type Lifecycle = 'extension.setEnabled' | 'extension.install' | 'extension.setTrust' | 'extension.uninstall'
+type Lifecycle = 'extension.setEnabled' | 'extension.install' | 'extension.approve' | 'extension.uninstall'
 type Params<M extends Lifecycle> = Omit<StudioModulesMethodMap[M]['params'], 'commandId'>
 type Result<M extends Lifecycle> = StudioModulesMethodMap[M]['result']
 
 export type ModuleLifecycleClient = {
   setEnabled(moduleId: string, enabled: boolean | null): Promise<Result<'extension.setEnabled'>>
   install(path: string): Promise<Result<'extension.install'>>
-  setTrust(moduleId: string, trusted: boolean): Promise<Result<'extension.setTrust'>>
+  /** Approve it as the person was shown it: `fingerprint` from `extension.installed`. */
+  approve(moduleId: string, fingerprint: string): Promise<Result<'extension.approve'>>
   uninstall(moduleId: string): Promise<Result<'extension.uninstall'>>
 }
 
@@ -58,7 +59,7 @@ export function moduleLifecycleOver(client: () => Promise<StudioClient>): Module
   return {
     setEnabled: (moduleId, enabled) => send('extension.setEnabled', { moduleId, enabled }),
     install: (path) => send('extension.install', { path }),
-    setTrust: (moduleId, trusted) => send('extension.setTrust', { moduleId, trusted }),
+    approve: (moduleId, fingerprint) => send('extension.approve', { moduleId, fingerprint }),
     uninstall: (moduleId) => send('extension.uninstall', { moduleId }),
   }
 }

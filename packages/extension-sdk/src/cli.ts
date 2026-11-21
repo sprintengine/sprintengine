@@ -443,7 +443,7 @@ function verifyCommand(args: string[]): void {
   if (!valid) {
     fail(
       `${manifest.id} has an INVALID signature (extension.sig changed after signing, or wrong key). ` +
-        'The app will refuse to trust it. Sign it again.',
+        'The app will refuse to run it. Sign it again.',
     )
   }
   const drift = moduleFileDigestIssuesSync(root, signature.files, { walk: 'pack', label: 'signed digests' })

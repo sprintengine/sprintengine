@@ -30,6 +30,7 @@ import {
   type ExtensionTier,
 } from './extension-manifest.js'
 import { EXTENSION_TIERS, tierRank } from './manifest-schema.js'
+import type { ExtensionPermission } from './permissions.js'
 
 export type ModuleTemplateInfo = {
   id: string
@@ -758,7 +759,7 @@ export async function addModuleParts(options: AddModulePartsOptions): Promise<Ad
     ) as unknown as ExtensionContributions
     const required = requiredExtensionTier({
       ...(typeof merged.main === 'string' ? { main: merged.main } : {}),
-      permissions: unionInto(merged.permissions, []),
+      permissions: unionInto(merged.permissions, []) as ExtensionPermission[],
       contributes: lists,
     })
     if (!isTier(merged.tier) || tierRank(merged.tier) < tierRank(required)) merged.tier = required

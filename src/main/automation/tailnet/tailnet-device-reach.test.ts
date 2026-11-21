@@ -512,7 +512,7 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         [
           'extension.setEnabled',
           'extension.install',
-          'extension.setTrust',
+          'extension.approve',
           'extension.uninstall',
           'extension.reportRegistry',
         ],

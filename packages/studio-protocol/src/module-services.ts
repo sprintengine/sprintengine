@@ -30,7 +30,8 @@ export type StudioModuleBacklogStatus = StudioBacklogItemStatus
 
 /** Why a Backlog service call was refused, in the service's own words. */
 export type StudioModuleBacklogErrorCode =
-  | 'permission_missing'
+  | 'not_permitted'
+  | 'approval_required'
   | 'invalid_input'
   | 'unknown_workspace'
   | 'workspace_folder_missing'
@@ -125,7 +126,7 @@ export type StudioModuleUsageSource = {
   error: string | null
 }
 
-export type StudioModuleUsageErrorCode = 'permission_missing' | 'invalid_input' | 'unavailable'
+export type StudioModuleUsageErrorCode = 'not_permitted' | 'approval_required' | 'invalid_input' | 'unavailable'
 
 /** The usage service's answer: its rows, or its own refusal. */
 export type StudioModuleUsageAnswer =

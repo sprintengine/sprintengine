@@ -10,7 +10,7 @@ const SAVE_DELAY_MS = 400
 
 // The extension's app state is its own key-value store in Studio's settings:
 // synchronous to read, so it can be read while rendering, and kept across
-// restarts. `storage` is the permission that discloses it. For data per
+// restarts. It needs the `settings:own` permission. For data per
 // workspace use getWorkspaceModuleState; for anything large, a worker and
 // getModuleStorage.
 export function NotesPanel({ studio }: { studio: ExtensionMountStudio }) {

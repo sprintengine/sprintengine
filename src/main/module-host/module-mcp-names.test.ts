@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { ownerInvoker } from './extension-invocation'
 import { test } from 'vitest'
 
 import type { CapabilityManifest } from '../../shared/modules/manifest'
@@ -19,7 +20,7 @@ function manifest(id: string): CapabilityManifest {
     version: 1,
     defaultEnabled: true,
     source: 'third-party',
-    permissions: ['mcp:tools'],
+    permissions: ['tools:contribute'],
   }
 }
 
@@ -124,6 +125,7 @@ test('a module tool always hears whether the caller was verified', async () => {
   const host = kernel()
   host.hostFor('decision-log').registerMcpTools([tool('decisions.record')])
   const resolve = createStudioGatewayTools({
+    callerInvoker: () => ownerInvoker(),
     appTools: CORE.map((name) => tool(name)),
     resolveModuleTools: () => host.mcpToolRegistrations(),
     isModuleEnabled: () => true,

@@ -10,8 +10,7 @@
   "name": "{{displayName}}",
   "description": "{{displayName}}, an extension for SprintEngine Studio.",
   "permissions": [
-    "module:bridge",
-    "backlog.write"
+    "backlog:operate"
   ],
   "main": "dist/main.cjs",
   "contributes": {

@@ -18,7 +18,7 @@ Pick the smallest surface and the lowest tier that do the job.
 | A tab in a workspace's pane | `panels[]` with an `entry` | `ui` | panel, blank |
 | A page of its own, with a row in the Extensions drawer | `doors[]` with an `entry` | `ui` | door |
 | Options in Settings | `settingsSections[]` with an `entry` | `ui` | settings-section |
-| Tools agents call | `mcpTools[]`, served by the worker; `mcp:tools` | `worker` | mcp-tools |
+| Tools agents call | `mcpTools[]`, served by the worker; `tools:contribute` | `worker` | mcp-tools |
 | Work with no window open, Node, or a service only the worker has | `main` | `worker` | chat-companion |
 
 A command's context tells the worker how it ran (`where`), the workspace, and
@@ -34,19 +34,19 @@ door. A cluster of controls belongs in a door.
 | Tell the person something went wrong | worker: `studio.notify({ severity, title, target })` (the bell; `target` opens your door) | — |
 | Say "done" | surface: `studio.toast({ tone, message })` (transient) | — |
 | Open one of your doors | surface: `studio.openGlobalSurface(id)` | — |
-| Reading or changing Backlog items | surface: `listBacklogItems`, `createBacklogItem`, `updateBacklogStatus`, …; worker: `getBacklogService(studio)` | `backlog.read` / `backlog.write` |
+| Reading or changing Backlog items | surface: `listBacklogItems`, `createBacklogItem`, `updateBacklogStatus`, …; worker: `getBacklogService(studio)` | `backlog:read` / `backlog:operate` |
 | Token usage and cost across agent sessions | worker: `getUsageService(studio)`; surface: `queryUsage` | `usage:read` |
-| Reading the person's own chats (standups, prompt coaching) | worker: `getActivityService(studio)` | `conversation:read-all` (broad) |
-| An agent doing work in a chat | worker: `getConversationService(studio)` | `conversation:operate` (or `:read`) |
-| Hand the person a prepared chat | surface: `studio.openChat({ workspaceId, prompt, name, dedupeKey })` | `chat:draft` (`conversation:operate` to send it) |
+| Reading the person's own chats (standups, prompt coaching) | worker: `getActivityService(studio)` | `conversation:read` (broad) |
+| An agent doing work in a chat | worker: `getConversationService(studio)` | `conversation:own` (or `:read`) |
+| Hand the person a prepared chat | surface: `studio.openChat({ workspaceId, prompt, name, dedupeKey })` | `chat:draft` (`conversation:own` to send it) |
 | Ask a model one question (summary, digest, JSON), no chat | worker: `getTextGenerationService(studio).generate` | `agents:generate` |
 | A background agent returning validated JSON | worker: `getCompanionAgentsService(studio)`, `runStructured({ tools: 'none' })` | `agents:companion` |
-| An agent that runs on a schedule | worker: `getScheduledAgentsService(studio)` (`tag`, `onRun` to trace runs) | `scheduled-agents.manage` |
-| Calling an API with a key | worker: `getSecretsService(studio).fetchWithSecret` | `secrets` |
-| Calling GitHub as the person | worker: `getGitHubService(studio).request` / `.graphql` (read-only) / `.download` (logs) | `github` |
-| The workspaces, and a workspace's branch and GitHub remote | `listWorkspaces`, `watchWorkspaces`, `getWorkspaceGitInfo(workspaceId)` | `ipc:workspace-read` |
-| Saving data | surface: `get/setModuleAppState`, `get/setWorkspaceModuleState`; worker: `getModuleStorage(studio)` (`list({ prefix })`, `getMany`, `watch`), `studio.getModuleDataDir()` past 1 MB | `storage` |
-| A surface asking the worker | worker `studio.registerMethods<Contract>({ … })`, surface `studio.methods<Contract>().read` / `.operate`; worker → surface `studio.emit` / `studio.subscribe` | `module:bridge` |
+| An agent that runs on a schedule | worker: `getScheduledAgentsService(studio)` (`tag`, `onRun` to trace runs) | `schedules:own` |
+| Calling an API with a key | worker: `getSecretsService(studio).fetchWithSecret` | `secrets:own` |
+| Calling GitHub as the person | worker: `getGitHubService(studio).request` / `.graphql` (read-only) / `.download` (logs) | `github:api` |
+| The workspaces, and a workspace's branch and GitHub remote | `listWorkspaces`, `watchWorkspaces`, `getWorkspaceGitInfo(workspaceId)` | `workspace:read` |
+| Saving data | surface: `get/setModuleAppState`, `get/setWorkspaceModuleState`; worker: `getModuleStorage(studio)` (`list({ prefix })`, `getMany`, `watch`), `studio.getModuleDataDir()` past 1 MB | `storage:own` |
+| A surface asking the worker | worker `studio.registerMethods<Contract>({ … })`, surface `studio.methods<Contract>().read` / `.operate`; worker → surface `studio.emit` / `studio.subscribe` | — |
 | Files inside the extension (HTML, WASM, images) | surface: `studio.getAssetUrl('runtime/index.html')`; worker: `studio.getAssetPath('dist/worker.cjs')` | — |
 
 The details are in the `api-renderer`, `api-main`, `conversations`, `brokers`
@@ -59,7 +59,7 @@ its **own** chats through `getConversationService(studio)` in the worker, or
 opens one for the person with `studio.openChat` in a surface (a draft by
 default: the person reads and sends it). It never drives the person's own chats
 or another extension's; reading the person's chats is the separate, read-only
-`getActivityService(studio)` behind the broad `conversation:read-all` (the
+`getActivityService(studio)` behind the broad `conversation:read` (the
 `api-main` topic). A question with one answer (a summary, a digest, a
 classification) needs no chat at all: `getTextGenerationService(studio)`. Read
 what an agent answered with `chats.reply(ref)`, never by joining streamed

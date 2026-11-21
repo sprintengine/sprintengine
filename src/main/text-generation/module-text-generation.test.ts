@@ -33,12 +33,10 @@ const envelope = (result: string, extra: Record<string, unknown> = {}) =>
 
 function registry(
   generate: (request: HeadlessTextRequest) => Promise<HeadlessTextResult>,
-  permissions: Record<string, string[]> = { insights: ['agents:generate'] },
   now: () => number = Date.now,
   settings: () => TextGenerationEngineSettings | null = () => null,
 ) {
   return createModuleTextGenerationRegistry({
-    getModulePermissions: (moduleId) => permissions[moduleId],
     generate,
     getCliRuntimes: () => ({ 'claude-code': { command: '/opt/claude' } }),
     getTextGenerationSettings: settings,
@@ -276,13 +274,12 @@ test('a Codex call that writes no message has no usable answer', async () => {
   expect(result).toMatchObject({ ok: false, code: 'guardrail' })
 })
 
-test('a module needs agents:generate, and a call it cannot make is refused before anything runs', async () => {
+test('a call it cannot make is refused before anything runs', async () => {
   const calls: HeadlessTextRequest[] = []
   const service = registry(async (request) => {
     calls.push(request)
     return answered('ok')
   })
-  expect(await service.generate('other', { prompt: 'hi' })).toMatchObject({ ok: false, code: 'permission_missing' })
   for (const input of [
     { prompt: '  ' },
     { prompt: 'x'.repeat(400_001) },
@@ -309,7 +306,6 @@ test('a call runs on the person’s chosen engine unless it names a runtime or m
       calls.push(request)
       return answered('ok')
     },
-    undefined,
     undefined,
     () => settings,
   )
@@ -411,7 +407,6 @@ test('two calls run at once, eight wait, and a ninth waiting call is busy; other
           resolve(answered(request.prompt))
         })
       }),
-    { insights: ['agents:generate'], radar: ['agents:generate'] },
   )
   const pending: Array<Promise<ModuleTextGenerationResult>> = []
   for (let index = 0; index < 10; index++) pending.push(service.generate('insights', { prompt: `p${index}` }))
@@ -439,7 +434,6 @@ test('more than thirty calls a minute are busy until the minute has passed', asy
   let clock = 1_000_000
   const service = registry(
     async () => answered('ok'),
-    undefined,
     () => clock,
   )
   for (let index = 0; index < 30; index++) expect((await service.generate('insights', { prompt: 'x' })).ok).toBe(true)

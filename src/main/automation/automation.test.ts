@@ -52,6 +52,7 @@ import type {
   ScheduledAgentWriteResult,
 } from '../../shared/scheduled-agents'
 import type { ScheduledAgentsService } from '../scheduled-agents/service'
+import { ownerInvoker } from '../module-host/extension-invocation'
 import { test } from 'vitest'
 
 test('automation', async () => {
@@ -2849,6 +2850,7 @@ test('automation', async () => {
       handler: async () => ({ content: [{ type: 'text', text: 'ok' }] }),
     }
     const tools = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: [appTool],
       resolveModuleTools: () => [],
       isModuleEnabled: () => true,
@@ -2861,6 +2863,7 @@ test('automation', async () => {
     assert.throws(
       () =>
         createStudioGatewayTools({
+          callerInvoker: () => ownerInvoker(),
           appTools: [appTool, appTool],
           resolveModuleTools: () => [],
           isModuleEnabled: () => true,
@@ -2903,6 +2906,7 @@ test('automation', async () => {
       handler: async () => ({ content: [{ type: 'text' as const, text: 'ok' }] }),
     }
     const resolveWidgetTools = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: [],
       resolveModuleTools: () => [
         { moduleId: 'widgets', moduleDisplayName: 'Widgets', registration: moduleWrites },
@@ -2949,7 +2953,7 @@ test('automation', async () => {
         summary: 'test module',
         defaultEnabled: true,
         source: 'third-party',
-        permissions: ['mcp:tools'],
+        permissions: ['tools:contribute'],
       },
       registerMain: (host) => host.registerMcpTools(tools),
     })
@@ -2977,6 +2981,7 @@ test('automation', async () => {
 
     const warnings: string[] = []
     const resolveGatewayTools = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: [],
       resolveModuleTools: () => kernel.mcpToolRegistrations(),
       isModuleEnabled: () => true,
@@ -2998,6 +3003,7 @@ test('automation', async () => {
     const shadowWarnings: string[] = []
     const coreTool = registrationOf('workspace.list', 'core')
     const resolveShadowed = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: [coreTool],
       resolveModuleTools: () => [
         {
@@ -3042,7 +3048,7 @@ test('automation', async () => {
         summary: 'fixture module',
         defaultEnabled: true,
         source: 'third-party',
-        permissions: ['mcp:tools'],
+        permissions: ['tools:contribute'],
       },
       registerMain: (host) => host.registerMcpTools([forecastTool]),
     }
@@ -3058,6 +3064,7 @@ test('automation', async () => {
 
     let moduleEnabled = true
     const resolveGatewayTools = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: createAutomationTools(backendsOf()),
       resolveModuleTools: () => kernel.mcpToolRegistrations(),
       isModuleEnabled: () => moduleEnabled,
@@ -3227,7 +3234,7 @@ test('automation', async () => {
 
   function installedModuleView(
     id: string,
-    trust: ThirdPartyModuleView['trust'],
+    approval: ThirdPartyModuleView['approval']['state'],
     launch: Partial<ThirdPartyModuleView['launch']> = {},
   ): ThirdPartyModuleView {
     return {
@@ -3251,8 +3258,12 @@ test('automation', async () => {
           mcpTools: [],
         },
       },
-      trust,
-      launch: { status: 'blocked_unsigned', hasMainEntry: true, expectedToLoad: false, ...launch },
+      approval:
+        approval === 'approved' || approval === 'pending'
+          ? { state: approval, fingerprint: 'sha256-test' }
+          : { state: approval },
+      signature: 'unsigned',
+      launch: { status: 'awaiting_approval', hasMainEntry: true, expectedToLoad: false, ...launch },
     }
   }
 
@@ -3293,12 +3304,12 @@ test('automation', async () => {
     const tools = createAutomationTools(
       backendsOf({
         getModuleRegistrySnapshot: () => snapshot,
-        // `weather` loaded; `sketchy` is installed on disk but never trusted, so
+        // `weather` loaded; `sketchy` is installed on disk but never approved, so
         // the renderer registry has never heard of it.
         listInstalledThirdPartyModules: async () => ({
           modules: [
-            installedModuleView('weather', 'trusted', { status: 'trusted_executable', expectedToLoad: true }),
-            installedModuleView('sketchy', 'unsigned'),
+            installedModuleView('weather', 'approved', { status: 'runs_worker', expectedToLoad: true }),
+            installedModuleView('sketchy', 'pending'),
           ],
           rejected: [],
         }),
@@ -3315,27 +3326,27 @@ test('automation', async () => {
           enabled: boolean
           installed: boolean
           absence: { reason: string } | null
-          trust?: string
+          approval?: string
         }>
       }
     ).modules
     assert.deepEqual(
       modules.map((module) => module.id).sort(),
       ['backlog', 'git', 'sketchy', 'weather'],
-      'every module the user could see is listed, including an installed-but-untrusted one',
+      'every module the user could see is listed, including an installed-but-unapproved one',
     )
     const git = modules.find((module) => module.id === 'git')
     assert.equal(git?.enabled, false)
     assert.equal(git?.absence?.reason, 'disabled', 'a switched-off module says so instead of vanishing')
     const sketchy = modules.find((module) => module.id === 'sketchy')
-    assert.equal(sketchy?.installed, true, 'an untrusted module is still installed')
+    assert.equal(sketchy?.installed, true, 'an unapproved module is still installed')
     assert.equal(sketchy?.enabled, false)
-    assert.equal(sketchy?.absence?.reason, 'untrusted')
-    assert.equal(sketchy?.trust, 'unsigned')
+    assert.equal(sketchy?.absence?.reason, 'unapproved')
+    assert.equal(sketchy?.approval, 'pending')
     assert.equal(
-      modules.find((module) => module.id === 'weather')?.trust,
-      'trusted',
-      'main-owned trust rides along for a loaded third-party module',
+      modules.find((module) => module.id === 'weather')?.approval,
+      'approved',
+      'main-owned approval rides along for a loaded third-party module',
     )
 
     const thirdParty = await tool(tools, 'extension.list').handler({ source: 'third-party' })
@@ -3379,19 +3390,19 @@ test('automation', async () => {
       },
     )
 
-    // An installed-but-untrusted module still reports its own manifest — the
-    // declared permissions are what a caller reads BEFORE deciding to trust it —
+    // An installed-but-unapproved module still reports its own manifest — the
+    // declared permissions are what a caller reads BEFORE deciding to approve it —
     // and null surfaces, because it registered nothing.
-    const untrusted = await tool(tools, 'extension.status').handler({ id: 'sketchy' })
-    const untrustedDetail = (
-      untrusted.structuredContent as {
-        module: { manifest: { id: string } | null; surfaces: unknown; absence: { reason: string }; trust: string }
+    const unapproved = await tool(tools, 'extension.status').handler({ id: 'sketchy' })
+    const unapprovedDetail = (
+      unapproved.structuredContent as {
+        module: { manifest: { id: string } | null; surfaces: unknown; absence: { reason: string }; approval: string }
       }
     ).module
-    assert.equal(untrustedDetail.manifest?.id, 'sketchy')
-    assert.equal(untrustedDetail.surfaces, null, 'a module that never loaded contributes nothing')
-    assert.equal(untrustedDetail.absence.reason, 'untrusted')
-    assert.equal(untrustedDetail.trust, 'unsigned')
+    assert.equal(unapprovedDetail.manifest?.id, 'sketchy')
+    assert.equal(unapprovedDetail.surfaces, null, 'a module that never loaded contributes nothing')
+    assert.equal(unapprovedDetail.absence.reason, 'unapproved')
+    assert.equal(unapprovedDetail.approval, 'pending')
 
     const unknown = await tool(tools, 'extension.status').handler({ id: 'nothing-like-this' })
     assert.equal((unknown.structuredContent as { error: { code: string } }).error.code, 'unknown_module')
@@ -3421,7 +3432,7 @@ test('automation', async () => {
       summary: 'fixture module',
       defaultEnabled: true,
       source: 'third-party' as const,
-      permissions: ['mcp:tools' as const],
+      permissions: ['tools:contribute' as const],
     }
     const fixtureModule: CapabilityModule = { manifest, registerMain: (host) => host.registerMcpTools([forecastTool]) }
     const { kernel } = loadMainModules({
@@ -3464,6 +3475,7 @@ test('automation', async () => {
       serverName: 'sprintengine-studio',
       serverVersion: '0.0.0-test',
       resolveTools: createStudioGatewayTools({
+        callerInvoker: () => ownerInvoker(),
         appTools,
         resolveModuleTools: () => kernel.mcpToolRegistrations(),
         isModuleEnabled: () => moduleEnabled,

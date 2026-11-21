@@ -22,7 +22,7 @@ function parsed(overrides: Record<string, unknown> = {}): ExtensionManifest {
 }
 
 test('the module kernel lists an extension by its install key, on by default and third-party', () => {
-  const extension = parsed({ permissions: ['storage', 'network'] })
+  const extension = parsed({ permissions: ['storage:own', 'workspace:read'] })
   const manifest = capabilityManifestOf('acme.demo', 'acme', extension)
   assert.deepEqual(manifest, {
     id: 'acme.demo',
@@ -32,7 +32,7 @@ test('the module kernel lists an extension by its install key, on by default and
     summary: 'A demo.',
     defaultEnabled: true,
     source: 'third-party',
-    permissions: ['storage', 'network'],
+    permissions: ['storage:own', 'workspace:read'],
   })
   // A copy: the kernel's list cannot reach back into the manifest.
   assert.notEqual(manifest.permissions, extension.permissions)

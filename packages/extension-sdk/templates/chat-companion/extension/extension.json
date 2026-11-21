@@ -10,8 +10,8 @@
   "name": "{{displayName}}",
   "description": "{{displayName}}, an extension for SprintEngine Studio.",
   "permissions": [
-    "conversation:operate",
-    "module:bridge"
+    "conversation:own",
+    "notifications:show"
   ],
   "main": "dist/main.cjs",
   "contributes": {

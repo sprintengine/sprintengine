@@ -222,7 +222,7 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
             `Work in ${made.folder}: read IDEA.md, then follow the guide below.`,
             'npm install, then node scripts/check-toolchain.mjs, then npm run check (a fresh project passes).',
             'Change the project toward the brief, running npm run check after every change.',
-            'npm run dev:install, then tell the person to trust it in Studio: Settings → Extensions.',
+            'npm run dev:install, then tell the person to approve it in Studio: Settings → Extensions.',
           ],
           topics: topicIndex(),
         },

@@ -37,7 +37,7 @@ const undeclaredMessage = (uses) =>
     .map(
       (use) =>
         `${use.what} needs ${use.needs.length > 1 ? 'one of ' : ''}${use.needs.map((p) => `"${p}"`).join(', ')}` +
-        (use.checked ? ' (Studio refuses it without)' : ' (declare it: the person is told what the extension does)'),
+        ' (Studio refuses it without: add it to permissions in extension/extension.json)',
     )
     .join('\n')
 

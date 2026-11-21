@@ -7,7 +7,7 @@ const OPENING_PROMPT =
 
 // The worker: Studio loads extension/dist/main.cjs with require and calls
 // `activate` with a `studio` for this extension. It serves the methods the
-// panel calls (`registerMethods`, which needs "module:bridge").
+// panel calls (`registerMethods`, which needs no permission).
 //
 // Chats an extension starts are real chats: they open as tabs in the
 // workspace, run on the agent runtime the person last chose (unless `cli`

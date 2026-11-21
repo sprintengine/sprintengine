@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Changed (approvals replace trust for extensions)
+
+- **`extension.setTrust`** is gone. **`extension.approve`**
+  `{ moduleId, fingerprint, commandId }` (an owner's, under
+  `extension-host`) approves an installed extension as the person was shown
+  it, and is refused when it changed since.
+- **`extension.install`** answers `approval` (`StudioExtensionApproval`:
+  `not-needed`, `unavailable`, `pending` with the `fingerprint` to approve and,
+  for an update, its `growth`, or `approved`) instead of `trust`.
+- **`ThirdPartyModuleView`** (`extension.installed`) carries `approval`,
+  `signature` (`verified`, `signed`, `unsigned`, `invalid`) and `signer`
+  instead of `trust`, `fingerprint` and `trustedVia`. Launch statuses are
+  `runs_worker`, `runs_without_worker`, `awaiting_approval`,
+  `blocked_invalid` and `launch_error`; the resolver's `untrusted` is
+  `unapproved`.
+- The module services' refusal code `permission_missing` is
+  `not_permitted` or `approval_required`. `extensionBacklog.*` and
+  `extensionUsage.query` are held to the connection's own grant as well as
+  the extension's approval.
+
 ### Changed (a CLI's models come only from the CLI)
 
 - **`PluginRegistryListEntry.modelSelection`** (`cliPlugins.list`) is a

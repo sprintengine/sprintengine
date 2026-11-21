@@ -64,7 +64,7 @@ export type CapabilityManifest = {
   conflictsWith?: string[]
   /** Provenance. Absent ⇒ bundled first-party. */
   source?: ModuleSource
-  /** Capability scopes a third-party module requests (shown at install and trust). */
+  /** The permissions an extension asks for (shown when the person approves it). */
   permissions?: string[]
   /** A plugin bundle's detached signature over its manifest. */
   signature?: ModuleSignature
@@ -128,23 +128,26 @@ export type ModuleResolutionErrorCode =
   | 'disabled_dependency'
   | 'conflict'
   | 'dependency_cycle'
-  /** A third-party module the person switched on but has not trusted. */
-  | 'untrusted'
+  /** An extension the person switched on but has not approved as it is now. */
+  | 'unapproved'
   /** A third-party module whose signature or files failed verification. */
   | 'invalid_signature'
 
 export type ThirdPartyModuleLaunchStatus =
-  | 'trusted_executable'
-  | 'trusted_manifest_only'
-  | 'blocked_unsigned'
-  | 'blocked_signed'
+  /** Approved (or content only), with a worker. */
+  | 'runs_worker'
+  /** Approved (or content only), with nothing that runs in the background. */
+  | 'runs_without_worker'
+  /** Waiting for the person's approval. */
+  | 'awaiting_approval'
+  /** Its signature or its files are broken; it never runs. */
   | 'blocked_invalid'
   | 'launch_error'
 
 /**
  * Whether an extension's window code (the `entry` of its panels, doors and
  * settings sections) can be served to a window: `none`, it declares none;
- * `blocked`, its trust keeps it out; `error`, declared and trusted but refused
+ * `blocked`, it is not approved (or broken); `error`, declared and approved but refused
  * (outside the folder, missing, changed); `available`, servable.
  */
 export type ThirdPartyRendererEntryAvailability = 'none' | 'blocked' | 'error' | 'available'
@@ -166,17 +169,37 @@ export type ThirdPartyModuleLaunchView = {
   rendererEntry?: ThirdPartyRendererEntryView
 }
 
+/**
+ * Whether the person approved an extension as it is now. Content only needs
+ * no approval; anything else is `pending` until the person approves its
+ * `fingerprint` (what it may do, and its files). `growth` is there when an
+ * earlier version was approved: what this one asks for beyond it, in words,
+ * empty when it asks for nothing new. `unavailable`: its files cannot all be
+ * read, so there is nothing to approve.
+ */
+export type StudioExtensionApproval =
+  | { state: 'not-needed' }
+  | { state: 'unavailable' }
+  | { state: 'approved'; fingerprint: string }
+  | { state: 'pending'; fingerprint: string; growth?: string[] }
+
 /** One installed extension, as its Studio holds it. */
 export type ThirdPartyModuleView = {
   /** Its install key as the id, with its extension.json's name and version. */
   manifest: CapabilityManifest
   /** Its extension.json. */
   extension: ExtensionManifestView
-  trust: StudioModuleTrustStatus
-  fingerprint?: string
+  /** Whether the person approved it as it is now (modules.ts). */
+  approval: StudioExtensionApproval
+  /**
+   * Its signature: `verified` by a publisher key Studio trusts, `signed` by
+   * another, `unsigned`, or `invalid` (it never runs). A badge: only the
+   * person's approval lets it run.
+   */
+  signature: 'verified' | 'signed' | 'unsigned' | 'invalid'
+  /** sha256 of the signer's public key, when signed. */
+  signer?: string
   launch: ThirdPartyModuleLaunchView
-  /** What made a trusted module trusted: its publisher's key, or the person's own grant. */
-  trustedVia?: 'publisher' | 'grant'
   /** Names of the MCP tools its main half registered this server run. */
   mcpTools?: string[]
 }
@@ -196,7 +219,7 @@ export type ThirdPartyModuleListResult = {
 }
 
 /**
- * One extension's window code a window may run: trusted, inside its folder,
+ * One extension's window code a window may run: approved, inside its folder,
  * and the bytes it was verified with. `entries` holds the source of each ESM
  * bundle its panels, doors and settings sections name, by the path
  * extension.json gives.
@@ -214,7 +237,7 @@ export type ThirdPartyRendererEntry = {
 /** `extension.rendererEntries`: the servable window halves, and why each other declared one was not served. */
 export type ThirdPartyRendererEntriesResult = {
   entries: ThirdPartyRendererEntry[]
-  /** By module id, a sentence (never a path); trust-blocked modules are not listed. */
+  /** By module id, a sentence (never a path); extensions waiting for approval are not listed. */
   failures: Record<string, string>
 }
 

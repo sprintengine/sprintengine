@@ -1,4 +1,4 @@
-// Brokered secrets for modules (SDK `getSecretsService`, permission `secrets`).
+// Brokered secrets for modules (SDK `getSecretsService`, permission `secrets:own`).
 //
 // A module stores an API key once and names the origins it may be sent to;
 // after that it can only ask the host to make a request WITH the key. The value
@@ -21,10 +21,8 @@
 // Requests go out with `redirect: 'error'`, a deadline, and a 1 MiB cap on the
 // answer (broker-http.ts).
 //
-// Permissions are read per call from the module's declared list, as the
-// conversation service does. The calls that answer a result say
-// `permission_missing`; `has` cannot, so it rejects — calling it without the
-// permission is a mistake in the module, not a state of the world. A request
+// Whether an extension may call it at all is the host's gate
+// (extension-host-gate.ts): `secrets:own`. A request
 // shape the module got wrong (a bad method, header name or value) rejects with
 // a TypeError for the same reason.
 
@@ -46,8 +44,6 @@ export type ModuleSecretsDeps = {
   userDataDir: string
   /** The platform's secret cipher; null where there is none (nothing can be stored). */
   cipher: SecretCipher | null
-  /** The permissions the module declared in its manifest. */
-  getModulePermissions: (moduleId: string) => readonly string[] | undefined
   /** Defaults to the global fetch. */
   fetch?: BrokerFetch
 }
@@ -118,12 +114,6 @@ export function createModuleSecretsRegistry(deps: ModuleSecretsDeps): ModuleSecr
   // other both land instead of the second overwriting the first's read.
   const writeChains = new Map<string, Promise<unknown>>()
 
-  function hasPermission(moduleId: string): boolean {
-    return (deps.getModulePermissions(moduleId) ?? []).includes('secrets')
-  }
-  function missing(moduleId: string): Failure {
-    return failure('permission_missing', `Extension "${moduleId}" must declare the "secrets" permission.`)
-  }
   function encryptionAvailable(): boolean {
     try {
       return deps.cipher?.available() === true
@@ -202,7 +192,6 @@ export function createModuleSecretsRegistry(deps: ModuleSecretsDeps): ModuleSecr
   function forModule(moduleId: string): ModuleSecretsService {
     return {
       async set(name, value, options) {
-        if (!hasPermission(moduleId)) return missing(moduleId)
         const badName = invalidName(name)
         if (badName) return badName
         if (typeof value !== 'string') throw new TypeError(`Secret "${name}" needs a string value.`)
@@ -244,13 +233,11 @@ export function createModuleSecretsRegistry(deps: ModuleSecretsDeps): ModuleSecr
       },
 
       async has(name) {
-        if (!hasPermission(moduleId)) throw new Error(missing(moduleId).message)
         if (invalidName(name)) return false
         return Object.hasOwn((await readRecord(moduleId)).secrets, name)
       },
 
       async delete(name) {
-        if (!hasPermission(moduleId)) return missing(moduleId)
         const badName = invalidName(name)
         if (badName) return badName
         try {
@@ -267,7 +254,6 @@ export function createModuleSecretsRegistry(deps: ModuleSecretsDeps): ModuleSecr
       },
 
       async fetchWithSecret(name, url, init) {
-        if (!hasPermission(moduleId)) return missing(moduleId)
         const badName = invalidName(name)
         if (badName) return badName
         const request = normalizeInit(init)

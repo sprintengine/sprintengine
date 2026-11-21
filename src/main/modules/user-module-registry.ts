@@ -15,20 +15,21 @@ import {
   studioReadsManifest,
   type ExtensionManifest,
 } from '../../shared/modules/third-party-manifest'
-import { classifyExtensionTrust, type ModuleTrust, type ModuleTrustContext } from './module-signature'
+import { classifyExtension, type ExtensionStanding, type ExtensionStandingContext } from './module-signature'
 import { readStudioEnv } from '../../shared/studio-env'
 
 // Discovery and install of extensions under
 // ~/.sprintengine/extensions/<publisher>.<id>/extension.json. The folder's
 // name is the install key: the publisher Studio derived from where the
 // extension came from (`local` for a folder), then the manifest's id. This
-// layer validates, classifies trust and installs; it never runs extension
-// code. Trust is classified over the folder's files every time, so it is
-// decided again from the bytes on disk, not carried over from the install.
+// layer validates, classifies and installs; it never runs extension code. An
+// extension's standing (its signature, and whether the person approved it as
+// it is) is decided over the folder's files every time, from the bytes on
+// disk, not carried over from the install.
 
 // SPRINTENGINE_USER_EXTENSION_ROOT redirects discovery for hermetic end-to-end
 // testing (paired with SPRINTENGINE_USER_DATA_DIR temp profiles). It moves the
-// install root only; trust applies to that root exactly as to the default one.
+// install root only; approval applies to that root exactly as to the default one.
 export function defaultUserModuleRoot(): string {
   const override = readStudioEnv('SPRINTENGINE_USER_EXTENSION_ROOT')?.trim()
   if (override) return override
@@ -46,7 +47,7 @@ export type InstalledModule = {
   manifest: CapabilityManifest
   extension: ExtensionManifest
   moduleRoot: string
-  trust: ModuleTrust
+  standing: ExtensionStanding
 }
 
 export type UserModuleListResult = {
@@ -59,7 +60,8 @@ export type InstallModuleResult =
       ok: true
       /** The install key. */
       id: string
-      trust: ModuleTrust
+      extension: ExtensionManifest
+      standing: ExtensionStanding
       /** Symbolic links in the folder, left out of the copy, relative to it. */
       strippedLinks: string[]
     }
@@ -171,7 +173,7 @@ function installedModule(
   extension: ExtensionManifest,
   folderName: string,
   moduleRoot: string,
-  ctx: ModuleTrustContext,
+  ctx: ExtensionStandingContext,
 ): InstalledModule {
   const publisher = parseExtensionInstallKey(folderName)!.publisher
   return {
@@ -180,7 +182,7 @@ function installedModule(
     manifest: capabilityManifestOf(folderName, publisher, extension),
     extension,
     moduleRoot,
-    trust: classifyExtensionTrust(moduleRoot, folderName, ctx),
+    standing: classifyExtension(moduleRoot, folderName, extension, ctx),
   }
 }
 
@@ -189,8 +191,8 @@ function sorted(result: UserModuleListResult): UserModuleListResult {
   return result
 }
 
-/** Every installed extension, validated and trust-classified, and the folders that hold none. */
-export async function discoverUserModules(root: string, ctx: ModuleTrustContext): Promise<UserModuleListResult> {
+/** Every installed extension, validated and classified, and the folders that hold none. */
+export async function discoverUserModules(root: string, ctx: ExtensionStandingContext): Promise<UserModuleListResult> {
   const result: UserModuleListResult = { modules: [], rejected: [] }
   for (const entry of await readDirSafe(root)) {
     if (!entry.isDirectory() || isHiddenModuleDir(entry.name)) continue
@@ -202,7 +204,7 @@ export async function discoverUserModules(root: string, ctx: ModuleTrustContext)
   return sorted(result)
 }
 
-export function discoverUserModulesSync(root: string, ctx: ModuleTrustContext): UserModuleListResult {
+export function discoverUserModulesSync(root: string, ctx: ExtensionStandingContext): UserModuleListResult {
   const result: UserModuleListResult = { modules: [], rejected: [] }
   for (const entry of readDirSafeSync(root)) {
     if (!entry.isDirectory() || isHiddenModuleDir(entry.name)) continue
@@ -219,12 +221,12 @@ export function discoverUserModulesSync(root: string, ctx: ModuleTrustContext): 
  * the folder into `<root>/local.<id>/`, REPLACING any earlier install of that
  * key. Symbolic links are left out of the copy and named in the result, for
  * the install review to show: their bytes live somewhere no digest follows.
- * The trust of the bytes that were installed comes back for the UI to ask about.
+ * The standing of the bytes that were installed comes back: what the person is asked to approve.
  */
 export async function installModuleFolder(
   selectedDir: string,
   root: string,
-  ctx: ModuleTrustContext,
+  ctx: ExtensionStandingContext,
 ): Promise<InstallModuleResult> {
   // The folder itself, wherever a link to it points: a linked root would be
   // copied as the link, and the extension would never appear. A missing one
@@ -279,7 +281,7 @@ export async function installModuleFolder(
   const staging = join(root, `.${key}.installing.${process.pid}.${Date.now()}`)
   await rm(staging, { recursive: true, force: true })
   const strippedLinks: string[] = []
-  let trust: ModuleTrust
+  let standing: ExtensionStanding
   try {
     await cp(srcDir, staging, {
       recursive: true,
@@ -293,20 +295,20 @@ export async function installModuleFolder(
         return true
       },
     })
-    trust = classifyExtensionTrust(staging, key, ctx)
-    if (trust.status === 'invalid') {
-      const issues = trust.issues ?? []
+    standing = classifyExtension(staging, key, extension, ctx)
+    if (standing.signature === 'invalid') {
+      const issues = standing.issues ?? []
       await rm(staging, { recursive: true, force: true })
       return {
         ok: false,
         rejected: { path: manifestPath, issues },
-        message: trust.tampered
+        message: standing.tampered
           ? `Extension "${extension.id}" has been changed since it was signed: its files do not match extension.sig.`
           : `Extension "${extension.id}" has an invalid signature.`,
       }
     }
-    if (trust.contentFingerprint === undefined) {
-      const issues = trust.issues ?? []
+    if (standing.contentDigest === undefined) {
+      const issues = standing.issues ?? []
       await rm(staging, { recursive: true, force: true })
       return {
         ok: false,
@@ -327,5 +329,5 @@ export async function installModuleFolder(
       message: `Could not install extension "${extension.id}": ${message}`,
     }
   }
-  return { ok: true, id: key, trust, strippedLinks: strippedLinks.sort() }
+  return { ok: true, id: key, extension, standing, strippedLinks: strippedLinks.sort() }
 }

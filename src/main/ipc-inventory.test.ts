@@ -161,7 +161,7 @@ import {
 } from './module-host/service-tokens'
 import { scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
 import { AGENT_RUNTIME_MANIFEST } from './modules/agent-runtime-module'
-import { extensionContentSync } from './modules/module-signature'
+import { approvedContext } from './modules/extension-approvals.test-helper'
 import { planThirdPartyMainModules } from './modules/third-party-main-loader'
 import { discoverUserModulesSync } from './modules/user-module-registry'
 import { registerCoreIpc } from './register-core-ipc'
@@ -252,23 +252,20 @@ function serverDomainStubs(dataDir: string): ServerDomainIpcDeps {
   }
 }
 
-/** An extension as Settings installs one: `local.<id>` in the user module root, trusted by a grant of its content. */
+/** An extension as Settings installs one: `local.<id>` in the user module root, approved as it is. */
 function installExtension(id: string): ReturnType<typeof planThirdPartyMainModules> {
   const root = join(scratch, 'modules')
   const key = `local.${id}`
   const moduleRoot = writeExtensionFolder(join(root, key), {
-    manifest: extensionManifest({ id, permissions: ['module:bridge'] }),
+    manifest: extensionManifest({ id, permissions: [] }),
     files: {
       'dist/main.cjs': `exports.activate = (host) => host.registerMethods({ forecast: { access: 'read', params: () => ({ ok: true, params: {} }), handler: () => ({ ok: true, result: 'sunny' }) } })\n`,
     },
   })
-  const content = extensionContentSync(moduleRoot)
-  assert.ok(content.ok, 'the installed extension has a content fingerprint')
-  const trusted = new Map([[key, content.fingerprint]])
-  const listed = discoverUserModulesSync(root, { trustedModules: trusted })
+  const listed = discoverUserModulesSync(root, approvedContext({ [key]: moduleRoot }))
   assert.ok(
-    listed.modules.some((entry) => entry.key === key && entry.trust.status === 'trusted'),
-    'the installed extension is discovered, trusted',
+    listed.modules.some((entry) => entry.key === key && entry.standing.approval.state === 'approved'),
+    'the installed extension is discovered, approved',
   )
   return planThirdPartyMainModules(listed)
 }

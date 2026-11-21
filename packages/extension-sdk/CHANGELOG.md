@@ -21,7 +21,7 @@ extension built against 3.x must be rewritten to this one.
   are the one validator, used by Studio, the CLI and the templates. Unknown
   keys are refused at every level. A contribution above the tier, a menu or
   top bar item naming nothing the extension contributes, an MCP tool without
-  `mcp:tools`, or an unsafe path fails. With `authoring: true`,
+  `tools:contribute`, or an unsafe path fails. With `authoring: true`,
   `engines.studio` must cover the newest field the manifest uses.
 - The package ships the JSON Schema as `extension.schema.json`
   (`@sprintengine/extension-sdk/extension.schema.json`), and the guide's
@@ -88,6 +88,37 @@ extension built against 3.x must be rewritten to this one.
   `runCommand` and `installTestingKit` are gone. `renderToHtml` stays.
 - The guide's `ui-kit` topic is now `styling`: drawing a surface yourself,
   with the `--sem-*` properties.
+
+### Permissions checked at the host; approvals replace trust
+
+- `permissions` is a new closed vocabulary, `EXTENSION_PERMISSIONS`:
+  `workspace:read`, `workspace:operate`, `conversation:read` (every chat,
+  read only), `backlog:read`, `backlog:operate`, `providers:read`,
+  `usage:read`, `storage:own`, `settings:own`, `secrets:own`,
+  `notifications:show`, `conversation:own`, `conversation:bypass`,
+  `chat:draft`, `schedules:own`, `agents:generate`, `agents:companion`,
+  `github:api`, `tools:contribute`. The old names (`filesystem:*`,
+  `process:spawn`, `network`, `ipc:*`, `module:bridge`, `backlog.*`,
+  `storage`, `secrets`, `github`, `mcp:tools`, …) fail validation, and
+  `KNOWN_CAPABILITY_PERMISSIONS` is gone. An extension's own methods need no
+  permission.
+- Every host method an extension can call has a row in
+  `EXTENSION_HOST_SERVICES` and `EXTENSION_MAIN_HOST_METHODS` (replacing
+  `MODULE_SERVICE_REQUIREMENTS`): the permission the extension's approval
+  must hold, and what whoever set the call off must hold. Studio checks both
+  on every call. A refused call answers `not_permitted` or
+  `approval_required` (replacing `permission_missing`) in the method's
+  failure shape, rejects for an async method with none, or throws. What a
+  method hands back that can be called (a companion's handle, the function
+  that stops a watch) has rows of its own (`returns`), and is checked at each
+  call. `EXTENSION_RENDERER_METHODS` rows carry their refusal, and the window
+  refuses what they do not cover, as the fakes do.
+- A signature no longer lets an extension run: the person approves it, bound
+  to a fingerprint over its permissions, tier, worker, background and files.
+  A signature by a trusted publisher key is shown as verified.
+- The fake hosts refuse what the gate refuses, from the same table, and list
+  each refusal in `undeclared` (`{ what, needs }`; `checked` is gone).
+- Templates and the fixture ask for the new names.
 
 ## 3.0.0-beta.1
 

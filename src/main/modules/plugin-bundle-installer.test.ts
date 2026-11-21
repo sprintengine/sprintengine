@@ -264,7 +264,7 @@ test('plugin-bundle-installer', async () => {
       },
       services: {
         mcpConfigService,
-        trustContext: () => ({ trustedModules: new Map() }),
+        trustContext: () => ({}),
       },
       workspaceRoot,
     }

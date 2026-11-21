@@ -31,8 +31,10 @@ entry per panel, door or settings section (an ESM bundle exporting
 `mount(root, studio)`), and a worker (`main`, a CommonJS bundle exporting
 `activate(studio)`) that serves its commands, methods and tools and reaches
 the host's services — chats of its own with the app's agents, Backlog reads
-and writes, token usage, the person's own activity. Extensions are
-trust-gated: only an extension the user has trusted runs code.
+and writes, token usage, the person's own activity. Anything beyond content
+runs only once the person approved it, and every call it makes into Studio is
+checked against what they approved and against what whoever set the call off
+may do (the `permissions` reference).
 
 - Author against [`@sprintengine/extension-sdk`](../../packages/extension-sdk/README.md).
   The fastest start is a template:
@@ -50,7 +52,7 @@ trust-gated: only an extension the user has trusted runs code.
   `ui`, `worker`) is the most authority the extension needs, and anything
   above it fails. `engines.studio` is the oldest Studio it runs on; an
   extension asking for a newer one than this app is refused with a message
-  saying so — never shown as merely "not trusted". extension.json is read from
+  saying so — never shown as merely "waiting for approval". extension.json is read from
   Studio 0.13.0 (`EXTENSION_MANIFEST_SINCE`).
 - **Surfaces bring their own drawing.** A ui entry is imported as a blob
   module into Studio's window, so it bundles everything it imports, React
@@ -64,13 +66,12 @@ trust-gated: only an extension the user has trusted runs code.
   contributed door.
 - Test without the app. `@sprintengine/extension-sdk/testing` has fake hosts
   that keep this app's rules (the permissions it checks, storage's limits, chat
-  ownership, the `module:bridge` that declaring methods needs, the MCP tools
-  extension.json declares); a scaffolded project runs its TypeScript tests and
+  ownership, the MCP tools extension.json declares); a scaffolded project runs its TypeScript tests and
   a smoke test that loads the built extension the way the app does on
   `npm run check`. See the SDK README's "Testing".
 - What runs is the Studio server's to change: Settings installs a folder,
-  trusts it, switches it on or off and uninstalls it through the server
-  (`extension.install`, `extension.setTrust`, `extension.setEnabled`,
+  approves it, switches it on or off and uninstalls it through the server
+  (`extension.install`, `extension.approve`, `extension.setEnabled`,
   `extension.uninstall`, each an owner's), and `extension.list` says what runs there
   and the methods each declares. Switching an extension off unloads its worker
   (its methods, tools, services and sidecars go, and its calls are refused
@@ -89,13 +90,16 @@ trust-gated: only an extension the user has trusted runs code.
   at `~/.sprintengine/keys/<id>.key`. Symbolic links are left out of the
   copy, and Settings names them; a folder with `node_modules`, `.git` or key
   files in it is refused, and `pack` leaves those out. A newly installed
-  extension without a worker appears as soon as it is trusted; one with a
+  extension without a worker appears as soon as it is approved; one with a
   worker starts, surfaces and all, with the next start of Studio.
-- **Trust binds to contents.** An unsigned extension waits for the person to
-  trust it, and the grant binds to its content fingerprint (the digests of
-  every file), so different bytes under the same install key never inherit it.
-  An `extension.sig` from a publisher key the person trusts makes it trusted.
-  A changed, missing or extra file after signing is refused as tampered.
+- **Approval binds to access and contents.** An extension beyond content waits
+  for the person to approve it, and the approval binds to a fingerprint over
+  its permissions, tier, worker and background and the digests of every file,
+  so different bytes under the same install key never inherit it. A new
+  version installed through Studio keeps the approval when it asks for no
+  more. An `extension.sig` is a badge (verified, by a publisher key Studio
+  trusts) and approves nothing; a changed, missing or extra file after signing
+  is refused as tampered.
 - Ids starting `studio-` or `sprintengine-` install only from Studio's own
   catalogue.
 - Permissions are install-time disclosure — see [permissions.md](./permissions.md).
@@ -126,7 +130,7 @@ const result = await workspaces.create({ name: 'Scratch', folderPath: '/abs/path
 
 The promise resolves only after the workspace is confirmed on the
 workspace-sync bus, so a returned id is always a real workspace. Declare
-`ipc:workspace-write`.
+`workspace:operate`.
 
 ### Trusting your own key while developing
 

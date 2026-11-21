@@ -22,7 +22,7 @@ import {
   type ExtensionMountStudio,
   type ScheduledAgentDraft,
 } from '../src/index.js'
-import { MODULE_SERVICE_REQUIREMENTS } from '../src/services.js'
+import { EXTENSION_HOST_SERVICES } from '../src/services.js'
 import { createFakeMainHost, createFakeRendererHost, renderToHtml } from '../src/testing.js'
 import { SERVICE_FAKES } from '../src/testing-services.js'
 
@@ -30,14 +30,15 @@ const ROOT = '/Users/dev/projects/app'
 
 describe('createFakeMainHost', () => {
   test('has a fake for every service the SDK publishes, and nothing else', () => {
-    assert.deepEqual(
-      Object.keys(SERVICE_FAKES).sort(),
-      MODULE_SERVICE_REQUIREMENTS.map((requirement) => requirement.key).sort(),
-    )
+    assert.deepEqual(Object.keys(SERVICE_FAKES).sort(), EXTENSION_HOST_SERVICES.map((service) => service.key).sort())
   })
 
   test('storage applies the host’s key pattern, root rule and 1 MB cap', async () => {
-    const fake = createFakeMainHost({ moduleId: 'notes', permissions: ['storage'], storage: { global: { seeded: 1 } } })
+    const fake = createFakeMainHost({
+      moduleId: 'notes',
+      permissions: ['storage:own'],
+      storage: { global: { seeded: 1 } },
+    })
     const storage = getModuleStorage(fake.host)
     assert.deepEqual(await storage.get({ key: 'seeded' }), { ok: true, value: 1, found: true })
     assert.equal((await storage.get({ key: 'Bad Key' })).ok, false)
@@ -63,21 +64,22 @@ describe('createFakeMainHost', () => {
     assert.deepEqual(fake.undeclared, [])
   })
 
-  test('a service used without its permission is reported, and the host’s checked ones refuse', async () => {
+  test('a call its permissions do not cover is refused as the host’s gate refuses it, and reported', async () => {
     const fake = createFakeMainHost({ moduleId: 'quiet', permissions: [] })
-    getModuleStorage(fake.host)
-    assert.deepEqual(fake.undeclared, [{ what: 'core.module-storage', needs: ['storage'], checked: false }])
+    const stored = await getModuleStorage(fake.host).get({ key: 'doc' })
+    assert.equal(!stored.ok && stored.code, 'not_permitted')
+    assert.deepEqual(fake.undeclared, [{ what: 'core.module-storage.get', needs: ['storage:own'] }])
 
     const conversations = getConversationService(fake.host)
     const created = await conversations.create({ workspaceId: 'ws-app' })
     assert.equal(created.ok, false)
-    assert.equal(!created.ok && created.code, 'permission_missing')
-    assert.throws(() => conversations.list(), /must declare the "conversation:read" permission/)
+    assert.equal(!created.ok && created.code, 'not_permitted')
+    assert.throws(() => conversations.list(), /was not approved for "conversation:own"/)
 
     const github = await getGitHubService(fake.host).request({ route: '/user' })
-    assert.equal(!github.ok && github.code, 'permission_missing')
+    assert.equal(!github.ok && github.code, 'not_permitted')
     const secret = await getSecretsService(fake.host).set('key', 'v', { allowedOrigins: ['https://api.example.com'] })
-    assert.equal(!secret.ok && secret.code, 'permission_missing')
+    assert.equal(!secret.ok && secret.code, 'not_permitted')
     assert.throws(
       () =>
         getCompanionAgentsService(fake.host).attach({
@@ -87,7 +89,7 @@ describe('createFakeMainHost', () => {
           workspaceRoot: ROOT,
           systemPrompt: 'Help.',
         }),
-      /must declare the "agents:companion" permission/,
+      /was not approved for "agents:companion"/,
     )
   })
 
@@ -106,7 +108,7 @@ describe('createFakeMainHost', () => {
     assert.equal(fake.host.requireService({ key: 'notes.index' }), own)
   })
 
-  test('declared methods need module:bridge, are called by access, and are refused as the host refuses', async () => {
+  test('declared methods need no permission, are called by access, and are refused as the host refuses', async () => {
     type Notes = {
       echo: { access: 'read'; params: { text: string }; result: { got: string } }
       save: { access: 'operate'; params: { text: string }; result: { count: number }; errors: 'empty' }
@@ -134,8 +136,6 @@ describe('createFakeMainHost', () => {
         },
       },
     }
-    assert.throws(() => fake.host.registerMethods<Notes>(methods), /module:bridge/)
-    fake.permissions.add('ipc:invoke')
     fake.host.registerMethods<Notes>(methods)
     assert.throws(() => fake.host.registerMethods<Notes>(methods), /already declares "echo"/)
     assert.throws(
@@ -190,9 +190,9 @@ describe('createFakeMainHost', () => {
     ]
     assert.throws(
       () => createFakeMainHost({ moduleId: 'notes' }).host.registerMcpTools(tools),
-      /must declare the "mcp:tools" permission/,
+      /was not approved for "tools:contribute"/,
     )
-    const fake = createFakeMainHost({ moduleId: 'notes', permissions: ['mcp:tools'] })
+    const fake = createFakeMainHost({ moduleId: 'notes', permissions: ['tools:contribute'] })
     fake.host.registerMcpTools(tools)
     assert.deepEqual(await fake.tools.call('notes_count', { prefix: 'n' }), {
       content: [{ type: 'text', text: 'n:ws-app' }],
@@ -205,7 +205,7 @@ describe('createFakeMainHost', () => {
     const fake = createFakeMainHost({
       manifest: {
         id: 'notes',
-        permissions: ['mcp:tools'],
+        permissions: ['tools:contribute'],
         contributes: {
           mcpTools: [
             { name: 'notes_search', description: 'Search the notes.', access: 'read' },
@@ -240,7 +240,7 @@ describe('createFakeMainHost', () => {
   })
 
   test('conversations: owned chats, events, presets capped, retries answered once', async () => {
-    const fake = createFakeMainHost({ moduleId: 'board', permissions: ['conversation:operate'] })
+    const fake = createFakeMainHost({ moduleId: 'board', permissions: ['conversation:own'] })
     const chats = getConversationService(fake.host)
     const lists: number[] = []
     chats.watch(undefined, (list) => lists.push(list.length))
@@ -309,7 +309,7 @@ describe('createFakeMainHost', () => {
 
   test('scheduled agents: owned, validated, fired, and a one-time schedule closes after its run', async () => {
     let clock = Date.parse('2026-10-09T10:00:00Z')
-    const fake = createFakeMainHost({ moduleId: 'board', permissions: ['scheduled-agents.manage'], now: () => clock })
+    const fake = createFakeMainHost({ moduleId: 'board', permissions: ['schedules:own'], now: () => clock })
     const scheduled = getScheduledAgentsService(fake.host)
     const changes: number[] = []
     scheduled.onChanged((agents) => changes.push(agents.length))
@@ -346,7 +346,7 @@ describe('createFakeMainHost', () => {
   })
 
   test('secrets go only to their origins over https, and an echoed value comes back redacted', async () => {
-    const fake = createFakeMainHost({ moduleId: 'radar', permissions: ['secrets'] })
+    const fake = createFakeMainHost({ moduleId: 'radar', permissions: ['secrets:own'] })
     const secrets = getSecretsService(fake.host)
     const http = await secrets.set('token', 'abc', { allowedOrigins: ['http://api.example.com'] })
     assert.equal(!http.ok && http.code, 'origin_not_allowed')
@@ -365,7 +365,7 @@ describe('createFakeMainHost', () => {
   })
 
   test('GitHub answers what was scripted, 404 otherwise, and not_signed_in when signed out', async () => {
-    const fake = createFakeMainHost({ moduleId: 'radar', permissions: ['github'] })
+    const fake = createFakeMainHost({ moduleId: 'radar', permissions: ['github:api'] })
     const github = getGitHubService(fake.host)
     fake.services.github.respond('GET', '/repos/{owner}/{repo}/pulls', { ok: true, status: 200, data: [{ number: 1 }] })
     assert.deepEqual(
@@ -405,7 +405,7 @@ describe('createFakeMainHost', () => {
   })
 
   test('workspaces answer null before hydration, as after launch', async () => {
-    const fake = createFakeMainHost({ moduleId: 'notes', permissions: ['ipc:workspace-read', 'ipc:workspace-write'] })
+    const fake = createFakeMainHost({ moduleId: 'notes', permissions: ['workspace:read', 'workspace:operate'] })
     const context = fake.host.requireService(WorkspaceContextToken)
     fake.services.workspaces.setHydrated(false)
     assert.equal(await context.get('ws-app'), null)
@@ -419,7 +419,7 @@ describe('createFakeMainHost', () => {
   })
 
   test('notify and emit are validated as the host validates them; hooks run in order', async () => {
-    const fake = createFakeMainHost({ moduleId: 'notes' })
+    const fake = createFakeMainHost({ moduleId: 'notes', permissions: ['notifications:show'] })
     fake.host.notify({ severity: 'info', title: '  Saved  ' })
     assert.deepEqual(fake.notifications, [{ severity: 'info', title: 'Saved' }])
     assert.throws(() => fake.host.notify({ severity: 'loud' as never, title: 'x' }), /severity/)
@@ -470,7 +470,7 @@ describe('createFakeRendererHost', () => {
   })
 
   test('the studio a surface is handed is the window’s, with that surface on it', async () => {
-    const renderer = createFakeRendererHost({ manifest: { id: 'notes', permissions: ['storage'] } })
+    const renderer = createFakeRendererHost({ manifest: { id: 'notes', permissions: ['settings:own'] } })
     const studio = renderer.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
     assert.deepEqual(studio.surface, { point: 'panels', id: 'notes', workspaceId: 'ws-app' })
     assert.equal(studio.moduleId, 'local.notes')
@@ -487,7 +487,7 @@ describe('createFakeRendererHost', () => {
   })
 
   test('calls the main fake’s methods, hears its events, and an openChat chat is the extension’s own', async () => {
-    const main = createFakeMainHost({ moduleId: 'notes', permissions: ['module:bridge', 'conversation:operate'] })
+    const main = createFakeMainHost({ moduleId: 'notes', permissions: ['conversation:own'] })
     main.host.registerMethods({
       list: {
         access: 'read',
@@ -507,7 +507,7 @@ describe('createFakeRendererHost', () => {
     assert.ok(opened.ok)
     assert.equal(main.services.conversations.all().length, 1, 'an openChat chat is the extension’s own')
 
-    const alone = createFakeRendererHost({ moduleId: 'notes', permissions: ['module:bridge'] })
+    const alone = createFakeRendererHost({ moduleId: 'notes', permissions: [] })
     const unavailable = await alone.host.methods().read('list', {})
     assert.equal(!unavailable.ok && unavailable.code, 'extension_unavailable')
   })
@@ -521,30 +521,26 @@ describe('createFakeRendererHost', () => {
     await assert.rejects(renderToHtml(createElement(Broken)), /timer exploded/)
   })
 
-  test('disclosure permissions used without being declared are reported', async () => {
+  test('window calls its permissions do not cover are refused as the window refuses them, and reported', async () => {
     const renderer = createFakeRendererHost({ moduleId: 'notes', permissions: [] })
-    await renderer.host.listWorkspaces()
-    renderer.host.setModuleAppState('draft', 'x')
+    await assert.rejects(renderer.host.listWorkspaces(), /not approved for "workspace:read"/)
+    assert.throws(() => renderer.host.setModuleAppState('draft', 'x'), /not approved for "settings:own"/)
     const chat = await renderer.host.openChat({ workspaceId: 'ws-app' })
-    assert.equal(!chat.ok && chat.code, 'permission_missing')
+    assert.equal(!chat.ok && chat.code, 'not_permitted')
     assert.deepEqual(
-      renderer.undeclared.map((use) => [use.what, use.checked]),
-      [
-        ['listWorkspaces', false],
-        ['setModuleAppState', false],
-        ['openChat', true],
-      ],
+      renderer.undeclared.map((use) => use.what),
+      ['listWorkspaces', 'setModuleAppState', 'openChat'],
     )
   })
 })
 
 describe('createFakeMainHost: Backlog, usage and activity', () => {
-  test('the Backlog checks backlog.read and backlog.write, validates as the host does, and is shared with the renderer', async () => {
-    const main = createFakeMainHost({ moduleId: 'board', permissions: ['backlog.read'] })
+  test('the Backlog checks backlog:read and backlog:operate, validates as the host does, and is shared with the renderer', async () => {
+    const main = createFakeMainHost({ moduleId: 'board', permissions: ['backlog:read'] })
     const backlog = getBacklogService(main.host)
     const refused = await backlog.create('ws-app', { title: 'Ship it' })
-    assert.equal(!refused.ok && refused.code, 'permission_missing')
-    main.permissions.add('backlog.write')
+    assert.equal(!refused.ok && refused.code, 'not_permitted')
+    main.permissions.add('backlog:operate')
 
     main.services.backlog.setKey('ws-app', 'MC')
     const created = await backlog.create('ws-app', { title: 'Ship it', body: 'Before Friday.', type: 'feature' })
@@ -592,15 +588,15 @@ describe('createFakeMainHost: Backlog, usage and activity', () => {
     assert.match(item?.sourceContent ?? '', /status: ready/)
     assert.deepEqual(seen, [1, 2, 2, 2, 2, 2], 'the watch heard every change')
 
-    main.permissions.delete('backlog.read')
-    await assert.rejects(renderer.host.listBacklogItems('ws-app'), /"backlog.read" permission/)
-    assert.throws(() => renderer.host.watchBacklogItems('ws-app', () => {}), /"backlog.read" permission/)
+    main.permissions.delete('backlog:read')
+    await assert.rejects(renderer.host.listBacklogItems('ws-app'), /approved for "backlog:read"/)
+    assert.throws(() => renderer.host.watchBacklogItems('ws-app', () => {}), /approved for "backlog:read"/)
   })
 
   test('a Backlog watch hears why it cannot deliver, and stays open', () => {
     const renderer = createFakeRendererHost({
       moduleId: 'board',
-      permissions: ['backlog.read'],
+      permissions: ['backlog:read'],
       workspaces: [
         { id: 'ws-app', name: 'App', folderPath: ROOT, mode: 'standard' },
         { id: 'ws-scratch', name: 'Scratch', folderPath: null, mode: 'standard' },
@@ -624,8 +620,8 @@ describe('createFakeMainHost: Backlog, usage and activity', () => {
     const main = createFakeMainHost({ moduleId: 'meter', permissions: [] })
     const usage = getUsageService(main.host)
     const refused = await usage.query({ from: hour, to: hour + 3_600_000 })
-    assert.equal(!refused.ok && refused.code, 'permission_missing')
-    assert.throws(() => usage.onChanged(() => {}), /"usage:read" permission/)
+    assert.equal(!refused.ok && refused.code, 'not_permitted')
+    assert.throws(() => usage.onChanged(() => {}), /approved for "usage:read"/)
     main.permissions.add('usage:read')
 
     let changes = 0
@@ -654,7 +650,7 @@ describe('createFakeMainHost: Backlog, usage and activity', () => {
   })
 
   test('activity lists the chats of open workspaces and the prompts in a window, newest kept', async () => {
-    const main = createFakeMainHost({ moduleId: 'standup', permissions: ['conversation:read-all'] })
+    const main = createFakeMainHost({ moduleId: 'standup', permissions: ['conversation:read'] })
     const activity = getActivityService(main.host)
     main.services.activity.addChat({ workspaceId: 'ws-app', agentId: 'a1', title: 'Plan', updatedAt: 200 })
     main.services.activity.addChat({ workspaceId: 'ws-gone', agentId: 'a2', title: 'Closed' })
@@ -679,13 +675,13 @@ describe('createFakeMainHost: Backlog, usage and activity', () => {
     assert.equal(!bad.ok && bad.code, 'invalid_input')
     main.permissions.clear()
     const refused = await activity.listChats()
-    assert.equal(!refused.ok && refused.code, 'permission_missing')
+    assert.equal(!refused.ok && refused.code, 'not_permitted')
   })
 })
 
 describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills', () => {
   test('storage lists by prefix, reads many at once, and its watch hears own writes and outside changes', async () => {
-    const fake = createFakeMainHost({ moduleId: 'notes', permissions: ['storage'] })
+    const fake = createFakeMainHost({ moduleId: 'notes', permissions: ['storage:own'] })
     const storage = getModuleStorage(fake.host)
     const heard: string[][] = []
     const stop = storage.watch({ workspaceRoot: ROOT }, (change) => heard.push(change.keys))
@@ -711,7 +707,7 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
   })
 
   test('GitHub keeps the readable headers, answers 304 to a matching etag, refuses a mutation and downloads', async () => {
-    const fake = createFakeMainHost({ moduleId: 'radar', permissions: ['github'] })
+    const fake = createFakeMainHost({ moduleId: 'radar', permissions: ['github:api'] })
     const github = getGitHubService(fake.host)
     fake.services.github.respond('GET', '/repos/{owner}/{repo}/pulls', {
       ok: true,
@@ -754,7 +750,7 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
     assert.equal(!unscripted.ok && unscripted.status, 404)
   })
 
-  test('workspaces keep a closed history and answer git info, behind ipc:workspace-read on both hosts', async () => {
+  test('workspaces keep a closed history and answer git info, behind workspace:read on both hosts', async () => {
     let clock = 1_000
     const main = createFakeMainHost({
       moduleId: 'vcs',
@@ -766,6 +762,11 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
       ],
     })
     const context = main.host.requireService(WorkspaceContextToken)
+    await assert.rejects(context.list(), /approved for "workspace:read"/)
+    const refused = await main.host.getWorkspaceGitInfo('ws-app')
+    assert.equal(!refused.ok && refused.code, 'not_permitted')
+    assert.deepEqual(main.undeclared.at(-1), { what: 'getWorkspaceGitInfo', needs: ['workspace:read'] })
+    main.permissions.add('workspace:read')
     main.services.workspaces.close('ws-docs')
     clock = 2_000
     assert.deepEqual(await context.list(), [
@@ -779,14 +780,6 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
       ],
     )
 
-    const refused = await main.host.getWorkspaceGitInfo('ws-app')
-    assert.equal(!refused.ok && refused.code, 'permission_missing')
-    assert.deepEqual(main.undeclared.at(-1), {
-      what: 'getWorkspaceGitInfo',
-      needs: ['ipc:workspace-read'],
-      checked: true,
-    })
-    main.permissions.add('ipc:workspace-read')
     const plain = await main.host.getWorkspaceGitInfo('ws-app')
     assert.equal(!plain.ok && plain.code, 'not_a_repository')
     main.services.workspaces.setGitInfo('ws-app', {
@@ -801,7 +794,11 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
   })
 
   test('module app state is the windows’ to set and main’s to read; a data dir, asset paths and skill status', async () => {
-    const fake = createFakeMainHost({ moduleId: 'pulse', permissions: ['storage'], appState: { pollMinutes: 15 } })
+    const fake = createFakeMainHost({
+      moduleId: 'pulse',
+      permissions: ['storage:own', 'settings:own', 'workspace:read', 'workspace:operate'],
+      appState: { pollMinutes: 15 },
+    })
     assert.equal(fake.host.getModuleAppState('pollMinutes'), 15)
     const heard: unknown[] = []
     fake.host.watchModuleAppState((values) => heard.push(values.pollMinutes))
@@ -819,7 +816,11 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
     assert.equal(existsSync(dir), false, 'dispose removes the temporary folder')
     assert.throws(
       () =>
-        createFakeMainHost({ moduleId: 'pulse', services: { 'core.module-storage': null } }).host.getModuleDataDir(),
+        createFakeMainHost({
+          moduleId: 'pulse',
+          permissions: ['storage:own'],
+          services: { 'core.module-storage': null },
+        }).host.getModuleDataDir(),
       /no storage service is provided/,
     )
 
@@ -829,7 +830,11 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
     assert.throws(() => assets.host.getAssetPath('README.md'), /not among module "pulse"'s verified files/)
     assert.throws(() => assets.host.getAssetPath('../package.json'), /module-relative file path/)
 
-    const skilled = createFakeMainHost({ moduleId: 'pulse', builtinSkills: ['pulse-guide'] })
+    const skilled = createFakeMainHost({
+      moduleId: 'pulse',
+      permissions: ['workspace:read', 'workspace:operate'],
+      builtinSkills: ['pulse-guide'],
+    })
     assert.deepEqual(await skilled.host.getSkillStatus(ROOT, 'pulse-guide'), { ok: false, status: 'missing' })
     assert.deepEqual(await skilled.host.ensureSkillInstalled(ROOT, 'pulse-guide'), { ok: true, status: 'installed' })
     assert.deepEqual(await skilled.host.getSkillStatus(ROOT, 'pulse-guide'), { ok: true, status: 'installed' })
@@ -841,7 +846,7 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
   })
 
   test('notify keeps a valid target, refuses a malformed one and clips as the host clips', () => {
-    const fake = createFakeMainHost({ moduleId: 'notes' })
+    const fake = createFakeMainHost({ moduleId: 'notes', permissions: ['notifications:show'] })
     fake.host.notify({ severity: 'info', title: 'x'.repeat(250), target: { surfaceId: ' notes ', viewId: 'inbox' } })
     assert.equal(fake.notifications[0]?.title.length, 200)
     assert.deepEqual(fake.notifications[0]?.target, { surfaceId: 'notes', viewId: 'inbox' })
@@ -907,7 +912,7 @@ describe('createFakeMainHost: agents, conversations and scheduled agents', () =>
     const fake = createFakeMainHost({ moduleId: 'digest', permissions: [] })
     const text = getTextGenerationService(fake.host)
     const refused = await text.generate({ prompt: 'Summarise' })
-    assert.equal(!refused.ok && refused.code, 'permission_missing')
+    assert.equal(!refused.ok && refused.code, 'not_permitted')
     fake.permissions.add('agents:generate')
 
     const unscripted = await text.generate({ prompt: 'Summarise' })
@@ -962,7 +967,7 @@ describe('createFakeMainHost: agents, conversations and scheduled agents', () =>
     assert.match(companions.prompts[0]?.prompt ?? '', /You have no tools for this task/)
     await assert.rejects(
       handle.runStructured({ prompt: 'Fix it', validate, tools: 'auto' }),
-      /"conversation:bypass" permission/,
+      /approved for "conversation:bypass"/,
     )
     fake.permissions.add('conversation:bypass')
     assert.deepEqual(await handle.runStructured({ prompt: 'Fix it', validate, tools: 'auto' }), {
@@ -975,7 +980,7 @@ describe('createFakeMainHost: agents, conversations and scheduled agents', () =>
       if (event.type !== 'approval_requested') return
       const requestId = String(event.payload?.requestId)
       void handle.respondToApproval({ requestId, decision: 'once' }).then(async (allowed) => {
-        assert.match(allowed.ok ? '' : allowed.message, /"conversation:operate" permission/)
+        assert.match(allowed.ok ? '' : allowed.message, /approved for "conversation:own"/)
         await handle.respondToApproval({ requestId, decision: 'deny' })
       })
     })
@@ -998,7 +1003,7 @@ describe('createFakeMainHost: agents, conversations and scheduled agents', () =>
   })
 
   test('conversations: reply reads a turn’s text, a worktree chat gets a workspace of its own, and a follow waits for a chat', async () => {
-    const fake = createFakeMainHost({ moduleId: 'board', permissions: ['conversation:operate'] })
+    const fake = createFakeMainHost({ moduleId: 'board', permissions: ['conversation:own'] })
     const chats = getConversationService(fake.host)
     const created = await chats.create({ workspaceId: 'ws-app', prompt: 'Plan it' })
     assert.ok(created.ok)
@@ -1022,7 +1027,7 @@ describe('createFakeMainHost: agents, conversations and scheduled agents', () =>
     fake.services.workspaces.setGitInfo('ws-app', { branch: 'main', remotes: [] })
     const isolated = await chats.create({ workspaceId: 'ws-app', worktree: { name: 'fix-ci' } })
     assert.ok(isolated.ok && isolated.conversation.workspaceId !== 'ws-app')
-    fake.permissions.add('ipc:workspace-read')
+    fake.permissions.add('workspace:read')
     const git = await fake.host.getWorkspaceGitInfo(isolated.conversation.workspaceId)
     assert.ok(git.ok && git.branch?.startsWith('agent/fix-ci-'))
 
@@ -1043,7 +1048,7 @@ describe('createFakeMainHost: agents, conversations and scheduled agents', () =>
     let clock = Date.parse('2026-10-09T10:00:00Z')
     const fake = createFakeMainHost({
       moduleId: 'board',
-      permissions: ['scheduled-agents.manage', 'conversation:read'],
+      permissions: ['schedules:own', 'conversation:own'],
       now: () => clock,
     })
     const scheduled = getScheduledAgentsService(fake.host)
@@ -1082,7 +1087,7 @@ describe('createFakeMainHost: agents, conversations and scheduled agents', () =>
   })
 
   test('listChatRuntimes answers runtime ids, and the test can change them', async () => {
-    const fake = createFakeMainHost({ moduleId: 'board' })
+    const fake = createFakeMainHost({ moduleId: 'board', permissions: ['providers:read'] })
     assert.deepEqual(
       (await fake.host.listChatRuntimes()).map((runtime) => runtime.id),
       ['claude-code', 'codex'],
@@ -1094,12 +1099,12 @@ describe('createFakeMainHost: agents, conversations and scheduled agents', () =>
 })
 
 describe('createFakeRendererHost: openChat', () => {
-  test('a draft needs chat:draft, sending needs conversation:operate, and a dedupeKey focuses the chat it opened', async () => {
+  test('a draft needs chat:draft, sending needs conversation:own, and a dedupeKey focuses the chat it opened', async () => {
     const main = createFakeMainHost({ moduleId: 'board', permissions: ['chat:draft'] })
     const renderer = createFakeRendererHost({ main })
     const sent = await renderer.host.openChat({ workspaceId: 'ws-app', prompt: 'Go', send: true })
-    assert.equal(!sent.ok && sent.code, 'permission_missing')
-    assert.deepEqual(renderer.undeclared.at(-1), { what: 'openChat', needs: ['conversation:operate'], checked: true })
+    assert.equal(!sent.ok && sent.code, 'not_permitted')
+    assert.deepEqual(renderer.undeclared.at(-1), { what: 'openChat', needs: ['conversation:own'] })
 
     const first = await renderer.host.openChat({
       workspaceId: 'ws-app',

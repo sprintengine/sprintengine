@@ -460,7 +460,7 @@ function classifyProviderAdapterWithEntryHash(
     }
   }
 
-  const trust = classifySignedManifestTrust(manifest, options.providerTrustContext ?? { trustedModules: new Map() })
+  const trust = classifySignedManifestTrust(manifest, options.providerTrustContext ?? {})
   if (trust.status === 'trusted') {
     return {
       kind: 'trusted-executable',

@@ -3,7 +3,7 @@
 The worker is the extension's background code: `main` in extension.json, a
 CommonJS bundle Studio loads with Node's `require`. It exports `activate`, as a
 named export or its default, and Studio calls it with a `studio` object once
-the extension is trusted and on. `background: true` in extension.json keeps it
+the extension is approved and on. `background: true` in extension.json keeps it
 running while the extension is on.
 
 ```ts
@@ -69,16 +69,16 @@ method of its name.
 | Member | Notes |
 | --- | --- |
 | `moduleId`, `supports(capability)` | Your install key (`local.<id>` for a folder install); ask `supports` before using a capability. |
-| `listChatRuntimes()` | `Promise<[{ id, label, available, models, lastSelected }]>`: the agent runtimes a chat can run on, with missing ones `available: false`. `id` is the runtime id every `cli` takes. May probe (cached a minute). `supports('chat-runtimes')`. |
-| `registerMethods<Contract>(methods)` | Methods the surfaces call with `studio.methods<Contract>()`, and the methods your commands run: each `{ access: 'read' \| 'operate', params, handler }`. `params` validates what was sent (`{ ok: true, params }` or `{ ok: false, message }`, answered `invalid_params`); the handler gets `(params, { clientId, commandId? })` and answers `{ ok: true, result }` (JSON) or `{ ok: false, code, message }`. Names: a lower-case letter, then letters, digits, dots, dashes. Needs `module:bridge`. |
+| `listChatRuntimes()` | `Promise<[{ id, label, available, models, lastSelected }]>`: the agent runtimes a chat can run on, with missing ones `available: false`. `id` is the runtime id every `cli` takes. May probe (cached a minute). `supports('chat-runtimes')`. `providers:read`. |
+| `registerMethods<Contract>(methods)` | Methods the surfaces call with `studio.methods<Contract>()`, and the methods your commands run: each `{ access: 'read' \| 'operate', params, handler }`. `params` validates what was sent (`{ ok: true, params }` or `{ ok: false, message }`, answered `invalid_params`); the handler gets `(params, { clientId, commandId? })` and answers `{ ok: true, result }` (JSON) or `{ ok: false, code, message }`. Names: a lower-case letter, then letters, digits, dots, dashes. Needs no permission. |
 | `emit(topic, payload?)` | Push a signal to `studio.subscribe(topic, cb)` in every surface. No replay. |
-| `registerMcpTools(tools)` | Serve the MCP tools extension.json declares (`contributes.mcpTools`). A tool not declared there is refused; the declaration's `description` and `access` are what agents see. Needs `mcp:tools`. |
-| `ensureSkillInstalled(root, id)` / `getSkillStatus(root, id)` | Put one of Studio's own skills in a workspace, or check without writing (below). |
-| `getModuleAppState(key)` / `watchModuleAppState(cb)` | Your extension's app state (what its surfaces and its settings section write), read-only, with no window open. `storage`. |
-| `getWorkspaceGitInfo(workspaceId)` | `{ ok, branch, remotes: [{ name, url, github? }] }`, read by git from the workspace's folder. Checked: `ipc:workspace-read`. |
-| `getModuleDataDir()` | A private directory under user data for data past the 1 MB value limit; removed at uninstall. `storage`. |
+| `registerMcpTools(tools)` | Serve the MCP tools extension.json declares (`contributes.mcpTools`). A tool not declared there is refused; the declaration's `description` and `access` are what agents see. Needs `tools:contribute`. |
+| `ensureSkillInstalled(root, id)` / `getSkillStatus(root, id)` | Put one of Studio's own skills in a workspace, or check without writing (below). `workspace:operate` / `workspace:read`. |
+| `getModuleAppState(key)` / `watchModuleAppState(cb)` | Your extension's app state (what its surfaces and its settings section write), read-only, with no window open. `settings:own`. |
+| `getWorkspaceGitInfo(workspaceId)` | `{ ok, branch, remotes: [{ name, url, github? }] }`, read by git from the workspace's folder. Checked: `workspace:read`. |
+| `getModuleDataDir()` | A private directory under user data for data past the 1 MB value limit; removed at uninstall. `storage:own`. |
 | `getAssetPath(relative)` | Absolute path of a file your extension ships (a worker thread, WASM, a data table); verified files only. |
-| `notify({ severity, title, body?, target? })` | A row in the bell of every open window, under the extension's name. The bell is for what went wrong: only `warning` and `error` reach it, and an `info` notify files nothing (say routine news with `toast` from a surface). `target: { surfaceId }` (one of your own doors) gives the row an Open that lands there. Dropped: an identical repeat within 10 s, or more than 20 rows in 10 s — fold a burst into one row. Rows sent before a window opens are kept (last 50). A `notification` menu item in extension.json adds a command to your rows. `supports('notifications')` is false where no window can show it. |
+| `notify({ severity, title, body?, target? })` | A row in the bell of every open window, under the extension's name. The bell is for what went wrong: only `warning` and `error` reach it, and an `info` notify files nothing (say routine news with `toast` from a surface). `target: { surfaceId }` (one of your own doors) gives the row an Open that lands there. Dropped: an identical repeat within 10 s, or more than 20 rows in 10 s — fold a burst into one row. Rows sent before a window opens are kept (last 50). A `notification` menu item in extension.json adds a command to your rows. `supports('notifications')` is false where no window can show it. `notifications:show`. |
 | `onStartup(hook)` / `onShutdownBegin(hook)` / `onShutdown(hook)` | Start watchers on startup; stop loops at shutdown begin; release everything at shutdown. |
 | `requireService(token)` / `getService(token)` | Host services by token (below). `requireService` throws when absent. |
 | `provideService(token, factory)` | Offer a service under a token of your own. |
@@ -91,18 +91,18 @@ its own data.
 
 | Helper / token | Permission | What |
 | --- | --- | --- |
-| `getConversationService(studio)` | `conversation:read` / `conversation:operate` | The extension's own chats — the `conversations` topic |
-| `getModuleStorage(studio)` | `storage` | JSON key-value store, per workspace (`workspaceRoot`) or global; 1 MB per value; atomic writes |
-| `getSecretsService(studio)` | `secrets` | API keys the host holds and sends only to named origins — the `brokers` topic |
-| `getGitHubService(studio)` | `github` | GitHub API calls with the person's sign-in — the `brokers` topic |
-| `getScheduledAgentsService(studio)` | `scheduled-agents.manage` | Create/list/update/remove/run the extension's own scheduled agents, and hear when they change (`onChanged`) and when one starts a chat (`onRun`) |
+| `getConversationService(studio)` | `conversation:own` | The extension's own chats — the `conversations` topic |
+| `getModuleStorage(studio)` | `storage:own` | JSON key-value store, per workspace (`workspaceRoot`) or global; 1 MB per value; atomic writes |
+| `getSecretsService(studio)` | `secrets:own` | API keys the host holds and sends only to named origins — the `brokers` topic |
+| `getGitHubService(studio)` | `github:api` | GitHub API calls with the person's sign-in — the `brokers` topic |
+| `getScheduledAgentsService(studio)` | `schedules:own` | Create/list/update/remove/run the extension's own scheduled agents, and hear when they change (`onChanged`) and when one starts a chat (`onRun`) |
 | `getCompanionAgentsService(studio)` | `agents:companion` | A workspace-bound background agent with a structured `runStructured` task API |
 | `getTextGenerationService(studio)` | `agents:generate` | One prompt answered by the person's own Claude Code or Codex with no chat or workspace — the `conversations` topic |
-| `studio.requireService(WorkspaceContextToken)` | `ipc:workspace-read` | `get(id)`, and `list()` of open workspaces `{ id, name, folderPath, mode, open }`; `list({ includeClosed: true })` adds the ones closed on this machine (`open: false`, `closedAt`) |
-| `studio.requireService(WorkspaceServiceToken)` | `ipc:workspace-write` | `create({ name, folderPath })` a workspace |
-| `getBacklogService(studio)` | `backlog.read` / `backlog.write` | List, locate, create and change Backlog items through the app — below |
+| `studio.requireService(WorkspaceContextToken)` | `workspace:read` | `get(id)`, and `list()` of open workspaces `{ id, name, folderPath, mode, open }`; `list({ includeClosed: true })` adds the ones closed on this machine (`open: false`, `closedAt`) |
+| `studio.requireService(WorkspaceServiceToken)` | `workspace:operate` | `create({ name, folderPath })` a workspace |
+| `getBacklogService(studio)` | `backlog:read` / `backlog:operate` | List, locate, create and change Backlog items through the app — below |
 | `getUsageService(studio)` | `usage:read` | Token usage of every agent session on the machine — below |
-| `getActivityService(studio)` | `conversation:read-all` | The person's Studio chats and prompts, read-only — below |
+| `getActivityService(studio)` | `conversation:read` | The person's Studio chats and prompts, read-only — below |
 
 ## Settings in the worker
 
@@ -123,7 +123,7 @@ studio.onShutdown(stop)
 Declare each tool in extension.json, then serve it from `activate`:
 
 ```json
-"permissions": ["mcp:tools"],
+"permissions": ["tools:contribute"],
 "contributes": {
   "mcpTools": [{ "name": "wordcount_count", "description": "Count the words in a piece of text.", "access": "read" }]
 }
@@ -195,7 +195,7 @@ and returns validated JSON. The agent asks before every tool it uses, and
   Use it whenever the prompt carries text you did not write.
 - `'ask'`: left open for the person. Show the `approval_requested` events from
   `onEvent` and relay their answer with `handle.respondToApproval({ requestId,
-  decision: 'once' | 'deny' })`; allowing needs `conversation:operate`.
+  decision: 'once' | 'deny' })`; allowing needs `conversation:own`.
 - `'auto'`: approved without asking. Needs `conversation:bypass` (the run is
   refused without it).
 
@@ -222,7 +222,7 @@ says when to query again. Do not read `~/.claude` or `~/.codex` yourself.
 **Activity.** `getActivityService(studio)`: `listChats({ from?, to?,
 workspaceId? })` and `prompts({ from, to, workspaceId?, limit? })` — the
 person's messages with the tail of each reply, never tool output. Open
-workspaces only. `conversation:read-all` is flagged broad in the consent
+workspaces only. `conversation:read` is flagged broad in the consent
 prompt; ask for it only when reading the person's chats is the extension's point.
 
 ## Storage

@@ -114,7 +114,7 @@ test('an unknown key is refused inside engines and contributes', () => {
 })
 
 test('an unknown key is refused inside every point’s items', () => {
-  const worker = { tier: 'worker', main: 'dist/main.cjs', permissions: ['mcp:tools'] }
+  const worker = { tier: 'worker', main: 'dist/main.cjs', permissions: ['tools:contribute'] }
   const cases: Array<[Raw, string]> = [
     [{ commands: [{ id: 'notes.clear', title: 'Clear', run: 'x' }] }, 'contributes.commands[0].run'],
     [
@@ -206,7 +206,7 @@ test('a point above the tier fails, naming the tier it needs', () => {
   refusedAt(
     base({
       tier: 'ui',
-      permissions: ['mcp:tools'],
+      permissions: ['tools:contribute'],
       contributes: { mcpTools: [{ name: 'notes_search', description: 'Search', access: 'read' }] },
     }),
     'tier',
@@ -217,11 +217,11 @@ test('a point above the tier fails, naming the tier it needs', () => {
 })
 
 test('permissions on a content or declarative extension fail', () => {
-  refusedAt(base({ tier: 'content', permissions: ['storage'] }), 'tier', /needs "ui"/)
-  refusedAt(base({ tier: 'declarative', permissions: ['storage'] }), 'tier', /needs "ui"/)
-  assert.deepEqual(accepted(base({ tier: 'ui', permissions: ['storage'] })).permissions, ['storage'])
+  refusedAt(base({ tier: 'content', permissions: ['storage:own'] }), 'tier', /needs "ui"/)
+  refusedAt(base({ tier: 'declarative', permissions: ['storage:own'] }), 'tier', /needs "ui"/)
+  assert.deepEqual(accepted(base({ tier: 'ui', permissions: ['storage:own'] })).permissions, ['storage:own'])
   refusedAt(base({ tier: 'ui', permissions: ['root'] }), 'permissions[0]', /must be one of/)
-  refusedAt(base({ tier: 'ui', permissions: ['storage', 'storage'] }), 'permissions[1]', /duplicate permission/)
+  refusedAt(base({ tier: 'ui', permissions: ['storage:own', 'storage:own'] }), 'permissions[1]', /duplicate permission/)
 })
 
 test('the worker tier needs main, and main or background need the worker tier', () => {
@@ -239,7 +239,7 @@ test('a command without an action runs worker code, so it needs the worker tier'
     base({
       tier: 'worker',
       main: 'dist/main.cjs',
-      permissions: ['module:bridge'],
+      permissions: [],
       contributes: { commands: [command] },
     }),
   )
@@ -320,15 +320,17 @@ test('MCP tools need the mcp:tools permission', () => {
   refusedAt(
     base({ tier: 'worker', main: 'dist/main.cjs', contributes }),
     'contributes.mcpTools',
-    /needs the "mcp:tools" permission/,
+    /needs the "tools:contribute" permission/,
   )
-  const manifest = accepted(base({ tier: 'worker', main: 'dist/main.cjs', permissions: ['mcp:tools'], contributes }))
+  const manifest = accepted(
+    base({ tier: 'worker', main: 'dist/main.cjs', permissions: ['tools:contribute'], contributes }),
+  )
   assert.deepEqual(manifest.contributes.mcpTools, contributes.mcpTools)
   refusedAt(
     base({
       tier: 'worker',
       main: 'dist/main.cjs',
-      permissions: ['mcp:tools'],
+      permissions: ['tools:contribute'],
       contributes: { mcpTools: [{ name: 'Notes-Search', description: 'x', access: 'read' }] },
     }),
     'contributes.mcpTools[0].name',
@@ -393,7 +395,7 @@ test('requiredExtensionTier is the least tier a manifest’s contents need', () 
     tier({ contributes: { ...empty, commands: [{ id: 'a', title: 'A', action: 'chat.new' }] } }),
     'declarative',
   )
-  assert.equal(tier({ permissions: ['storage'] }), 'ui')
+  assert.equal(tier({ permissions: ['storage:own'] }), 'ui')
   assert.equal(tier({ contributes: { ...empty, panels: [panel()] } }), 'ui')
   assert.equal(tier({ contributes: { ...empty, commands: [{ id: 'a', title: 'A' }] } }), 'worker')
   assert.equal(tier({ main: 'dist/main.cjs' }), 'worker')
@@ -424,15 +426,16 @@ test('reserved ids and publishers are Studio’s own', () => {
   assert.equal(isReservedExtensionPublisher('acme'), false)
 })
 
-test('a command without an action needs the method permission its worker method is declared under', () => {
+test('a command without an action runs its worker method, which needs no permission', () => {
   const worker = {
     tier: 'worker',
     main: 'dist/main.cjs',
     contributes: { commands: [{ id: 'notes.clear', title: 'Clear' }] },
   }
-  refusedAt(base(worker), 'contributes.commands', /module:bridge/)
-  accepted(base({ ...worker, permissions: ['module:bridge'] }))
-  accepted(base({ ...worker, permissions: ['ipc:invoke'] }))
+  accepted(base(worker))
+  accepted(base({ ...worker, permissions: [] }))
+  for (const retired of ['module:bridge', 'ipc:invoke', 'network', 'storage'])
+    refusedAt(base({ ...worker, permissions: [retired] }), 'permissions[0]', /must be one of/)
   // A command that runs a Studio action declares no method.
   accepted(base({ tier: 'declarative', contributes: { commands: [{ id: 'a', title: 'A', action: 'chat.new' }] } }))
 })

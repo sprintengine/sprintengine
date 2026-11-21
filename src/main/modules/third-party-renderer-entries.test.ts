@@ -12,12 +12,13 @@ import {
   writeExtensionFolder,
 } from '../../../tests/extension-folder'
 import { capabilityManifestOf } from '../../shared/modules/third-party-manifest'
-import { extensionContentSync, type ModuleTrustContext } from './module-signature'
+import type { ExtensionStandingContext } from './module-signature'
+import { approvedContext } from './extension-approvals.test-helper'
 import { collectThirdPartyRendererEntries, rendererEntryView } from './third-party-renderer-entries'
 import { discoverUserModules, type InstalledModule } from './user-module-registry'
 import { test } from 'vitest'
 
-const EMPTY_TRUST: ModuleTrustContext = { trustedModules: new Map() }
+const EMPTY_TRUST: ExtensionStandingContext = { approvals: new Map() }
 const ABSOLUTE_PATH_PATTERN = /(^|[\s'"])(?:\/[\w.-]|[A-Za-z]:\\)/
 
 // A ui-tier extension with one panel drawn by `dist/panel.js`.
@@ -47,22 +48,14 @@ function writePanelExtension(
   return writeExtensionFolder(join(root, `local.${id}`), { manifest: PANEL_MANIFEST(id), files })
 }
 
-// The grant Settings → Extensions records: the content the folder holds now.
-function grantsFor(...folders: string[]): ModuleTrustContext {
-  return {
-    trustedModules: new Map(
-      folders.map((folder) => {
-        const content = extensionContentSync(folder)
-        assert.ok(content.ok)
-        return [basename(folder), content.fingerprint]
-      }),
-    ),
-  }
+// The approval Settings → Extensions records: the folder as it is now.
+function grantsFor(...folders: string[]): ExtensionStandingContext {
+  return approvedContext(Object.fromEntries(folders.map((folder) => [basename(folder), folder])))
 }
 
-// Only trusted extensions are servable; signed-pending, unsigned, and invalid
-// stay blocked with their existing statuses.
-test('only a trusted extension’s entries are served', async () => {
+// Only approved extensions are servable; signed or unsigned but not approved,
+// and invalid, stay blocked.
+test('only an approved extension’s entries are served', async () => {
   await withTempDir(async (root) => {
     const approved = writePanelExtension(root, 'approved')
     writePanelExtension(root, 'unapproved')
@@ -72,12 +65,14 @@ test('only a trusted extension’s entries are served', async () => {
     await writeFile(join(tampered, 'dist', 'panel.js'), 'export function mount() { /* evil */ }\n')
 
     const { modules } = await discoverUserModules(root, grantsFor(approved))
-    const statuses = Object.fromEntries(modules.map((module) => [module.key, module.trust.status]))
+    const statuses = Object.fromEntries(
+      modules.map((module) => [module.key, [module.standing.signature, module.standing.approval.state]]),
+    )
     assert.deepEqual(statuses, {
-      'local.approved': 'trusted',
-      'local.pending': 'signed',
-      'local.tampered': 'invalid',
-      'local.unapproved': 'unsigned',
+      'local.approved': ['unsigned', 'approved'],
+      'local.pending': ['signed', 'pending'],
+      'local.tampered': ['invalid', 'unavailable'],
+      'local.unapproved': ['unsigned', 'pending'],
     })
 
     const served = await collectThirdPartyRendererEntries(modules)
@@ -89,7 +84,7 @@ test('only a trusted extension’s entries are served', async () => {
     assert.equal(served.entries[0]!.extension.id, 'approved')
     assert.equal(served.entries[0]!.manifest.id, 'local.approved')
     assert.equal(served.entries[0]!.assetOrigin, undefined)
-    assert.deepEqual(served.failures, {}, 'trust-blocked extensions are not serving failures')
+    assert.deepEqual(served.failures, {}, 'extensions waiting for approval are not serving failures')
 
     const views = Object.fromEntries(modules.map((module) => [module.key, rendererEntryView(module)]))
     assert.equal(views['local.approved']!.availability, 'available')
@@ -117,9 +112,9 @@ test('each distinct entry is served once, whichever surfaces share it', async ()
   })
 })
 
-// A trusted extension with no window code is still served, with no entries,
+// An approved extension with no window code is still served, with no entries,
 // so the window registers its commands, menus and top bar items.
-test('a trusted code-free extension is served with no entries', async () => {
+test('an approved code-free extension is served with no entries', async () => {
   await withTempDir(async (root) => {
     const folder = writeExtensionFolder(join(root, 'local.aliases'), {
       manifest: extensionManifest({
@@ -170,7 +165,11 @@ test('an entry outside the extension’s folder is never served', async () => {
         manifest: capabilityManifestOf(id, 'local', extension),
         extension,
         moduleRoot,
-        trust: { status: 'trusted', verifiedFiles: { [entry]: 'a'.repeat(64) } },
+        standing: {
+          signature: 'unsigned',
+          approval: { state: 'approved', fingerprint: 'sha256-test' },
+          verifiedFiles: { [entry]: 'a'.repeat(64) },
+        },
       }
       const view = rendererEntryView(crafted)
       assert.equal(view.availability, 'error', `${id} entry must be rejected`)
@@ -178,7 +177,7 @@ test('an entry outside the extension’s folder is never served', async () => {
       assert.doesNotMatch(view.message ?? '', ABSOLUTE_PATH_PATTERN)
 
       const served = await collectThirdPartyRendererEntries([crafted])
-      assert.deepEqual(served.entries, [], `${id} entry is never served, even for a trusted extension`)
+      assert.deepEqual(served.entries, [], `${id} entry is never served, even for an approved extension`)
       assert.equal(served.failures[id], 'entry must resolve inside the module root.')
     }
   })
@@ -205,30 +204,30 @@ test('discovery rejects a manifest whose entry escapes its folder', async () => 
   })
 })
 
-// Content-bound trust: changing a trusted extension's files removes it from
-// the servable set (the grant names other content now).
-test('a changed file takes a granted extension out of the served set', async () => {
+// Content-bound approval: changing an approved extension's files removes it from
+// the servable set (the approval names other content now).
+test('a changed file takes an approved extension out of the served set', async () => {
   await withTempDir(async (root) => {
     const folder = writePanelExtension(root, 'demo')
-    const trust = grantsFor(folder)
+    const approvals = grantsFor(folder)
 
-    const before = await discoverUserModules(root, trust)
-    assert.equal(before.modules[0]!.trust.status, 'trusted')
+    const before = await discoverUserModules(root, approvals)
+    assert.equal(before.modules[0]!.standing.approval.state, 'approved')
     assert.equal((await collectThirdPartyRendererEntries(before.modules)).entries.length, 1)
 
     await writeFile(
       join(folder, 'extension.json'),
-      JSON.stringify(PANEL_MANIFEST('demo', { permissions: ['network'] })),
+      JSON.stringify(PANEL_MANIFEST('demo', { permissions: ['settings:own'] })),
     )
-    const after = await discoverUserModules(root, trust)
-    assert.equal(after.modules[0]!.trust.status, 'unsigned')
+    const after = await discoverUserModules(root, approvals)
+    assert.equal(after.modules[0]!.standing.approval.state, 'pending')
     const served = await collectThirdPartyRendererEntries(after.modules)
     assert.deepEqual(served.entries, [], 'changed content is no longer servable')
     assert.equal(rendererEntryView(after.modules[0]!).availability, 'blocked')
   })
 })
 
-test('a missing entry is a serving failure; an untrusted extension with no entries is none', async () => {
+test('a missing entry is a serving failure; a content-only extension with no entries is none', async () => {
   await withTempDir(async (root) => {
     const missing = writePanelExtension(root, 'missing-entry', {})
     writeExtensionFolder(join(root, 'local.content-only'), {
@@ -244,11 +243,15 @@ test('a missing entry is a serving failure; an untrusted extension with no entri
     assert.doesNotMatch(view.message ?? '', ABSOLUTE_PATH_PATTERN)
 
     const contentOnly = modules.find((module) => module.key === 'local.content-only')!
-    assert.equal(contentOnly.trust.status, 'unsigned')
+    assert.equal(contentOnly.standing.approval.state, 'not-needed')
     assert.equal(rendererEntryView(contentOnly).availability, 'none')
 
     const served = await collectThirdPartyRendererEntries(modules)
-    assert.deepEqual(served.entries, [])
+    // Content needs no approval: it is served, with nothing to run.
+    assert.deepEqual(
+      served.entries.map((entry) => [entry.id, entry.entries]),
+      [['local.content-only', {}]],
+    )
     assert.equal(served.failures['local.missing-entry'], 'The window entry dist/panel.js is missing.')
     assert.equal('local.content-only' in served.failures, false)
   })
@@ -268,7 +271,7 @@ test('an entry that changed after verification is not served', async () => {
   })
 })
 
-// What `extension.rendererEntries` serves: only the trusted entries, each with
+// What `extension.rendererEntries` serves: only the approved entries, each with
 // the private origin its assets are served at in this Studio's windows.
 test('each served extension carries its asset origin', async () => {
   await withTempDir(async (root) => {

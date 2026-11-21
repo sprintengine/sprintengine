@@ -3,9 +3,7 @@
   "title": "Worker",
   "summary": "src/main.ts, built to main: Node in Studio's background, for services, MCP tools, the commands extension.json declares without an action, and the methods its surfaces call.",
   "requires": [],
-  "permissions": [
-    "module:bridge"
-  ],
+  "permissions": [],
   "main": "dist/main.cjs",
   "contributes": {},
   "scripts": {

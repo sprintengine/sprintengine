@@ -9,8 +9,7 @@ import { canonicalManifestPayload } from '../../packages/extension-sdk/src/manif
 import { agentCliSupportsConversationResume, agentCliUsesStableSessionIdForResume } from '../shared/agent-cli-resume'
 import { createPluginRegistry, validateManifestSource } from './plugin-registry'
 import { renderPluginLaunch } from './plugin-render'
-import { manifestFingerprint, verifyModuleSignature } from './modules/module-signature'
-import { createAppPluginRegistryOptions } from './plugin-registry-instance'
+import { verifyModuleSignature } from './modules/module-signature'
 import { test } from 'vitest'
 
 test('plugin-registry', async () => {
@@ -45,9 +44,7 @@ test('plugin-registry', async () => {
     await testCliProviderFieldMixingRejected()
     await testBundledExecutableProviderClassifiedAsExecutable()
     await testUnsignedExecutableProviderBlockedInProduction()
-    await testUnsignedExecutableProviderBlockedEvenWhenContentTrusted()
     await testSignedTrustedExecutableProviderClassifiedAsExecutable()
-    await testAppRegistryTrustStoreClassifiesSignedProviderExecutable()
     await testTamperedExecutableProviderBlocked()
     await testTamperedExecutableProviderEntryBlocked()
     await testUnsafeExecutableProviderEntryRejected()
@@ -1062,34 +1059,6 @@ test('plugin-registry', async () => {
     assert.match(provider!.adapter.trustError ?? '', /cannot run in production/)
   }
 
-  async function testUnsignedExecutableProviderBlockedEvenWhenContentTrusted(): Promise<void> {
-    const manifest: ConversationProviderManifest = {
-      kind: 'provider',
-      id: 'trusted-unsigned-adapter',
-      displayName: 'Trusted Unsigned Adapter',
-      version: 1,
-      providerType: 'model-provider',
-      models: [{ id: 'demo' }],
-      adapter: executableAdapterSpec(),
-    }
-    const userRoot = await createUserProvider('trusted-unsigned-adapter', manifest)
-
-    const registry = createPluginRegistry({
-      bundledRoot: BUNDLED_ROOT,
-      userRoot,
-      productionMode: true,
-      providerTrustContext: {
-        trustedModules: new Map([[manifest.id, manifestFingerprint(manifest)]]),
-      },
-    })
-    const report = await registry.load()
-    assert.deepEqual(report.rejected, [])
-    const provider = registry.getConversationProvider('trusted-unsigned-adapter')
-    assert.ok(provider)
-    assert.equal(provider!.adapter.execution, 'blocked')
-    assert.equal(provider!.adapter.trust, 'unsigned')
-  }
-
   async function testSignedTrustedExecutableProviderClassifiedAsExecutable(): Promise<void> {
     const signed = signProviderManifest({
       kind: 'provider',
@@ -1107,7 +1076,7 @@ test('plugin-registry', async () => {
     const registry = createPluginRegistry({
       bundledRoot: BUNDLED_ROOT,
       userRoot,
-      providerTrustContext: { trustedModules: new Map(), trustedKeyFingerprints: new Set([fingerprint!]) },
+      providerTrustContext: { trustedKeyFingerprints: new Set([fingerprint!]) },
     })
     const report = await registry.load()
     assert.deepEqual(report.rejected, [])
@@ -1116,29 +1085,6 @@ test('plugin-registry', async () => {
     assert.equal(provider!.adapter.execution, 'executable')
     assert.equal(provider!.adapter.trust, 'trusted')
     assert.equal(provider!.adapter.fingerprint, fingerprint)
-  }
-
-  async function testAppRegistryTrustStoreClassifiesSignedProviderExecutable(): Promise<void> {
-    const signed = signProviderManifest({
-      kind: 'provider',
-      id: 'app-trusted-adapter',
-      displayName: 'App Trusted Adapter',
-      version: 1,
-      providerType: 'model-provider',
-      models: [{ id: 'demo' }],
-      adapter: executableAdapterSpec(),
-    })
-    const userRoot = await createUserProvider('app-trusted-adapter', signed)
-    const userDataDir = await mkdtemp(join(tmpdir(), 'sprintengine-provider-trust-store-'))
-    await writeTrustedModules(userDataDir, { [signed.id]: manifestFingerprint(signed) })
-
-    const registry = createPluginRegistry(createAppPluginRegistryOptions(userDataDir, BUNDLED_ROOT, userRoot))
-    const report = await registry.load()
-    assert.deepEqual(report.rejected, [])
-    const provider = registry.getConversationProvider('app-trusted-adapter')
-    assert.ok(provider)
-    assert.equal(provider!.adapter.execution, 'executable')
-    assert.equal(provider!.adapter.trust, 'trusted')
   }
 
   async function testTamperedExecutableProviderBlocked(): Promise<void> {
@@ -1180,9 +1126,7 @@ test('plugin-registry', async () => {
     const registry = createPluginRegistry({
       bundledRoot: BUNDLED_ROOT,
       userRoot,
-      providerTrustContext: {
-        trustedModules: new Map([[signed.id, manifestFingerprint(signed)]]),
-      },
+      providerTrustContext: { trustedKeyFingerprints: new Set([verifyModuleSignature(signed).fingerprint!]) },
     })
     const report = await registry.load()
     assert.deepEqual(report.rejected, [])
@@ -1235,11 +1179,6 @@ test('plugin-registry', async () => {
       ...manifest,
       signature: { algorithm: 'ed25519', publicKey: publicKeyB64, signature },
     }
-  }
-
-  async function writeTrustedModules(userDataDir: string, trusted: Record<string, string>): Promise<void> {
-    await mkdir(userDataDir, { recursive: true })
-    await writeFile(join(userDataDir, 'trusted-modules.json'), JSON.stringify(trusted), 'utf-8')
   }
 
   const ADAPTER_CONTENT = 'export default function providerAdapter() { return null }\n'

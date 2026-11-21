@@ -40,7 +40,7 @@ function manifest(permissions: string[]): CapabilityManifest {
   return { id: 'acme', displayName: 'Acme', version: 1, defaultEnabled: true, source: 'third-party', permissions }
 }
 
-test('openChat refuses a module that declared neither chat:draft nor conversation:operate, before reaching the opener', async () => {
+test('openChat refuses a module that declared neither chat:draft nor conversation:own, before reaching the opener', async () => {
   let called = false
   setWorkspaceChatOpener(async () => {
     called = true
@@ -50,12 +50,12 @@ test('openChat refuses a module that declared neither chat:draft nor conversatio
   for (const host of [kernel.hostFor('acme'), kernel.hostFor('acme', manifest(['conversation:read']))]) {
     const result = await host.openChat({ workspaceId: 'ws-1' })
     assert.equal(result.ok, false)
-    if (!result.ok) assert.equal(result.code, 'permission_missing')
+    if (!result.ok) assert.equal(result.code, 'not_permitted')
   }
   assert.equal(called, false)
 })
 
-test('chat:draft opens a draft, and only conversation:operate sends the prompt', async () => {
+test('chat:draft opens a draft, and only conversation:own sends the prompt', async () => {
   const calls: Parameters<WorkspaceChatOpener>[0][] = []
   setWorkspaceChatOpener(async (input) => {
     calls.push(input)
@@ -71,9 +71,9 @@ test('chat:draft opens a draft, and only conversation:operate sends the prompt',
     },
   )
   const sent = await drafter.openChat({ workspaceId: 'ws-1', prompt: 'Fix CI', send: true })
-  assert.equal(!sent.ok && sent.code, 'permission_missing')
-  assert.match(!sent.ok ? sent.message : '', /conversation:operate/)
-  const operator = kernel.hostFor('acme', manifest(['conversation:operate']))
+  assert.equal(!sent.ok && sent.code, 'not_permitted')
+  assert.match(!sent.ok ? sent.message : '', /conversation:own/)
+  const operator = kernel.hostFor('acme', manifest(['conversation:own']))
   assert.equal((await operator.openChat({ workspaceId: 'ws-1', prompt: 'Fix CI', send: true })).ok, true)
   assert.deepEqual(
     calls.map((call) => [call.send ?? false, call.name ?? null, call.dedupeKey ?? null]),
@@ -85,7 +85,7 @@ test('chat:draft opens a draft, and only conversation:operate sends the prompt',
 })
 
 test('openChat answers unavailable until the shell registers an opener', async () => {
-  const host = createRendererHost().hostFor('acme', manifest(['conversation:operate']))
+  const host = createRendererHost().hostFor('acme', manifest(['conversation:own']))
   const result = await host.openChat({ workspaceId: 'ws-1' })
   assert.equal(result.ok, false)
   if (!result.ok) assert.equal(result.code, 'unavailable')
@@ -97,14 +97,14 @@ test('openChat hands the registered opener the input stamped with the calling mo
     calls.push(input)
     return { ok: true, agentId: 'chat-7' }
   })
-  const host = createRendererHost().hostFor('acme', manifest(['conversation:operate']))
+  const host = createRendererHost().hostFor('acme', manifest(['conversation:own']))
   const result = await host.openChat({ workspaceId: 'ws-1', prompt: 'Review this', send: true })
   assert.deepEqual(result, { ok: true, agentId: 'chat-7' })
   assert.deepEqual(calls, [{ workspaceId: 'ws-1', prompt: 'Review this', send: true, moduleId: 'acme' }])
 })
 
 test("supports('chat.open') follows the shell's opener rather than a table", () => {
-  const host = createRendererHost().hostFor('acme', manifest(['conversation:operate']))
+  const host = createRendererHost().hostFor('acme', manifest(['conversation:own']))
   assert.equal(host.supports('chat.open'), false)
   assert.equal(host.supports('chat.open-options'), false)
   setWorkspaceChatOpener(async () => ({ ok: true, agentId: 'chat-1' }))

@@ -11,18 +11,16 @@
   "description": "A forecast panel, a door, and a forecast tool for agents.",
   "license": "MIT",
   "permissions": [
-    "network",
-    "ipc:workspace-read",
-    "module:bridge",
-    "mcp:tools",
-    "scheduled-agents.manage",
-    "backlog.read",
+    "workspace:read",
+    "tools:contribute",
+    "schedules:own",
+    "backlog:read",
     "agents:companion",
-    "conversation:operate",
-    "secrets",
-    "github",
-    "storage",
-    "process:spawn"
+    "conversation:own",
+    "secrets:own",
+    "github:api",
+    "storage:own",
+    "notifications:show"
   ],
   "main": "dist/main.cjs",
   "contributes": {

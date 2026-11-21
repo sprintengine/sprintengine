@@ -30,7 +30,6 @@ function bundledPlugins() {
   // The bundled manifests, so the claude harness resolves the way it does in the app.
   const registry = createPluginRegistry(
     createAppPluginRegistryOptions(
-      join(process.cwd(), 'node_modules', '.cache', 'sprintengine'),
       join(process.cwd(), 'resources', 'plugins'),
       join(process.cwd(), 'node_modules', '.cache', 'sprintengine', 'plugins-none'),
     ),

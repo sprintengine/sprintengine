@@ -31,11 +31,11 @@ test('resolve', async () => {
     const result = resolveModuleEnablement(
       [manifest('thirdparty', { source: 'third-party', defaultEnabled: true })],
       {},
-      { ineligible: { thirdparty: 'untrusted' } },
+      { ineligible: { thirdparty: 'unapproved' } },
     )
-    assert.deepEqual(result.order, [], 'an untrusted module does not load')
+    assert.deepEqual(result.order, [], 'an unapproved module does not load')
     assert.equal(
-      result.errors.some((e) => e.id === 'thirdparty' && e.code === 'untrusted'),
+      result.errors.some((e) => e.id === 'thirdparty' && e.code === 'unapproved'),
       true,
     )
   }
@@ -45,11 +45,11 @@ test('resolve', async () => {
     const result = resolveModuleEnablement(
       [manifest('base', { source: 'third-party' }), manifest('dependent', { dependsOn: ['base'] })],
       {},
-      { ineligible: { base: 'untrusted' } },
+      { ineligible: { base: 'unapproved' } },
     )
     assert.deepEqual(result.order, [])
     assert.equal(
-      result.errors.some((e) => e.id === 'base' && e.code === 'untrusted'),
+      result.errors.some((e) => e.id === 'base' && e.code === 'unapproved'),
       true,
     )
     assert.equal(

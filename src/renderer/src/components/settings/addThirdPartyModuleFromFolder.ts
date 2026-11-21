@@ -1,5 +1,5 @@
 import type { ElectronApi } from '../../../../shared/electron-api'
-import type { ModuleTrustStatus } from '../../../../shared/modules/manifest'
+import type { StudioExtensionApproval } from '../../../../../packages/studio-protocol/src/public'
 import type { ModuleLifecycleClient } from '../../studio/moduleLifecycle'
 import { copy } from '../../../../shared/copy'
 
@@ -8,7 +8,8 @@ export type AddThirdPartyModuleOutcome =
   | {
       status: 'installed'
       id: string | null
-      trust: ModuleTrustStatus | null
+      /** Whether it waits for the person's approval, and what to approve. */
+      approval: StudioExtensionApproval | null
       /** Symbolic links in the folder that were left out of the copy, relative to it. */
       strippedLinks: string[]
     }
@@ -47,7 +48,7 @@ export async function addThirdPartyModuleFromFolder(
     return {
       status: 'installed',
       id: result.moduleId.trim() || null,
-      trust: result.trust,
+      approval: result.approval,
       strippedLinks: result.strippedLinks ?? [],
     }
   } catch (error) {
