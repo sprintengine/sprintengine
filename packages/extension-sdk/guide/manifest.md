@@ -79,9 +79,9 @@ answers the least tier a manifest needs.
   each one here, with what agents are told it does and whether it changes
   anything; the worker serves them with `registerMcpTools`. A tool the worker
   registers that is not declared is refused, and the declaration's words win.
-  Give each its `inputSchema` too: agents see its parameters before the
-  worker has ever run, and the schema the worker registers must take no more
-  than it. Needs the `tools:contribute` permission.
+  Each names its parameters in `inputSchema` (required): agents see them
+  before the worker has ever run, and the schema the worker registers must
+  take no more than it. Needs the `tools:contribute` permission.
 
 Every point defaults to empty. The points held for later formats (themes,
 keybindings, skills and the rest, listed under the reference) must be empty
@@ -188,7 +188,7 @@ markers.
 | `contributes.mcpTools[].name` | string | yes | 0.13.0 |  | The tool’s name on Studio’s MCP server. The worker serves it with `registerMcpTools`; a tool it registers that is not declared here is refused. |
 | `contributes.mcpTools[].description` | string | yes | 0.13.0 |  | What agents are told the tool does. |
 | `contributes.mcpTools[].access` | `read` \| `operate` | yes | 0.13.0 |  | `read` changes nothing; `operate` may, and agents are asked before it runs where their settings say so. |
-| `contributes.mcpTools[].inputSchema` | JSON Schema object |  | 0.13.0 |  | The tool’s parameters, as a JSON Schema for an object: what agents see before the worker has ever run. The schema the worker registers must take no more than this one (no parameter it leaves out, none it requires dropped). Without it, agents see the worker’s schema once it has run. |
+| `contributes.mcpTools[].inputSchema` | JSON Schema object | yes | 0.13.0 |  | The tool’s parameters, as a JSON Schema for an object: what agents see, before the worker has ever run. The schema the worker registers must take no more than this one (no parameter it leaves out, none it requires dropped). A tool that takes none says `{ "type": "object", "properties": {} }`. |
 
 Reserved, and must be empty for now: `contributes.themes`, `contributes.terminalThemes`, `contributes.iconThemes`, `contributes.syntaxes`, `contributes.fonts`, `contributes.snippets`, `contributes.keybindings`, `contributes.statusBarItems`, `contributes.settings`, `contributes.customEditors`, `contributes.newFiles`, `contributes.events`, `contributes.hooks`, `contributes.sidecars`, `contributes.agentProviders`, `contributes.skills`, `contributes.mcpServers`, `contributes.providers`.
 

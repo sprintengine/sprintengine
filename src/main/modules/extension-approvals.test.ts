@@ -69,7 +69,7 @@ test('what a manifest asks for, and that only content needs no approval', () => 
           { id: 'b.run', title: 'B', action: 'chat.new' },
           { id: 'a.mine', title: 'A' },
         ],
-        mcpTools: [{ name: 'notes_write', description: 'Writes.', access: 'operate' }],
+        mcpTools: [{ name: 'notes_write', description: 'Writes.', access: 'operate', inputSchema: { type: 'object' } }],
       },
     }),
     {

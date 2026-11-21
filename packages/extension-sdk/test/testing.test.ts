@@ -207,8 +207,13 @@ describe('createFakeMainHost', () => {
         permissions: ['tools:contribute'],
         contributes: {
           mcpTools: [
-            { name: 'notes_search', description: 'Search the notes.', access: 'read' },
-            { name: 'notes_clear', description: 'Clear the notes.', access: 'operate' },
+            { name: 'notes_search', description: 'Search the notes.', access: 'read', inputSchema: { type: 'object' } },
+            {
+              name: 'notes_clear',
+              description: 'Clear the notes.',
+              access: 'operate',
+              inputSchema: { type: 'object' },
+            },
           ],
         },
       },

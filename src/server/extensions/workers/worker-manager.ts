@@ -124,8 +124,6 @@ type Entry = {
   /** What its running process registered. */
   methods: Map<string, ModuleMethodAccess>
   tools: Set<string>
-  /** The input schemas its tools last registered, advertised while it is not running. */
-  schemas: Map<string, Record<string, unknown>>
   handlers: Map<string, McpToolRegistration['handler']>
 }
 
@@ -240,9 +238,8 @@ export class ExtensionWorkers implements KernelWorkerPort {
             name: declared.name,
             description: declared.description,
             mutates: declared.access === 'operate',
-            // extension.json's, so agents see the parameters before it has
-            // ever run; else what its worker last registered.
-            inputSchema: declared.inputSchema ?? entry.schemas.get(declared.name) ?? { type: 'object' },
+            // extension.json's, so agents see the parameters before it has ever run.
+            inputSchema: declared.inputSchema,
             handler,
           },
         })
@@ -331,7 +328,6 @@ export class ExtensionWorkers implements KernelWorkerPort {
       slot: null,
       methods: new Map(),
       tools: new Set(),
-      schemas: new Map(),
       handlers: new Map(),
     }
     this.entries.set(spec.extensionId, entry)
@@ -632,7 +628,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
   private registerMcpTools(entry: Entry, tools: unknown): void {
     const id = entry.spec.extensionId
     if (!Array.isArray(tools)) throw new Error('registerMcpTools takes a list of tools.')
-    const batch = new Map<string, Record<string, unknown>>()
+    const batch = new Set<string>()
     for (const tool of tools as Array<{ name?: unknown; inputSchema?: unknown }>) {
       const name = typeof tool?.name === 'string' ? tool.name : ''
       const declared = entry.spec.declaredTools.find((candidate) => candidate.name === name)
@@ -644,18 +640,12 @@ export class ExtensionWorkers implements KernelWorkerPort {
         throw new Error(`MCP tool "${name}" is registered twice by extension "${id}".`)
       if (!isRecord(tool.inputSchema))
         throw new Error(`MCP tool "${name}" from extension "${id}" has no inputSchema object.`)
-      const wider = declared.inputSchema ? widerThanDeclared(tool.inputSchema, declared.inputSchema) : null
+      const wider = widerThanDeclared(tool.inputSchema, declared.inputSchema)
       if (wider)
         throw new Error(`MCP tool "${name}" from extension "${id}" takes more than its extension.json says: ${wider}`)
-      batch.set(name, tool.inputSchema)
+      batch.add(name)
     }
-    let changed = false
-    for (const [name, schema] of batch) {
-      entry.tools.add(name)
-      if (JSON.stringify(entry.schemas.get(name)) !== JSON.stringify(schema)) changed = true
-      entry.schemas.set(name, schema)
-    }
-    if (changed) this.options.toolsChanged?.()
+    for (const name of batch) entry.tools.add(name)
   }
 
   private toolHandler(moduleId: string, name: string): McpToolRegistration['handler'] {

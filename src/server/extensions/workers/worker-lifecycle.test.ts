@@ -204,7 +204,14 @@ test('its MCP tools are on the gateway before it runs, and a call reaches its wo
       id: 'echo',
       main,
       permissions: ['tools:contribute'],
-      mcpTools: [{ name: 'echo_words', description: 'Count the words.', access: 'read' }],
+      mcpTools: [
+        {
+          name: 'echo_words',
+          description: 'Count the words.',
+          access: 'read',
+          inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+        },
+      ],
     },
   ])
   const listed = () =>
@@ -214,7 +221,11 @@ test('its MCP tools are on the gateway before it runs, and a call reaches its wo
   assert.equal(before.moduleId, 'local.echo')
   assert.equal(before.registration.description, 'Count the words.', 'described as extension.json describes it')
   assert.equal(before.registration.mutates, false)
-  assert.deepEqual(before.registration.inputSchema, { type: 'object' })
+  assert.deepEqual(before.registration.inputSchema, {
+    type: 'object',
+    properties: { text: { type: 'string' } },
+    required: ['text'],
+  })
   assert.equal(harness.workers.status('local.echo')?.state, 'idle')
 
   const result = (await runAsInvoker(ownerInvoker('auto', 'the agent'), () =>
@@ -223,12 +234,6 @@ test('its MCP tools are on the gateway before it runs, and a call reaches its wo
   assert.deepEqual(result.content, [{ type: 'text', text: '3 words' }])
   assert.equal((result.structuredContent as { kind: string }).kind, 'studio-agent')
   assert.notEqual((result.structuredContent as { pid: number }).pid, process.pid)
-  assert.deepEqual(listed()?.registration.inputSchema, {
-    type: 'object',
-    properties: { text: { type: 'string' } },
-    required: ['text'],
-  })
-  assert.ok(harness.toolsChanged() >= 1, 'MCP clients are told the schema changed')
 })
 
 test('a worker that serves a tool its extension.json does not declare does not start', async () => {
@@ -239,7 +244,7 @@ test('a worker that serves a tool its extension.json does not declare does not s
         id: 'sneaky',
         main,
         permissions: ['tools:contribute'],
-        mcpTools: [{ name: 'open_tool', description: 'Open.', access: 'read' }],
+        mcpTools: [{ name: 'open_tool', description: 'Open.', access: 'read', inputSchema: { type: 'object' } }],
       },
     ],
     { maxRestarts: 0 },
@@ -251,7 +256,9 @@ test('a worker that serves a tool its extension.json does not declare does not s
 })
 
 test('a background worker whose folder was removed or changed stops, stays stopped, and its tools leave the gateway', async () => {
-  const tools = (id: string) => [{ name: `${id}_ping`, description: 'Ping.', access: 'read' as const }]
+  const tools = (id: string) => [
+    { name: `${id}_ping`, description: 'Ping.', access: 'read' as const, inputSchema: { type: 'object' } },
+  ]
   harness = startWorkerHarness([
     worker('removed', { background: true, permissions: ['tools:contribute'], mcpTools: tools('removed') }),
     worker('changed', { background: true, permissions: ['tools:contribute'], mcpTools: tools('changed') }),
@@ -336,7 +343,7 @@ test('a worker that stops between starting and taking a call answers that it is 
         studio.registerMcpTools([{ name: 'brief_ping', description: 'x', inputSchema: { type: 'object' }, handler: async () => ({ content: [] }) }])
       })(exports.activate)\n`,
       permissions: ['tools:contribute'],
-      mcpTools: [{ name: 'brief_ping', description: 'Ping.', access: 'read' }],
+      mcpTools: [{ name: 'brief_ping', description: 'Ping.', access: 'read', inputSchema: { type: 'object' } }],
     }),
   ])
   const workers = harness.workers as unknown as { ensure: (id: string) => Promise<{ session: unknown }> }

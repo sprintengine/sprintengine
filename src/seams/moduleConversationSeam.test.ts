@@ -167,7 +167,14 @@ test('moduleConversationSeam', async () => {
   const load = loadMainModules({
     // What acme's extension.json declares: the only tool its worker may serve.
     moduleMcpTools: {
-      'acme.chat': [{ name: 'acme_start_chat', description: 'Starts a chat for whoever calls it.', access: 'operate' }],
+      'acme.chat': [
+        {
+          name: 'acme_start_chat',
+          description: 'Starts a chat for whoever calls it.',
+          access: 'operate',
+          inputSchema: { type: 'object' },
+        },
+      ],
     },
     modules: [
       agentRuntime,

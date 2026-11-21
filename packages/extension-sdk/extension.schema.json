@@ -666,7 +666,7 @@
                     "const": "object"
                   }
                 },
-                "description": "The tool’s parameters, as a JSON Schema for an object: what agents see before the worker has ever run. The schema the worker registers must take no more than this one (no parameter it leaves out, none it requires dropped). Without it, agents see the worker’s schema once it has run.",
+                "description": "The tool’s parameters, as a JSON Schema for an object: what agents see, before the worker has ever run. The schema the worker registers must take no more than this one (no parameter it leaves out, none it requires dropped). A tool that takes none says `{ \"type\": \"object\", \"properties\": {} }`.",
                 "x-since": "0.13.0",
                 "examples": [
                   {
@@ -686,7 +686,8 @@
             "required": [
               "name",
               "description",
-              "access"
+              "access",
+              "inputSchema"
             ]
           },
           "description": "Tools agents reach through Studio’s MCP server. Needs the `tools:contribute` permission.",

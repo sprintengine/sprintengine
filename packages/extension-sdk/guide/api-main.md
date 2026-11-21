@@ -153,12 +153,21 @@ studio.onShutdown(stop)
 
 ## MCP tools
 
-Declare each tool in extension.json, then serve it from `activate`:
+Declare each tool in extension.json, with its parameters (`inputSchema`,
+required: agents see it before the worker has ever run), then serve it from
+`activate` with a schema that takes no more:
 
 ```json
 "permissions": ["tools:contribute"],
 "contributes": {
-  "mcpTools": [{ "name": "wordcount_count", "description": "Count the words in a piece of text.", "access": "read" }]
+  "mcpTools": [
+    {
+      "name": "wordcount_count",
+      "description": "Count the words in a piece of text.",
+      "access": "read",
+      "inputSchema": { "type": "object", "properties": { "text": { "type": "string" } }, "required": ["text"] }
+    }
+  ]
 }
 ```
 

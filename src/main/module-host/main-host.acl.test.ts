@@ -41,8 +41,8 @@ const otherThirdParty: CapabilityManifest = {
 // The MCP tools acme-deck's extension.json declares: all its worker may register.
 const DECLARED_TOOLS: Record<string, readonly ExtensionMcpToolContribution[]> = {
   'acme-deck': [
-    { name: 'acme_deck_list', description: 'Lists the deck.', access: 'read' },
-    { name: 'acme_write', description: 'Writes a card.', access: 'operate' },
+    { name: 'acme_deck_list', description: 'Lists the deck.', access: 'read', inputSchema: { type: 'object' } },
+    { name: 'acme_write', description: 'Writes a card.', access: 'operate', inputSchema: { type: 'object' } },
   ],
 }
 

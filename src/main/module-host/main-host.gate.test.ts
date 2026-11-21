@@ -57,7 +57,9 @@ function setup(approved: () => readonly string[] | null = () => reader.permissio
   const kernel = createMainKernel({
     resolveModuleManifest: (id) => manifests.get(id),
     isModulePresent: (id) => manifests.has(id),
-    resolveDeclaredMcpTools: () => [{ name: 'reader_peek', description: 'Peeks.', access: 'read' }],
+    resolveDeclaredMcpTools: () => [
+      { name: 'reader_peek', description: 'Peeks.', access: 'read', inputSchema: { type: 'object' } },
+    ],
     resolveExtensionGrant: (id) => (id === reader.id ? approved() : (manifests.get(id)?.permissions ?? [])),
   })
   const host = kernel.hostFor('@host')

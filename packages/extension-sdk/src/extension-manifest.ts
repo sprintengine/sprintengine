@@ -413,7 +413,8 @@ const CONTRIBUTES: ObjectNode = {
             },
             inputSchema: {
               node: { kind: 'jsonSchema', maxBytes: 16_384 },
-              doc: 'The tool’s parameters, as a JSON Schema for an object: what agents see before the worker has ever run. The schema the worker registers must take no more than this one (no parameter it leaves out, none it requires dropped). Without it, agents see the worker’s schema once it has run.',
+              required: true,
+              doc: 'The tool’s parameters, as a JSON Schema for an object: what agents see, before the worker has ever run. The schema the worker registers must take no more than this one (no parameter it leaves out, none it requires dropped). A tool that takes none says `{ "type": "object", "properties": {} }`.',
               since: V1,
               example: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
             },
@@ -574,7 +575,7 @@ export type ExtensionMcpToolContribution = {
   description: string
   access: 'read' | 'operate'
   /** The tool's parameters, as a JSON Schema for an object. */
-  inputSchema?: Record<string, unknown>
+  inputSchema: Record<string, unknown>
 }
 
 export type ExtensionContributions = {

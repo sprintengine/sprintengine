@@ -207,7 +207,9 @@ test('a point above the tier fails, naming the tier it needs', () => {
     base({
       tier: 'ui',
       permissions: ['tools:contribute'],
-      contributes: { mcpTools: [{ name: 'notes_search', description: 'Search', access: 'read' }] },
+      contributes: {
+        mcpTools: [{ name: 'notes_search', description: 'Search', access: 'read', inputSchema: { type: 'object' } }],
+      },
     }),
     'tier',
     /needs "worker"/,
@@ -316,7 +318,11 @@ test('a top bar item runs a contributed command or opens a contributed door, exa
 })
 
 test('MCP tools need the mcp:tools permission', () => {
-  const contributes = { mcpTools: [{ name: 'notes_search', description: 'Search the notes.', access: 'read' }] }
+  const contributes = {
+    mcpTools: [
+      { name: 'notes_search', description: 'Search the notes.', access: 'read', inputSchema: { type: 'object' } },
+    ],
+  }
   refusedAt(
     base({ tier: 'worker', main: 'dist/main.cjs', contributes }),
     'contributes.mcpTools',
@@ -331,11 +337,32 @@ test('MCP tools need the mcp:tools permission', () => {
       tier: 'worker',
       main: 'dist/main.cjs',
       permissions: ['tools:contribute'],
-      contributes: { mcpTools: [{ name: 'Notes-Search', description: 'x', access: 'read' }] },
+      contributes: {
+        mcpTools: [{ name: 'Notes-Search', description: 'x', access: 'read', inputSchema: { type: 'object' } }],
+      },
     }),
     'contributes.mcpTools[0].name',
     /lower-case letters, digits and underscores/,
   )
+})
+
+test('every MCP tool names its parameters, as a JSON Schema for an object', () => {
+  const worker = (tool: Raw) =>
+    base({
+      tier: 'worker',
+      main: 'dist/main.cjs',
+      permissions: ['tools:contribute'],
+      contributes: { mcpTools: [tool] },
+    })
+  const tool = { name: 'notes_search', description: 'Search the notes.', access: 'read' }
+  refusedAt(worker(tool), 'contributes.mcpTools[0].inputSchema', /is required/)
+  refusedAt(
+    worker({ ...tool, inputSchema: { type: 'string' } }),
+    'contributes.mcpTools[0].inputSchema',
+    /must describe an object/,
+  )
+  const schema = { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] }
+  assert.deepEqual(accepted(worker({ ...tool, inputSchema: schema })).contributes.mcpTools[0]?.inputSchema, schema)
 })
 
 test('ids are unique within a point', () => {
