@@ -23,8 +23,11 @@ access, and the approval tells the person exactly that.
 
 `workspace-files:read` and `workspace-files:write` are a surface's way to the
 files in a workspace's folder (`files.*`): only inside the folder, never
-through a link out of it, and only for a person, device or browser that may
-read or write files on that machine themselves.
+through a link out of it, never under `.git`, and only for a person, device or
+browser that may read or write files on that machine themselves. A project's
+files can run code, so `workspace-files:write` is full access to the person's
+account, and the approval of a `ui` extension holding it says so instead of
+"runs isolated".
 
 Rules:
 

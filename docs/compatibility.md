@@ -292,7 +292,8 @@ browser tab. New permissions `workspace-files:read` and
 `workspace-files:write` give a frame the files of a workspace's folder
 (`files.*`), and need `filesystem:read` / `filesystem:write` of whoever opened
 the surface. The approval of a `ui` extension says its code runs isolated and
-can do only what the person allows; a worker's says full access, as before.
+can do only what the person allows, unless it holds `workspace-files:write`,
+which is full access; a worker's says full access, as before.
 
 ### Permissions checked at the host; approvals replace trust (no compatibility)
 

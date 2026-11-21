@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -83,4 +93,86 @@ test('a write replaces a file in place, a create refuses one that exists, and ne
   assert.equal(await refusal(writeExtensionFile(scope, 'docs/escape.txt', 'pwned', true)), 'action_failed')
   assert.equal(await refusal(writeExtensionFile(scope, 'linked-out/new.txt', 'pwned', true)), 'not_permitted')
   assert.equal(readFileSync(join(outside, 'secret.txt'), 'utf8'), 'secret', 'nothing outside was touched')
+})
+
+test('a file with a second name is refused, for reading and for writing', async () => {
+  const { scope, root, outside } = world()
+  linkSync(join(outside, 'secret.txt'), join(root, 'docs', 'alias.txt'))
+  assert.equal(await refusal(readExtensionFile(scope, 'docs/alias.txt')), 'not_permitted')
+  assert.equal(await refusal(writeExtensionFile(scope, 'docs/alias.txt', 'pwned', false)), 'not_permitted')
+  assert.equal(readFileSync(join(outside, 'secret.txt'), 'utf8'), 'secret')
+})
+
+test('nothing is written or made under a .git folder', async () => {
+  const { scope, root } = world()
+  mkdirSync(join(root, '.git'))
+  writeFileSync(join(root, '.git', 'config'), '[core]\n')
+  symlinkSync(join(root, '.git'), join(root, 'innocent'))
+  assert.equal(
+    await refusal(writeExtensionFile(scope, '.git/config', '[core]\nfsmonitor = evil\n', false)),
+    'not_permitted',
+  )
+  assert.equal(await refusal(writeExtensionFile(scope, '.GIT/hooks-new', 'x', true)), 'not_permitted')
+  assert.equal(await refusal(writeExtensionFile(scope, 'innocent/config', 'x', false)), 'not_permitted')
+  assert.equal(await refusal(writeExtensionFile(scope, '.git', 'x', true)), 'not_permitted')
+  assert.equal(readFileSync(join(root, '.git', 'config'), 'utf8'), '[core]\n')
+  assert.deepEqual(await readExtensionFile(scope, '.git/config'), { content: '[core]\n', size: 7 })
+})
+
+// Another process swapping a folder above the file for a link out, after the
+// check and before the open: the open follows it, and is refused.
+function swapDocsOut(root: string, outside: string) {
+  return async () => {
+    renameSync(join(root, 'docs'), join(root, 'docs-moved'))
+    mkdirSync(join(outside, 'docs'))
+    writeFileSync(join(outside, 'docs', 'notes.md'), 'outside')
+    symlinkSync(join(outside, 'docs'), join(root, 'docs'))
+  }
+}
+
+test('a folder above the file swapped for a link out between the check and the open is refused', async () => {
+  const read = world()
+  assert.equal(
+    await refusal(
+      readExtensionFile({ ...read.scope, betweenCheckAndOpen: swapDocsOut(read.root, read.outside) }, 'docs/notes.md'),
+    ),
+    'not_permitted',
+  )
+  const write = world()
+  assert.equal(
+    await refusal(
+      writeExtensionFile(
+        { ...write.scope, betweenCheckAndOpen: swapDocsOut(write.root, write.outside) },
+        'docs/notes.md',
+        'x',
+        false,
+      ),
+    ),
+    'not_permitted',
+  )
+  assert.equal(readFileSync(join(write.outside, 'docs', 'notes.md'), 'utf8'), 'outside', 'nothing outside was written')
+  const create = world()
+  assert.equal(
+    await refusal(
+      writeExtensionFile(
+        { ...create.scope, betweenCheckAndOpen: swapDocsOut(create.root, create.outside) },
+        'docs/new.md',
+        'x',
+        true,
+      ),
+    ),
+    'not_permitted',
+  )
+  assert.equal(
+    readFileSync(join(create.outside, 'docs', 'new.md'), 'utf8'),
+    '',
+    'nothing was written into the file made outside',
+  )
+})
+
+test('a search does not read a folder that is now a link out', async () => {
+  const { scope, root, outside } = world()
+  await swapDocsOut(root, outside)()
+  assert.deepEqual((await searchExtensionFiles(scope, 'notes', undefined)).paths, ['docs-moved/notes.md'])
+  assert.ok(existsSync(join(outside, 'docs', 'notes.md')))
 })

@@ -133,7 +133,9 @@ main })` take the parsed extension.json; the install key defaults to
   refused call rejects with an `ExtensionFrameError` and its `code`.
 - New permissions `workspace-files:read` and `workspace-files:write`: a
   surface's `files.read`, `.stat`, `.search` and `.write`, inside a
-  workspace's folder only and never through a link out of it.
+  workspace's folder only, never through a link out of it, never to a file
+  with a second name, and never writing under `.git`. `workspace-files:write`
+  is full access: the approval says so.
 - Studio puts the person's theme in the frame as the `THEME_TOKENS` custom
   properties (`--bg-surface`, `--text-default`, …), updated in place, and a
   kit stylesheet (`se-heading`, `se-muted`, `se-button`, `se-input`,

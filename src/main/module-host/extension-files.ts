@@ -8,18 +8,31 @@
 // 2. A file is opened with `O_NOFOLLOW` where the platform has it, so a link
 //    put in its place after the check is refused rather than followed.
 // 3. The opened descriptor's `dev`/`ino` must match a `stat` of the real path
-//    taken after the open: a file swapped between the check and the open is
-//    refused.
-// 4. A write never opens with `O_TRUNC`: it truncates with `ftruncate` once the
-//    check passed. A create opens with `O_EXCL`, so it never writes through
-//    a file or link that appeared meanwhile.
-// 5. A search walks with `lstat` and never follows a link.
+//    taken during the check, before the open: a file, or a folder above it,
+//    swapped between the check and the open is refused.
+// 4. After the open, the descriptor's own path (Linux: `/proc/self/fd`;
+//    elsewhere the real path resolved again) is checked for containment once
+//    more, so a folder above the file swapped for a link to somewhere else
+//    during the check is caught as well.
+// 5. A file with more than one name (`nlink > 1`) is refused: a hard link
+//    could alias a file outside the folder without any link to follow.
+// 6. A write never opens with `O_TRUNC`: it truncates with `ftruncate` once the
+//    checks passed. A create opens with `O_EXCL`, so it never writes through
+//    a file or link that appeared meanwhile. Nothing is written under a
+//    `.git` folder, whose configuration and hooks git runs.
+// 7. A search walks with `lstat`, never follows a link, and checks each
+//    folder's real path before reading it.
+//
+// What stays: on Windows `O_NOFOLLOW` does not exist, and outside Linux the
+// re-check of step 4 is a second `realpath`, so a swap made and undone
+// between the open and that re-check is not seen. Only another process
+// writing in the workspace can race these steps; a frame cannot make links.
 //
 // Pure Node; the host's gate has already held the call to the extension's
 // `workspace-files:*` and the caller's `filesystem:*`.
 
 import { constants, type Stats } from 'node:fs'
-import { lstat, open, readdir, realpath, stat, type FileHandle } from 'node:fs/promises'
+import { lstat, open, readdir, readlink, realpath, stat, type FileHandle } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 
 /** The largest file `files.read` answers, and the most `files.write` writes. */
@@ -46,6 +59,8 @@ export type ExtensionFilesScope = {
   root: string
   /** Folders no call may reach even inside the workspace (Studio's data, the installed extensions). */
   forbidden: readonly string[]
+  /** Tests only: runs between the check and the open, where another process could swap a path. */
+  betweenCheckAndOpen?: () => Promise<void>
 }
 
 function inside(parent: string, child: string): boolean {
@@ -86,11 +101,51 @@ function missing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
 }
 
-/** The descriptor is the file the checked real path names now. */
-async function sameFile(handle: FileHandle, real: string, shown: string): Promise<Stats> {
-  const [opened, named] = await Promise.all([handle.stat(), stat(real)])
-  if (opened.dev !== named.dev || opened.ino !== named.ino)
+/** Whether a path inside the workspace passes through a `.git` folder. */
+function inGitFolder(root: string, real: string): boolean {
+  return relative(root, real)
+    .split(sep)
+    .some((part) => part.toLowerCase() === '.git')
+}
+
+/** Where an open descriptor is now: the kernel's word on Linux, the path resolved again elsewhere. */
+async function descriptorPath(handle: FileHandle, path: string): Promise<string> {
+  if (process.platform === 'linux') {
+    try {
+      return await readlink(`/proc/self/fd/${handle.fd}`)
+    } catch {
+      // No /proc: resolve the path again below.
+    }
+  }
+  return realpath(path)
+}
+
+/**
+ * The descriptor is the file the check found (`checked`, taken before the
+ * open), it is still inside the workspace now, and it has one name only.
+ */
+async function sameFile(
+  handle: FileHandle,
+  checked: Stats,
+  path: string,
+  where: { root: string; forbidden: readonly string[] },
+  shown: string,
+): Promise<Stats> {
+  const opened = await handle.stat()
+  if (opened.dev !== checked.dev || opened.ino !== checked.ino)
     throw new ExtensionFileRefusal('not_permitted', `${shown} changed while it was opened, so it was not used.`)
+  let now: string
+  try {
+    now = await descriptorPath(handle, path)
+  } catch {
+    throw new ExtensionFileRefusal('not_permitted', `${shown} moved while it was opened, so it was not used.`)
+  }
+  contained(now, where.root, where.forbidden, shown)
+  if (opened.isFile() && opened.nlink > 1)
+    throw new ExtensionFileRefusal(
+      'not_permitted',
+      `${shown} has more than one name (a hard link), so it was not used.`,
+    )
   return opened
 }
 
@@ -98,6 +153,7 @@ async function openChecked(
   scope: ExtensionFilesScope,
   path: unknown,
   flags: number,
+  writing = false,
 ): Promise<{ handle: FileHandle; shown: string; stats: Stats }> {
   const parts = partsOf(path)
   const shown = parts.join('/')
@@ -112,6 +168,18 @@ async function openChecked(
     )
   }
   contained(real, root, forbidden, shown)
+  if (writing && inGitFolder(root, real))
+    throw new ExtensionFileRefusal(
+      'not_permitted',
+      `${shown} is in a .git folder, which Studio does not write for an extension.`,
+    )
+  let checked: Stats
+  try {
+    checked = await stat(real)
+  } catch {
+    throw new ExtensionFileRefusal('action_failed', `${shown} cannot be opened.`)
+  }
+  await scope.betweenCheckAndOpen?.()
   let handle: FileHandle
   try {
     handle = await open(real, flags | O_NOFOLLOW)
@@ -123,7 +191,7 @@ async function openChecked(
     )
   }
   try {
-    return { handle, shown, stats: await sameFile(handle, real, shown) }
+    return { handle, shown, stats: await sameFile(handle, checked, real, { root, forbidden }, shown) }
   } catch (error) {
     await handle.close().catch(() => undefined)
     throw error
@@ -192,9 +260,21 @@ export async function writeExtensionFile(
     throw new ExtensionFileRefusal('action_failed', `The folder ${dirname(shown)} does not exist.`)
   }
   contained(folder, root, forbidden, shown)
+  if (inGitFolder(root, folder) || basename(shown).toLowerCase() === '.git')
+    throw new ExtensionFileRefusal(
+      'not_permitted',
+      `${shown} is in a .git folder, which Studio does not write for an extension.`,
+    )
+  let folderChecked: Stats
+  try {
+    folderChecked = await stat(folder)
+  } catch {
+    throw new ExtensionFileRefusal('action_failed', `The folder ${dirname(shown)} does not exist.`)
+  }
   const target = join(folder, basename(shown))
   let handle: FileHandle
   let created: boolean
+  if (create) await scope.betweenCheckAndOpen?.()
   try {
     handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o644)
     created = true
@@ -203,7 +283,7 @@ export async function writeExtensionFile(
       throw new ExtensionFileRefusal('action_failed', `${shown} cannot be written.`)
     if (create) throw new ExtensionFileRefusal('action_failed', `${shown} already exists.`)
     // It exists: the real path it names must be inside too, and opened as it is.
-    const opened = await openChecked(scope, shown, constants.O_WRONLY)
+    const opened = await openChecked(scope, shown, constants.O_WRONLY, true)
     if (!opened.stats.isFile()) {
       await opened.handle.close().catch(() => undefined)
       throw new ExtensionFileRefusal('action_failed', `${shown} is not a file.`)
@@ -212,8 +292,16 @@ export async function writeExtensionFile(
     created = false
   }
   try {
-    if (created) await sameFile(handle, target, shown)
-    else await handle.truncate(0)
+    if (created) {
+      // The new file is where the check said, under the folder it checked.
+      const now = await descriptorPath(handle, target).catch(() => '')
+      if (dirname(now) !== folder) {
+        const where = await stat(dirname(now)).catch(() => null)
+        if (!where || where.dev !== folderChecked.dev || where.ino !== folderChecked.ino)
+          throw new ExtensionFileRefusal('not_permitted', `${shown} moved while it was made, so nothing was written.`)
+      }
+      contained(now, root, forbidden, shown)
+    } else await handle.truncate(0)
     await handle.write(bytes, 0, bytes.byteLength, 0)
     return { size: bytes.byteLength, created }
   } finally {
@@ -242,7 +330,10 @@ export async function searchExtensionFiles(
     const folder = queue.shift()!
     let names: string[]
     try {
-      names = (await readdir(folder)).sort()
+      // A folder swapped for a link after it was listed is not read.
+      const real = await realpath(folder)
+      if (!inside(root, real) || forbidden.some((denied) => inside(denied, real))) continue
+      names = (await readdir(real)).sort()
     } catch {
       continue
     }

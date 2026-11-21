@@ -7,6 +7,7 @@ import {
   capabilityAccess,
   describeCapabilityPermission,
   extensionApprovalCopy,
+  grantsFullAccess,
   isBroadCapabilityPermission,
   isKnownCapabilityPermission,
   partitionCapabilityAccess,
@@ -46,6 +47,10 @@ test('the approval says what each tier’s code can do, as this build enforces i
   // A ui extension's code runs in sandboxed frames: what it is allowed is all it can do.
   assert.match(extensionApprovalCopy('ui'), /runs isolated and can do only what you allow/)
   assert.doesNotMatch(extensionApprovalCopy('ui'), /full access/)
+  // Changing a project's files is running code as the person.
+  assert.match(extensionApprovalCopy('ui', ['workspace-files:write']), /full access to your account/)
+  assert.doesNotMatch(extensionApprovalCopy('ui', ['workspace-files:read']), /full access/)
+  assert.equal(grantsFullAccess(['backlog:read', 'workspace-files:write']), true)
   assert.match(extensionApprovalCopy('declarative'), /runs no code of its own/)
   assert.match(extensionApprovalCopy('content'), /runs nothing/)
 })

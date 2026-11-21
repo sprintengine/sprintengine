@@ -28,8 +28,10 @@ Studio calls when the surface closes. Types: `ExtensionMount`,
 
 The frame is its own document with an opaque origin: the extension's code
 cannot reach Studio's window, has no Node, and has no network (its policy
-refuses every connection, and it cannot open windows, navigate or submit
-forms). Images and fonts must be `data:` or `blob:` URLs. Everything the
+refuses every connection, and it cannot open windows or submit forms). A
+frame that tries to load another page in its place (`location.href`, a
+refresh) is stopped by the desktop app, and closed by any client that sees it
+load a second document. Images and fonts must be `data:` or `blob:` URLs. Everything the
 surface needs from Studio it asks for with `studio.host.call`, and Studio
 checks every call twice: against the permissions the person approved for the
 extension, and against what the person, device or browser that opened the
@@ -72,7 +74,11 @@ seconds, each at most 64 KiB.
 
 `files.*` reach only files inside a workspace's folder: a path is relative to
 the folder, and a file is found by its real path, so a link out of the folder
-is refused rather than followed. Text files only, up to 4 MiB.
+is refused rather than followed, as is a file with a second name (a hard
+link). Nothing is written under a `.git` folder. Text files only, up to 4 MiB.
+A project's files can run code (its scripts, its tools' settings), so the
+approval of an extension holding `workspace-files:write` says it has full
+access to the person's account.
 
 Opening a link in the person's browser is not offered to a frame yet: Studio
 cannot tell a click in a frame from one in its own window.
