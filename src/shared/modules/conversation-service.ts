@@ -108,9 +108,9 @@ export type ModuleConversationCreateInput = {
 export type ModuleConversationResult<T = object> =
   ({ ok: true } & T) | { ok: false; code: ModuleConversationErrorCode; message: string }
 
-// `conversation:own` covers subscribe/transcript/list/watch; `conversation:own`
-// covers everything and implies read. A module reaches only the conversations
-// it created.
+// `conversation:own` covers every method; whoever set the call off must also be
+// able to read, start or drive a chat, as the method needs. A module reaches
+// only the conversations it created.
 export type ModuleConversationService = {
   create(
     input: ModuleConversationCreateInput,

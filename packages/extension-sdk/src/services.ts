@@ -20,7 +20,15 @@
 //
 // `refusal` is how a refused call is told: `answer`, the method's own failure
 // shape (`{ ok: false, code, message }`) with code `not_permitted` or
-// `approval_required`; `throw`, an error, for a method with no failure shape.
+// `approval_required`; `reject`, a rejected promise, for an async method with
+// no failure shape; `throw`, an error, for a synchronous one.
+//
+// What a method hands back that can be called (a companion's handle, the
+// function that stops a watch) is a host method too, with a row of its own
+// under `returns`: by the method, then the member (`attach` → `send`), with
+// `()` for a function (`watch` → `()`, `attach` → `onStatus.()`). It is
+// checked at each call, as whoever set that call off, while the extension is
+// approved; a callable without a row is refused.
 //
 // This table is the one source: Studio's gate reads it, and so do the fake
 // hosts in `@sprintengine/extension-sdk/testing`. A test fails when a service
@@ -45,7 +53,7 @@ export type ExtensionInvokerRequirement =
 export type ExtensionHostRequirement = {
   readonly extension: ExtensionPermission | null
   readonly invoker: ExtensionInvokerRequirement | null
-  readonly refusal: 'answer' | 'throw'
+  readonly refusal: 'answer' | 'reject' | 'throw'
 }
 
 export type ExtensionHostService = {
@@ -60,12 +68,14 @@ export type ExtensionHostService = {
   providedBy: string
   /** Every method of it an extension may call, and what each needs. */
   methods: Readonly<Record<string, ExtensionHostRequirement>>
+  /** What a method hands back that can be called, by the method and the member's path, and what each needs. */
+  returns?: Readonly<Record<string, Readonly<Record<string, ExtensionHostRequirement>>>>
 }
 
 const need = (
   extension: ExtensionPermission | null,
   invoker: ExtensionInvokerRequirement | null,
-  refusal: 'answer' | 'throw',
+  refusal: 'answer' | 'reject' | 'throw',
 ): ExtensionHostRequirement => ({ extension, invoker, refusal })
 
 function each(
@@ -86,16 +96,19 @@ export const EXTENSION_HOST_SERVICES: readonly ExtensionHostService[] = [
     key: 'core.workspace-context',
     via: 'WorkspaceContextToken',
     providedBy: 'agent-runtime',
-    methods: each(['get', 'list'], need('workspace:read', 'workspace:read', 'throw')),
+    methods: each(['get', 'list'], need('workspace:read', 'workspace:read', 'reject')),
   },
   {
     key: 'core.module-storage',
     via: 'getModuleStorage',
     providedBy: 'agent-runtime',
     methods: {
-      ...each(['get', 'getMany', 'list', 'watch'], need('storage:own', 'extension:read', 'throw')),
-      ...each(['set', 'delete'], need('storage:own', 'extension:operate', 'throw')),
+      ...each(['get', 'getMany', 'list'], need('storage:own', 'extension:read', 'answer')),
+      watch: need('storage:own', 'extension:read', 'throw'),
+      ...each(['set', 'delete'], need('storage:own', 'extension:operate', 'answer')),
     },
+    // Stopping a watch needs nothing of whoever stops it.
+    returns: { watch: { '()': need('storage:own', null, 'throw') } },
   },
   {
     key: 'scheduled-agents.module-service',
@@ -103,7 +116,12 @@ export const EXTENSION_HOST_SERVICES: readonly ExtensionHostService[] = [
     providedBy: 'scheduled-agents',
     methods: {
       ...each(['create', 'update', 'remove', 'runNow'], need('schedules:own', 'workspace:operate', 'answer')),
-      ...each(['list', 'onChanged', 'onRun'], need('schedules:own', 'workspace:read', 'throw')),
+      list: need('schedules:own', 'workspace:read', 'reject'),
+      ...each(['onChanged', 'onRun'], need('schedules:own', 'workspace:read', 'throw')),
+    },
+    returns: {
+      onChanged: { '()': need('schedules:own', null, 'throw') },
+      onRun: { '()': need('schedules:own', null, 'throw') },
     },
   },
   {
@@ -111,6 +129,17 @@ export const EXTENSION_HOST_SERVICES: readonly ExtensionHostService[] = [
     via: 'getCompanionAgentsService',
     providedBy: 'agent-runtime',
     methods: { attach: need('agents:companion', 'conversation:create', 'throw') },
+    // The handle drives an agent as `attach` starts one: whoever drives it
+    // must be able to start a chat; whoever watches it, to read one.
+    returns: {
+      attach: {
+        ...each(['status', 'onStatus', 'onEvent'], need('agents:companion', 'conversation:read', 'throw')),
+        ...each(['onStatus.()', 'onEvent.()', 'dispose'], need('agents:companion', null, 'throw')),
+        ...each(['runStructured', 'send'], need('agents:companion', 'conversation:create', 'reject')),
+        respondToApproval: need('agents:companion', 'conversation:create', 'answer'),
+        interrupt: need('agents:companion', 'conversation:create', 'throw'),
+      },
+    },
   },
   {
     key: 'conversation.module-service',
@@ -131,11 +160,13 @@ export const EXTENSION_HOST_SERVICES: readonly ExtensionHostService[] = [
         ],
         need('conversation:own', 'conversation:operate', 'answer'),
       ),
-      reply: need('conversation:own', 'conversation:read', 'answer'),
-      ...each(
-        ['subscribe', 'follow', 'transcript', 'list', 'watch'],
-        need('conversation:own', 'conversation:read', 'throw'),
-      ),
+      ...each(['reply', 'transcript'], need('conversation:own', 'conversation:read', 'answer')),
+      ...each(['subscribe', 'follow', 'list', 'watch'], need('conversation:own', 'conversation:read', 'throw')),
+    },
+    returns: {
+      subscribe: { '()': need('conversation:own', null, 'throw') },
+      follow: { '()': need('conversation:own', null, 'throw') },
+      watch: { '()': need('conversation:own', null, 'throw') },
     },
   },
   {
@@ -144,7 +175,7 @@ export const EXTENSION_HOST_SERVICES: readonly ExtensionHostService[] = [
     providedBy: 'agent-runtime',
     methods: {
       ...each(['set', 'delete', 'fetchWithSecret'], need('secrets:own', 'extension:operate', 'answer')),
-      has: need('secrets:own', 'extension:operate', 'throw'),
+      has: need('secrets:own', 'extension:operate', 'reject'),
     },
   },
   {
@@ -153,7 +184,7 @@ export const EXTENSION_HOST_SERVICES: readonly ExtensionHostService[] = [
     providedBy: 'agent-runtime',
     methods: {
       ...each(['request', 'graphql', 'download'], need('github:api', 'owner', 'answer')),
-      status: need('github:api', 'owner', 'throw'),
+      status: need('github:api', 'owner', 'reject'),
     },
   },
   {
@@ -176,6 +207,7 @@ export const EXTENSION_HOST_SERVICES: readonly ExtensionHostService[] = [
       query: need('usage:read', 'workspace:read', 'answer'),
       onChanged: need('usage:read', 'workspace:read', 'throw'),
     },
+    returns: { onChanged: { '()': need('usage:read', null, 'throw') } },
   },
   {
     key: 'activity.module-service',
@@ -204,11 +236,11 @@ export function extensionHostService(key: string): ExtensionHostService | undefi
 export const EXTENSION_MAIN_HOST_METHODS: Readonly<Record<string, ExtensionHostRequirement>> = {
   moduleId: need(null, null, 'throw'),
   supports: need(null, null, 'throw'),
-  listChatRuntimes: need('providers:read', 'providers:read', 'throw'),
+  listChatRuntimes: need('providers:read', 'providers:read', 'reject'),
   registerMethods: need(null, null, 'throw'),
   registerMcpTools: need('tools:contribute', null, 'throw'),
-  ensureSkillInstalled: need('workspace:operate', 'workspace:operate', 'throw'),
-  getSkillStatus: need('workspace:read', 'workspace:read', 'throw'),
+  ensureSkillInstalled: need('workspace:operate', 'workspace:operate', 'reject'),
+  getSkillStatus: need('workspace:read', 'workspace:read', 'reject'),
   getModuleDataDir: need('storage:own', null, 'throw'),
   getAssetPath: need(null, null, 'throw'),
   getWorkspaceGitInfo: need('workspace:read', 'workspace:read', 'answer'),
@@ -225,33 +257,52 @@ export const EXTENSION_MAIN_HOST_METHODS: Readonly<Record<string, ExtensionHostR
   emit: need(null, null, 'throw'),
 }
 
+/** What one of the window's host methods needs of an extension: any one of `permissions`, and how a refusal is told. */
+export type ExtensionRendererRequirement = {
+  readonly permissions: readonly ExtensionPermission[]
+  readonly refusal: 'answer' | 'reject' | 'throw'
+}
+
+const inWindow = (
+  permissions: readonly ExtensionPermission[],
+  refusal: ExtensionRendererRequirement['refusal'],
+): ExtensionRendererRequirement => ({ permissions, refusal })
+
 /**
- * The window's host methods an extension's surface calls, and the permission
- * each needs of the extension (any one of those listed). The window that runs
- * a surface is the person's own, so the person is always the invoker.
+ * The window's host methods an extension's surface calls, and what each needs
+ * of the extension. The window that runs a surface is the person's own, so the
+ * person is always the invoker; its calls to the server pass the host's gate
+ * there as well. The window refuses a call the extension's approval does not
+ * cover, and so do the fake hosts. `openChat` with `send: true` needs
+ * `conversation:own` alone.
  */
-export const EXTENSION_RENDERER_METHODS: Readonly<Record<string, readonly ExtensionPermission[]>> = {
-  getWorkspace: ['workspace:read'],
-  listWorkspaces: ['workspace:read'],
-  watchWorkspaces: ['workspace:read'],
-  getWorkingRoot: ['workspace:read'],
-  getWorkspaceGitInfo: ['workspace:read'],
-  getWorkspaceModuleState: ['storage:own'],
-  setWorkspaceModuleState: ['storage:own'],
-  getModuleAppState: ['settings:own'],
-  setModuleAppState: ['settings:own'],
-  watchModuleAppState: ['settings:own'],
-  listBacklogItems: ['backlog:read'],
-  watchBacklogItems: ['backlog:read'],
-  getBacklogLocation: ['backlog:read'],
-  createBacklogItem: ['backlog:operate'],
-  updateBacklogStatus: ['backlog:operate'],
-  updateBacklogTriage: ['backlog:operate'],
-  addBacklogLink: ['backlog:operate'],
-  updateBacklogModuleMetadata: ['backlog:operate'],
-  queryUsage: ['usage:read'],
-  watchWorkspaceFile: ['workspace:read'],
-  openChat: ['chat:draft', 'conversation:own'],
+export const EXTENSION_RENDERER_METHODS: Readonly<Record<string, ExtensionRendererRequirement>> = {
+  getWorkspace: inWindow(['workspace:read'], 'reject'),
+  listWorkspaces: inWindow(['workspace:read'], 'reject'),
+  watchWorkspaces: inWindow(['workspace:read'], 'throw'),
+  getWorkingRoot: inWindow(['workspace:read'], 'reject'),
+  getWorkspaceGitInfo: inWindow(['workspace:read'], 'answer'),
+  watchWorkspaceFile: inWindow(['workspace:read'], 'throw'),
+  getWorkspaceModuleState: inWindow(['storage:own'], 'throw'),
+  setWorkspaceModuleState: inWindow(['storage:own'], 'throw'),
+  getModuleAppState: inWindow(['settings:own'], 'throw'),
+  setModuleAppState: inWindow(['settings:own'], 'throw'),
+  watchModuleAppState: inWindow(['settings:own'], 'throw'),
+  listBacklogItems: inWindow(['backlog:read'], 'reject'),
+  watchBacklogItems: inWindow(['backlog:read'], 'throw'),
+  getBacklogLocation: inWindow(['backlog:read'], 'answer'),
+  createBacklogItem: inWindow(['backlog:operate'], 'answer'),
+  updateBacklogStatus: inWindow(['backlog:operate'], 'answer'),
+  updateBacklogTriage: inWindow(['backlog:operate'], 'answer'),
+  addBacklogLink: inWindow(['backlog:operate'], 'answer'),
+  updateBacklogModuleMetadata: inWindow(['backlog:operate'], 'answer'),
+  queryUsage: inWindow(['usage:read'], 'answer'),
+  openChat: inWindow(['chat:draft', 'conversation:own'], 'answer'),
+}
+
+/** Why the window refused a call: the message the refusal carries. */
+export function extensionRendererRefusalMessage(extensionId: string, method: string, needs: readonly string[]): string {
+  return `Extension "${extensionId}" was not approved for ${needs.map((permission) => `"${permission}"`).join(' or ')}, which "${method}" needs.`
 }
 
 /** The codes a refused host call answers with. */

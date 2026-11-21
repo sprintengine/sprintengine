@@ -146,10 +146,13 @@ export function loadMainModules(options: {
   extensionApprovals?: Record<string, ExtensionLoadedApproval>
   /**
    * The person's approvals as they stand now, read at each host call: an
-   * extension whose approval is gone (uninstalled) or no longer names what was
-   * loaded is refused `approval_required`. Absent (tests), what was loaded stands.
+   * extension whose approval is gone (uninstalled) is refused
+   * `approval_required`, and one holds only what both what it was loaded with
+   * and its approval now cover. An update that kept the approval (its files
+   * changed, its access did not grow) leaves the running version as it was.
+   * Absent (tests), what was loaded stands.
    */
-  currentApprovals?: () => ReadonlyMap<string, { fingerprint: string }>
+  currentApprovals?: () => ReadonlyMap<string, { access: { permissions: readonly string[] } }>
 }): LoadMainModulesResult {
   const { modules, overrides = {}, provideServices, ineligible, launchErrors = [] } = options
   const registerTimeoutMs = options.registerTimeoutMs ?? REGISTER_MAIN_TIMEOUT_MS
@@ -180,10 +183,10 @@ export function loadMainModules(options: {
       if (!options.extensionApprovals) return byId.get(moduleId)?.manifest.permissions ?? []
       const loadedAs = options.extensionApprovals[moduleId]
       if (!loadedAs) return null
-      if (loadedAs.fingerprint === null || !options.currentApprovals) return loadedAs.permissions
-      return options.currentApprovals().get(moduleId)?.fingerprint === loadedAs.fingerprint
-        ? loadedAs.permissions
-        : null
+      if (!loadedAs.approved || !options.currentApprovals) return loadedAs.permissions
+      const now = options.currentApprovals().get(moduleId)
+      if (!now) return null
+      return loadedAs.permissions.filter((permission) => now.access.permissions.includes(permission))
     },
   })
   const hostScope = kernel.hostFor('@host')

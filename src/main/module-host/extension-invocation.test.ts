@@ -107,7 +107,7 @@ const agent = (agentId: string): McpConnectionContext => ({
   metadata: { kind: 'studio-agent', workspaceId: 'ws-0', agentId },
 })
 
-test('module-tool-caller', async () => {
+test('an extension tool runs under its caller’s ceiling', async () => {
   // A `none` agent's call makes a `none` chat, record and session alike.
   {
     const { call } = harness({ careful: 'none' })

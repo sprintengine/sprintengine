@@ -43,7 +43,7 @@ import {
   extensionHostService,
   type ExtensionHostRequirement,
 } from '../../../packages/extension-sdk/src/services'
-import { currentInvoker, runAsInvoker, type ExtensionInvoker } from './extension-invocation'
+import { currentInvoker, detachedFromInvocation, runAsInvoker, type ExtensionInvoker } from './extension-invocation'
 import {
   ExtensionHostRefusal,
   gateExtensionHostCall,
@@ -715,8 +715,20 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         message: `Extension "${request.moduleId}" declares "${request.method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with extension.${registration.access}.`,
       }
     }
-    const parsed = registration.params(request.params)
-    if (!parsed.ok) {
+    // Everything the extension's code does for this call runs as whoever sent
+    // it: its params validator as well as its handler, since either may call
+    // into the host.
+    const ran = await runAsInvoker(request.invoker, async () => {
+      const parsed = registration.params(request.params)
+      if (!parsed.ok) return { parsed }
+      const context: ModuleMethodContext = {
+        clientId: request.clientId,
+        ...(request.commandId === undefined ? {} : { commandId: request.commandId }),
+      }
+      return { parsed, answer: await registration.handler(parsed.params, context) }
+    })
+    if (!ran.parsed.ok) {
+      const parsed = ran.parsed
       return {
         ok: false,
         code: 'invalid_params',
@@ -726,11 +738,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
             : `Extension "${request.moduleId}" refused the params of "${request.method}".`,
       }
     }
-    const context: ModuleMethodContext = {
-      clientId: request.clientId,
-      ...(request.commandId === undefined ? {} : { commandId: request.commandId }),
-    }
-    const answer = await runAsInvoker(request.invoker, () => registration.handler(parsed.params, context))
+    const answer = ran.answer
     if (answer?.ok === true) {
       const problem = answer.result === undefined ? null : moduleEventPayloadProblem(answer.result, 'result')
       if (problem)
@@ -972,96 +980,107 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   // A guarded stand-in for a service, or for what one hands back: every
   // callable reached through it checks the load and, where `pinned`, that
   // its first argument is the module itself.
+  //
+  // For a Studio service, every callable is also a host method with a row in
+  // the table and passes the host's gate at each call, as whoever invoked the
+  // code calling it then and while the extension is approved: the service's
+  // own methods (`methods`), and what they hand back (`returns`, by the path
+  // from the method: `attach.send`, and `()` for a function, as `watch.()`).
+  // A callable without a row is refused. A service another extension provides
+  // is that extension's, and is not Studio's to gate.
   function guardedServiceView(moduleId: string, key: string, root: object, load: ModuleLoad, pinned: boolean) {
     const readOnly = (): never => {
       throw new Error(`Extension "${moduleId}" cannot change service "${key}".`)
     }
-    // One guarded stand-in per member and the object it is called on, so a
-    // member read twice is the same one (a class's method is shared by every
-    // instance, and each instance's is its own); kept apart by whether its
-    // first argument is held to the module.
-    const guarded = new WeakMap<object, Map<boolean, WeakMap<object, unknown>>>()
+    const service = extensionHostService(key)
+    // Where a callable sits: its path, and whether the gate holds it (a Studio service).
+    type Place = { path: string; gated: boolean }
+    const rowOf = (path: string): ExtensionHostRequirement | undefined => {
+      const [method, ...rest] = path.split('.')
+      if (!service || !method) return undefined
+      if (rest.length === 0) return Object.hasOwn(service.methods, method) ? service.methods[method] : undefined
+      const returned = service.returns?.[method]
+      const member = rest.join('.')
+      return returned && Object.hasOwn(returned, member) ? returned[member] : undefined
+    }
+    // One guarded stand-in per member, the object it is called on, its place
+    // and whether its first argument is held to the module, so a member read
+    // twice is the same one (a class's method is shared by every instance,
+    // and each instance's is its own).
+    const guarded = new WeakMap<object, Map<string, WeakMap<object, unknown>>>()
     const unbound = {}
-    const cacheFor = (self: unknown, pinFirst: boolean): WeakMap<object, unknown> => {
+    const cacheFor = (self: unknown, place: Place, pinFirst: boolean): WeakMap<object, unknown> => {
       const owner = typeof self === 'object' && self !== null ? self : unbound
-      let byPinning = guarded.get(owner)
-      if (!byPinning) guarded.set(owner, (byPinning = new Map()))
-      let cache = byPinning.get(pinFirst)
-      if (!cache) byPinning.set(pinFirst, (cache = new WeakMap()))
+      let byPlace = guarded.get(owner)
+      if (!byPlace) guarded.set(owner, (byPlace = new Map()))
+      const slot = `${place.gated ? 'g' : 'u'}\u0000${place.path}\u0000${pinFirst ? 1 : 0}`
+      let cache = byPlace.get(slot)
+      if (!cache) byPlace.set(slot, (cache = new WeakMap()))
       return cache
     }
     const live = () => {
       if (load.retired()) throw new Error(switchedOff(moduleId, `no longer reaches service "${key}"`))
     }
+    const child = (place: Place, member: string): Place => ({
+      path: place.path ? `${place.path}.${member}` : member,
+      gated: place.gated,
+    })
 
-    function guardFunction(fn: (...given: unknown[]) => unknown, self: unknown, pinFirst: boolean): unknown {
+    function guardFunction(fn: (...given: unknown[]) => unknown, self: unknown, place: Place, pinFirst: boolean) {
       return (...args: unknown[]) => {
         live()
+        if (place.gated) {
+          const requirement = rowOf(place.path)
+          const decision = gate(moduleId, `${key}.${place.path}`, requirement)
+          if (!decision.ok) return refuseExtensionHostCall(requirement, decision)
+        }
         if (pinFirst && args[0] !== moduleId) {
           throw new Error(
             `Extension "${moduleId}" called service "${key}" as module "${String(args[0])}": a module reaches it only as itself.`,
           )
         }
-        return guardResult(fn.apply(self, args))
+        // What it hands the host to call back later is called back as its
+        // own work, never as whoever set this call off.
+        const handed = args.map((arg) => (typeof arg === 'function' ? detachedFromInvocation(arg as never) : arg))
+        return guardResult(fn.apply(self, handed), place)
       }
     }
 
-    // What a call hands back: a capability is guarded, data is passed through.
-    function guardResult(result: unknown): unknown {
-      if (result instanceof Promise) return result.then(guardResult)
-      if (typeof result === 'function') return guardMember(result, undefined, false)
-      if (isCapability(result)) return guardMember(result, undefined, false)
+    // What a call at `place` hands back: a capability is guarded, data is passed through.
+    function guardResult(result: unknown, place: Place): unknown {
+      if (result instanceof Promise) return result.then((settled) => guardResult(settled, place))
+      if (typeof result === 'function')
+        return guardMember(result, undefined, { ...place, path: `${place.path}.()` }, false)
+      if (isCapability(result)) return guardMember(result, undefined, place, false)
       return result
     }
 
-    function guardMember(member: unknown, self: unknown, pinFirst: boolean): unknown {
+    function guardMember(member: unknown, self: unknown, place: Place, pinFirst: boolean): unknown {
       if (member === null || (typeof member !== 'object' && typeof member !== 'function')) return member
-      const cache = cacheFor(self, pinFirst)
+      const cache = cacheFor(self, place, pinFirst)
       const known = cache.get(member)
       if (known !== undefined) return known
       const made =
         typeof member === 'function'
-          ? guardFunction(member as (...given: unknown[]) => unknown, self, pinFirst)
-          : facadeOf(member, false)
+          ? guardFunction(member as (...given: unknown[]) => unknown, self, place, pinFirst)
+          : facadeOf(member, place, false)
       cache.set(member, made)
       return made
     }
 
-    // The service's own methods, each through the host's gate (a Studio
-    // service an extension reaches has a row per method; one another
-    // extension provides is that extension's, and is not Studio's to gate).
-    const methods = extensionHostService(key)?.methods
-    const gatedMethods = new Map<PropertyKey, { member: unknown; gated: unknown }>()
-    function gatedMethod(property: PropertyKey, member: unknown, guarded: unknown): unknown {
-      if (!methods) return guarded
-      const known = gatedMethods.get(property)
-      if (known && known.member === member) return known.gated
-      const name = String(property)
-      const gated = (...args: unknown[]) => {
-        const requirement = Object.hasOwn(methods, name) ? methods[name] : undefined
-        const decision = gate(moduleId, `${key}.${name}`, requirement)
-        if (!decision.ok) return refuseExtensionHostCall(requirement, decision)
-        return (guarded as (...given: unknown[]) => unknown)(...args)
-      }
-      gatedMethods.set(property, { member, gated })
-      return gated
-    }
-
-    function facadeOf(target: object, pinFirst: boolean, root = false): object {
+    function facadeOf(target: object, place: Place, pinFirst: boolean): object {
       const facade = Object.create(null) as Record<PropertyKey, unknown>
       for (const property of memberNames(target)) {
+        const at = child(place, String(property))
         Object.defineProperty(facade, property, {
           enumerable: true,
           get: () => {
             const member: unknown = Reflect.get(target, property, target)
-            if (typeof member === 'function') {
-              const guarded = guardMember(member, target, pinFirst)
-              return root ? gatedMethod(property, member, guarded) : guarded
-            }
-            // An object the service holds is reached through a facade of its
-            // own, whatever it holds; a value or a list is read as it is now.
+            if (typeof member === 'function') return guardMember(member, target, at, pinFirst)
+            // An object it holds is reached through a facade of its own,
+            // whatever it holds; a value or a list is read as it is now.
             if (member !== null && typeof member === 'object' && !Array.isArray(member) && !ArrayBuffer.isView(member))
-              return guardMember(member, target, false)
+              return guardMember(member, target, at, false)
             return member
           },
           set: readOnly,
@@ -1071,7 +1090,8 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     }
 
     // A service that is itself a function is that function, guarded.
-    return typeof root === 'function' ? guardMember(root, undefined, pinned) : facadeOf(root, pinned, true)
+    const top: Place = { path: '', gated: service !== undefined }
+    return typeof root === 'function' ? guardMember(root, undefined, top, pinned) : facadeOf(root, top, pinned)
   }
 
   // A module asset by path: the same refusals `moduleAssetUrl` makes, then
@@ -1174,7 +1194,11 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       },
       registerMethods: (batch) => (refuseRetired(), enforce('registerMethods'), live.registerMethods(batch)),
       registerMcpTools: (tools) => (refuseRetired(), enforce('registerMcpTools'), live.registerMcpTools(tools)),
-      watchModuleAppState: (cb) => (refuseRetired(), enforce('watchModuleAppState'), live.watchModuleAppState(cb)),
+      watchModuleAppState: (cb) => (
+        refuseRetired(),
+        enforce('watchModuleAppState'),
+        live.watchModuleAppState(detachedFromInvocation(cb))
+      ),
       onStartup: (hook) => (refuseRetired(), live.onStartup(hook)),
       onShutdownBegin: (hook) => (refuseRetired(), live.onShutdownBegin(hook)),
       onShutdown: (hook) => (refuseRetired(), live.onShutdown(hook)),

@@ -32,19 +32,27 @@ export type ExtensionAccess = {
   worker: boolean
   /** Its worker is started when it is switched on and kept running. */
   background: boolean
+  /** The MCP tools it serves agents, by name, with their access. */
+  tools: Record<string, 'read' | 'operate'>
+  /** Its commands that run one of Studio's own actions, as `<command>=<action>`, sorted. */
+  actions: string[]
 }
 
 export type ExtensionApprovalRecord = { fingerprint: string; access: ExtensionAccess }
 
 /** What an extension's manifest asks for. */
 export function extensionAccess(
-  manifest: Pick<ExtensionManifest, 'permissions' | 'tier' | 'main' | 'background'>,
+  manifest: Pick<ExtensionManifest, 'permissions' | 'tier' | 'main' | 'background' | 'contributes'>,
 ): ExtensionAccess {
   return {
     permissions: [...new Set(manifest.permissions)].sort(),
     tier: manifest.tier,
     worker: manifest.main !== undefined,
     background: manifest.background === true,
+    tools: Object.fromEntries(manifest.contributes.mcpTools.map((tool) => [tool.name, tool.access])),
+    actions: manifest.contributes.commands
+      .flatMap((command) => (command.action === undefined ? [] : [`${command.id}=${command.action}`]))
+      .sort(),
   }
 }
 
@@ -67,8 +75,10 @@ export function extensionApprovalFingerprint(access: ExtensionAccess, contentDig
 
 /**
  * What `next` asks for beyond `approved`, in words for the person: each
- * permission it adds, a higher tier, a worker, a background worker. Empty when
- * it may keep the approval.
+ * permission it adds, a higher tier, a worker, a background worker, and each
+ * contribution that carries authority, judged per entry: an MCP tool agents
+ * did not have, a tool that may now change things, a command that runs a
+ * Studio action it did not run. Empty when it may keep the approval.
  */
 export function accessGrowth(approved: ExtensionAccess, next: ExtensionAccess): string[] {
   const growth: string[] = next.permissions
@@ -77,6 +87,16 @@ export function accessGrowth(approved: ExtensionAccess, next: ExtensionAccess): 
   if (tierRank(next.tier) > tierRank(approved.tier)) growth.push(`the "${next.tier}" tier`)
   if (next.worker && !approved.worker) growth.push('a worker')
   if (next.background && !approved.background) growth.push('a worker that runs in the background')
+  for (const [name, access] of Object.entries(next.tools)) {
+    const before = Object.hasOwn(approved.tools, name) ? approved.tools[name] : undefined
+    if (before === undefined) growth.push(`the MCP tool "${name}"`)
+    else if (access === 'operate' && before === 'read') growth.push(`the MCP tool "${name}" changing things`)
+  }
+  for (const action of next.actions)
+    if (!approved.actions.includes(action)) {
+      const [command, ...rest] = action.split('=')
+      growth.push(`the command "${command}" running "${rest.join('=')}"`)
+    }
   return growth
 }
 
@@ -92,10 +112,25 @@ function readRecord(value: unknown): ExtensionApprovalRecord | null {
   const { fingerprint, access } = value as Record<string, unknown>
   if (typeof fingerprint !== 'string' || !fingerprint.startsWith('sha256-')) return null
   if (!access || typeof access !== 'object' || Array.isArray(access)) return null
-  const { permissions, tier, worker, background } = access as Record<string, unknown>
-  if (!Array.isArray(permissions) || !permissions.every((entry) => typeof entry === 'string')) return null
+  const { permissions, tier, worker, background, tools, actions } = access as Record<string, unknown>
+  const strings = (list: unknown): list is string[] =>
+    Array.isArray(list) && list.every((entry) => typeof entry === 'string')
+  if (!strings(permissions) || !strings(actions)) return null
   if (!isTier(tier) || typeof worker !== 'boolean' || typeof background !== 'boolean') return null
-  return { fingerprint, access: { permissions: [...permissions].sort(), tier, worker, background } }
+  if (!tools || typeof tools !== 'object' || Array.isArray(tools)) return null
+  const toolAccess = Object.entries(tools as Record<string, unknown>)
+  if (!toolAccess.every(([, value]) => value === 'read' || value === 'operate')) return null
+  return {
+    fingerprint,
+    access: {
+      permissions: [...permissions].sort(),
+      tier,
+      worker,
+      background,
+      tools: Object.fromEntries(toolAccess) as Record<string, 'read' | 'operate'>,
+      actions: [...actions].sort(),
+    },
+  }
 }
 
 /** Every approval on this machine, by install key. */

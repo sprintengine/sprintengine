@@ -289,7 +289,14 @@ const MODULE_STORAGE_GET_MANY_LIMIT = 1000
 // A module id the host refuses as a folder name.
 const UNSAFE_SEGMENT = /[\\/]|^\.\.?$/
 
-type StorageCode = 'invalid_key' | 'invalid_value' | 'value_too_large' | 'invalid_workspace_root' | 'io_error'
+type StorageCode =
+  | 'invalid_key'
+  | 'invalid_value'
+  | 'value_too_large'
+  | 'invalid_workspace_root'
+  | 'io_error'
+  | 'not_permitted'
+  | 'approval_required'
 
 function storageRegistry(context: FakeServiceContext): { registry: object; handle: FakeStorage } {
   const scopes = new Map<string, Map<string, string>>()

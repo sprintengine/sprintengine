@@ -53,8 +53,11 @@ ships. Approving names the fingerprint the person was shown, so an extension
 that changed since is refused rather than approved unseen.
 
 - A new version keeps its approval when it asks for no more: no new
-  permission, no higher tier, no new worker, no background worker. Otherwise
-  it waits for the person, who is shown what is new.
+  permission, no higher tier, no new worker, no background worker, no new MCP
+  tool, no tool that may now change things, no command running a Studio
+  action it did not run. Otherwise it waits for the person, who is shown what
+  is new. A version that kept its approval runs on until Studio starts again,
+  held to what both versions were approved for.
 - An extension that only carries content (`tier: "content"`) needs no
   approval.
 - Uninstalling forgets the approval.

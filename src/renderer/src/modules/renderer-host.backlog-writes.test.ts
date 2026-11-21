@@ -44,7 +44,7 @@ test('each Backlog write is its protocol method, naming the calling module, and 
   const { kernel, calls } = hostWithServices(async ({ method }) =>
     method === 'extensionBacklog.create' ? { ok: true, id: 'backlog/unfiled/x.md', numericId: 3 } : { ok: true },
   )
-  const host = kernel.hostFor('task-board', thirdParty(['backlog:operate']))
+  const host = kernel.hostFor('task-board', thirdParty(['backlog:operate', 'backlog:read']))
   const link = { id: 'l', type: 'external' as const, label: 'L', target: { kind: 'url', id: 'u' } }
   assert.deepEqual(await host.createBacklogItem('ws-1', { title: 'X' }), {
     ok: true,
@@ -83,7 +83,7 @@ test('queryUsage is moduleUsage.query', async () => {
 })
 
 test('a call answers in the service’s words, never a throw, with no caller wired', async () => {
-  const host = createRendererHost().hostFor('task-board', thirdParty(['backlog:operate']))
+  const host = createRendererHost().hostFor('task-board', thirdParty(['backlog:operate', 'usage:read']))
   const noCaller = await host.updateBacklogStatus('ws-1', 'backlog/a.md', 'ready')
   assert.equal(noCaller.ok ? null : noCaller.code, 'backlog_unavailable')
   const usage = await host.queryUsage({ from: 0, to: 1 })

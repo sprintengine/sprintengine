@@ -7,7 +7,7 @@ import { studioGrantPrincipal, studioPrincipal } from '../../../packages/studio-
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import { toolSuccess } from '../../shared/modules/mcp-tools'
 import { createStudioGatewayTools } from '../automation/studio-gateway-tools'
-import { ownerInvoker, runAsInvoker, type ExtensionInvoker } from './extension-invocation'
+import { currentInvoker, ownerInvoker, runAsInvoker, type ExtensionInvoker } from './extension-invocation'
 import { createMainKernel } from './main-host'
 import * as serviceTokens from './service-tokens'
 
@@ -21,7 +21,14 @@ const reader: CapabilityManifest = {
   version: '1.0.0',
   defaultEnabled: true,
   source: 'third-party',
-  permissions: ['conversation:own', 'backlog:operate', 'backlog:read', 'github:api', 'tools:contribute'],
+  permissions: [
+    'conversation:own',
+    'backlog:operate',
+    'backlog:read',
+    'github:api',
+    'tools:contribute',
+    'agents:companion',
+  ],
 }
 const bare: CapabilityManifest = {
   id: 'local.bare',
@@ -43,6 +50,7 @@ const DEVICE: ExtensionInvoker = {
 function setup(approved: () => readonly string[] | null = () => reader.permissions ?? []) {
   const manifests = new Map([reader, bare, bundled].map((manifest) => [manifest.id, manifest]))
   const calls: string[] = []
+  const listeners: Array<() => void> = []
   const kernel = createMainKernel({
     resolveModuleManifest: (id) => manifests.get(id),
     isModulePresent: (id) => manifests.has(id),
@@ -55,8 +63,28 @@ function setup(approved: () => readonly string[] | null = () => reader.permissio
     () =>
       ({
         list: (moduleId: string) => (calls.push(`list:${moduleId}`), []),
+        subscribe: (moduleId: string, _ref: unknown, cb: () => void) => {
+          calls.push(`subscribe:${moduleId}`)
+          listeners.push(cb)
+          return () => calls.push(`unsubscribe:${moduleId}`)
+        },
         create: async (moduleId: string) => (calls.push(`create:${moduleId}`), { ok: true }),
         internals: () => 'not for extensions',
+      }) as never,
+  )
+  host.provideService(
+    serviceTokens.CompanionAgentsModuleServiceToken,
+    () =>
+      ({
+        attach: (moduleId: string) => {
+          calls.push(`attach:${moduleId}`)
+          return {
+            agentId: 'guide',
+            status: () => 'idle',
+            send: async (message: string) => void calls.push(`send:${message}`),
+            secret: () => 'a member the table does not know',
+          }
+        },
       }) as never,
   )
   host.provideService(
@@ -74,7 +102,7 @@ function setup(approved: () => readonly string[] | null = () => reader.permissio
         getLocation: async (moduleId: string) => (calls.push(`location:${moduleId}`), { ok: true }),
       }) as never,
   )
-  return { kernel, calls }
+  return { kernel, calls, listeners }
 }
 
 type Chats = {
@@ -237,4 +265,90 @@ test('every member of an extension’s MainHost has a row in the table', () => {
   const { kernel } = setup()
   const members = Object.keys(kernel.hostFor('local.reader')).sort()
   assert.deepEqual(members, Object.keys(EXTENSION_MAIN_HOST_METHODS).sort())
+})
+
+test('an extension’s params validator runs as whoever called the method, as its handler does', async () => {
+  const { kernel, calls } = setup()
+  const host = kernel.hostFor('local.reader')
+  const chats = host.requireService(serviceTokens.ConversationModuleServiceToken) as unknown as Chats
+  const seen: string[] = []
+  host.registerMethods({
+    peek: {
+      access: 'read',
+      params: (value) => {
+        try {
+          chats.list('local.reader')
+          seen.push('read')
+        } catch {
+          seen.push('refused')
+        }
+        return { ok: true, params: value }
+      },
+      handler: () => ({ ok: true, result: null }),
+    },
+  })
+  const call = (invoker: ExtensionInvoker) =>
+    kernel.callModuleMethod({
+      moduleId: 'local.reader',
+      method: 'peek',
+      access: 'read',
+      params: {},
+      clientId: 'c',
+      invoker,
+    })
+  await call(DEVICE)
+  await call(ownerInvoker())
+  assert.deepEqual(seen, ['refused', 'read'])
+  assert.deepEqual(calls, ['list:local.reader'])
+})
+
+type Companion = {
+  agentId: string
+  status(): string
+  send(message: string): Promise<void>
+  secret(): string
+}
+
+test('what a service hands back is held to the gate at each call, as whoever calls it then', async () => {
+  let approval: readonly string[] | null = reader.permissions ?? []
+  const { kernel, calls } = setup(() => approval)
+  const companions = kernel
+    .hostFor('local.reader')
+    .requireService(serviceTokens.CompanionAgentsModuleServiceToken) as unknown as {
+    attach(moduleId: string): Companion
+  }
+  // Attached as the extension's own work (as in activate), driven later by a device.
+  const handle = companions.attach('local.reader')
+  assert.equal(handle.agentId, 'guide', 'data on the handle reads as it is')
+  await assert.rejects(
+    runAsInvoker(DEVICE, () => handle.send('from the device')),
+    /"companion-agents\.module-service\.attach\.send" .*needs "conversation:create"/,
+  )
+  await handle.send('from the person')
+  // A member without a row is no host method an extension may call.
+  assert.throws(() => handle.secret(), /not a host method an extension may call/)
+  // The approval is read at each call: gone, the handle it kept stops.
+  approval = null
+  assert.throws(() => handle.status(), /not approved as it is now/)
+  await assert.rejects(handle.send('after'), /not approved as it is now/)
+  assert.deepEqual(calls, ['attach:local.reader', 'send:from the person'])
+})
+
+test('what the host calls back runs as the extension’s own work, not as whoever registered it', () => {
+  const { kernel, listeners } = setup()
+  const chats = kernel
+    .hostFor('local.reader')
+    .requireService(serviceTokens.ConversationModuleServiceToken) as unknown as {
+    subscribe(moduleId: string, ref: unknown, cb: () => void): () => void
+  }
+  const agent: ExtensionInvoker = {
+    principal: studioPrincipal({ owner: false, permissions: ['conversation:read'] }),
+    permissionCeiling: 'auto',
+    label: 'the agent',
+  }
+  const heard: string[] = []
+  runAsInvoker(agent, () => chats.subscribe('local.reader', {}, () => heard.push(currentInvoker().label)))
+  // A resource made during the agent's call delivers later, still inside its context.
+  runAsInvoker(agent, () => listeners[0]!())
+  assert.deepEqual(heard, ['you'])
 })

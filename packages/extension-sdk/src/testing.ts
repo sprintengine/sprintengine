@@ -68,6 +68,7 @@ import {
   EXTENSION_MAIN_HOST_METHODS,
   EXTENSION_RENDERER_METHODS,
   extensionHostService,
+  extensionRendererRefusalMessage,
   type ExtensionHostRequirement,
 } from './services.js'
 import type { UsageQuery, UsageQueryResult } from './activity.js'
@@ -217,6 +218,7 @@ function refuseUndeclared(
   const message = `Extension "${moduleId}" was not approved for "${requirement.extension}", which "${what}" needs.`
   if (requirement.refusal === 'answer')
     return Promise.resolve({ ok: false, code: EXTENSION_HOST_REFUSALS.notPermitted, message })
+  if (requirement.refusal === 'reject') return Promise.reject(new Error(message))
   throw new Error(message)
 }
 
@@ -635,20 +637,62 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
   // A host method, through the gate; throws as the host does.
   function use(method: keyof typeof EXTENSION_MAIN_HOST_METHODS): void {
     const requirement = EXTENSION_MAIN_HOST_METHODS[method]
-    if (!covered(method, requirement)) void refuseUndeclared(moduleId, method, requirement)
+    // Every caller of `use` throws its refusal (an async method's becomes its rejection).
+    if (!covered(method, requirement)) void refuseUndeclared(moduleId, method, { ...requirement, refusal: 'throw' })
   }
   // A service as the host hands it to an extension: each method through the gate.
+  // A service as the host hands it to an extension: each method through the
+  // gate, and what a method hands back that can be called too (its row under
+  // `returns`), as the host does.
   function gated<T>(key: string, registry: T): T {
-    const methods = extensionHostService(key)?.methods
-    if (!methods || registry === null || typeof registry !== 'object') return registry
+    const service = extensionHostService(key)
+    if (!service || registry === null || typeof registry !== 'object') return registry
+    const call =
+      (fn: unknown, self: unknown, path: string, requirement: ExtensionHostRequirement | undefined) =>
+      (...args: unknown[]) => {
+        const what = `${key}.${path}`
+        if (!requirement) throw new Error(`"${what}" is not a host method an extension may call.`)
+        if (!covered(what, requirement)) return refuseUndeclared(moduleId, what, requirement)
+        return handBack((fn as (...given: unknown[]) => unknown).apply(self, args), path)
+      }
+    const rowOf = (path: string): ExtensionHostRequirement | undefined => {
+      const [method, ...rest] = path.split('.')
+      return method ? service.returns?.[method]?.[rest.join('.')] : undefined
+    }
+    // One stand-in per thing handed back, so a handle handed back twice is the same one.
+    const handedBack = new WeakMap<object, Map<string, unknown>>()
+    function handBack(result: unknown, path: string): unknown {
+      if (
+        result !== null &&
+        (typeof result === 'object' || typeof result === 'function') &&
+        !(result instanceof Promise)
+      ) {
+        const known = handedBack.get(result)?.get(path)
+        if (known !== undefined) return known
+        const made = handBackOnce(result, path)
+        if (made !== result) {
+          if (!handedBack.has(result)) handedBack.set(result, new Map())
+          handedBack.get(result)!.set(path, made)
+        }
+        return made
+      }
+      return handBackOnce(result, path)
+    }
+    function handBackOnce(result: unknown, path: string): unknown {
+      if (result instanceof Promise) return result.then((settled) => handBack(settled, path))
+      if (typeof result === 'function') return call(result, undefined, `${path}.()`, rowOf(`${path}.()`))
+      if (result === null || typeof result !== 'object' || Array.isArray(result)) return result
+      if (!Object.values(result).some((value) => typeof value === 'function')) return result
+      const handle: Record<string, unknown> = {}
+      for (const [name, value] of Object.entries(result))
+        handle[name] =
+          typeof value === 'function' ? call(value, result, `${path}.${name}`, rowOf(`${path}.${name}`)) : value
+      return handle
+    }
     const facade: Record<string, unknown> = {}
-    for (const [name, requirement] of Object.entries(methods)) {
+    for (const [name, requirement] of Object.entries(service.methods)) {
       const member = (registry as Record<string, unknown>)[name]
-      if (typeof member !== 'function') continue
-      facade[name] = (...args: unknown[]) =>
-        covered(`${key}.${name}`, requirement)
-          ? (member as (...given: unknown[]) => unknown).apply(registry, args)
-          : refuseUndeclared(moduleId, `${key}.${name}`, requirement)
+      if (typeof member === 'function') facade[name] = call(member, registry, name, requirement)
     }
     return facade as T
   }
@@ -992,22 +1036,9 @@ export type FakeRendererHost = {
 }
 
 // The window's host methods an extension's surface calls need a permission of
-// the extension (EXTENSION_RENDERER_METHODS). The window's host refuses the
-// ones in CHECKED_RENDERER_METHODS without it (an answer or a throw, as the
-// host does); the rest are listed for the person and recorded here.
-const CHECKED_RENDERER_METHODS = new Set([
-  'openChat',
-  'getWorkspaceGitInfo',
-  'listBacklogItems',
-  'watchBacklogItems',
-  'getBacklogLocation',
-  'createBacklogItem',
-  'updateBacklogStatus',
-  'updateBacklogTriage',
-  'addBacklogLink',
-  'updateBacklogModuleMetadata',
-  'queryUsage',
-])
+// the extension (EXTENSION_RENDERER_METHODS). The fake refuses one the
+// manifest does not cover as the window's host does (an answer, a rejection or
+// a throw, as the row says), and lists it in `undeclared`.
 
 // A chat's title fits a tab and a sidebar row; a key is an id, not a document.
 const MAX_CHAT_NAME_CHARS = 120
@@ -1166,28 +1197,18 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
     },
   }
 
-  // Records the call, and answers whether the extension's permissions cover it.
-  function record(method: string, args: unknown[], needsOverride?: readonly string[]): boolean {
+  function record(method: string, args: unknown[]): void {
     fake.calls.push({ method, args })
-    const needs = needsOverride ?? EXTENSION_RENDERER_METHODS[method]
-    if (!needs || needs.some((permission) => permissions.has(permission))) return true
-    if (!fake.undeclared.some((use) => use.what === method)) fake.undeclared.push({ what: method, needs })
-    return !CHECKED_RENDERER_METHODS.has(method)
   }
-  const refusedAnswer = (method: string) =>
-    Promise.resolve({
-      ok: false as const,
-      code: EXTENSION_HOST_REFUSALS.notPermitted,
-      message: `Extension "${moduleId}" was not approved for "${(EXTENSION_RENDERER_METHODS[method] ?? []).join('" or "')}", which "${method}" needs.`,
-    })
+  // Whether the manifest covers what a method needs; a call it does not is listed.
+  function covers(method: string, needs: readonly string[]): boolean {
+    if (needs.some((permission) => permissions.has(permission))) return true
+    if (!fake.undeclared.some((use) => use.what === method)) fake.undeclared.push({ what: method, needs })
+    return false
+  }
   const resolveWorkspace = (id: string): ModuleWorkspaceView | null => {
     const found = workspaces.find((workspace) => workspace.id === id)
     return found ? { ...found } : null
-  }
-  // The renderer's Backlog reads throw without `backlog:read`, as the host's do.
-  const requireBacklogRead = (covered: boolean): void => {
-    if (covered) return
-    throw new Error(`Extension "${moduleId}" was not approved for "backlog:read", so it cannot read the Backlog.`)
   }
   const backlogCall = <T>(method: string, args: unknown[]): Promise<T> =>
     (world.backlog.registry[method] as (moduleId: string, ...rest: unknown[]) => Promise<T>)(moduleId, ...args)
@@ -1207,42 +1228,41 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
       return true
     },
     async listBacklogItems(workspaceId) {
-      requireBacklogRead(record('listBacklogItems', [workspaceId]))
+      record('listBacklogItems', [workspaceId])
       const listed = await world.backlog.registry.list(moduleId, workspaceId)
       if (!listed.ok) throw new Error(listed.message)
       return listed.items ?? []
     },
     watchBacklogItems(workspaceId, cb, watchOptions) {
-      requireBacklogRead(record('watchBacklogItems', [workspaceId, cb, watchOptions]))
+      record('watchBacklogItems', [workspaceId, cb, watchOptions])
       return world.backlog.handle.watch(workspaceId, cb, watchOptions?.onError)
     },
     getBacklogLocation(workspaceId) {
-      if (!record('getBacklogLocation', [workspaceId])) return refusedAnswer('getBacklogLocation')
+      record('getBacklogLocation', [workspaceId])
       return backlogCall('getLocation', [workspaceId])
     },
     createBacklogItem(workspaceId, input) {
-      if (!record('createBacklogItem', [workspaceId, input])) return refusedAnswer('createBacklogItem')
+      record('createBacklogItem', [workspaceId, input])
       return backlogCall('create', [workspaceId, input])
     },
     updateBacklogStatus(workspaceId, itemId, status) {
-      if (!record('updateBacklogStatus', [workspaceId, itemId, status])) return refusedAnswer('updateBacklogStatus')
+      record('updateBacklogStatus', [workspaceId, itemId, status])
       return backlogCall('updateStatus', [workspaceId, itemId, status])
     },
     updateBacklogTriage(workspaceId, itemId, triage) {
-      if (!record('updateBacklogTriage', [workspaceId, itemId, triage])) return refusedAnswer('updateBacklogTriage')
+      record('updateBacklogTriage', [workspaceId, itemId, triage])
       return backlogCall('updateTriage', [workspaceId, itemId, triage])
     },
     addBacklogLink(workspaceId, itemId, link) {
-      if (!record('addBacklogLink', [workspaceId, itemId, link])) return refusedAnswer('addBacklogLink')
+      record('addBacklogLink', [workspaceId, itemId, link])
       return backlogCall('addLink', [workspaceId, itemId, link])
     },
     updateBacklogModuleMetadata(workspaceId, itemId, value) {
-      if (!record('updateBacklogModuleMetadata', [workspaceId, itemId, value]))
-        return refusedAnswer('updateBacklogModuleMetadata')
+      record('updateBacklogModuleMetadata', [workspaceId, itemId, value])
       return backlogCall('updateModuleMetadata', [workspaceId, itemId, value])
     },
     queryUsage(query) {
-      if (!record('queryUsage', [query])) return refusedAnswer('queryUsage')
+      record('queryUsage', [query])
       return world.usage.registry.query(moduleId, query)
     },
     async getWorkspace(workspaceId) {
@@ -1254,7 +1274,7 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
       return workspaces.map((workspace) => ({ ...workspace }))
     },
     async getWorkspaceGitInfo(workspaceId) {
-      if (!record('getWorkspaceGitInfo', [workspaceId])) return refusedAnswer('getWorkspaceGitInfo')
+      record('getWorkspaceGitInfo', [workspaceId])
       return world.workspaces.gitInfo(workspaceId)
     },
     watchWorkspaces(cb) {
@@ -1329,7 +1349,8 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
       // A draft the person reads and sends needs only `chat:draft`; a prompt
       // sent for them is driving the chat, which is `conversation:own`'s.
       const sends = input?.send === true
-      if (!record('openChat', [input], sends ? ['conversation:own'] : ['chat:draft', 'conversation:own'])) {
+      record('openChat', [input])
+      if (!covers('openChat', sends ? ['conversation:own'] : ['chat:draft', 'conversation:own'])) {
         return {
           ok: false,
           code: 'not_permitted',
@@ -1464,7 +1485,22 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
       }
     },
   }
-  fake.host = host
+  // The window's gate, in front of every method of the table (openChat checks its own).
+  const gated = { ...host } as Record<string, unknown>
+  for (const [method, requirement] of Object.entries(EXTENSION_RENDERER_METHODS)) {
+    const member = (host as unknown as Record<string, unknown>)[method]
+    if (typeof member !== 'function' || method === 'openChat') continue
+    gated[method] = (...args: unknown[]) => {
+      if (covers(method, requirement.permissions)) return (member as (...given: unknown[]) => unknown).apply(host, args)
+      record(method, args)
+      const message = extensionRendererRefusalMessage(moduleId, method, requirement.permissions)
+      if (requirement.refusal === 'answer')
+        return Promise.resolve({ ok: false, code: EXTENSION_HOST_REFUSALS.notPermitted, message })
+      if (requirement.refusal === 'reject') return Promise.reject(new Error(message))
+      throw new Error(message)
+    }
+  }
+  fake.host = gated as unknown as RendererHost
   main?.onEmit((topic, payload) => fake.emit(topic, payload))
   return fake
 }

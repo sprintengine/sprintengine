@@ -70,13 +70,56 @@ test('every method a service offers has a row, and every row is a method', () =>
 
 test('every row names a permission extension.json can ask for, and how a refusal is told', () => {
   const rows = [
-    ...EXTENSION_HOST_SERVICES.flatMap((service) => Object.values(service.methods)),
+    ...EXTENSION_HOST_SERVICES.flatMap((service) => [
+      ...Object.values(service.methods),
+      ...Object.values(service.returns ?? {}).flatMap((returned) => Object.values(returned)),
+    ]),
     ...Object.values(EXTENSION_MAIN_HOST_METHODS),
   ]
   for (const row of rows) {
     if (row.extension !== null) assert.ok((EXTENSION_PERMISSIONS as readonly string[]).includes(row.extension))
-    assert.ok(row.refusal === 'answer' || row.refusal === 'throw')
+    assert.ok(['answer', 'reject', 'throw'].includes(row.refusal))
   }
+  // What a method hands back belongs to a method the service has.
+  for (const service of EXTENSION_HOST_SERVICES)
+    for (const method of Object.keys(service.returns ?? {}))
+      assert.ok(Object.hasOwn(service.methods, method), `${service.key}.${method}`)
+})
+
+test('every callable a service hands back has a row: a function, and each member of a handle', async () => {
+  const context = {
+    moduleId: 'acme',
+    permissions: new Set<string>(),
+    now: Date.now,
+    workspaces: createFakeWorkspaces([]),
+  }
+  const registry = (key: string) =>
+    SERVICE_FAKES[key]!.create(context).registry as Record<string, (...args: unknown[]) => unknown>
+  const rows = (key: string, method: string) => Object.keys(extensionHostService(key)?.returns?.[method] ?? {}).sort()
+  // A companion's handle: every member that can be called, and what those hand back.
+  const handle = registry('companion-agents.module-service').attach!('acme', {
+    workspaceId: 'ws-app',
+    agentId: 'guide',
+    name: 'Guide',
+    workspaceRoot: process.cwd(),
+    systemPrompt: 'Help.',
+  }) as Record<string, unknown>
+  const members = Object.keys(handle).filter((name) => typeof handle[name] === 'function')
+  const returned = members.flatMap((name) => (name.startsWith('on') ? [`${name}.()`] : []))
+  assert.deepEqual(rows('companion-agents.module-service', 'attach'), [...members, ...returned].sort())
+  // The function a watch or a subscription hands back.
+  const stop = (key: string, method: string, ...args: unknown[]) => {
+    const result = registry(key)[method]!('acme', ...args)
+    assert.equal(typeof result, 'function', `${key}.${method}`)
+    assert.deepEqual(rows(key, method), ['()'], `${key}.${method}`)
+  }
+  stop('core.module-storage', 'watch', {}, () => {})
+  stop('conversation.module-service', 'subscribe', { workspaceId: 'ws-app', agentId: 'a' }, () => {})
+  stop('conversation.module-service', 'follow', { workspaceId: 'ws-app', agentId: 'a' }, undefined, () => {})
+  stop('conversation.module-service', 'watch', undefined, () => {})
+  stop('scheduled-agents.module-service', 'onChanged', () => {})
+  stop('scheduled-agents.module-service', 'onRun', () => {})
+  stop('usage.module-service', 'onChanged', () => {})
 })
 
 test('the rows that carry the most weight', () => {

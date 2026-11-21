@@ -14,7 +14,7 @@ import {
   type McpConnectionContext,
   type McpToolRegistration,
 } from '../../shared/modules/mcp-tools'
-import { runAsInvoker, ownerInvoker, type ExtensionInvoker } from '../module-host/extension-invocation'
+import { runAsInvoker, type ExtensionInvoker } from '../module-host/extension-invocation'
 
 const APP_MUTATION_TOOLS = new Set([
   ...BROWSER_MUTATION_TOOL_NAMES,
@@ -97,9 +97,9 @@ export function createStudioGatewayTools(options: {
    * (extension-invocation.ts): an agent here is the person, held to its own
    * launch ceiling; a paired device is what it was granted. The extension's
    * host calls are held to it, and an agent the module starts during the call
-   * is held to its ceiling. Absent, module tools run as the person, uncapped.
+   * is held to its ceiling. Never assumed: the composer names it.
    */
-  callerInvoker?: (context: McpConnectionContext | undefined) => ExtensionInvoker
+  callerInvoker: (context: McpConnectionContext | undefined) => ExtensionInvoker
   warn?: (message: string) => void
 }): StudioGatewayToolResolver {
   const coreNames = new Set<string>()
@@ -163,16 +163,14 @@ export type StudioGatewayToolResolver = (() => McpToolRegistration[]) & {
 function gateOnModuleEnablement(
   contribution: McpToolContribution,
   isModuleEnabled: (moduleId: string) => boolean,
-  callerInvoker: ((context: McpConnectionContext | undefined) => ExtensionInvoker) | undefined,
+  callerInvoker: (context: McpConnectionContext | undefined) => ExtensionInvoker,
 ): McpToolRegistration {
   const { moduleId, moduleDisplayName, registration } = contribution
   return {
     ...registration,
     handler: async (args, context) =>
       isModuleEnabled(moduleId)
-        ? runAsInvoker(callerInvoker?.(context) ?? ownerInvoker(), () =>
-            registration.handler(args, withVerifiedIdentity(context)),
-          )
+        ? runAsInvoker(callerInvoker(context), () => registration.handler(args, withVerifiedIdentity(context)))
         : toolError(
             `${moduleId}_module_disabled`,
             `The ${moduleDisplayName} extension is disabled. Enable it in Settings → Extensions to use ${moduleId} tools.`,

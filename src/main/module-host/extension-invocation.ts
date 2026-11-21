@@ -17,8 +17,9 @@
 // context, and every host call the extension makes checks the invoker as well
 // as the extension's own grant (extension-host-gate.ts). AsyncLocalStorage
 // follows the handler's own async work (awaits, timers, promises it starts),
-// which is exactly the work done on the invoker's behalf. A listener the
-// extension registered before the call runs outside it, as the person's.
+// which is exactly the work done on the invoker's behalf. What the host calls
+// back later (a listener the extension registered, at any time) runs outside
+// any invocation, as the person's (`detachedFromInvocation`).
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 
@@ -51,6 +52,16 @@ const storage = new AsyncLocalStorage<ExtensionInvoker>()
 /** Run extension code on `invoker`'s behalf. */
 export function runAsInvoker<T>(invoker: ExtensionInvoker, handler: () => T): T {
   return storage.run(invoker, handler)
+}
+
+/**
+ * `listener` as the host calls it back: outside any invocation, as the
+ * extension's own work. A resource made during an invocation (a child
+ * process's stream, a timer the service starts lazily) would otherwise carry
+ * that invocation into every later event it delivers, to whoever registered.
+ */
+export function detachedFromInvocation<A extends unknown[], R>(listener: (...args: A) => R): (...args: A) => R {
+  return (...args: A) => storage.exit(() => listener(...args))
 }
 
 /** Who invoked the extension code running now; the person when nothing did (its own work). */

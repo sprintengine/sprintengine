@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { ownerInvoker } from '../module-host/extension-invocation'
 import { test } from 'vitest'
 
 import { desktopGatewayTools } from './desktop-gateway-tools'
@@ -19,6 +20,7 @@ import { createClientToolLoop } from './client-tool-loop.test-helper'
 test('the desktop’s in-process composition lists exactly the recorded tools', async () => {
   const parts = desktopToolParts()
   const resolve = createStudioGatewayTools({
+    callerInvoker: () => ownerInvoker(),
     appTools: desktopGatewayTools(parts)(parts.core),
     resolveModuleTools: () => [],
     isModuleEnabled: () => false,
@@ -30,6 +32,7 @@ test('the desktop’s in-process composition lists exactly the recorded tools', 
 test('the shell’s browser and canvas, offered over its port, list exactly the recorded tools', async () => {
   const parts = desktopToolParts()
   const ownTools = createStudioGatewayTools({
+    callerInvoker: () => ownerInvoker(),
     appTools: desktopGatewayTools({ ...parts, browser: [], canvas: [] })(parts.core),
     resolveModuleTools: () => [],
     isModuleEnabled: () => false,

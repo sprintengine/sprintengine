@@ -33,11 +33,12 @@ export type ThirdPartyMainLoadPlan = {
 }
 
 /**
- * What an extension that runs was loaded under: the fingerprint the person
- * approved (null for content only, which needs none), and the permissions
- * that approval holds. Its calls are held to these while that approval stands.
+ * What an extension that runs was loaded under: whether it needed the
+ * person's approval (content only does not), and the permissions it was
+ * loaded with. Its calls are held to these, and to what its approval holds
+ * as the approvals stand at each call.
  */
-export type ExtensionLoadedApproval = { fingerprint: string | null; permissions: string[] }
+export type ExtensionLoadedApproval = { approved: boolean; permissions: string[] }
 
 type ThirdPartyMainExport = {
   activate?: unknown
@@ -98,7 +99,7 @@ export function planThirdPartyMainModules(
     if (isExtensionRunnable(standing) && standing.verifiedFiles) {
       verifiedFiles[installed.key] = standing.verifiedFiles
       approvals[installed.key] = {
-        fingerprint: standing.approval.state === 'approved' ? standing.approval.fingerprint : null,
+        approved: standing.approval.state === 'approved',
         permissions: [...installed.extension.permissions],
       }
       continue

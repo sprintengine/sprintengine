@@ -52,6 +52,7 @@ import type {
   ScheduledAgentWriteResult,
 } from '../../shared/scheduled-agents'
 import type { ScheduledAgentsService } from '../scheduled-agents/service'
+import { ownerInvoker } from '../module-host/extension-invocation'
 import { test } from 'vitest'
 
 test('automation', async () => {
@@ -2849,6 +2850,7 @@ test('automation', async () => {
       handler: async () => ({ content: [{ type: 'text', text: 'ok' }] }),
     }
     const tools = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: [appTool],
       resolveModuleTools: () => [],
       isModuleEnabled: () => true,
@@ -2861,6 +2863,7 @@ test('automation', async () => {
     assert.throws(
       () =>
         createStudioGatewayTools({
+          callerInvoker: () => ownerInvoker(),
           appTools: [appTool, appTool],
           resolveModuleTools: () => [],
           isModuleEnabled: () => true,
@@ -2903,6 +2906,7 @@ test('automation', async () => {
       handler: async () => ({ content: [{ type: 'text' as const, text: 'ok' }] }),
     }
     const resolveWidgetTools = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: [],
       resolveModuleTools: () => [
         { moduleId: 'widgets', moduleDisplayName: 'Widgets', registration: moduleWrites },
@@ -2977,6 +2981,7 @@ test('automation', async () => {
 
     const warnings: string[] = []
     const resolveGatewayTools = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: [],
       resolveModuleTools: () => kernel.mcpToolRegistrations(),
       isModuleEnabled: () => true,
@@ -2998,6 +3003,7 @@ test('automation', async () => {
     const shadowWarnings: string[] = []
     const coreTool = registrationOf('workspace.list', 'core')
     const resolveShadowed = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: [coreTool],
       resolveModuleTools: () => [
         {
@@ -3058,6 +3064,7 @@ test('automation', async () => {
 
     let moduleEnabled = true
     const resolveGatewayTools = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: createAutomationTools(backendsOf()),
       resolveModuleTools: () => kernel.mcpToolRegistrations(),
       isModuleEnabled: () => moduleEnabled,
@@ -3468,6 +3475,7 @@ test('automation', async () => {
       serverName: 'sprintengine-studio',
       serverVersion: '0.0.0-test',
       resolveTools: createStudioGatewayTools({
+        callerInvoker: () => ownerInvoker(),
         appTools,
         resolveModuleTools: () => kernel.mcpToolRegistrations(),
         isModuleEnabled: () => moduleEnabled,

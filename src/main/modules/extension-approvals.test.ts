@@ -16,7 +16,23 @@ import {
   type ExtensionAccess,
 } from './extension-approvals'
 
-const WORKER: ExtensionAccess = { permissions: ['storage:own'], tier: 'worker', worker: true, background: false }
+const WORKER: ExtensionAccess = {
+  permissions: ['storage:own'],
+  tier: 'worker',
+  worker: true,
+  background: false,
+  tools: { notes_search: 'read' },
+  actions: ['notes.open=chat.new'],
+}
+const NO_CONTRIBUTIONS = {
+  commands: [],
+  menus: [],
+  topBarItems: [],
+  panels: [],
+  doors: [],
+  settingsSections: [],
+  mcpTools: [],
+}
 
 function withDataDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), 'mc-extension-approvals-'))
@@ -43,14 +59,33 @@ test('the fingerprint covers the sorted permissions, the tier, the worker, backg
 
 test('what a manifest asks for, and that only content needs no approval', () => {
   assert.deepEqual(
-    extensionAccess({ permissions: ['tools:contribute', 'storage:own'], tier: 'worker', main: 'dist/main.cjs' }),
-    { permissions: ['storage:own', 'tools:contribute'], tier: 'worker', worker: true, background: false },
+    extensionAccess({
+      permissions: ['tools:contribute', 'storage:own'],
+      tier: 'worker',
+      main: 'dist/main.cjs',
+      contributes: {
+        ...NO_CONTRIBUTIONS,
+        commands: [
+          { id: 'b.run', title: 'B', action: 'chat.new' },
+          { id: 'a.mine', title: 'A' },
+        ],
+        mcpTools: [{ name: 'notes_write', description: 'Writes.', access: 'operate' }],
+      },
+    }),
+    {
+      permissions: ['storage:own', 'tools:contribute'],
+      tier: 'worker',
+      worker: true,
+      background: false,
+      tools: { notes_write: 'operate' },
+      actions: ['b.run=chat.new'],
+    },
   )
   assert.equal(extensionNeedsApproval({ tier: 'content' }), false)
   for (const tier of ['declarative', 'ui', 'worker'] as const) assert.equal(extensionNeedsApproval({ tier }), true)
 })
 
-test('an update grows its access by a permission, a higher tier, a worker or background, and only so', () => {
+test('an update grows its access by a permission, a higher tier, a worker, background or a contribution that carries authority, and only so', () => {
   assert.deepEqual(accessGrowth(WORKER, WORKER), [])
   assert.deepEqual(accessGrowth(WORKER, { ...WORKER, permissions: [] }), [], 'asking for less is no growth')
   assert.deepEqual(accessGrowth({ ...WORKER, tier: 'ui', worker: false }, WORKER), ['the "worker" tier', 'a worker'])
@@ -58,6 +93,26 @@ test('an update grows its access by a permission, a higher tier, a worker or bac
     'the "github:api" permission',
     'a worker that runs in the background',
   ])
+  // Contributions count per entry: a new tool, a tool that may now change
+  // things, a command that runs an action it did not.
+  assert.deepEqual(
+    accessGrowth(WORKER, {
+      ...WORKER,
+      tools: { notes_search: 'operate', notes_drop: 'read' },
+      actions: ['notes.open=chat.new', 'notes.clear=settings.open'],
+    }),
+    [
+      'the MCP tool "notes_search" changing things',
+      'the MCP tool "notes_drop"',
+      'the command "notes.clear" running "settings.open"',
+    ],
+  )
+  assert.deepEqual(accessGrowth(WORKER, { ...WORKER, tools: {}, actions: [] }), [], 'dropping them is no growth')
+  assert.deepEqual(
+    accessGrowth(WORKER, { ...WORKER, actions: ['notes.open=settings.open'] }),
+    ['the command "notes.open" running "settings.open"'],
+    'the same command running another action is new',
+  )
 })
 
 test('approvals are kept per install key, forgotten on request, and nothing is approved by a bad file', async () => {

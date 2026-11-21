@@ -15,7 +15,7 @@
 // and the built URL is checked once more against the origin and the path it
 // was meant to have.
 //
-// Whether an extension may call it at all is the host.s gate
+// Whether an extension may call it at all is the host's gate
 // (extension-host-gate.ts): `github:api`, and only the person may set it off.
 //
 // Three additions keep a module from working around the broker:

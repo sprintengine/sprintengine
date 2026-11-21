@@ -21,7 +21,7 @@
 // Requests go out with `redirect: 'error'`, a deadline, and a 1 MiB cap on the
 // answer (broker-http.ts).
 //
-// Whether an extension may call it at all is the host.s gate
+// Whether an extension may call it at all is the host's gate
 // (extension-host-gate.ts): `secrets:own`. A request
 // shape the module got wrong (a bad method, header name or value) rejects with
 // a TypeError for the same reason.

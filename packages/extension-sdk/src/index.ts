@@ -1056,7 +1056,13 @@ export function getCompanionAgentsService(host: MainHost): CompanionAgentsServic
 // ── Module storage (host-provided, consumed via the service bridge) ──────────
 
 export type ModuleStorageErrorCode =
-  'invalid_key' | 'invalid_value' | 'value_too_large' | 'invalid_workspace_root' | 'io_error'
+  | 'invalid_key'
+  | 'invalid_value'
+  | 'value_too_large'
+  | 'invalid_workspace_root'
+  | 'io_error'
+  | 'not_permitted'
+  | 'approval_required'
 
 export type ModuleStorageResult<T> = ({ ok: true } & T) | { ok: false; code: ModuleStorageErrorCode; message: string }
 
@@ -1943,8 +1949,10 @@ export {
   EXTENSION_MAIN_HOST_METHODS,
   EXTENSION_RENDERER_METHODS,
   extensionHostService,
+  extensionRendererRefusalMessage,
   type ExtensionHostRefusalCode,
   type ExtensionHostRequirement,
   type ExtensionHostService,
   type ExtensionInvokerRequirement,
+  type ExtensionRendererRequirement,
 } from './services.js'

@@ -66,7 +66,8 @@ describe('createFakeMainHost', () => {
 
   test('a call its permissions do not cover is refused as the host’s gate refuses it, and reported', async () => {
     const fake = createFakeMainHost({ moduleId: 'quiet', permissions: [] })
-    assert.throws(() => getModuleStorage(fake.host).get({ key: 'doc' }), /was not approved for "storage:own"/)
+    const stored = await getModuleStorage(fake.host).get({ key: 'doc' })
+    assert.equal(!stored.ok && stored.code, 'not_permitted')
     assert.deepEqual(fake.undeclared, [{ what: 'core.module-storage.get', needs: ['storage:own'] }])
 
     const conversations = getConversationService(fake.host)
@@ -469,7 +470,7 @@ describe('createFakeRendererHost', () => {
   })
 
   test('the studio a surface is handed is the window’s, with that surface on it', async () => {
-    const renderer = createFakeRendererHost({ manifest: { id: 'notes', permissions: ['storage:own'] } })
+    const renderer = createFakeRendererHost({ manifest: { id: 'notes', permissions: ['settings:own'] } })
     const studio = renderer.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
     assert.deepEqual(studio.surface, { point: 'panels', id: 'notes', workspaceId: 'ws-app' })
     assert.equal(studio.moduleId, 'local.notes')
@@ -520,10 +521,10 @@ describe('createFakeRendererHost', () => {
     await assert.rejects(renderToHtml(createElement(Broken)), /timer exploded/)
   })
 
-  test('window calls its permissions do not cover are reported, and the checked ones refused', async () => {
+  test('window calls its permissions do not cover are refused as the window refuses them, and reported', async () => {
     const renderer = createFakeRendererHost({ moduleId: 'notes', permissions: [] })
-    await renderer.host.listWorkspaces()
-    renderer.host.setModuleAppState('draft', 'x')
+    await assert.rejects(renderer.host.listWorkspaces(), /not approved for "workspace:read"/)
+    assert.throws(() => renderer.host.setModuleAppState('draft', 'x'), /not approved for "settings:own"/)
     const chat = await renderer.host.openChat({ workspaceId: 'ws-app' })
     assert.equal(!chat.ok && chat.code, 'not_permitted')
     assert.deepEqual(
@@ -761,7 +762,7 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
       ],
     })
     const context = main.host.requireService(WorkspaceContextToken)
-    assert.throws(() => context.list(), /approved for "workspace:read"/)
+    await assert.rejects(context.list(), /approved for "workspace:read"/)
     const refused = await main.host.getWorkspaceGitInfo('ws-app')
     assert.equal(!refused.ok && refused.code, 'not_permitted')
     assert.deepEqual(main.undeclared.at(-1), { what: 'getWorkspaceGitInfo', needs: ['workspace:read'] })

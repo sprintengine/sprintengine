@@ -757,8 +757,6 @@ export const en = {
     // src/renderer/src/modules/renderer-host.ts
     rendererHost: {
       theBacklogModuleIsDisabled: 'Backlog is turned off.',
-      moduleMustDeclareTheIpc: (moduleId: unknown) =>
-        `Extension "${moduleId}" was not approved for "workspace:read", so it cannot read a workspace's git information.`,
       workspaceGitInformationIsNot: 'Workspace git information is not available yet.',
       theWorkspaceSGitInformation: "The workspace's git information could not be read.",
       moduleDoesNotDeclareThe: (moduleId: unknown) =>

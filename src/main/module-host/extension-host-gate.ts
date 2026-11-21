@@ -85,7 +85,8 @@ export class ExtensionHostRefusal extends Error {
 
 /**
  * How a refused call is told, as its row says: the method's own failure
- * shape, as a settled promise, or a throw.
+ * shape as a settled promise, a rejected promise for an async method with
+ * none, or a throw. A method the table does not hold throws.
  */
 export function refuseExtensionHostCall(
   requirement: ExtensionHostRequirement | undefined,
@@ -93,5 +94,7 @@ export function refuseExtensionHostCall(
 ): Promise<{ ok: false; code: ExtensionHostRefusalCode; message: string }> {
   if (requirement?.refusal === 'answer')
     return Promise.resolve({ ok: false, code: refusal.code, message: refusal.message })
-  throw new ExtensionHostRefusal(refusal.code, refusal.message)
+  const error = new ExtensionHostRefusal(refusal.code, refusal.message)
+  if (requirement?.refusal === 'reject') return Promise.reject(error)
+  throw error
 }

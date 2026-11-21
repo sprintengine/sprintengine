@@ -157,8 +157,8 @@ export type ModuleConversationDeps = {
   getCliRuntimes?: () => ConversationCliRuntimeOverrides | undefined
   /**
    * The loosest preset a chat started now may run on, or null when uncapped:
-   * the ceiling of the agent whose MCP tool call into the module is running
-   * (module-tool-caller.ts). Read at each `create`.
+   * the ceiling of whoever invoked the module's code that is running
+   * (extension-invocation.ts). Read at each `create`.
    */
   getCallerPermissionCeiling?: () => CliPermissionPreset | null
   newCommandId?: () => string

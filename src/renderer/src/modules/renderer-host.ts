@@ -1,4 +1,8 @@
 import { moduleAssetUrl } from '../../../shared/modules/assets'
+import {
+  EXTENSION_RENDERER_METHODS,
+  extensionRendererRefusalMessage,
+} from '../../../../packages/extension-sdk/src/services'
 import type { ComponentType, LazyExoticComponent } from 'react'
 import type { RowBadge } from '../components/workspace/SidebarNavButton'
 
@@ -1601,13 +1605,32 @@ export function createRendererHost(): RendererKernel {
     }
     return backlogReader.reader
   }
-  // The Backlog reads are checked against the approved `backlog:read` for an
-  // extension. A bundled module is the app's own code and asks for nothing.
-  // (The window half runs in this window until frames; its calls to the
-  // server pass the host's gate there.)
-  const requireBacklogRead = (moduleId: string, manifest: CapabilityManifest | undefined): void => {
-    if (manifest?.source !== 'third-party' || manifest.permissions?.includes('backlog:read')) return
-    throw new Error(`Extension "${moduleId}" was not approved for "backlog:read", so it cannot read the Backlog.`)
+  // An extension's surface reaches this window's host through a stand-in that
+  // refuses what its approval does not cover (EXTENSION_RENDERER_METHODS), as
+  // the server's gate refuses its calls there. A bundled module is the app's
+  // own code and asks for nothing. (The surface runs in this window until
+  // frames, so this holds an honest extension to what it asked for.)
+  const gatedRendererHost = (
+    moduleId: string,
+    manifest: CapabilityManifest,
+    host: InternalRendererHost,
+  ): InternalRendererHost => {
+    // The window serves only an approved extension's surfaces, so its manifest's are the approved permissions.
+    const granted = manifest.permissions ?? []
+    const gated = { ...host } as Record<string, unknown>
+    for (const [method, requirement] of Object.entries(EXTENSION_RENDERER_METHODS)) {
+      const member = (host as unknown as Record<string, unknown>)[method]
+      if (typeof member !== 'function' || method === 'openChat') continue
+      gated[method] = (...args: unknown[]) => {
+        if (requirement.permissions.some((permission) => granted.includes(permission)))
+          return (member as (...given: unknown[]) => unknown).apply(host, args)
+        const message = extensionRendererRefusalMessage(moduleId, method, requirement.permissions)
+        if (requirement.refusal === 'answer') return Promise.resolve({ ok: false, code: 'not_permitted', message })
+        if (requirement.refusal === 'reject') return Promise.reject(new Error(message))
+        throw new Error(message)
+      }
+    }
+    return gated as unknown as InternalRendererHost
   }
   // A call into one of the host's services on the module's server, which
   // checks the module's permission. A refusal comes back as data.
@@ -1649,7 +1672,7 @@ export function createRendererHost(): RendererKernel {
   return {
     hostFor(moduleId, manifest) {
       const moduleName = manifest?.displayName?.trim() || moduleId
-      return {
+      const host: InternalRendererHost = {
         moduleId,
         supports(capability) {
           // Opening a chat needs the shell's opener, which a window registers
@@ -1941,11 +1964,9 @@ export function createRendererHost(): RendererKernel {
           backlogReader = { moduleId, reader }
         },
         async listBacklogItems(workspaceId) {
-          requireBacklogRead(moduleId, manifest)
           return requireBacklogReader().list(workspaceId)
         },
         watchBacklogItems(workspaceId, cb, options) {
-          requireBacklogRead(moduleId, manifest)
           const reader = requireBacklogReader()
           const backlogOff = (): boolean =>
             backlogReader !== null && moduleEnabledResolver !== null && !moduleEnabledResolver(backlogReader.moduleId)
@@ -2027,13 +2048,6 @@ export function createRendererHost(): RendererKernel {
           return workspaceListSource ? workspaceListSource.list() : []
         },
         async getWorkspaceGitInfo(workspaceId) {
-          if (!manifest?.permissions?.includes('workspace:read')) {
-            return {
-              ok: false,
-              code: 'not_permitted',
-              message: appCopy.modules.rendererHost.moduleMustDeclareTheIpc(moduleId),
-            }
-          }
           if (!workspaceGitInfoSource) {
             return {
               ok: false,
@@ -2270,6 +2284,7 @@ export function createRendererHost(): RendererKernel {
           }
         },
       }
+      return manifest?.source === 'third-party' ? gatedRendererHost(moduleId, manifest, host) : host
     },
     getPanel(componentId) {
       return panels.get(componentId)

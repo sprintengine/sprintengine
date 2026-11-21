@@ -108,7 +108,11 @@ extension built against 3.x must be rewritten to this one.
   must hold, and what whoever set the call off must hold. Studio checks both
   on every call. A refused call answers `not_permitted` or
   `approval_required` (replacing `permission_missing`) in the method's
-  failure shape, or throws.
+  failure shape, rejects for an async method with none, or throws. What a
+  method hands back that can be called (a companion's handle, the function
+  that stops a watch) has rows of its own (`returns`), and is checked at each
+  call. `EXTENSION_RENDERER_METHODS` rows carry their refusal, and the window
+  refuses what they do not cover, as the fakes do.
 - A signature no longer lets an extension run: the person approves it, bound
   to a fingerprint over its permissions, tier, worker, background and files.
   A signature by a trusted publisher key is shown as verified.
