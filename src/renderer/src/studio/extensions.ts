@@ -1,6 +1,13 @@
 import {
   STUDIO_EXTENSIONS_CAPABILITY,
+  STUDIO_EXTENSION_FRAMES_CAPABILITY,
   STUDIO_EXTENSION_HOST_CAPABILITY,
+  type ExtensionContributionsResult,
+  type ExtensionFrameDocument,
+  type StudioExtensionCall,
+  type StudioExtensionCallAnswer,
+  type StudioExtensionFrameRequest,
+  type StudioModuleEvent,
   type AgentLaunchPreviewInput,
   type AgentLaunchPreviewResult,
   type ExtensionScaffoldCreateInput,
@@ -31,7 +38,6 @@ import {
   type StudioModuleSummary,
   type StudioPluginStatus,
   type ThirdPartyModuleListResult,
-  type ThirdPartyRendererEntriesResult,
 } from '../../../../packages/studio-protocol/src/public'
 import { followWindowStudioPush, rereadOnReopen } from './windowStudioPush'
 import { windowStudioClient, windowStudioIsAnotherMachine } from './windowStudioClient'
@@ -40,8 +46,9 @@ import { windowStudioClient, windowStudioIsAnotherMachine } from './windowStudio
 // installing from it or from GitHub (`marketplace.*`), the agent CLIs' plugin
 // catalogue (`cliPlugins.*`), Studio's own plugin in a workspace, building an
 // extension (`extensionScaffold.*`), the hosted feeds, and the extensions
-// installed there (`extension.installed`, `extension.rendererEntries`,
-// `extension.changed`, `extension.list`). Over the window's own connection, as every
+// installed there (`extension.installed`, `extension.contributions`,
+// `extension.changed`, `extension.list`), and their surfaces' frames
+// (`extension.frame`, `extension.call`, `extension.events`). Over the window's own connection, as every
 // other client reaches them. The members keep the names the window has always
 // called them by, so a caller changes only where it imports them from. A
 // command carries a command id made for the call; a follow (`on…`) is kept
@@ -79,12 +86,18 @@ export type ExtensionsApi = {
   listThirdPartyModules(): Promise<ThirdPartyModuleListResult>
   /** Every module the Studio holds, switched on or off, and whether it runs there now. */
   listStudioModules(): Promise<StudioModuleSummary[]>
-  /** The trusted extensions' window halves, for this window to run; none where the Studio is another machine. */
-  listThirdPartyRendererEntries(): Promise<ThirdPartyRendererEntriesResult>
+  /** What the approved extensions add to this window, as their extension.json declares it. */
+  listExtensionContributions(): Promise<ExtensionContributionsResult>
+  /** Whether the Studio draws extension surfaces in frames (`extension-frames`). */
+  drawsExtensionFrames(): Promise<boolean>
+  /** The document one surface's frame is drawn from. */
+  extensionFrame(request: StudioExtensionFrameRequest): Promise<ExtensionFrameDocument>
+  /** One host call a frame made, as this window's connection; never throws. */
+  extensionCall(call: StudioExtensionCall): Promise<StudioExtensionCallAnswer>
+  /** Hear one extension's worker events, across reconnects. */
+  onExtensionEvents(moduleId: string, cb: (event: StudioModuleEvent) => void): () => void
   /** What is installed or trusted on the Studio changed. */
   onThirdPartyModulesChanged(cb: () => void): () => void
-  /** The person's values for the modules' Settings sections, which their main halves read. */
-  setModuleAppState(state: Record<string, Record<string, unknown>>): Promise<void>
   /** The module registry this window resolved, which the Studio's agent tools report. */
   setModuleRegistrySnapshot(snapshot: ModuleRegistrySnapshot): Promise<ModuleRegistrySnapshotWriteResult>
 }
@@ -176,10 +189,21 @@ export const extensionsApi: ExtensionsApi = {
   hostedSourcesFeedGet: () => extensions('sourcesFeed.get', {}),
   listThirdPartyModules: () => modules('extension.installed', {}),
   listStudioModules: async () => (await modules('extension.list', {})).modules,
-  listThirdPartyRendererEntries: async () =>
-    // A window half's assets are served from this computer's own folders, so
-    // a window whose Studio is another machine (a browser tab) runs none.
-    windowStudioIsAnotherMachine() ? { entries: [], failures: {} } : modules('extension.rendererEntries', {}),
+  listExtensionContributions: () => modules('extension.contributions', {}),
+  drawsExtensionFrames: async () => (await windowStudioClient()).supports(STUDIO_EXTENSION_FRAMES_CAPABILITY),
+  extensionFrame: (request) => call(STUDIO_EXTENSION_FRAMES_CAPABILITY, 'extension.frame', request),
+  extensionCall: (request) =>
+    answered(
+      () => call(STUDIO_EXTENSION_FRAMES_CAPABILITY, 'extension.call', { ...request, commandId: commandId() }),
+      (message) => ({ ok: false, code: 'unavailable', message }),
+    ),
+  onExtensionEvents: (moduleId, cb) =>
+    followWindowStudioPush({
+      topic: 'extension.events',
+      params: { moduleId },
+      capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+      onPayload: cb,
+    }),
   onThirdPartyModulesChanged: (cb) =>
     followWindowStudioPush({
       topic: 'extension.changed',
@@ -189,12 +213,6 @@ export const extensionsApi: ExtensionsApi = {
       // A change itself carries nothing: the listener reads the list.
       onReopen: () => cb(),
     }),
-  // A browser tab loads no extension and starts from the default settings, so
-  // what it would send would replace the desktop window's with blanks.
-  setModuleAppState: async (state) => {
-    if (windowStudioIsAnotherMachine()) return
-    await modules('extension.setAppState', { state, commandId: commandId() })
-  },
   setModuleRegistrySnapshot: async (snapshot) =>
     windowStudioIsAnotherMachine()
       ? { ok: true }

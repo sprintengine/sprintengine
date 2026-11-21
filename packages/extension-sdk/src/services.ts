@@ -38,6 +38,7 @@
 // hosts in `@sprintengine/extension-sdk/testing`. A test fails when a service
 // key or a method the SDK reaches has no row, so nothing can ship unchecked.
 
+import type { ExtensionFrameMethod } from './frame.js'
 import type { ExtensionPermission } from './permissions.js'
 
 /** What whoever set a call off must hold: a Studio protocol permission, or `owner`. */
@@ -50,6 +51,8 @@ export type ExtensionInvokerRequirement =
   | 'backlog:read'
   | 'backlog:operate'
   | 'providers:read'
+  | 'filesystem:read'
+  | 'filesystem:write'
   | 'extension:read'
   | 'extension:operate'
   | 'owner'
@@ -263,52 +266,66 @@ export const EXTENSION_MAIN_HOST_METHODS: Readonly<Record<string, ExtensionHostR
   emit: need(null, null, 'throw'),
 }
 
-/** What one of the window's host methods needs of an extension: any one of `permissions`, and how a refusal is told. */
-export type ExtensionRendererRequirement = {
-  readonly permissions: readonly ExtensionPermission[]
-  readonly refusal: 'answer' | 'reject' | 'throw'
+/** What a frame's host call needs, and where it is carried out once admitted. */
+export type ExtensionFrameRequirement = ExtensionHostRequirement & {
+  /**
+   * `server`: Studio carries it out where the extension is installed.
+   * `client`: Studio admits it there, and the window that drew the frame
+   * carries it out (a toast, a drafted chat, opening a door).
+   */
+  readonly runs: 'server' | 'client'
 }
 
-const inWindow = (
-  permissions: readonly ExtensionPermission[],
-  refusal: ExtensionRendererRequirement['refusal'],
-): ExtensionRendererRequirement => ({ permissions, refusal })
+const inFrame = (
+  extension: ExtensionPermission | null,
+  invoker: ExtensionInvokerRequirement | null,
+  runs: ExtensionFrameRequirement['runs'] = 'server',
+): ExtensionFrameRequirement => ({ extension, invoker, refusal: 'answer', runs })
 
 /**
- * The window's host methods an extension's surface calls, and what each needs
- * of the extension. The window that runs a surface is the person's own, so the
- * person is always the invoker; its calls to the server pass the host's gate
- * there as well. The window refuses a call the extension's approval does not
- * cover, and so do the fake hosts. `openChat` with `send: true` needs
- * `conversation:own` alone.
+ * The host methods a surface's frame calls (`studio.host.call`), and what each
+ * needs. Every call, the client ones included, reaches the Studio server
+ * first and passes the host's gate there, as the extension and as whoever
+ * opened the surface: the person's own window, a paired desktop window or a
+ * browser, each by its own connection's grant. A frame calls nothing else.
  */
-export const EXTENSION_RENDERER_METHODS: Readonly<Record<string, ExtensionRendererRequirement>> = {
-  getWorkspace: inWindow(['workspace:read'], 'reject'),
-  listWorkspaces: inWindow(['workspace:read'], 'reject'),
-  watchWorkspaces: inWindow(['workspace:read'], 'throw'),
-  getWorkingRoot: inWindow(['workspace:read'], 'reject'),
-  getWorkspaceGitInfo: inWindow(['workspace:read'], 'answer'),
-  watchWorkspaceFile: inWindow(['workspace:read'], 'reject'),
-  getWorkspaceModuleState: inWindow(['storage:own'], 'throw'),
-  setWorkspaceModuleState: inWindow(['storage:own'], 'throw'),
-  getModuleAppState: inWindow(['settings:own'], 'throw'),
-  setModuleAppState: inWindow(['settings:own'], 'throw'),
-  watchModuleAppState: inWindow(['settings:own'], 'throw'),
-  listBacklogItems: inWindow(['backlog:read'], 'reject'),
-  watchBacklogItems: inWindow(['backlog:read'], 'throw'),
-  getBacklogLocation: inWindow(['backlog:read'], 'answer'),
-  createBacklogItem: inWindow(['backlog:operate'], 'answer'),
-  updateBacklogStatus: inWindow(['backlog:operate'], 'answer'),
-  updateBacklogTriage: inWindow(['backlog:operate'], 'answer'),
-  addBacklogLink: inWindow(['backlog:operate'], 'answer'),
-  updateBacklogModuleMetadata: inWindow(['backlog:operate'], 'answer'),
-  queryUsage: inWindow(['usage:read'], 'answer'),
-  openChat: inWindow(['chat:draft', 'conversation:own'], 'answer'),
+export const EXTENSION_FRAME_METHODS: Readonly<Record<ExtensionFrameMethod, ExtensionFrameRequirement>> = {
+  'workspace.list': inFrame('workspace:read', 'workspace:read'),
+  'workspace.get': inFrame('workspace:read', 'workspace:read'),
+  'backlog.list': inFrame('backlog:read', 'backlog:read'),
+  'backlog.location': inFrame('backlog:read', 'backlog:read'),
+  'backlog.create': inFrame('backlog:operate', 'backlog:operate'),
+  'backlog.updateStatus': inFrame('backlog:operate', 'backlog:operate'),
+  'backlog.updateTriage': inFrame('backlog:operate', 'backlog:operate'),
+  'backlog.addLink': inFrame('backlog:operate', 'backlog:operate'),
+  'backlog.updateModuleMetadata': inFrame('backlog:operate', 'backlog:operate'),
+  'usage.query': inFrame('usage:read', 'workspace:read'),
+  'storage.get': inFrame('storage:own', 'extension:read'),
+  'storage.list': inFrame('storage:own', 'extension:read'),
+  'storage.set': inFrame('storage:own', 'extension:operate'),
+  'storage.delete': inFrame('storage:own', 'extension:operate'),
+  'settings.get': inFrame('settings:own', 'extension:read'),
+  'settings.set': inFrame('settings:own', 'extension:operate'),
+  // Machine-wide file access is not grantable; a workspace's folder is, and
+  // whoever opened the surface must be able to read or write files there too.
+  'files.read': inFrame('workspace-files:read', 'filesystem:read'),
+  'files.stat': inFrame('workspace-files:read', 'filesystem:read'),
+  'files.search': inFrame('workspace-files:read', 'filesystem:read'),
+  'files.write': inFrame('workspace-files:write', 'filesystem:write'),
+  notify: inFrame('notifications:show', 'extension:operate'),
+  'worker.read': inFrame(null, 'extension:read'),
+  'worker.operate': inFrame(null, 'extension:operate'),
+  toast: inFrame(null, 'extension:read', 'client'),
+  'chat.draft': inFrame('chat:draft', 'conversation:create', 'client'),
+  'doors.open': inFrame(null, 'extension:read', 'client'),
+  'tabs.focus': inFrame(null, 'workspace:read', 'client'),
 }
 
-/** Why the window refused a call: the message the refusal carries. */
-export function extensionRendererRefusalMessage(extensionId: string, method: string, needs: readonly string[]): string {
-  return `Extension "${extensionId}" was not approved for ${needs.map((permission) => `"${permission}"`).join(' or ')}, which "${method}" needs.`
+/** The frame method `name` names, or undefined. */
+export function extensionFrameMethod(name: string): ExtensionFrameRequirement | undefined {
+  return Object.hasOwn(EXTENSION_FRAME_METHODS, name)
+    ? EXTENSION_FRAME_METHODS[name as ExtensionFrameMethod]
+    : undefined
 }
 
 /** The codes a refused host call answers with. */

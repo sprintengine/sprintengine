@@ -160,6 +160,16 @@ export const STUDIO_UPDATE_SESSION_CAPABILITY = 'update-session' as const
 export const STUDIO_EXTENSION_HOST_CAPABILITY = 'extension-host' as const
 
 /**
+ * This Studio draws its extensions' surfaces in frames: `extension.frame`
+ * builds the document a panel, door or settings section is drawn from, and
+ * `extension.call` carries a frame's host calls, each checked as the
+ * extension and as the connection that drew the frame. A client draws an
+ * extension's surfaces only where its Studio offers this. Offered with
+ * `extension-host`.
+ */
+export const STUDIO_EXTENSION_FRAMES_CAPABILITY = 'extension-frames' as const
+
+/**
  * The agent CLIs on the Studio's machine: `cliRuntimes.*` (detect, install,
  * update) and `cliVersions.*` (whether each is behind its published version),
  * with their streams. Offered where the Studio holds the CLIs' detection.
@@ -447,6 +457,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_WEB_DEVICES_CAPABILITY,
   STUDIO_TAILNET_CAPABILITY,
   STUDIO_EXECUTION_HOSTS_CAPABILITY,
+  STUDIO_EXTENSION_FRAMES_CAPABILITY,
 ] as const
 
 /**

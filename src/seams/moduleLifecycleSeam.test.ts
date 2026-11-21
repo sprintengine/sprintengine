@@ -255,7 +255,7 @@ async function startServer() {
   await load.ready
   const manifests = thirdParty.modules.map((module) => module.manifest)
   hub.serveCallsFrom((request) => load.kernel.callModuleMethod(request))
-  hub.serveHostServicesFrom((moduleId, invoker) => load.kernel.hostServicesFor(moduleId, invoker))
+  hub.serveFrameCallsFrom((request) => load.kernel.callFrameMethod(request))
   hub.serveLifecycleFrom(
     createModuleLifecycle({
       dataDir,

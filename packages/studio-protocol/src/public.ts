@@ -52,6 +52,7 @@ export * from './canvas.js'
 // Keeping a Studio up to date, and reaching one whose protocol does not meet the client's.
 export * from './update.js'
 export * from './modules.js'
+export * from './module-service-types.js'
 export * from './extensions.js'
 export * from './extensions-types.js'
 export * from './artifacts.js'
@@ -62,7 +63,6 @@ export * from './web-devices.js'
 export * from './tailnet.js'
 export * from './tailnet-types.js'
 // The host's services a module's window half calls on its server.
-export * from './module-services.js'
 // What a Studio's machine has and lacks for the work it runs on its own.
 export * from './readiness.js'
 export * from './environment-access.js'

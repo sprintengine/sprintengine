@@ -5,10 +5,10 @@
 // the app and the `sprintengine-extension` CLI validate a manifest the same
 // way. Studio checks every call an extension makes into it against what the
 // person approved and against what whoever set the call off may do
-// (main/module-host/extension-host-gate.ts). A permission does not limit the
-// extension's own code: an extension with code runs inside Studio with full
-// access to this machine, and the approval says so in those words
-// (`extensionApprovalCopy`).
+// (main/module-host/extension-host-gate.ts). A `ui` extension's code runs
+// isolated in sandboxed frames, so what it is allowed is all it can do. A
+// `worker` extension's code runs on this machine with full access, and the
+// approval says so in those words (`extensionApprovalCopy`).
 //
 // See docs/extension-authors/permissions.md for the author-facing reference.
 
@@ -33,6 +33,8 @@ const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'backlog:operate': 'Create Backlog items and change their status, triage, links and metadata',
   'providers:read': 'See which agents a chat can run on',
   'usage:read': 'See token usage and cost of every agent session on this machine',
+  'workspace-files:read': 'Read the files in your workspaces’ folders',
+  'workspace-files:write': 'Change and create files in your workspaces’ folders',
   'storage:own': 'Save its own data',
   'settings:own': 'Read the values of its own Settings section',
   'secrets:own': 'Store API keys and send them to the sites it names (the key is never shown back to the extension)',
@@ -67,10 +69,11 @@ export function describeCapabilityPermission(permission: string): string {
 
 /**
  * What approving an extension of this tier means, in the words the approval
- * says before anything else. An extension with code (`ui`, `worker`) runs
- * inside Studio with full access to this machine; Studio checks only the calls
- * it makes into Studio. That is true until its code runs in a frame or a
- * process of its own, and stays true for a worker.
+ * says before anything else, and only what this build enforces. A `ui`
+ * extension's code runs in sandboxed frames with no network and no reach into
+ * the app, so it can do only what the person allows. A `worker` extension's
+ * code runs on this machine with full access; Studio checks only the calls it
+ * makes into Studio.
  */
 export function extensionApprovalCopy(tier: ExtensionTier): string {
   switch (tier) {
@@ -79,7 +82,7 @@ export function extensionApprovalCopy(tier: ExtensionTier): string {
     case 'declarative':
       return 'It adds commands, menu items and buttons to Studio that run Studio’s own actions. It runs no code of its own.'
     case 'ui':
-      return 'Its code runs inside Studio with full access to this machine: your files, your network and your accounts. Studio checks the calls it makes into Studio against what you allow below; its own code is not limited.'
+      return 'Its code runs isolated and can do only what you allow below: it has no network of its own, and everything else goes through Studio, which checks every call.'
     case 'worker':
       return 'Its code runs on this machine with full access: your files, your programs, your network and your accounts. Studio checks the calls it makes into Studio against what you allow below; its own code is not limited.'
   }
@@ -119,8 +122,10 @@ const CAPABILITY_ACCESS: Record<string, CapabilityAccess> = {
   'secrets:own': { title: 'Holds your API keys', care: true, why: 'Sends them to sites it names' },
   'usage:read': { title: 'Sees your usage and cost', care: true, why: 'Every agent session on this machine' },
   'backlog:operate': { title: 'Changes Backlog items', care: true, why: 'Creates and edits your items' },
+  'workspace-files:write': { title: 'Changes your project files', care: true, why: 'Writes files in your workspaces' },
   // Standard.
   'workspace:read': { title: 'Sees workspaces and git state', care: false },
+  'workspace-files:read': { title: 'Reads your project files', care: false },
   'backlog:read': { title: 'Reads the Backlog', care: false },
   'providers:read': { title: 'Sees your agents', care: false },
   'storage:own': { title: 'Saves its own data', care: false },

@@ -19,11 +19,10 @@ import {
   getScheduledAgentsService,
   WorkspaceContextToken,
   WorkspaceServiceToken,
-  type ExtensionMountStudio,
   type ScheduledAgentDraft,
 } from '../src/index.js'
 import { EXTENSION_HOST_SERVICES } from '../src/services.js'
-import { createFakeMainHost, createFakeRendererHost, renderToHtml } from '../src/testing.js'
+import { createFakeFrameStudio, createFakeMainHost, renderToHtml } from '../src/testing.js'
 import { SERVICE_FAKES } from '../src/testing-services.js'
 
 const ROOT = '/Users/dev/projects/app'
@@ -439,103 +438,8 @@ describe('createFakeMainHost', () => {
   })
 })
 
-describe('createFakeRendererHost', () => {
-  test('a mount draws into the root it is given, says ready once, and its cleanup is handed back', async () => {
-    const renderer = createFakeRendererHost({ manifest: { id: 'notes', contributes: { doors: [{ id: 'notes' }] } } })
-    assert.equal(renderer.host.moduleId, 'local.notes', 'a folder install names it local.<id>')
-    const root = { textContent: '' } as unknown as HTMLElement
-    let closed = 0
-    const entry = {
-      mount(target: HTMLElement, studio: ExtensionMountStudio) {
-        target.textContent = `${studio.surface.point}:${studio.surface.id}`
-        studio.ready()
-        studio.ready()
-        return () => void (closed += 1)
-      },
-    }
-    const close = await renderer.mount(entry, { point: 'doors', id: 'notes' }, root)
-    assert.equal(root.textContent, 'doors:notes')
-    assert.deepEqual(renderer.readied, [{ point: 'doors', id: 'notes' }], 'ready counts once per surface')
-    close()
-    assert.equal(closed, 1)
-
-    // A mount that hands back nothing still closes.
-    const quiet = await renderer.mount(
-      { mount: () => undefined },
-      { point: 'panels', id: 'x', workspaceId: 'ws-app' },
-      root,
-    )
-    quiet()
-    await assert.rejects(renderer.mount({} as never, { point: 'panels', id: 'x' }, root), /must export mount/)
-  })
-
-  test('the studio a surface is handed is the window’s, with that surface on it', async () => {
-    const renderer = createFakeRendererHost({ manifest: { id: 'notes', permissions: ['settings:own'] } })
-    const studio = renderer.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
-    assert.deepEqual(studio.surface, { point: 'panels', id: 'notes', workspaceId: 'ws-app' })
-    assert.equal(studio.moduleId, 'local.notes')
-    assert.equal(studio.setModuleAppState('draft', 'x'), true)
-    assert.equal(renderer.host.getModuleAppState('draft'), 'x')
-    assert.deepEqual(renderer.readied, [], 'nothing is ready until it says so')
-  })
-
-  test('openGlobalSurface opens only a door extension.json contributes', () => {
-    const renderer = createFakeRendererHost({ manifest: { id: 'notes', contributes: { doors: [{ id: 'board' }] } } })
-    assert.equal(renderer.host.openGlobalSurface('board'), true)
-    assert.equal(renderer.host.openGlobalSurface('someone-else'), false)
-    assert.deepEqual(renderer.openedDoors, ['board'])
-  })
-
-  test('calls the main fake’s methods, hears its events, and an openChat chat is the extension’s own', async () => {
-    const main = createFakeMainHost({ moduleId: 'notes', permissions: ['conversation:own'] })
-    main.host.registerMethods({
-      list: {
-        access: 'read',
-        params: () => ({ ok: true, params: {} }),
-        handler: () => ({ ok: true, result: ['First note'] }),
-      },
-    })
-    const renderer = createFakeRendererHost({ main })
-    assert.equal(renderer.host.moduleId, 'notes', 'given only the main half, it is the same extension')
-    assert.deepEqual(await renderer.host.methods().read('list', {}), { ok: true, result: ['First note'] })
-    const heard: unknown[] = []
-    renderer.host.subscribe('changed', (payload) => heard.push(payload))
-    main.host.emit('changed', { id: 2 })
-    assert.deepEqual(heard, [{ id: 2 }])
-
-    const opened = await renderer.host.openChat({ workspaceId: 'ws-app', prompt: 'Draft', send: false })
-    assert.ok(opened.ok)
-    assert.equal(main.services.conversations.all().length, 1, 'an openChat chat is the extension’s own')
-
-    const alone = createFakeRendererHost({ moduleId: 'notes', permissions: [] })
-    const unavailable = await alone.host.methods().read('list', {})
-    assert.equal(!unavailable.ok && unavailable.code, 'extension_unavailable')
-  })
-
-  test('renderToHtml draws a React surface in Node, and a component that throws fails it', async () => {
-    const Notes = ({ count }: { count: number }) => createElement('p', null, 'Notes: ', String(count))
-    assert.equal(await renderToHtml(createElement(Notes, { count: 3 })), '<p>Notes: 3</p>')
-    const Broken = () => {
-      throw new Error('timer exploded')
-    }
-    await assert.rejects(renderToHtml(createElement(Broken)), /timer exploded/)
-  })
-
-  test('window calls its permissions do not cover are refused as the window refuses them, and reported', async () => {
-    const renderer = createFakeRendererHost({ moduleId: 'notes', permissions: [] })
-    await assert.rejects(renderer.host.listWorkspaces(), /not approved for "workspace:read"/)
-    assert.throws(() => renderer.host.setModuleAppState('draft', 'x'), /not approved for "settings:own"/)
-    const chat = await renderer.host.openChat({ workspaceId: 'ws-app' })
-    assert.equal(!chat.ok && chat.code, 'not_permitted')
-    assert.deepEqual(
-      renderer.undeclared.map((use) => use.what),
-      ['listWorkspaces', 'setModuleAppState', 'openChat'],
-    )
-  })
-})
-
 describe('createFakeMainHost: Backlog, usage and activity', () => {
-  test('the Backlog checks backlog:read and backlog:operate, validates as the host does, and is shared with the renderer', async () => {
+  test('the Backlog checks backlog:read and backlog:operate, validates as the host does, and is shared with a frame', async () => {
     const main = createFakeMainHost({ moduleId: 'board', permissions: ['backlog:read'] })
     const backlog = getBacklogService(main.host)
     const refused = await backlog.create('ws-app', { title: 'Ship it' })
@@ -553,11 +457,12 @@ describe('createFakeMainHost: Backlog, usage and activity', () => {
     const unknown = await backlog.create('nowhere', { title: 'x' })
     assert.equal(!unknown.ok && unknown.code, 'unknown_workspace')
 
-    const renderer = createFakeRendererHost({ main })
-    const seen: number[] = []
-    renderer.host.watchBacklogItems('ws-app', (items) => seen.push(items.length))
-    const fromWindow = await renderer.host.createBacklogItem('ws-app', { title: 'From the window' })
-    assert.ok(fromWindow.ok && fromWindow.numericId === 2)
+    const studio = createFakeFrameStudio({ main }).studio({ point: 'panels', id: 'board', workspaceId: 'ws-app' })
+    const fromFrame = await studio.host.call('backlog.create', {
+      workspaceId: 'ws-app',
+      input: { title: 'From a frame' },
+    })
+    assert.ok(fromFrame.ok && fromFrame.numericId === 2)
     assert.deepEqual(await backlog.updateStatus('ws-app', created.id, 'ready'), { ok: true })
     assert.equal((await backlog.updateStatus('ws-app', 'backlog/nope.md', 'ready')).ok, false)
     assert.deepEqual(
@@ -580,39 +485,17 @@ describe('createFakeMainHost: Backlog, usage and activity', () => {
     assert.deepEqual(await backlog.updateModuleMetadata('ws-app', created.id, { lane: 2 }), { ok: true })
     assert.deepEqual(await backlog.updateTriage('ws-app', created.id, { difficulty: 'm', risk: null }), { ok: true })
 
-    const [item] = (await renderer.host.listBacklogItems('ws-app')).filter((entry) => entry.id === created.id)
+    const listed = await studio.host.call('backlog.list', { workspaceId: 'ws-app' })
+    assert.ok(listed.ok)
+    const [item] = listed.items.filter((entry) => entry.id === created.id)
     assert.equal(item?.status, 'ready')
     assert.equal(item?.difficulty, 'm')
     assert.deepEqual(item?.metadata, { board: { lane: 2 } })
     assert.equal(item?.links[0]?.moduleId, 'board', 'the host stamps the owner')
     assert.match(item?.sourceContent ?? '', /status: ready/)
-    assert.deepEqual(seen, [1, 2, 2, 2, 2, 2], 'the watch heard every change')
 
     main.permissions.delete('backlog:read')
-    await assert.rejects(renderer.host.listBacklogItems('ws-app'), /approved for "backlog:read"/)
-    assert.throws(() => renderer.host.watchBacklogItems('ws-app', () => {}), /approved for "backlog:read"/)
-  })
-
-  test('a Backlog watch hears why it cannot deliver, and stays open', () => {
-    const renderer = createFakeRendererHost({
-      moduleId: 'board',
-      permissions: ['backlog:read'],
-      workspaces: [
-        { id: 'ws-app', name: 'App', folderPath: ROOT, mode: 'standard' },
-        { id: 'ws-scratch', name: 'Scratch', folderPath: null, mode: 'standard' },
-      ],
-      backlogItems: { 'ws-app': [{ title: 'Seeded' }] },
-    })
-    const errors: string[] = []
-    const counts: number[] = []
-    renderer.host.watchBacklogItems('ws-scratch', () => {}, { onError: (error) => errors.push(error.code) })
-    renderer.host.watchBacklogItems('ws-app', (items) => counts.push(items.length), {
-      onError: (error) => errors.push(error.code),
-    })
-    renderer.services.backlog.failScan('ws-app', 'backlog/broken.md: bad frontmatter')
-    renderer.services.backlog.failScan('ws-app', null)
-    assert.deepEqual(errors, ['workspace_folder_missing', 'scan_failed'])
-    assert.deepEqual(counts, [1, 1])
+    await assert.rejects(studio.host.call('backlog.list', { workspaceId: 'ws-app' }), /approved for "backlog:read"/)
   })
 
   test('usage sums what was recorded over the window and the dimensions asked for, behind usage:read', async () => {
@@ -644,8 +527,8 @@ describe('createFakeMainHost: Backlog, usage and activity', () => {
     )
     const backwards = await usage.query({ from: hour, to: hour })
     assert.equal(!backwards.ok && backwards.code, 'invalid_input')
-    const renderer = createFakeRendererHost({ main })
-    const total = await renderer.host.queryUsage({ from: hour, to: hour + 10_800_000 })
+    const studio = createFakeFrameStudio({ main }).studio({ point: 'doors', id: 'meter' })
+    const total = await studio.host.call('usage.query', { query: { from: hour, to: hour + 10_800_000 } })
     assert.ok(total.ok && total.rows.length === 1 && total.rows[0]?.tokens.input === 111)
   })
 
@@ -750,7 +633,7 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
     assert.equal(!unscripted.ok && unscripted.status, 404)
   })
 
-  test('workspaces keep a closed history and answer git info, behind workspace:read on both hosts', async () => {
+  test('workspaces keep a closed history and answer git info, behind workspace:read', async () => {
     let clock = 1_000
     const main = createFakeMainHost({
       moduleId: 'vcs',
@@ -786,14 +669,13 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
       branch: 'main',
       remotes: [{ name: 'origin', url: 'git@github.com:acme/app.git', github: 'acme/app' }],
     })
-    const renderer = createFakeRendererHost({ main })
-    const info = await renderer.host.getWorkspaceGitInfo('ws-app')
+    const info = await main.host.getWorkspaceGitInfo('ws-app')
     assert.ok(info.ok && info.branch === 'main' && info.remotes[0]?.github === 'acme/app')
-    const closed = await renderer.host.getWorkspaceGitInfo('ws-docs')
+    const closed = await main.host.getWorkspaceGitInfo('ws-docs')
     assert.equal(!closed.ok && closed.code, 'unknown_workspace')
   })
 
-  test('module app state is the windows’ to set and main’s to read; a data dir, asset paths and skill status', async () => {
+  test('Settings values are a frame’s to set and the worker’s to read; a data dir, asset paths and skill status', async () => {
     const fake = createFakeMainHost({
       moduleId: 'pulse',
       permissions: ['storage:own', 'settings:own', 'workspace:read', 'workspace:operate'],
@@ -803,11 +685,11 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
     const heard: unknown[] = []
     fake.host.watchModuleAppState((values) => heard.push(values.pollMinutes))
     assert.deepEqual(heard, [], 'main hears changes, not the current value')
-    const renderer = createFakeRendererHost({ main: fake })
-    renderer.host.setModuleAppState('pollMinutes', 5)
+    const studio = createFakeFrameStudio({ main: fake }).studio({ point: 'settingsSections', id: 'pulse' })
+    await studio.host.call('settings.set', { key: 'pollMinutes', value: 5 })
     fake.setAppState('pollMinutes', 30)
     assert.deepEqual(heard, [5, 30])
-    assert.equal(renderer.host.getModuleAppState('pollMinutes'), 30)
+    assert.deepEqual(await studio.host.call('settings.get', {}), { pollMinutes: 30 })
 
     const dir = fake.host.getModuleDataDir()
     assert.ok(existsSync(dir) && dir.endsWith('pulse'))
@@ -859,51 +741,11 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
     const named = [...union.matchAll(/^\s*\|\s*'([^']+)'/gm)].map((match) => match[1]!)
     assert.ok(named.length > 30, `found only ${named.length} capabilities; is the scan broken?`)
     const main = createFakeMainHost({ moduleId: 'probe' }).host
-    const renderer = createFakeRendererHost({ moduleId: 'probe' }).host
     assert.deepEqual(
-      named.filter((capability) => !main.supports(capability) || !renderer.supports(capability)),
+      named.filter((capability) => !main.supports(capability)),
       [],
       'add the capability to KNOWN_CAPABILITIES in testing.ts (and fake what it gates)',
     )
-  })
-})
-
-describe('createFakeRendererHost: toasts, links and the window', () => {
-  test('toasts, links and the active workspace', async () => {
-    const renderer = createFakeRendererHost({
-      moduleId: 'board',
-      workspaces: [
-        { id: 'ws-app', name: 'App', folderPath: ROOT, mode: 'standard' },
-        { id: 'ws-board', name: 'Board', folderPath: ROOT, mode: 'board' },
-      ],
-    })
-    assert.equal(renderer.host.moduleId, 'board')
-
-    const dismiss = renderer.host.toast({ tone: 'good', message: '  Saved  ', action: { label: 'Undo', run() {} } })
-    assert.equal(renderer.toasts[0]?.message, 'Saved')
-    assert.equal(renderer.toasts[0]?.action?.label, 'Undo')
-    dismiss()
-    assert.equal(renderer.toasts[0]?.dismissed, true)
-    assert.throws(() => renderer.host.toast({ tone: 'loud' as never, message: 'x' }), /tone/)
-    assert.throws(() => renderer.host.toast({ tone: 'good', message: ' ' }), /non-empty message/)
-
-    assert.deepEqual(await renderer.host.openExternal('https://example.com/a b'), { ok: true })
-    assert.deepEqual(renderer.openedUrls, ['https://example.com/a%20b'])
-    const refused = await renderer.host.openExternal('file:///etc/passwd')
-    assert.equal(!refused.ok && refused.code, 'invalid_url')
-
-    const active: Array<string | null> = []
-    renderer.host.watchActiveWorkspace((id) => active.push(id))
-    renderer.setActiveWorkspace('ws-board')
-    renderer.setActiveWorkspace('ws-board')
-    renderer.setActiveWorkspace(null)
-    assert.deepEqual(active, ['ws-app', 'ws-board', null])
-
-    const older = createFakeRendererHost({ moduleId: 'board', capabilities: ['notifications'] })
-    older.host.toast({ tone: 'good', message: 'Nobody sees this' })
-    assert.deepEqual(older.toasts, [])
-    const unavailable = await older.host.openExternal('https://example.com')
-    assert.equal(!unavailable.ok && unavailable.code, 'unavailable')
   })
 })
 
@@ -1094,30 +936,127 @@ describe('createFakeMainHost: agents, conversations and scheduled agents', () =>
     )
     fake.setChatRuntimes([{ id: 'codex', label: 'Codex', available: true, models: [], lastSelected: true }])
     assert.equal((await fake.host.listChatRuntimes())[0]?.id, 'codex')
-    assert.equal(createFakeRendererHost({ main: fake }).host.listChatRuntimes()[0]?.id, 'codex')
   })
 })
 
-describe('createFakeRendererHost: openChat', () => {
-  test('a draft needs chat:draft, sending needs conversation:own, and a dedupeKey focuses the chat it opened', async () => {
-    const main = createFakeMainHost({ moduleId: 'board', permissions: ['chat:draft'] })
-    const renderer = createFakeRendererHost({ main })
-    const sent = await renderer.host.openChat({ workspaceId: 'ws-app', prompt: 'Go', send: true })
-    assert.equal(!sent.ok && sent.code, 'not_permitted')
-    assert.deepEqual(renderer.undeclared.at(-1), { what: 'openChat', needs: ['conversation:own'] })
+describe('createFakeFrameStudio', () => {
+  const surface = { point: 'doors', id: 'notes' } as const
 
-    const first = await renderer.host.openChat({
-      workspaceId: 'ws-app',
-      prompt: 'Look at card 42',
-      name: 'Card 42',
-      dedupeKey: 'card-42',
+  test('a mount draws into the root it is given, says ready once, and its cleanup is handed back', async () => {
+    const frame = createFakeFrameStudio({ manifest: { id: 'notes' } })
+    const drawn: string[] = []
+    const close = await frame.mount(
+      {
+        mount: (root, studio) => {
+          drawn.push(String(root))
+          studio.ready()
+          studio.ready()
+          return () => drawn.push('closed')
+        },
+      },
+      surface,
+      'root' as unknown as HTMLElement,
+    )
+    assert.deepEqual(frame.readied, [surface])
+    close()
+    assert.deepEqual(drawn, ['root', 'closed'])
+  })
+
+  test('a call the manifest’s permissions do not cover is refused as Studio refuses it, and reported', async () => {
+    const frame = createFakeFrameStudio({ manifest: { id: 'notes', permissions: ['workspace:read'] } })
+    const studio = frame.studio(surface)
+    assert.equal((await studio.host.call('workspace.list', {})).length, 1)
+    await assert.rejects(
+      studio.host.call('files.read', { workspaceId: 'ws-app', path: 'a.md' }),
+      (error: Error & { code?: string }) => {
+        assert.equal(error.code, 'not_permitted')
+        return true
+      },
+    )
+    assert.deepEqual(frame.undeclared, [{ what: 'files.read', needs: ['workspace-files:read'] }])
+    await assert.rejects(studio.host.call('shell.run' as never, {} as never), /not a host method/)
+    assert.equal(studio.host.has('files.read'), true)
+    assert.equal(studio.host.has('shell.run'), false)
+  })
+
+  test('whoever opened the surface is held to what they hold themselves', async () => {
+    const frame = createFakeFrameStudio({
+      manifest: { id: 'notes', permissions: ['workspace-files:write'] },
+      invoker: ['extension:read', 'filesystem:read'],
+      files: { 'ws-app': { 'notes.md': 'hi' } },
     })
-    assert.ok(first.ok && first.existing === undefined)
-    assert.equal(main.services.conversations.all()[0]?.summary.name, 'Card 42')
-    const again = await renderer.host.openChat({ workspaceId: 'ws-app', prompt: 'Different', dedupeKey: 'card-42' })
-    assert.deepEqual(again, { ok: true, agentId: first.agentId, existing: true })
-    assert.equal(renderer.openedChats.length, 1, 'nothing else is applied to the chat it focused')
-    const badName = await renderer.host.openChat({ workspaceId: 'ws-app', name: 'x'.repeat(121) })
-    assert.equal(!badName.ok && badName.code, 'invalid_input')
+    await assert.rejects(
+      frame.studio(surface).host.call('files.write', { workspaceId: 'ws-app', path: 'notes.md', content: 'x' }),
+      /filesystem:write/,
+    )
+    assert.equal(frame.file('ws-app', 'notes.md'), 'hi')
+  })
+
+  test('files stay inside the workspace; a create refuses a file that exists', async () => {
+    const frame = createFakeFrameStudio({
+      manifest: { id: 'notes', permissions: ['workspace-files:read', 'workspace-files:write'] },
+      files: { 'ws-app': { 'docs/a.md': 'A' } },
+    })
+    const studio = frame.studio(surface)
+    assert.deepEqual(await studio.host.call('files.read', { workspaceId: 'ws-app', path: 'docs/a.md' }), {
+      content: 'A',
+      size: 1,
+    })
+    await assert.rejects(
+      studio.host.call('files.read', { workspaceId: 'ws-app', path: '../x' }),
+      /inside the workspace/,
+    )
+    assert.deepEqual(await studio.host.call('files.search', { workspaceId: 'ws-app', query: 'A.MD' }), {
+      paths: ['docs/a.md'],
+      truncated: false,
+    })
+    await assert.rejects(
+      studio.host.call('files.write', { workspaceId: 'ws-app', path: 'docs/a.md', content: 'B', create: true }),
+      /already exists/,
+    )
+    await studio.host.call('files.write', { workspaceId: 'ws-app', path: 'docs/a.md', content: 'B' })
+    assert.equal(frame.file('ws-app', 'docs/a.md'), 'B')
+  })
+
+  test('the worker’s methods, its events, toasts, drafts and doors', async () => {
+    const main = createFakeMainHost({ moduleId: 'local.notes', permissions: ['chat:draft'] })
+    main.host.registerMethods({
+      count: {
+        access: 'read',
+        params: (value) => ({ ok: true, params: value }),
+        handler: async () => ({ ok: true, result: 3 }),
+      },
+    })
+    const frame = createFakeFrameStudio({
+      main,
+      manifest: { id: 'notes', permissions: ['chat:draft'], contributes: { doors: [{ id: 'board' }] } },
+    })
+    const studio = frame.studio(surface)
+    assert.deepEqual(await studio.methods().read('count', {}), { ok: true, result: 3 })
+    const unknown = await studio.methods().read('nope', {})
+    assert.equal(unknown.ok, false)
+    const pushes: unknown[] = []
+    studio.on('push', (push) => pushes.push(push))
+    main.host.emit('changed', { n: 1 })
+    assert.deepEqual(pushes, [{ topic: 'changed', payload: { n: 1 } }])
+    await studio.host.call('toast', { tone: 'good', message: 'Saved' })
+    await studio.host.call('chat.draft', { workspaceId: 'ws-app', prompt: 'Look at this' })
+    assert.deepEqual(await studio.host.call('doors.open', { id: 'board' }), { opened: true })
+    assert.deepEqual(await studio.host.call('doors.open', { id: 'elsewhere' }), { opened: false })
+    assert.deepEqual(frame.toasts, [{ tone: 'good', message: 'Saved' }])
+    assert.deepEqual(frame.drafts, [{ workspaceId: 'ws-app', prompt: 'Look at this' }])
+    const themes: unknown[] = []
+    studio.on('theme', (theme) => themes.push(theme))
+    frame.setColorScheme('dark')
+    assert.deepEqual(themes, [{ colorScheme: 'dark' }])
+    assert.equal(studio.theme.colorScheme, 'dark')
+  })
+
+  test('renderToHtml draws a React surface in Node, and a component that throws fails it', async () => {
+    assert.equal(await renderToHtml(createElement('p', null, 'Hello ', 'there')), '<p>Hello there</p>')
+    const Broken = () => {
+      throw new Error('broken surface')
+    }
+    await assert.rejects(renderToHtml(createElement(Broken)), /broken surface/)
   })
 })

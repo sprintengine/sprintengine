@@ -11,17 +11,7 @@
 // example, run-glyph providers receive a minimal input view rather than the
 // shell's internal workspace shape). Every narrowing is listed in README.md.
 
-import type { UsageQuery, UsageQueryResult } from './activity.js'
-import type {
-  BacklogWatchOptions,
-  ModuleBacklogCreated,
-  ModuleBacklogCreateInput,
-  ModuleBacklogLinkInput,
-  ModuleBacklogLocation,
-  ModuleBacklogResult,
-  ModuleBacklogTriageInput,
-} from './backlog.js'
-import type { ModuleChatRuntimeOption, ModuleOpenChatInput, ModuleOpenChatResult } from './conversation.js'
+import type { ModuleChatRuntimeOption } from './conversation.js'
 import type { HostCapability } from './host-api.js'
 
 // ── Manifest ─────────────────────────────────────────────────────────────────
@@ -126,8 +116,8 @@ export type ModuleNotification = {
 /**
  * The wire shape of one event, as `MainHost.emit` stamps it and the host
  * delivers it. Your module never constructs or receives this directly —
- * `emit(topic, payload)` builds it and `RendererHost.subscribe(topic, cb)`
- * hands `cb` the payload alone — but it is published so the routing contract is
+ * `emit(topic, payload)` builds it and a surface's `studio.on('push', cb)`
+ * hands `cb` the topic and payload — but it is published so the routing contract is
  * inspectable: identity and time are the host's, topic and payload are yours.
  */
 export type ModuleEventEnvelope = {
@@ -147,7 +137,7 @@ export type ModuleEventEnvelope = {
 // What your worker serves your window code (and any client the person
 // granted it) over the Studio protocol: a typed contract per method, a
 // validator for its params and a handler (`MainHost.registerMethods`), called
-// through `RendererHost.methods<Contract>()`. Host API 2 replaced host API 1's
+// through a surface's `studio.methods<Contract>()`. Host API 2 replaced host API 1's
 // IPC channels (`registerIpc` / `invoke`) with these.
 //
 //   type Board = {
@@ -175,7 +165,7 @@ export type {
   ModuleOperateMethod,
   ModuleReadMethod,
 } from './methods.js'
-import type { ModuleMethodContracts, ModuleMethodRegistrations, ModuleMethodsClient } from './methods.js'
+import type { ModuleMethodContracts, ModuleMethodRegistrations } from './methods.js'
 export { MODULE_METHOD_MAX_CHARS, isModuleMethodName } from './methods.js'
 
 export type StartupHook = () => void | Promise<void>
@@ -388,8 +378,8 @@ export type MainHost = {
    */
   supports(capability: HostCapability): boolean
   /**
-   * The agent runtimes a chat can run on, as `RendererHost.listChatRuntimes`
-   * lists them for your window half: each runtime's id (what a conversation's
+   * The agent runtimes a chat can run on, as Studio's own chat picker
+   * lists them: each runtime's id (what a conversation's
    * and a scheduled agent's `cli`, and a companion's `engine.cli`, take), its
    * label, its models and whether it is the person's last choice. A runtime
    * this machine does not have is listed with `available: false`. Reading it
@@ -451,8 +441,7 @@ export type MainHost = {
    */
   getModuleDataDir(): string
   /**
-   * The absolute path of a file packaged inside your module — the main-side
-   * twin of `RendererHost.getAssetUrl`, for what Node wants a path for:
+   * The absolute path of a file packaged inside your module — for what Node wants a path for:
    * `new Worker(host.getAssetPath('dist/worker.cjs'))`, a WASM file, a data
    * table. Only a file the module was verified with resolves, and only while
    * its bytes still match: anything else (an unlisted file, traversal, a
@@ -466,19 +455,18 @@ export type MainHost = {
    * `owner/repo` when it is on GitHub — so a VCS-aware module stops parsing
    * `.git` → gitdir → commondir → config itself, and needs no
    * `workspace:read` to do it. Declare `workspace:read`
-   * (checked: `not_permitted` without it). Never throws. The renderer
-   * twin is `RendererHost.getWorkspaceGitInfo`. Check
+   * (checked: `not_permitted` without it). Never throws. Check
    * `host.supports('workspace-git-info')` first.
    */
   getWorkspaceGitInfo(workspaceId: string): Promise<ModuleWorkspaceGitInfoResult>
   /**
    * Read one key of your module's APP-level state from the worker — the
-   * same namespace your Settings section's `setValue` and
-   * `RendererHost.setModuleAppState` write, as the windows last pushed it.
+   * same namespace your Settings section writes (`settings.set`), kept by
+   * Studio.
    * Persisted, so it reads with no window open: a scheduler in the worker
    * sees the run time the person chose without a second store and an IPC
-   * sync. Read-only (main never writes it back); a value set while no window
-   * was open arrives with the next window. `undefined` when the key has never
+   * sync. Read-only (main never writes it back); a value is there as soon as
+   * the surface set it. `undefined` when the key has never
    * been set. Never put a secret here — use the secrets service.
    * Check `host.supports('main-app-state')` first.
    */
@@ -487,7 +475,7 @@ export type MainHost = {
    * Hear your module's whole app-state namespace whenever it changes — a
    * Settings change in whichever window — not on subscribe (read the current value
    * with `getModuleAppState`). Returns the unsubscriber; unloading your module
-   * drops it too. The worker's twin of `RendererHost.watchModuleAppState`.
+   * drops it too. A surface writes them with `settings.set`.
    */
   watchModuleAppState(cb: (values: Readonly<Record<string, unknown>>) => void): () => void
   provideService<T>(token: ServiceToken<T>, factory: (host: MainHost) => T): T
@@ -522,9 +510,9 @@ export type MainHost = {
    */
   notify(input: ModuleNotifyInput): void
   /**
-   * Push an event to your module's renderer half — the subscribe verb your
+   * Push an event to your extension's surfaces — the subscribe verb your
    * declared methods do not have. The receiving end is
-   * `RendererHost.subscribe(topic, cb)`.
+   * a surface's `studio.on('push', cb)`.
    *
    * Identity is stamped from this host's scope, so only your module's
    * subscribers receive it and you can never emit as another module. An empty
@@ -658,13 +646,13 @@ export type ModuleWorkspaceGitInfoResult =
  * state that has not re-hydrated yet (e.g. right after app launch). Never a
  * throw, and never a deletion signal: retry later instead of discarding
  * per-workspace state. Declare the `workspace:read` permission
- * (install-time disclosure). The renderer twin is `RendererHost.getWorkspace`.
+ * (install-time disclosure). A surface's twin is `workspace.get`.
  */
 export type WorkspaceContextService = {
   get(workspaceId: string): Promise<ModuleWorkspaceView | null>
   /**
-   * Every workspace currently open, in registry order. The main-side twin of
-   * `RendererHost.listWorkspaces`, and the only way the worker can answer
+   * Every workspace currently open, in registry order. A surface's twin is
+   * `workspace.list`, and the only way the worker can answer
    * "which project roots are open" — an MCP tool your module contributes runs
    * with no window and no renderer to ask. Each entry says `open: true`;
    * with `includeClosed`, the workspaces closed on this machine follow, newest
@@ -1155,8 +1143,6 @@ export function getModuleStorage(host: MainHost): ModuleStorageService {
   }
 }
 
-// ── The window's studio (a ui entry's `mount`) ──────────────────────────────
-
 // ── Backlog views ────────────────────────────────────────────────────────────
 
 export type BacklogItemStatus = 'idea' | 'ready' | 'in_progress' | 'needs_input' | 'completed' | 'archived'
@@ -1212,366 +1198,26 @@ export type BacklogItemView = {
   modifiedAt: number
 }
 
-// ── Live runtime surfaces (renderer) ─────────────────────────────────────────
-
-export type WorkspaceFileWatchEvent = {
-  relativePath: string
-  /** File content after the change; null when the file does not exist. */
-  content: string | null
-}
-
-/** The resolved surface of the app's active theme (`watchColorScheme`). */
-export type ModuleColorScheme = 'light' | 'dark'
-
-export type ModuleFocusTabInput = {
-  workspaceId: string
-  kind: 'chat' | 'file'
-  /** A chat's agent id (from `openChat` or the conversation service), or a workspace-relative file path. */
-  id: string
-}
-
-// ── Toasts, links and window context (renderer) ──────────────────────────────
+// ── Surfaces in frames (a ui entry's `mount`) ────────────────────────────────
 
 /** A toast's tone. `good` for done, `warn`/`error` for trouble, `neutral`/`accent` for plain news. */
 export type ModuleToastTone = 'neutral' | 'accent' | 'good' | 'warn' | 'error'
 
-/**
- * Transient feedback — the answer to "did it work?" after a command or a click
- * in your door. Shown in the app's toast region with your module's name under
- * your message; leaves on its own (5 s, or 10 s for warn and error, held while
- * hovered). Anything the person must be able to find again belongs in the bell
- * (`MainHost.notify`), not here.
- */
-export type ModuleToastInput = {
-  tone: ModuleToastTone
-  /** One line, sentence case. Non-empty; clipped at 200 characters. */
-  message: string
-  /** An optional second line; clipped at 500 characters. */
-  detail?: string
-  /** At most one button. Pressing it dismisses the toast and runs `run`. */
-  action?: { label: string; run: () => void | Promise<void> }
-}
-
-/**
- * `RendererHost.openExternal`'s answer: `invalid_url` for anything but an
- * absolute http(s) URL, `unavailable` while your module is off or before the
- * window can open links, `failed` when the system refused.
- */
-export type ModuleOpenExternalResult =
-  { ok: true } | { ok: false; code: 'invalid_url' | 'unavailable' | 'failed'; message: string }
-
-// ── Renderer host registration contract ──────────────────────────────────────
-
-/**
- * The `studio` object an extension's window code is handed: what its
- * panels, doors and settings sections may ask of Studio. What it adds to Studio
- * is declared in extension.json, not registered here.
- */
-export type RendererHost = {
-  /** Your install key (`<publisher>.<id>`): the extension your `methods` calls reach and your bell rows are filed under. */
-  readonly moduleId: string
-  /**
-   * Whether the running host provides `capability` now. False for names it
-   * does not know, so an extension may probe for capabilities newer than its SDK.
-   */
-  supports(capability: HostCapability): boolean
-  /**
-   * Stable URL for a file packaged inside this trusted extension (e.g. runtime/index.html).
-   * Inside packaged HTML, relative resources, WebAssembly, workers and IndexedDB share a stable,
-   * separate origin. No leading slash, traversal, query or fragment in the path.
-   * Trust and enablement are checked on every request. Assets must be files
-   * under the installed extension's folder (128 MiB max).
-   */
-  getAssetUrl(relativePath: string): string
-  /**
-   * Open one of your doors (`contributes.doors`) as if it had been picked in
-   * the Extensions drawer. False for an id that is not one of yours, or while
-   * your extension is off.
-   */
-  openGlobalSurface(id: string): boolean
-  /**
-   * The workspace's Backlog items as read-only views. Declare the
-   * `backlog:read` permission; the host checks it. Change items with the
-   * Backlog write methods below (or `getBacklogService` in the worker) —
-   * never by writing an item's file. Rejects when the backlog module is
-   * disabled.
-   */
-  listBacklogItems(workspaceId: string): Promise<BacklogItemView[]>
-  /**
-   * Observe the workspace's Backlog: `cb` fires once with the current
-   * snapshot, then on every change (scans are debounced ~300ms behind file
-   * edits). Returns the unsubscriber — call it when your panel unmounts.
-   * `options.onError` hears why a snapshot could not be delivered (no project
-   * folder, an unreadable Backlog); the watch stays open and a later readable
-   * scan calls `cb` again. Throws when the backlog module is disabled or
-   * `backlog:read` is not declared.
-   */
-  watchBacklogItems(
-    workspaceId: string,
-    cb: (items: BacklogItemView[]) => void,
-    options?: BacklogWatchOptions,
-  ): () => void
-  // ── Backlog writes (renderer twin of `getBacklogService`) ──
-  // Each goes through the app's own Backlog service in main and answers a
-  // result, never a throw. `itemId` is a `BacklogItemView.id`. Reads need
-  // `backlog:read`, writes `backlog:operate`; `supports('backlog-write')` says
-  // whether the host has them.
-  /** Where the workspace's Backlog lives. */
-  getBacklogLocation(workspaceId: string): Promise<ModuleBacklogResult<{ location: ModuleBacklogLocation }>>
-  /** Create an item the way the app does: its id, file name and frontmatter follow the app's rules. */
-  createBacklogItem(
-    workspaceId: string,
-    input: ModuleBacklogCreateInput,
-  ): Promise<ModuleBacklogResult<ModuleBacklogCreated>>
-  updateBacklogStatus(workspaceId: string, itemId: string, status: BacklogItemStatus): Promise<ModuleBacklogResult>
-  updateBacklogTriage(
-    workspaceId: string,
-    itemId: string,
-    triage: ModuleBacklogTriageInput,
-  ): Promise<ModuleBacklogResult>
-  addBacklogLink(workspaceId: string, itemId: string, link: ModuleBacklogLinkInput): Promise<ModuleBacklogResult>
-  updateBacklogModuleMetadata(workspaceId: string, itemId: string, value: unknown): Promise<ModuleBacklogResult>
-  /**
-   * Token usage of every agent session on this machine — the renderer twin of
-   * `getUsageService(host).query`. Declare `usage:read`;
-   * `supports('usage')` says whether the host has it. For live updates, call
-   * it again when your worker hears `onChanged`.
-   */
-  queryUsage(query: UsageQuery): Promise<UsageQueryResult>
-  /**
-   * Resolve a workspace id (e.g. from `WorkspacePanelProps.workspaceId`) to
-   * its read-only view — the supported way to get a workspace's folder root,
-   * name, and mode. A null resolution means "not currently resolvable" (an
-   * unknown id, or the shell hasn't wired workspace state yet at early
-   * boot) — never a throw, and never a deletion signal: retry later instead
-   * of discarding per-workspace state. Declare the `workspace:read`
-   * permission (install-time disclosure). The worker's twin is
-   * `WorkspaceContextToken`.
-   */
-  getWorkspace(workspaceId: string): Promise<ModuleWorkspaceView | null>
-  /**
-   * Every open workspace as a read-only view, in the order the shell lists
-   * them — for a surface that is not mounted inside one workspace (a modal
-   * floating over the window, a settings section) and so has no id to
-   * resolve. Empty before the shell wires workspace state (early boot);
-   * never a throw. Declare the `workspace:read` permission (install-time
-   * disclosure).
-   */
-  listWorkspaces(): Promise<ModuleWorkspaceView[]>
-  /**
-   * A workspace's checked-out branch (null when detached) and its remotes,
-   * each with `owner/repo` when it is on GitHub — SSH host aliases from
-   * ~/.ssh/config resolved. Read by git from the workspace's working root, so
-   * a worktree reports its own branch. The worker's twin is
-   * `MainHost.getWorkspaceGitInfo`. Declare `workspace:read` (checked:
-   * `not_permitted` without it). Never throws. Check
-   * `host.supports('workspace-git-info')` first.
-   */
-  getWorkspaceGitInfo(workspaceId: string): Promise<ModuleWorkspaceGitInfoResult>
-  /**
-   * Observe the open workspaces: `cb` fires once with the current list, then
-   * on every change (deduped by value, so an unrelated store write does not
-   * wake it). Returns the unsubscriber — call it on unmount. Before the shell
-   * wires workspace state the first call reports an empty list. Declare
-   * `workspace:read`.
-   */
-  watchWorkspaces(cb: (workspaces: ModuleWorkspaceView[]) => void): () => void
-  /**
-   * Observe the app's resolved light/dark surface: `cb` fires immediately
-   * with the current scheme, then whenever it changes — an explicit theme
-   * switch, or an OS switch while the preference follows the system. Returns
-   * the unsubscriber; call it on unmount.
-   *
-   * This is for a themed runtime you HOST (Monaco's base theme, a chart
-   * library's palette) — something that needs a concrete 'light' | 'dark'
-   * rather than a CSS variable. Ordinary module UI should read THEME_TOKENS
-   * instead and re-skin without JavaScript.
-   */
-  watchColorScheme(cb: (scheme: ModuleColorScheme) => void): () => void
-  /**
-   * Your module's entry in the workspace's per-module state bag — durable
-   * state your module keeps on a workspace (view choices, selection, panel
-   * config), persisted with the workspace and synced across windows. Scoped
-   * to your module: one module can never read another's entry. `undefined`
-   * means no state is recorded, the workspace id is unknown, or the shell
-   * hasn't wired workspace state yet (early boot) — never a throw and never
-   * a deletion signal; retry later instead of discarding state. Declare the
-   * `storage:own` permission (install-time disclosure).
-   */
-  getWorkspaceModuleState<T = unknown>(workspaceId: string): T | undefined
-  /**
-   * Replace your module's entry in the workspace's per-module state bag;
-   * null/undefined removes it. Keep entries JSON-serializable — they persist
-   * into the workspace registry verbatim. False means the write was NOT
-   * stored (unknown workspace id, or the shell hasn't wired workspace state
-   * yet) — surface it or retry; never assume success. Declare the `storage:own`
-   * permission (install-time disclosure).
-   */
-  setWorkspaceModuleState(workspaceId: string, state: unknown): boolean
-  /**
-   * Read one key from your module's APP-level state — the scope above
-   * `getWorkspaceModuleState`, for state that belongs to your module rather
-   * than to a single workspace: remembered defaults, the last thing the user
-   * opened. Synchronous and store-backed, so a renderer selector can derive
-   * from it without an IPC round trip changing render timing (which is why
-   * this exists alongside the worker's `ModuleStorageService`).
-   * `undefined` means the key has never been set, or the shell has not wired
-   * the store yet (early boot) — never a throw and never a deletion signal.
-   * Scoped to your module: one module can never read another's. Persists with
-   * app settings and survives a disable/enable cycle. It shares a keyspace with
-   * your contributed Settings section's values, which are app-level module
-   * state by another name. Declare the `storage:own` permission.
-   */
-  getModuleAppState<T = unknown>(key: string): T | undefined
-  /**
-   * Write one key in your module's app-level state; `undefined` deletes it.
-   * Keep values JSON-serializable — they persist into app settings verbatim.
-   * False means the write was NOT stored (empty key, or the shell has not
-   * wired the store yet) — surface it or retry; never assume success. Declare
-   * the `storage:own` permission.
-   */
-  setModuleAppState(key: string, value: unknown): boolean
-  /**
-   * Observe your module's app-level state: `cb` fires with the whole namespace
-   * on every change (not on subscribe — read the current value with
-   * `getModuleAppState`). Returns the unsubscriber; call it on unmount. Pair
-   * the two with `useSyncExternalStore` for a reactive read.
-   */
-  watchModuleAppState(cb: (values: Readonly<Record<string, unknown>>) => void): () => void
-  /**
-   * Subscribe to events your worker pushed with `MainHost.emit` — the
-   * subscribe verb `methods` does not have. Scoped to your module: another
-   * module's events never reach you, and yours never reach it. `cb` receives
-   * the emitted payload. Returns the unsubscriber; call it on unmount.
-   *
-   * Nothing is replayed, so a subscriber must be correct having missed every
-   * event emitted before it subscribed — read current state through
-   * a `read` method and let events tell you when to read it again. Delivery stops
-   * while your module is disabled and resumes when it is re-enabled.
-   */
-  subscribe(topic: string, cb: (payload: unknown) => void): () => void
-  /**
-   * The workspace's *effective working root*: where its live work happens.
-   * `ModuleWorkspaceView.folderPath` deliberately reports the durable primary
-   * checkout; a worktree-backed workspace (a scheduled agent's run on a
-   * worktree, for one) does live work under a worktree, and this
-   * resolves that root. The live-runtime methods below
-   * resolve workspace-relative paths against it. Null means "not currently
-   * resolvable" — never a throw. Declare `workspace:read`.
-   */
-  getWorkingRoot(workspaceId: string): Promise<string | null>
-  /**
-   * Watch one workspace-relative file (resolved against the effective working
-   * root): `cb` fires once with the current content (null when the file
-   * doesn't exist), then debounced (~300ms) on every change. Rejects with a
-   * named cause for absolute/escaping paths, unknown/folderless workspaces,
-   * or a disabled Agent Runtime module. Keep the resolved closure and call it
-   * on unmount. Declare `workspace:read`.
-   */
-  watchWorkspaceFile(
-    workspaceId: string,
-    relativePath: string,
-    cb: (event: WorkspaceFileWatchEvent) => void,
-  ): Promise<() => void>
-  /**
-   * Focus a workspace tab: a chat by its agent id (added if missing) or a
-   * file tab by workspace-relative path. False when not focusable; throws
-   * with a named cause when agent runtime is unavailable.
-   */
-  focusTab(input: ModuleFocusTabInput): boolean
-  /**
-   * Open a chat in a workspace and focus it. By default the prompt lands in the
-   * composer as a draft the user sends themselves; `send: true` sends it as the
-   * first turn. `name` titles the chat, and `dedupeKey` focuses the chat this
-   * module already opened under that key instead of opening another (check
-   * `supports('chat.open-options')`). Expected failures come back as a
-   * result, never a throw (`unavailable` when this window cannot open chats).
-   * Declare `chat:draft` to open drafts, or `conversation:own`, which
-   * `send: true` needs.
-   */
-  openChat(input: ModuleOpenChatInput): Promise<ModuleOpenChatResult>
-  /**
-   * The agent runtimes a chat can run on, from the same catalog the shell's
-   * own chat picker reads, with the one the user last chose marked.
-   */
-  listChatRuntimes(): ModuleChatRuntimeOption[]
-  /**
-   * Show a toast: transient feedback in the app's toast region, under your
-   * module's name. Returns its dismisser. An empty message, an unknown tone or
-   * a malformed action throws; while your module is disabled, or in a window
-   * with no toast region (`supports('toast')` is false), nothing shows and the
-   * dismisser does nothing.
-   */
-  toast(input: ModuleToastInput): () => void
-  /**
-   * The workspace this window is showing, or null — none is open. The same id
-   * a command's `ModuleCommandContext.activeWorkspaceId` carries
-   * (`supports('active-workspace')`).
-   */
-  getActiveWorkspaceId(): string | null
-  /**
-   * Observe the workspace this window is showing: `cb` fires once with the
-   * current id (null for none), then whenever it changes. Returns the
-   * unsubscriber; call it on unmount.
-   */
-  watchActiveWorkspace(cb: (workspaceId: string | null) => void): () => void
-  /**
-   * Open an http(s) URL in the system browser through the app's own link
-   * path — never in the app's window. Anything but an absolute http(s) URL
-   * (no credentials) is refused as `invalid_url` before it leaves your code.
-   * Expected failures come back as a result, never a throw.
-   */
-  openExternal(url: string): Promise<ModuleOpenExternalResult>
-  /**
-   * Call the methods your worker (`main`) declared with
-   * `MainHost.registerMethods`, typed by your contract:
-   * `host.methods<Board>().read('cards.list', { column: 'todo' })`. `read`
-   * offers the methods declared `read`, `operate` the ones declared
-   * `operate`; a call never names another module. Calls travel over the
-   * window's Studio connection to the server your module runs on, and never
-   * throw: your handler's refusals and the host's (`extension_unavailable`,
-   * `extension_method_unknown`, `invalid_params`, …) are answers.
-   */
-  methods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(): ModuleMethodsClient<Cs>
-}
-
-// ── Entry contract ───────────────────────────────────────────────────────────
-// What an extension's code exports. A ui contribution's `entry` exports
-// `mount`; the worker's `main` exports `activate`. Studio calls them; an
-// extension never registers its panels, doors, commands or menus itself, it
-// declares them in extension.json.
-
-/** Which contribution a `mount` draws, and where. */
-export type ExtensionSurface = {
-  point: 'panels' | 'doors' | 'settingsSections'
-  /** The contribution's id in extension.json. */
-  id: string
-  /** The workspace a panel was opened in; absent for doors and settings sections. */
-  workspaceId?: string
-}
-
-/** The `studio` a `mount` is handed: the window's API, and this one surface. */
-export type ExtensionMountStudio = RendererHost & {
-  readonly surface: ExtensionSurface
-  /**
-   * Say the surface has drawn its content. Studio measures how long a surface
-   * takes from being opened to this call; call it once, after the first
-   * meaningful paint of your content.
-   */
-  ready(): void
-}
-
-/** What `mount` may hand back: a function Studio calls when the surface closes. */
-export type ExtensionMountCleanup = () => void
-
-/**
- * A ui `entry`'s export: draw into `root`, which Studio owns, and return a
- * cleanup function if anything outlives the DOM you drew.
- */
-export type ExtensionMount = (
-  root: HTMLElement,
-  studio: ExtensionMountStudio,
-) => void | ExtensionMountCleanup | Promise<void | ExtensionMountCleanup>
+export type {
+  ExtensionFilePath,
+  ExtensionFrameError,
+  ExtensionFrameErrorCode,
+  ExtensionFrameEvents,
+  ExtensionFrameMethod,
+  ExtensionFrameMethods,
+  ExtensionFramePush,
+  ExtensionFrameTheme,
+  ExtensionMount,
+  ExtensionMountCleanup,
+  ExtensionMountStudio,
+  ExtensionSurface,
+  ExtensionUiEntry,
+} from './frame.js'
 
 /**
  * The worker's export (`main`), as its default export or a named `activate`:
@@ -1596,9 +1242,6 @@ export type ExtensionCommandContext = {
   /** `notification`: the bell row the menu was opened on. */
   notification?: { title: string; body?: string; emittedAt: number }
 }
-
-/** A ui `entry` module's shape. */
-export type ExtensionUiEntry = { mount: ExtensionMount }
 
 /** The worker module's shape. */
 export type ExtensionWorkerEntry = { activate: ExtensionActivate } | { default: ExtensionActivate }
@@ -1947,12 +1590,12 @@ export {
   EXTENSION_HOST_REFUSALS,
   EXTENSION_HOST_SERVICES,
   EXTENSION_MAIN_HOST_METHODS,
-  EXTENSION_RENDERER_METHODS,
+  EXTENSION_FRAME_METHODS,
+  extensionFrameMethod,
   extensionHostService,
-  extensionRendererRefusalMessage,
   type ExtensionHostRefusalCode,
   type ExtensionHostRequirement,
   type ExtensionHostService,
   type ExtensionInvokerRequirement,
-  type ExtensionRendererRequirement,
+  type ExtensionFrameRequirement,
 } from './services.js'

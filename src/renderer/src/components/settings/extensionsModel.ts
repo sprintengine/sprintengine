@@ -9,7 +9,7 @@ import type {
   ThirdPartyModuleView,
 } from '../../../../shared/modules/manifest'
 import { capabilityAccess, partitionCapabilityAccess } from '../../../../shared/modules/permissions'
-import type { ThirdPartyRendererLoadState } from '../../modules/third-party-loader'
+import type { ExtensionContributionsState as ThirdPartyRendererLoadState } from '../../modules/extension-contributions'
 import type { AccessItem } from '../ui'
 import { copy } from '../../../../shared/copy'
 

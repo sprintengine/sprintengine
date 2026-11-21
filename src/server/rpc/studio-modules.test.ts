@@ -351,7 +351,7 @@ test('a Studio with no kernel yet answers extension_unavailable; one without mod
   )
 })
 
-// ── The host's services a module's window half calls ──────────────────────
+// ── The host calls an extension's frames make ───────────────────────────────
 
 /** A real kernel running `acme.board`, with Backlog and usage registries that record each call. */
 function hubWithServices(provide: { backlog?: boolean; usage?: boolean } = { backlog: true, usage: true }) {
@@ -407,118 +407,109 @@ function hubWithServices(provide: { backlog?: boolean; usage?: boolean } = { bac
       },
     }))
   const hub = createStudioModuleHub()
-  hub.serveHostServicesFrom((moduleId, invoker) => kernel.hostServicesFor(moduleId, invoker))
+  hub.serveFrameCallsFrom((request) => kernel.callFrameMethod(request))
   return { hub, calls }
 }
 
-test('a module’s Backlog writes and usage query reach the services under its id, their answers as results', async () => {
+/** One frame call over the socket, under a fresh command id unless one is given. */
+let nextCommand = 0
+type Frame = { t: string; ok?: boolean; result?: unknown; error?: { code: string } }
+const frameCall = (
+  request: (method: string, params: unknown) => Promise<Frame>,
+  method: string,
+  params: unknown,
+  moduleId = 'acme.board',
+  commandId = `fc${(nextCommand += 1)}`,
+) => request('extension.call', { moduleId, method, params, commandId })
+
+test('a frame’s Backlog and usage calls reach the services under its extension’s id, their answers as results', async () => {
   const { hub, calls } = hubWithServices()
   const { request } = await caller(hub)
-  const at = { moduleId: 'acme.board', workspaceId: 'ws-1' }
-  assert.deepEqual(answerOf(await request('extensionBacklog.location', at)), {
+  const at = { workspaceId: 'ws-1' }
+  assert.deepEqual(answerOf(await frameCall(request, 'backlog.location', at)), {
     ok: true,
-    location: { root: 'backlog', isDefault: true, exists: true },
+    result: { ok: true, location: { root: 'backlog', isDefault: true, exists: true } },
   })
-  assert.deepEqual(
-    answerOf(await request('extensionBacklog.create', { ...at, input: { title: 'Ship' }, commandId: 'c1' })),
-    { ok: true, id: 'backlog/unfiled/x.md', relativePath: 'unfiled/x.md', path: '/p/x.md' },
-  )
   const item = { ...at, itemId: 'backlog/a.md' }
-  await request('extensionBacklog.updateStatus', { ...item, status: 'ready', commandId: 'c2' })
-  await request('extensionBacklog.updateTriage', { ...item, triage: { risk: null }, commandId: 'c3' })
-  const link = { id: 'l', type: 'external', label: 'L', target: { kind: 'url', id: 'u' } }
-  await request('extensionBacklog.addLink', { ...item, link, commandId: 'c4' })
-  await request('extensionBacklog.updateModuleMetadata', { ...item, value: { lane: 1 }, commandId: 'c5' })
-  assert.deepEqual(
-    answerOf(await request('extensionUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 9 } })),
-    { ok: true, rows: [], scannedAt: 5, sources: [] },
-  )
+  await frameCall(request, 'backlog.create', { ...at, input: { title: 'Ship' } })
+  await frameCall(request, 'backlog.updateStatus', { ...item, status: 'ready' })
+  await frameCall(request, 'backlog.updateTriage', { ...item, triage: { risk: null } })
+  await frameCall(request, 'backlog.updateModuleMetadata', { ...item, value: { lane: 1 } })
+  assert.deepEqual(answerOf(await frameCall(request, 'usage.query', { query: { from: 0, to: 9 } })), {
+    ok: true,
+    result: { ok: true, rows: [], scannedAt: 5, sources: [] },
+  })
   assert.deepEqual(calls, [
     ['getLocation', 'acme.board', 'ws-1'],
     ['create', 'acme.board', 'ws-1', { title: 'Ship' }],
     ['updateStatus', 'acme.board', 'ws-1', 'backlog/a.md', 'ready'],
     ['updateTriage', 'acme.board', 'ws-1', 'backlog/a.md', { risk: null }],
-    ['addLink', 'acme.board', 'ws-1', 'backlog/a.md', link],
     ['updateModuleMetadata', 'acme.board', 'ws-1', 'backlog/a.md', { lane: 1 }],
     ['query', 'acme.board', { from: 0, to: 9 }],
   ])
-  // The service's own refusal is the answer, in its words.
-  assert.deepEqual(
-    answerOf(await request('extensionBacklog.create', { ...at, input: { title: 'denied' }, commandId: 'c6' })),
-    { ok: false, code: 'not_permitted', message: 'No backlog:operate.' },
-  )
 })
 
-test('a host-service call for a module not running here is extension_unavailable; a service not provided answers in its words', async () => {
+test('a frame call for an extension not running here, or a service not provided, is refused in an answer', async () => {
   const { hub, calls } = hubWithServices({ backlog: false })
   const { request } = await caller(hub)
-  assert.equal(
-    codeOf(await request('extensionBacklog.location', { moduleId: 'acme.gone', workspaceId: 'ws-1' })),
-    'extension_unavailable',
-  )
-  assert.equal(
-    codeOf(await request('extensionUsage.query', { moduleId: '@host', query: { from: 0, to: 1 } })),
-    'extension_unavailable',
-    'the host is not a module a client speaks for',
-  )
-  const missing = answerOf(await request('extensionBacklog.location', { moduleId: 'acme.board', workspaceId: 'ws-1' }))
-  assert.equal((missing as { code?: string }).code, 'backlog_unavailable')
+  const gone = answerOf(await frameCall(request, 'backlog.location', { workspaceId: 'ws-1' }, 'acme.gone')) as {
+    code?: string
+  }
+  assert.equal(gone.code, 'approval_required')
+  const host = answerOf(await frameCall(request, 'usage.query', { query: { from: 0, to: 1 } }, '@host')) as {
+    code?: string
+  }
+  assert.equal(host.code, 'approval_required', 'the host is not an extension a client speaks for')
+  const missing = answerOf(await frameCall(request, 'backlog.location', { workspaceId: 'ws-1' })) as { code?: string }
+  assert.equal(missing.code, 'unavailable')
   assert.equal(calls.length, 0)
   const before = await caller(createStudioModuleHub())
-  assert.equal(
-    codeOf(await before.request('extensionUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 1 } })),
-    'extension_unavailable',
-    'before the kernel exists',
-  )
+  const early = answerOf(await frameCall(before.request, 'usage.query', { query: { from: 0, to: 1 } })) as {
+    code?: string
+  }
+  assert.equal(early.code, 'unavailable', 'before the kernel exists')
 })
 
-test('a retried Backlog write is carried out once', async () => {
+test('a retried frame call is carried out once', async () => {
   const { hub, calls } = hubWithServices()
   const { request } = await caller(hub)
-  const params = { moduleId: 'acme.board', workspaceId: 'ws-1', input: { title: 'Once' }, commandId: 'c1' }
-  const first = await request('extensionBacklog.create', params)
-  assert.deepEqual(answerOf(await request('extensionBacklog.create', params)), answerOf(first))
+  const params = { workspaceId: 'ws-1', input: { title: 'Once' } }
+  const first = await frameCall(request, 'backlog.create', params, 'acme.board', 'same')
+  assert.deepEqual(answerOf(await frameCall(request, 'backlog.create', params, 'acme.board', 'same')), answerOf(first))
   assert.equal(calls.length, 1)
   assert.equal(
-    codeOf(await request('extensionBacklog.create', { ...params, input: { title: 'Twice' } })),
+    codeOf(await frameCall(request, 'backlog.create', { ...params, input: { title: 'Twice' } }, 'acme.board', 'same')),
     'command_id_conflict',
   )
 })
 
-test('a paired client reads the host services with extensions:read and writes them only with extensions:operate', async () => {
+test('a paired client’s frame calls are held to what the client itself holds, and audited', async () => {
   const { hub, calls } = hubWithServices()
   const reader = await caller(hub, (started) =>
     pairFakeClient(started.auth, 'reader', ['extensions:read', 'workspaces:read']),
   )
   assert.equal(
-    (
-      answerOf(await reader.request('extensionUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 1 } })) as {
-        ok: boolean
-      }
-    ).ok,
+    (answerOf(await frameCall(reader.request, 'usage.query', { query: { from: 0, to: 1 } })) as { ok: boolean }).ok,
     true,
   )
-  const write = { moduleId: 'acme.board', workspaceId: 'ws-1', input: { title: 'No' }, commandId: 'c1' }
-  assert.equal(codeOf(await reader.request('extensionBacklog.create', write)), 'scope_required')
   // The extension may write the Backlog; a client that may not cannot write it through the extension.
-  const unentitled = await caller(hub, (started) => pairFakeClient(started.auth, 'unentitled', ['extensions:operate']))
   const refused = answerOf(
-    await unentitled.request('extensionBacklog.create', { ...write, commandId: 'c0', input: { title: 'No' } }),
+    await frameCall(reader.request, 'backlog.create', { workspaceId: 'ws-1', input: { title: 'No' } }),
   ) as { ok: boolean; code?: string; message?: string }
   assert.equal(refused.code, 'not_permitted', JSON.stringify(refused))
-  assert.match(refused.message ?? '', /needs "backlog:operate", which "unentitled" does not hold/)
+  assert.match(refused.message ?? '', /needs "backlog:operate", which "reader" does not hold/)
   const operator = await caller(hub, (started) =>
     pairFakeClient(started.auth, 'operator', ['extensions:operate', 'backlog:operate']),
   )
-  await operator.request('extensionBacklog.create', { ...write, input: { title: 'Yes' } })
+  await frameCall(operator.request, 'backlog.create', { workspaceId: 'ws-1', input: { title: 'Yes' } })
   assert.deepEqual(
     calls.map((call) => call[0]),
     ['query', 'create'],
   )
   assert.equal(
-    operator.started.audit.some((entry) => entry.tool === 'extensionBacklog.create' && entry.moduleId === 'acme.board'),
+    operator.started.audit.some((entry) => entry.tool === 'extension.call' && entry.moduleId === 'acme.board'),
     true,
-    'a write from a paired client is audited',
+    'a call from a paired client is audited',
   )
 })
 
@@ -562,8 +553,8 @@ test('the installed list names a folder Studio could not read by its place only 
     approve: async () => ({ ok: true }),
     uninstall: async () => ({ ok: true, removedModuleIds: [] }),
     installed: async () => ({ modules: [], rejected }),
-    rendererEntries: async () => ({ entries: [], failures: {} }),
-    setAppState: () => undefined,
+    contributions: async () => ({ extensions: [], failures: {} }),
+    frame: async () => ({ ok: false, message: 'none' }),
     reportRegistry: () => ({ ok: true }),
   })
   const owner = await caller(hub)
@@ -594,8 +585,8 @@ test('a change to what runs is an owner’s: a paired client holding extensions:
     approve: async () => ({ ok: true }),
     uninstall: async () => ({ ok: true, removedModuleIds: [] }),
     installed: async () => ({ modules: [], rejected: [] }),
-    rendererEntries: async () => ({ entries: [], failures: {} }),
-    setAppState: () => undefined,
+    contributions: async () => ({ extensions: [], failures: {} }),
+    frame: async () => ({ ok: false, message: 'none' }),
     reportRegistry: () => ({ ok: true }),
   })
   const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['extensions:operate']))
@@ -621,8 +612,8 @@ test('the window’s module report is an owner’s: a paired client holding exte
     approve: async () => ({ ok: true }),
     uninstall: async () => ({ ok: true, removedModuleIds: [] }),
     installed: async () => ({ modules: [], rejected: [] }),
-    rendererEntries: async () => ({ entries: [], failures: {} }),
-    setAppState: () => undefined,
+    contributions: async () => ({ extensions: [], failures: {} }),
+    frame: async () => ({ ok: false, message: 'none' }),
     reportRegistry: (snapshot) => (reported.push(snapshot), { ok: true }),
   })
   const snapshot = { modules: [] }

@@ -52,9 +52,9 @@ vi.mock('../../studio/moduleLifecycle', () => ({
   }),
 }))
 
-vi.mock('../../modules/third-party-loader', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../modules/third-party-loader')>()),
-  getThirdPartyRendererLoadState: (id: string) => (id === 'local.decision-log' ? { status: 'loaded' } : undefined),
+vi.mock('../../modules/extension-contributions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../modules/extension-contributions')>()),
+  getExtensionContributionsState: (id: string) => (id === 'local.decision-log' ? { status: 'loaded' } : undefined),
 }))
 
 type Contributes = ThirdPartyModuleView['extension']['contributes']

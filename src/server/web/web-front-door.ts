@@ -6,6 +6,8 @@ import type { StudioRpcService } from '../../main/studio-rpc/studio-rpc-service'
 import type { StudioCore } from '../core/studio-core'
 import type { StudioGateway } from '../core/studio-gateway'
 import { provideServerChat, type ServerDomainIpcHandles } from '../desktop/server-ipc'
+import { extensionFrameDocuments } from '../extensions/frames/frame-cache'
+import { createExtensionFrameRoute } from '../extensions/frames/frame-route'
 import { createIpcTunnel } from '../ipc/ipc-tunnel'
 import { writeFileAtomicSync } from '../platform/atomic-file'
 import type { LocalClientBus } from '../platform/client-bus'
@@ -61,8 +63,6 @@ export type WebFrontDoorOptions = {
   devOrigin?: string | null
   /** Where `build:web` wrote the bundle. */
   staticDir: string | null
-  /** Third-party renderer modules on the web (R61): off unless the owner switches them on. */
-  thirdPartyModules?: boolean
   /** Publish the listener on the tailnet over HTTPS with `tailscale serve`, on this port (R19). */
   tailscaleServe?: { port: number } | null
 }
@@ -264,7 +264,6 @@ export async function startWebFrontDoor(input: {
     pairRequests,
     uploads,
     version: input.version,
-    thirdPartyModules: () => input.options.thirdPartyModules === true,
     studio: {
       connect(stream, who) {
         if ('session' in who) {
@@ -336,6 +335,8 @@ export async function startWebFrontDoor(input: {
       }),
       // `studio-server mcp-token`: a token to the agents' loopback endpoint, made on the machine.
       createMcpHttpRoutes({ mintKey, create: (name) => gateway.createMcpHttpClient(name) }),
+      // An extension's frame document, built for this tab over the Studio protocol (`extension.frame`).
+      createExtensionFrameRoute(extensionFrameDocuments),
     ],
     log: input.log,
   })

@@ -3,15 +3,19 @@ import { test } from 'vitest'
 
 import { createModulesApi } from './modules'
 
-test('showing an extension’s folder is the one modules call left on IPC', async () => {
-  const calls: Array<{ channel: string; id: string }> = []
+test('showing an extension’s folder and staging a frame’s document are the extension calls left on IPC', async () => {
+  const calls: unknown[][] = []
   const api = createModulesApi({
-    invoke: async (channel, id) => {
-      calls.push({ channel, id })
-      return { ok: true }
-    },
+    invoke: (async (...args: unknown[]) => {
+      calls.push(args)
+      return args[0] === 'extension-frames:stage' ? true : { ok: true }
+    }) as never,
   })
-  assert.deepEqual(Object.keys(api), ['revealThirdPartyModule'])
+  assert.deepEqual(Object.keys(api), ['revealThirdPartyModule', 'stageExtensionFrame'])
   assert.deepEqual(await api.revealThirdPartyModule('pr-radar'), { ok: true })
-  assert.deepEqual(calls, [{ channel: 'modules:third-party:reveal', id: 'pr-radar' }])
+  assert.equal(await api.stageExtensionFrame('a'.repeat(64), '<!doctype html>'), true)
+  assert.deepEqual(calls, [
+    ['modules:third-party:reveal', 'pr-radar'],
+    ['extension-frames:stage', 'a'.repeat(64), '<!doctype html>'],
+  ])
 })

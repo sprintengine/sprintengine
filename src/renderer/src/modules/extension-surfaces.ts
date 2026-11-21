@@ -1,20 +1,12 @@
-// The window half of an installed extension: the surfaces its extension.json
-// declares (panels, doors, settings sections), each drawn by the `mount` its
-// `entry` exports, and the `studio` object that mount is handed.
+// The surfaces approved extensions declare (panels, doors, settings
+// sections), each drawn in a sandboxed frame (ExtensionFrame) from a document
+// the Studio builds.
 //
-// The surfaces are registered by the loader (third-party-loader.ts) once an
-// extension's entries are evaluated; the pane, the door shell and Settings
-// read them from here, and `ExtensionSurfaceMount` runs the mount in a root
-// the shell owns.
+// The surfaces are registered from the extensions' extension.json
+// (extension-contributions.tsx); the pane, the door shell and Settings read
+// them from here.
 
-import type {
-  ExtensionMount,
-  ExtensionMountStudio,
-  ExtensionSurface,
-  RendererHost as SdkRendererHost,
-} from '../../../../packages/extension-sdk/src/index'
 import type { ExtensionSurfaceContribution, ExtensionSurfacePoint } from '../../../shared/modules/third-party-manifest'
-import { extensionSurfaceId } from '../../../shared/modules/extension-ids'
 import type { InternalRendererHost } from './renderer-host'
 
 export type LoadedExtensionSurface = {
@@ -22,7 +14,7 @@ export type LoadedExtensionSurface = {
   key: string
   point: ExtensionSurfacePoint
   contribution: ExtensionSurfaceContribution
-  mount: ExtensionMount
+  /** The extension's scoped host, for what a frame's admitted client calls do in this window. */
   host: InternalRendererHost
 }
 
@@ -84,56 +76,20 @@ export function getExtensionPanels(moduleEnabled?: (moduleId: string) => boolean
     .sort((a, b) => a.key.localeCompare(b.key) || a.contribution.id.localeCompare(b.contribution.id))
 }
 
-// What a surface's `mount` may call: exactly the SDK's RendererHost. The
-// window's own host carries the shell's register calls too; they are not
-// handed to extension code.
-const STUDIO_MEMBERS = [
-  'moduleId',
-  'supports',
-  'getAssetUrl',
-  'openGlobalSurface',
-  'listBacklogItems',
-  'watchBacklogItems',
-  'getBacklogLocation',
-  'createBacklogItem',
-  'updateBacklogStatus',
-  'updateBacklogTriage',
-  'addBacklogLink',
-  'updateBacklogModuleMetadata',
-  'queryUsage',
-  'getWorkspace',
-  'listWorkspaces',
-  'getWorkspaceGitInfo',
-  'watchWorkspaces',
-  'watchColorScheme',
-  'getWorkspaceModuleState',
-  'setWorkspaceModuleState',
-  'getModuleAppState',
-  'setModuleAppState',
-  'watchModuleAppState',
-  'subscribe',
-  'getWorkingRoot',
-  'watchWorkspaceFile',
-  'focusTab',
-  'openChat',
-  'listChatRuntimes',
-  'toast',
-  'getActiveWorkspaceId',
-  'watchActiveWorkspace',
-  'openExternal',
-  'methods',
-] as const satisfies readonly (keyof SdkRendererHost)[]
-
-// Every member of the SDK's RendererHost is listed above: a member added there
-// and not here fails this line.
-const _everyMember: Exclude<keyof SdkRendererHost, (typeof STUDIO_MEMBERS)[number]> extends never ? true : false = true
-void _everyMember
-
 // ── Readiness ───────────────────────────────────────────────────────────────
-// How long a surface takes from being opened to its `studio.ready()`: the
-// in-process baseline a later move into isolated frames is measured against.
+// How long a surface takes from being opened (its frame's host mounting) to
+// its `studio.ready()`, and to its frame's first contentful paint, both read
+// on this window's clock (`performance.timeOrigin`-based epoch ms).
 
-export type ExtensionReadiness = { key: string; point: ExtensionSurfacePoint; id: string; ms: number }
+export type ExtensionReadiness = {
+  key: string
+  point: ExtensionSurfacePoint
+  id: string
+  /** Opened to `studio.ready()`. */
+  ms: number
+  /** Opened to the frame's first contentful paint, when the frame reported one first. */
+  paintMs?: number
+}
 
 const READINESS_KEPT = 50
 const readiness: ExtensionReadiness[] = []
@@ -143,7 +99,8 @@ export function readExtensionReadiness(): readonly ExtensionReadiness[] {
   return readiness
 }
 
-function recordReadiness(entry: ExtensionReadiness): void {
+/** Record one surface's readiness, and mark it for the window's performance timeline. */
+export function recordReadiness(entry: ExtensionReadiness): void {
   readiness.push(entry)
   if (readiness.length > READINESS_KEPT) readiness.shift()
   try {
@@ -154,34 +111,4 @@ function recordReadiness(entry: ExtensionReadiness): void {
   } catch {
     // A runtime without User Timing keeps the in-memory record alone.
   }
-}
-
-/**
- * The `studio` one surface's mount is handed: the SDK's RendererHost picked
- * from the extension's scoped host, its doors named by their manifest ids,
- * and this surface with its `ready()`.
- */
-export function extensionMountStudio(
-  loaded: LoadedExtensionSurface,
-  surface: ExtensionSurface,
-  openedAt: number,
-): ExtensionMountStudio {
-  const host = loaded.host as unknown as SdkRendererHost
-  const picked: Record<string, unknown> = {}
-  for (const member of STUDIO_MEMBERS) {
-    const value = host[member]
-    picked[member] = typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(host) : value
-  }
-  let readied = false
-  return Object.freeze({
-    ...(picked as SdkRendererHost),
-    openGlobalSurface: (id: string) =>
-      typeof id === 'string' && host.openGlobalSurface(extensionSurfaceId(loaded.key, id)),
-    surface: Object.freeze({ ...surface }),
-    ready() {
-      if (readied) return
-      readied = true
-      recordReadiness({ key: loaded.key, point: surface.point, id: surface.id, ms: performance.now() - openedAt })
-    },
-  })
 }

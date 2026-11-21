@@ -59,11 +59,10 @@ test('reading what could be installed and what can run is the narrowest read eac
   assert.equal(STUDIO_TOPICS['cardFeed.changed'], STUDIO_EXTENSIONS_TOPICS['cardFeed.changed'])
 })
 
-test('the installed extensions are listed and loaded under extensions:read; what a window sets is a write', () => {
+test('the installed extensions and what they add to a client are read under extensions:read', () => {
   assert.equal(STUDIO_MODULES_METHODS['extension.installed'].scope, 'extensions:read')
-  assert.equal(STUDIO_MODULES_METHODS['extension.rendererEntries'].scope, 'extensions:read')
-  assert.equal(STUDIO_MODULES_METHODS['extension.setAppState'].scope, 'settings:write')
-  for (const method of ['extension.installed', 'extension.rendererEntries', 'extension.setAppState'] as const) {
+  assert.equal(STUDIO_MODULES_METHODS['extension.contributions'].scope, 'extensions:read')
+  for (const method of ['extension.installed', 'extension.contributions'] as const) {
     assert.equal(STUDIO_MODULES_METHODS[method].owner, undefined, method)
     assert.equal(STUDIO_MODULES_METHODS[method].capability, STUDIO_EXTENSION_HOST_CAPABILITY, method)
   }
@@ -133,14 +132,6 @@ test('a scaffold names an id and, at most, a folder; a module app state is names
       ideaMarkdown: '# Idea',
     })
   assert.equal(refusal(parseStudioMethodParams('extensionScaffold.target', { id: 'x', folder: '' })), 'invalid_params')
-  assert.equal(
-    refusal(parseStudioMethodParams('extension.setAppState', { commandId: 'c', state: { 'module:a': 1 } })),
-    'invalid_params',
-  )
-  assert.equal(
-    parseStudioMethodParams('extension.setAppState', { commandId: 'c', state: { 'module:a': { on: true } } }).ok,
-    true,
-  )
   assert.equal(
     refusal(parseStudioMethodParams('extension.reportRegistry', { commandId: 'c', snapshot: [] })),
     'invalid_params',

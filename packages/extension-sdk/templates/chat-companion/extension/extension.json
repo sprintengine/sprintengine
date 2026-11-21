@@ -11,6 +11,7 @@
   "description": "{{displayName}}, an extension for SprintEngine Studio.",
   "permissions": [
     "conversation:own",
+    "chat:draft",
     "notifications:show"
   ],
   "main": "dist/main.cjs",

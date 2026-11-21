@@ -7,8 +7,8 @@ import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/M
 import { copy } from '../../../../shared/copy'
 
 // Review → approve and turn on, in one step. The dialog is the consent: what
-// the extension is (its tier, said plainly: code that runs with full access to
-// this machine, where it has code), what needs care with a short why for each,
+// the extension is (its tier, said plainly: a worker's code runs with full
+// access to this machine, a ui extension's runs isolated), what needs care with a short why for each,
 // the rest as quiet pills, and for an update, what it asks beyond what was
 // approved before. Approving names the fingerprint the person was shown, so a
 // change since is refused rather than approved unseen.
@@ -51,7 +51,7 @@ export function ApprovalReviewDialog({
         leading={icon}
       />
       <ModalBody className="space-y-4">
-        {module.extension.tier === 'declarative' ? (
+        {module.extension.tier !== 'worker' ? (
           <p className="text-body text-[color:var(--text-default)]">{extensionApprovalCopy('declarative')}</p>
         ) : (
           <InlineNotice tone="warn">{extensionApprovalCopy(module.extension.tier)}</InlineNotice>

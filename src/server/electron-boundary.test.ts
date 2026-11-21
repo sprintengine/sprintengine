@@ -160,6 +160,9 @@ const COMPUTED_LOADS_ALLOWED: Readonly<Record<string, string>> = {
   // at load time by a host capability (owner default 2026-10-01: a server skips
   // the main half of a module that needs Electron), not by this walk.
   'src/main/modules/third-party-main-loader.ts': 'a third-party entry.main, loaded by path',
+  // The `import()` is in the text of the script the server puts in an
+  // extension's frame document; it runs in the frame, never in the server.
+  'src/server/extensions/frames/frame-bootstrap.ts': 'the frame bootstrap’s source text, run in the frame',
 }
 
 function sourceFilesUnder(directory: string): string[] {

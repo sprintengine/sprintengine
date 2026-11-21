@@ -95,8 +95,6 @@ export type WebListenerOptions = {
   pairRequests?: PairRequests | null
   /** Files an owner's tab drops into a message, saved on the server for the agent to read by path. */
   uploads?: WebUploads | null
-  /** Whether third-party renderer modules are on for the web (R61): their scripts are `blob:` URLs. */
-  thirdPartyModules?: () => boolean
   version: string
   extraRoutes?: readonly WebExtraRoute[]
   log?: (message: string) => void
@@ -172,7 +170,7 @@ export function createWebListener(options: WebListenerOptions): WebListener {
   }
 
   function headersForPage(origin: string, frameAncestors?: readonly string[]): Record<string, string> {
-    return pageHeaders({ origin, blobScripts: options.thirdPartyModules?.() === true, frameAncestors })
+    return pageHeaders({ origin, frameAncestors })
   }
 
   function sendPage(response: ServerResponse, html: string, origin: string): void {
@@ -555,8 +553,7 @@ export function createWebListener(options: WebListenerOptions): WebListener {
       for (const peer of socketsBySession.get(key) ?? []) peer.close(WEB_CLOSE_REVOKED, 'This embed was revoked.')
       socketsBySession.delete(key)
     },
-    pageHeaders: (origin, frameAncestors) =>
-      pageHeaders({ origin, blobScripts: options.thirdPartyModules?.() === true, frameAncestors }),
+    pageHeaders: (origin, frameAncestors) => pageHeaders({ origin, frameAncestors }),
     origins: () => {
       const port = boundPort ?? options.port
       return [

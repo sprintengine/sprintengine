@@ -38,14 +38,20 @@ export const EXTENSION_GUIDE_TOPICS: readonly ExtensionGuideTopic[] = [
     id: 'rules',
     summary: 'The mistakes that cost earlier extensions time: bundle shape, styling, trust, storage, untrusted input.',
   },
-  { id: 'api-renderer', summary: 'The `studio` a surface’s mount is handed: the window, state, chats, ready().' },
+  {
+    id: 'api-renderer',
+    summary: 'The `studio` a surface’s mount is handed in its frame: host calls, worker methods, events, ready().',
+  },
   {
     id: 'api-main',
     summary: 'The worker’s activate(studio): methods, commands, MCP tools, services, storage, notifications.',
   },
   { id: 'conversations', summary: "The extension's own chats, and one-shot text generation." },
   { id: 'brokers', summary: 'API keys and GitHub through the host, never a token in the extension.' },
-  { id: 'styling', summary: 'Drawing a surface yourself: React or plain DOM, the --sem-* properties, your own CSS.' },
+  {
+    id: 'styling',
+    summary: 'Drawing a surface in its frame: React or plain DOM, the theme properties, Studio’s kit, your own CSS.',
+  },
   {
     id: 'troubleshooting',
     summary: 'Studio does not list, trust or run the extension: what it shows, the cause, the fix.',

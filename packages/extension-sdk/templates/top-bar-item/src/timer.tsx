@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore, type CSSProperties } from 'react'
+import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import type { ExtensionMount, ExtensionMountStudio } from '@sprintengine/extension-sdk'
@@ -6,7 +6,7 @@ import type { ExtensionMount, ExtensionMountStudio } from '@sprintengine/extensi
 // The door the top bar button opens. extension.json declares both: the button
 // (`contributes.topBarItems`, with `door: "timer"`) and the door
 // (`contributes.doors`). Studio draws the button with the declared icon and
-// title; this file draws the door.
+// title; this file draws the door, in a frame of its own.
 
 const ENDS_AT_KEY = 'focusEndsAt'
 export const FOCUS_MINUTES = 25
@@ -18,23 +18,11 @@ export function formatRemaining(ms: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
-const button: CSSProperties = {
-  padding: 'var(--sem-space-sm) var(--sem-space-lg)',
-  border: 'none',
-  borderRadius: 'var(--sem-radius-control)',
-  background: 'var(--sem-color-accent-primary)',
-  color: 'var(--sem-color-text-on-accent)',
-  font: 'inherit',
-  cursor: 'pointer',
-}
-
-// The end time lives in the extension's app state, so a running timer
-// survives a restart and shows the same time in every window.
-export function FocusTimer({ studio }: { studio: ExtensionMountStudio }) {
-  const subscribe = useCallback((onChange: () => void) => studio.watchModuleAppState(() => onChange()), [studio])
-  const readEndsAt = useCallback(() => studio.getModuleAppState<number>(ENDS_AT_KEY) ?? null, [studio])
-  // The third argument is what a server render (the tests') reads.
-  const endsAt = useSyncExternalStore(subscribe, readEndsAt, readEndsAt)
+// The end time is one of the extension's Settings values, which Studio keeps
+// (`settings.set`, permission `settings:own`), so a running timer survives a
+// restart.
+export function FocusTimer({ studio, initialEndsAt }: { studio: ExtensionMountStudio; initialEndsAt: number | null }) {
+  const [endsAt, setEndsAt] = useState<number | null>(initialEndsAt)
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => studio.ready(), [studio])
@@ -47,8 +35,10 @@ export function FocusTimer({ studio }: { studio: ExtensionMountStudio }) {
   const remaining = endsAt === null ? null : endsAt - now
   const done = remaining !== null && remaining <= 0
   const toggle = () => {
+    const next = endsAt === null ? Date.now() + FOCUS_MINUTES * 60_000 : null
     setNow(Date.now())
-    studio.setModuleAppState(ENDS_AT_KEY, endsAt === null ? Date.now() + FOCUS_MINUTES * 60_000 : undefined)
+    setEndsAt(next)
+    void studio.host.call('settings.set', { key: ENDS_AT_KEY, value: next })
   }
 
   return (
@@ -58,12 +48,8 @@ export function FocusTimer({ studio }: { studio: ExtensionMountStudio }) {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 'var(--sem-space-lg)',
+        gap: 16,
         height: '100%',
-        background: 'var(--sem-color-bg-surface)',
-        color: 'var(--sem-color-text-default)',
-        fontFamily: 'var(--sem-font-family-ui)',
-        fontSize: 'var(--sem-font-size-body)',
       }}
     >
       <p style={{ margin: 0, fontSize: 48, fontVariantNumeric: 'tabular-nums' }} aria-live="polite">
@@ -73,15 +59,16 @@ export function FocusTimer({ studio }: { studio: ExtensionMountStudio }) {
             ? 'Time is up'
             : formatRemaining(remaining ?? 0)}
       </p>
-      <button type="button" style={button} onClick={toggle}>
+      <button type="button" className="se-button se-button--primary" onClick={toggle}>
         {endsAt === null ? `Start ${FOCUS_MINUTES} minutes of focus` : done ? 'Clear the timer' : 'Stop the timer'}
       </button>
     </div>
   )
 }
 
-export const mount: ExtensionMount = (root, studio) => {
+export const mount: ExtensionMount = async (root, studio) => {
+  const saved = (await studio.host.call('settings.get', {}))[ENDS_AT_KEY]
   const view = createRoot(root)
-  view.render(<FocusTimer studio={studio} />)
+  view.render(<FocusTimer studio={studio} initialEndsAt={typeof saved === 'number' ? saved : null} />)
   return () => view.unmount()
 }

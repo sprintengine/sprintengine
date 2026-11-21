@@ -615,6 +615,13 @@ export type ElectronApi = {
   saveGitPatch: (repoRoot: string, patch: string, defaultFileName?: string) => Promise<GitPatchSaveResult>
   /** Open an installed third-party module's folder. Absent where there is no file manager to open it in. */
   revealThirdPartyModule?: (id: string) => Promise<ThirdPartyModuleRevealResult>
+  /**
+   * Hand the shell an extension frame's document (`extension.frame`), which
+   * it serves at `studio-ext://frame/<hash>` once its bytes hash to `hash`.
+   * Absent in a browser tab, which loads the document from its Studio's own
+   * path instead.
+   */
+  stageExtensionFrame?: (hash: string, html: string) => Promise<boolean>
   // The conversation peek: what has been said in a chat the person is hovering
   // rather than looking at — the first message and everything since, from the
   // prompts this app captured. `source` says whether there is an answer, a

@@ -6,13 +6,14 @@ import {
   type StudioMethodTable,
   type StudioTopicTable,
 } from './contract.js'
-import { STUDIO_EXTENSION_HOST_CAPABILITY } from './handshake.js'
+import { STUDIO_EXTENSION_FRAMES_CAPABILITY, STUDIO_EXTENSION_HOST_CAPABILITY } from './handshake.js'
 import type {
+  ExtensionContributionsResult,
+  ExtensionFrameDocument,
   StudioExtensionApproval,
   ModuleRegistrySnapshot,
   ModuleRegistrySnapshotWriteResult,
   ThirdPartyModuleListResult,
-  ThirdPartyRendererEntriesResult,
 } from './extensions-types.js'
 
 // What a Studio's modules say to its clients. A module is a capability its
@@ -56,12 +57,18 @@ import type {
 //
 // - `extension.installed`: every extension installed here, with its approval,
 //   its signature, where it came from and whether it runs; what Settings and the
-//   Extensions door list. `extension.rendererEntries`: the approved extensions'
-//   window halves, for a desktop window of this Studio to run.
+//   Extensions door list. `extension.contributions`: what the approved
+//   extensions add to a client (commands, menus, top bar items, panels, doors,
+//   settings sections), as their extension.json declares it; no code.
 //   `extension.changed`: what is installed or approved here changed, so a
-//   window lists and loads them again.
-// - `extension.setAppState`: the person's values for the modules' Settings
-//   sections, which their main halves read here (`settings:write`).
+//   client lists them again.
+// - Under `extension-frames`: `extension.frame`, the document one panel, door
+//   or settings section is drawn from in its sandboxed frame (built here from
+//   the extension's verified entry, Studio's bootstrap and the theme the client
+//   names); and `extension.call`, one host call a frame made, which the client
+//   that drew the frame passes on. The call is checked here as the extension
+//   (its approval) and as this connection (its grant), and answers the
+//   method's result or the refusal's code and words.
 //   `extension.reportRegistry`: the module registry a window resolved, its window
 //   halves included, which the Studio's own `module.*` agent tools report. It
 //   is the window's own report, so an owner's only
@@ -137,6 +144,25 @@ export type StudioModuleCall = {
  * there, the params are not the method's) are the request's errors instead.
  */
 export type StudioModuleAnswer = { ok: true; result: unknown } | { ok: false; code: string; message: string }
+
+/** Which surface a frame draws. */
+export type StudioExtensionSurfacePoint = 'panels' | 'doors' | 'settingsSections'
+
+/** `extension.frame`'s params. */
+export type StudioExtensionFrameRequest = {
+  moduleId: string
+  point: StudioExtensionSurfacePoint
+  /** The contribution's id in extension.json. */
+  id: string
+  /** The client's theme, by id; the document is drawn in it when this Studio knows it. */
+  theme?: string
+}
+
+/** One host call a frame made: the extension, the frame method and its params. */
+export type StudioExtensionCall = { moduleId: string; method: string; params?: unknown }
+
+/** What a host call came to: the method's result, or why it was refused or failed. */
+export type StudioExtensionCallAnswer = { ok: true; result: unknown } | { ok: false; code: string; message: string }
 
 /** Why changing what runs on a Studio is an owner's. */
 export const STUDIO_MODULES_OWNER =
@@ -221,12 +247,22 @@ export type StudioModulesMethodMap = {
   }
   /** Every extension installed here, with its approval, signature, origin and launch state. */
   'extension.installed': { params: Record<string, never>; result: ThirdPartyModuleListResult }
-  /** The approved extensions' window halves, read and checked against their verified bytes now. */
-  'extension.rendererEntries': { params: Record<string, never>; result: ThirdPartyRendererEntriesResult }
-  /** The person's values for the modules' Settings sections, by `module:<id>` namespace. */
-  'extension.setAppState': {
-    params: { state: Record<string, Record<string, unknown>>; commandId: string }
-    result: Record<string, never>
+  /** What the approved extensions add to a client, as their extension.json declares it. */
+  'extension.contributions': { params: Record<string, never>; result: ExtensionContributionsResult }
+  /**
+   * The document one surface is drawn from: the extension's entry, read and
+   * checked against its verified bytes now, in Studio's frame, themed as
+   * `theme` (a built-in theme's id) when this Studio knows it.
+   */
+  'extension.frame': {
+    params: StudioExtensionFrameRequest
+    result: ExtensionFrameDocument
+    errors: 'extension_unavailable'
+  }
+  /** One host call a frame made, as the extension and as this connection. */
+  'extension.call': {
+    params: StudioExtensionCall & { commandId: string }
+    result: StudioExtensionCallAnswer
   }
   /** The module registry a window resolved; refused, with why, when it is not one. */
   'extension.reportRegistry': {
@@ -264,6 +300,8 @@ function parseCall(value: Record<string, unknown>) {
 }
 
 const MAX_COMMAND_ID_CHARS = 200
+/** The longest contribution or theme id. */
+const MAX_SURFACE_ID_CHARS = 200
 /** The longest approval fingerprint: `sha256-` and its digest. */
 const MAX_FINGERPRINT_CHARS = 128
 /** The longest folder path an install may name. */
@@ -362,28 +400,48 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
     capability: STUDIO_EXTENSION_HOST_CAPABILITY,
     params: studioNoParams,
   },
-  'extension.rendererEntries': {
+  'extension.contributions': {
     scope: 'extensions:read',
     mutation: false,
     capability: STUDIO_EXTENSION_HOST_CAPABILITY,
     params: studioNoParams,
   },
-  'extension.setAppState': {
-    scope: 'settings:write',
-    mutation: true,
-    capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+  'extension.frame': {
+    scope: 'extensions:read',
+    mutation: false,
+    capability: STUDIO_EXTENSION_FRAMES_CAPABILITY,
     params: (value) => {
+      if (!moduleId(value.moduleId)) return studioParamsRefused('"moduleId" is the extension\'s install key.')
+      if (value.point !== 'panels' && value.point !== 'doors' && value.point !== 'settingsSections')
+        return studioParamsRefused('"point" is panels, doors or settingsSections.')
+      if (typeof value.id !== 'string' || value.id.length === 0 || value.id.length > MAX_SURFACE_ID_CHARS)
+        return studioParamsRefused('"id" is the contribution\'s id in extension.json.')
+      if (value.theme !== undefined && (typeof value.theme !== 'string' || value.theme.length > MAX_SURFACE_ID_CHARS))
+        return studioParamsRefused('"theme" is a theme\'s id, when given.')
+      return studioParams({
+        moduleId: value.moduleId,
+        point: value.point,
+        id: value.id,
+        ...(value.theme === undefined ? {} : { theme: value.theme }),
+      })
+    },
+  },
+  'extension.call': {
+    scope: 'extensions:read',
+    mutation: true,
+    capability: STUDIO_EXTENSION_FRAMES_CAPABILITY,
+    params: (value) => {
+      if (!moduleId(value.moduleId)) return studioParamsRefused('"moduleId" is the extension\'s install key.')
+      if (typeof value.method !== 'string' || !/^[a-z][a-zA-Z.]{0,63}$/u.test(value.method))
+        return studioParamsRefused('"method" is a frame method\'s name.')
       const command = commandIdOf(value)
       if (!command.ok) return command
-      const state = value.state
-      if (
-        state === null ||
-        typeof state !== 'object' ||
-        Array.isArray(state) ||
-        !Object.values(state).every((bag) => bag !== null && typeof bag === 'object' && !Array.isArray(bag))
-      )
-        return studioParamsRefused('"state" is each module section\'s values by its namespace.')
-      return studioParams({ state: state as Record<string, Record<string, unknown>>, commandId: command.params })
+      return studioParams({
+        moduleId: value.moduleId,
+        method: value.method,
+        ...(value.params === undefined ? {} : { params: value.params }),
+        commandId: command.params,
+      })
     },
   },
   'extension.reportRegistry': {

@@ -235,7 +235,7 @@ export function activate(studio: MainHost): void {
   })
   // The module-owned event stream: the subscribe verb the
   // declared methods do not have. `emit` stamps this module's identity,
-  // so only this module's renderer subscribers see it. Nothing is replayed, so
+  // so only this extension's open surfaces hear it. Nothing is replayed, so
   // the `readOutlook` method stays the way a late panel reads the current value —
   // the event only says "read it again".
   studio.registerMethods({

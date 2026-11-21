@@ -145,8 +145,8 @@ export type ThirdPartyModuleLaunchStatus =
   | 'launch_error'
 
 /**
- * Whether an extension's window code (the `entry` of its panels, doors and
- * settings sections) can be served to a window: `none`, it declares none;
+ * Whether an extension's surfaces (the `entry` of its panels, doors and
+ * settings sections) can be drawn in frames: `none`, it declares none;
  * `blocked`, it is not approved (or broken); `error`, declared and approved but refused
  * (outside the folder, missing, changed); `available`, servable.
  */
@@ -165,7 +165,7 @@ export type ThirdPartyModuleLaunchView = {
   message?: string
   /** Whether its worker (`main`) loaded in this server run; absent reads as not loaded. */
   mainLoaded?: boolean
-  /** Whether its window half can be served. */
+  /** Whether its surfaces' entries can be drawn. */
   rendererEntry?: ThirdPartyRendererEntryView
 }
 
@@ -218,27 +218,31 @@ export type ThirdPartyModuleListResult = {
   rejected: Array<{ path: string; issues: ModuleManifestIssue[] }>
 }
 
-/**
- * One extension's window code a window may run: approved, inside its folder,
- * and the bytes it was verified with. `entries` holds the source of each ESM
- * bundle its panels, doors and settings sections name, by the path
- * extension.json gives.
- */
-export type ThirdPartyRendererEntry = {
+/** One approved extension, as a client registers what it adds. */
+export type ExtensionContributions = {
   /** Its install key. */
   id: string
   manifest: CapabilityManifest
   extension: ExtensionManifestView
-  entries: Record<string, string>
-  /** The private origin its assets are served at in this Studio's desktop windows. */
-  assetOrigin?: string
 }
 
-/** `extension.rendererEntries`: the servable window halves, and why each other declared one was not served. */
-export type ThirdPartyRendererEntriesResult = {
-  entries: ThirdPartyRendererEntry[]
+/**
+ * `extension.contributions`: what each approved extension adds to a client,
+ * as its extension.json declares it (no code: its surfaces are drawn in
+ * frames, `extension.frame`), and why each other one with surfaces is not offered.
+ */
+export type ExtensionContributionsResult = {
+  extensions: ExtensionContributions[]
   /** By module id, a sentence (never a path); extensions waiting for approval are not listed. */
   failures: Record<string, string>
+}
+
+/** `extension.frame`: the document one surface is drawn from. */
+export type ExtensionFrameDocument = {
+  /** `sha256-<hex>` of `html`: where a browser loads it (`/ext-frame/<hash>`), and what a desktop window stages. */
+  hash: string
+  /** The whole document: Studio's bootstrap, its theme and kit, and the extension's entry. */
+  html: string
 }
 
 /** Which build a window's module registry was taken in. */

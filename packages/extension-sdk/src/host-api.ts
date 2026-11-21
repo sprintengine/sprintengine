@@ -1,5 +1,6 @@
-// What a running Studio provides behind `studio.supports(name)`: the names an
-// extension may probe before it relies on a service. Which Studio an
+// What a running Studio provides behind the worker's `studio.supports(name)`:
+// the names an extension may probe before it relies on a service. A surface in
+// a frame asks `studio.host.has(method)` instead. Which Studio an
 // extension needs at all is `engines.studio` in its extension.json.
 //
 // Pure (no Node APIs, no values imported from index) and safe in any runtime.
@@ -22,7 +23,6 @@ export type HostCapability =
   | 'conversation-requests'
   // The agent CLI's own `permissionMode` beside the preset, and `allowedTools` at `create`.
   | 'conversation-permissions'
-  | 'chat.open'
   | 'companion-agents'
   // ── Agents, conversations and scheduled agents ──
   // A companion's structured run takes `tools` ('none' by default, 'ask',
@@ -35,9 +35,6 @@ export type HostCapability =
   | 'text-generation'
   // The conversation service's `create` takes `worktree`.
   | 'conversation-worktrees'
-  // `RendererHost.openChat` takes `name` and `dedupeKey`, and a draft needs
-  // only `chat:draft`. A renderer's, answered live like `chat.open`.
-  | 'chat.open-options'
   // `MainHost.listChatRuntimes()`.
   | 'chat-runtimes'
   // Scheduled agents take `name` and `tag`, `lastRun` names its chat's
@@ -49,26 +46,17 @@ export type HostCapability =
   | 'github'
   | 'storage'
   | 'mcp-tools'
-  | 'module-assets'
   // `MainHost.notify` reaches the bell of every open window, with `target`
   // opening your own door. False where no client delivery is wired.
   | 'notifications'
-  // The Backlog write API: `getBacklogService` in main, and the renderer's
-  // `createBacklogItem` / `updateBacklogStatus` / … beside `listBacklogItems`.
+  // The Backlog write API: `getBacklogService` in the worker.
   | 'backlog-write'
-  // `getUsageService` and the renderer's `queryUsage` (permission `usage:read`).
+  // `getUsageService` (permission `usage:read`).
   | 'usage'
   // `getActivityService` (permission `conversation:read`).
   | 'activity'
-  // ── The window's studio object ──
-  // `RendererHost.toast(...)`; true once the window's toast region is wired.
-  | 'toast'
-  // `RendererHost.moduleId`.
+  // `MainHost.moduleId`.
   | 'module-id'
-  // `RendererHost.getActiveWorkspaceId()` and `watchActiveWorkspace(cb)`.
-  | 'active-workspace'
-  // `RendererHost.openExternal(url)`; true once the window's link opener is wired.
-  | 'open-external'
   // `--chart-1` … `--chart-8` and `--chart-other` in THEME_TOKENS.
   | 'chart-tokens'
   // The worker runs in the desktop's own main process, where `electron` can be
@@ -95,7 +83,7 @@ export type HostCapability =
   | 'module-data-dir'
   // `MainHost.getAssetPath(relative)`: a verified file's path, for workers and the like.
   | 'main-asset-path'
-  // `getWorkspaceGitInfo(workspaceId)` on both hosts.
+  // `MainHost.getWorkspaceGitInfo(workspaceId)`.
   | 'workspace-git-info'
   // `WorkspaceContextService.list({ includeClosed })` and `open` on each entry.
   | 'workspace-history'

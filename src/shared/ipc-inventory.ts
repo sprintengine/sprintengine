@@ -120,6 +120,7 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'fs:open-image-attachment': DESKTOP('invoke'),
   'fs:show-item-in-folder': DESKTOP('invoke'),
   'modules:third-party:reveal': DESKTOP('invoke'),
+  'extension-frames:stage': WINDOW('invoke'),
   'app:restart': UPDATE('invoke'),
   'update:check': UPDATE('invoke'),
   'update:dismiss-install-outcome': UPDATE('invoke'),

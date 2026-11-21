@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import type { ExtensionMount, ExtensionMountStudio, ModuleConversationSummary } from '@sprintengine/extension-sdk'
@@ -15,26 +15,12 @@ const STATUS_WORDS: Record<ModuleConversationSummary['status'], string> = {
   absent: 'Not running',
 }
 
-const text: CSSProperties = {
-  fontFamily: 'var(--sem-font-family-ui)',
-  fontSize: 'var(--sem-font-size-body)',
-  color: 'var(--sem-color-text-default)',
-}
-const button: CSSProperties = {
-  ...text,
-  padding: 'var(--sem-space-xs) var(--sem-space-sm)',
-  border: '1px solid var(--sem-color-border-default)',
-  borderRadius: 'var(--sem-radius-control)',
-  background: 'var(--sem-color-bg-surface-raised)',
-  cursor: 'pointer',
-}
-
-// The panel, in a workspace's pane: it asks the worker for this extension's
-// chats, starts a summary chat through the worker, and opens a chat draft
-// itself. The worker pushes CHANGED_TOPIC whenever the list should be read
-// again.
+// The panel, in a workspace's pane and a frame of its own: it asks the worker
+// for this extension's chats, starts a summary chat through the worker, and
+// opens a chat draft itself. The worker pushes CHANGED_TOPIC whenever the
+// list should be read again; the panel hears it as a `push`.
 export function CompanionPanel({ studio }: { studio: ExtensionMountStudio }) {
-  const workspaceId = studio.surface.workspaceId ?? studio.getActiveWorkspaceId()
+  const workspaceId = studio.surface.workspaceId ?? null
   const [chats, setChats] = useState<ModuleConversationSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -47,7 +33,10 @@ export function CompanionPanel({ studio }: { studio: ExtensionMountStudio }) {
 
   useEffect(() => {
     void reload()
-    return studio.subscribe(CHANGED_TOPIC, () => void reload())
+    const heard = studio.on('push', (push) => {
+      if (push.topic === CHANGED_TOPIC) void reload()
+    })
+    return () => heard.dispose()
   }, [reload, studio])
   useEffect(() => {
     if (chats !== null || error !== null) studio.ready()
@@ -60,49 +49,49 @@ export function CompanionPanel({ studio }: { studio: ExtensionMountStudio }) {
     const result = await studio.methods<CompanionMethods>().operate('start', { workspaceId })
     setBusy(false)
     if (!result.ok) setError(result.message)
-    else studio.focusTab({ workspaceId, kind: 'chat', id: result.result.conversation.agentId })
+    else void studio.host.call('tabs.focus', { workspaceId, kind: 'chat', id: result.result.conversation.agentId })
   }
 
-  // openChat puts the prompt in a new chat's composer as a draft: the person
-  // reads it and sends it (pass `send: true` to send it for them).
+  // `chat.draft` puts the prompt in a new chat's composer as a draft: the
+  // person reads it and sends it (permission `chat:draft`).
   const draft = async () => {
     if (!workspaceId) return
-    const opened = await studio.openChat({ workspaceId, prompt: 'Help me plan the next change to this project.' })
+    const opened = await studio.host.call('chat.draft', {
+      workspaceId,
+      prompt: 'Help me plan the next change to this project.',
+    })
     if (!opened.ok) setError(opened.message)
   }
 
   return (
-    <div
-      style={{
-        ...text,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--sem-space-md)',
-        padding: 'var(--sem-space-md)',
-      }}
-    >
-      <div style={{ display: 'flex', gap: 'var(--sem-space-sm)' }}>
-        <button type="button" style={button} disabled={!workspaceId || busy} onClick={() => void summarise()}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 12 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="se-button" disabled={!workspaceId || busy} onClick={() => void summarise()}>
           {busy ? 'Starting…' : 'Summarise this project'}
         </button>
-        <button type="button" style={button} disabled={!workspaceId} onClick={() => void draft()}>
+        <button type="button" className="se-button" disabled={!workspaceId} onClick={() => void draft()}>
           Open a chat draft
         </button>
       </div>
-      {error ? <p style={{ margin: 0, color: 'var(--sem-color-status-danger)' }}>{error}</p> : null}
-      <h3 style={{ margin: 0, fontSize: 'var(--sem-font-size-meta)', color: 'var(--sem-color-text-muted)' }}>
+      {error ? <p style={{ margin: 0, color: 'var(--tone-error)' }}>{error}</p> : null}
+      <h3 className="se-muted" style={{ margin: 0, fontSize: 12 }}>
         Chats this extension started
       </h3>
       {chats === null ? null : chats.length === 0 ? (
-        <p style={{ margin: 0, color: 'var(--sem-color-text-muted)' }}>None yet. Summarise the project to start one.</p>
+        <p className="se-muted" style={{ margin: 0 }}>
+          None yet. Summarise the project to start one.
+        </p>
       ) : (
-        <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+        <ul className="se-list">
           {chats.map((chat) => (
-            <li key={chat.agentId}>
+            <li key={chat.agentId} className="se-list-row">
               <button
                 type="button"
-                style={{ ...button, border: 'none', background: 'transparent', width: '100%', textAlign: 'left' }}
-                onClick={() => studio.focusTab({ workspaceId: chat.workspaceId, kind: 'chat', id: chat.agentId })}
+                className="se-button"
+                style={{ border: 'none', background: 'transparent', width: '100%', justifyContent: 'flex-start' }}
+                onClick={() =>
+                  void studio.host.call('tabs.focus', { workspaceId: chat.workspaceId, kind: 'chat', id: chat.agentId })
+                }
               >
                 {chat.name} · {STATUS_WORDS[chat.status]}
               </button>

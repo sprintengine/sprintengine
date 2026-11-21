@@ -81,10 +81,11 @@ export function createServerModules(deps: {
           message: `Extension "${request.moduleId}" is not running on this Studio.`,
         },
   )
-  hub.serveHostServicesFrom((moduleId, invoker) =>
+  // The host calls an extension's frames make, over the Studio RPC's `extension.call`.
+  hub.serveFrameCallsFrom(async (request) =>
     load
-      ? load.kernel.hostServicesFor(moduleId, invoker)
-      : { ok: false, code: 'extension_unavailable', message: `Extension "${moduleId}" is not running on this Studio.` },
+      ? load.kernel.callFrameMethod(request)
+      : { ok: false, code: 'unavailable', message: `Extension "${request.moduleId}" is not running on this Studio.` },
   )
   let load: LoadMainModulesResult | null = null
   let gateway: StudioGateway | null = null
@@ -200,6 +201,7 @@ export function createServerModules(deps: {
         // What each extension runs under; its calls are refused once that approval is gone.
         extensionApprovals: thirdParty.approvals,
         currentApprovals: createExtensionApprovalReader(dataDir),
+        frameFileExclusions: () => [dataDir, defaultUserModuleRoot()],
         ineligible: thirdParty.ineligible,
         launchErrors: thirdParty.launchErrors,
         deliverModuleEvent: (event) => hub.deliverEvent(event),

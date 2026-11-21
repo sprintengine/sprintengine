@@ -163,6 +163,8 @@
           "backlog:operate",
           "providers:read",
           "usage:read",
+          "workspace-files:read",
+          "workspace-files:write",
           "storage:own",
           "settings:own",
           "secrets:own",

@@ -95,9 +95,7 @@ import {
 } from '../../../src/main/module-host/service-tokens'
 import { THIRD_PARTY_SERVICE_KEYS as APP_THIRD_PARTY_SERVICE_KEYS } from '../../../src/main/module-host/main-host'
 import type { CapabilityModule as AppCapabilityModule } from '../../../src/main/module-host/load-modules'
-import type { ModuleFocusTabInput as AppModuleFocusTabInput } from '../../../src/renderer/src/modules/workspace-tabs'
 import type { CompanionAgentsModuleRegistry as AppCompanionAgentsModuleRegistry } from '../../../src/main/companion-agent-service'
-import type { RendererHost as AppRendererHost } from '../../../src/renderer/src/modules/renderer-host'
 import type {
   ModuleWorkspaceGitInfoResult as AppModuleWorkspaceGitInfoResult,
   ModuleWorkspaceGitRemote as AppModuleWorkspaceGitRemote,
@@ -105,8 +103,6 @@ import type {
   ModuleWorkspaceListOptions as AppModuleWorkspaceListOptions,
   ModuleWorkspaceView as AppModuleWorkspaceView,
 } from '../../../src/shared/modules/workspace-view'
-import type { WorkspaceFileWatchEvent as AppWorkspaceFileWatchEvent } from '../../../src/renderer/src/modules/workspace-file-watch'
-import type { ModuleColorScheme as AppModuleColorScheme } from '../../../src/renderer/src/modules/color-scheme-watch'
 import type {
   BacklogItemLink as AppBacklogItemLink,
   BacklogItemStatus as AppBacklogItemStatus,
@@ -121,7 +117,6 @@ import type {
   ExtensionActivate as SdkExtensionActivate,
   ExtensionManifest as SdkExtensionManifest,
   ExtensionMount as SdkExtensionMount,
-  ExtensionMountStudio as SdkExtensionMountStudio,
   CapabilityPermission as SdkCapabilityPermission,
   CompanionAgentEvent as SdkCompanionAgentEvent,
   CompanionAgentHandle as SdkCompanionAgentHandle,
@@ -154,8 +149,6 @@ import type {
   ModuleFileDigests as SdkModuleFileDigests,
   ModuleSignature as SdkModuleSignature,
   ModuleSource as SdkModuleSource,
-  ModuleColorScheme as SdkModuleColorScheme,
-  ModuleFocusTabInput as SdkModuleFocusTabInput,
   ModuleStorageChange as SdkModuleStorageChange,
   ModuleStorageErrorCode as SdkModuleStorageErrorCode,
   ModuleStorageResult as SdkModuleStorageResult,
@@ -167,13 +160,11 @@ import type {
   ModuleWorkspaceListOptions as SdkModuleWorkspaceListOptions,
   ModuleWorkspaceView as SdkModuleWorkspaceView,
   WorkspaceContextService as SdkWorkspaceContextService,
-  RendererHost as SdkRendererHost,
   SidecarHandle as SdkSidecarHandle,
   SidecarRunState as SdkSidecarRunState,
   SidecarRuntimeStatus as SdkSidecarRuntimeStatus,
   SidecarSpec as SdkSidecarSpec,
   SidecarStartOptions as SdkSidecarStartOptions,
-  WorkspaceFileWatchEvent as SdkWorkspaceFileWatchEvent,
 } from '../src/index'
 import {
   SPRINTENGINE_FILE_DROP_MIME as SDK_FILE_DROP_MIME,
@@ -195,9 +186,6 @@ import type * as appBrokers from '../../../src/shared/modules/brokers'
 import type * as appBacklogService from '../../../src/shared/modules/backlog-service'
 import type * as appActivity from '../../../src/shared/modules/activity-service'
 import type { BacklogItem as AppBacklogItem } from '../../../src/shared/backlog/scan'
-// Shell surfaces and the renderer host's feedback, link and context members:
-// read as namespaces so this block's imports stay in one place.
-import type * as appRendererHost from '../../../src/renderer/src/modules/renderer-host'
 import type * as appNotifications from '../../../src/shared/modules/notifications'
 // The published service table and the testing kit (see the end of this file).
 import {
@@ -255,19 +243,6 @@ expectType<IsExact<AppBacklogResolvedLink, SdkBacklogResolvedLink>>()
 // provided under WorkspaceContextToken must match the SDK's contract.
 expectType<IsExact<AppModuleWorkspaceView, SdkModuleWorkspaceView>>()
 expectType<IsExact<AppModuleWorkspaceContextService, SdkWorkspaceContextService>>()
-// Live runtime surfaces: the published views/inputs mirror the
-// app-side declarations exactly; RendererHost method soundness rides the
-// AppRendererHost extends SdkRendererHost assertion below.
-expectType<IsExact<AppWorkspaceFileWatchEvent, SdkWorkspaceFileWatchEvent>>()
-// The published 'light' | 'dark' must stay the app's own resolved scheme: the
-// module host's watchColorScheme republishes exactly what useResolvedColorScheme
-// resolves, and a third value added app-side has to be published or refused.
-expectType<IsExact<AppModuleColorScheme, SdkModuleColorScheme>>()
-// focusTab opens a chat or a file; pinned on the method so the input shape
-// is checked wherever the host declares it.
-expectType<IsExact<AppRendererHost['focusTab'], SdkRendererHost['focusTab']>>()
-// …and the input itself, against the tab focuser that serves it.
-expectType<IsExact<AppModuleFocusTabInput, SdkModuleFocusTabInput>>()
 // Module storage: the SDK publishes the scoped service (getModuleStorage);
 // the app provides the moduleId-first registry under 'core.module-storage'.
 // The registry the app serves must accept exactly what the SDK helper
@@ -310,7 +285,6 @@ expectType<IsExact<AppMcpConnectionMetadata, SdkMcpConnectionMetadata>>()
 expectType<IsExact<AppMcpConnectionContext, SdkMcpConnectionContext>>()
 expectType<IsExact<AppMainHost['registerMcpTools'], SdkMainHost['registerMcpTools']>>()
 expectType<IsExact<AppMainHost['registerMethods'], SdkMainHost['registerMethods']>>()
-expectType<IsExact<AppRendererHost['methods'], SdkRendererHost['methods']>>()
 
 // The app's skills in a workspace: the result shape and the host method,
 // pinned exactly because the one-directional host assertion below would let a
@@ -335,83 +309,34 @@ expectType<IsExact<AppModuleWorkspaceListOptions, SdkModuleWorkspaceListOptions>
 expectType<IsExact<AppModuleWorkspaceGitRemote, SdkModuleWorkspaceGitRemote>>()
 expectType<IsExact<AppModuleWorkspaceGitInfoResult, SdkModuleWorkspaceGitInfoResult>>()
 expectType<IsExact<AppMainHost['getWorkspaceGitInfo'], SdkMainHost['getWorkspaceGitInfo']>>()
-expectType<IsExact<AppRendererHost['getWorkspaceGitInfo'], SdkRendererHost['getWorkspaceGitInfo']>>()
-// Settings in main: the app-state pair on MainHost reads exactly like the renderer's.
+// Settings in the worker: the app-state pair on MainHost.
 expectType<IsExact<AppMainHost['getModuleAppState'], SdkMainHost['getModuleAppState']>>()
 expectType<IsExact<AppMainHost['watchModuleAppState'], SdkMainHost['watchModuleAppState']>>()
-expectType<IsExact<AppMainHost['getModuleAppState'], AppRendererHost['getModuleAppState']>>()
-expectType<IsExact<AppMainHost['watchModuleAppState'], AppRendererHost['watchModuleAppState']>>()
 
 // Host soundness: the app host handed to module code satisfies the SDK view.
 expectType<Extends<AppMainHost, SdkMainHost>>()
-expectType<Extends<AppRendererHost, SdkRendererHost>>()
 // Host parity: the worker's host carries exactly the members the SDK
-// publishes, no more. The window's host is the shell's own and carries its
-// register calls too; what a surface's `mount` is handed is picked from it,
-// member by member, in src/renderer/src/modules/extension-surfaces.ts.
+// publishes, no more. A surface's `studio` is built in its frame
+// (server/extensions/frames/frame-bootstrap.ts), from EXTENSION_FRAME_METHODS.
 expectType<IsExact<keyof AppMainHost, keyof SdkMainHost>>()
-// Per-module workspace state: the accessor pair is the pinned SDK
-// shape for module-owned workspace state — exact identity, because the
-// one-directional host assertion above would let an optional-parameter or
-// return-type widening ride through unnoticed.
-expectType<IsExact<AppRendererHost['getWorkspaceModuleState'], SdkRendererHost['getWorkspaceModuleState']>>()
-expectType<IsExact<AppRendererHost['setWorkspaceModuleState'], SdkRendererHost['setWorkspaceModuleState']>>()
-
-// The opener a surface calls for one of its extension's own doors.
-expectType<IsExact<AppRendererHost['openGlobalSurface'], SdkRendererHost['openGlobalSurface']>>()
-
-// Renderer host additions for module-owned surfaces (WP-C, 2026-09-10). Pinned
-// exactly for the reason the whole file gives: the one-directional host
-// assertion compares method parameters bivariantly, so a widened parameter or
-// a dropped optional would ride through unnoticed.
-expectType<IsExact<AppRendererHost['listWorkspaces'], SdkRendererHost['listWorkspaces']>>()
-expectType<IsExact<AppRendererHost['watchWorkspaces'], SdkRendererHost['watchWorkspaces']>>()
-expectType<IsExact<AppRendererHost['watchColorScheme'], SdkRendererHost['watchColorScheme']>>()
-
-// ── The module-boundary surfaces ──────────────────────────────
-// Each is pinned exactly rather than by `Extends`, for the reason spelled out
-// above: the one-directional host assertion compares method parameters
-// bivariantly, so an app-side widening (or a dropped optional) would ride
-// through unnoticed on all three.
-
-// 1. App-level module state — the renderer-side, synchronously-readable scope
-// above the per-workspace bag. The accessor trio is pinned like the workspace-state pair.
-expectType<IsExact<AppRendererHost['getModuleAppState'], SdkRendererHost['getModuleAppState']>>()
-expectType<IsExact<AppRendererHost['setModuleAppState'], SdkRendererHost['setModuleAppState']>>()
-expectType<IsExact<AppRendererHost['watchModuleAppState'], SdkRendererHost['watchModuleAppState']>>()
-
-// 2. The module-owned event channel: the emit half on MainHost, the subscribe
-// half on RendererHost, and the envelope both processes agree on.
+// The module-owned event channel: the emit half on MainHost, the envelope a
+// surface hears as `push`.
 expectType<IsExact<AppModuleEventEnvelope, SdkModuleEventEnvelope>>()
 expectType<IsExact<AppMainHost['emit'], SdkMainHost['emit']>>()
-expectType<IsExact<AppRendererHost['subscribe'], SdkRendererHost['subscribe']>>()
 
 // The entry contracts may be async: the loader awaits what `activate` returns,
 // and the window what `mount` returns, so the SDK's contracts must be exactly
 // what they accept.
 expectType<IsExact<ReturnType<NonNullable<AppCapabilityModule['registerMain']>>, ReturnType<SdkExtensionActivate>>>()
 expectType<IsExact<Parameters<SdkExtensionActivate>, [studio: SdkMainHost]>>()
-expectType<Extends<SdkExtensionMountStudio, SdkRendererHost>>()
 expectType<IsExact<Parameters<SdkExtensionMount>[0], HTMLElement>>()
 
-// ── Shell surfaces, notifications and renderer-host context ─────────────────
-// Each pinned exactly: the one-directional host assertion compares method
-// parameters bivariantly, so a widened parameter or a dropped optional on any
-// of these would ride through unnoticed.
+// ── Notifications ───────────────────────────────────────────────────────────
 
 // A module's notify reaches the bell: the target it may name, on the input
 // and on the published notification.
 expectType<IsExact<appNotifications.ModuleNotificationTarget, sdk.ModuleNotificationTarget>>()
 expectType<IsExact<AppMainHost['notify'], SdkMainHost['notify']>>()
-// Toasts, links, identity and the active workspace.
-expectType<IsExact<appRendererHost.ModuleToastTone, sdk.ModuleToastTone>>()
-expectType<IsExact<appRendererHost.ModuleToastInput, sdk.ModuleToastInput>>()
-expectType<IsExact<appRendererHost.ModuleOpenExternalResult, sdk.ModuleOpenExternalResult>>()
-expectType<IsExact<AppRendererHost['moduleId'], SdkRendererHost['moduleId']>>()
-expectType<IsExact<AppRendererHost['toast'], SdkRendererHost['toast']>>()
-expectType<IsExact<AppRendererHost['getActiveWorkspaceId'], SdkRendererHost['getActiveWorkspaceId']>>()
-expectType<IsExact<AppRendererHost['watchActiveWorkspace'], SdkRendererHost['watchActiveWorkspace']>>()
-expectType<IsExact<AppRendererHost['openExternal'], SdkRendererHost['openExternal']>>()
 
 // ── Host capabilities, conversations, brokered credentials ─────────────────
 // Every shape exact. The event, status and attachment types are the app's own
@@ -419,9 +344,6 @@ expectType<IsExact<AppRendererHost['openExternal'], SdkRendererHost['openExterna
 // restatement to what the chat runtime actually emits.
 expectType<IsExact<appHostApi.HostCapability, sdk.HostCapability>>()
 expectType<IsExact<AppMainHost['supports'], SdkMainHost['supports']>>()
-expectType<IsExact<AppRendererHost['supports'], SdkRendererHost['supports']>>()
-expectType<IsExact<AppRendererHost['openChat'], SdkRendererHost['openChat']>>()
-expectType<IsExact<AppRendererHost['listChatRuntimes'], SdkRendererHost['listChatRuntimes']>>()
 expectType<IsExact<AppMainHost['listChatRuntimes'], SdkMainHost['listChatRuntimes']>>()
 
 expectType<IsExact<appConversation.ModuleConversationEventType, sdk.ModuleConversationEventType>>()
@@ -532,16 +454,6 @@ expectType<Extends<appBacklogService.ModuleBacklogService, sdk.ModuleBacklogServ
 expectType<IsExact<keyof appBacklogService.ModuleBacklogService, keyof sdk.ModuleBacklogService>>()
 expectType<IsExact<Omit<appBacklogService.ModuleBacklogService, 'list'>, Omit<sdk.ModuleBacklogService, 'list'>>>()
 expectType<Extends<appBacklogService.ModuleBacklogRegistry, SdkExpectedRegistry<sdk.ModuleBacklogService>>>()
-expectType<IsExact<AppRendererHost['getBacklogLocation'], SdkRendererHost['getBacklogLocation']>>()
-expectType<IsExact<AppRendererHost['createBacklogItem'], SdkRendererHost['createBacklogItem']>>()
-expectType<IsExact<AppRendererHost['updateBacklogStatus'], SdkRendererHost['updateBacklogStatus']>>()
-expectType<IsExact<AppRendererHost['updateBacklogTriage'], SdkRendererHost['updateBacklogTriage']>>()
-expectType<IsExact<AppRendererHost['addBacklogLink'], SdkRendererHost['addBacklogLink']>>()
-expectType<IsExact<AppRendererHost['updateBacklogModuleMetadata'], SdkRendererHost['updateBacklogModuleMetadata']>>()
-expectType<
-  IsExact<Parameters<AppRendererHost['watchBacklogItems']>[2], Parameters<SdkRendererHost['watchBacklogItems']>[2]>
->()
-expectType<IsExact<AppRendererHost['queryUsage'], SdkRendererHost['queryUsage']>>()
 
 expectType<IsExact<appActivity.UsageGroupBy, sdk.UsageGroupBy>>()
 expectType<IsExact<appActivity.UsageQuery, sdk.UsageQuery>>()

@@ -1,7 +1,7 @@
 {
   "id": "settings",
   "title": "Settings section",
-  "summary": "A section in Settings whose values the rest of the extension reads with getModuleAppState.",
+  "summary": "A section in Settings whose values Studio keeps, and the worker reads with getModuleAppState.",
   "requires": [],
   "permissions": [
     "settings:own"

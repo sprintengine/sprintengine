@@ -1,22 +1,17 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-// Main's copy of every module's app-level state — the `module:<id>`
-// namespaces in the renderer's app settings, which a module's Settings
-// section writes through `setValue` and `RendererHost.setModuleAppState`
-// writes directly. `MainHost.getModuleAppState` / `watchModuleAppState` read
-// it, so a module's `entry.main` sees the values the person chose with no
-// window open (a scheduler's run time, a poller's interval).
+// Every extension's Settings values: the `module:<id>` namespaces its
+// Settings section writes from its frame (`settings.set`, through the host's
+// gate) and reads back (`settings.get`). Studio keeps them in its data folder,
+// outside the extension's own reach, so `MainHost.getModuleAppState` /
+// `watchModuleAppState` read the values the person chose with no window open
+// (a scheduler's run time, a poller's interval).
 //
-// Same one-way contract as the other settings mirrors (text generation,
-// background mode): the renderer owns the values and pushes the whole bag on
-// change and when a window mounts; main persists the last push in user data
-// and reads it synchronously. Nothing in main writes a value back.
-//
-// One mirror per file, shared by everyone in the process: the IPC handler that
-// takes the push and the module host that reads it see the same object, so a
-// change is heard in process at once. A Studio server out of process reads
-// the same file and hears a push the shell wrote by watching it.
+// One store per file, shared by everyone in the process: the frame's host
+// call that writes and the worker that reads see the same object, so a change
+// is heard in process at once. Another process holding the same data folder
+// hears a write by watching the file.
 
 export const MODULE_APP_STATE_FILE = 'module-app-state.json'
 const NAMESPACE_PREFIX = 'module:'
@@ -27,8 +22,11 @@ type Namespaces = Record<string, Record<string, unknown>>
 export type ModuleAppStateMirror = {
   /** The module's namespace: an empty object when nothing was ever pushed. */
   get(moduleId: string): Readonly<Record<string, unknown>>
-  /** Adopt a renderer push of the whole bag; notifies the namespaces that changed. */
-  set(bag: unknown): void
+  /**
+   * Set one value of the module's namespace (`undefined` removes it), as its
+   * Settings section's frame does (`settings.set`); notifies its listeners.
+   */
+  setValue(moduleId: string, key: string, value: unknown): void
   /** Hear the module's namespace whenever it changes (not on subscribe). */
   subscribe(moduleId: string, listener: (values: Readonly<Record<string, unknown>>) => void): () => void
 }
@@ -123,9 +121,15 @@ export function createModuleAppStateMirror(options: {
       const namespace = current()[`${NAMESPACE_PREFIX}${moduleId.trim()}`]
       return namespace ? Object.freeze({ ...namespace }) : EMPTY
     },
-    set(bag) {
-      const next = normalizeModuleAppStateBag(bag)
-      // An unchanged push (every window mount sends one) never rewrites the file.
+    setValue(moduleId, key, value) {
+      if (namespaces !== null && !watching && options.watchFile !== false && fileSignature() !== seen) adopt(read())
+      const namespace = `${NAMESPACE_PREFIX}${moduleId.trim()}`
+      const values = { ...current()[namespace] }
+      if (value === undefined) delete values[key]
+      else values[key] = structuredClone(value)
+      const next = { ...current(), [namespace]: values }
+      if (Object.keys(values).length === 0) delete next[namespace]
+      // An unchanged value never rewrites the file.
       if (!adopt(next)) return
       const tmp = `${options.filePath}.${process.pid}.tmp`
       try {

@@ -9,9 +9,10 @@
 // their names with the Studio protocol's permissions (`workspace:read`,
 // `conversation:read`, …); the rest name what is the extension's own.
 //
-// A permission says what an extension may ask Studio to do. It is not a limit
-// on the extension's own code: a `ui` or `worker` extension's code runs inside
-// Studio with full access to this machine, and the approval says so.
+// A permission says what an extension may ask Studio to do. A `ui`
+// extension's code runs isolated in a frame, so what it may ask is all it can
+// do. A `worker` extension's code runs on this machine with full access, and
+// the approval says so.
 
 export const EXTENSION_PERMISSIONS = [
   // ── Studio's own data, as any client reads it ──
@@ -29,6 +30,10 @@ export const EXTENSION_PERMISSIONS = [
   'providers:read',
   // Token usage of every agent session on this machine.
   'usage:read',
+  // The files inside the person's workspaces, through Studio (`files.*`):
+  // never outside a workspace's folder, and never through a link out of it.
+  'workspace-files:read',
+  'workspace-files:write',
   // ── What is the extension's own ──
   // Its own stored data.
   'storage:own',

@@ -33,7 +33,7 @@ test('supports() answers the window-wired capabilities live', () => {
   for (const capability of ['notifications', 'toast', 'open-external']) {
     assert.equal(host.supports(capability), false, `${capability} is false until the window wires it`)
   }
-  for (const capability of ['module-id', 'active-workspace']) {
+  for (const capability of ['module-id']) {
     assert.equal(host.supports(capability), true, `${capability} is real in this build`)
   }
   for (const capability of ['command-context', 'surface-view', 'door-badges', 'skills', 'ui-kit-extras']) {

@@ -12,7 +12,7 @@ import {
   isKnownCapabilityPermission,
 } from '../../../../shared/modules/permissions'
 import { getModuleContributionError } from '../../modules/ModuleContributionBoundary'
-import { getThirdPartyRendererLoadState } from '../../modules/third-party-loader'
+import { getExtensionContributionsState as getThirdPartyRendererLoadState } from '../../modules/extension-contributions'
 import type { Tone } from '../ui/tokens'
 import { Badge, EmptyState, GhostButton, InlineNotice, OutlineButton, SettingCard, type OverflowMenuItem } from '../ui'
 import { deriveContributions, moduleDoorIcon } from './extensionContributions'

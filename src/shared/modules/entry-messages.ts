@@ -1,9 +1,9 @@
-// Shared sanitation rule for messages produced while resolving, serving, or
-// evaluating third-party entry bundles. Anything that may reach the renderer
-// (launch views, renderer-entry load states) must not leak absolute filesystem
-// paths; both the main-side server (entry-containment.ts) and the renderer-side
-// loader (third-party-loader.ts) apply the same rule so no process becomes the
-// weak link.
+// Shared sanitation rule for messages produced while resolving, reading or
+// drawing extension entries. Anything that may reach a window (launch views,
+// contribution states, a frame that failed to draw) must not leak absolute
+// filesystem paths; the server (entry-containment.ts) and the window
+// (extension-contributions.tsx, ExtensionSurfaceMount.tsx) apply the same rule
+// so no process becomes the weak link.
 
 export function sanitizeEntryMessage(message: string, fallback: string): string {
   if (containsAbsolutePath(message)) return fallback

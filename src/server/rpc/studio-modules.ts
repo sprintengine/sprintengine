@@ -4,7 +4,8 @@ import type {
   StudioModuleNotification,
 } from '../../../packages/studio-protocol/src/public'
 import type { ExtensionInvoker } from '../../main/module-host/extension-invocation'
-import type { ModuleHostServicesOutcome } from '../../main/module-host/main-host'
+import type { ExtensionFrameCallRequest } from '../../main/module-host/extension-frame-calls'
+import type { StudioExtensionCallAnswer } from '../../../packages/studio-protocol/src/public'
 import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 
 // What a Studio's modules say to its clients, between the module kernel and
@@ -18,12 +19,11 @@ import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 // exists (`serveCallsFrom`); before then, and on a Studio with no kernel, a
 // call is answered `extension_unavailable`.
 //
-// So are the host's services a module's window half calls (the Backlog's
-// writes, the usage query): the router asks `hostServices` for the calling
-// module's, as the connection that sent the call, which the kernel answers
-// once it exists (`serveHostServicesFrom`), `extension_unavailable` for a
-// module not running here. Each call is held to the extension's approval and
-// to that connection's own grant.
+// So are the host calls an extension's frames make (`extension.call`): the
+// router hands each to `frameCall`, as the connection whose client drew the
+// frame, which the kernel answers once it exists (`serveFrameCallsFrom`).
+// Each call is held to the extension's approval and to that connection's own
+// grant.
 //
 // What runs here (`extension.list`, and the owner's `extension.setEnabled`,
 // `.install`, `.approve`, `.uninstall`) is the lifecycle's, served once the
@@ -60,10 +60,10 @@ export type StudioModules = {
   call(request: StudioModuleCallRequest): Promise<StudioModuleCallOutcome>
   /** Where calls are served from: the kernel, once it exists. */
   serveCallsFrom(serve: (request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>): void
-  /** The host's services, as the module named reaches them here; `extension_unavailable` before a kernel. */
-  hostServices(moduleId: string, invoker: ExtensionInvoker): ModuleHostServicesOutcome
-  /** Where host services are read from: the kernel, once it exists. */
-  serveHostServicesFrom(read: (moduleId: string, invoker: ExtensionInvoker) => ModuleHostServicesOutcome): void
+  /** One host call a frame made; refused `unavailable` before a kernel. */
+  frameCall(request: ExtensionFrameCallRequest): Promise<StudioExtensionCallAnswer>
+  /** Where frame calls are served from: the kernel, once it exists. */
+  serveFrameCallsFrom(serve: (request: ExtensionFrameCallRequest) => Promise<StudioExtensionCallAnswer>): void
   /** What lists and changes the modules that run here; null before a kernel is wired. */
   lifecycle(): ModuleLifecycle | null
   serveLifecycleFrom(lifecycle: ModuleLifecycle): void
@@ -91,7 +91,7 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
   const changedListeners = new Set<(value: null) => void>()
   let readRecent: () => ReadonlyArray<StudioModuleNotification> = () => []
   let serve: ((request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>) | null = null
-  let readHostServices: ((moduleId: string, invoker: ExtensionInvoker) => ModuleHostServicesOutcome) | null = null
+  let serveFrameCall: ((request: ExtensionFrameCallRequest) => Promise<StudioExtensionCallAnswer>) | null = null
   let lifecycle: ModuleLifecycle | null = null
 
   function each<T>(listeners: Set<(value: T) => void>, value: T, what: string): void {
@@ -120,17 +120,17 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
     serveCallsFrom(next) {
       serve = next
     },
-    hostServices(moduleId, invoker) {
-      if (!readHostServices)
+    async frameCall(request) {
+      if (!serveFrameCall)
         return {
           ok: false,
-          code: 'extension_unavailable',
-          message: `Extension "${moduleId}" is not running on this Studio: its extensions have not loaded.`,
+          code: 'unavailable',
+          message: `Extension "${request.moduleId}" is not running on this Studio: its extensions have not loaded.`,
         }
-      return readHostServices(moduleId, invoker)
+      return serveFrameCall(request)
     },
-    serveHostServicesFrom(read) {
-      readHostServices = read
+    serveFrameCallsFrom(serve) {
+      serveFrameCall = serve
     },
     lifecycle: () => lifecycle,
     serveLifecycleFrom(next) {
