@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { afterAll, test, vi } from 'vitest'
@@ -161,11 +161,12 @@ import {
 } from './module-host/service-tokens'
 import { scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
 import { AGENT_RUNTIME_MANIFEST } from './modules/agent-runtime-module'
-import { computeModuleFileDigestsSync, manifestFingerprint } from './modules/module-signature'
+import { extensionContentSync } from './modules/module-signature'
 import { planThirdPartyMainModules } from './modules/third-party-main-loader'
 import { discoverUserModulesSync } from './modules/user-module-registry'
 import { registerCoreIpc } from './register-core-ipc'
 import { attachStartupTimeline } from './startup-timeline'
+import { extensionManifest, writeExtensionFolder } from '../../tests/extension-folder'
 
 /**
  * Server rows per area. A new server channel raises its area's count and fails
@@ -251,33 +252,25 @@ function serverDomainStubs(dataDir: string): ServerDomainIpcDeps {
   }
 }
 
-/** An extension as Settings installs one: a folder in the user module root, trusted by its fingerprint. */
+/** An extension as Settings installs one: `local.<id>` in the user module root, trusted by a grant of its content. */
 function installExtension(id: string): ReturnType<typeof planThirdPartyMainModules> {
   const root = join(scratch, 'modules')
-  const moduleRoot = join(root, id)
-  mkdirSync(join(moduleRoot, 'dist'), { recursive: true })
-  writeFileSync(
-    join(moduleRoot, 'dist', 'main.cjs'),
-    `exports.registerMain = (host) => host.registerMethods({ forecast: { access: 'read', params: () => ({ ok: true, params: {} }), handler: () => ({ ok: true, result: 'sunny' }) } })\n`,
+  const key = `local.${id}`
+  const moduleRoot = writeExtensionFolder(join(root, key), {
+    manifest: extensionManifest({ id, permissions: ['module:bridge'] }),
+    files: {
+      'dist/main.cjs': `exports.activate = (host) => host.registerMethods({ forecast: { access: 'read', params: () => ({ ok: true, params: {} }), handler: () => ({ ok: true, result: 'sunny' }) } })\n`,
+    },
+  })
+  const content = extensionContentSync(moduleRoot)
+  assert.ok(content.ok, 'the installed extension has a content fingerprint')
+  const trusted = new Map([[key, content.fingerprint]])
+  const listed = discoverUserModulesSync(root, { trustedModules: trusted })
+  assert.ok(
+    listed.modules.some((entry) => entry.key === key && entry.trust.status === 'trusted'),
+    'the installed extension is discovered, trusted',
   )
-  writeFileSync(
-    join(moduleRoot, 'manifest.json'),
-    JSON.stringify({
-      id,
-      displayName: id,
-      version: 1,
-      defaultEnabled: true,
-      permissions: ['module:bridge'],
-      entry: { main: 'dist/main.cjs' },
-      files: computeModuleFileDigestsSync(moduleRoot).files,
-    }),
-  )
-  const listed = discoverUserModulesSync(root, { trustedModules: new Map() }).modules.find(
-    (entry) => entry.manifest.id === id,
-  )
-  assert.ok(listed, 'the installed extension is discovered')
-  const trusted = new Map([[id, manifestFingerprint(listed.manifest)]])
-  return planThirdPartyMainModules(discoverUserModulesSync(root, { trustedModules: trusted }))
+  return planThirdPartyMainModules(listed)
 }
 
 /** Every non-test `.ts` file under a directory of the repository. */
@@ -358,7 +351,7 @@ test('what main and the server register, and what the preload uses, is the inven
     ineligible: installed.ineligible,
   })
   assert.deepEqual(modules.report.errors, [])
-  assert.ok(modules.report.loaded.includes('weather-deck'), 'the installed extension loads')
+  assert.ok(modules.report.loaded.includes('local.weather-deck'), 'the installed extension loads')
 
   // ── The preload: every member, with stand-ins ──
   const usedBy = new Map<string, Set<string>>()
@@ -423,9 +416,9 @@ test('what main and the server register, and what the preload uses, is the inven
 
   // An installed extension declares methods, served over the Studio protocol,
   // and registers no IPC at all.
-  assert.deepEqual(modules.kernel.declaredMethods('weather-deck'), [{ name: 'forecast', access: 'read' }])
+  assert.deepEqual(modules.kernel.declaredMethods('local.weather-deck'), [{ name: 'forecast', access: 'read' }])
   assert.deepEqual(
-    [...registered].filter((channel) => channel.startsWith('weather-deck')),
+    [...registered].filter((channel) => channel.startsWith('local.weather-deck')),
     [],
     'an installed extension registers no IPC channel',
   )

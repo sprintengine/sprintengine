@@ -1,6 +1,5 @@
 import React, { type JSX } from 'react'
 
-import type { MarketplaceUpdateStatesResult } from '../../../../shared/electron-api'
 import type {
   ModuleEnablementOverrides,
   ModuleManifestIssue,
@@ -12,7 +11,6 @@ import {
   isBroadCapabilityPermission,
   isKnownCapabilityPermission,
 } from '../../../../shared/modules/permissions'
-import { getRendererHost } from '../../modules'
 import { getModuleContributionError } from '../../modules/ModuleContributionBoundary'
 import { getThirdPartyRendererLoadState } from '../../modules/third-party-loader'
 import type { Tone } from '../ui/tokens'
@@ -25,13 +23,11 @@ import {
   ExtensionRow,
   ExtensionStateLabel,
   InstalledTrailing,
-  NeedsUpdatingTrailing,
   ReviewTrailing,
 } from './ExtensionRow'
 import {
   accessItems,
   isSigned,
-  marketplaceUpdateFor,
   moduleMeta,
   moduleProblem,
   problemText,
@@ -39,7 +35,6 @@ import {
   resolveModuleEnabled,
   runState,
   sourceLabel,
-  type ExtensionUpdate,
 } from './extensionsModel'
 import { SettingsSectionTitle } from './SettingsAtoms'
 import { copy as appCopy } from '../../../../shared/copy'
@@ -100,7 +95,6 @@ export type ExtensionActions = {
   onRevokeTrust: (module: ThirdPartyModuleView) => void
   onUninstall: ((module: ThirdPartyModuleView) => void) | null
   onReveal: ((module: ThirdPartyModuleView) => void) | null
-  onUpdate: (module: ThirdPartyModuleView, update: ExtensionUpdate) => void
   onCopyId: (module: ThirdPartyModuleView) => void
 }
 
@@ -120,14 +114,12 @@ function trustFact(module: ThirdPartyModuleView): string {
 export function ExtensionListRow({
   module,
   overrides,
-  updateStates,
   actions,
   detailsOpen,
   onDetailsOpenChange,
 }: {
   module: ThirdPartyModuleView
   overrides: ModuleEnablementOverrides
-  updateStates: MarketplaceUpdateStatesResult | null
   actions: ExtensionActions
   detailsOpen: boolean
   onDetailsOpenChange: (open: boolean) => void
@@ -141,28 +133,13 @@ export function ExtensionListRow({
   const rendererLoadState = getThirdPartyRendererLoadState(id)
   const contributionError = getModuleContributionError(id)
   const problem = moduleProblem(module, rendererLoadState, contributionError)
-  // Built for another host API: trusting it would not make it run (the host
-  // refuses it before trust is asked), so Review is not offered; the notice
-  // says what would.
-  const hostBlocked = problem?.kind === 'host-api' ? problem : null
-  const reviewable = !trusted && !invalid && !hostBlocked
+  const reviewable = !trusted && !invalid
   const state = runState(module, enabled, rendererLoadState, contributionError)
-  const update = marketplaceUpdateFor(module, updateStates)
-  const registry = getRendererHost()
-  const doorIcon = trusted ? moduleDoorIcon(id, registry) : null
+  const doorIcon = moduleDoorIcon(module.extension)
   const { care, standard } = accessItems(module.manifest.permissions)
-
-  const updateButton = update ? (
-    <OutlineButton size="xs" disabled={pending} onClick={() => actions.onUpdate(module, update)}>
-      {appCopy.settings.thirdPartyModuleList.updateToV}
-      {update.latestVersion}
-    </OutlineButton>
-  ) : null
 
   const trailing = invalid ? (
     <CannotTrustTrailing />
-  ) : !trusted && hostBlocked ? (
-    <NeedsUpdatingTrailing direction={hostBlocked.direction} />
   ) : !trusted ? (
     <ReviewTrailing name={name} onReview={() => actions.onReview(module)} />
   ) : (
@@ -197,16 +174,6 @@ export function ExtensionListRow({
             },
           ]
         : []),
-    ...(update
-      ? [
-          {
-            id: 'update',
-            label: appCopy.settings.thirdPartyModuleList.updateToV2(update.latestVersion),
-            disabled: pending,
-            onSelect: () => actions.onUpdate(module, update),
-          },
-        ]
-      : []),
     ...(actions.onReveal
       ? [
           {
@@ -244,28 +211,12 @@ export function ExtensionListRow({
   ]
 
   // The row says a problem only where there is something to read: a failure,
-  // a host this module was not built for, a signature that does not match.
-  // Update rides the notice when the registry has a newer version — the one
-  // case where the way out is on the row.
-  const notice = problem ? { text: problemText(problem), ...(updateButton ? { action: updateButton } : {}) } : null
+  // or a signature that does not match.
+  const notice = problem ? { text: problemText(problem) } : null
 
   const source = sourceLabel(module)
   const facts = [
-    ...(source
-      ? [
-          {
-            term: 'Source',
-            description:
-              module.origin?.kind === 'github' ? (
-                <>
-                  {source} · <span className="font-mono text-micro">{module.origin.repo}</span>
-                </>
-              ) : (
-                source
-              ),
-          },
-        ]
-      : []),
+    ...(source ? [{ term: 'Source', description: source }] : []),
     { term: 'Signature', description: signatureFact(module) },
     { term: 'Trusted', description: trustFact(module) },
   ]
@@ -296,14 +247,7 @@ export function ExtensionListRow({
               </span>
             )
           }
-          adds={
-            trusted
-              ? deriveContributions(id, registry, {
-                  rendererLoaded: rendererLoadState?.status === 'loaded',
-                  mcpTools: module.launch.mainLoaded ? module.mcpTools : undefined,
-                })
-              : null
-          }
+          adds={deriveContributions(module.extension)}
           care={care}
           standard={standard}
           facts={facts}
@@ -319,7 +263,6 @@ export function ExtensionListRow({
                 </OutlineButton>
               ) : null}
               <span className="flex-1" />
-              {updateButton}
               {actions.onReveal ? (
                 <GhostButton size="xs" onClick={() => actions.onReveal?.(module)}>
                   {appCopy.settings.thirdPartyModuleList.showFiles}

@@ -33,7 +33,7 @@ const CALLS: Record<Method, Record<string, unknown>> = {
   'marketplace.update': { commandId: 'c-update', id: 'pr-radar' },
   'marketplace.uninstall': { commandId: 'c-uninstall', pluginId: 'pr-radar' },
   'marketplace.resolveGithub': { url: 'https://github.com/acme/notes-ext' },
-  'marketplace.installGithub': { commandId: 'c-github', trustToken: 't', trustCode: true },
+  'marketplace.installGithub': { commandId: 'c-github', trustToken: 't' },
   'cliPlugins.list': {},
   'cliPlugins.availability': {},
   'cliPlugins.launchPreview': { cli: 'codex' },
@@ -65,7 +65,6 @@ function stub() {
       uninstall: note('uninstall', failed),
       resolveGithub: note('resolveGithub', failed),
       installGithub: note('installGithub', failed),
-      cardMarketplace: {} as never,
     },
     scaffold: {
       home: () => '/Users/dev/Documents/SprintEngine/Extensions',

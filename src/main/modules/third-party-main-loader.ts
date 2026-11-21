@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module'
 
+import type { ExtensionMcpToolContribution } from '../../../packages/extension-sdk/src/extension-manifest'
 import type { ModuleFileDigests, ModuleResolutionErrorCode } from '../../shared/modules/manifest'
 import type { CapabilityModule, MainModuleLoadError, MainModuleLoadReport } from '../module-host/load-modules'
 import type { MainHost } from '../module-host/main-host'
@@ -22,13 +23,15 @@ export type ThirdPartyMainLoadPlan = {
   moduleRoots: Record<string, string>
   /** The file digests each trusted module was verified with — what `getAssetPath` resolves against. */
   verifiedFiles: Record<string, ModuleFileDigests>
+  /** The MCP tools each extension's extension.json declares: all its worker may register. */
+  mcpTools: Record<string, readonly ExtensionMcpToolContribution[]>
   ineligible: Record<string, ModuleResolutionErrorCode>
   launchErrors: MainModuleLoadError[]
   diagnostics: ThirdPartyMainLoadDiagnostics
 }
 
 type ThirdPartyMainExport = {
-  registerMain?: unknown
+  activate?: unknown
   default?: unknown
 }
 
@@ -44,15 +47,15 @@ let launchSnapshot: ThirdPartyMainLaunchSnapshot = {
   errors: new Map(),
 }
 
-/** Why a module's main half did not run here; Settings shows it in these words. */
+/** Why an extension's worker did not run here; Settings shows it in these words. */
 export const NEEDS_ELECTRON_MAIN = 'skipped: needs electron-main'
 
 /** `require('electron')` from a module's main half, where its main half runs without Electron. */
 export class ElectronUnavailableError extends Error {
   constructor(request: string) {
     super(
-      `${NEEDS_ELECTRON_MAIN}: this module's main half requires "${request}", which the Studio server ` +
-        'does not provide. Declare requires.hostCapabilities ["electron-main"] in its manifest.',
+      `${NEEDS_ELECTRON_MAIN}: this extension's worker requires "${request}", which the Studio server ` +
+        'does not provide.',
     )
     this.name = 'ElectronUnavailableError'
   }
@@ -62,9 +65,9 @@ export function planThirdPartyMainModules(
   input: ThirdPartyMainLoadInput,
   options: {
     /**
-     * Whether `electron` can be required where the main halves run: false in
-     * the Studio server out of process (owner default 2026-10-01), where a
-     * module that declares it needs Electron is loaded manifest-only.
+     * Whether `electron` can be required where the workers run: false in the
+     * Studio server out of process (owner default 2026-10-01), where a worker
+     * that requires it is reported as skipped rather than as a crash.
      */
     electronMain?: boolean
   } = {},
@@ -73,28 +76,25 @@ export function planThirdPartyMainModules(
   const moduleRoots: Record<string, string> = {}
   const verifiedFiles: Record<string, ModuleFileDigests> = {}
   const ineligible: Record<string, ModuleResolutionErrorCode> = {}
+  const mcpTools: Record<string, readonly ExtensionMcpToolContribution[]> = {}
   const electronMain = options.electronMain ?? true
 
   for (const installed of input.modules) {
-    const needsElectron = installed.manifest.requires?.hostCapabilities?.includes('electron-main') === true
-    modules.push(
-      !electronMain && needsElectron
-        ? { manifest: installed.manifest }
-        : createThirdPartyMainModule(installed, { electronMain }),
-    )
-    if (!electronMain && needsElectron) skippedForElectron.add(installed.manifest.id)
-    moduleRoots[installed.manifest.id] = installed.moduleRoot
+    modules.push(createThirdPartyMainModule(installed, { electronMain }))
+    moduleRoots[installed.key] = installed.moduleRoot
+    mcpTools[installed.key] = installed.extension.contributes.mcpTools
     if (isLoadEligible(installed.trust.status) && installed.trust.verifiedFiles) {
-      verifiedFiles[installed.manifest.id] = installed.trust.verifiedFiles
+      verifiedFiles[installed.key] = installed.trust.verifiedFiles
     }
     if (isLoadEligible(installed.trust.status)) continue
-    ineligible[installed.manifest.id] = installed.trust.status === 'invalid' ? 'invalid_signature' : 'untrusted'
+    ineligible[installed.key] = installed.trust.status === 'invalid' ? 'invalid_signature' : 'untrusted'
   }
 
   return {
     modules,
     moduleRoots,
     verifiedFiles,
+    mcpTools,
     ineligible,
     launchErrors: input.rejected.map(rejectionToLoadError),
     diagnostics: { rejected: input.rejected },
@@ -145,20 +145,20 @@ function rejectionToLoadError(rejection: ModuleRejection): MainModuleLoadError {
 }
 
 function sanitizeLaunchMessage(message: string): string {
-  return sanitizeEntryMessage(message, 'Module main entry failed during startup.')
+  return sanitizeEntryMessage(message, 'The extension’s worker failed during startup.')
 }
 
-// The modules this process loaded manifest-only because they need Electron.
+// The extensions whose worker this process skipped because it needs Electron.
 const skippedForElectron = new Set<string>()
 
-/** Whether a module's main half was skipped here because it needs Electron. */
+/** Whether an extension's worker was skipped here because it needs Electron. */
 export function skippedForElectronMain(moduleId: string): boolean {
   return skippedForElectron.has(moduleId)
 }
 
 function createThirdPartyMainModule(installed: InstalledModule, options: { electronMain: boolean }): CapabilityModule {
-  const entryMain = installed.manifest.entry?.main
-  if (!isLoadEligible(installed.trust.status) || !entryMain) {
+  const main = installed.extension.tier === 'worker' ? installed.extension.main : undefined
+  if (!isLoadEligible(installed.trust.status) || !main) {
     return { manifest: installed.manifest }
   }
 
@@ -166,19 +166,19 @@ function createThirdPartyMainModule(installed: InstalledModule, options: { elect
   return {
     manifest: installed.manifest,
     registerMain: (host) => {
-      if (options.electronMain) return loadTrustedEntry(installed.moduleRoot, entryMain, verifiedFiles, host)
-      // An undeclared `require('electron')` is caught as it happens (the
-      // Studio server's require guard throws ElectronUnavailableError), and
-      // classified by name rather than reported as a crash.
+      if (options.electronMain) return loadTrustedWorker(installed.moduleRoot, main, verifiedFiles, host)
+      // A `require('electron')` is caught as it happens (the Studio server's
+      // require guard throws ElectronUnavailableError), and classified by name
+      // rather than reported as a crash.
       const classify = (error: unknown): never => {
         if (error instanceof Error && error.name === 'ElectronUnavailableError') {
-          skippedForElectron.add(installed.manifest.id)
+          skippedForElectron.add(installed.key)
         }
         throw error
       }
       try {
-        const registered = loadTrustedEntry(installed.moduleRoot, entryMain, verifiedFiles, host)
-        return registered ? Promise.resolve(registered).catch(classify) : registered
+        const activated = loadTrustedWorker(installed.moduleRoot, main, verifiedFiles, host)
+        return activated ? Promise.resolve(activated).catch(classify) : activated
       } catch (error) {
         return classify(error)
       }
@@ -186,49 +186,53 @@ function createThirdPartyMainModule(installed: InstalledModule, options: { elect
   }
 }
 
-// Trust was decided over the files as discovery found them, and registerMain
-// runs later. The whole module folder is held to those digests again here,
+// Trust was decided over the files as discovery found them, and the worker
+// is loaded later. The whole folder is held to those digests again here,
 // synchronously and immediately before require(), so a file swapped in between
-// — the entry or anything it loads from its own folder — is refused rather
+// — the worker or anything it loads from its own folder — is refused rather
 // than run. require() reads the entry from disk once more after this check;
 // loading from the very bytes hashed would mean compiling through Node's
 // private module internals, so the window left is the one between this
 // synchronous check and require's own read, in the same tick.
-function loadTrustedEntry(
+function loadTrustedWorker(
   moduleRoot: string,
-  entryMain: string,
+  main: string,
   verifiedFiles: ModuleFileDigests | undefined,
   host: MainHost,
 ): void | Promise<void> {
-  const entryPath = resolveContainedEntry(moduleRoot, entryMain, 'entry.main')
-  if (!verifiedFiles || verifiedFiles[entryMain] === undefined) {
-    throw new Error('entry.main is not among the module files that were verified.')
+  const entryPath = resolveContainedEntry(moduleRoot, main, 'main')
+  if (!verifiedFiles || verifiedFiles[main] === undefined) {
+    throw new Error('main is not among the extension’s files that were verified.')
   }
   const changed = moduleFileDigestIssuesSync(moduleRoot, verifiedFiles, { label: 'digests verified at discovery' })
   if (changed.length > 0) {
     throw new Error(
-      `Module files changed after they were verified, so entry.main was not loaded: ${changed
+      `The extension’s files changed after they were verified, so its worker was not loaded: ${changed
         .map((issue) => `${issue.path}: ${issue.message}`)
         .join('; ')}`,
     )
   }
   const entryModule = createRequire(`${entryPath}.loader.cjs`)(entryPath) as ThirdPartyMainExport
-  const registerMain = resolveRegisterMain(entryModule)
-  // Returned, not dropped: an async registerMain's promise is what the loader
+  // Returned, not dropped: an async activate's promise is what the loader
   // races against its timeout.
-  return registerMain(host)
+  return resolveActivate(entryModule)(host)
 }
 
-function resolveRegisterMain(entryModule: ThirdPartyMainExport): (host: MainHost) => void | Promise<void> {
-  if (typeof entryModule.registerMain === 'function') {
-    return entryModule.registerMain as (host: MainHost) => void | Promise<void>
+// `activate` as a named export, or the default export (a CommonJS bundle's
+// `module.exports.default`, or an ES module's).
+function resolveActivate(entryModule: ThirdPartyMainExport): (host: MainHost) => void | Promise<void> {
+  if (typeof entryModule.activate === 'function') {
+    return entryModule.activate as (host: MainHost) => void | Promise<void>
+  }
+  if (typeof entryModule.default === 'function') {
+    return entryModule.default as (host: MainHost) => void | Promise<void>
   }
   if (
     entryModule.default &&
     typeof entryModule.default === 'object' &&
-    typeof (entryModule.default as { registerMain?: unknown }).registerMain === 'function'
+    typeof (entryModule.default as { activate?: unknown }).activate === 'function'
   ) {
-    return (entryModule.default as { registerMain: (host: MainHost) => void | Promise<void> }).registerMain
+    return (entryModule.default as { activate: (host: MainHost) => void | Promise<void> }).activate
   }
-  throw new Error('entry.main must export a callable registerMain(host).')
+  throw new Error('main must export activate(studio), as a named export or its default.')
 }

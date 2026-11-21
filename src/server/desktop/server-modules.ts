@@ -6,7 +6,6 @@ import { ScheduledAgentsServiceToken } from '../../main/module-host/service-toke
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from '../../main/modules/agent-runtime-module'
 import { createModuleLifecycle, liveModuleIds } from '../../main/modules/module-lifecycle'
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
-import { applyHostApiGate } from '../../main/modules/host-api-gate'
 import {
   planThirdPartyMainModules,
   readThirdPartyMainLaunchSnapshot,
@@ -151,15 +150,13 @@ export function createServerModules(deps: {
     load(nextGateway) {
       gateway = nextGateway
       const overrides = readOverrides()
-      // Main halves run here without Electron: a module that declares it needs
-      // it loads manifest-only, and one that requires it anyway is refused at
-      // the require (12.4).
+      // Workers run here without Electron: one that requires it is refused at
+      // the require and reported as skipped.
       const thirdParty = planThirdPartyMainModules(
         discoverUserModulesSync(defaultUserModuleRoot(), readModuleTrustContextSync(dataDir)),
         { electronMain: false },
       )
       installElectronRequireGuard(() => Object.values(thirdParty.moduleRoots))
-      applyHostApiGate(thirdParty.ineligible, thirdParty.modules)
       ineligible = thirdParty.ineligible
       moduleRootsById = thirdParty.moduleRoots
       // The schedules are the core's; the kernel holds them under the
@@ -198,6 +195,7 @@ export function createServerModules(deps: {
         overrides,
         moduleRoots: thirdParty.moduleRoots,
         moduleVerifiedFiles: thirdParty.verifiedFiles,
+        moduleMcpTools: thirdParty.mcpTools,
         ineligible: thirdParty.ineligible,
         launchErrors: thirdParty.launchErrors,
         deliverModuleEvent: (event) => hub.deliverEvent(event),

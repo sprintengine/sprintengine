@@ -148,14 +148,15 @@ export type StudioModuleDeclaredMethod = { name: string; access: 'read' | 'opera
 export type StudioModuleSummary = {
   id: string
   name: string
-  version: number
+  /** A built-in module's integer, or an extension's semver. */
+  version: number | string
   /** The app's own module, or an extension the person installed. */
   source: 'bundled' | 'third-party'
   /** Switched on: the person's choice, or its default. */
   enabled: boolean
   /** Running here now: its main half loaded, or (a window-only extension) its manifest. */
   running: boolean
-  /** Why a switched-on module does not run: not trusted, a bad signature, another host API, a failed load. */
+  /** Why a switched-on module does not run: not trusted, a bad signature, a failed load. */
   blocked?: string
   /** What it declares (`extension.read` / `extension.operate`), empty while it is not running. */
   methods: StudioModuleDeclaredMethod[]
@@ -166,14 +167,6 @@ export type StudioModuleLifecycleAnswer<T extends object = object> = ({ ok: true
 
 /** A module's trust as its signature and the person's grant classify it. */
 export type StudioModuleTrust = 'trusted' | 'signed' | 'unsigned' | 'invalid'
-
-/** Why an uninstall was refused when another owner holds the module: the plugin install that put it there. */
-export type StudioModuleUninstallRefusal = {
-  ok: false
-  message: string
-  /** Set when a marketplace or GitHub plugin install owns it: uninstall that plugin instead. */
-  pluginId?: string
-}
 
 export type StudioModulesMethodMap = {
   /** Call a method the module declared `read`. */
@@ -199,11 +192,15 @@ export type StudioModulesMethodMap = {
     params: { moduleId: string; enabled: boolean | null; commandId: string }
     result: StudioModuleLifecycleAnswer<{ module: StudioModuleSummary | null }>
   }
-  /** Install the extension in a folder on this machine. It runs once trusted, from the next start. */
+  /**
+   * Install the extension in a folder on this machine, under `local.<id>`. It
+   * runs once trusted. Symbolic links in the folder are left out of the copy
+   * and named in `strippedLinks`.
+   */
   'extension.install': {
     params: { path: string; commandId: string }
     result:
-      | { ok: true; moduleId: string; trust: StudioModuleTrust }
+      | { ok: true; moduleId: string; trust: StudioModuleTrust; strippedLinks: string[] }
       | { ok: false; message: string; issues?: Array<{ path: string; message: string }> }
   }
   /** Trust an installed extension's manifest and code as they are now, or withdraw trust. */
@@ -214,7 +211,7 @@ export type StudioModulesMethodMap = {
   /** Remove an extension added from a folder, and what was kept for it. */
   'extension.uninstall': {
     params: { moduleId: string; commandId: string }
-    result: { ok: true; removedModuleIds: string[] } | StudioModuleUninstallRefusal
+    result: { ok: true; removedModuleIds: string[] } | { ok: false; message: string }
   }
   /** Every extension installed here, with its trust, origin and launch state. */
   'extension.installed': { params: Record<string, never>; result: ThirdPartyModuleListResult }

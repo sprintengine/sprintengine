@@ -8,7 +8,6 @@ import { windowModuleSwitches } from '../../studio/moduleSwitches'
 import type { StudioModuleSummary } from '../../../../../packages/studio-protocol/src/public'
 import { ChevronDownIcon, FolderPlusIcon, GithubSettingsIcon } from '../AppIcons'
 import { InstallFromGitHubDialog } from '../extensions/InstallFromGitHubDialog'
-import { ExtensionTrustReview } from '../extensions/ExtensionTrustReview'
 import {
   ActionResultMessage,
   GhostButton,
@@ -25,7 +24,6 @@ import {
   roveMenuFocus,
 } from '../ui'
 import { ExtensionIcon } from '../ui/ExtensionIcon'
-import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/Modal'
 import { EXTENSIONS_BROWSE_DEEPLINK } from './extensionsRoute'
 import {
   accessItems,
@@ -291,10 +289,6 @@ export function ModulesSettingsTab(): JSX.Element {
         }
       : null,
     onReveal: extensions.reveal ? (module) => void extensions.reveal?.(module) : null,
-    onUpdate: (module, update) => {
-      setDetailsFor(null)
-      void extensions.update(module, update)
-    },
     onCopyId: (module) => {
       void window.api
         .clipboardWriteText(module.manifest.id)
@@ -309,7 +303,6 @@ export function ModulesSettingsTab(): JSX.Element {
       key={module.manifest.id}
       module={module}
       overrides={overrides}
-      updateStates={extensions.updateStates}
       actions={actions}
       detailsOpen={detailsFor === module.manifest.id}
       onDetailsOpenChange={(open) =>
@@ -319,7 +312,6 @@ export function ModulesSettingsTab(): JSX.Element {
   )
 
   const reviewAccess = reviewing ? accessItems(reviewing.manifest.permissions) : { care: [], standard: [] }
-  const pause = extensions.updatePause
 
   return (
     <div role="tabpanel" id="settings-panel-modules" aria-labelledby="settings-tab-modules" className="space-y-5">
@@ -488,33 +480,6 @@ export function ModulesSettingsTab(): JSX.Element {
           })
         }}
       />
-
-      {pause ? (
-        <Modal
-          open
-          onClose={extensions.cancelUpdateTrust}
-          label={appCopy.settings.modulesSettingsTab.update(pause.module.manifest.displayName)}
-        >
-          <ModalHeader
-            title={appCopy.settings.modulesSettingsTab.updateToV(
-              pause.module.manifest.displayName,
-              pause.update.latestVersion,
-            )}
-            leading={<ExtensionMark module={pause.module} doorIcon={null} size={40} />}
-          />
-          <ModalBody>
-            <ExtensionTrustReview {...pause.review} />
-          </ModalBody>
-          <ModalFooter>
-            <ModalButton variant="ghost" onClick={extensions.cancelUpdateTrust}>
-              {appCopy.settings.modulesSettingsTab.cancel}
-            </ModalButton>
-            <ModalButton variant="primary" onClick={() => void extensions.confirmUpdateTrust()}>
-              {appCopy.settings.modulesSettingsTab.trustAndUpdate}
-            </ModalButton>
-          </ModalFooter>
-        </Modal>
-      ) : null}
 
       <InstallFromGitHubDialog
         open={installFromGitHub}

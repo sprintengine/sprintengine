@@ -37,12 +37,12 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
     prompt: "MCP tools any agent can call to search my team's issue tracker and add a comment to an issue.",
   },
   {
-    id: 'global-surface',
-    surface: 'Page + sidebar row',
+    id: 'door',
+    surface: 'Page in Extensions',
     title: copy.workspace.agentComposer.extensionIdeas.releaseDashboard,
     description: copy.workspace.agentComposer.extensionIdeas.openPRsAndCIStatus,
     prompt:
-      'A full page with its own sidebar row that shows open pull requests and CI status for every project I have open.',
+      'A full page, opened from the Extensions drawer, that shows open pull requests and CI status for every project I have open.',
   },
   {
     id: 'backlog-action',
@@ -82,14 +82,6 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
     description: copy.workspace.agentComposer.extensionIdeas.aSettingsSectionForYour,
     prompt:
       'A Settings section where I set our commit-message rules, and a command that checks the staged message against them.',
-  },
-  {
-    id: 'workspace-type',
-    surface: 'Workspace type',
-    title: copy.workspace.agentComposer.extensionIdeas.standupWorkspace,
-    description: copy.workspace.agentComposer.extensionIdeas.opensOnYesterdaySCommits,
-    prompt:
-      "A standup workspace type that opens with yesterday's commits across my projects and today's Backlog items.",
   },
   {
     id: 'blank',

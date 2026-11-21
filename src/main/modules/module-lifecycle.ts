@@ -16,16 +16,11 @@ import {
 } from '../../shared/modules/manifest'
 import { readModuleOverridesSync, writeModuleOverrides } from '../module-host/enablement-store'
 import { moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
-import {
-  defaultMarketplacePluginInstallStorePath,
-  readMarketplacePluginInstallReceipts,
-} from '../marketplace/plugin-lifecycle'
 import { forgetModules, isModuleIdSegment } from './forget-modules'
 import { createModuleAssetOriginResolver } from './module-asset-origins'
-import { manifestFingerprint } from './module-signature'
 import type { ModuleRegistryMirror } from './registry-mirror'
 import type { ThirdPartyLaunchSession } from './third-party-main-loader'
-import { moduleOriginsFromReceipts, toThirdPartyModuleView } from './third-party-module-view'
+import { toThirdPartyModuleView } from './third-party-module-view'
 import { collectThirdPartyRendererEntries } from './third-party-renderer-entries'
 import { readModuleTrustContextSync } from './trust-context'
 import { setModuleTrust } from './trust-store'
@@ -51,10 +46,6 @@ import { discoverUserModules, installModuleFolder } from './user-module-registry
 // - The modules' Settings values (`extension.setAppState`) are kept in the data
 //   folder for their main halves; the registry a window resolved
 //   (`extension.reportRegistry`) is kept in memory for the agents' tools.
-// - A module a marketplace or GitHub install put in place belongs to that
-//   plugin: uninstalling it here is refused with the plugin's id, and the
-//   plugin's own uninstall removes it with the rest of its bundle.
-//
 // Every change runs one at a time: two switches arriving together must not
 // each write the overrides they read before the other's.
 
@@ -124,7 +115,6 @@ const INELIGIBLE_WORDS: Record<ModuleResolutionErrorCode, string> = {
   dependency_cycle: 'Its dependencies depend on it.',
   untrusted: 'It waits to be trusted.',
   invalid_signature: 'Its signature or its files do not match, so it will not run.',
-  incompatible_host_api: 'It was built for a host API this Studio does not provide.',
 }
 
 /** Every module a kernel holds, as `extension.list` answers it. */
@@ -159,9 +149,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
   }
   const trustContext = () => readModuleTrustContextSync(deps.dataDir)
   const installed = async (moduleId: string) =>
-    (await discoverUserModules(deps.moduleRoot(), trustContext())).modules.find(
-      (module) => module.manifest.id === moduleId,
-    )
+    (await discoverUserModules(deps.moduleRoot(), trustContext())).modules.find((module) => module.key === moduleId)
   const failed = (error: unknown) => ({
     ok: false as const,
     message: error instanceof Error ? error.message : String(error),
@@ -178,20 +166,13 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     },
 
     async installed() {
-      const [{ modules, rejected }, receipts] = await Promise.all([
-        discoverUserModules(deps.moduleRoot(), trustContext()),
-        readMarketplacePluginInstallReceipts(defaultMarketplacePluginInstallStorePath(deps.dataDir)),
-      ])
+      const { modules, rejected } = await discoverUserModules(deps.moduleRoot(), trustContext())
       const session = deps.launchSession()
       const overrides = readModuleOverridesSync(deps.dataDir)
-      // An unreadable receipt store leaves origins unknown rather than calling
-      // every module a folder install.
-      const origins = receipts.ok ? moduleOriginsFromReceipts(receipts.receipts) : null
       return {
         modules: modules.map((module) =>
           toThirdPartyModuleView(module, session.snapshot, overrides, {
-            ...(origins ? { origin: origins.get(module.manifest.id) ?? { kind: 'folder' } } : {}),
-            mcpTools: session.mcpTools.get(module.manifest.id) ?? [],
+            mcpTools: session.mcpTools.get(module.key) ?? [],
           }),
         ),
         rejected,
@@ -199,9 +180,8 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     },
 
     async rendererEntries() {
-      const context = trustContext()
-      const { modules } = await discoverUserModules(deps.moduleRoot(), context)
-      return collectThirdPartyRendererEntries(modules, context, assetOriginOf)
+      const { modules } = await discoverUserModules(deps.moduleRoot(), trustContext())
+      return collectThirdPartyRendererEntries(modules, assetOriginOf)
     },
 
     setAppState(state) {
@@ -237,7 +217,12 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
               ...(result.rejected.issues.length > 0 ? { issues: result.rejected.issues } : {}),
             }
           deps.changed()
-          return { ok: true as const, moduleId: result.id, trust: result.trust.status }
+          return {
+            ok: true as const,
+            moduleId: result.id,
+            trust: result.trust.status,
+            strippedLinks: result.strippedLinks,
+          }
         } catch (error) {
           return failed(error)
         }
@@ -260,20 +245,19 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
             return {
               ok: false,
               message: target.trust.tampered
-                ? `Extension "${moduleId}" does not match the file digests its manifest signs and cannot be trusted.`
+                ? `Extension "${moduleId}" does not match the file digests extension.sig signs and cannot be trusted.`
                 : `Extension "${moduleId}" has an invalid signature and cannot be trusted.`,
             }
-          // The grant binds to the manifest fingerprint, which covers the
-          // `files` digests the folder was just held to; without them a grant
-          // would vouch for nothing that runs.
-          if (!target.manifest.files)
+          // The grant binds to the content of the folder as it is now: every
+          // file, extension.json included. A folder whose files cannot all be
+          // digested (a symbolic link put there since) cannot be vouched for.
+          const content = target.trust.contentFingerprint
+          if (content === undefined)
             return {
               ok: false,
-              message:
-                `Extension "${moduleId}" lists no digests of its code, so trusting it could not cover what runs. ` +
-                'Sign it with `sprintengine-extension sign`, which records them, and install it again.',
+              message: `Extension "${moduleId}" holds files an extension cannot ship, so trusting it could not cover what runs. Install it again.`,
             }
-          const { result } = await setModuleTrust(deps.dataDir, moduleId, manifestFingerprint(target.manifest))
+          const { result } = await setModuleTrust(deps.dataDir, moduleId, content)
           if (!result.ok) return { ok: false, message: result.message ?? 'Trust could not be saved.' }
           deps.changed()
           return { ok: true }
@@ -286,21 +270,6 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
       oneAtATime(async () => {
         try {
           if (!isModuleIdSegment(moduleId)) return { ok: false, message: 'That is not a module id.' }
-          const receipts = await readMarketplacePluginInstallReceipts(
-            defaultMarketplacePluginInstallStorePath(deps.dataDir),
-          )
-          if (!receipts.ok) return { ok: false, message: receipts.message }
-          const owner = receipts.receipts.find(
-            (receipt) =>
-              receipt.id === moduleId ||
-              receipt.components.some((component) => component.kind === 'module' && component.id === moduleId),
-          )
-          if (owner)
-            return {
-              ok: false,
-              message: `Extension "${moduleId}" came with the plugin "${owner.id}": uninstall the plugin.`,
-              pluginId: owner.id,
-            }
           const target = await installed(moduleId)
           if (!target) return { ok: false, message: `Extension "${moduleId}" is not installed.` }
           const contained = await containedModuleFolder(deps.moduleRoot(), target.moduleRoot)
@@ -332,7 +301,7 @@ async function containedModuleFolder(
 ): Promise<{ ok: true; path: string } | { ok: false; message: string }> {
   const refused = {
     ok: false as const,
-    message: 'That module’s folder is not inside the modules folder, so it was left alone.',
+    message: 'That extension’s folder is not inside the extensions folder, so it was left alone.',
   }
   try {
     const info = await lstat(folder)

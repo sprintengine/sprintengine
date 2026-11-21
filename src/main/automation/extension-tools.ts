@@ -41,9 +41,8 @@ export const EXTENSION_MUTATION_TOOL_NAMES: readonly string[] = [EXTENSION_CREAT
 export const EXTENSION_TEMPLATE_IDS: readonly string[] = [
   'blank',
   'panel',
-  'global-surface',
+  'door',
   'chat-companion',
-  'workspace-type',
   'top-bar-item',
   'settings-section',
   'backlog-action',
@@ -108,9 +107,9 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
   const create: McpToolRegistration = {
     name: EXTENSION_CREATE_TOOL,
     description:
-      'Create a new SprintEngine Studio extension (a capability module that adds panels, pages, commands, ' +
-      'Settings sections, MCP tools, chats and more to Studio) as a project ready to build: module/manifest.json, ' +
-      'plugin.json, TypeScript source, tests against the SDK fake hosts, the build, validate and dev-install ' +
+      'Create a new SprintEngine Studio extension (one that adds panels, pages, commands, menu items, Settings ' +
+      'sections, MCP tools, chats and more to Studio) as a project ready to build: extension/extension.json, ' +
+      'TypeScript source, tests against the SDK fake hosts, the build, validate and dev-install ' +
       'scripts, and IDEA.md holding the brief. Use it whenever you are asked to build an extension, plugin or ' +
       'module for SprintEngine Studio, rather than writing those files yourself. It never writes over anything: ' +
       'the folder must be new or empty, and one that already holds an extension is handed back untouched. The ' +
@@ -122,8 +121,8 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
         name: {
           type: 'string',
           description:
-            'The extension’s id: lowercase letters, digits and single hyphens, e.g. "pr-radar". It is the module ' +
-            'id, the new folder’s name, and the prefix of the extension’s commands and IPC channels.',
+            'The extension’s id: lowercase letters, digits and single hyphens, e.g. "pr-radar". It is the ' +
+            'manifest id, the new folder’s name, and (as local.<id>) the key Studio installs it under.',
         },
         folder: {
           type: 'string',
@@ -148,15 +147,15 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
           description:
             'What the project starts as. "blank" (the default) is the smallest project that runs: start there ' +
             'unless one of the others is plainly the surface asked for. The others: panel (a panel in a ' +
-            'workspace), global-surface (a page of its own in the Extensions drawer), chat-companion (an agent ' +
-            'working in chats it starts), workspace-type, top-bar-item, settings-section, backlog-action, ' +
+            'workspace’s pane), door (a page of its own in the Extensions drawer), chat-companion (an agent ' +
+            'working in chats it starts), top-bar-item, settings-section, backlog-action, ' +
             'file-action, mcp-tools (tools agents call).',
         },
         parts: {
           type: 'array',
           items: { type: 'string', enum: [...EXTENSION_PART_IDS] },
           description:
-            'Parts to add on top of the template: main (a Node entry in Studio’s main process), mcp (MCP tools ' +
+            'Parts to add on top of the template: main (the worker, Node code Studio runs for it), mcp (MCP tools ' +
             'from it), settings (a Settings section), door (a page of its own). The same as running ' +
             '`npx sprintengine-extension add <part>` in the project later.',
         },

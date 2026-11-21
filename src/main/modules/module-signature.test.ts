@@ -1,275 +1,197 @@
 import assert from 'node:assert/strict'
-import { generateKeyPairSync, sign } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { test } from 'vitest'
 
-import type { CapabilityManifest } from '../../shared/modules/manifest'
-import { canonicalManifestPayload } from '../../shared/modules/third-party-manifest'
+import { generateModuleSigningKeyPair, signManifest } from '../../../packages/extension-sdk/src/signing'
+import { newExtensionSigner, signExtensionFolder, writeExtensionFolder } from '../../../tests/extension-folder'
 import {
-  classifyModuleTrust,
+  classifyExtensionTrust,
   classifySignedManifestTrust,
-  computeModuleFileDigestsSync,
+  extensionContentSync,
   isLoadEligible,
-  isTrustedByPublisher,
   manifestFingerprint,
-  moduleContentFingerprint,
-  moduleContentFingerprintSync,
   verifyModuleSignature,
   type ModuleTrustContext,
 } from './module-signature'
 
-const MAIN_SOURCE = 'exports.registerMain = () => {}\n'
-
-function baseManifest(): CapabilityManifest {
-  return {
-    id: 'signed-module',
-    displayName: 'Signed module',
-    version: 1,
-    defaultEnabled: false,
-    source: 'third-party',
-    permissions: ['network'],
-    entry: { main: 'dist/main.cjs' },
-  }
-}
-
-type Signer = { sign: (manifest: CapabilityManifest) => CapabilityManifest; fingerprint: string }
-
-function newSigner(): Signer {
-  const { publicKey, privateKey } = generateKeyPairSync('ed25519')
-  const publicKeyB64 = publicKey.export({ type: 'spki', format: 'der' }).toString('base64')
-  const signer = {
-    sign: (manifest: CapabilityManifest): CapabilityManifest => {
-      const payload = Buffer.from(canonicalManifestPayload(manifest), 'utf8')
-      const signature = sign(null, payload, privateKey).toString('base64')
-      return { ...manifest, signature: { algorithm: 'ed25519', publicKey: publicKeyB64, signature } }
-    },
-    fingerprint: '',
-  }
-  signer.fingerprint = verifyModuleSignature(signer.sign(baseManifest())).fingerprint!
-  return signer
-}
-
-// A module folder holding dist/main.cjs, with the manifest written beside it.
-function moduleFolder(): string {
-  const root = mkdtempSync(join(tmpdir(), 'mc-module-signature-'))
-  mkdirSync(join(root, 'dist'), { recursive: true })
-  writeFileSync(join(root, 'dist', 'main.cjs'), MAIN_SOURCE)
-  return root
-}
-
-function withManifest(root: string, manifest: CapabilityManifest): CapabilityManifest {
-  writeFileSync(join(root, 'manifest.json'), JSON.stringify(manifest))
-  return manifest
-}
-
-// Signed the way `sprintengine-extension sign` signs: with the folder's digests.
-function signedWithFiles(root: string, signer: Signer, manifest = baseManifest()): CapabilityManifest {
-  const files = computeModuleFileDigestsSync(root).files
-  return withManifest(root, signer.sign({ ...manifest, files }))
-}
-
-function withTemp(fn: (root: string) => void): void {
-  const root = moduleFolder()
-  try {
-    fn(root)
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
-}
-
+const KEY = 'acme.demo'
 const NO_TRUST: ModuleTrustContext = { trustedModules: new Map() }
+const EVIL_SOURCE = 'require("child_process").exec("curl evil")\n'
 
-test('a valid signature verifies and a changed signed field does not', () => {
-  const signed = newSigner().sign(baseManifest())
-  assert.equal(verifyModuleSignature(signed).valid, true)
-  const renamed: CapabilityManifest = { ...signed, displayName: 'Evil module' }
-  assert.equal(verifyModuleSignature(renamed).valid, false)
-})
+// An installed extension's folder: extension.json and dist/main.cjs.
+function withTemp(fn: (root: string) => void): void {
+  const parent = mkdtempSync(join(tmpdir(), 'mc-module-signature-'))
+  try {
+    fn(writeExtensionFolder(join(parent, KEY)))
+  } finally {
+    rmSync(parent, { recursive: true, force: true })
+  }
+}
 
-test('a signature over a manifest without files still verifies byte for byte', () => {
-  // The payload only grows a `files` key when the manifest has one, so a
-  // signature made before `files` existed keeps verifying.
-  const signed = newSigner().sign(baseManifest())
-  assert.equal(signed.files, undefined)
-  assert.equal(canonicalManifestPayload(signed).includes('"files"'), false)
-  assert.equal(verifyModuleSignature(signed).valid, true)
-})
+function contentFingerprint(root: string): string {
+  const content = extensionContentSync(root)
+  assert.ok(content.ok)
+  return content.fingerprint
+}
 
-test('the files map is part of the signed payload', () => {
-  const signer = newSigner()
-  const signed = signer.sign({ ...baseManifest(), files: { 'dist/main.cjs': 'a'.repeat(64) } })
-  assert.equal(verifyModuleSignature(signed).valid, true)
-  const otherDigest: CapabilityManifest = { ...signed, files: { 'dist/main.cjs': 'b'.repeat(64) } }
-  const noDigests: CapabilityManifest = { ...signed, files: undefined }
-  assert.equal(verifyModuleSignature(otherDigest).valid, false)
-  assert.equal(verifyModuleSignature(noDigests).valid, false)
-})
-
-test('a signed manifest without files is not trusted by its publisher key', () => {
+test('an extension without extension.sig is unsigned, with its content fingerprint', () => {
   withTemp((root) => {
-    const signer = newSigner()
-    const manifest = withManifest(root, signer.sign(baseManifest()))
-    const trust = classifyModuleTrust(manifest, root, {
-      trustedModules: new Map(),
-      trustedKeyFingerprints: new Set([signer.fingerprint]),
-    })
-    assert.equal(trust.status, 'signed')
-    assert.equal(isTrustedByPublisher(trust), false)
-    assert.match(trust.issues?.[0]?.message ?? '', /lists no digests of its code/)
+    const trust = classifyExtensionTrust(root, KEY, NO_TRUST)
+    assert.equal(trust.status, 'unsigned')
+    assert.equal(trust.fingerprint, undefined)
+    assert.equal(trust.verifiedFiles, undefined)
+    assert.equal(trust.contentFingerprint, contentFingerprint(root))
+    assert.equal(isLoadEligible(trust.status), false)
   })
 })
 
-test('a signed manifest whose files match is trusted by its publisher key', () => {
+test('a good signature by a key nobody trusts is signed, not trusted', () => {
   withTemp((root) => {
-    const signer = newSigner()
-    const manifest = signedWithFiles(root, signer)
-    const trust = classifyModuleTrust(manifest, root, {
+    const signer = newExtensionSigner()
+    signExtensionFolder(root, signer)
+    const trust = classifyExtensionTrust(root, KEY, NO_TRUST)
+    assert.equal(trust.status, 'signed')
+    assert.equal(trust.fingerprint, signer.fingerprint)
+    assert.equal(trust.verifiedFiles, undefined)
+  })
+})
+
+test('a good signature by a trusted publisher key is trusted via the publisher', () => {
+  withTemp((root) => {
+    const signer = newExtensionSigner()
+    signExtensionFolder(root, signer)
+    const trust = classifyExtensionTrust(root, KEY, {
       trustedModules: new Map(),
       trustedKeyFingerprints: new Set([signer.fingerprint]),
     })
     assert.equal(trust.status, 'trusted')
     assert.equal(trust.via, 'publisher')
-    assert.deepEqual(Object.keys(trust.verifiedFiles ?? {}), ['dist/main.cjs'])
+    assert.equal(trust.fingerprint, signer.fingerprint)
+    // extension.sig itself is not one of the files it vouches for.
+    assert.deepEqual(Object.keys(trust.verifiedFiles ?? {}), ['dist/main.cjs', 'extension.json'])
+    assert.equal(trust.contentFingerprint, contentFingerprint(root))
   })
 })
 
-test('a changed code file under signed digests is invalid and tampered', () => {
+test('a grant trusts exactly the content it names, and a changed file loses it', () => {
   withTemp((root) => {
-    const signer = newSigner()
-    const manifest = signedWithFiles(root, signer)
-    writeFileSync(join(root, 'dist', 'main.cjs'), 'require("child_process").exec("curl evil")\n')
-    const trust = classifyModuleTrust(manifest, root, {
-      trustedModules: new Map([[manifest.id, manifestFingerprint(manifest)]]),
+    const ctx: ModuleTrustContext = { trustedModules: new Map([[KEY, contentFingerprint(root)]]) }
+    const trusted = classifyExtensionTrust(root, KEY, ctx)
+    assert.equal(trusted.status, 'trusted')
+    assert.equal(trusted.via, 'grant')
+    assert.deepEqual(Object.keys(trusted.verifiedFiles ?? {}), ['dist/main.cjs', 'extension.json'])
+
+    // The grant is per install key: the same bytes under another key are not trusted.
+    assert.equal(classifyExtensionTrust(root, 'local.demo', ctx).status, 'unsigned')
+
+    writeFileSync(join(root, 'dist', 'main.cjs'), EVIL_SOURCE)
+    const swapped = classifyExtensionTrust(root, KEY, ctx)
+    assert.equal(swapped.status, 'unsigned')
+    assert.equal(swapped.verifiedFiles, undefined)
+  })
+})
+
+test('a grant also trusts a signed extension whose key nobody trusts', () => {
+  withTemp((root) => {
+    const signer = newExtensionSigner()
+    signExtensionFolder(root, signer)
+    const trust = classifyExtensionTrust(root, KEY, { trustedModules: new Map([[KEY, contentFingerprint(root)]]) })
+    assert.equal(trust.status, 'trusted')
+    assert.equal(trust.via, 'grant')
+    assert.equal(trust.fingerprint, signer.fingerprint)
+  })
+})
+
+test('a bad signature is invalid, whatever is granted or trusted', () => {
+  withTemp((root) => {
+    const signer = newExtensionSigner()
+    signExtensionFolder(root, signer)
+    const sigPath = join(root, 'extension.sig')
+    const sig = JSON.parse(readFileSync(sigPath, 'utf8')) as { signature: string }
+    // Another key's signature over the same digests does not verify under this public key.
+    const other = generateModuleSigningKeyPair()
+    const forged = signManifest({ id: 'demo' }, other.privateKeyPem).signature
+    writeFileSync(sigPath, JSON.stringify({ ...sig, signature: forged }))
+    const trust = classifyExtensionTrust(root, KEY, {
+      trustedModules: new Map([[KEY, contentFingerprint(root)]]),
+      trustedKeyFingerprints: new Set([signer.fingerprint]),
+    })
+    assert.equal(trust.status, 'invalid')
+    assert.equal(trust.tampered, undefined)
+    assert.equal(isLoadEligible(trust.status), false)
+  })
+})
+
+test('an extension.sig that is not one is invalid', () => {
+  withTemp((root) => {
+    writeFileSync(join(root, 'extension.sig'), 'not json')
+    const trust = classifyExtensionTrust(root, KEY, NO_TRUST)
+    assert.equal(trust.status, 'invalid')
+    assert.deepEqual(trust.issues, [{ path: 'extension.sig', message: 'extension.sig is not JSON.' }])
+  })
+})
+
+test('a changed file under signed digests is invalid and tampered', () => {
+  withTemp((root) => {
+    const signer = newExtensionSigner()
+    signExtensionFolder(root, signer)
+    writeFileSync(join(root, 'dist', 'main.cjs'), EVIL_SOURCE)
+    const trust = classifyExtensionTrust(root, KEY, {
+      trustedModules: new Map([[KEY, contentFingerprint(root)]]),
       trustedKeyFingerprints: new Set([signer.fingerprint]),
     })
     assert.equal(trust.status, 'invalid')
     assert.equal(trust.tampered, true)
-    assert.equal(isLoadEligible(trust.status), false)
     assert.deepEqual(trust.issues, [{ path: 'files.dist/main.cjs', message: 'does not match the signed digests.' }])
   })
 })
 
-test('a file the signed digests do not list is refused', () => {
+test('a file the signed digests do not list is invalid and tampered', () => {
   withTemp((root) => {
-    const signer = newSigner()
-    const manifest = signedWithFiles(root, signer)
+    const signer = newExtensionSigner()
+    signExtensionFolder(root, signer)
     writeFileSync(join(root, 'dist', 'payload.cjs'), 'module.exports = 1\n')
-    const trust = classifyModuleTrust(manifest, root, {
+    const trust = classifyExtensionTrust(root, KEY, {
       trustedModules: new Map(),
       trustedKeyFingerprints: new Set([signer.fingerprint]),
     })
     assert.equal(trust.status, 'invalid')
+    assert.equal(trust.tampered, true)
     assert.deepEqual(trust.issues, [
       { path: 'files.dist/payload.cjs', message: 'is not listed in the signed digests.' },
     ])
   })
 })
 
-test('a symlink in the module folder is refused', () => {
+test('a symbolic link in the folder leaves it without a content fingerprint, so nothing trusts it', () => {
   withTemp((root) => {
-    const signer = newSigner()
-    const manifest = signedWithFiles(root, signer)
-    writeFileSync(join(root, 'elsewhere.cjs'), MAIN_SOURCE)
-    rmSync(join(root, 'dist', 'main.cjs'))
-    symlinkSync(join(root, 'elsewhere.cjs'), join(root, 'dist', 'main.cjs'))
-    const scan = computeModuleFileDigestsSync(root)
-    assert.equal(scan.ok, false)
-    const trust = classifyModuleTrust(manifest, root, {
-      trustedModules: new Map(),
-      trustedKeyFingerprints: new Set([signer.fingerprint]),
-    })
-    assert.equal(trust.status, 'invalid')
+    const before = contentFingerprint(root)
+    writeFileSync(join(root, '..', 'elsewhere.cjs'), EVIL_SOURCE)
+    symlinkSync(join(root, '..', 'elsewhere.cjs'), join(root, 'dist', 'linked.cjs'))
+    assert.equal(extensionContentSync(root).ok, false)
+    const trust = classifyExtensionTrust(root, KEY, { trustedModules: new Map([[KEY, before]]) })
+    assert.equal(trust.status, 'unsigned')
+    assert.equal(trust.contentFingerprint, undefined)
     assert.ok(trust.issues?.some((issue) => /symbolic link/.test(issue.message)))
   })
 })
 
-test('a grant binds to the manifest fingerprint, which covers the files', () => {
-  withTemp((root) => {
-    const manifest = withManifest(root, { ...baseManifest(), files: computeModuleFileDigestsSync(root).files })
-    const ctx: ModuleTrustContext = { trustedModules: new Map([[manifest.id, manifestFingerprint(manifest)]]) }
-    const trusted = classifyModuleTrust(manifest, root, ctx)
-    assert.equal(trusted.status, 'trusted')
-    assert.equal(trusted.via, 'grant')
-    assert.deepEqual(Object.keys(trusted.verifiedFiles ?? {}), ['dist/main.cjs'])
-
-    // The same manifest over different code no longer matches what it lists.
-    writeFileSync(join(root, 'dist', 'main.cjs'), 'require("child_process").exec("curl evil")\n')
-    const swapped = classifyModuleTrust(manifest, root, ctx)
-    assert.equal(swapped.status, 'invalid')
-    assert.equal(swapped.tampered, true)
-  })
-})
-
-test('a grant for a manifest without files trusts nothing', () => {
-  withTemp((root) => {
-    const manifest = withManifest(root, baseManifest())
-    const content = moduleContentFingerprintSync(manifest, root)
-    assert.ok(content.ok)
-    for (const fingerprint of [manifestFingerprint(manifest), content.fingerprint]) {
-      const trust = classifyModuleTrust(manifest, root, { trustedModules: new Map([[manifest.id, fingerprint]]) })
-      assert.equal(trust.status, 'unsigned')
-      assert.equal(trust.verifiedFiles, undefined)
-      assert.match(trust.issues?.[0]?.message ?? '', /a trust grant cannot cover it/)
-    }
-  })
-})
-
-test('a grant for a changed manifest does not carry over', () => {
-  withTemp((root) => {
-    const files = computeModuleFileDigestsSync(root).files
-    const original = withManifest(root, { ...baseManifest(), files })
-    const swapped = withManifest(root, { ...original, permissions: ['process:spawn', 'network'] })
-    const ctx: ModuleTrustContext = { trustedModules: new Map([[original.id, manifestFingerprint(original)]]) }
-    assert.equal(classifyModuleTrust(swapped, root, ctx).status, 'unsigned')
-  })
-})
-
-test('a verified marketplace install vouches for exactly the code it installed', () => {
-  withTemp((root) => {
-    const signer = newSigner()
-    const manifest = withManifest(root, signer.sign(baseManifest()))
-    const installed = moduleContentFingerprint(manifest, computeModuleFileDigestsSync(root).files)
-    const ctx: ModuleTrustContext = {
-      trustedModules: new Map(),
-      trustedKeyFingerprints: new Set([signer.fingerprint]),
-      verifiedModuleInstalls: new Map([[manifest.id, installed]]),
-    }
-    const trust = classifyModuleTrust(manifest, root, ctx)
-    assert.equal(trust.status, 'trusted')
-    assert.equal(trust.via, 'publisher')
-
-    writeFileSync(join(root, 'dist', 'main.cjs'), 'require("child_process").exec("curl evil")\n')
-    const swapped = classifyModuleTrust(manifest, root, ctx)
-    assert.equal(swapped.status, 'signed')
-    assert.match(swapped.issues?.[0]?.message ?? '', /do not match the ones its marketplace install verified/)
-  })
-})
-
-test('an invalid signature stays invalid even when its content is granted', () => {
-  withTemp((root) => {
-    const signed = newSigner().sign(baseManifest())
-    const tampered = withManifest(root, { ...signed, displayName: 'Evil' })
-    const trust = classifyModuleTrust(tampered, root, {
-      trustedModules: new Map([[tampered.id, manifestFingerprint(tampered)]]),
-    })
-    assert.equal(trust.status, 'invalid')
-    assert.equal(trust.tampered, undefined)
-  })
-})
-
-test('manifest-only trust for bundle manifests is unchanged', () => {
-  const unsigned = baseManifest()
+test('manifest-only trust for bundle manifests binds to the manifest fingerprint or a publisher key', () => {
+  const unsigned = { id: 'bundle', name: 'Bundle', version: '1.0.0' }
   assert.equal(classifySignedManifestTrust(unsigned, NO_TRUST).status, 'unsigned')
   assert.equal(
     classifySignedManifestTrust(unsigned, { trustedModules: new Map([[unsigned.id, manifestFingerprint(unsigned)]]) })
       .status,
     'trusted',
   )
-  const signer = newSigner()
-  const signed = signer.sign(baseManifest())
+  const signer = generateModuleSigningKeyPair()
+  const signed = { ...unsigned, signature: signManifest(unsigned, signer.privateKeyPem) }
+  const renamed = { ...signed, name: 'Evil' }
+  assert.equal(verifyModuleSignature(signed).valid, true)
+  assert.equal(verifyModuleSignature(renamed).valid, false)
   assert.equal(classifySignedManifestTrust(signed, NO_TRUST).status, 'signed')
   assert.equal(
     classifySignedManifestTrust(signed, {
@@ -278,6 +200,7 @@ test('manifest-only trust for bundle manifests is unchanged', () => {
     }).status,
     'trusted',
   )
+  assert.equal(classifySignedManifestTrust(renamed, NO_TRUST).status, 'invalid')
 })
 
 test('only trusted is load eligible', () => {

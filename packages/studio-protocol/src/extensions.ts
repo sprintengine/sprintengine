@@ -213,7 +213,7 @@ function registryInstall(value: Record<string, unknown>): StudioParsed<Marketpla
 }
 
 function uninstall(value: Record<string, unknown>): StudioParsed<MarketplacePluginUninstallInput> {
-  if (!id(value.pluginId)) return refuse('"pluginId" is the plugin\'s id, or one of its modules\'.')
+  if (!id(value.pluginId)) return refuse('"pluginId" is the plugin\'s id.')
   const at = envelope(value)
   if (!at.ok) return at
   return studioParams({ ...at.params, pluginId: value.pluginId })
@@ -221,15 +221,9 @@ function uninstall(value: Record<string, unknown>): StudioParsed<MarketplacePlug
 
 function githubInstall(value: Record<string, unknown>): StudioParsed<GithubExtensionInstallInput> {
   if (!text(value.trustToken, 400)) return refuse('"trustToken" is the approval the repository\'s review issued.')
-  if (value.trustCode !== undefined && typeof value.trustCode !== 'boolean')
-    return refuse('"trustCode" is true or false, when given.')
   const at = envelope(value)
   if (!at.ok) return at
-  return studioParams({
-    ...at.params,
-    trustToken: value.trustToken,
-    ...(value.trustCode === true ? { trustCode: true } : {}),
-  })
+  return studioParams({ ...at.params, trustToken: value.trustToken })
 }
 
 function runtimeOverride(value: unknown): boolean {

@@ -37,28 +37,20 @@ export type ModuleSignature = {
 }
 
 /**
- * A third-party module's code entry points, relative to its folder. `preload`
- * is reserved and never loaded.
- */
-export type ModuleEntry = {
-  main?: string
-  preload?: string
-  renderer?: string
-}
-
-/**
- * sha256 digests of a third-party module's own files: POSIX path relative to
- * the module folder → lowercase hex, every regular file but manifest.json.
+ * sha256 digests of an extension's own files: POSIX path relative to its
+ * folder → lowercase hex, every regular file but extension.sig.
  */
 export type ModuleFileDigests = Record<string, string>
 
-/** What a module's main half needs of its host to run at all; the module SDK's `HostCapability`. */
-export type ModuleHostCapability = string
-
+/**
+ * A module as a Studio lists it: one of its own, or an installed extension
+ * (its install key as the id, its extension.json's name and version).
+ */
 export type CapabilityManifest = {
   id: string
   displayName: string
-  version: number
+  /** A built-in module's integer, or an extension's semver. */
+  version: number | string
   publisher?: string
   category?: CapabilityCategory
   summary?: string
@@ -74,20 +66,59 @@ export type CapabilityManifest = {
   source?: ModuleSource
   /** Capability scopes a third-party module requests (shown at install and trust). */
   permissions?: string[]
-  /** The host API the module was built against. Required for third-party modules; absent on bundled ones. */
-  engines?: { hostApi: number }
-  /**
-   * What the host must provide for `entry.main` to run at all: a module naming
-   * `electron-main` is loaded manifest-only wherever its main half would run
-   * without Electron (the Studio server out of process).
-   */
-  requires?: { hostCapabilities?: ModuleHostCapability[] }
-  /** Code entry points (third-party). */
-  entry?: ModuleEntry
-  /** Digests of every file a third-party module ships, inside the signed payload. */
-  files?: ModuleFileDigests
-  /** Detached signature over the manifest, if the module is signed. */
+  /** A plugin bundle's detached signature over its manifest. */
   signature?: ModuleSignature
+}
+
+// ── extension.json, as a Studio serves it ───────────────────────────────────
+// The SDK's `ExtensionManifest` (packages/extension-sdk/src/extension-manifest.ts),
+// already validated by the Studio that sends it. Mirrored here so this package
+// stays self-contained; the SDK drift guard holds the two identical.
+
+export type ExtensionTierView = 'content' | 'declarative' | 'ui' | 'worker'
+export type ExtensionCommandContributionView = {
+  id: string
+  title: string
+  when?: 'global' | 'workspace'
+  action?: string
+}
+export type ExtensionMenuContributionView = { where: 'backlog.item' | 'file' | 'notification'; command: string }
+export type ExtensionTopBarItemContributionView = {
+  id: string
+  title: string
+  icon?: string
+  command?: string
+  door?: string
+}
+export type ExtensionSurfaceContributionView = { id: string; title: string; icon?: string; entry: string }
+export type ExtensionMcpToolContributionView = { name: string; description: string; access: 'read' | 'operate' }
+export type ExtensionContributionsView = {
+  commands: ExtensionCommandContributionView[]
+  menus: ExtensionMenuContributionView[]
+  topBarItems: ExtensionTopBarItemContributionView[]
+  panels: ExtensionSurfaceContributionView[]
+  doors: ExtensionSurfaceContributionView[]
+  settingsSections: ExtensionSurfaceContributionView[]
+  mcpTools: ExtensionMcpToolContributionView[]
+}
+export type ExtensionManifestView = {
+  manifestVersion: 1
+  id: string
+  version: string
+  engines: { studio: string }
+  tier: ExtensionTierView
+  name: string
+  description?: string
+  icon?: string
+  cover?: string
+  screenshots?: string[]
+  license?: string
+  repository?: string
+  homepage?: string
+  permissions: string[]
+  main?: string
+  background?: boolean
+  contributes: ExtensionContributionsView
 }
 
 /** Why a module that wanted to load cannot, as the enablement resolver says. */
@@ -101,8 +132,6 @@ export type ModuleResolutionErrorCode =
   | 'untrusted'
   /** A third-party module whose signature or files failed verification. */
   | 'invalid_signature'
-  /** A third-party module built for a host API this Studio does not provide. */
-  | 'incompatible_host_api'
 
 export type ThirdPartyModuleLaunchStatus =
   | 'trusted_executable'
@@ -110,15 +139,13 @@ export type ThirdPartyModuleLaunchStatus =
   | 'blocked_unsigned'
   | 'blocked_signed'
   | 'blocked_invalid'
-  /** Built for a host API this Studio does not provide (`engines.hostApi`). */
-  | 'blocked_host_api'
   | 'launch_error'
 
 /**
- * Whether a module's `entry.renderer` can be served to a window: `none`, it
- * declares none; `blocked`, its trust or host API keeps it out; `error`,
- * declared and trusted but refused (outside the folder, missing, changed);
- * `available`, servable.
+ * Whether an extension's window code (the `entry` of its panels, doors and
+ * settings sections) can be served to a window: `none`, it declares none;
+ * `blocked`, its trust keeps it out; `error`, declared and trusted but refused
+ * (outside the folder, missing, changed); `available`, servable.
  */
 export type ThirdPartyRendererEntryAvailability = 'none' | 'blocked' | 'error' | 'available'
 
@@ -133,29 +160,21 @@ export type ThirdPartyModuleLaunchView = {
   hasMainEntry: boolean
   expectedToLoad: boolean
   message?: string
-  /** Whether `entry.main` loaded in this server run; absent reads as not loaded. */
+  /** Whether its worker (`main`) loaded in this server run; absent reads as not loaded. */
   mainLoaded?: boolean
   /** Whether its window half can be served. */
   rendererEntry?: ThirdPartyRendererEntryView
 }
 
-/**
- * Where an installed extension came from, read off the install receipts: a
- * folder the person picked (no receipt), the marketplace registry, or a GitHub
- * repository. `pluginId` is the receipt's id, the bundle the module arrived
- * in, which an update or an uninstall acts on.
- */
-export type ThirdPartyModuleOrigin =
-  { kind: 'folder' } | { kind: 'marketplace'; pluginId: string } | { kind: 'github'; pluginId: string; repo: string }
-
 /** One installed extension, as its Studio holds it. */
 export type ThirdPartyModuleView = {
+  /** Its install key as the id, with its extension.json's name and version. */
   manifest: CapabilityManifest
+  /** Its extension.json. */
+  extension: ExtensionManifestView
   trust: StudioModuleTrustStatus
   fingerprint?: string
   launch: ThirdPartyModuleLaunchView
-  /** Absent when the receipts could not be read: unknown, not a folder. */
-  origin?: ThirdPartyModuleOrigin
   /** What made a trusted module trusted: its publisher's key, or the person's own grant. */
   trustedVia?: 'publisher' | 'grant'
   /** Names of the MCP tools its main half registered this server run. */
@@ -167,7 +186,7 @@ export type ModuleManifestIssue = { path: string; message: string }
 /**
  * `extension.installed`: every installed extension, and the folders that hold
  * none Studio could read. A folder's `path` is its place on that disk (the
- * folder or its `manifest.json`) for a connection that may name any path (an
+ * folder or its `extension.json`) for a connection that may name any path (an
  * owner's own); anyone else is told the folder's name, and an issue's words
  * name the folder rather than its place.
  */
@@ -177,17 +196,19 @@ export type ThirdPartyModuleListResult = {
 }
 
 /**
- * One extension's window half a window may run: trusted, inside its folder,
- * and the bytes it was verified with. `code` is the ESM bundle's source.
+ * One extension's window code a window may run: trusted, inside its folder,
+ * and the bytes it was verified with. `entries` holds the source of each ESM
+ * bundle its panels, doors and settings sections name, by the path
+ * extension.json gives.
  */
 export type ThirdPartyRendererEntry = {
+  /** Its install key. */
   id: string
   manifest: CapabilityManifest
-  code: string
+  extension: ExtensionManifestView
+  entries: Record<string, string>
   /** The private origin its assets are served at in this Studio's desktop windows. */
   assetOrigin?: string
-  /** Signed by a first-party marketplace publisher key, as the Studio verified. */
-  firstPartySigned?: boolean
 }
 
 /** `extension.rendererEntries`: the servable window halves, and why each other declared one was not served. */
@@ -245,7 +266,7 @@ export type ModuleRegistrySnapshotWriteResult = { ok: boolean; message?: string 
 // ── The marketplace ─────────────────────────────────────────────────────────
 
 /** What a marketplace bundle carries; the module SDK's `MarketplaceComponentKind`. */
-export type MarketplaceComponentKind = 'mcp' | 'skills' | 'module'
+export type MarketplaceComponentKind = 'mcp' | 'skills'
 
 /** What a registry entry may say it provides: a bundle's kinds, or `cli` for an agent CLI the app ships. */
 export type MarketplaceProvidesKind = MarketplaceComponentKind | 'cli'
@@ -443,8 +464,6 @@ export type MarketplacePluginVerifyResult = {
   files?: string[]
   /** Every MCP server the install would add. */
   mcpServers?: MarketplaceMcpServerDisclosure[]
-  /** The bundle carries a module: code that runs in Studio. */
-  codeBearing?: boolean
   /** The signer's key fingerprint (sha256 of the public key), when signed. */
   keyFingerprint?: string
   /** What was disclosed, and the one-time token that installs exactly that; absent when nothing may be approved. */
@@ -481,8 +500,6 @@ export type GithubExtensionResolveResult =
 
 export type GithubExtensionInstallInput = MarketplaceInstallEnvelope & {
   trustToken: string
-  /** The person's "I trust this code", required when the review showed unsigned module code. */
-  trustCode?: boolean
 }
 
 export type MarketplacePluginUninstallInput = MarketplaceInstallEnvelope & { pluginId: string }
@@ -495,9 +512,6 @@ export type MarketplacePluginInstalledComponent = {
   servers?: McpServerConfig[]
   harnesses?: SkillHarness[]
   installedDirName?: string
-  /** Module components: the trust at install and the installed manifest's fingerprint. */
-  trustStatus?: StudioModuleTrustStatus
-  manifestFp?: string
 }
 
 export type MarketplacePluginInstallResult =
@@ -512,8 +526,6 @@ export type MarketplacePluginInstallResult =
       mcpSettings?: McpSettings
       /** What a successful install left undone, said to the person. */
       notices?: string[]
-      /** The install landed a module whose code loads only at the next start. */
-      restartRequired?: boolean
     }
   | {
       ok: false

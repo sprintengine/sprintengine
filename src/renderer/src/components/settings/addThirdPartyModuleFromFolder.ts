@@ -5,7 +5,13 @@ import { copy } from '../../../../shared/copy'
 
 export type AddThirdPartyModuleOutcome =
   | { status: 'cancelled' }
-  | { status: 'installed'; id: string | null; trust: ModuleTrustStatus | null }
+  | {
+      status: 'installed'
+      id: string | null
+      trust: ModuleTrustStatus | null
+      /** Symbolic links in the folder that were left out of the copy, relative to it. */
+      strippedLinks: string[]
+    }
   | { status: 'failed'; message: string }
 
 /**
@@ -42,6 +48,7 @@ export async function addThirdPartyModuleFromFolder(
       status: 'installed',
       id: result.moduleId.trim() || null,
       trust: result.trust,
+      strippedLinks: result.strippedLinks ?? [],
     }
   } catch (error) {
     return {

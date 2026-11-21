@@ -1,7 +1,5 @@
 import { expect, test } from 'vitest'
 
-import type { MarketplaceUpdateStatesResult } from '../../../../shared/electron-api'
-import { HOST_API_VERSION } from '../../../../shared/modules/host-api'
 import type {
   CapabilityManifest,
   ThirdPartyModuleLaunchView,
@@ -10,16 +8,19 @@ import type {
 import {
   accessItems,
   builtInMatchesFilter,
-  marketplaceUpdateFor,
   moduleMatchesFilter,
   moduleMatchesQuery,
+  isSigned,
   moduleMeta,
   moduleProblem,
   modulesAwaitingRestart,
   problemText,
+  publisherName,
   resolveModuleEnabled,
   restartBannerTitle,
   runState,
+  signatureLabel,
+  sourceLabel,
 } from './extensionsModel'
 
 function view(
@@ -31,13 +32,33 @@ function view(
   const { manifest, launch, ...rest } = overrides
   return {
     trust: 'trusted',
+    extension: {
+      manifestVersion: 1,
+      id: 'radar',
+      version: '1.0.0',
+      engines: { studio: '>=0.13.0' },
+      tier: 'worker',
+      name: 'PR Radar',
+      permissions: [],
+      main: 'dist/main.cjs',
+      contributes: {
+        commands: [],
+        menus: [],
+        topBarItems: [],
+        panels: [],
+        doors: [],
+        settingsSections: [],
+        mcpTools: [],
+      },
+    },
     ...rest,
     manifest: {
-      id: 'radar',
+      id: 'acme.radar',
       displayName: 'PR Radar',
-      version: 1,
+      version: '1.0.0',
+      publisher: 'acme',
       defaultEnabled: true,
-      engines: { hostApi: HOST_API_VERSION },
+      source: 'third-party',
       ...manifest,
     },
     launch: { status: 'trusted_executable', hasMainEntry: true, expectedToLoad: true, mainLoaded: true, ...launch },
@@ -76,24 +97,6 @@ test('failures say Couldn’t start with the reason, whatever the switch says', 
   expect(problemText(moduleProblem(view(), undefined, 'crashed while rendering')!)).toBe('crashed while rendering')
 })
 
-test('a module built for another host API says which way, in words', () => {
-  const newer = view({
-    manifest: { engines: { hostApi: HOST_API_VERSION + 1 } },
-    launch: { status: 'blocked_host_api' },
-  })
-  expect(problemText(moduleProblem(newer, undefined)!)).toBe('Built for a newer version of Studio.')
-  // It says so before trust: trusting it would not make it run.
-  expect(moduleProblem({ ...newer, trust: 'unsigned' }, undefined)).toEqual({ kind: 'host-api', direction: 'newer' })
-  const older = view({ manifest: { engines: { hostApi: 0 } }, launch: { status: 'blocked_host_api' } })
-  // It says what to do about it: update it, where the guide is, and that an agent can do it.
-  const said = problemText(moduleProblem(older, undefined)!)
-  expect(said).toMatch(/^Built for an older version of Studio\. It needs updating to host API 3/)
-  // Named as a reader finds it, not by a path in Studio's own repository.
-  expect(said).toContain('“Host API version” section of the extension SDK’s README (@sprintengine/extension-sdk)')
-  expect(said).not.toMatch(/docs\//)
-  expect(said).toContain('ask an agent to update it')
-})
-
 test('an invalid signature can never be trusted, and the row says so', () => {
   const invalid = view({ trust: 'invalid', launch: { status: 'blocked_invalid' } })
   expect(moduleProblem(invalid, undefined)).toEqual({ kind: 'invalid' })
@@ -101,7 +104,7 @@ test('an invalid signature can never be trusted, and the row says so', () => {
 })
 
 test('the restart line counts trusted, enabled main entries that did not load this session', () => {
-  const waiting = view({ manifest: { id: 'radar', displayName: 'PR Radar' }, launch: { mainLoaded: false } })
+  const waiting = view({ manifest: { id: 'acme.radar', displayName: 'PR Radar' }, launch: { mainLoaded: false } })
   const running = view({ manifest: { id: 'log', displayName: 'Decision Log' } })
   const untrusted = view({
     trust: 'unsigned',
@@ -114,7 +117,7 @@ test('the restart line counts trusted, enabled main entries that did not load th
   const enabledFor = (module: ThirdPartyModuleView) => resolveModuleEnabled({}, module)
 
   const one = modulesAwaitingRestart(all, enabledFor)
-  expect(one.map((module) => module.manifest.id)).toEqual(['radar'])
+  expect(one.map((module) => module.manifest.id)).toEqual(['acme.radar'])
   expect(restartBannerTitle(one)).toBe('Restart Studio to start PR Radar')
 
   const two = modulesAwaitingRestart(all, (module) => module.manifest.id === 'off' || enabledFor(module))
@@ -122,62 +125,25 @@ test('the restart line counts trusted, enabled main entries that did not load th
   expect(restartBannerTitle([])).toBeNull()
 })
 
-function states(entries: Array<[string, number, number]>): MarketplaceUpdateStatesResult {
-  return {
-    ok: true,
-    checked: true,
-    registryState: 'ok',
-    registrySource: 'network',
-    stale: false,
-    fetchedAt: '2026-10-09T00:00:00.000Z',
-    entries: entries.map(([id, installed, latest]) => ({
-      id,
-      displayName: id,
-      availability: {
-        state: installed < latest ? 'update-available' : installed > latest ? 'ahead-of-registry' : 'current',
-        installedVersion: installed,
-        latestVersion: latest,
-      },
-    })),
-  } as MarketplaceUpdateStatesResult
-}
-
-test('Update is offered only for a marketplace install whose registry lists a newer version', () => {
-  const registry = states([
-    ['weather', 3, 4],
-    ['current', 2, 2],
-  ])
-  expect(marketplaceUpdateFor({ origin: { kind: 'marketplace', pluginId: 'weather' } }, registry)).toEqual({
-    pluginId: 'weather',
-    latestVersion: 4,
-  })
-  expect(marketplaceUpdateFor({ origin: { kind: 'marketplace', pluginId: 'current' } }, registry)).toBeNull()
-  // GitHub and folder installs have no registry update path.
-  expect(marketplaceUpdateFor({ origin: { kind: 'github', pluginId: 'weather', repo: 'acme/w' } }, registry)).toBeNull()
-  expect(marketplaceUpdateFor({ origin: { kind: 'folder' } }, registry)).toBeNull()
-  expect(marketplaceUpdateFor({}, registry)).toBeNull()
-  // A registry that could not be read claims nothing.
-  expect(marketplaceUpdateFor({ origin: { kind: 'marketplace', pluginId: 'weather' } }, null)).toBeNull()
-  expect(
-    marketplaceUpdateFor({ origin: { kind: 'marketplace', pluginId: 'weather' } }, { ok: false, message: 'offline' }),
-  ).toBeNull()
+test('the meta line is publisher · source · signature, and a folder install names no publisher', () => {
+  expect(moduleMeta(view({ fingerprint: 'f'.repeat(64) }))).toBe('acme · Signed')
+  expect(moduleMeta(view({ trust: 'unsigned', manifest: { id: 'local.radar', publisher: 'local' } }))).toBe(
+    'Local build · Unsigned',
+  )
+  expect(moduleMeta(view({ trust: 'signed', fingerprint: 'f'.repeat(64) }))).toBe('acme · Signed')
+  expect(moduleMeta(view({ trust: 'invalid' }))).toBe('acme · Invalid signature')
 })
 
-test('the meta line is publisher · source · signature, and the scaffold placeholder is no publisher', () => {
-  expect(
-    moduleMeta(
-      view({
-        manifest: { publisher: 'acme', signature: { algorithm: 'ed25519', publicKey: 'k', signature: 's' } },
-        origin: { kind: 'github', pluginId: 'radar', repo: 'acme/pr-radar' },
-      }),
-    ),
-  ).toBe('acme · GitHub · Signed')
-  expect(
-    moduleMeta(view({ trust: 'unsigned', manifest: { publisher: 'Local developer' }, origin: { kind: 'folder' } })),
-  ).toBe('Local build · Unsigned')
-  expect(moduleMeta(view({ trust: 'signed', origin: { kind: 'marketplace', pluginId: 'x' } }))).toBe(
-    'Marketplace · Signed',
-  )
+test('a trusted extension is signed only when its extension.sig named a signer', () => {
+  expect(isSigned(view({ fingerprint: 'f'.repeat(64) }))).toBe(true)
+  expect(isSigned(view())).toBe(false)
+  expect(signatureLabel(view())).toBe('Unsigned')
+  expect(isSigned(view({ trust: 'signed' }))).toBe(true)
+  expect(isSigned(view({ trust: 'unsigned', fingerprint: 'f'.repeat(64) }))).toBe(false)
+  expect(sourceLabel(view())).toBeNull()
+  expect(sourceLabel(view({ manifest: { publisher: 'local' } }))).toBe('Local build')
+  expect(publisherName({ publisher: 'local' })).toBeNull()
+  expect(publisherName({ publisher: ' acme ' })).toBe('acme')
 })
 
 test('access splits into what needs care and the rest, with short titles', () => {

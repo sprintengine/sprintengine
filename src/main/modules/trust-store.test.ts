@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict'
-import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { mkdtemp, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-import { canonicalManifestPayload, validateThirdPartyModuleManifest } from '../../shared/modules/third-party-manifest'
+import { generateModuleSigningKeyPair, signManifest } from '../../../packages/extension-sdk/src/signing'
 import {
   isSignedByTrustedPublisher,
   manifestFingerprint,
@@ -70,32 +69,15 @@ test('trust-store', async () => {
     })
   }
 
-  // Sign a reserved-id manifest with a fresh ed25519 key, returning the signed
+  // Sign a bundle manifest with a fresh ed25519 key, returning the signed
   // manifest object and the signer's key fingerprint (sha256 of the DER public
   // key — matching module-signature's publicKeyFingerprint).
-  function signedReservedManifest(): { manifest: SignedManifest; fingerprint: string } {
-    const validated = validateThirdPartyModuleManifest({
-      id: 'switchboard',
-      displayName: 'Switchboard',
-      version: 1,
-      summary: 'Reserved-id fixture.',
-    })
-    assert.equal(validated.ok, true)
-    if (!validated.ok) throw new Error('test manifest invalid')
-    const { publicKey, privateKey } = generateKeyPairSync('ed25519')
-    const publicKeyDer = publicKey.export({ type: 'spki', format: 'der' })
+  function signedReservedManifest(): { manifest: SignedManifest & { name: string }; fingerprint: string } {
+    const manifest = { id: 'switchboard', name: 'Switchboard', version: '1.0.0' }
+    const signer = generateModuleSigningKeyPair()
     return {
-      manifest: {
-        ...validated.manifest,
-        signature: {
-          algorithm: 'ed25519' as const,
-          publicKey: publicKeyDer.toString('base64'),
-          signature: sign(null, Buffer.from(canonicalManifestPayload(validated.manifest), 'utf8'), privateKey).toString(
-            'base64',
-          ),
-        },
-      },
-      fingerprint: createHash('sha256').update(publicKeyDer).digest('hex'),
+      manifest: { ...manifest, signature: signManifest(manifest, signer.privateKeyPem) },
+      fingerprint: signer.fingerprint,
     }
   }
 
@@ -131,7 +113,7 @@ test('trust-store', async () => {
 
     // A tampered payload invalidates the signature, so the first-party key no
     // longer qualifies either — the lock binds to the VERIFIED fingerprint.
-    const tampered = { ...firstParty.manifest, displayName: 'Tampered' }
+    const tampered = { ...firstParty.manifest, name: 'Tampered' }
     assert.equal(isSignedByTrustedPublisher(tampered, publisherCtx), false)
   }
 

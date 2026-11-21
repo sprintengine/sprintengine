@@ -15,16 +15,19 @@ const EXTENSION_README_FILENAME = 'README.md'
 
 export const MODULE_FOLDER_README = `# SprintEngine extensions
 
-Drop an extension here to have SprintEngine pick it up on next launch.
+Studio keeps the extensions it installed here, one folder each, named by
+its install key: the publisher Studio derived from where it came from
+(\`local\` for a folder you installed), then its id.
 
 ## Layout
 
 \`\`\`
 ~/.sprintengine/extensions/
-  <extension-id>/
-    manifest.json   # required — id must equal this folder name
-    dist/main.cjs   # optional entry.main (CommonJS, where Studio's server runs)
-    dist/renderer.mjs # optional entry.renderer (ESM bundle, Studio's windows)
+  local.<extension-id>/
+    extension.json  # required — its id must match the folder's
+    extension.sig   # optional signature, written by sprintengine-extension sign
+    dist/main.cjs   # the worker (\`main\`), for a worker-tier extension
+    dist/panel.js   # the \`entry\` of a panel, door or settings section
 \`\`\`
 
 ## Getting started
@@ -35,20 +38,20 @@ Author extensions against the published SDK:
 npm install --save-dev @sprintengine/extension-sdk
 \`\`\`
 
-A \`manifest.json\` describes the extension; \`entry.main\` / \`entry.renderer\`
-register methods, services, panels, workspace types, commands and settings
-through the host APIs (\`MainHost\` / \`RendererHost\`). Validate, pack and sign
-with the bundled CLI:
+An \`extension.json\` declares what the extension adds (panels, doors,
+settings sections, commands, menus, top bar items, agent tools) and the most
+authority it needs. A surface's \`entry\` exports \`mount(root, studio)\`; the
+worker exports \`activate(studio)\`. Validate, pack and sign with the bundled
+CLI:
 
 \`\`\`
 npx sprintengine-extension pack ./my-extension
 npx sprintengine-extension sign ./my-extension --key ./signing.pem
 \`\`\`
 
-Installed extensions are listed under **Settings → Extensions**, where you
-review the access each one requests and grant trust before its code runs. You
-can also install an extension folder from there instead of copying it here by
-hand.
+Install an extension folder from **Settings → Extensions**, which copies it
+here; there you review the access each one requests and grant trust before
+its code runs.
 `
 
 export const PLUGIN_FOLDER_README = `# SprintEngine conversation providers

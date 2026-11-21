@@ -1,6 +1,5 @@
 import { isSubagentRecord } from '../../../shared/agent-state'
 import type { CapabilityManifest, ModuleEnablementOverrides } from '../../../shared/modules/manifest'
-import type { MarketplacePluginRegistryInstallResult } from '../../../shared/electron-api'
 import { activeForChannel } from '../../../shared/modules/dev-only'
 import { resolveModuleEnablement } from '../../../shared/modules/resolve'
 import { toModuleWorkspaceView, type ModuleWorkspaceView } from '../../../shared/modules/workspace-view'
@@ -525,32 +524,6 @@ export function loadThirdPartyRendererModules(): Promise<void> {
 export function refreshThirdPartyRendererModules(): Promise<void> {
   rendererLoadQueue = rendererLoadQueue.catch(() => undefined).then(() => loadRendererModuleBatch(true))
   return rendererLoadQueue
-}
-
-/** Clear the conservative restart hint only for code this install activated. */
-export async function installAndActivateRendererModules(
-  install: () => Promise<MarketplacePluginRegistryInstallResult>,
-): Promise<MarketplacePluginRegistryInstallResult> {
-  const previouslyLoaded = new Set(thirdPartyRendererManifests.map((manifest) => manifest.id))
-  const result = await install()
-  if (!result.ok) return result
-  try {
-    await refreshThirdPartyRendererModules()
-  } catch (error) {
-    console.error('[modules] renderer activation after install failed:', error)
-    return result
-  }
-  const modules = result.installed.filter((component) => component.kind === 'module')
-  const activated =
-    modules.length > 0 &&
-    modules.every(
-      (component) =>
-        !previouslyLoaded.has(component.id) &&
-        thirdPartyRendererManifests.some(
-          (manifest) => manifest.id === component.id && !manifest.entry?.main && !manifest.entry?.preload,
-        ),
-    )
-  return activated && !result.updated ? { ...result, restartRequired: false } : result
 }
 
 async function loadRendererModuleBatch(refresh: boolean): Promise<void> {

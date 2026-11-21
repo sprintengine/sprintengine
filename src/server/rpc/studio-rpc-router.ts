@@ -2600,9 +2600,9 @@ type PathAsker = { context: StudioRequestContext; grant: { owner: boolean } }
 
 /**
  * The installed extensions with each unreadable folder named, not placed: its
- * `path` (the folder, or the `manifest.json` in it) becomes the folder's name,
+ * `path` (the folder, or the `extension.json` in it) becomes the folder's name,
  * and an issue's words that still name a place on this disk (a read error's
- * `open '/…/manifest.json'`) say the folder's name in its stead, or a plain
+ * `open '/…/extension.json'`) say the folder's name in its stead, or a plain
  * sentence when some other path remains.
  */
 function withFolderNamesOnly(installed: ThirdPartyModuleListResult): ThirdPartyModuleListResult {
@@ -2610,7 +2610,7 @@ function withFolderNamesOnly(installed: ThirdPartyModuleListResult): ThirdPartyM
     ...installed,
     rejected: installed.rejected.map((entry) => {
       const segments = entry.path.split(/[\\/]/u).filter(Boolean)
-      if (segments.length > 1 && segments.at(-1) === 'manifest.json') segments.pop()
+      if (segments.length > 1 && segments.at(-1) === 'extension.json') segments.pop()
       const name = segments.at(-1) ?? ''
       const folder = name ? entry.path.slice(0, entry.path.lastIndexOf(name) + name.length) : ''
       return {

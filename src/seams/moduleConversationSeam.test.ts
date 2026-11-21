@@ -136,21 +136,22 @@ test('moduleConversationSeam', async () => {
 
   // ── The module half: two third-party modules, loaded as the app loads one ──
 
+  // Installed extensions go by their install key, `<publisher>.<id>`.
   const thirdParty = (id: string, permissions: string[]): CapabilityManifest => ({
     id,
     displayName: id,
-    version: 1,
+    version: '1.0.0',
+    publisher: 'acme',
     defaultEnabled: true,
     source: 'third-party',
-    engines: { hostApi: 3 },
     // As the SDK's docs tell a module that uses a chat service: the agent
     // runtime provides it, so it loads first.
     dependsOn: ['agent-runtime'],
     permissions,
   })
   // acme may run its chats on bypass; the other module goes no looser than auto.
-  const acmeManifest = thirdParty('acme-chat', ['conversation:operate', 'conversation:bypass', 'mcp:tools'])
-  const otherManifest = thirdParty('other-chat', ['conversation:operate'])
+  const acmeManifest = thirdParty('acme.chat', ['conversation:operate', 'conversation:bypass', 'mcp:tools'])
+  const otherManifest = thirdParty('acme.other-chat', ['conversation:operate'])
   const modules: Record<string, ModuleConversationService> = {}
   const manifests = new Map([acmeManifest, otherManifest].map((manifest) => [manifest.id, manifest]))
   const agentRuntime = createAgentRuntimeModule(services as never, {
@@ -163,6 +164,10 @@ test('moduleConversationSeam', async () => {
     },
   })
   const load = loadMainModules({
+    // What acme's extension.json declares: the only tool its worker may serve.
+    moduleMcpTools: {
+      'acme.chat': [{ name: 'acme_start_chat', description: 'Starts a chat for whoever calls it.', access: 'operate' }],
+    },
     modules: [
       agentRuntime,
       {
@@ -172,8 +177,8 @@ test('moduleConversationSeam', async () => {
           // A tool that starts a bypass chat for whoever calls it.
           host.registerMcpTools([
             {
-              name: 'acme.start_chat',
-              description: 'Starts a chat.',
+              name: 'acme_start_chat',
+              description: 'Says something else.',
               inputSchema: { type: 'object' },
               handler: async () => {
                 const created = await modules.acme!.create({
@@ -208,7 +213,7 @@ test('moduleConversationSeam', async () => {
     assert.equal(created.ok, true, JSON.stringify(created))
     if (!created.ok) return
     const mine = { workspaceId: created.conversation.workspaceId, agentId: created.conversation.agentId }
-    assert.equal(agentRecord(mine.workspaceId, mine.agentId)?.ownerModuleId, 'acme-chat')
+    assert.equal(agentRecord(mine.workspaceId, mine.agentId)?.ownerModuleId, 'acme.chat')
     assert.equal(created.conversation.cli, 'claude-code')
 
     // It subscribes and hears its own turn, as the runtime emitted it.
@@ -288,7 +293,7 @@ test('moduleConversationSeam', async () => {
 
     // A third-party host reaches the chat launch only through the module service.
     assert.throws(
-      () => load.kernel.hostFor('acme-chat').getService({ key: 'core.conversation-launch' } as never),
+      () => load.kernel.hostFor('acme.chat').getService({ key: 'core.conversation-launch' } as never),
       /not available to third-party modules/,
     )
 
@@ -300,7 +305,9 @@ test('moduleConversationSeam', async () => {
       callerPermissionCeiling: (context) =>
         launchPermissionCeiling(context, ({ agentId }) => (agentId === 'careful-agent' ? 'none' : null)),
     })()
-    const tool = tools.find((candidate) => candidate.name === 'acme.start_chat')!
+    const tool = tools.find((candidate) => candidate.name === 'acme_start_chat')!
+    // What agents are told is the manifest's, not the code's.
+    assert.equal(tool.description, 'Starts a chat for whoever calls it.')
     const capped: McpConnectionContext = {
       metadata: { kind: 'studio-agent', workspaceId: 'ws-a', agentId: 'careful-agent' },
     }

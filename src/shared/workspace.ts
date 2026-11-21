@@ -699,7 +699,7 @@ export type WorkspaceGitPanelState = {
 // tabset because the pane mixes kinds FlexLayout used to scatter across two
 // exclusive rails.
 export type WorkspacePaneTabKind =
-  'browser' | 'terminal' | 'files' | 'diff' | 'git' | 'backlog' | 'canvas' | 'document' | 'library'
+  'browser' | 'terminal' | 'files' | 'diff' | 'git' | 'backlog' | 'canvas' | 'document' | 'library' | 'extension'
 
 export type WorkspacePaneTab = {
   id: string
@@ -770,6 +770,9 @@ export type WorkspacePaneTab = {
   // document tab is always opened ON something (a plan an agent proposed), so
   // the normalizer drops one without it. One tab per file, like Canvas.
   document?: { path: string }
+  // Extension only: the installed extension (its install key) and the panel of
+  // its extension.json the tab draws. Required; one tab per panel.
+  extension?: { key: string; panel: string }
   // Browser only: the device toolbar's viewport; absent means fill.
   viewport?: BrowserViewport
   // Browser and canvas only: where the floating player sits, in viewport pixels. Persisted

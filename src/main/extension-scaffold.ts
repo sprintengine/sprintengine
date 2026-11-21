@@ -100,7 +100,7 @@ function studioEnv(): { isPackaged: boolean; resourcesPath: string; appPath: str
 
 export type ExtensionScaffoldDeps = {
   roots: () => ScaffoldRoots
-  /** Where extensions are installed on this computer, one folder per id. */
+  /** Where extensions are installed on this computer, one folder per install key (`local.<id>` for a folder). */
   moduleRoot: () => string
   /** Where a new extension's folder is made when the person picks none. */
   home: () => string
@@ -156,7 +156,7 @@ function targetState(parent: string, folder: string, installed: () => boolean): 
   // A link is never filled, even to an empty folder: a project is a cloned
   // repository's to fill, and one could point a likely name anywhere.
   if (entry.isSymbolicLink() || !entry.isDirectory()) return 'taken'
-  if (existsSync(join(folder, 'module', 'manifest.json'))) return 'extension'
+  if (existsSync(join(folder, 'extension', 'extension.json'))) return 'extension'
   try {
     if (readdirSync(folder).length !== 0) return 'taken'
   } catch {
@@ -167,7 +167,7 @@ function targetState(parent: string, folder: string, installed: () => boolean): 
 
 export function createExtensionScaffoldHandlers(overrides: Partial<ExtensionScaffoldDeps> = {}) {
   const deps: ExtensionScaffoldDeps = { ...defaultDeps(), ...overrides }
-  const isInstalled = (id: string) => () => existsSync(join(deps.moduleRoot(), id))
+  const isInstalled = (id: string) => () => existsSync(join(deps.moduleRoot(), `local.${id}`))
 
   // Where the input puts the extension, or null when it names nowhere
   // usable. The home is the one parent that need not exist yet: `create`

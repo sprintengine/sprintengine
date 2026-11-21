@@ -39,7 +39,10 @@
     "packages/extension-sdk/src/activity.ts",
     "packages/extension-sdk/src/services.ts",
     "packages/extension-sdk/src/json-value.ts",
-    "packages/extension-sdk/src/methods.ts"
+    "packages/extension-sdk/src/methods.ts",
+    "packages/extension-sdk/src/extension-manifest.ts",
+    "packages/extension-sdk/src/manifest-schema.ts",
+    "packages/extension-sdk/src/permissions.ts"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "compilerOptions": {

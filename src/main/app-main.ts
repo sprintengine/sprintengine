@@ -41,7 +41,6 @@ import { allowsMultipleInstances } from './app-instance'
 import { writeDiagnosticLog } from './diagnostics-service'
 import { removeRetiredEntitlementCache } from './retired-entitlement-cache'
 import { removeRetiredRelayState } from './retired-relay-state'
-import { applyHostApiGate } from './modules/host-api-gate'
 import { studioPlatform } from '../server/platform/platform'
 import { SERVER_EVENTS, SERVER_METHODS } from '../server/desktop/server-methods'
 import type { AgentPhaseEvent } from '../shared/agent-runtime'
@@ -137,10 +136,6 @@ const moduleOverrides = readModuleEnablementOverrides()
 const thirdPartyMainLoad = planThirdPartyMainModules(
   discoverUserModulesSync(defaultUserModuleRoot(), readModuleTrustContext()),
 )
-// ── extension-platform additions ──
-// A module built for another host API stays unloaded whatever its trust says,
-// and the load report says why (modules/host-api-gate.ts).
-applyHostApiGate(thirdPartyMainLoad.ineligible, thirdPartyMainLoad.modules)
 // Live-resolved main enablement, kept in step with the renderer's overrides (see
 // recomputeMainEnablement below). A module with no main runtime of its own — one
 // whose work rides another module's engine tick — is honored through this set
@@ -190,6 +185,7 @@ const moduleLoad = loadMainModules({
   moduleRoots: thirdPartyMainLoad.moduleRoots,
   // What `getAssetPath` resolves: the files each module was verified with.
   moduleVerifiedFiles: thirdPartyMainLoad.verifiedFiles,
+  moduleMcpTools: thirdPartyMainLoad.mcpTools,
   ineligible: thirdPartyMainLoad.ineligible,
   launchErrors: thirdPartyMainLoad.launchErrors,
   // Module events reach every client following the Studio's `extension.events`

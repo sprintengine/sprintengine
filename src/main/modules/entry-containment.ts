@@ -1,15 +1,11 @@
 import { isAbsolute, relative, resolve } from 'node:path'
 
-// Shared safety rules for serving third-party entry code. Every entry bundle
-// (entry.main, entry.renderer) must resolve strictly inside its module root —
+// Shared safety rules for serving an extension's code. Every entry (its
+// worker's `main`, its surfaces' `entry`) must resolve strictly inside its folder —
 // `..` traversal, absolute paths, and NUL bytes are rejected — and any message
 // that might reach the renderer must not leak absolute filesystem paths.
 
-export function resolveContainedEntry(
-  moduleRoot: string,
-  entryRelative: string,
-  field: 'entry.main' | 'entry.renderer',
-): string {
+export function resolveContainedEntry(moduleRoot: string, entryRelative: string, field: string): string {
   return resolveContainedPath(moduleRoot, entryRelative, field)
 }
 

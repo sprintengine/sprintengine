@@ -607,9 +607,6 @@ export const en = {
     },
     // src/renderer/src/components/extensions/ExtensionTrustReview.tsx
     extensionTrustReview: {
-      unsignedCodeReviewBeforeTrusting: 'Unsigned code — review before trusting',
-      unsignedCodeThatRunsWith:
-        'Unsigned code that runs with the app’s full access, not in a sandbox. Trust it only if you trust its source.',
       inlineMCPServerReviewIt: 'Inline MCP server — review it before trusting',
       runsALocalCommandOr:
         'Runs a local command or connects to a remote endpoint. Trusting it adds and starts the server below.',
@@ -626,9 +623,6 @@ export const en = {
       signingKey: 'Signing key',
       pinnedToCommit: 'Pinned to commit',
       accessItRequests: 'Access it requests',
-      unsignedCodeCanReadAnd:
-        'Unsigned code can read and change anything Studio can, including your projects and agent credentials.',
-      iTrustThisCodeAnd: 'I trust this code and where it came from',
       adds: 'Adds ',
       mCPServer: ' MCP server',
       sets: 'Sets ',
@@ -5194,8 +5188,6 @@ export const en = {
         reviewsWhatAnotherChatChanged: 'Reviews what another chat changed.',
         commitConventions: 'Commit conventions',
         aSettingsSectionForYour: 'A Settings section for your commit-message rules.',
-        standupWorkspace: 'Standup workspace',
-        opensOnYesterdaySCommits: "Opens on yesterday's commits and today's Backlog.",
         copyBranchLink: 'Copy branch link',
         aPaletteCommandThatCopies: 'A palette command that copies the branch URL.',
       },
@@ -5933,10 +5925,6 @@ export const en = {
       theModuleIsTurnedOff: (label: unknown) => `The ${label} extension is turned off.`,
       theModuleIsnTInstalled: (label: unknown) => `The ${label} extension isn’t installed.`,
       findItInPlugins: 'Find it in Plugins',
-      updateStudioToInstallExtensions: 'Update Studio to install extensions.',
-      couldNotVerifyThisExtension: 'Could not verify this extension.',
-      needsYourTrustFirstReview: (name: unknown) => `${name} needs your trust first. Review it in Plugins.`,
-      theInstallCouldNotBe: 'The install could not be completed.',
     },
     newWorkspace: {
       // src/renderer/src/components/workspace/newWorkspace/DesignSystemAttachStep.tsx

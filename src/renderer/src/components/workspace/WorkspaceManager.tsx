@@ -3412,11 +3412,10 @@ export default function WorkspaceManager() {
       }
 
       if (!result.chat) {
-        // A run that opens no surface and no chat — an `install.module` card is
-        // the first — would otherwise end with the button still reading
-        // "Install" and nothing on screen to say it worked. Main composes the one
-        // sentence worth showing for each action ("Reviews installed. Restart
-        // SprintEngine Studio to use it."); say them.
+        // A run that opens no surface and no chat would otherwise end with the
+        // button still reading "Install" and nothing on screen to say it
+        // worked. Main composes the one sentence worth showing for each action
+        // ("Reviews installed."); say them.
         if (!result.surface) {
           const said = result.outcomes
             .filter((outcome) => outcome.status === 'done' || outcome.status === 'already')
