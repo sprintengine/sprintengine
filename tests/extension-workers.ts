@@ -27,7 +27,12 @@ export type TestExtension = {
   main: string
   permissions?: string[]
   background?: boolean
-  mcpTools?: Array<{ name: string; description: string; access: 'read' | 'operate' }>
+  mcpTools?: Array<{
+    name: string
+    description: string
+    access: 'read' | 'operate'
+    inputSchema?: Record<string, unknown>
+  }>
 }
 
 export type WorkerHarness = {

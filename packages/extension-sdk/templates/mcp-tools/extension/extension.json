@@ -19,12 +19,18 @@
       {
         "name": "{{toolPrefix}}_word_count",
         "description": "Count the words, lines and characters in a piece of text.",
-        "access": "read"
+        "access": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": { "text": { "type": "string", "description": "The text to count." } },
+          "required": ["text"]
+        }
       },
       {
         "name": "{{toolPrefix}}_open_workspaces",
         "description": "List the workspaces open in SprintEngine Studio, with the folder each one works in.",
-        "access": "read"
+        "access": "read",
+        "inputSchema": { "type": "object", "properties": {} }
       }
     ]
   }

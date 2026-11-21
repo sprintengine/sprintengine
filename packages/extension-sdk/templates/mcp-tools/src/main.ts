@@ -9,9 +9,11 @@ const failure = (value: string): McpToolResult => ({ content: [{ type: 'text', t
 // agent can call them by name. Needs the "tools:contribute" permission.
 //
 // Each tool is declared in extension.json (`contributes.mcpTools`): its name,
-// what agents are told it does, and its access (`read` changes nothing). A
-// tool served here that extension.json does not declare is refused, and the
-// manifest's description and access are what agents see. Tool names are a
+// what agents are told it does, its access (`read` changes nothing) and its
+// parameters (`inputSchema`), which agents see before this worker has ever
+// run. A tool served here that extension.json does not declare, or that takes
+// more than its declared schema, is refused, and the manifest's description,
+// access and schema are what agents see. Tool names are a
 // public contract: they start with the extension id, and stay stable.
 export function activate(studio: MainHost): void {
   studio.registerMcpTools([

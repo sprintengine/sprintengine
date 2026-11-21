@@ -151,6 +151,42 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   })
 }
 
+/**
+ * How the schema a worker registers takes more than the one extension.json
+ * declares, or null when it matches or narrows it: an object; no parameter the
+ * declaration leaves out when it allows no others; each parameter both name of
+ * the same type; and every parameter the declaration requires required too.
+ */
+export function widerThanDeclared(
+  registered: Record<string, unknown>,
+  declared: Record<string, unknown>,
+): string | null {
+  if (registered.type !== 'object') return 'its schema does not describe an object.'
+  const declaredProperties = isRecord(declared.properties) ? declared.properties : {}
+  const registeredProperties = isRecord(registered.properties) ? registered.properties : {}
+  if (declared.additionalProperties === false) {
+    if (registered.additionalProperties !== false) return 'it does not refuse parameters extension.json leaves out.'
+    const extra = Object.keys(registeredProperties).filter((key) => !Object.hasOwn(declaredProperties, key))
+    if (extra.length > 0) return `it takes ${extra.map((key) => `"${key}"`).join(', ')}, which extension.json does not.`
+  }
+  for (const [key, schema] of Object.entries(registeredProperties)) {
+    const mine = isRecord(schema) ? schema.type : undefined
+    const theirs =
+      Object.hasOwn(declaredProperties, key) && isRecord(declaredProperties[key])
+        ? declaredProperties[key].type
+        : undefined
+    if (theirs !== undefined && JSON.stringify(mine) !== JSON.stringify(theirs))
+      return `"${key}" is ${JSON.stringify(mine ?? 'any type')} there and ${JSON.stringify(theirs)} in extension.json.`
+  }
+  const required = new Set(Array.isArray(registered.required) ? registered.required : [])
+  const dropped = (Array.isArray(declared.required) ? (declared.required as unknown[]) : []).filter(
+    (key) => !required.has(key),
+  )
+  if (dropped.length > 0)
+    return `it does not require ${dropped.map((key) => `"${String(key)}"`).join(', ')}, which extension.json does.`
+  return null
+}
+
 export class ExtensionWorkers implements KernelWorkerPort {
   private readonly entries = new Map<string, Entry>()
   private readonly active: WorkerSlotPool
@@ -188,7 +224,9 @@ export class ExtensionWorkers implements KernelWorkerPort {
             name: declared.name,
             description: declared.description,
             mutates: declared.access === 'operate',
-            inputSchema: entry.schemas.get(declared.name) ?? { type: 'object' },
+            // extension.json's, so agents see the parameters before it has
+            // ever run; else what its worker last registered.
+            inputSchema: declared.inputSchema ?? entry.schemas.get(declared.name) ?? { type: 'object' },
             handler,
           },
         })
@@ -558,7 +596,8 @@ export class ExtensionWorkers implements KernelWorkerPort {
     const batch = new Map<string, Record<string, unknown>>()
     for (const tool of tools as Array<{ name?: unknown; inputSchema?: unknown }>) {
       const name = typeof tool?.name === 'string' ? tool.name : ''
-      if (!entry.spec.declaredTools.some((declared) => declared.name === name))
+      const declared = entry.spec.declaredTools.find((candidate) => candidate.name === name)
+      if (!declared)
         throw new Error(
           `MCP tool "${name}" from extension "${id}" is not declared in its extension.json (contributes.mcpTools).`,
         )
@@ -566,6 +605,9 @@ export class ExtensionWorkers implements KernelWorkerPort {
         throw new Error(`MCP tool "${name}" is registered twice by extension "${id}".`)
       if (!isRecord(tool.inputSchema))
         throw new Error(`MCP tool "${name}" from extension "${id}" has no inputSchema object.`)
+      const wider = declared.inputSchema ? widerThanDeclared(tool.inputSchema, declared.inputSchema) : null
+      if (wider)
+        throw new Error(`MCP tool "${name}" from extension "${id}" takes more than its extension.json says: ${wider}`)
       batch.set(name, tool.inputSchema)
     }
     let changed = false

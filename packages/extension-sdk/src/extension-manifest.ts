@@ -411,6 +411,12 @@ const CONTRIBUTES: ObjectNode = {
               doc: '`read` changes nothing; `operate` may, and agents are asked before it runs where their settings say so.',
               since: V1,
             },
+            inputSchema: {
+              node: { kind: 'jsonSchema', maxBytes: 16_384 },
+              doc: 'The tool’s parameters, as a JSON Schema for an object: what agents see before the worker has ever run. The schema the worker registers must take no more than this one (no parameter it leaves out, none it requires dropped). Without it, agents see the worker’s schema once it has run.',
+              since: V1,
+              example: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+            },
           },
         },
       },
@@ -563,7 +569,13 @@ export type ExtensionTopBarItemContribution = {
 }
 /** A panel, door or settings section: drawn by its own `entry`. */
 export type ExtensionSurfaceContribution = { id: string; title: string; icon?: ExtensionIcon; entry: string }
-export type ExtensionMcpToolContribution = { name: string; description: string; access: 'read' | 'operate' }
+export type ExtensionMcpToolContribution = {
+  name: string
+  description: string
+  access: 'read' | 'operate'
+  /** The tool's parameters, as a JSON Schema for an object. */
+  inputSchema?: Record<string, unknown>
+}
 
 export type ExtensionContributions = {
   commands: ExtensionCommandContribution[]
