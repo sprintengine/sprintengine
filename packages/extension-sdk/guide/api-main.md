@@ -1,10 +1,38 @@
 # The worker (`main`)
 
 The worker is the extension's background code: `main` in extension.json, a
-CommonJS bundle Studio loads with Node's `require`. It exports `activate`, as a
-named export or its default, and Studio calls it with a `studio` object once
-the extension is approved and on. `background: true` in extension.json keeps it
-running while the extension is on.
+CommonJS bundle. It exports `activate`, as a named export or its default.
+Studio runs it in a Node process of its own, one per extension, with a clean
+environment (none of Studio's variables or the shell's credentials), loads
+`main` there with `require` and calls `activate` with a `studio` object. Its
+output goes to the extension's log, in Studio's logs folder under
+`extensions/`.
+
+When it runs:
+
+- **On demand.** It starts when something needs it: one of its methods, a
+  command, an MCP tool, a surface's `worker.request`. It is stopped after five
+  idle minutes and starts again at the next call. At most five on-demand
+  workers run at once; one more waits for a place.
+- **In the background.** `background: true` in extension.json starts it when
+  the extension is switched on and keeps it running. At most sixteen run;
+  past that the newest waits, and Settings says why.
+- **Supervised.** `activate` must finish within ten seconds, and each call
+  within thirty. A worker that crashes is started again after half a second,
+  two seconds and five; after a fourth crash it stays stopped, shown as failed
+  in Settings and in the bell, until it is switched off and on again.
+- **Stopped** when it is switched off or uninstalled, or its approval changes
+  (an update installed): it has two seconds for its `onShutdown` hooks, then
+  it is ended. A call still running fails with words that say why.
+
+Every call into Studio crosses to Studio's process. A call that answers data
+answers a promise (`getModuleAppState`, a conversation service's `list`, a
+companion's `attach` and `status`); one that answers an unsubscriber answers it
+at once, and a refusal of it is written to the extension's log. Studio holds
+each call to whoever set off the work it is part of: a call made from work
+left running after that call ended (a timer, say) is refused, unless the
+extension is `background: true`, whose own work runs as the person who
+approved it. `provideService` is not available to a worker.
 
 ```ts
 import type { MainHost } from '@sprintengine/extension-sdk'
@@ -25,8 +53,8 @@ Use a worker only when the idea needs Node, a service only the worker has, a
 command that runs your code, MCP tools, or work with no window open. It takes
 the `worker` tier, the most the person is asked to allow.
 
-Bundle it as one CommonJS file with `electron` external and everything else
-bundled: the installed extension has no `node_modules` (the template's
+Bundle it as one CommonJS file with everything bundled (a worker runs as
+plain Node; `electron` is never there to require): the installed extension has no `node_modules` (the template's
 `build:main` does this). It may start worker threads from other files it
 ships: build each as its own CommonJS bundle into `extension/dist/` and start
 it with `new Worker(studio.getAssetPath('dist/thread.cjs'))`.
@@ -110,10 +138,11 @@ What your settings section and your other surfaces write with
 `setModuleAppState` is one namespace, and the worker reads it with
 `studio.getModuleAppState(key)` — the value the person chose, persisted, with no
 window open. `studio.watchModuleAppState(cb)` hears it change. Read-only from
-main; no second store and no IPC sync step.
+the worker; no second store. The worker runs in a process of its own, so the
+read answers a promise.
 
 ```ts
-const every = studio.getModuleAppState<number>('pollMinutes') ?? 15
+const every = (await studio.getModuleAppState<number>('pollMinutes')) ?? 15
 const stop = studio.watchModuleAppState((values) => reschedule(Number(values.pollMinutes ?? 15)))
 studio.onShutdown(stop)
 ```
@@ -186,7 +215,7 @@ still working is skipped. `supports('scheduled-agent-runs')`.
 
 ## Companion agents and their tools
 
-`getCompanionAgentsService(studio).attach(spec)` gives a background agent bound
+`await getCompanionAgentsService(studio).attach(spec)` gives a background agent bound
 to a workspace; `runStructured({ prompt, validate, tools? })` runs one task
 and returns validated JSON. The agent asks before every tool it uses, and
 `tools` decides the answer:
