@@ -2967,10 +2967,27 @@ test('automation', async () => {
       ],
       // What each extension.json declares: a third-party module serves only these.
       moduleMcpTools: {
-        'first-owner': [{ name: 'weather_deck_forecast', description: 'test tool first', access: 'read' }],
+        'first-owner': [
+          {
+            name: 'weather_deck_forecast',
+            description: 'test tool first',
+            access: 'read',
+            inputSchema: { type: 'object' },
+          },
+        ],
         'second-owner': [
-          { name: 'second_owner_extra', description: 'test tool extra', access: 'read' },
-          { name: 'weather_deck_forecast', description: 'test tool second', access: 'read' },
+          {
+            name: 'second_owner_extra',
+            description: 'test tool extra',
+            access: 'read',
+            inputSchema: { type: 'object' },
+          },
+          {
+            name: 'weather_deck_forecast',
+            description: 'test tool second',
+            access: 'read',
+            inputSchema: { type: 'object' },
+          },
         ],
       },
     })
@@ -3056,7 +3073,12 @@ test('automation', async () => {
       modules: [fixtureModule],
       moduleMcpTools: {
         'weather-deck': [
-          { name: 'weather_deck_forecast', description: 'Forecast from the fixture module.', access: 'read' },
+          {
+            name: 'weather_deck_forecast',
+            description: 'Forecast from the fixture module.',
+            access: 'read',
+            inputSchema: { type: 'object' },
+          },
         ],
       },
     })
@@ -3439,7 +3461,12 @@ test('automation', async () => {
       modules: [fixtureModule],
       moduleMcpTools: {
         'weather-deck': [
-          { name: 'weather_deck_forecast', description: 'Forecast from the fixture module.', access: 'read' },
+          {
+            name: 'weather_deck_forecast',
+            description: 'Forecast from the fixture module.',
+            access: 'read',
+            inputSchema: { type: 'object' },
+          },
         ],
       },
     })

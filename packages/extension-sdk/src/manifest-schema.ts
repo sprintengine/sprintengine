@@ -40,8 +40,33 @@ export type ArrayNode = {
 export type ObjectNode = { kind: 'object'; fields: Readonly<Record<string, FieldSpec>>; title?: string }
 /** A key held for a later format: present, it must be an empty array. */
 export type ReservedNode = { kind: 'reserved'; purpose: string }
+/** A JSON Schema for an object (a tool's parameters): JSON data, `type: "object"`, at most `maxBytes` as JSON. */
+export type JsonSchemaNode = { kind: 'jsonSchema'; maxBytes: number }
 
-export type SchemaNode = StringNode | BooleanNode | LiteralNode | ArrayNode | ObjectNode | ReservedNode
+export type SchemaNode = StringNode | BooleanNode | LiteralNode | ArrayNode | ObjectNode | ReservedNode | JsonSchemaNode
+
+/** Why `value` is not plain JSON data (objects, lists, strings, finite numbers, booleans, null), or null. */
+function jsonDataProblem(value: unknown, depth = 0): string | null {
+  if (depth > 32) return 'nests too deep.'
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return null
+  if (typeof value === 'number') return Number.isFinite(value) ? null : 'holds a number JSON cannot carry.'
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const problem = jsonDataProblem(item, depth + 1)
+      if (problem) return problem
+    }
+    return null
+  }
+  if (isPlainObject(value)) {
+    for (const [key, item] of Object.entries(value)) {
+      if (FORBIDDEN_KEYS.has(key)) return `holds the reserved name "${key}".`
+      const problem = jsonDataProblem(item, depth + 1)
+      if (problem) return problem
+    }
+    return null
+  }
+  return 'holds something that is not JSON.'
+}
 
 export type FieldSpec = {
   node: SchemaNode
@@ -119,6 +144,37 @@ export function validateNode(node: SchemaNode, value: unknown, path: string, iss
         issues.push({ path, message: `is reserved for ${node.purpose} and must be empty for now.` })
       }
       return undefined
+    case 'jsonSchema': {
+      if (!isPlainObject(value)) {
+        issues.push({ path, message: 'must be a JSON Schema object.' })
+        return undefined
+      }
+      const problem = jsonDataProblem(value)
+      if (problem) {
+        issues.push({ path, message: `must be JSON data: it ${problem}` })
+        return undefined
+      }
+      if (value.type !== 'object') {
+        issues.push({ path, message: 'must describe an object: `"type": "object"`.' })
+        return undefined
+      }
+      if (value.properties !== undefined && !isPlainObject(value.properties)) {
+        issues.push({ path: join(path, 'properties'), message: 'must be an object of property name to schema.' })
+        return undefined
+      }
+      if (
+        value.required !== undefined &&
+        (!Array.isArray(value.required) || value.required.some((name) => typeof name !== 'string'))
+      ) {
+        issues.push({ path: join(path, 'required'), message: 'must be a list of property names.' })
+        return undefined
+      }
+      if (JSON.stringify(value).length > node.maxBytes) {
+        issues.push({ path, message: `must be at most ${node.maxBytes} characters as JSON.` })
+        return undefined
+      }
+      return JSON.parse(JSON.stringify(value)) as unknown
+    }
     case 'array': {
       if (!Array.isArray(value)) {
         issues.push({ path, message: 'must be an array.' })
@@ -205,6 +261,8 @@ export function nodeJsonSchema(node: SchemaNode, field?: FieldSpec): JsonSchema 
       return { const: node.value, ...meta }
     case 'reserved':
       return { type: 'array', maxItems: 0, ...meta, description: `Reserved for ${node.purpose}; must be empty.` }
+    case 'jsonSchema':
+      return { type: 'object', required: ['type'], properties: { type: { const: 'object' } }, ...meta }
     case 'array':
       return { type: 'array', maxItems: node.max, items: nodeJsonSchema(node.items), ...meta }
     case 'object': {
@@ -247,6 +305,8 @@ function typeText(node: SchemaNode): string {
       return `\`${node.value}\``
     case 'reserved':
       return 'reserved, `[]`'
+    case 'jsonSchema':
+      return 'JSON Schema object'
     case 'array':
       return `${node.items.kind === 'object' ? 'object' : typeText(node.items)}[] (at most ${node.max})`
     case 'object':

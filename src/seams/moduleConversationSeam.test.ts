@@ -167,7 +167,14 @@ test('moduleConversationSeam', async () => {
   const load = loadMainModules({
     // What acme's extension.json declares: the only tool its worker may serve.
     moduleMcpTools: {
-      'acme.chat': [{ name: 'acme_start_chat', description: 'Starts a chat for whoever calls it.', access: 'operate' }],
+      'acme.chat': [
+        {
+          name: 'acme_start_chat',
+          description: 'Starts a chat for whoever calls it.',
+          access: 'operate',
+          inputSchema: { type: 'object' },
+        },
+      ],
     },
     modules: [
       agentRuntime,
@@ -228,7 +235,7 @@ test('moduleConversationSeam', async () => {
     )
     assert.ok(heard.every((received) => received.agentId === mine.agentId))
     assert.deepEqual(
-      acme.list().map((summary) => summary.agentId),
+      (await acme.list()).map((summary) => summary.agentId),
       [mine.agentId],
     )
     const transcript = await acme.transcript(mine)
@@ -254,7 +261,7 @@ test('moduleConversationSeam', async () => {
     const leaked: unknown[] = []
     const foreignSubscriptions: Array<() => void> = []
     for (const foreign of [userChat, otherChat]) {
-      assert.ok(!acme.list().some((summary) => summary.agentId === foreign.agentId))
+      assert.ok(!(await acme.list()).some((summary) => summary.agentId === foreign.agentId))
       foreignSubscriptions.push(acme.subscribe(foreign, (event) => leaked.push(event)))
       const refused = await acme.send(foreign, { message: 'let me in' })
       assert.equal(refused.ok, false)

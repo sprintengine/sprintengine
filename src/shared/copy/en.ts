@@ -4199,7 +4199,7 @@ export const en = {
       uninstall: (name: unknown) => `Uninstall ${name}?`,
       uninstall2: 'Uninstall',
       uninstalled: (name: unknown) => `Uninstalled ${name}`,
-      itStopsAtTheNext: 'It stops at the next restart.',
+      itsWorkerStopped: 'Its worker stopped.',
     },
     // src/renderer/src/components/settings/versionControlProviders.ts
     versionControlProviders: {

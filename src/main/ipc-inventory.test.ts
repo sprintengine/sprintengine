@@ -162,7 +162,10 @@ import {
 import { scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
 import { AGENT_RUNTIME_MANIFEST } from './modules/agent-runtime-module'
 import { approvedContext } from './modules/extension-approvals.test-helper'
-import { planThirdPartyMainModules } from './modules/third-party-main-loader'
+import { planInstalledExtensions } from '../server/extensions/extension-plan'
+import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
+import { workerEntryForTests } from '../../tests/extension-worker'
+import { ownerInvoker } from './module-host/extension-invocation'
 import { discoverUserModulesSync } from './modules/user-module-registry'
 import { registerCoreIpc } from './register-core-ipc'
 import { attachStartupTimeline } from './startup-timeline'
@@ -253,7 +256,16 @@ function serverDomainStubs(dataDir: string): ServerDomainIpcDeps {
 }
 
 /** An extension as Settings installs one: `local.<id>` in the user module root, approved as it is. */
-function installExtension(id: string): ReturnType<typeof planThirdPartyMainModules> {
+// Its worker runs in a process of its own, as the server forks it.
+const approvedFingerprints = new Map<string, { fingerprint: string }>()
+const extensionWorkers = createExtensionWorkers({
+  entryPath: workerEntryForTests(),
+  logDir: join(scratch, 'logs'),
+  approvals: () => approvedFingerprints,
+})
+afterAll(() => extensionWorkers.workers.close())
+
+function installExtension(id: string): ReturnType<typeof planInstalledExtensions> {
   const root = join(scratch, 'modules')
   const key = `local.${id}`
   const moduleRoot = writeExtensionFolder(join(root, key), {
@@ -267,7 +279,10 @@ function installExtension(id: string): ReturnType<typeof planThirdPartyMainModul
     listed.modules.some((entry) => entry.key === key && entry.standing.approval.state === 'approved'),
     'the installed extension is discovered, approved',
   )
-  return planThirdPartyMainModules(listed)
+  for (const entry of listed.modules)
+    if (entry.standing.approval.state === 'approved')
+      approvedFingerprints.set(entry.key, { fingerprint: entry.standing.approval.fingerprint })
+  return planInstalledExtensions(listed, () => extensionWorkers.workers)
 }
 
 /** Every non-test `.ts` file under a directory of the repository. */
@@ -346,6 +361,8 @@ test('what main and the server register, and what the preload uses, is the inven
       ...installed.modules,
     ],
     ineligible: installed.ineligible,
+    moduleRoots: installed.moduleRoots,
+    onKernel: extensionWorkers.bind,
   })
   assert.deepEqual(modules.report.errors, [])
   assert.ok(modules.report.loaded.includes('local.weather-deck'), 'the installed extension loads')
@@ -411,8 +428,17 @@ test('what main and the server register, and what the preload uses, is the inven
     assert.ok(row && 'server' in row && row.dir === 'invoke', `the web tunnel's "${channel}" is a server invoke row`)
   }
 
-  // An installed extension declares methods, served over the Studio protocol,
-  // and registers no IPC at all.
+  // An installed extension declares methods, served over the Studio protocol
+  // by its worker process, and registers no IPC at all.
+  const forecast = await modules.kernel.callModuleMethod({
+    moduleId: 'local.weather-deck',
+    method: 'forecast',
+    access: 'read',
+    params: {},
+    clientId: 'inventory',
+    invoker: ownerInvoker(),
+  })
+  assert.deepEqual(forecast, { ok: true, answer: { ok: true, result: 'sunny' } })
   assert.deepEqual(modules.kernel.declaredMethods('local.weather-deck'), [{ name: 'forecast', access: 'read' }])
   assert.deepEqual(
     [...registered].filter((channel) => channel.startsWith('local.weather-deck')),

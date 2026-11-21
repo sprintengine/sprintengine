@@ -163,8 +163,10 @@ export type ThirdPartyModuleLaunchView = {
   hasMainEntry: boolean
   expectedToLoad: boolean
   message?: string
-  /** Whether its worker (`main`) loaded in this server run; absent reads as not loaded. */
+  /** Whether this server run holds its worker (`main`), running or ready to start; absent reads as not. */
   mainLoaded?: boolean
+  /** Why its worker waits to start (too many run at once), while it does. */
+  waiting?: string
   /** Whether its surfaces' entries can be drawn. */
   rendererEntry?: ThirdPartyRendererEntryView
 }

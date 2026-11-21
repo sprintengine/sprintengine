@@ -127,8 +127,8 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
         // never touched — saying so is what makes the button pressable.
         body:
           'Its files are removed, with its settings, the data it stored ' +
-          'outside your projects and the keys you gave it. Work it saved in your projects stays. Code already ' +
-          'running stops at the next restart.',
+          'outside your projects and the keys you gave it. Work it saved in your projects stays. Its worker, ' +
+          'if it is running, stops now.',
         confirmLabel: copy.settings.useThirdPartyExtensions.uninstall2,
         tone: 'danger',
       })
@@ -142,11 +142,12 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
           // default (on) never brings an uninstalled extension back.
           await refreshThirdPartyRendererModules()
           forgetModules(result.removedModuleIds)
-          if (module.launch.mainLoaded) {
+          // Only an extension with a worker had one to stop.
+          if (module.launch.hasMainEntry && module.launch.mainLoaded) {
             showToast({
               tone: 'neutral',
               title: copy.settings.useThirdPartyExtensions.uninstalled(name),
-              description: copy.settings.useThirdPartyExtensions.itStopsAtTheNext,
+              description: copy.settings.useThirdPartyExtensions.itsWorkerStopped,
             })
           }
         } else {

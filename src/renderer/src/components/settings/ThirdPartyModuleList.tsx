@@ -198,8 +198,12 @@ export function ExtensionListRow({
   ]
 
   // The row says a problem only where there is something to read: a failure,
-  // or a signature that does not match.
-  const notice = problem ? { text: problemText(problem) } : null
+  // or a signature that does not match; and why a worker waits to start.
+  const notice = problem
+    ? { text: problemText(problem) }
+    : state === 'waiting' && module.launch.waiting
+      ? { text: module.launch.waiting, tone: 'warn' as const }
+      : null
 
   const source = sourceLabel(module)
   const facts = [

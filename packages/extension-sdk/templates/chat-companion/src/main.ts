@@ -59,7 +59,7 @@ export function activate(studio: MainHost): void {
   }
 
   studio.registerMethods<CompanionMethods>({
-    list: { access: 'read', params: readNothing, handler: () => ({ ok: true, result: conversations.list() }) },
+    list: { access: 'read', params: readNothing, handler: async () => ({ ok: true, result: await conversations.list() }) },
     start: {
       access: 'operate',
       params: readStartRequest,
@@ -78,6 +78,11 @@ export function activate(studio: MainHost): void {
   // Tell every open window to read the list again whenever it changes. An
   // event is a signal, not state: a window opened later reads through
   // the `list` method and never needs an old event.
+  //
+  // A watch lasts only while the worker runs. A worker without
+  // `background: true` is stopped after five idle minutes, and its watch with
+  // it; this one listens across quiet hours, so extension.json says
+  // `"background": true`.
   let stopWatching = () => {}
   studio.onStartup(() => {
     stopWatching = conversations.watch(undefined, () => studio.emit(CHANGED_TOPIC))

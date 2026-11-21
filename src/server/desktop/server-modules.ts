@@ -5,13 +5,12 @@ import type { McpToolContribution } from '../../main/module-host/main-host'
 import { ScheduledAgentsServiceToken } from '../../main/module-host/service-tokens'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from '../../main/modules/agent-runtime-module'
 import { createModuleLifecycle, liveModuleIds } from '../../main/modules/module-lifecycle'
+import type { ExtensionRunView } from '../../main/modules/third-party-module-view'
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
-import {
-  planThirdPartyMainModules,
-  readThirdPartyMainLaunchSnapshot,
-  thirdPartyLaunchSession,
-  recordThirdPartyMainLaunchReport,
-} from '../../main/modules/third-party-main-loader'
+import { planInstalledExtensions, readInstalledStanding } from '../extensions/extension-plan'
+import { createExtensionWorkers } from '../extensions/workers/worker-manager'
+import { resolveWorkerEntryPath } from '../extensions/workers/worker-process'
+import { join } from 'node:path'
 import { readExtensionStandingContextSync } from '../../main/modules/extension-standing-context'
 import { createExtensionApprovalReader } from '../../main/modules/extension-approvals'
 import { createExtensionFrameGrant } from '../../main/modules/extension-frame-grant'
@@ -25,7 +24,6 @@ import { resolveModuleEnablement } from '../../shared/modules/resolve'
 import type { StudioCore } from '../core/studio-core'
 import type { StudioGateway } from '../core/studio-gateway'
 import type { StudioPlatform } from '../platform/platform'
-import { installElectronRequireGuard } from './electron-require-guard'
 
 // The module kernel in the Studio server out of process (phase 6 spec, 12.2):
 // every module's server half, registered on the server's IPC tunnel, its MCP
@@ -90,6 +88,16 @@ export function createServerModules(deps: {
   )
   let load: LoadMainModulesResult | null = null
   let gateway: StudioGateway | null = null
+  const approvals = createExtensionApprovalReader(dataDir)
+  // Every worker extension's code runs in a process of its own.
+  const { workers, bind: bindWorkers } = createExtensionWorkers({
+    entryPath: resolveWorkerEntryPath(),
+    logDir: join(platform.paths.logsDir(), 'extensions'),
+    approvals,
+    installed: () => readInstalledStanding(defaultUserModuleRoot(), dataDir),
+    toolsChanged: () => gateway?.notifyToolsListChanged(),
+    stateChanged: () => hub.deliverChanged(),
+  })
   let stopWatchingModules: (() => void) | null = null
   let manifests: CapabilityManifest[] = []
   let ineligible: Record<string, ModuleResolutionErrorCode> = {}
@@ -120,10 +128,13 @@ export function createServerModules(deps: {
       dataDir,
       moduleRoot: defaultUserModuleRoot,
       applyEnablement,
-      // Every client following `extension.changed` lists and loads them again.
-      changed: () => hub.deliverChanged(),
-      launchSession: () =>
-        thirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), load?.kernel.mcpToolRegistrations() ?? []),
+      // Every client following `extension.changed` lists and loads them again,
+      // and a worker whose approval is gone or changed stops.
+      changed: () => {
+        workers.reconcile()
+        hub.deliverChanged()
+      },
+      run: () => extensionRunView(),
       registry,
       view: () => {
         const current = load
@@ -141,6 +152,17 @@ export function createServerModules(deps: {
     }),
   )
 
+  const extensionRunView = (): ExtensionRunView => {
+    const current = load
+    const tools = current?.kernel.mcpToolRegistrations() ?? []
+    return {
+      attached: (id) => workers.serves(id) && workers.status(id)?.state !== 'stopped',
+      worker: (id) => workers.status(id),
+      loadError: (id) => current?.report.errors.find((error) => error.id === id)?.message,
+      mcpTools: (id) => tools.filter((tool) => tool.moduleId === id).map((tool) => tool.registration.name),
+    }
+  }
+
   const recompute = (overrides: Record<string, boolean>): void => {
     const { order } = resolveModuleEnablement(manifests, overrides)
     enabled.clear()
@@ -153,13 +175,10 @@ export function createServerModules(deps: {
     load(nextGateway) {
       gateway = nextGateway
       const overrides = readOverrides()
-      // Workers run here without Electron: one that requires it is refused at
-      // the require and reported as skipped.
-      const thirdParty = planThirdPartyMainModules(
+      const thirdParty = planInstalledExtensions(
         discoverUserModulesSync(defaultUserModuleRoot(), readExtensionStandingContextSync(dataDir)),
-        { electronMain: false },
+        () => workers,
       )
-      installElectronRequireGuard(() => Object.values(thirdParty.moduleRoots))
       ineligible = thirdParty.ineligible
       moduleRootsById = thirdParty.moduleRoots
       // The schedules are the core's; the kernel holds them under the
@@ -201,14 +220,14 @@ export function createServerModules(deps: {
         moduleMcpTools: thirdParty.mcpTools,
         // What each extension runs under; its calls are refused once that approval is gone.
         extensionApprovals: thirdParty.approvals,
-        currentApprovals: createExtensionApprovalReader(dataDir),
-        resolveFrameGrant: createExtensionFrameGrant({ approvals: createExtensionApprovalReader(dataDir), dataDir }),
+        currentApprovals: approvals,
+        resolveFrameGrant: createExtensionFrameGrant({ approvals, dataDir }),
+        onKernel: bindWorkers,
         frameFileExclusions: () => [dataDir, defaultUserModuleRoot()],
         ineligible: thirdParty.ineligible,
         launchErrors: thirdParty.launchErrors,
         deliverModuleEvent: (event) => hub.deliverEvent(event),
         deliverModuleNotification: (notification) => hub.deliverNotification(notification),
-        electronMain: false,
         // A module tool that would shadow one of the gateway's own is refused
         // at registration, naming the tool it collides with.
         coreMcpToolNames: () => nextGateway.coreToolNames(),
@@ -224,10 +243,6 @@ export function createServerModules(deps: {
         permissions: (moduleId) => byId.get(moduleId)?.permissions,
         loaded: () => [...enabled],
       })
-      recordThirdPartyMainLaunchReport(
-        thirdParty.modules.map((module) => module.manifest.id),
-        load.report,
-      )
       if (load.report.errors.length > 0) {
         deps.log(`module load errors: ${load.report.errors.map((error) => `${error.id}: ${error.message}`).join('; ')}`)
       }
@@ -240,13 +255,18 @@ export function createServerModules(deps: {
       if (current) void current.ready.then(() => current.kernel.runStartup())
       // A module copied into the drop-in folder while Studio runs is listed
       // at once, not after a reload.
-      stopWatchingModules ??= watchUserModuleRoot(defaultUserModuleRoot(), () => hub.deliverChanged())
+      // A worker whose extension was removed from the folder (and its approval with it) stops.
+      stopWatchingModules ??= watchUserModuleRoot(defaultUserModuleRoot(), () => {
+        workers.reconcile()
+        hub.deliverChanged()
+      })
     },
     shutdownBegin: () => load?.kernel.runShutdownBegin() ?? Promise.resolve(),
-    shutdown: () => {
+    shutdown: async () => {
       stopWatchingModules?.()
       stopWatchingModules = null
-      return load?.kernel.runShutdown() ?? Promise.resolve()
+      await (load?.kernel.runShutdown() ?? Promise.resolve())
+      await workers.close()
     },
   }
 }

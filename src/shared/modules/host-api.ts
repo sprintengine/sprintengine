@@ -9,7 +9,7 @@ export type { HostCapability } from '../../../packages/extension-sdk/src/host-ap
 // makes it real, so `supports()` never promises a service nobody provides.
 // `notifications` is not here: its answer depends on wiring rather than on
 // this build (main-host.ts: a client delivery is wired).
-const HOST_CAPABILITIES: ReadonlySet<HostCapability> = new Set<HostCapability>([
+export const HOST_CAPABILITIES: ReadonlySet<HostCapability> = new Set<HostCapability>([
   'conversations',
   'conversation-controls',
   'conversation-streams',

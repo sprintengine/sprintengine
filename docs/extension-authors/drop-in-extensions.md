@@ -110,10 +110,10 @@ may do (the `permissions` reference).
   transient report in the window's toast region. Notifications reach the
   windows through the same client bus as extension events, so they work
   unchanged when the server runs in a process of its own.
-- **The worker may run without Electron.** When Studio runs its server in a
-  process of its own, an extension's worker runs there: a Node process with no
-  Electron APIs, where `studio.supports('electron-main')` is false. Build it
-  with `electron` external, and check before you use it.
+- **The worker runs in a Node process of its own**, forked by the Studio
+  server, with no Electron APIs and a clean environment. It starts when something needs it and is
+  stopped after five idle minutes, unless extension.json says
+  `background: true`. Bundle everything into it.
 
 ### Creating a workspace from the worker
 

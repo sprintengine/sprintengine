@@ -13,7 +13,8 @@ Code comes in two kinds, and each is optional:
   exporting `mount(root, studio)`. Studio loads it into a sandboxed frame of
   its own, on every client, and hands it the frame's root to draw in.
 - **The worker**, `main`: a CommonJS bundle exporting `activate(studio)`. It
-  runs in the background with Node, and serves the extension's commands,
+  runs in a Node process of its own, started when something needs it (or kept
+  running, with `background: true`), and serves the extension's commands,
   methods and MCP tools.
 
 The contract is `@sprintengine/extension-sdk` and nothing else; an extension

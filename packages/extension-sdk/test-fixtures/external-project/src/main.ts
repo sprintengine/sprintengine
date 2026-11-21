@@ -4,7 +4,6 @@
 // declares its poller sidecar here (background workers come later).
 
 import {
-  createServiceToken,
   getCompanionAgentsService,
   getConversationService,
   getGitHubService,
@@ -21,7 +20,6 @@ import {
 
 import { readCommandContext, readNothing, type Outlook, type WeatherMethods } from './methods'
 
-const forecastService = createServiceToken<{ refresh(): Promise<void> }>('weather-deck.forecast')
 
 // The tool extension.json declares under contributes.mcpTools. Its
 // description and access there are what agents see.
@@ -79,9 +77,6 @@ export function activate(studio: MainHost): void {
       },
     },
   })
-  studio.provideService(forecastService, () => ({
-    refresh: async () => undefined,
-  }))
   studio.registerMcpTools([forecastTool])
   // The skill the forecaster chats and the scheduled refresh invoke.
   studio.registerMethods({
@@ -208,7 +203,7 @@ export function activate(studio: MainHost): void {
           throw new Error('weather-deck:ask-guide requires a workspace root.')
         }
         const companions = getCompanionAgentsService(studio)
-        const guide = companions.attach({
+        const guide = await companions.attach({
           workspaceId: 'weather-deck',
           agentId: 'forecast-guide',
           name: 'Forecast Guide',
@@ -287,7 +282,7 @@ export function activate(studio: MainHost): void {
           ok: true as const,
           sessionId: created.conversation.sessionId,
           events: transcript.ok ? transcript.events.length : seen.length,
-          open: conversations.list({ workspaceId }).length,
+          open: (await conversations.list({ workspaceId })).length,
         }
       }),
     },

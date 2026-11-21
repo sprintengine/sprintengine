@@ -1,4 +1,4 @@
-import type { ExtensionLoadedApproval } from '../modules/third-party-main-loader'
+import type { ExtensionLoadedApproval } from '../../server/extensions/extension-plan'
 import type { ExtensionMcpToolContribution } from '../../../packages/extension-sdk/src/extension-manifest'
 import type { ModuleEventEnvelope } from '../../shared/modules/events'
 import type {
@@ -134,15 +134,13 @@ export function loadMainModules(options: {
   skillRegistry?: ModuleSkillHostRegistry
   /** Async registerMain bound override, for tests. */
   registerTimeoutMs?: number
-  /** False in the Studio server out of process: see `MainKernelOptions.electronMain`. */
-  electronMain?: boolean
   /** The gateway's own tool names: see `MainKernelOptions.coreMcpToolNames`. */
   coreMcpToolNames?: () => Iterable<string>
   /** Verified file digests per third-party module id, for `MainHost.getAssetPath`. */
   moduleVerifiedFiles?: Record<string, ModuleFileDigests>
   /** The MCP tools each installed extension declares (`contributes.mcpTools`). */
   moduleMcpTools?: Record<string, readonly ExtensionMcpToolContribution[]>
-  /** What each extension that runs was approved for, as loaded (third-party-main-loader.ts). */
+  /** What each extension that runs was approved for, as loaded (server/extensions/extension-plan.ts). */
   extensionApprovals?: Record<string, ExtensionLoadedApproval>
   /**
    * The person's approvals as they stand now, read at each host call: an
@@ -157,6 +155,8 @@ export function loadMainModules(options: {
   frameFileExclusions?: () => readonly string[]
   /** What frame calls are held to: see `MainKernelOptions.resolveFrameGrant`. */
   resolveFrameGrant?: (moduleId: string, frame: string) => { grant: readonly string[]; outdated: boolean } | null
+  /** Handed the kernel as soon as it exists, before any module registers (the workers bind to it). */
+  onKernel?: (kernel: MainKernel) => void
 }): LoadMainModulesResult {
   const { modules, overrides = {}, provideServices, ineligible, launchErrors = [] } = options
   const registerTimeoutMs = options.registerTimeoutMs ?? REGISTER_MAIN_TIMEOUT_MS
@@ -168,7 +168,6 @@ export function loadMainModules(options: {
   )
 
   const kernel = createMainKernel({
-    ...(options.electronMain === undefined ? {} : { electronMain: options.electronMain }),
     deliverModuleEvent: options.deliverModuleEvent,
     ...(options.deliverModuleNotification ? { deliverModuleNotification: options.deliverModuleNotification } : {}),
     now: options.now,
@@ -195,6 +194,7 @@ export function loadMainModules(options: {
       return loadedAs.permissions.filter((permission) => now.access.permissions.includes(permission))
     },
   })
+  options.onKernel?.(kernel)
   const hostScope = kernel.hostFor('@host')
   provideServices?.(hostScope)
   const loaded: string[] = []

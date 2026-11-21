@@ -30,6 +30,8 @@ test('companion-agent-service', async () => {
     await testFirstRunStructuredSpawnsAndResolvesTyped()
     await testSystemPromptPreambleDeliveredOnce()
     await testInvalidThenValidRetriesOnce()
+    await testAsyncValidatorIsAwaited()
+    await testInterruptDuringValidationEndsTheRun()
     await testInvalidTwiceRejectsWithValidatorErrors()
     await testInterruptLeavesSessionReusable()
     await testSecondRunInterruptsFirst()
@@ -256,6 +258,72 @@ test('companion-agent-service', async () => {
       assert.ok(phases.includes('retrying'))
       service.dispose()
       // A finished turn refreshes the thread index in the background.
+      await runtime.shutdown()
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true })
+    }
+  }
+
+  // A worker's validator runs in its own process and answers a promise:
+  // the run waits for its verdict, and retries on a refusal as it does on a
+  // validator that answers at once.
+  async function testAsyncValidatorIsAwaited(): Promise<void> {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'companion-'))
+    try {
+      const script = { responses: ['{"score": "high"}', '{"score": 3}'], seenMessages: [] as string[] }
+      const runtime = companionRuntime(scriptedProvider(script))
+      const service = companionService(runtime)
+      const handle = service.attach({ ...SPEC_BASE, workspaceRoot })
+      const value = await handle.runStructured<number>({
+        prompt: 'Score it.',
+        validate: async (raw) => {
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          const score = (raw as { score?: unknown }).score
+          return typeof score === 'number'
+            ? { ok: true, value: score }
+            : { ok: false, errors: ['score must be a number'] }
+        },
+      })
+      assert.equal(value, 3)
+      assert.equal(script.seenMessages.length, 2, 'the refused answer was retried')
+      service.dispose()
+      await runtime.shutdown()
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true })
+    }
+  }
+
+  // Interrupted while its validator is still deciding: the run ends there.
+  // The validator's later refusal sends no retry, and a later verdict is not
+  // returned as if the run had finished.
+  async function testInterruptDuringValidationEndsTheRun(): Promise<void> {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'companion-'))
+    try {
+      const script = { responses: ['{"score": "high"}', '{"score": 3}'], seenMessages: [] as string[] }
+      const runtime = companionRuntime(scriptedProvider(script))
+      const service = companionService(runtime)
+      const handle = service.attach({ ...SPEC_BASE, workspaceRoot })
+      let validating: () => void = () => undefined
+      const asked = new Promise<void>((resolve) => (validating = resolve))
+      let refuse: () => void = () => undefined
+      const run = handle.runStructured<number>({
+        prompt: 'Score it.',
+        validate: () => {
+          validating()
+          return new Promise((resolve) => (refuse = () => resolve({ ok: false, errors: ['score must be a number'] })))
+        },
+      })
+      const outcome = run.then(
+        () => 'resolved',
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      )
+      await asked
+      handle.interrupt()
+      refuse()
+      assert.match(await outcome, /interrupted/)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      assert.equal(script.seenMessages.length, 1, 'no turn was sent after the interrupt')
+      service.dispose()
       await runtime.shutdown()
     } finally {
       await rm(workspaceRoot, { recursive: true, force: true })

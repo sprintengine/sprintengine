@@ -16,6 +16,7 @@ import { extensionFrameHash } from '../../server/extensions/frames/frame-documen
 import { createExtensionApprovalReader, writeExtensionApproval } from './extension-approvals'
 import { createExtensionFrameGrant } from './extension-frame-grant'
 import { approvalOf } from './extension-approvals.test-helper'
+import { NO_EXTENSION_RUN } from './third-party-module-view'
 
 // The lifecycle's own rules: which switches apply at once, how a module is
 // listed, and that switches arriving together are each kept. Its whole path
@@ -28,10 +29,7 @@ afterEach(() => {
 
 /** A kernel that loaded nothing, and a registry nobody reported. */
 const quiet = () => ({
-  launchSession: () => ({
-    snapshot: { loaded: new Set<string>(), manifestOnly: new Set<string>(), errors: new Map<string, string>() },
-    mcpTools: new Map<string, string[]>(),
-  }),
+  run: () => NO_EXTENSION_RUN,
   registry: createModuleRegistryMirror(),
 })
 

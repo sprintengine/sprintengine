@@ -10,7 +10,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "build:ui": "node scripts/build-ui.mjs",
-    "build:main": "esbuild src/main.ts --bundle --format=cjs --platform=node --target=node22 --external:electron --outfile=extension/dist/main.cjs",
+    "build:main": "esbuild src/main.ts --bundle --format=cjs --platform=node --target=node22 --outfile=extension/dist/main.cjs",
     "build": "npm run build:ui --if-present && npm run build:main --if-present",
     "build:test": "esbuild \"test/**/*.test.ts\" --bundle --platform=node --format=esm --target=node22 --packages=external --jsx=automatic --loader:.css=text --outbase=test --outdir=test/.build --out-extension:.js=.mjs --log-level=warning",
     "test": "npm run build:test && node --test test/smoke.test.mjs \"test/.build/**/*.test.mjs\"",

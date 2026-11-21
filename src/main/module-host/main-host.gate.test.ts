@@ -57,7 +57,9 @@ function setup(approved: () => readonly string[] | null = () => reader.permissio
   const kernel = createMainKernel({
     resolveModuleManifest: (id) => manifests.get(id),
     isModulePresent: (id) => manifests.has(id),
-    resolveDeclaredMcpTools: () => [{ name: 'reader_peek', description: 'Peeks.', access: 'read' }],
+    resolveDeclaredMcpTools: () => [
+      { name: 'reader_peek', description: 'Peeks.', access: 'read', inputSchema: { type: 'object' } },
+    ],
     resolveExtensionGrant: (id) => (id === reader.id ? approved() : (manifests.get(id)?.permissions ?? [])),
   })
   const host = kernel.hostFor('@host')
@@ -296,7 +298,10 @@ test('an extension tool an agent or a device calls runs as that caller', async (
 
 test('every member of an extension’s MainHost has a row in the table', () => {
   const { kernel } = setup()
-  const members = Object.keys(kernel.hostFor('local.reader')).sort()
+  // `provideService` is Studio's own parts' alone: a worker's host calls never reach it.
+  const members = Object.keys(kernel.hostFor('local.reader'))
+    .filter((name) => name !== 'provideService')
+    .sort()
   assert.deepEqual(members, Object.keys(EXTENSION_MAIN_HOST_METHODS).sort())
 })
 

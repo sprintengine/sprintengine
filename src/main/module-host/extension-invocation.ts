@@ -10,8 +10,10 @@
 // - a paired device or another app over its Studio connection, or a device
 //   calling the extension's MCP tool through the tailnet gateway: what that
 //   connection was granted, and its ceiling;
-// - nothing (a startup hook, a sidecar, a timer the extension set while it
-//   started): the person who approved it.
+// - nothing (Studio's own parts' startup hooks): the person. An extension's
+//   worker is held to invocations it is handed (server/extensions/workers/
+//   worker-session.ts): its activation, and a background extension's own
+//   work after it, run as the person who approved it.
 //
 // The kernel runs a method's handler or a tool's handler inside the invoker's
 // context, and every host call the extension makes checks the invoker as well

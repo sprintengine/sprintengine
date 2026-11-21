@@ -112,7 +112,7 @@ IDEA.md                   the brief
 
 The scripts: `build:ui` (`node scripts/build-ui.mjs`, bundling each ui entry
 extension.json names from `src/<name>.tsx`, React included), `build:main`
-(esbuild, CommonJS, `electron` external), `build`, `test`, `validate`,
+(esbuild, CommonJS, everything bundled: a worker runs as plain Node), `build`, `test`, `validate`,
 `check` (typecheck, build, test, validate), `dev:install` and `keygen`. The
 build writes `extension/dist/` and never touches extension.json.
 
@@ -568,7 +568,17 @@ Beyond plain requests:
 
 ## The worker's `studio`
 
-`MainHost`, handed to `activate`:
+`MainHost`, handed to `activate`. The worker runs in a Node process of its
+own, one per extension, started when something needs it and stopped after
+five idle minutes, unless extension.json says `background: true`, which
+starts it when the extension is switched on and keeps it running. A listener
+(`watch`, `subscribe`, `onStatus`, `watchModuleAppState`) lasts only while the
+worker runs: to keep listening across idle periods, set `background: true`.
+Work a call into your worker sets going (a timer) may call Studio only while
+that call lasts; a background worker's own work, from `activate` and its
+startup hooks on, may at any time. Every call into Studio crosses to Studio's
+process: one that answers data answers a promise, and one that answers an
+unsubscriber answers it at once.
 
 - `moduleId` (your install key) and `supports(capability)`.
 - `listChatRuntimes()` — the agent runtimes a chat can run on, with the ones
@@ -582,9 +592,9 @@ Beyond plain requests:
   refused, and the declaration's `description` and `access` are what agents
   see. Declare `tools:contribute`. An off extension's tools stay listed and answer an
   enable error instead of running.
-- `provideService` / `getService` / `requireService(token)` — the service
-  bridge. An extension resolves only the services the SDK publishes (its
-  exported tokens and the ones behind the `get*Service` helpers).
+- `getService` / `requireService(token)` — the service bridge. An extension
+  resolves only the services the SDK publishes (its exported tokens and the
+  ones behind the `get*Service` helpers). A worker provides none of its own.
 - `onStartup`, `onShutdownBegin` and `onShutdown` hooks.
 - `registerSidecar(spec)` — a declaration the host lists; it does not spawn
   it. Spawn your own process if you need one (declare `process:spawn`).
@@ -598,10 +608,10 @@ Beyond plain requests:
 - `ensureSkillInstalled(workspaceRoot, skillId)` / `getSkillStatus(…)` — put
   one of Studio's own skills in a workspace, or ask without writing. An
   extension ships no skills of its own yet (`contributes.skills` is reserved).
-- `getModuleAppState(key)` / `watchModuleAppState(cb)` — the extension's app
-  state (what its surfaces and settings section write), read-only, persisted,
-  so the worker sees the person's settings with no window open
-  (`supports('main-app-state')`).
+- `getModuleAppState(key)` (a promise) / `watchModuleAppState(cb)` — the
+  extension's app state (what its surfaces and settings section write),
+  read-only, persisted, so the worker sees the person's settings with no
+  window open (`supports('main-app-state')`).
 - `getWorkspaceGitInfo(workspaceId)` — the branch and remotes of a workspace,
   each remote with `owner/repo` when it is on GitHub. Declare
   `workspace:read`; it is checked.

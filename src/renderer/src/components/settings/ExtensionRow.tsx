@@ -41,7 +41,7 @@ export function ExtensionStateLabel({ state }: { state: ExtensionRunState }): JS
   const glyph =
     state === 'running' || state === 'on' ? (
       <LifecycleGlyph state="done" live={false} />
-    ) : state === 'pending' || state === 'stopping' ? (
+    ) : state === 'pending' ? (
       <RefreshIcon className="icon-sm shrink-0 text-[color:var(--text-muted)]" />
     ) : state === 'failed' ? (
       <LifecycleGlyph state="failed" live={false} />
@@ -166,7 +166,7 @@ export type ExtensionRowProps = {
   trailing: React.ReactNode
   menuItems: OverflowMenuItem[]
   /** A failure or an incompatibility, said under the row. */
-  notice?: { text: string; action?: React.ReactNode } | null
+  notice?: { text: string; action?: React.ReactNode; tone?: 'error' | 'warn' } | null
   /** The details surface's body, rendered only while open. */
   renderDetails: (args: { titleId: string }) => React.ReactNode
   /** Controlled, so the ⋯ menu's Details opens the same popover the name does. */
@@ -286,7 +286,7 @@ export function ExtensionRow({
         />
       </div>
       {notice ? (
-        <InlineNotice tone="error" action={notice.action} className="col-span-2 col-start-2 mt-2.5">
+        <InlineNotice tone={notice.tone ?? 'error'} action={notice.action} className="col-span-2 col-start-2 mt-2.5">
           {notice.text}
         </InlineNotice>
       ) : null}

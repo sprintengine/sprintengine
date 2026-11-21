@@ -13,7 +13,8 @@
       {
         "name": "{{toolPrefix}}_about",
         "description": "Say which extension this is.",
-        "access": "read"
+        "access": "read",
+        "inputSchema": { "type": "object", "properties": {} }
       }
     ]
   },

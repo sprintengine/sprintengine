@@ -938,7 +938,7 @@ function conversationsRegistry(context: FakeServiceContext): { registry: object;
         .join('')
       return { ok: true as const, turnId: id, text: streamed }
     },
-    list(_m: string, filter?: { workspaceId?: string }) {
+    async list(_m: string, filter?: { workspaceId?: string }) {
       return list(filter)
     },
     watch(_m: string, filter: { workspaceId?: string } | undefined, cb: (list: ModuleConversationSummary[]) => void) {
@@ -1320,7 +1320,7 @@ function companionsRegistry(context: FakeServiceContext): { registry: object; ha
     companion.handle = {
       workspaceId: spec.workspaceId,
       agentId: spec.agentId,
-      status: () => status,
+      status: async () => status,
       onStatus(cb) {
         statusListeners.add(cb)
         return () => {
@@ -1348,7 +1348,7 @@ function companionsRegistry(context: FakeServiceContext): { registry: object; ha
             prompts.push({ agentId: spec.agentId, prompt, via: 'runStructured', tools })
             options.onPhase?.(attempt === 0 ? 'running' : 'retrying')
             const answer = await reply({ spec, prompt, attempt, tools })
-            const validated = options.validate(structuredClone(answer))
+            const validated = await options.validate(structuredClone(answer))
             if (validated.ok) return validated.value
             errors = validated.errors
           }
@@ -1406,7 +1406,7 @@ function companionsRegistry(context: FakeServiceContext): { registry: object; ha
   }
 
   const registry = {
-    attach(_moduleId: string, spec: CompanionAgentSpec): CompanionAgentHandle {
+    async attach(_moduleId: string, spec: CompanionAgentSpec): Promise<CompanionAgentHandle> {
       if (!spec?.workspaceRoot || !isAbsolute(spec.workspaceRoot)) {
         throw new Error('A companion agent needs an absolute workspaceRoot.')
       }

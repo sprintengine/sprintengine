@@ -48,7 +48,7 @@ const DECLARED = [
   'notes.add',
   'notes_add',
   'handoff_latest',
-].map((name) => ({ name, description: name, access: 'read' as const }))
+].map((name) => ({ name, description: name, access: 'read' as const, inputSchema: { type: 'object' } }))
 
 function kernel() {
   return createMainKernel({

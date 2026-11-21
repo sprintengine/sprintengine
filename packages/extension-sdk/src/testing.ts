@@ -149,7 +149,6 @@ const KNOWN_CAPABILITIES: readonly HostCapability[] = [
   'activity',
   'module-id',
   'chart-tokens',
-  'electron-main',
   // Main-host plumbing: settings, workspaces, storage, GitHub, skills, MCP.
   'skill-status',
   'mcp-verified-identity',
@@ -523,7 +522,6 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     )
   }
   const tools = new Map<string, McpToolRegistration>()
-  const provided = new Map<string, unknown>()
   const startupHooks: Array<() => unknown> = []
   const shutdownBeginHooks: Array<() => unknown> = []
   const shutdownHooks: Array<() => unknown> = []
@@ -699,7 +697,6 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
 
   function resolve<T>(token: ServiceToken<T>, required: boolean): T | undefined {
     const key = token?.key
-    if (provided.has(key)) return provided.get(key) as T
     const override = options.services && Object.hasOwn(options.services, key) ? options.services[key] : undefined
     if (override === undefined && !registries.has(key)) {
       throw new Error(`Service "${key}" is not available to third-party modules.`)
@@ -819,7 +816,7 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
         return refuseUndeclared(moduleId, 'getWorkspaceGitInfo', requirement)
       return workspaces.gitInfo(workspaceId)
     },
-    getModuleAppState<T = unknown>(key: string): T | undefined {
+    async getModuleAppState<T = unknown>(key: string): Promise<T | undefined> {
       use('getModuleAppState')
       if (typeof key !== 'string' || key.trim().length === 0) return undefined
       return appState.get(key) as T | undefined
@@ -828,14 +825,6 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
       use('watchModuleAppState')
       // Heard on change only, not on subscribe, as the host's main half is.
       return appState.subscribe(cb)
-    },
-    provideService(token, factory) {
-      if (provided.has(token.key) || registries.has(token.key)) {
-        throw new Error(`Service "${token.key}" is already provided; module "${moduleId}" tried to provide it again.`)
-      }
-      const instance = factory(host)
-      provided.set(token.key, instance)
-      return instance
     },
     getService: (token) => resolve(token, false),
     requireService: (token) => resolve(token, true) as never,

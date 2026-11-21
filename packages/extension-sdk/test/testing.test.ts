@@ -79,7 +79,7 @@ describe('createFakeMainHost', () => {
     assert.equal(!github.ok && github.code, 'not_permitted')
     const secret = await getSecretsService(fake.host).set('key', 'v', { allowedOrigins: ['https://api.example.com'] })
     assert.equal(!secret.ok && secret.code, 'not_permitted')
-    assert.throws(
+    await assert.rejects(
       () =>
         getCompanionAgentsService(fake.host).attach({
           workspaceId: 'ws-app',
@@ -103,8 +103,8 @@ describe('createFakeMainHost', () => {
       /requires service "github.module-service", which no enabled module provides/,
     )
     assert.equal(fake.host.getService({ key: 'github.module-service' }), undefined)
-    const own = fake.host.provideService({ key: 'notes.index' }, () => ({ size: 3 }))
-    assert.equal(fake.host.requireService({ key: 'notes.index' }), own)
+    // A worker provides no service of its own: its process is its own.
+    assert.equal('provideService' in fake.host, false)
   })
 
   test('declared methods need no permission, are called by access, and are refused as the host refuses', async () => {
@@ -207,8 +207,13 @@ describe('createFakeMainHost', () => {
         permissions: ['tools:contribute'],
         contributes: {
           mcpTools: [
-            { name: 'notes_search', description: 'Search the notes.', access: 'read' },
-            { name: 'notes_clear', description: 'Clear the notes.', access: 'operate' },
+            { name: 'notes_search', description: 'Search the notes.', access: 'read', inputSchema: { type: 'object' } },
+            {
+              name: 'notes_clear',
+              description: 'Clear the notes.',
+              access: 'operate',
+              inputSchema: { type: 'object' },
+            },
           ],
         },
       },
@@ -267,7 +272,7 @@ describe('createFakeMainHost', () => {
     fake.services.conversations.emitEvent(ref, { type: 'content_delta', payload: { text: 'Done' } })
     fake.services.conversations.emitEvent(ref, { type: 'turn_completed' })
     assert.deepEqual(seen, ['turn_started', 'content_delta', 'turn_completed'])
-    assert.equal(chats.list()[0]?.status, 'ready')
+    assert.equal((await chats.list())[0]?.status, 'ready')
     const transcript = await chats.transcript(ref)
     assert.ok(transcript.ok)
     assert.deepEqual(
@@ -388,9 +393,9 @@ describe('createFakeMainHost', () => {
     const fake = createFakeMainHost({ moduleId: 'review', permissions: ['agents:companion'] })
     const companions = getCompanionAgentsService(fake.host)
     const spec = { workspaceId: 'ws-app', agentId: 'guide', name: 'Guide', workspaceRoot: ROOT, systemPrompt: 'Help.' }
-    const handle = companions.attach(spec)
-    assert.equal(companions.attach(spec), handle)
-    assert.equal(handle.status(), 'absent', 'attach never spawns')
+    const handle = await companions.attach(spec)
+    assert.equal(await companions.attach(spec), handle)
+    assert.equal(await handle.status(), 'absent', 'attach never spawns')
     fake.services.companions.respond(({ attempt }) => (attempt === 0 ? { wrong: true } : { score: 3 }))
     const score = await handle.runStructured({
       prompt: 'Rate it',
@@ -681,7 +686,7 @@ describe('createFakeMainHost: settings, workspaces, storage, GitHub and skills',
       permissions: ['storage:own', 'settings:own', 'workspace:read', 'workspace:operate'],
       appState: { pollMinutes: 15 },
     })
-    assert.equal(fake.host.getModuleAppState('pollMinutes'), 15)
+    assert.equal(await fake.host.getModuleAppState('pollMinutes'), 15)
     const heard: unknown[] = []
     fake.host.watchModuleAppState((values) => heard.push(values.pollMinutes))
     assert.deepEqual(heard, [], 'main hears changes, not the current value')
@@ -794,7 +799,7 @@ describe('createFakeMainHost: agents, conversations and scheduled agents', () =>
 
   test('companion runs deny tools by default, refuse auto without conversation:bypass, and leave ask to the person', async () => {
     const fake = createFakeMainHost({ moduleId: 'review', permissions: ['agents:companion'] })
-    const handle = getCompanionAgentsService(fake.host).attach({
+    const handle = await getCompanionAgentsService(fake.host).attach({
       workspaceId: 'ws-app',
       agentId: 'guide',
       name: 'Guide',
@@ -922,7 +927,7 @@ describe('createFakeMainHost: agents, conversations and scheduled agents', () =>
     const lastRun = fake.services.scheduledAgents.fire(created.agent.id)
     assert.ok(lastRun.ok && lastRun.agentId)
     assert.deepEqual(runs, [['card-42', lastRun.agentId]], 'a one-time schedule is heard before it closes')
-    const [chat] = getConversationService(fake.host).list({ workspaceId: lastRun.workspaceId })
+    const [chat] = await getConversationService(fake.host).list({ workspaceId: lastRun.workspaceId })
     assert.equal(chat?.scheduledAgentId, created.agent.id)
     assert.equal(chat?.scheduledAgentTag, 'card-42')
     assert.deepEqual(await scheduled.list(), [])

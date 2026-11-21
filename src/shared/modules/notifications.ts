@@ -123,7 +123,7 @@ export function validateModuleNotifyInput(input: unknown): ModuleNotifyValidatio
 }
 
 // Notification text shown for a module failure must not leak install locations
-// (mirrors the launch-snapshot sanitizer in third-party-main-loader.ts).
+// (as Settings' words for a failed worker do not: entry-messages.ts).
 export function sanitizeNotificationText(text: string, fallback: string): string {
   if (/(^|[\s'"])(?:\/[\w.-][^\s'"]*|[A-Za-z]:\\[^\s'"]+)/.test(text)) return fallback
   return text

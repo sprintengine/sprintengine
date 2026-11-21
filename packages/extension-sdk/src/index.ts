@@ -468,9 +468,10 @@ export type MainHost = {
    * sync. Read-only (main never writes it back); a value is there as soon as
    * the surface set it. `undefined` when the key has never
    * been set. Never put a secret here — use the secrets service.
-   * Check `host.supports('main-app-state')` first.
+   * Check `host.supports('main-app-state')` first. Asynchronous: the worker
+   * runs in a process of its own and asks Studio.
    */
-  getModuleAppState<T = unknown>(key: string): T | undefined
+  getModuleAppState<T = unknown>(key: string): Promise<T | undefined>
   /**
    * Hear your module's whole app-state namespace whenever it changes — a
    * Settings change in whichever window — not on subscribe (read the current value
@@ -478,7 +479,6 @@ export type MainHost = {
    * drops it too. A surface writes them with `settings.set`.
    */
   watchModuleAppState(cb: (values: Readonly<Record<string, unknown>>) => void): () => void
-  provideService<T>(token: ServiceToken<T>, factory: (host: MainHost) => T): T
   getService<T>(token: ServiceToken<T>): T | undefined
   requireService<T>(token: ServiceToken<T>): T
   onStartup(hook: StartupHook): void
@@ -930,7 +930,8 @@ export type CompanionValidateResult<T> = { ok: true; value: T } | { ok: false; e
 
 export type CompanionRunStructuredOptions<T> = {
   prompt: string
-  validate: (raw: unknown) => CompanionValidateResult<T>
+  /** May answer a promise: it runs in the worker, and Studio awaits it. */
+  validate: (raw: unknown) => CompanionValidateResult<T> | Promise<CompanionValidateResult<T>>
   /** Validator errors are fed back to the agent and the turn retried. Default 1. */
   retries?: number
   onPhase?: (phase: string) => void
@@ -968,7 +969,7 @@ export type CompanionAgentHandle = {
   readonly workspaceId: string
   readonly agentId: string
   /** Folds from the same conversation-session projection the Sessions popover reads. */
-  status(): CompanionAgentStatus
+  status(): Promise<CompanionAgentStatus>
   onStatus(cb: (status: CompanionAgentStatus) => void): () => void
   /** Run a structured JSON task: extract final JSON, validate, retry-once, return typed. */
   runStructured<T>(opts: CompanionRunStructuredOptions<T>): Promise<T>
@@ -998,18 +999,18 @@ export type CompanionAgentHandle = {
  * `getCompanionAgentsService(host)`. `attach` NEVER spawns — it returns a handle
  * in `absent` status; the first `runStructured`/`send` (a live user intent)
  * spawns, so reopening a workspace never auto-starts a companion. A second
- * `attach` with the same (workspaceId, agentId) returns the SAME handle.
+ * `attach` with the same (workspaceId, agentId) reaches the SAME session.
  *
  * Declare the `agents:companion` permission (the service checks it at attach
  * time and throws if absent). Studio starts the service ahead of every
  * extension's worker.
  */
 export type CompanionAgentsService = {
-  attach(spec: CompanionAgentSpec): CompanionAgentHandle
+  attach(spec: CompanionAgentSpec): Promise<CompanionAgentHandle>
 }
 
 type CompanionAgentsRegistry = {
-  attach(moduleId: string, spec: CompanionAgentSpec): CompanionAgentHandle
+  attach(moduleId: string, spec: CompanionAgentSpec): Promise<CompanionAgentHandle>
 }
 
 const companionAgentsModuleServiceToken: ServiceToken<CompanionAgentsRegistry> =
@@ -1024,19 +1025,22 @@ export function getCompanionAgentsService(host: MainHost): CompanionAgentsServic
   const registry = host.requireService(companionAgentsModuleServiceToken)
   const moduleId = host.moduleId
   return {
-    attach: (spec) => {
+    attach: async (spec) => {
       const handle: Omit<CompanionAgentHandle, 'respondToApproval'> &
-        Partial<Pick<CompanionAgentHandle, 'respondToApproval'>> = registry.attach(moduleId, spec)
+        Partial<Pick<CompanionAgentHandle, 'respondToApproval'>> = await registry.attach(moduleId, spec)
       if (handle.respondToApproval) return handle as CompanionAgentHandle
       // A host older than `companion-tools` has no answer to give; say so
       // rather than leave the module a TypeError.
-      return Object.assign(handle, {
-        respondToApproval: () =>
-          Promise.resolve({
-            ok: false as const,
-            message: `This version of the app has no "respondToApproval"; check host.supports('companion-tools').`,
-          }),
-      })
+      return Object.assign(
+        { ...handle },
+        {
+          respondToApproval: () =>
+            Promise.resolve({
+              ok: false as const,
+              message: `This version of the app has no "respondToApproval"; check host.supports('companion-tools').`,
+            }),
+        },
+      )
     },
   }
 }

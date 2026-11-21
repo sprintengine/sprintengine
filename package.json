@@ -114,7 +114,8 @@
       "!node_modules/docx/dist/index.{mjs,iife.js,umd.cjs,d.ts,d.cts}"
     ],
     "asarUnpack": [
-      "node_modules/@vscode/ripgrep-*/bin/**"
+      "node_modules/@vscode/ripgrep-*/bin/**",
+      "out/main/extension-worker.js"
     ],
     "extraResources": [
       {

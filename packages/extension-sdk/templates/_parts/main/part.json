@@ -7,7 +7,7 @@
   "main": "dist/main.cjs",
   "contributes": {},
   "scripts": {
-    "build:main": "esbuild src/main.ts --bundle --format=cjs --platform=node --target=node22 --external:electron --outfile=extension/dist/main.cjs"
+    "build:main": "esbuild src/main.ts --bundle --format=cjs --platform=node --target=node22 --outfile=extension/dist/main.cjs"
   },
   "devDependencies": {}
 }

@@ -408,7 +408,7 @@ export type ModuleConversationService = {
     ref: ModuleConversationRef,
     turnId?: string,
   ): Promise<ModuleConversationResult<{ turnId: string; text: string }>>
-  list(filter?: { workspaceId?: string }): ModuleConversationSummary[]
+  list(filter?: { workspaceId?: string }): Promise<ModuleConversationSummary[]>
   /** `cb` fires once with the current list, then on every change. Returns the unsubscriber. */
   watch(
     filter: { workspaceId?: string } | undefined,

@@ -202,6 +202,14 @@ import {
 type Extends<A, B> = [A] extends [B] ? true : false
 // Type identity via the generic-function-identity trick: detects added/removed
 // optional properties, which mutual assignability cannot.
+// What a worker sees of an app method. Its code runs in a process of its own
+// (src/server/extensions/workers), so an answer that is data arrives as a
+// promise; an unsubscriber, a promise or nothing arrives as it is.
+type InWorkerResult<R> =
+  R extends Promise<unknown> ? R : R extends (...args: never[]) => unknown ? R : [R] extends [void] ? R : Promise<R>
+type InWorker<S> = {
+  [K in keyof S]: S[K] extends (...args: infer A) => infer R ? (...args: A) => InWorkerResult<R> : S[K]
+}
 type IsExact<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
 
 // A failing assertion surfaces as `false is not assignable to true` on the
@@ -310,15 +318,22 @@ expectType<IsExact<AppModuleWorkspaceGitRemote, SdkModuleWorkspaceGitRemote>>()
 expectType<IsExact<AppModuleWorkspaceGitInfoResult, SdkModuleWorkspaceGitInfoResult>>()
 expectType<IsExact<AppMainHost['getWorkspaceGitInfo'], SdkMainHost['getWorkspaceGitInfo']>>()
 // Settings in the worker: the app-state pair on MainHost.
-expectType<IsExact<AppMainHost['getModuleAppState'], SdkMainHost['getModuleAppState']>>()
+expectType<IsExact<Parameters<AppMainHost['getModuleAppState']>, Parameters<SdkMainHost['getModuleAppState']>>>()
+expectType<
+  IsExact<ReturnType<SdkMainHost['getModuleAppState']>, Promise<ReturnType<AppMainHost['getModuleAppState']>>>
+>()
 expectType<IsExact<AppMainHost['watchModuleAppState'], SdkMainHost['watchModuleAppState']>>()
 
-// Host soundness: the app host handed to module code satisfies the SDK view.
-expectType<Extends<AppMainHost, SdkMainHost>>()
+// Host soundness: the app host a worker's calls reach satisfies the SDK view,
+// but for what the worker's process can only ask for (an answer it awaits)
+// and `provideService`, which a worker cannot do from its own process.
+type WorkerAsks = 'getModuleAppState' | 'provideService'
+expectType<Extends<Omit<AppMainHost, WorkerAsks>, Omit<SdkMainHost, WorkerAsks>>>()
 // Host parity: the worker's host carries exactly the members the SDK
-// publishes, no more. A surface's `studio` is built in its frame
+// publishes, no more, but for `provideService`, which only Studio's own parts
+// use. A surface's `studio` is built in its frame
 // (server/extensions/frames/frame-bootstrap.ts), from EXTENSION_FRAME_METHODS.
-expectType<IsExact<keyof AppMainHost, keyof SdkMainHost>>()
+expectType<IsExact<Exclude<keyof AppMainHost, 'provideService'>, keyof SdkMainHost>>()
 // The module-owned event channel: the emit half on MainHost, the envelope a
 // surface hears as `push`.
 expectType<IsExact<AppModuleEventEnvelope, SdkModuleEventEnvelope>>()
@@ -362,7 +377,7 @@ expectType<
     sdk.ModuleConversationResult<{ events: sdk.ModuleConversationEvent[] }>
   >
 >()
-expectType<IsExact<appConversation.ModuleConversationService, sdk.ModuleConversationService>>()
+expectType<IsExact<InWorker<appConversation.ModuleConversationService>, sdk.ModuleConversationService>>()
 expectType<IsExact<appConversation.ModuleOpenChatInput, sdk.ModuleOpenChatInput>>()
 expectType<IsExact<appConversation.ModuleOpenChatResult, sdk.ModuleOpenChatResult>>()
 expectType<IsExact<appConversation.ModuleChatRuntimeOption, sdk.ModuleChatRuntimeOption>>()
@@ -422,7 +437,9 @@ expectType<IsExact<appBrokers.ModuleGitHubDownloadResponse, sdk.ModuleGitHubDown
 type SdkExpectedRegistry<S> = {
   [K in keyof S]: S[K] extends (...args: infer A) => infer R ? (moduleId: string, ...args: A) => R : never
 }
-expectType<IsExact<appConversation.ModuleConversationRegistry, SdkExpectedRegistry<sdk.ModuleConversationService>>>()
+expectType<
+  IsExact<InWorker<appConversation.ModuleConversationRegistry>, SdkExpectedRegistry<sdk.ModuleConversationService>>
+>()
 expectType<IsExact<appBrokers.ModuleSecretsRegistry, SdkExpectedRegistry<sdk.ModuleSecretsService>>>()
 expectType<IsExact<appBrokers.ModuleGitHubRegistry, SdkExpectedRegistry<sdk.ModuleGitHubService>>>()
 expectType<
@@ -485,9 +502,14 @@ type AppCompanionAgentHandle = ReturnType<AppCompanionAttach>
 type AppCompanionAgentEvent = Parameters<Parameters<AppCompanionAgentHandle['onEvent']>[0]>[0]
 expectType<IsExact<Parameters<AppCompanionAttach>, [moduleId: string, spec: SdkCompanionAgentSpec]>>()
 expectType<IsExact<keyof AppCompanionAgentsModuleRegistry, keyof SdkCompanionAgentsService>>()
-expectType<IsExact<Omit<AppCompanionAgentHandle, 'onEvent'>, Omit<SdkCompanionAgentHandle, 'onEvent'>>>()
+expectType<
+  IsExact<Omit<AppCompanionAgentHandle, 'onEvent' | 'status'>, Omit<SdkCompanionAgentHandle, 'onEvent' | 'status'>>
+>()
 expectType<IsExact<keyof AppCompanionAgentHandle, keyof SdkCompanionAgentHandle>>()
+// The worker awaits what the app answers at once: the handle, and its status.
 expectType<IsExact<ReturnType<AppCompanionAgentHandle['status']>, SdkCompanionAgentStatus>>()
+expectType<IsExact<ReturnType<SdkCompanionAgentHandle['status']>, Promise<SdkCompanionAgentStatus>>>()
+expectType<IsExact<ReturnType<SdkCompanionAgentsService['attach']>, Promise<SdkCompanionAgentHandle>>>()
 expectType<
   IsExact<Parameters<AppCompanionAgentHandle['runStructured']>[0], SdkCompanionRunStructuredOptions<unknown>>
 >()
