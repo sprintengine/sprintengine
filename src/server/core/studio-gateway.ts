@@ -32,6 +32,7 @@ import { createClientToolsetStore, type ConversationRef } from '../tools/client-
 import { createPullRequestTools } from '../pull-requests/pull-request-tools'
 import { studioPullRequestCreationDeps } from '../pull-requests/pull-request-creation'
 import { createLocalServerTools } from '../local-servers/local-server-tools'
+import { createFileViewTools } from '../file-views/file-view-tools'
 import { studioBridgeScriptPath, type StudioCore } from './studio-core'
 import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
@@ -128,6 +129,8 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       permissionModesOf: (cli) => listPluginRegistryEntries().find((entry) => entry.id === cli)?.permissionModes ?? [],
       lifecycle: core.conversationLifecycle,
       moveChat: core.conversationMove.move,
+      // A chat's agent compacting its own chat once its turn ends.
+      compactOwnChat: core.selfCompact.request,
       // A paired device moves a chat only into this machine's own projects.
       deviceMayName: async (folder) => (await confineToRoots(folder, ownWorkspaceFolders(core))).ok,
       ...(options.linkLaunchedAgent ? { linkLaunchedAgent: options.linkLaunchedAgent } : {}),
@@ -184,6 +187,8 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       isSignedInGitHubHost: async (host) => Boolean(await gitHubHostToken(host)),
     }),
     ...createLocalServerTools({ link: (key, input) => core.localServers.linkForAgent(key, input) }),
+    // Files an agent shows the person in its chat, to read and edit there.
+    ...createFileViewTools({ views: core.fileViews }),
     // `worktree.lease` and `worktree.release`: a worktree of the agent's own
     // from this core's pool, beside the chats that work in it.
     ...core.worktrees.tools,

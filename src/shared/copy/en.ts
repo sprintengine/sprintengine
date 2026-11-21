@@ -1250,6 +1250,25 @@ export const en = {
           connectsOverTheInternet: 'Connects over the internet',
         },
       },
+      // src/renderer/src/components/panels/agentChat/fileView/FileViewCard.tsx
+      fileView: {
+        files: 'Files shown in this chat',
+        file: (path: unknown) => `File ${path}`,
+        loading: 'Opening…',
+        saving: 'Saving…',
+        saved: 'Saved',
+        unsaved: 'Not saved yet',
+        readOnly: 'Read only',
+        readOnlyHere: 'This view cannot change the chat, so the file is read only here.',
+        cannotSaveHere: 'This Studio cannot save files shown in a chat. Update it to edit them here.',
+        changedOnDisk: 'This file changed on disk since you opened it. Your edits are not saved.',
+        goneOnDisk: 'This file is gone from disk. Your edits are not saved.',
+        reload: 'Load the file from disk',
+        keepMine: 'Save mine over it',
+        couldNotSave: 'Could not save',
+        couldNotOpen: 'Could not open this file',
+        tryAgain: 'Try again',
+      },
       // src/renderer/src/components/panels/agentChat/promptCacheNotice.tsx
       promptCacheNotice: {
         handoff: 'Handoff',

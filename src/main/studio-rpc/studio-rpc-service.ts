@@ -1,3 +1,4 @@
+import type { FileViews } from '../../server/file-views/file-views'
 import type { Duplex } from 'node:stream'
 import type { DistributionTerminalHost } from '../../server/wsl/distribution-terminal-host'
 import type { DistributionMachine } from '../../server/wsl/distribution-machine'
@@ -255,6 +256,8 @@ export type StudioRpcServiceOptions = {
   schedules?: StudioSchedulesDomain
   /** The chats' records beyond their rest (`chat-lifecycle`). */
   chatLifecycle?: StudioChatLifecycleDomain
+  /** The files chats' agents showed, read and saved from the chat (`file-views`). */
+  fileViews?: Pick<FileViews, 'read' | 'write'>
   /** The machine's boards, for another device (`canvas-boards`): where the canvas service runs in this process. */
   canvas?: StudioCanvasDomain
   /** How this Studio is updated (`update.*`); by hand when not given. */
@@ -533,6 +536,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.agentSkills ? { agentSkills: options.agentSkills } : {}),
       ...(options.schedules ? { schedules: options.schedules } : {}),
       ...(options.chatLifecycle ? { chatLifecycle: options.chatLifecycle } : {}),
+      ...(options.fileViews ? { fileViews: options.fileViews } : {}),
       ...(options.canvas ? { canvas: options.canvas } : {}),
       ...(options.updates ? { updates: options.updates } : {}),
       ...(options.modules ? { modules: options.modules } : {}),

@@ -42,6 +42,7 @@ import { presentToolItem, summarizeToolGroup } from '../../../../../shared/conve
 import type { ConversationToolKind } from '../../../../../shared/conversation-runtime'
 import {
   deriveTurnFold,
+  isFileView,
   isPluginOffer,
   turnAgentLanes,
   turnFoldedProse,
@@ -52,6 +53,7 @@ import {
 import { formatStepDuration } from './stepDuration'
 import { useLiveRowMotion } from './liveVisibility'
 import { PluginOfferCard } from './pluginOffer/PluginOfferCard'
+import { FileViewCard } from './fileView/FileViewCard'
 import { formatMessageDateTime, formatMessageTime, LiveElapsed } from './liveElapsed'
 import { useClockFormat } from '../../../utils/clockFormat'
 import { showCodexFollowupLabels } from '../../../utils/markdownCodexFollowups'
@@ -900,6 +902,10 @@ export const WorkTimelineStep = memo(function WorkTimelineStep({ tool }: { tool:
   // machine) falls back to its tool row, so the call is never lost.
   if (isPluginOffer(tool) && tool.outputStatus !== 'error')
     return <PluginOfferCard tool={tool} fallback={<ToolRow tool={tool} />} />
+  // Files the agent showed: an editor of each, in tabs. Still running, or
+  // with an answer that names no file, the call is its tool row.
+  if (isFileView(tool) && tool.status === 'done' && tool.outputStatus !== 'error')
+    return <FileViewCard tool={tool} fallback={<ToolRow tool={tool} />} />
   return <ToolRow tool={tool} />
 })
 

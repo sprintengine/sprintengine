@@ -228,6 +228,38 @@ were settled:
   worktree nothing uses goes even unmerged, its commits staying on its
   `agent/` branch (never deleted while unmerged), as a returned slot's do.
   Reopening the chat checks its branch out again while the branch is there.
+- **Slots nothing holds any more go back** (2026-11-21). Four ways the pool
+  kept worktrees it could have handed on, which piled up:
+  - _A held slot is read again, not trusted._ The held record says what was
+    found when the slot was held; a person who deleted the stray file found
+    it still held. A lease that finds the pool full, and every sweep, look at
+    each held slot as it is now (`recheckHeld`): one whose tree reads clean
+    is returned (and a lease takes it as it stands), one that still holds
+    work stays held as it was, with its time and reason.
+  - _Build output left outside the default branch is not work._ An agent
+    that built a package living only on another branch, then switched back,
+    left the package's folder with nothing but its `node_modules`, `dist` and
+    a packed `.tgz`; every lease of that slot met it as a change and held the
+    slot. An untracked file counts as work unless it is build output by its
+    name (under `node_modules`, `dist`, `build`, `out`, `coverage`, `.turbo`,
+    `.next` or `.cache`, or a `*.tgz`) in a folder the default branch does not
+    have at all (`buildLeftovers`). A clean return removes those files, so the
+    next lease does not meet them. Every tracked change, and anything
+    untracked outside that rule (a new package's source beside its build, an
+    archive at the root or in a folder the default branch has), is still work
+    and holds the slot.
+  - _A detached HEAD with nobody to come back to it is returned._ A slot
+    whose chat, or whose agent's chat, is gone was refused as "on a detached
+    HEAD" by a full pool's lease, and waited for a sweep. It is returned now
+    as an unused slot is, any commit only that HEAD has first put on a branch
+    of its own.
+  - _An agent's own leases end with its work._ The slots an agent leased
+    (`worktree.lease`) go back a few seconds after its chat settles or is
+    removed, the agent is removed, or a sub-agent's task ends
+    (`agent-lease-release.ts`), from the core rather than a window's sweep, so
+    with no window open too. Only a clean slot goes; one with work stays the
+    agent's (a sub-agent takes follow-ups), and the sweep holds it for a
+    person once nobody on record can come back to it.
 
 ## 6. Settings ▸ Worktrees (2026-10-05)
 

@@ -79,7 +79,11 @@ function legacyLocalOnly(toolName: string): boolean {
     toolName.startsWith('canvas.') ||
     toolName.startsWith('terminal.') ||
     // Since a device was found reading the person's in-app browser pane: the agents' tools here alone.
-    toolName.startsWith('browser.')
+    toolName.startsWith('browser.') ||
+    // Since agents compact their own chats: a device has no chat of its own.
+    toolName === 'conversation.compact' ||
+    // Since agents show files in their chats: a device saves them with `fileViews.*`.
+    toolName.startsWith('file.')
   )
 }
 function legacyRequiredScopeForTool(toolName: string, isMutation: boolean): TailnetScope {

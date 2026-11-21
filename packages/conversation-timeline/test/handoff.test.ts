@@ -101,3 +101,25 @@ test('Studio’s own compaction before the cache expired draws its divider and n
   expect(rows.filter((row) => row.kind === 'user')).toHaveLength(1)
   expect(rows.some((row) => row.kind === 'compaction')).toBe(true)
 })
+
+test('the compaction a chat’s agent asked for draws its divider, saying so, and no message', () => {
+  const events = [
+    event('user_message', 1, { turnId: 't1', text: 'Wait for CI' }),
+    event('turn_started', 2, { turnId: 't1' }),
+    event('turn_completed', 3, { turnId: 't1' }),
+    event('user_message', 4, {
+      turnId: 't2',
+      text: '/compact',
+      origin: { kind: 'studio', reason: 'agent-compact' },
+    }),
+    event('turn_started', 5, { turnId: 't2' }),
+    event('context_compacted', 6, { turnId: 't2', trigger: 'manual', preTokens: 31_900, postTokens: 8_800 }),
+    event('turn_completed', 7, { turnId: 't2' }),
+  ]
+  const entries = projectConversation(events).entries
+  const compaction = entries.find((entry) => entry.kind === 'compaction')
+  expect(compaction).toMatchObject({ askedByAgent: true })
+  expect(compaction && 'beforeCacheExpiry' in compaction).toBe(false)
+  const rows = deriveConversationTimelineRows(entries, false)
+  expect(rows.filter((row) => row.kind === 'user')).toHaveLength(1)
+})

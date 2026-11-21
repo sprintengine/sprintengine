@@ -5,16 +5,16 @@ import { UNCLAIMED_LEASE_MS, type ReservedPath, type SlotKeeper, type SlotLease,
 import {
   clearStaleIndexLock,
   commitIsReachable,
-  isPerAgentFile,
   operationInProgress,
   readSlotGitDir,
   readSlotStatus,
+  removeBuildLeftovers,
   removePerAgentFiles,
 } from './slot-git'
 import { WORKTREE_POOL_OWNER } from '../worktree-leases'
 import { type PoolContext, type PoolRuntime, holdIdle, tail, messageOf } from './pool-context'
 import type { WorktreePoolSweepEntry, WorktreePoolReturnInput } from './worktree-pool-service'
-import { lockReasonOf, isOurLock, hold, holdAfterFailure, forgetSlotsGoneFromDisk } from './pool-slot-steps'
+import { lockReasonOf, isOurLock, hold, holdAfterFailure, forgetSlotsGoneFromDisk, slotWork } from './pool-slot-steps'
 import { evictOverLimit, measureSlot, enforceDiskLimit } from './pool-eviction'
 import { giveBack, judgeIdle, readIdleFacts, type IdleFacts } from './pool-idle'
 
@@ -80,6 +80,35 @@ export async function returnSlot(
     await enforceDiskLimit(ctx)
   }
   return 'returned'
+}
+
+/**
+ * Look at a held slot again, as it is now, and return it if what held it has
+ * gone: a person (or an agent) committed, stashed or deleted the work, or the
+ * only thing left is what no longer counts (`slotWork`). The held record says
+ * what was found when it was held, not what is there: a slot held for one
+ * untracked file stayed held after the file was deleted, until someone
+ * pressed a button in Settings. Read first without touching the record, so a
+ * slot that still holds work stays held as it was, with its time and reason;
+ * only one that reads clean goes through the return, which checks everything
+ * again under the path's hold and holds it anew if something moved.
+ */
+export async function recheckHeld(
+  ctx: PoolContext,
+  pool: PoolRuntime,
+  slot: SlotRecord,
+): Promise<'returned' | 'held' | 'postponed' | 'skipped'> {
+  if (slot.state !== 'held' || pool.busy.has(slot.id)) return 'skipped'
+  const lock = await lockReasonOf(ctx, pool, slot.path)
+  if (lock === undefined || (lock !== null && !isOurLock(lock))) return 'held'
+  const gitDir = await readSlotGitDir(ctx.git, slot.path)
+  if (!gitDir || (await operationInProgress(gitDir))) return 'held'
+  const status = await readSlotStatus(ctx.git, slot.path)
+  if (!status.ok) return 'held'
+  if ((await slotWork(ctx, pool, slot.path, status.status)).changes > 0) return 'held'
+  const outcome = await returnSlot(ctx, pool, slot)
+  if (outcome === 'returned') ctx.log(`${slot.path}: was held, and nothing holds it now`)
+  return outcome
 }
 
 /** Whether a return may take `slot` as it stands: not busy, and in a state a return starts from. */
@@ -158,8 +187,10 @@ async function returnHolding(
     // The MCP config every agent launch writes into its worktree is the
     // app's, not the agent's work, and is removed below; nothing else counts
     // as clean.
-    const ownFiles = status.status.untrackedPaths.filter(isPerAgentFile).length
-    const agentChanges = status.status.changedPaths - ownFiles
+    // So is build output left in a folder the default branch does not have
+    // (`slotWork`), which is removed below too.
+    const work = await slotWork(ctx, pool, slot.path, status.status)
+    const agentChanges = work.changes
     if (agentChanges > 0) {
       return await holdUnlessParking('dirty', null, {
         changedPaths: agentChanges,
@@ -204,6 +235,9 @@ async function returnHolding(
     }
     const cleared = await removePerAgentFiles(ctx.git, slot.path)
     if (cleared.length > 0) ctx.log(`${slot.path}: removed the last agent's ${cleared.join(', ')}`)
+    const swept = await removeBuildLeftovers(slot.path, work.leftovers)
+    if (swept.length > 0)
+      ctx.log(`${slot.path}: removed build output left outside the default branch: ${swept.join(', ')}`)
     await ctx.git(pool.record.repoRoot, ['worktree', 'unlock', slot.path])
     await ctx.withPool(pool, async () => {
       slot.state = 'idle'
@@ -326,6 +360,13 @@ export async function returnUnused(
       if (outcome !== 'skipped') entries.push({ path: slot.path, branch: null, verdict: outcome })
       continue
     }
+    if (slot.state === 'held') {
+      // Looked at again, as it is now: what held it may be gone.
+      if (input.dryRun) continue
+      const outcome = await recheckHeld(ctx, pool, slot)
+      if (outcome === 'returned') entries.push({ path: slot.path, branch: null, verdict: 'returned' })
+      continue
+    }
     if (slot.state !== 'leased' || !slot.lease) continue
     const lease = slot.lease
     const base = { path: slot.path, branch: lease.branch }
@@ -353,7 +394,11 @@ export async function returnUnused(
       const after = ctx.slotById(pool, slot.id)
       entries.push(
         outcome === 'returned'
-          ? { ...base, verdict: 'returned', detail: givenBackHow }
+          ? {
+              ...base,
+              verdict: 'returned',
+              detail: verdict.keeper ? givenBackHow : 'nobody on record can come back to it',
+            }
           : outcome === 'held'
             ? { ...base, verdict: 'held', detail: after?.held?.detail ?? after?.held?.reason }
             : {
@@ -411,6 +456,51 @@ export async function release(
     await dropUnusedBranch(ctx, found.pool, branch, base)
   }
   return outcome === 'skipped' ? 'busy' : outcome
+}
+
+/**
+ * Give back, now, the slots an agent leased for itself (`worktree.lease`)
+ * once its work is over: the agent's chat settled or was removed, the agent
+ * was removed, or a sub-agent finished its task. Without this they waited
+ * for the cleanup's sweep, which only a desktop window runs, every few hours
+ * or a minute after a change it noticed, or for a lease that found the pool
+ * full; in the meantime every finished sub-agent kept a worktree.
+ *
+ * Only a slot that holds no work is returned (`slotWork`), and its branch is
+ * kept, as every return keeps it. One with work in it stays leased: its agent
+ * may still be asked to finish it (a sub-agent takes follow-ups), and the
+ * sweep holds it for a person once nobody on record can. Something running
+ * in it postpones its return to the sweep. `agentId` left out means every
+ * agent of the chat.
+ */
+export async function releaseLeasesOf(
+  ctx: PoolContext,
+  owner: { workspaceId: string; agentId?: string },
+): Promise<Array<{ path: string; outcome: 'returned' | 'held' | 'postponed' | 'skipped' | 'kept' }>> {
+  const outcomes: Array<{ path: string; outcome: 'returned' | 'held' | 'postponed' | 'skipped' | 'kept' }> = []
+  for (const pool of [...ctx.pools.values()]) {
+    if (ctx.stopped) break
+    const leased = pool.record.slots.filter(
+      (slot) =>
+        slot.state === 'leased' &&
+        slot.lease !== null &&
+        slot.lease.agentId !== null &&
+        slot.lease.workspaceId === owner.workspaceId &&
+        (owner.agentId === undefined || slot.lease.agentId === owner.agentId),
+    )
+    if (leased.length === 0 || !(await ctx.ready(pool))) continue
+    for (const slot of leased) {
+      const status = await readSlotStatus(ctx.git, slot.path)
+      if (!status.ok || (await slotWork(ctx, pool, slot.path, status.status)).changes > 0) {
+        outcomes.push({ path: slot.path, outcome: 'kept' })
+        continue
+      }
+      const outcome = await returnSlot(ctx, pool, slot)
+      if (outcome === 'returned') ctx.log(`${slot.path}: given back; the agent that leased it is done`)
+      outcomes.push({ path: slot.path, outcome })
+    }
+  }
+  return outcomes
 }
 
 /**

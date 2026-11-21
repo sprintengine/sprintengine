@@ -58,6 +58,10 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'conversation.changesDiff': CHAT_READ,
   'conversation.changedFile': CHAT_READ,
   'conversation.attachment': CHAT_READ,
+  // A file the chat's agent showed, read and saved through that chat: the
+  // device can drive the chat, which could ask its agent to change the file.
+  'fileViews.read': CHAT_READ,
+  'fileViews.write': CHAT_OPERATE,
   'conversation.planDocument': CHAT_READ,
   'conversation.threads': CHAT_READ,
   'conversation.search': CHAT_READ,

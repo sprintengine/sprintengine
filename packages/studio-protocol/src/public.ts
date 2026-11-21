@@ -47,6 +47,7 @@ export * from './worktrees.js'
 // The desktop's own windows' workspace registry.
 export * from './workspace-sync.js'
 export * from './chat-lifecycle.js'
+export * from './file-views.js'
 // A machine's Canvas boards, for a client on another device.
 export * from './canvas.js'
 // Keeping a Studio up to date, and reaching one whose protocol does not meet the client's.

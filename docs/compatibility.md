@@ -199,6 +199,13 @@ process); a client of one that does not says to update or open Studio there.
 There is no fallback to the old socket or tools: a machine on an older build
 shows its boards to a current desktop or phone once it is updated.
 
+The files a chat's agent showed in the chat (`file.view`) are read and saved
+on the chat's Studio with `fileViews.read` and `fileViews.write` (capability
+`file-views`, 2026-11-21; `conversation:read` and `conversation:operate`), by
+the chat's key and the path the agent showed. It is additive: a Studio built
+before it does not list the capability, and a client says to update it
+rather than open the view; a client built before it draws the call as a step.
+
 Bump the version instead when the change is not additive: a field that changes
 meaning or type, a field that is removed, a response whose shape a peer is
 already parsing. Nothing a capability flag can describe should bump the version,

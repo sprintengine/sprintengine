@@ -156,6 +156,7 @@ import {
   type StudioWorktreesTopicMap,
 } from './worktrees.js'
 import { STUDIO_CHAT_LIFECYCLE_METHODS, type StudioChatLifecycleMethodMap } from './chat-lifecycle.js'
+import { STUDIO_FILE_VIEWS_METHODS, type StudioFileViewsMethodMap } from './file-views.js'
 import {
   STUDIO_CANVAS_METHODS,
   STUDIO_CANVAS_TOPICS,
@@ -335,7 +336,8 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioAccessMethodMap &
   StudioWebDevicesMethodMap &
   StudioTailnetMethodMap &
-  StudioHostsMethodMap
+  StudioHostsMethodMap &
+  StudioFileViewsMethodMap
 
 /** The `server` and `conversation` methods phase 2 shipped; the chat surface's are in `chat.ts`. */
 type StudioConversationMethodMap = {
@@ -799,6 +801,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_WEB_DEVICES_METHODS,
   ...STUDIO_TAILNET_METHODS,
   ...STUDIO_HOSTS_METHODS,
+  ...STUDIO_FILE_VIEWS_METHODS,
 }
 
 /**

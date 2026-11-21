@@ -278,6 +278,8 @@ export function createStudioRpc(
     // its marks and name written by the same lifecycle the sidebar's are, its
     // delete made as a window's Delete makes it, and a search of what was
     // said in the chats this sidebar lists, most recently spoken in first.
+    // The files a chat's agent showed the person, saved from the chat.
+    fileViews: core.fileViews,
     chatLifecycle: createStudioChatLifecycleDomain({
       lifecycle: core.conversationLifecycle,
       deletion: (actor) => core.worktrees.settledChatDeletion(actor),

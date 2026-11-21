@@ -132,3 +132,17 @@ test('a plugin Studio offered stands outside the fold, under any runtime’s nam
   expect(turnFoldedSteps([shown, ...tools])).toEqual(tools)
   expect(turnShownWork([shown, ...tools], undefined)).toEqual([{ kind: 'step', id: shown.id, tool: shown }])
 })
+
+test('files Studio showed stand outside the fold, under any runtime’s name for the tool', () => {
+  const view = (name: string, serverName?: string): TranscriptToolEntry => ({
+    ...tools[0],
+    id: name,
+    name,
+    ...(serverName ? { serverName } : {}),
+  })
+  expect(stepShownToUser(view('mcp__sprintengine-studio__file_view'))).toBe(true)
+  expect(stepShownToUser(view('sprintengine-studio.file_view'))).toBe(true)
+  expect(stepShownToUser(view('file_view', 'sprintengine-studio'))).toBe(true)
+  expect(stepShownToUser(view('mcp__other__file_view'))).toBe(false)
+  expect(stepShownToUser({ ...view('mcp__sprintengine-studio__file_view'), outputStatus: 'error' })).toBe(false)
+})

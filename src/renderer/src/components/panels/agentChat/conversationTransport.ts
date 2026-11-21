@@ -303,11 +303,40 @@ export type ConversationTransport = {
    */
   readContextBreakdown?(input: ConversationContextBreakdownInput): Promise<ConversationContextBreakdownResult>
   /**
+   * A file the chat's agent showed in the chat (`file.view`), read on the
+   * Studio the chat lives on, through the chat (`fileViews.read`): the
+   * machine that holds the file. Present for every chat on the Studio
+   * protocol; a Studio that does not serve `file-views` answers that it
+   * cannot, in words.
+   */
+  readFileView?(input: { key: ConversationKey; path: string }): Promise<ChatFileViewRead>
+  /**
+   * Save what the person typed into a file the chat's agent showed, on the
+   * machine that holds it (`fileViews.write`), unless the file changed there
+   * since it was read (`ifMatch`): then `conflict`, and the file is left alone.
+   */
+  writeFileView?(input: {
+    key: ConversationKey
+    path: string
+    text: string
+    ifMatch: string
+  }): Promise<ChatFileViewWrite>
+  /**
    * The Studio this window belongs to: providers, files, plans and command
    * lists. The same for every chat in the window, whichever machine it runs on.
    */
   services: ChatServices
 }
+
+/** A shown file as read: its text and the hash a save is conditional on; or why it cannot be. */
+export type ChatFileViewRead =
+  { ok: true; text: string; hash: string; mtimeMs: number } | { ok: false; message: string; code?: string }
+
+/** A save: landed (with the file's hash now), refused for a change on disk since (`conflict`), or why not. */
+export type ChatFileViewWrite =
+  | { ok: true; hash: string; mtimeMs: number }
+  | { ok: false; conflict: true; currentHash: string | null }
+  | { ok: false; conflict?: false; message: string }
 
 export type ConversationToolImageResult =
   { ok: true; src: string } | { ok: false; unsupported: boolean; message: string }
@@ -447,6 +476,8 @@ function studioCalls(
     sendScheduledNow: (input) => parts().sendScheduledNow(input),
     cancelScheduled: (input) => parts().cancelScheduled(input),
     usageLimitResume: (input) => parts().usageLimitResume(input),
+    readFileView: (input) => parts().readFileView(input),
+    writeFileView: (input) => parts().writeFileView(input),
     services: implementation.services,
   }
 }

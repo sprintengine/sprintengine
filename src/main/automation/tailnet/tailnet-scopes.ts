@@ -123,6 +123,12 @@ const CHAT_TO_CHAT_TOOLS: ReadonlySet<string> = new Set([
  * machine that the caller names, and teaches an agent about to work in it; a
  * paired device has neither the folder nor the agent.
  *
+ * The `file.*` family shows files in the calling agent's own chat; a paired
+ * device reads and saves what a chat showed with `fileViews.*`.
+ *
+ * `conversation.compact` compacts the calling agent's own chat; a paired
+ * device has no chat of its own to compact.
+ *
  * The `plugin.*` family finds a plugin and draws it as a card in the calling
  * agent's chat, for the person at this machine to install or not.
  *
@@ -165,6 +171,12 @@ export function localOnlyGatewayToolReason(toolName: string): string | null {
   }
   if (toolName.startsWith('plugin.')) {
     return `"${toolName}" offers the person at this machine a plugin to install, in the calling agent's chat, and a paired device is not an agent. Run it from an agent on that machine.`
+  }
+  if (toolName.startsWith('file.')) {
+    return `"${toolName}" shows files in the calling agent's own chat, and a paired device is not an agent. A paired device opens and saves the files a chat showed through this machine's Studio (\`fileViews.*\`) instead.`
+  }
+  if (toolName === 'conversation.compact') {
+    return `"${toolName}" compacts the calling agent's own chat once its turn ends, and a paired device is not an agent. Run it from an agent on that machine.`
   }
   if (toolName.startsWith('worktree.')) {
     return `"${toolName}" hands the calling agent a worktree on this machine and holds it for that agent, and a paired device is not an agent. Run it from an agent on that machine.`

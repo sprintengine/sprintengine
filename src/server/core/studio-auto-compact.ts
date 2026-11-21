@@ -21,8 +21,32 @@ import {
 /** How a chat records the compaction: Studio's, sent before its cache expired. */
 export const AUTO_COMPACT_ORIGIN: ConversationMessageOrigin = { kind: 'studio', reason: 'auto-compact' }
 
+/** How a chat records the compaction its own agent asked for once its turn ended (`conversation.compact`). */
+export const AGENT_COMPACT_ORIGIN: ConversationMessageOrigin = { kind: 'studio', reason: 'agent-compact' }
+
 /** What is sent: Claude Code's own compaction, which the chat draws as its divider. */
 const COMPACT_COMMAND = '/compact'
+
+/**
+ * Send a chat the CLI's `/compact` as Studio's own message, through a host
+ * made with `AUTO_COMPACT_ORIGIN` (the compaction before a cache expires) or
+ * `AGENT_COMPACT_ORIGIN` (the one an agent asks for on its own chat,
+ * conversation-self-compact.ts), which the chat draws alike, as its
+ * compaction divider alone, each saying why.
+ */
+export async function sendStudioCompaction(
+  host: Pick<ConversationGatewayHost, 'resolveKey' | 'command'>,
+  session: Pick<ConversationSessionSummary, 'workspaceId' | 'agentId'>,
+  commandId: string,
+): Promise<{ ok: boolean; message?: string }> {
+  const key = host.resolveKey(session.workspaceId, session.agentId)
+  if (!key) return { ok: false, message: 'The chat has no folder on this machine' }
+  const answer = await host.command(key, AUTO_COMPACT_CLIENT_ID, commandId, {
+    kind: 'send',
+    message: COMPACT_COMMAND,
+  })
+  return answer.ok ? { ok: true } : { ok: false, message: answer.message }
+}
 
 // The events that can move what the scheduler decides: a reading, a turn
 // starting or ending, the work a chat runs in the background, a session
@@ -93,15 +117,9 @@ export function createStudioAutoCompact(deps: StudioAutoCompactDeps): AutoCompac
     enabledByDefault: deps.enabledByDefault,
     // Through the same send a paired device's goes, which resumes a chat
     // whose child the idle sweep ended, marked as Studio's.
-    send: async (session, commandId) => {
+    send: (session, commandId) => {
       host ??= deps.createHost({ origin: AUTO_COMPACT_ORIGIN })
-      const key = host.resolveKey(session.workspaceId, session.agentId)
-      if (!key) return { ok: false, message: 'The chat has no folder on this machine' }
-      const answer = await host.command(key, AUTO_COMPACT_CLIENT_ID, commandId, {
-        kind: 'send',
-        message: COMPACT_COMMAND,
-      })
-      return answer.ok ? { ok: true } : { ok: false, message: answer.message }
+      return sendStudioCompaction(host, session, commandId)
     },
     ...(deps.now ? { now: deps.now } : {}),
     setTimer,

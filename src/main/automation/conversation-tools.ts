@@ -8,6 +8,7 @@ import {
 import type { WorkspaceRegistryActor } from '../../shared/workspace-registry'
 import type { ConversationLifecycle } from './conversation-lifecycle'
 import type { ConversationMove } from './conversation-move'
+import type { ConversationSelfCompact } from './conversation-self-compact'
 import { parseCliPermissionPreset } from '../../shared/cli-permission-preset'
 import type { CliPermissionModeSpec } from '../../shared/cli-permission-mode'
 import { conversationPermissionModes } from '../../shared/conversation-harness'
@@ -49,6 +50,7 @@ export const CONVERSATION_MUTATION_TOOL_NAMES: readonly string[] = [
   'conversation.highlight',
   'conversation.auto_settle',
   'conversation.change_project',
+  'conversation.compact',
 ]
 
 const EFFORT_ID = /^[a-z0-9_-]{1,40}$/i
@@ -94,6 +96,11 @@ export type ConversationToolsDeps = {
    * so.
    */
   linkLaunchedAgent?: (link: LaunchedAgentLink) => LaunchLinkResult
+  /**
+   * The calling agent compacting its own chat once its turn ends
+   * (conversation-self-compact.ts). Absent, the tool says this machine cannot.
+   */
+  compactOwnChat?: ConversationSelfCompact['request']
 }
 
 /**
@@ -663,6 +670,33 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
             note: 'This chat moves once your current turn completes, and your next turn starts in the new folder. Finish your reply as usual.',
           })
         return toolSuccess(moved)
+      },
+    },
+    {
+      name: 'conversation.compact',
+      description:
+        "Compact your own chat: Studio runs your CLI's own compaction (`/compact`) on this conversation, so it " +
+        'continues from a summary. It runs after your current turn ends, never during it: the call answers ' +
+        'compactsWhenTurnEnds: true, and once your turn completes Studio sends `/compact` as its own message, drawn ' +
+        'only as the compaction divider. Use it as the last thing before ending a turn that will be followed by a ' +
+        'long wait (over about 55 minutes, longer than the prompt cache lasts), so the turn that wakes you re-reads ' +
+        'a summary rather than the whole conversation uncached. Say in your reply what you are waiting for, since ' +
+        'the summary is what you will have. It is let go, and the chat left as it is, if your turn fails or is ' +
+        'stopped, a message reaches the chat first, or a new turn starts. Work left running in the background (a ' +
+        'monitor, a shell waiting on CI) does not hold it back. Only Claude Code and Codex chats compact; another ' +
+        'CLI is refused with "cannot_compact", and an agent in a terminal with "not_a_chat". Takes no arguments: ' +
+        'it acts on the calling chat only.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      handler: async (_args, context) => {
+        if (!deps.compactOwnChat) return toolError('unavailable', 'This machine cannot compact a chat from here.')
+        const compacted = await deps.compactOwnChat(launchingAgentOf(context))
+        if (!compacted.ok) return toolError(compacted.code, compacted.message)
+        if ('compactsWhenTurnEnds' in compacted)
+          return toolSuccess({
+            ...compacted,
+            note: 'Your chat is compacted once your current turn completes. Finish your reply as usual, saying what you are waiting for; it is left as it is if the turn fails or is stopped, or a message reaches the chat first.',
+          })
+        return toolSuccess(compacted)
       },
     },
   ]

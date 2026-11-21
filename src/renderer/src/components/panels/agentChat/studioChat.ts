@@ -9,6 +9,7 @@ import {
 import { CONVERSATION_FORK_CAPABILITY } from '../../../../../../packages/conversation-protocol/src/public'
 import {
   isChatAddress,
+  STUDIO_FILE_VIEWS_CAPABILITY,
   STUDIO_SESSION_FILES_CAPABILITY,
   STUDIO_SESSION_FILE_UPLOADS_CAPABILITY,
   STUDIO_TERMINAL_HANDOFF_CAPABILITY,
@@ -56,6 +57,8 @@ const lostConnection = (error: unknown): boolean =>
   error instanceof StudioError && (error.code === 'unauthorized' || presentStudioFailure(error).kind === 'connection')
 const FORK_NEEDS_NEWER_STUDIO =
   'This Studio is older than this window and cannot fork a chat. Update it, then try again.'
+const FILE_VIEWS_NEED_NEWER_STUDIO =
+  'The Studio this chat runs on is older than this window and cannot open files shown in a chat. Update it to edit them here.'
 const CONNECTION_LOST = 'This window lost its connection to Studio. It reconnects by itself; try again in a moment.'
 
 // Anything else in the words the runtime gives it: a version refusal names
@@ -466,6 +469,8 @@ export type StudioTransportParts = Omit<ConversationTransport, 'capabilities' | 
       | 'cancelScheduled'
       | 'usageLimitResume'
       | 'restartSession'
+      | 'readFileView'
+      | 'writeFileView'
     >
   >
 
@@ -829,6 +834,30 @@ export function createStudioConversationParts(
         return { ok: false, reason: 'failed', message: messageOf(error) }
       }
     },
+    // A Studio from before file views answers that it cannot, in words; one
+    // that does not know the chat's file is `not_found`, said as it said it.
+    readFileView: (input) =>
+      outcome(async () => {
+        if (!(await client()).supports(STUDIO_FILE_VIEWS_CAPABILITY))
+          return { ok: false as const, message: FILE_VIEWS_NEED_NEWER_STUDIO }
+        const read = await ask(client, 'fileViews.read', { key: refOf(input.key), path: input.path })
+        return { ok: true as const, text: read.text, hash: read.hash, mtimeMs: read.mtimeMs }
+      }),
+    writeFileView: (input) =>
+      outcome(async () => {
+        if (!(await client()).supports(STUDIO_FILE_VIEWS_CAPABILITY))
+          return { ok: false as const, message: FILE_VIEWS_NEED_NEWER_STUDIO }
+        const written = await ask(client, 'fileViews.write', {
+          key: refOf(input.key),
+          path: input.path,
+          text: input.text,
+          ifMatch: input.ifMatch,
+          commandId: commandId(),
+        })
+        return written.ok
+          ? { ok: true as const, hash: written.hash, mtimeMs: written.mtimeMs }
+          : { ok: false as const, conflict: true as const, currentHash: written.currentHash }
+      }),
     revert: (input) =>
       outcome(() =>
         ask(client, 'conversation.revert', {

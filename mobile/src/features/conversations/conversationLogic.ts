@@ -408,7 +408,9 @@ export function compactionLabel(row: Extract<ConversationRow, { kind: "compactio
         : `${formatTokenCount(row.preTokens)} → ${formatTokenCount(row.postTokens)}`;
   const trigger = row.beforeCacheExpiry
     ? "automatically, before the cache expired"
-    : row.trigger === "auto"
+    : row.askedByAgent
+      ? "at the agent’s request"
+      : row.trigger === "auto"
       ? "automatically"
       : row.trigger === "manual"
         ? "on request"

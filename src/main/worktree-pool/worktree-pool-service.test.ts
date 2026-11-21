@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { access, appendFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, beforeEach, test } from 'vitest'
 
@@ -181,6 +181,7 @@ async function pushToOrigin(file: string, content: string): Promise<string> {
   const seed = join(caseDir, 'pusher')
   if (!(await exists(seed))) await git(caseDir, 'clone', '-q', origin, seed)
   await git(seed, 'pull', '-q', 'origin', 'main')
+  await mkdir(dirname(join(seed, file)), { recursive: true })
   await writeFile(join(seed, file), content)
   await git(seed, 'add', '.')
   await git(seed, 'commit', '-q', '-m', `edit ${file}`)
@@ -2886,4 +2887,197 @@ test('a truly full pool says whose each slot is, why it stays, and when one may 
     /Do not clone the repository or run `git worktree add` instead: call worktree\.lease again in 7 minutes, or tell the person/,
   )
   assert.deepEqual(harness.givenBack, [])
+})
+
+// ── Slots nothing holds any more ─────────────────────────────────────────
+
+test('a held slot whose work is gone is looked at again when a lease finds the pool full, and leased as it stands', async () => {
+  const harness = makeService({ chats: [] })
+  await harness.service.updateSettings({ maxSlots: 2 })
+  const leased = await lease(harness, 'dirty')
+  // The pool's other place, kept by a terminal open in it.
+  const busy = await lease(harness, 'busy')
+  harness.live.push(busy.path)
+  await writeFile(join(leased.path, 'notes.txt'), 'wip\n')
+  await mkdir(join(leased.path, 'node_modules', 'dep'), { recursive: true })
+  await writeFile(join(leased.path, 'node_modules', 'dep', 'index.js'), 'module.exports = 1\n')
+  assert.equal((await returnAll(harness)).find((entry) => entry.path === leased.path)?.verdict, 'held')
+  assert.equal((await slotAt(harness, 'app-01')).state, 'held')
+
+  // Still dirty: the lease is refused, and the slot stays held as it was.
+  const since = (await slotAt(harness, 'app-01')).held?.since
+  const refused = await harness.service.lease({ repoRoot: repo, name: 'refused' })
+  assert.equal(refused.ok ? null : refused.reason, 'full')
+  assert.match(refused.ok ? '' : refused.message, /held with 1 changes for you to commit, stash or discard/)
+  assert.equal((await slotAt(harness, 'app-01')).held?.since, since, 'looked at, not held again')
+
+  // Someone deleted the file by hand: the record still says held, the tree does not.
+  await rm(join(leased.path, 'notes.txt'))
+  const next = await lease(harness, 'next')
+  assert.equal(next.path, leased.path, 'the same slot, not a new one')
+  assert.equal(await git(next.path, 'branch', '--show-current'), 'agent/next')
+  assert.equal(await exists(join(next.path, 'node_modules', 'dep', 'index.js')), true, 'installed files kept')
+})
+
+test('the sweep returns a held slot once what held it is gone, and leaves one with work held', async () => {
+  const harness = makeService({ chats: [] })
+  const cleaned = await lease(harness, 'cleaned')
+  const dirty = await lease(harness, 'dirty')
+  await writeFile(join(cleaned.path, 'notes.txt'), 'wip\n')
+  await writeFile(join(dirty.path, 'notes.txt'), 'wip\n')
+  await returnAll(harness)
+  await rm(join(cleaned.path, 'notes.txt'))
+
+  const swept = await harness.service.returnUnused({ repoRoot: repo, protectedPaths: [], agentIds: new Set() })
+  assert.deepEqual(
+    swept.map((entry) => [entry.path, entry.verdict]),
+    [[cleaned.path, 'returned']],
+  )
+  assert.equal((await slotAt(harness, 'app-01')).state, 'idle')
+  assert.equal((await slotAt(harness, 'app-02')).state, 'held')
+  assert.equal(await readFile(join(dirty.path, 'notes.txt'), 'utf8'), 'wip\n')
+})
+
+test('build output left in a folder the default branch lacks is no work: the return removes it and the slot comes back', async () => {
+  const harness = makeService()
+  const leased = await lease(harness, 'sdk-build')
+  // A package built on another branch, left behind: its dependencies (ignored),
+  // its build and its packed archive (neither ignored).
+  const sdk = join(leased.path, 'packages', 'extension-sdk')
+  await mkdir(join(sdk, 'node_modules', 'dep'), { recursive: true })
+  await writeFile(join(sdk, 'node_modules', 'dep', 'index.js'), 'module.exports = 1\n')
+  await mkdir(join(sdk, 'dist'), { recursive: true })
+  await writeFile(join(sdk, 'dist', 'index.js'), 'export {}\n')
+  await writeFile(join(sdk, 'extension-sdk-1.0.0.tgz'), 'archive\n')
+
+  const swept = await returnAll(harness)
+  assert.equal(swept[0]?.verdict, 'returned', swept[0]?.detail ?? '')
+  assert.equal((await slotAt(harness, 'app-01')).state, 'idle')
+  assert.equal(await exists(join(sdk, 'dist', 'index.js')), false, 'the build is removed')
+  assert.equal(await exists(join(sdk, 'extension-sdk-1.0.0.tgz')), false, 'the archive is removed')
+  assert.equal(await exists(join(sdk, 'node_modules', 'dep', 'index.js')), true, 'ignored files are the pool’s, kept')
+  const next = await lease(harness, 'next')
+  assert.equal(next.path, leased.path, 'leased again, not held for a person')
+})
+
+test('untracked files that are not build output, or build output where the default branch has the folder, are work', async () => {
+  await pushToOrigin('packages/app/index.js', 'export {}\n')
+  const harness = makeService()
+  const source = await lease(harness, 'source')
+  const tracked = await lease(harness, 'tracked-folder')
+  const rootArchive = await lease(harness, 'root-archive')
+  // A new package's source beside its build: the source is work.
+  await mkdir(join(source.path, 'packages', 'new', 'dist'), { recursive: true })
+  await writeFile(join(source.path, 'packages', 'new', 'dist', 'index.js'), 'export {}\n')
+  await writeFile(join(source.path, 'packages', 'new', 'index.ts'), 'export {}\n')
+  // An archive in a folder the default branch has.
+  await writeFile(join(tracked.path, 'packages', 'app', 'app-1.0.0.tgz'), 'archive\n')
+  // An archive at the root, which every branch has.
+  await writeFile(join(rootArchive.path, 'app-1.0.0.tgz'), 'archive\n')
+
+  const swept = await returnAll(harness)
+  const verdict = (leased: { path: string }) => swept.find((entry) => entry.path === leased.path)?.verdict
+  assert.equal(verdict(source), 'held')
+  assert.equal((await slotAt(harness, 'app-01')).held?.changedPaths, 1, 'the build beside it does not count')
+  assert.equal(verdict(tracked), 'held')
+  assert.equal(verdict(rootArchive), 'held')
+  assert.equal(await exists(join(source.path, 'packages', 'new', 'dist', 'index.js')), true, 'nothing held is removed')
+  assert.equal(await exists(join(tracked.path, 'packages', 'app', 'app-1.0.0.tgz')), true)
+})
+
+test('a clean slot on a detached HEAD whose agent’s chat is gone is taken back when a lease finds the pool full', async () => {
+  const harness = makeService({ chats: [] })
+  await harness.service.updateSettings({ maxSlots: 2 })
+  // The pool's other place, kept by a terminal open in it.
+  harness.live.push((await lease(harness, 'busy-retest')).path)
+  const leased = await harness.service.lease({
+    repoRoot: repo,
+    name: 'retest',
+    owner: 'agent-9',
+    agentId: 'agent-9',
+    workspaceId: 'ws-gone',
+  })
+  assert.ok(leased.ok)
+  await git(leased.path, 'switch', '-q', '--detach')
+  harness.clock.offset += 2 * HOUR
+
+  const next = await lease(harness, 'next')
+  assert.equal(next.path, leased.path, 'its place went to the lease')
+  assert.ok(await git(repo, 'rev-parse', '--verify', 'agent/retest'), 'its branch is kept')
+})
+
+test('a detached HEAD with commits of its own, its chat gone, is taken back with those commits kept on a branch', async () => {
+  const harness = makeService({ chats: [] })
+  await harness.service.updateSettings({ maxSlots: 2 })
+  // The pool's other place, kept by a terminal open in it.
+  harness.live.push((await lease(harness, 'busy-lost')).path)
+  const leased = await harness.service.lease({
+    repoRoot: repo,
+    name: 'lost',
+    owner: 'agent-9',
+    agentId: 'agent-9',
+    workspaceId: 'ws-gone',
+  })
+  assert.ok(leased.ok)
+  await git(leased.path, 'switch', '-q', '--detach')
+  await writeFile(join(leased.path, 'only-here.txt'), 'only here\n')
+  await git(leased.path, 'add', 'only-here.txt')
+  await git(leased.path, 'commit', '-q', '-m', 'only here')
+  const own = await git(leased.path, 'rev-parse', 'HEAD')
+  harness.clock.offset += 2 * HOUR
+
+  const next = await lease(harness, 'next')
+  assert.equal(next.path, leased.path, 'its place went to the lease')
+  const branches = await git(repo, 'branch', '--format=%(refname:short) %(objectname)')
+  assert.match(branches, new RegExp(`agent/lost-rescued-${own.slice(0, 7)} ${own}`), 'the commit is on a branch')
+})
+
+test('an agent’s own slots go back once its work is over, the clean ones only', async () => {
+  const harness = makeService({ chats: [] })
+  const clean = await harness.service.lease({
+    repoRoot: repo,
+    name: 'clean',
+    owner: 'agent-1',
+    agentId: 'agent-1',
+    workspaceId: 'ws-1',
+  })
+  const dirty = await harness.service.lease({
+    repoRoot: repo,
+    name: 'dirty',
+    owner: 'agent-1',
+    agentId: 'agent-1',
+    workspaceId: 'ws-1',
+  })
+  const other = await harness.service.lease({
+    repoRoot: repo,
+    name: 'other',
+    owner: 'agent-2',
+    agentId: 'agent-2',
+    workspaceId: 'ws-1',
+  })
+  assert.ok(clean.ok && dirty.ok && other.ok)
+  await writeFile(join(dirty.path, 'notes.txt'), 'wip\n')
+
+  const outcomes = await harness.service.releaseLeasesOf({ workspaceId: 'ws-1', agentId: 'agent-1' })
+  assert.deepEqual(
+    outcomes.map((entry) => [entry.path, entry.outcome]),
+    [
+      [clean.path, 'returned'],
+      [dirty.path, 'kept'],
+    ],
+  )
+  assert.equal((await slotAt(harness, 'app-01')).state, 'idle')
+  assert.equal((await slotAt(harness, 'app-02')).state, 'leased', 'work in it: still the agent’s')
+  assert.equal((await slotAt(harness, 'app-03')).state, 'leased', 'another agent’s')
+  assert.ok(await git(repo, 'rev-parse', '--verify', 'agent/clean'), 'its branch is kept')
+
+  // The whole chat settling takes the other agent's too.
+  const all = await harness.service.releaseLeasesOf({ workspaceId: 'ws-1' })
+  assert.deepEqual(
+    all.map((entry) => [entry.path, entry.outcome]),
+    [
+      [dirty.path, 'kept'],
+      [other.path, 'returned'],
+    ],
+  )
 })

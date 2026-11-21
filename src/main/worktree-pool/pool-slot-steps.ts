@@ -6,11 +6,38 @@ import { parseGitWorktreePorcelain, runGitWorktreeListPorcelain } from '../git-w
 import { withWorktreeRegistryLock } from '../worktree-registry-lock'
 import { RESERVED_PATHS_MAX, type ReservedPath, type SlotRecord } from './pool-store'
 import { type PoolContext, type PoolRuntime, messageOf } from './pool-context'
+import { buildLeftovers, isPerAgentFile, resolvePoolBaseRef, type SlotStatus } from './slot-git'
 
 /**
  * Steps on one slot that leasing, returning, evicting and recovery all take:
  * holding it for a person, and forgetting one gone from disk.
  */
+
+// ── What counts as work ───────────────────────────────────────────────────
+
+/**
+ * The changes in a slot that are someone's work, by its status: every
+ * tracked change, and every untracked file but two kinds the app or a build
+ * leaves. The files each agent launch writes (`isPerAgentFile`) are the
+ * app's; build output in a folder the default branch does not have
+ * (`buildLeftovers`) is a build's, made again by running it. `leftovers` are
+ * the second kind, which a clean return removes so the next lease does not
+ * meet them. Every return, every give-back and every recheck of a held slot
+ * counts the same way.
+ */
+export async function slotWork(
+  ctx: PoolContext,
+  pool: PoolRuntime,
+  slotPath: string,
+  status: SlotStatus,
+): Promise<{ changes: number; leftovers: string[] }> {
+  const own = status.untrackedPaths.filter(isPerAgentFile)
+  const rest = status.untrackedPaths.filter((path) => !isPerAgentFile(path))
+  const base =
+    rest.length > 0 ? ((await resolvePoolBaseRef(ctx.git, pool.record.repoRoot)) ?? pool.record.defaultRef) : null
+  const leftovers = await buildLeftovers(ctx.git, slotPath, rest, base)
+  return { changes: status.changedPaths - own.length - leftovers.length, leftovers }
+}
 
 // ── Holding a slot ────────────────────────────────────────────────────────
 

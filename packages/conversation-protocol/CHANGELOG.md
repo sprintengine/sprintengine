@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`agent-compact`**, a `ConversationStudioMessageReason`: the `/compact`
+  Studio sends once a chat's own agent asked for its chat to be compacted at
+  the end of its turn. `isStudioCompactionReason` reads it and `auto-compact`
+  alike. A reader built before it takes the message for Studio's with no
+  reason, as for any reason it does not know.
+
 ## 0.3.0
 
 The lane is gone: every client follows and drives a chat on the Studio

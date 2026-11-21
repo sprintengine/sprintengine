@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added (files a chat's agent showed, saved from the chat)
+
+- **`file-views`** (`STUDIO_FILE_VIEWS_CAPABILITY`, `file-views.ts`):
+  `fileViews.read` (`conversation:read`) and `fileViews.write`
+  (`conversation:operate`, a mutation under its `commandId`). Each names the
+  chat by its key and a file by the absolute path the chat's agent showed it
+  by (Studio's `file.view` tool); any other path is `not_found`. A read
+  answers the text with its SHA-256, size and mtime; a write is conditional on
+  that hash (`ifMatch`) and answers the hash now, or `{ ok: false, code:
+'conflict', currentHash }` for a file changed on disk since, which it leaves
+  alone. Files up to `STUDIO_FILE_VIEW_MAX_BYTES` (2 MB). A Studio that does
+  not list the capability serves neither, and a client says to update it.
+- `file` joins `STUDIO_RESERVED_TOOLSET_NAMES`: the family of Studio's own
+  `file.view`, which no app's toolset may take.
+
 ### Changed (a CLI's models come only from the CLI)
 
 - **`PluginRegistryListEntry.modelSelection`** (`cliPlugins.list`) is a

@@ -181,6 +181,10 @@
       "sha256": "443a05ea762c54601ea67b7b0c8cd1f9b76700250d4d589bb27f61664c5905d2"
     },
     {
+      "name": "conversation.compact",
+      "sha256": "27b3bd71f76046c9e77c960d9ed4b728a59cbcf92bc99fd7bcdcaf12c1ee5160"
+    },
+    {
       "name": "conversation.send",
       "sha256": "7e841da0f12b5de986e1e727dd2c9ec585354b19b742b8f7b4d8b99e24fd3962"
     },
@@ -243,6 +247,10 @@
     {
       "name": "local_server.link",
       "sha256": "22c97db66798e939a9996a1cd7701da3b7b335019f256af6f847fb106fe16e5b"
+    },
+    {
+      "name": "file.view",
+      "sha256": "d8c9db813f33711af75c8b20027118d32b6ba7ab34dd164e08e85b25fbb66f59"
     },
     {
       "name": "worktree.lease",
@@ -619,6 +627,10 @@
       "sha256": "443a05ea762c54601ea67b7b0c8cd1f9b76700250d4d589bb27f61664c5905d2"
     },
     {
+      "name": "conversation.compact",
+      "sha256": "27b3bd71f76046c9e77c960d9ed4b728a59cbcf92bc99fd7bcdcaf12c1ee5160"
+    },
+    {
       "name": "conversation.send",
       "sha256": "7e841da0f12b5de986e1e727dd2c9ec585354b19b742b8f7b4d8b99e24fd3962"
     },
@@ -681,6 +693,10 @@
     {
       "name": "local_server.link",
       "sha256": "22c97db66798e939a9996a1cd7701da3b7b335019f256af6f847fb106fe16e5b"
+    },
+    {
+      "name": "file.view",
+      "sha256": "d8c9db813f33711af75c8b20027118d32b6ba7ab34dd164e08e85b25fbb66f59"
     },
     {
       "name": "worktree.lease",

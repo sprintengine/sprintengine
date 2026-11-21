@@ -1,3 +1,4 @@
+import type { FileViews } from '../file-views/file-views'
 import { randomUUID } from 'node:crypto'
 import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
 import type { DistributionMachine } from '../wsl/distribution-machine'
@@ -54,6 +55,7 @@ import {
   STUDIO_AGENT_SKILLS_CAPABILITY,
   STUDIO_SCHEDULES_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+  STUDIO_FILE_VIEWS_CAPABILITY,
   STUDIO_CANVAS_BOARDS_CAPABILITY,
   STUDIO_PROTOCOL_MIN_SUPPORTED,
   STUDIO_PROTOCOL_VERSION,
@@ -211,6 +213,8 @@ export type StudioRpcServerOptions = {
   schedules?: StudioSchedulesDomain
   /** The chats' records beyond their rest. Advertised as `chat-lifecycle` only when given. */
   chatLifecycle?: StudioChatLifecycleDomain
+  /** The files chats' agents showed. Advertised as `file-views` only when given. */
+  fileViews?: Pick<FileViews, 'read' | 'write'>
   /** The machine's boards, for another device. Advertised as `canvas-boards` only when given. */
   canvas?: StudioCanvasDomain
   /** How this Studio is updated (`update.*`); by hand when not given. */
@@ -334,6 +338,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_AGENT_SKILLS_CAPABILITY || options.agentSkills !== undefined) &&
         (capability !== STUDIO_SCHEDULES_CAPABILITY || options.schedules !== undefined) &&
         (capability !== STUDIO_CHAT_LIFECYCLE_CAPABILITY || options.chatLifecycle !== undefined) &&
+        (capability !== STUDIO_FILE_VIEWS_CAPABILITY || options.fileViews !== undefined) &&
         (capability !== STUDIO_CANVAS_BOARDS_CAPABILITY || options.canvas !== undefined) &&
         (capability !== STUDIO_EXTENSIONS_CAPABILITY || options.extensions !== undefined) &&
         (capability !== STUDIO_ARTIFACTS_CAPABILITY || options.artifacts !== undefined) &&
@@ -393,6 +398,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.agentSkills ? { agentSkills: options.agentSkills } : {}),
     ...(options.schedules ? { schedules: options.schedules } : {}),
     ...(options.chatLifecycle ? { chatLifecycle: options.chatLifecycle } : {}),
+    ...(options.fileViews ? { fileViews: options.fileViews } : {}),
     ...(options.canvas ? { canvas: options.canvas } : {}),
     ...(options.updates ? { updates: options.updates } : {}),
     ...(options.modules ? { modules: options.modules } : {}),
