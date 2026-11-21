@@ -277,8 +277,7 @@ export type MainHost = {
   getModuleDataDir(): string
   /**
    * The absolute path of a file the module was verified with, while its bytes
-   * still match — the main-side twin of `RendererHost.getAssetUrl`. Throws for
-   * anything else.
+   * still match. Throws for anything else.
    */
   getAssetPath(relativePath: string): string
   /**
@@ -492,6 +491,12 @@ export type MainKernelOptions = {
   resolveExtensionGrant?: (moduleId: string) => readonly string[] | null
   /** Folders a frame's `files.*` may never reach, even inside a workspace (Studio's data, the installed extensions). */
   frameFileExclusions?: () => readonly string[]
+  /**
+   * What an extension's frame calls are held to: its approval's permissions as
+   * they stand now, or null when it is not an approved, switched-on
+   * extension. Absent (tests), the extensions the kernel was started with.
+   */
+  resolveFrameGrant?: (moduleId: string) => readonly string[] | null
 }
 
 // Flood bounds: a module may emit at most this many notifications per window;
@@ -627,12 +632,18 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
 
   // A frame's host calls, against the same services the worker reaches.
   const frameCalls = createExtensionFrameCalls({
-    isPresent: (moduleId) =>
-      options.isModulePresent
+    // The approvals as they stand now where the server says so; otherwise
+    // (tests) the extensions this kernel was started with.
+    grantOf: (moduleId) => {
+      if (options.resolveFrameGrant) return options.resolveFrameGrant(moduleId)
+      const present = options.isModulePresent
         ? options.isModulePresent(moduleId)
-        : options.resolveModuleManifest?.(moduleId) !== undefined,
-    isThirdParty,
-    gate,
+        : options.resolveModuleManifest?.(moduleId) !== undefined
+      if (!isThirdParty(moduleId) || !present) return null
+      return options.resolveExtensionGrant
+        ? options.resolveExtensionGrant(moduleId)
+        : (options.resolveModuleManifest?.(moduleId)?.permissions ?? [])
+    },
     service: (key) => services.get(key)?.value,
     callModuleMethod: (request) => callModuleMethod(request),
     emitNotification,

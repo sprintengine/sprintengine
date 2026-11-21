@@ -18,6 +18,7 @@ import type { CapabilityManifest } from '../shared/modules/manifest'
 import { SCHEDULED_AGENTS_MANIFEST, scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
 import type { ExtensionStandingContext } from './modules/module-signature'
 import { createExtensionApprovalReader } from './modules/extension-approvals'
+import { createExtensionFrameGrant } from './modules/extension-frame-grant'
 import { readExtensionStandingContextSync } from './modules/extension-standing-context'
 import {
   planThirdPartyMainModules,
@@ -186,6 +187,10 @@ const moduleLoad = loadMainModules({
   // What each extension runs under; its calls are refused once that approval is gone.
   extensionApprovals: thirdPartyMainLoad.approvals,
   currentApprovals: createExtensionApprovalReader(app.getPath('userData')),
+  resolveFrameGrant: createExtensionFrameGrant({
+    approvals: createExtensionApprovalReader(app.getPath('userData')),
+    dataDir: app.getPath('userData'),
+  }),
   frameFileExclusions: () => [app.getPath('userData'), defaultUserModuleRoot()],
   ineligible: thirdPartyMainLoad.ineligible,
   launchErrors: thirdPartyMainLoad.launchErrors,

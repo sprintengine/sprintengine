@@ -18,8 +18,7 @@ import type {
   WorkspaceContextService,
 } from '../../../packages/extension-sdk/src/index'
 import type { StudioExtensionCallAnswer } from '../../../packages/studio-protocol/src/public'
-import type { ExtensionHostDecision } from './extension-host-gate'
-import type { ExtensionHostRequirement } from '../../../packages/extension-sdk/src/services'
+import { gateExtensionHostCall } from './extension-host-gate'
 import { runAsInvoker, type ExtensionInvoker } from './extension-invocation'
 import {
   ExtensionFileRefusal,
@@ -44,15 +43,14 @@ export type ExtensionFrameCallRequest = {
 }
 
 export type ExtensionFrameCallDeps = {
-  /** Installed and switched on here (its worker loaded, or its manifest alone). */
-  isPresent(moduleId: string): boolean
-  isThirdParty(moduleId: string): boolean
-  gate(
-    moduleId: string,
-    method: string,
-    requirement: ExtensionHostRequirement,
-    invoker: ExtensionInvoker,
-  ): ExtensionHostDecision
+  /**
+   * The permissions an extension's approval holds now, read at each call: null
+   * when it is not an installed extension that is approved as it is and
+   * switched on. Read from the approvals and the switches as they stand, not
+   * as they stood when the kernel started, so one installed or approved
+   * during the session is served at once and one revoked is refused at once.
+   */
+  grantOf(moduleId: string): readonly string[] | null
   /** A service the host's parts provide, by key. */
   service(key: string): unknown
   callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome>
@@ -212,13 +210,13 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
         code: 'unknown_method',
         message: `"${request.method}" is not a host method a frame may call.`,
       }
-    if (!deps.isThirdParty(request.moduleId) || !deps.isPresent(request.moduleId))
-      return {
-        ok: false,
-        code: 'approval_required',
-        message: `Extension "${request.moduleId}" is not running on this Studio: it is not installed, not approved, or switched off.`,
-      }
-    const decision = deps.gate(request.moduleId, request.method, requirement, request.invoker)
+    const decision = gateExtensionHostCall({
+      extensionId: request.moduleId,
+      method: request.method,
+      requirement,
+      grant: deps.grantOf(request.moduleId),
+      invoker: request.invoker,
+    })
     if (!decision.ok) return { ok: false, code: decision.code, message: decision.message }
     // Admitted: the window that drew the frame carries a client method out.
     if (requirement.runs === 'client') return { ok: true, result: null }

@@ -14,6 +14,7 @@ import {
 } from '../../main/modules/third-party-main-loader'
 import { readExtensionStandingContextSync } from '../../main/modules/extension-standing-context'
 import { createExtensionApprovalReader } from '../../main/modules/extension-approvals'
+import { createExtensionFrameGrant } from '../../main/modules/extension-frame-grant'
 import { defaultUserModuleRoot, discoverUserModulesSync } from '../../main/modules/user-module-registry'
 import { watchUserModuleRoot } from '../../main/modules/user-module-watch'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
@@ -201,6 +202,7 @@ export function createServerModules(deps: {
         // What each extension runs under; its calls are refused once that approval is gone.
         extensionApprovals: thirdParty.approvals,
         currentApprovals: createExtensionApprovalReader(dataDir),
+        resolveFrameGrant: createExtensionFrameGrant({ approvals: createExtensionApprovalReader(dataDir), dataDir }),
         frameFileExclusions: () => [dataDir, defaultUserModuleRoot()],
         ineligible: thirdParty.ineligible,
         launchErrors: thirdParty.launchErrors,
