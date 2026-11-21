@@ -155,3 +155,63 @@ test('a call is held to every invoker the worker serves then: their common permi
   assert.equal(held.permissionCeiling, 'auto')
   assert.match(held.label, /this device and the agent/)
 })
+
+const POLLER = `
+const ticks = []
+let late = null
+const read = (handler) => ({ access: 'read', params: (value) => ({ ok: true, params: value }), handler })
+exports.activate = (studio) => {
+  // A poller, as a background extension runs one: its own work, long after startup.
+  setInterval(() => {
+    studio.getWorkspaceGitInfo('ws-1').then(
+      (answer) => ticks.push(answer.ok ? 'ok' : answer.code),
+      (error) => ticks.push(error.code),
+    )
+  }, 40)
+  studio.registerMethods({
+    ticks: read(async () => ({ ok: true, result: ticks })),
+    // A timer set while serving whoever calls this: theirs, and it ends with their call.
+    later: read(async () => {
+      setTimeout(() => {
+        studio.getWorkspaceGitInfo('ws-1').then(
+          (answer) => (late = answer.ok ? 'ok' : answer.code),
+          (error) => (late = error.code),
+        )
+      }, 40)
+      return { ok: true, result: null }
+    }),
+    late: read(async () => ({ ok: true, result: late })),
+  })
+}
+`
+
+test('a background extension’s own timers keep working after startup; one set during a device’s call does not', async () => {
+  harness = startWorkerHarness([{ id: 'poller', main: POLLER, permissions: ['workspace:read'], background: true }])
+  const reader: ExtensionInvoker = {
+    principal: studioPrincipal({ owner: false, permissions: ['extension:read', 'workspace:read'] }),
+    permissionCeiling: 'auto',
+    label: 'this device',
+  }
+  const ask = (method: string, invoker: ExtensionInvoker = ownerInvoker()) =>
+    harness!.load.kernel.callModuleMethod({
+      moduleId: 'local.poller',
+      method,
+      access: 'read',
+      params: {},
+      clientId: invoker.label,
+      invoker,
+    })
+  let ticks: string[] = []
+  for (let tries = 0; ticks.length < 5 && tries < 200; tries++) {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    const answer = await ask('ticks')
+    if (answer.ok && answer.answer.ok) ticks = answer.answer.result as string[]
+  }
+  assert.ok(ticks.length >= 5, 'it ticked several times after it started')
+  assert.deepEqual([...new Set(ticks)], ['ok'], 'every tick was admitted, as the person who approved it')
+
+  // The device could read a workspace's git itself; its call has ended by the time the timer fires.
+  assert.equal((await ask('later', reader)).ok, true)
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  assert.deepEqual(await ask('late'), { ok: true, answer: { ok: true, result: 'invocation_ended' } })
+})

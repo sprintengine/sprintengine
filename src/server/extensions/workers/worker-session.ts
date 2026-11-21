@@ -36,6 +36,15 @@ import type { WorkerCall } from './worker-process'
 // is refused; so is a call naming none, unless the extension is a
 // `background` one, whose own work runs as the person who approved it.
 //
+// A background extension's own work is its activation (`activate` and its
+// startup hooks) and whatever that sets going: a timer, an interval, a
+// listener it registered then and every delivery to it. All of it runs under
+// the activation's id, which stays live while the worker runs, so a poller
+// started in `activate` keeps working after startup. Work set going during
+// someone else's call (a device's, an agent's) carries that call's id, which
+// ends with it, and stays refused. An on-demand worker's activation ends when
+// its startup hooks have run.
+//
 // The ids name what a call is for, not what it may do. A worker serving two
 // invokers at once holds both ids, and nothing stops it putting one on the
 // other's work. So a call is held to every invocation the worker is serving
@@ -68,6 +77,10 @@ export type WorkerSessionDeps = {
 }
 
 export type WorkerSession = {
+  /** The activation's invocation: the extension's own work, as the person who approved it. Its id. */
+  startActivation(): string
+  /** Its startup hooks have run: an on-demand worker's activation ends; a background one's own work goes on. */
+  activationStarted(): void
   /** Start an invocation as `invoker`: its id. */
   begin(invoker: ExtensionInvoker): string
   end(id: string): void
@@ -147,6 +160,9 @@ export function createWorkerSession(deps: WorkerSessionDeps): WorkerSession {
   const subscriptions = new Set<() => unknown>()
   let nextHandle = 0
   let open = true
+  // The extension's own work: its activation, as the person who approved it.
+  const ownWork = ownerInvoker(null, 'its own work')
+  let activation: string | null = null
 
   function begin(invoker: ExtensionInvoker): string {
     const id = randomUUID()
@@ -209,7 +225,16 @@ export function createWorkerSession(deps: WorkerSessionDeps): WorkerSession {
     // that is who this delivery's invocation is for.
     const made = (...args: unknown[]): unknown => {
       if (!open) return undefined
-      return run({ kind: 'callback', callback: id, args }, currentInvoker()).catch(() => undefined)
+      const invoker = currentInvoker()
+      // Registered by a background extension's own work: delivered as that work.
+      const delivered =
+        deps.background && invoker === ownWork && activation !== null && invocations.has(activation)
+          ? deps.call({ kind: 'callback', callback: id, args, invocation: activation })
+          : run({ kind: 'callback', callback: id, args }, invoker)
+      // Handled here, so a delivery nobody awaits cannot fail the server; a
+      // caller that awaits it (a validator) still hears its answer or its error.
+      delivered.catch(() => undefined)
+      return delivered
     }
     listeners.set(id, made)
     return made
@@ -304,6 +329,13 @@ export function createWorkerSession(deps: WorkerSessionDeps): WorkerSession {
   }
 
   return {
+    startActivation() {
+      activation = begin(ownWork)
+      return activation
+    },
+    activationStarted() {
+      if (!deps.background && activation !== null) end(activation)
+    },
     begin,
     end,
     run,

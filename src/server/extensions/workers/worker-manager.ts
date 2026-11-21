@@ -461,14 +461,14 @@ export class ExtensionWorkers implements KernelWorkerPort {
             : Promise.reject(new Error(`Extension "${spec.extensionId}"'s worker is not running.`)),
       })
       session = created
-      const activation = created.begin(ownerInvoker(null, 'Studio, starting it'))
+      const activation = created.startActivation()
       proc = await startWorkerProcess({
         extensionId: spec.extensionId,
         entryPath: this.options.entryPath,
         init: { ...this.initFor(entry), invocation: activation },
         log: (stream, line) => entry.log(`[${stream}] ${line}`),
         onHostCall: (message) => created.hostCall(message),
-        onStarted: () => created.end(activation),
+        onStarted: () => created.activationStarted(),
         readyTimeoutMs: this.options.readyTimeoutMs ?? WORKER_READY_TIMEOUT_MS,
         signal,
         ...(this.options.execPath ? { execPath: this.options.execPath } : {}),
