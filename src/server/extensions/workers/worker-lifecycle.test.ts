@@ -299,3 +299,31 @@ test('the bell row for a worker that keeps crashing names no place on this disk;
     /\/Users\/dev\/\.sprintengine\/extensions\/local\.leaky/,
   )
 })
+
+test('a call during an idle stop waits for the old process to finish, and the cap still counts it once', async () => {
+  // Its shutdown hook takes a while: the window a racing start would land in.
+  const slowToStop = PING.replace(
+    'exports.activate = (studio) => studio.registerMethods(',
+    'exports.activate = (studio) => (studio.onShutdown(() => new Promise((resolve) => setTimeout(resolve, 400))), studio.registerMethods)(',
+  )
+  harness = startWorkerHarness([worker('first', { main: slowToStop }), worker('second')], {
+    maxActive: 1,
+    idleReapMs: 0,
+  })
+  const before = await pid('first')
+  const reaping = harness.workers.reapIdle(Date.now() + 1)
+  const again = pid('first')
+  const [, after] = await Promise.all([reaping, again])
+  assert.notEqual(after, before)
+  const log = readFileSync(join(harness.logDir, 'local.first.log'), 'utf8')
+  assert.ok(
+    log.indexOf('worker stopped') < log.lastIndexOf(`worker started (pid ${after})`),
+    'the new process started only once the old one had stopped',
+  )
+  // One place, and the restarted worker holds it: the second waits.
+  const second = ping('second')
+  await until(() => harness!.workers.status('local.second')?.state === 'waiting', 5_000, 'the second to wait')
+  await harness.workers.reapIdle(Date.now() + 1)
+  const answered = await second
+  assert.ok(answered.ok && answered.answer.ok)
+})

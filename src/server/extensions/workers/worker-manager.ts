@@ -115,6 +115,8 @@ type Entry = {
   /** Bumped by every stop: a start or restart from before it gives up. */
   generation: number
   starting: Promise<Entry> | null
+  /** A stop under way: a start waits for it, so the old process never overlaps the new one. */
+  stopping: Promise<void> | null
   abort: AbortController | null
   process: WorkerProcess | null
   session: WorkerSession | null
@@ -315,6 +317,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
       restarts: 0,
       generation: 0,
       starting: null,
+      stopping: null,
       abort: null,
       process: null,
       session: null,
@@ -484,6 +487,9 @@ export class ExtensionWorkers implements KernelWorkerPort {
   /** One start: a place in its pool, its approval and files checked again, the fork, `ready`. */
   private async attempt(entry: Entry, generation: number, signal: AbortSignal): Promise<void> {
     const { spec } = entry
+    // The process before it finishes its shutdown hooks and gives back its place first.
+    while (entry.stopping) await entry.stopping
+    if (entry.generation !== generation) throw new Error(entry.message ?? 'The worker was stopped.')
     const pool = spec.background ? this.backgroundPool : this.active
     if (!entry.slot) {
       if (!pool.hasRoom())
@@ -722,20 +728,30 @@ export class ExtensionWorkers implements KernelWorkerPort {
     entry.abort = null
     const proc = entry.process
     const session = entry.session
+    // This process's place, taken now: a start that follows gets its own.
+    const slot = entry.slot
     entry.process = null
     entry.session = null
-    this.setState(entry, state, message)
-    if (proc && session) {
-      const shutdown = session.begin(ownerInvoker(null, 'Studio, stopping it'))
-      await proc.stop(
-        shutdown,
-        message ?? `Extension "${entry.spec.extensionId}"'s worker was stopped before it answered.`,
-      )
-      entry.log(`[studio] worker stopped${message ? `: ${message}` : ''}`)
-    }
-    session?.close()
-    entry.slot?.release()
     entry.slot = null
+    this.setState(entry, state, message)
+    const stopping = (async () => {
+      if (proc && session) {
+        const shutdown = session.begin(ownerInvoker(null, 'Studio, stopping it'))
+        await proc.stop(
+          shutdown,
+          message ?? `Extension "${entry.spec.extensionId}"'s worker was stopped before it answered.`,
+        )
+        entry.log(`[studio] worker stopped${message ? `: ${message}` : ''}`)
+      }
+      session?.close()
+      slot?.release()
+    })()
+    entry.stopping = stopping
+    try {
+      await stopping
+    } finally {
+      if (entry.stopping === stopping) entry.stopping = null
+    }
   }
 }
 
