@@ -27,9 +27,10 @@ export function isApproved(module: Pick<ThirdPartyModuleView, 'approval'>): bool
  * - `pending` — on, but its main entry waits on the next launch (Starts after restart);
  * - `stopping` — turned off, but its main entry stays loaded until the next launch (Stops after restart);
  * - `off` — off (Off);
+ * - `waiting` — on, but its worker waits for a place: too many already run (Waiting to start), with why as a notice;
  * - `failed` — it could not start (Couldn't start), with the reason as a notice.
  */
-export type ExtensionRunState = 'running' | 'on' | 'pending' | 'stopping' | 'off' | 'failed'
+export type ExtensionRunState = 'running' | 'on' | 'pending' | 'stopping' | 'off' | 'waiting' | 'failed'
 
 export const RUN_STATE_LABEL: Record<ExtensionRunState, string> = {
   running: 'Running',
@@ -37,6 +38,7 @@ export const RUN_STATE_LABEL: Record<ExtensionRunState, string> = {
   pending: 'Starts after restart',
   stopping: 'Stops after restart',
   off: 'Off',
+  waiting: 'Waiting to start',
   failed: 'Couldn’t start',
 }
 
@@ -93,6 +95,7 @@ export function runState(
   if (moduleProblem(module, rendererLoadState, contributionError)) return 'failed'
   const mainLoaded = module.launch.mainLoaded === true
   if (!enabled) return module.launch.hasMainEntry && mainLoaded ? 'stopping' : 'off'
+  if (module.launch.hasMainEntry && module.launch.waiting) return 'waiting'
   if (module.launch.hasMainEntry) return mainLoaded ? 'running' : 'pending'
   if (hasRendererEntry(module)) return rendererLoadState?.status === 'loaded' ? 'running' : 'pending'
   return 'on'

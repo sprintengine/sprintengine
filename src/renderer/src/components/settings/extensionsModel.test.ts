@@ -18,6 +18,7 @@ import {
   publisherName,
   resolveModuleEnabled,
   restartBannerTitle,
+  RUN_STATE_LABEL,
   runState,
   signatureLabel,
   sourceLabel,
@@ -69,6 +70,13 @@ function view(
 test('a running main entry reads Running; one turned on since launch waits on a restart', () => {
   expect(runState(view(), true, undefined)).toBe('running')
   expect(runState(view({ launch: { mainLoaded: false } }), true, undefined)).toBe('pending')
+})
+
+test('a worker waiting for a place reads Waiting to start, not Running', () => {
+  const waiting = view({ launch: { waiting: 'Waiting to start: 16 extensions already run in the background.' } })
+  expect(runState(waiting, true, undefined)).toBe('waiting')
+  expect(RUN_STATE_LABEL.waiting).toBe('Waiting to start')
+  expect(runState(waiting, false, undefined)).toBe('stopping')
 })
 
 test('turning a loaded main entry off says it stops at the next restart; an unloaded one is just Off', () => {
