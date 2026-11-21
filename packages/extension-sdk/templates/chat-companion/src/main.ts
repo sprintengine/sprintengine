@@ -59,7 +59,7 @@ export function activate(studio: MainHost): void {
   }
 
   studio.registerMethods<CompanionMethods>({
-    list: { access: 'read', params: readNothing, handler: () => ({ ok: true, result: conversations.list() }) },
+    list: { access: 'read', params: readNothing, handler: async () => ({ ok: true, result: await conversations.list() }) },
     start: {
       access: 'operate',
       params: readStartRequest,

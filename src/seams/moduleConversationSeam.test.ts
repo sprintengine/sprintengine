@@ -228,7 +228,7 @@ test('moduleConversationSeam', async () => {
     )
     assert.ok(heard.every((received) => received.agentId === mine.agentId))
     assert.deepEqual(
-      acme.list().map((summary) => summary.agentId),
+      (await acme.list()).map((summary) => summary.agentId),
       [mine.agentId],
     )
     const transcript = await acme.transcript(mine)
@@ -254,7 +254,7 @@ test('moduleConversationSeam', async () => {
     const leaked: unknown[] = []
     const foreignSubscriptions: Array<() => void> = []
     for (const foreign of [userChat, otherChat]) {
-      assert.ok(!acme.list().some((summary) => summary.agentId === foreign.agentId))
+      assert.ok(!(await acme.list()).some((summary) => summary.agentId === foreign.agentId))
       foreignSubscriptions.push(acme.subscribe(foreign, (event) => leaked.push(event)))
       const refused = await acme.send(foreign, { message: 'let me in' })
       assert.equal(refused.ok, false)

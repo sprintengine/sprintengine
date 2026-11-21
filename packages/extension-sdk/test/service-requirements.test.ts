@@ -97,13 +97,13 @@ test('every callable a service hands back has a row: a function, and each member
     SERVICE_FAKES[key]!.create(context).registry as Record<string, (...args: unknown[]) => unknown>
   const rows = (key: string, method: string) => Object.keys(extensionHostService(key)?.returns?.[method] ?? {}).sort()
   // A companion's handle: every member that can be called, and what those hand back.
-  const handle = registry('companion-agents.module-service').attach!('acme', {
+  const handle = (await registry('companion-agents.module-service').attach!('acme', {
     workspaceId: 'ws-app',
     agentId: 'guide',
     name: 'Guide',
     workspaceRoot: process.cwd(),
     systemPrompt: 'Help.',
-  }) as Record<string, unknown>
+  })) as Record<string, unknown>
   const members = Object.keys(handle).filter((name) => typeof handle[name] === 'function')
   const returned = members.flatMap((name) => (name.startsWith('on') ? [`${name}.()`] : []))
   assert.deepEqual(rows('companion-agents.module-service', 'attach'), [...members, ...returned].sort())

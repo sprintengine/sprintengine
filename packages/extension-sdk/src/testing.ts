@@ -819,7 +819,7 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
         return refuseUndeclared(moduleId, 'getWorkspaceGitInfo', requirement)
       return workspaces.gitInfo(workspaceId)
     },
-    getModuleAppState<T = unknown>(key: string): T | undefined {
+    async getModuleAppState<T = unknown>(key: string): Promise<T | undefined> {
       use('getModuleAppState')
       if (typeof key !== 'string' || key.trim().length === 0) return undefined
       return appState.get(key) as T | undefined
