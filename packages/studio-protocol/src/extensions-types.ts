@@ -310,6 +310,9 @@ export type ExtensionContent = {
   configuration?: LanguageConfigurationView
 }
 
+/** `extension.settings`: an extension's declared settings' values here, each its default until set. */
+export type ExtensionSettingValues = { values: Record<string, ExtensionSettingValueView> }
+
 /** Which build a window's module registry was taken in. */
 export type ModuleBuildChannel = 'development' | 'production'
 

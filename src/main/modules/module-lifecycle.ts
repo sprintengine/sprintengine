@@ -10,7 +10,10 @@ import type {
   StudioExtensionContentRequest,
   StudioExtensionFrameRequest,
   ThirdPartyModuleListResult,
+  ExtensionSettingValueView,
 } from '../../../packages/studio-protocol/src/public'
+import { extensionSettingDefaults, settingValueProblem } from '../../../packages/extension-sdk/src/extension-manifest'
+import { moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
 import { readExtensionContent, type ContentAnswer } from './extension-content'
 import { EXTENSION_FRAME_THEMES } from '../../shared/extension-frame-themes.generated'
 import { extensionFrameDocuments } from '../../server/extensions/frames/frame-cache'
@@ -116,6 +119,15 @@ export type ModuleLifecycle = {
   contributions(): Promise<ExtensionContributionsResult>
   /** One piece of what an extension adds, checked, or why it is not served here. */
   content(request: StudioExtensionContentRequest): Promise<ContentAnswer>
+  /** The values of an extension's declared settings, or why there are none here. */
+  settings(
+    moduleId: string,
+  ): Promise<{ ok: true; values: Record<string, ExtensionSettingValueView> } | { ok: false; message: string }>
+  setSetting(
+    moduleId: string,
+    key: string,
+    value: ExtensionSettingValueView | null,
+  ): Promise<Answer<'extension.setSetting'>>
   /** One surface's frame document, or why it is not drawn here. */
   frame(
     request: StudioExtensionFrameRequest,
@@ -201,6 +213,29 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
         }
       return readExtensionContent(target, request)
     },
+
+    async settings(moduleId) {
+      const target = await installed(moduleId)
+      if (!target) return { ok: false, message: `Extension "${moduleId}" is not installed.` }
+      return { ok: true, values: declaredSettingValues(target.extension.contributes.settings, deps.dataDir, moduleId) }
+    },
+
+    setSetting: (moduleId, key, value) =>
+      oneAtATime(async () => {
+        const target = await installed(moduleId)
+        if (!target) return { ok: false, message: `Extension "${moduleId}" is not installed.` }
+        const declared = target.extension.contributes.settings
+        const setting = declared.find((candidate) => candidate.key === key)
+        if (!setting) return { ok: false, message: `Extension "${moduleId}" declares no setting "${key}".` }
+        if (value !== null) {
+          const problem = settingValueProblem(setting, value)
+          if (problem) return { ok: false, message: `${setting.title} ${problem}` }
+        }
+        // The store the extension's own code reads (`settings.get`,
+        // `getModuleAppState`); `null` removes the value, so its default is read.
+        moduleAppStateMirrorFor(deps.dataDir).setValue(moduleId, key, value === null ? undefined : value)
+        return { ok: true, values: declaredSettingValues(declared, deps.dataDir, moduleId) }
+      }),
 
     async frame({ moduleId, point, id, theme }) {
       const unavailable = {
@@ -345,6 +380,22 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
         }
       }),
   }
+}
+
+/** Each declared setting's value: the one stored here when it still fits, else its default. */
+function declaredSettingValues(
+  declared: ReadonlyArray<Parameters<typeof settingValueProblem>[0]>,
+  dataDir: string,
+  moduleId: string,
+): Record<string, ExtensionSettingValueView> {
+  const stored = moduleAppStateMirrorFor(dataDir).get(moduleId)
+  const values: Record<string, ExtensionSettingValueView> = extensionSettingDefaults(declared)
+  for (const setting of declared) {
+    const value = stored[setting.key]
+    if (value !== undefined && settingValueProblem(setting, value) === null)
+      values[setting.key] = value as ExtensionSettingValueView
+  }
+  return values
 }
 
 // The folder an uninstall may remove: a real directory (not a link to one)

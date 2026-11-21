@@ -556,6 +556,8 @@ test('the installed list names a folder Studio could not read by its place only 
     contributions: async () => ({ extensions: [], failures: {} }),
     frame: async () => ({ ok: false, message: 'none' }),
     content: async () => ({ ok: false, message: 'none' }),
+    settings: async () => ({ ok: false, message: 'none' }),
+    setSetting: async () => ({ ok: false, message: 'none' }),
     reportRegistry: () => ({ ok: true }),
   })
   const owner = await caller(hub)
@@ -589,6 +591,8 @@ test('a change to what runs is an owner’s: a paired client holding extensions:
     contributions: async () => ({ extensions: [], failures: {} }),
     frame: async () => ({ ok: false, message: 'none' }),
     content: async () => ({ ok: false, message: 'none' }),
+    settings: async () => ({ ok: false, message: 'none' }),
+    setSetting: async () => ({ ok: false, message: 'none' }),
     reportRegistry: () => ({ ok: true }),
   })
   const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['extensions:operate']))
@@ -617,6 +621,8 @@ test('the window’s module report is an owner’s: a paired client holding exte
     contributions: async () => ({ extensions: [], failures: {} }),
     frame: async () => ({ ok: false, message: 'none' }),
     content: async () => ({ ok: false, message: 'none' }),
+    settings: async () => ({ ok: false, message: 'none' }),
+    setSetting: async () => ({ ok: false, message: 'none' }),
     reportRegistry: (snapshot) => (reported.push(snapshot), { ok: true }),
   })
   const snapshot = { modules: [] }

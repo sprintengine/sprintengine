@@ -524,7 +524,7 @@ test('trust revoked: its top bar button is gone, and running its command or acti
   assert.deepEqual(calls, [])
 })
 
-test('the sample content extension binds its key, shows its status item, and runs none of its code', async () => {
+test('the sample content extension binds its key, shows its status item and its settings, and runs none of its code', async () => {
   const { readFileSync } = await import('node:fs')
   const { join } = await import('node:path')
   const { parseExtensionManifest } = await import('../../../shared/modules/third-party-manifest')
@@ -574,6 +574,11 @@ test('the sample content extension binds its key, shows its status item, and run
   const status = kernel.getTopBarItems().find((item) => item.id === `${key}:status.tally`)
   assert.ok(status, 'the status item is in the band')
   assert.equal(status.moduleId, key)
+
+  // Its settings are a section Studio draws itself.
+  const section = kernel.getSettingsSections().find((candidate) => candidate.id === `${key}:settings`)
+  assert.equal(section?.label, 'Tally language')
+  assert.equal(section?.moduleId, key)
 
   assert.deepEqual(calls, [], 'no worker method was ever called')
   // Switched off, none of it shows.

@@ -5,6 +5,7 @@ import {
   type ExtensionContent,
   type ExtensionContributionsResult,
   type ExtensionFrameDocument,
+  type ExtensionSettingValueView,
   type StudioExtensionContentRequest,
   type StudioExtensionCall,
   type StudioExtensionCallAnswer,
@@ -98,6 +99,14 @@ export type ExtensionsApi = {
   extensionCall(call: StudioExtensionCall): Promise<StudioExtensionCallAnswer>
   /** One piece of what a content extension adds (a syntax's grammar), checked by the Studio. */
   extensionContent(request: StudioExtensionContentRequest): Promise<ExtensionContent>
+  /** The values of an extension's declared settings, each its default until set. */
+  extensionSettings(moduleId: string): Promise<Record<string, ExtensionSettingValueView>>
+  /** Set one declared setting (`null`: back to its default); never throws. */
+  setExtensionSetting(input: {
+    moduleId: string
+    key: string
+    value: ExtensionSettingValueView | null
+  }): Promise<{ ok: true; values: Record<string, ExtensionSettingValueView> } | { ok: false; message: string }>
   /** Hear one extension's worker events, across reconnects. */
   onExtensionEvents(moduleId: string, cb: (event: StudioModuleEvent) => void): () => void
   /** What is installed or trusted on the Studio changed. */
@@ -207,6 +216,12 @@ export const extensionsApi: ExtensionsApi = {
       (message) => ({ ok: false, code: 'unavailable', message }),
     ),
   extensionContent: (request) => modules('extension.content', request),
+  extensionSettings: async (moduleId) => (await modules('extension.settings', { moduleId })).values,
+  setExtensionSetting: (input) =>
+    answered(
+      () => modules('extension.setSetting', { ...input, commandId: commandId() }),
+      (message) => ({ ok: false, message }),
+    ),
   onExtensionEvents: (moduleId, cb) =>
     followWindowStudioPush({
       topic: 'extension.events',

@@ -9,6 +9,7 @@ import {
 } from '../../../shared/modules/third-party-manifest'
 import { runAppCommand } from '../commands/appCommandRunner'
 import { getCommandDefinition } from '../commands/commandRegistry'
+import { ExtensionSettingsForm } from '../components/extensions/ExtensionSettingsForm'
 import { ExtensionSurfaceMount } from '../components/extensions/ExtensionSurfaceMount'
 import { GhostButton, IconButton, Tooltip } from '../components/ui'
 import { extensionGlyph } from './extension-glyphs'
@@ -30,7 +31,8 @@ import type { InternalRendererHost, RendererKernel } from './renderer-host'
 // - keybindings bind a key to one of its commands, or to one of Studio's own
 //   (a content extension binds Studio's without any code), joining Settings ▸
 //   Shortcuts like Studio's, where they can be changed or removed;
-// - status bar items show a short label, and run a command when pressed.
+// - status bar items show a short label, and run a command when pressed;
+// - declared settings are drawn by Studio itself, as a section in Settings.
 //
 // Its syntaxes are registered apart from these (lib/highlight/
 // contributedSyntaxes.ts), as data the window's languages read.
@@ -327,6 +329,19 @@ function registerContributions(
       },
     })
   })
+  if (contributes.settings.length > 0) {
+    const declared = contributes.settings
+    host.registerSettingsSection({
+      id: extensionSurfaceId(key, 'settings'),
+      label: extension.name,
+      description: 'Settings it declares',
+      icon: extensionGlyph('settings'),
+      order: surfaces.settingsSections.length,
+      Component: function ExtensionDeclaredSettings() {
+        return <ExtensionSettingsForm extensionKey={key} settings={declared} />
+      },
+    })
+  }
   contributes.topBarItems.forEach((item, index) => {
     const Glyph = extensionGlyph(item.icon)
     const command = item.command ? commands.get(item.command) : undefined

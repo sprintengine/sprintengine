@@ -5,13 +5,16 @@ import { join } from 'node:path'
 
 import { test } from 'vitest'
 
+import { moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
+import { declaredSettingDefaultsReader, withDeclaredSettingDefaults } from './extension-setting-defaults'
 import { createModuleLifecycle } from './module-lifecycle'
 import { createModuleRegistryMirror } from './registry-mirror'
 import { NO_EXTENSION_RUN } from './third-party-module-view'
 
 // The SDK's sample content extension, installed from its folder the way the
 // person installs one: it needs no approval, its grammar is served checked
-// and as data. A broken grammar is refused at
+// and as data, its declared settings read as their defaults until set, and
+// what it declares is what a value is held to. A broken grammar is refused at
 // install, and one broken after install is not served.
 
 const SAMPLE = join(process.cwd(), 'packages/extension-sdk/examples/content-sample')
@@ -87,4 +90,29 @@ test('a grammar that would never highlight is refused at install', async () => {
   assert.equal(installed.ok, false)
   if (installed.ok) return
   assert.match(installed.issues?.[0]?.message ?? '', /names no repository rule: #nowhere/)
+})
+
+test('declared settings read as their defaults until set, and a value is held to its declaration', async () => {
+  const { dataDir, lifecycle } = setUp()
+  assert.ok((await lifecycle.install(SAMPLE)).ok)
+  assert.deepEqual(await lifecycle.settings(KEY), { ok: true, values: { indent: 2, currency: 'EUR' } })
+
+  assert.deepEqual(await lifecycle.setSetting(KEY, 'indent', 4), { ok: true, values: { indent: 4, currency: 'EUR' } })
+  const tooWide = await lifecycle.setSetting(KEY, 'indent', 12)
+  assert.deepEqual(tooWide, { ok: false, message: 'Indent width must be at most 8.' })
+  const offList = await lifecycle.setSetting(KEY, 'currency', 'JPY')
+  assert.equal(offList.ok, false)
+  assert.equal((await lifecycle.setSetting(KEY, 'undeclared', 1)).ok, false)
+
+  // The extension's own code reads the same store, defaults under what is set.
+  const store = withDeclaredSettingDefaults(
+    moduleAppStateMirrorFor(dataDir),
+    declaredSettingDefaultsReader(() => join(dataDir, 'extensions')),
+  )
+  assert.deepEqual(store.get(KEY), { indent: 4, currency: 'EUR' })
+  assert.deepEqual(await lifecycle.setSetting(KEY, 'indent', null), {
+    ok: true,
+    values: { indent: 2, currency: 'EUR' },
+  })
+  assert.deepEqual(store.get(KEY), { indent: 2, currency: 'EUR' })
 })
