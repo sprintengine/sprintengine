@@ -209,6 +209,48 @@ Claude chat offers it too, asked of its agent over there (2026-10-25). Codex
 and the ACP runtimes do not offer it, and there `/btw` goes to the CLI as
 before.
 
+### Files shown in the chat
+
+An agent shows the person files with Studio's `file.view` tool (2026-11-21):
+"show me my CLAUDE.md", or code it wants looked at. The chat draws an editor
+of each file, in tabs when there are several, with the file's path above it,
+in place of the read-only code block pasting the file into a reply would be
+(`agentChat/fileView/FileViewCard.tsx`). Each tab is the live file on the
+machine the chat runs on, not a copy: it is read when the view first draws,
+and what the person types is saved after a short pause, or at once with
+⌘S (Ctrl+S), and the header says **Saved** when it lands. Syntax is coloured
+by the file's extension, in the editor the Editor pane uses (Monaco); the
+editor grows with a short file and scrolls past about eighteen lines.
+
+A call can mark lines for the person to look at, `highlights: [{ from, to,
+note? }]` per file: the lines take the agent violet (the colour that says an
+agent is somewhere, as a tab or a Files row wears it), the note sits after the
+first line of its range, and the editor opens scrolled to the first one. This
+doubles as "show me this code". An in-chat diff view is a natural next step
+on the same block; today `editor.open_diff` opens one outside the chat.
+
+**Who writes.** The tool only opens the view. It resolves each path
+(absolute, `~/`, or relative to the agent's folder), checks the file is text
+and at most 2 MB, and writes down in Studio's data folder that this chat
+showed it (`server/file-views/file-views.ts`, `file-views.json`). It writes
+no file, and it does not see what the person types. A save is the person's:
+their edit, sent by their own connection to the chat's Studio
+(`fileViews.write`, needing `conversation:operate`), for a path that chat
+showed, and no other. That is why a view may hold a file outside every folder
+Studio knows: the agent chose to show it and the person chose to change it.
+Every save is conditional on the file as the view last read it (its SHA-256):
+a file changed on disk since is not written over, and the view says so, with
+**Load the file from disk** and **Save mine over it**. A save the disk refuses
+says why, with **Try again**.
+
+**On every machine.** The reads and saves go through the chat's transport to
+the Studio the chat lives on (capability `file-views`), so a paired desktop's
+chat, an SSH or WSL machine's, and a browser tab all edit the file on the
+machine that holds it. A view that cannot drive the chat shows the files read
+only, and a Studio from before the capability says to update it. An embedded
+conversation, which has no editor of the app's own, and the phone draw the
+call as its ordinary step for now.
+
 ### Quotes
 
 Select words in one of the agent's replies and press **Quote** in the small

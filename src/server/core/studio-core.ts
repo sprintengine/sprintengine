@@ -130,6 +130,7 @@ import { createPullRequestChatFolders } from '../pull-requests/pull-request-chat
 import { createStudioScheduledMessages, studioHeldMessages, studioScheduledSends } from './studio-scheduled-messages'
 import { AGENT_COMPACT_ORIGIN, createStudioAutoCompact, sendStudioCompaction } from './studio-auto-compact'
 import { createConversationSelfCompact } from '../../main/automation/conversation-self-compact'
+import { createFileViews } from '../file-views/file-views'
 import { createSettledChatsSettingsStore } from '../../main/settled-chats-settings-store'
 import { createStudioSettlement } from './studio-settlement'
 import { createStudioWorktreePool, WORKTREE_QUIT_WAIT_MS } from './studio-worktree-pool'
@@ -1269,6 +1270,16 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Auto compact', message })
     },
   })
+  // The files a chat's agent showed the person in the chat (`file.view`),
+  // which the person saves from the chat (`fileViews.*`): kept here, beside
+  // the chats, so a paired device and a browser tab save on this machine.
+  const fileViews = createFileViews({
+    dataDir,
+    folderOf: ({ workspaceId, agentId }) => {
+      const record = workspaceRegistry.getRecord(workspaceId)
+      return conversationWorkingRoot(record?.agents[agentId], record?.folderPath) ?? null
+    },
+  })
   // An agent compacting its own chat (`conversation.compact`): held until its
   // turn ends, then sent as the auto compaction's is, through the same door,
   // as Studio's own message that says the agent asked for it.
@@ -1673,6 +1684,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     conversationLifecycle,
     conversationMove,
     selfCompact,
+    fileViews,
     /** The Settled chats settings, as the windows push them; the rest sweep reads them. */
     settledChatsSettings,
     /** The rest sweep, for the module run states the windows push. */

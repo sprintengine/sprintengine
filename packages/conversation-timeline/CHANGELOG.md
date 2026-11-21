@@ -29,6 +29,10 @@
   `agent-compact`); the message is drawn by the divider alone, as an
   `auto-compact` one is.
 
+- **`isFileView`** (`turnFolds.ts`): Studio's `file.view` under any runtime's
+  spelling, as `isPluginOffer` reads a plugin offer. `stepShownToUser` holds
+  it out of a turn's fold: the files an agent showed are for the person.
+
 - **`deriveConversationRows`** (`conversationRows.ts`): a projected
   conversation as one flat list of rows for a narrow screen (messages,
   thinking, runs of steps, agent cards, each turn's work behind one line, its

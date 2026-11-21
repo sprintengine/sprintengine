@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -67,6 +67,7 @@ import { createStudioRpcService, type StudioRpcService } from '../main/studio-rp
 import { createWorkspaceRegistryService } from '../main/workspace-registry-service'
 import { createInMemoryWorkspaceRegistryStore } from '../main/workspace-registry-store'
 import { createWorkspaceSyncService } from '../main/workspace-sync-service'
+import { createFileViews, type FileViews } from '../server/file-views/file-views'
 
 // ── Seam: a local app, the SDK, the Studio RPC and a real chat ──────────────
 //
@@ -85,6 +86,7 @@ let root: string
 let userData: string
 let service: StudioRpcService
 let runtime: ConversationRuntime
+let fileViews: FileViews
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'studio-rpc-seam-'))
@@ -159,7 +161,9 @@ beforeAll(async () => {
     send: (input) => runtime.sendTurn(input),
   })
   const audit = createGatewayAuditStore({ resolveUserDataDir: () => userData })
+  fileViews = createFileViews({ dataDir: userData, folderOf: () => folder })
   service = createStudioRpcService({
+    fileViews,
     // The platform's pieces, as a standalone server would install them.
     paths: { dataDir: () => userData },
     identity: createStaticAppIdentity({ version: '0.0.0-seam' }),
@@ -568,6 +572,9 @@ test('every method the server serves has its call in the SDK, under the same sco
     >),
     // And the machines its computer offers, which New chat and Settings ▸ Machines use, by name.
     'hosts.list': 'request',
+    // And the files a chat's agent showed, which the chat's view reads and saves, by name.
+    'fileViews.read': 'request',
+    'fileViews.write': 'request',
     // And who reaches it over the tailnet and the machines it drives, which its Settings uses, by name.
     ...(Object.fromEntries(Object.keys(STUDIO_TAILNET_METHODS).map((method) => [method, 'request'])) as Record<
       keyof StudioTailnetMethodMap,
@@ -650,5 +657,57 @@ test('every method the server serves has its call in the SDK, under the same sco
     assert.equal(info.grant.clientId, client.grant.clientId)
   } finally {
     client.close()
+  }
+})
+
+test('a paired app reads and saves a file a chat’s agent showed, never over a change on disk, and only through that chat', async () => {
+  const path = join(await realpath(join(root, 'project')), 'NOTES.md')
+  await writeFile(path, 'first\n')
+  const shown = await fileViews.show({ workspaceId: 'ws-a', agentId: 'agent-1' }, [{ path: 'NOTES.md' }])
+  assert.deepEqual(
+    shown.shown.map((file) => file.path),
+    [path],
+  )
+  const key = { workspaceId: 'ws-a', agentId: 'agent-1' }
+  const driver = await pairedClient(['conversation:read', 'conversation:operate'], 'auto')
+  const reader = await pairedClient(['conversation:read'], 'auto')
+  try {
+    assert.equal(driver.supports('file-views'), true)
+    assert.equal(driver.grant.owner, false, 'a paired app, not an owner')
+    const read = await driver.request('fileViews.read', { key, path })
+    assert.equal(read.text, 'first\n')
+    const saved = await driver.request('fileViews.write', {
+      key,
+      path,
+      text: 'second\n',
+      ifMatch: read.hash,
+      commandId: 'save-1',
+    })
+    assert.equal(saved.ok, true)
+    assert.equal(await readFile(path, 'utf8'), 'second\n')
+    // Changed on disk since: answered as a conflict, and left alone.
+    await writeFile(path, 'theirs\n')
+    const refused = await driver.request('fileViews.write', {
+      key,
+      path,
+      text: 'mine\n',
+      ifMatch: saved.ok ? saved.hash : '',
+      commandId: 'save-2',
+    })
+    assert.equal(refused.ok, false)
+    assert.equal(await readFile(path, 'utf8'), 'theirs\n')
+    // Another chat did not show it; a client that cannot drive the chat cannot save.
+    await assert.rejects(
+      driver.request('fileViews.read', { key: { workspaceId: 'ws-a', agentId: 'agent-2' }, path }),
+      (error: StudioError) => error.code === 'not_found',
+    )
+    assert.equal((await reader.request('fileViews.read', { key, path })).text, 'theirs\n')
+    await assert.rejects(
+      reader.request('fileViews.write', { key, path, text: 'x', ifMatch: read.hash, commandId: 'save-3' }),
+      (error: StudioError) => error.code === 'scope_required',
+    )
+  } finally {
+    driver.close()
+    reader.close()
   }
 })

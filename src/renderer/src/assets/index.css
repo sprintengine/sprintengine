@@ -5126,6 +5126,24 @@ body:has([data-selection-pane]:focus-within)
   margin-block: 0;
 }
 
+/* The lines an agent pointed at in a file it showed (agentChat/fileView): the
+ * violet that says an agent is somewhere, as a tab or a Files row wears it, as
+ * a soft ground under the lines and a 2px edge beside their numbers, with the
+ * agent's note after the first line in the same ink. Monaco draws these by
+ * class name, so they are rules here rather than utilities. */
+.file-view .file-view-highlight {
+  background: var(--agent-trail-soft);
+}
+.file-view .file-view-highlight-edge {
+  border-left: 2px solid var(--agent-trail-ink);
+  margin-left: var(--sem-space-3xs);
+}
+.file-view .file-view-highlight-note {
+  color: var(--agent-trail-ink);
+  font-family: var(--sem-font-family-ui);
+  font-style: italic;
+}
+
 /* A table wider than the pane scrolls inside it, and the edge that hides
  * columns fades out, so a cut-off table does not read as one that ends there.
  * utils/markdown.tsx marks which edges hide content; the mask only takes alpha,
