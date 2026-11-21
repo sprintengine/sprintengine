@@ -192,6 +192,12 @@ type CompanionEntry = {
   statusListeners: Set<(status: CompanionAgentStatus) => void>
   eventListeners: Set<(event: ConversationEvent) => void>
   activeCollector: StructuredRunCollector | null
+  // Bumped by an interrupt, a dispose, and every run or chat turn that takes
+  // the session over. A structured run is the one that counts only while it
+  // matches: between turns (its validator may take a while, answering from a
+  // worker's process) there is no collector to settle, and this is what tells
+  // it that it was interrupted or replaced.
+  runGeneration: number
   // Approval requests the session raised that nothing has answered yet: what
   // `respondToApproval` may answer.
   openApprovals: Set<string>
@@ -446,6 +452,7 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
   }
 
   function interruptEntry(entry: CompanionEntry): Promise<void> {
+    entry.runGeneration += 1
     if (!entry.sessionId) return Promise.resolve()
     const collector = entry.activeCollector
     if (collector) settleCollector(collector, { ok: false, message: 'interrupted' })
@@ -513,8 +520,13 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
     const tools = opts.tools ?? 'none'
     if (!COMPANION_TOOL_POLICIES.has(tools)) throw new Error('"tools" must be "none", "ask" or "auto".')
     await ensureSpawned(entry)
-    // One writer: a second concurrent structured run interrupts the first.
+    // One writer: a second concurrent structured run interrupts the first, or,
+    // between its turns, leaves it to find itself replaced.
     if (entry.activeCollector) await interruptEntry(entry)
+    const generation = (entry.runGeneration += 1)
+    const stillMine = (): void => {
+      if (entry.runGeneration !== generation || entry.disposed) throw new CompanionTurnError('interrupted')
+    }
 
     const maxRetries = Math.max(0, opts.retries ?? 1)
     let message = consumePreamble(entry, tools === 'none' ? `${NO_TOOLS_NOTE}\n\n${opts.prompt}` : opts.prompt)
@@ -526,6 +538,8 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
       const raw = extractJson(text)
       if (raw !== undefined) {
         const result = await opts.validate(raw)
+        // Interrupted or replaced while it validated: neither its answer nor a retry is wanted.
+        stillMine()
         if (result.ok) return result.value
         lastErrors = result.errors.length > 0 ? result.errors : ['Validation failed.']
       } else {
@@ -541,8 +555,10 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
     const message = rawMessage.trim()
     if (!message) throw new Error('Companion chat message is required.')
     await ensureSpawned(entry)
-    // Chat is single-flight per session: cancel any in-flight structured run.
+    // Chat is single-flight per session: cancel any in-flight structured run,
+    // and one between its turns.
     if (entry.activeCollector) await interruptEntry(entry)
+    else entry.runGeneration += 1
     if (entry.pendingSend) await entry.pendingSend.catch(() => undefined)
     if (entry.pendingInterrupt) await entry.pendingInterrupt
     const sessionId = entry.sessionId
@@ -556,6 +572,7 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
   function disposeEntry(entry: CompanionEntry): void {
     if (entry.disposed) return
     entry.disposed = true
+    entry.runGeneration += 1
     const collector = entry.activeCollector
     if (collector) settleCollector(collector, { ok: false, message: 'disposed' })
     entry.activeCollector = null
@@ -614,6 +631,7 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
         statusListeners: new Set(),
         eventListeners: new Set(),
         activeCollector: null,
+        runGeneration: 0,
         openApprovals: new Set(),
         pendingSend: null,
         pendingInterrupt: null,
