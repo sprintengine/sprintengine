@@ -8,13 +8,15 @@ extension.sig left out), the signer's public key, and an ed25519 signature
 over those digests. So a signature says "this key vouches for exactly these
 files": the declaration and the code together.
 
-- Unsigned: installable. Studio waits for the person to trust it in
-  Settings → Extensions, and the trust holds for those exact contents.
-- Signed by a publisher key the person trusts: trusted without asking.
-- Signed by a key Studio does not know: shown with the key's fingerprint, and
-  the person still decides.
+A signature is a badge, not a pass: whatever signs it, an extension beyond
+content runs only once the person approves it in Settings → Extensions, and
+the approval holds for those exact contents and that access.
+
+- Unsigned: installable, and shown as unsigned.
+- Signed by a publisher key Studio trusts: shown as verified.
+- Signed by a key Studio does not know: shown with the key's fingerprint.
 - Any change to the folder after signing makes the signature invalid, and an
-  invalid extension is refused outright (not merely untrusted). Sign again.
+  invalid extension is refused outright, whatever was approved. Sign again.
 
 ## The key
 
@@ -25,8 +27,8 @@ npm run keygen    # sprintengine-extension keygen --out ~/.sprintengine/keys/<id
 - The private key is a PKCS#8 PEM file, mode 600. It never goes in the
   project, never in git, never in CI logs. `pack` never copies `*.key` /
   `*.pem` files, the validators refuse them, and `.gitignore` ignores them.
-- Back it up. Losing it means publishing under a new fingerprint, and people
-  who trusted the old one are asked again.
+- Back it up. Losing it means publishing under a new fingerprint, and your
+  extension no longer shows as signed by the old one.
 - In CI, keep it in a secret and write it to a temp file for the `sign` step.
 
 ## Sign, verify, pack
@@ -61,8 +63,9 @@ what you try is what you would ship. It leaves `extension/` itself alone.
 People install an extension from a folder: Settings → Extensions, install from
 a folder, pointing at `extension/` or a packed copy. Studio copies it under
 `~/.sprintengine/extensions/local.<id>/`; the `local` publisher is what a
-folder install is. An unsigned folder waits for trust; a signed one shows its
-signer.
+folder install is. It waits for the person's approval, which shows what it
+asks for and its signer. A new version installed the same way keeps the
+approval when it asks for no more access.
 
 ## The SDK itself
 

@@ -5,7 +5,7 @@ once, and afterwards asks the host to make the request that needs it; for
 GitHub, the host uses the person's own sign-in. Both live in the worker.
 Check `studio.supports('secrets')` / `studio.supports('github')` first.
 
-## Secrets (`secrets` permission)
+## Secrets (`secrets:own` permission)
 
 ```ts
 import { getSecretsService, type MainHost } from '@sprintengine/extension-sdk'
@@ -60,7 +60,7 @@ export function activate(studio: MainHost): void {
 Never put a key in extension.json, the bundle, app state, storage
 or a settings value: all of those are readable files.
 
-## GitHub (`github` permission)
+## GitHub (`github:api` permission)
 
 ```ts
 import { getGitHubService } from '@sprintengine/extension-sdk'
@@ -138,6 +138,6 @@ off** — anywhere else is `redirect_not_allowed`. Bodies are capped (16 MiB).
 
 ## When not to use a broker
 
-Plain unauthenticated `fetch` from the worker is ordinary Node code; declare
-`network`. The brokers exist so a credential never sits in extension memory,
-files or logs.
+Plain unauthenticated `fetch` from the worker is ordinary Node code, and needs
+no permission: a worker runs with full access to this machine. The brokers
+exist so a credential never sits in extension memory, files or logs.

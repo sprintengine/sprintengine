@@ -6,8 +6,8 @@ ways, and only these:
 
 | | Where | Permission | Who sends |
 | --- | --- | --- | --- |
-| `studio.openChat(input)` | surface | `chat:draft` (a draft) or `conversation:operate` (needed for `send: true`) | The person: the prompt lands as a draft unless `send: true` |
-| `getConversationService(studio)` | worker | `conversation:operate` (everything) or `conversation:read` (watch/read only) | The extension |
+| `studio.openChat(input)` | surface | `chat:draft` (a draft) or `conversation:own` (needed for `send: true`) | The person: the prompt lands as a draft unless `send: true` |
+| `getConversationService(studio)` | worker | `conversation:own` | The extension |
 | `getTextGenerationService(studio)` | worker | `agents:generate` | The extension: one prompt, one answer, no chat at all |
 | `getCompanionAgentsService(studio)` | worker | `agents:companion` | The extension: a background agent with a structured task API (the `api-main` topic) |
 
@@ -15,7 +15,7 @@ The first two create ordinary chats: a tab in the workspace the person can
 read, answer and stop. A extension drives only chats it created — never the
 person's own, never another extension's (`not_owned`). Reading the person's
 chats, read-only, is `getActivityService(studio)` behind the broad
-`conversation:read-all` (the `api-main` topic). There is no
+`conversation:read` (the `api-main` topic). There is no
 terminal-agent API; do not spawn agent CLIs from the worker to work around
 that.
 
@@ -56,7 +56,7 @@ const opened = await studio.openChat({
   dedupeKey: 'plan:search-rewrite',  // optional: asking again focuses this chat instead of opening another
   send: false,                       // default: a draft
 })
-if (!opened.ok) showError(opened.message)  // permission_missing | unknown_workspace | workspace_folder_missing | cli_not_conversational | unavailable | invalid_input
+if (!opened.ok) showError(opened.message)  // not_permitted | unknown_workspace | workspace_folder_missing | cli_not_conversational | unavailable | invalid_input
 else studio.focusTab({ workspaceId, kind: 'chat', id: opened.agentId })  // openChat already focuses; this re-focuses later
 ```
 
@@ -115,7 +115,7 @@ export function activate(studio: MainHost): void {
 | `resolvePlan(ref, { requestId, decision, commandId? })` | operate | Answer a request of kind `plan`: `approve` or `reject`. Refused for any other kind. |
 | `setPermissionPreset(ref, preset, { permissionMode?, commandId? }?)` | operate | Switch the chat's preset from its next tool call. Answers `{ ok: true, permissionPreset, permissionMode?, notice? }`: the preset in force, lowered to the extension's ceiling when it asked for more (and the mode dropped with it). |
 | `setModel(ref, modelId)` | operate | Switch to another model of the chat's runtime from its next turn (an id `listChatRuntimes()` lists, or `default`). Answers `{ ok: true, modelId, notice? }`; a runtime that binds a chat to its model refuses. |
-| `subscribe(ref, cb)` | read | Live events from now on; returns the unsubscriber. A chat the host has not loaded yet (a saved chat at startup) is attached all the same and delivers once it is; a ref to anything not yours delivers nothing. Throws only without `conversation:read` or for a malformed ref. |
+| `subscribe(ref, cb)` | read | Live events from now on; returns the unsubscriber. A chat the host has not loaded yet (a saved chat at startup) is attached all the same and delivers once it is; a ref to anything not yours delivers nothing. Throws only without `conversation:own` or for a malformed ref. |
 | `follow(ref, { afterSeq?, generation?, turnLimit? }?, onFrame)` | read | No gap: a `snapshot` (or only the events after the cursor you hold), a `synchronized` fence, then live events. Keep the fence's `seq` and `generation` as your next cursor; a snapshot with `reset: true` replaces what you held. Returns the unsubscriber. Like `subscribe`, it waits for a chat the host has not loaded yet. |
 | `transcript(ref)` | read | Every recorded event, for catching up. |
 | `reply(ref, turnId?)` | read | `{ ok: true, turnId, text }`: the last finished turn's reply (or `turnId`'s), the agent's last message of the turn. `no_reply` while none has finished. |
@@ -155,7 +155,7 @@ each present where the runtime can say it:
   own protocol carries).
 - `costUsd`: what the turn cost, where the runtime prices it.
 
-Error codes: `permission_missing`, `invalid_input`, `unknown_workspace`,
+Error codes: `not_permitted`, `invalid_input`, `unknown_workspace`,
 `workspace_folder_missing`, `no_cli_selected`, `cli_not_conversational`,
 `unknown_skill`, `not_owned`, `agent_write_failed`,
 `conversation_start_failed`, `runtime_refused`, `no_reply` (`reply`),
@@ -209,7 +209,7 @@ With no `cli`, it answers on the runtime and model the person chose for
 Studio's text generation in Settings, and on Claude Code's small model when
 they chose none. Declare `agents:generate`. Each extension gets two calls at once
 and eight waiting; past that, or past thirty a minute, a call answers `busy`
-at once. Failures: `permission_missing`, `invalid_input`, `unsupported` (a
+at once. Failures: `not_permitted`, `invalid_input`, `unsupported` (a
 runtime with no headless backend),
 `unavailable` (not installed), `busy`, `timeout`, `failed`, `invalid_output`
 (no usable answer, or no JSON when `json` was asked for).

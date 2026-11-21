@@ -17,9 +17,9 @@ fixes follow.
    properties, in inline styles or CSS of your own placed inside your root.
 5. **Relative URLs resolve to nothing** in a surface. Reach the extension's
    files with `studio.getAssetUrl(path)`.
-6. **Any change to `extension/` is new contents.** Trust binds to exact
-   contents, and a signature to exact files. Rebuild → `dev:install` → trust
-   again, or sign again.
+6. **Any change to `extension/` is new contents.** An approval binds to exact
+   contents and access, and a signature to exact files. Rebuild →
+   `dev:install` → approve again, or sign again.
 7. **Store with the host**: `getModuleStorage`, app state, workspace state.
    Never JSON files in the home folder; never a raw `localStorage` key.
 8. **Keys stay out of the project.** `npm run keygen` writes
@@ -72,13 +72,14 @@ your commands; a top bar item names one of your commands or doors.
 **MCP tools are declared first.** A tool the worker registers that
 extension.json does not list is refused.
 
-## Trust and signing
+## Approval and signing
 
-**Any change under `extension/` is new contents.** A person's trust binds to the
-extension's content fingerprint, the digests of every file in the folder.
-After each rebuild an unsigned extension is trusted again.
+**Any change under `extension/` is new contents.** A person's approval binds to
+the extension's permissions, tier and worker and to the digests of every file
+in the folder. After each rebuild copied in by `dev:install` it is approved
+again.
 
-**A signed extension changed after signing is refused, not just untrusted.**
+**A signed extension changed after signing is refused, whatever was approved.**
 `dev:install` signs the installed copy whenever your key exists. If you signed
 `extension/` for publishing, sign it again after every build.
 

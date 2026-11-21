@@ -70,23 +70,25 @@ npm run check        # typecheck → build → tests (smoke + test/*.test.ts) �
 npm run dev:install  # build, validate, copy extension/ to ~/.sprintengine/extensions/local.<id>/, sign it if a key exists
 ```
 
-Then in Studio: **Settings → Extensions**, find the extension, trust it. Only
-the person can trust it; never try to do it for them. `extension.status` (a
-Studio tool) says whether Studio sees the installed extension, whether it is
-trusted, and why it is not running when it is not.
+Then in Studio: **Settings → Extensions**, find the extension, approve it.
+Only the person can approve it; never try to do it for them. The approval
+tells them what it asks for, and that its code runs with full access to this
+machine. `extension.status` (a Studio tool) says whether Studio sees the
+installed extension, whether it is approved, and why it is not running when it
+is not.
 
-- Trust is granted to exact contents. Every rebuild is new contents, so an
-  unsigned extension is trusted again after each `dev:install`. That is the
-  design, not a bug. Signed with a key the person trusts, it is trusted
-  without asking (the `publishing` topic).
+- An approval is bound to exact contents and access. Every rebuild copied in by
+  `dev:install` is new contents, so it is approved again after each. That is
+  the design, not a bug. A signature does not approve anything (the
+  `publishing` topic).
 - Say what the person should click and what they should see. You cannot see
   Studio's window; they can.
 
 ## Testing without Studio
 
 `@sprintengine/extension-sdk/testing` has fake hosts that keep the host's rules:
-the permissions it checks, storage's key and size limits, chat ownership, the
-`module:bridge` that declaring methods needs, and the MCP tools extension.json
+the permissions every call needs (from the same table Studio's gate reads),
+storage's key and size limits, chat ownership, and the MCP tools extension.json
 declares. Write tests in `test/*.test.ts`; `npm test` bundles them with esbuild
 and runs them with `node --test`:
 
@@ -143,7 +145,7 @@ the same name, and that every declared MCP tool is served.
 | `conversations` | Starting, prompting and reading the extension's own chats; one-shot text generation |
 | `brokers` | API keys and GitHub through the host |
 | `styling` | Drawing a surface: React or plain DOM, the `--sem-*` properties, your own CSS |
-| `troubleshooting` | Studio does not list, trust or run the extension |
+| `troubleshooting` | Studio does not list, approve or run the extension |
 | `publishing` | Signing with extension.sig, packing, handing it to others |
 
 ## Done means

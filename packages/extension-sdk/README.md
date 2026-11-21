@@ -16,7 +16,7 @@ of the SDK.
 The package is types-first. Beyond the declarations it ships the manifest
 validator (`validateExtensionManifest`), the JSON Schema
 (`@sprintengine/extension-sdk/extension.schema.json`), a few small pure values
-(`KNOWN_CAPABILITY_PERMISSIONS`, `EXTENSION_MANIFEST_SINCE`,
+(`EXTENSION_PERMISSIONS`, `EXTENSION_HOST_SERVICES`, `EXTENSION_MANIFEST_SINCE`,
 `createServiceToken`, the `get*Service` helpers), signing
 (`@sprintengine/extension-sdk/signing`), the `sprintengine-extension` CLI, the
 starter templates, the extension guide for agents (`guide/`,
@@ -57,9 +57,9 @@ Templates combine. `--with` adds parts on top of the one you start from, and
 
 | Part | What it adds |
 | --- | --- |
-| `main` | The worker: `src/main.ts` exporting `activate`, its methods' contract in `src/methods.ts`, `main` in extension.json and its `build:main` script, and `module:bridge` |
-| `mcp` | MCP tools declared in `contributes.mcpTools` and served from `activate` (`mcp:tools`); brings `main` when missing |
-| `settings` | A settings section (`storage`) |
+| `main` | The worker: `src/main.ts` exporting `activate`, its methods' contract in `src/methods.ts`, `main` in extension.json and its `build:main` script |
+| `mcp` | MCP tools declared in `contributes.mcpTools` and served from `activate` (`tools:contribute`); brings `main` when missing |
+| `settings` | A settings section (`settings:own`) |
 | `door` | A door with a row in the Extensions drawer |
 
 A part copies its files and its test, merges its contributions and permissions
@@ -82,7 +82,7 @@ made it. Commit `vendor/` with the project.
 
 The working method for an agent building an extension — the project layout,
 which contribution or API to reach for, choosing a tier and permissions, the
-check / side-load loop, signing, and what "not trusted", "tampered" and "needs
+check / side-load loop, signing, and what "waits for approval", "tampered" and "needs
 a newer Studio" mean — is a set of topics in the package's `guide/` folder
 (`start`, `surfaces`, `manifest`, `permissions`, `rules`, `api-renderer`,
 `api-main`, `conversations`, `brokers`, `styling`, `troubleshooting`,
@@ -130,7 +130,7 @@ in it is relative to that folder.
   "engines": { "studio": ">=0.13.0" },
   "tier": "worker",
   "name": "Notes",
-  "permissions": ["storage", "module:bridge"],
+  "permissions": ["storage:own"],
   "main": "dist/main.cjs",
   "contributes": {
     "commands": [{ "id": "notes.clear", "title": "Clear notes" }],
@@ -173,14 +173,16 @@ are generated from the validator's field table.
 **Install keys.** Studio installs an extension under `<publisher>.<id>`; a
 folder install is `local.<id>`, in `~/.sprintengine/extensions/local.<id>/`
 (`SPRINTENGINE_USER_EXTENSION_ROOT` moves the root). The key is
-`studio.moduleId`, and what trust and storage are keyed by. Ids starting
+`studio.moduleId`, and what approval and storage are keyed by. Ids starting
 `studio-` or `sprintengine-` install only from Studio's own catalogue.
 
-**Trust.** Only an extension the person trusts runs code. Unsigned, it waits
-for them to trust it in Settings → Extensions, and the trust binds to its
-content fingerprint (the digests of every file), so different bytes under the
-same key never inherit it. Signed (`extension.sig`) by a publisher key they
-trust, it is trusted. Changed after signing, it is refused.
+**Approval.** Anything beyond content runs only once the person approves it in
+Settings → Extensions. The approval names a fingerprint over its permissions,
+tier, worker, background and the digests of every file, so different bytes
+under the same key never inherit it; a new version keeps it when it asks for no
+more access, and asks again when it does. A signature (`extension.sig`) is a
+badge: by a publisher key Studio trusts it shows as verified, and the person
+still approves. Changed after signing, it is refused.
 
 ## Testing
 
@@ -210,7 +212,7 @@ const html = await renderToHtml(createElement(Notes, { studio }))
   declare and takes the declaration's description and access. Each service's
   handle is on `services`, to arrange the world and read what the extension
   did to it:
-  - `storage`: the real key pattern, absolute-root rule and 1 MB cap;
+  - `storage:own`: the real key pattern, absolute-root rule and 1 MB cap;
     `list({ prefix })`, `getMany` and `watch`, which hears the extension's own
     writes and `changeExternally(key, value, root)` (a `git pull`, a hand edit).
   - `conversations`: `emitEvent` (turn events get a `turnId`; give
@@ -225,8 +227,8 @@ const html = await renderToHtml(createElement(Notes, { studio }))
     agent asking to use a tool mid-run.
   - `textGeneration`: `respond`, `setPreferred`, `calls`; `agents:generate`
     checked, and the host's two-running, eight-waiting lane (`busy`).
-  - `secrets` (origins, https, redaction).
-  - `github`: `respond('GET', '/route', …)`, `respondGraphql` (a mutation is
+  - `secrets:own` (origins, https, redaction).
+  - `github:api`: `respond('GET', '/route', …)`, `respondGraphql` (a mutation is
     refused before it is sent), `respondDownload`, `setSignedIn`.
   - `backlog` (`seed`, `setKey`, `setLocation`, `failScan`), `usage`
     (`record`) and `activity` (`addChat`, `addPrompt`), behind their
@@ -234,9 +236,9 @@ const html = await renderToHtml(createElement(Notes, { studio }))
   - `workspaces`: `setHydrated(false)` for the after-launch null, `close(id)`
     for `list({ includeClosed: true })`, `setGitInfo(id, …)`.
 
-  A permission the host checks is refused as the host refuses it
-  (`permission_missing`, or a throw); a disclosure-only one used undeclared is
-  listed in `undeclared`. `methods.read` / `methods.operate` call your
+  A call your permissions do not cover is refused as the host's gate refuses it
+  (`not_permitted`, or a throw), from the same table, and listed in
+  `undeclared`. `methods.read` / `methods.operate` call your
   declared methods as a surface or a command would; `tools.call` hands the
   handler agent metadata. `setAppState(key, value)` pushes a settings change
   `watchModuleAppState` hears. `getModuleDataDir()` hands out a temporary
@@ -276,38 +278,50 @@ if (studio.supports('conversations')) startChatFeatures(studio)
 `supports(name)` is true for a capability the host provides now — a service
 can be missing because the module that provides it is turned off. Names:
 `conversations`, `chat.open`, `companion-agents`, `scheduled-agents`,
-`secrets`, `github`, `storage`, `mcp-tools`, `module-assets`,
+`secrets:own`, `github:api`, `storage:own`, `mcp-tools`, `module-assets`,
 `notifications`, `backlog-write`, `usage`, `activity`, and the finer ones
 described where their API is below. An unknown name answers `false`, so an
 extension may probe for capabilities newer than its SDK.
 
 ## Permissions
 
-Declare what the extension touches in `permissions`; only the `ui` and
-`worker` tiers hold any. They are install-time disclosure: the consent prompt
-lists them before the person trusts the extension. Most are not a sandbox —
-trusted code runs in the app's process — but these are checked on every call,
-and an extension without them gets `permission_missing`:
+Ask for what the extension touches in `permissions`; only the `ui` and
+`worker` tiers hold any. Studio checks every call your code makes into it at
+the host, against two things, and a call goes through only when both hold:
+the permissions the person approved, and what whoever set the call off may do
+themselves (the person, a paired device, another app, an agent). A refused
+call answers `not_permitted` or `approval_required`, in the method's failure
+shape where it has one, or throws. A permission does not limit your own code:
+an extension with code runs inside Studio with full access to this machine,
+and the approval says so.
 
 | Permission | Checked on |
 | --- | --- |
-| `conversation:read` | `getConversationService`: `subscribe`, `follow`, `transcript`, `reply`, `list`, `watch` |
-| `conversation:operate` | Everything in the conversation service, `openChat` with `send: true`, and allowing a companion's tool call. Implies read. |
-| `conversation:bypass` | Running the extension's chats on `bypass` (without it they go no looser than `auto`), and a companion task with `tools: 'auto'` |
+| `workspace:read` | `WorkspaceContextToken`, `getWorkspaceGitInfo`, `getSkillStatus`, a surface's workspace reads |
+| `workspace:operate` | `WorkspaceServiceToken`, `ensureSkillInstalled` |
+| `conversation:own` | The conversation service, `openChat` with `send: true`, and allowing a companion's tool call |
+| `conversation:bypass` | Running the extension's chats on `bypass` (without it they go no looser than `auto`), `allowedTools`, and a companion task with `tools: 'auto'` |
 | `chat:draft` | `openChat` without `send` (a draft the person reads and sends) |
-| `secrets` | `getSecretsService` |
-| `github` | `getGitHubService` |
-| `mcp:tools` | `registerMcpTools`, and declaring `contributes.mcpTools` |
-| `agents:companion` | Attaching a companion agent |
-| `module:bridge` | Declaring methods (`registerMethods`): the ones surfaces call with `studio.methods()`, and the ones commands run. The broad `ipc:invoke` also allows it; declare `module:bridge` instead |
-| `backlog.read` | `getBacklogService` reads; `listBacklogItems`, `watchBacklogItems`, `getBacklogLocation` |
-| `backlog.write` | `getBacklogService` writes; `createBacklogItem`, `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`, `updateBacklogModuleMetadata` |
-| `usage:read` | `getUsageService`, `queryUsage` |
-| `conversation:read-all` | `getActivityService` (flagged as a broad scope in the consent prompt) |
+| `storage:own` | `getModuleStorage`, `getModuleDataDir`, workspace module state |
+| `settings:own` | `getModuleAppState`, `watchModuleAppState`, a surface's module app state |
+| `notifications:show` | `notify` |
+| `secrets:own` | `getSecretsService` |
+| `github:api` | `getGitHubService` (only the person may set it off) |
+| `tools:contribute` | `registerMcpTools`, and declaring `contributes.mcpTools` |
+| `agents:companion` | `getCompanionAgentsService` |
 | `agents:generate` | `getTextGenerationService(studio).generate` |
+| `schedules:own` | `getScheduledAgentsService` |
+| `backlog:read` | `getBacklogService` reads; `listBacklogItems`, `watchBacklogItems`, `getBacklogLocation` |
+| `backlog:operate` | `getBacklogService` writes; `createBacklogItem`, `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`, `updateBacklogModuleMetadata` |
+| `providers:read` | `listChatRuntimes` |
+| `usage:read` | `getUsageService`, `queryUsage` |
+| `conversation:read` | `getActivityService`: every chat on this machine, read only (flagged broad in the approval) |
 
-The list is closed: `KNOWN_CAPABILITY_PERMISSIONS` exports it, and a name not
-in it fails validation. Its consent copy is in
+Your own methods (`registerMethods`), events and files need no permission.
+The list is closed: `EXTENSION_PERMISSIONS` exports it, and a name not in it
+fails validation. What each host method needs, of your extension and of
+whoever set the call off, is `EXTENSION_HOST_SERVICES` and
+`EXTENSION_MAIN_HOST_METHODS`; the wording the person reads is in
 [`docs/extension-authors/permissions.md`](../../docs/extension-authors/permissions.md)
 in the app repository.
 
@@ -348,7 +362,7 @@ export function activate(studio: MainHost): void {
 }
 ```
 
-Declare `conversation:operate` (or `conversation:read` for a extension that only
+Declare `conversation:own` ( for a extension that only
 reads its chats).
 
 - **`create(input)`** starts a chat in a workspace: `cli` and `model` default
@@ -404,7 +418,7 @@ reads its chats).
   `generation` as the next cursor. A snapshot with `reset: true` replaces what
   you held. Check `studio.supports('conversation-streams')`. Both attach to a
   chat the host has not loaded yet (a saved chat at startup) and deliver once
-  it is; they throw only without `conversation:read` or for a malformed ref.
+  it is; they throw only without `conversation:own` or for a malformed ref.
   **`transcript(ref)`** replays everything recorded. **`list(filter?)`** and
   **`watch(filter, cb)`** give `ModuleConversationSummary` rows; a scheduled
   run's chat carries `scheduledAgentId` and `scheduledAgentTag`.
@@ -439,7 +453,7 @@ if (opened.ok) studio.focusTab({ workspaceId, kind: 'chat', id: opened.agentId }
 `openChat` adds a chat to the workspace and focuses it. By default the prompt
 lands in the composer as a **draft** the person reads and sends; `send: true`
 sends it as the first turn. Declare `chat:draft` for drafts, or
-`conversation:operate`, which `send: true` needs; check
+`conversation:own`, which `send: true` needs; check
 `studio.supports('chat.open')` first (`unavailable` means this window cannot
 open chats). `name` titles the chat, and `dedupeKey` (your own key for it)
 focuses the chat this extension already opened under that key in the workspace
@@ -470,7 +484,7 @@ answer: `'none'` (the default) denies them all and tells the agent up front
 it has no tools — use it for any prompt carrying text you did not write;
 `'ask'` leaves them for the person, whose answer you relay with
 `handle.respondToApproval({ requestId, decision })` (allowing needs
-`conversation:operate`); `'auto'` approves them all and needs
+`conversation:own`); `'auto'` approves them all and needs
 `conversation:bypass`. `engine.cli` takes a runtime id. Check
 `studio.supports('companion-tools')`: a host without it approves every tool call.
 
@@ -519,7 +533,7 @@ request to one of the https origins it was stored with (exact origin, bound at
 `set`; change the list by setting the value again). Requests refuse redirects
 and cap the response at 1 MiB. Values are encrypted with the operating
 system's keychain; where it has none, `set` answers `storage_unavailable`.
-Declare `secrets`; check `studio.supports('secrets')`.
+Declare `secrets:own`; check `studio.supports('secrets')`.
 
 ### GitHub
 
@@ -538,7 +552,7 @@ The request goes to the GitHub API with the person's own sign-in; the extension
 never sees the token. `route` is a `/`-prefixed template: `{name}` placeholders
 are filled from `params` (encoded, so a value cannot add a segment, a query or
 a host) and the rest of `params` becomes the query string. Anything that could
-move the request elsewhere is `invalid_route`. Declare `github`; check
+move the request elsewhere is `invalid_route`. Declare `github:api`; check
 `studio.supports('github')`.
 
 Beyond plain requests:
@@ -569,11 +583,11 @@ Beyond plain requests:
 - `registerMethods(methods)` — the methods your surfaces (or a client the
   person granted them) call through `methods`, and the ones commands without
   an `action` run: each with its access (`read` or `operate`), a params
-  validator and a handler. Needs `module:bridge`.
+  validator and a handler. Your own methods need no permission.
 - `registerMcpTools(tools)` — serve the tools extension.json declares in
   `contributes.mcpTools` on Studio's MCP server. A tool not declared is
   refused, and the declaration's `description` and `access` are what agents
-  see. Declare `mcp:tools`. An off extension's tools stay listed and answer an
+  see. Declare `tools:contribute`. An off extension's tools stay listed and answer an
   enable error instead of running.
 - `provideService` / `getService` / `requireService(token)` — the service
   bridge. An extension resolves only the services the SDK publishes (its
@@ -597,7 +611,7 @@ Beyond plain requests:
   (`supports('main-app-state')`).
 - `getWorkspaceGitInfo(workspaceId)` — the branch and remotes of a workspace,
   each remote with `owner/repo` when it is on GitHub. Declare
-  `ipc:workspace-read`; it is checked.
+  `workspace:read`; it is checked.
 - `getModuleDataDir()` — a directory of your own under the app's user data,
   for data past storage's 1 MB value limit; removed at uninstall.
 - `getAssetPath(relativePath)` — the absolute path of a file the extension
@@ -633,17 +647,17 @@ panel's workspace) and `ready()`.
   through the app's own link path; anything else is refused.
 - **The window:** `getActiveWorkspaceId()` and `watchActiveWorkspace(cb)`.
 - **Workspaces:** `getWorkspace`, `listWorkspaces`, `watchWorkspaces`,
-  `getWorkingRoot`, `getWorkspaceGitInfo` (declare `ipc:workspace-read`),
-  `watchWorkspaceFile` (`filesystem:read-workspace`).
+  `getWorkingRoot`, `getWorkspaceGitInfo` (declare `workspace:read`),
+  `watchWorkspaceFile` (`workspace:read`).
 - **Chats:** `openChat`, `listChatRuntimes`, `focusTab` (above).
 - **State:** `getWorkspaceModuleState` / `setWorkspaceModuleState` (your entry
   on a workspace, synced across windows) and `getModuleAppState` /
   `setModuleAppState` / `watchModuleAppState` (app-level, readable from the
-  worker). Declare `storage`.
+  worker). Declare `storage:own`.
 - **Backlog:** `listBacklogItems`, `watchBacklogItems(id, cb, { onError })`,
-  `getBacklogLocation` (declare `backlog.read`); `createBacklogItem`,
+  `getBacklogLocation` (declare `backlog:read`); `createBacklogItem`,
   `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`,
-  `updateBacklogModuleMetadata` (declare `backlog.write`). See "The Backlog".
+  `updateBacklogModuleMetadata` (declare `backlog:operate`). See "The Backlog".
 - **Usage:** `queryUsage(query)` (declare `usage:read`).
 - **Theme:** `watchColorScheme(cb)` for a runtime you host (an editor, a chart
   library); ordinary styling uses the `--sem-*` properties.
@@ -702,8 +716,7 @@ if (!answer.ok) studio.toast({ tone: 'error', message: answer.message })
   `extension_method_unknown`, `invalid_params`, `scope_required`,
   `unavailable` (a handler that threw, or no connection).
 - **Names** are a lower-case letter, then letters, digits, dots and dashes;
-  your install key is their namespace. Declaring methods needs
-  `module:bridge`.
+  your install key is their namespace. Declaring them needs no permission.
 - **Commands.** A command without an `action` calls the method of its id with
   access `operate` and an `ExtensionCommandContext` as params (`where`,
   `workspaceId`, and `backlogItemIds`, `filePaths` or `notification` for a
@@ -728,7 +741,7 @@ protocol's `extension.events` stream); delivery pauses while your extension is o
 and optionally per workspace. Workspace keys live in the project's store in
 the person's home (`~/.sprintengine/workspaces/<project>/modules/<install key>/`),
 never in the project's folder; global keys under the app's data; JSON
-values up to 1 MB, atomic writes. Declare `storage`.
+values up to 1 MB, atomic writes. Declare `storage:own`.
 
 `list({ prefix })` and `getMany({ keys })` read a record family in one call
 (`supports('storage-query')`). `watch({ workspaceRoot? }, cb)` says which keys
@@ -748,7 +761,7 @@ const view = await studio.requireService(WorkspaceContextToken).get(workspaceId)
 ```
 
 `create` resolves once the workspace is confirmed, so a returned id is real.
-The context service (declare `ipc:workspace-read`) also has `list()`: the open
+The context service (declare `workspace:read`) also has `list()`: the open
 workspaces, each with `open: true`. `list({ includeClosed: true })` adds the
 workspaces closed on this machine, newest first, with `open: false` and
 `closedAt` (`supports('workspace-history')`), so a extension can tie what it kept
@@ -797,7 +810,7 @@ const moved = await studio.updateBacklogStatus(workspaceId, item.id, 'completed'
   could not be read. The watch stays open and calls `cb` again after the next
   readable scan.
 
-Declare `backlog.read` for reads and `backlog.write` for writes; the host
+Declare `backlog:read` for reads and `backlog:operate` for writes; the host
 checks both. `studio.supports('backlog-write')` says whether the host has the
 write API.
 
@@ -854,7 +867,7 @@ extensions. Messages the app sent on the person's behalf are not theirs and are
 left out. Chats in closed workspaces, and agent sessions outside Studio, are
 not covered.
 
-Declare `conversation:read-all`. Its consent prompt says "Read every chat on
+Declare `conversation:read`. Its consent prompt says "Read every chat on
 this machine, including what you and the agents wrote" and is flagged as a
 broad scope, so ask for it only when reading the person's chats is the point
 of the extension. Check `studio.supports('activity')`.
@@ -866,7 +879,7 @@ comes round, a new chat starts in the project with that prompt as its first
 message, on the CLI, model, permissions, skills, MCP servers and worktree
 setting it was made with. Nothing carries from one run to the next. A extension
 creates its own with `getScheduledAgentsService(studio)` (declare
-`scheduled-agents.manage`). Every method
+`schedules:own`). Every method
 is scoped to your extension: `list` returns only yours, and `update`, `remove`
 and `runNow` refuse an id you did not create. They appear in the person's
 sidebar like the ones they make themselves, and they can close them.
@@ -969,17 +982,18 @@ work on it, and a bundle naming a `module` component is refused.
 `$SPRINTENGINE_USER_EXTENSION_ROOT`), replacing the old copy and leaving out
 symbolic links, `node_modules`, `.git` and key files. When a key is at hand
 (`--key`, `$SPRINTENGINE_SIGNING_KEY`, or `~/.sprintengine/keys/<id>.key`;
-`--no-sign` skips it) it signs the installed copy. Unsigned, Studio waits for
-you to trust it in Settings → Extensions, and asks again after each rebuild,
-since trust binds to exact contents. Settings → Extensions can also install a
-folder: `extension/`, or a packed copy.
+`--no-sign` skips it) it signs the installed copy. Studio waits for you to
+approve it in Settings → Extensions, and asks again after each rebuild copied
+in this way, since the approval binds to exact contents. Settings → Extensions
+can also install a folder (`extension/`, or a packed copy); installed that way,
+a new build keeps its approval when it asks for no more access.
 
 ## Packaged web runtimes and WebAssembly
 
 `studio.getAssetUrl('runtime/index.html')` returns a stable URL for a file in
 the installed extension — use it as an iframe `src`. Relative scripts,
 workers, WebAssembly (`application/wasm`) and IndexedDB work inside it, under
-a private per-installation origin. The host checks trust and enablement on
+a private per-installation origin. The host checks approval and enablement on
 every request and serves only files the extension was verified with, up to
 128 MiB. Never store secrets in the extension's folder or log these URLs; use
 the secrets broker. This is not a sandbox for hostile code.

@@ -125,15 +125,17 @@ The `welcome`'s `grant` is what the connection may do:
 - `extensions:operate` — call the methods modules declare `operate`
   (`extension.operate`, once per `commandId`), and write the Backlog as a module
   (`extensionBacklog.create`, `.updateStatus`, `.updateTriage`, `.addLink`,
-  `.updateModuleMetadata`); carries `extensions:read`. The module's own manifest
-  permissions (`backlog.write`, `usage:read`) are checked on every call. A
-  browser session never holds it.
+  `.updateModuleMetadata`); carries `extensions:read`. Every call is checked
+  at the host against the extension's approved permissions and against the
+  client's own grant (`backlog:operate` for a Backlog write, `workspace:read`
+  for usage), so an extension never lets a client do what it could not do
+  itself. A browser session never holds it.
 - No scope changes what runs: `extension.setEnabled`, `extension.install`,
-  `extension.setTrust` and `extension.uninstall` are an owner's
-  (`STUDIO_MODULES_OWNER`), because each installs, trusts, starts or stops an
+  `extension.approve` and `extension.uninstall` are an owner's
+  (`STUDIO_MODULES_OWNER`), because each installs, approves, starts or stops an
   extension's code on that machine. `extension.list`, what runs there, needs
   `extensions:read`, as do `extension.installed` (every installed extension, with
-  its trust and origin), `extension.rendererEntries` (their window halves) and
+  its approval, signature and origin), `extension.rendererEntries` (their window halves) and
   the `extension.changed` stream. `extension.setAppState` (the modules' Settings
   values) needs `settings:write`. `extension.reportRegistry` (the registry a
   window resolved) is an owner's: it is the report of the Studio's own window.
