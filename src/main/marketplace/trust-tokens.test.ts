@@ -18,7 +18,7 @@ const ENTRY = {
   category: 'dev-tools',
   icon: '',
   latest: 1,
-  provides: ['module'],
+  provides: ['mcp'],
   source: `https://github.com/acme/ext/tree/${'a'.repeat(40)}`,
 } as MarketplacePluginEntry
 
@@ -28,7 +28,7 @@ test('a token is spent once, and only for the entry it names', () => {
   assert.deepEqual(store.peek(token), { entryId: 'plugin-a', source: 'registry' })
 
   const grant = store.consume(token, 'plugin-a')
-  assert.deepEqual(grant, { entryId: 'plugin-a', source: 'registry', pin: PIN, allowUnsignedCode: false })
+  assert.deepEqual(grant, { entryId: 'plugin-a', source: 'registry', pin: PIN })
   assert.equal(store.consume(token, 'plugin-a'), null, 'a second install cannot reuse the approval')
   assert.equal(store.peek(token), null)
 
@@ -53,25 +53,12 @@ test('a token expires ten minutes after the prompt', () => {
   assert.equal(store.consume(token, 'plugin-a'), null)
 })
 
-test('unsigned code is allowed only for a GitHub entry that asked for it', () => {
+test('a GitHub entry rides in its grant', () => {
   const store = createTrustTokenStore()
-  const registry = store.issue({ entryId: 'plugin-a', source: 'registry', pin: PIN, allowUnsignedCode: true })
-  assert.equal(store.consume(registry, 'plugin-a')?.allowUnsignedCode, false)
-
-  const github = store.issue({
-    entryId: ENTRY.id,
-    source: 'github',
-    pin: PIN,
-    allowUnsignedCode: true,
-    entry: ENTRY,
-  })
+  const github = store.issue({ entryId: ENTRY.id, source: 'github', pin: PIN, entry: ENTRY })
   const grant = store.consume(github, ENTRY.id)
-  assert.equal(grant?.allowUnsignedCode, true)
-  // The synthesised entry rides in the grant; it is in no registry.
+  // The synthesised entry is in no registry, so the grant carries it.
   assert.deepEqual(grant?.entry, ENTRY)
-
-  const unasked = store.issue({ entryId: ENTRY.id, source: 'github', pin: PIN })
-  assert.equal(store.consume(unasked, ENTRY.id)?.allowUnsignedCode, false)
 })
 
 test('the issued pin cannot be changed by the caller afterwards', () => {

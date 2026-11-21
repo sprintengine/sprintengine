@@ -280,7 +280,7 @@ export function InstalledExtensionsInventory({
             if (updated) await settleAfterUpdate()
             return
           }
-          const outcome = classifyVerification(verify, entry.provides)
+          const outcome = classifyVerification(verify)
           if (outcome.kind === 'blocked') {
             setUpdateRun({ status: 'idle' })
             setUpdateNotice({

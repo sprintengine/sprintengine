@@ -1989,8 +1989,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     name: 'marketplace.list',
     description:
       'Browse the extension marketplace index the app itself reads (same registry client, cache, and ' +
-      'bundled-first policy as the Plugins marketplace) — modules, MCP servers, skill packs, agent CLIs and ' +
-      'automations. Filter by what an entry provides to get the module-first facet. Read-only: installing is ' +
+      'bundled-first policy as the Plugins marketplace) — MCP servers, skill packs and agent CLIs. Filter by ' +
+      'what an entry provides. Read-only: installing is ' +
       'a trust decision and is not on this surface. The result discloses where the index came from and ' +
       'whether it is a stale offline cache.',
     inputSchema: {
@@ -1999,7 +1999,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
         provides: {
           type: 'string',
           enum: [...MARKETPLACE_COMPONENT_KINDS],
-          description: 'Only entries that bundle this component kind; "module" is the module-first facet.',
+          description: 'Only entries that bundle this component kind.',
         },
         query: {
           type: 'string',

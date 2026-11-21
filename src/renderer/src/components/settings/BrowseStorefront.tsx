@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { installAndActivateRendererModules } from '../../modules'
 
 import { isClaudeCodePluginEntry, type MarketplacePluginEntry } from '../../../../shared/marketplace/manifest'
 import type { McpServerConfig, McpSettings } from '../../../../shared/workspace'
@@ -95,16 +94,14 @@ export function PluginDetailPanel({
     async (trustToken?: string) => {
       setFlow({ status: 'installing' })
       try {
-        const result = await installAndActivateRendererModules(() =>
-          extensionsApi.installMarketplacePluginFromRegistry({
-            id: plugin.id,
-            // The approval main issued at verify; it installs exactly what the
-            // prompt disclosed, never whatever the source moved to since.
-            ...(trustToken ? { trustToken } : {}),
-            workspaceRoot: workspaceRoot ?? undefined,
-            mcpSettings,
-          }),
-        )
+        const result = await extensionsApi.installMarketplacePluginFromRegistry({
+          id: plugin.id,
+          // The approval main issued at verify; it installs exactly what the
+          // prompt disclosed, never whatever the source moved to since.
+          ...(trustToken ? { trustToken } : {}),
+          workspaceRoot: workspaceRoot ?? undefined,
+          mcpSettings,
+        })
         if (result.ok) {
           // Reflect installed MCP servers in the store so the Installed tab's
           // MCP rows update without a reload; re-list the other primitives.
@@ -144,7 +141,7 @@ export function PluginDetailPanel({
       })
       return
     }
-    const outcome = classifyVerification(verify, plugin.provides)
+    const outcome = classifyVerification(verify)
     if (outcome.kind === 'blocked') {
       setFlow({
         status: 'blocked',

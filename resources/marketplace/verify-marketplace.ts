@@ -11,7 +11,6 @@ import { verifyBundledSkillFolder } from '../../src/main/marketplace/skill-conte
 import {
   MARKETPLACE_COMPONENT_KINDS,
   MARKETPLACE_EXTRA_HOSTS_ENV,
-  hasCodeBearingComponent,
   isMarketplaceSourceHostAllowed,
   parseMarketplaceExtraHosts,
   parseMarketplaceIndex,
@@ -342,13 +341,11 @@ function assertNoOrphanPluginPayloads(
 }
 
 /**
- * A committed payload whose entry carries no signature (a declarative bundle —
- * an MCP config or a skill — which ships unsigned like every other
- * non-code-bearing bundle). The signature gate is replaced, not dropped:
+ * A committed payload whose entry carries no signature (an MCP config or a
+ * skill, which a bundle may ship unsigned). The signature gate is replaced,
+ * not dropped:
  *
  * - the manifest must parse under the optionally-signed authoring contract;
- * - it must carry no `module`/`cli` component, mirroring the download and
- *   install gates that refuse an unsigned code-bearing bundle;
  * - its component digests must match the committed bytes, so the payload cannot
  *   drift from what the manifest declares;
  * - an MCP component must parse — the same per-kind content check the signed
@@ -378,12 +375,6 @@ function validateUnsignedPluginPayload(
       'committed bundle is signed but its registry entry carries no signature; publish the signature on both.'
     ))
     return
-  }
-  if (hasCodeBearingComponent(manifest.components)) {
-    issues.push(issue(
-      `plugins/${entry.id}/plugin.json`,
-      'an unsigned bundle may not carry a module or cli component; sign it before publishing.'
-    ))
   }
   issues.push(...formatValidatorIssues(
     `plugins/${entry.id}/plugin.json`,

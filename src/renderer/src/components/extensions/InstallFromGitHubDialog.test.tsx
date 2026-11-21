@@ -20,12 +20,6 @@ import { adoptExtensionsDouble } from '../../studio/extensions.double'
 vi.mock('../../studio/extensions', () => import('../../studio/extensions.double'))
 adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 
-// The install resolves renderer-only modules after main answers; here main's
-// answer is the whole story.
-vi.mock('../../modules', () => ({
-  installAndActivateRendererModules: (install: () => Promise<MarketplacePluginRegistryInstallResult>) => install(),
-}))
-
 const SHA = 'a1b2c3d'.padEnd(40, '0')
 
 function preview(overrides: Partial<GithubExtensionPreview> = {}): GithubExtensionPreview {
@@ -34,14 +28,13 @@ function preview(overrides: Partial<GithubExtensionPreview> = {}): GithubExtensi
     displayName: 'Notes',
     version: 2,
     publisher: { name: 'Acme', verified: false },
-    summary: 'Notes, an extension for SprintEngine Studio.',
-    provides: ['module'],
+    summary: 'Notes, a plugin for SprintEngine Studio.',
+    provides: ['skills'],
     origin: { url: 'https://github.com/acme/notes-ext', owner: 'acme', repo: 'notes-ext' },
     verify: {
       classification: 'unsigned',
       permissions: ['storage'],
       sourceUrl: `https://github.com/acme/notes-ext/tree/${SHA}`,
-      codeBearing: true,
       pin: { commitSha: SHA, manifestSha256: 'f'.repeat(64), componentDigests: {} },
     },
     ...overrides,
@@ -121,7 +114,7 @@ async function click(target: HTMLElement | undefined): Promise<void> {
   })
 }
 
-test('a pasted repository is reviewed by main, and unsigned code waits for "I trust this code"', async () => {
+test('a pasted repository is reviewed by main, then installs with the token the review issued', async () => {
   await mount({ workspaceRoot: '/Users/dev/project' })
   await typeUrl('https://github.com/acme/notes-ext')
   await click(button('Review'))
@@ -129,21 +122,30 @@ test('a pasted repository is reviewed by main, and unsigned code waits for "I tr
 
   const text = dialog().textContent ?? ''
   expect(text).toContain('Notes')
-  expect(text).toContain('Unsigned code')
+  expect(text).toContain('Unsigned')
   expect(text).toContain(SHA)
   expect(text).toContain('https://github.com/acme/notes-ext')
 
-  const install = button('Trust and install')
-  expect(install?.disabled).toBe(true)
-  await click(dialog().querySelector('input[type="checkbox"]') as HTMLElement)
-  expect(button('Trust and install')?.disabled).toBe(false)
-
-  await click(button('Trust and install'))
-  expect(installCalls).toEqual([{ trustToken: 'token-1', trustCode: true, workspaceRoot: '/Users/dev/project' }])
+  await click(button('Install'))
+  expect(installCalls).toEqual([{ trustToken: 'token-1', workspaceRoot: '/Users/dev/project' }])
   expect(dialog().textContent).toContain('Installed Notes.')
 })
 
-test('signed code needs no second answer, and editing the URL starts over', async () => {
+test('an extension repository is refused with how to install it instead', async () => {
+  resolveAnswer = {
+    ok: false,
+    message:
+      'This repository is an extension (it has extension.json), and installing an extension from GitHub is not ' +
+      'available yet. Clone the repository, then install its folder from Settings → Extensions → Add from folder.',
+  }
+  await mount()
+  await typeUrl('acme/notes-ext')
+  await click(button('Review'))
+  expect(dialog().textContent).toContain('Add from folder')
+  expect(button('Install')).toBeUndefined()
+})
+
+test('a signed bundle installs from its review, and editing the URL starts over', async () => {
   resolveAnswer = {
     ok: true,
     trustToken: 'token-2',
@@ -152,10 +154,10 @@ test('signed code needs no second answer, and editing the URL starts over', asyn
       verify: { ...preview().verify, classification: 'verified', keyFingerprint: 'e'.repeat(64) },
     }),
   }
-  await mount()
+  await mount({ workspaceRoot: '/Users/dev/project' })
   await typeUrl('acme/notes-ext')
   await click(button('Review'))
-  expect(dialog().textContent).not.toContain('I trust this code')
+  expect(dialog().textContent).toContain('Verified')
   expect(button('Install')?.disabled).toBe(false)
 
   await typeUrl('acme/other-ext')
@@ -179,13 +181,12 @@ test('a skill repository is sent to the skill-source path, with its URL', async 
 })
 
 test('a refused install says why, and a bundle that writes into a project needs one open', async () => {
-  resolveAnswer = { ok: true, trustToken: 'token-3', preview: preview({ provides: ['module', 'mcp'] }) }
+  resolveAnswer = { ok: true, trustToken: 'token-3', preview: preview({ provides: ['skills', 'mcp'] }) }
   await mount({ workspaceRoot: null })
   await typeUrl('acme/notes-ext')
   await click(button('Review'))
-  await click(dialog().querySelector('input[type="checkbox"]') as HTMLElement)
   expect(dialog().textContent).toContain('Open that project')
-  expect(button('Trust and install')?.disabled).toBe(true)
+  expect(button('Install')?.disabled).toBe(true)
 })
 
 test('an installed copy is named, and what changed since its approval is spelled out', () => {

@@ -121,6 +121,11 @@ export function createPluginRegistry(options: PluginRegistryOptions): PluginRegi
         continue
       }
 
+      if (source === 'user' && result.manifest.auth?.env !== undefined) {
+        rejected.push(userAuthEnvRejection(manifestPath))
+        continue
+      }
+
       if (result.manifest.kind === 'provider') {
         loadedConversationProviders.push({
           manifest: result.manifest,
@@ -201,6 +206,11 @@ export function createPluginRegistry(options: PluginRegistryOptions): PluginRegi
 
       if (source === 'user' && result.manifest.kind !== 'provider') {
         rejected.push(userAgentCliRejection(manifestPath))
+        continue
+      }
+
+      if (source === 'user' && result.manifest.auth?.env !== undefined) {
+        rejected.push(userAuthEnvRejection(manifestPath))
         continue
       }
 
@@ -329,6 +339,22 @@ function userAgentCliRejection(manifestPath: string): PluginRegistryLoadReport['
       {
         path: 'kind',
         message: 'Agent CLIs ship with the app; the user plugin folder holds conversation providers only.',
+      },
+    ],
+  }
+}
+
+// A provider dropped into the user plugin folder is anybody's file, and naming
+// an environment variable would let it read a secret the person set for
+// something else. Its key is entered in Settings instead.
+function userAuthEnvRejection(manifestPath: string): PluginRegistryLoadReport['rejected'][number] {
+  return {
+    source: 'user',
+    manifestPath,
+    issues: [
+      {
+        path: 'auth.env',
+        message: "auth.env is read only for providers that ship with Studio; enter this provider's key in Settings.",
       },
     ],
   }

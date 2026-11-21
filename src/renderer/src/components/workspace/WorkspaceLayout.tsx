@@ -30,7 +30,7 @@ import { openExternalFileWindow } from '../auxWindows/openFileWindow'
 import { getRendererHost, selectModuleEnabled } from '../../modules'
 import { samePath } from '../../utils/paths'
 import { EXTENSIONS_BROWSE_DEEPLINK, MODULES_SETTINGS_TAB } from '../settings/extensionsRoute'
-import { MissingModulePanelSurface, ModuleNotInstalledSurface, workspaceModuleAbsence } from './ModuleAbsenceSurfaces'
+import { ModuleNotInstalledSurface, workspaceModuleAbsence } from './ModuleAbsenceSurfaces'
 import {
   isSessionFailed,
   isSessionWorking,
@@ -862,21 +862,8 @@ function WorkspaceLayoutBody({
           // component) falls back to the explicit unavailable surface.
           const host = getRendererHost()
           const Panel = component ? host.getPanel(component) : undefined
-          if (!Panel) {
-            // No registered panel: usually a stale tab, but when the component
-            // id's `<moduleId>.` prefix names a known marketplace module the
-            // owning module is missing, and the tab upgrades to the explicit
-            // not-installed surface with the install path.
-            return component ? (
-              <MissingModulePanelSurface
-                componentId={component}
-                fallback={DISABLED_SURFACE}
-                onOpenMarketplace={() => openSettingsOverlay({ initialTab: EXTENSIONS_BROWSE_DEEPLINK })}
-              />
-            ) : (
-              DISABLED_SURFACE
-            )
-          }
+          // No registered panel: a stale tab, or one whose module is gone.
+          if (!Panel) return DISABLED_SURFACE
           const moduleId = host.getPanelModule(component!)
           if (moduleId && !selectModuleEnabled(moduleOverrides, moduleId)) return DISABLED_SURFACE
           // Outside the Suspense, so a chunk that fails to load is contained
@@ -894,7 +881,7 @@ function WorkspaceLayoutBody({
         }
       }
     },
-    [moduleOverrides, openSettingsOverlay, shouldKillTerminalOnUnmount, workspaceId],
+    [moduleOverrides, shouldKillTerminalOnUnmount, workspaceId],
   )
   // The pill floats over the top of a tab on the layout's top row, so whatever
   // cannot scroll out from under it starts below it. A chat can, and runs to the

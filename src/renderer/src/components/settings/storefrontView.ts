@@ -9,7 +9,6 @@ import type { MarketplaceProvidesKind } from '../../../../shared/marketplace/man
 const COMPONENT_KIND_LABEL: Record<MarketplaceProvidesKind, string> = {
   mcp: 'MCP server',
   skills: 'Skill pack',
-  module: 'Module',
   cli: 'Agent CLI',
 }
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -27,7 +27,7 @@ test('update-detection', async () => {
       category: 'dev-tools',
       icon: `icons/${id}.svg`,
       latest,
-      provides: ['module'],
+      provides: ['mcp'],
       source: `https://github.com/sprintengine/studio-releases/tree/main/plugins/${id}`,
     }
   }
@@ -52,10 +52,7 @@ test('update-detection', async () => {
     message: 'Marketplace registry fetch failed with HTTP 503.',
   }
 
-  async function writeReceiptStore(
-    path: string,
-    receipts: Array<{ id: string; version: number; components?: Array<{ kind: string; id: string }> }>,
-  ): Promise<void> {
+  async function writeReceiptStore(path: string, receipts: Array<{ id: string; version: number }>): Promise<void> {
     const plugins = Object.fromEntries(
       receipts.map((receipt) => [
         receipt.id,
@@ -66,31 +63,11 @@ test('update-detection', async () => {
           sourceUrl: '',
           classification: 'community',
           installedAt: '2026-08-01T00:00:00.000Z',
-          components: receipt.components ?? [],
+          components: [],
         },
       ]),
     )
     await writeFile(path, JSON.stringify({ schemaVersion: 2, plugins }, null, 2), 'utf8')
-  }
-
-  async function writeUserModule(root: string, id: string, version: number): Promise<void> {
-    const dir = join(root, id)
-    await mkdir(dir, { recursive: true })
-    await writeFile(
-      join(dir, 'manifest.json'),
-      JSON.stringify(
-        {
-          id,
-          displayName: `${id} Module`,
-          version,
-          defaultEnabled: true,
-          permissions: [],
-        },
-        null,
-        2,
-      ),
-      'utf8',
-    )
   }
 
   function services(
@@ -107,8 +84,6 @@ test('update-detection', async () => {
         },
       },
       receiptStorePath: join(temp, 'marketplace-installs.json'),
-      moduleRoot: () => join(temp, 'modules'),
-      trustContext: () => ({ trustedModules: new Map() }),
     }
   }
 
@@ -147,13 +122,13 @@ test('update-detection', async () => {
     })
   }
 
-  async function testDirectlyInstalledModuleCanBeAheadOfRegistry(): Promise<void> {
+  async function testAnInstallCanBeAheadOfRegistry(): Promise<void> {
     await withTempDir(async (temp) => {
-      const svc = services(temp, okRegistry([registryEntry('dev-module', 2)]))
-      // A local dev build installed without a receipt: on-disk manifest wins.
-      await writeUserModule(svc.moduleRoot(), 'dev-module', 3)
+      const svc = services(temp, okRegistry([registryEntry('ahead', 2)]))
+      // A registry that re-lists an older bundle than the one installed.
+      await writeReceiptStore(svc.receiptStorePath, [{ id: 'ahead', version: 3 }])
 
-      const availability = availabilityOf(await readMarketplaceUpdateStates(svc), 'dev-module')
+      const availability = availabilityOf(await readMarketplaceUpdateStates(svc), 'ahead')
       assert.deepEqual(availability, { state: 'ahead-of-registry', installedVersion: 3, latestVersion: 2 })
       // A real state of its own — neither an update offer nor an error.
       assert.notEqual(availability.state, 'update-available')
@@ -161,29 +136,13 @@ test('update-detection', async () => {
     })
   }
 
-  async function testReceiptOwnedModuleFolderIsNotASecondEntry(): Promise<void> {
-    await withTempDir(async (temp) => {
-      const svc = services(temp, okRegistry([registryEntry('owner-plugin', 2)]))
-      await writeReceiptStore(svc.receiptStorePath, [
-        { id: 'owner-plugin', version: 1, components: [{ kind: 'module', id: 'owned-module' }] },
-      ])
-      await writeUserModule(svc.moduleRoot(), 'owned-module', 1)
-
-      const result = await readMarketplaceUpdateStates(svc)
-      assert.equal(result.ok, true)
-      if (!result.ok) return
-      assert.deepEqual(
-        result.entries.map((entry) => entry.id),
-        ['owner-plugin'],
-      )
-    })
-  }
-
   async function testUnreachableRegistryReadsUnknownNeverCurrent(): Promise<void> {
     await withTempDir(async (temp) => {
       const svc = services(temp, unreachableRegistry)
-      await writeReceiptStore(svc.receiptStorePath, [{ id: 'behind', version: 1 }])
-      await writeUserModule(svc.moduleRoot(), 'dev-module', 3)
+      await writeReceiptStore(svc.receiptStorePath, [
+        { id: 'behind', version: 1 },
+        { id: 'ahead', version: 3 },
+      ])
 
       const result = await readMarketplaceUpdateStates(svc)
       assert.equal(result.ok, true)
@@ -199,7 +158,7 @@ test('update-detection', async () => {
         installedVersion: 1,
         reason: 'registry-unreachable',
       })
-      assert.deepEqual(availabilityOf(result, 'dev-module'), {
+      assert.deepEqual(availabilityOf(result, 'ahead'), {
         state: 'unknown',
         installedVersion: 3,
         reason: 'registry-unreachable',
@@ -231,8 +190,7 @@ test('update-detection', async () => {
 
   async function main(): Promise<void> {
     await testReceiptStatesAgainstRegistryLatest()
-    await testDirectlyInstalledModuleCanBeAheadOfRegistry()
-    await testReceiptOwnedModuleFolderIsNotASecondEntry()
+    await testAnInstallCanBeAheadOfRegistry()
     await testUnreachableRegistryReadsUnknownNeverCurrent()
     await testMalformedReceiptStoreFailsClosed()
     await testNothingInstalledYieldsNoEntries()

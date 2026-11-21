@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import type { ConversationProviderManifest } from '../shared/plugin-manifest'
-import { canonicalManifestPayload } from '../shared/modules/third-party-manifest'
+import { canonicalManifestPayload } from '../../packages/extension-sdk/src/manifest-validate'
 import { agentCliSupportsConversationResume, agentCliUsesStableSessionIdForResume } from '../shared/agent-cli-resume'
 import { createPluginRegistry, validateManifestSource } from './plugin-registry'
 import { renderPluginLaunch } from './plugin-render'
@@ -30,6 +30,7 @@ test('plugin-registry', async () => {
     await testFixtureManifestsValidate()
     await testUserPluginCannotAddOrReplaceAnAgentCli()
     await testUserProviderCannotTakeABundledId()
+    await testUserProviderCannotReadTheEnvironment()
     await testInvalidManifestRejectedWithIssues()
     await testIdDirectoryMismatchRejected()
     await testMissingPermissionPresetsRejected()
@@ -587,6 +588,41 @@ test('plugin-registry', async () => {
     assert.equal(registry.getConversationProvider('codex'), undefined)
   }
 
+  // A user provider's key is entered in Settings. One that names an
+  // environment variable is refused, by the sync load the launch path uses too,
+  // so it can never read a secret the person set for something else.
+  async function testUserProviderCannotReadTheEnvironment(): Promise<void> {
+    const userRootParent = await mkdtemp(join(tmpdir(), 'sprintengine-user-provider-env-'))
+    const userRoot = join(userRootParent, 'plugins')
+    await mkdir(join(userRoot, 'acme-models'), { recursive: true })
+    await writeFile(
+      join(userRoot, 'acme-models', 'plugin.json'),
+      JSON.stringify({
+        kind: 'provider',
+        id: 'acme-models',
+        displayName: 'Acme Models',
+        version: 1,
+        providerType: 'model-provider',
+        models: [{ id: 'm' }],
+        auth: { type: 'api-key', label: 'API key', env: 'OPENAI_API_KEY' },
+      }),
+      'utf-8',
+    )
+    for (const load of ['load', 'loadSync'] as const) {
+      const registry = createPluginRegistry({ bundledRoot: BUNDLED_ROOT, userRoot })
+      const report = await registry[load]()
+      const refused = report.rejected.filter((rejected) => rejected.source === 'user')
+      assert.equal(refused.length, 1, load)
+      assert.deepEqual(refused[0]?.issues, [
+        {
+          path: 'auth.env',
+          message: "auth.env is read only for providers that ship with Studio; enter this provider's key in Settings.",
+        },
+      ])
+      assert.equal(registry.getConversationProvider('acme-models'), undefined, load)
+    }
+  }
+
   async function testInvalidManifestRejectedWithIssues(): Promise<void> {
     const result = validateManifestSource('not json')
     assert.equal(result.ok, false)
@@ -824,7 +860,7 @@ test('plugin-registry', async () => {
         version: 1,
         providerType: 'model-provider',
         models: [{ id: 'gpt-5', displayName: 'GPT-5' }, { id: 'gpt-5-mini' }],
-        auth: { type: 'api-key', label: 'API key', env: 'OPENAI_API_KEY' },
+        auth: { type: 'api-key', label: 'API key' },
       }),
       'utf-8',
     )

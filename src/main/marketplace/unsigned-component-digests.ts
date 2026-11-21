@@ -9,8 +9,7 @@ import { computeMarketplacePluginComponentsWithDigestsSync } from '../../../pack
 // nothing whether or not it lists digests — anybody can write them — and an
 // author who never signs has no tool that writes them. What holds an unsigned
 // install to what the person reviewed is the trust pin (a digest of every
-// staged file, re-checked at install), and for a module its own `files` map.
-// So a component an unsigned manifest lists no digests for is held to the
+// staged file, re-checked at install). So a component an unsigned manifest lists no digests for is held to the
 // bytes that were read, which still refuses what a bundle may never carry
 // (a key file, node_modules, a path that is not there); a component it does
 // list digests for is held to them, as before.

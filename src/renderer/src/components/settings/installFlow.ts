@@ -15,13 +15,11 @@
 // issued. The token is the approval: main pinned it to exactly the content it
 // disclosed, and the renderer can carry it but never make one up.
 //
-// Trust split (T4b/T5): an 'unsigned' bundle is no longer a blanket block. Unsigned
-// mcp/skills-only bundles are declarative — they earn the same explicit trust prompt
-// as community (installing load-ineligible behind the token). Unsigned code-bearing
-// registry bundles (a module) and 'invalid' still hard-block with no install
-// affordance, mirroring the backend gate (shared/marketplace/component-trust.ts,
-// which is the real enforcement; this classification only picks the UI affordance).
-// No permission is ever fabricated.
+// Trust split (T4b/T5): an 'unsigned' bundle is no longer a blanket block. A
+// bundle carries only MCP servers and skills, which are declarative, so an
+// unsigned one earns the same explicit trust prompt as community (installing
+// load-ineligible behind the token). 'invalid' still hard-blocks with no install
+// affordance. No permission is ever fabricated.
 
 import type {
   MarketplacePluginRegistryInstallResult,
@@ -31,24 +29,12 @@ import type { MarketplaceProvidesKind } from '../../../../shared/marketplace/man
 import type { ExtensionTrustReviewData } from '../extensions/ExtensionTrustReview'
 import { copy as appCopy } from '../../../../shared/copy'
 
-// A module executes arbitrary code once loaded, so an UNSIGNED registry bundle
-// carrying one is never trust-grantable in the UI — it hard-blocks. mcp/skills are
-// declarative and may install unsigned behind an explicit trust grant. The real
-// enforcement is the backend `hasCodeBearingComponent` gate; this kind-level check
-// only decides whether the renderer offers a trust prompt or a hard block.
-function hasCodeBearingKind(provides: readonly MarketplaceProvidesKind[]): boolean {
-  return provides.includes('module')
-}
-
 /**
  * Whether installing this bundle needs an open workspace.
  *
- * Only the two workspace-scoped kinds do: an MCP server syncs into
- * `<workspaceRoot>/.mcp.json` and a skill pack copies into the workspace's
- * harness dirs. A module installs into `~/.sprintengine/extensions/<id>`, which
- * touches no project — so a module-only bundle installs with no workspace open at all, which is what
- * makes a first-party module installable from a fresh app that has never
- * opened a folder (D10).
+ * Both bundle kinds do: an MCP server syncs into `<workspaceRoot>/.mcp.json`
+ * and a skill pack copies into the workspace's harness dirs. An inline agent
+ * CLI row (`cli`) touches no project.
  *
  * Lives here rather than inline in `BrowseStorefront` so the rule can be
  * asserted without a renderer, like the rest of the flow.
@@ -70,10 +56,7 @@ export type InstallFlowState =
   | { status: 'needs-trust'; review: ExtensionTrustReviewData; trustToken: string }
   // install-entry IPC in flight (verified direct, or community after trust).
   | { status: 'installing' }
-  // `restartRequired`: the install landed a module whose main entry only loads
-  // at app launch (G7/D13), so the notice says so instead of a flat "Installed."
-  // that sends the person looking for a door that is not there yet.
-  | { status: 'installed'; updated: boolean; notices?: string[]; restartRequired?: boolean }
+  | { status: 'installed'; updated: boolean; notices?: string[] }
   // Hard block (unsigned/invalid): no install affordance is offered.
   | { status: 'blocked'; classification: BlockedClassification; message: string; issues?: string[] }
   // Verify or install failed reachably (network / thrown / install ok:false) —
@@ -106,34 +89,18 @@ export function trustReviewFromVerify(
     ...(verify.sourceUrl ? { sourceUrl: verify.sourceUrl } : {}),
     ...(verify.pin?.commitSha ? { commitSha: verify.pin.commitSha } : {}),
     ...(verify.keyFingerprint ? { keyFingerprint: verify.keyFingerprint } : {}),
-    ...(verify.codeBearing ? { codeBearing: true } : {}),
   }
 }
 
 // Map a verify result to the next step. Verified installs directly; community and
-// unsigned mcp/skills-only earn the trust prompt with what verify disclosed;
-// unsigned code-bearing bundles and invalid are hard blocks carrying the verifier's
-// message + issue detail. `provides` (from the registry entry) backs up the
-// verifier's own code-bearing flag for the unsigned split.
-export function classifyVerification(
-  verify: MarketplacePluginVerifyResult,
-  provides: readonly MarketplaceProvidesKind[],
-): VerifyOutcome {
+// unsigned earn the trust prompt with what verify disclosed; invalid is a hard
+// block carrying the verifier's message + issue detail.
+export function classifyVerification(verify: MarketplacePluginVerifyResult): VerifyOutcome {
   switch (verify.classification) {
     case 'verified':
       return { kind: 'install', ...(verify.trustToken ? { trustToken: verify.trustToken } : {}) }
     case 'community':
     case 'unsigned': {
-      // Code-bearing unsigned hard-blocks (the backend refuses it too); unsigned
-      // mcp/skills-only earns the explicit trust prompt.
-      if (verify.classification === 'unsigned' && (verify.codeBearing || hasCodeBearingKind(provides))) {
-        return {
-          kind: 'blocked',
-          classification: 'unsigned',
-          message: verify.message || blockedFallbackMessage('unsigned'),
-          issues: verify.issues?.map((issue) => issue.message),
-        }
-      }
       // No token, no approval to give: main declined to issue one.
       if (!verify.trustToken) {
         return {
@@ -172,9 +139,6 @@ export function summarizeInstallResult(result: MarketplacePluginRegistryInstallR
       status: 'installed',
       updated: result.updated,
       ...(result.notices?.length ? { notices: result.notices } : {}),
-      // Main decides this from LIVE_ENABLED_MODULE_IDS and the components it
-      // actually wrote; the renderer keeps no second copy of that list.
-      ...(result.restartRequired ? { restartRequired: true } : {}),
     }
   }
   if (result.classification === 'unsigned' || result.classification === 'invalid') {
@@ -258,12 +222,7 @@ export function deriveInstallView(state: InstallFlowState): InstallFlowView {
         notice: null,
       }
     case 'installed': {
-      // A module's code loads at app launch, so an install that landed one is
-      // on disk and not yet in the app. The sentence says the whole state —
-      // what happened, and what is left to do — rather than "Installed." and a
-      // door the person then cannot find.
-      const done = state.updated ? 'Updated to the latest version.' : 'Installed.'
-      const message = state.restartRequired ? `${done} Restart SprintEngine Studio to use it.` : done
+      const message = state.updated ? 'Updated to the latest version.' : 'Installed.'
       return {
         action: null,
         busy: false,

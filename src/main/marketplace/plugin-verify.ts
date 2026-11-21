@@ -1,13 +1,12 @@
 import { createHash } from 'node:crypto'
-import { readFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { rm } from 'node:fs/promises'
 
 import type {
   MarketplaceManifestIssue,
   MarketplacePluginAuthoringManifest,
   MarketplacePluginEntry,
 } from '../../shared/marketplace'
-import { hasCodeBearingComponent, isClaudeCodePluginEntry, validateMarketplaceIndex } from '../../shared/marketplace'
+import { isClaudeCodePluginEntry, validateMarketplaceIndex } from '../../shared/marketplace'
 import type {
   MarketplaceMcpServerDisclosure,
   MarketplacePluginVerifyResult,
@@ -16,9 +15,7 @@ import type {
 } from '../../shared/electron-api'
 import type { CapabilityPermission } from '../../shared/modules/permissions'
 import { normalizeMcpServerConfig } from '../mcp-config-service'
-import { validateModuleFileDigests } from '../../../packages/extension-sdk/src/manifest-validate'
-import { parseThirdPartyModuleManifest } from '../../shared/modules/third-party-manifest'
-import { moduleFileDigestIssuesSync, type ModuleTrustContext } from '../modules/module-signature'
+import type { ModuleTrustContext } from '../modules/module-signature'
 import { readBundleMcpServers } from '../modules/plugin-bundle-installer'
 import {
   defaultMarketplacePluginStagingRoot,
@@ -38,19 +35,6 @@ export type MarketplacePluginVerifierServices = {
   log?: MarketplaceInstallLog
 }
 
-export type MarketplacePluginVerifyOptions = {
-  // An unsigned bundle carrying module code is read and disclosed rather than
-  // refused — for a GitHub-URL install, where the person may then choose to
-  // trust the code. Never set on the registry path.
-  allowUnsignedCode?: boolean
-  // Refuse a module component whose own manifest lists no `files` digests, or
-  // whose files do not match them. The digests are what module trust holds
-  // the installed code to at every launch; without them a person could be
-  // asked to trust code nothing would ever check again. Set for a GitHub-URL
-  // install, where nobody else has vouched for the bundle.
-  requireModuleFileDigests?: boolean
-}
-
 /**
  * Verify reads what an install would put on this machine — without installing
  * it — and answers with everything a trust prompt must disclose and the pin
@@ -60,17 +44,14 @@ export type MarketplacePluginVerifyOptions = {
  */
 export function createMarketplacePluginVerifier(services: MarketplacePluginVerifierServices) {
   return {
-    verify: (
-      entry: MarketplacePluginEntry,
-      options: MarketplacePluginVerifyOptions = {},
-    ): Promise<MarketplacePluginVerifyResult> => verifyMarketplacePlugin(entry, services, options),
+    verify: (entry: MarketplacePluginEntry): Promise<MarketplacePluginVerifyResult> =>
+      verifyMarketplacePlugin(entry, services),
   }
 }
 
 async function verifyMarketplacePlugin(
   entry: MarketplacePluginEntry,
   services: MarketplacePluginVerifierServices,
-  options: MarketplacePluginVerifyOptions,
 ): Promise<MarketplacePluginVerifyResult> {
   const registryEntry = validateRegistryEntry(entry)
   if (!registryEntry.ok) {
@@ -142,7 +123,6 @@ async function verifyMarketplacePlugin(
     trustContext: services.trustContext(),
     stagingRoot: services.stagingRoot ?? defaultMarketplacePluginStagingRoot(),
     fetcher: services.fetcher,
-    ...(options.allowUnsignedCode ? { allowUnsignedCode: true } : {}),
   })
 
   if (!download.ok) {
@@ -156,25 +136,12 @@ async function verifyMarketplacePlugin(
   }
 
   try {
-    if (options.requireModuleFileDigests) {
-      const problem = await moduleFileDigestProblem(download.stagedBundlePath, download.manifest)
-      if (problem) {
-        return {
-          classification: 'invalid',
-          permissions: [],
-          sourceUrl: download.sourceUrl,
-          issues: problem.issues,
-          message: problem.message,
-        }
-      }
-    }
     const servers = await bundleMcpDisclosure(download.stagedBundlePath, download.manifest)
     return {
       classification: download.classification,
       permissions: [...((download.manifest.permissions ?? []) as CapabilityPermission[])],
       sourceUrl: download.sourceUrl,
       ...(servers.length > 0 ? { mcpServers: servers } : {}),
-      ...(hasCodeBearingComponent(download.manifest.components) ? { codeBearing: true } : {}),
       ...(download.trust.fingerprint ? { keyFingerprint: download.trust.fingerprint } : {}),
       pin: download.pin,
     }
@@ -191,51 +158,6 @@ export async function bundleMcpDisclosure(
   manifest: MarketplacePluginAuthoringManifest,
 ): Promise<MarketplaceMcpServerDisclosure[]> {
   return (await readBundleMcpServers(stage, manifest)).map(describeMcpServer)
-}
-
-// What is wrong with a staged bundle's module component as code to trust: its
-// manifest does not parse, lists no `files`, or its folder does not hold
-// exactly those files. Null when there is no module, or nothing is wrong.
-async function moduleFileDigestProblem(
-  stage: string,
-  manifest: MarketplacePluginAuthoringManifest,
-): Promise<{ message: string; issues: MarketplaceManifestIssue[] } | null> {
-  const component = manifest.components.module
-  if (!component) return null
-  const moduleRoot = join(stage, component.path)
-  let source: string
-  try {
-    source = await readFile(join(moduleRoot, 'manifest.json'), 'utf8')
-  } catch {
-    return {
-      message: `The extension folder "${component.path}" has no manifest.json.`,
-      issues: [{ path: 'components.module.path', message: 'manifest.json is missing.' }],
-    }
-  }
-  const parsed = parseThirdPartyModuleManifest(source)
-  if (!parsed.ok) return { message: 'The module’s manifest.json is invalid.', issues: parsed.issues }
-  const files = parsed.manifest.files
-  if (!files) {
-    return {
-      message:
-        `The module "${parsed.manifest.id}" lists no digests of its files, so nothing could hold the installed ` +
-        'code to what you review here. Its author must record them with `sprintengine-extension sign` (or a ' +
-        `template's \`npm run dev:install\`) and commit ${component.path}/manifest.json.`,
-      issues: [{ path: 'files', message: 'the module manifest carries no "files" digests.' }],
-    }
-  }
-  const shape = validateModuleFileDigests(files)
-  if (!shape.ok) return { message: 'The module’s "files" digests are malformed.', issues: shape.issues }
-  const drift = moduleFileDigestIssuesSync(moduleRoot, shape.files, { label: 'the module manifest’s digests' })
-  if (drift.length > 0) {
-    return {
-      message:
-        `The module "${parsed.manifest.id}" does not match the file digests its manifest lists — ` +
-        'it was changed after they were recorded. Its author must record them again and push.',
-      issues: drift,
-    }
-  }
-  return null
 }
 
 function validateRegistryEntry(

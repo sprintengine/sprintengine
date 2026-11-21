@@ -213,9 +213,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   let core: ReturnType<typeof createStudioCore>
   try {
     core = createStudioCore(platform, {
-      // What the shell adds to the agents' skills and cards: its Trash, and
-      // the marketplace and module trust store a card's `install.module`
-      // goes through. The GitHub token is this process's own store's.
+      // What the shell adds to the agents' skills and cards: its Trash. The
+      // GitHub token is this process's own store's.
       agentSkills: {
         resolveGitHubToken: () => githubTokenStore.resolveToken(),
         trash: async (path) => {

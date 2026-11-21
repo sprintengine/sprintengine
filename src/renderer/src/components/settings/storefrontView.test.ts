@@ -44,10 +44,9 @@ test('storefrontView', async () => {
   }
 
   {
-    // A module-carrying entry's kind label reads "Module".
-    const calendar = plugin({ id: 'sprintengine-calendar', name: 'Calendar', provides: ['module'] })
-    assert.deepEqual(componentKindLabels(calendar.provides), ['Module'])
-    assert.deepEqual(componentKindLabels(['mcp', 'skills']), ['MCP server', 'Skill pack'])
+    // Each kind an entry provides reads as its label.
+    assert.deepEqual(componentKindLabels(plugin().provides), ['MCP server'])
+    assert.deepEqual(componentKindLabels(['mcp', 'skills', 'cli']), ['MCP server', 'Skill pack', 'Agent CLI'])
   }
 
   console.log('storefrontView.test.ts passed')
