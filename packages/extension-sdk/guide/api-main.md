@@ -12,8 +12,11 @@ When it runs:
 
 - **On demand.** It starts when something needs it: one of its methods, a
   command, an MCP tool, a surface's `worker.request`. It is stopped after five
-  idle minutes and starts again at the next call. At most five on-demand
-  workers run at once; one more waits for a place.
+  idle minutes and starts again at the next call, and every listener it
+  registered (`watch`, `subscribe`, `onStatus`, `watchModuleAppState`) stops
+  with it. At most five on-demand workers run at once; one more waits for a
+  place.
+- **To keep listening across idle periods**, set `background: true`.
 - **In the background.** `background: true` in extension.json starts it when
   the extension is switched on and keeps it running. At most sixteen run;
   past that the newest waits, and Settings says why.
@@ -30,9 +33,11 @@ answers a promise (`getModuleAppState`, a conversation service's `list`, a
 companion's `attach` and `status`); one that answers an unsubscriber answers it
 at once, and a refusal of it is written to the extension's log. Studio holds
 each call to whoever set off the work it is part of: a call made from work
-left running after that call ended (a timer, say) is refused, unless the
-extension is `background: true`, whose own work runs as the person who
-approved it. `provideService` is not available to a worker.
+left running after that call ended (a timer, say) is refused. A
+`background: true` worker's own work, which is everything `activate` and its
+startup hooks set going (a poller's interval, a listener and each delivery to
+it), runs as the person who approved it for as long as the worker runs. A
+worker provides no services of its own.
 
 ```ts
 import type { MainHost } from '@sprintengine/extension-sdk'
