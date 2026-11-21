@@ -138,10 +138,10 @@ export type ModuleEventEnvelope = {
   emittedAt: number
 }
 
-// ── Main-process host (entry.main) ───────────────────────────────────────────
+// ── The worker's studio (`main`, `activate(studio)`) ─────────────────────────
 
 // ── Declared methods ─────────────────────────────────────────────────────────
-// What your `entry.main` serves your window code (and any client the person
+// What your worker serves your window code (and any client the person
 // granted it) over the Studio protocol: a typed contract per method, a
 // validator for its params and a handler (`MainHost.registerMethods`), called
 // through `RendererHost.methods<Contract>()`. Host API 2 replaced host API 1's
@@ -469,10 +469,10 @@ export type MainHost = {
    */
   getWorkspaceGitInfo(workspaceId: string): Promise<ModuleWorkspaceGitInfoResult>
   /**
-   * Read one key of your module's APP-level state from `entry.main` — the
+   * Read one key of your module's APP-level state from the worker — the
    * same namespace your Settings section's `setValue` and
    * `RendererHost.setModuleAppState` write, as the windows last pushed it.
-   * Persisted, so it reads with no window open: a scheduler in `entry.main`
+   * Persisted, so it reads with no window open: a scheduler in the worker
    * sees the run time the person chose without a second store and an IPC
    * sync. Read-only (main never writes it back); a value set while no window
    * was open arrives with the next window. `undefined` when the key has never
@@ -484,7 +484,7 @@ export type MainHost = {
    * Hear your module's whole app-state namespace whenever it changes — a
    * Settings change in whichever window — not on subscribe (read the current value
    * with `getModuleAppState`). Returns the unsubscriber; unloading your module
-   * drops it too. The `entry.main` twin of `RendererHost.watchModuleAppState`.
+   * drops it too. The worker's twin of `RendererHost.watchModuleAppState`.
    */
   watchModuleAppState(cb: (values: Readonly<Record<string, unknown>>) => void): () => void
   provideService<T>(token: ServiceToken<T>, factory: (host: MainHost) => T): T
@@ -568,11 +568,9 @@ export type WorkspaceService = {
 }
 
 /**
- * Resolve with `host.requireService(WorkspaceServiceToken)` from a module's
- * `entry.main`. Provided by the agent-runtime core — declare
- * `dependsOn: ['agent-runtime']` (or a chain reaching it) or resolve inside
- * handlers rather than at the top of `registerMain`, so registration order
- * can't race the provider.
+ * Resolve with `studio.requireService(WorkspaceServiceToken)` from the
+ * worker. Provided by Studio's agent runtime, which starts
+ * ahead of every extension's worker, so `activate` may resolve it at once.
  */
 export const WorkspaceServiceToken: ServiceToken<WorkspaceService> =
   createServiceToken<WorkspaceService>('core.workspace')
@@ -651,7 +649,7 @@ export type ModuleWorkspaceGitInfoResult =
   | { ok: false; code: ModuleWorkspaceGitInfoErrorCode; message: string }
 
 /**
- * Resolve a workspace id to its read-only view from `entry.main`. A null
+ * Resolve a workspace id to its read-only view from the worker. A null
  * resolution means "not currently resolvable" — an unknown id, or workspace
  * state that has not re-hydrated yet (e.g. right after app launch). Never a
  * throw, and never a deletion signal: retry later instead of discarding
@@ -662,7 +660,7 @@ export type WorkspaceContextService = {
   get(workspaceId: string): Promise<ModuleWorkspaceView | null>
   /**
    * Every workspace currently open, in registry order. The main-side twin of
-   * `RendererHost.listWorkspaces`, and the only way `entry.main` can answer
+   * `RendererHost.listWorkspaces`, and the only way the worker can answer
    * "which project roots are open" — an MCP tool your module contributes runs
    * with no window and no renderer to ask. Each entry says `open: true`;
    * with `includeClosed`, the workspaces closed on this machine follow, newest
@@ -672,11 +670,9 @@ export type WorkspaceContextService = {
 }
 
 /**
- * Resolve with `host.requireService(WorkspaceContextToken)` from a module's
- * `entry.main`. Provided by the agent-runtime core — declare
- * `dependsOn: ['agent-runtime']` (or a chain reaching it) or resolve inside
- * handlers rather than at the top of `registerMain`, so registration order
- * can't race the provider.
+ * Resolve with `studio.requireService(WorkspaceContextToken)` from the
+ * worker. Provided by Studio's agent runtime, which starts
+ * ahead of every extension's worker, so `activate` may resolve it at once.
  */
 export const WorkspaceContextToken: ServiceToken<WorkspaceContextService> =
   createServiceToken<WorkspaceContextService>('core.workspace-context')
@@ -821,13 +817,12 @@ export type ScheduledAgentView = ScheduledAgent & {
 export type ScheduledAgentWriteResult = { ok: true; agent: ScheduledAgentView } | { ok: false; message: string }
 
 /**
- * Scheduled agents for a module's `entry.main`, obtained via
+ * Scheduled agents for an extension's worker, obtained via
  * `getScheduledAgentsService(host)`. Every method is pre-scoped to your
  * module: `create` stamps it as the owner, `list` returns only the ones it
  * owns, and every other call refuses an id it does not own as if the id did
  * not exist. Declare the `scheduled-agents.manage` permission (install-time
- * disclosure) and `dependsOn: ['scheduled-agents']` so the service exists
- * before your entry runs.
+ * disclosure). Studio starts the service ahead of every extension's worker.
  */
 export type ModuleScheduledAgentsService = {
   create(draft: ScheduledAgentDraft): Promise<ScheduledAgentWriteResult>
@@ -1007,15 +1002,15 @@ export type CompanionAgentHandle = {
 }
 
 /**
- * Workspace-bound background agents for a module's `entry.main`, obtained via
+ * Workspace-bound background agents for an extension's worker, obtained via
  * `getCompanionAgentsService(host)`. `attach` NEVER spawns — it returns a handle
  * in `absent` status; the first `runStructured`/`send` (a live user intent)
  * spawns, so reopening a workspace never auto-starts a companion. A second
  * `attach` with the same (workspaceId, agentId) returns the SAME handle.
  *
  * Declare the `agents:companion` permission (the service checks it at attach
- * time and throws if absent) and `dependsOn: ['agent-runtime']` so the service
- * exists before your entry runs.
+ * time and throws if absent). Studio starts the service ahead of every
+ * extension's worker.
  */
 export type CompanionAgentsService = {
   attach(spec: CompanionAgentSpec): CompanionAgentHandle
@@ -1134,11 +1129,8 @@ const moduleStorageToken: ServiceToken<ModuleStorageRegistry> =
 /**
  * The scoped storage service for `host`'s module. The raw host registry takes
  * a module id on every call; this helper closes over `host.moduleId` exactly
- * like `getScheduledAgentsService`. Provided by the agent-runtime core — declare
- * `dependsOn: ['agent-runtime']` (a chain that reaches it, e.g.
- * `['scheduled-agents']`, also works) so your `entry.main` registers after the
- * provider; without the dependency edge, load order is alphabetical and a
- * top-of-registerMain call can race the provider and fail your module's load.
+ * like `getScheduledAgentsService`. Provided by Studio's agent runtime, which
+ * starts ahead of every extension's worker, so `activate` may resolve it at once.
  */
 export function getModuleStorage(host: MainHost): ModuleStorageService {
   const registry = host.requireService(moduleStorageToken)
@@ -1290,7 +1282,7 @@ export type RendererHost = {
   /**
    * The workspace's Backlog items as read-only views. Declare the
    * `backlog.read` permission; the host checks it. Change items with the
-   * Backlog write methods below (or `getBacklogService` in `entry.main`) —
+   * Backlog write methods below (or `getBacklogService` in the worker) —
    * never by writing an item's file. Rejects when the backlog module is
    * disabled.
    */
@@ -1333,7 +1325,7 @@ export type RendererHost = {
    * Token usage of every agent session on this machine — the renderer twin of
    * `getUsageService(host).query`. Declare `usage:read`;
    * `supports('usage')` says whether the host has it. For live updates, call
-   * it again when your `entry.main` hears `onChanged`.
+   * it again when your worker hears `onChanged`.
    */
   queryUsage(query: UsageQuery): Promise<UsageQueryResult>
   /**
@@ -1343,7 +1335,7 @@ export type RendererHost = {
    * unknown id, or the shell hasn't wired workspace state yet at early
    * boot) — never a throw, and never a deletion signal: retry later instead
    * of discarding per-workspace state. Declare the `ipc:workspace-read`
-   * permission (install-time disclosure). The `entry.main` twin is
+   * permission (install-time disclosure). The worker's twin is
    * `WorkspaceContextToken`.
    */
   getWorkspace(workspaceId: string): Promise<ModuleWorkspaceView | null>
@@ -1360,7 +1352,7 @@ export type RendererHost = {
    * A workspace's checked-out branch (null when detached) and its remotes,
    * each with `owner/repo` when it is on GitHub — SSH host aliases from
    * ~/.ssh/config resolved. Read by git from the workspace's working root, so
-   * a worktree reports its own branch. The `entry.main` twin is
+   * a worktree reports its own branch. The worker's twin is
    * `MainHost.getWorkspaceGitInfo`. Declare `ipc:workspace-read` (checked:
    * `permission_missing` without it). Never throws. Check
    * `host.supports('workspace-git-info')` first.
@@ -1412,7 +1404,7 @@ export type RendererHost = {
    * than to a single workspace: remembered defaults, the last thing the user
    * opened. Synchronous and store-backed, so a renderer selector can derive
    * from it without an IPC round trip changing render timing (which is why
-   * this exists alongside the `entry.main` `ModuleStorageService`).
+   * this exists alongside the worker's `ModuleStorageService`).
    * `undefined` means the key has never been set, or the shell has not wired
    * the store yet (early boot) — never a throw and never a deletion signal.
    * Scoped to your module: one module can never read another's. Persists with
@@ -1437,7 +1429,7 @@ export type RendererHost = {
    */
   watchModuleAppState(cb: (values: Readonly<Record<string, unknown>>) => void): () => void
   /**
-   * Subscribe to events your `entry.main` pushed with `MainHost.emit` — the
+   * Subscribe to events your worker pushed with `MainHost.emit` — the
    * subscribe verb `methods` does not have. Scoped to your module: another
    * module's events never reach you, and yours never reach it. `cb` receives
    * the emitted payload. Returns the unsubscriber; call it on unmount.
@@ -1940,10 +1932,4 @@ export {
 // The table a scaffolded project's smoke test and the `/testing` fakes read,
 // so neither keeps a copy of the host's rules that can go stale.
 
-export {
-  dependsOnReaches,
-  MODULE_DEPENDENCY_CHAINS,
-  MODULE_SERVICE_REQUIREMENTS,
-  moduleServiceRequirement,
-  type ModuleServiceRequirement,
-} from './services.js'
+export { MODULE_SERVICE_REQUIREMENTS, moduleServiceRequirement, type ModuleServiceRequirement } from './services.js'

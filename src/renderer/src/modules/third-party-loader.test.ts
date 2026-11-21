@@ -5,10 +5,12 @@ import type { ExtensionManifestView, ThirdPartyRendererEntriesResult } from '../
 import type { AppNotification } from '../../../shared/workspace'
 import { setAppCommandRunner } from '../commands/appCommandRunner'
 import { getExtensionPanels, getExtensionSurface } from './extension-surfaces'
+import { resolveModuleEnablement } from '../../../shared/modules/resolve'
 import { createRendererHost, type ModuleMethodCall, type RendererKernel } from './renderer-host'
 import {
   getThirdPartyRendererLoadState,
   loadThirdPartyRendererEntries,
+  reconcileThirdPartyRendererEntries,
   rendererEntriesForRefresh,
   type ThirdPartyEntryImporter,
 } from './third-party-loader'
@@ -520,4 +522,56 @@ test('a live refresh adds only extensions this window has not evaluated, and non
     {},
     'an update failure cannot overwrite the state of code already running',
   )
+})
+
+test('an extension switched off and then uninstalled is offered nowhere and draws nothing, and comes back only as it was', async () => {
+  const kernel = createRendererHost()
+  const shipped = served([
+    {
+      key: 'local.gone',
+      contributes: {
+        panels: [{ id: 'notes', title: 'Notes', entry: 'dist/panel.js' }],
+        commands: [{ id: 'gone.open', title: 'Open Backlog', action: 'panel.backlog.toggle' }],
+      },
+      entries: { 'dist/panel.js': 'panel' },
+    },
+  ])
+  const loaded = await loadThirdPartyRendererEntries(kernel, shipped, importerFor({ panel: { mount } }))
+  assert.deepEqual(
+    loaded.map((manifest) => manifest.id),
+    ['local.gone'],
+  )
+  assert.ok(getExtensionSurface('local.gone', 'panels', 'notes'))
+
+  // Switched off, then uninstalled: the uninstall forgets the switch, and the
+  // default is on, so only leaving the universe keeps it away.
+  const enabledIn = (universe: typeof loaded) => (id: string) =>
+    new Set(resolveModuleEnablement(universe, {}).order).has(id)
+  const offered = (universe: typeof loaded) => enabledIn(universe)('local.gone')
+  assert.equal(new Set(resolveModuleEnablement(loaded, { 'local.gone': false }).order).has('local.gone'), false)
+  const kept = reconcileThirdPartyRendererEntries(loaded, served([]))
+  assert.deepEqual(kept, [])
+  assert.equal(offered(kept), false, 'its default does not bring it back')
+  assert.equal(getExtensionSurface('local.gone', 'panels', 'notes'), undefined, 'its panel does not mount')
+  assert.deepEqual(
+    getExtensionPanels().filter((panel) => panel.key === 'local.gone'),
+    [],
+  )
+  assert.deepEqual(
+    kernel.getModuleCommands(enabledIn(kept)).map((command) => command.moduleId),
+    [],
+    'its command is not offered',
+  )
+
+  // Served again exactly as it was (trusted again): it comes back without a second evaluation.
+  const back = reconcileThirdPartyRendererEntries(kept, shipped)
+  assert.deepEqual(
+    back.map((manifest) => manifest.id),
+    ['local.gone'],
+  )
+  assert.ok(getExtensionSurface('local.gone', 'panels', 'notes'))
+  // Served changed (a new version): it waits for the window to reload.
+  reconcileThirdPartyRendererEntries(back, served([]))
+  const changed = served([{ key: 'local.gone', over: { version: '2.0.0' }, entries: { 'dist/panel.js': 'panel' } }])
+  assert.deepEqual(reconcileThirdPartyRendererEntries([], changed), [])
 })

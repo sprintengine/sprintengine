@@ -209,7 +209,14 @@ export function loadMainModules(options: {
     notifyLoadError(loadError)
   }
 
-  for (const id of resolution.order) {
+  // The app's own modules first, in dependency order, then every installed
+  // extension: an extension's activate may resolve any service the app's
+  // modules provide, and declares no dependencies to order it after them.
+  const appFirst = [
+    ...resolution.order.filter((id) => byId.get(id)?.manifest.source !== 'third-party'),
+    ...resolution.order.filter((id) => byId.get(id)?.manifest.source === 'third-party'),
+  ]
+  for (const id of appFirst) {
     const module = byId.get(id)
     if (!module) continue
     if (!module.registerMain) {

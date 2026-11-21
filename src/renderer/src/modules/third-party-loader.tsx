@@ -11,7 +11,7 @@ import { runAppCommand } from '../commands/appCommandRunner'
 import { ExtensionSurfaceMount } from '../components/extensions/ExtensionSurfaceMount'
 import { IconButton, Tooltip } from '../components/ui'
 import { extensionGlyph } from './extension-glyphs'
-import { registerExtensionSurface } from './extension-surfaces'
+import { registerExtensionSurface, retireExtensionSurfaces, type LoadedExtensionSurface } from './extension-surfaces'
 import type { InternalRendererHost, RendererKernel } from './renderer-host'
 
 // Loads the window half of each trusted extension the Studio serves
@@ -44,6 +44,52 @@ const loadStates = new Map<string, ThirdPartyRendererLoadState>()
 
 export function getThirdPartyRendererLoadState(moduleId: string): ThirdPartyRendererLoadState | undefined {
   return loadStates.get(moduleId)
+}
+
+// What each loaded extension was served as, so one served again unchanged
+// after it was retired can come back without evaluating its code twice.
+const loadedSignatures = new Map<string, string>()
+
+type Retired = { manifest: CapabilityManifest; surfaces: LoadedExtensionSurface[]; signature: string }
+const retired = new Map<string, Retired>()
+
+function servedSignature(entry: ThirdPartyRendererEntriesResult['entries'][number]): string {
+  return JSON.stringify([entry.extension, entry.entries])
+}
+
+/**
+ * The loaded extensions as the Studio serves them now. One it no longer
+ * serves (uninstalled, or no longer trusted) leaves the enablement universe and
+ * takes its surfaces with it, so nothing of it is offered or drawn and an
+ * open surface unmounts; its registrations stay with the shell, gated off by
+ * that absence, whatever the person's switch said. One served again exactly
+ * as it was comes back; a changed one waits for the window to reload.
+ */
+export function reconcileThirdPartyRendererEntries(
+  loaded: readonly CapabilityManifest[],
+  served: ThirdPartyRendererEntriesResult,
+): CapabilityManifest[] {
+  const servedById = new Map(served.entries.map((entry) => [entry.id, entry]))
+  const kept: CapabilityManifest[] = []
+  for (const manifest of loaded) {
+    if (servedById.has(manifest.id)) {
+      kept.push(manifest)
+      continue
+    }
+    retired.set(manifest.id, {
+      manifest,
+      surfaces: retireExtensionSurfaces(manifest.id),
+      signature: loadedSignatures.get(manifest.id) ?? '',
+    })
+  }
+  for (const [id, entry] of servedById) {
+    const previous = retired.get(id)
+    if (!previous || previous.signature !== servedSignature(entry)) continue
+    retired.delete(id)
+    for (const surface of previous.surfaces) registerExtensionSurface(surface)
+    kept.push(previous.manifest)
+  }
+  return kept
 }
 
 export type ThirdPartyEntryImporter = (code: string) => Promise<unknown>
@@ -259,6 +305,7 @@ export async function loadThirdPartyRendererEntries(
       if (entry.assetOrigin) kernel.setModuleAssetOrigin(entry.id, entry.assetOrigin)
       registerContributions(kernel.hostFor(entry.id, entry.manifest), entry.id, extension, mounts)
       loadStates.set(entry.id, { status: 'loaded' })
+      loadedSignatures.set(entry.id, servedSignature(entry))
       loaded.push(entry.manifest)
     } catch (error) {
       recordError(entry.id, error instanceof Error ? error.message : String(error))

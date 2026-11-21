@@ -31,7 +31,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 64,
-      "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+      "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
       "description": "The extension’s version, semver.",
       "x-since": "0.13.0",
       "examples": [
@@ -95,6 +95,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 1024,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.png|\\.svg|\\.jpg|\\.jpeg|\\.webp)$",
       "description": "A square image shown beside the name.",
       "x-since": "0.13.0",
       "examples": [
@@ -105,6 +106,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 1024,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.png|\\.svg|\\.jpg|\\.jpeg|\\.webp)$",
       "description": "A wide image for its listing.",
       "x-since": "0.13.0"
     },
@@ -114,7 +116,8 @@
       "items": {
         "type": "string",
         "minLength": 1,
-        "maxLength": 1024
+        "maxLength": 1024,
+        "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.png|\\.svg|\\.jpg|\\.jpeg|\\.webp)$"
       },
       "description": "Images of it at work, for its listing.",
       "x-since": "0.13.0"
@@ -194,6 +197,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 1024,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.js|\\.mjs|\\.cjs)$",
       "description": "The worker’s entry: a module whose `activate(studio)` (its default export, or a named `activate`) registers what it serves. Worker tier only, and required by it.",
       "x-since": "0.13.0",
       "x-tier": "worker",
@@ -455,6 +459,7 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 1024,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.js|\\.mjs)$",
                 "description": "What the panel draws, as a tab in a workspace’s pane. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
                 "x-since": "0.13.0",
                 "examples": [
@@ -528,6 +533,7 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 1024,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.js|\\.mjs)$",
                 "description": "What the door draws when it is open. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
                 "x-since": "0.13.0",
                 "examples": [
@@ -601,6 +607,7 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 1024,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.js|\\.mjs)$",
                 "description": "What the section draws in Settings. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
                 "x-since": "0.13.0",
                 "examples": [
@@ -785,5 +792,24 @@
     "engines",
     "tier",
     "name"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "tier": {
+            "const": "worker"
+          }
+        },
+        "required": [
+          "tier"
+        ]
+      },
+      "then": {
+        "required": [
+          "main"
+        ]
+      }
+    }
   ]
 }

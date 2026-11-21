@@ -1,5 +1,5 @@
 import { lstatSync, readdirSync, readFileSync } from 'fs'
-import { cp, mkdir, readdir, readFile, rename, rm } from 'fs/promises'
+import { cp, lstat, mkdir, readdir, readFile, realpath, rename, rm } from 'fs/promises'
 import { homedir } from 'os'
 import { join, relative, sep } from 'path'
 
@@ -100,6 +100,19 @@ function validateInstalledManifestSource(source: string, manifestPath: string, f
       rejection: {
         path: manifestPath,
         issues: [{ path: '', message: `"${folderName}" is not an install key (<publisher>.<id>).` }],
+      },
+    }
+  }
+  // Only a folder install puts an extension here, so its key's publisher is
+  // `local`; a folder named for another publisher was not put here by Studio.
+  if (key.publisher !== LOCAL_EXTENSION_PUBLISHER || isReservedExtensionId(key.id)) {
+    return {
+      ok: false,
+      rejection: {
+        path: manifestPath,
+        issues: [
+          { path: '', message: `"${folderName}" is not a key Studio installs an extension from a folder under.` },
+        ],
       },
     }
   }
@@ -209,13 +222,23 @@ export function discoverUserModulesSync(root: string, ctx: ModuleTrustContext): 
  * The trust of the bytes that were installed comes back for the UI to ask about.
  */
 export async function installModuleFolder(
-  srcDir: string,
+  selectedDir: string,
   root: string,
   ctx: ModuleTrustContext,
 ): Promise<InstallModuleResult> {
+  // The folder itself, wherever a link to it points: a linked root would be
+  // copied as the link, and the extension would never appear. A missing one
+  // is said by the read below.
+  const srcDir = await realpath(selectedDir).catch(() => selectedDir)
   const manifestPath = join(srcDir, EXTENSION_MANIFEST_FILENAME)
   let source: string
   try {
+    // A linked manifest is read through the link and then left out of the
+    // copy, so it is refused rather than half installed.
+    if ((await lstat(manifestPath)).isSymbolicLink()) {
+      const message = 'extension.json is a symbolic link; an extension ships regular files only.'
+      return { ok: false, rejected: { path: manifestPath, issues: [{ path: '', message }] }, message }
+    }
     source = await readFile(manifestPath, 'utf8')
   } catch (error) {
     const rejection = {

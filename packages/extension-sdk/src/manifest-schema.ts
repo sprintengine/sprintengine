@@ -1,6 +1,7 @@
 // A small schema vocabulary for extension.json: one description of each field
-// drives the validator, the JSON Schema and the reference in the guide, so the
-// three cannot disagree. The repository keeps no schema library, so this is
+// drives the validator, the JSON Schema and the reference in the guide. The
+// JSON Schema carries each field's shape (and what a pattern can say of a
+// path); the SDK's validator is authoritative for the rest. The repository keeps no schema library, so this is
 // the least that does the job: strings, booleans, one literal, arrays and
 // strict objects. Pure (no Node or DOM APIs).
 
@@ -24,6 +25,8 @@ export type StringNode = {
   enum?: readonly string[]
   /** Extra checks a pattern cannot express; returns a message, or null. */
   check?: (value: string) => string | null
+  /** A pattern for the JSON Schema alone, approximating what `check` holds. */
+  schemaPattern?: string
 }
 export type BooleanNode = { kind: 'boolean' }
 export type LiteralNode = { kind: 'literal'; value: number }
@@ -188,7 +191,11 @@ export function nodeJsonSchema(node: SchemaNode, field?: FieldSpec): JsonSchema 
         type: 'string',
         ...(node.min ? { minLength: node.min } : {}),
         maxLength: node.max,
-        ...(node.pattern ? { pattern: node.pattern.source } : {}),
+        ...(node.pattern
+          ? { pattern: node.pattern.source }
+          : node.schemaPattern
+            ? { pattern: node.schemaPattern }
+            : {}),
         ...(node.enum ? { enum: [...node.enum] } : {}),
         ...meta,
       }

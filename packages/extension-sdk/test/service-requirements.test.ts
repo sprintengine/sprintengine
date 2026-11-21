@@ -16,7 +16,7 @@ import { join } from 'node:path'
 import { test } from 'vitest'
 
 import { KNOWN_CAPABILITY_PERMISSIONS } from '../src/index.js'
-import { dependsOnReaches, MODULE_SERVICE_REQUIREMENTS, moduleServiceRequirement } from '../src/services.js'
+import { MODULE_SERVICE_REQUIREMENTS, moduleServiceRequirement } from '../src/services.js'
 
 const SRC = join(process.cwd(), 'packages', 'extension-sdk', 'src')
 
@@ -44,7 +44,7 @@ test('every service key the SDK resolves has a row in MODULE_SERVICE_REQUIREMENT
   assert.deepEqual(rows, keys, 'add a row for each new service (and drop the row of a removed one)')
 })
 
-test('every row names permissions the SDK knows, and a provider a dependsOn can name', () => {
+test('every row names permissions the SDK knows', () => {
   for (const requirement of MODULE_SERVICE_REQUIREMENTS) {
     assert.ok(requirement.permissions.length > 0, `${requirement.key} needs at least one permission`)
     for (const permission of requirement.permissions) {
@@ -53,7 +53,6 @@ test('every row names permissions the SDK knows, and a provider a dependsOn can 
         `${requirement.key}: unknown permission ${permission}`,
       )
     }
-    assert.ok(dependsOnReaches([requirement.providedBy], requirement.providedBy))
   }
 })
 
@@ -67,11 +66,4 @@ test('the rows the scaffold used to get wrong', () => {
   })
   assert.deepEqual(moduleServiceRequirement('core.workspace-context')?.permissions, ['ipc:workspace-read'])
   assert.equal(moduleServiceRequirement('automations.module-service'), undefined, 'automations is gone')
-  assert.equal(
-    dependsOnReaches(['scheduled-agents'], 'agent-runtime'),
-    true,
-    'scheduled-agents loads after agent-runtime',
-  )
-  assert.equal(dependsOnReaches(['agent-runtime'], 'scheduled-agents'), false)
-  assert.equal(dependsOnReaches(undefined, 'agent-runtime'), false)
 })

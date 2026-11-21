@@ -6,7 +6,10 @@
 // The field table below is the single description of the format: the
 // validator walks it, `extensionManifestJsonSchema()` turns it into the JSON
 // Schema the SDK ships (`extension.schema.json`), and
-// `extensionManifestReference()` into the reference in guide/manifest.md.
+// `extensionManifestReference()` into the reference in guide/manifest.md. The
+// schema covers shape, for editors; the validator is authoritative for the
+// rules a schema cannot say cheaply (tiers, references between points,
+// permissions a point needs).
 // Unknown keys are refused at every level, so nothing can be smuggled past the
 // install review by a key Studio does not read. Pure (no Node or DOM APIs).
 
@@ -119,8 +122,9 @@ export const EXTENSION_RESERVED_POINTS: Readonly<Record<string, string>> = {
 
 const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const COMMAND_ID_RE = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/
+// A numeric prerelease identifier has no leading zero (`1.0.0-01` is not semver).
 const SEMVER_RE =
-  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 const ENGINE_RE = /^>=(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const MCP_TOOL_RE = /^[a-z][a-z0-9_]*$/
 // C0 and C1 controls, and the bidirectional overrides that make text read
@@ -166,10 +170,18 @@ const displayText = (max: number, min = 1): SchemaNode => ({
   check: (value) => (UNSAFE_TEXT_RE.test(value) ? 'must not hold control or text-direction characters.' : null),
 })
 
+// What JSON Schema can say of a safe path: relative, `/` between folders, no
+// `.` or `..` segment, no empty segment, no backslash, colon or control
+// character. Device names stay the validator's.
+const SAFE_PATH_SCHEMA = String.raw`^(?!/)(?!.*(?:^|/)\.{1,2}(?:/|$))(?!.*//)[^\\:<>"|?*\u0000-\u001f]+`
+
 const pathNode = (extensions?: readonly string[]): SchemaNode => ({
   kind: 'string',
   min: 1,
   max: 1024,
+  schemaPattern: `${SAFE_PATH_SCHEMA}${
+    extensions ? `(?:${extensions.map((extension) => extension.replace('.', '\\.')).join('|')})` : ''
+  }$`,
   check: (value) => {
     if (!isSafeExtensionPath(value)) {
       return 'must be a relative path inside the extension, with / between folders and no "..", device names or drive letters.'
@@ -664,6 +676,18 @@ function crossFieldIssues(manifest: ExtensionManifest, options: ExtensionManifes
       issues.push({ path: `${path}.door`, message: `names no contributed door: ${item.door}.` })
     }
   })
+  // A command without an action runs the worker method of its id, and the
+  // worker declares methods only under the method permission.
+  if (
+    contributes.commands.some((command) => command.action === undefined) &&
+    !manifest.permissions.some((permission) => permission === 'module:bridge' || permission === 'ipc:invoke')
+  ) {
+    issues.push({
+      path: 'contributes.commands',
+      message:
+        'a command without an action needs the "module:bridge" permission, under which its worker method is declared.',
+    })
+  }
   if (contributes.mcpTools.length > 0 && !manifest.permissions.includes('mcp:tools')) {
     issues.push({ path: 'contributes.mcpTools', message: 'needs the "mcp:tools" permission.' })
   }
@@ -811,6 +835,14 @@ export function extensionManifestJsonSchema(): JsonSchema {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     $id: 'https://sprintengine.dev/schemas/extension.schema.json',
     ...nodeJsonSchema(EXTENSION_MANIFEST_FIELDS),
+    // The worker tier needs its worker.
+    allOf: [
+      {
+        if: { properties: { tier: { const: 'worker' } }, required: ['tier'] },
+        // oxlint-disable-next-line unicorn/no-thenable -- JSON Schema's own keyword, never awaited
+        then: { required: ['main'] },
+      },
+    ],
   }
 }
 

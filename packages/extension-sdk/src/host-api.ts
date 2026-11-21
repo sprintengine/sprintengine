@@ -99,6 +99,6 @@ export type HostCapability =
   | 'workspace-git-info'
   // `WorkspaceContextService.list({ includeClosed })` and `open` on each entry.
   | 'workspace-history'
-  // `MainHost.getModuleAppState` / `watchModuleAppState`: Settings values in entry.main.
+  // `MainHost.getModuleAppState` / `watchModuleAppState`: Settings values in the worker.
   | 'main-app-state'
   | (string & {})

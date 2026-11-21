@@ -532,15 +532,19 @@ async function loadRendererModuleBatch(refresh: boolean): Promise<void> {
     // third-party renderer entries" rather than failing the boot.
     if (!windowHasStudio()) return
     const served = await extensionsApi.listThirdPartyRendererEntries()
-    const { loadThirdPartyRendererEntries, rendererEntriesForRefresh } = await import('./third-party-loader')
+    const { loadThirdPartyRendererEntries, reconcileThirdPartyRendererEntries, rendererEntriesForRefresh } =
+      await import('./third-party-loader')
+    // What the Studio no longer serves (uninstalled, untrusted) leaves first.
+    const before = thirdPartyRendererManifests
+    const kept = reconcileThirdPartyRendererEntries(before, served)
     const loaded = await loadThirdPartyRendererEntries(
       rendererHost,
       refresh ? rendererEntriesForRefresh(served) : served,
     )
-    thirdPartyRendererManifests = [...thirdPartyRendererManifests, ...loaded]
-    if (loaded.length > 0) {
+    thirdPartyRendererManifests = [...kept, ...loaded]
+    if (loaded.length > 0 || kept.length !== before.length || kept.some((manifest, i) => manifest !== before[i])) {
       // The memoized enabled-set is keyed per overrides object; the universe just
-      // changed, so any set resolved before the manifests landed is stale.
+      // changed, so any set resolved before it is stale.
       enabledSetCache = new WeakMap()
     }
   } finally {

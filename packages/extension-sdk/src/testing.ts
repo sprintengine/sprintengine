@@ -262,7 +262,7 @@ export const DEFAULT_FAKE_CHAT_RUNTIMES: readonly ModuleChatRuntimeOption[] = [
 // ── Module app state ─────────────────────────────────────────────────────────
 
 // The module's app-level state (its Settings values): one namespace the
-// renderer reads and writes and `entry.main` reads, so a fake renderer given a
+// renderer reads and writes and the worker reads, so a fake renderer given a
 // fake main host shares it, as the windows and main do.
 type AppStateStore = {
   get(key: string): unknown
@@ -326,7 +326,7 @@ export type FakeMainHostOptions = FakeModuleIdentity & {
   /** The module's folder, which `getAssetPath` resolves under. Default: the working directory (the project root under `npm test`). */
   moduleRoot?: string
   /**
-   * The files the module was verified with (`module/manifest.json`'s `files`),
+   * The files the module was verified with (every file of the extension's folder),
    * module-relative. Given, `getAssetPath` resolves only these, as the host
    * does; absent, any file that exists under `moduleRoot`.
    */
@@ -334,7 +334,7 @@ export type FakeMainHostOptions = FakeModuleIdentity & {
 }
 
 export type FakeMainHost = {
-  /** Hand this to `registerMain`. */
+  /** Hand this to the worker's `activate`. */
   host: MainHost
   /** The module's declared permissions. Live: add or remove one to test the other branch. */
   permissions: Set<string>

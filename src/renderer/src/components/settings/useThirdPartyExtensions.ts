@@ -133,6 +133,8 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
       try {
         const result = await lifecycle.setTrust(id, false)
         if (!result.ok) setMessage({ tone: 'error', text: result.message ?? 'Couldn’t update trust.' })
+        // Its window code is no longer served: what it added leaves now.
+        await refreshThirdPartyRendererModules()
         await load()
       } finally {
         setPendingId(null)
@@ -166,6 +168,9 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
       try {
         const result = await lifecycle.uninstall(module.manifest.id)
         if (result.ok) {
+          // What it added leaves before its switch is forgotten, so the
+          // default (on) never brings an uninstalled extension back.
+          await refreshThirdPartyRendererModules()
           forgetModules(result.removedModuleIds)
           if (module.launch.mainLoaded) {
             showToast({

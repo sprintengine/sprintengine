@@ -29,6 +29,7 @@ test('load-modules', async () => {
     testDisabledModuleNeverRegisters()
     testProvideServicesSeedsBeforeModules()
     testCrossModuleServiceWiring()
+    testAppModulesStartBeforeEveryExtension()
     testThrowingModuleIsIsolated()
     testDuplicateMethodIsReportedNotFatal()
     testLifecycleAndSidecarsCollected()
@@ -46,6 +47,33 @@ test('load-modules', async () => {
     await testThirdPartyWorkerServesOnlyItsDeclaredMcpTools()
 
     console.log('module-host tests passed')
+  }
+
+  // An extension declares no dependencies, and its install key sorts before
+  // a built-in id like `scheduled-agents`; its activate may still resolve a
+  // service any of the app's modules provides.
+  function testAppModulesStartBeforeEveryExtension(): void {
+    const token = createServiceToken<{ ping(moduleId: string): string }>('scheduled-agents.module-service')
+    const order: string[] = []
+    const provider: CapabilityModule = {
+      manifest: { id: 'zz-scheduled', displayName: 'Provider', version: 1, defaultEnabled: true },
+      registerMain: (host) => {
+        order.push('zz-scheduled')
+        host.provideService(token, () => ({ ping: (moduleId: string) => `pong ${moduleId}` }))
+      },
+    }
+    let answer = ''
+    const extension: CapabilityModule = {
+      manifest: { id: 'local.aaa', displayName: 'Aaa', version: '1.0.0', defaultEnabled: true, source: 'third-party' },
+      registerMain: (host) => {
+        order.push('local.aaa')
+        answer = host.requireService(token).ping(host.moduleId)
+      },
+    }
+    const { report } = loadMainModules({ modules: [extension, provider] })
+    assert.deepEqual(report.errors, [])
+    assert.deepEqual(order, ['zz-scheduled', 'local.aaa'])
+    assert.equal(answer, 'pong local.aaa')
   }
 
   function testEnabledModulesRegisterInDependencyOrder(): void {

@@ -235,7 +235,14 @@ test('the worker tier needs main, and main or background need the worker tier', 
 test('a command without an action runs worker code, so it needs the worker tier', () => {
   const command = { id: 'notes.clear', title: 'Clear notes' }
   refusedAt(base({ tier: 'ui', contributes: { commands: [command] } }), 'tier', /needs "worker"/)
-  accepted(base({ tier: 'worker', main: 'dist/main.cjs', contributes: { commands: [command] } }))
+  accepted(
+    base({
+      tier: 'worker',
+      main: 'dist/main.cjs',
+      permissions: ['module:bridge'],
+      contributes: { commands: [command] },
+    }),
+  )
   refusedAt(
     base({ tier: 'declarative', contributes: { commands: [{ ...command, action: 'not.a.command' }] } }),
     'contributes.commands[0].action',
@@ -415,4 +422,23 @@ test('reserved ids and publishers are Studio’s own', () => {
     assert.equal(isReservedExtensionPublisher(publisher), true, publisher)
   }
   assert.equal(isReservedExtensionPublisher('acme'), false)
+})
+
+test('a command without an action needs the method permission its worker method is declared under', () => {
+  const worker = {
+    tier: 'worker',
+    main: 'dist/main.cjs',
+    contributes: { commands: [{ id: 'notes.clear', title: 'Clear' }] },
+  }
+  refusedAt(base(worker), 'contributes.commands', /module:bridge/)
+  accepted(base({ ...worker, permissions: ['module:bridge'] }))
+  accepted(base({ ...worker, permissions: ['ipc:invoke'] }))
+  // A command that runs a Studio action declares no method.
+  accepted(base({ tier: 'declarative', contributes: { commands: [{ id: 'a', title: 'A', action: 'chat.new' }] } }))
+})
+
+test('version is semver: a numeric prerelease identifier has no leading zero', () => {
+  for (const version of ['1.0.0', '1.0.0-0', '1.0.0-alpha.1', '1.0.0-0a', '1.0.0+001']) accepted(base({ version }))
+  for (const version of ['1.0.0-01', '1.0.0-alpha.01', '01.0.0', '1.0'])
+    refusedAt(base({ version }), 'version', /semver/)
 })

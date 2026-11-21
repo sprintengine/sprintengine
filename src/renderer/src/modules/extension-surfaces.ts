@@ -28,12 +28,45 @@ export type LoadedExtensionSurface = {
 
 const surfaces = new Map<string, LoadedExtensionSurface>()
 
+// Who draws a surface hears when the set changes: an extension that is
+// uninstalled or no longer trusted takes its surfaces with it, and an open
+// one unmounts rather than keep running its code.
+const listeners = new Set<() => void>()
+let version = 0
+
+function changed(): void {
+  version += 1
+  for (const listener of [...listeners]) listener()
+}
+
+/** Hear the set of surfaces change; returns the unsubscriber. */
+export function subscribeExtensionSurfaces(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+/** A number that moves whenever the set of surfaces changes. */
+export function extensionSurfacesVersion(): number {
+  return version
+}
+
 function surfaceKey(key: string, point: ExtensionSurfacePoint, id: string): string {
   return `${key}\u0000${point}\u0000${id}`
 }
 
 export function registerExtensionSurface(surface: LoadedExtensionSurface): void {
   surfaces.set(surfaceKey(surface.key, surface.point, surface.contribution.id), surface)
+  changed()
+}
+
+/** Take every surface of an extension out, and hand them back for a later restore. */
+export function retireExtensionSurfaces(key: string): LoadedExtensionSurface[] {
+  const retired = [...surfaces.entries()].filter(([, surface]) => surface.key === key)
+  for (const [id] of retired) surfaces.delete(id)
+  if (retired.length > 0) changed()
+  return retired.map(([, surface]) => surface)
 }
 
 export function getExtensionSurface(

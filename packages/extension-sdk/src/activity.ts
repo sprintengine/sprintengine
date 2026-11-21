@@ -108,7 +108,7 @@ const usageModuleServiceToken: ServiceToken<ModuleUsageRegistry> = { key: 'usage
 
 /**
  * The scoped usage service for `host`'s module. `host.supports('usage')` says
- * whether this host has it; declare `dependsOn: ['agent-runtime']`.
+ * whether this host has it.
  */
 export function getUsageService(host: MainHost): ModuleUsageService {
   const registry = host.requireService(usageModuleServiceToken)
@@ -194,7 +194,7 @@ const activityModuleServiceToken: ServiceToken<ModuleActivityRegistry> = { key: 
 
 /**
  * The scoped activity service for `host`'s module. `host.supports('activity')`
- * says whether this host has it; declare `dependsOn: ['agent-runtime']`.
+ * says whether this host has it.
  */
 export function getActivityService(host: MainHost): ModuleActivityService {
   const registry = host.requireService(activityModuleServiceToken)

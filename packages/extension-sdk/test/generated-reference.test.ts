@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { test } from 'vitest'
+import { expect, test } from 'vitest'
 
 import { extensionManifestJsonSchema, extensionManifestReference } from '../src/extension-manifest.js'
 
@@ -38,5 +38,27 @@ test('guide/manifest.md carries the reference the field table produces', () => {
   assert.ok(
     readFileSync(GUIDE_PATH, 'utf8') === expected,
     `The generated reference in guide/manifest.md is out of date. ${HOW}`,
+  )
+})
+
+test('the schema says what a pattern can of paths, and that the worker tier needs main', () => {
+  const schema = extensionManifestJsonSchema() as {
+    properties: Record<string, { pattern?: string; properties?: Record<string, unknown> }>
+    allOf: unknown[]
+  }
+  const main = new RegExp(schema.properties.main!.pattern!, 'u')
+  for (const path of ['dist/main.cjs', 'main.mjs']) expect(main.test(path), path).toBe(true)
+  for (const path of [
+    '../main.cjs',
+    '/main.cjs',
+    'dist/../main.cjs',
+    'dist//main.cjs',
+    'C:/main.cjs',
+    'dist\\main.cjs',
+  ]) {
+    expect(main.test(path), path).toBe(false)
+  }
+  expect(JSON.stringify(schema.allOf)).toBe(
+    '[{"if":{"properties":{"tier":{"const":"worker"}},"required":["tier"]},"then":{"required":["main"]}}]',
   )
 })

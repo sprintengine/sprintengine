@@ -335,30 +335,55 @@ test('a folder whose name is not an install key is rejected', async () => {
 test('a folder whose manifest id differs from its install key is rejected', async () => {
   await withTempDir(async (dir) => {
     const root = join(dir, 'extensions')
-    writeExtensionFolder(join(root, 'acme.wrong'), { manifest: extensionManifest({ id: 'demo' }) })
+    writeExtensionFolder(join(root, 'local.wrong'), { manifest: extensionManifest({ id: 'demo' }) })
     const listed = await discoverUserModules(root, EMPTY_TRUST)
     assert.deepEqual(listed.modules, [])
     assert.equal(listed.rejected.length, 1)
     assert.deepEqual(listed.rejected[0]!.issues, [
-      { path: 'id', message: '"demo" must match its folder "acme.wrong".' },
+      { path: 'id', message: '"demo" must match its folder "local.wrong".' },
     ])
     assert.equal(discoverUserModulesSync(root, EMPTY_TRUST).rejected.length, 1)
   })
 })
 
-test('a publisher’s install key is listed under its publisher', async () => {
+test('only a folder install’s key is discovered: another publisher, or a reserved id, is rejected', async () => {
   await withTempDir(async (dir) => {
     const root = join(dir, 'extensions')
     writeExtensionFolder(join(root, 'acme.demo'))
+    writeExtensionFolder(join(root, 'sprintengine.demo'))
+    writeExtensionFolder(join(root, 'local.studio-x'), { manifest: extensionManifest({ id: 'studio-x' }) })
     writeExtensionFolder(join(root, 'local.demo'))
     const listed = await discoverUserModules(root, EMPTY_TRUST)
     assert.deepEqual(
       listed.modules.map((module) => [module.key, module.publisher, module.manifest.publisher]),
-      [
-        ['acme.demo', 'acme', 'acme'],
-        ['local.demo', 'local', 'local'],
-      ],
+      [['local.demo', 'local', 'local']],
     )
+    assert.deepEqual(listed.rejected.map((rejection) => rejection.path.split(/[\\/]/).at(-2)).sort(), [
+      'acme.demo',
+      'local.studio-x',
+      'sprintengine.demo',
+    ])
+  })
+})
+
+test('a linked folder installs what it points at, and a linked extension.json is refused', async () => {
+  await withTempDir(async (dir) => {
+    const src = writeExtensionFolder(join(dir, 'src'))
+    await symlink(src, join(dir, 'linked-src'))
+    const root = join(dir, 'extensions')
+    const install = await installModuleFolder(join(dir, 'linked-src'), root, EMPTY_TRUST)
+    assert.equal(install.ok, true, install.ok ? '' : install.message)
+    assert.equal(existsSync(join(root, 'local.demo', 'extension.json')), true)
+    assert.equal((await discoverUserModules(root, EMPTY_TRUST)).modules.length, 1)
+
+    const other = writeExtensionFolder(join(dir, 'other'))
+    await writeFile(join(dir, 'real.json'), JSON.stringify(extensionManifest({ id: 'other' })))
+    await rm(join(other, 'extension.json'))
+    await symlink(join(dir, 'real.json'), join(other, 'extension.json'))
+    const refused = await installModuleFolder(other, root, EMPTY_TRUST)
+    assert.equal(refused.ok, false)
+    if (!refused.ok) assert.match(refused.message, /symbolic link/)
+    assert.equal(existsSync(join(root, 'local.other')), false)
   })
 })
 

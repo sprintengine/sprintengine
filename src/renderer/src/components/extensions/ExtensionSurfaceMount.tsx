@@ -1,8 +1,13 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
 
 import type { ExtensionSurfacePoint } from '../../../../shared/modules/third-party-manifest'
 import { sanitizeEntryMessage } from '../../../../shared/modules/entry-messages'
-import { extensionMountStudio, getExtensionSurface } from '../../modules/extension-surfaces'
+import {
+  extensionMountStudio,
+  extensionSurfacesVersion,
+  getExtensionSurface,
+  subscribeExtensionSurfaces,
+} from '../../modules/extension-surfaces'
 import { EmptyState } from '../ui/EmptyState'
 
 // One extension surface — a pane tab, a door, a settings section — drawn by
@@ -30,6 +35,9 @@ export function ExtensionSurfaceMount({
 }: ExtensionSurfaceMountProps): ReactElement {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
+  // Re-read when the set changes: a surface whose extension was uninstalled
+  // or lost its trust is gone, and its mount is cleaned up below.
+  useSyncExternalStore(subscribeExtensionSurfaces, extensionSurfacesVersion, extensionSurfacesVersion)
   const loaded = getExtensionSurface(extensionKey, point, id)
 
   useEffect(() => {

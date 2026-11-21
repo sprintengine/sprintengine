@@ -21,10 +21,8 @@ export type ModuleServiceRequirement = {
   /** Any one of these must be declared in the manifest. */
   permissions: readonly CapabilityPermission[]
   /**
-   * The bundled module that provides it. A module that resolves the service at
-   * the top of `registerMain` lists it in `dependsOn` (or one that depends on
-   * it — `scheduled-agents` reaches `agent-runtime`), so the provider
-   * registers first.
+   * The part of Studio that provides it. Studio starts its own parts ahead of
+   * every extension's worker, so `activate` may resolve the service at once.
    */
   providedBy: string
   /**
@@ -123,23 +121,7 @@ export const MODULE_SERVICE_REQUIREMENTS: readonly ModuleServiceRequirement[] = 
   },
 ]
 
-/**
- * The bundled modules a `dependsOn` entry reaches, itself included: naming
- * `scheduled-agents` also orders a module after `agent-runtime`.
- */
-export const MODULE_DEPENDENCY_CHAINS: Readonly<Record<string, readonly string[]>> = {
-  'agent-runtime': ['agent-runtime'],
-  'scheduled-agents': ['scheduled-agents', 'agent-runtime'],
-}
-
 /** The requirement for `key`, or undefined for a key the SDK does not publish. */
 export function moduleServiceRequirement(key: string): ModuleServiceRequirement | undefined {
   return MODULE_SERVICE_REQUIREMENTS.find((requirement) => requirement.key === key)
-}
-
-/** Whether a manifest's `dependsOn` orders the module after `provider`. */
-export function dependsOnReaches(dependsOn: readonly string[] | undefined, provider: string): boolean {
-  return (dependsOn ?? []).some((dependency) =>
-    (MODULE_DEPENDENCY_CHAINS[dependency] ?? [dependency]).includes(provider),
-  )
 }
