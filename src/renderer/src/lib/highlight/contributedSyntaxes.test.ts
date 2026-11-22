@@ -22,15 +22,22 @@ vi.mock('./grammarWorker?worker', () => ({
   default: class {
     onmessage: ((event: { data: unknown }) => void) | null = null
     onerror = null
-    postMessage(request: { id: number; lines: string[] }) {
+    constructor() {
+      queueMicrotask(() => this.onmessage?.({ data: { type: 'ready' } }))
+    }
+    postMessage(request: { type: string; id: number; lines?: string[] }) {
+      if (request.type === 'load') {
+        queueMicrotask(() => this.onmessage?.({ data: { type: 'loaded', id: request.id } }))
+        return
+      }
       asked.lines.push(request.lines)
       // The worker's answer for `move 42`: a keyword, a space, a number.
       queueMicrotask(() =>
         this.onmessage?.({
           data: {
+            type: 'tokens',
             id: request.id,
-            ok: true,
-            lines: request.lines.map(() => [
+            lines: (request.lines ?? []).map(() => [
               [0, 'keyword'],
               [4, null],
               [5, 'number'],
@@ -100,7 +107,7 @@ test('an extension switched off contributes no language', () => {
 })
 
 test('a chat code block takes its colours from the worker’s answer', async () => {
-  const tokens = await tokenizeContributed(LANGUAGE, ['move 42'], 1000)
+  const tokens = await tokenizeContributed(LANGUAGE, ['move 42'], { sliceDeadlineMs: 1000 })
   expect(asked.lines).toContainEqual(['move 42'])
   expect(themedTokensOf('move 42', tokens![0])).toEqual([
     { content: 'move', offset: 0, color: 'var(--sem-syntax-keyword)' },
@@ -134,8 +141,20 @@ test('the editor gets the same tokens as semantic tokens, and a document too lar
     0, 0, 4, 1, 0, 0, 5, 2, 3, 0, 2, 0, 4, 1, 0, 0, 5, 1, 3, 0,
   ])
   const provider = semanticTokensProvider(LANGUAGE)
-  const model = (text: string) => ({ getValue: () => text, getLineCount: () => text.split('\n').length }) as never
-  const tokens = await provider.provideDocumentSemanticTokens(model('move 42'), null, {} as never)
+  const model = (text: string) =>
+    ({
+      uri: { toString: () => 'file:///ledger.tally' },
+      getValue: () => text,
+      getLineCount: () => text.split('\n').length,
+    }) as never
+  const live = { isCancellationRequested: false } as never
+  const tokens = await provider.provideDocumentSemanticTokens(model('move 42'), null, live)
   expect(tokens && 'data' in tokens ? Array.from(tokens.data) : null).toEqual([0, 0, 4, 1, 0, 0, 5, 2, 3, 0])
-  expect(await provider.provideDocumentSemanticTokens(model('x'.repeat(500_001)), null, {} as never)).toBeNull()
+  expect(await provider.provideDocumentSemanticTokens(model('x'.repeat(500_001)), null, live)).toBeNull()
+  // A pass Monaco already cancelled asks the worker for nothing.
+  const asks = asked.lines.length
+  expect(
+    await provider.provideDocumentSemanticTokens(model('move 9'), null, { isCancellationRequested: true } as never),
+  ).toBeNull()
+  expect(asked.lines.length).toBe(asks)
 })

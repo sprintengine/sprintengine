@@ -7,7 +7,12 @@ import { CODE_THEME, CODE_THEME_REGISTRATION, codeRoleOfColor, type CodeRole } f
 // TextMate grammar compiled and run by the same Shiki engine chat uses for
 // Studio's own languages, off the window's thread, so a grammar that
 // backtracks for minutes costs a worker the window terminates, never the
-// window itself (grammarHost.ts holds the deadline).
+// window itself (grammarHost.ts holds the deadlines).
+//
+// The work comes in steps, each with a budget of its own on the host's side:
+// the engine starting (`ready`, posted once it can serve), a grammar loading
+// and compiling (`load`), and a slice of lines tokenized (`tokenize`), which
+// may go on from where the last slice of the same document stopped.
 //
 // Each extension gets a highlighter, and so a grammar registry, of its own:
 // a grammar's scope can never stand in for Studio's (which never load here)
@@ -17,25 +22,49 @@ import { CODE_THEME, CODE_THEME_REGISTRATION, codeRoleOfColor, type CodeRole } f
 // No DOM, no Node: it runs in a Web Worker in the app and in a worker thread
 // in the tests.
 
-/** One request: tokenize `lines` in `language`, its grammar sent with it the first time. */
-export type GrammarRequest = {
-  id: number
-  extensionId: string
-  language: string
-  /** The grammar, as its Studio checked and served it; sent once per worker. */
-  grammar?: Record<string, unknown> & { scopeName: string }
-  lines: readonly string[]
-}
+export type GrammarRequest =
+  | {
+      type: 'load'
+      id: number
+      extensionId: string
+      language: string
+      /** The grammar, as its Studio checked and served it. */
+      grammar: Record<string, unknown> & { scopeName: string }
+    }
+  | {
+      type: 'tokenize'
+      id: number
+      extensionId: string
+      language: string
+      lines: readonly string[]
+      /** A document's key: its grammar state is kept under it after the slice. */
+      stateKey?: string
+      /** Go on from the state the last slice under `stateKey` ended in, rather than a fresh one. */
+      resume?: boolean
+    }
 
-/** Each line's tokens as `[offset, role]`, a role only where it changes; or why there are none. */
+/** Each line's tokens as `[offset, role]`, a role only where it changes. */
+export type TokenLines = Array<Array<[number, CodeRole | null]>>
+
 export type GrammarResponse =
-  { id: number; ok: true; lines: Array<Array<[number, CodeRole | null]>> } | { id: number; ok: false; message: string }
+  | { type: 'ready' }
+  | { type: 'loaded'; id: number }
+  | { type: 'tokens'; id: number; lines: TokenLines }
+  | { type: 'failed'; id: number; message: string }
 
 /** Lines longer than this are left plain, as Studio's own grammars leave them. */
 export const GRAMMAR_LINE_MAX_CHARS = 1000
 const LINE_TIME_LIMIT_MS = 50
+/** The documents whose state is kept between slices. */
+const MAX_KEPT_STATES = 32
 
-export type GrammarTokenizer = { handle(request: GrammarRequest): Promise<GrammarResponse> }
+type GrammarState = ReturnType<HighlighterCore['getLastGrammarState']>
+
+export type GrammarTokenizer = {
+  /** Resolves once the engine can serve: the worker posts `ready` then. */
+  ready: Promise<void>
+  handle(request: GrammarRequest): Promise<GrammarResponse>
+}
 
 export function createGrammarTokenizer(
   options: {
@@ -46,7 +75,8 @@ export function createGrammarTokenizer(
   const lineTimeLimitMs = options.lineTimeLimitMs ?? LINE_TIME_LIMIT_MS
   const engine = createOnigurumaEngine(import('shiki/wasm'))
   const highlighters = new Map<string, Promise<HighlighterCore>>()
-  const loaded = new Set<string>()
+  const loaded = new Map<string, HighlighterCore>()
+  const states = new Map<string, GrammarState | undefined>()
   const highlighterFor = (extensionId: string) => {
     let highlighter = highlighters.get(extensionId)
     if (!highlighter) {
@@ -55,17 +85,25 @@ export function createGrammarTokenizer(
     }
     return highlighter
   }
+  // The engine and a highlighter exist: what every request needs before its budget starts.
+  const ready = highlighterFor('').then(() => undefined)
+
   return {
+    ready,
     async handle(request) {
       try {
-        const highlighter = await highlighterFor(request.extensionId)
-        if (!loaded.has(request.language)) {
-          if (!request.grammar) return { id: request.id, ok: false, message: 'The grammar was not sent.' }
+        if (request.type === 'load') {
+          const highlighter = await highlighterFor(request.extensionId)
           await highlighter.loadLanguage({ ...request.grammar, name: request.language } as never)
-          loaded.add(request.language)
+          // Compile its first scanners now, inside this step's budget.
+          highlighter.codeToTokensBase('', { lang: request.language, theme: CODE_THEME })
+          loaded.set(request.language, highlighter)
+          return { type: 'loaded', id: request.id }
         }
-        const lines: Array<Array<[number, CodeRole | null]>> = []
-        let state: ReturnType<HighlighterCore['getLastGrammarState']> | undefined
+        const highlighter = loaded.get(request.language)
+        if (!highlighter) return { type: 'failed', id: request.id, message: 'The grammar is not loaded.' }
+        const lines: TokenLines = []
+        let state = request.resume && request.stateKey ? states.get(request.stateKey) : undefined
         for (const line of request.lines) {
           if (line.length > GRAMMAR_LINE_MAX_CHARS) {
             lines.push([[0, null]])
@@ -85,9 +123,14 @@ export function createGrammarTokenizer(
           }
           lines.push(out.length > 0 ? out : [[0, null]])
         }
-        return { id: request.id, ok: true, lines }
+        if (request.stateKey) {
+          states.delete(request.stateKey)
+          states.set(request.stateKey, state)
+          while (states.size > MAX_KEPT_STATES) states.delete(states.keys().next().value!)
+        }
+        return { type: 'tokens', id: request.id, lines }
       } catch (error) {
-        return { id: request.id, ok: false, message: error instanceof Error ? error.message : String(error) }
+        return { type: 'failed', id: request.id, message: error instanceof Error ? error.message : String(error) }
       }
     },
   }

@@ -98,9 +98,11 @@ answers the least tier a manifest needs.
   include of another scope (an embedded `source.js`) is allowed and stays
   plain. Each extension's grammars run in a registry of their own, in a worker
   apart from the window, so a scope name never stands in for Studio's or
-  another extension's. A code block has a second and a document two to be
-  coloured: past that the worker is stopped, the code stays plain, and the
-  extension's highlighting stays off until the window reloads. Code is
+  another extension's. Lines are coloured in slices of 400, and loading
+  the grammar and each slice have a budget (a slice has a second in chat, a
+  second and a half in the editor): past it the worker is stopped, the code
+  stays plain, and the extension's highlighting stays off until the window
+  reloads. The worker's own start never counts against a grammar. Code is
   coloured by what each token is (comment, keyword, string, number, function,
   type), in the active theme's colours.
 - **`keybindings`** bind a key chord to a command: one the extension

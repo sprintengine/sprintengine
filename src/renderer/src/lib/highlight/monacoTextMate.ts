@@ -62,11 +62,17 @@ export function encodeSemanticTokens(lines: readonly string[], tokens: TokenLine
 export function semanticTokensProvider(language: string): Monaco.languages.DocumentSemanticTokensProvider {
   return {
     getLegend: () => SEMANTIC_LEGEND,
-    async provideDocumentSemanticTokens(model) {
+    async provideDocumentSemanticTokens(model, _lastResultId, token) {
       const text = model.getValue()
       if (text.length > DOCUMENT_MAX_CHARS || model.getLineCount() > DOCUMENT_MAX_LINES) return null
       const lines = text.split(/\r?\n/)
-      const tokens = await tokenizeContributed(language, lines, DOCUMENT_DEADLINE_MS)
+      // One pass per document at a time: a newer one replaces one still
+      // waiting, and one Monaco cancelled stops before its next slice.
+      const tokens = await tokenizeContributed(language, lines, {
+        sliceDeadlineMs: DOCUMENT_DEADLINE_MS,
+        key: model.uri.toString(),
+        cancelled: () => token.isCancellationRequested,
+      })
       return tokens ? { data: encodeSemanticTokens(lines, tokens) } : null
     },
     releaseDocumentSemanticTokens() {},

@@ -8,20 +8,21 @@ import {
   type GrammarHost,
   type GrammarSource,
   type GrammarWorker as GrammarWorkerHandle,
+  type TokenizeOptions,
   type TokenLines,
 } from './grammarHost'
 import GrammarWorker from './grammarWorker?worker'
 
 // The window's one grammar host (grammarHost.ts), for chat code blocks and
-// the editor alike, over the worker that runs extensions' grammars. A block
-// in chat has a second to be coloured, a document in the editor two; past
-// that its extension's highlighting stops for the session and the person is
-// told which extension it was.
+// the editor alike, over the worker that runs extensions' grammars. Lines go
+// in slices of 400, and each slice has a budget: a second in chat, a second
+// and a half in the editor. Past it, its extension's highlighting stops for
+// the session and the person is told which extension it was.
 
-/** A chat code block's budget. */
+/** A chat code block's budget per slice. */
 export const CODE_BLOCK_DEADLINE_MS = 1000
-/** An editor document's budget. */
-export const DOCUMENT_DEADLINE_MS = 2000
+/** An editor document's budget per slice. */
+export const DOCUMENT_DEADLINE_MS = 1500
 /** The most of a document the editor asks to be coloured; beyond it, the file stays plain. */
 export const DOCUMENT_MAX_CHARS = 500_000
 export const DOCUMENT_MAX_LINES = 20_000
@@ -63,10 +64,10 @@ export function isContributedLanguage(language: string): boolean {
 export function tokenizeContributed(
   language: string,
   lines: readonly string[],
-  deadlineMs: number,
+  options: TokenizeOptions,
 ): Promise<TokenLines | null> {
   const source = sourceOf(language)
-  return source ? grammarHost().tokenize(source, lines, deadlineMs) : Promise.resolve(null)
+  return source ? grammarHost().tokenize(source, lines, options) : Promise.resolve(null)
 }
 
 /** A line's text cut into tokens at the offsets the worker gave, coloured by role. */

@@ -106,7 +106,10 @@ function ContributedSource({ code, language, streaming }: { code: string; langua
     if (streaming) return
     let cancelled = false
     const texts = code.split('\n')
-    void tokenizeContributed(language, texts.slice(0, HIGHLIGHT_LINE_LIMIT), CODE_BLOCK_DEADLINE_MS).then((tokens) => {
+    void tokenizeContributed(language, texts.slice(0, HIGHLIGHT_LINE_LIMIT), {
+      sliceDeadlineMs: CODE_BLOCK_DEADLINE_MS,
+      cancelled: () => cancelled,
+    }).then((tokens) => {
       if (cancelled || !tokens) return
       setLines({ code, lines: texts.map((text, index) => ({ text, tokens: themedTokensOf(text, tokens[index]) })) })
     })
