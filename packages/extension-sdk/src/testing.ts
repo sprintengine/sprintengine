@@ -1265,7 +1265,7 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
     'files.read': async (p) => {
       const { byPath, key } = fileOf(p.workspaceId, p.path)
       const content = byPath.get(key)
-      if (content === undefined) throw frameError('action_failed', `${key} does not exist.`)
+      if (content === undefined) throw frameError('missing', `${key} does not exist.`)
       const bytes = new TextEncoder().encode(content)
       return {
         content: p.encoding === 'base64' ? Buffer.from(bytes).toString('base64') : content,
@@ -1280,7 +1280,7 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
         return { type: 'file', size: new TextEncoder().encode(content).byteLength, modifiedAt: 0 }
       if ([...byPath.keys()].some((path) => path.startsWith(`${key}/`)))
         return { type: 'directory', size: 0, modifiedAt: 0 }
-      throw frameError('action_failed', `${key} does not exist.`)
+      throw frameError('missing', `${key} does not exist.`)
     },
     'files.search': (p) => {
       const id = workspace(p.workspaceId).id

@@ -238,3 +238,10 @@ test('two saves against the same bytes: one is written whole, the other is refus
   const now = readFileSync(join(root, 'docs', 'notes.md'), 'utf8')
   assert.ok(now === 'AAAAAAAA' || now === 'BB', `the file holds one save whole, not "${now}"`)
 })
+
+test('a file or folder that is not there is refused as missing, by its code', async () => {
+  const { scope } = world()
+  assert.equal(await refusal(readExtensionFile(scope, 'docs/gone.md')), 'missing')
+  assert.equal(await refusal(statExtensionFile(scope, 'gone')), 'missing')
+  assert.equal(await refusal(writeExtensionFile(scope, 'gone/new.md', 'x')), 'missing')
+})

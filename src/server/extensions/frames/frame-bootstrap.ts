@@ -32,6 +32,7 @@ const FRAME_ERROR_CODES = [
   'cancelled',
   'action_failed',
   'conflict',
+  'missing',
 ]
 
 export const FRAME_ROOT_ID = 'se-root'
