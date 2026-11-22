@@ -33,11 +33,12 @@ export function EditorViewPicker({
 }): ReactElement {
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
-  const options = [
+  const options: Array<{ id: string; label: string; kind?: 'text' | 'bytes' }> = [
     { id: TEXT_EDITOR_VIEW, label: t.textEditor },
     ...matches.map((editor) => ({
       id: extensionEditorViewId(editor),
       label: t.fromExtension(editor.contribution.title, editor.extension?.name ?? editor.key),
+      kind: editor.contribution.contentKind ?? 'text',
     })),
   ]
   return (
@@ -72,6 +73,7 @@ export function EditorViewPicker({
                   workspaceId,
                   path,
                   option.id === TEXT_EDITOR_VIEW ? 'text-editor' : 'other-editor',
+                  option.kind,
                 ).then((ok) => {
                   if (ok) chooseEditorView(workspaceId, path, option.id)
                 })

@@ -9,9 +9,9 @@
 //
 // Leaving (Open with…, closing the tab, drawing the frame again) first asks
 // the frame for the edits it holds back. A frame that does not answer keeps
-// the person where they are, with the reason. A binary document cannot be
-// shown by the text editor, so leaving for it, or closing the tab, while it
-// has unsaved edits asks first: save, discard, or stay.
+// the person where they are, with the reason. Unsaved edits a view cannot
+// show (bytes in the text editor, or in an editor of text; text in an editor
+// of bytes; bytes when the tab closes) ask first: save, discard, or stay.
 
 import type { StudioExtensionCallAnswer } from '../../../../packages/studio-protocol/src/public'
 import { EXTENSION_EDITOR_FLUSH_TIMEOUT_MS } from '../../../../packages/extension-sdk/src/custom-editors'
@@ -62,8 +62,12 @@ export type ExtensionEditorController = {
   frameReady(): void
   /** The frame went away; the session stays. */
   closeFrame(): void
-  /** True when the person may leave the editor for `where` now. */
-  prepareToLeave(where: ExtensionEditorLeaving): Promise<boolean>
+  /**
+   * True when the person may leave the editor for `where` now. `nextKind`:
+   * what another editor of the file edits, text or bytes; one of the other
+   * kind cannot show this one's unsaved edits.
+   */
+  prepareToLeave(where: ExtensionEditorLeaving, nextKind?: 'text' | 'bytes'): Promise<boolean>
   dispose(): void
 }
 
@@ -154,7 +158,7 @@ export function createExtensionEditorController(options: ExtensionEditorControll
       session.detachFrame()
       settleFlushes(false)
     },
-    async prepareToLeave(where) {
+    async prepareToLeave(where, nextKind) {
       const state = session.state()
       // Nothing to keep: a file that never opened, or a frame not yet drawn.
       if (state.status !== 'ready') return true
@@ -162,7 +166,11 @@ export function createExtensionEditorController(options: ExtensionEditorControll
         session.reportError(LEAVE_FLUSH_FAILED)
         return false
       }
-      const keeps = contentKind === 'text' || where === 'other-editor' || where === 'redraw'
+      // Text is the text editor's buffer, which every text view of the file
+      // shows; bytes stay only with another editor of bytes, or a redraw.
+      const keeps =
+        where === 'redraw' ||
+        (where === 'other-editor' ? (nextKind ?? contentKind) === contentKind : contentKind === 'text')
       if (keeps || !options.model.dirty()) return true
       const choice = await options.askUnsaved()
       if (choice === 'stay') return false

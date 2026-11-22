@@ -174,7 +174,8 @@ function ExtensionEditorBody({
   )
   useEffect(() => () => controller.dispose(), [controller])
   useEffect(
-    () => registerEditorLeaveGuard(workspaceId, filePath, (where) => controller.prepareToLeave(where)),
+    () =>
+      registerEditorLeaveGuard(workspaceId, filePath, (where, nextKind) => controller.prepareToLeave(where, nextKind)),
     [controller, filePath, workspaceId],
   )
   // The file under the editor, kept in step with disk while it is open.

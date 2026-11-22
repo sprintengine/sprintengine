@@ -93,7 +93,10 @@ function opensByDefault(editor: MatchedExtensionEditor, path: string): boolean {
 // now (extension-editor-controller.ts): Open with…, closing the tab and
 // drawing the frame again all ask first.
 
-export type EditorLeaveGuard = (where: 'text-editor' | 'other-editor' | 'close') => Promise<boolean>
+export type EditorLeaveGuard = (
+  where: 'text-editor' | 'other-editor' | 'close',
+  nextKind?: 'text' | 'bytes',
+) => Promise<boolean>
 
 const guards = new Map<string, EditorLeaveGuard>()
 
@@ -116,9 +119,10 @@ export function leaveExtensionEditor(
   workspaceId: string,
   path: string,
   where: 'text-editor' | 'other-editor' | 'close',
+  nextKind?: 'text' | 'bytes',
 ): Promise<boolean> {
   const guard = guards.get(choiceKey(workspaceId, path))
-  return guard ? guard(where) : Promise.resolve(true)
+  return guard ? guard(where, nextKind) : Promise.resolve(true)
 }
 
 /**

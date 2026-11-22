@@ -171,3 +171,12 @@ test('a file that could not be opened stays an error, and no frame reads it agai
     ['files.read'],
   )
 })
+
+test('leaving unsaved bytes for an editor of text, or text for one of bytes, asks first', async () => {
+  const { controller, asked } = await opened()
+  controller.document.applyEdit({ baseVersion: 1, content: { kind: 'bytes', bytes: new Uint8Array([7]).buffer } })
+  assert.equal(await controller.prepareToLeave('other-editor', 'bytes'), true, 'another editor of bytes keeps them')
+  assert.deepEqual(asked, [])
+  assert.equal(await controller.prepareToLeave('other-editor', 'text'), false, 'Cancel stays')
+  assert.deepEqual(asked, ['asked'])
+})
