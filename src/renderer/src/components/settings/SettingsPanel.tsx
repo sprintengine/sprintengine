@@ -43,7 +43,6 @@ import {
   Spinner,
   Tooltip,
 } from '../ui'
-import { useConfirmDialog } from '../ui/ConfirmDialog'
 import { KeyboardShortcutsTab } from './KeyboardShortcutsTab'
 import { RemoteTailnetSettingsTab } from './RemoteTailnetSettingsTab'
 import { TextGenerationSettingsSection } from './TextGenerationSettingsSection'
@@ -118,7 +117,6 @@ import type { SettingsUpdateBadge } from '../../utils/settingsUpdateBadges'
 import { sourceUpdateCadenceLine, type SkillRepoTransport } from '../../../../shared/skills'
 import { clientSupports, hostPlatform } from '../../clientCapabilities'
 import { isImeKey } from '../../utils/imeKey'
-import { agentSetupApi } from '../../studio/agentSetup'
 import { agentSkillsApi } from '../../studio/agentSkills'
 import { gitApi } from '../../studio/git'
 import { copy as appCopy } from '../../../../shared/copy'
@@ -164,7 +162,7 @@ type SettingsTabId =
   | 'machines'
   | 'worktrees'
   | 'artifacts'
-  | 'knowledge-graph'
+  | 'knowledge'
   | 'design-system'
   | 'remote'
 
@@ -201,7 +199,7 @@ const settingsTabs: Array<{ id: SettingsTabId; label: string; icon: SettingsTabI
   // stays 'github' — it is a persisted deep-link target (menus, module routes).
   { id: 'github', label: appCopy.settings.settingsPanel.versionControl, icon: GithubSettingsIcon },
   { id: 'trackers', label: appCopy.settings.settingsPanel.ticketTrackers, icon: TrackersSettingsIcon },
-  { id: 'knowledge-graph', label: appCopy.settings.settingsPanel.knowledgeGraph, icon: KnowledgeGraphSettingsIcon },
+  { id: 'knowledge', label: appCopy.settings.settingsPanel.knowledge, icon: KnowledgeGraphSettingsIcon },
   { id: 'design-system', label: appCopy.settings.settingsPanel.designSystem, icon: DesignSystemSettingsIcon },
   // Titled for what a person installs; the id stays `modules`, a persisted
   // deep-link target (the Extensions drawer, a disabled door's explainer).
@@ -216,7 +214,7 @@ const settingsTabs: Array<{ id: SettingsTabId; label: string; icon: SettingsTabI
 const settingsTabGroups: Array<{ label: string; ids: SettingsTabId[] }> = [
   { label: 'app', ids: ['general', 'profile', 'appearance', 'shortcuts', 'settled-chats'] },
   { label: 'agents', ids: ['agents', 'providers', 'machines', 'worktrees', 'artifacts'] },
-  { label: 'workspace', ids: ['github', 'trackers', 'knowledge-graph', 'design-system', 'modules'] },
+  { label: 'workspace', ids: ['github', 'trackers', 'knowledge', 'design-system', 'modules'] },
   { label: 'companion', ids: ['remote'] },
 ]
 
@@ -256,7 +254,7 @@ function isSettingsTabId(value: unknown): value is SettingsTabId {
     value === 'machines' ||
     value === 'worktrees' ||
     value === 'artifacts' ||
-    value === 'knowledge-graph' ||
+    value === 'knowledge' ||
     value === 'design-system' ||
     value === 'remote'
   )
@@ -698,7 +696,6 @@ export default function SettingsPanel({
     },
     [setActiveWorkspace, onClose],
   )
-  const dialog = useConfirmDialog()
   const cliRuntimes = useWorkspaceStore((s) => s.appSettings.cliRuntimes)
   const pluginCatalogEntries = useWorkspaceStore((s) => s.pluginCatalogEntries)
   const refreshCliAvailability = useWorkspaceStore((s) => s.refreshCliAvailability)
@@ -764,11 +761,7 @@ export default function SettingsPanel({
   const telemetryEnabled = useWorkspaceStore((s) => s.appSettings.telemetryEnabled)
   const setKeepRunningInBackground = useWorkspaceStore((s) => s.setKeepRunningInBackground)
   const setTelemetryEnabled = useWorkspaceStore((s) => s.setTelemetryEnabled)
-  const activeKnowledgeConfig = resolveProjectKnowledgeConfig(
-    activeWorkspace?.folderPath,
-    projectKnowledgeRoots,
-    activeWorkspace?.memory.relativeRoot,
-  )
+  const activeKnowledgeConfig = resolveProjectKnowledgeConfig(activeWorkspace?.folderPath, projectKnowledgeRoots)
   const activeProjectRoot = activeKnowledgeConfig?.projectRoot ?? activeWorkspace?.folderPath ?? null
   const activeDesignSystemRoot = activeWorkspace?.folderPath ?? null
   // The app update as main reports it, shared with the Settings badges
@@ -790,9 +783,6 @@ export default function SettingsPanel({
   // True while the user is replacing an already-saved token; the write-only
   // input only renders when there is nothing saved or a replace is underway.
   const [githubTokenEditing, setGithubTokenEditing] = useState(false)
-  const [activityInstalled, setActivityInstalled] = useState(false)
-  const [activityPending, setActivityPending] = useState(false)
-  const [activityMessage, setActivityMessage] = useState<string | null>(null)
   // Built-in tab ids plus `module-section:<id>` for contributed sections. An
   // initialTab may name either; unknown values fall back to the default tab.
   // (Deep-links to the folded MCPs / Skill packs / Extensions tabs are routed to
@@ -899,84 +889,6 @@ export default function SettingsPanel({
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const autoCheckStartedRef = useRef(false)
   const lastUpdateRequestIdRef = useRef<number | null>(null)
-
-  // Knowledge-graph activity tracking is workspace-scoped: probe install state
-  // when a workspace is open, and reset it otherwise. (Built-in skills moved to
-  // the Connectors surface with the folded MCPs/Skill packs/Extensions tabs.)
-  useEffect(() => {
-    let cancelled = false
-    setActivityMessage(null)
-    if (!activeProjectRoot) {
-      setActivityInstalled(false)
-      return
-    }
-    void agentSetupApi.memoryActivityIsInstalled({ workspaceRoot: activeProjectRoot }).then((installed) => {
-      if (!cancelled) setActivityInstalled(installed)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [activeProjectRoot])
-
-  const toggleActivityTracking = useCallback(
-    async (next: boolean) => {
-      if (!activeProjectRoot) return
-      const memoryRoot = activeKnowledgeConfig?.relativeRoot ?? null
-      if (next && !memoryRoot) {
-        setActivityMessage('Configure a knowledge folder before enabling activity tracking.')
-        return
-      }
-      if (next) {
-        const confirmed = await dialog.confirm({
-          title: appCopy.settings.settingsPanel.enableActivityTracking,
-          body: (
-            <>
-              <div>{appCopy.settings.settingsPanel.whatHappens}</div>
-              <ul className="mt-1 list-disc pl-5">
-                <li>{appCopy.settings.settingsPanel.claudeCodeAgentsNoteEach}</li>
-                <li>
-                  {appCopy.settings.settingsPanel.theNotesAreKeptIn}{' '}
-                  <span className="font-mono">{appCopy.settings.settingsPanel.sprintengineWorkspaces}</span>
-                </li>
-              </ul>
-              <div className="mt-2">{appCopy.settings.settingsPanel.onlyKnowledgeFilesAreRecorded}</div>
-            </>
-          ),
-          confirmLabel: appCopy.settings.settingsPanel.enableTracking,
-        })
-        if (!confirmed) return
-      }
-      setActivityPending(true)
-      setActivityMessage(null)
-      try {
-        if (next) {
-          const result = await agentSetupApi.memoryActivityInstall({
-            workspaceRoot: activeProjectRoot,
-            memoryRelativeRoot: memoryRoot,
-          })
-          if (result.ok) {
-            setActivityInstalled(true)
-          } else {
-            setActivityMessage(result.message)
-          }
-        } else {
-          const result = await agentSetupApi.memoryActivityUninstall({
-            workspaceRoot: activeProjectRoot,
-          })
-          if (result.ok) {
-            setActivityInstalled(false)
-          } else {
-            setActivityMessage(result.message)
-          }
-        }
-      } catch (error) {
-        setActivityMessage(error instanceof Error ? error.message : 'Failed to update activity tracking.')
-      } finally {
-        setActivityPending(false)
-      }
-    },
-    [activeKnowledgeConfig?.relativeRoot, activeProjectRoot],
-  )
 
   useEffect(() => {
     let cancelled = false
@@ -1659,15 +1571,15 @@ export default function SettingsPanel({
         />
       ) : null}
 
-      {activeSettingsTab === 'knowledge-graph' ? (
+      {activeSettingsTab === 'knowledge' ? (
         <div
           role="tabpanel"
-          id="settings-panel-knowledge-graph"
-          aria-labelledby="settings-tab-knowledge-graph"
+          id="settings-panel-knowledge"
+          aria-labelledby="settings-tab-knowledge"
           className="space-y-4"
         >
           <SettingsPageHeader
-            title={appCopy.settings.settingsPanel.knowledgeGraph}
+            title={appCopy.settings.settingsPanel.knowledge}
             meta={
               activeProjectRoot ? (
                 <span className="inline-block max-w-[260px] truncate align-bottom font-mono" title={activeProjectRoot}>
@@ -1678,24 +1590,6 @@ export default function SettingsPanel({
           />
 
           <ProjectKnowledgeList activeProjectRoot={activeProjectRoot} />
-
-          {/* No top rule: the card draws its own edge. */}
-          <div className="pt-2">
-            <SettingCard>
-              <SettingToggle
-                label={appCopy.settings.settingsPanel.activityTracking}
-                description={appCopy.settings.settingsPanel.recordWhichKnowledgeFilesClaude}
-                enabled={activityInstalled}
-                disabled={activityPending || !activeProjectRoot || !activeKnowledgeConfig?.relativeRoot}
-                onChange={(next) => void toggleActivityTracking(next)}
-              />
-            </SettingCard>
-            {activityMessage ? (
-              <div className="mt-2">
-                <InlineNotice tone="warn">{activityMessage}</InlineNotice>
-              </div>
-            ) : null}
-          </div>
         </div>
       ) : null}
 

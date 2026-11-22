@@ -25,7 +25,6 @@ import type {
   AgentExecution,
   WorkspaceWorktreeState,
   WorktreeEntry,
-  MemoryGraphSettings,
   WorkspaceHighlight,
   McpServerConfig,
 } from '../../../shared/workspace'
@@ -82,7 +81,7 @@ import {
   defaultWorkspaceWorktreeState,
   normalizeWorkspaceWorktreeState,
 } from './slices/worktreesSlice'
-import { createMemorySlice, defaultWorkspaceMemoryConfig } from './slices/memorySlice'
+import { createKnowledgeSlice } from './slices/knowledgeSlice'
 import { createCliAvailabilitySlice, type CliAvailabilitySlice } from './slices/cliAvailabilitySlice'
 import { createPluginsSlice, type PluginsSlice } from './slices/pluginsSlice'
 import { createHostedCardFeedSlice, type HostedCardFeedSlice } from './slices/hostedCardFeedSlice'
@@ -430,13 +429,6 @@ export interface WorkspaceStore
   applyAgentTerminalLaunchStateEvent: (apply: AgentTerminalLaunchStateApply) => void
   setAgentExecution: (workspaceId: WorkspaceId, agentId: AgentId, execution: Partial<AgentExecution>) => void
   setWorkspaceWorktreeState: (workspaceId: WorkspaceId, worktreeState: Partial<WorkspaceWorktreeState> | null) => void
-  setWorkspaceMemoryRelativeRoot: (workspaceId: WorkspaceId, relativeRoot: string | null) => void
-  updateMemoryGraphSettings: (
-    workspaceId: WorkspaceId,
-    update:
-      | Partial<MemoryGraphSettings>
-      | ((current: MemoryGraphSettings) => Partial<MemoryGraphSettings> | MemoryGraphSettings),
-  ) => void
   upsertWorktreeEntry: (workspaceId: WorkspaceId, entry: WorktreeEntry) => void
   markWorktreeMissing: (workspaceId: WorkspaceId, worktreeId: string, missingAt?: number) => void
   removeWorktreeEntry: (workspaceId: WorkspaceId, worktreeId: string) => void
@@ -460,7 +452,6 @@ export interface WorkspaceStore
 const workspacesSliceDeps: WorkspacesSliceDependencies = {
   defaultAgent,
   defaultEditorState,
-  defaultWorkspaceMemoryConfig,
   defaultWorkspaceWorktreeState,
   normalizeAgentState,
   normalizeWorkspaceWorktreeState,
@@ -1394,7 +1385,7 @@ export const useWorkspaceStore: WorkspaceStoreHook = create<WorkspaceStore>()(
       ...createLayoutSlice(set),
       ...createAgentsSlice(set),
       ...createWorktreesSlice(set),
-      ...createMemorySlice(set),
+      ...createKnowledgeSlice(set),
       ...createPluginsSlice(set),
       ...createCliAvailabilitySlice(set),
       ...createHostedCardFeedSlice(set),

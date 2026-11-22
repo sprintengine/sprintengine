@@ -80,7 +80,6 @@ const ALLOW_LIST = new Map([
   ],
   ['GitGraphView.tsx', 'Graph sub-view rendered inside GitPanel; the parent panel owns the operational chrome.'],
   ['GitConflictResolverPanel.tsx', 'Rebuild scheduled in the app-wide audit plan (Stage 7).'],
-  ['MemoryGraphPanel.tsx', 'Graph canvas surface; rebuild scheduled in the app-wide audit plan.'],
   [
     'ComposerAttachmentStrip.tsx',
     'The attachment strip of the chat composer (the launch surface), rendered inside AgentChatView: a row of chips above the field, not a panel, so it carries no PanelHeader.',

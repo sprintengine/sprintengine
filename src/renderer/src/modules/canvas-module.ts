@@ -1,8 +1,8 @@
 import { CANVAS_MODULE_DEFAULT_ENABLED } from '../../../shared/modules/manifest'
 import type { RendererModule } from './renderer-host'
 
-// The Canvas pane tab as a renderer-only capability module. Like git and
-// memory-graph, the BACKEND is foundational: main owns the `.excalidraw` file,
+// The Canvas pane tab as a renderer-only capability module. Like git, the
+// BACKEND is foundational: main owns the `.excalidraw` file,
 // the merge and the `canvas.*` tools whether or not this module is on, and the
 // tools answer for themselves when it is off. What gates here is the surface —
 // the tab kind in the pane's launcher and "+" menu, the panel the pane mounts,

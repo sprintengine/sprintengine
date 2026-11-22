@@ -116,6 +116,7 @@ export const BUNDLED_MODULE_IDS: readonly string[] = [
   'design-wizard',
   'dev-tools',
   'git',
+  // Retired but still reserved (the knowledge graph panel, removed 2026-11-21).
   'memory-graph',
   'switchboard',
   // RESERVED, never bundled: the Sprint Engine ships as an out-of-tree module
@@ -1815,7 +1816,6 @@ export type CommandAvailability =
   | 'always'
   | 'activeWorkspace'
   | 'activeFile'
-  | 'memoryGraphEnabled'
   | 'canvasEnabled'
   | 'backlogEnabled'
   | 'gitPanelActive'

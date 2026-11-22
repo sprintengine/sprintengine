@@ -14,7 +14,6 @@ test('normalizers', async () => {
       mode: 'standard',
       layoutModel: undefined as unknown as Workspace['layoutModel'],
       agents: {},
-      memory: undefined,
       worktreeState: undefined,
       editorState: { openFiles: [], activeFilePath: null },
       highlight: undefined,

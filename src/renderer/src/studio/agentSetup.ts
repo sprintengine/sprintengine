@@ -8,15 +8,7 @@ import {
   type BuiltinSkillStatus,
   type McpSyncInput,
   type McpSyncResult,
-  type MemoryActivityEvent,
-  type MemoryActivityInstallResult,
-  type MemoryActivityStatus,
-  type MemoryActivitySynapse,
-  type MemoryActivitySynapsesPayload,
-  type MemoryActivityUninstallResult,
-  type MemoryGraphIndexResult,
-  type MemoryPreviewResult,
-  type MemoryRootStatus,
+  type KnowledgeRootStatus,
   type StudioAreaSkillChoices,
   type StudioAreaSkillId,
   type StudioMethod,
@@ -25,10 +17,9 @@ import {
 } from '../../../../packages/studio-protocol/src/public'
 import { followWindowStudioPush } from './windowStudioPush'
 import { windowStudioClient } from './windowStudioClient'
-import { copy } from '../../../shared/copy'
 
 // The window's way to what its Studio's agents are set up with beyond their
-// CLIs: the Studio protocol's `memory.*`, `memoryActivity.*`, `mcp.sync`,
+// CLIs: the Studio protocol's `knowledge.resolveRoot`, `mcp.sync`,
 // `agentConfig.*`, `builtinSkills.*` and `areaSkills.*`, over the window's own
 // connection, as every other client reaches them. The members keep the names
 // the window has always called them by, so a caller changes only where it
@@ -36,22 +27,10 @@ import { copy } from '../../../shared/copy'
 // its unsubscriber.
 
 type Workspace = { workspaceRoot: string | null }
-type MemoryRoot = Workspace & { relativeRoot: string | null }
-type Hook = Workspace & { memoryRelativeRoot: string | null }
+type KnowledgeRoot = Workspace & { relativeRoot: string | null }
 
 export type AgentSetupApi = {
-  memoryResolveRoot(input: MemoryRoot): Promise<MemoryRootStatus>
-  memoryIndex(input: MemoryRoot): Promise<MemoryGraphIndexResult>
-  memoryReadPreview(input: MemoryRoot & { relativePath: string }): Promise<MemoryPreviewResult>
-  memoryActivityInstall(input: Hook): Promise<MemoryActivityInstallResult>
-  memoryActivityUninstall(input: Workspace): Promise<MemoryActivityUninstallResult>
-  memoryActivityStartWatching(input: Hook): Promise<{ ok: true }>
-  memoryActivityGetStatus(input: Workspace): Promise<MemoryActivityStatus>
-  memoryActivityGetSynapses(input: Workspace): Promise<MemoryActivitySynapse[]>
-  memoryActivityIsInstalled(input: Workspace): Promise<boolean>
-  onMemoryActivityEvent(cb: (event: MemoryActivityEvent) => void): () => void
-  onMemoryActivityStatus(cb: (status: MemoryActivityStatus) => void): () => void
-  onMemoryActivitySynapses(cb: (payload: MemoryActivitySynapsesPayload) => void): () => void
+  knowledgeResolveRoot(input: KnowledgeRoot): Promise<KnowledgeRootStatus>
   mcpSync(input: McpSyncInput): Promise<McpSyncResult>
   detectExistingAgentConfig(input?: AgentConfigDetectInput): Promise<AgentConfigDetectResult>
   adoptAgentConfig(input: AgentConfigAdoptInput): Promise<AgentConfigAdoptResult>
@@ -78,11 +57,7 @@ async function call<M extends StudioMethod>(method: M, params: StudioMethodParam
   return client.request(method, params)
 }
 
-function follow<T>(
-  topic:
-    'memoryActivity.events' | 'memoryActivity.statusChanged' | 'memoryActivity.synapsesChanged' | 'areaSkills.changed',
-  cb: (payload: T) => void,
-): () => void {
+function follow<T>(topic: 'areaSkills.changed', cb: (payload: T) => void): () => void {
   return followWindowStudioPush({
     topic,
     params: {},
@@ -93,34 +68,9 @@ function follow<T>(
 
 export { windowHasStudio } from './windowStudioClient'
 
-const memoryRoot = ({ workspaceRoot, relativeRoot }: MemoryRoot) => ({ workspaceFolder: workspaceRoot, relativeRoot })
-
 export const agentSetupApi: AgentSetupApi = {
-  memoryResolveRoot: (input) => call('memory.resolveRoot', memoryRoot(input)),
-  memoryIndex: (input) => call('memory.index', memoryRoot(input)),
-  memoryReadPreview: (input) => call('memory.readPreview', { ...memoryRoot(input), relativePath: input.relativePath }),
-  memoryActivityInstall: async ({ workspaceRoot, memoryRelativeRoot }) => {
-    if (!workspaceRoot || !memoryRelativeRoot)
-      return { ok: false, message: copy.studio.agentSetup.workspaceAndKnowledgeRootAre }
-    return call('memoryActivity.install', { commandId: randomId(), workspaceFolder: workspaceRoot, memoryRelativeRoot })
-  },
-  memoryActivityUninstall: async ({ workspaceRoot }) => {
-    if (!workspaceRoot) return { ok: false, message: copy.studio.agentSetup.workspaceRootIsRequired }
-    return call('memoryActivity.uninstall', { commandId: randomId(), workspaceFolder: workspaceRoot })
-  },
-  memoryActivityStartWatching: async ({ workspaceRoot, memoryRelativeRoot }) => {
-    if (workspaceRoot && memoryRelativeRoot)
-      await call('memoryActivity.startWatching', { workspaceFolder: workspaceRoot, memoryRelativeRoot })
-    return { ok: true }
-  },
-  memoryActivityGetStatus: ({ workspaceRoot }) => call('memoryActivity.status', { workspaceFolder: workspaceRoot }),
-  memoryActivityGetSynapses: async ({ workspaceRoot }) =>
-    workspaceRoot ? (await call('memoryActivity.synapses', { workspaceFolder: workspaceRoot })).synapses : [],
-  memoryActivityIsInstalled: async ({ workspaceRoot }) =>
-    workspaceRoot ? (await call('memoryActivity.isInstalled', { workspaceFolder: workspaceRoot })).installed : false,
-  onMemoryActivityEvent: (cb) => follow('memoryActivity.events', cb),
-  onMemoryActivityStatus: (cb) => follow('memoryActivity.statusChanged', cb),
-  onMemoryActivitySynapses: (cb) => follow('memoryActivity.synapsesChanged', cb),
+  knowledgeResolveRoot: ({ workspaceRoot, relativeRoot }) =>
+    call('knowledge.resolveRoot', { workspaceFolder: workspaceRoot, relativeRoot }),
   mcpSync: (input) => call('mcp.sync', { ...input, commandId: randomId() }),
   detectExistingAgentConfig: (input = {}) => call('agentConfig.detect', input),
   adoptAgentConfig: (input) => call('agentConfig.adopt', { ...input, commandId: randomId() }),

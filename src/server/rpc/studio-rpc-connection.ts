@@ -197,7 +197,7 @@ export type StudioRpcConnectionOptions = {
   runtimes?: CliRuntimes
   /** The launch settings and the CLIs' catalogs: the `launchSettings.changed` and `cliModels.changed` streams. */
   agentSettings?: StudioAgentSettings
-  /** What the agents are set up with: the `memoryActivity.*` and `areaSkills.changed` streams. */
+  /** What the agents are set up with: the `areaSkills.changed` stream. */
   agentSetup?: StudioAgentSetup
   /** What the Studio keeps beside its chats: the `usageLimits.changed` and `usageLimitResumes.changed` streams. */
   chatStores?: StudioChatStores
@@ -1607,12 +1607,6 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     'cliModels.changed': (id) => subscribeFeed(id, 'cliModels.changed', options.agentSettings?.onModelsChanged ?? null),
     'launchSettings.changed': (id) =>
       subscribeFeed(id, 'launchSettings.changed', options.agentSettings?.onLaunchSettingsChanged ?? null),
-    'memoryActivity.events': (id) =>
-      subscribeFeed(id, 'memoryActivity.events', options.agentSetup?.onMemoryActivityEvent ?? null),
-    'memoryActivity.statusChanged': (id) =>
-      subscribeFeed(id, 'memoryActivity.statusChanged', options.agentSetup?.onMemoryActivityStatus ?? null),
-    'memoryActivity.synapsesChanged': (id) =>
-      subscribeFeed(id, 'memoryActivity.synapsesChanged', options.agentSetup?.onMemoryActivitySynapses ?? null),
     'areaSkills.changed': (id) =>
       subscribeFeed(id, 'areaSkills.changed', options.agentSetup?.onAreaSkillsChanged ?? null),
     'usageLimits.changed': (id) =>

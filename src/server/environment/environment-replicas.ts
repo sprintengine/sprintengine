@@ -37,7 +37,6 @@ import type { WorkspaceFieldsPatch, WorkspaceSyncEvent } from '../../shared/work
 const MIRRORED_FIELDS = [
   'folderPath',
   'folderMissing',
-  'memory',
   'settledAt',
   'settledOverride',
   'autoSettleEnabled',
@@ -248,7 +247,6 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
       layoutModel: copyLayout(workspace.layoutModel, new Set(Object.keys(agents))),
       agents,
       worktreeState: { containerPath: null, entries: {}, updatedAt: null },
-      memory: isRecord(workspace.memory) ? workspace.memory : { relativeRoot: null },
       editorState: { openFiles: [], activeFilePath: null },
       ...(machine?.kind === 'wsl'
         ? {

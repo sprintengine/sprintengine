@@ -311,8 +311,9 @@ test('legacy commands are taken apart the way the shell read them', () => {
   assert.equal(parseLegacyHookCommand('echo "/r/.sprintengine/hooks/agent-state.mjs"'), null, 'only node or env')
   assert.equal(parseLegacyHookCommand('node "/r/other.mjs" --socket "/s"'), null, 'only our scripts')
   assert.equal(
-    parseLegacyHookCommand('node ".sprintengine/hooks/knowledge-activity.mjs" --knowledge-root "docs"')?.target,
-    'knowledge-activity',
+    parseLegacyHookCommand('node ".sprintengine/hooks/knowledge-activity.mjs" --knowledge-root "docs"'),
+    null,
+    'the retired knowledge graph’s hook is removed, not moved',
   )
 })
 

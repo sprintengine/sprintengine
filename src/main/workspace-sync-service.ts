@@ -702,7 +702,6 @@ function validateUpdateLayout(payload: Record<string, unknown>): ValidationResul
 const EDITABLE_FIELDS = [
   'folderPath',
   'folderMissing',
-  'memory',
   'settledAt',
   'settledOverride',
   'autoSettleEnabled',

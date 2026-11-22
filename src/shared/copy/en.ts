@@ -390,7 +390,6 @@ export const en = {
       toggleBacklog: 'Toggle backlog',
       showSubagents: 'Show subagents',
       toggleCanvas: 'Toggle canvas',
-      toggleKnowledgeGraph: 'Toggle knowledge graph',
       gitManageWorktrees: 'Git: Manage worktrees',
       gitRefreshStatus: 'Git: Refresh status',
       gitFetchRemotes: 'Git: Fetch remotes',
@@ -706,21 +705,6 @@ export const en = {
       itMayHaveBeenRemoved: 'It may have been removed or not written yet. Pick another file, or reload.',
       thisFileCanTBe: 'This file can’t be previewed',
       loadingPreview: 'Loading preview…',
-    },
-  },
-  memory: {
-    // src/renderer/src/components/memory/MemoryGraphHud.tsx
-    memoryGraphHud: {
-      types: 'Types',
-    },
-    // src/renderer/src/components/memory/MemoryPreviewPane.tsx
-    memoryPreviewPane: {
-      knowledgeNodePreview: 'Knowledge node preview',
-      openInEditor: 'Open in editor',
-      close: 'Close',
-      closePreview: 'Close preview',
-      loadingPreview: 'Loading preview…',
-      related: 'Related',
     },
   },
   modules: {
@@ -2154,25 +2138,6 @@ export const en = {
       commitMessage: 'Commit message',
       commitPush: 'Commit & Push…',
       commit: 'Commit',
-    },
-    // src/renderer/src/components/panels/MemoryGraphPanel.tsx
-    memoryGraphPanel: {
-      knowledgeGraph: 'Knowledge Graph',
-      refreshIndex: 'Refresh index',
-      refreshKnowledgeIndex: 'Refresh knowledge index',
-      searchNotes: 'Search notes',
-      searchNotes2: 'Search notes…',
-      slashFocusesSearch: 'Slash focuses search',
-      knowledgeGraphIsNotConfigured: 'Knowledge Graph is not configured',
-      setAKnowledgePathIn: 'Set a knowledge path in Settings → Knowledge to see the graph.',
-      indexingKnowledge: 'Indexing knowledge…',
-      knowledgeFolderUnavailable: 'Knowledge folder unavailable',
-      checkSettingsOrCreateThe: 'Check Settings, or create the configured folder',
-      noMatches: 'No matches',
-      noKnowledgeFilesFound: 'No knowledge files found',
-      noNotesMatch: (trim: unknown) => `No notes match "${trim}".`,
-      theKnowledgeFolderIsEmpty: 'The knowledge folder is empty. Add a Markdown file to start.',
-      activityTrackingOff: 'Activity tracking off',
     },
     // src/renderer/src/components/panels/PlainTerminalPanel.tsx
     plainTerminalPanel: {
@@ -3966,7 +3931,7 @@ export const en = {
       artifacts: 'Artifacts',
       versionControl: 'Version control',
       ticketTrackers: 'Ticket trackers',
-      knowledgeGraph: 'Knowledge graph',
+      knowledge: 'Knowledge',
       designSystem: 'Design system',
       extensions: 'Extensions',
       remote: 'Remote',
@@ -3979,13 +3944,6 @@ export const en = {
       reCheckNow: 'Re-check now',
       versionControlCouldNotBe: 'Version control could not be checked.',
       fromTheModule: (moduleId: unknown) => `From the ${moduleId} module`,
-      enableActivityTracking: 'Enable activity tracking?',
-      whatHappens: 'What happens:',
-      claudeCodeAgentsNoteEach: 'Claude Code agents note each knowledge file they read or edit',
-      theNotesAreKeptIn: 'The notes are kept in this project’s folder under',
-      sprintengineWorkspaces: '~/.sprintengine/workspaces/',
-      onlyKnowledgeFilesAreRecorded: 'Only knowledge files are recorded. Nothing is written to the project folder.',
-      enableTracking: 'Enable tracking',
       settingsCategories: 'Settings categories',
       interface: 'Interface',
       chatList: 'Chat list',
@@ -4022,8 +3980,6 @@ export const en = {
       checkForCLIUpdates: 'Check for CLI updates',
       offersUpdateWhenANewer: 'Offers Update when a newer version is published.',
       memory: 'Memory',
-      activityTracking: 'Activity tracking',
-      recordWhichKnowledgeFilesClaude: 'Record which knowledge files Claude Code reads.',
       done: 'Done',
       settings: 'Settings',
       closeSettings: 'Close settings',
@@ -4450,11 +4406,6 @@ export const en = {
       noTitlesHere: 'No titles here.',
       noDraftsHere: 'No drafts here.',
     },
-    // src/renderer/src/studio/agentSetup.ts
-    agentSetup: {
-      workspaceAndKnowledgeRootAre: 'Workspace and knowledge root are required.',
-      workspaceRootIsRequired: 'Workspace root is required.',
-    },
     // src/renderer/src/studio/agentSetup.double.ts
     agentSetupDouble: {
       nothingSetUpHere: 'Nothing set up here.',
@@ -4654,8 +4605,6 @@ export const en = {
       subagents: 'Subagents',
       toggleCanvas: 'Toggle canvas',
       canvas: 'Canvas',
-      toggleKnowledgeGraph: 'Toggle knowledge graph',
-      knowledgeGraph: 'Knowledge Graph',
       showUsage: 'Show usage',
       showUsageLimits: 'Show usage limits',
       newChatIn: (folderDisplayName: unknown) => `New chat in ${folderDisplayName}`,

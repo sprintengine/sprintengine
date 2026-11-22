@@ -31,7 +31,7 @@ test('Design system with no workspace open is the kit empty state', () => {
   )
 })
 
-test('Knowledge graph with no workspace open is the kit empty state', () => {
+test('Knowledge with no workspace open is the kit empty state', () => {
   expect(
     emptyStateTitled(render(<ProjectKnowledgeList activeProjectRoot={null} />), 'Open a workspace first.'),
   ).not.toBe(null)

@@ -34,10 +34,6 @@ const seededWorkspace = {
   },
   agents: {},
   worktreeState: { entries: [], lastSyncedAt: null },
-  memory: {
-    relativeRoot: null,
-    graphSettings: null,
-  },
   editorState: { openFiles: [], activeFilePath: null },
   createdAt: 1_700_000_000_000,
 }

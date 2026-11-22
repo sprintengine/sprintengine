@@ -21,7 +21,7 @@ import {
   type TextGenerationWritingStyle,
 } from '../../../../shared/text-generation/writing-style'
 import { normalizeMcpSourceRef } from '../../../../shared/mcp/normalize-server'
-import { normalizeProjectKnowledgeRoots } from './memorySlice'
+import { normalizeProjectKnowledgeRoots } from './knowledgeSlice'
 import { launchSettingsClient } from '../launchSettingsClient'
 import { isProjectColorSetting, type ProjectColorSetting } from '../../utils/projectColor'
 import { isProjectIconSetting, normalizeProjectIcons, type ProjectIconSetting } from '../../../../shared/project-icon'
@@ -787,11 +787,11 @@ export function normalizeAppSettings(settings: Partial<AppSettings> | undefined,
     // key an older build persisted drops on every hydration — the same
     // merge-not-only-migrate enforcement as the opt-in reset below.
     lastSelectedAgentModel: normalizeCliModelSelection(settings?.lastSelectedAgentModel),
-    projectKnowledgeRoots: normalizeProjectKnowledgeRoots(settings?.projectKnowledgeRoots, workspaces),
-    // Not pruned against the open workspaces, unlike the knowledge roots above:
-    // a project's colour has to survive closing every chat in it and opening
-    // one again next week, or "it never changes behind your back" is untrue for
-    // exactly the projects a person comes back to.
+    projectKnowledgeRoots: normalizeProjectKnowledgeRoots(settings?.projectKnowledgeRoots),
+    // Not pruned against the open workspaces: a project's colour has to
+    // survive closing every chat in it and opening one again next week, or "it
+    // never changes behind your back" is untrue for exactly the projects a
+    // person comes back to.
     projectColors: normalizeProjectColors(settings?.projectColors),
     projectIcons: normalizeProjectIcons(settings?.projectIcons),
     recentWorkspaceFolders: normalizeRecentWorkspaceFolders(
@@ -1410,7 +1410,7 @@ export function createSettingsSlice(set: SettingsSliceSet): SettingsSlice {
       }),
 
     // The five launch settings below (CLI runtimes, MCP, the last-selected CLI,
-    // the spawn permission preset; knowledge roots live in memorySlice) are
+    // the spawn permission preset; knowledge roots live in knowledgeSlice) are
     // main's. Each setter applies its change here at once, then sends main the
     // part it changed; main's answer replaces this window's copy
     // (launchSettingsClient).

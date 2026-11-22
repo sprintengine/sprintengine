@@ -75,7 +75,6 @@ export async function newChatThere(input: {
           layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
           agents: { [key.agentId]: { ...defaultAgent(key.agentId, key.agentId), ...seed.agentPatch } },
           worktreeState: { containerPath: null, entries: {}, updatedAt: null },
-          memory: { relativeRoot: null },
           editorState: { openFiles: [], activeFilePath: null },
           createdAt: Date.now(),
         },

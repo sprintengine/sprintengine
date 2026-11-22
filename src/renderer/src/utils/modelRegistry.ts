@@ -806,7 +806,7 @@ export function addTerminalTab(workspaceId: string, terminalId: string, name = '
   }
 
   // No terminal tabset yet: dock beside real content, never inside the sidebar's
-  // nav pane (Knowledge Graph), which would bury the terminal under
+  // nav pane, which would bury the terminal under
   // the open panel. When the nav pane is the only tabset, dock a fresh column on
   // the RIGHT edge of the root so terminals always open to the right of it.
   const targetTabset = activeContentTabset(model)
@@ -1210,15 +1210,14 @@ export type RailSide = 'left'
 
 // Strip-less navigational rail components: a single-instance navigational
 // surface docked in ONE left pane whose FlexLayout tab strip is hidden.
-// Knowledge Graph is the one left; it is reached through the command palette /
-// View menu. Files, Git and Backlog are NOT here any more — they are
-// workspace-pane tabs (browser-pane epic; store v73 strips the Files/Git rail
-// tabs, v74 the Backlog one) and the header's Backlog switch toggles the pane
-// tab. The Editor is deliberately excluded: it owns a
-// document tab strip so multiple open files stay switchable (see
-// toggleEditorRailComponent). The side-keyed machinery below stays generic so
-// a second nav component can come back without a rewrite.
-export const NAV_RAIL_COMPONENTS = new Set<string>(['memory-graph'])
+// None ships today. Files, Git and Backlog are workspace-pane tabs
+// (browser-pane epic; store v73 strips the Files/Git rail tabs, v74 the
+// Backlog one) and the header's Backlog switch toggles the pane tab; the
+// knowledge graph panel, the last one, was removed. The Editor is deliberately
+// excluded: it owns a document tab strip so multiple open files stay
+// switchable (see toggleEditorRailComponent). The side-keyed machinery below
+// stays generic so a nav component can come back without a rewrite.
+export const NAV_RAIL_COMPONENTS = new Set<string>()
 
 const RAILS: Record<
   RailSide,

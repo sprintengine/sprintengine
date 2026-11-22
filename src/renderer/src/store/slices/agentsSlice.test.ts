@@ -13,7 +13,6 @@ import {
   normalizeAgentRuntime,
   normalizeAgentState,
 } from './agentsSlice'
-import { defaultWorkspaceMemoryConfig } from './memorySlice'
 import { defaultWorkspaceWorktreeState } from './worktreesSlice'
 import { test } from 'vitest'
 
@@ -148,7 +147,6 @@ test('agentsSlice', async () => {
         agents: {},
         layoutModel: standardTemplate.layout,
         worktreeState: defaultWorkspaceWorktreeState(),
-        memory: defaultWorkspaceMemoryConfig(),
         editorState: defaultEditorState(),
         createdAt: 1,
       },
