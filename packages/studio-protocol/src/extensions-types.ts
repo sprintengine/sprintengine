@@ -133,6 +133,29 @@ export type ExtensionSettingContributionView = {
 }
 /** A point the extension's worker hooks, and whether its failure refuses the action. */
 export type ExtensionHookContributionView = { point: string; onError?: 'pass' | 'deny' }
+/** A skill an extension hands agents: a folder holding a SKILL.md. */
+export type ExtensionSkillContributionView = { id: string; path: string }
+/** An MCP server an extension hands agents: a local command (`stdio`) or a hosted server (`http`). */
+export type ExtensionMcpServerContributionView = {
+  id: string
+  name: string
+  description?: string
+  transport: 'stdio' | 'http'
+  command?: string
+  args?: string[]
+  env?: Array<{ name: string; value: string }>
+  url?: string
+}
+/** An OpenAI-compatible model provider an extension adds to chats. */
+export type ExtensionProviderContributionView = {
+  id: string
+  name: string
+  baseUrl: string
+  chatCompletionsPath?: string
+  modelsPath?: string
+  models: Array<{ id: string; name?: string }>
+  apiKey?: { label: string }
+}
 export type ExtensionContributionsView = {
   commands: ExtensionCommandContributionView[]
   menus: ExtensionMenuContributionView[]
@@ -147,6 +170,9 @@ export type ExtensionContributionsView = {
   keybindings: ExtensionKeybindingContributionView[]
   statusBarItems: ExtensionStatusBarItemContributionView[]
   settings: ExtensionSettingContributionView[]
+  skills: ExtensionSkillContributionView[]
+  mcpServers: ExtensionMcpServerContributionView[]
+  providers: ExtensionProviderContributionView[]
 }
 export type ExtensionManifestView = {
   manifestVersion: 1
@@ -758,7 +784,8 @@ export type HostedCardFeedReadResult =
 
 // ── The agent CLIs' plugin catalogue ────────────────────────────────────────
 
-export type PluginSource = 'bundled' | 'user'
+/** Where a CLI or a provider comes from: the app itself, or an installed extension (providers only). */
+export type PluginSource = 'bundled' | 'extension'
 export type PluginSkillSupport = 'native' | 'prompt-shim' | 'unsupported'
 export type PluginSkillInstallScope = 'workspace' | 'user'
 export type PluginSkillFormat = 'agent-skills-v1' | 'claude-code' | 'codex' | 'opencode' | 'generic'

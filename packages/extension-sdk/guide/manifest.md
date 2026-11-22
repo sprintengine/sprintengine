@@ -217,7 +217,7 @@ markers.
 | `version` | string | yes | 0.13.0 |  | The extension’s version, semver. |
 | `engines` | object | yes | 0.13.0 |  | The Studio versions it runs on. |
 | `engines.studio` | string | yes | 0.13.0 |  | The oldest Studio it runs on, as `>=x.y.z`: at least the newest “since” of any field it uses. |
-| `tier` | `content` \| `declarative` \| `ui` \| `worker` | yes | 0.13.0 |  | The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, custom editors, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation. |
+| `tier` | `content` \| `declarative` \| `ui` \| `worker` | yes | 0.13.0 |  | The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items, and the skills, MCP servers and model providers it hands agents and chats), `ui` (panels, doors, settings sections, custom editors, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation. |
 | `name` | string | yes | 0.13.0 |  | Display name. |
 | `description` | string |  | 0.13.0 |  | One or two sentences shown with the name. |
 | `icon` | string |  | 0.13.0 |  | A square image shown beside the name. |
@@ -307,8 +307,33 @@ markers.
 | `contributes.hooks` | object[] (at most 8) |  | 0.13.0 | worker | Hooks the worker runs before (or after) Studio acts: Studio calls them in the order of the extensions’ install keys, waiting at most 2 s on each. The approval names each point in plain words, and an update that adds one asks again. |
 | `contributes.hooks[].point` | `agent.launch.before` \| `agent.prompt.before` \| `agent.tool.before` \| `agent.tool.after` \| `terminal.write.before` \| `workspace.create.before` \| `workspace.create.after` \| `editor.save.before` | yes | 0.13.0 |  | Where Studio asks the worker, which serves it with `registerHooks`. A `.before` point may refuse or change what Studio is about to do; an `.after` point only hears what it did. The guide’s hooks topic says what each one carries. |
 | `contributes.hooks[].onError` | `pass` \| `deny` |  | 0.13.0 |  | What a failed hook does: one that throws, answers after 2 s, answers something else, or whose worker crashed or did not start. `pass` (the default) lets the action go on as if it had passed; `deny` refuses it, naming the extension, so a guard fails closed. Ignored for an `.after` point. |
+| `contributes.skills` | object[] (at most 64) |  | 0.13.0 | declarative | Skills the person’s agents can use, in every workspace on this machine. Studio copies each into a folder of its own and hands it to agents at launch; it never writes into a project. Listed when the extension is installed; no approval is asked for them. |
+| `contributes.skills[].id` | string | yes | 0.13.0 |  | Id, unique among this extension’s skills. Agents see the skill as `<publisher>.<id>.<skill id>`. |
+| `contributes.skills[].path` | string | yes | 0.13.0 |  | A folder holding the skill: its `SKILL.md` (at most 256 KiB) and any files it names, 256 files at most. |
+| `contributes.mcpServers` | object[] (at most 16) |  | 0.13.0 | declarative | MCP servers the person’s agents get, in every workspace on this machine. A `stdio` server’s command, arguments, environment and the extension’s files are part of what the person approves at install, so an update that changes any of them asks again; an `http` server is listed when the extension is installed and asks nothing. |
+| `contributes.mcpServers[].id` | string | yes | 0.13.0 |  | Id, unique among this extension’s servers. Agents see the server as `<publisher>_<id>_<server id>`. |
+| `contributes.mcpServers[].name` | string | yes | 0.13.0 |  | Its name, for the person. |
+| `contributes.mcpServers[].description` | string |  | 0.13.0 |  | What it gives agents, in a sentence. |
+| `contributes.mcpServers[].transport` | `stdio` \| `http` | yes | 0.13.0 |  | `stdio`: a local command each agent starts, with `command`. `http`: a hosted server agents reach at `url`. |
+| `contributes.mcpServers[].command` | string |  | 0.13.0 |  | What a `stdio` server runs: a program on the PATH, such as `node` or `npx`, or a file the extension ships, as `${extensionPath}/bin/server`. |
+| `contributes.mcpServers[].args` | string[] (at most 64) |  | 0.13.0 |  | Its arguments. `${extensionPath}` stands for the extension’s installed folder. |
+| `contributes.mcpServers[].env` | object[] (at most 32) |  | 0.13.0 |  | Environment variables the command runs with, shown on the install review. |
+| `contributes.mcpServers[].env[].name` | string | yes | 0.13.0 |  | The variable’s name. |
+| `contributes.mcpServers[].env[].value` | string | yes | 0.13.0 |  | Its value, as written: Studio reads none from its own environment. `${extensionPath}` stands for the installed folder. |
+| `contributes.mcpServers[].url` | string |  | 0.13.0 |  | Where an `http` server is: `https`, or plain `http` to localhost. |
+| `contributes.providers` | object[] (at most 8) |  | 0.13.0 | declarative | Model providers for chats: OpenAI-compatible endpoints. The person approves each at install, seeing the origin its key goes to; an update that adds one or moves it to another origin asks again. |
+| `contributes.providers[].id` | string | yes | 0.13.0 |  | Id, unique among this extension’s providers. Studio knows it, and keeps its key, as `<publisher>.<id>/<provider id>`. |
+| `contributes.providers[].name` | string | yes | 0.13.0 |  | Its name in the model picker. |
+| `contributes.providers[].baseUrl` | string | yes | 0.13.0 |  | The OpenAI-compatible API’s base: `https`, or plain `http` to localhost. Its key is sent to this origin and no other, and the install review names it. |
+| `contributes.providers[].chatCompletionsPath` | string |  | 0.13.0 |  | The chat completions path on that origin. Defaults to `/v1/chat/completions`. |
+| `contributes.providers[].modelsPath` | string |  | 0.13.0 |  | A models path on that origin answering `{ data: [{ id }] }`, for the picker to list what the endpoint offers now. |
+| `contributes.providers[].models` | object[] (at most 64) | yes | 0.13.0 |  | Models to offer, the first being the default. At least one. |
+| `contributes.providers[].models[].id` | string | yes | 0.13.0 |  | The model id the endpoint takes. |
+| `contributes.providers[].models[].name` | string |  | 0.13.0 |  | Its name in the picker. |
+| `contributes.providers[].apiKey` | object |  | 0.13.0 |  | The provider takes an API key, entered in Settings and sent as a bearer token. Never read from an environment variable. |
+| `contributes.providers[].apiKey.label` | string | yes | 0.13.0 |  | What the key is called where the person enters it, in Settings. |
 
-Reserved, and must be empty for now: `contributes.themes`, `contributes.terminalThemes`, `contributes.iconThemes`, `contributes.fonts`, `contributes.snippets`, `contributes.newFiles`, `contributes.events`, `contributes.sidecars`, `contributes.agentProviders`, `contributes.skills`, `contributes.mcpServers`, `contributes.providers`.
+Reserved, and must be empty for now: `contributes.themes`, `contributes.terminalThemes`, `contributes.iconThemes`, `contributes.fonts`, `contributes.snippets`, `contributes.newFiles`, `contributes.events`, `contributes.sidecars`, `contributes.agentProviders`.
 
 Icons: `extension`, `chat`, `branch`, `folder`, `schedule`, `spark`, `lock`, `settings`, `check`, `warning`, `copy`, `notes`.
 
