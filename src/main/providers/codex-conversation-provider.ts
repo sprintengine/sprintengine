@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { ChatExtensionContributions } from '../../server/extensions/agent-contributions/projection'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -246,6 +247,9 @@ export type CodexConversationProviderOptions = {
   // The app's MCP gateway on the machine the chat's `codex` runs on. Null
   // leaves it out; the chat runs without Studio's tools rather than not at all.
   resolveStudioMcpServer?: StudioMcpServerResolver
+  // What installed extensions hand the chat: their MCP servers, beside the
+  // session's own. Read at each start.
+  extensionContributions?: () => ChatExtensionContributions
   // The size of Codex's log database on the chat's machine, read when a start
   // times out. Tests stand in; the default lists the Codex home folder there.
   readCodexLogBytes?: (env: NodeJS.ProcessEnv) => Promise<number | null>
@@ -1273,7 +1277,12 @@ export function createCodexConversationProvider(
               { byName: true },
             )
           : null,
-        state.input.mcpServers ?? [],
+        [
+          ...(state.input.mcpServers ?? []),
+          ...(options.extensionContributions?.().mcpServers ?? []).filter(
+            (server) => !(state.input.mcpServers ?? []).some((own) => own.id === server.id),
+          ),
+        ],
       )
       // The gateway and the session's own MCP servers, as config overrides
       // on top of the person's own `config.toml`, for this process only.

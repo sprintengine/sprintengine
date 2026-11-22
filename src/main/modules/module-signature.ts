@@ -122,7 +122,10 @@ export function extensionContentSync(root: string): ExtensionContentResult {
 export function classifyExtension(
   root: string,
   key: string,
-  manifest: Pick<ExtensionManifest, 'permissions' | 'tier' | 'main' | 'background' | 'contributes'>,
+  manifest: Pick<
+    ExtensionManifest,
+    'permissions' | 'tier' | 'main' | 'background' | 'contributes' | 'icon' | 'cover' | 'screenshots'
+  >,
   ctx: ExtensionStandingContext,
 ): ExtensionStanding {
   const scan = computeModuleFileDigestsSync(root)
@@ -154,9 +157,9 @@ export function classifyExtension(
   }
   const signed = signer !== undefined ? { signer } : {}
   if (!scan.ok) return { signature, ...signed, issues: scan.issues, approval: { state: 'unavailable' } }
-  const access = extensionAccess(manifest)
+  const access = extensionAccess(manifest, scan.files)
   const content = { contentDigest: contentDigest!, verifiedFiles: scan.files }
-  if (!extensionNeedsApproval(access)) return { signature, ...signed, approval: { state: 'not-needed' }, ...content }
+  if (!extensionNeedsApproval(manifest)) return { signature, ...signed, approval: { state: 'not-needed' }, ...content }
   const fingerprint = extensionApprovalFingerprint(access, contentDigest!)
   const record = ctx.approvals.get(key)
   if (record?.fingerprint === fingerprint)

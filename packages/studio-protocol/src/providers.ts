@@ -35,7 +35,8 @@ export type StudioProviderListEntry = {
   capabilities?: ConversationCapabilities
   id: string
   displayName: string
-  source: 'bundled' | 'user'
+  /** Studio's own, or added by an installed extension (its id then `<publisher>.<id>/<provider id>`). */
+  source: 'bundled' | 'extension'
   version: number
   providerType: StudioProviderType
   models: StudioProviderModel[]

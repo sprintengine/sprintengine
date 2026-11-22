@@ -8,6 +8,7 @@ import { basename, dirname, join } from 'path'
 import { existsSync } from 'fs'
 import { buildAgentStateReporterCommand, buildLauncherHookCommand } from './agent-state'
 import { LAUNCH_FILES_DIR, prepareLaunchIntegration, pruneLaunchFiles } from './integrations/launch-integration'
+import { launchExtensionContributions } from '../server/extensions/agent-contributions/projection'
 import { gitTracksPath } from './skills/studio-plugin'
 import {
   ensureAgentIntegrationHome,
@@ -712,6 +713,7 @@ export function createAppServices(
         skill: (skillId) => resolveSkillById(skillId),
         homeDir: () => homedir(),
         gitTracks: (path) => gitTracksPath(dirname(path), basename(path)),
+        extensionContributions: () => launchExtensionContributions(app.getPath('userData')),
         warn: (message) => {
           void writeDiagnosticLog({ level: 'warning', title: 'Launch integration', message, source: 'terminal' })
         },

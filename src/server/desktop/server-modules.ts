@@ -5,6 +5,7 @@ import type { McpToolContribution } from '../../main/module-host/main-host'
 import { ScheduledAgentsServiceToken } from '../../main/module-host/service-tokens'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from '../../main/modules/agent-runtime-module'
 import { createModuleLifecycle, liveModuleIds } from '../../main/modules/module-lifecycle'
+import { bundledRegistryIds } from '../../main/plugin-registry-instance'
 import type { ExtensionRunView } from '../../main/modules/third-party-module-view'
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
 import { planInstalledExtensions, readInstalledStanding } from '../extensions/extension-plan'
@@ -140,6 +141,9 @@ export function createServerModules(deps: {
       // Every client following `extension.settingsChanged` reads them again.
       settingsChanged: (moduleId) => hub.deliverSettingsChanged(moduleId),
       registry,
+      // An extension's provider may not take a built-in's id.
+      protectedProviderIds: bundledRegistryIds,
+      warn: (message) => deps.log(`[extensions] ${message}`),
       view: () => {
         const current = load
         if (!current) return null

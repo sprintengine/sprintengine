@@ -19,6 +19,13 @@
 //   opencode — `OPENCODE_CONFIG_CONTENT`: the agent-state plugin by `file://`
 //            URL, the `mcp` table, and `skills.paths` for a launch skill.
 //
+// What installed extensions hand agents rides the same channels, on every
+// launch with a route: their MCP servers beside the person's, and their
+// skills as the plugin folder each extension's projection already is
+// (Claude Code), in the launch's own plugin (Cursor), in `skills.paths`
+// (OpenCode), or copied where the CLI reads the person's own skills while the
+// app runs (Codex, Grok). See server/extensions/agent-contributions.
+//
 // The files named here are content-addressed (the same document is the same
 // file, so a resumed session finds what it was launched with) and owner-only,
 // since a synced server's environment can hold a secret. Nothing is reaped per
@@ -149,7 +156,7 @@ export type ClaudeLaunchInput = {
   dir: string
   /** The person's synced servers for this CLI; the gateway rides the app's plugin. */
   servers: readonly McpServerConfig[]
-  /** One-skill plugin directories (a module's skill the prompt invokes). */
+  /** Plugin directories carrying skills: a module's skill the prompt invokes, or an extension's projection. */
   skillPluginDirs?: ReadonlyArray<{ id: string; dir: string }>
   /** Skills the launch already carries as the app's own one-skill plugins. */
   bundledSkills?: readonly string[]
@@ -173,7 +180,9 @@ export async function buildClaudeLaunchIntegration(input: ClaudeLaunchInput): Pr
   return {
     args,
     env: {},
-    ...(skillPluginDirs.length > 0 ? { pluginDirs: skillPluginDirs.map((plugin) => plugin.dir) } : {}),
+    // One directory may carry several skills (an extension's projection), and
+    // is handed once.
+    ...(skillPluginDirs.length > 0 ? { pluginDirs: [...new Set(skillPluginDirs.map((plugin) => plugin.dir))] } : {}),
     carries: {
       mcp: true,
       agentState: true,
@@ -382,7 +391,15 @@ export type PrepareLaunchIntegrationDeps = {
   skillSourceDir: (skillId: string) => string | null
   /** Whether git tracks a file, so a tidy never deletes a committed one. */
   gitTracks: (path: string) => Promise<boolean>
+  /** What installed extensions hand every agent on this machine now. */
+  extensionContributions?: () => LaunchExtensionContributions
   warn?: (message: string) => void
+}
+
+/** What installed extensions hand a launch: their MCP servers, and their skills with the plugin folder carrying each. */
+export type LaunchExtensionContributions = {
+  servers: readonly McpServerConfig[]
+  skills: ReadonlyArray<{ name: string; dir: string; pluginDir: string; version: string }>
 }
 
 export type PreparedLaunchIntegration =
@@ -407,10 +424,11 @@ export async function prepareLaunchIntegration(
   if (route === 'claude' && !deps.carriesAppPlugins(input.cli, input.hostId, input.integration)) {
     return { ok: true, integration: null }
   }
+  const extensions = deps.extensionContributions?.() ?? { servers: [], skills: [] }
   if (!route) {
-    // No channel of its own: only the launch skill, copied where the CLI reads
-    // the person's own skills while the app runs.
-    const skills = await userLevelLaunchSkills(input, spec, deps)
+    // No channel of its own: only the launch skill and the extensions' skills,
+    // copied where the CLI reads the person's own skills while the app runs.
+    const skills = await userLevelLaunchSkills(input, spec, deps, extensions)
     if (skills.length === 0) return { ok: true, integration: null }
     return {
       ok: true,
@@ -420,6 +438,12 @@ export async function prepareLaunchIntegration(
   const resolved = await resolveLaunchMcpServers({ settings: input.settings, client: input.cli as McpClientTarget })
   if (!resolved.ok) return { ok: false, message: resolved.message }
   for (const issue of resolved.issues) deps.warn?.(issue.message)
+  // The extensions' servers reach every agent, whatever the person's own sync
+  // says: switching the extension off is how they are taken away. A server of
+  // the person's under the same name is theirs, and wins.
+  const own = new Set(resolved.servers.map((server) => server.id))
+  const servers = [...resolved.servers, ...extensions.servers.filter((server) => !own.has(server.id))]
+  const extensionSkills: LaunchSkill[] = extensions.skills.map((skill) => ({ id: skill.name, sourceDir: skill.dir }))
   const dir = deps.launchFilesDir()
   const gatewayEntry = deps.gateway(input.hostId)
   const mayDelete = async (path: string) => !(await deps.gitTracks(path))
@@ -440,8 +464,8 @@ export async function prepareLaunchIntegration(
     }
     integration = await buildClaudeLaunchIntegration({
       dir,
-      servers: resolved.servers,
-      skillPluginDirs,
+      servers,
+      skillPluginDirs: [...skillPluginDirs, ...extensionPluginDirs(extensions)],
       bundledSkills,
     })
     await removeManagedStudioGatewayFromClaudeWorkspace(input.workspaceRoot).catch(() => [])
@@ -450,18 +474,18 @@ export async function prepareLaunchIntegration(
     const command = stateSpec?.registration.kind === 'toml-block' ? deps.agentStateHookCommand() : null
     integration = buildCodexLaunchIntegration({
       gateway: gatewayEntry ? launchGatewayServer(gatewayEntry, input.cli, { passIdentityByName: true }) : null,
-      servers: resolved.servers,
+      servers,
       agentState: stateSpec && command ? { spec: stateSpec, command } : null,
     })
     await removeCodexManagedBlockFromWorkspace(input.workspaceRoot, mayDelete).catch(() => false)
-    const skills = await userLevelLaunchSkills(input, spec, deps)
+    const skills = await userLevelLaunchSkills(input, spec, deps, extensions)
     if (skills.length > 0) integration = { ...integration, carries: { ...integration.carries, skills } }
   } else if (route === 'cursor') {
     integration = await buildCursorLaunchIntegration({
       dir,
       gateway: gatewayEntry ? launchGatewayServer(gatewayEntry, input.cli) : null,
-      servers: resolved.servers,
-      skills: launchSkillSources(input, deps),
+      servers,
+      skills: [...launchSkillSources(input, deps), ...extensionSkills],
     })
     await removeCursorWorkspaceMcp(input.workspaceRoot, mayDelete).catch(() => false)
   } else {
@@ -470,11 +494,11 @@ export async function prepareLaunchIntegration(
       stateSpec?.registration.kind === 'plugin-file'
         ? deps.agentStateTemplatePath(stateSpec.registration.template)
         : null
-    const skills = launchSkillSources(input, deps)
+    const skills = [...launchSkillSources(input, deps), ...extensionSkills]
     integration = await buildOpencodeLaunchIntegration({
       dir,
       gateway: gatewayEntry ? launchGatewayServer(gatewayEntry, input.cli) : null,
-      servers: resolved.servers,
+      servers,
       agentState: templatePath ? { templatePath, socketPath: deps.socketPath() } : null,
       skills,
     })
@@ -484,6 +508,11 @@ export async function prepareLaunchIntegration(
     deps.warn?.(`MCP server "${id}" cannot be handed to ${input.cli} at launch, so this session starts without it.`)
   }
   return { ok: true, integration }
+}
+
+/** Each extension skill with the plugin directory carrying it: an extension's projection folder carries all of its skills. */
+function extensionPluginDirs(extensions: LaunchExtensionContributions): Array<{ id: string; dir: string }> {
+  return extensions.skills.map((skill) => ({ id: skill.name, dir: skill.pluginDir }))
 }
 
 function launchSkillSources(input: PrepareLaunchIntegrationInput, deps: PrepareLaunchIntegrationDeps): LaunchSkill[] {
@@ -515,22 +544,50 @@ async function userLevelLaunchSkills(
   input: PrepareLaunchIntegrationInput,
   spec: PluginLaunchIntegrationSpec,
   deps: PrepareLaunchIntegrationDeps,
+  extensions: LaunchExtensionContributions = { servers: [], skills: [] },
 ): Promise<string[]> {
   if (!spec.userSkillsDir) return []
+  const skillsDir = join(deps.homeDir(), ...spec.userSkillsDir.split('/'))
   const present: string[] = []
+  const wanted: Array<{ skill: { id: string; version: string }; source: string }> = []
   for (const skillId of new Set(input.skillIds)) {
     const skill = deps.skill(skillId)
     const source = deps.skillSourceDir(skillId)
-    if (!skill || !source) continue
-    const result = await ensureUserLevelSkillCopy({
-      skillsDir: join(deps.homeDir(), ...spec.userSkillsDir.split('/')),
-      skill,
-      sourceDir: source,
-      cli: input.cli,
-    }).catch(() => null)
-    if (result) present.push(skillId)
+    if (skill && source) wanted.push({ skill, source })
   }
+  for (const skill of extensions.skills)
+    wanted.push({ skill: { id: skill.name, version: skill.version }, source: skill.dir })
+  for (const { skill, source } of wanted) {
+    const result = await ensureUserLevelSkillCopy({ skillsDir, skill, sourceDir: source, cli: input.cli }).catch(
+      () => null,
+    )
+    if (result) present.push(skill.id)
+  }
+  await removeRetractedExtensionSkillCopies(skillsDir, new Set(extensions.skills.map((skill) => skill.name)))
   return present
+}
+
+/** An extension skill's name as agents see it: `<publisher>.<id>.<skill id>`. */
+const EXTENSION_SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/**
+ * Take out the app's copies of extension skills no extension hands agents any
+ * more (it was uninstalled, switched off or updated without them), so a
+ * retracted skill does not wait for the app to quit. Only an untouched copy
+ * the app made: one the person edited, or their own folder of that name,
+ * stays.
+ */
+async function removeRetractedExtensionSkillCopies(skillsDir: string, current: ReadonlySet<string>): Promise<void> {
+  const names = await readdir(skillsDir).catch(() => [] as string[])
+  for (const name of names) {
+    if (!EXTENSION_SKILL_NAME.test(name) || current.has(name)) continue
+    const destination = join(skillsDir, name)
+    const manifest = await readManagedSkillManifest(destination).catch(() => null)
+    if (!manifest || manifest.id !== name) continue
+    const hash = await hashSkillDirectory(destination, new Set([MANAGED_SKILL_MANIFEST_FILE])).catch(() => null)
+    if (hash !== manifest.installedSkillHash) continue
+    await rm(destination, { recursive: true, force: true }).catch(() => undefined)
+  }
 }
 
 /** The ledger marker of a user-level launch skill copy: recognised by its managed manifest. */

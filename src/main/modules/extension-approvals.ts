@@ -5,6 +5,12 @@ import { join } from 'node:path'
 
 import { tierRank, type ExtensionTier } from '../../../packages/extension-sdk/src/manifest-schema'
 import { extensionHookApprovalLines, isExtensionHookPoint } from '../../../packages/extension-sdk/src/hooks'
+import {
+  EXTENSION_MANIFEST_FILENAME,
+  EXTENSION_SIGNATURE_FILENAME,
+} from '../../../packages/extension-sdk/src/extension-manifest'
+import { providerOrigin } from '../../../packages/extension-sdk/src/agent-contributions'
+import type { ModuleFileDigests } from '../../shared/modules/manifest'
 import type { ExtensionManifest } from '../../shared/modules/third-party-manifest'
 
 // What the person approved an extension for, on this machine.
@@ -16,6 +22,15 @@ import type { ExtensionManifest } from '../../shared/modules/third-party-manifes
 // whether it has a worker and whether that worker runs in the background) and
 // over the content of every file it ships. Approving names the fingerprint the
 // person was shown, so they approve exactly what they saw.
+//
+// What it hands the person's agents asks by what it can do. A skill (words an
+// agent reads) and a hosted MCP server (a URL an agent reaches) are listed at
+// install and ask nothing. A local MCP server is a command the agents start on
+// this machine: approved once, at install, with its command, arguments and
+// environment shown, and bound into its entry here with the extension's files
+// it may run, so an update that changes any of them asks again. A model
+// provider receives the key the person enters: it asks once, naming the origin
+// the key goes to, and again if an update moves it to another.
 //
 // Install asks once. A later install of the same extension changes the
 // fingerprint (its files changed), and keeps the approval when it asks for no
@@ -51,14 +66,60 @@ export type ExtensionAccess = {
    * Studio do, so one it did not hook before is asked for again.
    */
   hooks: string[]
+  /**
+   * Its local (stdio) MCP servers, as `<server>=<digest>`, sorted: the digest
+   * covers the command, its arguments, its environment and the extension's
+   * files it may run (`localServerRunDigest`).
+   */
+  localServers: string[]
+  /** Its model providers, as `<provider>=<origin its key is sent to>`, sorted. */
+  providers: string[]
 }
 
 export type ExtensionApprovalRecord = { fingerprint: string; access: ExtensionAccess }
 
-/** What an extension's manifest asks for. */
-export function extensionAccess(
-  manifest: Pick<ExtensionManifest, 'permissions' | 'tier' | 'main' | 'background' | 'contributes'>,
-): ExtensionAccess {
+type AccessManifest = Pick<
+  ExtensionManifest,
+  'permissions' | 'tier' | 'main' | 'background' | 'contributes' | 'icon' | 'cover' | 'screenshots'
+>
+
+/**
+ * The digest a local MCP server's approval is bound to: its command, its
+ * arguments, its environment, and the extension's files it may run. Studio
+ * cannot tell which of them a command reads, so every file counts but the
+ * manifest (whose relevant part is the command itself), the signature, the
+ * listing's images and the skills' folders, which hold words for agents.
+ * Without digests (files that cannot be read) it binds to that, so it never
+ * matches an approval.
+ */
+export function localServerRunDigest(
+  server: ExtensionManifest['contributes']['mcpServers'][number],
+  manifest: AccessManifest,
+  files: ModuleFileDigests | undefined,
+): string {
+  const hash = createHash('sha256')
+  hash.update(`command:${server.command ?? ''}\0`)
+  for (const arg of server.args ?? []) hash.update(`arg:${arg}\0`)
+  for (const variable of [...(server.env ?? [])].sort((a, b) => a.name.localeCompare(b.name)))
+    hash.update(`env:${variable.name}=${variable.value}\0`)
+  if (!files) return `sha256-${hash.update('files:unavailable').digest('hex')}`
+  const skipped = new Set<string>([
+    EXTENSION_MANIFEST_FILENAME,
+    EXTENSION_SIGNATURE_FILENAME,
+    ...(manifest.icon ? [manifest.icon] : []),
+    ...(manifest.cover ? [manifest.cover] : []),
+    ...(manifest.screenshots ?? []),
+  ])
+  const skillFolders = manifest.contributes.skills.map((skill) => `${skill.path.replace(/\/+$/, '')}/`)
+  for (const path of Object.keys(files).sort()) {
+    if (skipped.has(path) || skillFolders.some((folder) => path.startsWith(folder))) continue
+    hash.update(`file:${path}=${files[path]}\0`)
+  }
+  return `sha256-${hash.digest('hex')}`
+}
+
+/** What an extension's manifest asks for, its local MCP servers bound to the files it ships. */
+export function extensionAccess(manifest: AccessManifest, files?: ModuleFileDigests): ExtensionAccess {
   return {
     permissions: [...new Set(manifest.permissions)].sort(),
     tier: manifest.tier,
@@ -72,6 +133,13 @@ export function extensionAccess(
       .map((editor) => `${editor.id}=${editorFiles(editor).join(',')}|${editor.priority ?? 'default'}`)
       .sort(),
     hooks: [...new Set(manifest.contributes.hooks.map((hook) => hook.point))].sort(),
+    localServers: manifest.contributes.mcpServers
+      .filter((server) => server.transport === 'stdio')
+      .map((server) => `${server.id}=${localServerRunDigest(server, manifest, files)}`)
+      .sort(),
+    providers: manifest.contributes.providers
+      .map((provider) => `${provider.id}=${providerOrigin(provider.baseUrl)}`)
+      .sort(),
   }
 }
 
@@ -81,9 +149,21 @@ function editorFiles(editor: { extensions?: string[]; filenames?: string[] }): s
   ].sort()
 }
 
-/** Whether an extension at this access waits for the person's approval: anything beyond content does. */
-export function extensionNeedsApproval(access: Pick<ExtensionAccess, 'tier'>): boolean {
-  return access.tier !== 'content'
+/**
+ * Whether an extension waits for the person's approval. Content never does,
+ * code (ui, worker) always does. A declarative one does when it carries
+ * something that acts for the person: a command, a menu item or a top bar
+ * button, a local MCP server, or a model provider. One whose declarative part
+ * is only skills and hosted MCP servers is listed at install and asks nothing.
+ */
+export function extensionNeedsApproval(manifest: Pick<ExtensionManifest, 'tier' | 'contributes'>): boolean {
+  if (manifest.tier === 'content') return false
+  if (manifest.tier !== 'declarative') return true
+  const { commands, menus, topBarItems, mcpServers, providers } = manifest.contributes
+  return (
+    commands.length + menus.length + topBarItems.length + providers.length > 0 ||
+    mcpServers.some((server) => server.transport === 'stdio')
+  )
 }
 
 /** The fingerprint an approval is bound to: what it may do, and the content of its files. */
@@ -93,6 +173,8 @@ export function extensionApprovalFingerprint(access: ExtensionAccess, contentDig
     `tier:${access.tier}`,
     `worker:${access.worker ? 1 : 0}`,
     `background:${access.background ? 1 : 0}`,
+    `localServers:${[...access.localServers].sort().join(',')}`,
+    `providers:${[...access.providers].sort().join(',')}`,
     `content:${contentDigest}`,
   ].join('\0')
   return `sha256-${createHash('sha256').update(canonical).digest('hex')}`
@@ -145,6 +227,22 @@ export function accessGrowth(approved: ExtensionAccess, next: ExtensionAccess): 
       const [line] = isExtensionHookPoint(point) ? extensionHookApprovalLines([point]) : []
       growth.push(line ? `a hook: ${line.charAt(0).toLowerCase()}${line.slice(1)}` : `the hook "${point}"`)
     }
+  const entries = (list: readonly string[]) =>
+    new Map(list.map((entry) => [entry.slice(0, entry.indexOf('=')), entry.slice(entry.indexOf('=') + 1)]))
+  const approvedServers = entries(approved.localServers)
+  for (const [id, digest] of entries(next.localServers)) {
+    const before = approvedServers.get(id)
+    if (before === undefined) growth.push(`the local MCP server "${id}"`)
+    else if (before !== digest)
+      growth.push(`the local MCP server "${id}", with a changed command, environment or files`)
+  }
+  const approvedProviders = entries(approved.providers)
+  for (const [id, origin] of entries(next.providers)) {
+    const before = approvedProviders.get(id)
+    if (before === undefined) growth.push(`the model provider "${id}", sending its key to ${origin}`)
+    else if (before !== origin)
+      growth.push(`the model provider "${id}" sending its key to ${origin} instead of ${before}`)
+  }
   return growth
 }
 
@@ -160,10 +258,12 @@ function readRecord(value: unknown): ExtensionApprovalRecord | null {
   const { fingerprint, access } = value as Record<string, unknown>
   if (typeof fingerprint !== 'string' || !fingerprint.startsWith('sha256-')) return null
   if (!access || typeof access !== 'object' || Array.isArray(access)) return null
-  const { permissions, tier, worker, background, tools, actions, editors, hooks } = access as Record<string, unknown>
+  const { permissions, tier, worker, background, tools, actions, editors, hooks, localServers, providers } =
+    access as Record<string, unknown>
   const strings = (list: unknown): list is string[] =>
     Array.isArray(list) && list.every((entry) => typeof entry === 'string')
   if (!strings(permissions) || !strings(actions) || !strings(editors) || !strings(hooks)) return null
+  if (!strings(localServers) || !strings(providers)) return null
   if (!isTier(tier) || typeof worker !== 'boolean' || typeof background !== 'boolean') return null
   if (!tools || typeof tools !== 'object' || Array.isArray(tools)) return null
   const toolAccess = Object.entries(tools as Record<string, unknown>)
@@ -179,6 +279,8 @@ function readRecord(value: unknown): ExtensionApprovalRecord | null {
       actions: [...actions].sort(),
       editors: [...editors].sort(),
       hooks: [...hooks].sort(),
+      localServers: [...localServers].sort(),
+      providers: [...providers].sort(),
     },
   }
 }

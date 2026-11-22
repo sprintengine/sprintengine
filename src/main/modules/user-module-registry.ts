@@ -19,6 +19,7 @@ import { classifyExtension, type ExtensionStanding, type ExtensionStandingContex
 import { resolveContainedPath } from './entry-containment'
 import { contentFileIssues } from './extension-content'
 import { readStudioEnv } from '../../shared/studio-env'
+import { agentContributionIssues } from '../../server/extensions/agent-contributions/install-checks'
 
 // Discovery and install of extensions under
 // ~/.sprintengine/extensions/<publisher>.<id>/extension.json. The folder's
@@ -229,6 +230,7 @@ export async function installModuleFolder(
   selectedDir: string,
   root: string,
   ctx: ExtensionStandingContext,
+  options: { protectedProviderIds?: ReadonlySet<string> } = {},
 ): Promise<InstallModuleResult> {
   // The folder itself, wherever a link to it points: a linked root would be
   // copied as the link, and the extension would never appear. A missing one
@@ -290,6 +292,15 @@ export async function installModuleFolder(
       ok: false,
       rejected: { path: manifestPath, issues: contentIssues },
       message: 'A file the extension’s extension.json names is not one Studio can use.',
+    }
+  }
+  // What it hands agents, checked as the projection will use it.
+  const agentIssues = await agentContributionIssues(extension, srcDir, options.protectedProviderIds)
+  if (agentIssues.length > 0) {
+    return {
+      ok: false,
+      rejected: { path: manifestPath, issues: agentIssues },
+      message: `${agentIssues[0]!.path} ${agentIssues[0]!.message}`,
     }
   }
 

@@ -29,6 +29,7 @@ import { handleExtensionFrameScheme, stagedExtensionFrames } from './extension-f
 import { defaultUserModuleRoot, discoverUserModulesSync } from './modules/user-module-registry'
 import { watchUserModuleRoot } from './modules/user-module-watch'
 import { createModuleLifecycle, liveModuleIds } from './modules/module-lifecycle'
+import { bundledRegistryIds } from './plugin-registry-instance'
 import { attachBuildSkewWatch, createBuildSkewWatch } from './build-skew'
 import { registerCoreIpc } from './register-core-ipc'
 import { markStartup } from './startup-timeline'
@@ -273,6 +274,9 @@ if (!serverHost)
         }
       },
       registry: services.moduleRegistryMirror,
+      // An extension's provider may not take a built-in's id.
+      protectedProviderIds: bundledRegistryIds,
+      warn: (message) => console.warn(`[extensions] ${message}`),
       applyEnablement: async (overrides) => {
         const report = await moduleLoad.applyEnablement(overrides, {
           liveModuleIds: liveModuleIds(Object.keys(thirdPartyMainLoad.moduleRoots), moduleLoad.report.errors),
@@ -361,7 +365,7 @@ void app.whenReady().then(() => {
   handleExtensionFrameScheme(protocol, stagedExtensionFrames)
 })
 if (DIAGNOSTICS_ENABLED) {
-  console.info('[modules] extension roots:', extensionFolders.moduleRoot, extensionFolders.pluginRoot)
+  console.info('[modules] extension root:', extensionFolders.moduleRoot)
   if (extensionFolders.errors.length > 0) {
     console.warn('[modules] extension folder setup errors:', extensionFolders.errors)
   }
