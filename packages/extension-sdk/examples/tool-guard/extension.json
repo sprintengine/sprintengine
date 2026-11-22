@@ -6,7 +6,7 @@
   "engines": { "studio": ">=0.13.0" },
   "tier": "worker",
   "name": "Tool guard",
-  "description": "Refuses an agent's shell command that deletes files recursively and by force, and logs each tool call an agent finishes.",
+  "description": "In Claude Code chats, refuses an agent's shell command that deletes files recursively and by force, and logs each tool call an agent finishes.",
   "license": "MIT",
   "main": "main.cjs",
   "contributes": {

@@ -203,7 +203,7 @@ test('a hook the approved version did not have is growth, said in the approval�
   assert.deepEqual(accessGrowth(hooked(['agent.tool.before']), hooked(['agent.tool.before'])), [])
   assert.deepEqual(accessGrowth(hooked(['agent.tool.before', 'agent.tool.after']), hooked(['agent.tool.before'])), [])
   assert.deepEqual(accessGrowth(hooked([]), hooked(['agent.tool.before', 'editor.save.before'])), [
-    'a hook: can check, change or refuse your agents’ tool calls',
+    'a hook: can check, change or refuse your agents’ tool calls in Claude Code chats',
     'a hook: can check, change or refuse the files you save in the editor',
   ])
 })

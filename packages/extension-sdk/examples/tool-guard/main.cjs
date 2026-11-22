@@ -1,7 +1,9 @@
 // Tool guard: a worker that hooks agents' tool calls.
 //
 // Before a call runs, it refuses a shell command that deletes recursively and
-// by force (`rm -rf`, `rm -fr`, `rm -r -f`, `rm --recursive --force`). The
+// by force (`rm -rf`, `rm -fr`, `rm -r -f`, `rm --recursive --force`), also
+// quoted (`"rm" '-rf'`), escaped (`\rm`) or nested in another command
+// (`$(rm -rf x)`, backticks, `bash -c "rm -rf x"`, a subshell). The
 // agent reads the reason, with this extension's name, and carries on. Its
 // entry in extension.json says `"onError": "deny"`, so should this hook ever
 // fail or answer late, the call is refused rather than let through.
@@ -13,7 +15,10 @@ const SHELL_TOOLS = new Set(['Bash', 'BashOutput', 'shell', 'exec_command'])
 
 /** Whether a command line deletes recursively and by force. */
 function deletesByForce(command) {
-  for (const segment of command.split(/&&|\|\||;|\||\n/)) {
+  // Quotes and escapes taken out, so `"rm" -rf` and `bash -c "rm -rf x"` read
+  // as the words the shell runs; every nested command is a segment of its own.
+  const plain = command.replace(/\\(.)/g, '$1').replace(/["']/g, '')
+  for (const segment of plain.split(/&&|\|\||;|\||\n|\$\(|`|[(){}]/)) {
     const words = segment.trim().split(/\s+/)
     const at = words.findIndex((word) => word === 'rm' || word.endsWith('/rm'))
     if (at < 0) continue

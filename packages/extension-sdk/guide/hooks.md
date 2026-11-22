@@ -151,5 +151,5 @@ assert.equal(verdict.kind, 'deny')
 ```
 
 The approval names each point you hook in plain words ("Can check, change or
-refuse your agents' tool calls"), and an update that hooks a point the
-approved version did not asks the person again.
+refuse your agents' tool calls in Claude Code chats"), and an update that
+hooks a point the approved version did not asks the person again.

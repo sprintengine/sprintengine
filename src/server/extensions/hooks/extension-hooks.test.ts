@@ -79,6 +79,14 @@ test('the sample guard refuses rm -rf, naming itself, and lets anything else thr
     'cd app && rm -fr dist',
     'rm -r -f node_modules',
     'rm --recursive --force x',
+    // Quoted, escaped and nested forms.
+    '"rm" \'-rf\' build',
+    '\\rm -rf build',
+    'echo "$(rm -rf build)"',
+    'echo `rm -fr build`',
+    'bash -c "rm -rf build"',
+    "sh -c 'cd app && rm -r -f dist'",
+    '(cd app; rm -rf dist)',
   ]) {
     const outcome = await hooks.run('agent.tool.before', call(command), ownerInvoker())
     assert.equal(outcome.kind, 'deny', command)
@@ -90,7 +98,7 @@ test('the sample guard refuses rm -rf, naming itself, and lets anything else thr
       /^The extension "Tool guard" \(local\.tool-guard\) refused this: it deletes files recursively and by force/u,
     )
   }
-  for (const command of ['rm build/out.txt', 'ls -rf', 'git rm -r src']) {
+  for (const command of ['rm build/out.txt', 'ls -rf', 'git rm -r src', 'bash -c "rm build/out.txt"']) {
     const outcome = await hooks.run('agent.tool.before', call(command), ownerInvoker())
     assert.equal(outcome.kind, 'continue', command)
   }

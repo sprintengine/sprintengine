@@ -264,7 +264,7 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
   'agent.tool.before': {
     decides: true,
     changes: { input: plainObject },
-    approval: 'Can check, change or refuse your agents’ tool calls',
+    approval: 'Can check, change or refuse your agents’ tool calls in Claude Code chats',
     summary:
       'An agent in a chat is about to run a tool. Return `{ deny }` to refuse the call (the agent reads the reason) or change `input`; the chat’s permission mode still asks the person as usual. Claude Code chats only for now: other runtimes have no hook before a tool runs that Studio can answer.',
     event:
@@ -273,7 +273,7 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
   'agent.tool.after': {
     decides: false,
     changes: {},
-    approval: 'Sees each tool call your agents finish, and what it returned',
+    approval: 'Sees each tool call your agents finish in Claude Code chats, and what it returned',
     summary:
       'An agent in a chat finished a tool call, or it failed. Observe only: Studio does not wait for it. Claude Code chats only for now.',
     event:
