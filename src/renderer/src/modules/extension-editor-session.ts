@@ -118,6 +118,9 @@ export type EditorSession = {
 
 const REFUSALS = new Set(['not_permitted', 'approval_required'])
 
+/** How long before a disk read that writes kept overtaking is tried again. */
+const RECHECK_MS = 50
+
 export function sameContent(a: EditorContent | undefined, b: EditorContent | undefined): boolean {
   if (a === undefined || b === undefined) return a === b
   if (typeof a === 'string' || typeof b === 'string') return a === b
@@ -217,12 +220,24 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
   }
 
   /** A disk read no write or reload overtook while it was on its way. */
-  async function readSettled(): Promise<EditorRead> {
-    for (let attempt = 0; ; attempt += 1) {
+  // Null when writes kept overtaking it: what it read is dropped, and the
+  // caller looks again a moment later rather than apply an older version.
+  async function readSettled(): Promise<EditorRead | null> {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
       const generation = diskGeneration
       const read = await options.read()
-      if (generation === diskGeneration || attempt >= 3) return read
+      if (generation === diskGeneration) return read
     }
+    return null
+  }
+
+  let recheck: ReturnType<typeof setTimeout> | null = null
+  const checkAgain = (afterRefusedSave: boolean) => {
+    if (recheck !== null || disposed) return
+    recheck = setTimeout(() => {
+      recheck = null
+      void diskChanged(afterRefusedSave)
+    }, RECHECK_MS)
   }
 
   async function write(content: EditorContent, expected: string | undefined): Promise<EditorWrite> {
@@ -273,6 +288,7 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
     if (disposed || current.status !== 'ready') return
     const read = await readSettled()
     if (disposed) return
+    if (read === null) return checkAgain(afterRefusedSave)
     if (!read.ok) {
       if (read.code === 'missing') update({ conflict: { kind: 'deleted' } })
       // A save was refused because the file changed, and what it changed to cannot be read.
@@ -388,6 +404,10 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
     async reload() {
       const read = await readSettled()
       if (disposed) return
+      if (read === null) {
+        update({ saveError: 'The file kept changing while it was read. Try again.' })
+        return
+      }
       if (!read.ok) {
         if (read.code === 'missing') update({ conflict: { kind: 'deleted' } })
         else update({ saveError: read.message })
@@ -412,6 +432,7 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
     },
     dispose() {
       disposed = true
+      if (recheck !== null) clearTimeout(recheck)
       stopModel()
       listeners.clear()
     },

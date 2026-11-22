@@ -320,3 +320,39 @@ test('a save refused because the file changed, whose new version cannot be read,
   assert.equal(await session.save(), false)
   assert.equal(session.state().saveError, 'list.todo is larger than 4 MiB.')
 })
+
+test('a disk read overtaken by saves more times than it retries is dropped, and checked again later', async () => {
+  let disk = 'saved-0\n'
+  let overtakes = 4
+  let session: ReturnType<typeof createEditorSession>
+  let saved = 0
+  const read = async () => {
+    const seen = disk
+    // Each watch read sees the file just before another save lands.
+    if (overtakes > 0 && saved >= 0 && started) {
+      overtakes -= 1
+      saved += 1
+      session.applyEdit({ baseVersion: 1, content: { kind: 'text', text: `saved-${saved}\n` } })
+      await session.save()
+    }
+    return { ok: true as const, content: seen, sha256: sha(seen) }
+  }
+  let started = false
+  const made = open(fakeDisk(null), {
+    read,
+    write: async (next: EditorContent) => {
+      disk = next as string
+      return { ok: true as const, sha256: sha(next) }
+    },
+  })
+  session = made.session
+  await session.start()
+  session.attachFrame()
+  started = true
+  await session.diskChanged()
+  assert.equal(disk, 'saved-4\n')
+  assert.equal(made.model.get(), 'saved-4\n', 'the stale read was not applied')
+  assert.equal(made.model.dirty(), false)
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  assert.equal(made.model.get(), 'saved-4\n')
+})
