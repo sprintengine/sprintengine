@@ -62,12 +62,15 @@ export type StudioEditorSaveHooks = (input: {
   path: string
   text: string
   grant: StudioGrant
+  /** The workspace the file was opened in, and its language, as the editor said. */
+  workspaceId: string | null
+  languageId: string | null
 }) => Promise<{ ok: true; text: string } | { ok: false; message: string }> | null
 
 export type StudioFileSystemHandlerOptions = {
   /** The files; without them, every method is answered `unavailable`. */
   fileSystem?: StudioFileSystem
-  /** Run on a `files.writeText` with `save: true`; absent, a save writes as any write does. */
+  /** Run on a `files.writeText` with `save`; absent, a save writes as any write does. */
   editorSaveHooks?: StudioEditorSaveHooks
   /** The first answer to a command id is every retry's. */
   once: Kept
@@ -236,7 +239,13 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
           // Studio that holds the file, after its path is placed and before a
           // byte is written.
           const hooked = params.save
-            ? options.editorSaveHooks?.({ path: path!, text: params.text, grant: asking.grant })
+            ? options.editorSaveHooks?.({
+                path: path!,
+                text: params.text,
+                grant: asking.grant,
+                workspaceId: params.save.workspaceId ?? null,
+                languageId: params.save.languageId ?? null,
+              })
             : null
           const decided = hooked ? await hooked : null
           if (decided && !decided.ok) return { refused: refuse('refused_by_extension' as const, decided.message) }

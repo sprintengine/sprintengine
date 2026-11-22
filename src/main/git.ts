@@ -238,6 +238,12 @@ export type GitWorktreeCreateInput = {
    * `agentWorktreePaths` named, under the person's branch prefix.
    */
   fromPool?: boolean
+  /**
+   * With `fromPool`: fork from `baseRef` as named (an extension's hook named
+   * it), not the default branch. A pool slot, always on the default branch,
+   * is not leased for it.
+   */
+  baseRefNamed?: boolean
   /** The machine whose git makes it (a WSL machine's); absent resolves from the folder. */
   hostId?: string
   /**
@@ -639,7 +645,7 @@ async function finishAddedWorktree(
 async function createAgentWorktreeFromPool(
   input: GitWorktreeCreateInput,
 ): Promise<GitWorktreeOperationResult<GitWorktreeCreated>> {
-  const pool = activeWorktreePool()
+  const pool = input.baseRefNamed ? null : activeWorktreePool()
   // The base the pool already fetched for this very request, when it then
   // declined: the fresh worktree forks from it rather than fetching again.
   let poolBaseRef: string | null = null
@@ -699,7 +705,9 @@ async function createAgentWorktreeFromPool(
   }
   const root = await resolveRepoRoot(input.repoRoot)
   if (!root.ok) return root
-  const forkBase = poolBaseRef ?? (await resolveAgentForkBase(defaultSlotGitRunner, root.data))
+  const forkBase = input.baseRefNamed
+    ? input.baseRef
+    : (poolBaseRef ?? (await resolveAgentForkBase(defaultSlotGitRunner, root.data)))
   const created = await createGitWorktree({ ...input, fromPool: false, baseRef: forkBase ?? input.baseRef })
   return created.ok ? { ...created, data: await withDependencyInstall(created.data, root.data, input) } : created
 }

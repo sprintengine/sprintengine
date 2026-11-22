@@ -688,8 +688,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
         throw new Error(
           `Hook "${point}" from extension "${id}" is not listed in its extension.json (contributes.hooks).`,
         )
-      if (entry.hooks.has(point) || batch.has(point))
-        throw new Error(`Hook "${point}" is registered twice by extension "${id}".`)
+      // A point served again gains a handler, which the worker runs after the others.
       batch.add(point)
     }
     for (const point of batch) entry.hooks.add(point)

@@ -89,6 +89,16 @@ export type ConversationLaunchWorkspace = {
 /** Who a sub-agent's first message is from: Studio, giving it the task, not the person. */
 export const SUBAGENT_TASK_ORIGIN = { kind: 'studio', reason: 'subagent-task' } as const
 
+/** A new chat's worktree before it is cut: where, and on which branch. */
+type NewChatWorktreePlan = {
+  repoRoot: string
+  projectFolder: string
+  hostId: ExecutionHostId | null
+  containerPath: string
+  destinationPath: string
+  branchName: string
+}
+
 export type ConversationLaunchRequest = {
   /** The workspace the chat joins (or, with `newChat`, whose folder a new one starts in). */
   workspaceId?: string
@@ -359,6 +369,8 @@ export type ConversationLaunchServiceDeps = {
     destinationPath: string
     branchName: string
     hostId: ExecutionHostId | null
+    /** The ref to fork from, when an extension's hook named one; absent, the project's default branch. */
+    baseRef?: string
   }) => Promise<
     | {
         ok: true
@@ -419,14 +431,12 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
   // rather than founding a header named after the slug. Everything works off
   // the project behind the folder, so a chat started from a worktree chat gets
   // a sibling worktree, not one nested inside the other's container.
-  async function cutNewChatWorktree(
+  /** Where a new chat's worktree would be cut, and on which branch: nothing is made yet. */
+  async function planNewChatWorktree(
     workspace: ConversationLaunchWorkspace,
     folderPath: string,
     worktreeName: string | undefined,
-  ): Promise<
-    | { ok: true; folderPath: string; worktree: WorkspaceWorktree; dependencyInstall?: StartedDependencyInstall }
-    | { ok: false; message: string }
-  > {
+  ): Promise<{ ok: true; plan: NewChatWorktreePlan } | { ok: false; message: string }> {
     if (!deps.getRepoRoot || !deps.createWorktree) {
       return { ok: false, message: 'This Studio cannot make worktrees for the chats it starts.' }
     }
@@ -446,18 +456,30 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     const { worktreeBranchPrefix } = effectiveAgentLaunchSettings(deps.getLaunchSettings())
     const paths = agentWorktreePaths(repoRoot, name, worktreeBranchPrefix)
     if (!paths) return { ok: false, message: `"${name}" does not reduce to a usable worktree name.` }
-    const made = await deps
-      .createWorktree({
-        repoRoot,
-        containerPath: paths.containerPath,
-        destinationPath: paths.destinationPath,
-        branchName: paths.branchName,
-        hostId,
-      })
-      .catch((error: unknown) => ({
-        ok: false as const,
-        message: error instanceof Error ? error.message : String(error),
-      }))
+    return { ok: true, plan: { repoRoot, projectFolder, hostId, ...paths } }
+  }
+
+  /** Cut the planned worktree, on the branch and from the base the extensions' hooks left (null: the default). */
+  async function cutNewChatWorktree(
+    plan: NewChatWorktreePlan,
+    branchName: string,
+    baseRef: string | null,
+  ): Promise<
+    | { ok: true; folderPath: string; worktree: WorkspaceWorktree; dependencyInstall?: StartedDependencyInstall }
+    | { ok: false; message: string }
+  > {
+    const { repoRoot, projectFolder, hostId } = plan
+    const made = await deps.createWorktree!({
+      repoRoot,
+      containerPath: plan.containerPath,
+      destinationPath: plan.destinationPath,
+      branchName,
+      hostId,
+      ...(baseRef ? { baseRef } : {}),
+    }).catch((error: unknown) => ({
+      ok: false as const,
+      message: error instanceof Error ? error.message : String(error),
+    }))
     if (!made.ok) return { ok: false, message: `The chat's worktree could not be made: ${made.message}` }
     return {
       ok: true,
@@ -634,13 +656,11 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     // The worktree the new chat runs in, for the answer: one cut for it here,
     // or one the project already had.
     let launchedWorktree: { path: string; branch: string | null } | null = null
+    let planned: NewChatWorktreePlan | null = null
     if (request.newWorktree === true) {
-      const cut = await cutNewChatWorktree(workspace, workspaceRoot, request.worktreeName?.trim() || undefined)
-      if (!cut.ok) return { ok: false, code: 'worktree_unavailable', message: cut.message }
-      chatFolder = cut.folderPath
-      chatWorktree = cut.worktree
-      installing = cut.dependencyInstall ?? null
-      launchedWorktree = { path: cut.folderPath, branch: cut.worktree.branch ?? null }
+      const plan = await planNewChatWorktree(workspace, workspaceRoot, request.worktreeName?.trim() || undefined)
+      if (!plan.ok) return { ok: false, code: 'worktree_unavailable', message: plan.message }
+      planned = plan.plan
     } else if (existingWorktreePath) {
       const found = await findExistingWorktree(workspace, workspaceRoot, existingWorktreePath)
       if (!found.ok) return { ok: false, code: 'worktree_unavailable', message: found.message }
@@ -649,6 +669,62 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         chatWorktree = found.worktree.marker
         launchedWorktree = { path: found.worktree.folderPath, branch: found.worktree.marker.branch ?? null }
       }
+    }
+
+    // A new chat's workspace meets the extensions' `workspace.create.before`
+    // before anything of it is made: a hook may rename it, refuse it, or put
+    // its new worktree on another branch or base. The name is the one the
+    // first message gives, else the next free "Chat N" among the folder's.
+    const firstTitle = request.sendFirst !== false && request.prompt ? deriveWorkspaceTitle(request.prompt) : null
+    let derivedName = ''
+    let hookedName: string | null = null
+    let worktreeBranch = planned?.branchName ?? null
+    let worktreeBase: string | null = null
+    if (newChat) {
+      derivedName =
+        firstTitle ??
+        nextNewChatName(
+          planned
+            ? []
+            : deps
+                .listWorkspaces()
+                .filter((other) => other.folderPath === chatFolder)
+                .map((other) => other.name ?? ''),
+        )
+      try {
+        const hooked = await runExtensionHook(
+          deps.extensionHooks,
+          'workspace.create.before',
+          {
+            for: 'chat',
+            name: derivedName,
+            folderPath: planned ? null : chatFolder,
+            project:
+              planned?.projectFolder ?? workspaceProjectRootOf({ folderPath: chatFolder, worktree: chatWorktree }),
+            worktree: planned !== null || chatWorktree !== null,
+            branch: planned ? planned.branchName : (chatWorktree?.branch ?? null),
+            base: planned ? null : (chatWorktree?.baseRef ?? null),
+          },
+          hookInvoker,
+        )
+        hookedName = hooked.name
+        // A branch or base a hook named is taken only for the worktree cut now.
+        if (planned) {
+          worktreeBranch = hooked.branch ?? planned.branchName
+          worktreeBase = hooked.base
+        }
+      } catch (error) {
+        if (error instanceof ExtensionHookDenied) return { ok: false, code: error.code, message: error.message }
+        throw error
+      }
+    }
+    if (planned) {
+      const cut = await cutNewChatWorktree(planned, worktreeBranch ?? planned.branchName, worktreeBase)
+      if (!cut.ok) return { ok: false, code: 'worktree_unavailable', message: cut.message }
+      chatFolder = cut.folderPath
+      chatWorktree = cut.worktree
+      installing = cut.dependencyInstall ?? null
+      launchedWorktree = { path: cut.folderPath, branch: cut.worktree.branch ?? null }
     }
     // The run worktree when there is one: the session starts there, so the
     // agent's edits, its transcript and the skills below all stay inside it.
@@ -775,30 +851,8 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
       // title when one is on. A chat made with no prompt (a phone's New chat
       // with pictures, whose first message follows through its ordinary send)
       // is named by the titler from that message instead.
-      const firstTitle = request.sendFirst !== false && request.prompt ? deriveWorkspaceTitle(request.prompt) : null
-      const derivedName =
-        firstTitle ??
-        nextNewChatName(
-          deps
-            .listWorkspaces()
-            .filter((other) => other.folderPath === chatFolder)
-            .map((other) => other.name ?? ''),
-        )
-      // Extensions may rename the chat's workspace or refuse it; a name one
-      // gave is kept, so the titler does not replace it.
-      let hooked: { name: string | null }
-      try {
-        hooked = await runExtensionHook(
-          deps.extensionHooks,
-          'workspace.create.before',
-          { for: 'chat', name: derivedName, folderPath: chatFolder, worktree: chatWorktree !== null },
-          hookInvoker,
-        )
-      } catch (error) {
-        unkeep()
-        if (error instanceof ExtensionHookDenied) return { ok: false, code: error.code, message: error.message }
-        throw error
-      }
+      // A name an extension's hook gave is kept, so the titler does not replace it.
+      const hooked = { name: hookedName }
       const renamed = hooked.name !== null && hooked.name !== derivedName
       // Born with its agent, in one event, so a window never shows the
       // template's tab with no agent behind it.
@@ -827,7 +881,10 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
             workspaceId: created.workspaceId,
             name: renamed ? hooked.name! : derivedName,
             folderPath: chatFolder,
+            project: workspaceProjectRootOf({ folderPath: chatFolder, worktree: chatWorktree }),
             worktree: chatWorktree !== null,
+            branch: chatWorktree?.branch ?? null,
+            base: chatWorktree?.baseRef ?? null,
           },
           hookInvoker(),
         )

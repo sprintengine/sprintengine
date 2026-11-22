@@ -429,10 +429,16 @@ test('a closed connection’s searches end, in a slot clear of any window’s', 
 })
 
 test('a save the person made meets the extensions’ save hooks where the file is: changed, refused, or left alone', async () => {
-  const asked: Array<{ path: string; text: string; owner: boolean }> = []
+  const asked: Array<{
+    path: string
+    text: string
+    owner: boolean
+    workspaceId: string | null
+    languageId: string | null
+  }> = []
   const { started, workspace } = await serve({
-    editorSaveHooks: ({ path, text, grant }) => {
-      asked.push({ path, text, owner: grant.owner })
+    editorSaveHooks: ({ path, text, grant, workspaceId, languageId }) => {
+      asked.push({ path, text, owner: grant.owner, workspaceId, languageId })
       if (text.includes('TODO'))
         return Promise.resolve({
           ok: false,
@@ -445,13 +451,21 @@ test('a save the person made meets the extensions’ save hooks where the file i
   const file = join(workspace, 'saved.txt')
 
   // Changed: the hook's text is written, and answered.
-  const saved = await owner.request('files.writeText', { commandId: cid(), path: file, text: 'one   \n\n', save: true })
+  // The editor says which workspace the file was opened in, and its language.
+  const saved = await owner.request('files.writeText', {
+    commandId: cid(),
+    path: file,
+    text: 'one   \n\n',
+    save: { workspaceId: 'ws-1', languageId: 'plaintext' },
+  })
   assert.deepEqual(resultOf(saved), { text: 'one\n' })
   assert.equal(readFileSync(file, 'utf8'), 'one\n')
-  assert.deepEqual(asked, [{ path: file, text: 'one   \n\n', owner: true }])
+  assert.deepEqual(asked, [
+    { path: file, text: 'one   \n\n', owner: true, workspaceId: 'ws-1', languageId: 'plaintext' },
+  ])
 
   // Refused: nothing is written, and the refusal names the extension.
-  const refused = await owner.request('files.writeText', { commandId: cid(), path: file, text: 'TODO', save: true })
+  const refused = await owner.request('files.writeText', { commandId: cid(), path: file, text: 'TODO', save: {} })
   assert.equal(codeOf(refused), 'refused_by_extension')
   assert.match((refused as { error?: { message?: string } }).error?.message ?? '', /"Lint" \(local\.lint\)/u)
   assert.equal(readFileSync(file, 'utf8'), 'one\n')

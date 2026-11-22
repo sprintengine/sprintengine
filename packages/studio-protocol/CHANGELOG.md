@@ -7,8 +7,9 @@
 - `ExtensionContributionsView` carries `hooks`: each point an extension's
   worker hooks (`agent.tool.before`, `editor.save.before`, …) and its
   `onError`, so a client's approval names them.
-- **`files.writeText`** takes `save: true` for a save the person made in an
-  editor, which runs the Studio's `editor.save.before` hooks before it
+- **`files.writeText`** takes `save` for a save the person made in an
+  editor (`{ workspaceId?, languageId? }`: the workspace it was opened in and
+  its language), which runs the Studio's `editor.save.before` hooks before it
   writes, and answers `text` when a hook changed what was written. A hook's
   refusal is `refused_by_extension`, whose message names the extension and
   its reason. There is no capability for it: a client and its Studio are one

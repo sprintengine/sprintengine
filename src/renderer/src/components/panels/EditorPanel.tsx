@@ -394,7 +394,10 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
         const roots = ws ? [ws.folderPath, workspaceWorkingRoot(ws)].filter((root): root is string => !!root) : []
         // A save the person made: the Studio that holds the file runs its
         // extensions' save hooks, which may change what is written or refuse it.
-        written = await filesApi.writefile(file.path, content, { roots, save: true })
+        written = await filesApi.writefile(file.path, content, {
+          roots,
+          save: { workspaceId, ...(file.language ? { languageId: file.language } : {}) },
+        })
       } catch (error) {
         if (previousBaseline !== undefined) setEditorDiskBaseline(workspaceId, file.path, previousBaseline)
         if ((error as { code?: unknown } | null)?.code === 'refused_by_extension') {

@@ -47,6 +47,7 @@ import type {
 } from './frame.js'
 import { EXTENSION_EDITOR_FLUSH_TIMEOUT_MS } from './custom-editors.js'
 import {
+  chainExtensionHookHandlers,
   isExtensionHookPoint,
   readExtensionHookAnswer,
   type ExtensionHookEvents,
@@ -550,7 +551,8 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     )
   }
   const tools = new Map<string, McpToolRegistration>()
-  const hookHandlers = new Map<ExtensionHookPoint, (event: unknown) => unknown>()
+  // Each point's handlers, in the order registered.
+  const hookHandlers = new Map<ExtensionHookPoint, Array<(event: unknown) => unknown>>()
   const startupHooks: Array<() => unknown> = []
   const shutdownBeginHooks: Array<() => unknown> = []
   const shutdownHooks: Array<() => unknown> = []
@@ -586,9 +588,9 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
         const listed = options.manifest?.contributes?.hooks
         if (listed && !listed.some((entry) => entry.point === point))
           throw new Error(`extension.json lists no hook for "${point}" (contributes.hooks).`)
-        const handler = hookHandlers.get(point)
-        if (!handler) throw new Error(`The worker registered no hook for "${point}".`)
-        const answer = await handler(structuredClone(event))
+        const handlers = hookHandlers.get(point)
+        if (!handlers) throw new Error(`The worker registered no hook for "${point}".`)
+        const answer = await chainExtensionHookHandlers(handlers, structuredClone(event))
         return readExtensionHookAnswer(point, event as unknown as Record<string, unknown>, answer)
       },
       registered: () => [...hookHandlers.keys()],
@@ -824,12 +826,17 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
           throw new Error(
             `Hook "${point}" from extension "${moduleId}" is not listed in its extension.json (contributes.hooks).`,
           )
-        if (hookHandlers.has(point)) throw new Error(`Hook "${point}" is registered twice by extension "${moduleId}".`)
         if (typeof handler !== 'function')
           throw new Error(`Hook "${point}" from extension "${moduleId}" has no handler.`)
       }
-      for (const [point, handler] of entries)
-        hookHandlers.set(point as ExtensionHookPoint, handler as (event: unknown) => unknown)
+      const added = entries as Array<[ExtensionHookPoint, (event: unknown) => unknown]>
+      for (const [point, handler] of added) hookHandlers.set(point, [...(hookHandlers.get(point) ?? []), handler])
+      return () => {
+        for (const [point, handler] of added) {
+          const left = hookHandlers.get(point)?.filter((each) => each !== handler)
+          if (left) hookHandlers.set(point, left)
+        }
+      }
     },
     async ensureSkillInstalled(workspaceRoot, skillId) {
       use('ensureSkillInstalled')

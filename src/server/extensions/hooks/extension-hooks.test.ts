@@ -140,6 +140,44 @@ test('a hook changes the fields its point allows, and a change to any other fiel
   })
 })
 
+// As the reference app has it: a worker may serve one point with several
+// handlers, which run in the order registered, each seeing the last one's
+// change; a refusal ends the run; and what registerHooks answers takes its
+// handlers back out.
+test('one worker’s handlers for a point run in registration order, and a disposed one no longer runs', async () => {
+  const hooks = start([
+    {
+      id: 'layered',
+      main: `
+exports.activate = (studio) => {
+  studio.registerHooks({ 'agent.tool.before': (event) => ({ change: { input: { command: event.input.command + ' --one' } } }) })
+  const second = studio.registerHooks({
+    'agent.tool.before': (event) =>
+      event.input.command.startsWith('stop') ? { deny: 'the second said no' } : { change: { input: { command: event.input.command + ' --two' } } },
+  })
+  studio.registerHooks({ 'agent.tool.before': (event) => {
+    if (event.input.command.startsWith('drop')) second()
+    return { change: { input: { command: event.input.command + ' --three' } } }
+  } })
+}
+`,
+      hooks: [{ point: 'agent.tool.before' }],
+    },
+  ])
+  assert.deepEqual(await hooks.run('agent.tool.before', call('make'), ownerInvoker()), {
+    kind: 'continue',
+    event: call('make --one --two --three'),
+  })
+  const refused = await hooks.run('agent.tool.before', call('stop'), ownerInvoker())
+  assert.equal(refused.kind === 'deny' && refused.reason, 'the second said no')
+  // The third takes the second back out: from the next call on, it no longer runs.
+  await hooks.run('agent.tool.before', call('drop'), ownerInvoker())
+  assert.deepEqual(await hooks.run('agent.tool.before', call('make'), ownerInvoker()), {
+    kind: 'continue',
+    event: call('make --one --three'),
+  })
+})
+
 test('extensions run in the order of their install keys, each seeing the last one’s change, and a refusal stops the rest', async () => {
   const hooks = start([
     // Listed out of order: the install keys decide.

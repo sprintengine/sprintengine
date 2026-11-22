@@ -3,7 +3,7 @@ import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host
 import type { DistributionMachine } from '../wsl/distribution-machine'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, isAbsolute, join, relative, sep } from 'node:path'
 
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import {
@@ -108,10 +108,24 @@ export function createStudioRpc(
     ...(options.hostKind ? { hostKind: options.hostKind } : {}),
     // A save the person made in an editor, on whichever client, meets this
     // Studio's extensions' hooks, as the connection that saved.
-    editorSaveHooks: ({ path, text, grant }) =>
+    editorSaveHooks: ({ path, text, grant, workspaceId, languageId }) =>
       core.extensionHooks.wants('editor.save.before')
         ? core.extensionHooks
-            .run('editor.save.before', { path, text }, invokerOfGrant(grant))
+            .run(
+              'editor.save.before',
+              {
+                path,
+                workspaceId,
+                // Where the file is in the workspace's folder, when it is in it.
+                relativePath: pathInFolder(
+                  workspaceId ? core.workspaceRegistry.getRecord(workspaceId)?.folderPath : null,
+                  path,
+                ),
+                languageId,
+                text,
+              },
+              invokerOfGrant(grant),
+            )
             .then((outcome) =>
               outcome.kind === 'deny'
                 ? { ok: false as const, message: extensionHookRefusal(outcome) }
@@ -487,4 +501,12 @@ export function createStudioTailnetDomain(gateway: StudioGateway, shares: Tailne
       onChanged: (listener) => gateway.onMeshChanged(listener),
     },
   }
+}
+
+/** `path` relative to `folder`, with forward slashes, when it is inside it; else null. */
+export function pathInFolder(folder: string | null | undefined, path: string): string | null {
+  if (!folder) return null
+  const inside = relative(folder, path)
+  if (!inside || inside.startsWith('..') || isAbsolute(inside)) return null
+  return inside.split(sep).join('/')
 }

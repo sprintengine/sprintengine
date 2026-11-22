@@ -260,9 +260,10 @@ export type MainHost = {
    * Serve the hooks an extension's extension.json lists. Only an extension's
    * worker serves hooks: its process registers them with its server
    * (server/extensions/workers/worker-session.ts), which runs them; a part of
-   * Studio's own in this process has none, and is refused.
+   * Studio's own in this process has none, and is refused. Answers what takes
+   * the handlers back out.
    */
-  registerHooks(handlers: ExtensionHookHandlers): void
+  registerHooks(handlers: ExtensionHookHandlers): () => void
   /**
    * Make one of the app's skills present in a workspace now, rather than at
    * the next spawn — how a module pre-installs the skill an agent will be told

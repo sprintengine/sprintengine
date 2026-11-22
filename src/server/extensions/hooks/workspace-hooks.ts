@@ -1,5 +1,6 @@
 import type { WorkspaceCreateRequest, WorkspaceCreateResult } from '../../../main/workspace-registry-service'
 import type { ExtensionInvoker } from '../../../main/module-host/extension-invocation'
+import { workspaceProjectRootOf } from '../../../shared/worktree-paths'
 import { ExtensionHookDenied, runExtensionHook, type ExtensionHooks } from './extension-hooks'
 
 // A workspace an agent's `workspace.create` or an extension asks for meets
@@ -24,7 +25,12 @@ export async function createWorkspaceWithHooks(
         for: 'workspace',
         name: request.name?.trim() || null,
         folderPath: request.folderPath ?? null,
+        project: workspaceProjectRootOf({ folderPath: request.folderPath ?? null, worktree: request.worktree ?? null }),
         worktree: Boolean(request.worktree),
+        // Its worktree, when it has one, exists already: a hook's change to
+        // either is not taken.
+        branch: request.worktree?.branch ?? null,
+        base: request.worktree?.baseRef ?? null,
       },
       invoker,
     )
@@ -42,7 +48,10 @@ export async function createWorkspaceWithHooks(
         workspaceId: created.result.workspace.id,
         name: created.result.workspace.name ?? next.name ?? '',
         folderPath: created.result.workspace.folderPath ?? null,
+        project: workspaceProjectRootOf(created.result.workspace),
         worktree: Boolean(created.result.workspace.worktree),
+        branch: created.result.workspace.worktree?.branch ?? null,
+        base: created.result.workspace.worktree?.baseRef ?? null,
       },
       invoker(),
     )

@@ -730,8 +730,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
           containerPath: input.containerPath,
           destinationPath: input.destinationPath,
           branchName: input.branchName,
-          baseRef: 'HEAD',
+          baseRef: input.baseRef ?? 'HEAD',
           fromPool: true,
+          // A base an extension's hook named is forked from as named.
+          ...(input.baseRef !== undefined ? { baseRefNamed: true } : {}),
           copyIncludedFiles: true,
           // The chat is created after its worktree, so the branch names the owner.
           agentLockOwner: input.branchName,

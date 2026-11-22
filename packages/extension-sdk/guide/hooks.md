@@ -33,6 +33,17 @@ export function activate(studio: MainHost): void {
 `examples/tool-guard/` in this package is a complete one, and the `hook-guard`
 template starts a project from it.
 
+Call `registerHooks` as often as you like: a point served more than once runs
+its handlers in the order they were registered, each handed the event as the
+ones before it changed it, and the first `{ deny }` ends the run. Each call
+answers a function that takes its handlers back out:
+
+```ts
+const stop = studio.registerHooks({ 'agent.prompt.before': (event) => undefined })
+// Later: this handler no longer runs.
+stop()
+```
+
 ## What a hook answers
 
 - **Nothing** (`undefined`): the action goes on, as the next extension's hook
@@ -53,7 +64,10 @@ ignored.
 - Studio runs the hooks of every extension that lists a point, one after
   another, in the order of their install keys (`local.a-guard` before
   `local.b-format`). Each sees the event as the ones before it changed it.
-- Each hook has **two seconds**. A worker that is not running is started
+  Studio has no separate development folders: an extension you are working
+  on is installed under its key like any other, and takes its place in the
+  same order.
+- Each extension's hooks for a point have **two seconds** together. A worker that is not running is started
   first, and its start is not counted.
 - A hook that throws, answers late, answers something that is not one of the
   three answers above, or whose worker crashed or did not start, counts as
@@ -85,7 +99,10 @@ machine by that machine's.
 - `agent.tool.before` and `.after`: **Claude Code chats.** Studio answers
   Claude Code's own PreToolUse hook, under every permission mode, bypass
   included; a changed `input` is what the tool runs, and still goes through
-  the chat's permission mode. Codex, Gemini, OpenCode, Cursor and
+  the chat's permission mode. One kind of call is not hooked: the
+  `SendMessage` that passes on a message the person wrote to one of the
+  chat's own agents (and the `ToolSearch` that finds that tool). It carries
+  the person's own words, which no hook ever sees. Codex, Gemini, OpenCode, Cursor and
   OpenAI-compatible chats are not hooked yet: their runtimes ask Studio only
   when they want an approval, which bypass and auto never do, so a hook
   there could not be relied on. Agents in terminals are not hooked yet either:
@@ -107,10 +124,17 @@ machine by that machine's.
   machine, an agent or an extension) and every agent started in a terminal.
   It refuses; it changes nothing.
 - `workspace.create.before` and `.after`: a new chat's workspace, and one an
-  agent's `workspace.create` or an extension asks for.
+  agent's `workspace.create` or an extension asks for. The event names the
+  project (`project`, by its folder) and the worktree's `branch` and `base`.
+  For a new chat cut a worktree of its own, the hook runs before the cut, and
+  a changed `branch` or `base` is the one it is cut on or forks from; a
+  worktree that already exists keeps its own.
 - `editor.save.before`: a save the person makes in Studio's editor, docked or
   popped out, of a text file on any machine whose Studio runs hooks. Autosave
-  and an agent's own edits are not saves the person made.
+  and an agent's own edits are not saves the person made. The event carries
+  the file's `path` on its machine, the workspace it was opened in
+  (`workspaceId`), its path inside that workspace's folder (`relativePath`,
+  null outside it) and its language as the editor names it (`languageId`).
 
 ## The points
 
@@ -123,9 +147,9 @@ machine by that machine's.
 | `agent.tool.before` | `{ agent: string; workspaceId: string; agentId: string; tool: string; input: Record<string, unknown>; callId: string \| null }` | `{ deny }`, `{ change }` or nothing | `input` | An agent in a chat is about to run a tool. Return `{ deny }` to refuse the call (the agent reads the reason) or change `input`; the chat’s permission mode still asks the person as usual. Claude Code chats only for now: other runtimes have no hook before a tool runs that Studio can answer. |
 | `agent.tool.after` | `{ agent: string; workspaceId: string; agentId: string; tool: string; input: Record<string, unknown>; callId: string \| null; output: unknown; failed: boolean }` | nothing: it observes | — | An agent in a chat finished a tool call, or it failed. Observe only: Studio does not wait for it. Claude Code chats only for now. |
 | `terminal.write.before` | `{ terminalId: string; workspaceId: string \| null; agent: string \| null; from: 'studio' \| 'extension'; inputKind: 'send' \| 'notice'; text: string; enter: boolean }` | `{ deny }`, `{ change }` or nothing | `text`, `enter` | Studio is about to type into a terminal for someone other than a person at its keyboard: an extension’s or a tool’s raw write. Keystrokes from a person (on any machine) are never hooked, and a prompt to an agent takes `agent.prompt.before` instead. Change `text` or `enter`, or return `{ deny }` to refuse the write. |
-| `workspace.create.before` | `{ for: 'chat' \| 'workspace'; name: string \| null; folderPath: string \| null; worktree: boolean }` | `{ deny }`, `{ change }` or nothing | `name` | Studio is about to make a workspace: for a new chat, or one an agent or extension asked for. Change `name`, or return `{ deny }` to refuse it. |
-| `workspace.create.after` | `{ for: 'chat' \| 'workspace'; workspaceId: string; name: string; folderPath: string \| null; worktree: boolean }` | nothing: it observes | — | Studio made a workspace. Observe only: Studio does not wait for it. |
-| `editor.save.before` | `{ path: string; text: string }` | `{ deny }`, `{ change }` or nothing | `text` | The person is about to save a text file from Studio’s editor, on whichever machine holds it. Change `text` (format on save), and the editor shows what was saved; or return `{ deny }` to refuse the save, and the editor shows the reason and keeps the edits unsaved. |
+| `workspace.create.before` | `{ for: 'chat' \| 'workspace'; name: string \| null; folderPath: string \| null; project: string \| null; worktree: boolean; branch: string \| null; base: string \| null }` | `{ deny }`, `{ change }` or nothing | `name`, `branch`, `base` | Studio is about to make a workspace: for a new chat, or one an agent or extension asked for. Change `name`; for a new chat cut a worktree of its own, change the `branch` it is cut on or the `base` it forks from (a change to either is ignored where the worktree already exists); or return `{ deny }` to refuse it. |
+| `workspace.create.after` | `{ for: 'chat' \| 'workspace'; workspaceId: string; name: string; folderPath: string \| null; project: string \| null; worktree: boolean; branch: string \| null; base: string \| null }` | nothing: it observes | — | Studio made a workspace. Observe only: Studio does not wait for it. |
+| `editor.save.before` | `{ path: string; workspaceId: string \| null; relativePath: string \| null; languageId: string \| null; text: string }` | `{ deny }`, `{ change }` or nothing | `text` | The person is about to save a text file from Studio’s editor, on whichever machine holds it. Change `text` (format on save), and the editor shows what was saved; or return `{ deny }` to refuse the save, and the editor shows the reason and keeps the edits unsaved. |
 
 <!-- generated:extension-hook-reference:end -->
 

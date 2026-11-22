@@ -2,6 +2,7 @@ import {
   STUDIO_FILE_SYSTEM_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
   type ContentSearchResult,
+  type StudioEditorSave,
   type FileWatchEvent,
   type ProjectLogo,
   type StudioCapability,
@@ -58,7 +59,7 @@ export type FilesApi = {
   writefile(
     path: string,
     content: string,
-    options?: { roots?: readonly string[]; save?: boolean },
+    options?: { roots?: readonly string[]; save?: StudioEditorSave },
   ): Promise<{ text?: string }>
   saveDroppedImage(input: { mediaType: string; dataBase64: string }): Promise<string>
   createFile(parentDir: string, name: string): Promise<string>
@@ -138,7 +139,7 @@ export const filesApi: FilesApi = {
       path,
       text,
       ...(options.roots === undefined ? {} : { roots: [...options.roots] }),
-      ...(options.save ? { save: true } : {}),
+      ...(options.save ? { save: options.save } : {}),
     })
     return written.text === undefined ? {} : { text: written.text }
   },

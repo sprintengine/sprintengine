@@ -492,10 +492,17 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
       try {
         // The workspace's folder, when the opener named one, so the save does
         // not follow a link out of it.
-        const root = tabsRef.current.find((candidate) => candidate.path === path)?.rootPath
+        const tab = tabsRef.current.find((candidate) => candidate.path === path)
+        const root = tab?.rootPath
         // A save the person made: the extensions' save hooks may change what
         // is written (the buffer takes it, unless typed into meanwhile) or refuse it.
-        const written = await filesApi.writefile(path, value, { roots: root ? [root] : [], save: true })
+        const written = await filesApi.writefile(path, value, {
+          roots: root ? [root] : [],
+          save: {
+            ...(tab?.workspaceId ? { workspaceId: tab.workspaceId } : {}),
+            languageId: detectLanguage(tab?.name ?? path),
+          },
+        })
         if (written.text !== undefined) {
           const text = written.text
           setBuffers((prev) => {

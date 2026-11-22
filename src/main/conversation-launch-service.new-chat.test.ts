@@ -15,6 +15,7 @@ import { createConversationLaunchService, type ConversationLaunchServiceDeps } f
 import { createWorkspaceRegistryService } from './workspace-registry-service'
 import { createInMemoryWorkspaceRegistryStore } from './workspace-registry-store'
 import { createWorkspaceSyncService } from './workspace-sync-service'
+import type { ExtensionHookOutcome, ExtensionHooks } from '../server/extensions/hooks/extension-hooks'
 
 // A phone's New chat, as main carries it out: a chat born in a worktree of its
 // own, cut the way a window's New chat cuts one, and a chat that runs at the
@@ -52,6 +53,7 @@ function harness(
     reasoningEfforts?: string[] | null
     withoutGit?: boolean
     worktrees?: Array<{ path: string; branch: string | null }> | null
+    extensionHooks?: ExtensionHooks
   } = {},
 ) {
   let ids = 0
@@ -143,6 +145,7 @@ function harness(
         }),
     newWorktreeSuffix: () => 'K7QZ',
     newCommandId: () => 'cmd-1',
+    ...(options.extensionHooks ? { extensionHooks: options.extensionHooks } : {}),
   })
   return { service, registry, repoRootAsks, worktreeAsks, listAsks, starts, sends, uses }
 }
@@ -528,4 +531,86 @@ test('an existing worktree is only for a new chat, and never beside a new one', 
   if (!both.ok) assert.equal(both.code, 'invalid_arguments')
   assert.equal(h.worktreeAsks.length, 0)
   assert.equal(h.starts.length, 0)
+})
+
+/** Extensions' workspace hooks, answering as `decide` says, and what they heard. */
+function workspaceHooks(decide: (event: Record<string, unknown>) => 'deny' | Record<string, unknown>) {
+  const before: Array<Record<string, unknown>> = []
+  const after: Array<Record<string, unknown>> = []
+  const hooks: ExtensionHooks = {
+    wants: (point) => point === 'workspace.create.before' || point === 'workspace.create.after',
+    run: async (_point, event) => {
+      before.push(event as Record<string, unknown>)
+      const decided = decide(event as Record<string, unknown>)
+      return (
+        decided === 'deny'
+          ? { kind: 'deny', extensionId: 'acme.branches', displayName: 'Branches', reason: 'not here', failed: false }
+          : { kind: 'continue', event: decided }
+      ) as ExtensionHookOutcome<never>
+    },
+    notify: (_point, event) => void after.push(event as Record<string, unknown>),
+    bind: () => undefined,
+  }
+  return { hooks, before, after }
+}
+
+// A new chat's workspace meets `workspace.create.before` before its worktree
+// is cut: the hook sees the project, the branch it would be cut on and the
+// base (the default branch), and may put it on another branch or base.
+test('a hook sees a new worktree chat’s project and branch before the cut, and may change its branch and base', async () => {
+  const w = workspaceHooks((event) => ({ ...event, branch: 'feature/login', base: 'origin/release' }))
+  const h = harness({ extensionHooks: w.hooks })
+  const result = await h.service.launch({ workspaceId: 'ws-app', newChat: true, newWorktree: true, cli: 'codex' })
+  assert.equal(result.ok, true, result.ok ? '' : result.message)
+  assert.deepEqual(w.before, [
+    {
+      for: 'chat',
+      name: 'Chat',
+      folderPath: null,
+      project: '/Users/dev/app',
+      worktree: true,
+      branch: 'agent/chat-k7qz',
+      base: null,
+    },
+  ])
+  assert.equal(h.worktreeAsks[0]?.branchName, 'feature/login')
+  assert.equal(h.worktreeAsks[0]?.baseRef, 'origin/release')
+  assert.deepEqual(w.after[0], {
+    for: 'chat',
+    workspaceId: 'ws-new-1',
+    name: 'Chat',
+    folderPath: '/Users/dev/.sprintengine-worktrees/app/chat-k7qz',
+    project: '/Users/dev/app',
+    worktree: true,
+    branch: 'feature/login',
+    base: 'origin/main',
+  })
+})
+
+test('a new chat’s workspace a hook refused cuts no worktree and makes nothing', async () => {
+  const w = workspaceHooks(() => 'deny')
+  const h = harness({ extensionHooks: w.hooks })
+  const result = await h.service.launch({ workspaceId: 'ws-app', newChat: true, newWorktree: true, cli: 'codex' })
+  assert.equal(result.ok, false)
+  assert.ok(!result.ok)
+  assert.equal(result.code, 'refused_by_extension')
+  assert.deepEqual(h.worktreeAsks, [], 'nothing cut')
+  assert.deepEqual(h.starts, [])
+  assert.equal(h.registry.getRecords().length, 3, 'no workspace made')
+})
+
+test('a branch or base a hook names for a worktree that already exists is not taken', async () => {
+  const w = workspaceHooks((event) => ({ ...event, branch: 'feature/other', base: 'origin/other' }))
+  const h = harness({ extensionHooks: w.hooks })
+  const result = await h.service.launch({
+    workspaceId: 'ws-app',
+    newChat: true,
+    existingWorktreePath: '/Users/dev/.sprintengine-worktrees/app/login-fix',
+    cli: 'codex',
+  })
+  assert.equal(result.ok, true, result.ok ? '' : result.message)
+  assert.equal(w.before[0]?.branch, 'agent/login-fix')
+  assert.equal(w.before[0]?.folderPath, '/Users/dev/.sprintengine-worktrees/app/login-fix')
+  assert.deepEqual(h.worktreeAsks, [])
+  assert.equal(w.after[0]?.branch, 'agent/login-fix')
 })

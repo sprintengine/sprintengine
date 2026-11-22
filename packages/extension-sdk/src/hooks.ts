@@ -156,21 +156,36 @@ export type ExtensionHookEvents = {
     for: 'chat' | 'workspace'
     /** Its name, when one was given or derived. */
     name: string | null
-    /** The project folder it works in. */
+    /** The folder it works in; null for a new worktree that is not cut yet. */
     folderPath: string | null
+    /** The project it files under, by its folder: the repository a worktree is cut from. */
+    project: string | null
     /** Whether its folder is a git worktree of its own. */
     worktree: boolean
+    /** The worktree's branch: the one a new worktree will be cut on, or an existing one's. */
+    branch: string | null
+    /** The ref the worktree forks from; null for a new one cut from the project's default branch. */
+    base: string | null
   }
   'workspace.create.after': {
     for: 'chat' | 'workspace'
     workspaceId: string
     name: string
     folderPath: string | null
+    project: string | null
     worktree: boolean
+    branch: string | null
+    base: string | null
   }
   'editor.save.before': {
     /** The file's path on the machine that holds it. */
     path: string
+    /** The workspace the file was opened in, when the editor knows it. */
+    workspaceId: string | null
+    /** The file's path inside that workspace's folder, with `/` between its parts; null when it is outside it. */
+    relativePath: string | null
+    /** Its language, as the editor names it (`typescript`, `markdown`…). */
+    languageId: string | null
     /** The text about to be written. */
     text: string
   }
@@ -187,7 +202,7 @@ export type ExtensionHookChanges = {
   'agent.prompt.before': { prompt: string }
   'agent.tool.before': { input: Record<string, unknown> }
   'terminal.write.before': { text: string; enter: boolean }
-  'workspace.create.before': { name: string }
+  'workspace.create.before': { name: string; branch: string; base: string }
   'editor.save.before': { text: string }
 }
 
@@ -198,7 +213,7 @@ export type ExtensionHookHandler<P extends ExtensionHookPoint> = (
   event: Readonly<ExtensionHookEvents[P]>,
 ) => ExtensionHookAnswer<P> | Promise<ExtensionHookAnswer<P>>
 
-/** What `studio.registerHooks` takes: a handler per point extension.json lists. */
+/** What `studio.registerHooks` takes: a handler per point extension.json lists. Call it again to add more; they run in the order registered. */
 export type ExtensionHookHandlers = { [P in ExtensionHookPoint]?: ExtensionHookHandler<P> }
 
 // ── The table ───────────────────────────────────────────────────────────────
@@ -290,11 +305,12 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
   },
   'workspace.create.before': {
     decides: true,
-    changes: { name: text(1024, 1) },
-    approval: 'Can rename or refuse the workspaces Studio makes',
+    changes: { name: text(1024, 1), branch: text(255, 1), base: text(1024, 1) },
+    approval: 'Can rename or refuse the workspaces Studio makes, and choose their worktrees’ branches',
     summary:
-      'Studio is about to make a workspace: for a new chat, or one an agent or extension asked for. Change `name`, or return `{ deny }` to refuse it.',
-    event: "{ for: 'chat' | 'workspace'; name: string | null; folderPath: string | null; worktree: boolean }",
+      'Studio is about to make a workspace: for a new chat, or one an agent or extension asked for. Change `name`; for a new chat cut a worktree of its own, change the `branch` it is cut on or the `base` it forks from (a change to either is ignored where the worktree already exists); or return `{ deny }` to refuse it.',
+    event:
+      "{ for: 'chat' | 'workspace'; name: string | null; folderPath: string | null; project: string | null; worktree: boolean; branch: string | null; base: string | null }",
   },
   'workspace.create.after': {
     decides: false,
@@ -302,7 +318,7 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
     approval: 'Hears about each workspace Studio makes',
     summary: 'Studio made a workspace. Observe only: Studio does not wait for it.',
     event:
-      "{ for: 'chat' | 'workspace'; workspaceId: string; name: string; folderPath: string | null; worktree: boolean }",
+      "{ for: 'chat' | 'workspace'; workspaceId: string; name: string; folderPath: string | null; project: string | null; worktree: boolean; branch: string | null; base: string | null }",
   },
   'editor.save.before': {
     decides: true,
@@ -310,13 +326,44 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
     approval: 'Can check, change or refuse the files you save in the editor',
     summary:
       'The person is about to save a text file from Studio’s editor, on whichever machine holds it. Change `text` (format on save), and the editor shows what was saved; or return `{ deny }` to refuse the save, and the editor shows the reason and keeps the edits unsaved.',
-    event: '{ path: string; text: string }',
+    event:
+      '{ path: string; workspaceId: string | null; relativePath: string | null; languageId: string | null; text: string }',
   },
 }
 
 /** Whether a point only observes. */
 export function isExtensionAfterHookPoint(point: ExtensionHookPoint): point is ExtensionAfterHookPoint {
   return !EXTENSION_HOOK_SPECS[point].decides
+}
+
+// ── Several handlers ────────────────────────────────────────────────────────
+
+/**
+ * One extension's handlers for a point, in the order they were registered, as
+ * one answer: each is handed the event as the ones before it changed it; a
+ * refusal, or an answer that is neither nothing nor a change, ends the run and
+ * is the answer; the changes are merged into one. The worker runs them so
+ * (server/extensions/workers/worker-entry.ts), and the fake host the same.
+ */
+export async function chainExtensionHookHandlers(
+  handlers: ReadonlyArray<(event: unknown) => unknown>,
+  event: unknown,
+): Promise<unknown> {
+  if (handlers.length === 1) return await handlers[0]!(event)
+  let current = event
+  const changed: Record<string, unknown> = {}
+  for (const handler of handlers) {
+    const answer = await handler(current)
+    if (answer === undefined || answer === null) continue
+    const change =
+      typeof answer === 'object' && !Array.isArray(answer) && Object.keys(answer).length === 1
+        ? (answer as { change?: unknown }).change
+        : undefined
+    if (change === null || typeof change !== 'object' || Array.isArray(change)) return answer
+    current = { ...(current as Record<string, unknown>), ...(change as Record<string, unknown>) }
+    Object.assign(changed, change)
+  }
+  return Object.keys(changed).length > 0 ? { change: changed } : undefined
 }
 
 // ── Reading an answer ───────────────────────────────────────────────────────

@@ -335,7 +335,8 @@ did. Hooks run on the Studio that holds the action, so a client never runs
 another machine's extensions. What crosses the wire is small: the
 `ExtensionContributionsView` carries `hooks` (each point and its `onError`), so
 a client's approval names them; and a save the person makes in an editor is
-sent as `files.writeText` with `save: true`, which meets the Studio's
+sent as `files.writeText` with `save` (the workspace it was opened in and its
+language), which meets the Studio's
 `editor.save.before` hooks and may answer the `text` a hook wrote, or refuse
 with the new code `refused_by_extension`. There is no capability for it: a
 client always sends `save` for a save the person made, as a window and its

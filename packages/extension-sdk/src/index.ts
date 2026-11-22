@@ -420,14 +420,17 @@ export type MainHost = {
    * Serve the hooks your extension.json lists (`contributes.hooks`): a
    * handler per point, handed the event and answering nothing to let the
    * action go on, `{ change: { … } }` to change the fields the point allows,
-   * or `{ deny: reason }` to refuse it. A point extension.json does not list,
-   * or one registered twice, is refused. Studio waits on each handler for at
-   * most two seconds; decide before awaiting anything else, since one that
+   * or `{ deny: reason }` to refuse it. A point extension.json does not list
+   * is refused. Call it again to serve a point with more handlers: they run
+   * in the order registered, each handed the event as the ones before changed
+   * it, and the first refusal ends the run. What it answers takes these
+   * handlers back out. Studio waits on a point's handlers for at most two
+   * seconds together; decide before awaiting something else, since one that
    * fails or is slow counts as the hook failing. A hook runs as whoever set
    * off the action it guards, so what it asks of Studio is held to them. See
    * the guide's hooks topic.
    */
-  registerHooks(handlers: ExtensionHookHandlers): void
+  registerHooks(handlers: ExtensionHookHandlers): () => void
   /**
    * Make a skill present in a workspace now, rather than at the next agent
    * launch — how you pre-install the skill an agent will be told to invoke.
