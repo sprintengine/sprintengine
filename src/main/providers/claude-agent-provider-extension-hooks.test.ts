@@ -179,7 +179,8 @@ const ended = (events: ConversationEvent[]) => events.at(-1)?.type
 test('the sample guard refuses rm -rf in a Claude Code chat, even under bypass, naming the extension; other calls run', async () => {
   const { adapter, run, ran } = await chat(toolHooksOver([GUARD]))
   const refused = await run('rm -rf build')
-  expect(toolOutput(refused)).toMatchObject({ status: 'declined' })
+  // Its step shows the refusal's words, which name the extension.
+  expect(toolOutput(refused)).toMatchObject({ status: 'error' })
   expect(String(toolOutput(refused)?.output)).toContain(
     'The extension "Tool guard" (local.tool-guard) refused this: it deletes files recursively and by force',
   )
@@ -241,7 +242,7 @@ for (const onError of ['pass', 'deny'] as const) {
       expect(toolOutput(events)).toMatchObject({ status: 'ok' })
     } else {
       expect(ran).toEqual([])
-      expect(toolOutput(events)).toMatchObject({ status: 'declined' })
+      expect(toolOutput(events)).toMatchObject({ status: 'error' })
       expect(String(toolOutput(events)?.output)).toContain(
         'The extension "Hangs" (local.hangs) refused this: its hook failed, and it refuses when it fails',
       )

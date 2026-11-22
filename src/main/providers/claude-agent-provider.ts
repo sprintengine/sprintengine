@@ -1217,8 +1217,9 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
                   // extension to the agent, and changed input still goes on
                   // to whatever the chat's permission mode does with it.
                   const hooked = await extensionToolHooks(state, input.tool_name, input.tool_input, input.tool_use_id)
+                  // Not marked declined: the step shows the refusal's words, which
+                  // name the extension, where a declined one says only that.
                   if (hooked?.kind === 'deny') {
-                    state.declinedToolUseIds.add(input.tool_use_id)
                     return {
                       hookSpecificOutput: {
                         hookEventName: 'PreToolUse' as const,
