@@ -204,7 +204,9 @@ main })` take the parsed extension.json; the install key defaults to
   extension's own editor, drawn in a frame in the file's tab: by suffix
   (`extensions`) or exact name (`filenames`), `priority` `default` (opens
   matching files) or `option` (offered under Open with), and `contentKind`
-  `text` or `bytes`. It needs `workspace-files:read`, and
+  `text` or `bytes`. A file Studio's text editor is for (`.json`, `.ts`,
+  `.md` and their like: `STUDIO_TEXT_EDITOR_SUFFIXES`) is only ever offered.
+  It needs `workspace-files:read`, and
   `workspace-files:write` to save; without it the file opens read only. A
   new editor, or one that takes more files, is asked for again on update. No
   longer reserved.
@@ -213,8 +215,8 @@ main })` take the parsed extension.json; the install key defaults to
   current document when it moved), `onWillSave`, and `session()`, the sync in
   one call (`decode`, `encode`, `merge`, `change`, `flush`, `onReplace`).
   Studio keeps the unsaved state, saves and watches the file. Types:
-  `ExtensionEditorDocumentApi` and its kin; `customEditorMatchRank` says which
-  editor takes a file.
+  `ExtensionEditorDocumentApi` and its kin; `customEditorMatchRank` and
+  `customEditorOpensByDefault` say which editor takes a file.
 - `files.read` takes `encoding: 'base64'` for a file's bytes and answers its
   `sha256`; `files.write` takes `encoding` and `expectedSha256`, and is
   refused `conflict` when the file changed since it was read. The error code

@@ -58,6 +58,13 @@ test('a file opens in its best default editor; an option editor is only offered'
   assert.equal(resolveExtensionEditor('ws', plain, optionOnly)?.contribution.id, 'tree')
 })
 
+test('an editor for a file Studio’s text editor is for is only offered', () => {
+  editor('local.json-tools', 'tree', { extensions: ['.json'] })
+  const plain = '/Users/dev/app/package.json'
+  assert.equal(extensionEditorsFor(plain).length, 1)
+  assert.equal(resolveExtensionEditor('ws', plain, extensionEditorsFor(plain)), null)
+})
+
 test('the person can always reopen a file in the text editor, for that file only', () => {
   editor('local.todo', 'todo', { extensions: ['.todo'] })
   const a = '/Users/dev/app/a.todo'

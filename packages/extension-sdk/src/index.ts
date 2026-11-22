@@ -1575,7 +1575,9 @@ export {
 export {
   EXTENSION_EDITOR_DOCUMENT_MAX_BYTES,
   EXTENSION_EDITOR_FLUSH_TIMEOUT_MS,
+  STUDIO_TEXT_EDITOR_SUFFIXES,
   customEditorMatchRank,
+  customEditorOpensByDefault,
 } from './custom-editors.js'
 
 // What a content extension's syntax files hold, checked the same way by the

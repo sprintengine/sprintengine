@@ -3,14 +3,19 @@
 //
 // A file opens in the best-matching editor whose priority is `default` (an
 // exact name beats a suffix, a longer suffix a shorter one); an `option`
-// editor is only offered under Open with. Whatever opened it, the person can
+// editor, or one matching a file Studio's text editor is for (`.ts`, `.json`,
+// `.md` and their like), is only offered under Open with. Whatever opened it, the person can
 // reopen the file in the text editor, or in another matching editor, and
 // that choice holds for the file while this window is open. Every way of
 // opening a file ends in the editor pane (the Files tree, `editor.open`, a
 // link in a chat), so the choice is made there, once.
 
 import type { ExtensionCustomEditorContribution } from '../../../../packages/extension-sdk/src/extension-manifest'
-import { customEditorMatchRank, fileNameOf } from '../../../../packages/extension-sdk/src/custom-editors'
+import {
+  customEditorMatchRank,
+  customEditorOpensByDefault,
+  fileNameOf,
+} from '../../../../packages/extension-sdk/src/custom-editors'
 import { getExtensionSurfacesOf, type LoadedExtensionSurface } from './extension-surfaces'
 
 /** A custom editor that matches a file, with the extension it comes from. */
@@ -73,7 +78,8 @@ export function resolveExtensionEditor(
   if (choice === TEXT_EDITOR_VIEW) return null
   const picked = choice ? matches.find((editor) => extensionEditorViewId(editor) === choice) : undefined
   if (picked) return picked
-  return matches.find((editor) => (editor.contribution.priority ?? 'default') === 'default') ?? null
+  const name = fileNameOf(path)
+  return matches.find((editor) => customEditorOpensByDefault(editor.contribution, name)) ?? null
 }
 
 /** Tests only: forget every choice. */

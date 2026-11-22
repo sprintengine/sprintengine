@@ -83,7 +83,11 @@ answers the least tier a manifest needs.
   `priority: "default"` (the default) a matching file opens in it from the
   Files tree, an agent's `editor.open` or a link in a chat; with `"option"` it
   opens in Studio's text editor and the editor is offered under Open with.
-  The person can always reopen the file in the text editor, and back. Its
+  A file Studio's text editor is for (`.json`, `.ts`, `.md`, `.yaml`, `.env`,
+  lockfiles and their like, `STUDIO_TEXT_EDITOR_SUFFIXES`) is only ever
+  offered, whatever the priority; a longer suffix such as `.sketch.json` is
+  not one of them. The person can always reopen the file in the text editor,
+  and back. Its
   `entry`'s `mount` gets `studio.document`: the file as text, or as raw bytes
   with `contentKind: "bytes"`, never its path. Studio keeps the unsaved state,
   saves the file (its Save, or Cmd/Ctrl+S in the editor), and watches it on
@@ -267,7 +271,7 @@ markers.
 | `contributes.customEditors[].entry` | string | yes | 0.13.0 |  | What the editor draws, in a frame of its own in the file’s tab: a `.js` or `.mjs` module whose `mount(root, studio)` draws into `root`. Its `studio.document` holds the file’s content and takes its edits; Studio keeps the unsaved state, saves and watches the file, and the frame never gets a path. |
 | `contributes.customEditors[].extensions` | string[] (at most 32) |  | 0.13.0 |  | File-name suffixes it opens, with the dot, ignoring case. A longer suffix (`.todo.json`) wins over a shorter one (`.json`), and a file named only the suffix never matches. Give `extensions`, `filenames` or both. |
 | `contributes.customEditors[].filenames` | string[] (at most 32) |  | 0.13.0 |  | Exact file names it opens, ignoring case; a name wins over any suffix. |
-| `contributes.customEditors[].priority` | `default` \| `option` |  | 0.13.0 |  | `default` (the default) opens matching files in this editor; `option` opens them in Studio’s text editor and offers this one under Open with. Either way the person can reopen the file in the text editor. |
+| `contributes.customEditors[].priority` | `default` \| `option` |  | 0.13.0 |  | `default` (the default) opens matching files in this editor; `option` opens them in Studio’s text editor and offers this one under Open with. Files Studio’s text editor is for (such as `.json`, `.ts`, `.md`, `.yaml`, `.env` and lockfiles) are always `option`; a longer suffix such as `.sketch.json` is not one of them. Either way the person can reopen the file in the text editor. |
 | `contributes.customEditors[].contentKind` | `text` \| `bytes` |  | 0.13.0 |  | `text` (the default) hands the editor the file as UTF-8 text and takes whole-text edits; `bytes` hands it the raw bytes, for a binary format, and takes whole-byte edits. |
 | `contributes.keybindings` | object[] (at most 64) |  | 0.13.0 | content | Keyboard shortcuts. |
 | `contributes.keybindings[].command` | string | yes | 0.13.0 |  | The command the key runs. Either a command this extension contributes in `contributes.commands`, or one of Studio’s own command actions (listed below), which a content extension may bind without any code. |
