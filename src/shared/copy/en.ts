@@ -390,7 +390,6 @@ export const en = {
       toggleBacklog: 'Toggle backlog',
       showSubagents: 'Show subagents',
       toggleCanvas: 'Toggle canvas',
-      toggleKnowledgeGraph: 'Toggle knowledge graph',
       gitManageWorktrees: 'Git: Manage worktrees',
       gitRefreshStatus: 'Git: Refresh status',
       gitFetchRemotes: 'Git: Fetch remotes',
@@ -702,21 +701,6 @@ export const en = {
       loadingPreview: 'Loading preview…',
     },
   },
-  memory: {
-    // src/renderer/src/components/memory/MemoryGraphHud.tsx
-    memoryGraphHud: {
-      types: 'Types',
-    },
-    // src/renderer/src/components/memory/MemoryPreviewPane.tsx
-    memoryPreviewPane: {
-      knowledgeNodePreview: 'Knowledge node preview',
-      openInEditor: 'Open in editor',
-      close: 'Close',
-      closePreview: 'Close preview',
-      loadingPreview: 'Loading preview…',
-      related: 'Related',
-    },
-  },
   modules: {
     // src/renderer/src/modules/agent-runtime-module.ts
     agentRuntimeModule: {
@@ -960,6 +944,8 @@ export const en = {
       chatSubagents: {
         waitingOnYou: 'Waiting on you',
         working: 'Working',
+        // A sub-agent its parent resumed: one row, saying which task it is on.
+        round: (round: number) => `Round ${round}`,
       },
       // src/renderer/src/components/panels/agentChat/ChatViewErrorBoundary.tsx
       chatViewErrorBoundary: {
@@ -1241,6 +1227,25 @@ export const en = {
           runsOnThisComputer: 'Runs on this computer',
           connectsOverTheInternet: 'Connects over the internet',
         },
+      },
+      // src/renderer/src/components/panels/agentChat/fileView/FileViewCard.tsx
+      fileView: {
+        files: 'Files shown in this chat',
+        file: (path: unknown) => `File ${path}`,
+        loading: 'Opening…',
+        saving: 'Saving…',
+        saved: 'Saved',
+        unsaved: 'Not saved yet',
+        readOnly: 'Read only',
+        readOnlyHere: 'This view cannot change the chat, so the file is read only here.',
+        cannotSaveHere: 'This Studio cannot save files shown in a chat. Update it to edit them here.',
+        changedOnDisk: 'This file changed on disk since you opened it. Your edits are not saved.',
+        goneOnDisk: 'This file is gone from disk. Your edits are not saved.',
+        reload: 'Load the file from disk',
+        keepMine: 'Save mine over it',
+        couldNotSave: 'Could not save',
+        couldNotOpen: 'Could not open this file',
+        tryAgain: 'Try again',
       },
       // src/renderer/src/components/panels/agentChat/promptCacheNotice.tsx
       promptCacheNotice: {
@@ -2126,25 +2131,6 @@ export const en = {
       commitPush: 'Commit & Push…',
       commit: 'Commit',
     },
-    // src/renderer/src/components/panels/MemoryGraphPanel.tsx
-    memoryGraphPanel: {
-      knowledgeGraph: 'Knowledge Graph',
-      refreshIndex: 'Refresh index',
-      refreshKnowledgeIndex: 'Refresh knowledge index',
-      searchNotes: 'Search notes',
-      searchNotes2: 'Search notes…',
-      slashFocusesSearch: 'Slash focuses search',
-      knowledgeGraphIsNotConfigured: 'Knowledge Graph is not configured',
-      setAKnowledgePathIn: 'Set a knowledge path in Settings → Knowledge to see the graph.',
-      indexingKnowledge: 'Indexing knowledge…',
-      knowledgeFolderUnavailable: 'Knowledge folder unavailable',
-      checkSettingsOrCreateThe: 'Check Settings, or create the configured folder',
-      noMatches: 'No matches',
-      noKnowledgeFilesFound: 'No knowledge files found',
-      noNotesMatch: (trim: unknown) => `No notes match "${trim}".`,
-      theKnowledgeFolderIsEmpty: 'The knowledge folder is empty. Add a Markdown file to start.',
-      activityTrackingOff: 'Activity tracking off',
-    },
     // src/renderer/src/components/panels/PlainTerminalPanel.tsx
     plainTerminalPanel: {
       terminalExited: 'Terminal exited',
@@ -2702,6 +2688,15 @@ export const en = {
         address: 'Address',
         agent: 'Agent',
         runs: 'Runs',
+      },
+      // mobile/src/features/conversations/conversationListLogic.ts
+      chatListStale: {
+        thisDesktop: 'This desktop',
+        signedOut: (desktop: unknown) => `${desktop} no longer accepts this phone.`,
+        notAnswering: (desktop: unknown) => `${desktop} is not answering.`,
+        chatsFrom: (ago: unknown) => `Its chats here are from ${ago}.`,
+        pairAgain: 'Pair again',
+        didNotAnswer: 'The desktop did not answer in time.',
       },
       // mobile/src/features/conversations/ConversationsScreen.tsx
       conversationsScreen: {
@@ -3928,7 +3923,7 @@ export const en = {
       artifacts: 'Artifacts',
       versionControl: 'Version control',
       ticketTrackers: 'Ticket trackers',
-      knowledgeGraph: 'Knowledge graph',
+      knowledge: 'Knowledge',
       designSystem: 'Design system',
       extensions: 'Extensions',
       remote: 'Remote',
@@ -3941,13 +3936,6 @@ export const en = {
       reCheckNow: 'Re-check now',
       versionControlCouldNotBe: 'Version control could not be checked.',
       fromTheModule: (moduleId: unknown) => `From the ${moduleId} extension`,
-      enableActivityTracking: 'Enable activity tracking?',
-      whatHappens: 'What happens:',
-      claudeCodeAgentsNoteEach: 'Claude Code agents note each knowledge file they read or edit',
-      theNotesAreKeptIn: 'The notes are kept in this project’s folder under',
-      sprintengineWorkspaces: '~/.sprintengine/workspaces/',
-      onlyKnowledgeFilesAreRecorded: 'Only knowledge files are recorded. Nothing is written to the project folder.',
-      enableTracking: 'Enable tracking',
       settingsCategories: 'Settings categories',
       interface: 'Interface',
       chatList: 'Chat list',
@@ -3984,8 +3972,6 @@ export const en = {
       checkForCLIUpdates: 'Check for CLI updates',
       offersUpdateWhenANewer: 'Offers Update when a newer version is published.',
       memory: 'Memory',
-      activityTracking: 'Activity tracking',
-      recordWhichKnowledgeFilesClaude: 'Record which knowledge files Claude Code reads.',
       done: 'Done',
       settings: 'Settings',
       closeSettings: 'Close settings',
@@ -4409,11 +4395,6 @@ export const en = {
       noTitlesHere: 'No titles here.',
       noDraftsHere: 'No drafts here.',
     },
-    // src/renderer/src/studio/agentSetup.ts
-    agentSetup: {
-      workspaceAndKnowledgeRootAre: 'Workspace and knowledge root are required.',
-      workspaceRootIsRequired: 'Workspace root is required.',
-    },
     // src/renderer/src/studio/agentSetup.double.ts
     agentSetupDouble: {
       nothingSetUpHere: 'Nothing set up here.',
@@ -4613,8 +4594,6 @@ export const en = {
       subagents: 'Subagents',
       toggleCanvas: 'Toggle canvas',
       canvas: 'Canvas',
-      toggleKnowledgeGraph: 'Toggle knowledge graph',
-      knowledgeGraph: 'Knowledge Graph',
       showUsage: 'Show usage',
       showUsageLimits: 'Show usage limits',
       newChatIn: (folderDisplayName: unknown) => `New chat in ${folderDisplayName}`,
@@ -6390,6 +6369,24 @@ export const en = {
         needsApproval: 'Needs approval',
         failed: 'Failed',
         done: 'Done',
+      },
+      // src/renderer/src/components/workspace/remoteBand/remoteListFreshness.ts
+      remoteListFreshness: {
+        signedOut: 'Signed out',
+        notPaired: 'Not paired',
+        oldPairing: 'Old pairing',
+        pairedAgainSince: (machine: unknown) =>
+          `${machine} was paired again since this chat was opened here; open it from the list to follow it over the new pairing.`,
+        outOfDate: 'Out of date',
+        notAnswering: 'Not answering',
+        pairAgain: 'pair again',
+        pairAgainWith: (machine: unknown) => `Pair again with ${machine} in Settings`,
+        refusedThisDevice: (machine: unknown) => `${machine} no longer accepts this device.`,
+        noLongerPaired: (machine: unknown) => `${machine} is no longer paired with this device.`,
+        shareNoProtocol: (machine: unknown) => `${machine} runs a Studio this app cannot read; update one of them.`,
+        isNotAnswering: (machine: unknown) => `${machine} is not answering.`,
+        readAt: (ago: unknown) => `This is its list of chats from ${ago}.`,
+        readEarlier: 'This is its list of chats from an earlier read.',
       },
     },
     // src/renderer/src/components/workspace/RootErrorBoundary.tsx

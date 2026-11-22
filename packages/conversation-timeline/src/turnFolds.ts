@@ -23,7 +23,7 @@ type IntermediateText = { text: string; beforeToolUseId: string }
  */
 export function stepShownToUser(tool: TranscriptToolEntry): boolean {
   if (tool.outputStatus === 'error') return false
-  return tool.name === 'GenerateImage' || isPluginOffer(tool)
+  return tool.name === 'GenerateImage' || isPluginOffer(tool) || isFileView(tool)
 }
 
 // The Studio MCP server's id (`STUDIO_MCP_SERVER_ID` in the app's
@@ -40,6 +40,16 @@ const STUDIO_SERVER_ID = 'sprintengine-studio'
 export function isPluginOffer(tool: Pick<TranscriptToolEntry, 'name' | 'serverName'>): boolean {
   const studio = tool.serverName === STUDIO_SERVER_ID || tool.name.includes(STUDIO_SERVER_ID)
   return studio && /(?:^|__|[./])plugin[._]offer$/u.test(tool.name)
+}
+
+/**
+ * Studio's `file.view`, under any runtime's spelling of it, as
+ * `isPluginOffer` reads one: the files an agent showed the person, drawn as
+ * an editor of each, in tabs.
+ */
+export function isFileView(tool: Pick<TranscriptToolEntry, 'name' | 'serverName'>): boolean {
+  const studio = tool.serverName === STUDIO_SERVER_ID || tool.name.includes(STUDIO_SERVER_ID)
+  return studio && /(?:^|__|[./])file[._]view$/u.test(tool.name)
 }
 
 export { proseShownToUser }

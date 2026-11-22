@@ -461,7 +461,6 @@ const MENU_ACCELERATOR_COMMAND_IDS = [
   'panel.files.toggle',
   'panel.editor.toggle',
   'panel.git.toggle',
-  'panel.knowledge-graph.toggle',
 ] as const
 
 // A chat in the middle of a turn, or stopped on a card, holds its layout as a
@@ -940,9 +939,6 @@ export default function WorkspaceManager() {
     // The performance diagnostics panel is an engineering tool, offered only in
     // dev or when SPRINTENGINE_DIAGNOSTICS=1 (matching the View-menu gate).
     if (window.api.isDevelopment || window.api.isDiagnosticsEnabled) context.diagnosticsEnabled = true
-    // The Knowledge Graph toggle is the panel's only entry point (no rail
-    // glyph), so its availability tracks the memory-graph module directly.
-    if (selectModuleEnabled(moduleEnablement, 'memory-graph')) context.memoryGraphEnabled = true
     // The Canvas tab is a pane tab the canvas module gates; with it off the
     // pane renders the unavailable surface, so the toggle is not offered.
     if (selectModuleEnabled(moduleEnablement, 'canvas')) context.canvasEnabled = true
@@ -4509,15 +4505,6 @@ export default function WorkspaceManager() {
           () => togglePaneKind(windowActiveWorkspaceId, 'canvas'),
           paneOpenOf(windowActiveWorkspaceId),
         )
-        return true
-      }
-      if (commandId === 'panel.knowledge-graph.toggle' && windowActiveWorkspaceId) {
-        // The Knowledge Graph has no rail glyph; this palette/menu command is its
-        // entry point. The module guard mirrors the command's availability so the
-        // static View-menu item can't mount a panel the disabled memory-graph
-        // module never registered.
-        if (!selectModuleEnabled(moduleEnablement, 'memory-graph')) return false
-        togglePanelRailComponent(windowActiveWorkspaceId, 'memory-graph', 'Knowledge Graph')
         return true
       }
       if (commandId === 'git.worktrees.open' && windowActiveWorkspaceId) {

@@ -339,7 +339,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     ...(terminals
       ? {
           linkLaunchedAgent: (link) => terminals.launchNotices.link(link),
-          dismissLaunchNotice: (sessionId) => terminals.launchNotices.dismiss(sessionId),
+          dismissLaunchNotice: (sessionId, chat) => terminals.launchNotices.dismiss(sessionId, chat),
         }
       : {}),
     // The shell's notifications; windows follow these on the Studio protocol

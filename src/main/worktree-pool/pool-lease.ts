@@ -504,6 +504,8 @@ export async function lease(ctx: PoolContext, input: WorktreePoolLeaseInput): Pr
       // every slot and what holds it, so the person knows what to free.
       if (made === 'full') {
         const room = await makeRoom(ctx, pool)
+        // A held slot came back idle: the next pass leases it as it stands.
+        if (room.ok && room.idle) continue
         if (room.ok) made = await createSlot(ctx, pool, local)
         if (made === 'full') {
           const { maxSlots } = await ctx.getSettings()
@@ -1027,7 +1029,7 @@ async function recreateAtReservedPath(
       return created
     })
   let slot = await claim()
-  if (slot === 'full' && (await makeRoom(ctx, pool)).ok) slot = await claim()
+  if (slot === 'full' && (await makeRoom(ctx, pool, { place: true })).ok) slot = await claim()
   if (slot === 'full' || slot === 'taken') return null
   const made = slot
   try {

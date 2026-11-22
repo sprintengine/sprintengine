@@ -608,23 +608,6 @@ export default function CommandPalette({
                 },
               ]
             : []),
-          // The Knowledge Graph has no rail glyph, so this row (and the View
-          // menu) is its entry point. Availability-gated like the panel
-          // commands: hidden while the memory-graph module is disabled.
-          ...(panelCommandEnabled('panel.knowledge-graph.toggle')
-            ? [
-                {
-                  id: 'panel.knowledge-graph.toggle',
-                  label: appCopy.ui.commandPalette.toggleKnowledgeGraph,
-                  searchLabel: appCopy.ui.commandPalette.knowledgeGraph,
-                  shortcut: shortcutFor('panel.knowledge-graph.toggle'),
-                  run: () => {
-                    togglePanelRailComponent(activeWorkspace.id, 'memory-graph', 'Knowledge Graph')
-                    onClose()
-                  },
-                },
-              ]
-            : []),
         ]
       : []
     // Commands contributed by enabled capability modules, gated by the same

@@ -10,9 +10,9 @@
 // (`isPathInsideOrEqual`, `isPathInside`, `isInside`, and a reversed-argument
 // twin). They fell into exactly two families — one that counts the parent
 // itself as contained and one that does not — and this is those two families.
-// Three case-insensitive, string-normalizing variants
-// (`shared/project-knowledge.ts`, `main/memory-graph.ts`,
-// state paths) are a different predicate and keep their own.
+// The case-insensitive, string-normalizing variants
+// (`shared/project-knowledge.ts`, state paths) are a different predicate and
+// keep their own.
 //
 // The renderer's `isPathOrChild` (src/shared/paths.ts) is a third thing again:
 // a pure string comparison over user-visible paths, with no Node and no cwd.

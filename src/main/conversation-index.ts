@@ -12,6 +12,7 @@ import {
 import { conversationConfinementRoot, workspaceStorePath, workspaceStoreReady } from './workspace-store'
 import { CONVERSATION_MAX_REPLY_PREVIEW } from '../../packages/conversation-protocol/src/public'
 import {
+  isStudioCompactionReason,
   readConversationMessageOrigin,
   type ConversationEvent,
   type ConversationKey,
@@ -510,7 +511,7 @@ function foldEvent(fold: ThreadFold, event: ConversationEvent): void {
   if (
     event.type === 'user_message' &&
     text(event.payload?.turnId) &&
-    readConversationMessageOrigin(event.payload?.origin)?.reason === 'auto-compact'
+    isStudioCompactionReason(readConversationMessageOrigin(event.payload?.origin)?.reason)
   )
     fold.quietTurns.add(text(event.payload?.turnId))
   if (event.type === 'turn_completed') {

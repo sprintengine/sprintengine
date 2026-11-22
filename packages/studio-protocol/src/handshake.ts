@@ -183,8 +183,8 @@ export const STUDIO_AGENT_RUNTIMES_CAPABILITY = 'agent-runtimes' as const
 export const STUDIO_AGENT_SETTINGS_CAPABILITY = 'agent-settings' as const
 
 /**
- * What a Studio's agents are set up with beyond their CLIs: `memory.*`,
- * `memoryActivity.*`, `mcp.sync`, `agentConfig.*`, `builtinSkills.*` and
+ * What a Studio's agents are set up with beyond their CLIs:
+ * `knowledge.resolveRoot`, `mcp.sync`, `agentConfig.*`, `builtinSkills.*` and
  * `areaSkills.*`, with their streams. Offered where the Studio holds those
  * services.
  */
@@ -392,6 +392,13 @@ export const STUDIO_TAILNET_CAPABILITY = 'tailnet' as const
 export const STUDIO_EXECUTION_HOSTS_CAPABILITY = 'execution-hosts' as const
 
 /**
+ * Files a chat's agent showed the person, read and saved from the chat
+ * (`file-views.ts`): `fileViews.read` and `fileViews.write`, for the paths the
+ * chat's own agent showed. Offered by a Studio whose core keeps the views.
+ */
+export const STUDIO_FILE_VIEWS_CAPABILITY = 'file-views' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -458,6 +465,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_TAILNET_CAPABILITY,
   STUDIO_EXECUTION_HOSTS_CAPABILITY,
   STUDIO_EXTENSION_FRAMES_CAPABILITY,
+  STUDIO_FILE_VIEWS_CAPABILITY,
 ] as const
 
 /**

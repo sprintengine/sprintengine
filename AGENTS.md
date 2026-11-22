@@ -5,6 +5,10 @@ green, and how commit messages are written. Read it before you open a pull
 request. Three of its rules are repeated here because they are broken while a
 comment is being typed, not at review time.
 
+Start at `docs/feature-map.md`: where each feature lives (its server side, its
+components, its wire and its tests). When you add a feature or move one, update
+its entry in the same change; `npm run lint` checks every path it names.
+
 ## Every feature works on every machine
 
 A chat looks and behaves the same whichever machine it runs on (owner ruling

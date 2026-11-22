@@ -11,6 +11,11 @@
 
 ### Changed
 
+- `deriveConversationRows` shows a working turn's thinking in the open: every
+  stretch of it so far is one `reasoning` row marked `box`, with the stretches
+  in `texts`, just above the reply. Once the turn settles the stretches are
+  rows of their own again, folded with the steps they led to.
+
 - `formatStepDuration` moves up to hours from an hour on ("6h 59m 50s"),
   where it read "419m 50s".
 
@@ -18,6 +23,15 @@
   authenticate", whatever category the provider filed it under.
 
 ### Added
+
+- A compaction entry, and its row, say `askedByAgent` when its turn's message
+  was Studio's `/compact` at the chat's agent's request (`origin.reason`
+  `agent-compact`); the message is drawn by the divider alone, as an
+  `auto-compact` one is.
+
+- **`isFileView`** (`turnFolds.ts`): Studio's `file.view` under any runtime's
+  spelling, as `isPluginOffer` reads a plugin offer. `stepShownToUser` holds
+  it out of a turn's fold: the files an agent showed are for the person.
 
 - **`deriveConversationRows`** (`conversationRows.ts`): a projected
   conversation as one flat list of rows for a narrow screen (messages,

@@ -157,7 +157,7 @@ import type {
 // The contract, one module per domain. Everything a caller imports from this
 // file is declared in one of them; this file adds the ElectronApi shape.
 export type * from './ipc/filesystem'
-export type * from './ipc/memory'
+export type * from './ipc/knowledge'
 export type * from './ipc/studio-plugin'
 export type * from './ipc/agent-cli'
 export type * from './ipc/marketplace'

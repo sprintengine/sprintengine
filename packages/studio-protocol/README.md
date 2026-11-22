@@ -193,8 +193,8 @@ The `welcome`'s `grant` is what the connection may do:
   (`launchSettings.get`, `.update`, `.migrate` and the `launchSettings.changed`
   topic: they name the program each CLI and MCP server runs on the machine and
   hold the MCP servers' keys), and what writes the programs and hooks the
-  agent CLIs run (`mcp.sync`, `agentConfig.adopt`, `memoryActivity.install`
-  and `.uninstall`). Everything else reaches a client by its scope.
+  agent CLIs run (`mcp.sync` and `agentConfig.adopt`). Everything else
+  reaches a client by its scope.
   A client that is not an owner never names a conversation's folder or a
   CLI's `command` (in `cliRuntimes` or a detection's or install's `runtime`),
   and names files and folders (a stat, a picture, a search, a file attached to

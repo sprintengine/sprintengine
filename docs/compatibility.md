@@ -199,6 +199,13 @@ process); a client of one that does not says to update or open Studio there.
 There is no fallback to the old socket or tools: a machine on an older build
 shows its boards to a current desktop or phone once it is updated.
 
+The files a chat's agent showed in the chat (`file.view`) are read and saved
+on the chat's Studio with `fileViews.read` and `fileViews.write` (capability
+`file-views`, 2026-11-21; `conversation:read` and `conversation:operate`), by
+the chat's key and the path the agent showed. It is additive: a Studio built
+before it does not list the capability, and a client says to update it
+rather than open the view; a client built before it draws the call as a step.
+
 Bump the version instead when the change is not additive: a field that changes
 meaning or type, a field that is removed, a response whose shape a peer is
 already parsing. Nothing a capability flag can describe should bump the version,
@@ -717,15 +724,14 @@ can run is `providers:read`; a title or a commit message is
 checkout only inside the folders the Studio knows. The desktop's own windows,
 Settings included, reach all of them only this way: their window IPC is gone.
 `agent-setup` (2026-11-12) adds what a Studio's agents are set up with beyond
-their CLIs: `memory.*` and `memoryActivity.*` (the project knowledge graph and
-the activity agents leave in it, with the `memoryActivity.events`,
-`.statusChanged` and `.synapsesChanged` streams), `mcp.sync`,
+their CLIs: `knowledge.resolveRoot` (where a project's knowledge folder is,
+the one a launch points its agent at), `mcp.sync`,
 `agentConfig.detect` and `.adopt`, `builtinSkills.list` and `.status`, and
 `areaSkills.*` with `areaSkills.changed`. A workspace is named by its folder
 (`workspaceFolder`), held to the folders the Studio knows for any client that
 is not an owner, and one on an SSH machine is refused in words for now.
-`mcp.sync`, `agentConfig.adopt` and the activity hook's install and uninstall
-are an owner's: they write what the agent CLIs run. Every Studio advertises
+`mcp.sync` and `agentConfig.adopt` are an owner's: they write what the agent
+CLIs run. Every Studio advertises
 `agent-setup` too, about its own machine; the first builds with it did so only
 in process. `agent-skills` (2026-11-12) adds the skills, design systems and
 cards a Studio's agents are given: `skillSources.*` with

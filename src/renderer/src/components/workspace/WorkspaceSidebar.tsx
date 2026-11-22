@@ -126,6 +126,7 @@ import {
   remoteLifecycleWritable,
   remoteRestToFollow,
   unattachedConversations,
+  remoteLastKnownByConnection,
   chatRecencyOf,
   remoteRowRecency,
   interleaveChats,
@@ -246,6 +247,7 @@ import {
   ChatJumpHint,
   ProjectLine,
   MachineRowGlyph,
+  RemoteLastKnownMark,
   ScheduledRunGlyph,
   RowTooltip,
   RowTooltipsSuppressed,
@@ -257,6 +259,7 @@ import {
   type RowMachine,
 } from './sidebar/rowParts'
 import { TerminalLineView } from './sidebar/TerminalLineView'
+import type { RemoteLastKnown } from './remoteBand/remoteListFreshness'
 import {
   FolderContextMenu,
   RemoteConversationContextMenu,
@@ -1472,13 +1475,7 @@ function WorkspaceSidebar({
   const remoteSessions = useRemoteSessions({ enabled: !contextRailActive })
   // How each machine stands (design-environments), for whether its rows are a last read.
   const environments = useEnvironments()
-  const {
-    presence: remotePresence,
-    browses: remoteBrowses,
-    listening: remoteListening,
-    link: remoteLink,
-    refresh: refreshRemote,
-  } = remoteSessions
+  const { presence: remotePresence, browses: remoteBrowses, link: remoteLink, refresh: refreshRemote } = remoteSessions
   // Row menu marks asked of a paired machine and not yet read back: drawn at
   // once, as a local Star flips at once, until a list read after the machine
   // took them stands in for them (`withPendingRemoteMarks`).
@@ -1491,11 +1488,24 @@ function WorkspaceSidebar({
           browses: remoteBrowses,
           environments,
           workspaces: railWorkspaces,
+          reachability: remotePresence.meshReachability,
+          connectionsListed: remotePresence.meshListed,
         }),
         pendingRemoteMarks,
       ),
-    [remotePresence.mesh, remoteBrowses, environments, railWorkspaces, pendingRemoteMarks],
+    [
+      remotePresence.mesh,
+      remotePresence.meshReachability,
+      remotePresence.meshListed,
+      remoteBrowses,
+      environments,
+      railWorkspaces,
+      pendingRemoteMarks,
+    ],
   )
+  // Each machine whose rows are a last-known list, for the rows opened here
+  // from it, which say so as its unopened rows do.
+  const remoteLastKnown = useMemo(() => remoteLastKnownByConnection(remoteGroups), [remoteGroups])
   // What a link to one of their chats opens (`remoteChatLinks.ts`).
   useEffect(() => publishRemoteChatLinkTargets(remoteGroups, environments), [remoteGroups, environments])
   // Each other machine's scheduled agents, beside this computer's in the
@@ -1688,8 +1698,8 @@ function WorkspaceSidebar({
   // that DO have a window are already `Workspace`s in `railWorkspaces` and
   // group themselves; listing them here too would be the same chat twice.
   const listedRemote = useMemo(
-    () => unattachedConversations(remoteGroups, remoteListening, railWorkspaces),
-    [remoteGroups, remoteListening, railWorkspaces],
+    () => unattachedConversations(remoteGroups, remoteLink !== 'down', railWorkspaces),
+    [remoteGroups, remoteLink, railWorkspaces],
   )
   // Remote chats asked to settle and not yet gone from their machine's list.
   // Hidden at once, as a local Settle moves its row at once; put back, with
@@ -3255,6 +3265,9 @@ function WorkspaceSidebar({
         }
         isTabDropTarget={tabDropTarget?.kind === 'workspace' && tabDropTarget.id === workspace.id}
         rowConversation={remoteConversationByWorkspace.get(workspace.id) ?? null}
+        rowLastKnown={
+          workspace.remoteOrigin ? (remoteLastKnown.get(workspace.remoteOrigin.connectionId) ?? null) : null
+        }
         liveSessions={sessionsByWorkspaceId.get(workspace.id) ?? NO_SESSIONS}
         peekSessions={peekSessionsByWorkspaceId.get(workspace.id) ?? NO_SESSIONS}
         conversationSessions={conversationsByWorkspaceId.get(workspace.id) ?? NO_CONVERSATIONS}
@@ -3515,9 +3528,19 @@ function WorkspaceSidebar({
               <TruncatedText
                 as="span"
                 text={conversation.title}
-                className={`min-w-0 flex-1 ${working || needsAttention || unseenDone ? 'font-semibold' : ''}`}
+                className={`min-w-0 flex-1 ${working || needsAttention || unseenDone ? 'font-semibold' : ''} ${
+                  conversation.lastKnown ? 'text-[color:var(--text-muted)]' : ''
+                }`}
               />
             )}
+            {/* Its machine's list is a last-known one: the row says so, and why. */}
+            {conversation.lastKnown && renamingRemote?.key !== conversation.key ? (
+              <RemoteLastKnownMark
+                lastKnown={conversation.lastKnown}
+                machineName={conversation.machineName}
+                now={now}
+              />
+            ) : null}
             <span className="sr-only">
               {appCopy.workspace.workspaceSidebar.on}
               {conversation.machineName}
@@ -5126,6 +5149,13 @@ type WorkspaceRowProps = {
   dropMark: 'before' | 'after' | null
   isTabDropTarget: boolean
   rowConversation: RemoteConversation | null
+  /**
+   * A chat opened here from a machine whose list is a last-known one (it
+   * stopped answering, no longer takes this pairing, or is no longer paired):
+   * the row says so, as that machine's unopened rows do, rather than reading
+   * as a plain row of this computer.
+   */
+  rowLastKnown: RemoteLastKnown | null
   liveSessions: TerminalSessionSnapshot[]
   peekSessions: TerminalSessionSnapshot[]
   conversationSessions: readonly ConversationSessionSummary[]
@@ -5164,6 +5194,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
   dropMark,
   isTabDropTarget,
   rowConversation,
+  rowLastKnown,
   liveSessions,
   peekSessions,
   conversationSessions,
@@ -5212,6 +5243,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
       recency?.lastInputAt,
       recency?.idleSince,
       wokeAt,
+      rowLastKnown?.since,
       ...rowLines.lines.map((line) => line.idleSince),
       ...peekSessions.map(activityAt),
       ...conversationSessions.map(conversationFinishedAt),
@@ -5993,6 +6025,10 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
         ) : (
           titleCluster
         )}
+
+        {rowLastKnown && workspace.remoteOrigin && !renaming ? (
+          <RemoteLastKnownMark lastKnown={rowLastKnown} machineName={workspace.remoteOrigin.machineName} now={now} />
+        ) : null}
 
         {/* What this chat's agents have running: a dev server, a preview.
             On the title line rather than the meta line because it is about

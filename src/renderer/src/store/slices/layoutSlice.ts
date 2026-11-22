@@ -107,6 +107,10 @@ export const RETIRED_MODULE_TAB_COMPONENTS: readonly string[] = [
   'sprintengine-roster',
   'sprintengine-tasks',
   'sprint-engines',
+  // The knowledge graph panel (`memory-graph` module) was removed 2026-11-21.
+  // It docked in the strip-less left rail, so a surviving tab would be an
+  // unavailable surface with no strip to close it from.
+  'memory-graph',
 ]
 
 export function stripRetiredModuleTabsFromLayout(layoutModel: unknown): unknown {
@@ -140,8 +144,8 @@ export function healRetiredRailLayout(ws: Workspace): Workspace {
   }
 }
 
-// Files / Git / Knowledge Graph are exclusive strip-less switches sharing the
-// left pane, Skills is the same idiom on the right; the membership answer is
+// A rail's switches are exclusive and strip-less, sharing one edge's pane
+// (`NAV_RAIL_COMPONENTS`; none ships today); the membership answer is
 // owned by modelRegistry so the migration and the runtime toggle never drift.
 // A tabset qualifies only when every tab belongs to the SAME rail — a mixed
 // tabset keeps its strip and self-heals on the next toggle.
@@ -173,10 +177,10 @@ function hideNavRailTabStripInNode(node: unknown): unknown {
   return { ...record, children: nextChildren }
 }
 
-// The rail switches (Knowledge Graph today; Files / Git / Backlog before they
-// moved into the workspace pane) carry their own selection chrome, so the
-// FlexLayout tab strip on a tabset that holds only one rail's switches is
-// redundant. Stamp enableTabStrip: false onto those tabsets without touching
+// The rail switches (Files / Git / Backlog before they moved into the
+// workspace pane, and the knowledge graph panel before it was removed) carry
+// their own selection chrome, so the FlexLayout tab strip on a tabset that
+// holds only one rail's switches is redundant. Stamp enableTabStrip: false onto those tabsets without touching
 // mixed tabsets (e.g. a nav tab parked beside the editor) — those keep their
 // strip and self-heal on the next toggle. Kept under its original name: four
 // store modules import it.

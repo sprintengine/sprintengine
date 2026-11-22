@@ -30,6 +30,7 @@ const APP_MUTATION_TOOLS = new Set([
   'agent.launch',
   // Stopping or starting one is a chat acting on its own, so both are audited.
   'subagent.start',
+  'subagent.resume',
   'subagent.cancel',
   'schedule.create',
   // Changing one changes what this machine starts on its own later.

@@ -41,6 +41,7 @@ test('claude-agent-provider', async () => {
     await testModeSwitchesReachTheLiveChild()
     await testLiveModelSwitch()
     await testResumeCursorIsPassedToTheSdkAndSessionUpdatesEmit()
+    await testAResumedReadOnlySessionKeepsItsModelEffortAndMode()
     await testCanUseToolApprovalFlowApproveAndDeny()
     await testBypassAnswersSubagentAsksButKeepsSafetyAndRuleAsks()
     await testDeniedToolResultReadsAsDeclined()
@@ -836,6 +837,34 @@ test('claude-agent-provider', async () => {
     assert.equal(capturedOptions[0]?.resume, 'previous-1')
     const updated = events.find((event) => event.type === 'session_updated')
     assert.equal(updated?.payload?.providerSessionId, 'resumed-2')
+  }
+
+  // A sub-agent resumed for a second round (`subagent.resume`): the child picks
+  // up the same Claude Code session, on the model and effort it ran on, and a
+  // read-only one stays in the mode that changes nothing.
+  async function testAResumedReadOnlySessionKeepsItsModelEffortAndMode(): Promise<void> {
+    const { adapter, capturedOptions } = createAdapter((_userMessage, context) => {
+      context.emit({ type: 'system', subtype: 'init', session_id: 'reviewer-1', model: 'opus' })
+      context.emit({
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        session_id: 'reviewer-1',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      })
+    })
+    const session = { ...SESSION_INPUT, modelId: 'opus', permissionPreset: 'manual' as const }
+    await collect(adapter.startSession({ ...session, resumeSessionId: 'reviewer-1' }) as ConversationEvent[])
+    await collect(
+      adapter.sendTurn({
+        ...turnInput({ message: 'Round 2: check the fixes.', mode: 'ask', reasoningEffort: 'high' }),
+        ...session,
+      }) as AsyncIterable<ConversationEvent>,
+    )
+    assert.equal(capturedOptions[0]?.resume, 'reviewer-1', 'the same CLI session')
+    assert.equal(capturedOptions[0]?.model, 'opus')
+    assert.equal(capturedOptions[0]?.effort, 'high')
+    assert.equal(capturedOptions[0]?.permissionMode, 'plan', 'read-only: Claude Code changes nothing in plan mode')
   }
 
   // A tool the person refused comes back from the CLI as an ordinary error

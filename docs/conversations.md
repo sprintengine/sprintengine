@@ -209,6 +209,48 @@ Claude chat offers it too, asked of its agent over there (2026-10-25). Codex
 and the ACP runtimes do not offer it, and there `/btw` goes to the CLI as
 before.
 
+### Files shown in the chat
+
+An agent shows the person files with Studio's `file.view` tool (2026-11-21):
+"show me my CLAUDE.md", or code it wants looked at. The chat draws an editor
+of each file, in tabs when there are several, with the file's path above it,
+in place of the read-only code block pasting the file into a reply would be
+(`agentChat/fileView/FileViewCard.tsx`). Each tab is the live file on the
+machine the chat runs on, not a copy: it is read when the view first draws,
+and what the person types is saved after a short pause, or at once with
+⌘S (Ctrl+S), and the header says **Saved** when it lands. Syntax is coloured
+by the file's extension, in the editor the Editor pane uses (Monaco); the
+editor grows with a short file and scrolls past about eighteen lines.
+
+A call can mark lines for the person to look at, `highlights: [{ from, to,
+note? }]` per file: the lines take the agent violet (the colour that says an
+agent is somewhere, as a tab or a Files row wears it), the note sits after the
+first line of its range, and the editor opens scrolled to the first one. This
+doubles as "show me this code". An in-chat diff view is a natural next step
+on the same block; today `editor.open_diff` opens one outside the chat.
+
+**Who writes.** The tool only opens the view. It resolves each path
+(absolute, `~/`, or relative to the agent's folder), checks the file is text
+and at most 2 MB, and writes down in Studio's data folder that this chat
+showed it (`server/file-views/file-views.ts`, `file-views.json`). It writes
+no file, and it does not see what the person types. A save is the person's:
+their edit, sent by their own connection to the chat's Studio
+(`fileViews.write`, needing `conversation:operate`), for a path that chat
+showed, and no other. That is why a view may hold a file outside every folder
+Studio knows: the agent chose to show it and the person chose to change it.
+Every save is conditional on the file as the view last read it (its SHA-256):
+a file changed on disk since is not written over, and the view says so, with
+**Load the file from disk** and **Save mine over it**. A save the disk refuses
+says why, with **Try again**.
+
+**On every machine.** The reads and saves go through the chat's transport to
+the Studio the chat lives on (capability `file-views`), so a paired desktop's
+chat, an SSH or WSL machine's, and a browser tab all edit the file on the
+machine that holds it. A view that cannot drive the chat shows the files read
+only, and a Studio from before the capability says to update it. An embedded
+conversation, which has no editor of the app's own, and the phone draw the
+call as its ordinary step for now.
+
 ### Quotes
 
 Select words in one of the agent's replies and press **Quote** in the small
@@ -928,6 +970,27 @@ is audited. Nothing new crosses the wire: a paired device lists the chat under
 its new project from `workspace.list`, which the folder change moves, and its
 next message to the chat starts the session in the new folder there.
 
+**`conversation.compact`** `{}` (2026-11-21) lets a chat's own agent compact
+its chat, for an agent about to end a turn and wait longer than its prompt
+cache lasts (a CI run, a review): the turn that wakes it then re-reads a
+summary rather than the whole conversation uncached. It takes no arguments and
+acts on the calling chat only (`launchingAgentOf`). An agent asks from inside
+its turn, and a CLI runs `/compact` as a turn of its own, so the request is
+held (`compactsWhenTurnEnds: true`) until that turn completes, and after the
+same grace an agent's own settle waits, sent as the auto compaction's is: the
+CLI's `/compact`, as Studio's message (`origin.reason` `agent-compact`), drawn
+as the compaction divider alone, "at the agent's request"
+(`conversation-self-compact.ts`, `sendStudioCompaction`); like the auto
+compaction's, its turn neither badges the chat nor notifies. It is let go when the turn fails or is stopped, a
+message reaches the chat or waits to go in, a new turn starts, or the session
+closes; work the turn left running in the background does not hold it back.
+Claude Code and Codex chats compact; another CLI is refused as
+`cannot_compact`, and an agent in a terminal as `not_a_chat`. It is an
+agent's tool and never a paired device's (`localOnlyGatewayToolReason`), and
+is audited. The new reason is additive: a client built before it reads the
+message as Studio's with no reason, and draws it as a Studio message
+(`/compact`) above the divider.
+
 Beyond its marks, a paired desktop or the phone manages a chat here as it
 manages one of its own, each part a method of this desktop's Studio
 (`chat-lifecycle`, 2026-10-25, on the protocol since 2026-11-13), by the
@@ -1282,6 +1345,18 @@ chat beneath stays mounted and hidden, since a queued message lives in its view.
   rewind or checkpoint revert, and its preset cannot be raised past its parent's,
   which the runtime refuses by any path (`subagentPresetCeiling`). A row reads its
   live status, so a person's follow-up does not say Done.
+- Its parent can give one that has ended another task (`subagent.resume`), so a
+  second review round goes to the reviewer that did the first and keeps what it
+  read. It is the chat's ordinary send to a resting chat, as Studio's message:
+  the CLI picks up its own session (Claude Code's session id, Codex's thread
+  with the model and sandbox named again), on the model, effort, preset and
+  read-only mode its record holds. It stays one row, which leads with its round
+  ("Round 2 · Done in 40s") on the desktop, a paired desktop (`round` on the
+  `conversation-subagents` row), the browser and the phone; its parent's
+  `subagent.status` answers that round's result. One still working or waiting
+  on the person is refused `subagent_busy`, and one on a CLI whose chats cannot
+  resume their session `resume_unsupported`. It counts toward its parent's four
+  running sub-agents only while its round runs.
 - An agent a chat's CLI spawned is a lane, read through its owner's session as a
   conversation (`laneTranscript`). What it asks the person is answered in the
   normal dock.

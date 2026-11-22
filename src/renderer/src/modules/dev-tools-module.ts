@@ -9,7 +9,7 @@ import type { RendererModule } from './renderer-host'
 const EditorPanel = React.lazy(() => import('../components/panels/EditorPanel'))
 
 // Dev Tools (file explorer + editor) as a renderer-only
-// capability module. Like git and memory-graph, the *backend* is foundational:
+// capability module. Like git, the *backend* is foundational:
 // the filesystem IPC stays always-registered in register-core-ipc because
 // agents and search depend on it. Only the panels gate.
 //

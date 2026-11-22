@@ -28,7 +28,8 @@ const desktop = (deviceId) => ({
 
 function harness({ chatsPerDesktop = 3, threads = null } = {}) {
   // `threads`, when given, is what every desktop lists, read afresh each time.
-  const desk = { workspaceIds: ["w"], threads };
+  // `fail`, by desktop, is the error its next list reads throw.
+  const desk = { workspaceIds: ["w"], threads, fail: {} };
   const toasts = [];
   const slots = [];
   const effects = [];
@@ -76,6 +77,7 @@ function harness({ chatsPerDesktop = 3, threads = null } = {}) {
     list: async () => {
       reads.list++;
       await tick();
+      if (desk.fail[deviceId]) throw desk.fail[deviceId];
       if (desk.threads) return desk.threads.map((thread) => ({ ...thread }));
       return Array.from({ length: chatsPerDesktop }, (_, i) => ({
         workspaceId: desk.workspaceIds[i % desk.workspaceIds.length],
@@ -513,4 +515,114 @@ test("a desktop that keeps no rest offers no Snooze", async () => {
   const [row] = h.value().chats;
   assert.equal(row.snoozable, false);
   assert.equal(await h.value().snoozeChat(row, Date.now() + MIN), false);
+});
+
+test("a desktop whose list cannot be read keeps its chats, says why, and claims no live work", async () => {
+  const h = harness({
+    threads: [{ workspaceId: "w", agentId: "busy", phase: "running", title: "busy" }],
+  });
+  h.render({ sessions: [desktop("one"), desktop("two")], activeDeviceId: "one" });
+  await settle(h);
+  assert.equal(h.value().chats.length, 2);
+  assert.equal(h.value().stale.length, 0);
+
+  // Desktop one drops this pairing; desktop two stops answering.
+  h.desk.fail.one = Object.assign(new Error("This phone is no longer paired with the desktop."), { code: "unauthorized" });
+  h.desk.fail.two = Object.assign(new Error("The desktop did not answer."), { code: "unavailable" });
+  await h.value().refresh();
+  await settle(h);
+  assert.equal(h.value().chats.length, 2, "the chats each desktop last listed stay in the list");
+  assert.ok(
+    h.value().chats.every((row) => row.thread.phase === "idle"),
+    "a turn that was running then is not drawn as working now",
+  );
+  const stale = h.value().stale;
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(stale.map((entry) => [entry.deviceId, entry.kind]))),
+    [
+      ["one", "signed-out"],
+      ["two", "not-answering"],
+    ],
+  );
+  assert.ok(stale.every((entry) => typeof entry.since === "number"), "each says when its chats were last listed");
+
+  // Paired again, and answering: the list is current.
+  h.desk.fail = {};
+  await h.value().refresh();
+  await settle(h);
+  assert.equal(h.value().stale.length, 0);
+  assert.equal(h.value().chats[0].thread.phase, "running");
+});
+
+test("a launch whose first read fails keeps nothing, so the list says only why", async () => {
+  const h = harness();
+  h.desk.fail.one = Object.assign(new Error("The desktop did not answer."), { code: "unavailable" });
+  h.render({ sessions: [desktop("one")], activeDeviceId: "one" });
+  await settle(h);
+  assert.equal(h.value().chats.length, 0);
+  assert.equal(h.value().stale.length, 1);
+  assert.equal(h.value().stale[0].since, null, "no kept chats, so no age to give");
+});
+
+test("a refusal that is the answer is a current, empty list, as on the desktop", async () => {
+  const h = harness();
+  h.desk.fail.one = Object.assign(new Error("This pairing may not read chats."), { code: "scope_required" });
+  h.render({ sessions: [desktop("one")], activeDeviceId: "one" });
+  await settle(h);
+  assert.equal(h.value().stale.length, 0);
+  assert.equal(h.value().failures.length, 0);
+});
+
+test("a poll backs off a failing desktop on its own, and keeps asking the one that answers", async () => {
+  const h = harness();
+  h.render({ sessions: [desktop("one"), desktop("two")], activeDeviceId: "one" });
+  await settle(h);
+  h.desk.fail.two = Object.assign(new Error("The desktop did not answer."), { code: "unavailable" });
+  await h.value().refresh();
+  await settle(h);
+  const before = h.reads.list;
+  await h.value().poll();
+  await settle(h);
+  assert.equal(h.reads.list, before + 1, "a poll asks the desktop that answers, and not the failing one yet");
+  assert.equal(h.value().stale.length, 1, "the failing desktop still says why");
+  assert.equal(h.value().chats.length, 6, "and keeps its chats");
+  // A person pulling to refresh asks every desktop.
+  await h.value().refresh();
+  await settle(h);
+  assert.equal(h.reads.list, before + 3);
+});
+
+test("a desktop known to have revoked this phone keeps its chats and says so", async () => {
+  const h = harness();
+  h.render({ sessions: [desktop("one")], activeDeviceId: "one" });
+  await settle(h);
+  assert.equal(h.value().chats.length, 3);
+  // The chat screen learned the desktop revoked this phone.
+  h.render({ sessions: [{ ...desktop("one"), status: "revoked" }] });
+  await h.value().refresh();
+  await settle(h);
+  assert.equal(h.value().chats.length, 3, "its chats stay, as last listed");
+  assert.equal(h.value().stale.length, 1);
+  assert.equal(h.value().stale[0].kind, "signed-out");
+});
+
+test("a poll while a poll is out joins it, so a slow desktop cannot make every poll discard the last", async () => {
+  const h = harness();
+  h.render({ sessions: [desktop("one"), desktop("two")], activeDeviceId: "one" });
+  await settle(h);
+  const before = h.reads.list;
+  const first = h.value().poll();
+  const second = h.value().poll();
+  assert.equal(second, first, "the second poll is the first one's read");
+  await first;
+  await settle(h);
+  assert.equal(h.reads.list, before + 2, "one read per desktop, not two");
+  assert.equal(h.value().chats.length, 6, "and what it read is applied");
+  // A person's own asking does not wait on a poll; it asks every desktop.
+  const polled = h.value().poll();
+  const asked = h.value().refresh();
+  assert.notEqual(asked, polled);
+  await asked;
+  await settle(h);
+  assert.equal(h.value().chats.length, 6);
 });

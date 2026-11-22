@@ -399,7 +399,7 @@ test('agent-launch-service', async () => {
     })
   })
 
-  run("the project's Knowledge Graph reaches a headless launch", async () => {
+  run("the project's knowledge folder reaches a headless launch", async () => {
     const app = harness({
       workspaces: [workspace({ folderPath: '/repo/a' })],
       settings: settings({
@@ -412,19 +412,17 @@ test('agent-launch-service', async () => {
     const launched = await app.service.launch({ workspaceId: 'ws-1', prompt: 'Do the thing.' })
     assert.equal(launched.ok, true, JSON.stringify(launched))
     const spawn = app.spawns[0]!
-    // The resolved pair is what the spawn carries, and it is BOTH halves now: it
-    // sets SPRINTENGINE_KNOWLEDGE_ROOT for the session AND it is what
-    // `terminal-launch.ts` builds the host-context document's knowledge section
-    // from. A headless launch therefore hands the spawn exactly what an
-    // interactive one does.
-    assert.equal(spawn.memoryRootPath, '/repo/a/knowledge')
-    assert.equal(spawn.memoryRelativeRoot, 'knowledge')
-    // And the prompt is the user's alone: the sentence about the graph is host
+    // The resolved pair is what the spawn carries: it is what `terminal-launch.ts`
+    // builds the host-context document's knowledge section from. A headless
+    // launch therefore hands the spawn exactly what an interactive one does.
+    assert.equal(spawn.knowledgeRootPath, '/repo/a/knowledge')
+    assert.equal(spawn.knowledgeRelativeRoot, 'knowledge')
+    // And the prompt is the user's alone: the sentence about the folder is host
     // context, delivered out of band, not something the user said.
     assert.equal(spawn.initialPrompt, 'Do the thing.')
   })
 
-  run('a configured-but-unreadable Knowledge Graph is said out loud, not dropped', async () => {
+  run('a configured-but-unreadable knowledge folder is said out loud, not dropped', async () => {
     const app = harness({
       workspaces: [workspace({ folderPath: '/repo/a' })],
       settings: settings({ lastSelectedCli: 'codex', projectKnowledgeRoots: { '/repo/a': 'knowledge' } }),
@@ -434,21 +432,21 @@ test('agent-launch-service', async () => {
     })
 
     const launched = await app.service.launch({ workspaceId: 'ws-1' })
-    // A graph that cannot be read must not fail the launch, and the fact that one
+    // A folder that cannot be read must not fail the launch, and the fact that one
     // is CONFIGURED still has to reach the spawn — an unresolved root with a known
     // relative path is what makes the host-context document say "configured, but
     // missing" instead of saying nothing and leaving the agent to guess a folder.
     assert.equal(launched.ok, true, JSON.stringify(launched))
-    assert.equal(app.spawns[0]!.memoryRootPath, undefined)
-    assert.equal(app.spawns[0]!.memoryRelativeRoot, 'knowledge')
+    assert.equal(app.spawns[0]!.knowledgeRootPath, undefined)
+    assert.equal(app.spawns[0]!.knowledgeRelativeRoot, 'knowledge')
     assert.equal(app.spawns[0]!.initialPrompt, undefined)
   })
 
-  run('a project with no Knowledge Graph launches with no graph and no line', async () => {
+  run('a project with no knowledge folder launches with no pointer and no line', async () => {
     const app = harness({ settings: settings({ lastSelectedCli: 'codex' }) })
     const launched = await app.service.launch({ workspaceId: 'ws-1', prompt: 'go' })
     assert.equal(launched.ok, true, JSON.stringify(launched))
-    assert.equal(app.spawns[0]!.memoryRootPath, undefined)
+    assert.equal(app.spawns[0]!.knowledgeRootPath, undefined)
     assert.equal(app.spawns[0]!.initialPrompt, 'go')
   })
 

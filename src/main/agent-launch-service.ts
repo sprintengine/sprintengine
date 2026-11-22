@@ -42,7 +42,7 @@ import { randomUUID } from 'crypto'
 
 import type {
   AgentCli,
-  MemoryRootStatus,
+  KnowledgeRootStatus,
   McpSettings,
   TerminalSessionSnapshot,
   TerminalSpawnResult,
@@ -90,8 +90,6 @@ export type AgentLaunchWorkspace = {
   mode?: string
   folderPath?: string | null
   agents?: Record<string, { name?: string }>
-  /** Workspace-level Knowledge Graph override, below the per-project setting. */
-  memory?: { relativeRoot?: string | null } | null
   /** The machine the workspace runs on (`local`, or a WSL distribution). */
   hostId?: string | null
 }
@@ -138,12 +136,13 @@ export type AgentLaunchServiceDeps = {
    */
   cliResumesSessions?: (cli: string) => boolean
   /**
-   * Resolve a project's Knowledge Graph root on disk (`memory-graph.ts`'s
-   * `resolveMemoryRoot`, the same call the renderer makes over IPC). Optional:
-   * a host that cannot resolve one launches without the graph rather than
-   * failing, which is what a project with no KG configured gets anyway.
+   * Resolve a project's knowledge folder on disk (`knowledge-root.ts`'s
+   * `resolveKnowledgeRoot`, the same call the renderer makes over the Studio
+   * protocol). Optional: a host that cannot resolve one launches without the
+   * pointer rather than failing, which is what a project with no knowledge
+   * folder configured gets anyway.
    */
-  resolveKnowledgeRoot?: (input: { workspaceRoot: string; relativeRoot: string }) => Promise<MemoryRootStatus>
+  resolveKnowledgeRoot?: (input: { workspaceRoot: string; relativeRoot: string }) => Promise<KnowledgeRootStatus>
   terminal: {
     list: () => TerminalSessionSnapshot[]
     spawn: (payload: TerminalSpawnPayload) => Promise<TerminalSpawnResult>
@@ -285,18 +284,17 @@ export function createAgentLaunchService(deps: AgentLaunchServiceDeps): AgentLau
 
     const agentId = request.agentId?.trim() || `agent-${cli}-${newAgentSuffix()}`
     const name = request.name?.trim() || pickRandomAgentName(takenAgentNames(workspace, deps.terminal.list()))
-    // The project's Knowledge Graph, resolved the same way the interactive
-    // launch resolves it: the per-project setting from the main-owned store,
-    // falling back to the workspace's own override. Without this a
-    // headless-launched agent silently loses `SPRINTENGINE_KNOWLEDGE_ROOT`, and the
-    // spawn has nothing to build the host-context document's knowledge section
-    // from — it would then either ignore the project's recorded context or guess
-    // at a folder.
+    // The project's knowledge folder, resolved the same way the interactive
+    // launch resolves it: the per-project setting from the main-owned store.
+    // Without this a headless-launched agent's spawn has nothing to build the
+    // host-context document's knowledge section from — it would then either
+    // ignore the project's recorded context or guess at a folder.
     const knowledge = await resolveKnowledgeLaunch(workspace, settings.projectKnowledgeRoots)
-    // The prompt is the user's alone. The sentence about the graph, and the one
-    // about an attached design system, are built into the host-context document
-    // by `terminal-launch.ts` from the root/relativeRoot pair below — which is
-    // how a headless launch now receives exactly what an interactive one does.
+    // The prompt is the user's alone. The sentence about the knowledge folder,
+    // and the one about an attached design system, are built into the
+    // host-context document by `terminal-launch.ts` from the root/relativeRoot
+    // pair below — which is how a headless launch now receives exactly what an
+    // interactive one does.
     // A resumed conversation already has its opening; a prompt would be sent
     // into it as a new message nobody typed there.
     const initialPrompt = resumeCliSessionId ? undefined : request.prompt
@@ -360,8 +358,8 @@ export function createAgentLaunchService(deps: AgentLaunchServiceDeps): AgentLau
       ...(record.cliPermissionMode ? { cliPermissionMode: record.cliPermissionMode } : {}),
       ...(record.cliModel ? { cliModel: record.cliModel } : {}),
       ...(worktreePath ? { executionMode: 'worktree' as const, worktreePath } : {}),
-      ...(knowledge.rootPath ? { memoryRootPath: knowledge.rootPath } : {}),
-      ...(knowledge.relativeRoot ? { memoryRelativeRoot: knowledge.relativeRoot } : {}),
+      ...(knowledge.rootPath ? { knowledgeRootPath: knowledge.rootPath } : {}),
+      ...(knowledge.relativeRoot ? { knowledgeRelativeRoot: knowledge.relativeRoot } : {}),
       // A connector launch forwards its own single-server MCP instead of the
       // workspace's, and marks itself so the spawn prunes anything else out of
       // the worktree config. Ordinary agents fall through to the user's MCP.
@@ -423,9 +421,9 @@ export function createAgentLaunchService(deps: AgentLaunchServiceDeps): AgentLau
   }
 
   /**
-   * The Knowledge Graph inputs for this launch, or an empty context when the
+   * The knowledge-folder inputs for this launch, or an empty context when the
    * project configures none (the common case) or the host wired no resolver.
-   * Never throws: a graph that cannot be read must not fail a launch, and
+   * Never throws: a folder that cannot be read must not fail a launch, and
    * `knowledgeLaunchContext` still emits the "configured but inaccessible" line
    * so the agent is told rather than left to guess a folder.
    */
@@ -435,15 +433,11 @@ export function createAgentLaunchService(deps: AgentLaunchServiceDeps): AgentLau
   ): Promise<KnowledgeLaunchContext> {
     const empty: KnowledgeLaunchContext = { promptSuffix: null }
     if (!deps.resolveKnowledgeRoot) return empty
-    const config = resolveProjectKnowledgeConfig(
-      workspace.folderPath,
-      projectKnowledgeRoots,
-      workspace.memory?.relativeRoot,
-    )
+    const config = resolveProjectKnowledgeConfig(workspace.folderPath, projectKnowledgeRoots)
     if (!config?.relativeRoot) return empty
     const status = await deps
       .resolveKnowledgeRoot({ workspaceRoot: config.projectRoot, relativeRoot: config.relativeRoot })
-      .catch((error): MemoryRootStatus => ({
+      .catch((error): KnowledgeRootStatus => ({
         ok: false,
         status: 'inaccessible',
         relativeRoot: config.relativeRoot,

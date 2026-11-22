@@ -8,7 +8,6 @@ import {
   normalizeWorktreeEntry,
   normalizeWorkspaceWorktreeState,
 } from './worktreesSlice'
-import { defaultWorkspaceMemoryConfig } from './memorySlice'
 import { test } from 'vitest'
 
 test('worktreesSlice', async () => {
@@ -101,7 +100,6 @@ test('worktreesSlice', async () => {
         templateId: 'worktrees-slice-standard',
         agents: {},
         layoutModel: standardTemplate.layout,
-        memory: defaultWorkspaceMemoryConfig(),
         editorState: { openFiles: [], activeFilePath: null },
         worktreeState: defaultWorkspaceWorktreeState(),
         createdAt: 1,

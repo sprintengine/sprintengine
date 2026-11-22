@@ -15,6 +15,10 @@ export type FakeMonacoEditor = {
   /** Edits pushed onto the model, as [start offset, end offset, text]. */
   edits: Array<[number, number, string]>
   commands: Array<{ keybinding: number; run: () => unknown }>
+  /** Decorations set through `createDecorationsCollection`, each collection's list as given. */
+  decorations: unknown[][]
+  /** Lines `revealLineNearTop` was asked for. */
+  revealed: number[]
   disposed: boolean
   /** The person types: the whole text becomes `next`. */
   type(next: string): void
@@ -52,6 +56,8 @@ function createEditor(initial: string, onChange: (value: string) => void) {
       const before = editor.text.slice(0, offset).split('\n')
       return { lineNumber: before.length, column: before[before.length - 1].length + 1 }
     },
+    getLineCount: () => editor.text.split('\n').length,
+    getLineMaxColumn: (line: number) => (editor.text.split('\n')[line - 1] ?? '').length + 1,
     pushStackElement() {},
     pushEditOperations(_selections: unknown, operations: Array<{ range: EditRange; text: string }>) {
       for (const { range, text } of operations) {
@@ -70,6 +76,8 @@ function createEditor(initial: string, onChange: (value: string) => void) {
     fullReplaces: 0,
     edits: [],
     commands: [],
+    decorations: [],
+    revealed: [],
     disposed: false,
     type(next: string) {
       editor.text = next
@@ -94,7 +102,13 @@ function createEditor(initial: string, onChange: (value: string) => void) {
       disposeListeners.push(listener)
       return disposable
     },
-    createDecorationsCollection: () => ({ clear() {}, set() {} }),
+    createDecorationsCollection(decorations: unknown[] = []) {
+      editor.decorations.push(decorations)
+      return { clear() {}, set() {} }
+    },
+    revealLineNearTop(line: number) {
+      editor.revealed.push(line)
+    },
     addCommand(keybinding: number, run: () => unknown) {
       editor.commands.push({ keybinding, run })
     },

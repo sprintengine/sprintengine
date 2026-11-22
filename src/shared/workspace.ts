@@ -125,54 +125,6 @@ export type WorkspaceWorktreeState = {
   updatedAt: number | null
 }
 
-export type MemoryGraphColorRule = {
-  id: string
-  pattern: string
-  color: string
-}
-
-export type MemoryGraphFiltersConfig = {
-  hideOrphans: boolean
-  hideAttachments: boolean
-  hideUnresolved: boolean
-  depthFromSelection: number | null
-  disabledGroups: string[]
-}
-
-export type MemoryGraphDisplayConfig = {
-  nodeSizeScale: number
-  lineThicknessScale: number
-  labelFadeThreshold: number
-  labelFontSize: number
-  showArrows: boolean
-  curvedEdges: boolean
-  glowHalos: boolean
-  starfield: boolean
-}
-
-export type MemoryGraphForcesConfig = {
-  centerForce: number
-  repelForce: number
-  linkForce: number
-  linkDistance: number
-}
-
-export type MemoryGraphSettings = {
-  /** Bumped when default tuning changes so the renderer can migrate stored values. */
-  version?: number
-  sidebarOpen: boolean
-  activeTab: 'filters' | 'groups' | 'display' | 'forces'
-  filters: MemoryGraphFiltersConfig
-  colorRules: MemoryGraphColorRule[]
-  display: MemoryGraphDisplayConfig
-  forces: MemoryGraphForcesConfig
-}
-
-export type WorkspaceMemoryConfig = {
-  relativeRoot: string | null
-  graphSettings?: MemoryGraphSettings
-}
-
 // Records why a persisted workspace registry intentionally has zero workspaces.
 // Hydration failure, parse failure, migration failure, and unknown startup
 // empties all remain distinct (they are classifications of the persisted shape,
@@ -920,7 +872,6 @@ export type Workspace = {
   layoutModel: IJsonModel
   agents: Record<AgentId, AgentState>
   worktreeState: WorkspaceWorktreeState
-  memory: WorkspaceMemoryConfig
   editorState: EditorState
   fileExplorerState?: WorkspaceFileExplorerState
   backlogState?: WorkspaceBacklogState

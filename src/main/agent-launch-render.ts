@@ -86,7 +86,7 @@ export type AgentLaunchRenderInput = {
   // (a markdown file, or for Cursor a plugin directory — already in the
   // launched shell's path style), and the document itself.
   // Both absent — the ordinary case, a project with no design system and no
-  // knowledge graph — render no context args and no context env, so the launch
+  // knowledge folder — render no context args and no context env, so the launch
   // is byte-identical to what it was.
   contextFile?: string
   contextText?: string

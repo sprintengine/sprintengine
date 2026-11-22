@@ -636,7 +636,7 @@ export type ConversationListWorkspace = {
   agents?: Readonly<
     Record<
       string,
-      | (Pick<AgentState, 'subagentOf' | 'subagentReadOnly' | 'subagentEnd'> &
+      | (Pick<AgentState, 'subagentOf' | 'subagentReadOnly' | 'subagentEnd' | 'subagentRound'> &
           Partial<Pick<AgentState, 'name' | 'conversation'>>)
       | undefined
     >
@@ -1173,6 +1173,7 @@ export function createConversationGatewayHost(
       const latest = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)[0]
       const providerId = agent.conversation?.providerId ?? latest?.providerId ?? ''
       const error = agent.subagentEnd?.error
+      const round = agent.subagentRound
       rows.push({
         ...key,
         title: agent.name || 'Sub-agent',
@@ -1187,6 +1188,11 @@ export function createConversationGatewayHost(
         startedAt: wholeNumber(parent.startedAt) ?? 0,
         ...(epoch(agent.subagentEnd?.at) ? { endedAt: Math.trunc(agent.subagentEnd.at) } : {}),
         ...(error ? { error } : {}),
+        // A resumed one says which round it is on, so a device draws one row
+        // that ran again rather than a second sub-agent.
+        ...(round && round.n > 1 && epoch(round.startedAt)
+          ? { round: Math.trunc(round.n), roundStartedAt: Math.trunc(round.startedAt) }
+          : {}),
       })
     }
     return rows.sort((a, b) => a.startedAt - b.startedAt).slice(-CONVERSATION_MAX_SUBAGENTS)

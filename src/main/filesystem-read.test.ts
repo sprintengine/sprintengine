@@ -8,7 +8,6 @@ import {
   MAX_IMAGE_DATA_URL_BYTES,
   MAX_TEXT_FILE_READ_BYTES,
 } from './filesystem-read'
-import { readMemoryPreview } from './memory-graph'
 import { test } from 'vitest'
 
 test('filesystem-read', async () => {
@@ -18,7 +17,6 @@ test('filesystem-read', async () => {
     await assertTextReadLimits()
     await assertImageReadLimits()
     await assertFileStats()
-    await assertMemoryPreviewImageLimit()
     assertBinarySniffing()
   }
 
@@ -74,26 +72,6 @@ test('filesystem-read', async () => {
       assert.equal(stats.sizeBytes, '<main>hello</main>'.length)
       assert.match(stats.modifiedAt, /^\d{4}-\d{2}-\d{2}T/u)
       assert.equal(Number.isFinite(stats.modifiedAtMs), true)
-    } finally {
-      rmSync(root, { force: true, recursive: true })
-    }
-  }
-
-  async function assertMemoryPreviewImageLimit(): Promise<void> {
-    const root = mkdtempSync(join(tmpdir(), 'sprintengine-memory-preview-image-'))
-
-    try {
-      const knowledgeRoot = join(root, 'knowledge')
-      mkdirSync(knowledgeRoot, { recursive: true })
-      const largeImagePath = join(knowledgeRoot, 'large.png')
-      writeFileSync(largeImagePath, Buffer.alloc(MAX_IMAGE_DATA_URL_BYTES + 1, 0x89))
-
-      const preview = await readMemoryPreview(root, 'knowledge', 'large.png')
-      assert.equal(preview.ok, true)
-      if (preview.ok) {
-        assert.equal(preview.previewKind, 'unsupported')
-        assert.match(preview.message, /too large/u)
-      }
     } finally {
       rmSync(root, { force: true, recursive: true })
     }

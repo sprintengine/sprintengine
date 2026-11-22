@@ -9,18 +9,11 @@ import {
   worktreeLastUsedAt,
 } from '../agent-worktree-keep-checks'
 import { UNCLAIMED_LEASE_MS, type SlotKeeper, type SlotRecord } from './pool-store'
-import {
-  isPerAgentFile,
-  operationInProgress,
-  patchesAlreadyIn,
-  readSlotGitDir,
-  readSlotStatus,
-  resolvePoolBaseRef,
-} from './slot-git'
+import { operationInProgress, patchesAlreadyIn, readSlotGitDir, readSlotStatus, resolvePoolBaseRef } from './slot-git'
 import type { PoolContext, PoolRuntime } from './pool-context'
-import { isOurLock, lockReasonOf } from './pool-slot-steps'
+import { isOurLock, lockReasonOf, slotWork } from './pool-slot-steps'
 import { evictSlot } from './pool-eviction'
-import { returnSlot } from './pool-return'
+import { recheckHeld, returnSlot } from './pool-return'
 
 /**
  * Giving back a leased slot whose chat still exists (worktree-pool-service.ts).
@@ -123,7 +116,12 @@ export async function readIdleFacts(ctx: PoolContext): Promise<IdleFacts> {
 }
 
 export type IdleVerdict =
-  | { ok: true; keeper: SlotKeeper }
+  /**
+   * `keeper` is who the slot is kept for once given back; null when nobody
+   * on record can come back to it (its chat or its agent's chat is gone),
+   * and it is returned to the pool as any unused slot is.
+   */
+  | { ok: true; keeper: SlotKeeper | null }
   | {
       ok: false
       reason: string
@@ -213,11 +211,13 @@ export async function judgeIdle(
   }
   const now = ctx.now()
   if (!lease.claimed && now - lease.leasedAt < UNCLAIMED_LEASE_MS) return no('leased moments ago')
-  // The idle period is for someone's next step. With no chat on record in
-  // it and no agent's chat (whoever it was leased for settled or was
-  // deleted), there is none: the sweep returns such a slot without waiting
-  // (pool-return.ts), and a lease that needs the room does not wait either.
-  if (chats.length > 0 || agentChat !== undefined) {
+  // Nobody on record can come back to it: no chat works in it, and the chat
+  // of the agent that leased it is gone (settled and off screen, or deleted).
+  const nobody = chats.length === 0 && agentChat === undefined
+  // The idle period is for someone's next step. With nobody, there is none:
+  // the sweep returns such a slot without waiting (pool-return.ts), and a
+  // lease that needs the room does not wait either.
+  if (!nobody) {
     const touched = Math.max(
       lease.leasedAt,
       slot.lastUsedAt ?? 0,
@@ -243,14 +243,20 @@ export async function judgeIdle(
   if (operation) return no(`a ${operation} is in progress`)
   const status = await readSlotStatus(ctx.git, slot.path)
   if (!status.ok) return no(`git status failed: ${status.message}`)
-  const changes =
-    status.status.changedPaths - status.status.untrackedPaths.filter((path) => isPerAgentFile(path)).length
+  const { changes } = await slotWork(ctx, pool, slot.path, status.status)
   if (changes > 0) return no(`${changes} uncommitted change${changes === 1 ? '' : 's'}`)
   // On another branch than the lease's, it is given back on that one: the
   // branch its agent moved to is where the work is, and where the chat comes
   // back to (`giveBack`). A detached HEAD has no branch to come back to.
   const branch = status.status.branch
-  if (branch === null) return no(`it is on a detached HEAD, not ${lease.branch}`)
+  if (branch === null) {
+    // With nobody to come back to it, a detached HEAD keeps it from no one:
+    // it is returned as the sweep returns a slot nobody uses (`returnSlot`),
+    // which first puts any commit only that HEAD has on a branch of its own,
+    // and is kept for nobody.
+    if (nobody) return { ok: true, keeper: null }
+    return no(`it is on a detached HEAD, not ${lease.branch}`)
+  }
   const oid = status.status.oid
   if (!oid || !(await workIsElsewhere(ctx, pool, slot, oid))) return no('it has commits not pushed')
   const hidden = await hiddenEditPaths(slot.path, ctx.git)
@@ -283,9 +289,18 @@ export async function giveBack(
   ctx: PoolContext,
   pool: PoolRuntime,
   slot: SlotRecord,
-  keeper: SlotKeeper,
+  keeper: SlotKeeper | null,
   options: { evict?: boolean; why: string },
 ): Promise<'returned' | 'held' | 'postponed' | 'skipped'> {
+  if (keeper === null) {
+    // Kept for nobody: returned as any unused slot is, and removed when the
+    // room is wanted.
+    const outcome = await returnSlot(ctx, pool, slot)
+    if (outcome !== 'returned') return outcome
+    ctx.log(`${slot.path}: given back; nobody on record can come back to it (${options.why})`)
+    if (options.evict && pool.record.slots.includes(slot)) await evictSlot(ctx, pool, slot, options.why)
+    return 'returned'
+  }
   const leaseBranch = slot.lease?.branch ?? keeper.branch
   const outcome = await returnSlot(ctx, pool, slot, false, keeper)
   if (outcome !== 'returned') return outcome
@@ -349,7 +364,8 @@ function standing(slot: SlotRecord): string {
 
 /**
  * Free one place in a full pool, for a lease (or a chat coming back) that
- * needs it: a parked slot is removed, its path kept for its chat; failing
+ * needs it: a held slot nothing holds any more is returned (`idle`: it is
+ * there to lease, not a place to make one); else a parked slot is removed, its path kept for its chat; failing
  * that, a leased slot nothing uses is given back and removed the same way.
  * Never one that holds anything only it has (every eviction rule applies),
  * nor one in use. Otherwise every slot with the reason it is held, so the
@@ -359,9 +375,25 @@ function standing(slot: SlotRecord): string {
 export async function makeRoom(
   ctx: PoolContext,
   pool: PoolRuntime,
-): Promise<{ ok: true } | { ok: false; reasons: string[]; soonest: { slot: string; inMs: number } | null }> {
+  /** A place at a path of the caller's own is wanted (a chat coming back), so an idle slot is no use: it is removed. */
+  options: { place?: boolean } = {},
+): Promise<
+  { ok: true; idle?: true } | { ok: false; reasons: string[]; soonest: { slot: string; inMs: number } | null }
+> {
   const reasons = new Map<string, string>()
   const why = 'to make room for a new lease'
+  // A held slot is looked at again as it is now: what held it may be gone
+  // (`recheckHeld`). One that comes back idle is leased as it stands, which
+  // keeps its installed dependencies; the caller looks for it (`idle`).
+  const held = pool.record.slots
+    .filter((slot) => slot.state === 'held' && !pool.busy.has(slot.id))
+    .sort((a, b) => (a.held?.since ?? a.createdAt) - (b.held?.since ?? b.createdAt))
+  for (const slot of held) {
+    if (ctx.stopped) break
+    if ((await recheckHeld(ctx, pool, slot)) !== 'returned' || slot.state !== 'idle' || slot.parked) continue
+    if (!options.place) return { ok: true, idle: true }
+    if ((await evictSlot(ctx, pool, slot, why)) === true) return { ok: true }
+  }
   const parked = pool.record.slots
     .filter((slot) => slot.state === 'idle' && slot.parked && !pool.busy.has(slot.id))
     .sort((a, b) => (a.lastUsedAt ?? a.createdAt) - (b.lastUsedAt ?? b.createdAt))

@@ -58,6 +58,10 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'conversation.changesDiff': CHAT_READ,
   'conversation.changedFile': CHAT_READ,
   'conversation.attachment': CHAT_READ,
+  // A file the chat's agent showed, read and saved through that chat: the
+  // device can drive the chat, which could ask its agent to change the file.
+  'fileViews.read': CHAT_READ,
+  'fileViews.write': CHAT_OPERATE,
   'conversation.planDocument': CHAT_READ,
   'conversation.threads': CHAT_READ,
   'conversation.search': CHAT_READ,
@@ -372,23 +376,7 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
           'areaSkills.changed',
         ],
       ],
-      [
-        'the knowledge folders and their activity hook (files:read, or an owner’s)',
-        [
-          'memory.resolveRoot',
-          'memory.index',
-          'memory.readPreview',
-          'memoryActivity.install',
-          'memoryActivity.uninstall',
-          'memoryActivity.startWatching',
-          'memoryActivity.status',
-          'memoryActivity.synapses',
-          'memoryActivity.isInstalled',
-          'memoryActivity.events',
-          'memoryActivity.statusChanged',
-          'memoryActivity.synapsesChanged',
-        ],
-      ],
+      ['a project’s knowledge folder (files:read)', ['knowledge.resolveRoot']],
       [
         'client tools, offered by an app that gives agents its tools (tools:offer)',
         ['tools.offer', 'tools.withdraw', 'tools.focus'],

@@ -725,9 +725,9 @@ function WorkspaceLayoutBody({
     })
   }, [workspaceAgents])
 
-  // Capability-module gate. Host-registered panels (editor, git, memory-graph,
-  // …) are gated generically in the factory's default case by their owning
-  // module's enablement, so a disabled module's panel falls back to the explicit
+  // Capability-module gate. Host-registered panels (editor, git, …) are gated
+  // generically in the factory's default case by their owning module's
+  // enablement, so a disabled module's panel falls back to the explicit
   // DISABLED_SURFACE and PanelRail hides its button. Only the panels with
   // bespoke props (file-editor, git-conflict) need an explicit gated
   // arm below; those read enablement from this single overrides object.
@@ -775,9 +775,8 @@ function WorkspaceLayoutBody({
       // the shell's own chrome (agent, terminal) and panels that take bespoke props
       // (file-editor's filePath, git-conflict's
       // paths).
-      // Every plain `{ workspaceId }` host panel — editor, git,
-      // memory-graph — falls
-      // through to `default`, which renders it gated by its owning module.
+      // Every plain `{ workspaceId }` host panel — editor, git — falls through
+      // to `default`, which renders it gated by its owning module.
       switch (component) {
         case 'agent':
           return timedPanel(
@@ -953,11 +952,11 @@ function WorkspaceLayoutBody({
   const handleAction = useCallback(
     (action: Action) => {
       // Removing a tabset hands its weight back to flexlayout, which spreads it
-      // across every remaining sibling — including the strip-less nav rail on
-      // the left (Knowledge Graph), which would otherwise grow when a terminal
-      // beside it is closed. Snapshot the rails'
-      // widths before the deletion applies, then re-pin them once the model has
-      // settled so the freed space goes to the editor/terminal siblings instead.
+      // across every remaining sibling — including a strip-less nav rail on
+      // the left, which would otherwise grow when a terminal beside it is
+      // closed. Snapshot the rails' widths before the deletion applies, then
+      // re-pin them once the model has settled so the freed space goes to the
+      // editor/terminal siblings instead.
       if (action.type === Actions.DELETE_TAB || action.type === Actions.DELETE_TABSET) {
         const model = modelRef.current
         const railFractions = model ? captureRailWidthFractions(model) : null

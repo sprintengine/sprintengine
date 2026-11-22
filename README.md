@@ -90,7 +90,7 @@ Eleven themes, light and dark, all drawn from the same design system.
 
 ## What else is in the box
 
-Code review with a guide agent, a design-system door, a memory graph, scheduled
+Code review with a guide agent, a design-system door, scheduled
 and triggered automations, remote machines over SSH and your tailnet, and a
 [companion app](#phone-companion) for driving all of it from your phone.
 
@@ -228,8 +228,7 @@ no-op rather than an error in your CLI.
 
 A few things are kept across quits because they do their job while Studio is
 closed: locks on agent worktrees, `tailscale serve` mappings for ports you
-shared, the knowledge-activity hook in repositories where you turned it on, and
-Studio's runtime inside any WSL distribution it ran agents in. On Windows the
+shared, and Studio's runtime inside any WSL distribution it ran agents in. On Windows the
 uninstaller removes these as well, and asks whether to delete Studio's settings
 and logs.
 

@@ -190,9 +190,11 @@ export type AgentLaunchNotices = {
   onChatIdle(summary: Pick<ConversationSessionSummary, 'sessionId' | 'workspaceId' | 'agentId'>): void
   /**
    * The parent heard how this sub-agent ended from the call it was waiting on,
-   * so the notice saying the same is not sent.
+   * so the notice saying the same is not sent. The chat, when given, finds a
+   * sub-agent linked under an earlier session than the one named: a resumed
+   * one runs on a new session.
    */
-  dismiss(sessionId: string): void
+  dismiss(sessionId: string, chat?: { workspaceId: string; agentId: string }): void
   /**
    * Someone stopped this sub-agent, so what is queued about it goes and nothing
    * more is said. Named by the chat, as the session may be a newer one than it
@@ -375,6 +377,18 @@ export function createAgentLaunchNotices(deps: AgentLaunchNoticesDeps): AgentLau
       })
     }
     parents.get(key)!.touchedAt = now()
+    // One link per chat: linked again (a sub-agent resumed for another round),
+    // the earlier link goes, so its events are not read twice. A notice it
+    // already queued stays queued.
+    if (input.child.transport === 'conversation')
+      for (const [sessionId, child] of children)
+        if (
+          sessionId !== input.child.sessionId &&
+          child.identity.transport === 'conversation' &&
+          child.identity.workspaceId === input.child.workspaceId &&
+          child.identity.agentId === input.child.agentId
+        )
+          children.delete(sessionId)
     children.set(input.child.sessionId, { identity: { ...input.child }, parentKey: key, reported: null })
     while (children.size > MAX_LINKS) unlinkChild(children.keys().next().value!)
     save()
@@ -525,11 +539,11 @@ export function createAgentLaunchNotices(deps: AgentLaunchNoticesDeps): AgentLau
     void flush(parent)
   }
 
-  function dismiss(sessionId: string): void {
-    const child = children.get(sessionId)
+  function dismiss(sessionId: string, chat?: { workspaceId: string; agentId: string }): void {
+    const child = children.get(sessionId) ?? (chat ? chatChildOf(chat) : undefined)
     if (!child) return
     const pending = parents.get(child.parentKey)?.pending
-    if (pending?.delete(sessionId)) save()
+    if (pending?.delete(child.identity.sessionId)) save()
     // Told nothing yet: the report still reading its result stops at this.
     else if (child.reported === null) child.dismissed = true
   }

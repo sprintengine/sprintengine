@@ -7,6 +7,7 @@ import { afterEach, test } from 'vitest'
 
 import { authorizeStudioAccess } from '../../../../packages/studio-protocol/src/permissions'
 import { launchWhereItLives } from '../../../server/core/environment-chat-calls'
+import { createFileViewTools } from '../../../server/file-views/file-view-tools'
 import { createLocalServerTools } from '../../../server/local-servers/local-server-tools'
 import { createPullRequestTools } from '../../../server/pull-requests/pull-request-tools'
 import type { EnvironmentClients } from '../../../shared/environment-clients'
@@ -113,6 +114,8 @@ const DEVICE_TOOLS: Readonly<Record<string, typeof LOCAL | readonly TailnetScope
 
   // Never to a device, whatever it holds (tailnet-scopes.ts says why for each).
   'agent.launch': LOCAL,
+  'conversation.compact': LOCAL,
+  'file.view': LOCAL,
   'backlog.work': LOCAL,
   'terminal.list': LOCAL,
   'terminal.read': LOCAL,
@@ -169,6 +172,7 @@ const DEVICE_TOOLS: Readonly<Record<string, typeof LOCAL | readonly TailnetScope
   'conversation.interrupt': LOCAL,
   'subagent.start': LOCAL,
   'subagent.status': LOCAL,
+  'subagent.resume': LOCAL,
   'subagent.cancel': LOCAL,
   'extension.create': LOCAL,
   'extension.guide': LOCAL,
@@ -215,6 +219,7 @@ function builtInTools(): McpToolRegistration[] {
     createWorktreePoolTools,
     createPullRequestTools,
     createLocalServerTools,
+    createFileViewTools,
     createTailnetTools,
   ]
   return factories.flatMap((factory) => factory(unused))

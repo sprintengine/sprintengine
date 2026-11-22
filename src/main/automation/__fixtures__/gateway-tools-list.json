@@ -181,6 +181,10 @@
       "sha256": "443a05ea762c54601ea67b7b0c8cd1f9b76700250d4d589bb27f61664c5905d2"
     },
     {
+      "name": "conversation.compact",
+      "sha256": "27b3bd71f76046c9e77c960d9ed4b728a59cbcf92bc99fd7bcdcaf12c1ee5160"
+    },
+    {
       "name": "conversation.send",
       "sha256": "7e841da0f12b5de986e1e727dd2c9ec585354b19b742b8f7b4d8b99e24fd3962"
     },
@@ -198,11 +202,15 @@
     },
     {
       "name": "subagent.start",
-      "sha256": "72a3ab9b00d3fd32a6a7adc9a9490280cf00c7d7e651713c4a178290accd90ec"
+      "sha256": "860779e77b3d3fccc5c92829c327b54b6cc70f399bfb303fffebb5727b1819e2"
     },
     {
       "name": "subagent.status",
-      "sha256": "5fae4d0ac3820d466ece3e32dc6e65e632330810a1417f66a480ff95d09111cf"
+      "sha256": "147a567320361c7d963d4f62b5875e5b0a0dfea65ebb7ff39119c65c3c890bd5"
+    },
+    {
+      "name": "subagent.resume",
+      "sha256": "bed477515fa741ab977158efe25a91b84e6b032ebe577e6f5498e974368af161"
     },
     {
       "name": "subagent.cancel",
@@ -243,6 +251,10 @@
     {
       "name": "local_server.link",
       "sha256": "22c97db66798e939a9996a1cd7701da3b7b335019f256af6f847fb106fe16e5b"
+    },
+    {
+      "name": "file.view",
+      "sha256": "d8c9db813f33711af75c8b20027118d32b6ba7ab34dd164e08e85b25fbb66f59"
     },
     {
       "name": "worktree.lease",
@@ -619,6 +631,10 @@
       "sha256": "443a05ea762c54601ea67b7b0c8cd1f9b76700250d4d589bb27f61664c5905d2"
     },
     {
+      "name": "conversation.compact",
+      "sha256": "27b3bd71f76046c9e77c960d9ed4b728a59cbcf92bc99fd7bcdcaf12c1ee5160"
+    },
+    {
       "name": "conversation.send",
       "sha256": "7e841da0f12b5de986e1e727dd2c9ec585354b19b742b8f7b4d8b99e24fd3962"
     },
@@ -636,11 +652,15 @@
     },
     {
       "name": "subagent.start",
-      "sha256": "72a3ab9b00d3fd32a6a7adc9a9490280cf00c7d7e651713c4a178290accd90ec"
+      "sha256": "860779e77b3d3fccc5c92829c327b54b6cc70f399bfb303fffebb5727b1819e2"
     },
     {
       "name": "subagent.status",
-      "sha256": "5fae4d0ac3820d466ece3e32dc6e65e632330810a1417f66a480ff95d09111cf"
+      "sha256": "147a567320361c7d963d4f62b5875e5b0a0dfea65ebb7ff39119c65c3c890bd5"
+    },
+    {
+      "name": "subagent.resume",
+      "sha256": "bed477515fa741ab977158efe25a91b84e6b032ebe577e6f5498e974368af161"
     },
     {
       "name": "subagent.cancel",
@@ -681,6 +701,10 @@
     {
       "name": "local_server.link",
       "sha256": "22c97db66798e939a9996a1cd7701da3b7b335019f256af6f847fb106fe16e5b"
+    },
+    {
+      "name": "file.view",
+      "sha256": "d8c9db813f33711af75c8b20027118d32b6ba7ab34dd164e08e85b25fbb66f59"
     },
     {
       "name": "worktree.lease",

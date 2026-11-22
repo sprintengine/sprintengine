@@ -16,9 +16,9 @@
 //       each entry MUST carry a comment pointing to the Phase D consumer
 //       task that will migrate it.
 //
-//   (c) no-radial-gradient — `radial-gradient(...)` is reserved for the
-//       memory graph canvas. Anywhere else, hierarchy comes from typography,
-//       spacing, and hairlines, not radial decoration.
+//   (c) no-radial-gradient — no `radial-gradient(...)`. Hierarchy comes from
+//       typography, spacing, and hairlines, not radial decoration. (The one
+//       exception, the knowledge graph canvas, went with the graph.)
 //
 //   (d) no-statusdot-from-app-icons — importing `StatusDot` from any module
 //       whose path includes `AppIcons` re-creates the deleted alias. Import
@@ -109,9 +109,6 @@ const TOOLTIP_PATH = 'src/renderer/src/components/ui/Tooltip.tsx'
 // for its panel — that's exactly the shape rule (g) flags, so the canonical
 // primitive needs to be exempt.
 const DRAWER_PATH = 'src/renderer/src/components/ui/Drawer.tsx'
-// Memory graph atmosphere exception: pinned to exactly this canvas file — the
-// graph is an atmospheric surface, not chrome.
-const MEMORY_CANVAS_PATH = 'src/renderer/src/components/memory/MemoryGraphCanvas.tsx'
 
 // Native <select> allow-list — EMPTY, and it stays empty.
 //
@@ -323,8 +320,8 @@ for (const path of FILES) {
     }
   }
 
-  // (c) radial-gradient outside the memory graph canvas.
-  if (path !== MEMORY_CANVAS_PATH) {
+  // (c) radial-gradient, anywhere.
+  {
     RADIAL_GRADIENT.lastIndex = 0
     let match
     while ((match = RADIAL_GRADIENT.exec(source))) {
@@ -335,7 +332,7 @@ for (const path of FILES) {
         line,
         column,
         match: match[0],
-        canonical: 'use solid token-backed backgrounds; radial-gradient is memory-canvas-only',
+        canonical: 'use solid token-backed backgrounds',
       })
     }
   }
@@ -692,7 +689,7 @@ if (findings.length > 0) {
       '  - ui/Popover for anchored menus, listboxes, and dialog popovers\n' +
       '  - ui/Buttons, ui/Input, ui/Textarea, ui/Checkbox, ui/Switch instead of a\n' +
       '    raw <button>, <input> or <textarea>\n' +
-      'Confine radial-gradient to the memory graph canvas. Delete any\n' +
+      'Draw no radial-gradient. Delete any\n' +
       'AppIcons.StatusDot re-export; it was removed in T9 and should never\n' +
       'come back.\n' +
       '\n' +

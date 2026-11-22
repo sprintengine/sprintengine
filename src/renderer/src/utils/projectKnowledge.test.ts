@@ -13,7 +13,7 @@ test('projectKnowledge', async () => {
     }
   }
 
-  type TestWorkspace = { folderPath: string | null; memory?: { relativeRoot: string | null } | null }
+  type TestWorkspace = { folderPath: string | null }
 
   run('relativePathBetween resolves a sibling folder', () => {
     assert.equal(relativePathBetween('/Users/x/workspace/sprintengine', '/Users/x/workspace/knowledge'), '../knowledge')
@@ -36,8 +36,8 @@ test('projectKnowledge', async () => {
 
   run('listOpenProjectKnowledge dedupes workspaces sharing a configured project root', () => {
     const workspaces: TestWorkspace[] = [
-      { folderPath: '/Users/x/workspace/sprintengine', memory: { relativeRoot: null } },
-      { folderPath: '/Users/x/workspace/sprintengine', memory: { relativeRoot: null } },
+      { folderPath: '/Users/x/workspace/sprintengine' },
+      { folderPath: '/Users/x/workspace/sprintengine' },
     ]
     const entries = listOpenProjectKnowledge(workspaces, { '/Users/x/workspace/sprintengine': 'knowledge' })
     assert.equal(entries.length, 1)
@@ -49,8 +49,8 @@ test('projectKnowledge', async () => {
 
   run('listOpenProjectKnowledge collapses an inheriting worktree onto its configured ancestor', () => {
     const workspaces: TestWorkspace[] = [
-      { folderPath: '/Users/x/workspace/sprintengine', memory: { relativeRoot: null } },
-      { folderPath: '/Users/x/workspace/sprintengine/worktrees/run-1', memory: { relativeRoot: null } },
+      { folderPath: '/Users/x/workspace/sprintengine' },
+      { folderPath: '/Users/x/workspace/sprintengine/worktrees/run-1' },
     ]
     const entries = listOpenProjectKnowledge(workspaces, { '/Users/x/workspace/sprintengine': 'knowledge' })
     assert.equal(entries.length, 1)
@@ -59,7 +59,7 @@ test('projectKnowledge', async () => {
   })
 
   run('listOpenProjectKnowledge lists an unconfigured project with a null root', () => {
-    const workspaces: TestWorkspace[] = [{ folderPath: '/Users/x/workspace/sibling', memory: { relativeRoot: null } }]
+    const workspaces: TestWorkspace[] = [{ folderPath: '/Users/x/workspace/sibling' }]
     const entries = listOpenProjectKnowledge(workspaces, {})
     assert.equal(entries.length, 1)
     assert.equal(entries[0].name, 'sibling')
@@ -68,8 +68,8 @@ test('projectKnowledge', async () => {
 
   run('listOpenProjectKnowledge sorts distinct projects by name', () => {
     const workspaces: TestWorkspace[] = [
-      { folderPath: '/Users/x/workspace/zeta', memory: { relativeRoot: null } },
-      { folderPath: '/Users/x/workspace/alpha', memory: { relativeRoot: null } },
+      { folderPath: '/Users/x/workspace/zeta' },
+      { folderPath: '/Users/x/workspace/alpha' },
     ]
     const entries = listOpenProjectKnowledge(workspaces, {})
     assert.deepEqual(
@@ -85,14 +85,10 @@ test('projectKnowledge', async () => {
 
   // Guards the resolver contract the list relies on for shared-folder math.
   run('resolveProjectKnowledgeConfig prefers the deepest configured ancestor', () => {
-    const config = resolveProjectKnowledgeConfig(
-      '/Users/x/workspace/sprintengine/packages/app',
-      {
-        '/Users/x/workspace': 'shared',
-        '/Users/x/workspace/sprintengine': 'knowledge',
-      },
-      null,
-    )
+    const config = resolveProjectKnowledgeConfig('/Users/x/workspace/sprintengine/packages/app', {
+      '/Users/x/workspace': 'shared',
+      '/Users/x/workspace/sprintengine': 'knowledge',
+    })
     assert.equal(config?.projectRoot, '/Users/x/workspace/sprintengine')
     assert.equal(config?.relativeRoot, 'knowledge')
     assert.equal(config?.inherited, true)

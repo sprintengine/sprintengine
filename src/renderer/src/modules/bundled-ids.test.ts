@@ -19,8 +19,8 @@ test('bundled-ids', async () => {
   // module and `sprint-engine` the extracted Sprint Engine (both
   // publisher-locked reservations); the others are retired — `mobile-relay` with
   // the hosted relay, when the phone moved to the tailnet, `automations` when
-  // scheduled agents replaced it, and `voice-dictation` when dictation was
-  // removed.
+  // scheduled agents replaced it, `voice-dictation` when dictation was
+  // removed, and `memory-graph` when the knowledge graph panel was.
   // They are listed here, not silently tolerated, so the set stays deliberate.
   const RETIRED_RESERVED_IDS = [
     'switchboard',
@@ -30,6 +30,7 @@ test('bundled-ids', async () => {
     'mobile-relay',
     'automations',
     'voice-dictation',
+    'memory-graph',
   ]
 
   const bundled = [...BUNDLED_RENDERER_MODULE_MANIFESTS.map((m) => m.id)].sort()

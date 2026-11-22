@@ -4,12 +4,12 @@ import { Checkbox, EmptyState, GhostButton, InlineNotice, Input, MicroChip, Stat
 import type { Tone } from '../ui'
 import { SettingCard, SettingsSectionTitle } from './SettingsAtoms'
 import { listOpenProjectKnowledge, relativePathBetween, type ProjectKnowledgeEntry } from '../../utils/projectKnowledge'
-import { isAbsolutePath } from '../../store/slices/memorySlice'
+import { isAbsolutePath } from '../../store/slices/knowledgeSlice'
 import { isImeKey } from '../../utils/imeKey'
 import { agentSetupApi } from '../../studio/agentSetup'
 import { copy } from '../../../../shared/copy'
 
-type RowStatus = MemoryRootStatus | null
+type RowStatus = KnowledgeRootStatus | null
 
 function dotTone(status: RowStatus, checking: boolean): Tone {
   if (checking || !status) return 'neutral'
@@ -29,7 +29,7 @@ type ProjectKnowledgeListProps = {
 }
 
 /**
- * Knowledge Graph settings list. One row per open project (deduped across its
+ * Knowledge settings list. One row per open project (deduped across its
  * workspaces); each row sets that project's knowledge folder. Multi-select + "Point at shared folder…" assigns one real folder to
  * several projects, storing each project's own relative path to it.
  */
@@ -72,7 +72,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
     }
     setChecking((c) => ({ ...c, [key]: true }))
     try {
-      const status = await agentSetupApi.memoryResolveRoot({ workspaceRoot: projectRoot, relativeRoot })
+      const status = await agentSetupApi.knowledgeResolveRoot({ workspaceRoot: projectRoot, relativeRoot })
       setStatuses((s) => ({ ...s, [key]: status }))
     } catch (error) {
       setStatuses((s) => ({

@@ -642,6 +642,31 @@ test('a read-only chat on Manual runs ask with approvals off, so a refused actio
   await done
 })
 
+test('a resumed read-only thread names its model, effort and read-only sandbox, never left to the config default', async () => {
+  // A sub-agent resumed for a second round (`subagent.resume`): the app-server
+  // resumes the thread it ran on, and nothing about how it ran is left for
+  // Codex to fill in from its own config.
+  const f = fixture()
+  Object.assign(f.input, { modelId: 'gpt-6.1-sol', permissionPreset: 'manual' })
+  await f.adapter.startSession({ ...f.input, resumeSessionId: 'reviewer-thread' })
+  const done = f.send('high', 'ask', 'Round 2: check the fixes.')
+  await f.started
+  expect(f.calls.find((call) => call.method === 'thread/start')).toBeUndefined()
+  expect(f.calls.find((call) => call.method === 'thread/resume')?.params).toMatchObject({
+    threadId: 'reviewer-thread',
+    model: 'gpt-6.1-sol',
+    sandbox: 'read-only',
+  })
+  expect(f.calls.find((call) => call.method === 'turn/start')?.params).toMatchObject({
+    model: 'gpt-6.1-sol',
+    effort: 'high',
+    approvalPolicy: 'never',
+    sandboxPolicy: { type: 'readOnly', networkAccess: false },
+  })
+  await f.message({ method: 'turn/completed', params: { threadId: 'native-thread', turn: { status: 'completed' } } })
+  await done
+})
+
 test('each preset rides thread start and every turn', async () => {
   for (const [permissionPreset, approvalPolicy, approvalsReviewer, sandbox, type] of [
     ['auto', 'on-request', 'auto_review', 'workspace-write', 'workspaceWrite'],

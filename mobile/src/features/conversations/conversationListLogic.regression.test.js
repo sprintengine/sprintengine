@@ -1,6 +1,14 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const {
+  CHAT_LIST_SLOW_POLL_MAX_MS,
+  CHAT_LIST_SLOW_POLL_MS,
+  chatListFailureKind,
+  chatListPollDue,
+  chatListSlowPollMs,
+  chatListWithin,
+  chatListStaleWords,
+  lastKnownChatRow,
   CHAT_DATE_SECTION_LABEL,
   CHAT_EARLIER_AFTER_MS,
   chatCliMark,
@@ -539,4 +547,45 @@ test("a chat opened in a screen's place keeps what was under it, and the list un
   assert.deepEqual(routesInPlaceOfTop([home, { name: "ChatLink" }], chat, home), [home, chat]);
   assert.deepEqual(routesInPlaceOfTop([{ name: "ChatLink" }], chat, home), [home, chat]);
   assert.deepEqual(routesInPlaceOfTop([home, { name: "Notices" }, { name: "Conversation" }], chat, home), [home, { name: "Notices" }, chat]);
+});
+
+test("a desktop's chats as a last-known list: why, how old, and polled further apart while it fails", () => {
+  assert.equal(chatListFailureKind({ code: "unauthorized" }), "signed-out");
+  assert.equal(chatListFailureKind({ code: "revoked" }), "signed-out");
+  assert.equal(chatListFailureKind({ code: "peer_mismatch" }), "signed-out");
+  assert.equal(chatListFailureKind({ code: "unavailable" }), "not-answering");
+  assert.equal(chatListFailureKind(new Error("socket closed")), "not-answering");
+  assert.equal(chatListFailureKind({ code: "scope_required" }), null, "a refusal that is the answer lists none");
+  assert.equal(chatListFailureKind({ code: "conversations_unsupported" }), null);
+
+  const now = Date.UTC(2026, 10, 20, 12);
+  assert.equal(
+    chatListStaleWords({ deviceId: "d", desktopName: "mac-mini", kind: "signed-out", since: now - 2 * 3_600_000 }, now),
+    "mac-mini no longer accepts this phone. Its chats here are from 2h ago.",
+  );
+  assert.equal(
+    chatListStaleWords({ deviceId: "d", desktopName: "mac-mini", kind: "not-answering", since: null }, now),
+    "mac-mini is not answering.",
+    "with nothing kept, only why",
+  );
+
+  const row = { deviceId: "d", thread: { workspaceId: "w", agentId: "a", phase: "running", backgroundWork: { agents: 1, monitors: 0 } } };
+  assert.equal(lastKnownChatRow(row).thread.phase, "idle");
+  assert.equal(lastKnownChatRow(row).thread.backgroundWork, undefined);
+  const failed = { deviceId: "d", thread: { workspaceId: "w", agentId: "a", phase: "failed" } };
+  assert.equal(lastKnownChatRow(failed), failed, "a row with nothing live is kept as it is");
+
+  assert.equal(chatListSlowPollMs(0), CHAT_LIST_SLOW_POLL_MS);
+  assert.equal(chatListSlowPollMs(1), CHAT_LIST_SLOW_POLL_MS * 2);
+  assert.equal(chatListSlowPollMs(99), CHAT_LIST_SLOW_POLL_MAX_MS);
+  assert.equal(chatListPollDue(undefined, 0), true);
+  assert.equal(chatListPollDue({ askedAt: 0, failures: 0 }, 1), true, "a desktop that answers is asked on every poll");
+  assert.equal(chatListPollDue({ askedAt: 0, failures: 1 }, CHAT_LIST_SLOW_POLL_MS), false);
+  assert.equal(chatListPollDue({ askedAt: 0, failures: 1 }, CHAT_LIST_SLOW_POLL_MS * 2), true);
+});
+
+test("a list read that never answers lands as not answering once its bound passes", async () => {
+  const hung = new Promise(() => {});
+  await assert.rejects(chatListWithin(hung, 5), (error) => chatListFailureKind(error) === "not-answering");
+  assert.equal(await chatListWithin(Promise.resolve("listed"), 1000), "listed", "an answer in time is the answer");
 });

@@ -42,6 +42,7 @@ import { presentToolItem, summarizeToolGroup } from '../../../../../shared/conve
 import type { ConversationToolKind } from '../../../../../shared/conversation-runtime'
 import {
   deriveTurnFold,
+  isFileView,
   isPluginOffer,
   turnAgentLanes,
   turnFoldedProse,
@@ -52,12 +53,13 @@ import {
 import { formatStepDuration } from './stepDuration'
 import { useLiveRowMotion } from './liveVisibility'
 import { PluginOfferCard } from './pluginOffer/PluginOfferCard'
+import { FileViewCard } from './fileView/FileViewCard'
 import { formatMessageDateTime, formatMessageTime, LiveElapsed } from './liveElapsed'
 import { useClockFormat } from '../../../utils/clockFormat'
 import { showCodexFollowupLabels } from '../../../utils/markdownCodexFollowups'
 import { markdownClipboardHtml } from '../../../utils/markdownClipboardHtml'
 import { useMessageCopyMenu } from './messageCopyMenu'
-import { ReasoningBlock } from './reasoningBlock'
+import { ReasoningBlock, ReasoningBox } from './reasoningBlock'
 import { SideQuestionMarker, type KeptSideQuestion } from './sideQuestion'
 import { CompactionDivider, HandoffDivider, TurnMeta } from './turnMeta'
 import { CommandOutputRow } from './commandOutputRow'
@@ -514,7 +516,7 @@ export function AssistantTurnBlock({
   modelSwitched?: boolean
 }) {
   const context = useConversationLinkContext()
-  const fold = deriveTurnFold(entry, tools)
+  const derivedFold = deriveTurnFold(entry, tools)
   // Folded until asked for, the turn running now included: the steps are how
   // the reply was reached, and the working line already says what is
   // happening (owner ruling 2026-10-02).
@@ -524,7 +526,6 @@ export function AssistantTurnBlock({
     false,
   )
   const foldRegionId = useId()
-  const open = !fold || workOpen
   // Kept while the tools are, so the cards are not redrawn for each token.
   const lanes = useMemo(() => turnAgentLanes(tools), [tools])
   const failed = useMemo(() => turnFoldFailures(tools), [tools])
@@ -532,6 +533,23 @@ export function AssistantTurnBlock({
   const foldedProse = useMemo(() => turnFoldedProse(entry.intermediateText), [entry.intermediateText])
   const shown = useMemo(() => turnShownWork(tools, entry.intermediateText), [tools, entry.intermediateText])
   const settledReply = entry.status !== 'streaming' && hasReply(entry)
+  // While the turn works its thinking is shown in the open, in one box above
+  // the reply; once it settles the box goes and the thoughts are the fold's.
+  const working = entry.status === 'streaming'
+  const thoughts = useMemo(
+    () =>
+      working
+        ? [...(entry.reasoningSegments ?? []).map((segment) => segment.text), entry.reasoning].filter((text) =>
+            text.trim(),
+          )
+        : [],
+    [working, entry.reasoningSegments, entry.reasoning],
+  )
+  const boxed = thoughts.length > 0
+  // The box holds the thinking, so a fold with nothing else under it (its
+  // steps all shown to the person) would open onto nothing: there is none.
+  const fold = boxed && !foldedSteps && !foldedProse?.length ? null : derivedFold
+  const open = !fold || workOpen
   const copy = useMessageCopyMenu(
     settledReply
       ? {
@@ -570,18 +588,18 @@ export function AssistantTurnBlock({
       {/* What the fold opens and closes. The agents and what the agent showed
           are drawn under it, so the timeline inside leaves them out. */}
       <div id={foldRegionId}>
-        {open && (foldedSteps || foldedProse?.length || entry.reasoningSegments?.length) ? (
+        {open && (foldedSteps || foldedProse?.length || (!boxed && entry.reasoningSegments?.length)) ? (
           <WorkTimeline
             tools={tools}
             live={entry.status === 'streaming'}
             intermediateText={foldedProse}
-            reasoning={entry.reasoningSegments}
+            reasoning={boxed ? undefined : entry.reasoningSegments}
             turnId={entry.turnId}
             foldedOnly
           />
         ) : null}
         {/* Thinking since the last step: the whole turn's when it ran none. */}
-        {open && entry.reasoning.trim() ? (
+        {open && !boxed && entry.reasoning.trim() ? (
           <ReasoningBlock
             text={entry.reasoning}
             duration={
@@ -592,6 +610,7 @@ export function AssistantTurnBlock({
           />
         ) : null}
       </div>
+      {boxed ? <ReasoningBox texts={thoughts} live={entry.reasoningLive === true} disclosureId={entry.turnId} /> : null}
       {shown.map((item) =>
         item.kind === 'step' ? (
           <WorkTimelineStep key={item.id} tool={item.tool} />
@@ -883,6 +902,10 @@ export const WorkTimelineStep = memo(function WorkTimelineStep({ tool }: { tool:
   // machine) falls back to its tool row, so the call is never lost.
   if (isPluginOffer(tool) && tool.outputStatus !== 'error')
     return <PluginOfferCard tool={tool} fallback={<ToolRow tool={tool} />} />
+  // Files the agent showed: an editor of each, in tabs. Still running, or
+  // with an answer that names no file, the call is its tool row.
+  if (isFileView(tool) && tool.status === 'done' && tool.outputStatus !== 'error')
+    return <FileViewCard tool={tool} fallback={<ToolRow tool={tool} />} />
   return <ToolRow tool={tool} />
 })
 
