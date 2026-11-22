@@ -1517,6 +1517,7 @@ export {
   EXTENSION_TIERS,
   LOCAL_EXTENSION_PUBLISHER,
   STUDIO_EXTENSION_VERSION,
+  EXTENSION_SETTING_TYPES,
   compareStudioVersions,
   extensionInstallKey,
   extensionSettingDefaults,

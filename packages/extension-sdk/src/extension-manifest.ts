@@ -313,8 +313,9 @@ const commandRef = (doc: string): FieldSpec => ({
   example: 'panel.git.toggle',
 })
 
-const SETTING_TYPES = ['string', 'number', 'integer', 'boolean'] as const
-export type ExtensionSettingType = (typeof SETTING_TYPES)[number]
+/** The types a declared setting may have. */
+export const EXTENSION_SETTING_TYPES = ['string', 'number', 'integer', 'boolean'] as const
+export type ExtensionSettingType = (typeof EXTENSION_SETTING_TYPES)[number]
 const SETTING_KEY_RE = /^[A-Za-z][A-Za-z0-9_.-]*$/
 const FILE_SUFFIX_RE = /^\.[A-Za-z0-9_+-][A-Za-z0-9_.+-]*$/
 const PORTABLE_NAME_RE = /^[^<>:"/\\|?*\u0000-\u001f]+$/
@@ -635,7 +636,7 @@ const CONTRIBUTES: ObjectNode = {
             },
             description: { node: displayText(512), doc: 'Help shown under the label.', since: V1 },
             type: {
-              node: { kind: 'string', max: 16, enum: SETTING_TYPES },
+              node: { kind: 'string', max: 16, enum: EXTENSION_SETTING_TYPES },
               required: true,
               doc: 'The value’s type.',
               since: V1,
