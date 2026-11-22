@@ -1,5 +1,9 @@
 import { EXTENSION_HOST_SERVICES } from '../../../../packages/extension-sdk/src/services'
-import type { ExtensionMcpToolContribution } from '../../../../packages/extension-sdk/src/extension-manifest'
+import type {
+  ExtensionHookContribution,
+  ExtensionMcpToolContribution,
+} from '../../../../packages/extension-sdk/src/extension-manifest'
+import { isExtensionHookPoint, type ExtensionHookPoint } from '../../../../packages/extension-sdk/src/hooks'
 import { isModuleMethodName, type ModuleMethodAccess } from '../../../shared/modules/methods'
 import { HOST_CAPABILITIES } from '../../../shared/modules/host-api'
 import type { ModuleFileDigests } from '../../../shared/modules/manifest'
@@ -13,7 +17,11 @@ import {
   type ModuleMethodCallOutcome,
   type ModuleMethodCallRequest,
 } from '../../../main/module-host/main-host'
-import { currentInvoker, ownerInvoker } from '../../../main/module-host/extension-invocation'
+import {
+  currentInvoker,
+  ownerInvoker,
+  type ExtensionInvoker,
+} from '../../../main/module-host/extension-invocation'
 import { resolveContainedEntry } from '../../../main/modules/entry-containment'
 import { moduleFileDigestIssuesSync } from '../../../main/modules/module-signature'
 import { createWorkerLog, type WorkerLog } from './worker-log'
@@ -64,6 +72,17 @@ export type WorkerExtensionSpec = {
   /** The approval it was loaded under. */
   fingerprint: string
   declaredTools: readonly ExtensionMcpToolContribution[]
+  /** The points extension.json lists (`contributes.hooks`); absent, none. */
+  declaredHooks?: readonly ExtensionHookContribution[]
+}
+
+/** An extension that hooks a point, as the hook chain asks it. */
+export type WorkerHookParticipant = {
+  extensionId: string
+  displayName: string
+  onError: 'pass' | 'deny'
+  /** The approval it was loaded under: a hook answered after it changed no longer speaks for the person. */
+  fingerprint: string
 }
 
 /** An installed extension as discovery finds it: whether it may run as it is, and the approval it runs under. */
@@ -124,6 +143,7 @@ type Entry = {
   /** What its running process registered. */
   methods: Map<string, ModuleMethodAccess>
   tools: Set<string>
+  hooks: Set<string>
   handlers: Map<string, McpToolRegistration['handler']>
 }
 
@@ -328,6 +348,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
       slot: null,
       methods: new Map(),
       tools: new Set(),
+      hooks: new Set(),
       handlers: new Map(),
     }
     this.entries.set(spec.extensionId, entry)
@@ -522,6 +543,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
       this.setState(entry, entry.restarts > 0 ? 'restarting' : 'starting')
       entry.methods = new Map()
       entry.tools = new Set()
+      entry.hooks = new Set()
       let proc: WorkerProcess | null = null
       const created = createWorkerSession({
         extensionId: spec.extensionId,
@@ -530,9 +552,10 @@ export class ExtensionWorkers implements KernelWorkerPort {
         gate: (method) => this.options.gate(spec.extensionId, method),
         registerMethods: (batch) => this.registerMethods(entry, batch),
         registerMcpTools: (tools) => this.registerMcpTools(entry, tools),
-        call: (call) =>
+        registerHooks: (points) => this.registerHooks(entry, points),
+        call: (call, timeoutMs) =>
           proc
-            ? proc.call(call, this.options.callTimeoutMs ?? WORKER_CALL_TIMEOUT_MS)
+            ? proc.call(call, timeoutMs ?? this.options.callTimeoutMs ?? WORKER_CALL_TIMEOUT_MS)
             : Promise.reject(new Error(`Extension "${spec.extensionId}"'s worker is not running.`)),
       })
       session = created
@@ -646,6 +669,82 @@ export class ExtensionWorkers implements KernelWorkerPort {
       batch.add(name)
     }
     for (const name of batch) entry.tools.add(name)
+  }
+
+  private registerHooks(entry: Entry, points: unknown): void {
+    const id = entry.spec.extensionId
+    if (!Array.isArray(points)) throw new Error('registerHooks takes the points it serves.')
+    const batch = new Set<string>()
+    for (const point of points) {
+      if (!isExtensionHookPoint(point)) throw new Error(`"${String(point)}" is not a hook point Studio has.`)
+      if (!(entry.spec.declaredHooks ?? []).some((hook) => hook.point === point))
+        throw new Error(`Hook "${point}" from extension "${id}" is not listed in its extension.json (contributes.hooks).`)
+      if (entry.hooks.has(point) || batch.has(point))
+        throw new Error(`Hook "${point}" is registered twice by extension "${id}".`)
+      batch.add(point)
+    }
+    for (const point of batch) entry.hooks.add(point)
+  }
+
+  // ── Hooks ──────────────────────────────────────────────────────────────────
+
+  /**
+   * The extensions that list `point`, in the order of their install keys:
+   * the ones loaded and not stopped for good. An errored one is listed, so its
+   * failure is its `onError`'s to decide.
+   */
+  hookParticipants(point: ExtensionHookPoint): WorkerHookParticipant[] {
+    const listed: WorkerHookParticipant[] = []
+    for (const entry of this.entries.values()) {
+      if (entry.state === 'stopped') continue
+      const hook = entry.spec.declaredHooks?.find((candidate) => candidate.point === point)
+      if (!hook) continue
+      listed.push({
+        extensionId: entry.spec.extensionId,
+        displayName: entry.spec.displayName,
+        onError: hook.onError ?? 'pass',
+        fingerprint: entry.spec.fingerprint,
+      })
+    }
+    return listed.sort((a, b) => (a.extensionId < b.extensionId ? -1 : a.extensionId > b.extensionId ? 1 : 0))
+  }
+
+  /** Whether any loaded extension lists `point`: cheap, for the call sites' no-hook path. */
+  hooksListed(point: ExtensionHookPoint): boolean {
+    for (const entry of this.entries.values())
+      if (entry.state !== 'stopped' && entry.spec.declaredHooks?.some((hook) => hook.point === point)) return true
+    return false
+  }
+
+  /** Start its worker when it is not running; its start is not the hook's time. */
+  async startForHook(moduleId: string): Promise<void> {
+    await this.ensure(moduleId)
+  }
+
+  /** A line in the extension's log, from its hooks' chain. */
+  logHook(moduleId: string, line: string): void {
+    this.entries.get(moduleId)?.log(`[studio] ${line}`)
+  }
+
+  /** Whether the extension still runs under the approval it was listed with. */
+  stillServes(moduleId: string, fingerprint: string): boolean {
+    const entry = this.entries.get(moduleId)
+    return entry !== undefined && entry.state !== 'stopped' && entry.spec.fingerprint === fingerprint
+  }
+
+  /** Run its hook for `point` on `event` as `invoker`, answered within `timeoutMs`: the worker's raw answer. */
+  async runHook(
+    moduleId: string,
+    point: ExtensionHookPoint,
+    event: unknown,
+    invoker: ExtensionInvoker,
+    timeoutMs: number,
+  ): Promise<unknown> {
+    const entry = this.entries.get(moduleId)
+    const session = entry?.session
+    if (!entry || !session) throw new Error(entry?.message ?? stoppedMeanwhile(moduleId))
+    if (!entry.hooks.has(point)) throw new Error(`Extension "${moduleId}"'s worker registered no hook for "${point}".`)
+    return session.run({ kind: 'hook', point, event }, invoker, timeoutMs)
   }
 
   private toolHandler(moduleId: string, name: string): McpToolRegistration['handler'] {

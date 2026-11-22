@@ -94,6 +94,7 @@ export function planInstalledExtensions(
             background: extension.background === true,
             fingerprint,
             declaredTools: extension.contributes.mcpTools,
+            declaredHooks: extension.contributes.hooks,
           },
           host,
         ),

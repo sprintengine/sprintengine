@@ -50,6 +50,15 @@ export function ownerInvoker(permissionCeiling: CliPermissionPreset | null = nul
   return { principal: OWNER_PRINCIPAL, permissionCeiling, label }
 }
 
+/**
+ * Someone Studio cannot name any more (a paired app since revoked): holds no
+ * permission, and a chat it starts runs on Manual. What an action no one
+ * known set off runs as.
+ */
+export function nobodyInvoker(label = 'someone Studio no longer knows'): ExtensionInvoker {
+  return { principal: studioPrincipal({ owner: false, permissions: [] }), permissionCeiling: 'manual', label }
+}
+
 const storage = new AsyncLocalStorage<ExtensionInvoker>()
 
 /** Run extension code on `invoker`'s behalf. */

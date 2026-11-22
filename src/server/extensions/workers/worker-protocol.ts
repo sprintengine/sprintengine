@@ -105,6 +105,8 @@ export type WorkerCallMessage = { t: 'call'; id: number; invocation: string } & 
   | { kind: 'method'; name: string; params: unknown; context: WorkerCallContext }
   | { kind: 'tool'; name: string; args: Record<string, unknown>; context: WorkerCallContext }
   | { kind: 'callback'; callback: number; args: unknown[] }
+  /** A hook the extension lists: its handler is handed `event` and answers its decision. */
+  | { kind: 'hook'; point: string; event: unknown }
   | { kind: 'shutdown' }
 )
 
@@ -139,6 +141,7 @@ export const WORKER_HOST_METHODS = [
   'listChatRuntimes',
   'registerMethods',
   'registerMcpTools',
+  'registerHooks',
   'ensureSkillInstalled',
   'getSkillStatus',
   'getWorkspaceGitInfo',

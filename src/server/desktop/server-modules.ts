@@ -98,6 +98,8 @@ export function createServerModules(deps: {
     toolsChanged: () => gateway?.notifyToolsListChanged(),
     stateChanged: () => hub.deliverChanged(),
   })
+  // The core's actions ask these workers' hooks (extension-hooks.ts).
+  core.extensionHooks.bind(workers)
   let stopWatchingModules: (() => void) | null = null
   let manifests: CapabilityManifest[] = []
   let ineligible: Record<string, ModuleResolutionErrorCode> = {}

@@ -68,8 +68,10 @@ export type WorkerSessionDeps = {
   gate: (method: WorkerHostMethod) => { ok: true } | { ok: false; code: string; message: string }
   registerMethods: (batch: unknown) => void
   registerMcpTools: (tools: unknown) => void
-  /** Send the worker a call as `invocation`. */
-  call: (call: WorkerCall & { invocation: string }) => Promise<unknown>
+  /** The points the worker registers hooks for. */
+  registerHooks: (points: unknown) => void
+  /** Send the worker a call as `invocation`, answered within `timeoutMs` (the supervisor's limit when absent). */
+  call: (call: WorkerCall & { invocation: string }, timeoutMs?: number) => Promise<unknown>
 }
 
 export type WorkerSession = {
@@ -80,8 +82,8 @@ export type WorkerSession = {
   /** Start an invocation as `invoker`: its id. */
   begin(invoker: ExtensionInvoker): string
   end(id: string): void
-  /** Run `call` in the worker as an invocation of `invoker`, ending it once answered. */
-  run(call: WorkerCall, invoker: ExtensionInvoker): Promise<unknown>
+  /** Run `call` in the worker as an invocation of `invoker`, ending it once answered (or after `timeoutMs`). */
+  run(call: WorkerCall, invoker: ExtensionInvoker, timeoutMs?: number): Promise<unknown>
   /** Answer one call the worker made into Studio. */
   hostCall(message: WorkerHostCallMessage): Promise<Omit<WorkerHostAnswerMessage, 't' | 'id'>>
   /** How many invocations are live. */
@@ -172,10 +174,10 @@ export function createWorkerSession(deps: WorkerSessionDeps): WorkerSession {
     if (ended.size > ENDED_REMEMBERED) ended.delete(ended.values().next().value as string)
   }
 
-  async function run(call: WorkerCall, invoker: ExtensionInvoker): Promise<unknown> {
+  async function run(call: WorkerCall, invoker: ExtensionInvoker, timeoutMs?: number): Promise<unknown> {
     const id = begin(invoker)
     try {
-      return await deps.call({ ...call, invocation: id })
+      return await deps.call({ ...call, invocation: id }, timeoutMs)
     } finally {
       end(id)
     }
@@ -298,12 +300,14 @@ export function createWorkerSession(deps: WorkerSessionDeps): WorkerSession {
       const method = name as WorkerHostMethod
       switch (method) {
         case 'registerMethods':
-        case 'registerMcpTools': {
+        case 'registerMcpTools':
+        case 'registerHooks': {
           const decision = deps.gate(method)
           if (!decision.ok)
             throw Object.assign(new Error(decision.message), { name: 'ExtensionHostRefusal', code: decision.code })
           if (method === 'registerMethods') deps.registerMethods(args[0])
-          else deps.registerMcpTools(args[0])
+          else if (method === 'registerMcpTools') deps.registerMcpTools(args[0])
+          else deps.registerHooks(args[0])
           return undefined
         }
         case 'watchModuleAppState': {

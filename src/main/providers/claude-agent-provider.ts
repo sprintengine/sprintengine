@@ -148,6 +148,7 @@ import type {
   ConversationProviderSteerResult,
   ConversationDisposeOptions,
   ConversationProviderSideQuestionInput,
+  ConversationToolHooks,
 } from './conversation-provider-adapter'
 
 export const CLAUDE_AGENT_PROVIDER_ID = 'claude-agent'
@@ -282,6 +283,7 @@ type SessionState = {
   mode?: 'default' | 'plan' | 'ask'
   reasoningEffort?: string
   onBeforeTool?: (name: string) => Promise<void>
+  toolHooks?: ConversationToolHooks
   providerSessionId: string | null
   // The newest entry of the provider session's main chain this process has
   // seen; each turn end carries it as the point a rewind can go back to.
@@ -1211,6 +1213,21 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
                       },
                     }
                   }
+                  // Extensions' hooks decide next: a refusal names the
+                  // extension to the agent, and changed input still goes on
+                  // to whatever the chat's permission mode does with it.
+                  const hooked = await extensionToolHooks(state, input.tool_name, input.tool_input, input.tool_use_id)
+                  if (hooked?.kind === 'deny') {
+                    state.declinedToolUseIds.add(input.tool_use_id)
+                    return {
+                      hookSpecificOutput: {
+                        hookEventName: 'PreToolUse' as const,
+                        permissionDecision: 'deny' as const,
+                        permissionDecisionReason: hooked.reason,
+                      },
+                    }
+                  }
+                  const updatedInput = hooked?.kind === 'change' ? { updatedInput: hooked.input } : {}
                   if (manualAsks(state, input.tool_name)) {
                     await state.onBeforeTool?.(input.tool_name)
                     return {
@@ -1218,11 +1235,49 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
                         hookEventName: 'PreToolUse' as const,
                         permissionDecision: 'ask' as const,
                         permissionDecisionReason: 'Manual mode asks before every action that changes something.',
+                        ...updatedInput,
                       },
                     }
                   }
                   await state.onBeforeTool?.(input.tool_name)
+                  if (hooked?.kind === 'change')
+                    return { hookSpecificOutput: { hookEventName: 'PreToolUse' as const, ...updatedInput } }
                 }
+                return {}
+              },
+            ],
+          },
+        ],
+        // Extensions hear each finished call; nothing waits for them.
+        PostToolUse: [
+          {
+            hooks: [
+              async (input) => {
+                if (input.hook_event_name === 'PostToolUse')
+                  state.toolHooks?.after({
+                    tool: input.tool_name,
+                    input: asRecord(input.tool_input) ?? {},
+                    callId: input.tool_use_id || null,
+                    output: input.tool_response,
+                    failed: false,
+                  })
+                return {}
+              },
+            ],
+          },
+        ],
+        PostToolUseFailure: [
+          {
+            hooks: [
+              async (input) => {
+                if (input.hook_event_name === 'PostToolUseFailure')
+                  state.toolHooks?.after({
+                    tool: input.tool_name,
+                    input: asRecord(input.tool_input) ?? {},
+                    callId: input.tool_use_id || null,
+                    output: input.error,
+                    failed: true,
+                  })
                 return {}
               },
             ],
@@ -1361,6 +1416,22 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     if (toolName === 'ToolSearch') return typeof input?.query === 'string' && input.query.includes('SendMessage')
     if (toolName !== 'SendMessage' || typeof input?.to !== 'string') return false
     return expected.delete(input.to)
+  }
+
+  // What extensions' `agent.tool.before` hooks make of a call: null when none
+  // hooks it (nothing awaited), a refusal, or the input they changed it to.
+  async function extensionToolHooks(
+    state: SessionState,
+    toolName: string,
+    toolInput: unknown,
+    toolUseId: string,
+  ): Promise<null | { kind: 'deny'; reason: string } | { kind: 'change'; input: Record<string, unknown> }> {
+    const input = asRecord(toolInput) ?? {}
+    const pending = state.toolHooks?.before({ tool: toolName, input, callId: toolUseId || null })
+    if (!pending) return null
+    const decided = await pending
+    if (decided.kind === 'deny') return decided
+    return JSON.stringify(decided.input) === JSON.stringify(input) ? null : { kind: 'change', input: decided.input }
   }
 
   function manualAsks(state: SessionState, toolName: string): boolean {
@@ -1650,6 +1721,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
         skillPluginDir: null,
         projectCommands: null,
         onBeforeTool: input.onBeforeTool,
+        ...(input.toolHooks ? { toolHooks: input.toolHooks } : {}),
         providerSessionId: input.resumeSessionId?.trim() || null,
         lastChainUuid: null,
         settledChainUuid: null,

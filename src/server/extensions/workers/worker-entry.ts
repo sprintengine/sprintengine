@@ -46,6 +46,7 @@ const pendingHost = new Map<number, { resolve: (value: unknown) => void; reject:
 const callbacks = new Map<number, Fn>()
 const methods = new Map<string, MethodRegistration>()
 const tools = new Map<string, Fn>()
+const hooks = new Map<string, Fn>()
 const startupHooks: Hook[] = []
 const shutdownBeginHooks: Hook[] = []
 const shutdownHooks: Hook[] = []
@@ -295,6 +296,20 @@ function createStudio(start: WorkerInitMessage): Record<string, unknown> {
       registrations.push(accepted)
       accepted.catch((error: unknown) => report('studio.registerMcpTools was refused', error))
     },
+    registerHooks: (handlers: unknown) => {
+      if (handlers === null || typeof handlers !== 'object' || Array.isArray(handlers))
+        throw new Error(`Extension "${start.extensionId}" registers its hooks as an object of point to handler.`)
+      const entries = Object.entries(handlers as Record<string, unknown>)
+      for (const [point, handler] of entries) {
+        if (typeof handler !== 'function') throw new Error(`Hook "${point}" has no handler.`)
+        if (hooks.has(point)) throw new Error(`Hook "${point}" is registered twice by extension "${start.extensionId}".`)
+      }
+      const accepted = hostCall({ host: 'registerHooks' }, [entries.map(([point]) => point)]).then(() => {
+        for (const [point, handler] of entries) hooks.set(point, handler as Fn)
+      })
+      registrations.push(accepted)
+      accepted.catch((error: unknown) => report('studio.registerHooks was refused', error))
+    },
     ensureSkillInstalled: (root: unknown, skillId: unknown) =>
       hostCall({ host: 'ensureSkillInstalled' }, [root, skillId]),
     getSkillStatus: (root: unknown, skillId: unknown) => hostCall({ host: 'getSkillStatus' }, [root, skillId]),
@@ -390,6 +405,12 @@ async function serve(call: WorkerCallMessage): Promise<unknown> {
       const handler = tools.get(call.name)
       if (!handler) throw new Error(`The worker serves no MCP tool "${call.name}".`)
       return await handler(call.args, call.context)
+    }
+    case 'hook': {
+      const handler = hooks.get(call.point)
+      if (!handler) throw new Error(`The worker registered no hook for "${call.point}".`)
+      // Its answer goes back as it is; Studio reads it (readExtensionHookAnswer).
+      return await handler(call.event)
     }
     case 'callback': {
       const callback = callbacks.get(call.callback)

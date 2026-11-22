@@ -62,6 +62,7 @@ import {
   type TailnetShareService,
 } from '../../main/automation/tailnet/tailnet-share-service'
 import { createTailnetFileUploads, TAILNET_UPLOADS_DIRNAME } from '../../main/automation/tailnet/tailnet-file-uploads'
+import { tailnetDeviceGrant } from '../../main/automation/tailnet/tailnet-studio-endpoint'
 import { listKnownWorkspaceRoots, uniqueResolvedRoots } from '../../main/workspace-roots'
 
 // The Studio RPC over a core: the owner socket in `<dataDir>/run` that local
@@ -303,6 +304,14 @@ export function createStudioRpc(
     log: (message) => {
       void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Local app socket', message })
     },
+  })
+  // A chat a paired device or app started runs its extensions' hooks as that
+  // client, read as it stands at each hook (hook-invokers.ts).
+  core.hookInvokers.bindClients((clientId) => {
+    const device = /^tailnet:(.+)$/.exec(clientId)?.[1]
+    if (device === undefined) return service.appGrantFor(clientId)
+    const found = gateway.getTailnetStatus().devices.find((candidate) => candidate.id === device)
+    return found ? tailnetDeviceGrant(found) : null
   })
   // An app's tools reach the chats it started, and as far as its pairing says.
   gateway.linkClientTools({

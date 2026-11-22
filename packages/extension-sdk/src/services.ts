@@ -249,6 +249,7 @@ export const EXTENSION_MAIN_HOST_METHODS: Readonly<Record<string, ExtensionHostR
   listChatRuntimes: need('providers:read', 'providers:read', 'reject'),
   registerMethods: need(null, null, 'throw'),
   registerMcpTools: need('tools:contribute', null, 'throw'),
+  registerHooks: need(null, null, 'throw'),
   ensureSkillInstalled: need('workspace:operate', 'workspace:operate', 'reject'),
   getSkillStatus: need('workspace:read', 'workspace:read', 'reject'),
   getModuleDataDir: need('storage:own', null, 'throw'),

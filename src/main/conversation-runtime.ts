@@ -154,6 +154,7 @@ import type { PowerActivity } from './power-activity'
 import {
   type ConversationMessage,
   type ConversationProviderAdapter,
+  type ConversationToolHooks,
   type MockAdapterTurnInput,
   type ConversationProviderCursor,
   type ConversationProviderEventStream,
@@ -164,6 +165,11 @@ import { CLAUDE_AGENT_PROVIDER_ID, createClaudeAgentProvider } from './providers
 import { createCodexConversationProvider } from './providers/codex-conversation-provider'
 import { ACP_PROFILES, createAcpConversationProvider } from './providers/acp-conversation-provider'
 import { leadingCommandFor } from './conversation-commands/leading-command'
+import {
+  extensionHookRefusal,
+  type ExtensionHooks,
+} from '../server/extensions/hooks/extension-hooks'
+import { nobodyInvoker, type ExtensionInvoker } from './module-host/extension-invocation'
 import { cliForConversationProvider } from '../shared/conversation-harness'
 import { workspaceStorePath } from './workspace-store'
 import {
@@ -379,6 +385,12 @@ export type ConversationRuntimeOptions = {
   // pool and the agent worktree cleanup never return or remove it while it
   // starts. The process's own unless given.
   worktreeLeases?: WorktreeLeases
+  // Extensions' agent hooks (server/extensions/hooks/extension-hooks.ts), run
+  // on a chat's tool calls as the chat's starter (`chatInvoker`).
+  extensionHooks?: ExtensionHooks
+  // Who a chat's actions run as, for its hooks: the person, or the paired
+  // device or app that started it, as it holds now.
+  chatInvoker?: (chat: { workspaceId: string; agentId: string }) => ExtensionInvoker
 }
 
 type ConversationRuntimeListener = (event: ConversationEvent) => void
@@ -534,6 +546,8 @@ export class ConversationRuntime {
   private readonly prepareChatFolder: NonNullable<ConversationRuntimeOptions['prepareChatFolder']>
   private readonly heldChatMode: ConversationRuntimeOptions['heldChatMode']
   private readonly subagentPresetCeiling: ConversationRuntimeOptions['subagentPresetCeiling']
+  private readonly extensionHooks: ExtensionHooks | undefined
+  private readonly chatInvoker: ConversationRuntimeOptions['chatInvoker']
   private readonly worktreeLeases: WorktreeLeases
   // Starts waiting for their folder's hold, by session id, or by chat for a
   // session start or a revert (`chatWaitKey`): see `holdChatFolder`.
@@ -653,6 +667,8 @@ export class ConversationRuntime {
     this.resolveSkills = options.resolveSkills ?? createConversationSkillsResolver()
     this.heldChatMode = options.heldChatMode
     this.subagentPresetCeiling = options.subagentPresetCeiling
+    this.extensionHooks = options.extensionHooks
+    this.chatInvoker = options.chatInvoker
     this.prepareChatFolder = options.prepareChatFolder ?? (() => Promise.resolve({ ok: true }))
     this.worktreeLeases = options.worktreeLeases ?? worktreeLeases
     this.approvalRules = options.approvalRules ?? new ConversationApprovalRuleStore()
@@ -994,6 +1010,7 @@ export class ConversationRuntime {
           // child resumes after a `result` (background subagents completing).
           onSessionEvent: (event) => this.enqueueContinuationEvent(session, event),
           onBeforeTool: (name) => this.captureBeforeTool(session, name),
+          ...(this.extensionHooks ? { toolHooks: this.toolHooksFor(session) } : {}),
         }),
       )
     try {
@@ -2730,6 +2747,32 @@ export class ConversationRuntime {
     if (!adapter) return { ok: false, message: 'Conversation provider adapter is unavailable.' }
 
     return { ok: true, adapter }
+  }
+
+  /** Extensions' hooks on a chat's tool calls, run as whoever started the chat. */
+  private toolHooksFor(session: {
+    providerId: string
+    workspaceId: string
+    agentId: string
+  }): ConversationToolHooks | undefined {
+    const hooks = this.extensionHooks
+    if (!hooks) return undefined
+    const chat = () => ({ agent: session.providerId, workspaceId: session.workspaceId, agentId: session.agentId })
+    const invoker = () =>
+      this.chatInvoker?.({ workspaceId: session.workspaceId, agentId: session.agentId }) ?? nobodyInvoker('the chat')
+    return {
+      before: (call) => {
+        if (!hooks.wants('agent.tool.before')) return null
+        return hooks.run('agent.tool.before', { ...chat(), ...call }, invoker()).then((outcome) =>
+          outcome.kind === 'deny'
+            ? { kind: 'deny' as const, reason: extensionHookRefusal(outcome) }
+            : { kind: 'continue' as const, input: outcome.event.input },
+        )
+      },
+      after: (call) => {
+        if (hooks.wants('agent.tool.after')) hooks.notify('agent.tool.after', { ...chat(), ...call }, invoker())
+      },
+    }
   }
 
   private getAdapterForProviderId(providerId: string): ConversationProviderAdapter | undefined {

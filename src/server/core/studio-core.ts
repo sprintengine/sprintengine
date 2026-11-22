@@ -60,6 +60,8 @@ import { createConversationImportService } from '../../main/conversation-import/
 import { createConversationModelCatalog } from '../../main/conversation-model-catalog'
 import { ConversationPlanStore } from '../../main/conversation-plan-store'
 import { ConversationOutbox } from '../../main/conversation-outbox'
+import { createExtensionHooks } from '../extensions/hooks/extension-hooks'
+import { createHookInvokers } from '../extensions/hooks/hook-invokers'
 import { ConversationRuntime, type ConversationRuntimeOptions } from '../../main/conversation-runtime'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import { createGitWorktree, getGitRepoRoot } from '../../main/git'
@@ -478,7 +480,15 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // here so the owner's shutdown disposes its child processes.
   // The saved approvals, which a revoked app's tools leave with it.
   const approvalRules = new ConversationApprovalRuleStore(dataDir)
+  // Extensions' agent hooks: bound to the workers once the module kernel holds
+  // them (server-modules.ts, app-main.ts), and run as each action's invoker.
+  const extensionHooks = createExtensionHooks()
+  const hookInvokers = createHookInvokers()
+  const chatInvoker = (chat: { workspaceId: string; agentId: string }) =>
+    hookInvokers.ofChat(workspaceRegistry.getRecord(chat.workspaceId)?.agents[chat.agentId]?.launchCommandId)
   const conversationRuntime = new ConversationRuntime({
+    extensionHooks,
+    chatInvoker,
     secretStore: getSharedCredentialStore(),
     approvalRules,
     attachmentStore: new ConversationAttachmentStore(dataDir),
@@ -1653,6 +1663,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   }
 
   return {
+    /** Extensions' agent hooks, bound to the workers by whoever holds them. */
+    extensionHooks,
+    hookInvokers,
+    chatInvoker,
     /** Other environments' Studios, as this desktop's callers reach a chat one holds; null where it reaches none. */
     environmentClients,
     /** This desktop's copies of the chats other environments hold; null where it reaches none. */
