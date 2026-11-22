@@ -130,20 +130,25 @@ test('a new custom editor, or one that takes more files, asks again; one that ta
     extensions,
     ...(filenames ? { filenames } : {}),
   })
-  const access = (editors: ReturnType<typeof editor>[]) =>
+  const access = (editors: Array<ReturnType<typeof editor> & { priority?: 'default' | 'option' }>) =>
     extensionAccess({
       permissions: ['workspace-files:read'],
       tier: 'ui',
       contributes: { ...NO_CONTRIBUTIONS, customEditors: editors },
     })
   const approved = access([editor(['.todo'], ['TODO'])])
-  assert.deepEqual(approved.editors, ['todo=.todo,todo'])
+  assert.deepEqual(approved.editors, ['todo=.todo,todo|default'])
   assert.deepEqual(accessGrowth(approved, approved), [])
   assert.deepEqual(accessGrowth(approved, access([editor(['.TODO'])])), [])
   assert.deepEqual(accessGrowth(approved, access([editor(['.todo', '.tasks'], ['TODO'])])), [
     'the editor "todo" opening .tasks files too',
   ])
   assert.deepEqual(accessGrowth(access([]), approved), ['the editor "todo" opening .todo, todo files'])
+  const offered = access([{ ...editor(['.todo']), priority: 'option' as const }])
+  assert.deepEqual(accessGrowth(offered, access([editor(['.todo'])])), [
+    'the editor "todo" opening its files by default',
+  ])
+  assert.deepEqual(accessGrowth(access([editor(['.todo'])]), offered), [], 'only offering its files is no growth')
 })
 
 test('approvals are kept per install key, forgotten on request, and nothing is approved by a bad file', async () => {

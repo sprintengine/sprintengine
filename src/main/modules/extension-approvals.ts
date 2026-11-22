@@ -37,10 +37,11 @@ export type ExtensionAccess = {
   /** Its commands that run one of Studio's own actions, as `<command>=<action>`, sorted. */
   actions: string[]
   /**
-   * Its custom editors and the files each takes over, as
-   * `<editor>=<suffixes and names, lower case, sorted>`, sorted: an editor
-   * opens the person's files in the extension's code, so a new one, or one
-   * that takes more files, is asked for again.
+   * Its custom editors, the files each takes and whether it opens them by
+   * default, as `<editor>=<suffixes and names, lower case, sorted>|<priority>`,
+   * sorted: an editor opens the person's files in the extension's code, so a
+   * new one, one that takes more files, or one that goes from being offered
+   * to opening them by default, is asked for again.
    */
   editors: string[]
 }
@@ -60,7 +61,9 @@ export function extensionAccess(
     actions: manifest.contributes.commands
       .flatMap((command) => (command.action === undefined ? [] : [`${command.id}=${command.action}`]))
       .sort(),
-    editors: manifest.contributes.customEditors.map((editor) => `${editor.id}=${editorFiles(editor).join(',')}`).sort(),
+    editors: manifest.contributes.customEditors
+      .map((editor) => `${editor.id}=${editorFiles(editor).join(',')}|${editor.priority ?? 'default'}`)
+      .sort(),
   }
 }
 
@@ -111,23 +114,23 @@ export function accessGrowth(approved: ExtensionAccess, next: ExtensionAccess): 
       const [command, ...rest] = action.split('=')
       growth.push(`the command "${command}" running "${rest.join('=')}"`)
     }
-  const approvedEditors = new Map(
-    approved.editors.map((entry) => [
-      entry.slice(0, entry.indexOf('=')),
-      entry.slice(entry.indexOf('=') + 1).split(','),
-    ]),
-  )
+  const editorOf = (entry: string) => {
+    const [files = '', priority = 'default'] = entry.slice(entry.indexOf('=') + 1).split('|')
+    return { id: entry.slice(0, entry.indexOf('=')), files: files.split(','), priority }
+  }
+  const approvedEditors = new Map(approved.editors.map((entry) => [editorOf(entry).id, editorOf(entry)]))
   for (const entry of next.editors) {
-    const id = entry.slice(0, entry.indexOf('='))
-    const files = entry.slice(entry.indexOf('=') + 1).split(',')
+    const { id, files, priority } = editorOf(entry)
     const before = approvedEditors.get(id)
-    const added = before ? files.filter((file) => !before.includes(file)) : files
-    if (added.length === 0) continue
-    growth.push(
-      before
-        ? `the editor "${id}" opening ${added.join(', ')} files too`
-        : `the editor "${id}" opening ${added.join(', ')} files`,
-    )
+    const added = before ? files.filter((file) => !before.files.includes(file)) : files
+    if (added.length > 0)
+      growth.push(
+        before
+          ? `the editor "${id}" opening ${added.join(', ')} files too`
+          : `the editor "${id}" opening ${added.join(', ')} files`,
+      )
+    if (before && before.priority === 'option' && priority === 'default')
+      growth.push(`the editor "${id}" opening its files by default`)
   }
   return growth
 }
