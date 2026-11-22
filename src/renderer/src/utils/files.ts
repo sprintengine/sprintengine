@@ -22,6 +22,19 @@ export function detectLanguage(filename: string): string {
   return contributedSyntaxForFile(filename)?.language ?? builtin
 }
 
+/**
+ * Whether Studio's own editor is for a file: it has a language for it (one
+ * of Studio's, or one another extension contributes) or shows it as an
+ * image. An extension's custom editor for such a file is only offered, never
+ * opened by default. `exceptExtension` leaves out the syntaxes of the
+ * extension asking, whose own language does not stand in its own way.
+ */
+export function textEditorHandles(filename: string, exceptExtension?: string): boolean {
+  if (isImageFile(filename) || builtinLanguage(filename) !== 'plaintext') return true
+  const contributed = contributedSyntaxForFile(filename)
+  return contributed !== undefined && contributed.extensionId !== exceptExtension
+}
+
 function builtinLanguage(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() ?? ''
   const map: Record<string, string> = {

@@ -8,7 +8,7 @@ import { join } from 'node:path'
 
 import { expect, test } from 'vitest'
 
-import { customEditorMatchRank, customEditorOpensByDefault } from '../src/custom-editors.js'
+import { customEditorMatchRank } from '../src/custom-editors.js'
 import { parseExtensionManifest, requiredExtensionTier, validateExtensionManifest } from '../src/extension-manifest.js'
 import type { ExtensionEditorSession } from '../src/frame.js'
 import { createFakeFrameStudio } from '../src/testing.js'
@@ -65,15 +65,6 @@ test('an exact name beats a suffix, a longer suffix beats a shorter, and a bare 
   expect(customEditorMatchRank(editor, 'a.TODO.JSON')).toBeGreaterThan(customEditorMatchRank(editor, 'a.json'))
   expect(customEditorMatchRank(editor, '.json')).toBe(0)
   expect(customEditorMatchRank(editor, 'notes.md')).toBe(0)
-})
-
-test('an editor never takes a file Studio’s text editor is for by default, only a longer suffix of one', () => {
-  const editor = { extensions: ['.json', '.sketch.json'], filenames: ['tasks.md'] }
-  expect(customEditorOpensByDefault(editor, 'package.json')).toBe(false)
-  expect(customEditorOpensByDefault(editor, 'logo.sketch.json')).toBe(true)
-  expect(customEditorOpensByDefault(editor, 'tasks.md'), 'an exact name is the author’s choice').toBe(true)
-  expect(customEditorOpensByDefault({ ...editor, priority: 'option' }, 'logo.sketch.json')).toBe(false)
-  expect(customEditorOpensByDefault({ extensions: ['.todo'] }, 'a.todo')).toBe(true)
 })
 
 async function mountSample(text: string, readOnly = false) {

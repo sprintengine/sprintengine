@@ -36,9 +36,9 @@ afterEach(() => {
 })
 
 test('a file opens in its best default editor; an option editor is only offered', () => {
-  editor('local.todo', 'todo', { extensions: ['.todo', '.todo.json'] })
-  editor('local.json-tools', 'tree', { extensions: ['.json'], priority: 'option' })
-  const list = '/Users/dev/app/list.todo.json'
+  editor('local.todo', 'todo', { extensions: ['.todo', '.todo.bak'] })
+  editor('local.json-tools', 'tree', { extensions: ['.bak'], priority: 'option' })
+  const list = '/Users/dev/app/list.todo.bak'
   const matches = extensionEditorsFor(list)
   assert.deepEqual(
     matches.map((match) => match.contribution.id),
@@ -47,7 +47,7 @@ test('a file opens in its best default editor; an option editor is only offered'
   )
   assert.equal(resolveExtensionEditor('ws', list, matches)?.contribution.id, 'todo')
 
-  const plain = '/Users/dev/app/package.json'
+  const plain = '/Users/dev/app/notes.bak'
   const optionOnly = extensionEditorsFor(plain)
   assert.deepEqual(
     optionOnly.map((match) => match.contribution.id),
@@ -58,11 +58,15 @@ test('a file opens in its best default editor; an option editor is only offered'
   assert.equal(resolveExtensionEditor('ws', plain, optionOnly)?.contribution.id, 'tree')
 })
 
-test('an editor for a file Studio’s text editor is for is only offered', () => {
-  editor('local.json-tools', 'tree', { extensions: ['.json'] })
-  const plain = '/Users/dev/app/package.json'
-  assert.equal(extensionEditorsFor(plain).length, 1)
-  assert.equal(resolveExtensionEditor('ws', plain, extensionEditorsFor(plain)), null)
+test('an editor for a file Studio’s own editor has a language for is only offered, by suffix or by name', () => {
+  editor('local.json-tools', 'tree', { extensions: ['.py', '.sketch'], filenames: ['package.json', 'Dockerfile'] })
+  for (const path of ['/Users/dev/app/main.py', '/Users/dev/app/package.json']) {
+    assert.equal(extensionEditorsFor(path).length, 1, `${path} is offered`)
+    assert.equal(resolveExtensionEditor('ws', path, extensionEditorsFor(path)), null, `${path} opens as text`)
+  }
+  // No language of Studio's: the editor's own suffix, and a name the text editor shows as plain text.
+  for (const path of ['/Users/dev/app/logo.sketch', '/Users/dev/app/Dockerfile'])
+    assert.equal(resolveExtensionEditor('ws', path, extensionEditorsFor(path))?.contribution.id, 'tree', path)
 })
 
 test('the person can always reopen a file in the text editor, for that file only', () => {

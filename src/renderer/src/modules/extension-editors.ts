@@ -3,19 +3,19 @@
 //
 // A file opens in the best-matching editor whose priority is `default` (an
 // exact name beats a suffix, a longer suffix a shorter one); an `option`
-// editor, or one matching a file Studio's text editor is for (`.ts`, `.json`,
-// `.md` and their like), is only offered under Open with. Whatever opened it, the person can
+// editor is only offered under Open with, and so is every editor for a file
+// Studio's own editor already has a language for, or shows as an image, by
+// the same registry it highlights with (`textEditorHandles`), whether the
+// editor names the file by suffix or by name. Installing an extension never
+// changes how a person's code opens. Whatever opened it, the person can
 // reopen the file in the text editor, or in another matching editor, and
 // that choice holds for the file while this window is open. Every way of
 // opening a file ends in the editor pane (the Files tree, `editor.open`, a
 // link in a chat), so the choice is made there, once.
 
 import type { ExtensionCustomEditorContribution } from '../../../../packages/extension-sdk/src/extension-manifest'
-import {
-  customEditorMatchRank,
-  customEditorOpensByDefault,
-  fileNameOf,
-} from '../../../../packages/extension-sdk/src/custom-editors'
+import { customEditorMatchRank, fileNameOf } from '../../../../packages/extension-sdk/src/custom-editors'
+import { textEditorHandles } from '../utils/files'
 import { getExtensionSurfacesOf, type LoadedExtensionSurface } from './extension-surfaces'
 
 /** A custom editor that matches a file, with the extension it comes from. */
@@ -78,8 +78,66 @@ export function resolveExtensionEditor(
   if (choice === TEXT_EDITOR_VIEW) return null
   const picked = choice ? matches.find((editor) => extensionEditorViewId(editor) === choice) : undefined
   if (picked) return picked
-  const name = fileNameOf(path)
-  return matches.find((editor) => customEditorOpensByDefault(editor.contribution, name)) ?? null
+  return matches.find((editor) => opensByDefault(editor, path)) ?? null
+}
+
+/** Whether `editor` takes `path` when it is opened, rather than being offered. */
+function opensByDefault(editor: MatchedExtensionEditor, path: string): boolean {
+  if ((editor.contribution.priority ?? 'default') !== 'default') return false
+  // A language the extension contributes itself does not stand in its own editor's way.
+  return !textEditorHandles(fileNameOf(path), editor.key)
+}
+
+// ── Leaving an editor ───────────────────────────────────────────────────────
+// The custom editor open on a file answers whether the person may leave it
+// now (extension-editor-controller.ts): Open with…, closing the tab and
+// drawing the frame again all ask first.
+
+export type EditorLeaveGuard = (where: 'text-editor' | 'other-editor' | 'close') => Promise<boolean>
+
+const guards = new Map<string, EditorLeaveGuard>()
+
+/** The custom editor shown for `path` says what leaving it takes; returns the way to stop. */
+export function registerEditorLeaveGuard(workspaceId: string, path: string, guard: EditorLeaveGuard): () => void {
+  const key = choiceKey(workspaceId, path)
+  guards.set(key, guard)
+  return () => {
+    if (guards.get(key) === guard) guards.delete(key)
+  }
+}
+
+/** Whether a custom editor is shown for `path`, and must be asked before it goes. */
+export function hasEditorLeaveGuard(workspaceId: string, path: string): boolean {
+  return guards.has(choiceKey(workspaceId, path))
+}
+
+/** True when the person may leave `path`'s custom editor for `where` now; true too when none is shown. */
+export function leaveExtensionEditor(
+  workspaceId: string,
+  path: string,
+  where: 'text-editor' | 'other-editor' | 'close',
+): Promise<boolean> {
+  const guard = guards.get(choiceKey(workspaceId, path))
+  return guard ? guard(where) : Promise.resolve(true)
+}
+
+/**
+ * Close a file tab only once the custom editor shown for it, if any, let it
+ * go: true when the editor takes over (and runs `close` itself if it may),
+ * false when there is none and the caller closes as usual.
+ */
+export function guardsExtensionEditorClose(
+  workspaceId: string,
+  node: { getComponent(): string | undefined; getConfig(): unknown },
+  close: () => void,
+): boolean {
+  if (node.getComponent() !== 'file-editor') return false
+  const path = (node.getConfig() as { filePath?: unknown } | undefined)?.filePath
+  if (typeof path !== 'string' || !hasEditorLeaveGuard(workspaceId, path)) return false
+  void leaveExtensionEditor(workspaceId, path, 'close').then((ok) => {
+    if (ok) close()
+  })
+  return true
 }
 
 /** Tests only: forget every choice. */

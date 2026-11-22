@@ -1573,11 +1573,10 @@ export {
 
 // Which custom editor opens a file, and how large its document may be.
 export {
-  EXTENSION_EDITOR_DOCUMENT_MAX_BYTES,
+  EXTENSION_EDITOR_BYTES_MAX_BYTES,
   EXTENSION_EDITOR_FLUSH_TIMEOUT_MS,
-  STUDIO_TEXT_EDITOR_SUFFIXES,
+  EXTENSION_EDITOR_TEXT_MAX_BYTES,
   customEditorMatchRank,
-  customEditorOpensByDefault,
 } from './custom-editors.js'
 
 // What a content extension's syntax files hold, checked the same way by the

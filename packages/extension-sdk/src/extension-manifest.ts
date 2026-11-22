@@ -676,7 +676,7 @@ const CONTRIBUTES: ObjectNode = {
             },
             priority: {
               node: { kind: 'string', max: 16, enum: EXTENSION_EDITOR_PRIORITIES },
-              doc: '`default` (the default) opens matching files in this editor; `option` opens them in Studio’s text editor and offers this one under Open with. Files Studio’s text editor is for (such as `.json`, `.ts`, `.md`, `.yaml`, `.env` and lockfiles) are always `option`; a longer suffix such as `.sketch.json` is not one of them. Either way the person can reopen the file in the text editor.',
+              doc: '`default` (the default) opens matching files in this editor; `option` opens them in Studio’s text editor and offers this one under Open with. A file Studio’s own editor has a language for (`.json`, `.ts`, `.py`, `.md`, `package.json` and the like) or shows as an image is always `option`, whether the editor names it by suffix or by name, so installing an extension never changes how a person’s code opens. Either way the person can reopen the file in the text editor.',
               since: V1,
             },
             contentKind: {
