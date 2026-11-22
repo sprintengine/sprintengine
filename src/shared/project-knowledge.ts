@@ -40,19 +40,14 @@ export function knowledgeLaunchContext(status: KnowledgeRootStatus): KnowledgeLa
     return {
       rootPath: status.rootPath,
       relativeRoot: status.relativeRoot,
-      promptSuffix: [
-        `Knowledge Graph is configured at ${status.relativeRoot}.`,
-        'This is a repo-local Markdown knowledge graph for product, architecture, brand, and ecosystem context.',
-        'Inspect it when relevant instead of assuming project context.',
-        'Read its index notes first, and follow the links from there.',
-      ].join(' '),
+      promptSuffix: `This project keeps its notes as Markdown in \`${status.relativeRoot}\`. Read the index notes there first.`,
     }
   }
   return {
     rootPath: undefined,
     ...(status.relativeRoot ? { relativeRoot: status.relativeRoot } : {}),
     promptSuffix: status.relativeRoot
-      ? `Knowledge Graph is configured at ${status.relativeRoot}, but the folder is currently missing or inaccessible. Do not guess another knowledge folder.`
+      ? `This project keeps its notes as Markdown in \`${status.relativeRoot}\`, but that folder is missing or inaccessible. Do not guess another knowledge folder.`
       : null,
   }
 }
