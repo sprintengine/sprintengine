@@ -6,6 +6,7 @@ import { EXTENSION_HOST_REFUSALS } from '../../../../packages/extension-sdk/src/
 import type { CliPermissionPreset } from '../../../shared/cli-permission-preset'
 import { isLooserCliPermissionPreset } from '../../../shared/cli-permission-preset'
 import type { MainHost } from '../../../main/module-host/main-host'
+import type { AgentStarter } from '../../../shared/agent-state'
 import { ownerInvoker, runAsInvoker, type ExtensionInvoker } from '../../../main/module-host/extension-invocation'
 import {
   WORKER_HOST_METHODS,
@@ -137,7 +138,19 @@ export function heldToAll(own: ExtensionInvoker, others: readonly ExtensionInvok
     principal: studioPrincipal({ owner, permissions }),
     permissionCeiling: ceiling,
     label: `${labels} (whom the extension's worker is also serving now)`,
+    starter: sharedStarter([own, ...narrower]),
   }
+}
+
+/**
+ * Who started what a narrowed invocation starts: the one starter every
+ * invoker it serves shares, else no one, since a chat cannot belong to two.
+ */
+function sharedStarter(invokers: readonly ExtensionInvoker[]): AgentStarter {
+  const first = invokers[0]?.starter
+  if (!first) return { kind: 'nobody' }
+  const same = invokers.every((invoker) => JSON.stringify(invoker.starter) === JSON.stringify(first))
+  return same ? first : { kind: 'nobody' }
 }
 
 /** A plain object, or a host facade, with something on it that can be called. */

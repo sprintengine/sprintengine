@@ -7,7 +7,11 @@ import {
   type CliPermissionPreset,
 } from '../../../shared/cli-permission-preset'
 import type { McpConnectionContext } from '../../../main/automation/mcp-socket-server'
-import { gatewayCallerStarter, type AgentPermissionResolver } from '../../../main/automation/launch-permission-cap'
+import {
+  gatewayCallerStarter,
+  type AgentPermissionResolver,
+  type AgentStarterResolver,
+} from '../../../main/automation/launch-permission-cap'
 import { nobodyInvoker, ownerInvoker, type ExtensionInvoker } from '../../../main/module-host/extension-invocation'
 
 // Who an action a hook guards runs as.
@@ -53,7 +57,11 @@ function tighter(a: CliPermissionPreset | null, b: CliPermissionPreset | null): 
   return isLooserCliPermissionPreset(a, b) ? b : a
 }
 
-export function createHookInvokers(deps: { resolveAgentPermissionPreset: AgentPermissionResolver }): HookInvokers {
+export function createHookInvokers(deps: {
+  resolveAgentPermissionPreset: AgentPermissionResolver
+  /** Who started an agent here, as its record keeps it. */
+  agentStarterOf?: AgentStarterResolver
+}): HookInvokers {
   let grantFor: ((clientId: string) => StudioGrant | null) | null = null
   const ofClient = (clientId: string): ExtensionInvoker => {
     const grant = grantFor?.(clientId) ?? null
@@ -79,7 +87,7 @@ export function createHookInvokers(deps: { resolveAgentPermissionPreset: AgentPe
       return ceiling === invoker.permissionCeiling ? invoker : { ...invoker, permissionCeiling: ceiling }
     },
     ofGatewayCaller(context) {
-      const starter = gatewayCallerStarter(context, deps.resolveAgentPermissionPreset)
+      const starter = gatewayCallerStarter(context, deps.resolveAgentPermissionPreset, deps.agentStarterOf)
       return starter.kind === 'agent' ? ownerInvoker(starter.ceiling, 'the agent', starter) : ofStarter(starter)
     },
     bindClients(next) {

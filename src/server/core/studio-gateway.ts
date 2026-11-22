@@ -22,7 +22,7 @@ import {
   latestTurnEnd,
   movesWorkspaceList,
 } from '../../main/automation/conversation-lifecycle'
-import { launchPermissionCeiling } from '../../main/automation/launch-permission-cap'
+import { gatewayCallerStarter, launchPermissionCeiling } from '../../main/automation/launch-permission-cap'
 import { tailnetDeviceGrant } from '../../main/automation/tailnet/tailnet-studio-endpoint'
 import { ownerInvoker } from '../../main/module-host/extension-invocation'
 import { extensionHookRefusal } from '../extensions/hooks/extension-hooks'
@@ -133,6 +133,7 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
         (request) => core.conversationLaunchService.launch(request),
       ),
       resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
+      agentStarterOf: core.agentStarterOf,
       permissionModesOf: (cli) => listPluginRegistryEntries().find((entry) => entry.id === cli)?.permissionModes ?? [],
       lifecycle: core.conversationLifecycle,
       moveChat: core.conversationMove.move,
@@ -175,6 +176,7 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     ...createSubagentTools({
       launch: (request) => core.conversationLaunchService.launch(request),
       resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
+      agentStarterOf: core.agentStarterOf,
       isKnownCli: (cli) => listPluginRegistryEntries().some((entry) => entry.id === cli),
       displayNames: async (cli, modelId) => {
         const entry = listPluginRegistryEntries().find((candidate) => candidate.id === cli)
@@ -237,9 +239,12 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     // is no looser than that agent; a paired device is what its Studio
     // connection carries (the same route `/tailnet/v1/studio` grants), read as
     // the device stands now, so a narrowed or revoked device holds less at once.
+    // What the extension starts for its caller keeps who that is: the device,
+    // or whoever started the calling agent, as its record keeps it.
     callerInvoker: (context) => {
+      const starter = gatewayCallerStarter(context, core.resolveAgentPermissionPreset, core.agentStarterOf)
       if (context?.metadata.kind !== 'remote-tailnet')
-        return ownerInvoker(launchPermissionCeiling(context, core.resolveAgentPermissionPreset), 'the agent')
+        return ownerInvoker(launchPermissionCeiling(context, core.resolveAgentPermissionPreset), 'the agent', starter)
       const deviceId = context.metadata.deviceId
       const device = automation?.getTailnetStatus().devices.find((candidate) => candidate.id === deviceId)
       const grant = device ? tailnetDeviceGrant(device) : null
@@ -247,6 +252,7 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
         principal: grant ? studioGrantPrincipal(grant) : studioPrincipal({ owner: false, permissions: [] }),
         permissionCeiling: grant?.ceiling ?? 'manual',
         label: `the device "${context.metadata.deviceName ?? deviceId ?? 'unknown'}"`,
+        starter,
       }
     },
     warn: (details) => {

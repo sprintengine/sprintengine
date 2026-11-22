@@ -486,9 +486,19 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // Extensions' agent hooks: bound to the workers once the module kernel holds
   // them (server-modules.ts, app-main.ts), and run as each action's invoker.
   const extensionHooks = createExtensionHooks()
+  // Who started an agent here, as its record keeps it.
+  const agentStarterOf = ({ workspaceId, agentId }: { workspaceId?: string; agentId: string }) => {
+    if (workspaceId) return workspaceRegistry.getRecord(workspaceId)?.agents[agentId]?.startedBy
+    for (const record of workspaceRegistry.getRecords()) {
+      const agent = record.agents?.[agentId]
+      if (agent) return agent.startedBy
+    }
+    return undefined
+  }
   const hookInvokers = createHookInvokers({
     // Read when a hook runs, by which time the resolver below exists.
     resolveAgentPermissionPreset: (input) => resolveAgentPermissionPreset(input),
+    agentStarterOf,
   })
   const chatInvoker = (chat: { workspaceId: string; agentId: string }) =>
     hookInvokers.ofAgent(workspaceRegistry.getRecord(chat.workspaceId)?.agents[chat.agentId])
@@ -1705,6 +1715,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     extensionHooks,
     hookInvokers,
     chatInvoker,
+    /** Who started an agent here, as its record keeps it. */
+    agentStarterOf,
     /** Other environments' Studios, as this desktop's callers reach a chat one holds; null where it reaches none. */
     environmentClients,
     /** This desktop's copies of the chats other environments hold; null where it reaches none. */

@@ -30,6 +30,7 @@ import {
   gatewayCallerStarter,
   launchPermissionCeiling,
   type AgentPermissionResolver,
+  type AgentStarterResolver,
 } from './launch-permission-cap'
 
 /**
@@ -101,6 +102,8 @@ export type SubagentToolsDeps = {
   launch: ConversationLaunchService['launch']
   /** The calling agent's own preset, which a sub-agent may not exceed (launch-permission-cap.ts). */
   resolveAgentPermissionPreset: AgentPermissionResolver
+  /** Who started a calling agent, as its record keeps it: what a chat it starts keeps as its own starter. */
+  agentStarterOf?: AgentStarterResolver
   /** Whether this machine has the CLI at all. */
   isKnownCli: (cli: string) => boolean
   /** The CLI's and the model's names as the pickers show them, for a sub-agent's default title. */
@@ -459,7 +462,7 @@ export function createSubagentTools(deps: SubagentToolsDeps): McpToolRegistratio
         starting.set(startKey, (starting.get(startKey) ?? 0) + 1)
         try {
           launched = await deps.launch({
-            startedBy: gatewayCallerStarter(context, deps.resolveAgentPermissionPreset),
+            startedBy: gatewayCallerStarter(context, deps.resolveAgentPermissionPreset, deps.agentStarterOf),
             // The parent agent's task, which the extensions' prompt hooks check.
             promptHookAs: { inputKind: 'subagent', from: 'agent' },
             workspaceId: parent.workspaceId,
@@ -669,7 +672,11 @@ export function createSubagentTools(deps: SubagentToolsDeps): McpToolRegistratio
         // Settles when the round's turn does: a refusal, or a send that never
         // reached the chat, ends the round as failed, which a turn that ran has
         // already ended (and then this changes nothing).
-        void sendTask(chat, args.task, gatewayCallerStarter(context, deps.resolveAgentPermissionPreset)).then(
+        void sendTask(
+          chat,
+          args.task,
+          gatewayCallerStarter(context, deps.resolveAgentPermissionPreset, deps.agentStarterOf),
+        ).then(
           (sent) => {
             if (!sent.ok) lifecycle.fail(chat, sent.message)
           },
