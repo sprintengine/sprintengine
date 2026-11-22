@@ -32,6 +32,10 @@ const NO_CONTRIBUTIONS = {
   doors: [],
   settingsSections: [],
   mcpTools: [],
+  syntaxes: [],
+  keybindings: [],
+  statusBarItems: [],
+  settings: [],
 }
 
 function withDataDir(fn: (dir: string) => Promise<void>): Promise<void> {

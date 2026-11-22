@@ -92,6 +92,38 @@ export type ExtensionTopBarItemContributionView = {
 }
 export type ExtensionSurfaceContributionView = { id: string; title: string; icon?: string; entry: string }
 export type ExtensionMcpToolContributionView = { name: string; description: string; access: 'read' | 'operate' }
+export type ExtensionSyntaxContributionView = {
+  id: string
+  title: string
+  scopeName: string
+  path: string
+  configuration?: string
+  extensions?: string[]
+  filenames?: string[]
+}
+export type ExtensionKeybindingContributionView = { command: string; key: string; when?: 'global' | 'workspace' }
+export type ExtensionStatusBarItemContributionView = {
+  id: string
+  text?: string
+  icon?: string
+  tooltip?: string
+  command?: string
+}
+export type ExtensionSettingValueView = string | number | boolean
+export type ExtensionSettingContributionView = {
+  key: string
+  title: string
+  description?: string
+  type: 'string' | 'number' | 'integer' | 'boolean'
+  default?: ExtensionSettingValueView
+  enum?: ExtensionSettingValueView[]
+  enumLabels?: string[]
+  minimum?: number
+  maximum?: number
+  maxLength?: number
+  multiline?: boolean
+  placeholder?: string
+}
 export type ExtensionContributionsView = {
   commands: ExtensionCommandContributionView[]
   menus: ExtensionMenuContributionView[]
@@ -100,6 +132,10 @@ export type ExtensionContributionsView = {
   doors: ExtensionSurfaceContributionView[]
   settingsSections: ExtensionSurfaceContributionView[]
   mcpTools: ExtensionMcpToolContributionView[]
+  syntaxes: ExtensionSyntaxContributionView[]
+  keybindings: ExtensionKeybindingContributionView[]
+  statusBarItems: ExtensionStatusBarItemContributionView[]
+  settings: ExtensionSettingContributionView[]
 }
 export type ExtensionManifestView = {
   manifestVersion: 1
@@ -246,6 +282,36 @@ export type ExtensionFrameDocument = {
   /** The whole document: Studio's bootstrap, its theme and kit, and the extension's entry. */
   html: string
 }
+
+// ── What a content extension adds ───────────────────────────────────────────
+
+/** What `extension.content` serves. */
+export type StudioExtensionContentKind = 'syntax'
+
+/** `extension.content`'s params: an extension, a kind, and the contribution's id in its extension.json. */
+export type StudioExtensionContentRequest = { moduleId: string; kind: StudioExtensionContentKind; id: string }
+
+/** A language configuration, as the editor reads it. */
+export type LanguageConfigurationView = {
+  comments?: { lineComment?: string; blockComment?: [string, string] }
+  brackets?: Array<[string, string]>
+  autoClosingPairs?: Array<{ open: string; close: string }>
+  surroundingPairs?: Array<{ open: string; close: string }>
+}
+
+/**
+ * One piece of a content extension, checked on the server that serves it: a
+ * syntax's TextMate grammar (only the keys a TextMate engine reads) and its
+ * language configuration.
+ */
+export type ExtensionContent = {
+  kind: 'syntax'
+  grammar: Record<string, unknown> & { scopeName: string }
+  configuration?: LanguageConfigurationView
+}
+
+/** `extension.settings`: an extension's declared settings' values here, each its default until set. */
+export type ExtensionSettingValues = { values: Record<string, ExtensionSettingValueView> }
 
 /** Which build a window's module registry was taken in. */
 export type ModuleBuildChannel = 'development' | 'production'

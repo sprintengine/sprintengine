@@ -70,6 +70,10 @@ test('the smallest manifest validates, with no permissions and every point empty
     doors: [],
     settingsSections: [],
     mcpTools: [],
+    syntaxes: [],
+    keybindings: [],
+    statusBarItems: [],
+    settings: [],
   })
 })
 

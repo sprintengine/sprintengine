@@ -426,6 +426,9 @@ test('every method the server serves has its call in the SDK, under the same sco
     'extension.reportRegistry': 'request',
     // Their surfaces' frames: the document, and each host call a frame makes.
     'extension.frame': 'request',
+    'extension.content': 'request',
+    'extension.settings': 'request',
+    'extension.setSetting': 'request',
     'extension.call': 'request',
     // And what a client reads before it starts a chat.
     'workspaces.list': 'request',

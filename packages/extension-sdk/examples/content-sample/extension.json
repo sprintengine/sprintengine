@@ -1,0 +1,52 @@
+{
+  "$schema": "../../extension.schema.json",
+  "manifestVersion": 1,
+  "id": "tally-language",
+  "version": "1.0.0",
+  "engines": { "studio": ">=0.13.0" },
+  "tier": "content",
+  "name": "Tally language",
+  "description": "Highlighting for Tally files in chat and the editor, a shortcut, a status item and a setting. Content only: it runs no code.",
+  "license": "MIT",
+  "contributes": {
+    "syntaxes": [
+      {
+        "id": "tally",
+        "title": "Tally",
+        "scopeName": "source.tally",
+        "path": "syntaxes/tally.tmLanguage.json",
+        "configuration": "syntaxes/language-configuration.json",
+        "extensions": [".tally"]
+      }
+    ],
+    "keybindings": [{ "command": "usage.show", "key": "Mod+Alt+U" }],
+    "statusBarItems": [
+      {
+        "id": "tally",
+        "text": "Tally",
+        "icon": "notes",
+        "tooltip": "Open the command palette",
+        "command": "commandPalette.open"
+      }
+    ],
+    "settings": [
+      {
+        "key": "indent",
+        "title": "Indent width",
+        "description": "Spaces per level when a Tally file is laid out.",
+        "type": "integer",
+        "default": 2,
+        "minimum": 1,
+        "maximum": 8
+      },
+      {
+        "key": "currency",
+        "title": "Currency",
+        "type": "string",
+        "default": "EUR",
+        "enum": ["EUR", "USD", "GBP"],
+        "enumLabels": ["Euro", "US dollar", "Pound sterling"]
+      }
+    ]
+  }
+}

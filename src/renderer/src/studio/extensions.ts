@@ -1,9 +1,13 @@
 import {
+  studioGrantAllows,
   STUDIO_EXTENSIONS_CAPABILITY,
   STUDIO_EXTENSION_FRAMES_CAPABILITY,
   STUDIO_EXTENSION_HOST_CAPABILITY,
+  type ExtensionContent,
   type ExtensionContributionsResult,
   type ExtensionFrameDocument,
+  type ExtensionSettingValueView,
+  type StudioExtensionContentRequest,
   type StudioExtensionCall,
   type StudioExtensionCallAnswer,
   type StudioExtensionFrameRequest,
@@ -94,6 +98,20 @@ export type ExtensionsApi = {
   extensionFrame(request: StudioExtensionFrameRequest): Promise<ExtensionFrameDocument>
   /** One host call a frame made, as this window's connection; never throws. */
   extensionCall(call: StudioExtensionCall): Promise<StudioExtensionCallAnswer>
+  /** One piece of what a content extension adds (a syntax's grammar), checked by the Studio. */
+  extensionContent(request: StudioExtensionContentRequest): Promise<ExtensionContent>
+  /** The values of an extension's declared settings, each its default until set. */
+  extensionSettings(moduleId: string): Promise<Record<string, ExtensionSettingValueView>>
+  /** Whether this window's connection may read and change extensions' settings (`settings:write`). */
+  canChangeExtensionSettings(): Promise<boolean>
+  /** Hear whose settings values changed, from any writer, and once more after a reconnect. */
+  onExtensionSettingsChanged(cb: (moduleId: string | null) => void): () => void
+  /** Set one declared setting (`null`: back to its default); never throws. */
+  setExtensionSetting(input: {
+    moduleId: string
+    key: string
+    value: ExtensionSettingValueView | null
+  }): Promise<{ ok: true; values: Record<string, ExtensionSettingValueView> } | { ok: false; message: string }>
   /** Hear one extension's worker events, across reconnects. */
   onExtensionEvents(moduleId: string, cb: (event: StudioModuleEvent) => void): () => void
   /** What is installed or trusted on the Studio changed. */
@@ -201,6 +219,26 @@ export const extensionsApi: ExtensionsApi = {
     answered(
       () => call(STUDIO_EXTENSION_FRAMES_CAPABILITY, 'extension.call', { ...request, commandId: commandId() }),
       (message) => ({ ok: false, code: 'unavailable', message }),
+    ),
+  extensionContent: (request) => modules('extension.content', request),
+  extensionSettings: async (moduleId) => (await modules('extension.settings', { moduleId })).values,
+  canChangeExtensionSettings: async () => {
+    const client = await windowStudioClient()
+    return client.supports(STUDIO_EXTENSION_HOST_CAPABILITY) && studioGrantAllows(client.grant, 'extension.setSetting')
+  },
+  onExtensionSettingsChanged: (cb) =>
+    followWindowStudioPush({
+      topic: 'extension.settingsChanged',
+      params: {},
+      capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+      onPayload: (payload) => cb(payload.moduleId),
+      // What changed while the window was away is not known: read every one again.
+      onReopen: () => cb(null),
+    }),
+  setExtensionSetting: (input) =>
+    answered(
+      () => modules('extension.setSetting', { ...input, commandId: commandId() }),
+      (message) => ({ ok: false, message }),
     ),
   onExtensionEvents: (moduleId, cb) =>
     followWindowStudioPush({

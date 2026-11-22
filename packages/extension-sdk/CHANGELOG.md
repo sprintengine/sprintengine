@@ -183,6 +183,21 @@ main })` take the parsed extension.json; the install key defaults to
 - The approval says what a `ui` extension's code can do: it runs isolated,
   and can do only what the person allows. A worker's still says full access.
 
+### Content contributions
+
+- Four points, all `content` tier, so an extension carrying only them installs
+  with no approval prompt: `syntaxes` (TextMate grammars, with an optional
+  language configuration), `keybindings` (to an own command or one of
+  Studio's command actions), `statusBarItems` and `settings` (a schema Studio
+  draws in Settings; code reads the values with `settings:own`). They are no
+  longer reserved.
+- `parseTextMateGrammar`, `validateTextMateGrammar`,
+  `parseLanguageConfiguration` and `validateLanguageConfiguration` check a
+  syntax's files the way Studio does at install and when it serves them;
+  `sprintengine-extension pack` runs them too. `keybindingProblem`,
+  `settingValueProblem` and `extensionSettingDefaults` answer the rest.
+- `examples/content-sample/` is a content extension carrying one of each.
+
 ## 3.0.0-beta.1
 
 Host API 3: the SDK is renamed. Modules are called extensions everywhere

@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from 'react'
 import type { AuxWindowKind } from '../../../../shared/electron-api'
 import { parseEditorRange, type EditorRange } from '../../../../shared/editor-reveal'
 import { useAppTheme } from '../../hooks/useAppTheme'
+import { followServedSyntaxes } from '../../lib/highlight/contributedSyntaxes'
 import { followStoredSettings } from './auxSettingsWrite'
 import { writeAuxWindowBounds } from './auxWindowPlacement'
 import { InlineNotice, Spinner } from '../ui'
@@ -87,6 +88,8 @@ export default function AuxWindowApp() {
   // its copy of them.
   useAppTheme({ mirrorToMain: false })
   useEffect(() => followStoredSettings(), [])
+  // The languages extensions contribute, for the editor and diff windows.
+  useEffect(() => followServedSyntaxes(), [])
   const [descriptor] = useState(readInitialParams)
   const [params, setParams] = useState<AuxWindowParams>(descriptor?.params ?? {})
   // Bumps on every retarget (even a repeat of the same params) so the file

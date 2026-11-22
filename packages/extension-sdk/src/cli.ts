@@ -32,6 +32,7 @@ import {
   type ExtensionManifest,
 } from './extension-manifest.js'
 import type { ThirdPartyManifestIssue } from './manifest-validate.js'
+import { parseLanguageConfiguration, parseTextMateGrammar } from './content-syntaxes.js'
 import { computeModuleFileDigestsSync, moduleFileDigestIssuesSync } from './module-files.js'
 import {
   MARKETPLACE_COMPONENT_KINDS,
@@ -147,6 +148,11 @@ function declaredFiles(manifest: ExtensionManifest): Array<{ path: string; file:
       files.push({ path: `contributes.${point}[${index}].entry`, file: surface.entry }),
     )
   }
+  manifest.contributes.syntaxes.forEach((syntax, index) => {
+    files.push({ path: `contributes.syntaxes[${index}].path`, file: syntax.path })
+    if (syntax.configuration)
+      files.push({ path: `contributes.syntaxes[${index}].configuration`, file: syntax.configuration })
+  })
   if (manifest.icon) files.push({ path: 'icon', file: manifest.icon })
   if (manifest.cover) files.push({ path: 'cover', file: manifest.cover })
   manifest.screenshots?.forEach((file, index) => files.push({ path: `screenshots[${index}]`, file }))
@@ -349,6 +355,28 @@ function pack(args: string[]): void {
     .filter(({ file }) => !existsSync(join(sourceDir, file)))
     .map(({ path, file }) => ({ path, message: `names "${file}", which does not exist.` }))
   if (missing.length > 0) fail(`Files extension.json names are missing in ${sourceDir}:`, missing)
+  // Content is checked as Studio checks it at install and when it serves it.
+  const content: ThirdPartyManifestIssue[] = []
+  manifest.contributes.syntaxes.forEach((syntax, index) => {
+    const grammar = parseTextMateGrammar(readFileSync(join(sourceDir, syntax.path), 'utf8'), syntax.scopeName)
+    if (!grammar.ok)
+      content.push(
+        ...grammar.issues.map((issue) => ({
+          path: `contributes.syntaxes[${index}].path`,
+          message: `${syntax.path}${issue.path ? ` (${issue.path})` : ''}: ${issue.message}`,
+        })),
+      )
+    if (!syntax.configuration) return
+    const configuration = parseLanguageConfiguration(readFileSync(join(sourceDir, syntax.configuration), 'utf8'))
+    if (!configuration.ok)
+      content.push(
+        ...configuration.issues.map((issue) => ({
+          path: `contributes.syntaxes[${index}].configuration`,
+          message: `${syntax.configuration}${issue.path ? ` (${issue.path})` : ''}: ${issue.message}`,
+        })),
+      )
+  })
+  if (content.length > 0) fail(`Content files in ${sourceDir} are not ones Studio can use:`, content)
 
   // A pack whose files no longer match the signed digests would install as
   // tampered; say so here, where signing again is one command away.

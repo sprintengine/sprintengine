@@ -121,7 +121,11 @@ The `welcome`'s `grant` is what the connection may do:
   `read` (`extension.read`), under the `extension-host` capability. Under
   `extension-frames` it also builds the document an extension's surface is
   drawn from in a sandboxed frame (`extension.frame`) and carries the host
-  calls that frame makes (`extension.call`, once per `commandId`). Each call
+  calls that frame makes (`extension.call`, once per `commandId`). It reads
+  what a content extension adds (`extension.content`: a syntax's grammar,
+  checked by the Studio, as data), and hears whose declared settings changed
+  (`extension.settingsChanged`); reading and changing the values themselves
+  (`extension.settings`, `extension.setSetting`) needs `settings:write`. Each call
   is checked at the host against the extension's approved permissions and
   against the client's own grant (`backlog:operate` for a Backlog write,
   `filesystem:read` for a file read, `extension:operate` for a write to the

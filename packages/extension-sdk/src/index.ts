@@ -1517,8 +1517,13 @@ export {
   EXTENSION_TIERS,
   LOCAL_EXTENSION_PUBLISHER,
   STUDIO_EXTENSION_VERSION,
+  EXTENSION_SETTING_TYPES,
   compareStudioVersions,
   extensionInstallKey,
+  extensionSettingDefaults,
+  extensionSettingValues,
+  keybindingProblem,
+  settingValueProblem,
   extensionManifestJsonSchema,
   extensionManifestReference,
   isExtensionInstallKey,
@@ -1542,10 +1547,32 @@ export {
   type ExtensionMenuPlace,
   type ExtensionSurfaceContribution,
   type ExtensionSurfacePoint,
+  type ExtensionKeybindingContribution,
+  type ExtensionSettingContribution,
+  type ExtensionSettingType,
+  type ExtensionSettingValue,
+  type ExtensionStatusBarItemContribution,
+  type ExtensionSyntaxContribution,
   type ExtensionTier,
   type ExtensionTopBarItemContribution,
   type ManifestIssue,
 } from './extension-manifest.js'
+
+// What a content extension's syntax files hold, checked the same way by the
+// author's tools, at install and each time Studio serves them.
+export {
+  GRAMMAR_MAX_BYTES,
+  LANGUAGE_CONFIGURATION_MAX_BYTES,
+  SCOPE_NAME_RE,
+  parseLanguageConfiguration,
+  parseTextMateGrammar,
+  validateLanguageConfiguration,
+  validateTextMateGrammar,
+  type GrammarResult,
+  type LanguageConfiguration,
+  type LanguageConfigurationResult,
+  type TextMateGrammar,
+} from './content-syntaxes.js'
 
 // The base of a plugin bundle's plugin.json, and the path rules every package
 // format shares.

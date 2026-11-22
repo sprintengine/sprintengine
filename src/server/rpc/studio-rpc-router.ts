@@ -906,6 +906,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       | 'extension.install'
       | 'extension.approve'
       | 'extension.uninstall'
+      | 'extension.setSetting'
       | 'extension.reportRegistry',
     R,
   >(method: M, context: Asking, commandId: string, work: (lifecycle: ModuleLifecycle) => Promise<R>) {
@@ -2375,6 +2376,26 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         ? { ok: true, result: { hash: built.hash, html: built.html } }
         : refuse('extension_unavailable', built.message)
     },
+    // What a content extension adds, read and checked here, served as data;
+    // and the values of the settings an extension declares.
+    'extension.content': async (params) => {
+      const lifecycle = options.modules?.lifecycle()
+      if (!lifecycle) return unserved('extension.content')
+      const answer = await lifecycle.content(params)
+      return answer.ok ? { ok: true, result: answer.content } : refuse('extension_unavailable', answer.message)
+    },
+    'extension.settings': async ({ moduleId }) => {
+      const lifecycle = options.modules?.lifecycle()
+      if (!lifecycle) return unserved('extension.settings')
+      const answer = await lifecycle.settings(moduleId)
+      return answer.ok
+        ? { ok: true, result: { values: answer.values } }
+        : refuse('extension_unavailable', answer.message)
+    },
+    'extension.setSetting': ({ moduleId, key, value, commandId }, context) =>
+      lifecycleCommand('extension.setSetting', context, commandId, (lifecycle) =>
+        lifecycle.setSetting(moduleId, key, value),
+      ),
     'extension.call': ({ commandId, ...params }, { grant, voice }) => {
       const modules = options.modules
       if (!modules) return unserved('extension.call')

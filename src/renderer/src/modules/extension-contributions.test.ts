@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { afterEach, test } from 'vitest'
+import { afterEach, test, vi } from 'vitest'
 
 import type { ExtensionContributionsResult, ExtensionManifestView } from '../../../shared/modules/manifest'
 import type { AppNotification } from '../../../shared/workspace'
@@ -42,6 +42,10 @@ function extension(id: string, contributes: Partial<Contributes> = {}, over: Par
       doors: [],
       settingsSections: [],
       mcpTools: [],
+      syntaxes: [],
+      keybindings: [],
+      statusBarItems: [],
+      settings: [],
       ...contributes,
     },
     ...over,
@@ -518,4 +522,171 @@ test('trust revoked: its top bar button is gone, and running its command or acti
     .run({ activeWorkspaceId: null, activeWorkspaceMode: null })
   assert.deepEqual(ran, [])
   assert.deepEqual(calls, [])
+})
+
+test('the sample content extension binds its key, shows its status item and its settings, and runs none of its code', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { parseExtensionManifest } = await import('../../../shared/modules/third-party-manifest')
+  const parsed = parseExtensionManifest(
+    readFileSync(join(process.cwd(), 'packages/extension-sdk/examples/content-sample/extension.json'), 'utf8'),
+  )
+  assert.ok(parsed.ok)
+  if (!parsed.ok) return
+  const { kernel, calls } = recordingKernel({ ok: true, value: null })
+  const ran: string[] = []
+  stopRunner = setAppCommandRunner((commandId) => {
+    ran.push(commandId)
+    return true
+  })
+  const key = 'local.tally-language'
+  const loaded = await loadThirdPartyRendererEntries(kernel, {
+    extensions: [
+      {
+        id: key,
+        manifest: {
+          id: key,
+          displayName: 'Tally language',
+          version: '1.0.0',
+          defaultEnabled: true,
+          source: 'third-party',
+        },
+        extension: parsed.manifest,
+      },
+    ],
+    failures: {},
+  })
+  assert.deepEqual(
+    loaded.map((manifest) => manifest.id),
+    [key],
+  )
+
+  // Its key is bound to Studio's own command, as a command of the extension's
+  // titled as Studio's, so Settings ▸ Shortcuts lists it under the extension.
+  const bound = kernel.getModuleCommand(`${key}.studio-action:usage.show`)
+  assert.ok(bound, 'the keybinding registers a command')
+  assert.deepEqual(bound.defaultKeybindings, ['primary+alt+u'], "Mod is the platform's primary modifier")
+  assert.equal(bound.category, 'Tally language')
+  await bound.run({} as never)
+  assert.deepEqual(ran, ['usage.show'])
+
+  // The status item sits in the band, after the extension's own buttons.
+  const status = kernel.getTopBarItems().find((item) => item.id === `${key}:status.tally`)
+  assert.ok(status, 'the status item is in the band')
+  assert.equal(status.moduleId, key)
+
+  // Its settings are a section Studio draws itself.
+  const section = kernel.getSettingsSections().find((candidate) => candidate.id === `${key}:settings`)
+  assert.equal(section?.label, 'Tally language')
+  assert.equal(section?.moduleId, key)
+
+  assert.deepEqual(calls, [], 'no worker method was ever called')
+  // Switched off, none of it shows.
+  assert.equal(
+    kernel.getTopBarItems((moduleId) => moduleId !== key).some((item) => item.moduleId === key),
+    false,
+  )
+})
+
+test('a key bound to an extension’s own command joins that command', async () => {
+  const kernel = createRendererHost()
+  await loadThirdPartyRendererEntries(
+    kernel,
+    served([
+      {
+        key: 'acme.keyed',
+        over: { tier: 'declarative' },
+        contributes: {
+          commands: [{ id: 'notes.open', title: 'Open notes', action: 'panel.files.toggle' }],
+          keybindings: [{ command: 'notes.open', key: 'Mod+Shift+Y' }],
+          statusBarItems: [{ id: 'quiet', icon: 'notes' }],
+        },
+      },
+    ]),
+  )
+  assert.deepEqual(kernel.getModuleCommand('acme.keyed.notes.open')?.defaultKeybindings, ['primary+shift+y'])
+  assert.equal(kernel.getModuleCommand('acme.keyed.command:notes.open'), undefined)
+  assert.ok(kernel.getTopBarItems().some((item) => item.id === 'acme.keyed:status.quiet'))
+})
+
+test('each keybinding keeps its own condition, even beside another on the same command', async () => {
+  const kernel = createRendererHost()
+  await loadThirdPartyRendererEntries(
+    kernel,
+    served([
+      {
+        key: 'acme.when',
+        over: { tier: 'declarative' },
+        contributes: {
+          commands: [
+            { id: 'notes.open', title: 'Open notes', action: 'panel.files.toggle' },
+            // An own id that once collided with the command a Studio action's key gets.
+            { id: 'run.git.fetch', title: 'Fetch, my way', action: 'git.fetch' },
+          ],
+          keybindings: [
+            { command: 'notes.open', key: 'Mod+Shift+Y' },
+            { command: 'notes.open', key: 'Mod+Alt+Y', when: 'workspace' },
+            { command: 'usage.show', key: 'Mod+Alt+U' },
+            { command: 'usage.show', key: 'Mod+Alt+K', when: 'workspace' },
+            { command: 'git.fetch', key: 'Mod+Alt+F' },
+          ],
+        },
+      },
+    ]),
+  )
+  const command = (id: string) => kernel.getModuleCommand(`acme.when.${id}`)
+  assert.deepEqual(command('notes.open')?.defaultKeybindings, ['primary+shift+y'])
+  assert.equal(command('notes.open')?.availability, undefined, 'the command itself works anywhere')
+  assert.deepEqual(command('command:notes.open:workspace')?.defaultKeybindings, ['primary+alt+y'])
+  assert.deepEqual(command('command:notes.open:workspace')?.availability, ['activeWorkspace'])
+  assert.deepEqual(command('studio-action:usage.show')?.defaultKeybindings, ['primary+alt+u'])
+  assert.equal(command('studio-action:usage.show')?.availability, undefined)
+  assert.deepEqual(command('studio-action:usage.show:workspace')?.defaultKeybindings, ['primary+alt+k'])
+  assert.deepEqual(command('studio-action:usage.show:workspace')?.availability, ['activeWorkspace'])
+  assert.ok(command('run.git.fetch'), 'the extension’s own command')
+  assert.deepEqual(command('studio-action:git.fetch')?.defaultKeybindings, ['primary+alt+f'])
+})
+
+test('a key the system keeps, or one Studio’s shortcuts use, is never bound, even past validation', async () => {
+  const kernel = createRendererHost()
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  await loadThirdPartyRendererEntries(
+    kernel,
+    served([
+      {
+        key: 'acme.chords',
+        // Served as a folder edited after install would be, past the SDK's check.
+        contributes: {
+          keybindings: [
+            { command: 'usage.show', key: 'Mod+C' },
+            { command: 'usage.show', key: 'Mod+Shift+G' },
+            { command: 'usage.show', key: 'Mod+Alt+U' },
+          ],
+        },
+      },
+    ]),
+  )
+  warn.mockRestore()
+  assert.deepEqual(kernel.getModuleCommand('acme.chords.studio-action:usage.show')?.defaultKeybindings, [
+    'primary+alt+u',
+  ])
+})
+
+test('a status item always names its extension', async () => {
+  const kernel = createRendererHost()
+  await loadThirdPartyRendererEntries(
+    kernel,
+    served([
+      {
+        key: 'acme.status',
+        contributes: { statusBarItems: [{ id: 'state', text: 'Offline', tooltip: 'Studio is offline' }] },
+      },
+    ]),
+  )
+  const item = kernel.getTopBarItems().find((candidate) => candidate.id === 'acme.status:status.state')
+  assert.ok(item)
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { createElement } = await import('react')
+  const html = renderToStaticMarkup(createElement(item.Component))
+  assert.match(html, /aria-label="Offline, Studio is offline, from Ext status"/)
 })

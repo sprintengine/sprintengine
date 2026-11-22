@@ -52,7 +52,7 @@ Rules:
 | `workspace-files:write` | Change and create files in your workspaces’ folders | a surface's `files.write` | `filesystem:write` |
 | `usage:read` | See token usage and cost of every agent session on this machine | `getUsageService`, a surface's `usage.query` | `workspace:read` |
 | `storage:own` | Save its own data | `getModuleStorage`, `getModuleDataDir`, a surface's `storage.*` | `extension:read` / `extension:operate` |
-| `settings:own` | Read the values of its own Settings section | `getModuleAppState`, `watchModuleAppState`, a surface's `settings.get`, `settings.set` | `extension:read` |
+| `settings:own` | Read the values of its own Settings section | `getModuleAppState`, `watchModuleAppState`, a surface's `settings.get`, `settings.set` | `extension:read` to read; `settings:write` to change one, as Studio's own settings need |
 | `secrets:own` | Store API keys and send them to the sites it names | `getSecretsService` | `extension:operate` |
 | `notifications:show` | Show notifications in the bell | `notify` | `extension:operate` |
 | `conversation:own` | Start chats of its own with your agents, send them messages, read them and stop them | `getConversationService`, allowing a companion's tool call | `conversation:create` / `operate` / `read` |

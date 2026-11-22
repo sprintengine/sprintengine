@@ -1504,6 +1504,15 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       const modules = options.modules
       subscribeFeed(id, 'extension.changed', modules ? (deliver) => modules.onChanged(() => deliver({})) : null)
     },
+    // Whose settings values changed; the client reads them again.
+    'extension.settingsChanged': (id) => {
+      const modules = options.modules
+      subscribeFeed(
+        id,
+        'extension.settingsChanged',
+        modules ? (deliver) => modules.onSettingsChanged((moduleId) => deliver({ moduleId })) : null,
+      )
+    },
     'cardFeed.changed': (id) =>
       subscribeFeed(id, 'cardFeed.changed', options.extensions?.feeds.onCardFeedChanged ?? null),
     // The questions open now, then the whole list again on each change: a

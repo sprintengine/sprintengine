@@ -36,6 +36,8 @@ import { createModuleGitHubRegistry } from '../module-host/module-github'
 import { createModuleSecretsRegistry } from '../module-host/module-secrets'
 import { createModuleStorageRegistry } from '../module-host/module-storage'
 import { moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
+import { declaredSettingsReader, withDeclaredSettings } from './extension-declared-settings'
+import { defaultUserModuleRoot } from './user-module-registry'
 import { invokerCeiling } from '../module-host/extension-invocation'
 import { createCompanionAgentService, createCompanionAgentsModuleRegistry } from '../companion-agent-service'
 import { createModuleTextGenerationRegistry } from '../text-generation/module-text-generation'
@@ -176,7 +178,12 @@ export function createAgentRuntimeModule(
       // Every extension's Settings values, which its frames write
       // (`settings.set`) and `MainHost.getModuleAppState` reads, so a worker
       // sees the person's settings with no window open.
-      host.provideService(ModuleAppStateToken, () => moduleAppStateMirrorFor(paths.dataDir()))
+      // A setting an extension declares reads as Settings reads it (the
+      // stored value while it fits, else its default), and a write to one is
+      // held to its declaration.
+      host.provideService(ModuleAppStateToken, () =>
+        withDeclaredSettings(moduleAppStateMirrorFor(paths.dataDir()), declaredSettingsReader(defaultUserModuleRoot)),
+      )
       // Companion agents: workspace-bound background agents driven through the
       // shared conversation runtime. The core service is app-internal
       // (first-party consumers require it directly); the moduleId-scoped

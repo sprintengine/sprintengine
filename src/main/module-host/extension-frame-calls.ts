@@ -184,7 +184,13 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
         if (problem) throw invalid(problem)
         if (JSON.stringify(value).length > MAX_SETTING_VALUE_BYTES) throw invalid('A Settings value is at most 64 KiB.')
       }
-      settings().setValue(request.moduleId, key, value === null ? undefined : value)
+      try {
+        settings().setValue(request.moduleId, key, value === null ? undefined : value)
+      } catch (error) {
+        // A declared setting is held to its declaration (extension-declared-settings.ts).
+        if (error instanceof Error && error.name === 'DeclaredSettingRefusal') throw invalid(error.message)
+        throw error
+      }
       return { ok: true }
     },
     'files.read': async (_request, params) => readExtensionFile(await filesScope(params), params.path),

@@ -27,6 +27,7 @@ import {
   type ObjectNode,
   type SchemaNode,
 } from './manifest-schema.js'
+import { SCOPE_NAME_RE } from './content-syntaxes.js'
 import { EXTENSION_PERMISSIONS, type ExtensionPermission } from './permissions.js'
 
 export { EXTENSION_TIERS, type ExtensionTier, type ManifestIssue } from './manifest-schema.js'
@@ -101,12 +102,8 @@ export const EXTENSION_RESERVED_POINTS: Readonly<Record<string, string>> = {
   themes: 'app color themes',
   terminalThemes: 'terminal color themes',
   iconThemes: 'file icon themes',
-  syntaxes: 'syntax highlighting',
   fonts: 'font families',
   snippets: 'editor snippets',
-  keybindings: 'keyboard shortcuts',
-  statusBarItems: 'status bar items',
-  settings: 'declared settings',
   customEditors: 'custom editors',
   newFiles: 'new file templates',
   events: 'events delivered to the worker',
@@ -236,6 +233,148 @@ const surfaceObject = (title: string, entryDoc: string): ObjectNode => ({
 })
 
 const byId = { key: (item: unknown) => String((item as { id: string }).id), label: 'id' }
+
+const KEYBINDING_MODIFIERS = new Set([
+  'mod',
+  'primary',
+  'cmd',
+  'command',
+  'ctrl',
+  'control',
+  'alt',
+  'option',
+  'opt',
+  'meta',
+  'super',
+  'win',
+  'shift',
+])
+const KEYBINDING_NAMED_KEYS = new Set([
+  'enter',
+  'escape',
+  'esc',
+  'tab',
+  'space',
+  'backspace',
+  'delete',
+  'insert',
+  'home',
+  'end',
+  'pageup',
+  'pagedown',
+  'up',
+  'down',
+  'left',
+  'right',
+  'arrowup',
+  'arrowdown',
+  'arrowleft',
+  'arrowright',
+])
+const FUNCTION_KEY_RE = /^f(?:[1-9]|1\d|2[0-4])$/
+
+/**
+ * Why a key chord is not one Studio binds, or null: modifiers and one key
+ * joined by `+`, such as `Mod+Shift+K`, with at least one modifier other than
+ * Shift unless the key is a function key. `Mod` is Cmd on macOS and Ctrl
+ * elsewhere.
+ */
+export function keybindingProblem(value: string): string | null {
+  const parts = value.split('+').map((part) => part.trim())
+  if (value.endsWith('+')) parts.splice(-2, 2, '+')
+  const key = parts.pop() ?? ''
+  const modifiers = parts.map((part) => part.toLowerCase())
+  if (modifiers.some((modifier) => !KEYBINDING_MODIFIERS.has(modifier)))
+    return 'names a modifier Studio does not know: use Mod, Ctrl, Alt, Shift or Meta.'
+  if (new Set(modifiers).size !== modifiers.length) return 'names a modifier twice.'
+  const lower = key.toLowerCase()
+  const isFunction = FUNCTION_KEY_RE.test(lower)
+  if (!(isFunction || KEYBINDING_NAMED_KEYS.has(lower) || (/^\S$/u.test(key) && !UNSAFE_TEXT_RE.test(key))))
+    return 'must end in one key: a character, a function key (F1–F24) or a named key such as Enter.'
+  if (!isFunction && !modifiers.some((modifier) => modifier !== 'shift'))
+    return 'needs a modifier other than Shift (Mod, Ctrl, Alt or Meta), so typing never runs it.'
+  if (isReservedChord(modifiers, lower))
+    return 'is a key the system or the browser keeps (copy, paste, undo, close, reload and their like), so Studio does not let an extension take it.'
+  return null
+}
+
+// The command modifier, whatever it is called: on macOS Cmd, elsewhere Ctrl,
+// and a chord on either is the platform's.
+const PRIMARY_MODIFIERS = new Set(['mod', 'primary', 'cmd', 'command', 'ctrl', 'control', 'meta', 'super', 'win'])
+// Keys the platform, the window or the browser own under the command
+// modifier alone: clipboard and selection, undo and redo, find, print, save,
+// and the window's and tab's own (quit, close, hide, minimise, reload, new,
+// open tab, address bar). Taken by an extension they would stop doing what
+// every app does with them, with no prompt to say so.
+const RESERVED_PRIMARY_KEYS = new Set([
+  'a',
+  'c',
+  'v',
+  'x',
+  'z',
+  'y',
+  'f',
+  'g',
+  'p',
+  's',
+  'q',
+  'w',
+  'h',
+  'm',
+  'r',
+  't',
+  'n',
+  'l',
+  'o',
+  '+',
+  '-',
+  '=',
+  '0',
+])
+// The same with Shift: redo, reopen a closed tab, a new private window, a hard reload.
+const RESERVED_PRIMARY_SHIFT_KEYS = new Set(['z', 't', 'n', 'r', 'w', 'g'])
+// Function keys a browser or the system keep, with any modifier: reload,
+// full screen and developer tools; and Alt+F4's close.
+const RESERVED_FUNCTION_KEYS = new Set(['f5', 'f11', 'f12'])
+
+/** Whether a chord is one the platform or the browser keeps. */
+function isReservedChord(modifiers: readonly string[], key: string): boolean {
+  const primary = modifiers.filter((modifier) => PRIMARY_MODIFIERS.has(modifier))
+  const shift = modifiers.includes('shift')
+  const alt = modifiers.some((modifier) => modifier === 'alt' || modifier === 'option' || modifier === 'opt')
+  if (RESERVED_FUNCTION_KEYS.has(key)) return true
+  if (key === 'f4' && alt) return true
+  // Developer tools and the console.
+  if (primary.length === 1 && alt && (key === 'i' || key === 'j')) return true
+  if (primary.length === 0 || alt) return false
+  if (primary.length === 1 && !shift) return RESERVED_PRIMARY_KEYS.has(key)
+  if (primary.length === 1 && shift) return RESERVED_PRIMARY_SHIFT_KEYS.has(key)
+  return false
+}
+
+// A command id of the extension's own (lower case), or one of Studio's
+// actions, some of which are camel-cased (`commandPalette.open`).
+const COMMAND_REF_RE = /^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$/
+
+const commandRef = (doc: string): FieldSpec => ({
+  node: {
+    kind: 'string',
+    min: 1,
+    max: 100,
+    pattern: COMMAND_REF_RE,
+    patternMessage: 'must be a command id: words joined by dots or dashes.',
+  },
+  doc: `${doc} Either a command this extension contributes in \`contributes.commands\`, or one of Studio’s own command actions (listed below), which a content extension may bind without any code.`,
+  since: V1,
+  example: 'panel.git.toggle',
+})
+
+/** The types a declared setting may have. */
+export const EXTENSION_SETTING_TYPES = ['string', 'number', 'integer', 'boolean'] as const
+export type ExtensionSettingType = (typeof EXTENSION_SETTING_TYPES)[number]
+const SETTING_KEY_RE = /^[A-Za-z][A-Za-z0-9_.-]*$/
+const FILE_SUFFIX_RE = /^\.[A-Za-z0-9_+-][A-Za-z0-9_.+-]*$/
+const PORTABLE_NAME_RE = /^[^<>:"/\\|?*\u0000-\u001f]+$/
 
 const CONTRIBUTES: ObjectNode = {
   kind: 'object',
@@ -377,6 +516,218 @@ const CONTRIBUTES: ObjectNode = {
       since: V1,
       tier: 'ui',
     },
+    syntaxes: {
+      node: {
+        kind: 'array',
+        max: 16,
+        unique: byId,
+        items: {
+          kind: 'object',
+          title: 'SyntaxContribution',
+          fields: {
+            id: {
+              node: idNode(),
+              required: true,
+              doc: 'Language id, unique among this extension’s syntaxes. A chat code block whose fence names it (```gleam), or one of its extensions without the dot, is highlighted with it.',
+              since: V1,
+              example: 'gleam',
+            },
+            title: { node: displayText(64), required: true, doc: 'The language’s name.', since: V1, example: 'Gleam' },
+            scopeName: {
+              node: {
+                kind: 'string',
+                min: 3,
+                max: 128,
+                pattern: SCOPE_NAME_RE,
+                patternMessage: 'must be a dotted TextMate scope, such as source.gleam.',
+              },
+              required: true,
+              doc: 'The grammar’s root scope, unique among this extension’s syntaxes; the grammar file’s own `scopeName` must match.',
+              since: V1,
+              example: 'source.gleam',
+            },
+            path: {
+              node: pathNode(['.json']),
+              required: true,
+              doc: 'A TextMate grammar in JSON, at most 1 MiB. Keys a TextMate engine does not read are dropped; every `#name` it includes must name a rule in a repository.',
+              since: V1,
+              example: 'syntaxes/gleam.tmLanguage.json',
+            },
+            configuration: {
+              node: pathNode(['.json']),
+              doc: 'A language configuration, at most 64 KiB: `comments`, `brackets`, `autoClosingPairs` and `surroundingPairs`, which the editor reads.',
+              since: V1,
+              example: 'syntaxes/language-configuration.json',
+            },
+            extensions: {
+              node: {
+                kind: 'array',
+                max: 32,
+                unique: { key: (item) => String(item).toLowerCase(), label: 'extension' },
+                items: {
+                  kind: 'string',
+                  min: 2,
+                  max: 64,
+                  pattern: FILE_SUFFIX_RE,
+                  patternMessage: 'must be a file-name suffix with its dot, such as .gleam.',
+                },
+              },
+              doc: 'File-name suffixes the editor opens in this language, ignoring case. A longer suffix wins over a shorter one, and one of Studio’s own languages that drives completions (TypeScript, JavaScript, JSON, CSS, SCSS, Less, HTML, Markdown) is never replaced.',
+              since: V1,
+              example: ['.gleam'],
+            },
+            filenames: {
+              node: {
+                kind: 'array',
+                max: 32,
+                unique: { key: (item) => String(item).toLowerCase(), label: 'file name' },
+                items: {
+                  kind: 'string',
+                  min: 1,
+                  max: 128,
+                  pattern: PORTABLE_NAME_RE,
+                  patternMessage: 'must be a file name with no folder or characters Windows forbids.',
+                  check: (value) => (value === '.' || value === '..' ? 'must be a file name.' : null),
+                },
+              },
+              doc: 'Exact file names the editor opens in this language, ignoring case; a name wins over any suffix.',
+              since: V1,
+              example: ['gleam.toml'],
+            },
+          },
+        },
+      },
+      doc: 'Syntax highlighting for a language, in chat code blocks and the editor.',
+      since: V1,
+      tier: 'content',
+    },
+    keybindings: {
+      node: {
+        kind: 'array',
+        max: 64,
+        unique: { key: (item) => String((item as { key: string }).key).toLowerCase(), label: 'key' },
+        items: {
+          kind: 'object',
+          title: 'KeybindingContribution',
+          fields: {
+            command: { ...commandRef('The command the key runs.'), required: true },
+            key: {
+              node: { kind: 'string', min: 1, max: 64, check: keybindingProblem },
+              required: true,
+              doc: 'The key chord: modifiers and one key joined by `+`. `Mod` is Cmd on macOS and Ctrl elsewhere. It can be changed or removed in Settings ▸ Shortcuts like any of Studio’s.',
+              since: V1,
+              example: 'Mod+Alt+G',
+            },
+            when: {
+              node: { kind: 'string', max: 16, enum: ['global', 'workspace'] },
+              doc: 'Where the key works. `workspace` only while a workspace is open. Defaults to `global`.',
+              since: V1,
+            },
+          },
+        },
+      },
+      doc: 'Keyboard shortcuts.',
+      since: V1,
+      tier: 'content',
+    },
+    statusBarItems: {
+      node: {
+        kind: 'array',
+        max: 8,
+        unique: byId,
+        items: {
+          kind: 'object',
+          title: 'StatusBarItemContribution',
+          fields: {
+            id: {
+              node: idNode(),
+              required: true,
+              doc: 'Id, unique among this extension’s status bar items.',
+              since: V1,
+            },
+            text: {
+              node: displayText(32),
+              doc: 'A short label. Give `text`, `icon` or both.',
+              since: V1,
+              example: 'Gleam',
+            },
+            icon: { ...iconField('A glyph before the text.'), doc: 'A glyph before the text.' },
+            tooltip: { node: displayText(128), doc: 'Shown on hover. Defaults to the extension’s name.', since: V1 },
+            command: commandRef('The command pressing the item runs. Without one, the item only shows.'),
+          },
+        },
+      },
+      doc: 'Short status items, shown in the window’s band beside the top bar.',
+      since: V1,
+      tier: 'content',
+    },
+    settings: {
+      node: {
+        kind: 'array',
+        max: 64,
+        unique: { key: (item) => String((item as { key: string }).key), label: 'key' },
+        items: {
+          kind: 'object',
+          title: 'SettingContribution',
+          fields: {
+            key: {
+              node: {
+                kind: 'string',
+                min: 1,
+                max: 64,
+                pattern: SETTING_KEY_RE,
+                patternMessage: 'must start with a letter, then letters, digits, dots, dashes or underscores.',
+              },
+              required: true,
+              doc: 'The key its value is read under (`settings.get` in a frame, `getModuleAppState` in a worker, both with `settings:own`).',
+              since: V1,
+              example: 'serverUrl',
+            },
+            title: {
+              node: displayText(64),
+              required: true,
+              doc: 'Its label in Settings.',
+              since: V1,
+              example: 'Server URL',
+            },
+            description: { node: displayText(512), doc: 'Help shown under the label.', since: V1 },
+            type: {
+              node: { kind: 'string', max: 16, enum: EXTENSION_SETTING_TYPES },
+              required: true,
+              doc: 'The value’s type.',
+              since: V1,
+            },
+            default: {
+              node: { kind: 'scalar', maxLength: 4096 },
+              doc: 'The value read while the person has set none; of `type`.',
+              since: V1,
+            },
+            enum: {
+              node: { kind: 'array', max: 64, items: { kind: 'scalar', maxLength: 256 } },
+              doc: 'The values allowed, of `type`; Settings shows a picker.',
+              since: V1,
+            },
+            enumLabels: {
+              node: { kind: 'array', max: 64, items: displayText(64) },
+              doc: 'The picker’s labels, one per `enum` value.',
+              since: V1,
+            },
+            minimum: { node: { kind: 'number' }, doc: 'Numbers: the smallest value.', since: V1 },
+            maximum: { node: { kind: 'number' }, doc: 'Numbers: the largest value.', since: V1 },
+            maxLength: {
+              node: { kind: 'number', integer: true, min: 1, max: 4096 },
+              doc: 'Strings: the most characters. Defaults to 4096.',
+              since: V1,
+            },
+            multiline: { node: { kind: 'boolean' }, doc: 'Strings: a box of several lines.', since: V1 },
+            placeholder: { node: displayText(128), doc: 'Strings and numbers: a hint shown while empty.', since: V1 },
+          },
+        },
+      },
+      doc: 'Settings Studio shows under the extension in Settings, with no code of its own; the extension’s code reads their values with `settings:own`.',
+      since: V1,
+      tier: 'content',
+    },
     mcpTools: {
       node: {
         kind: 'array',
@@ -491,7 +842,7 @@ export const EXTENSION_MANIFEST_FIELDS: ObjectNode = {
     tier: {
       node: { kind: 'string', max: 16, enum: EXTENSION_TIERS },
       required: true,
-      doc: 'The most authority it needs, least first: `content`, `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.',
+      doc: 'The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.',
       since: V1,
       example: 'ui',
     },
@@ -578,6 +929,40 @@ export type ExtensionMcpToolContribution = {
   inputSchema: Record<string, unknown>
 }
 
+export type ExtensionSyntaxContribution = {
+  id: string
+  title: string
+  scopeName: string
+  path: string
+  configuration?: string
+  extensions?: string[]
+  filenames?: string[]
+}
+export type ExtensionKeybindingContribution = { command: string; key: string; when?: 'global' | 'workspace' }
+export type ExtensionStatusBarItemContribution = {
+  id: string
+  text?: string
+  icon?: ExtensionIcon
+  tooltip?: string
+  command?: string
+}
+/** A setting's value: of its `type`. */
+export type ExtensionSettingValue = string | number | boolean
+export type ExtensionSettingContribution = {
+  key: string
+  title: string
+  description?: string
+  type: ExtensionSettingType
+  default?: ExtensionSettingValue
+  enum?: ExtensionSettingValue[]
+  enumLabels?: string[]
+  minimum?: number
+  maximum?: number
+  maxLength?: number
+  multiline?: boolean
+  placeholder?: string
+}
+
 export type ExtensionContributions = {
   commands: ExtensionCommandContribution[]
   menus: ExtensionMenuContribution[]
@@ -586,6 +971,10 @@ export type ExtensionContributions = {
   doors: ExtensionSurfaceContribution[]
   settingsSections: ExtensionSurfaceContribution[]
   mcpTools: ExtensionMcpToolContribution[]
+  syntaxes: ExtensionSyntaxContribution[]
+  keybindings: ExtensionKeybindingContribution[]
+  statusBarItems: ExtensionStatusBarItemContribution[]
+  settings: ExtensionSettingContribution[]
 }
 
 export type ExtensionManifest = {
@@ -631,6 +1020,10 @@ const EMPTY_CONTRIBUTIONS = (): ExtensionContributions => ({
   doors: [],
   settingsSections: [],
   mcpTools: [],
+  syntaxes: [],
+  keybindings: [],
+  statusBarItems: [],
+  settings: [],
 })
 
 /** Compare two `x.y.z` versions. */
@@ -695,6 +1088,43 @@ function crossFieldIssues(manifest: ExtensionManifest, options: ExtensionManifes
       issues.push({ path: `${path}.door`, message: `names no contributed door: ${item.door}.` })
     }
   })
+  // A keybinding or a status bar item runs a command of the extension's own,
+  // or one of Studio's: a content extension binds Studio's without code.
+  const runnable = (command: string) =>
+    commandIds.has(command) || (EXTENSION_COMMAND_ACTIONS as readonly string[]).includes(command)
+  contributes.keybindings.forEach((binding, index) => {
+    if (!runnable(binding.command))
+      issues.push({
+        path: `contributes.keybindings[${index}].command`,
+        message: `names neither a contributed command nor a Studio command action: ${binding.command}.`,
+      })
+  })
+  contributes.statusBarItems.forEach((item, index) => {
+    const path = `contributes.statusBarItems[${index}]`
+    if (item.text === undefined && item.icon === undefined)
+      issues.push({ path, message: 'must give text, an icon, or both.' })
+    if (item.command !== undefined && !runnable(item.command))
+      issues.push({
+        path: `${path}.command`,
+        message: `names neither a contributed command nor a Studio command action: ${item.command}.`,
+      })
+  })
+  const scopes = new Set<string>()
+  contributes.syntaxes.forEach((syntax, index) => {
+    if (scopes.has(syntax.scopeName))
+      issues.push({
+        path: `contributes.syntaxes[${index}].scopeName`,
+        message: `duplicate scope: ${syntax.scopeName}.`,
+      })
+    scopes.add(syntax.scopeName)
+  })
+  contributes.settings.forEach((setting, index) => {
+    for (const problem of settingProblems(setting))
+      issues.push({
+        path: `contributes.settings[${index}]${problem.field ? `.${problem.field}` : ''}`,
+        message: problem.message,
+      })
+  })
   if (contributes.mcpTools.length > 0 && !manifest.permissions.includes('tools:contribute')) {
     issues.push({ path: 'contributes.mcpTools', message: 'needs the "tools:contribute" permission.' })
   }
@@ -714,6 +1144,90 @@ function crossFieldIssues(manifest: ExtensionManifest, options: ExtensionManifes
     }
   }
   return issues
+}
+
+/** Why `value` is not one a setting may hold, or null: its type, its choices, its range and length. */
+export function settingValueProblem(setting: ExtensionSettingContribution, value: unknown): string | null {
+  switch (setting.type) {
+    case 'string':
+      if (typeof value !== 'string') return 'must be text.'
+      if (value.length > (setting.maxLength ?? 4096)) return `must be at most ${setting.maxLength ?? 4096} characters.`
+      if (!setting.multiline && /[\r\n]/.test(value)) return 'must be one line.'
+      break
+    case 'number':
+    case 'integer':
+      if (typeof value !== 'number' || !Number.isFinite(value)) return 'must be a number.'
+      if (setting.type === 'integer' && !Number.isInteger(value)) return 'must be a whole number.'
+      if (setting.minimum !== undefined && value < setting.minimum) return `must be at least ${setting.minimum}.`
+      if (setting.maximum !== undefined && value > setting.maximum) return `must be at most ${setting.maximum}.`
+      break
+    case 'boolean':
+      if (typeof value !== 'boolean') return 'must be true or false.'
+      break
+  }
+  if (setting.enum && !setting.enum.includes(value as ExtensionSettingValue))
+    return `must be one of: ${setting.enum.map((choice) => JSON.stringify(choice)).join(', ')}.`
+  return null
+}
+
+function settingProblems(setting: ExtensionSettingContribution): Array<{ field?: string; message: string }> {
+  const problems: Array<{ field?: string; message: string }> = []
+  const numeric = setting.type === 'number' || setting.type === 'integer'
+  if (!numeric && (setting.minimum !== undefined || setting.maximum !== undefined))
+    problems.push({ field: 'minimum', message: 'applies to numbers only.' })
+  if (setting.type !== 'string' && (setting.maxLength !== undefined || setting.multiline !== undefined))
+    problems.push({ field: 'maxLength', message: 'maxLength and multiline apply to strings only.' })
+  if (setting.type === 'boolean' && setting.placeholder !== undefined)
+    problems.push({ field: 'placeholder', message: 'applies to strings and numbers only.' })
+  if (setting.minimum !== undefined && setting.maximum !== undefined && setting.minimum > setting.maximum)
+    problems.push({ field: 'minimum', message: 'must not be above maximum.' })
+  if (setting.enum) {
+    if (setting.type === 'boolean') problems.push({ field: 'enum', message: 'does not apply to true or false.' })
+    if (setting.enum.length === 0) problems.push({ field: 'enum', message: 'must list at least one value.' })
+    const bare = { ...setting, enum: undefined }
+    setting.enum.forEach((choice, index) => {
+      const problem = settingValueProblem(bare, choice)
+      if (problem) problems.push({ field: `enum[${index}]`, message: problem })
+    })
+    if (new Set(setting.enum).size !== setting.enum.length)
+      problems.push({ field: 'enum', message: 'lists a value twice.' })
+  }
+  if (setting.enumLabels && setting.enumLabels.length !== (setting.enum?.length ?? -1))
+    problems.push({ field: 'enumLabels', message: 'must give one label per enum value.' })
+  if (setting.default !== undefined) {
+    const problem = settingValueProblem(setting, setting.default)
+    if (problem) problems.push({ field: 'default', message: problem })
+  }
+  return problems
+}
+
+/**
+ * Each declared setting's value as the extension's code and Settings both
+ * read it: the stored one while it still fits the declaration, else its
+ * default (a value stored before an update narrowed the setting falls back),
+ * else nothing. Keys the extension does not declare are left out.
+ */
+export function extensionSettingValues(
+  settings: readonly ExtensionSettingContribution[],
+  stored: Readonly<Record<string, unknown>>,
+): Record<string, ExtensionSettingValue> {
+  const values: Record<string, ExtensionSettingValue> = {}
+  for (const setting of settings) {
+    const value = stored[setting.key]
+    if (value !== undefined && settingValueProblem(setting, value) === null)
+      values[setting.key] = value as ExtensionSettingValue
+    else if (setting.default !== undefined) values[setting.key] = setting.default
+  }
+  return values
+}
+
+/** Each declared setting's default, by key: what is read while the person has set none. */
+export function extensionSettingDefaults(
+  settings: readonly ExtensionSettingContribution[],
+): Record<string, ExtensionSettingValue> {
+  const defaults: Record<string, ExtensionSettingValue> = {}
+  for (const setting of settings) if (setting.default !== undefined) defaults[setting.key] = setting.default
+  return defaults
 }
 
 function newestSinceUsed(manifest: ExtensionManifest): string {

@@ -29,6 +29,10 @@ export type StringNode = {
   schemaPattern?: string
 }
 export type BooleanNode = { kind: 'boolean' }
+/** A finite number, whole when `integer`. */
+export type NumberNode = { kind: 'number'; integer?: boolean; min?: number; max?: number }
+/** A string (at most `maxLength` characters), a finite number or a boolean: a setting's value. */
+export type ScalarNode = { kind: 'scalar'; maxLength: number }
 export type LiteralNode = { kind: 'literal'; value: number }
 export type ArrayNode = {
   kind: 'array'
@@ -43,7 +47,16 @@ export type ReservedNode = { kind: 'reserved'; purpose: string }
 /** A JSON Schema for an object (a tool's parameters): JSON data, `type: "object"`, at most `maxBytes` as JSON. */
 export type JsonSchemaNode = { kind: 'jsonSchema'; maxBytes: number }
 
-export type SchemaNode = StringNode | BooleanNode | LiteralNode | ArrayNode | ObjectNode | ReservedNode | JsonSchemaNode
+export type SchemaNode =
+  | StringNode
+  | BooleanNode
+  | NumberNode
+  | ScalarNode
+  | LiteralNode
+  | ArrayNode
+  | ObjectNode
+  | ReservedNode
+  | JsonSchemaNode
 
 /** Why `value` is not plain JSON data (objects, lists, strings, finite numbers, booleans, null), or null. */
 function jsonDataProblem(value: unknown, depth = 0): string | null {
@@ -133,6 +146,31 @@ export function validateNode(node: SchemaNode, value: unknown, path: string, iss
         return undefined
       }
       return value
+    case 'number':
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        issues.push({ path, message: 'must be a number.' })
+        return undefined
+      }
+      if (node.integer && !Number.isInteger(value)) {
+        issues.push({ path, message: 'must be a whole number.' })
+        return undefined
+      }
+      if ((node.min !== undefined && value < node.min) || (node.max !== undefined && value > node.max)) {
+        issues.push({ path, message: `must be between ${node.min ?? '-∞'} and ${node.max ?? '∞'}.` })
+        return undefined
+      }
+      return value
+    case 'scalar':
+      if (typeof value === 'string') {
+        if (value.length > node.maxLength) {
+          issues.push({ path, message: `must be at most ${node.maxLength} characters.` })
+          return undefined
+        }
+        return value
+      }
+      if (typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) return value
+      issues.push({ path, message: 'must be a string, a number or true or false.' })
+      return undefined
     case 'literal':
       if (value !== node.value) {
         issues.push({ path, message: `must be ${node.value}.` })
@@ -257,6 +295,15 @@ export function nodeJsonSchema(node: SchemaNode, field?: FieldSpec): JsonSchema 
       }
     case 'boolean':
       return { type: 'boolean', ...meta }
+    case 'number':
+      return {
+        type: node.integer ? 'integer' : 'number',
+        ...(node.min !== undefined ? { minimum: node.min } : {}),
+        ...(node.max !== undefined ? { maximum: node.max } : {}),
+        ...meta,
+      }
+    case 'scalar':
+      return { type: ['string', 'number', 'boolean'], maxLength: node.maxLength, ...meta }
     case 'literal':
       return { const: node.value, ...meta }
     case 'reserved':
@@ -301,6 +348,10 @@ function typeText(node: SchemaNode): string {
       return node.enum ? node.enum.map((value) => `\`${value}\``).join(' \\| ') : 'string'
     case 'boolean':
       return 'boolean'
+    case 'number':
+      return node.integer ? 'integer' : 'number'
+    case 'scalar':
+      return 'string \\| number \\| boolean'
     case 'literal':
       return `\`${node.value}\``
     case 'reserved':

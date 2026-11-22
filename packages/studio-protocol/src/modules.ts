@@ -8,6 +8,10 @@ import {
 } from './contract.js'
 import { STUDIO_EXTENSION_FRAMES_CAPABILITY, STUDIO_EXTENSION_HOST_CAPABILITY } from './handshake.js'
 import type {
+  ExtensionContent,
+  ExtensionSettingValues,
+  ExtensionSettingValueView,
+  StudioExtensionContentRequest,
   ExtensionContributionsResult,
   ExtensionFrameDocument,
   StudioExtensionApproval,
@@ -61,7 +65,14 @@ import type {
 //   extensions add to a client (commands, menus, top bar items, panels, doors,
 //   settings sections), as their extension.json declares it; no code.
 //   `extension.changed`: what is installed or approved here changed, so a
-//   client lists them again.
+//   client lists them again. `extension.content`: one piece of what a content
+//   extension adds (a syntax's grammar), its file read here, held to the bytes
+//   the extension was verified with and checked, served as data and never as
+//   a path, to every client alike. `extension.settings` and
+//   `extension.setSetting`: the values of the settings an extension declares,
+//   which Settings shows and changes and the extension's own code reads; both
+//   need `settings:write`, as Studio's own settings do, and
+//   `extension.settingsChanged` says whose changed, from any writer.
 // - Under `extension-frames`: `extension.frame`, the document one panel, door
 //   or settings section is drawn from in its sandboxed frame (built here from
 //   the extension's verified entry, Studio's bootstrap and the theme the client
@@ -270,6 +281,23 @@ export type StudioModulesMethodMap = {
     result: ExtensionFrameDocument
     errors: 'extension_unavailable'
   }
+  /** One piece of what a content extension adds, checked here, as data. */
+  'extension.content': {
+    params: StudioExtensionContentRequest
+    result: ExtensionContent
+    errors: 'extension_unavailable'
+  }
+  /** The values of the settings an extension declares: each the person's, else its default. */
+  'extension.settings': {
+    params: { moduleId: string }
+    result: ExtensionSettingValues
+    errors: 'extension_unavailable'
+  }
+  /** Set one declared setting (`null`: back to its default), held to what extension.json declares of it. */
+  'extension.setSetting': {
+    params: { moduleId: string; key: string; value: ExtensionSettingValueView | null; commandId: string }
+    result: StudioModuleLifecycleAnswer<{ values: Record<string, ExtensionSettingValueView> }>
+  }
   /** One host call a frame made, as the extension and as this connection. */
   'extension.call': {
     params: StudioExtensionCall & { commandId: string }
@@ -290,6 +318,8 @@ export type StudioModulesTopicMap = {
   'extension.notifications': { params: Record<string, never>; payload: StudioModuleNotification; stream: 'push' }
   /** What is installed or approved here changed: list and load the extensions again. */
   'extension.changed': { params: Record<string, never>; payload: Record<string, never>; stream: 'push' }
+  /** An extension's settings values changed: read them again (`extension.settings`). */
+  'extension.settingsChanged': { params: Record<string, never>; payload: { moduleId: string }; stream: 'push' }
 }
 
 /** A manifest id, as the module kernel accepts one. */
@@ -437,6 +467,50 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
       })
     },
   },
+  'extension.content': {
+    scope: 'extensions:read',
+    mutation: false,
+    capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+    params: (value) => {
+      if (!moduleId(value.moduleId)) return studioParamsRefused('"moduleId" is the extension\'s install key.')
+      if (value.kind !== 'syntax') return studioParamsRefused('"kind" is syntax.')
+      if (typeof value.id !== 'string' || value.id.length === 0 || value.id.length > MAX_SURFACE_ID_CHARS)
+        return studioParamsRefused('"id" is the contribution\'s id in extension.json.')
+      return studioParams({ moduleId: value.moduleId, kind: value.kind, id: value.id })
+    },
+  },
+  'extension.settings': {
+    // Settings may hold a server address or a token: read only by a
+    // connection that may change Studio's settings.
+    scope: 'settings:write',
+    mutation: false,
+    capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+    params: (value) =>
+      moduleId(value.moduleId)
+        ? studioParams({ moduleId: value.moduleId })
+        : studioParamsRefused('"moduleId" is the extension\'s install key.'),
+  },
+  'extension.setSetting': {
+    // A declared setting is one of Studio's settings, not an extension's
+    // operation: the person's own browser tab changes it as it changes any.
+    scope: 'settings:write',
+    mutation: true,
+    capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+    params: (value) => {
+      const named = namedModule(value)
+      if (!named.ok) return named
+      if (typeof value.key !== 'string' || value.key.length === 0 || value.key.length > 64)
+        return studioParamsRefused('"key" is a setting\'s key in extension.json.')
+      const setting = value.value
+      const scalar =
+        setting === null ||
+        typeof setting === 'boolean' ||
+        (typeof setting === 'number' && Number.isFinite(setting)) ||
+        (typeof setting === 'string' && setting.length <= 4096)
+      if (!scalar) return studioParamsRefused('"value" is text, a number, true or false, or null for the default.')
+      return studioParams({ ...named.params, key: value.key, value: setting as ExtensionSettingValueView | null })
+    },
+  },
   'extension.call': {
     scope: 'extensions:read',
     mutation: true,
@@ -498,6 +572,12 @@ export const STUDIO_MODULES_TOPICS: StudioTopicTable<StudioModulesTopicMap> = {
     params: studioNoParams,
   },
   'extension.changed': {
+    scope: 'extensions:read',
+    capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+    push: true,
+    params: studioNoParams,
+  },
+  'extension.settingsChanged': {
     scope: 'extensions:read',
     capability: STUDIO_EXTENSION_HOST_CAPABILITY,
     push: true,
