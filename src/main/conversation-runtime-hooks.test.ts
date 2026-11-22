@@ -59,7 +59,8 @@ async function harness(decide: Parameters<typeof fakeHooks>[0]) {
     starterInvoker: (starter) => ownerInvoker(null, `starter ${starter.kind}`),
   })
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
-  const start = () => runtime.startSession({ ...key, providerId: 'mock-provider', modelId: 'mock-model' })
+  const start = (extra: { openingPrompt?: string } = {}) =>
+    runtime.startSession({ ...key, providerId: 'mock-provider', modelId: 'mock-model', ...extra })
   const done = async () => {
     await runtime.shutdown()
     await rm(workspaceRoot, { recursive: true, force: true })
@@ -178,6 +179,41 @@ test('a message nobody typed meets agent.prompt.before; what a person types neve
       message: 'The extension "Guard" (acme.guard) refused this: not here',
     })
     assert.equal(turns.length, before)
+  } finally {
+    await done()
+  }
+})
+
+test('a new chat’s launch hook sees the first message it is about to be sent', async () => {
+  const { heard, start, done } = await harness(() => null)
+  try {
+    const started = await start({ openingPrompt: '  Fix the build  ' })
+    assert.ok(started.ok)
+    assert.equal(heard.find((entry) => entry.point === 'agent.launch.before')?.event.prompt, 'Fix the build')
+  } finally {
+    await done()
+  }
+})
+
+// A retry of a send already carried out is answered from its receipt: the
+// extensions' hooks are not run again for it.
+test('a retried send is answered from its receipt without running the prompt hooks again', async () => {
+  const { runtime, heard, turns, start, done } = await harness((point, event) =>
+    point === 'agent.prompt.before' ? { ...event, prompt: `${String(event.prompt)} (checked)` } : null,
+  )
+  try {
+    const started = await start()
+    assert.ok(started.ok)
+    const send = {
+      sessionId: started.session.sessionId,
+      commandId: 'cmd-retried',
+      message: 'Review it',
+      hookAs: { inputKind: 'send' as const, from: 'extension' as const },
+    }
+    assert.equal((await runtime.sendTurn(send)).ok, true)
+    assert.equal((await runtime.sendTurn(send)).ok, true)
+    assert.equal(heard.filter((entry) => entry.point === 'agent.prompt.before').length, 1)
+    assert.equal(turns.filter((turn) => turn.message === 'Review it (checked)').length, 1)
   } finally {
     await done()
   }

@@ -822,6 +822,7 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
             ...(skills.length > 0 ? { skills } : {}),
             ...(turnMode ? { mode: turnMode } : {}),
             ...(subagentOf ? { subagentTask: true as const } : {}),
+            ...(request.promptHookAs ? { from: request.promptHookAs.from } : {}),
             at: Date.now(),
           },
           request.attachments ?? [],
@@ -916,6 +917,8 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     )
     const started = await deps
       .startSession({
+        // What the launch hooks see as the chat's first message.
+        ...(prompt && request.sendFirst !== false ? { openingPrompt: prompt } : {}),
         workspaceRoot: workingRoot,
         workspaceId: chatWorkspaceId,
         agentId,

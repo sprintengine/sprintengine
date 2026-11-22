@@ -53,6 +53,7 @@ import {
   FIRST_MESSAGE_CLIENT_ID,
   FIRST_MESSAGES_FILENAME,
   recoverFirstMessages,
+  recoveryHookAs,
 } from '../../main/conversation-first-messages'
 import { createSubagentLifecycle, subagentChangesOf } from '../../main/subagent-lifecycle'
 import { createConversationCheckoutChanges } from '../../main/conversation-checkout-changes'
@@ -1371,10 +1372,12 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       return null
     },
     send: async (chat, commandId, message) => {
-      // Not the person typing now: the extensions' prompt hooks check it again.
+      // One nobody typed meets the extensions' prompt hooks again, as sent
+      // again; a person's own words never do.
+      const hookAs = recoveryHookAs(message)
       const host = createConversationHost({
         ...(message.subagentTask ? { origin: SUBAGENT_TASK_ORIGIN } : {}),
-        hookAs: { inputKind: 'recovery', from: 'studio' },
+        ...(hookAs ? { hookAs } : {}),
       })
       const key = host.resolveKey(chat.workspaceId, chat.agentId)
       if (!key) return { ok: false, message: 'The chat is no longer there.' }

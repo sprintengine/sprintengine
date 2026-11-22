@@ -1101,18 +1101,39 @@ export class ConversationRuntime {
    * (the protocol, the SDK, a module's `send`, the window) is promised.
    */
   sendTurn(input: ConversationSendTurnInput): Promise<ConversationSessionActionResult> {
-    // A message nobody typed meets the extensions' prompt hooks here, the one
-    // door every send to a chat comes through; a person's never does.
-    if (input.hookAs && this.extensionHooks?.wants('agent.prompt.before')) return this.sendHooked(input, input.hookAs)
-    return this.sendTurnCommand(input)
+    return this.runCommand(
+      input.sessionId,
+      input,
+      // A message nobody typed meets the extensions' prompt hooks here, the
+      // one door every send to a chat comes through, once a retry of a send
+      // that already went has been answered from its receipt; a person's
+      // message never does.
+      (command) =>
+        input.hookAs && this.extensionHooks?.wants('agent.prompt.before')
+          ? this.sendHooked(input, input.hookAs, command)
+          : this.sendTurnNow(input, command),
+      // A send turned away busy runs nothing, so it is answered before
+      // anything is written: a phone tries again every second while a turn
+      // runs. A stale one is the same: nothing is recorded, and the same id
+      // confirmed by the person runs; only a sender that names its command
+      // says when it was written for that. Asked after the receipts, so a
+      // repeat of a send that already went is answered as it was, however old.
+      () => {
+        if (input.commandId && isStaleConversationSend(input, this.now())) return staleRefusal()
+        const session = this.sessions.get(input.sessionId)
+        return session && !input.steer && isSessionBusy(session) ? busyRefusal(session) : null
+      },
+    )
   }
 
   private async sendHooked(
     input: ConversationSendTurnInput,
     hookAs: ConversationPromptHookAs,
+    command: CommandInFlight,
   ): Promise<ConversationSessionActionResult> {
+    const { hookAs: _hooked, ...rest } = input
     const session = this.sessions.get(input.sessionId)
-    if (!session) return this.sendTurnCommand(input)
+    if (!session) return this.sendTurnNow(rest, command)
     const chat = { workspaceId: session.workspaceId, agentId: session.agentId }
     const outcome = await this.extensionHooks!.run(
       'agent.prompt.before',
@@ -1132,27 +1153,7 @@ export class ConversationRuntime {
     )
     if (outcome.kind === 'deny')
       return { ok: false, code: 'refused_by_extension', message: extensionHookRefusal(outcome) }
-    const { hookAs: _hooked, ...rest } = input
-    return this.sendTurnCommand({ ...rest, message: outcome.event.prompt })
-  }
-
-  private sendTurnCommand(input: ConversationSendTurnInput): Promise<ConversationSessionActionResult> {
-    return this.runCommand(
-      input.sessionId,
-      input,
-      (command) => this.sendTurnNow(input, command),
-      // A send turned away busy runs nothing, so it is answered before
-      // anything is written: a phone tries again every second while a turn
-      // runs. A stale one is the same: nothing is recorded, and the same id
-      // confirmed by the person runs; only a sender that names its command
-      // says when it was written for that. Asked after the receipts, so a
-      // repeat of a send that already went is answered as it was, however old.
-      () => {
-        if (input.commandId && isStaleConversationSend(input, this.now())) return staleRefusal()
-        const session = this.sessions.get(input.sessionId)
-        return session && !input.steer && isSessionBusy(session) ? busyRefusal(session) : null
-      },
-    )
+    return this.sendTurnNow({ ...rest, message: outcome.event.prompt }, command)
   }
 
   private async sendTurnNow(
@@ -2812,7 +2813,7 @@ export class ConversationRuntime {
         workspaceId: input.workspaceId,
         model: input.modelId === CONVERSATION_DEFAULT_MODEL_ID ? null : input.modelId,
         permission: input.permissionPreset ?? null,
-        prompt: null,
+        prompt: input.openingPrompt?.trim() || null,
       },
       activeInvoker() ?? this.chatInvoker?.(chat) ?? nobodyInvoker('the chat'),
     )

@@ -305,7 +305,7 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
   },
   'workspace.create.before': {
     decides: true,
-    changes: { name: text(1024, 1), branch: text(255, 1), base: text(1024, 1) },
+    changes: { name: text(1024, 1), branch: text(1024, 1), base: text(1024, 1) },
     approval: 'Can rename or refuse the workspaces Studio makes, and choose their worktrees’ branches',
     summary:
       'Studio is about to make a workspace: for a new chat, or one an agent or extension asked for. Change `name`; for a new chat cut a worktree of its own, change the `branch` it is cut on or the `base` it forks from (a change to either is ignored where the worktree already exists); or return `{ deny }` to refuse it.',

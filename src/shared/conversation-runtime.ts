@@ -138,6 +138,9 @@ export type ConversationMcpServer = {
 }
 
 export type ConversationStartSessionInput = {
+  // The first message the chat is about to be sent, when its launcher sends
+  // one: what a new chat's `agent.launch.before` hooks see as its prompt.
+  openingPrompt?: string
   workspaceRoot: string
   workspaceId: string
   agentId: string

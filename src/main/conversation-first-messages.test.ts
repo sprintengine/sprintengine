@@ -17,6 +17,7 @@ import {
   firstMessageCommandId,
   firstMessageSettled,
   recoverFirstMessages,
+  recoveryHookAs,
   type PendingFirstMessage,
 } from './conversation-first-messages'
 import { createMockConversationProvider } from './providers/mock-conversation-provider'
@@ -441,6 +442,55 @@ test('a first message sent again at the next start meets the prompt hooks as a r
     assert.equal(told.at(-1), 'hello lost (checked)')
   } finally {
     await runtime.shutdown()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+// A first message keeps whether a person typed it: sent again after a stop,
+// only one nobody typed meets the prompt hooks, as a recovery from whoever
+// sent it; a person's own words never do.
+test('a kept first message says whether nobody typed it, and only such a one is hooked when sent again', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'first-messages-from-'))
+  const filePath = join(dir, 'first.json')
+  try {
+    const store = createPendingFirstMessages({ filePath })
+    let suffix = 0
+    const service = createConversationLaunchService({
+      getWorkspace: (id) => (id === 'ws-1' ? { id, folderPath: '/repo/a', agents: {} } : null),
+      getLaunchSettings: () => emptyAgentLaunchSettings(),
+      writeAgent: () => ({ ok: true }),
+      listWorkspaces: () => [],
+      createWorkspace: () => ({ ok: false, message: 'not in this test' }),
+      removeWorkspace: () => undefined,
+      startSession: async (input) => ({
+        ok: true,
+        session: {
+          sessionId: 'conv_1',
+          workspaceId: input.workspaceId,
+          agentId: input.agentId,
+        } as ConversationSessionSummary,
+      }),
+      // Cut off by a stop: never answered.
+      send: () => new Promise(() => undefined),
+      firstMessages: store,
+      newAgentSuffix: () => `s${++suffix}`,
+    })
+    const base = { workspaceId: 'ws-1', cli: 'claude-code', skills: [] }
+    await service.launch({ ...base, prompt: 'typed by a person', launchCommandId: 'client:phone:c1' })
+    await service.launch({
+      ...base,
+      prompt: 'from an agent',
+      launchCommandId: 'agent:c2',
+      promptHookAs: { inputKind: 'launch', from: 'agent' },
+    })
+    const kept = await createPendingFirstMessages({ filePath }).all()
+    const person = kept[firstMessageCommandId('client:phone:c1')]!
+    const agent = kept[firstMessageCommandId('agent:c2')]!
+    assert.equal(person.from, undefined)
+    assert.equal(agent.from, 'agent')
+    assert.equal(recoveryHookAs(person), undefined, 'a person’s words are never hooked')
+    assert.deepEqual(recoveryHookAs(agent), { inputKind: 'recovery', from: 'agent' })
+  } finally {
     await rm(dir, { recursive: true, force: true })
   }
 })

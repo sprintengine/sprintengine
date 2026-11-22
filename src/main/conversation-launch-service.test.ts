@@ -133,6 +133,8 @@ test('a chat launch writes a conversation agent, starts its session and sends th
   assert.notEqual(agent.name, 'Ada', 'the name is not one the workspace already uses')
 
   assert.deepEqual(record.starts[0], {
+    // What the launch hooks see as its first message.
+    openingPrompt: 'fix the build',
     workspaceRoot: '/repo/a',
     workspaceId: 'ws-1',
     agentId: 'agent-claude-code-abc123',
