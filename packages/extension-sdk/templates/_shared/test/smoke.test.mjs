@@ -11,6 +11,9 @@
 //   command without an `action` has an `operate` method of the same name,
 //   every MCP tool extension.json declares is served, and nothing is used
 //   that extension.json does not declare.
+// - Each skill's folder holds its SKILL.md, and every file of the extension a
+//   local MCP server runs (`${extensionPath}/…` in its command or arguments)
+//   was built.
 //
 // Your own tests are TypeScript, in test/*.test.ts: `npm test` builds them
 // with esbuild (`npm run build:test`) and runs them beside this file.
@@ -111,5 +114,22 @@ if (manifest?.main) {
       await main.shutdown()
       main.dispose()
     }
+  })
+}
+
+for (const skill of manifest?.contributes.skills ?? []) {
+  test(`skill "${skill.id}": ${skill.path}/SKILL.md is there`, () => {
+    built(`${skill.path.replace(/\/+$/, '')}/SKILL.md`)
+  })
+}
+
+const EXTENSION_PATH = '${extensionPath}/'
+for (const server of manifest?.contributes.mcpServers ?? []) {
+  if (server.transport !== 'stdio') continue
+  const files = [server.command ?? '', ...(server.args ?? [])]
+    .filter((part) => part.startsWith(EXTENSION_PATH))
+    .map((part) => part.slice(EXTENSION_PATH.length))
+  test(`MCP server "${server.id}": the files it runs were built`, () => {
+    for (const file of files) built(file)
   })
 }

@@ -1,0 +1,25 @@
+{
+  "$schema": "../node_modules/@sprintengine/extension-sdk/extension.schema.json",
+  "manifestVersion": 1,
+  "id": "{{id}}",
+  "version": "0.1.0",
+  "engines": {
+    "studio": ">={{studioVersion}}"
+  },
+  "tier": "declarative",
+  "name": "{{displayName}}",
+  "description": "{{displayName}}, an extension for SprintEngine Studio.",
+  "contributes": {
+    "skills": [{ "id": "word-budget", "path": "skills/word-budget" }],
+    "mcpServers": [
+      {
+        "id": "word-count",
+        "name": "Word count",
+        "description": "Counts the words in a text, for keeping to a budget.",
+        "transport": "stdio",
+        "command": "node",
+        "args": ["${extensionPath}/dist/server.mjs"]
+      }
+    ]
+  }
+}

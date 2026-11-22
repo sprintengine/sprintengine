@@ -182,6 +182,7 @@ test('the templates on offer, the copies that must not drift, and the refusals',
     'file-action',
     'mcp-tools',
     'hook-guard',
+    'agent-kit',
   ])
 
   // ── Copies that must not drift ─────────────────────────────────────────────
