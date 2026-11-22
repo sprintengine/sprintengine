@@ -88,8 +88,8 @@ test('a syntax names a JSON grammar, a dotted scope unique in the extension, and
 test('a keybinding is a modified key bound to an own command or a Studio action', () => {
   expect(keybindingProblem('Mod+Shift+K')).toBeNull()
   expect(keybindingProblem('Ctrl+Alt+Enter')).toBeNull()
-  expect(keybindingProblem('F5')).toBeNull()
-  expect(keybindingProblem('Mod++')).toBeNull()
+  expect(keybindingProblem('F6')).toBeNull()
+  expect(keybindingProblem('Mod+Alt++')).toBeNull()
   expect(keybindingProblem('K')).toMatch(/modifier other than Shift/)
   expect(keybindingProblem('Shift+K')).toMatch(/modifier other than Shift/)
   expect(keybindingProblem('Hyper+K')).toMatch(/modifier Studio does not know/)
@@ -242,4 +242,59 @@ test('a language configuration keeps its markers and pairs, short and on one lin
   })
   expect(validateLanguageConfiguration({ autoClosingPairs: [['<<<<<<<<<', '>']] }).ok).toBe(false)
   expect(validateLanguageConfiguration({ comments: { lineComment: 'a\nb' } }).ok).toBe(false)
+})
+
+test('a key the system or the browser keeps is refused', () => {
+  for (const chord of [
+    'Mod+C',
+    'Mod+V',
+    'Mod+X',
+    'Mod+A',
+    'Mod+Z',
+    'Mod+Shift+Z',
+    'Ctrl+Y',
+    'Cmd+Q',
+    'Mod+W',
+    'Mod+R',
+    'Mod+T',
+    'Mod+N',
+    'Mod+Shift+T',
+    'Mod+F',
+    'Mod+P',
+    'Mod+S',
+    'F5',
+    'Shift+F5',
+    'F11',
+    'F12',
+    'Alt+F4',
+    'Mod+Alt+I',
+  ])
+    expect(keybindingProblem(chord), chord).toMatch(/system or the browser keeps/)
+  for (const chord of ['Mod+Alt+U', 'Mod+Shift+K', 'Ctrl+Alt+C', 'F6', 'Mod+Shift+Y'])
+    expect(keybindingProblem(chord), chord).toBeNull()
+})
+
+test('a grammar whose includes double at each level is refused before it can run', () => {
+  // Each rule includes the one below it twice: 1.6 KB of JSON that expands to
+  // 2^26 rules, which no deadline inside the engine interrupts.
+  const repository: Record<string, unknown> = { r0: { match: 'a', name: 'keyword.x' } }
+  for (let level = 1; level <= 26; level += 1)
+    repository[`r${level}`] = { patterns: [{ include: `#r${level - 1}` }, { include: `#r${level - 1}` }] }
+  const doubling = validateTextMateGrammar(
+    { scopeName: 'source.x', patterns: [{ include: '#r26' }], repository },
+    'source.x',
+  )
+  expect(doubling.ok).toBe(false)
+  if (!doubling.ok) expect(doubling.issues[0]!.message).toMatch(/expands, include by include, to more than 10000 rules/)
+
+  // A grammar that includes itself, as nested blocks do, is normal and passes.
+  const recursive = validateTextMateGrammar(
+    {
+      scopeName: 'source.x',
+      patterns: [{ include: '#block' }],
+      repository: { block: { begin: '\\{', end: '\\}', patterns: [{ include: '#block' }, { include: '$self' }] } },
+    },
+    'source.x',
+  )
+  expect(recursive.ok).toBe(true)
 })

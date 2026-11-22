@@ -95,16 +95,20 @@ answers the least tier a manifest needs.
   64 KiB) gives the editor comment markers, brackets, auto-closing and
   surrounding pairs. Studio keeps only the keys a TextMate engine reads, and
   refuses a grammar whose `scopeName` differs from the entry's or that
-  includes a `#name` no repository holds; an include of another scope (an
-  embedded `source.js`) is allowed and stays plain. Code is coloured by what
+  includes a `#name` no repository holds, or whose includes expand to more
+  than 10,000 rules; an include of another scope (an embedded `source.js`) is
+  allowed and stays plain. Code is coloured by what
   each token is (comment, keyword, string, number, function, type), in the
   active theme's colours.
 - **`keybindings`** bind a key chord to a command: one the extension
   contributes, or one of Studio's own command actions (the list under the
   reference), which a content extension may bind with no code. `Mod` is Cmd on
-  macOS and Ctrl elsewhere. The binding is listed under the extension in
-  Settings ▸ Shortcuts, where the person can change or remove it; a chord
-  Studio already uses is shown there as a conflict.
+  macOS and Ctrl elsewhere. A chord the system or the browser keeps (copy,
+  paste, cut, select all, undo and redo, find, print, save, quit, close,
+  reload, a new window or tab, zoom, `F5`, `F11`, `F12`, developer tools) is
+  refused, and one Studio's own shortcuts already use is not bound. The
+  binding is listed under the extension in Settings ▸ Shortcuts, where the
+  person can change or remove it; its `when` holds for that binding alone.
 - **`statusBarItems`** are short labels (text, an icon or both) in the
   window's band beside the top bar items, with a tooltip. One with a `command`
   runs it when pressed: the extension's own, or one of Studio's actions.

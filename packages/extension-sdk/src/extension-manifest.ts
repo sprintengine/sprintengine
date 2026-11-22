@@ -293,7 +293,63 @@ export function keybindingProblem(value: string): string | null {
     return 'must end in one key: a character, a function key (F1–F24) or a named key such as Enter.'
   if (!isFunction && !modifiers.some((modifier) => modifier !== 'shift'))
     return 'needs a modifier other than Shift (Mod, Ctrl, Alt or Meta), so typing never runs it.'
+  if (isReservedChord(modifiers, lower))
+    return 'is a key the system or the browser keeps (copy, paste, undo, close, reload and their like), so Studio does not let an extension take it.'
   return null
+}
+
+// The command modifier, whatever it is called: on macOS Cmd, elsewhere Ctrl,
+// and a chord on either is the platform's.
+const PRIMARY_MODIFIERS = new Set(['mod', 'primary', 'cmd', 'command', 'ctrl', 'control', 'meta', 'super', 'win'])
+// Keys the platform, the window or the browser own under the command
+// modifier alone: clipboard and selection, undo and redo, find, print, save,
+// and the window's and tab's own (quit, close, hide, minimise, reload, new,
+// open tab, address bar). Taken by an extension they would stop doing what
+// every app does with them, with no prompt to say so.
+const RESERVED_PRIMARY_KEYS = new Set([
+  'a',
+  'c',
+  'v',
+  'x',
+  'z',
+  'y',
+  'f',
+  'g',
+  'p',
+  's',
+  'q',
+  'w',
+  'h',
+  'm',
+  'r',
+  't',
+  'n',
+  'l',
+  'o',
+  '+',
+  '-',
+  '=',
+  '0',
+])
+// The same with Shift: redo, reopen a closed tab, a new private window, a hard reload.
+const RESERVED_PRIMARY_SHIFT_KEYS = new Set(['z', 't', 'n', 'r', 'w', 'g'])
+// Function keys a browser or the system keep, with any modifier: reload,
+// full screen and developer tools; and Alt+F4's close.
+const RESERVED_FUNCTION_KEYS = new Set(['f5', 'f11', 'f12'])
+
+/** Whether a chord is one the platform or the browser keeps. */
+function isReservedChord(modifiers: readonly string[], key: string): boolean {
+  const primary = modifiers.filter((modifier) => PRIMARY_MODIFIERS.has(modifier))
+  const shift = modifiers.includes('shift')
+  const alt = modifiers.some((modifier) => modifier === 'alt' || modifier === 'option' || modifier === 'opt')
+  if (RESERVED_FUNCTION_KEYS.has(key)) return true
+  if (key === 'f4' && alt) return true
+  // Developer tools and the console.
+  if (primary.length === 1 && alt && (key === 'i' || key === 'j')) return true
+  if (primary.length === 0 || alt) return false
+  if (primary.length === 1 && !shift) return RESERVED_PRIMARY_KEYS.has(key)
+  if (primary.length === 1 && shift) return RESERVED_PRIMARY_SHIFT_KEYS.has(key)
+  return false
 }
 
 // A command id of the extension's own (lower case), or one of Studio's

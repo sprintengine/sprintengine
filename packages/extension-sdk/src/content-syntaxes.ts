@@ -137,8 +137,70 @@ export function validateTextMateGrammar(value: unknown, scopeName: string): Gram
     if (include.startsWith('#') && !walk.repositoryNames.has(include.slice(1)))
       walk.issues.push({ path, message: `names no repository rule: ${include}.` })
   }
+  if (walk.issues.length === 0 && grammar) {
+    const expanded = expandedRuleCount(grammar)
+    if (expanded > MAX_EXPANDED_RULES)
+      walk.issues.push({
+        path: 'patterns',
+        message: `expands, include by include, to more than ${MAX_EXPANDED_RULES} rules: an include that names rules which include each other over and over makes the highlighter's work grow without end.`,
+      })
+  }
   if (walk.issues.length > 0 || !grammar) return { ok: false, issues: walk.issues.map(stripLead) }
   return { ok: true, grammar: grammar as TextMateGrammar }
+}
+
+/** The most rules a grammar may expand to, following every include once per place it is named. */
+export const MAX_EXPANDED_RULES = 10_000
+
+/**
+ * How many rules a grammar becomes once each `#name` include is replaced by
+ * the rule it names, everywhere it is named: what the engine walks to find
+ * where a line's next token starts. A grammar whose includes double at each
+ * level (`a` includes `b` twice, `b` includes `c` twice, …) is a few hundred
+ * bytes and expands to millions; counted with a memo per name it costs one
+ * pass. A name met again inside its own expansion (a recursive grammar, which
+ * is normal) counts once.
+ */
+function expandedRuleCount(grammar: Record<string, unknown>): number {
+  const named = new Map<string, Array<Record<string, unknown>>>()
+  const collect = (rule: unknown): void => {
+    if (!isRecord(rule)) return
+    for (const key of ['repository', 'injections']) {
+      const repository = rule[key]
+      if (!isRecord(repository)) continue
+      for (const [name, child] of Object.entries(repository)) {
+        if (key === 'repository' && isRecord(child)) named.set(name, [...(named.get(name) ?? []), child])
+        collect(child)
+      }
+    }
+    for (const child of Array.isArray(rule.patterns) ? rule.patterns : []) collect(child)
+    for (const key of CAPTURE_KEYS)
+      if (isRecord(rule[key])) for (const child of Object.values(rule[key])) collect(child)
+  }
+  collect(grammar)
+  const memo = new Map<string, number>()
+  const open = new Set<string>()
+  const capped = (value: number) => Math.min(value, MAX_EXPANDED_RULES + 1)
+  const sizeOfName = (name: string): number => {
+    const known = memo.get(name)
+    if (known !== undefined) return known
+    if (open.has(name)) return 1
+    open.add(name)
+    const size = Math.max(1, ...(named.get(name) ?? []).map((rule) => sizeOf(rule)))
+    open.delete(name)
+    memo.set(name, size)
+    return size
+  }
+  const sizeOf = (rule: Record<string, unknown>): number => {
+    let size = 1
+    const include = rule.include
+    if (typeof include === 'string' && include.startsWith('#')) size += sizeOfName(include.slice(1))
+    for (const child of Array.isArray(rule.patterns) ? rule.patterns : []) if (isRecord(child)) size += sizeOf(child)
+    for (const key of CAPTURE_KEYS)
+      if (isRecord(rule[key])) for (const child of Object.values(rule[key])) if (isRecord(child)) size += sizeOf(child)
+    return capped(size)
+  }
+  return sizeOf(grammar)
 }
 
 function stripLead(issue: ManifestIssue): ManifestIssue {
