@@ -135,6 +135,8 @@ export function createServerModules(deps: {
         hub.deliverChanged()
       },
       run: () => extensionRunView(),
+      // Every client following `extension.settingsChanged` reads them again.
+      settingsChanged: (moduleId) => hub.deliverSettingsChanged(moduleId),
       registry,
       view: () => {
         const current = load

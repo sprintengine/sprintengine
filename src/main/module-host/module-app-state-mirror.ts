@@ -31,6 +31,12 @@ export type ModuleAppStateMirror = {
   subscribe(moduleId: string, listener: (values: Readonly<Record<string, unknown>>) => void): () => void
 }
 
+/** The store's own handle: every module's changes, and an end to its watching. */
+export type ModuleAppStateStore = ModuleAppStateMirror & {
+  /** Hear which module's namespace changed, whichever it is, here or in another process. */
+  subscribeAll(listener: (moduleId: string) => void): () => void
+}
+
 const EMPTY: Readonly<Record<string, unknown>> = Object.freeze({})
 
 /** Only `module:<id>` namespaces holding a plain object; everything else is dropped. */
@@ -51,9 +57,10 @@ export function createModuleAppStateMirror(options: {
   /** Watch the file for a push another process wrote. Defaults to true. */
   watchFile?: boolean
   watchIntervalMs?: number
-}): ModuleAppStateMirror & { dispose(): void } {
+}): ModuleAppStateStore & { dispose(): void } {
   let namespaces: Namespaces | null = null
   const listeners = new Map<string, Set<(values: Readonly<Record<string, unknown>>) => void>>()
+  const anyListeners = new Set<(moduleId: string) => void>()
   let watching: ReturnType<typeof setInterval> | null = null
   // What the file looked like when last read or written, so a read with no
   // watch running still notices a push another process wrote since.
@@ -91,6 +98,13 @@ export function createModuleAppStateMirror(options: {
           listener(values)
         } catch (error) {
           console.warn(`[modules] an app-state watcher for "${namespace}" threw:`, error)
+        }
+      }
+      for (const listener of anyListeners) {
+        try {
+          listener(namespace.slice(NAMESPACE_PREFIX.length))
+        } catch (error) {
+          console.warn('[modules] an app-state watcher threw:', error)
         }
       }
     }
@@ -152,20 +166,30 @@ export function createModuleAppStateMirror(options: {
       return () => {
         set.delete(listener)
         if (set.size === 0) listeners.delete(namespace)
-        if (listeners.size === 0) stopWatching()
+        if (listeners.size === 0 && anyListeners.size === 0) stopWatching()
+      }
+    },
+    subscribeAll(listener) {
+      anyListeners.add(listener)
+      current()
+      startWatching()
+      return () => {
+        anyListeners.delete(listener)
+        if (listeners.size === 0 && anyListeners.size === 0) stopWatching()
       }
     },
     dispose() {
       listeners.clear()
+      anyListeners.clear()
       stopWatching()
     },
   }
 }
 
-const mirrors = new Map<string, ModuleAppStateMirror>()
+const mirrors = new Map<string, ModuleAppStateStore>()
 
 /** The process's one mirror over `<userData>/module-app-state.json`. */
-export function moduleAppStateMirrorFor(userDataDir: string): ModuleAppStateMirror {
+export function moduleAppStateMirrorFor(userDataDir: string): ModuleAppStateStore {
   const filePath = join(userDataDir, MODULE_APP_STATE_FILE)
   let mirror = mirrors.get(filePath)
   if (!mirror) {

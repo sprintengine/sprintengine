@@ -77,6 +77,10 @@ export type StudioModules = {
   deliverChanged(): void
   /** Hear each change of what is installed or approved; returns the unsubscriber. */
   onChanged(listener: () => void): () => void
+  /** One extension's settings values changed, to every listener. */
+  deliverSettingsChanged(moduleId: string): void
+  /** Hear whose settings values changed; returns the unsubscriber. */
+  onSettingsChanged(listener: (moduleId: string) => void): () => void
   /** Hear each bell row from now on; returns the unsubscriber. */
   onNotification(listener: (notification: StudioModuleNotification) => void): () => void
   /** The rows the kernel still keeps, oldest first, as copies. Empty before a kernel is wired. */
@@ -89,6 +93,7 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
   const eventListeners = new Set<(event: StudioModuleEvent) => void>()
   const notificationListeners = new Set<(notification: StudioModuleNotification) => void>()
   const changedListeners = new Set<(value: null) => void>()
+  const settingsListeners = new Set<(moduleId: string) => void>()
   let readRecent: () => ReadonlyArray<StudioModuleNotification> = () => []
   let serve: ((request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>) | null = null
   let serveFrameCall: ((request: ExtensionFrameCallRequest) => Promise<StudioExtensionCallAnswer>) | null = null
@@ -139,6 +144,13 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
     deliverEvent: (event) => each(eventListeners, event, 'event'),
     deliverNotification: (notification) => each(notificationListeners, notification, 'notification'),
     deliverChanged: () => each(changedListeners, null, 'change'),
+    deliverSettingsChanged: (moduleId) => each(settingsListeners, moduleId, 'settings change'),
+    onSettingsChanged(listener) {
+      settingsListeners.add(listener)
+      return () => {
+        settingsListeners.delete(listener)
+      }
+    },
     onChanged(listener) {
       const heard = () => listener()
       changedListeners.add(heard)

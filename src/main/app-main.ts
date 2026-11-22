@@ -256,6 +256,7 @@ if (!serverHost)
         extensionWorkers.workers.reconcile()
         services.moduleHub.deliverChanged()
       },
+      settingsChanged: (moduleId) => services.moduleHub.deliverSettingsChanged(moduleId),
       // What this session's kernel holds, read only when an extension list is
       // asked for, long after `moduleLoad` exists.
       run: () => {

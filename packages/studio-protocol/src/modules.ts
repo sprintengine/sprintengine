@@ -70,7 +70,9 @@ import type {
 //   the extension was verified with and checked, served as data and never as
 //   a path, to every client alike. `extension.settings` and
 //   `extension.setSetting`: the values of the settings an extension declares,
-//   which Settings shows and changes and the extension's own code reads.
+//   which Settings shows and changes and the extension's own code reads; both
+//   need `settings:write`, as Studio's own settings do, and
+//   `extension.settingsChanged` says whose changed, from any writer.
 // - Under `extension-frames`: `extension.frame`, the document one panel, door
 //   or settings section is drawn from in its sandboxed frame (built here from
 //   the extension's verified entry, Studio's bootstrap and the theme the client
@@ -316,6 +318,8 @@ export type StudioModulesTopicMap = {
   'extension.notifications': { params: Record<string, never>; payload: StudioModuleNotification; stream: 'push' }
   /** What is installed or approved here changed: list and load the extensions again. */
   'extension.changed': { params: Record<string, never>; payload: Record<string, never>; stream: 'push' }
+  /** An extension's settings values changed: read them again (`extension.settings`). */
+  'extension.settingsChanged': { params: Record<string, never>; payload: { moduleId: string }; stream: 'push' }
 }
 
 /** A manifest id, as the module kernel accepts one. */
@@ -476,7 +480,9 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
     },
   },
   'extension.settings': {
-    scope: 'extensions:read',
+    // Settings may hold a server address or a token: read only by a
+    // connection that may change Studio's settings.
+    scope: 'settings:write',
     mutation: false,
     capability: STUDIO_EXTENSION_HOST_CAPABILITY,
     params: (value) =>
@@ -485,7 +491,9 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
         : studioParamsRefused('"moduleId" is the extension\'s install key.'),
   },
   'extension.setSetting': {
-    scope: 'extensions:operate',
+    // A declared setting is one of Studio's settings, not an extension's
+    // operation: the person's own browser tab changes it as it changes any.
+    scope: 'settings:write',
     mutation: true,
     capability: STUDIO_EXTENSION_HOST_CAPABILITY,
     params: (value) => {
@@ -564,6 +572,12 @@ export const STUDIO_MODULES_TOPICS: StudioTopicTable<StudioModulesTopicMap> = {
     params: studioNoParams,
   },
   'extension.changed': {
+    scope: 'extensions:read',
+    capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+    push: true,
+    params: studioNoParams,
+  },
+  'extension.settingsChanged': {
     scope: 'extensions:read',
     capability: STUDIO_EXTENSION_HOST_CAPABILITY,
     push: true,

@@ -12,7 +12,7 @@ import type {
   ThirdPartyModuleListResult,
   ExtensionSettingValueView,
 } from '../../../packages/studio-protocol/src/public'
-import { extensionSettingDefaults, settingValueProblem } from '../../../packages/extension-sdk/src/extension-manifest'
+import { extensionSettingValues, settingValueProblem } from '../../../packages/extension-sdk/src/extension-manifest'
 import { moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
 import { readExtensionContent, type ContentAnswer } from './extension-content'
 import { EXTENSION_FRAME_THEMES } from '../../shared/extension-frame-themes.generated'
@@ -103,6 +103,8 @@ export type ModuleLifecycleDeps = {
   applyEnablement: (overrides: Record<string, boolean>) => Promise<{ ok: true } | { ok: false; message: string }>
   /** What is installed or approved changed: tell the windows. */
   changed: () => void
+  /** An extension's settings values changed, here or in another process holding the same data folder. */
+  settingsChanged?: (moduleId: string) => void
   /** What this server run did with its extensions: their workers and their tools. */
   run: () => ExtensionRunView
   /** The registry a window resolved, kept for the agents' `module.*` tools. */
@@ -176,6 +178,10 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     return next
   }
   const standingContext = () => readExtensionStandingContextSync(deps.dataDir)
+  if (deps.settingsChanged) {
+    const heard = deps.settingsChanged
+    moduleAppStateMirrorFor(deps.dataDir).subscribeAll((moduleId) => heard(moduleId))
+  }
   const installed = async (moduleId: string) =>
     (await discoverUserModules(deps.moduleRoot(), standingContext())).modules.find((module) => module.key === moduleId)
   const failed = (error: unknown) => ({
@@ -388,14 +394,8 @@ function declaredSettingValues(
   dataDir: string,
   moduleId: string,
 ): Record<string, ExtensionSettingValueView> {
-  const stored = moduleAppStateMirrorFor(dataDir).get(moduleId)
-  const values: Record<string, ExtensionSettingValueView> = extensionSettingDefaults(declared)
-  for (const setting of declared) {
-    const value = stored[setting.key]
-    if (value !== undefined && settingValueProblem(setting, value) === null)
-      values[setting.key] = value as ExtensionSettingValueView
-  }
-  return values
+  // The rule the extension's own code reads by too (extension-declared-settings.ts).
+  return extensionSettingValues(declared, moduleAppStateMirrorFor(dataDir).get(moduleId))
 }
 
 // The folder an uninstall may remove: a real directory (not a link to one)

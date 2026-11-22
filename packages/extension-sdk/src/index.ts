@@ -1521,6 +1521,7 @@ export {
   compareStudioVersions,
   extensionInstallKey,
   extensionSettingDefaults,
+  extensionSettingValues,
   keybindingProblem,
   settingValueProblem,
   extensionManifestJsonSchema,

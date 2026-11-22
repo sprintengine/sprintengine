@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { test } from 'vitest'
 
 import { moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
-import { declaredSettingDefaultsReader, withDeclaredSettingDefaults } from './extension-setting-defaults'
+import { declaredSettingsReader, withDeclaredSettings } from './extension-declared-settings'
 import { createModuleLifecycle } from './module-lifecycle'
 import { createModuleRegistryMirror } from './registry-mirror'
 import { NO_EXTENSION_RUN } from './third-party-module-view'
@@ -23,7 +23,9 @@ const KEY = 'local.tally-language'
 function setUp() {
   const dataDir = mkdtempSync(join(tmpdir(), 'content-'))
   const changes: string[] = []
+  const settingsChanged: string[] = []
   const lifecycle = createModuleLifecycle({
+    settingsChanged: (moduleId) => settingsChanged.push(moduleId),
     dataDir,
     moduleRoot: () => join(dataDir, 'extensions'),
     view: () => null,
@@ -32,7 +34,7 @@ function setUp() {
     run: () => NO_EXTENSION_RUN,
     registry: createModuleRegistryMirror(),
   })
-  return { dataDir, lifecycle, changes }
+  return { dataDir, lifecycle, changes, settingsChanged }
 }
 
 test('the sample installs with no approval asked, and its grammar is served checked, as data', async () => {
@@ -105,9 +107,9 @@ test('declared settings read as their defaults until set, and a value is held to
   assert.equal((await lifecycle.setSetting(KEY, 'undeclared', 1)).ok, false)
 
   // The extension's own code reads the same store, defaults under what is set.
-  const store = withDeclaredSettingDefaults(
+  const store = withDeclaredSettings(
     moduleAppStateMirrorFor(dataDir),
-    declaredSettingDefaultsReader(() => join(dataDir, 'extensions')),
+    declaredSettingsReader(() => join(dataDir, 'extensions')),
   )
   assert.deepEqual(store.get(KEY), { indent: 4, currency: 'EUR' })
   assert.deepEqual(await lifecycle.setSetting(KEY, 'indent', null), {
@@ -115,4 +117,33 @@ test('declared settings read as their defaults until set, and a value is held to
     values: { indent: 2, currency: 'EUR' },
   })
   assert.deepEqual(store.get(KEY), { indent: 2, currency: 'EUR' })
+})
+
+test('the extension’s code and Settings read a setting by one rule, and code’s writes are held to it too', async () => {
+  const { dataDir, lifecycle, settingsChanged } = setUp()
+  assert.ok((await lifecycle.install(SAMPLE)).ok)
+  const raw = moduleAppStateMirrorFor(dataDir)
+  const store = withDeclaredSettings(
+    raw,
+    declaredSettingsReader(() => join(dataDir, 'extensions')),
+  )
+  // A value stored before an update narrowed the setting (or written past
+  // Studio), and a key the extension does not declare.
+  raw.setValue(KEY, 'indent', 99)
+  raw.setValue(KEY, 'section-note', 'kept as it is')
+  assert.deepEqual(await lifecycle.settings(KEY), { ok: true, values: { indent: 2, currency: 'EUR' } })
+  assert.deepEqual(store.get(KEY), { indent: 2, currency: 'EUR', 'section-note': 'kept as it is' })
+
+  // A frame's `settings.set` and a worker write through this store.
+  assert.throws(() => store.setValue(KEY, 'indent', 9), {
+    name: 'DeclaredSettingRefusal',
+    message: 'Indent width must be at most 8.',
+  })
+  assert.throws(() => store.setValue(KEY, 'currency', 'JPY'), { name: 'DeclaredSettingRefusal' })
+  store.setValue(KEY, 'indent', 6)
+  store.setValue(KEY, 'anything-else', { free: true })
+  assert.deepEqual(await lifecycle.settings(KEY), { ok: true, values: { indent: 6, currency: 'EUR' } })
+
+  // Every write, whoever made it, is heard by the clients following settings.
+  assert.ok(settingsChanged.filter((id) => id === KEY).length >= 3, settingsChanged.join(', '))
 })

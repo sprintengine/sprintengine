@@ -119,10 +119,15 @@ answers the least tier a manifest needs.
   Settings named for the extension: text (one line or several), a number, a
   whole number, true or false, or a choice from `enum`. Each value lives on
   the Studio the extension is installed on, so every window shows the same
-  one, and Studio refuses a value outside what the setting declares. The
-  extension's code reads them with the `settings:own` permission:
-  `settings.get` in a frame, `getModuleAppState` in a worker. A setting the
-  person never set reads as its `default`.
+  one and an open Settings page follows changes made anywhere, and Studio
+  refuses a value outside what the setting declares, from Settings and from
+  the extension's own code alike. The extension's code reads them with the
+  `settings:own` permission: `settings.get` in a frame, `getModuleAppState` in
+  a worker. A setting reads as its stored value while that fits the
+  declaration, else as its `default`, the same for Settings and for code, so
+  a value kept from before an update narrowed the setting falls back. Studio
+  shows and changes the values only on a connection allowed to change its
+  settings; elsewhere the section is read only.
 
 Every point defaults to empty. The points held for later formats (themes,
 fonts, skills and the rest, listed under the reference) must be empty or

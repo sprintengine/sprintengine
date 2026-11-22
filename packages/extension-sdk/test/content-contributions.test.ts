@@ -10,6 +10,7 @@ import { expect, test } from 'vitest'
 
 import {
   extensionSettingDefaults,
+  extensionSettingValues,
   keybindingProblem,
   parseExtensionManifest,
   requiredExtensionTier,
@@ -297,4 +298,22 @@ test('a grammar whose includes double at each level is refused before it can run
     'source.x',
   )
   expect(recursive.ok).toBe(true)
+})
+
+test('a stored value is read while it fits its setting, and its default once it no longer does', () => {
+  const indent: ExtensionSettingContribution = {
+    key: 'indent',
+    title: 'Indent',
+    type: 'integer',
+    minimum: 1,
+    maximum: 8,
+    default: 2,
+  }
+  const url: ExtensionSettingContribution = { key: 'url', title: 'URL', type: 'string' }
+  expect(extensionSettingValues([indent, url], { indent: 4, url: 'https://example.com', other: true })).toEqual({
+    indent: 4,
+    url: 'https://example.com',
+  })
+  // Kept from before an update narrowed the range, or written past Studio.
+  expect(extensionSettingValues([indent, url], { indent: 12, url: 7 })).toEqual({ indent: 2 })
 })

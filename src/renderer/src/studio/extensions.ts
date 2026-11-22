@@ -1,4 +1,5 @@
 import {
+  studioGrantAllows,
   STUDIO_EXTENSIONS_CAPABILITY,
   STUDIO_EXTENSION_FRAMES_CAPABILITY,
   STUDIO_EXTENSION_HOST_CAPABILITY,
@@ -101,6 +102,10 @@ export type ExtensionsApi = {
   extensionContent(request: StudioExtensionContentRequest): Promise<ExtensionContent>
   /** The values of an extension's declared settings, each its default until set. */
   extensionSettings(moduleId: string): Promise<Record<string, ExtensionSettingValueView>>
+  /** Whether this window's connection may read and change extensions' settings (`settings:write`). */
+  canChangeExtensionSettings(): Promise<boolean>
+  /** Hear whose settings values changed, from any writer, and once more after a reconnect. */
+  onExtensionSettingsChanged(cb: (moduleId: string | null) => void): () => void
   /** Set one declared setting (`null`: back to its default); never throws. */
   setExtensionSetting(input: {
     moduleId: string
@@ -217,6 +222,19 @@ export const extensionsApi: ExtensionsApi = {
     ),
   extensionContent: (request) => modules('extension.content', request),
   extensionSettings: async (moduleId) => (await modules('extension.settings', { moduleId })).values,
+  canChangeExtensionSettings: async () => {
+    const client = await windowStudioClient()
+    return client.supports(STUDIO_EXTENSION_HOST_CAPABILITY) && studioGrantAllows(client.grant, 'extension.setSetting')
+  },
+  onExtensionSettingsChanged: (cb) =>
+    followWindowStudioPush({
+      topic: 'extension.settingsChanged',
+      params: {},
+      capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+      onPayload: (payload) => cb(payload.moduleId),
+      // What changed while the window was away is not known: read every one again.
+      onReopen: () => cb(null),
+    }),
   setExtensionSetting: (input) =>
     answered(
       () => modules('extension.setSetting', { ...input, commandId: commandId() }),

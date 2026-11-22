@@ -66,6 +66,8 @@ function blank(): Api {
       throw new Error(NONE)
     },
     extensionSettings: async () => ({}),
+    canChangeExtensionSettings: async () => false,
+    onExtensionSettingsChanged: () => () => undefined,
     setExtensionSetting: async () => ({ ok: false, message: NONE }),
     onExtensionEvents: () => () => undefined,
     onThirdPartyModulesChanged: () => () => undefined,

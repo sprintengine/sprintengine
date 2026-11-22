@@ -10,10 +10,14 @@
   a TextMate engine reads) and its language configuration. Refused
   `extension_unavailable` when the extension is not installed, switched off,
   may not run, or its file fails the checks.
-- **`extension.settings`** `{ moduleId }` (`extensions:read`) answers the
-  values of the settings an extension declares, each its default until set;
-  **`extension.setSetting`** `{ moduleId, key, value | null, commandId }`
-  (`extensions:operate`) sets one, held to what extension.json declares of it.
+- **`extension.settings`** `{ moduleId }` answers the values of the settings
+  an extension declares, each the stored value while it fits the declaration,
+  else its default; **`extension.setSetting`**
+  `{ moduleId, key, value | null, commandId }` sets one, held to what
+  extension.json declares of it. Both need **`settings:write`**, as Studio's
+  own settings do: values may hold a server address or a token. The
+  **`extension.settingsChanged`** topic (`extensions:read`) says whose values
+  changed, from any writer, with no values.
 - `ExtensionContributionsView` carries `syntaxes`, `keybindings`,
   `statusBarItems` and `settings`.
 

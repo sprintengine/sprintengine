@@ -3,7 +3,7 @@ import { test } from 'vitest'
 
 import { STUDIO_ERROR_CODES } from '../src/envelope'
 import { STUDIO_EXTENSION_FRAMES_CAPABILITY, STUDIO_EXTENSION_HOST_CAPABILITY } from '../src/handshake'
-import { STUDIO_METHODS, parseStudioMethodParams } from '../src/methods'
+import { STUDIO_METHODS, parseStudioMethodParams, studioGrantAllows, studioGrantAllowsTopic } from '../src/methods'
 import {
   STUDIO_MODULE_METHOD_MAX_CHARS,
   STUDIO_MODULES_METHODS,
@@ -11,7 +11,7 @@ import {
   isStudioModuleMethodName,
 } from '../src/modules'
 import { STUDIO_SCOPE_PERMISSIONS, studioGrantPrincipal } from '../src/permissions'
-import { studioScopesGrant } from '../src/scopes'
+import { STUDIO_SCOPES, studioScopesGrant } from '../src/scopes'
 
 const refusal = (parsed: { ok: boolean; code?: string }) => (parsed.ok ? null : parsed.code)
 
@@ -192,4 +192,17 @@ test('a lifecycle command names its module or folder and carries a commandId', (
     ok: true,
     params: { moduleId: 'acme', commandId: 'c1' },
   })
+})
+
+test('an extension’s declared settings are read and changed as Studio’s settings are, by settings:write', () => {
+  const grant = (scopes: string[]) => ({ owner: false, scopes })
+  // A browser tab on this machine: every scope but operating extensions.
+  const browser = grant(STUDIO_SCOPES.filter((scope) => scope !== 'extensions:operate'))
+  assert.equal(studioGrantAllows(browser, 'extension.setSetting'), true)
+  assert.equal(studioGrantAllows(browser, 'extension.settings'), true)
+  // A pairing that may list and operate extensions, and not change settings.
+  const pairing = grant(['extensions:read', 'extensions:operate'])
+  assert.equal(studioGrantAllows(pairing, 'extension.setSetting'), false)
+  assert.equal(studioGrantAllows(pairing, 'extension.settings'), false, 'values may hold a token')
+  assert.equal(studioGrantAllowsTopic(pairing, 'extension.settingsChanged'), true, 'it hears whose changed, no values')
 })

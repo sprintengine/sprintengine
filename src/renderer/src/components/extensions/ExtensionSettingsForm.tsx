@@ -15,9 +15,23 @@ import { EmptyState, Input, Select, SettingCard, SettingRow, Switch, Textarea } 
 // the extension's own code reads it (`settings.get` in a frame,
 // `getModuleAppState` in a worker). A setting the person never set shows, and
 // reads as, its default.
+//
+// The form follows the values: a change from another window, another client
+// or the extension's own code is heard (`extension.settingsChanged`) and read
+// again, and so is everything after a reconnect. Reading and changing them
+// both need `settings:write`, as Studio's own settings do; a connection
+// without it sees the declared settings, read only, with their defaults.
 
 type Values = Record<string, ExtensionSettingValue>
-type State = { status: 'loading' } | { status: 'failed'; message: string } | { status: 'ready'; values: Values }
+type State =
+  { status: 'loading' } | { status: 'failed'; message: string } | { status: 'ready'; values: Values; writable: boolean }
+
+/** What each setting shows on a connection that may not read the values: its default. */
+function defaultsOf(settings: readonly ExtensionSettingContribution[]): Values {
+  const values: Values = {}
+  for (const setting of settings) if (setting.default !== undefined) values[setting.key] = setting.default
+  return values
+}
 
 export function ExtensionSettingsForm({
   extensionKey,
@@ -29,32 +43,47 @@ export function ExtensionSettingsForm({
   const [state, setState] = useState<State>({ status: 'loading' })
   useEffect(() => {
     let current = true
-    extensionsApi.extensionSettings(extensionKey).then(
-      (values) => current && setState({ status: 'ready', values }),
-      (error: unknown) =>
-        current && setState({ status: 'failed', message: error instanceof Error ? error.message : String(error) }),
-    )
+    const read = async () => {
+      try {
+        const writable = await extensionsApi.canChangeExtensionSettings()
+        const values = writable ? await extensionsApi.extensionSettings(extensionKey) : defaultsOf(settings)
+        if (current) setState({ status: 'ready', values, writable })
+      } catch (error) {
+        if (current) setState({ status: 'failed', message: error instanceof Error ? error.message : String(error) })
+      }
+    }
+    void read()
+    const stop = extensionsApi.onExtensionSettingsChanged((moduleId) => {
+      if (moduleId === null || moduleId === extensionKey) void read()
+    })
     return () => {
       current = false
+      stop()
     }
-  }, [extensionKey])
+  }, [extensionKey, settings])
 
   if (state.status === 'failed') return <EmptyState title="These settings could not be read" body={state.message} />
   if (state.status === 'loading') return <SettingCard aria-busy="true">{null}</SettingCard>
 
   const save = async (setting: ExtensionSettingContribution, value: ExtensionSettingValue | null): Promise<boolean> => {
     const answer = await extensionsApi.setExtensionSetting({ moduleId: extensionKey, key: setting.key, value })
-    if (answer.ok) setState({ status: 'ready', values: answer.values })
+    if (answer.ok) setState({ status: 'ready', values: answer.values, writable: true })
     else showToast({ tone: 'warn', title: `${setting.title} was not changed`, description: answer.message })
     return answer.ok
   }
   return (
     <SettingCard>
+      {state.writable ? null : (
+        <p className="px-4 pt-3 text-meta text-[color:var(--text-muted)]">
+          Read only here: this connection may not read or change Studio’s settings, so each shows its default.
+        </p>
+      )}
       {settings.map((setting) => (
         <SettingField
           key={setting.key}
           setting={setting}
           value={state.values[setting.key]}
+          readOnly={!state.writable}
           onSave={(value) => save(setting, value)}
         />
       ))}
@@ -65,10 +94,12 @@ export function ExtensionSettingsForm({
 function SettingField({
   setting,
   value,
+  readOnly,
   onSave,
 }: {
   setting: ExtensionSettingContribution
   value: ExtensionSettingValue | undefined
+  readOnly: boolean
   onSave: (value: ExtensionSettingValue | null) => Promise<boolean>
 }): ReactElement {
   const labelId = useId()
@@ -82,6 +113,7 @@ function SettingField({
     return row(
       <Switch
         checked={value === true}
+        disabled={readOnly}
         onChange={(next) => void onSave(next)}
         ariaLabelledBy={labelId}
         ariaDescribedBy={helpId}
@@ -99,32 +131,35 @@ function SettingField({
         }))}
         value={selected === -1 ? null : String(selected)}
         onChange={(index) => void onSave(choices[Number(index)]!)}
+        disabled={readOnly}
         size="sm"
         {...(setting.placeholder ? { placeholder: setting.placeholder } : {})}
       />,
     )
   }
   return row(
-    <TextField setting={setting} value={value} onSave={onSave} labelId={labelId} />,
+    <TextField setting={setting} value={value} onSave={onSave} labelId={labelId} readOnly={readOnly} />,
     setting.multiline === true,
   )
 }
 
 /**
- * Text or a number, saved when the field is left or Enter is pressed; emptied,
- * a number goes back to its default. A value the Studio refuses puts the field
- * back to what is kept.
+ * Text or a number, saved when the field is left or Enter is pressed.
+ * Emptied, a number goes back to its default, and so does text that has one.
+ * A value the Studio refuses puts the field back to what is kept.
  */
 function TextField({
   setting,
   value,
   onSave,
   labelId,
+  readOnly,
 }: {
   setting: ExtensionSettingContribution
   value: ExtensionSettingValue | undefined
   onSave: (value: ExtensionSettingValue | null) => Promise<boolean>
   labelId: string
+  readOnly: boolean
 }): ReactElement {
   const shown = value === undefined ? '' : String(value)
   const [draft, setDraft] = useState(shown)
@@ -137,13 +172,14 @@ function TextField({
       setDraft(shown)
       return
     }
-    const value = !numeric ? draft : draft.trim() === '' ? null : number
+    const value = draftValue(setting, draft)
     void onSave(value).then((saved) => {
       if (!saved) setDraft(shown)
     })
   }
   const shared = {
     'aria-labelledby': labelId,
+    readOnly,
     value: draft,
     placeholder: setting.placeholder,
     onBlur: commit,
@@ -175,4 +211,11 @@ function TextField({
       }}
     />
   )
+}
+
+/** What a text field's draft saves as: emptied, back to the default where there is one (`null`). */
+export function draftValue(setting: ExtensionSettingContribution, draft: string): ExtensionSettingValue | null {
+  const numeric = setting.type === 'number' || setting.type === 'integer'
+  if (draft.trim() === '' && (numeric || setting.default !== undefined)) return null
+  return numeric ? Number(draft) : draft
 }

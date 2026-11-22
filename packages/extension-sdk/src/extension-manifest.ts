@@ -1201,6 +1201,26 @@ function settingProblems(setting: ExtensionSettingContribution): Array<{ field?:
   return problems
 }
 
+/**
+ * Each declared setting's value as the extension's code and Settings both
+ * read it: the stored one while it still fits the declaration, else its
+ * default (a value stored before an update narrowed the setting falls back),
+ * else nothing. Keys the extension does not declare are left out.
+ */
+export function extensionSettingValues(
+  settings: readonly ExtensionSettingContribution[],
+  stored: Readonly<Record<string, unknown>>,
+): Record<string, ExtensionSettingValue> {
+  const values: Record<string, ExtensionSettingValue> = {}
+  for (const setting of settings) {
+    const value = stored[setting.key]
+    if (value !== undefined && settingValueProblem(setting, value) === null)
+      values[setting.key] = value as ExtensionSettingValue
+    else if (setting.default !== undefined) values[setting.key] = setting.default
+  }
+  return values
+}
+
 /** Each declared setting's default, by key: what is read while the person has set none. */
 export function extensionSettingDefaults(
   settings: readonly ExtensionSettingContribution[],
