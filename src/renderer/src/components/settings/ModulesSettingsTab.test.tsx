@@ -91,6 +91,7 @@ function module(
         doors: [],
         settingsSections: [],
         mcpTools: [],
+        hooks: [],
         syntaxes: [],
         customEditors: [],
         keybindings: [],

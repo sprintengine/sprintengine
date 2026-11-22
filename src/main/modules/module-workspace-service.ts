@@ -1,3 +1,6 @@
+import type { ExtensionHooks } from '../../server/extensions/hooks/extension-hooks'
+import { createWorkspaceWithHooks } from '../../server/extensions/hooks/workspace-hooks'
+import { currentInvoker } from '../module-host/extension-invocation'
 import {
   toModuleWorkspaceView,
   type ModuleWorkspaceListEntry,
@@ -28,12 +31,16 @@ export type ModuleWorkspaceService = {
 
 export type ModuleWorkspaceServiceBackends = {
   workspaceSync: Pick<WorkspaceSyncService, 'createWorkspace'>
+  /** Extensions' hooks on the workspace an extension asks for, run as whoever its call serves. */
+  extensionHooks?: ExtensionHooks | null
 }
 
 export function createModuleWorkspaceService(backends: ModuleWorkspaceServiceBackends): ModuleWorkspaceService {
   return {
     async create(input): Promise<ModuleWorkspaceCreateResult> {
-      const outcome = backends.workspaceSync.createWorkspace(input, 'module')
+      const outcome = await createWorkspaceWithHooks(backends.extensionHooks, currentInvoker, input, (request) =>
+        backends.workspaceSync.createWorkspace(request, 'module'),
+      )
       if (!outcome.ok) return { ok: false, code: outcome.reason, message: outcome.message }
       return { ok: true, workspaceId: outcome.result.workspace.id }
     },

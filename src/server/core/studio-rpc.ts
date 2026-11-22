@@ -63,6 +63,8 @@ import {
 } from '../../main/automation/tailnet/tailnet-share-service'
 import { createTailnetFileUploads, TAILNET_UPLOADS_DIRNAME } from '../../main/automation/tailnet/tailnet-file-uploads'
 import { tailnetDeviceGrant } from '../../main/automation/tailnet/tailnet-studio-endpoint'
+import { extensionHookRefusal } from '../extensions/hooks/extension-hooks'
+import { invokerOfGrant } from '../extensions/hooks/hook-invokers'
 import { listKnownWorkspaceRoots, uniqueResolvedRoots } from '../../main/workspace-roots'
 
 // The Studio RPC over a core: the owner socket in `<dataDir>/run` that local
@@ -104,6 +106,18 @@ export function createStudioRpc(
   const shares = createTailnetShareService()
   const service = createStudioRpcService({
     ...(options.hostKind ? { hostKind: options.hostKind } : {}),
+    // A save the person made in an editor, on whichever client, meets this
+    // Studio's extensions' hooks, as the connection that saved.
+    editorSaveHooks: ({ path, text, grant }) =>
+      core.extensionHooks.wants('editor.save.before')
+        ? core.extensionHooks
+            .run('editor.save.before', { path, text }, invokerOfGrant(grant))
+            .then((outcome) =>
+              outcome.kind === 'deny'
+                ? { ok: false as const, message: extensionHookRefusal(outcome) }
+                : { ok: true as const, text: outcome.event.text },
+            )
+        : null,
     // How this Studio is updated: the host says (a desktop itself, a WSL or
     // SSH server by the desktop that manages it, a hand-started one by hand).
     ...(options.updates ? { updates: options.updates } : {}),

@@ -80,6 +80,8 @@ import type {
 } from '../../../packages/studio-protocol/src/environment-access'
 import { createShellEnvironmentClients } from './shell-environment-clients'
 import { readStudioEnv } from '../../shared/studio-env'
+import { createWorkspaceWithHooks } from '../extensions/hooks/workspace-hooks'
+import { activeInvoker } from '../../main/module-host/extension-invocation'
 
 // The desktop's own Studio server, out of process (phase 6 spec): the core,
 // its gateway and owner socket, the tunnelled window.api domains, and the
@@ -383,7 +385,13 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
             : {}),
           launchAgent: (request) => launchAgent(request),
           resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
-          createWorkspace: (input, actor) => workspaceSyncService.createWorkspace(input, actor),
+          createWorkspace: (input, actor, context) =>
+            createWorkspaceWithHooks(
+              core.extensionHooks,
+              () => activeInvoker() ?? core.hookInvokers.ofGatewayCaller(context),
+              input,
+              (request) => workspaceSyncService.createWorkspace(request, actor),
+            ),
           studioDataDirs: () => [envelope.dataDir],
           getScheduledAgents: () => modules.scheduledAgents(),
           ...withDefinedMachineSchedules(machineSchedulesOf(core)),

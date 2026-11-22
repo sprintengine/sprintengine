@@ -1,4 +1,5 @@
 import type { FileViews } from '../../server/file-views/file-views'
+import type { StudioEditorSaveHooks } from '../../server/rpc/studio-file-system'
 import type { Duplex } from 'node:stream'
 import type { DistributionTerminalHost } from '../../server/wsl/distribution-terminal-host'
 import type { DistributionMachine } from '../../server/wsl/distribution-machine'
@@ -206,6 +207,8 @@ export type StudioRpcServiceOptions = {
   files?: StudioFiles
   /** The files on this machine by path (`file-system`, `files-mention`). */
   fileSystem?: StudioFileSystem
+  /** Extensions' `editor.save.before` hooks on a save the person made (`extension-hooks`). */
+  editorSaveHooks?: StudioEditorSaveHooks
   /** Git on this machine (`git`). */
   git?: StudioGit
   /** The worktrees its agents run in, and deleting settled chats (`worktrees`). */
@@ -500,6 +503,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.tools ? { tools: options.tools } : {}),
       ...(options.files ? { files: options.files } : {}),
       ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
+      ...(options.editorSaveHooks ? { editorSaveHooks: options.editorSaveHooks } : {}),
       ...(options.git ? { git: options.git } : {}),
       ...(options.worktrees ? { worktrees: options.worktrees } : {}),
       ...(options.workspaceSync ? { workspaceSync: options.workspaceSync } : {}),

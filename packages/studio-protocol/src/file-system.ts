@@ -135,10 +135,16 @@ export type StudioFileSystemMethodMap = {
    * Write a text file. `roots` are the folders of the project it was opened
    * in: a save there does not write through a link that leads out of them.
    */
+  /**
+   * Write a text file. `save: true` is a save the person made in an editor:
+   * a Studio offering `extension-hooks` runs its extensions'
+   * `editor.save.before` hooks first, and answers `text` when one changed what
+   * was written; a hook's refusal is `refused_by_extension`.
+   */
   'files.writeText': {
-    params: Commanded<{ path: string; text: string; roots?: string[] }>
-    result: Record<string, never>
-    errors: Unknown
+    params: Commanded<{ path: string; text: string; roots?: string[]; save?: true }>
+    result: { text?: string }
+    errors: Unknown | 'refused_by_extension'
   }
   /** Keep a dropped or pasted picture in Studio's own picture folder; answers where. */
   'files.saveDroppedImage': {
@@ -270,10 +276,12 @@ export const STUDIO_FILE_SYSTEM_METHODS: StudioMethodTable<StudioFileSystemMetho
         !(Array.isArray(value.roots) && value.roots.length <= 64 && value.roots.every(isStudioPath))
       )
         return refuse('"roots" lists the project’s folders.')
+      if (value.save !== undefined && value.save !== true) return refuse('"save" is true for a save the person made.')
       return studioParams({
         path: at.params.path,
         text: value.text,
         ...(value.roots === undefined ? {} : { roots: [...(value.roots as string[])] }),
+        ...(value.save === true ? { save: true as const } : {}),
       })
     }),
   },

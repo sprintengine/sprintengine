@@ -32,6 +32,12 @@
  * module that owns the chat, and a run worktree the chat works in instead of
  * the workspace checkout.
  */
+import {
+  ExtensionHookDenied,
+  runExtensionHook,
+  type ExtensionHooks,
+} from '../server/extensions/hooks/extension-hooks'
+import { ownerInvoker, type ExtensionInvoker } from './module-host/extension-invocation'
 import { randomUUID } from 'crypto'
 
 import { newAgentIdSuffix } from '../shared/agent-ids'
@@ -371,6 +377,13 @@ export type ConversationLaunchServiceDeps = {
   /** The random tail of a new chat's worktree name. Injected so tests get stable names. */
   newWorktreeSuffix?: () => string
   newCommandId?: () => string
+  /**
+   * Extensions' hooks: `agent.launch.before` before anything of the chat is
+   * made, and a new chat's `workspace.create.before` and `.after`, run as
+   * `hookInvoker` says whoever asked for the launch is.
+   */
+  extensionHooks?: ExtensionHooks
+  hookInvoker?: (launchCommandId: string | undefined) => ExtensionInvoker
 }
 
 export type ConversationLaunchService = {
@@ -596,6 +609,25 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     // behind, as a window's New chat that fails after cutting one does; a pool
     // slot comes back with the pool's return sweep, which takes back a lease
     // no chat has been seen to hold.
+    const hookInvoker = () => deps.hookInvoker?.(request.launchCommandId) ?? ownerInvoker(null, 'you')
+    try {
+      await runExtensionHook(
+        deps.extensionHooks,
+        'agent.launch.before',
+        {
+          agent: providerId,
+          where: 'chat',
+          workspaceId: workspace.id,
+          model: modelId === CONVERSATION_DEFAULT_MODEL_ID ? null : modelId,
+          permission: permissionPreset ?? null,
+          prompt: request.prompt?.trim() || null,
+        },
+        hookInvoker,
+      )
+    } catch (error) {
+      if (error instanceof ExtensionHookDenied) return { ok: false, code: error.code, message: error.message }
+      throw error
+    }
     let chatFolder: string = workspaceRoot
     let chatWorktree = workspace.worktree ?? null
     let installing: StartedDependencyInstall | null = null
@@ -743,18 +775,35 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
       // with pictures, whose first message follows through its ordinary send)
       // is named by the titler from that message instead.
       const firstTitle = request.sendFirst !== false && request.prompt ? deriveWorkspaceTitle(request.prompt) : null
+      const derivedName =
+        firstTitle ??
+        nextNewChatName(
+          deps
+            .listWorkspaces()
+            .filter((other) => other.folderPath === chatFolder)
+            .map((other) => other.name ?? ''),
+        )
+      // Extensions may rename the chat's workspace or refuse it; a name one
+      // gave is kept, so the titler does not replace it.
+      let hooked: { name: string | null }
+      try {
+        hooked = await runExtensionHook(
+          deps.extensionHooks,
+          'workspace.create.before',
+          { for: 'chat', name: derivedName, folderPath: chatFolder, worktree: chatWorktree !== null },
+          hookInvoker,
+        )
+      } catch (error) {
+        unkeep()
+        if (error instanceof ExtensionHookDenied) return { ok: false, code: error.code, message: error.message }
+        throw error
+      }
+      const renamed = hooked.name !== null && hooked.name !== derivedName
       // Born with its agent, in one event, so a window never shows the
       // template's tab with no agent behind it.
       const created = deps.createWorkspace({
-        name:
-          firstTitle ??
-          nextNewChatName(
-            deps
-              .listWorkspaces()
-              .filter((other) => other.folderPath === chatFolder)
-              .map((other) => other.name ?? ''),
-          ),
-        ...(firstTitle ? { titleOpen: true } : {}),
+        name: renamed ? hooked.name! : derivedName,
+        ...(firstTitle && !renamed ? { titleOpen: true } : {}),
         folderPath: chatFolder,
         templateId: SOLO_CHAT_TEMPLATE_ID,
         ...(workspace.hostId ? { hostId: workspace.hostId } : {}),
@@ -769,6 +818,18 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         return { ok: false, code: 'workspace_create_failed', message: created.message }
       }
       chatWorkspaceId = created.workspaceId
+      if (deps.extensionHooks?.wants('workspace.create.after'))
+        deps.extensionHooks.notify(
+          'workspace.create.after',
+          {
+            for: 'chat',
+            workspaceId: created.workspaceId,
+            name: renamed ? hooked.name! : derivedName,
+            folderPath: chatFolder,
+            worktree: chatWorktree !== null,
+          },
+          hookInvoker(),
+        )
     } else {
       const written = deps.writeAgent(workspace.id, agentId, agent)
       if (!written.ok) {

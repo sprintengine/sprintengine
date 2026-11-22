@@ -1,4 +1,5 @@
 import {
+  STUDIO_EXTENSION_HOOKS_CAPABILITY,
   STUDIO_FILE_SYSTEM_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
   type ContentSearchResult,
@@ -14,7 +15,7 @@ import {
 } from '../../../../packages/studio-protocol/src/public'
 import { isMachinePath } from '../../../shared/machine-paths'
 import { followWindowStudioPush } from './windowStudioPush'
-import { askStudioOfPaths } from './paneStudio'
+import { askStudioOfPaths, askStudioOfPathsOffering } from './paneStudio'
 import { watchWindowStudio, windowStudioState } from './windowStudioClient'
 
 // The window's way to the files on its Studio's machine: the Studio protocol's
@@ -47,8 +48,19 @@ export type FilesApi = {
   checkWorkspaceFolder(path: string): Promise<WorkspaceFolderCheckResult>
   detectProjectLogo(folderPath: string): Promise<ProjectLogo | null>
   readProjectIconFile(filePath: string): Promise<ProjectLogo | null>
-  /** `roots` are the folders of the project the file was opened in: a save there does not write through a link out of them. */
-  writefile(path: string, content: string, options?: { roots?: readonly string[] }): Promise<void>
+  /**
+   * `roots` are the folders of the project the file was opened in: a save
+   * there does not write through a link out of them. `save` is a save the
+   * person made in an editor: the Studio that holds the file runs its
+   * extensions' `editor.save.before` hooks, where it offers them, and the
+   * answer's `text` is what was written when a hook changed it. A hook's
+   * refusal rejects with code `refused_by_extension`.
+   */
+  writefile(
+    path: string,
+    content: string,
+    options?: { roots?: readonly string[]; save?: boolean },
+  ): Promise<{ text?: string }>
   saveDroppedImage(input: { mediaType: string; dataBase64: string }): Promise<string>
   createFile(parentDir: string, name: string): Promise<string>
   createDir(parentDir: string, name: string): Promise<string>
@@ -122,12 +134,20 @@ export const filesApi: FilesApi = {
   detectProjectLogo: async (folderPath) => (await call('files.projectLogo', { folderPath })).logo,
   readProjectIconFile: async (path) => (await call('files.projectIcon', { path })).logo,
   writefile: async (path, text, options = {}) => {
-    await call('files.writeText', {
-      commandId: randomId(),
-      path,
-      text,
-      ...(options.roots === undefined ? {} : { roots: [...options.roots] }),
-    })
+    const written = await askStudioOfPathsOffering(
+      'files.writeText',
+      {
+        commandId: randomId(),
+        path,
+        text,
+        ...(options.roots === undefined ? {} : { roots: [...options.roots] }),
+      },
+      STUDIO_FILE_SYSTEM_CAPABILITY,
+      UNSERVED,
+      // An older Studio has no hooks and refuses a field it does not read.
+      (params, offers) => (options.save && offers(STUDIO_EXTENSION_HOOKS_CAPABILITY) ? { ...params, save: true } : params),
+    )
+    return written.text === undefined ? {} : { text: written.text }
   },
   saveDroppedImage: async (input) =>
     (

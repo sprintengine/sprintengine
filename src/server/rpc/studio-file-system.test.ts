@@ -58,10 +58,17 @@ function disk() {
   return { base, workspace, store, outside }
 }
 
-async function serve(options: { trash?: (path: string) => Promise<void>; files?: boolean } = {}) {
+async function serve(
+  options: {
+    trash?: (path: string) => Promise<void>
+    files?: boolean
+    editorSaveHooks?: Parameters<typeof startTestServer>[0]['editorSaveHooks']
+  } = {},
+) {
   const at = disk()
   const trashed: string[] = []
   const started = await startTestServer({
+    ...(options.editorSaveHooks ? { editorSaveHooks: options.editorSaveHooks } : {}),
     ...(options.files === false
       ? {}
       : {
@@ -418,4 +425,41 @@ test('a closed connection’s searches end, in a slot clear of any window’s', 
     await new Promise((resolve) => setTimeout(resolve, 10))
   assert.deepEqual(slots.released, slots.searched)
   assert.ok(slots.searched[0]! >= 1_000_000_000, 'its slot is clear of any window’s webContents id')
+})
+
+test('a save the person made meets the extensions’ save hooks where the file is: changed, refused, or left alone', async () => {
+  const asked: Array<{ path: string; text: string; owner: boolean }> = []
+  const { started, workspace } = await serve({
+    editorSaveHooks: ({ path, text, grant }) => {
+      asked.push({ path, text, owner: grant.owner })
+      if (text.includes('TODO'))
+        return Promise.resolve({ ok: false, message: 'The extension "Lint" (local.lint) refused this: a TODO is left.' })
+      return Promise.resolve({ ok: true, text: text.trimEnd() + '\n' })
+    },
+  })
+  const owner = await client(started.path, OWNER_TOKEN)
+  const file = join(workspace, 'saved.txt')
+
+  // Changed: the hook's text is written, and answered.
+  const saved = await owner.request('files.writeText', { commandId: cid(), path: file, text: 'one   \n\n', save: true })
+  assert.deepEqual(resultOf(saved), { text: 'one\n' })
+  assert.equal(readFileSync(file, 'utf8'), 'one\n')
+  assert.deepEqual(asked, [{ path: file, text: 'one   \n\n', owner: true }])
+
+  // Refused: nothing is written, and the refusal names the extension.
+  const refused = await owner.request('files.writeText', { commandId: cid(), path: file, text: 'TODO', save: true })
+  assert.equal(codeOf(refused), 'refused_by_extension')
+  assert.match((refused as { error?: { message?: string } }).error?.message ?? '', /"Lint" \(local\.lint\)/u)
+  assert.equal(readFileSync(file, 'utf8'), 'one\n')
+
+  // Any other write is not a save the person made: no hook.
+  assert.deepEqual(resultOf(await owner.request('files.writeText', { commandId: cid(), path: file, text: 'TODO' })), {})
+  assert.equal(readFileSync(file, 'utf8'), 'TODO')
+  assert.equal(asked.length, 2)
+})
+
+test('extension-hooks is offered only where saves meet hooks', async () => {
+  const without = await serve()
+  const plain = await client(without.started.path, OWNER_TOKEN)
+  assert.equal((plain.welcome as { capabilities: string[] }).capabilities.includes('extension-hooks'), false)
 })

@@ -51,6 +51,7 @@ function view(
         doors: [],
         settingsSections: [],
         mcpTools: [],
+        hooks: [],
         syntaxes: [],
         customEditors: [],
         keybindings: [],

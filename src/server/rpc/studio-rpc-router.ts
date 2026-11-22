@@ -29,6 +29,7 @@ import {
   type ThirdPartyModuleListResult,
   studioScopesGrant,
 } from '../../../packages/studio-protocol/src/public'
+import type { StudioEditorSaveHooks } from './studio-file-system'
 import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
 import type {
   StudioEnvironmentWork,
@@ -220,6 +221,8 @@ export type StudioRpcRouterOptions = {
   files?: StudioFiles
   /** The files on this machine by path; without it, `files.*` by path is answered `unavailable`. */
   fileSystem?: StudioFileSystem
+  /** Extensions' `editor.save.before` hooks on a save the person made (`extension-hooks`). */
+  editorSaveHooks?: StudioEditorSaveHooks
   /** Git on this machine; without it, `git.*`, `github.*` and `versionControl.*` are answered `unavailable`. */
   git?: StudioGit
   /** The worktrees its agents run in, and deleting settled chats; without it, `worktrees.*` and `settledChats.*` are answered `unavailable`. */
@@ -972,6 +975,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   // for them is who may name which path (`studio-file-system.ts`).
   const fileSystem = createStudioFileSystemHandlers({
     ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
+    ...(options.editorSaveHooks ? { editorSaveHooks: options.editorSaveHooks } : {}),
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
   })

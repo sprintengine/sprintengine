@@ -183,7 +183,12 @@ export type AutomationBackends = {
   createWorkspace(
     input: WorkspaceCreateRequest,
     actor: WorkspaceMutationActor,
-  ): { ok: true; result: WorkspaceCreateResult } | { ok: false; reason: string; message: string }
+    /** The calling connection, for extensions' hooks to run as. */
+    context?: McpConnectionContext,
+  ):
+    | { ok: true; result: WorkspaceCreateResult }
+    | { ok: false; reason: string; message: string }
+    | Promise<{ ok: true; result: WorkspaceCreateResult } | { ok: false; reason: string; message: string }>
   /** Read-only backlog listing for a workspace root (files + frontmatter, no writes). */
   listBacklogItems(workspaceRoot: string): Promise<BacklogListItemsResult>
   /** Read one backlog item (validated backlog/ relative path). */
@@ -1061,13 +1066,14 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       // Synchronous authority: the id comes back from the same call that
       // committed it, which is what retired the delegate-to-renderer round trip
       // and its 7s bus-confirmation poll.
-      const outcome = backends.createWorkspace(
+      const outcome = await backends.createWorkspace(
         {
           name: optionalString(args.name),
           folderPath: optionalString(args.folderPath),
           templateId: optionalString(args.templateId),
         },
         'gateway',
+        context,
       )
       if (!outcome.ok) return failure(outcome.reason, outcome.message)
       return success({ workspace: workspaceProjection(outcome.result.workspace) })

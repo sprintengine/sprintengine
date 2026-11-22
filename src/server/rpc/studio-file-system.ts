@@ -53,9 +53,22 @@ type Kept = <A extends { ok: boolean; error?: StudioErrorBody }>(
   method: string,
 ) => Promise<A | Refused<'unavailable'>>
 
+/**
+ * Extensions' `editor.save.before` hooks on a save the person made, run as
+ * the connection that asked: null at once when none hooks the point, else
+ * the text to write or a refusal naming the extension.
+ */
+export type StudioEditorSaveHooks = (input: {
+  path: string
+  text: string
+  grant: StudioGrant
+}) => Promise<{ ok: true; text: string } | { ok: false; message: string }> | null
+
 export type StudioFileSystemHandlerOptions = {
   /** The files; without them, every method is answered `unavailable`. */
   fileSystem?: StudioFileSystem
+  /** Run on a `files.writeText` with `save: true`; absent, a save writes as any write does. */
+  editorSaveHooks?: StudioEditorSaveHooks
   /** The first answer to a command id is every retry's. */
   once: Kept
   /** A client's command id, namespaced by the client. */
@@ -127,17 +140,22 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
   }
 
   /** Carry out a write once per command id, on paths the asker may change. */
-  function writing<M extends StudioFileSystemMethod>(
+  function writing<M extends StudioFileSystemMethod, R extends string = never>(
     method: M,
     params: StudioMethodParams<M> & { commandId: string },
     asking: StudioFileSystemAsking,
     paths: Array<{ raw: string; purpose: 'read' | 'write'; notRoot?: boolean }>,
-    work: (fs: StudioFileSystem, placed: string[]) => Promise<StudioMethodResult<M>>,
+    work: (
+      fs: StudioFileSystem,
+      placed: string[],
+    ) => Promise<StudioMethodResult<M> | { refused: Refused<R> }>,
   ) {
     if (!fileSystem) return unserved(method)
     return options.once(
       `${method}:${options.runtimeId(asking.grant, params.commandId)}`,
-      async (): Promise<{ ok: true; result: StudioMethodResult<M> } | Refused<'not_found' | 'unavailable'>> => {
+      async (): Promise<
+        { ok: true; result: StudioMethodResult<M> } | Refused<'not_found' | 'unavailable'> | Refused<R>
+      > => {
         const placed: string[] = []
         for (const { raw, purpose, notRoot } of paths) {
           const at = await placePath(fileSystem, raw, asking, purpose)
@@ -146,7 +164,9 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
             return refuse('not_found', ROOT_ITSELF)
           placed.push(at.path)
         }
-        return ok(await work(fileSystem, placed))
+        const done = await work(fileSystem, placed)
+        if (done && typeof done === 'object' && 'refused' in done) return done.refused
+        return ok(done as StudioMethodResult<M>)
       },
       asking.voice,
       method,
@@ -205,13 +225,20 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
       return ok({ path: at.ok ? at.path : null })
     },
     'files.writeText': (params, asking) =>
-      writing('files.writeText', params, asking, [{ raw: params.path, purpose: 'write' }], async (fs, [path]) => {
+      writing<'files.writeText', 'refused_by_extension'>('files.writeText', params, asking, [{ raw: params.path, purpose: 'write' }], async (fs, [path]) => {
         // A client held to known folders writes only inside them: its own
         // roots are those, whatever it named.
         const owner = namesAnyPath(asking)
         const roots = owner ? (params.roots ?? []) : await fs.writableRoots()
-        await fs.writeText(path!, params.text, roots, owner)
-        return {}
+        // A save the person made meets the extensions' hooks here, on the
+        // Studio that holds the file, after its path is placed and before a
+        // byte is written.
+        const hooked = params.save ? options.editorSaveHooks?.({ path: path!, text: params.text, grant: asking.grant }) : null
+        const decided = hooked ? await hooked : null
+        if (decided && !decided.ok) return { refused: refuse('refused_by_extension' as const, decided.message) }
+        const text = decided ? decided.text : params.text
+        await fs.writeText(path!, text, roots, owner)
+        return text === params.text ? {} : { text }
       }),
     // It names no path: the picture goes to Studio's own picture folder.
     'files.saveDroppedImage': ({ mediaType, dataBase64, commandId }, asking) => {

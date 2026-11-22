@@ -320,6 +320,9 @@ export const STUDIO_ERROR_CODES = [
   // declare under the entry it was called through.
   'extension_unavailable',
   'extension_method_unknown',
+  // An extension's hook refused the action (a save the person made, under
+  // `extension-hooks`); the message names the extension and its reason.
+  'refused_by_extension',
 ] as const
 
 export type StudioErrorCode = (typeof STUDIO_ERROR_CODES)[number]

@@ -307,6 +307,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
   // headless: its pty runs and buffers, and the first pane that opens it over
   // the Studio protocol takes it over.
   const composed = createAgentLaunchService({
+    ...(deps.extensionHooks ? { extensionHooks: deps.extensionHooks } : {}),
     listWorkspaces: () => workspaceSyncService.getSnapshot().state.workspaces,
     getLaunchSettings: () => agentLaunchSettings.get(),
     // Hooks-only selectability: a known plugin with no agentStateSpec is refused as an agent.

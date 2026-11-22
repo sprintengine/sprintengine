@@ -16,6 +16,7 @@ function contributes(over: Partial<Contributes> = {}): Pick<ExtensionManifestVie
       doors: [],
       settingsSections: [],
       mcpTools: [],
+      hooks: [],
       syntaxes: [],
       customEditors: [],
       keybindings: [],

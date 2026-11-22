@@ -388,15 +388,31 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
       // itself causes reads as this tab's own save and not as someone's edit.
       const previousBaseline = getEditorDiskBaseline(workspaceId, file.path)
       setEditorDiskBaseline(workspaceId, file.path, content)
+      let written: { text?: string }
       try {
         // The project's folders, so the save does not follow a link out of them.
         const roots = ws ? [ws.folderPath, workspaceWorkingRoot(ws)].filter((root): root is string => !!root) : []
-        await filesApi.writefile(file.path, content, { roots })
+        // A save the person made: the Studio that holds the file runs its
+        // extensions' save hooks, which may change what is written or refuse it.
+        written = await filesApi.writefile(file.path, content, { roots, save: true })
       } catch (error) {
         if (previousBaseline !== undefined) setEditorDiskBaseline(workspaceId, file.path, previousBaseline)
+        if ((error as { code?: unknown } | null)?.code === 'refused_by_extension') {
+          setDiskNotice({ path: file.path, kind: 'refused', message: (error as Error).message })
+          return
+        }
         throw error
       }
       setDiskNotice(null)
+      if (written.text !== undefined) {
+        // A hook changed what was written (formatted it, say): the tab shows
+        // that, unless it was typed into meanwhile, when the edits stay unsaved
+        // over the new baseline.
+        if (getEditorBuffer(workspaceId, file.path, content) === content) takeDiskContent(file.path, written.text)
+        else setEditorDiskBaseline(workspaceId, file.path, written.text)
+        void refreshGitStatus()
+        return
+      }
       // Typed into while the write was in flight: what is on screen is not what
       // was written, and stays unsaved — a clean flag over it would let the
       // next reload from disk take those keystrokes away.

@@ -1805,6 +1805,8 @@ export const en = {
         overwrite: (fileName: unknown) => `Overwrite ${fileName}?`,
         itChangedOnDiskSince: 'It changed on disk since it was opened. Saving replaces that version with yours.',
         overwrite2: 'Overwrite',
+        notSaved: 'Not saved',
+        dismiss: 'Dismiss',
       },
     },
     // src/renderer/src/components/panels/EditorPanel.tsx

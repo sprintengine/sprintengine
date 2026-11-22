@@ -62,6 +62,7 @@ import { ConversationPlanStore } from '../../main/conversation-plan-store'
 import { ConversationOutbox } from '../../main/conversation-outbox'
 import { createExtensionHooks } from '../extensions/hooks/extension-hooks'
 import { createHookInvokers } from '../extensions/hooks/hook-invokers'
+import { activeInvoker } from '../../main/module-host/extension-invocation'
 import { ConversationRuntime, type ConversationRuntimeOptions } from '../../main/conversation-runtime'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import { createGitWorktree, getGitRepoRoot } from '../../main/git'
@@ -680,6 +681,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   })
   const conversationLaunchService = createConversationLaunchService({
     firstMessages,
+    extensionHooks,
+    // An extension's own launch runs as whoever its call serves; any other
+    // as the client whose command id it carries, or the person.
+    hookInvoker: (launchCommandId) => activeInvoker() ?? hookInvokers.ofChat(launchCommandId),
     getWorkspace: (workspaceId) => workspaceRegistry.getRecord(workspaceId) ?? null,
     getLaunchSettings: () => agentLaunchSettings.get(),
     writeAgent: (workspaceId, agentId, agent) =>
