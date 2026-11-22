@@ -175,10 +175,48 @@ Wire: `schedules.*`. Tests: `src/main/scheduled-agents/scheduled-agents.test.ts`
 
 ## Extending Studio
 
-**Extensions and modules**: `src/main/modules/`, `src/main/module-host/`, `src/server/extensions/extensions-domain.ts`,
-the door `src/renderer/src/components/workspace/globalSurface/extensions/ExtensionsGlobalSurface.tsx`;
-the SDK in `packages/module-sdk/`. Doc: `docs/module-authors/`, `docs/compatibility.md` ("The module
-host API").
+**Extensions** (installing, switching on, the door): `src/main/modules/`, `src/main/module-host/`,
+`src/server/extensions/extensions-domain.ts`, the door
+`src/renderer/src/components/workspace/globalSurface/extensions/ExtensionsGlobalSurface.tsx`; the SDK in
+`packages/extension-sdk/` (CLI, templates, guide). Wire: `extension.*` (`packages/studio-protocol/src/modules.ts`,
+capability `extension-host`). Doc: `docs/extension-authors/`, `docs/compatibility.md` ("The extension host API").
+
+**The manifest** (`extension.json`: id, tier, permissions, `main`, `contributes`): the one validator
+`packages/extension-sdk/src/extension-manifest.ts` (the field table, tiers in `manifest-schema.ts`), the
+shipped `packages/extension-sdk/extension.schema.json`, the guide's `packages/extension-sdk/guide/manifest.md`;
+Studio reads it through `src/shared/modules/third-party-manifest.ts`. Tests:
+`packages/extension-sdk/test/extension-manifest.test.ts`.
+
+**Approvals and the host gate** (what an extension may call, and who for): every call an extension makes
+into Studio passes `src/main/module-host/extension-host-gate.ts`, against the table in
+`packages/extension-sdk/src/services.ts` (permissions in `permissions.ts`) and the invoker in
+`src/main/module-host/extension-invocation.ts`. Approvals: `src/main/modules/extension-approvals.ts`, the
+review `src/renderer/src/components/settings/ApprovalReviewDialog.tsx`. Wire: `extension.approve`. Doc:
+`docs/extension-authors/permissions.md`. Tests: `src/main/module-host/main-host.gate.test.ts`,
+`src/main/modules/extension-approvals.test.ts`.
+
+**Extension frames** (a panel, door or settings section drawn in a sandboxed frame, on every client): the
+document in `src/server/extensions/frames/` (`frame-document.ts`, `frame-bootstrap.ts`, the web listener's
+`frame-route.ts`), the desktop shell's `src/main/extension-frames/extension-frame-shell.ts`, the window's bridge
+`src/renderer/src/modules/extension-frame-host.ts` and mount
+`src/renderer/src/components/extensions/ExtensionSurfaceMount.tsx`; a frame's host calls in
+`src/main/module-host/extension-frame-calls.ts`; the entry contract in `packages/extension-sdk/src/frame.ts`.
+Wire: `extension.frame`, `extension.call`, `extension.contributions` (capability `extension-frames`). Tests:
+`src/server/extensions/frames/frame-document.test.ts`, `src/renderer/src/modules/extension-frame-host.test.ts`,
+`src/main/module-host/extension-frame-calls.test.ts`.
+
+**Extension workers** (an extension's `main`, in a process of its own): `src/server/extensions/workers/`
+(`worker-manager.ts`, `worker-process.ts`, the fork's own `worker-entry.ts`, its environment in
+`worker-env.ts`). Tests: `src/server/extensions/workers/worker-lifecycle.test.ts`,
+`src/server/extensions/workers/worker-invocations.test.ts`.
+
+**Content contributions** (syntaxes, keybindings, status bar items, settings; no approval needed): checked by
+`packages/extension-sdk/src/content-syntaxes.ts`, served by `src/main/modules/extension-content.ts` and
+`src/main/modules/extension-declared-settings.ts`; drawn by `src/renderer/src/lib/highlight/contributedSyntaxes.ts`,
+`src/renderer/src/modules/extension-contributions.tsx` (keybindings, status bar items) and
+`src/renderer/src/components/extensions/ExtensionSettingsForm.tsx`. Wire: `extension.content`,
+`extension.settings`, `extension.setSetting`. Sample: `packages/extension-sdk/examples/content-sample/`. Tests:
+`packages/extension-sdk/test/content-contributions.test.ts`, `src/main/modules/extension-content.test.ts`.
 
 **Skills and plugins**: `src/main/skills/`, `src/server/agent-setup/`. Doc: `docs/plugin-authors/README.md`.
 
