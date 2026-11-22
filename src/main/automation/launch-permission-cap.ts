@@ -6,6 +6,7 @@ import {
   parseCliPermissionPreset,
   type CliPermissionPreset,
 } from '../../shared/cli-permission-preset'
+import type { AgentStarter } from '../../shared/agent-state'
 import { parseCliPermissionModeId, type CliPermissionModeSpec } from '../../shared/cli-permission-mode'
 import type { McpConnectionContext } from '../../shared/modules/mcp-tools'
 
@@ -55,6 +56,21 @@ export function launchPermissionCeiling(
     resolve({ agentId: metadata.agentId, ...(metadata.workspaceId ? { workspaceId: metadata.workspaceId } : {}) }) ??
     STRICTEST_PRESET
   )
+}
+
+/**
+ * Who a gateway caller is, as an agent or chat it starts keeps it: a paired
+ * device by its client id, any other caller (an agent here) as an agent under
+ * its own launch ceiling (`launchPermissionCeiling`).
+ */
+export function gatewayCallerStarter(
+  context: McpConnectionContext | undefined,
+  resolve: AgentPermissionResolver,
+): AgentStarter {
+  const metadata = context?.metadata
+  if (metadata?.kind === 'remote-tailnet')
+    return metadata.deviceId ? { kind: 'client', clientId: `tailnet:${metadata.deviceId}` } : { kind: 'nobody' }
+  return { kind: 'agent', ceiling: launchPermissionCeiling(context, resolve) }
 }
 
 /**

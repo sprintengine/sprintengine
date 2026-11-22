@@ -40,9 +40,6 @@
  */
 import { randomUUID } from 'crypto'
 
-import { ExtensionHookDenied, runExtensionHook, type ExtensionHooks } from '../server/extensions/hooks/extension-hooks'
-import { activeInvoker, ownerInvoker } from './module-host/extension-invocation'
-
 import type {
   AgentCli,
   KnowledgeRootStatus,
@@ -155,12 +152,6 @@ export type AgentLaunchServiceDeps = {
   newSessionId?: () => string
   /** Agent id suffix. Injected for the same reason. */
   newAgentSuffix?: () => string
-  /**
-   * Extensions' `agent.launch.before` hooks, run before the terminal is
-   * spawned. Only the person's own windows and agents (and extensions, as
-   * whoever their call serves) start a terminal agent.
-   */
-  extensionHooks?: ExtensionHooks
 }
 
 export type AgentLaunchService = {
@@ -337,25 +328,6 @@ export function createAgentLaunchService(deps: AgentLaunchServiceDeps): AgentLau
     // otherwise launches on this machine.
     const hostId = normalizeExecutionHostId(request.host) ?? normalizeExecutionHostId(workspace.hostId)
     if (hostId) record.hostId = hostId
-
-    try {
-      await runExtensionHook(
-        deps.extensionHooks,
-        'agent.launch.before',
-        {
-          agent: cli,
-          where: 'terminal',
-          workspaceId: workspace.id,
-          model: record.cliModel ?? null,
-          permission: record.cliPermissionPreset ?? null,
-          prompt: initialPrompt?.trim() || null,
-        },
-        () => activeInvoker() ?? ownerInvoker(null, 'you'),
-      )
-    } catch (error) {
-      if (error instanceof ExtensionHookDenied) return { ok: false, code: error.code, message: error.message }
-      throw error
-    }
 
     const sessionId = newSessionId()
     const spawned = await deps.terminal.spawn({

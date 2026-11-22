@@ -3,6 +3,8 @@
 // speaks (the chat view's IPC, the tailnet lane, the module SDK). It is
 // re-exported here under the names app code has always imported; what stays
 // below is the runtime's own: session inputs, results and summaries.
+import type { AgentStarter } from './agent-state'
+import type { ExtensionPromptInputKind } from '../../packages/extension-sdk/src/hooks'
 import type {
   ConversationApprovalKind,
   ConversationEvent,
@@ -215,6 +217,14 @@ export type ConversationPlanDocumentInput = ConversationKey & {
  */
 export type ConversationCommandReceiptState = 'kept' | 'none' | 'no_session'
 
+/** What a message nobody typed is, for the extensions' prompt hooks. */
+export type ConversationPromptHookAs = {
+  inputKind: ExtensionPromptInputKind
+  from: 'studio' | 'extension' | 'agent'
+  /** Who the send runs as, when it is not the chat's own starter. */
+  starter?: AgentStarter
+}
+
 export type ConversationSendTurnInput = Omit<ConversationSendRequest<ConversationImageAttachment>, 'queue'> & {
   sessionId: string
   commandId?: string
@@ -228,6 +238,12 @@ export type ConversationSendTurnInput = Omit<ConversationSendRequest<Conversatio
   // by Studio's own senders in main; neither a window's IPC nor the Studio
   // protocol's `session.send` passes one through.
   origin?: ConversationMessageOrigin
+  // A message the person did not type, which the extensions'
+  // `agent.prompt.before` hooks check, change or refuse before it is sent:
+  // what kind it is, who sends it, and who that send runs as (the extension
+  // whose call it is, else `starter`, else the chat's own starter). Set only by
+  // Studio's own senders in main; a person's message never carries it.
+  hookAs?: ConversationPromptHookAs
   // What the person wrote to one of the chat's agents, for a message asking the
   // chat to pass it on: recorded on the `user_message`, for the agent's lane.
   subagentMessage?: ConversationSubagentMessage

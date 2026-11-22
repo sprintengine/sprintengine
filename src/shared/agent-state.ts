@@ -60,6 +60,20 @@ export type AgentConversationRuntime = {
   modelId: string
 }
 
+/**
+ * Who started an agent, kept on its record so the extensions' hooks its
+ * actions meet run as them (server/extensions/hooks/hook-invokers.ts): the
+ * person (their own windows, Studio's own launches on their behalf), a paired
+ * app or device by its client id (`tailnet:<device>` for a device), read as it
+ * stands at each hook, or another agent on this machine under the ceiling it
+ * ran on. An agent with none, or `nobody`, runs its hooks as no one.
+ */
+export type AgentStarter =
+  | { kind: 'person' }
+  | { kind: 'client'; clientId: string }
+  | { kind: 'agent'; ceiling: CliPermissionPreset | null }
+  | { kind: 'nobody' }
+
 export type AgentState = {
   id: AgentId
   name: string
@@ -208,6 +222,8 @@ export type AgentState = {
   // is retried finds the chat its first attempt made rather than making a
   // second. Set once at launch and never edited.
   launchCommandId?: string
+  // Who started it (`AgentStarter`). Set once at launch and never edited.
+  startedBy?: AgentStarter
   // The key the owning module opened this chat under (`openChat`'s
   // `dedupeKey`), so asking again focuses it instead of opening another. Set
   // once, beside `ownerModuleId`, and never edited.

@@ -27,6 +27,7 @@ import {
 } from '../agent-launch-notices'
 import {
   capLaunchPermissionPreset,
+  gatewayCallerStarter,
   launchPermissionCeiling,
   resolveNamedPermissionMode,
   type AgentPermissionResolver,
@@ -350,6 +351,7 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
         }
         const launched = await deps.launch(
           {
+            startedBy: gatewayCallerStarter(context, deps.resolveAgentPermissionPreset),
             ...(projectlessFolder
               ? { newChatIn: { folderPath: projectlessFolder } }
               : { workspaceId, ...(args.newChat === true ? { newChat: true } : {}) }),

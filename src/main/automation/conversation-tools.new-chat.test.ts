@@ -32,7 +32,9 @@ function create(launched: ConversationLaunchResult = LAUNCHED) {
   const requests: ConversationLaunchRequest[] = []
   const [registration] = createConversationTools({
     launch: async (request) => {
-      requests.push(request)
+      // Who started it is asserted in conversation-tools.test.ts.
+      const { startedBy: _starter, ...rest } = request
+      requests.push(rest)
       return launched
     },
     resolveAgentPermissionPreset: () => 'bypass',

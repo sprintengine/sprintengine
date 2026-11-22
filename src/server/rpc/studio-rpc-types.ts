@@ -28,6 +28,7 @@ import type {
   StudioListChange,
   StudioWindowTicketGrant,
 } from '../../../packages/studio-protocol/src/public'
+import type { AgentStarter } from '../../shared/agent-state'
 import type {
   ConversationApprovalRuleRevokeResult,
   ConversationApprovalRulesResult,
@@ -133,6 +134,8 @@ export type StudioConversationBackend = {
   create(
     request: StudioConversationCreate,
     launchCommandId: string,
+    /** Who asked: the chat keeps it, and its hooks run as them. */
+    startedBy: AgentStarter,
   ): Promise<{ ok: true; conversation: StudioCreatedConversation } | { ok: false; code: string; message: string }>
   /**
    * What a client is shown of anything read from a conversation — an event, a

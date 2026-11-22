@@ -27,6 +27,7 @@ import type { SubagentLifecycle } from '../subagent-lifecycle'
 import type { ConversationChatControl } from './conversation-chat-tools'
 import {
   capLaunchPermissionPreset,
+  gatewayCallerStarter,
   launchPermissionCeiling,
   type AgentPermissionResolver,
 } from './launch-permission-cap'
@@ -456,6 +457,7 @@ export function createSubagentTools(deps: SubagentToolsDeps): McpToolRegistratio
         starting.set(startKey, (starting.get(startKey) ?? 0) + 1)
         try {
           launched = await deps.launch({
+            startedBy: gatewayCallerStarter(context, deps.resolveAgentPermissionPreset),
             workspaceId: parent.workspaceId,
             cli,
             prompt,

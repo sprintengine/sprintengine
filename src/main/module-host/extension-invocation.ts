@@ -31,6 +31,7 @@ import {
   studioPrincipal,
   type StudioPrincipal,
 } from '../../../packages/studio-protocol/src/permissions'
+import type { AgentStarter } from '../../shared/agent-state'
 import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
 import { clampPresetToCeiling } from '../../shared/permission-ceiling'
 
@@ -41,13 +42,22 @@ export type ExtensionInvoker = {
   permissionCeiling: CliPermissionPreset | null
   /** Who it is, for a refusal's words: "this device", "this app", "the agent". */
   label: string
+  /**
+   * Who that is, for what it starts: an agent or chat started during the
+   * invocation keeps it, so its later hooks run as the same someone.
+   */
+  starter?: AgentStarter
 }
 
 /** The person at this machine: every permission, no ceiling. */
 export const OWNER_PRINCIPAL: StudioPrincipal = studioPrincipal({ owner: true, permissions: STUDIO_PERMISSIONS })
 
-export function ownerInvoker(permissionCeiling: CliPermissionPreset | null = null, label = 'you'): ExtensionInvoker {
-  return { principal: OWNER_PRINCIPAL, permissionCeiling, label }
+export function ownerInvoker(
+  permissionCeiling: CliPermissionPreset | null = null,
+  label = 'you',
+  starter: AgentStarter = { kind: 'person' },
+): ExtensionInvoker {
+  return { principal: OWNER_PRINCIPAL, permissionCeiling, label, starter }
 }
 
 /**
@@ -56,7 +66,12 @@ export function ownerInvoker(permissionCeiling: CliPermissionPreset | null = nul
  * known set off runs as.
  */
 export function nobodyInvoker(label = 'someone Studio no longer knows'): ExtensionInvoker {
-  return { principal: studioPrincipal({ owner: false, permissions: [] }), permissionCeiling: 'manual', label }
+  return {
+    principal: studioPrincipal({ owner: false, permissions: [] }),
+    permissionCeiling: 'manual',
+    label,
+    starter: { kind: 'nobody' },
+  }
 }
 
 const storage = new AsyncLocalStorage<ExtensionInvoker>()

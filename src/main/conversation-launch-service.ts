@@ -33,12 +33,12 @@
  * the workspace checkout.
  */
 import { ExtensionHookDenied, runExtensionHook, type ExtensionHooks } from '../server/extensions/hooks/extension-hooks'
-import { ownerInvoker, type ExtensionInvoker } from './module-host/extension-invocation'
+import { activeInvoker, nobodyInvoker, type ExtensionInvoker } from './module-host/extension-invocation'
 import { randomUUID } from 'crypto'
 
 import { newAgentIdSuffix } from '../shared/agent-ids'
 import { pickRandomAgentName } from '../shared/agent-names'
-import { defaultAgent, type AgentState } from '../shared/agent-state'
+import { defaultAgent, type AgentStarter, type AgentState } from '../shared/agent-state'
 import {
   CONVERSATION_DEFAULT_MODEL_ID,
   conversationPermissionModes,
@@ -190,6 +190,11 @@ export type ConversationLaunchRequest = {
   /** The module that started the chat; only that module reaches it through the module service. */
   ownerModuleId?: string
   /** The caller's namespaced id for this create, kept on the chat so a retry can find it. */
+  /**
+   * Who asked for the chat: kept on its record, and what its hooks run as.
+   * Absent, the extension whose call this is, else no one.
+   */
+  startedBy?: AgentStarter
   launchCommandId?: string
   /**
    * The scheduled agent whose run this is. Written on the workspace a new
@@ -379,7 +384,7 @@ export type ConversationLaunchServiceDeps = {
    * `hookInvoker` says whoever asked for the launch is.
    */
   extensionHooks?: ExtensionHooks
-  hookInvoker?: (launchCommandId: string | undefined) => ExtensionInvoker
+  hookInvoker?: (startedBy: AgentStarter) => ExtensionInvoker
 }
 
 export type ConversationLaunchService = {
@@ -605,25 +610,8 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     // behind, as a window's New chat that fails after cutting one does; a pool
     // slot comes back with the pool's return sweep, which takes back a lease
     // no chat has been seen to hold.
-    const hookInvoker = () => deps.hookInvoker?.(request.launchCommandId) ?? ownerInvoker(null, 'you')
-    try {
-      await runExtensionHook(
-        deps.extensionHooks,
-        'agent.launch.before',
-        {
-          agent: providerId,
-          where: 'chat',
-          workspaceId: workspace.id,
-          model: modelId === CONVERSATION_DEFAULT_MODEL_ID ? null : modelId,
-          permission: permissionPreset ?? null,
-          prompt: request.prompt?.trim() || null,
-        },
-        hookInvoker,
-      )
-    } catch (error) {
-      if (error instanceof ExtensionHookDenied) return { ok: false, code: error.code, message: error.message }
-      throw error
-    }
+    const startedBy: AgentStarter = request.startedBy ?? activeInvoker()?.starter ?? { kind: 'nobody' }
+    const hookInvoker = () => deps.hookInvoker?.(startedBy) ?? nobodyInvoker()
     let chatFolder: string = workspaceRoot
     let chatWorktree = workspace.worktree ?? null
     let installing: StartedDependencyInstall | null = null
@@ -709,6 +697,7 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
       ...(subagentOf && request.subagentReadOnly ? { subagentReadOnly: true as const } : {}),
       ...(request.ownerModuleId?.trim() ? { ownerModuleId: request.ownerModuleId.trim() } : {}),
       ...(request.launchCommandId ? { launchCommandId: request.launchCommandId } : {}),
+      startedBy,
       ...(newChat && request.scheduledAgentId?.trim() && request.scheduledAgentTag?.trim()
         ? { scheduledAgentTag: request.scheduledAgentTag.trim() }
         : {}),

@@ -1,8 +1,9 @@
 import { join } from 'node:path'
 
 import type { ExtensionHooks } from '../extensions/hooks/extension-hooks'
+import { guardTerminalSpawn } from '../extensions/hooks/launch-hooks'
 import { controlPlaneHooks } from '../extensions/hooks/control-plane-hooks'
-import type { ExtensionInvoker } from '../../main/module-host/extension-invocation'
+import { activeInvoker, ownerInvoker, type ExtensionInvoker } from '../../main/module-host/extension-invocation'
 
 import { createAgentControlPlane } from '../../main/agent-control-plane'
 import {
@@ -216,6 +217,20 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
 
   // The one way to type at a live agent, terminal or chat: concurrent prompts
   // serialise per session, and no window is needed.
+  // Every agent a terminal starts, from any launcher, meets the extensions'
+  // `agent.launch.before` at this one door (launch-hooks.ts).
+  const spawnTerminal = guardTerminalSpawn({
+    spawn: (viewer: Parameters<typeof runtime.sessions.spawnTerminal>[0], payload) =>
+      runtime.sessions.spawnTerminal(viewer, payload),
+    live: (sessionId) => runtime.sessions.listTerminals().some((session) => session.sessionId === sessionId),
+    hooks: deps.extensionHooks,
+    invokerOf: (payload) =>
+      activeInvoker() ??
+      (payload.workspaceId && payload.agentId && deps.chatInvoker
+        ? deps.chatInvoker({ workspaceId: payload.workspaceId, agentId: payload.agentId })
+        : ownerInvoker(null, 'you')),
+  })
+
   const controlPlane = createAgentControlPlane({
     ...(deps.extensionHooks && deps.chatInvoker
       ? { hooks: controlPlaneHooks(deps.extensionHooks, deps.chatInvoker) }
@@ -307,7 +322,6 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
   // headless: its pty runs and buffers, and the first pane that opens it over
   // the Studio protocol takes it over.
   const composed = createAgentLaunchService({
-    ...(deps.extensionHooks ? { extensionHooks: deps.extensionHooks } : {}),
     listWorkspaces: () => workspaceSyncService.getSnapshot().state.workspaces,
     getLaunchSettings: () => agentLaunchSettings.get(),
     // Hooks-only selectability: a known plugin with no agentStateSpec is refused as an agent.
@@ -324,7 +338,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
     resolveKnowledgeRoot: (input) => resolveKnowledgeRoot(input.workspaceRoot, input.relativeRoot),
     terminal: {
       list: () => runtime.sessions.listTerminals(),
-      spawn: (payload) => runtime.sessions.spawnTerminal(headlessTerminalViewer(), payload),
+      spawn: (payload) => spawnTerminal(headlessTerminalViewer(), payload),
       kill: (sessionId) => runtime.sessions.killTerminal(sessionId),
     },
   })
@@ -382,6 +396,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
   const studioTerminals = createStudioTerminals({
     runtime: {
       ...runtime.sessions,
+      spawnTerminal,
       onSessionsDelta: runtime.onSessionsDelta,
       onPromptUndelivered: runtime.onPromptUndelivered,
     },

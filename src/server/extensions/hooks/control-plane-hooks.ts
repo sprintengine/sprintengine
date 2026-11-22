@@ -8,8 +8,8 @@ import { extensionHookRefusal, type ExtensionHooks } from './extension-hooks'
 // through it, so they are never hooked.
 //
 // Who it runs as: the extension whose call this is, when an extension's code
-// asked; otherwise the chat's starter, or (for a terminal, which only the
-// person's own windows and agents reach) the person.
+// asked; otherwise whoever started the agent it goes to (hook-invokers.ts),
+// or the person for a terminal with no agent.
 
 export function controlPlaneHooks(
   hooks: ExtensionHooks,
@@ -17,7 +17,7 @@ export function controlPlaneHooks(
 ): ControlPlaneHooks {
   const invokerOf = (session: ControlPlaneSession): ExtensionInvoker =>
     activeInvoker() ??
-    (session.transport === 'conversation' && session.workspaceId && session.agentId
+    (session.workspaceId && session.agentId
       ? chatInvoker({ workspaceId: session.workspaceId, agentId: session.agentId })
       : ownerInvoker(null, 'Studio'))
   return {
@@ -32,7 +32,9 @@ export function controlPlaneHooks(
             where: session.transport === 'conversation' ? 'chat' : 'terminal',
             workspaceId: session.workspaceId ?? null,
             agentId: session.agentId ?? null,
+            terminalId: session.transport === 'terminal' ? session.sessionId : null,
             from,
+            inputKind: from === 'extension' ? 'send' : 'notice',
             prompt: text,
           },
           invokerOf(session),

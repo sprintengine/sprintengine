@@ -1603,6 +1603,8 @@ export {
   EXTENSION_HOOK_SPECS,
   EXTENSION_HOOK_TEXT_MAX_CHARS,
   EXTENSION_HOOK_TIME_LIMIT_MS,
+  EXTENSION_HOOK_TOOL_BUDGET_MS,
+  EXTENSION_PROMPT_INPUT_KINDS,
   extensionHookApprovalLines,
   extensionHookReference,
   isExtensionAfterHookPoint,
@@ -1620,6 +1622,7 @@ export {
   type ExtensionHookPoint,
   type ExtensionHookPointSpec,
   type ExtensionHookVerdict,
+  type ExtensionPromptInputKind,
 } from './hooks.js'
 
 // What a content extension's syntax files hold, checked the same way by the

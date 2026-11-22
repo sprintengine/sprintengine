@@ -131,7 +131,9 @@ test('a refused prompt is not sent, and the send says which extension refused it
         where: 'chat',
         workspaceId: 'ws-2',
         agentId: 'agent-2',
+        terminalId: null,
         from: 'studio',
+        inputKind: 'notice',
         prompt: 'deploy it',
       },
       {
@@ -139,14 +141,16 @@ test('a refused prompt is not sent, and the send says which extension refused it
         where: 'terminal',
         workspaceId: 'ws-1',
         agentId: 'agent-1',
+        terminalId: 'term-1',
         from: 'studio',
+        inputKind: 'notice',
         prompt: 'deploy it',
       },
     ],
   )
   assert.deepEqual(
     heard.map((entry) => entry.invoker),
-    ['the chat’s starter', 'Studio'],
+    ['the chat’s starter', 'the chat’s starter'],
   )
 })
 

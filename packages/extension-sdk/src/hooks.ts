@@ -79,6 +79,26 @@ export type ExtensionAgentToolCall = {
   callId: string | null
 }
 
+/**
+ * What a prompt nobody typed is: `launch` (a new agent's first message, from
+ * an agent's `conversation.create`, an extension or a schedule), `send`
+ * (another agent's or an extension's message to a running agent), `subagent`
+ * (a sub-agent's task, started or resumed), `companion` (an extension's
+ * background agent), `notice` (Studio telling an agent what happened),
+ * `recovery` (a first message sent again after a stop cut it off) or `tour`
+ * (a tour's prompt typed into its terminal).
+ */
+export const EXTENSION_PROMPT_INPUT_KINDS = [
+  'launch',
+  'send',
+  'subagent',
+  'companion',
+  'notice',
+  'recovery',
+  'tour',
+] as const
+export type ExtensionPromptInputKind = (typeof EXTENSION_PROMPT_INPUT_KINDS)[number]
+
 export type ExtensionHookEvents = {
   'agent.launch.before': {
     /** The agent's runtime: a chat's provider (`claude-agent`) or a terminal's CLI (`claude`). */
@@ -101,8 +121,12 @@ export type ExtensionHookEvents = {
     where: 'chat' | 'terminal'
     workspaceId: string | null
     agentId: string | null
+    /** The terminal, for an agent in one. */
+    terminalId: string | null
     /** Who is sending it: Studio itself (a notice), an extension, or another agent. */
     from: 'studio' | 'extension' | 'agent'
+    /** What kind of message it is. */
+    inputKind: ExtensionPromptInputKind
     prompt: string
   }
   'agent.tool.before': ExtensionAgentToolCall
@@ -225,9 +249,9 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
     changes: { prompt: text(EXTENSION_HOOK_TEXT_MAX_CHARS) },
     approval: 'Can check, change or refuse the messages Studio, extensions and other agents send your agents',
     summary:
-      'Studio is about to hand an agent a message the person did not type: a notice Studio sends, an extension’s message, another agent’s `conversation.send`. A message the person sends is never hooked. Change `prompt`, or return `{ deny }` to refuse it.',
+      'Studio is about to hand an agent a message the person did not type (`inputKind` says which): a new agent’s first message from an agent, an extension or a schedule; another agent’s or an extension’s message; a sub-agent’s task; an extension’s background agent’s; a notice Studio sends; a first message sent again after a stop; a tour’s prompt. A message the person types, on any machine, is never hooked. Change `prompt`, or return `{ deny }` to refuse it.',
     event:
-      "{ agent: string | null; where: 'chat' | 'terminal'; workspaceId: string | null; agentId: string | null; from: 'studio' | 'extension' | 'agent'; prompt: string }",
+      "{ agent: string | null; where: 'chat' | 'terminal'; workspaceId: string | null; agentId: string | null; terminalId: string | null; from: 'studio' | 'extension' | 'agent'; inputKind: 'launch' | 'send' | 'subagent' | 'companion' | 'notice' | 'recovery' | 'tour'; prompt: string }",
   },
   'agent.tool.before': {
     decides: true,

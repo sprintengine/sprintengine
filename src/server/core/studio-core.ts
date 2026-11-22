@@ -484,9 +484,12 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // Extensions' agent hooks: bound to the workers once the module kernel holds
   // them (server-modules.ts, app-main.ts), and run as each action's invoker.
   const extensionHooks = createExtensionHooks()
-  const hookInvokers = createHookInvokers()
+  const hookInvokers = createHookInvokers({
+    // Read when a hook runs, by which time the resolver below exists.
+    resolveAgentPermissionPreset: (input) => resolveAgentPermissionPreset(input),
+  })
   const chatInvoker = (chat: { workspaceId: string; agentId: string }) =>
-    hookInvokers.ofChat(workspaceRegistry.getRecord(chat.workspaceId)?.agents[chat.agentId]?.launchCommandId)
+    hookInvokers.ofAgent(workspaceRegistry.getRecord(chat.workspaceId)?.agents[chat.agentId])
   const conversationRuntime = new ConversationRuntime({
     extensionHooks,
     chatInvoker,
@@ -682,9 +685,9 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   const conversationLaunchService = createConversationLaunchService({
     firstMessages,
     extensionHooks,
-    // An extension's own launch runs as whoever its call serves; any other
-    // as the client whose command id it carries, or the person.
-    hookInvoker: (launchCommandId) => activeInvoker() ?? hookInvokers.ofChat(launchCommandId),
+    // Whoever asked for the launch: the extension's caller, or the starter
+    // the launch names (the connection, the gateway caller, the person).
+    hookInvoker: (startedBy) => activeInvoker() ?? hookInvokers.ofAgent({ startedBy }),
     getWorkspace: (workspaceId) => workspaceRegistry.getRecord(workspaceId) ?? null,
     getLaunchSettings: () => agentLaunchSettings.get(),
     writeAgent: (workspaceId, agentId, agent) =>
@@ -1450,7 +1453,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     // say of its own.
     after: firstPlan,
     conversations,
-    launch: (request) => conversationLaunchService.launch(request),
+    // A schedule's run is the person's own, on the schedule they keep.
+    launch: (request) => conversationLaunchService.launch({ ...request, startedBy: { kind: 'person' } }),
     createConversationHost: () => createConversationHost(),
     workspaceRecords: () => workspaceRegistry.getRecords(),
     gitHost: (hostId) => (hostId ? hosts.get(hostId) : null),

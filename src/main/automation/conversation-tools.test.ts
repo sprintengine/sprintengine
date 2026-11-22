@@ -78,7 +78,11 @@ test('conversation.create forwards the launch and answers with the ids a pane fo
     }
   }).handler
   const result = await handler({ workspaceId: ' ws-1 ', cli: 'codex', prompt: 'hi', permissionPreset: 'bypass_all' })
-  assert.deepEqual(requests, [{ workspaceId: 'ws-1', cli: 'codex', prompt: 'hi', permissionPreset: 'bypass' }])
+  assert.deepEqual(withoutStarter(requests), [
+    { workspaceId: 'ws-1', cli: 'codex', prompt: 'hi', permissionPreset: 'bypass' },
+  ])
+  // An agent's chat keeps that it was the agent's, under its own ceiling.
+  assert.deepEqual((requests[0] as { startedBy?: unknown }).startedBy, { kind: 'agent', ceiling: null })
   assert.equal(result.isError, undefined)
   assert.deepEqual((result.structuredContent as { conversation: unknown }).conversation, {
     workspaceId: 'ws-1',
@@ -131,7 +135,10 @@ test('conversation.create asks for a chat of its own when newChat is set, and de
   assert.equal(schema.properties.newChat?.type, 'boolean')
   const result = await registration.handler({ workspaceId: 'ws-1', newChat: true, prompt: 'hi' })
   await registration.handler({ workspaceId: 'ws-1', newChat: false })
-  assert.deepEqual(requests, [{ workspaceId: 'ws-1', newChat: true, prompt: 'hi' }, { workspaceId: 'ws-1' }])
+  assert.deepEqual(withoutStarter(requests), [
+    { workspaceId: 'ws-1', newChat: true, prompt: 'hi' },
+    { workspaceId: 'ws-1' },
+  ])
   assert.equal(
     (result.structuredContent as { conversation: { workspaceId: string } }).conversation.workspaceId,
     'ws-new',
@@ -282,3 +289,11 @@ test("conversation.create takes a mode its chat runs, at that mode's level and u
     'permission_escalation',
   )
 })
+
+/** The launch requests as they were, but for who started them (asserted where it matters). */
+function withoutStarter<T>(requests: T[]): T[] {
+  return requests.map((request) => {
+    const { startedBy: _starter, ...rest } = request as T & { startedBy?: unknown }
+    return rest as T
+  })
+}

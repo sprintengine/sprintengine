@@ -151,7 +151,16 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
           ? core.extensionHooks
               .run(
                 'agent.prompt.before',
-                { agent: null, where: 'chat', workspaceId, agentId, from: 'agent', prompt: message },
+                {
+                  agent: null,
+                  where: 'chat',
+                  workspaceId,
+                  agentId,
+                  terminalId: null,
+                  from: 'agent',
+                  inputKind: 'send',
+                  prompt: message,
+                },
                 core.hookInvokers.ofGatewayCaller(context),
               )
               .then((outcome) =>
