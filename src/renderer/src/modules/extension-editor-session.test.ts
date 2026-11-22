@@ -356,3 +356,26 @@ test('a disk read overtaken by saves more times than it retries is dropped, and 
   await new Promise((resolve) => setTimeout(resolve, 120))
   assert.equal(made.model.get(), 'saved-4\n')
 })
+
+test('restoring a deleted file only makes it: one made again meanwhile is a conflict, not written over', async () => {
+  const disk = fakeDisk('a\n')
+  const writes: Array<{ create?: boolean }> = []
+  const { session } = open(disk, {
+    write: async (next, expected, create) => {
+      writes.push(create ? { create } : {})
+      if (create && disk.content !== null) return { ok: false, code: 'conflict', message: 'list.todo already exists.' }
+      return disk.write(next, expected)
+    },
+  })
+  await session.start()
+  session.attachFrame()
+  session.applyEdit({ baseVersion: 1, content: { kind: 'text', text: 'mine\n' } })
+  disk.set(null)
+  await session.diskChanged()
+  assert.deepEqual(session.state().conflict, { kind: 'deleted' })
+  disk.set('made again elsewhere\n')
+  assert.equal(await session.save(), false)
+  assert.equal(disk.content, 'made again elsewhere\n')
+  assert.deepEqual(writes[0], { create: true })
+  assert.equal(session.state().conflict?.kind, 'changed')
+})

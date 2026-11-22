@@ -80,7 +80,8 @@ export type EditorSessionOptions = {
   readOnly: boolean
   model: EditorDocumentModel
   read(): Promise<EditorRead>
-  write(content: EditorContent, expectedSha256: string | undefined): Promise<EditorWrite>
+  /** `create`: make the file, and answer `conflict` when one is there. */
+  write(content: EditorContent, expectedSha256: string | undefined, create?: boolean): Promise<EditorWrite>
   /** Hand a document to the frame. */
   post(document: EditorFrameDocument): void
   /** Ask the frame to hand over what it holds back; false when it did not in time. */
@@ -240,9 +241,9 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
     }, RECHECK_MS)
   }
 
-  async function write(content: EditorContent, expected: string | undefined): Promise<EditorWrite> {
-    const first = await options.write(content, expected)
-    if (first.ok || first.code !== 'conflict') return first
+  async function write(content: EditorContent, expected: string | undefined, create: boolean): Promise<EditorWrite> {
+    const first = await options.write(content, expected, create || undefined)
+    if (first.ok || first.code !== 'conflict' || create) return first
     // The sha this window holds may be older than the file while the file
     // still holds what the window believes: the text editor saved it, or
     // the same content was written again. Then write against what is there.
@@ -251,14 +252,15 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
     return first
   }
 
-  async function saveContent(content: EditorContent, expected: string | undefined): Promise<boolean> {
+  /** `create`: the file is gone, and is made again only if nobody made it meanwhile. */
+  async function saveContent(content: EditorContent, expected: string | undefined, create = false): Promise<boolean> {
     const tooLarge = editorContentTooLarge(content)
     if (tooLarge) {
       update({ saveError: tooLarge })
       return false
     }
     update({ saving: true, saveError: null })
-    const written = await write(content, expected)
+    const written = await write(content, expected, create)
     if (disposed) return false
     if (written.ok) {
       diskGeneration += 1
@@ -395,8 +397,9 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
       if (!(await flushed())) return false
       const content = model.get()
       if (content === undefined || !model.dirty()) return true
-      // A file gone from disk is written back, as the text editor does.
-      if (current.conflict?.kind === 'deleted') return saveContent(content, undefined)
+      // A file gone from disk is made again, as the text editor does; one
+      // made again by someone else meanwhile is a conflict, never written over.
+      if (current.conflict?.kind === 'deleted') return saveContent(content, undefined, true)
       // Changed on disk: the person chooses first, to reload or to save over it.
       if (current.conflict) return false
       return saveContent(content, diskSha)
@@ -423,7 +426,7 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
       if (!(await flushed())) return false
       const content = model.get()
       if (content === undefined) return false
-      return saveContent(content, conflict.kind === 'changed' ? conflict.sha256 : undefined)
+      return conflict.kind === 'changed' ? saveContent(content, conflict.sha256) : saveContent(content, undefined, true)
     },
     state: () => current,
     subscribe(listener) {

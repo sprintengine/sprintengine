@@ -116,7 +116,7 @@ export function createExtensionEditorController(options: ExtensionEditorControll
     readOnly: options.readOnly,
     model: options.model,
     read,
-    write: async (content, expected) => {
+    write: async (content, expected, create) => {
       if (!port) return { ok: false, code: 'unavailable', message: 'The editor is not drawn, so nothing was saved.' }
       const answer = await port.call('files.write', {
         workspaceId,
@@ -125,6 +125,7 @@ export function createExtensionEditorController(options: ExtensionEditorControll
           ? { content }
           : { content: bytesToBase64(content), encoding: 'base64' as const }),
         ...(expected ? { expectedSha256: expected } : {}),
+        ...(create ? { create: true } : {}),
       })
       return answer.ok ? { ok: true, sha256: (answer.result as { sha256: string }).sha256 } : answer
     },

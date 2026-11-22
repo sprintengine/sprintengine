@@ -102,9 +102,9 @@ test('a write replaces a file in place, a create refuses one that exists, and ne
     created: true,
     sha256: sha('new'),
   })
-  assert.equal(await refusal(writeExtensionFile(scope, 'docs/new.md', 'again', { create: true })), 'action_failed')
+  assert.equal(await refusal(writeExtensionFile(scope, 'docs/new.md', 'again', { create: true })), 'conflict')
   assert.equal(await refusal(writeExtensionFile(scope, 'docs/escape.txt', 'pwned')), 'not_permitted')
-  assert.equal(await refusal(writeExtensionFile(scope, 'docs/escape.txt', 'pwned', { create: true })), 'action_failed')
+  assert.equal(await refusal(writeExtensionFile(scope, 'docs/escape.txt', 'pwned', { create: true })), 'conflict')
   assert.equal(
     await refusal(writeExtensionFile(scope, 'linked-out/new.txt', 'pwned', { create: true })),
     'not_permitted',

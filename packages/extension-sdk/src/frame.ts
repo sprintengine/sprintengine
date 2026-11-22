@@ -106,7 +106,7 @@ export type ExtensionFrameMethods = {
   /**
    * Write a file: `content` is UTF-8 text, or with `encoding: 'base64'` its
    * bytes in base64. `create: true` makes a new one and refuses one that
-   * exists. With `expectedSha256` it writes only over a file whose bytes
+   * exists with `conflict`. With `expectedSha256` it writes only over a file whose bytes
    * still hash to it, and refuses with `conflict` otherwise (one gone too),
    * so nothing changed meanwhile is written over unseen.
    */

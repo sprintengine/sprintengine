@@ -1295,7 +1295,7 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
       const { byPath, key } = fileOf(p.workspaceId, p.path)
       if (typeof p.content !== 'string') throw frameError('invalid_params', '"content" is the text to write.')
       const exists = byPath.has(key)
-      if (p.create === true && exists) throw frameError('action_failed', `${key} already exists.`)
+      if (p.create === true && exists) throw frameError('conflict', `${key} already exists.`)
       if (typeof p.expectedSha256 === 'string') {
         const now = byPath.get(key)
         if (now === undefined || (await sha256Hex(new TextEncoder().encode(now))) !== p.expectedSha256)

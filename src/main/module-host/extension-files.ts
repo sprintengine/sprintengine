@@ -347,7 +347,7 @@ export async function writeExtensionFile(
     } catch (error) {
       if ((error as NodeJS.ErrnoException | null)?.code !== 'EEXIST')
         throw new ExtensionFileRefusal('action_failed', `${shown} cannot be written.`)
-      if (create) throw new ExtensionFileRefusal('action_failed', `${shown} already exists.`)
+      if (create) throw new ExtensionFileRefusal('conflict', `${shown} already exists.`)
       // It exists: the real path it names must be inside too, and opened as it is.
       let opened: Awaited<ReturnType<typeof openChecked>>
       try {

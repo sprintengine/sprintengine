@@ -82,7 +82,8 @@ caches), so `files.read` refuses those too. Nothing is written under a `.git` fo
 text, or with `encoding: 'base64'` the raw bytes in base64. `sha256` is of the
 file's bytes; a `files.write` given `expectedSha256` writes only over a file
 whose bytes still hash to it, and is refused `conflict` otherwise (one that is
-gone too), so nothing changed meanwhile is written over unseen.
+gone too), so nothing changed meanwhile is written over unseen. A `files.write` with `create: true` over a
+file that exists is refused `conflict` too.
 A project's files can run code (its scripts, its tools' settings), so the
 approval of an extension holding `workspace-files:write` says it has full
 access to the person's account.
