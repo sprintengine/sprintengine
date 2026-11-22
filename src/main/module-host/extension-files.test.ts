@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -15,6 +16,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, test } from 'vitest'
+
+import { writeConfinedFile } from '../confined-file'
 
 import {
   ExtensionFileRefusal,
@@ -244,4 +247,47 @@ test('a file or folder that is not there is refused as missing, by its code', as
   assert.equal(await refusal(readExtensionFile(scope, 'docs/gone.md')), 'missing')
   assert.equal(await refusal(statExtensionFile(scope, 'gone')), 'missing')
   assert.equal(await refusal(writeExtensionFile(scope, 'gone/new.md', 'x')), 'missing')
+})
+
+test('saves through a link and through the file it names take one turn: one is written, the other refused', async () => {
+  const { scope, root } = world()
+  symlinkSync(join(root, 'docs', 'notes.md'), join(root, 'docs', 'alias-link.md'))
+  const read = await readExtensionFile(scope, 'docs/notes.md')
+  const paused = { ...scope, beforeCommit: () => new Promise<void>((resolve) => setTimeout(resolve, 30)) }
+  const outcomes = await Promise.all(
+    [
+      ['docs/notes.md', 'AAAAAAAA'],
+      ['docs/alias-link.md', 'BB'],
+    ].map(([path, content]) =>
+      writeExtensionFile(paused, path!, content!, { expectedSha256: read.sha256 }).then(
+        () => 'written',
+        (error: ExtensionFileRefusal) => error.code,
+      ),
+    ),
+  )
+  assert.deepEqual([...outcomes].sort(), ['conflict', 'written'])
+  const now = readFileSync(join(root, 'docs', 'notes.md'), 'utf8')
+  assert.ok(now === 'AAAAAAAA' || now === 'BB', `the file holds one save whole, not "${now}"`)
+})
+
+test('an editor’s save waits for an extension’s write to the same file to finish', async () => {
+  const { scope, root } = world()
+  const order: string[] = []
+  const paused = {
+    ...scope,
+    beforeCommit: async () => {
+      order.push('extension checked')
+      await new Promise<void>((resolve) => setTimeout(resolve, 30))
+    },
+  }
+  const extension = writeExtensionFile(paused, 'docs/notes.md', 'from the extension').then(() =>
+    order.push('extension wrote'),
+  )
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  const editor = writeConfinedFile(join(realpathSync(root), 'docs', 'notes.md'), 'from the editor').then(() =>
+    order.push('editor wrote'),
+  )
+  await Promise.all([extension, editor])
+  assert.deepEqual(order, ['extension checked', 'extension wrote', 'editor wrote'])
+  assert.equal(readFileSync(join(root, 'docs', 'notes.md'), 'utf8'), 'from the editor')
 })

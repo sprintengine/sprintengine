@@ -22,7 +22,8 @@
 //    `O_EXCL`, so it never writes through a file or link that appeared
 //    meanwhile. Nothing is written under a `.git` folder, whose
 //    configuration and hooks git runs.
-// 7. Writes to one file take turns (`withFileLock`): a write's check of the
+// 7. Writes to one file take turns with every Studio writer of it
+//    (`withFileWriteTurn`, keyed by its real path): a write's check of the
 //    bytes it expects (`expectedSha256`) and its write are one step, so two
 //    saves against the same bytes never both pass and leave a mix.
 //
@@ -47,6 +48,8 @@ import { createHash } from 'node:crypto'
 import { constants, type Stats } from 'node:fs'
 import { lstat, open, readdir, readlink, realpath, stat, unlink, type FileHandle } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
+
+import { withFileWriteTurn } from '../file-write-queue'
 
 /** The largest file `files.read` answers, and the most `files.write` writes. */
 export const EXTENSION_FILE_MAX_BYTES = 4 * 1024 * 1024
@@ -110,24 +113,6 @@ async function realRoot(scope: ExtensionFilesScope): Promise<{ root: string; for
 function contained(real: string, root: string, forbidden: readonly string[], shown: string): void {
   if (!inside(root, real) || forbidden.some((folder) => inside(folder, real)))
     throw new ExtensionFileRefusal('not_permitted', `${shown} is outside the workspace’s folder.`)
-}
-
-// The writes waiting for each file, by its real path: a write takes its turn
-// after the one before it settles. Studio's server is the one process that
-// writes for extensions, so a queue here orders every client's saves.
-const fileTurns = new Map<string, Promise<unknown>>()
-
-function withFileLock<T>(target: string, work: () => Promise<T>): Promise<T> {
-  // Case-insensitive file systems (macOS, Windows by default) name one file many ways.
-  const key = process.platform === 'linux' ? target : target.toLowerCase()
-  const before = fileTurns.get(key) ?? Promise.resolve()
-  const turn = before.catch(() => undefined).then(work)
-  const settled = turn.catch(() => undefined)
-  fileTurns.set(key, settled)
-  void settled.then(() => {
-    if (fileTurns.get(key) === settled) fileTurns.delete(key)
-  })
-  return turn
 }
 
 function missing(error: unknown): boolean {
@@ -348,7 +333,7 @@ export async function writeExtensionFile(
   const target = join(folder, basename(shown))
   // One write at a time to a file, from every client and window: the check
   // and the write below are one step for whoever else saves it.
-  return withFileLock(target, async () => {
+  return withFileWriteTurn(target, async () => {
     let handle: FileHandle
     let created: boolean
     if (create) await scope.betweenCheckAndOpen?.()
