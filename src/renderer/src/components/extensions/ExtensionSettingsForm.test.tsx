@@ -94,9 +94,26 @@ test('a connection that may not change settings sees them read only, with their 
   expect(studio.reads).toBe(0)
 })
 
-test('emptied, a field with a default goes back to it', () => {
-  expect(draftValue(SETTINGS[1]!, '')).toBeNull()
+test('text is saved as typed, empty included, and Reset to default is its own control', async () => {
+  expect(draftValue(SETTINGS[1]!, '')).toBe('')
+  expect(draftValue(SETTINGS[1]!, '  ')).toBe('  ')
   expect(draftValue({ key: 'free', title: 'Free', type: 'string' }, '')).toBe('')
   expect(draftValue(SETTINGS[0]!, ' ')).toBeNull()
   expect(draftValue(SETTINGS[0]!, '4')).toBe(4)
+
+  studio.values = { indent: 5, label: '' }
+  act(() => root!.render(<ExtensionSettingsForm extensionKey="local.tally" settings={SETTINGS} />))
+  await flush()
+  const resets = [...host!.querySelectorAll('button')].filter((button) => button.textContent === 'Reset to default')
+  expect(resets.map((button) => button.getAttribute('aria-label'))).toEqual([
+    'Reset Indent width to default',
+    'Reset Label to default',
+  ])
+  await act(async () => resets[1]!.click())
+  expect(studio.saved).toEqual([{ moduleId: 'local.tally', key: 'label', value: null }])
+  // At its default, a setting offers no reset.
+  studio.values = { indent: 2, label: 'Main' }
+  await act(async () => studio.heard!('local.tally'))
+  await flush()
+  expect([...host!.querySelectorAll('button')].some((button) => button.textContent === 'Reset to default')).toBe(false)
 })

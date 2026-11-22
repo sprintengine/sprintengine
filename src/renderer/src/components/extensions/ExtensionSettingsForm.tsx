@@ -6,7 +6,7 @@ import type {
 } from '../../../../shared/modules/third-party-manifest'
 import { extensionsApi } from '../../studio/extensions'
 import { showToast } from '../../store/toastStore'
-import { EmptyState, Input, Select, SettingCard, SettingRow, Switch, Textarea } from '../ui'
+import { EmptyState, GhostButton, Input, Select, SettingCard, SettingRow, Switch, Textarea } from '../ui'
 
 // The settings an extension declares in extension.json, drawn by Studio as
 // its own rows: no extension code runs for them. Each value lives on the
@@ -104,9 +104,19 @@ function SettingField({
 }): ReactElement {
   const labelId = useId()
   const helpId = setting.description ? `${labelId}-help` : undefined
+  // Back to its default: what an emptied field never means, since an empty
+  // string is a value a setting may hold.
+  const resettable = !readOnly && value !== undefined && value !== setting.default
   const row = (control: ReactElement, stacked = false) => (
     <SettingRow label={setting.title} help={setting.description} labelId={labelId} helpId={helpId} stacked={stacked}>
-      {control}
+      <div className="flex items-center gap-2">
+        {control}
+        {resettable ? (
+          <GhostButton size="sm" aria-label={`Reset ${setting.title} to default`} onClick={() => void onSave(null)}>
+            Reset to default
+          </GhostButton>
+        ) : null}
+      </div>
     </SettingRow>
   )
   if (setting.type === 'boolean')
@@ -144,9 +154,10 @@ function SettingField({
 }
 
 /**
- * Text or a number, saved when the field is left or Enter is pressed.
- * Emptied, a number goes back to its default, and so does text that has one.
- * A value the Studio refuses puts the field back to what is kept.
+ * Text or a number, saved when the field is left or Enter is pressed. Text is
+ * saved as typed, empty included; an emptied number goes back to its default,
+ * as "Reset to default" does for any setting. A value the Studio refuses puts
+ * the field back to what is kept.
  */
 function TextField({
   setting,
@@ -213,9 +224,9 @@ function TextField({
   )
 }
 
-/** What a text field's draft saves as: emptied, back to the default where there is one (`null`). */
+/** What a field's draft saves as: text as it is typed, an empty one included; an emptied number, its default (`null`). */
 export function draftValue(setting: ExtensionSettingContribution, draft: string): ExtensionSettingValue | null {
   const numeric = setting.type === 'number' || setting.type === 'integer'
-  if (draft.trim() === '' && (numeric || setting.default !== undefined)) return null
-  return numeric ? Number(draft) : draft
+  if (!numeric) return draft
+  return draft.trim() === '' ? null : Number(draft)
 }
