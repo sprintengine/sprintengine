@@ -44,7 +44,7 @@ seconds, each at most 64 KiB.
 | --- | --- |
 | `surface` | `{ point, id, workspaceId? }`: which contribution this is (`panels`, `doors`, `settingsSections` or `customEditors`, and its id in extension.json), and for a panel or a custom editor, the workspace it was opened in. |
 | `document` | A custom editor's file (below); absent in every other surface. |
-| `host.call(method, params, { signal }?)` | Ask Studio to do one thing (the table below). Resolves with the method's result; rejects with an `Error` whose `code` says why (`not_permitted`, `approval_required`, `unknown_method`, `invalid_params`, `rate_limited`, `too_large`, `unavailable`, `timeout`, `cancelled`, `action_failed`, `conflict`) and `retryable`. |
+| `host.call(method, params, { signal }?)` | Ask Studio to do one thing (the table below). Resolves with the method's result; rejects with an `Error` whose `code` says why (`not_permitted`, `approval_required`, `unknown_method`, `invalid_params`, `rate_limited`, `too_large`, `unavailable`, `timeout`, `cancelled`, `action_failed`, `conflict`, `missing`) and `retryable`. |
 | `host.has(method)` | Whether this Studio offers a method. |
 | `methods<Contract>()` | The worker's declared methods (`registerMethods`): `.read(name, params)`, `.operate(name, params)`. Never throws: a refusal, the worker's or Studio's, is an answer. |
 | `on('push', fn)` | The worker's events (`MainHost.emit`): `{ topic, payload? }`. Nothing is replayed: read the state again when an event says so. |
@@ -120,15 +120,25 @@ export const mount: ExtensionMount = async (root, studio) => {
 | --- | --- |
 | `get()` | The document once Studio handed it over: `{ version, readOnly, content }`, `content` being `{ kind: 'text', text }` or, with `contentKind: "bytes"`, `{ kind: 'bytes', bytes }` (an `ArrayBuffer`). |
 | `onDidChange(fn)` | Each document Studio hands over, the current one first. A new one comes when the file changed outside the editor: on disk while there are no unsaved edits, in the text editor, or reloaded. |
-| `applyEdit({ baseVersion, content })` | Replace the whole content. `baseVersion` is the version the edit was made against; an accepted edit keeps it. Rejects with `conflict` (and `document`, the current one) when the document changed since, `not_permitted` when it is read only, `too_large` past 4 MiB. |
+| `applyEdit({ baseVersion, content })` | Replace the whole content. `baseVersion` is the version the edit was made against; an accepted edit keeps it. Rejects with `conflict` (and `document`, the current one) when the document changed since, `not_permitted` when it is read only, `too_large` past 1 MiB of text or 768 KiB of bytes. |
 | `onWillSave(fn)` | Studio is about to save: hand over anything held back. Studio waits up to a second for the returned promise. |
 | `session(options?)` | The sync in one call. `value` is the editor's value; `change(value)` sends it as an edit after `debounceMs` (250 by default), one at a time, and before a save; `flush()` sends it now; `onReplace(fn)` hears the value replaced from outside; `decode` and `encode` turn content into the editor's value and back (text by default); `merge(base, outside, mine)`, when given, resolves an edit refused because the document changed first, and is sent instead. Without `merge` the outside version wins and the refused edit is dropped, so nothing is written over unseen. |
 
 A document is `readOnly` when the extension holds no `workspace-files:write`,
-and Studio saves nothing then. When the file changes on disk while the editor
-has unsaved edits, Studio does not hand the change over: the tab says the file
-changed and offers to load it from disk or save the edits over it. A save that
-finds the file changed since it was read is refused the same way.
+or the person, device or browser that opened it may not write files, and
+Studio saves nothing then. A file larger than 1 MiB of text, or 768 KiB of
+bytes, does not open in a custom editor: a save travels to the Studio as one
+request, and bytes travel in base64. When the file changes on disk while the
+editor has unsaved edits, Studio does not hand the change over: the tab says
+the file changed and offers to load it from disk or save the edits over it. A
+save that finds the file changed since it was read is refused the same way. A
+file deleted under unsaved edits is written back by Save. Before a save, and
+before the person leaves the editor (Open with…, closing the tab), Studio asks
+the editor for the edits it holds back (`onWillSave`, `session()` does this),
+and saves nothing, or stays, when it does not answer within a second. A
+binary document's unsaved edits stay with the tab when another editor of the
+file is opened; leaving them for the text editor, or closing the tab, asks
+whether to save them.
 `createFakeFrameStudio({ document: { text } })` (`/testing`) gives a test the
 same `studio.document` against a fake Studio: `frame.document.replace(text)`
 for a change made outside, `.save()`, `.edits` and `.refused`.

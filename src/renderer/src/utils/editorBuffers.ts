@@ -9,6 +9,32 @@ const listeners = new Map<string, Set<EditorBufferListener>>()
 // agent's edit from the editor's own save (utils/editorDiskSync.ts). Kept
 // beside the buffers so it follows them through a rename, a move and a close.
 const diskBaselines = new Map<string, string>()
+// A binary file's bytes, for an extension's editor that edits bytes
+// (`contentKind: "bytes"`), and what was last read from or written to disk:
+// the text buffers' counterparts, kept here so they outlive the editor's frame
+// and follow the file through a rename, a move and a close as the text does.
+const byteBuffers = new Map<string, Uint8Array>()
+const byteBaselines = new Map<string, Uint8Array>()
+const stores: Array<Map<string, unknown>> = [buffers, diskBaselines, byteBuffers, byteBaselines]
+
+function keysOf(workspaceId: string, matches: (path: string) => boolean): string[] {
+  const keys = new Set<string>()
+  for (const store of stores)
+    for (const key of store.keys()) {
+      const [owner, path] = key.split('\u0000')
+      if (owner === workspaceId && path && matches(path)) keys.add(key)
+    }
+  return [...keys]
+}
+
+function moveKey(fromKey: string, toKey: string): void {
+  for (const store of stores) {
+    if (!store.has(fromKey)) continue
+    const value = store.get(fromKey)
+    store.delete(fromKey)
+    store.set(toKey, value)
+  }
+}
 
 function bufferKey(workspaceId: string, path: string): string {
   return `${workspaceId}\u0000${path}`
@@ -41,34 +67,20 @@ export function setEditorDiskBaseline(workspaceId: string, path: string, content
   diskBaselines.set(bufferKey(workspaceId, path), content)
 }
 
-function moveDiskBaseline(fromKey: string, toKey: string): void {
-  const baseline = diskBaselines.get(fromKey)
-  diskBaselines.delete(fromKey)
-  if (baseline !== undefined) diskBaselines.set(toKey, baseline)
-}
-
 export function deleteEditorBuffer(workspaceId: string, path: string): void {
   const key = bufferKey(workspaceId, path)
-  diskBaselines.delete(key)
-  if (!buffers.delete(key)) return
-  emit(workspaceId, path)
+  const had = buffers.has(key) || byteBuffers.has(key)
+  for (const store of stores) store.delete(key)
+  if (had) emit(workspaceId, path)
 }
 
 export function remapEditorBuffers(workspaceId: string, fromPath: string, toPath: string): void {
   const separator = fromPath.includes('\\') && !fromPath.includes('/') ? '\\' : '/'
   const fromPrefix = `${fromPath}${separator}`
-
-  for (const [key, content] of [...buffers.entries()]) {
-    const [bufferWorkspaceId, path] = key.split('\u0000')
-    if (bufferWorkspaceId !== workspaceId || !path || (path !== fromPath && !path.startsWith(fromPrefix))) {
-      continue
-    }
-
-    const suffix = path === fromPath ? '' : path.slice(fromPath.length)
-    const nextPath = `${toPath}${suffix}`
-    buffers.delete(key)
-    buffers.set(bufferKey(workspaceId, nextPath), content)
-    moveDiskBaseline(key, bufferKey(workspaceId, nextPath))
+  for (const key of keysOf(workspaceId, (path) => path === fromPath || path.startsWith(fromPrefix))) {
+    const path = key.split('\u0000')[1]!
+    const nextPath = `${toPath}${path === fromPath ? '' : path.slice(fromPath.length)}`
+    moveKey(key, bufferKey(workspaceId, nextPath))
     emit(workspaceId, path)
     emit(workspaceId, nextPath)
   }
@@ -77,23 +89,35 @@ export function remapEditorBuffers(workspaceId: string, fromPath: string, toPath
 export function moveEditorBuffer(sourceWorkspaceId: string, destWorkspaceId: string, path: string): void {
   if (sourceWorkspaceId === destWorkspaceId) return
   const sourceKey = bufferKey(sourceWorkspaceId, path)
-  if (!buffers.has(sourceKey)) return
-  const content = buffers.get(sourceKey) ?? ''
-  buffers.delete(sourceKey)
-  buffers.set(bufferKey(destWorkspaceId, path), content)
-  moveDiskBaseline(sourceKey, bufferKey(destWorkspaceId, path))
+  if (!buffers.has(sourceKey) && !byteBuffers.has(sourceKey)) return
+  moveKey(sourceKey, bufferKey(destWorkspaceId, path))
   emit(sourceWorkspaceId, path)
   emit(destWorkspaceId, path)
 }
 
 export function removeEditorBuffersForPath(workspaceId: string, path: string): void {
-  for (const key of [...buffers.keys()]) {
-    const [bufferWorkspaceId, bufferPath] = key.split('\u0000')
-    if (bufferWorkspaceId !== workspaceId || !bufferPath || !isPathOrChild(bufferPath, path)) continue
-    buffers.delete(key)
-    diskBaselines.delete(key)
-    emit(workspaceId, bufferPath)
+  for (const key of keysOf(workspaceId, (bufferPath) => isPathOrChild(bufferPath, path))) {
+    for (const store of stores) store.delete(key)
+    emit(workspaceId, key.split('\u0000')[1]!)
   }
+}
+
+/** A binary file's bytes as an extension's editor left them, or undefined. */
+export function getEditorBytes(workspaceId: string, path: string): Uint8Array | undefined {
+  return byteBuffers.get(bufferKey(workspaceId, path))
+}
+
+export function setEditorBytes(workspaceId: string, path: string, bytes: Uint8Array): void {
+  byteBuffers.set(bufferKey(workspaceId, path), bytes)
+  emit(workspaceId, path)
+}
+
+export function getEditorBytesBaseline(workspaceId: string, path: string): Uint8Array | undefined {
+  return byteBaselines.get(bufferKey(workspaceId, path))
+}
+
+export function setEditorBytesBaseline(workspaceId: string, path: string, bytes: Uint8Array): void {
+  byteBaselines.set(bufferKey(workspaceId, path), bytes)
 }
 
 export function subscribeEditorBuffer(workspaceId: string, path: string, listener: EditorBufferListener): () => void {

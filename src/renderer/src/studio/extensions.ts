@@ -97,6 +97,8 @@ export type ExtensionsApi = {
   drawsExtensionFrames(): Promise<boolean>
   /** Whether the window's Studio opens files in its extensions' custom editors (`extension-editors`). */
   opensExtensionEditors(): Promise<boolean>
+  /** Whether this window's connection may write files on its Studio (`filesystem:write`). */
+  canWriteFiles(): Promise<boolean>
   /** The document one surface's frame is drawn from. */
   extensionFrame(request: StudioExtensionFrameRequest): Promise<ExtensionFrameDocument>
   /** One host call a frame made, as this window's connection; never throws. */
@@ -218,6 +220,7 @@ export const extensionsApi: ExtensionsApi = {
   },
   drawsExtensionFrames: async () => (await windowStudioClient()).supports(STUDIO_EXTENSION_FRAMES_CAPABILITY),
   opensExtensionEditors: async () => (await windowStudioClient()).supports(STUDIO_EXTENSION_EDITORS_CAPABILITY),
+  canWriteFiles: async () => studioGrantAllows((await windowStudioClient()).grant, 'files.writeText'),
   extensionFrame: (request) => call(STUDIO_EXTENSION_FRAMES_CAPABILITY, 'extension.frame', request),
   extensionCall: (request) =>
     answered(

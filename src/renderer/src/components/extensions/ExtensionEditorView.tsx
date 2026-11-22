@@ -1,42 +1,40 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react'
 
-import { EXTENSION_EDITOR_FLUSH_TIMEOUT_MS } from '../../../../../packages/extension-sdk/src/custom-editors'
 import { copy } from '../../../../shared/copy'
-import type { MatchedExtensionEditor } from '../../modules/extension-editors'
-import {
-  base64ToBytes,
-  bytesToBase64,
-  createEditorSession,
-  createLocalDocumentModel,
-  type EditorDocumentModel,
-  type EditorRead,
-  type EditorSession,
-  type EditorSessionState,
-  type EditorWrite,
-} from '../../modules/extension-editor-session'
+import { registerEditorLeaveGuard, type MatchedExtensionEditor } from '../../modules/extension-editors'
+import { createExtensionEditorController } from '../../modules/extension-editor-controller'
+import type { EditorDocumentModel, EditorSessionState } from '../../modules/extension-editor-session'
+import { extensionsApi } from '../../studio/extensions'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import {
   getEditorBuffer,
+  getEditorBytes,
+  getEditorBytesBaseline,
   getEditorDiskBaseline,
   hasEditorBuffer,
   setEditorBuffer,
+  setEditorBytes,
+  setEditorBytesBaseline,
   setEditorDiskBaseline,
   subscribeEditorBuffer,
 } from '../../utils/editorBuffers'
 import { watchFileOnDisk } from '../../utils/fileDiskWatch'
-import { GhostButton, InlineNotice, OutlineButton, Spinner } from '../ui'
-import { ExtensionSurfaceMount, type ExtensionEditorLink, type ExtensionEditorPort } from './ExtensionSurfaceMount'
+import { GhostButton, InlineNotice, OutlineButton, Spinner, useConfirmDialog } from '../ui'
+import { ExtensionSurfaceMount, type ExtensionEditorLink } from './ExtensionSurfaceMount'
 
 // A file open in an extension's custom editor: the editor's frame, and above
 // it what Studio keeps for it, as the text editor does: whether it is saved,
 // Save, and what the file on disk did under unsaved edits.
 //
-// The document session (extension-editor-session.ts) reads and saves the file
-// through this window's Studio as the extension's frame (`files.read`,
-// `files.write`), so the extension's approval and this window's connection
-// are both checked, on every client alike. A text file's content is the
-// window's editor buffer, shared with the text editor, so reopening the file
-// there keeps unsaved edits; a binary file's bytes are the session's own.
+// The document session lives in a controller this view holds
+// (extension-editor-controller.ts), not in the frame, so a frame drawn again
+// finds the document as it was and a file that could not be opened stays an
+// error. It reads and saves the file through this window's Studio as the
+// extension's frame (`files.read`, `files.write`), so the extension's
+// approval and this window's connection are both checked, on every client
+// alike. A text file's content is the window's editor buffer, shared with the
+// text editor; a binary file's is the window's byte buffer beside it. Both
+// outlive the frame, and the tab shows their unsaved dot.
 
 const t = copy.extensions.extensionEditorView
 
@@ -60,33 +58,78 @@ function openFileOf(workspaceId: string, path: string) {
     ?.editorState?.openFiles.find((file) => file.path === path)
 }
 
+const dirtyOf = (workspaceId: string, path: string) => openFileOf(workspaceId, path)?.isDirty ?? false
+
 /** A text file's document: the buffer, unsaved flag and disk baseline the text editor uses for it. */
 function sharedTextModel(workspaceId: string, path: string): EditorDocumentModel {
+  const text = (content: string | Uint8Array) =>
+    typeof content === 'string' ? content : new TextDecoder().decode(content)
   return {
     get: () => (hasEditorBuffer(workspaceId, path) ? getEditorBuffer(workspaceId, path) : undefined),
     set(content, origin) {
-      const text = typeof content === 'string' ? content : new TextDecoder().decode(content)
-      if (origin === 'frame') useWorkspaceStore.getState().updateFileContent(workspaceId, path, text)
-      else setEditorBuffer(workspaceId, path, text)
+      if (origin === 'frame') useWorkspaceStore.getState().updateFileContent(workspaceId, path, text(content))
+      else setEditorBuffer(workspaceId, path, text(content))
     },
-    dirty: () => openFileOf(workspaceId, path)?.isDirty ?? false,
+    dirty: () => dirtyOf(workspaceId, path),
     markClean: () => useWorkspaceStore.getState().markFileClean(workspaceId, path),
     baseline: () => getEditorDiskBaseline(workspaceId, path),
-    setBaseline: (content) =>
-      setEditorDiskBaseline(
-        workspaceId,
-        path,
-        typeof content === 'string' ? content : new TextDecoder().decode(content),
-      ),
+    setBaseline: (content) => setEditorDiskBaseline(workspaceId, path, text(content)),
     subscribe: (listener) => subscribeEditorBuffer(workspaceId, path, listener),
   }
 }
 
-// A missing file is an `action_failed` whose words say so: the containment
-// answers no code of its own for it.
-const MISSING = /does not exist\.$/u
+/** A binary file's document: the window's byte buffer for it, which outlives the frame, and the tab's unsaved flag. */
+function sharedBytesModel(workspaceId: string, path: string): EditorDocumentModel {
+  const bytes = (content: string | Uint8Array) =>
+    typeof content === 'string' ? new TextEncoder().encode(content) : content
+  return {
+    get: () => getEditorBytes(workspaceId, path),
+    set(content, origin) {
+      setEditorBytes(workspaceId, path, bytes(content))
+      if (origin === 'frame') useWorkspaceStore.getState().markFileDirty(workspaceId, path)
+    },
+    dirty: () => dirtyOf(workspaceId, path),
+    markClean: () => useWorkspaceStore.getState().markFileClean(workspaceId, path),
+    baseline: () => getEditorBytesBaseline(workspaceId, path),
+    setBaseline: (content) => setEditorBytesBaseline(workspaceId, path, bytes(content)),
+    subscribe: (listener) => subscribeEditorBuffer(workspaceId, path, listener),
+  }
+}
 
-export function ExtensionEditorView({
+// Whether this window's connection may write files on its Studio: a paired
+// device may not, and then a custom editor opens read only.
+let canWriteFiles: Promise<boolean> | null = null
+function useCanWriteFiles(): boolean | null {
+  const [known, setKnown] = useState<boolean | null>(null)
+  useEffect(() => {
+    let live = true
+    canWriteFiles ??= extensionsApi.canWriteFiles().catch(() => false)
+    void canWriteFiles.then((value) => {
+      if (live) setKnown(value)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+  return known
+}
+
+export function ExtensionEditorView(props: Props): ReactElement {
+  const canWrite = useCanWriteFiles()
+  if (canWrite === null) return <Loading />
+  return <ExtensionEditorBody {...props} canWrite={canWrite} />
+}
+
+function Loading(): ReactElement {
+  return (
+    <div className="flex h-full items-center justify-center gap-2 text-meta text-[color:var(--text-muted)]">
+      <Spinner />
+      <span role="status">{t.loading}</span>
+    </div>
+  )
+}
+
+function ExtensionEditorBody({
   workspaceId,
   filePath,
   relativePath,
@@ -94,101 +137,70 @@ export function ExtensionEditorView({
   editor,
   picker,
   onOpenInTextEditor,
-}: Props): ReactElement {
+  canWrite,
+}: Props & { canWrite: boolean }): ReactElement {
   const contentKind = editor.contribution.contentKind ?? 'text'
-  const readOnly = !(editor.extension?.permissions ?? []).includes('workspace-files:write')
-  const [session, setSession] = useState<EditorSession | null>(null)
+  const readOnly = !canWrite || !(editor.extension?.permissions ?? []).includes('workspace-files:write')
+  const { choose } = useConfirmDialog()
 
-  const link = useMemo<ExtensionEditorLink>(() => {
-    let current: EditorSession | null = null
-    let nextFlush = 1
-    const flushes = new Map<number, (ok: boolean) => void>()
-    const read = async (port: ExtensionEditorPort): Promise<EditorRead> => {
-      const answer = await port.call('files.read', {
+  const controller = useMemo(
+    () =>
+      createExtensionEditorController({
         workspaceId,
-        path: relativePath,
-        encoding: contentKind === 'bytes' ? 'base64' : 'utf8',
-      })
-      if (!answer.ok)
-        return { ok: false, code: MISSING.test(answer.message) ? 'missing' : answer.code, message: answer.message }
-      const result = answer.result as { content: string; sha256: string }
-      return {
-        ok: true,
-        content: contentKind === 'bytes' ? base64ToBytes(result.content) : result.content,
-        sha256: result.sha256,
-      }
-    }
-    const write = async (port: ExtensionEditorPort, content: string | Uint8Array, expected?: string) => {
-      const answer = await port.call('files.write', {
-        workspaceId,
-        path: relativePath,
-        ...(typeof content === 'string'
-          ? { content }
-          : { content: bytesToBase64(content), encoding: 'base64' as const }),
-        ...(expected ? { expectedSha256: expected } : {}),
-      })
-      return (answer.ok ? { ok: true, sha256: (answer.result as { sha256: string }).sha256 } : answer) as EditorWrite
-    }
-    const close = () => {
-      current?.dispose()
-      current = null
-      for (const settle of flushes.values()) settle(false)
-      flushes.clear()
-      setSession(null)
-    }
-    return {
-      document: {
-        applyEdit: (params) =>
-          current?.applyEdit(params) ?? { ok: false, code: 'unavailable', message: 'The document is not open.' },
-        flushed: (id, ok) => flushes.get(id)?.(ok),
-        save: () => void current?.save(),
-      },
-      open(port) {
-        close()
-        const next = createEditorSession({
-          contentKind,
-          readOnly,
-          model: contentKind === 'text' ? sharedTextModel(workspaceId, filePath) : createLocalDocumentModel(),
-          read: () => read(port),
-          write: (content, expected) => write(port, content, expected),
-          post: (document) => port.sendDocument(document),
-          flushFrame: () =>
-            new Promise<boolean>((resolve) => {
-              const id = nextFlush++
-              const timer = setTimeout(() => settle(false), EXTENSION_EDITOR_FLUSH_TIMEOUT_MS)
-              const settle = (ok: boolean) => {
-                clearTimeout(timer)
-                flushes.delete(id)
-                resolve(ok)
-              }
-              flushes.set(id, settle)
-              port.requestFlush(id)
-            }),
-        })
-        current = next
-        setSession(next)
-        void next.start()
-      },
-      frameReady: () => current?.attachFrame(),
-      close,
-    }
-  }, [contentKind, filePath, readOnly, relativePath, workspaceId])
-
+        relativePath,
+        contentKind,
+        readOnly,
+        model:
+          contentKind === 'text' ? sharedTextModel(workspaceId, filePath) : sharedBytesModel(workspaceId, filePath),
+        discard: () => {
+          const baseline = getEditorBytesBaseline(workspaceId, filePath)
+          if (baseline) setEditorBytes(workspaceId, filePath, baseline)
+          useWorkspaceStore.getState().markFileClean(workspaceId, filePath)
+        },
+        askUnsaved: async () => {
+          const choice = await choose({
+            title: t.unsavedTitle(fileName),
+            body: t.unsavedBody,
+            confirmLabel: t.save,
+            alternateLabel: t.discard,
+            cancelLabel: t.stay,
+          })
+          return choice === 'confirm' ? 'save' : choice === 'alternate' ? 'discard' : 'stay'
+        },
+      }),
+    // The confirm dialog is read when it asks, not a reason for a new document.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [contentKind, filePath, readOnly, relativePath, workspaceId],
+  )
+  useEffect(() => () => controller.dispose(), [controller])
+  useEffect(
+    () => registerEditorLeaveGuard(workspaceId, filePath, (where) => controller.prepareToLeave(where)),
+    [controller, filePath, workspaceId],
+  )
   // The file under the editor, kept in step with disk while it is open.
-  useEffect(() => {
-    if (!session) return
-    return watchFileOnDisk(filePath, () => void session.diskChanged())
-  }, [filePath, session])
+  useEffect(() => watchFileOnDisk(filePath, () => void controller.session.diskChanged()), [controller, filePath])
 
+  const link = useMemo<ExtensionEditorLink>(
+    () => ({
+      document: controller.document,
+      open: (port) => controller.openFrame(port),
+      frameReady: () => controller.frameReady(),
+      close: () => controller.closeFrame(),
+      beforeRedraw: () => controller.prepareToLeave('redraw'),
+    }),
+    [controller],
+  )
+
+  const session = controller.session
   const state = useSyncExternalStore(
-    (listener) => session?.subscribe(listener) ?? (() => undefined),
-    () => session?.state() ?? null,
-    () => null,
+    (listener) => session.subscribe(listener),
+    () => session.state(),
+    () => session.state(),
   )
   const title = editor.contribution.title
   const extensionName = editor.extension?.name ?? editor.key
 
-  if (state?.status === 'refused' || state?.status === 'failed') {
+  if (state.status === 'refused' || state.status === 'failed') {
     return (
       <div className="flex h-full items-center justify-center bg-[color:var(--bg-app)] px-4">
         <InlineNotice
@@ -208,18 +220,18 @@ export function ExtensionEditorView({
 
   return (
     <div className="flex h-full flex-col bg-[color:var(--bg-app)]">
-      <EditorBar state={state} label={t.by(title, extensionName)} onSave={() => void session?.save()} picker={picker} />
-      {state?.conflict ? (
+      <EditorBar state={state} label={t.by(title, extensionName)} onSave={() => void session.save()} picker={picker} />
+      {state.conflict ? (
         <div className="shrink-0 px-3 pb-1">
           <InlineNotice
             tone="warn"
             action={
               <>
-                <GhostButton size="xs" onClick={() => void session?.reload()}>
+                <GhostButton size="xs" onClick={() => void session.reload()}>
                   {t.reload}
                 </GhostButton>
-                {state.conflict.kind === 'changed' && !state.readOnly ? (
-                  <GhostButton size="xs" onClick={() => void session?.saveOverConflict()}>
+                {!state.readOnly ? (
+                  <GhostButton size="xs" onClick={() => void session.saveOverConflict()}>
                     {t.keepMine}
                   </GhostButton>
                 ) : null}
@@ -230,16 +242,15 @@ export function ExtensionEditorView({
           </InlineNotice>
         </div>
       ) : null}
-      {state?.saveError ? (
+      {state.saveError ? (
         <div className="shrink-0 px-3 pb-1">
           <InlineNotice tone="error" title={t.couldNotSave} hint={state.saveError} />
         </div>
       ) : null}
       <div className="relative min-h-0 flex-1">
-        {state === null || state.status === 'loading' ? (
-          <div className="absolute inset-0 flex items-center justify-center gap-2 text-meta text-[color:var(--text-muted)]">
-            <Spinner />
-            <span role="status">{t.loading}</span>
+        {state.status === 'loading' ? (
+          <div className="absolute inset-0">
+            <Loading />
           </div>
         ) : null}
         <ExtensionSurfaceMount
@@ -261,27 +272,25 @@ function EditorBar({
   onSave,
   picker,
 }: {
-  state: EditorSessionState | null
+  state: EditorSessionState
   label: string
   onSave: () => void
   picker: ReactNode
 }): ReactElement {
-  const word = !state
-    ? ''
-    : state.readOnly
-      ? t.readOnly
-      : state.saving
-        ? t.saving
-        : state.dirty
-          ? t.unsaved
-          : state.status === 'ready'
-            ? t.saved
-            : ''
+  const word = state.readOnly
+    ? t.readOnly
+    : state.saving
+      ? t.saving
+      : state.dirty
+        ? t.unsaved
+        : state.status === 'ready'
+          ? t.saved
+          : ''
   return (
     <div className="flex h-control-md shrink-0 items-center gap-2 px-3 text-meta text-[color:var(--text-muted)]">
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <span role="status">{word}</span>
-      {state && !state.readOnly ? (
+      {!state.readOnly ? (
         <GhostButton size="xs" disabled={!state.dirty || state.saving} onClick={onSave}>
           {t.save}
         </GhostButton>

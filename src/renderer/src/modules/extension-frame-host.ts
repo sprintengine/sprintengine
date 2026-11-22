@@ -18,7 +18,7 @@
 
 import { extensionFrameMethod } from '../../../../packages/extension-sdk/src/services'
 import type { StudioExtensionCallAnswer } from '../../../../packages/studio-protocol/src/public'
-import { EXTENSION_EDITOR_DOCUMENT_MAX_BYTES } from '../../../../packages/extension-sdk/src/custom-editors'
+import { EXTENSION_EDITOR_TEXT_MAX_BYTES } from '../../../../packages/extension-sdk/src/custom-editors'
 import {
   EXTENSION_EDITOR_APPLY_EDIT,
   EXTENSION_FRAME_EVENTS,
@@ -89,7 +89,7 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
   const budget = createExtensionFrameBudget()
   // A custom editor's edits are whole documents: up to the document's size,
   // on a budget of their own so typing never starves the frame's calls.
-  const editBudget = createExtensionFrameBudget({ maxBytes: EXTENSION_EDITOR_DOCUMENT_MAX_BYTES + 4096 })
+  const editBudget = createExtensionFrameBudget({ maxBytes: EXTENSION_EDITOR_TEXT_MAX_BYTES + 4096 })
   const now = options.now ?? Date.now
   // The calls waiting for the Studio, and those of them the frame gave up on:
   // a cancel counts only for a call still waiting, and both forget an id once
@@ -159,7 +159,7 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
       const id = Number.isSafeInteger(message.id) ? (message.id as number) : null
       const edit = message.kind === 'req' && message.method === EXTENSION_EDITOR_APPLY_EDIT
       const refused = edit
-        ? editBudget.admit(now(), extensionFrameMessageBytes(message, EXTENSION_EDITOR_DOCUMENT_MAX_BYTES + 4096))
+        ? editBudget.admit(now(), extensionFrameMessageBytes(message, EXTENSION_EDITOR_TEXT_MAX_BYTES + 4096))
         : budget.admit(now(), extensionFrameMessageBytes(message))
       if (refused) {
         if (message.kind === 'req' && id !== null)
@@ -168,7 +168,7 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
             message:
               refused === 'too_large'
                 ? edit
-                  ? 'A document is at most 4 MiB.'
+                  ? 'A document is at most 1 MiB of text or 768 KiB of bytes.'
                   : 'A message from a frame is at most 64 KiB.'
                 : 'This frame sent too many messages; try again shortly.',
           })

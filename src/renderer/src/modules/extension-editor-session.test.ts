@@ -4,9 +4,16 @@ import { createHash } from 'node:crypto'
 import { test } from 'vitest'
 
 import {
+  EXTENSION_EDITOR_BYTES_MAX_BYTES,
+  EXTENSION_EDITOR_TEXT_MAX_BYTES,
+} from '../../../../packages/extension-sdk/src/custom-editors'
+import { STUDIO_MAX_CLIENT_FRAME_BYTES } from '../../../../packages/studio-protocol/src/public'
+import {
+  FLUSH_FAILED,
   base64ToBytes,
   bytesToBase64,
   createEditorSession,
+  editorContentTooLarge,
   createLocalDocumentModel,
   type EditorContent,
   type EditorFrameDocument,
@@ -210,4 +217,106 @@ test('two views of one file share its document: the text editor’s edits reach 
   assert.equal(text(posted[1]), 'typed more\n')
   const stale = session.applyEdit({ baseVersion: 1, content: { kind: 'text', text: 'frame\n' } })
   assert.equal(stale.ok ? 'applied' : stale.code, 'conflict')
+})
+
+test('a save whose frame did not hand over its edits saves nothing, says so and stays unsaved', async () => {
+  const disk = fakeDisk('a\n')
+  const { session, model } = open(disk, { flushFrame: async () => false })
+  await session.start()
+  session.attachFrame()
+  session.applyEdit({ baseVersion: 1, content: { kind: 'text', text: 'b\n' } })
+  assert.equal(await session.save(), false)
+  assert.deepEqual(disk.writes, [])
+  assert.equal(model.dirty(), true)
+  assert.equal(session.state().saveError, FLUSH_FAILED)
+
+  // Save mine over it waits for the frame the same way.
+  disk.set('theirs\n')
+  await session.diskChanged()
+  assert.equal(session.state().conflict?.kind, 'changed')
+  assert.equal(await session.saveOverConflict(), false)
+  assert.equal(disk.content, 'theirs\n')
+})
+
+test('a disk read overtaken by a save is read again, so the older version never replaces the newer', async () => {
+  let content = 'a\n'
+  let hold: (() => void) | null = null
+  const disk = {
+    read: async () => {
+      const seen = content
+      // The first watch read is slow: it sees the file before the save lands.
+      if (hold === null && seen === 'a\n' && reads > 0) await new Promise<void>((resolve) => (hold = resolve))
+      reads += 1
+      return { ok: true as const, content: seen, sha256: sha(seen) }
+    },
+    write: async (next: EditorContent) => {
+      content = next as string
+      return { ok: true as const, sha256: sha(next) }
+    },
+  }
+  let reads = 0
+  const { session, model, posted } = open(fakeDisk(null), { read: disk.read, write: disk.write })
+  await session.start()
+  session.attachFrame()
+  const stale = session.diskChanged()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  session.applyEdit({ baseVersion: 1, content: { kind: 'text', text: 'b\n' } })
+  assert.equal(await session.save(), true)
+  hold!()
+  await stale
+  assert.equal(model.get(), 'b\n', 'the editor keeps what it saved')
+  assert.equal(posted.length, 1, 'the frame is handed nothing older than what it holds')
+})
+
+test('a file deleted under unsaved edits is written back by Save', async () => {
+  const disk = fakeDisk('a\n')
+  const { session, model } = open(disk)
+  await session.start()
+  session.attachFrame()
+  session.applyEdit({ baseVersion: 1, content: { kind: 'text', text: 'mine\n' } })
+  disk.set(null)
+  await session.diskChanged()
+  assert.deepEqual(session.state().conflict, { kind: 'deleted' })
+  assert.equal(await session.save(), true)
+  assert.equal(disk.content, 'mine\n')
+  assert.deepEqual(disk.writes.at(-1), { content: 'mine\n' }, 'written back with no bytes to expect')
+  assert.equal(model.dirty(), false)
+  assert.equal(session.state().conflict, null)
+})
+
+test('a document past what one save can carry does not open, and an edit past it is refused, in plain words', async () => {
+  const big = 'x'.repeat(EXTENSION_EDITOR_TEXT_MAX_BYTES + 1)
+  const tooBig = open(fakeDisk(big))
+  await tooBig.session.start()
+  assert.equal(tooBig.session.state().status, 'failed')
+  assert.match(tooBig.session.state().message ?? '', /at most 1 MiB of text/)
+
+  const { session } = open(fakeDisk('a\n'))
+  await session.start()
+  session.attachFrame()
+  const refused = session.applyEdit({ baseVersion: 1, content: { kind: 'text', text: big } })
+  assert.equal(refused.ok ? 'applied' : refused.code, 'too_large')
+
+  // The limits fit one request to the Studio, bytes in base64.
+  const envelope = 16 * 1024
+  assert.ok(EXTENSION_EDITOR_TEXT_MAX_BYTES + envelope <= STUDIO_MAX_CLIENT_FRAME_BYTES)
+  assert.ok(Math.ceil(EXTENSION_EDITOR_BYTES_MAX_BYTES / 3) * 4 + envelope <= STUDIO_MAX_CLIENT_FRAME_BYTES)
+  assert.equal(editorContentTooLarge(new Uint8Array(EXTENSION_EDITOR_BYTES_MAX_BYTES)), null)
+  assert.match(editorContentTooLarge(new Uint8Array(EXTENSION_EDITOR_BYTES_MAX_BYTES + 1)) ?? '', /768 KiB/)
+})
+
+test('a save refused because the file changed, whose new version cannot be read, says why', async () => {
+  let readable = true
+  const disk = fakeDisk('a\n')
+  const { session } = open(disk, {
+    read: async () =>
+      readable ? disk.read() : { ok: false, code: 'action_failed', message: 'list.todo is larger than 4 MiB.' },
+  })
+  await session.start()
+  session.attachFrame()
+  session.applyEdit({ baseVersion: 1, content: { kind: 'text', text: 'mine\n' } })
+  disk.set('theirs\n')
+  readable = false
+  assert.equal(await session.save(), false)
+  assert.equal(session.state().saveError, 'list.todo is larger than 4 MiB.')
 })

@@ -11,6 +11,7 @@ import {
   type ExtensionFrameDocumentChannel,
 } from '../../modules/extension-frame-host'
 import type { StudioExtensionCallAnswer } from '../../../../../packages/studio-protocol/src/public'
+import type { ExtensionEditorPort } from '../../modules/extension-editor-controller'
 import {
   extensionSurfacesVersion,
   getExtensionSurface,
@@ -30,15 +31,7 @@ import { EmptyState } from '../ui/EmptyState'
 // through the bridge (extension-frame-host.ts) to that Studio, which checks
 // each as the extension and as this window's connection.
 
-/** What a custom editor's session reaches once its frame's document is built. */
-export type ExtensionEditorPort = {
-  /** A host call as this frame's (`extension.call`, naming its document): `files.read` and `files.write`. */
-  call(method: string, params: unknown): Promise<StudioExtensionCallAnswer>
-  sendDocument(document: unknown): void
-  requestFlush(id: number): void
-}
-
-/** A custom editor's link to the window's document session (ExtensionEditorView). */
+/** A custom editor's link to the window's document session (extension-editor-controller.ts). */
 export type ExtensionEditorLink = {
   document: ExtensionFrameDocumentChannel
   /** The frame's document is built: the session reads, saves and reaches the frame through `port`. */
@@ -47,6 +40,8 @@ export type ExtensionEditorLink = {
   frameReady(): void
   /** The frame closed, or is about to be drawn again. */
   close(): void
+  /** True when the frame may be drawn again now: it handed over what it held. */
+  beforeRedraw(): Promise<boolean>
 }
 
 type ExtensionSurfaceMountProps = {
@@ -139,8 +134,11 @@ export function ExtensionSurfaceMount({
     const call = async (method: string, params: unknown): Promise<StudioExtensionCallAnswer> => {
       const answer = await extensionsApi.extensionCall({ moduleId: extensionKey, frame: frameHash, method, params })
       if (answer.ok || answer.code !== 'frame_outdated') return answer
-      // Drawn before the extension's access grew: draw it again from the extension as it is now.
-      if (!closed) setGeneration((value) => value + 1)
+      // Drawn before the extension's access grew: draw it again from the
+      // extension as it is now, once a custom editor handed over its edits.
+      if (!closed && (!link || (await link.beforeRedraw()))) {
+        if (!closed) setGeneration((value) => value + 1)
+      }
       return { ok: false, code: 'unavailable', message: answer.message }
     }
     const link = editorRef.current

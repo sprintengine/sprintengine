@@ -5,6 +5,7 @@ import {
   TEXT_EDITOR_VIEW,
   chooseEditorView,
   extensionEditorViewId,
+  leaveExtensionEditor,
   type MatchedExtensionEditor,
 } from '../../modules/extension-editors'
 import { ContextMenu, GhostButton, MenuItem } from '../ui'
@@ -12,6 +13,7 @@ import { ContextMenu, GhostButton, MenuItem } from '../ui'
 // Open with…: the editors a file can be shown in, Studio's text editor first,
 // then each extension editor that takes files of its type. Shown on every file
 // some extension editor matches, so a file is never stuck in one of them.
+// Leaving an extension's editor waits for it to hand over its edits.
 
 const t = copy.extensions.editorViewPicker
 
@@ -62,7 +64,17 @@ export function EditorViewPicker({
               hint={option.id === current ? t.current : undefined}
               onClick={() => {
                 setMenu(null)
-                chooseEditorView(workspaceId, path, option.id)
+                if (option.id === current) return
+                // The editor shown now hands over what it holds first, and
+                // asks about edits the next view cannot show; it stays when
+                // either fails, and says why.
+                void leaveExtensionEditor(
+                  workspaceId,
+                  path,
+                  option.id === TEXT_EDITOR_VIEW ? 'text-editor' : 'other-editor',
+                ).then((ok) => {
+                  if (ok) chooseEditorView(workspaceId, path, option.id)
+                })
               }}
             >
               {option.label}

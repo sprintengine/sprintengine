@@ -622,6 +622,11 @@ export const en = {
       save: 'Save',
       by: (editor: unknown, extension: unknown) => `${editor}, from ${extension}`,
       frameTitle: (editor: unknown, file: unknown) => `${editor}: ${file}`,
+      unsavedTitle: (file: unknown) => `Save the changes to ${file}?`,
+      unsavedBody:
+        'These changes are not saved yet, and leaving this editor would lose them. Save them first, or discard them.',
+      discard: 'Discard',
+      stay: 'Cancel',
     },
     // src/renderer/src/components/extensions/EditorViewPicker.tsx
     editorViewPicker: {

@@ -28,6 +28,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import { normalizeAgentRuntime } from '../../store/slices/agentsSlice'
 import { openExternalFileWindow } from '../auxWindows/openFileWindow'
 import { getRendererHost, selectModuleEnabled } from '../../modules'
+import { guardsExtensionEditorClose } from '../../modules/extension-editors'
 import { samePath } from '../../utils/paths'
 import { EXTENSIONS_BROWSE_DEEPLINK, MODULES_SETTINGS_TAB } from '../settings/extensionsRoute'
 import { ModuleNotInstalledSurface, workspaceModuleAbsence } from './ModuleAbsenceSurfaces'
@@ -970,6 +971,13 @@ function WorkspaceLayoutBody({
 
       if (action.type === Actions.DELETE_TAB) {
         const node = modelRef.current?.getNodeById(action.data.node)
+        // A file open in an extension's editor hands over its edits (and asks
+        // about any that would be lost) before its tab goes.
+        if (
+          node instanceof TabNode &&
+          guardsExtensionEditorClose(workspaceId, node, () => closeTabWithCleanupRef.current(node))
+        )
+          return undefined
         const nodeId = node?.getId() ?? String(action.data.node ?? '')
         const preserveRuntime = (action.data as Record<string, unknown>).__sprintenginePreserveRuntime === true
         if (preserveRuntime) {
@@ -1022,13 +1030,16 @@ function WorkspaceLayoutBody({
   )
 
   const closeTabWithCleanup = useCallback(
-    (node: TabNode) => {
+    (node: TabNode, guarded = false) => {
+      if (!guarded && guardsExtensionEditorClose(workspaceId, node, () => closeTabWithCleanup(node, true))) return
       cleanupNode(node)
       const model = modelRef.current
       if (model) deleteTabPreservingRails(model, node.getId())
     },
-    [cleanupNode],
+    [cleanupNode, workspaceId],
   )
+  const closeTabWithCleanupRef = useRef((node: TabNode) => closeTabWithCleanup(node, true))
+  closeTabWithCleanupRef.current = (node: TabNode) => closeTabWithCleanup(node, true)
 
   const handleAuxMouseClick = useCallback<NodeMouseEvent>(
     (node, event) => {

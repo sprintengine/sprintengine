@@ -15,10 +15,20 @@
 // - the file on disk: a change is handed to the frame while the document has
 //   no unsaved edits, and is a conflict to resolve while it has.
 //
+// A save never runs on edits the frame has not handed over: it asks the frame
+// first, and stays unsaved when the frame does not answer. A disk read that
+// began before the latest write or reload is read again, so an older version
+// never replaces a newer one.
+//
 // Pure: the reads, writes, model and frame are handed in, so a test drives it
 // without a window.
 
-import { EXTENSION_EDITOR_DOCUMENT_MAX_BYTES } from '../../../../packages/extension-sdk/src/custom-editors'
+import {
+  EXTENSION_EDITOR_BYTES_MAX_BYTES,
+  EXTENSION_EDITOR_TEXT_MAX_BYTES,
+  extensionEditorLimitWords,
+} from '../../../../packages/extension-sdk/src/custom-editors'
+import { STUDIO_MAX_CLIENT_FRAME_BYTES } from '../../../../packages/studio-protocol/src/public'
 
 /** Text, or the raw bytes of a binary file. */
 export type EditorContent = string | Uint8Array
@@ -77,6 +87,10 @@ export type EditorSessionOptions = {
   flushFrame(): Promise<boolean>
 }
 
+/** What a person is told when a frame kept edits back from a save. */
+export const FLUSH_FAILED =
+  'The editor did not hand over its latest changes in time, so nothing was saved. Your changes are still here.'
+
 export type EditorEditAnswer =
   { ok: true } | { ok: false; code: string; message: string; document?: EditorFrameDocument }
 
@@ -85,6 +99,10 @@ export type EditorSession = {
   start(): Promise<void>
   /** The frame is ready for its first document (or a new frame replaced it). */
   attachFrame(): void
+  /** The frame went away; the document stays, for the next one. */
+  detachFrame(): void
+  /** Say why something the person asked for did not happen. */
+  reportError(message: string): void
   applyEdit(params: unknown): EditorEditAnswer
   /** The file may have changed on disk. */
   diskChanged(): Promise<void>
@@ -112,15 +130,35 @@ function sizeOf(content: EditorContent): number {
   return typeof content === 'string' ? new TextEncoder().encode(content).byteLength : content.byteLength
 }
 
+// A save is one request to the Studio: the content as JSON (bytes in base64),
+// and the request around it. Kept under the most a client may send at once.
+const REQUEST_MAX_BYTES = STUDIO_MAX_CLIENT_FRAME_BYTES - 16 * 1024
+
+/** Why `content` is too large to open or save in a custom editor, or null. */
+export function editorContentTooLarge(content: EditorContent): string | null {
+  const kind = typeof content === 'string' ? 'text' : 'bytes'
+  const limit = kind === 'text' ? EXTENSION_EDITOR_TEXT_MAX_BYTES : EXTENSION_EDITOR_BYTES_MAX_BYTES
+  const fits =
+    sizeOf(content) <= limit &&
+    (typeof content !== 'string' || new TextEncoder().encode(JSON.stringify(content)).byteLength <= REQUEST_MAX_BYTES)
+  return fits
+    ? null
+    : `An extension’s editor opens and saves files of at most ${extensionEditorLimitWords(kind)}, and this is larger. Open it in the text editor instead.`
+}
+
 export function createEditorSession(options: EditorSessionOptions): EditorSession {
   const { model } = options
   let version = 0
   let attached = false
   let disposed = false
+  let started = false
   // The bytes on disk the window last read or wrote, for a save's `expectedSha256`.
   let diskSha: string | undefined
   // What the frame holds, so its own edits are not handed back to it.
   let frameHolds: EditorContent | undefined
+  // Counted at each write and each reload from disk: a read that began
+  // before one of them may hold what the file was, and is read again.
+  let diskGeneration = 0
   let current: EditorSessionState = {
     status: 'loading',
     dirty: false,
@@ -160,6 +198,7 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
   })
 
   const takeDisk = (content: EditorContent, sha256: string) => {
+    diskGeneration += 1
     diskSha = sha256
     model.set(content, 'disk')
     model.setBaseline(content)
@@ -177,6 +216,15 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
       : null
   }
 
+  /** A disk read no write or reload overtook while it was on its way. */
+  async function readSettled(): Promise<EditorRead> {
+    for (let attempt = 0; ; attempt += 1) {
+      const generation = diskGeneration
+      const read = await options.read()
+      if (generation === diskGeneration || attempt >= 3) return read
+    }
+  }
+
   async function write(content: EditorContent, expected: string | undefined): Promise<EditorWrite> {
     const first = await options.write(content, expected)
     if (first.ok || first.code !== 'conflict') return first
@@ -189,10 +237,16 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
   }
 
   async function saveContent(content: EditorContent, expected: string | undefined): Promise<boolean> {
+    const tooLarge = editorContentTooLarge(content)
+    if (tooLarge) {
+      update({ saveError: tooLarge })
+      return false
+    }
     update({ saving: true, saveError: null })
     const written = await write(content, expected)
     if (disposed) return false
     if (written.ok) {
+      diskGeneration += 1
       diskSha = written.sha256
       model.setBaseline(content)
       if (sameContent(model.get(), content)) model.markClean()
@@ -208,12 +262,26 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
     return false
   }
 
+  /** Ask the frame for what it holds back; say so and stop when it does not answer. */
+  async function flushed(): Promise<boolean> {
+    if (await options.flushFrame()) return true
+    if (!disposed) update({ saveError: FLUSH_FAILED })
+    return false
+  }
+
   async function diskChanged(afterRefusedSave = false): Promise<void> {
     if (disposed || current.status !== 'ready') return
-    const read = await options.read()
+    const read = await readSettled()
     if (disposed) return
     if (!read.ok) {
       if (read.code === 'missing') update({ conflict: { kind: 'deleted' } })
+      // A save was refused because the file changed, and what it changed to cannot be read.
+      else if (afterRefusedSave) update({ saveError: read.message })
+      return
+    }
+    const tooLarge = editorContentTooLarge(read.content)
+    if (tooLarge) {
+      update({ saveError: tooLarge })
       return
     }
     const content = model.get()
@@ -235,10 +303,19 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
 
   return {
     async start() {
+      // Once per document: a frame drawn again finds it as it was, a
+      // terminal failure included, and nothing is read twice for it.
+      if (started) return
+      started = true
       const read = await options.read()
       if (disposed) return
       if (!read.ok) {
         update({ status: REFUSALS.has(read.code) ? 'refused' : 'failed', message: read.message })
+        return
+      }
+      const tooLarge = editorContentTooLarge(read.content)
+      if (tooLarge) {
+        update({ status: 'failed', message: tooLarge })
         return
       }
       diskSha = read.sha256
@@ -249,7 +326,8 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
         model.markClean()
         update({ status: 'ready' })
       } else {
-        // Unsaved edits made before this view opened (in the text editor) stay.
+        // Unsaved edits made before this view opened (the text editor's, or
+        // another editor's of the same file) stay.
         update({ status: 'ready' })
         if (!sameContent(read.content, held) && !sameContent(read.content, model.baseline()))
           update({ conflict: { kind: 'changed', content: read.content, sha256: read.sha256 } })
@@ -260,6 +338,13 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
       attached = true
       frameHolds = undefined
       handOver()
+    },
+    detachFrame() {
+      attached = false
+      frameHolds = undefined
+    },
+    reportError(message) {
+      if (!disposed) update({ saveError: message })
     },
     applyEdit(params) {
       const edit = params as { baseVersion?: unknown; content?: unknown } | null
@@ -273,8 +358,8 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
           code: 'invalid_params',
           message: `An edit is { baseVersion, content } with ${options.contentKind} content.`,
         }
-      if (sizeOf(content) > EXTENSION_EDITOR_DOCUMENT_MAX_BYTES)
-        return { ok: false, code: 'too_large', message: 'A document is at most 4 MiB.' }
+      const tooLarge = editorContentTooLarge(content)
+      if (tooLarge) return { ok: false, code: 'too_large', message: tooLarge }
       if (edit.baseVersion !== version)
         return {
           ok: false,
@@ -291,23 +376,33 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
     diskChanged: () => diskChanged(),
     async save() {
       if (options.readOnly || current.status !== 'ready' || current.saving) return false
-      await options.flushFrame()
+      if (!(await flushed())) return false
       const content = model.get()
       if (content === undefined || !model.dirty()) return true
-      // Under a conflict the person chooses first: reload, or save over it.
+      // A file gone from disk is written back, as the text editor does.
+      if (current.conflict?.kind === 'deleted') return saveContent(content, undefined)
+      // Changed on disk: the person chooses first, to reload or to save over it.
       if (current.conflict) return false
       return saveContent(content, diskSha)
     },
     async reload() {
-      const read = await options.read()
+      const read = await readSettled()
       if (disposed) return
-      if (read.ok) takeDisk(read.content, read.sha256)
-      else if (read.code === 'missing') update({ conflict: { kind: 'deleted' } })
+      if (!read.ok) {
+        if (read.code === 'missing') update({ conflict: { kind: 'deleted' } })
+        else update({ saveError: read.message })
+        return
+      }
+      const tooLarge = editorContentTooLarge(read.content)
+      if (tooLarge) update({ saveError: tooLarge })
+      else takeDisk(read.content, read.sha256)
     },
     async saveOverConflict() {
       const conflict = current.conflict
+      if (!conflict || options.readOnly || current.saving) return false
+      if (!(await flushed())) return false
       const content = model.get()
-      if (!conflict || content === undefined || options.readOnly) return false
+      if (content === undefined) return false
       return saveContent(content, conflict.kind === 'changed' ? conflict.sha256 : undefined)
     },
     state: () => current,

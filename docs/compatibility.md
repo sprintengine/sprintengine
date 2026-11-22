@@ -323,9 +323,9 @@ extension (`workspace-files:read`, `:write`) and as that window's connection
 (`filesystem:read`, `:write`). Those two methods carry bytes in base64 and the
 file's sha256, and a write may be conditional on it. A client opens files in
 custom editors only where its Studio offers the new capability
-`extension-editors`; elsewhere, an older Studio included, the file opens in the
-text editor and nothing says so, since nothing is lost. An approval grows when
-an update adds an editor or gives one more files to open.
+`extension-editors`; elsewhere the file opens in the text editor. An approval
+grows when an update adds an editor, gives one more files to open, or has one
+open its files by default where it was only offered.
 
 ### Permissions checked at the host; approvals replace trust (no compatibility)
 

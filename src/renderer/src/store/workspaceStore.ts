@@ -442,6 +442,7 @@ export interface WorkspaceStore
   setActiveFile: (workspaceId: WorkspaceId, path: string) => void
   updateFileContent: (workspaceId: WorkspaceId, path: string, content: string) => void
   markFileClean: (workspaceId: WorkspaceId, path: string) => void
+  markFileDirty: (workspaceId: WorkspaceId, path: string) => void
   remapOpenFiles: (workspaceId: WorkspaceId, fromPath: string, toPath: string) => void
   removeOpenFilesForPath: (workspaceId: WorkspaceId, path: string) => void
 

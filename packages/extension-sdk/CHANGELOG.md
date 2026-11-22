@@ -204,8 +204,10 @@ main })` take the parsed extension.json; the install key defaults to
   extension's own editor, drawn in a frame in the file's tab: by suffix
   (`extensions`) or exact name (`filenames`), `priority` `default` (opens
   matching files) or `option` (offered under Open with), and `contentKind`
-  `text` or `bytes`. A file Studio's text editor is for (`.json`, `.ts`,
-  `.md` and their like: `STUDIO_TEXT_EDITOR_SUFFIXES`) is only ever offered.
+  `text` or `bytes`. A file Studio's own editor has a language for, by suffix
+  or by name, is only ever offered. A document is at most 1 MiB of text or
+  768 KiB of bytes (`EXTENSION_EDITOR_TEXT_MAX_BYTES`,
+  `EXTENSION_EDITOR_BYTES_MAX_BYTES`).
   It needs `workspace-files:read`, and
   `workspace-files:write` to save; without it the file opens read only. A
   new editor, or one that takes more files, is asked for again on update. No
@@ -215,12 +217,13 @@ main })` take the parsed extension.json; the install key defaults to
   current document when it moved), `onWillSave`, and `session()`, the sync in
   one call (`decode`, `encode`, `merge`, `change`, `flush`, `onReplace`).
   Studio keeps the unsaved state, saves and watches the file. Types:
-  `ExtensionEditorDocumentApi` and its kin; `customEditorMatchRank` and
-  `customEditorOpensByDefault` say which editor takes a file.
+  `ExtensionEditorDocumentApi` and its kin; `customEditorMatchRank` says how
+  well an editor matches a file.
 - `files.read` takes `encoding: 'base64'` for a file's bytes and answers its
   `sha256`; `files.write` takes `encoding` and `expectedSha256`, and is
-  refused `conflict` when the file changed since it was read. The error code
-  `conflict` is new.
+  refused `conflict` when the file changed since it was read. Writes to one
+  file take turns. The error codes `conflict` and `missing` (the file or
+  folder named is not there) are new.
 - `createFakeFrameStudio({ document })` gives a custom editor its document in
   a test, the same `studio.document` the frame runs, with
   `frame.document.replace`, `.save`, `.edits` and `.refused`.

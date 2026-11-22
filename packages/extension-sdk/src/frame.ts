@@ -160,6 +160,8 @@ export type ExtensionFrameErrorCode =
   | 'action_failed'
   /** A document edit or a conditional write was made against a version that is no longer the current one. */
   | 'conflict'
+  /** The file or folder named is not there. */
+  | 'missing'
 
 /** What a rejected `host.call` rejects with. */
 export type ExtensionFrameError = Error & { code: ExtensionFrameErrorCode; retryable: boolean }
@@ -241,7 +243,8 @@ export type ExtensionEditorDocumentApi = {
   /**
    * Replace the document's content. Rejects with `conflict` (and the current
    * `document`) when `baseVersion` is not the current version, `not_permitted`
-   * when it is read only, and `too_large` past 4 MiB.
+   * when it is read only, and `too_large` past 1 MiB of text or 768 KiB of
+   * bytes (`EXTENSION_EDITOR_TEXT_MAX_BYTES`, `EXTENSION_EDITOR_BYTES_MAX_BYTES`).
    */
   applyEdit(edit: ExtensionEditorEdit): Promise<void>
   /**
