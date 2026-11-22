@@ -125,7 +125,7 @@ const KNOWN_REGISTRATION_FILES: ReadonlyArray<readonly string[]> = [
 ]
 
 function namersFor(script: IntegrationLedgerEntry, entries: readonly IntegrationLedgerEntry[]): string[] {
-  const configKinds = new Set(['agent-state-hooks', 'status-line', 'knowledge-activity-hook'])
+  const configKinds = new Set(['agent-state-hooks', 'status-line'])
   const owner = dirname(dirname(dirname(script.path)))
   const under = (path: string) => path.startsWith(`${owner}/`) || path.startsWith(`${owner}\\`)
   return [
@@ -159,7 +159,6 @@ export const REPOSITORY_CLEANUP_VERSION = 1
 export const BOOT_CLEANUP_KINDS: ReadonlySet<IntegrationLedgerEntry['kind']> = new Set<IntegrationLedgerEntry['kind']>([
   ...[...SESSION_INTEGRATION_KINDS].filter((kind) => kind !== 'launcher'),
   'hook-script',
-  'knowledge-activity-hook',
 ])
 
 export type BootCleanupInput = {

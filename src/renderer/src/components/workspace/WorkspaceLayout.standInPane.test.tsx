@@ -20,6 +20,7 @@ type Modules = {
   WorkspaceLayout: typeof import('./WorkspaceLayout').default
   useWorkspaceStore: typeof import('../../store/workspaceStore').useWorkspaceStore
   modelRegistry: typeof import('../../utils/modelRegistry')
+  flexlayout: typeof import('flexlayout-react')
   layoutTabActions: typeof import('./manager/layoutTabActions')
   mesh: typeof import('../../../../shared/tailnet-mesh')
 }
@@ -80,6 +81,7 @@ beforeAll(async () => {
     WorkspaceLayout: (await import('./WorkspaceLayout')).default,
     useWorkspaceStore: (await import('../../store/workspaceStore')).useWorkspaceStore,
     modelRegistry: await import('../../utils/modelRegistry'),
+    flexlayout: await import('flexlayout-react'),
     layoutTabActions: await import('./manager/layoutTabActions'),
     mesh: await import('../../../../shared/tailnet-mesh'),
   }
@@ -264,7 +266,7 @@ test('closing the pane of a stand-in leaves it holding its chat', async () => {
   assert.ok(model)
   const { act } = modules.React
   act(() => {
-    modules.modelRegistry.deleteTabPreservingRails(model, pane.id)
+    model.doAction(modules.flexlayout.Actions.deleteTab(pane.id))
   })
   await settle()
 

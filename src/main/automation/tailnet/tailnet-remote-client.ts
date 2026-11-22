@@ -106,8 +106,8 @@ export function requestTailnetJson(input: {
         headers: {
           Accept: 'application/json',
           Connection: 'close',
-          // No Origin, ever: the listener refuses any request carrying one, and
-          // rightly — see the transport notes in the knowledge graph.
+          // No Origin, ever: the listener refuses any request carrying one, since
+          // an Origin means a browser sent it (tailnet-gateway-server.ts).
           ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': payload.length } : {}),
           ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
         },

@@ -62,12 +62,7 @@ import {
 } from './slices/workspacePaneSlice'
 import { createFocusedAgentSlice, type FocusedAgentSlice } from './slices/focusedAgentSlice'
 import { createWorkspacesSlice, type SoloChatSeed, type WorkspacesSliceDependencies } from './slices/workspacesSlice'
-import {
-  createLayoutSlice,
-  healRetiredRailLayout,
-  stripRetiredRailTabsFromLayout,
-  hideNavRailTabStrip,
-} from './slices/layoutSlice'
+import { createLayoutSlice, healRetiredRailLayout, stripRetiredRailTabsFromLayout } from './slices/layoutSlice'
 import {
   createAgentsSlice,
   defaultAgent,
@@ -455,7 +450,6 @@ const workspacesSliceDeps: WorkspacesSliceDependencies = {
   defaultWorkspaceWorktreeState,
   normalizeAgentState,
   normalizeWorkspaceWorktreeState,
-  hideNavRailTabStrip,
   pickWorkspaceAgentName,
   isPathOrChild,
 }

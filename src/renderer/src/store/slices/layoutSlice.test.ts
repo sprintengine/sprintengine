@@ -3,13 +3,11 @@ import assert from 'node:assert/strict'
 import type { IJsonModel } from 'flexlayout-react'
 import type { LayoutTemplate, Workspace } from '../../../../shared/workspace'
 import { useWorkspaceStore } from '../workspaceStore'
-import { NAV_RAIL_COMPONENTS } from '../../utils/modelRegistry'
 import {
   createLayoutSlice,
   healRetiredRailLayout,
   RETIRED_MODULE_TAB_COMPONENTS,
   stripRetiredModuleTabsFromLayout,
-  hideNavRailTabStrip,
   modelContainsComponent,
   stripRetiredRailTabsFromLayout,
   stripSettingsTabsFromLayout,
@@ -38,23 +36,6 @@ test('layoutSlice', async () => {
     },
   }
 
-  function findTabset(
-    model: IJsonModel,
-    predicate: (record: Record<string, unknown>) => boolean,
-  ): Record<string, unknown> | null {
-    let found: Record<string, unknown> | null = null
-    const walk = (node: unknown) => {
-      if (found || !node || typeof node !== 'object') return
-      const record = node as Record<string, unknown>
-      if (record.type === 'tabset' && predicate(record)) {
-        found = record
-        return
-      }
-      if (Array.isArray(record.children)) record.children.forEach(walk)
-    }
-    walk(model.layout)
-    return found
-  }
   // Layout tabs whose owning module was retired are stripped on hydration, the
   // same way the rail-to-pane move strips its tabs: the model registry no longer
   // resolves the component, so a surviving tab would render an empty surface.
@@ -133,59 +114,6 @@ test('layoutSlice', async () => {
     assert.equal(modelContainsComponent(everyRetiredStripped, component), false, `${component} tab is stripped`)
   }
   assert.ok(findTab(everyRetiredStripped, 'editor'), 'the ordinary tab beside them survives')
-
-  // Nav-rail strip migration: a tabset holding only a nav switch loses its
-  // strip; a tabset mixing a nav switch with the editor keeps its strip (so the
-  // editor's file tabs survive) and self-heals later. No shipped component is a
-  // rail switch any more (Backlog moved into the workspace pane at store v74,
-  // and the knowledge graph panel was removed), so a stand-in plays one.
-  const RAIL = 'nav-stand-in'
-  NAV_RAIL_COMPONENTS.add(RAIL)
-  const navRailLayoutForStripMigration: IJsonModel = {
-    global: {},
-    borders: [],
-    layout: {
-      type: 'row',
-      children: [
-        {
-          type: 'tabset',
-          weight: 18,
-          children: [{ type: 'tab', name: 'Nav stand-in', component: RAIL }],
-        },
-        {
-          type: 'tabset',
-          weight: 52,
-          children: [
-            { type: 'tab', name: 'Nav stand-in', component: RAIL },
-            { type: 'tab', name: 'Editor', component: 'editor' },
-          ],
-        },
-        {
-          type: 'tabset',
-          weight: 30,
-          children: [{ type: 'tab', name: 'Agent', component: 'agent', config: { agentId: 'a-1' } }],
-        },
-      ],
-    },
-  }
-  const navStripHidden = hideNavRailTabStrip(navRailLayoutForStripMigration) as IJsonModel
-  const navOnlyTabset = findTabset(navStripHidden, (record) => {
-    const children = Array.isArray(record.children) ? record.children : []
-    return children.length === 1 && (children[0] as Record<string, unknown>)?.component === RAIL
-  })!
-  const mixedEditorTabset = findTabset(navStripHidden, (record) => {
-    const children = Array.isArray(record.children) ? record.children : []
-    return children.some((child) => (child as Record<string, unknown>)?.component === 'editor')
-  })!
-  const agentOnlyTabset = findTabset(navStripHidden, (record) => {
-    const children = Array.isArray(record.children) ? record.children : []
-    return children.some((child) => (child as Record<string, unknown>)?.component === 'agent')
-  })!
-  assert.equal(navOnlyTabset.enableTabStrip, false)
-  // Mixed nav+editor and pure-agent tabsets keep their strips.
-  assert.equal(mixedEditorTabset.enableTabStrip, undefined)
-  assert.equal(agentOnlyTabset.enableTabStrip, undefined)
-  NAV_RAIL_COMPONENTS.delete(RAIL)
 
   const stripped = stripSettingsTabsFromLayout({
     global: {},

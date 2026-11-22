@@ -758,7 +758,7 @@ export function TrackersSettingsIcon({ className }: IconProps) {
   )
 }
 
-export function KnowledgeGraphSettingsIcon({ className }: IconProps) {
+export function KnowledgeSettingsIcon({ className }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="6" cy="7" r="2.2" stroke="currentColor" strokeWidth={iconStroke} />

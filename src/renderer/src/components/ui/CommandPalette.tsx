@@ -4,7 +4,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import { ScrollArea } from './ScrollArea'
 import type { Workspace, WorkspaceId, WorkspaceWindowId } from '../../../../shared/workspace'
 import type { BuiltinSkill, WorkspaceSkill } from '../../../../shared/electron-api'
-import { togglePanelRailComponent } from '../../utils/modelRegistry'
+import { toggleEditorTab } from '../../utils/modelRegistry'
 import { openFileSurface } from '../../utils/openFileSurface'
 import { isHiddenFromRail } from '../../utils/workspaceVisibility'
 import { getEffectiveKeybindingLabel, platformKeybindingsFromApiPlatform } from '../../commands/effectiveKeybindings'
@@ -542,7 +542,7 @@ export default function CommandPalette({
             searchLabel: appCopy.ui.commandPalette.codeEditor,
             shortcut: shortcutFor('panel.editor.toggle'),
             run: () => {
-              togglePanelRailComponent(activeWorkspace.id, 'editor', 'Editor')
+              toggleEditorTab(activeWorkspace.id, 'Editor')
               onClose()
             },
           },

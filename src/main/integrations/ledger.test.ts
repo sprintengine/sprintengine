@@ -104,6 +104,30 @@ test('a garbled ledger reads as empty rather than taking the app down', async ()
   assert.equal((await ledger.list()).length, 1)
 })
 
+test('an entry of a kind this build does not know is dropped when the ledger is read', async () => {
+  const { ledger, file } = await ledgerAt('unknown-kind')
+  const { writeFile } = await import('node:fs/promises')
+  const stamp = {
+    source: 'write',
+    firstRecordedAt: '2026-09-25T12:00:00.000Z',
+    lastRecordedAt: '2026-09-25T12:00:00.000Z',
+  }
+  await writeFile(
+    file,
+    JSON.stringify({
+      version: 1,
+      entries: [
+        { ...hook, ...stamp },
+        { ...hook, kind: 'retired-kind', ...stamp },
+      ],
+    }),
+  )
+  assert.deepEqual(
+    (await ledger.list()).map((entry) => entry.kind),
+    ['agent-state-hooks'],
+  )
+})
+
 test('the process-wide recorder is silent until a ledger is installed', async () => {
   recordIntegrationWrite(hook)
   const { ledger } = await ledgerAt('global')

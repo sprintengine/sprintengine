@@ -261,7 +261,7 @@ test('terminal-launch', async () => {
     assert.ok(!bootstrap.includes('TERM'), 'protected keys stay core-owned')
   }
 
-  // A plain repo — no design system, no knowledge graph — launches exactly as it
+  // A plain repo — no design system, no knowledge folder — launches exactly as it
   // did: no flag, no env, no wrapping.
   function testNothingIsDeliveredWhenTheHostHasNothingToSay(): void {
     assert.equal(buildHostContextDocument({}), null)

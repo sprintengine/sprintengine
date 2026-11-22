@@ -43,7 +43,7 @@ import { isOwnUrlHandlerEntry } from '../linux-url-handler'
 import { hashSkillDirectory, MANAGED_SKILL_MANIFEST_FILE, readManagedSkillManifest } from '../builtin-skills'
 import { readSkillProvenance } from '../skills/install'
 import { removeSettingsKey, STUDIO_PLUGIN_ID, STUDIO_PLUGIN_SOURCE_ID } from '../skills/studio-plugin'
-import { KNOWLEDGE_ACTIVITY_HOOK_TAG, scanForIntegrations, type ScanHome, type ScanRoot } from './integration-scan'
+import { scanForIntegrations, type ScanHome, type ScanRoot } from './integration-scan'
 import { LAUNCHER_POINTER_NAME, POSIX_LAUNCHER_NAME, WINDOWS_EMPTY_MCP_NAME, WINDOWS_LAUNCHER_NAME } from './launcher'
 import { LAUNCH_SKILL_COPY_MARKER } from './launch-integration'
 import { ledgerKey, type IntegrationLedger, type IntegrationLedgerEntry } from './ledger'
@@ -105,8 +105,7 @@ export type IntegrationRemovalOptions = {
  * Left out, because each one does its job while the app is closed or is the
  * person's own choice: worktree locks (they keep agent worktrees safe from a
  * prune), tailnet shares (the person published them), the link handler (it is
- * what opens the app from a sign-in link), the knowledge-activity hook (a
- * per-repository opt-in), and a distribution's own files (its Node and helper).
+ * what opens the app from a sign-in link), and a distribution's own files (its Node and helper).
  * Left to the uninstaller too: a locked worktree's git excludes (the worktree
  * outlives the quit, and without them its generated files show as untracked
  * until the next connector launch), the reporter copies earlier builds made
@@ -145,7 +144,6 @@ const ONE_AT_A_TIME: ReadonlySet<LedgerKind> = new Set<LedgerKind>([
 const RUNS_LAUNCHER: ReadonlySet<LedgerKind> = new Set<LedgerKind>([
   'agent-state-hooks',
   'status-line',
-  'knowledge-activity-hook',
   'mcp-gateway',
   'studio-plugin-copy',
 ])
@@ -162,7 +160,6 @@ const GROUP_BY_KIND: Record<IntegrationLedgerEntry['kind'], IntegrationRemovalGr
   'claude-plugin-setting': 'repositories',
   'claude-known-marketplace': 'user-config',
   'skill-copy': 'repositories',
-  'knowledge-activity-hook': 'repositories',
   'git-exclude': 'repositories',
   'worktree-lock': 'worktree-locks',
   'tailnet-share': 'tailnet',
@@ -177,7 +174,6 @@ const GROUP_BY_KIND: Record<IntegrationLedgerEntry['kind'], IntegrationRemovalGr
 const KIND_ORDER: readonly IntegrationLedgerEntry['kind'][] = [
   'agent-state-hooks',
   'status-line',
-  'knowledge-activity-hook',
   'mcp-gateway',
   'mcp-approval',
   'claude-plugin-setting',
@@ -214,8 +210,6 @@ function describe(entry: IntegrationLedgerEntry): string {
       return 'Studio marketplace in Claude Code’s plugin list'
     case 'skill-copy':
       return `Studio skill ${basename(entry.path)}`
-    case 'knowledge-activity-hook':
-      return 'Knowledge activity hook'
     case 'git-exclude':
       return entry.marker === 'owned' ? 'Worktree git excludes' : 'Git exclude lines'
     case 'worktree-lock':
@@ -401,28 +395,6 @@ function isOpencodeGateway(value: unknown): boolean {
   return isManagedStudioGatewayEntry({ command, args, env: isRecord(value.environment) ? value.environment : {} })
 }
 
-function stripKnowledgeActivityHooks(settings: Record<string, unknown>): boolean {
-  if (!isRecord(settings.hooks)) return false
-  let changed = false
-  for (const [event, blocks] of Object.entries(settings.hooks)) {
-    if (!Array.isArray(blocks)) continue
-    const kept = blocks
-      .map((block) => {
-        if (!isRecord(block) || !Array.isArray(block.hooks)) return block
-        const hooks = block.hooks.filter(
-          (hook) => !(isRecord(hook) && hook._sprintengine === KNOWLEDGE_ACTIVITY_HOOK_TAG),
-        )
-        if (hooks.length !== block.hooks.length) changed = true
-        return { ...block, hooks }
-      })
-      .filter((block) => !isRecord(block) || !Array.isArray(block.hooks) || block.hooks.length > 0)
-    if (kept.length === 0) delete settings.hooks[event]
-    else settings.hooks[event] = kept
-  }
-  if (Object.keys(settings.hooks).length === 0) delete settings.hooks
-  return changed
-}
-
 // ── What a ledger path may be, before anything is deleted at it ─────────────
 //
 // The ledger is the app's own file, but a path in it is still checked for the
@@ -437,7 +409,7 @@ export function isLauncherDirPath(path: string): boolean {
   return slashes(path).endsWith('/.sprintengine/bin')
 }
 
-const HOOK_SCRIPT_NAMES = new Set(['agent-state.mjs', 'status-line.mjs', 'knowledge-activity.mjs'])
+const HOOK_SCRIPT_NAMES = new Set(['agent-state.mjs', 'status-line.mjs'])
 
 export function isHookScriptPath(path: string): boolean {
   return /\/\.sprintengine\/hooks\/[^/]+$/u.test(slashes(path)) && HOOK_SCRIPT_NAMES.has(basename(path))
@@ -623,15 +595,6 @@ async function removeEntry(
       return skip(
         outcome === 'absent' ? ALREADY_GONE : 'The file could not be read or is not ours, so it was left as it is.',
       )
-    }
-    case 'knowledge-activity-hook': {
-      const result = await editJson(entry.path, stripKnowledgeActivityHooks, deleteIfEmpty)
-      const record = typeof entry.detail?.record === 'string' ? entry.detail.record : null
-      if (record) {
-        await rm(record, { force: true }).catch(() => undefined)
-        await removeHooksDirIfOnlyOurs(dirname(record)).catch(() => undefined)
-      }
-      return result
     }
     case 'hook-script': {
       if (!isHookScriptPath(entry.path)) return skip(NOT_OURS_BY_PATH)

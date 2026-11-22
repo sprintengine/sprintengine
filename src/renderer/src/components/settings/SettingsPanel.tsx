@@ -95,7 +95,7 @@ import {
   ProvidersSettingsIcon,
   GithubSettingsIcon,
   TrackersSettingsIcon,
-  KnowledgeGraphSettingsIcon,
+  KnowledgeSettingsIcon,
   DesignSystemSettingsIcon,
   ModulesSettingsIcon,
   RemoteSettingsIcon,
@@ -199,7 +199,7 @@ const settingsTabs: Array<{ id: SettingsTabId; label: string; icon: SettingsTabI
   // stays 'github' — it is a persisted deep-link target (menus, module routes).
   { id: 'github', label: appCopy.settings.settingsPanel.versionControl, icon: GithubSettingsIcon },
   { id: 'trackers', label: appCopy.settings.settingsPanel.ticketTrackers, icon: TrackersSettingsIcon },
-  { id: 'knowledge', label: appCopy.settings.settingsPanel.knowledge, icon: KnowledgeGraphSettingsIcon },
+  { id: 'knowledge', label: appCopy.settings.settingsPanel.knowledge, icon: KnowledgeSettingsIcon },
   { id: 'design-system', label: appCopy.settings.settingsPanel.designSystem, icon: DesignSystemSettingsIcon },
   // Titled for what a person installs; the id stays `modules`, a persisted
   // deep-link target (the Extensions drawer, a disabled door's explainer).

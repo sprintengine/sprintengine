@@ -45,14 +45,11 @@ import { formatRelativeMs, formatRelativeMsAgo } from '../../utils/relativeTime'
 import type { HighlightColor, Workspace } from '../../../../shared/workspace'
 import {
   NEW_AGENT_TAB_COMPONENT,
-  captureRailWidthFractions,
   consumePendingAgentFlash,
-  deleteTabPreservingRails,
   ensureStandInPane,
   holdsMeshConversationPane,
   registerModel,
   removeGitConflictTab,
-  restoreRailWidthFractions,
   unregisterModel,
 } from '../../utils/modelRegistry'
 import { TAB_DRAG_MIME, serializeTabDragPayload } from '../../utils/tabDragPayload'
@@ -964,23 +961,6 @@ function WorkspaceLayoutBody({
 
   const handleAction = useCallback(
     (action: Action) => {
-      // Removing a tabset hands its weight back to flexlayout, which spreads it
-      // across every remaining sibling — including a strip-less nav rail on
-      // the left, which would otherwise grow when a terminal beside it is
-      // closed. Snapshot the rails' widths before the deletion applies, then
-      // re-pin them once the model has settled so the freed space goes to the
-      // editor/terminal siblings instead.
-      if (action.type === Actions.DELETE_TAB || action.type === Actions.DELETE_TABSET) {
-        const model = modelRef.current
-        const railFractions = model ? captureRailWidthFractions(model) : null
-        if (railFractions != null) {
-          queueMicrotask(() => {
-            const current = modelRef.current
-            if (current) restoreRailWidthFractions(current, railFractions)
-          })
-        }
-      }
-
       if (action.type === Actions.DELETE_TAB) {
         const node = modelRef.current?.getNodeById(action.data.node)
         const nodeId = node?.getId() ?? String(action.data.node ?? '')
@@ -1038,7 +1018,7 @@ function WorkspaceLayoutBody({
     (node: TabNode) => {
       cleanupNode(node)
       const model = modelRef.current
-      if (model) deleteTabPreservingRails(model, node.getId())
+      if (model) model.doAction(Actions.deleteTab(node.getId()))
     },
     [cleanupNode],
   )
@@ -1131,7 +1111,7 @@ function WorkspaceLayoutBody({
     })
     agentNodeIds.forEach((nodeId) => {
       hideTabWithoutCleanupRef.current.add(nodeId)
-      deleteTabPreservingRails(model, nodeId)
+      model.doAction(Actions.deleteTab(nodeId))
     })
   }, [])
 
@@ -1140,7 +1120,7 @@ function WorkspaceLayoutBody({
     hideTabWithoutCleanupRef.current.add(node.getId())
     const parent = node.getParent()
     const model = modelRef.current
-    if (model) deleteTabPreservingRails(model, node.getId())
+    if (model) model.doAction(Actions.deleteTab(node.getId()))
 
     // The hide button is removed with the tab, leaving focus on <body>; hand it back to the new active tab.
     if (!(parent instanceof TabSetNode)) return
@@ -1383,7 +1363,7 @@ function WorkspaceLayoutBody({
               if (!filePath) return
               // Moves this file; where files open next is Settings' call.
               void openExternalFileWindow({ workspaceId, path: filePath, name: node.getName() })
-              deleteTabPreservingRails(node.getModel(), node.getId())
+              node.getModel().doAction(Actions.deleteTab(node.getId()))
             }
           : undefined
       // A live PTY bolds the tab name, mirroring the sidebar's resident-workspace
@@ -1924,8 +1904,7 @@ function WorkspaceLayoutBody({
   )
 
   // The tab strip's "+". It rides the tabsets that host agents and
-  // terminals — never a rail pane, whose strip is chrome for a panel, and never
-  // an editor-only column, where a new agent has nothing to do with the files
+  // terminals — never an editor-only column, where a new agent has nothing to do with the files
   // beside it. Sticky, so it stays put when the tabs overflow and scroll.
   const renderTabSet = useCallback<(tabSetNode: TabSetNode | BorderNode, values: ITabSetRenderValues) => void>(
     (tabSetNode, values) => {

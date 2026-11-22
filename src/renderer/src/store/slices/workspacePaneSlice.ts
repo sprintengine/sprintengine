@@ -438,8 +438,8 @@ function layoutHasComponent(layoutModel: unknown, component: string): boolean {
 type JsonTabsetNode = JsonLayoutNode & { selected?: number }
 
 // Whether the component's tab was the SELECTED tab of its tabset — on screen,
-// not parked behind the editor in a mixed tabset (a shape `hideNavRailTabStrip`
-// leaves alone on purpose). FlexLayout's default selection is the first tab.
+// not parked behind the editor in a mixed tabset. FlexLayout's default
+// selection is the first tab.
 function layoutShowsComponent(layoutModel: unknown, component: string): boolean {
   const layout = (layoutModel as { layout?: JsonLayoutNode } | null | undefined)?.layout
   const visit = (node: JsonTabsetNode | undefined): boolean => {

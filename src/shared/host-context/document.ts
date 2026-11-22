@@ -3,7 +3,7 @@
  * NOT the user's request.
  *
  * Before this module, the two things we had to say — a design system is attached
- * at `design-system/`, and this project has a Knowledge Graph — were appended to
+ * at `design-system/`, and where this project keeps its notes — were appended to
  * the user's first message by the renderer. That has three faults the owner
  * called out (2026-09-07): the model reads host context as part of the request,
  * resume skips it entirely, and the headless launch path only ever appended half
@@ -48,7 +48,7 @@ export const HOST_CONTEXT_CLOSE_TAG = '</host-context>'
  *
  * `designSystem` is present when — and only when — `<executionRoot>/design-system/`
  * exists. That predicate is unchanged and stays KG-independent: a repo with a
- * design system and no Knowledge Graph must still get its design section.
+ * design system and no knowledge folder must still get its design section.
  *
  * `knowledge` mirrors what a launch already resolves: `ok` false with a
  * `relativeRoot` is the configured-but-unreadable case, which still has to be
@@ -106,7 +106,7 @@ export function buildHostContextDocument(input: HostContextInput): string | null
 
   const knowledgeLine = knowledgeSection(input.knowledge)
   if (knowledgeLine) {
-    sections.push(['## Knowledge graph', '', knowledgeLine].join('\n'))
+    sections.push(['## Knowledge', '', knowledgeLine].join('\n'))
   }
 
   if (input.editorTools) {
@@ -199,7 +199,7 @@ function joinSections(sections: string[]): string[] {
 }
 
 /**
- * The Knowledge Graph sentence, taken verbatim from the shared launch resolver
+ * The knowledge sentence, taken verbatim from the shared launch resolver
  * so this document cannot drift from what the old prompt suffix said.
  */
 function knowledgeSection(knowledge: HostContextInput['knowledge']): string | null {
