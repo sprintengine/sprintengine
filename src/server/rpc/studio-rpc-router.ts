@@ -222,7 +222,7 @@ export type StudioRpcRouterOptions = {
   files?: StudioFiles
   /** The files on this machine by path; without it, `files.*` by path is answered `unavailable`. */
   fileSystem?: StudioFileSystem
-  /** Extensions' `editor.save.before` hooks on a save the person made (`extension-hooks`). */
+  /** Extensions' `editor.save.before` hooks on a save the person made. */
   editorSaveHooks?: StudioEditorSaveHooks
   /** Git on this machine; without it, `git.*`, `github.*` and `versionControl.*` are answered `unavailable`. */
   git?: StudioGit

@@ -327,7 +327,7 @@ custom editors only where its Studio offers the new capability
 grows when an update adds an editor, gives one more files to open, or has one
 open its files by default where it was only offered.
 
-### Agent hooks (`extension-hooks`)
+### Agent hooks (no compatibility)
 
 A worker extension's `contributes.hooks` lets it check, change or refuse what
 the Studio's agents and the Studio itself are about to do, and hear what they
@@ -337,9 +337,9 @@ another machine's extensions. What crosses the wire is small: the
 a client's approval names them; and a save the person makes in an editor is
 sent as `files.writeText` with `save: true`, which meets the Studio's
 `editor.save.before` hooks and may answer the `text` a hook wrote, or refuse
-with the new code `refused_by_extension`. A client sends `save` only to a
-Studio offering the new capability `extension-hooks` (offered with
-`extension-host`); an older Studio writes the file as before, with no hooks. A
+with the new code `refused_by_extension`. There is no capability for it: a
+client always sends `save` for a save the person made, as a window and its
+Studio are one build. A
 refusal of any other hooked action (a launch, a workspace, a prompt) comes back
 in the refusal that action already had, its words naming the extension. An
 approval grows when an update hooks a point the approved version did not.
@@ -1013,11 +1013,6 @@ from a window is the chat's `conversation.markUnread`. The window's 14
 `workspace-sync:*`, `workspace-registry:*`, `workspace-backup:*` and
 `chats:projectless-*` IPC channels are gone; a desktop's window and its own
 Studio are one build.
-`extension-hooks` (2026-11-22) says the Studio runs its extensions' agent
-hooks, and that `files.writeText` takes `save: true` (an editor save the
-person made, which meets `editor.save.before`), answering `text` when a hook
-changed what was written, or `refused_by_extension`. Offered with
-`extension-host`. A client sends `save` only where it is offered.
 `extension-editors` (2026-11-22) says the Studio opens files in its
 extensions' custom editors: `extension.frame` takes `point: 'customEditors'`,
 and a frame's `files.read` and `files.write` carry bytes (`encoding: 'base64'`),

@@ -117,35 +117,18 @@ export function askStudioAtPath<M extends StudioMethod>(
   return askStudioWhere(whereOf(namedIn(params, namedIn({ path }))), method, params, capability, unserved)
 }
 
-/**
- * As `askStudioOfPaths`, with `params` finished by what the Studio that
- * answers offers: a field only a newer Studio reads is sent only to one that
- * offers its capability.
- */
-export function askStudioOfPathsOffering<M extends StudioMethod>(
+async function askStudioWhere<M extends StudioMethod>(
+  where: Where,
   method: M,
   params: StudioMethodParams<M>,
   capability: StudioCapability,
   unserved: string,
-  finish: (params: StudioMethodParams<M>, offers: (capability: StudioCapability) => boolean) => StudioMethodParams<M>,
-): Promise<StudioMethodResult<M>> {
-  return askStudioWhere(machineOfAsk(params), method, params, capability, unserved, finish)
-}
-
-async function askStudioWhere<M extends StudioMethod>(
-  where: Where,
-  method: M,
-  given: StudioMethodParams<M>,
-  capability: StudioCapability,
-  unserved: string,
-  finish?: (params: StudioMethodParams<M>, offers: (capability: StudioCapability) => boolean) => StudioMethodParams<M>,
 ): Promise<StudioMethodResult<M>> {
   if ('mixed' in where) throw new Error(MIXED_MACHINES)
-  const paramsFor = (client: StudioClient) => (finish ? finish(given, (offered) => client.supports(offered)) : given)
   if (where.machine === null) {
     const client = await windowStudioClient()
     if (!client.supports(capability)) throw new Error(unserved)
-    return client.request(method, paramsFor(client))
+    return client.request(method, params)
   }
   const route = where.machine
   const ssh = route.startsWith('ssh:')
@@ -162,7 +145,7 @@ async function askStudioWhere<M extends StudioMethod>(
       if (!spelling) throw new Error(MIXED_MACHINES)
       const answer = await (client.request as (method: string, params: unknown) => Promise<unknown>)(
         method,
-        machinePanePathsIn(spelling, paramsFor(client)),
+        machinePanePathsIn(spelling, params),
       )
       return machinePanePathsOut(spelling, answer) as StudioMethodResult<M>
     },

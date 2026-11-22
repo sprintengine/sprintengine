@@ -207,7 +207,7 @@ export type StudioRpcServiceOptions = {
   files?: StudioFiles
   /** The files on this machine by path (`file-system`, `files-mention`). */
   fileSystem?: StudioFileSystem
-  /** Extensions' `editor.save.before` hooks on a save the person made (`extension-hooks`). */
+  /** Extensions' `editor.save.before` hooks on a save the person made. */
   editorSaveHooks?: StudioEditorSaveHooks
   /** Git on this machine (`git`). */
   git?: StudioGit

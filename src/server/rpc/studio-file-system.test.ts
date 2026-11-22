@@ -461,9 +461,3 @@ test('a save the person made meets the extensions’ save hooks where the file i
   assert.equal(readFileSync(file, 'utf8'), 'TODO')
   assert.equal(asked.length, 2)
 })
-
-test('extension-hooks is offered only where saves meet hooks', async () => {
-  const without = await serve()
-  const plain = await client(without.started.path, OWNER_TOKEN)
-  assert.equal((plain.welcome as { capabilities: string[] }).capabilities.includes('extension-hooks'), false)
-})

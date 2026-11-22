@@ -180,14 +180,6 @@ export const STUDIO_EXTENSION_FRAMES_CAPABILITY = 'extension-frames' as const
 export const STUDIO_EXTENSION_EDITORS_CAPABILITY = 'extension-editors' as const
 
 /**
- * This Studio runs its extensions' agent hooks, and a `files.writeText` with
- * `save: true` meets its `editor.save.before` hooks: it may answer the text a
- * hook changed, or `refused_by_extension`. A client sends `save` only where
- * its Studio offers this. Offered with `extension-host`.
- */
-export const STUDIO_EXTENSION_HOOKS_CAPABILITY = 'extension-hooks' as const
-
-/**
  * The agent CLIs on the Studio's machine: `cliRuntimes.*` (detect, install,
  * update) and `cliVersions.*` (whether each is behind its published version),
  * with their streams. Offered where the Studio holds the CLIs' detection.
@@ -485,7 +477,6 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_EXTENSION_FRAMES_CAPABILITY,
   STUDIO_FILE_VIEWS_CAPABILITY,
   STUDIO_EXTENSION_EDITORS_CAPABILITY,
-  STUDIO_EXTENSION_HOOKS_CAPABILITY,
 ] as const
 
 /**

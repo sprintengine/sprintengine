@@ -11,8 +11,8 @@
   editor, which runs the Studio's `editor.save.before` hooks before it
   writes, and answers `text` when a hook changed what was written. A hook's
   refusal is `refused_by_extension`, whose message names the extension and
-  its reason. Clients send it only to a Studio offering
-  **`extension-hooks`**; an older one writes as before.
+  its reason. There is no capability for it: a client and its Studio are one
+  build.
 
 ### Added (custom editors)
 

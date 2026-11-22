@@ -231,7 +231,7 @@ wired at a Claude Code chat's tool calls (`src/main/providers/claude-agent-provi
 `src/main/conversation-runtime.ts`), the control plane's sends (`src/server/extensions/hooks/control-plane-hooks.ts`),
 launches (`src/main/conversation-launch-service.ts`, `src/main/agent-launch-service.ts`), new workspaces
 (`src/server/extensions/hooks/workspace-hooks.ts`) and editor saves (`src/server/rpc/studio-file-system.ts`). Wire:
-`files.writeText` `save` (capability `extension-hooks`). Sample: `packages/extension-sdk/examples/tool-guard/`;
+`files.writeText` `save`. Sample: `packages/extension-sdk/examples/tool-guard/`;
 template `packages/extension-sdk/templates/hook-guard/`; guide `packages/extension-sdk/guide/hooks.md`. Tests:
 `src/server/extensions/hooks/extension-hooks.test.ts`, `src/main/providers/claude-agent-provider-extension-hooks.test.ts`.
 

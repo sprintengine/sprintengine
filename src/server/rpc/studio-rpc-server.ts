@@ -37,7 +37,6 @@ import {
   STUDIO_LOCAL_SERVERS_CAPABILITY,
   STUDIO_WORKSPACES_CAPABILITY,
   STUDIO_EXTENSION_EDITORS_CAPABILITY,
-  STUDIO_EXTENSION_HOOKS_CAPABILITY,
   STUDIO_EXTENSION_HOST_CAPABILITY,
   STUDIO_TERMINALS_CAPABILITY,
   STUDIO_AGENT_RUNTIMES_CAPABILITY,
@@ -172,7 +171,7 @@ export type StudioRpcServerOptions = {
   files?: StudioFiles
   /** The files on this machine by path. Advertised as `file-system` and `files-mention` only when given; every Studio's core gives them. */
   fileSystem?: StudioFileSystem
-  /** Extensions' `editor.save.before` hooks on a save the person made (`extension-hooks`). */
+  /** Extensions' `editor.save.before` hooks on a save the person made. */
   editorSaveHooks?: StudioEditorSaveHooks
   /** Git on this machine. Advertised as `git` only when given; every Studio's core gives it. */
   git?: StudioGit
@@ -324,10 +323,6 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_WORKSPACES_CAPABILITY || options.discovery !== undefined) &&
         ((capability !== STUDIO_EXTENSION_HOST_CAPABILITY && capability !== STUDIO_EXTENSION_EDITORS_CAPABILITY) ||
           options.modules !== undefined) &&
-        (capability !== STUDIO_EXTENSION_HOOKS_CAPABILITY ||
-          (options.modules !== undefined &&
-            options.fileSystem !== undefined &&
-            options.editorSaveHooks !== undefined)) &&
         (capability !== STUDIO_ENVIRONMENT_READINESS_CAPABILITY || options.readiness !== undefined) &&
         (capability !== STUDIO_WINDOW_TICKETS_CAPABILITY || options.environmentAccess !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_ADOPT_CAPABILITY || options.adoption !== undefined) &&

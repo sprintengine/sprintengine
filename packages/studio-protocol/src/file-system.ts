@@ -137,8 +137,7 @@ export type StudioFileSystemMethodMap = {
    */
   /**
    * Write a text file. `save: true` is a save the person made in an editor:
-   * a Studio offering `extension-hooks` runs its extensions'
-   * `editor.save.before` hooks first, and answers `text` when one changed what
+   * the Studio runs its extensions' `editor.save.before` hooks first, and answers `text` when one changed what
    * was written; a hook's refusal is `refused_by_extension`.
    */
   'files.writeText': {

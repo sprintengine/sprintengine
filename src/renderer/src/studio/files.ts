@@ -1,5 +1,4 @@
 import {
-  STUDIO_EXTENSION_HOOKS_CAPABILITY,
   STUDIO_FILE_SYSTEM_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
   type ContentSearchResult,
@@ -15,7 +14,7 @@ import {
 } from '../../../../packages/studio-protocol/src/public'
 import { isMachinePath } from '../../../shared/machine-paths'
 import { followWindowStudioPush } from './windowStudioPush'
-import { askStudioOfPaths, askStudioOfPathsOffering } from './paneStudio'
+import { askStudioOfPaths } from './paneStudio'
 import { watchWindowStudio, windowStudioState } from './windowStudioClient'
 
 // The window's way to the files on its Studio's machine: the Studio protocol's
@@ -52,7 +51,7 @@ export type FilesApi = {
    * `roots` are the folders of the project the file was opened in: a save
    * there does not write through a link out of them. `save` is a save the
    * person made in an editor: the Studio that holds the file runs its
-   * extensions' `editor.save.before` hooks, where it offers them, and the
+   * extensions' `editor.save.before` hooks, and the
    * answer's `text` is what was written when a hook changed it. A hook's
    * refusal rejects with code `refused_by_extension`.
    */
@@ -134,20 +133,13 @@ export const filesApi: FilesApi = {
   detectProjectLogo: async (folderPath) => (await call('files.projectLogo', { folderPath })).logo,
   readProjectIconFile: async (path) => (await call('files.projectIcon', { path })).logo,
   writefile: async (path, text, options = {}) => {
-    const written = await askStudioOfPathsOffering(
-      'files.writeText',
-      {
-        commandId: randomId(),
-        path,
-        text,
-        ...(options.roots === undefined ? {} : { roots: [...options.roots] }),
-      },
-      STUDIO_FILE_SYSTEM_CAPABILITY,
-      UNSERVED,
-      // An older Studio has no hooks and refuses a field it does not read.
-      (params, offers) =>
-        options.save && offers(STUDIO_EXTENSION_HOOKS_CAPABILITY) ? { ...params, save: true } : params,
-    )
+    const written = await call('files.writeText', {
+      commandId: randomId(),
+      path,
+      text,
+      ...(options.roots === undefined ? {} : { roots: [...options.roots] }),
+      ...(options.save ? { save: true } : {}),
+    })
     return written.text === undefined ? {} : { text: written.text }
   },
   saveDroppedImage: async (input) =>
