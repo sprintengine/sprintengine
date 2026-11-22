@@ -4102,7 +4102,7 @@ test('NewAgentPanel', async () => {
       // Where it goes is the extensions home, not the project the door was on.
       assert.equal(door.folderChip()?.getAttribute('data-extension-folder'), 'home')
       assert.equal(door.view.container.querySelector('[data-project-trigger]'), null, 'no project picker')
-      assert.ok(text.includes('Show all 10'))
+      assert.ok(text.includes('Show all 11'))
 
       const idea = door.view.find((el) => el.tagName === 'BUTTON' && (el.textContent ?? '').includes('PR review badge'))
       assert.ok(idea, 'the first idea is offered')

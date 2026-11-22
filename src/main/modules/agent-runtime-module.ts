@@ -216,6 +216,7 @@ export function createAgentRuntimeModule(
       host.provideService(ConversationHostToken, () => services.createConversationHost)
       const conversationSessions = new ConversationSessionApi(services.conversations)
       const conversations = createConversationModuleRegistry({
+        extensionHooks: services.extensionHooks ?? null,
         launch: (request) => services.conversationLaunchService.launch(request),
         runtime: services.conversations,
         // The same replay, fence and live tail every other follower gets.

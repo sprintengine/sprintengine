@@ -40,29 +40,29 @@ scaffolds a project that already builds, passes its own tests and installs.
 `--sdk-tarball <file>` depends on a local SDK build instead of the npm release
 (for working on the SDK itself). Templates:
 
-| Template           | What it starts you with                                                                                    | Tier     |
-| ------------------ | ---------------------------------------------------------------------------------------------------------- | -------- |
-| `blank`            | One small panel: the smallest extension that draws something                                               | `ui`     |
-| `panel`            | A notes panel, saved in the extension's app state                                                          | `ui`     |
-| `door`             | A full-window door listing the open workspaces                                                             | `ui`     |
-| `editor`           | A custom editor for `.kv` files: a form of keys and values Studio opens, saves and keeps in step with disk | `ui`     |
-| `chat-companion`   | A worker that starts and follows chats of its own, and a panel to drive it                                 | `worker` |
-| `top-bar-item`     | A top bar button opening a focus-timer door                                                                | `ui`     |
-| `settings-section` | A section in Settings, and a command that opens Settings                                                   | `ui`     |
-| `backlog-action`   | A Backlog item menu command whose worker starts a planning chat per item                                   | `worker` |
-| `file-action`      | A Files-tree menu command whose worker files a Backlog item naming the files                               | `worker` |
-| `mcp-tools`        | A worker serving declared tools to any agent through Studio's MCP server                                   | `worker` |
-| `hook-guard`       | A worker hooking agents' tool calls: refuses one that matches a rule, and logs each that finishes          | `worker` |
+| Template | What it starts you with | Tier |
+| --- | --- | --- |
+| `blank` | One small panel: the smallest extension that draws something | `ui` |
+| `panel` | A notes panel, saved in the extension's app state | `ui` |
+| `door` | A full-window door listing the open workspaces | `ui` |
+| `editor` | A custom editor for `.kv` files: a form of keys and values Studio opens, saves and keeps in step with disk | `ui` |
+| `chat-companion` | A worker that starts and follows chats of its own, and a panel to drive it | `worker` |
+| `top-bar-item` | A top bar button opening a focus-timer door | `ui` |
+| `settings-section` | A section in Settings, and a command that opens Settings | `ui` |
+| `backlog-action` | A Backlog item menu command whose worker starts a planning chat per item | `worker` |
+| `file-action` | A Files-tree menu command whose worker files a Backlog item naming the files | `worker` |
+| `mcp-tools` | A worker serving declared tools to any agent through Studio's MCP server | `worker` |
+| `hook-guard` | A worker hooking agents' tool calls: refuses one that matches a rule, and logs each that finishes | `worker` |
 
 Templates combine. `--with` adds parts on top of the one you start from, and
 `sprintengine-extension add <part>...` adds them to a project you already have:
 
-| Part       | What it adds                                                                                                                                    |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `main`     | The worker: `src/main.ts` exporting `activate`, its methods' contract in `src/methods.ts`, `main` in extension.json and its `build:main` script |
-| `mcp`      | MCP tools declared in `contributes.mcpTools` and served from `activate` (`tools:contribute`); brings `main` when missing                        |
-| `settings` | A settings section (`settings:own`)                                                                                                             |
-| `door`     | A door with a row in the Extensions drawer                                                                                                      |
+| Part | What it adds |
+| --- | --- |
+| `main` | The worker: `src/main.ts` exporting `activate`, its methods' contract in `src/methods.ts`, `main` in extension.json and its `build:main` script |
+| `mcp` | MCP tools declared in `contributes.mcpTools` and served from `activate` (`tools:contribute`); brings `main` when missing |
+| `settings` | A settings section (`settings:own`) |
+| `door` | A door with a row in the Extensions drawer |
 
 A part copies its files and its test, merges its contributions and permissions
 into `extension/extension.json`, raises `tier` when it needs to, adds its
@@ -197,11 +197,11 @@ import { manifest } from './manifest' // extension.json, validated
 import { activate } from '../src/main'
 import { Notes } from '../src/notes'
 
-const main = createFakeMainHost({ manifest }) // moduleId: local.<id>
+const main = createFakeMainHost({ manifest })              // moduleId: local.<id>
 await activate(main.host)
-await main.methods.operate('start', { workspaceId: 'ws-app' }) // as a surface would
-main.services.conversations.emitEvent(ref, { type: 'turn_completed' }) // make the agent answer
-await main.tools.call('notes_search', { query: 'x' }) // as an agent would
+await main.methods.operate('start', { workspaceId: 'ws-app' })          // as a surface would
+main.services.conversations.emitEvent(ref, { type: 'turn_completed' })  // make the agent answer
+await main.tools.call('notes_search', { query: 'x' })                   // as an agent would
 
 const frame = createFakeFrameStudio({ manifest, main }) // a surface in its frame; its worker is `main`
 const studio = frame.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
@@ -248,7 +248,6 @@ const html = await renderToHtml(createElement(Notes, { studio }))
   `skills.setStatus(root, id, status)` scripts `getSkillStatus`, and
   `setChatRuntimes` what `listChatRuntimes` answers. `emitted`,
   `notifications`, `startup()` and `shutdown()` cover the rest.
-
 - **`createFakeFrameStudio({ manifest, main? })`** is the `studio` a surface
   is handed in its frame, with a fake Studio behind `host.call`: every call is
   checked as Studio checks it, against the manifest's permissions and against
@@ -275,7 +274,7 @@ served, and nothing undeclared is used.
 ## What the host provides
 
 Which Studio an extension needs is `engines.studio`. What the running Studio
-provides _today_ is a separate question, and both `studio` objects answer it:
+provides *today* is a separate question, and both `studio` objects answer it:
 
 ```ts
 if (studio.supports('conversations')) startChatFeatures(studio)
@@ -301,28 +300,28 @@ shape where it has one, or throws. A `ui` extension's code runs in sandboxed
 frames, so what it is allowed is all it can do; a `worker` extension's code
 runs on this machine with full access, and the approval says so.
 
-| Permission                                      | Checked on                                                                                                                                      |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `workspace:read`                                | `WorkspaceContextToken`, `getWorkspaceGitInfo`, `getSkillStatus`, a surface's workspace reads                                                   |
-| `workspace:operate`                             | `WorkspaceServiceToken`, `ensureSkillInstalled`                                                                                                 |
-| `conversation:own`                              | The conversation service, and allowing a companion's tool call                                                                                  |
-| `conversation:bypass`                           | Running the extension's chats on `bypass` (without it they go no looser than `auto`), `allowedTools`, and a companion task with `tools: 'auto'` |
-| `chat:draft`                                    | A surface's `chat.draft` (a draft the person reads and sends)                                                                                   |
-| `storage:own`                                   | `getModuleStorage`, `getModuleDataDir`, a surface's `storage.*`                                                                                 |
-| `settings:own`                                  | `getModuleAppState`, `watchModuleAppState`, a surface's `settings.*`                                                                            |
-| `notifications:show`                            | `notify`                                                                                                                                        |
-| `secrets:own`                                   | `getSecretsService`                                                                                                                             |
-| `github:api`                                    | `getGitHubService` (only the person may set it off)                                                                                             |
-| `tools:contribute`                              | `registerMcpTools`, and declaring `contributes.mcpTools`                                                                                        |
-| `agents:companion`                              | `getCompanionAgentsService`                                                                                                                     |
-| `agents:generate`                               | `getTextGenerationService(studio).generate`                                                                                                     |
-| `schedules:own`                                 | `getScheduledAgentsService`                                                                                                                     |
-| `backlog:read`                                  | `getBacklogService` reads; a surface's `backlog.list`, `backlog.location`                                                                       |
-| `backlog:operate`                               | `getBacklogService` writes; a surface's other `backlog.*`                                                                                       |
-| `workspace-files:read`, `workspace-files:write` | A surface's `files.read` / `.stat` / `.search`, and `files.write`, inside a workspace's folder                                                  |
-| `providers:read`                                | `listChatRuntimes`                                                                                                                              |
-| `usage:read`                                    | `getUsageService`, a surface's `usage.query`                                                                                                    |
-| `conversation:read`                             | `getActivityService`: every chat on this machine, read only (flagged broad in the approval)                                                     |
+| Permission | Checked on |
+| --- | --- |
+| `workspace:read` | `WorkspaceContextToken`, `getWorkspaceGitInfo`, `getSkillStatus`, a surface's workspace reads |
+| `workspace:operate` | `WorkspaceServiceToken`, `ensureSkillInstalled` |
+| `conversation:own` | The conversation service, and allowing a companion's tool call |
+| `conversation:bypass` | Running the extension's chats on `bypass` (without it they go no looser than `auto`), `allowedTools`, and a companion task with `tools: 'auto'` |
+| `chat:draft` | A surface's `chat.draft` (a draft the person reads and sends) |
+| `storage:own` | `getModuleStorage`, `getModuleDataDir`, a surface's `storage.*` |
+| `settings:own` | `getModuleAppState`, `watchModuleAppState`, a surface's `settings.*` |
+| `notifications:show` | `notify` |
+| `secrets:own` | `getSecretsService` |
+| `github:api` | `getGitHubService` (only the person may set it off) |
+| `tools:contribute` | `registerMcpTools`, and declaring `contributes.mcpTools` |
+| `agents:companion` | `getCompanionAgentsService` |
+| `agents:generate` | `getTextGenerationService(studio).generate` |
+| `schedules:own` | `getScheduledAgentsService` |
+| `backlog:read` | `getBacklogService` reads; a surface's `backlog.list`, `backlog.location` |
+| `backlog:operate` | `getBacklogService` writes; a surface's other `backlog.*` |
+| `workspace-files:read`, `workspace-files:write` | A surface's `files.read` / `.stat` / `.search`, and `files.write`, inside a workspace's folder |
+| `providers:read` | `listChatRuntimes` |
+| `usage:read` | `getUsageService`, a surface's `usage.query` |
+| `conversation:read` | `getActivityService`: every chat on this machine, read only (flagged broad in the approval) |
 
 Your own methods (`registerMethods`), events and files need no permission.
 The list is closed: `EXTENSION_PERMISSIONS` exports it, and a name not in it
@@ -432,7 +431,7 @@ reads its chats).
   run's chat carries `scheduledAgentId` and `scheduledAgentTag`.
 - **Replies and usage.** A `turn_completed` event's payload carries `text`
   (the agent's last message of the turn), `usage` (`{ inputTokens,
-outputTokens, cacheReadTokens, cacheWriteTokens }`, summed over the turn's
+  outputTokens, cacheReadTokens, cacheWriteTokens }`, summed over the turn's
   model requests, fresh input apart from the prompt cache's share; a count
   the runtime cannot report is absent) and `costUsd`, where the runtime can
   say them (`ModuleConversationTurnCompletedPayload`).
@@ -564,7 +563,7 @@ Beyond plain requests:
   or `subscription` is refused (`invalid_query`) before it is sent, so a poll is
   a read, not a write acting as the person. `data` is `{ data, errors? }`.
 - **Downloads** (`supports('github-download')`): `github.download({ route,
-params, encoding? })` for a job's logs or an archive. GitHub answers those
+  params, encoding? })` for a job's logs or an archive. GitHub answers those
   with a redirect to its own storage; the host follows that one redirect only
   to a GitHub storage host and strips the token before it does
   (`redirect_not_allowed` otherwise).
@@ -779,12 +778,7 @@ const backlog = getBacklogService(studio)
 const created = await backlog.create(workspaceId, { title: 'Faster refunds', status: 'ready', epic: 'payments' })
 if (created.ok) console.log(created.displayId, created.relativePath) // "MC-241", "backlog/payments/2026-10-09-faster-refunds.md"
 await backlog.updateStatus(workspaceId, itemId, 'in_progress')
-await backlog.addLink(workspaceId, itemId, {
-  id: 'board-chat',
-  type: 'agent',
-  label: 'Board chat',
-  target: { kind: 'chat', id: agentId },
-})
+await backlog.addLink(workspaceId, itemId, { id: 'board-chat', type: 'agent', label: 'Board chat', target: { kind: 'chat', id: agentId } })
 
 // a surface
 const moved = await studio.updateBacklogStatus(workspaceId, item.id, 'completed')
@@ -795,7 +789,7 @@ const moved = await studio.updateBacklogStatus(workspaceId, item.id, 'completed'
   mutation lane, so it never interleaves with another writer. `create` takes
   the app's create path: it allocates the next number, files the item under
   its epic's folder with a unique name, and answers `{ id, relativePath,
-path, numericId, displayId }`.
+  path, numericId, displayId }`.
 - `addLink` records the link as your extension's (a `moduleId` naming another
   extension is refused); `updateModuleMetadata` writes your extension's entry only.
 - `getLocation` / `getBacklogLocation` answer `{ root, isDefault, exists }`:
@@ -855,10 +849,10 @@ every agent session on this machine"); check `studio.supports('usage')`.
 workspace, read-only:
 
 - `listChats({ from?, to?, workspaceId? })` → `{ workspaceId, agentId, title,
-cli, providerId, model, createdAt, updatedAt, turnCount, status }` per chat,
+  cli, providerId, model, createdAt, updatedAt, turnCount, status }` per chat,
   newest first.
 - `prompts({ from, to, workspaceId?, limit? })` → `{ at, workspaceId,
-agentId, text, replyTail? }`: each message the person sent, with the last
+  agentId, text, replyTail? }`: each message the person sent, with the last
   few hundred characters of the agent's reply. `limit` defaults to 200 (at
   most 1000); `truncated` says older ones were left out.
 

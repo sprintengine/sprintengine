@@ -5191,6 +5191,8 @@ export const en = {
         pRReviewBadge: 'PR review badge',
         aCountOfThePRs: 'A count of the PRs waiting on you, in the top bar.',
         toolsForMyIssueTracker: 'Tools for my issue tracker',
+        guardForAgentCommands: 'A guard for agents’ commands',
+        refuseRiskyCommandsBefore: 'Refuse risky commands before an agent runs them.',
         letAnyAgentSearchAnd: 'Let any agent search and update your tracker.',
         releaseDashboard: 'Release dashboard',
         openPRsAndCIStatus: 'Open PRs and CI status across projects.',

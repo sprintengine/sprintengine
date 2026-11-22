@@ -24,6 +24,7 @@ import {
 import { launchPermissionCeiling } from '../../main/automation/launch-permission-cap'
 import { tailnetDeviceGrant } from '../../main/automation/tailnet/tailnet-studio-endpoint'
 import { ownerInvoker } from '../../main/module-host/extension-invocation'
+import { extensionHookRefusal } from '../extensions/hooks/extension-hooks'
 import { studioGrantPrincipal, studioPrincipal } from '../../../packages/studio-protocol/src/permissions'
 import { createStudioGatewayTools } from '../../main/automation/studio-gateway-tools'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
@@ -145,6 +146,20 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     ...createConversationChatTools({
       resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
       chats,
+      promptHook: ({ workspaceId, agentId, message, context }) =>
+        core.extensionHooks.wants('agent.prompt.before')
+          ? core.extensionHooks
+              .run(
+                'agent.prompt.before',
+                { agent: null, where: 'chat', workspaceId, agentId, from: 'agent', prompt: message },
+                core.hookInvokers.ofGatewayCaller(context),
+              )
+              .then((outcome) =>
+                outcome.kind === 'deny'
+                  ? { ok: false as const, message: extensionHookRefusal(outcome) }
+                  : { ok: true as const, message: outcome.event.prompt },
+              )
+          : null,
     }),
     // A chat starting a sub-agent of its own, on the same chats and launch.
     ...createSubagentTools({

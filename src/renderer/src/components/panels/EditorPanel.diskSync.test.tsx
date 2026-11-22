@@ -35,6 +35,7 @@ const watchers: Array<{ path: string; cb: (event: FileWatchEvent) => void; stopp
     writefile: async (path: string, content: string) => {
       writes.push({ path, content })
       disk.set(path, content)
+      return {}
     },
     watchPath: async (path: string, cb: (event: FileWatchEvent) => void) => {
       const watcher = { path, cb, stopped: false }

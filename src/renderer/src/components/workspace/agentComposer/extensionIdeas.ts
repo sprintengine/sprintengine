@@ -61,6 +61,14 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
       'A scratchpad panel for each project that keeps my notes between sessions and lets me paste a note into a chat.',
   },
   {
+    id: 'hook-guard',
+    surface: 'Agent hooks',
+    title: copy.workspace.agentComposer.extensionIdeas.guardForAgentCommands,
+    description: copy.workspace.agentComposer.extensionIdeas.refuseRiskyCommandsBefore,
+    prompt:
+      'A guard that refuses any agent’s shell command that force-pushes or deletes outside the project, and tells the agent why.',
+  },
+  {
     id: 'editor',
     surface: 'Editor',
     title: copy.workspace.agentComposer.extensionIdeas.envFileForm,

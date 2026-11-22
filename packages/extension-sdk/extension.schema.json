@@ -23,7 +23,9 @@
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
       "description": "Extension id, kebab-case. Studio installs it under `<publisher>.<id>`, the publisher derived from where it came from (`local` for a folder). Ids starting `studio-` or `sprintengine-` install only from Studio’s own catalogue.",
       "x-since": "0.13.0",
-      "examples": ["notes"]
+      "examples": [
+        "notes"
+      ]
     },
     "version": {
       "type": "string",
@@ -32,7 +34,9 @@
       "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
       "description": "The extension’s version, semver.",
       "x-since": "0.13.0",
-      "examples": ["1.0.0"]
+      "examples": [
+        "1.0.0"
+      ]
     },
     "engines": {
       "type": "object",
@@ -45,20 +49,31 @@
           "pattern": "^>=(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$",
           "description": "The oldest Studio it runs on, as `>=x.y.z`: at least the newest “since” of any field it uses.",
           "x-since": "0.13.0",
-          "examples": [">=0.13.0"]
+          "examples": [
+            ">=0.13.0"
+          ]
         }
       },
-      "required": ["studio"],
+      "required": [
+        "studio"
+      ],
       "description": "The Studio versions it runs on.",
       "x-since": "0.13.0"
     },
     "tier": {
       "type": "string",
       "maxLength": 16,
-      "enum": ["content", "declarative", "ui", "worker"],
+      "enum": [
+        "content",
+        "declarative",
+        "ui",
+        "worker"
+      ],
       "description": "The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, custom editors, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.",
       "x-since": "0.13.0",
-      "examples": ["ui"]
+      "examples": [
+        "ui"
+      ]
     },
     "name": {
       "type": "string",
@@ -66,7 +81,9 @@
       "maxLength": 64,
       "description": "Display name.",
       "x-since": "0.13.0",
-      "examples": ["Notes"]
+      "examples": [
+        "Notes"
+      ]
     },
     "description": {
       "type": "string",
@@ -81,7 +98,9 @@
       "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Pp][Nn][Gg]|\\.[Ss][Vv][Gg]|\\.[Jj][Pp][Gg]|\\.[Jj][Pp][Ee][Gg]|\\.[Ww][Ee][Bb][Pp])$",
       "description": "A square image shown beside the name.",
       "x-since": "0.13.0",
-      "examples": ["assets/icon.png"]
+      "examples": [
+        "assets/icon.png"
+      ]
     },
     "cover": {
       "type": "string",
@@ -110,7 +129,9 @@
       "pattern": "^[A-Za-z0-9.+()-]+(?: (?:OR|AND|WITH) [A-Za-z0-9.+()-]+)*$",
       "description": "Its licence, as an SPDX expression.",
       "x-since": "0.13.0",
-      "examples": ["MIT"]
+      "examples": [
+        "MIT"
+      ]
     },
     "repository": {
       "type": "string",
@@ -161,7 +182,11 @@
       "description": "What it asks the person to allow. `content` and `declarative` extensions hold none.",
       "x-since": "0.13.0",
       "x-tier": "ui",
-      "examples": [["storage:own"]]
+      "examples": [
+        [
+          "storage:own"
+        ]
+      ]
     },
     "main": {
       "type": "string",
@@ -171,7 +196,9 @@
       "description": "The worker’s entry: a module whose `activate(studio)` (its default export, or a named `activate`) registers what it serves. Worker tier only, and required by it.",
       "x-since": "0.13.0",
       "x-tier": "worker",
-      "examples": ["dist/main.js"]
+      "examples": [
+        "dist/main.js"
+      ]
     },
     "background": {
       "type": "boolean",
@@ -198,7 +225,9 @@
                 "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
                 "description": "Command id, unique among this extension’s commands. Without `action`, running the command calls the worker method of this name (`registerMethods`, access `operate`).",
                 "x-since": "0.13.0",
-                "examples": ["notes.clear"]
+                "examples": [
+                  "notes.clear"
+                ]
               },
               "title": {
                 "type": "string",
@@ -206,12 +235,17 @@
                 "maxLength": 128,
                 "description": "Title in the command palette and in menus.",
                 "x-since": "0.13.0",
-                "examples": ["Clear notes"]
+                "examples": [
+                  "Clear notes"
+                ]
               },
               "when": {
                 "type": "string",
                 "maxLength": 16,
-                "enum": ["global", "workspace"],
+                "enum": [
+                  "global",
+                  "workspace"
+                ],
                 "description": "Where the command is offered. `workspace` hides it while no workspace is open. Defaults to `global`.",
                 "x-since": "0.13.0"
               },
@@ -238,10 +272,15 @@
                 ],
                 "description": "A Studio command this command runs. A command with an `action` is declarative and runs no extension code; one without needs the worker tier.",
                 "x-since": "0.13.0",
-                "examples": ["panel.backlog.toggle"]
+                "examples": [
+                  "panel.backlog.toggle"
+                ]
               }
             },
-            "required": ["id", "title"]
+            "required": [
+              "id",
+              "title"
+            ]
           },
           "description": "Command palette entries.",
           "x-since": "0.13.0",
@@ -258,7 +297,11 @@
               "where": {
                 "type": "string",
                 "maxLength": 32,
-                "enum": ["backlog.item", "file", "notification"],
+                "enum": [
+                  "backlog.item",
+                  "file",
+                  "notification"
+                ],
                 "description": "The menu: a backlog item’s, a file’s in the Files tree, or one of this extension’s own notifications.",
                 "x-since": "0.13.0"
               },
@@ -269,10 +312,15 @@
                 "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
                 "description": "A command this extension contributes. Its title is the menu item’s label, and it runs with the item it was picked on.",
                 "x-since": "0.13.0",
-                "examples": ["notes.clear"]
+                "examples": [
+                  "notes.clear"
+                ]
               }
             },
-            "required": ["where", "command"]
+            "required": [
+              "where",
+              "command"
+            ]
           },
           "description": "Items in Studio’s own menus.",
           "x-since": "0.13.0",
@@ -320,7 +368,9 @@
                 ],
                 "description": "The button’s glyph. Defaults to `extension`.",
                 "x-since": "0.13.0",
-                "examples": ["notes"]
+                "examples": [
+                  "notes"
+                ]
               },
               "command": {
                 "type": "string",
@@ -339,7 +389,10 @@
                 "x-since": "0.13.0"
               }
             },
-            "required": ["id", "title"]
+            "required": [
+              "id",
+              "title"
+            ]
           },
           "description": "Buttons in the top bar.",
           "x-since": "0.13.0",
@@ -360,7 +413,9 @@
                 "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
                 "description": "Id, unique within this point.",
                 "x-since": "0.13.0",
-                "examples": ["notes"]
+                "examples": [
+                  "notes"
+                ]
               },
               "title": {
                 "type": "string",
@@ -368,7 +423,9 @@
                 "maxLength": 64,
                 "description": "What Studio calls it.",
                 "x-since": "0.13.0",
-                "examples": ["Notes"]
+                "examples": [
+                  "Notes"
+                ]
               },
               "icon": {
                 "type": "string",
@@ -389,7 +446,9 @@
                 ],
                 "description": "Glyph beside the title. Defaults to `extension`.",
                 "x-since": "0.13.0",
-                "examples": ["notes"]
+                "examples": [
+                  "notes"
+                ]
               },
               "entry": {
                 "type": "string",
@@ -398,10 +457,16 @@
                 "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
                 "description": "What the panel draws, as a tab in a workspace’s pane. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
                 "x-since": "0.13.0",
-                "examples": ["dist/notes.js"]
+                "examples": [
+                  "dist/notes.js"
+                ]
               }
             },
-            "required": ["id", "title", "entry"]
+            "required": [
+              "id",
+              "title",
+              "entry"
+            ]
           },
           "description": "Pane tabs, offered by the pane’s + menu.",
           "x-since": "0.13.0",
@@ -422,7 +487,9 @@
                 "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
                 "description": "Id, unique within this point.",
                 "x-since": "0.13.0",
-                "examples": ["notes"]
+                "examples": [
+                  "notes"
+                ]
               },
               "title": {
                 "type": "string",
@@ -430,7 +497,9 @@
                 "maxLength": 64,
                 "description": "What Studio calls it.",
                 "x-since": "0.13.0",
-                "examples": ["Notes"]
+                "examples": [
+                  "Notes"
+                ]
               },
               "icon": {
                 "type": "string",
@@ -451,7 +520,9 @@
                 ],
                 "description": "Glyph beside the title. Defaults to `extension`.",
                 "x-since": "0.13.0",
-                "examples": ["notes"]
+                "examples": [
+                  "notes"
+                ]
               },
               "entry": {
                 "type": "string",
@@ -460,10 +531,16 @@
                 "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
                 "description": "What the door draws when it is open. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
                 "x-since": "0.13.0",
-                "examples": ["dist/notes.js"]
+                "examples": [
+                  "dist/notes.js"
+                ]
               }
             },
-            "required": ["id", "title", "entry"]
+            "required": [
+              "id",
+              "title",
+              "entry"
+            ]
           },
           "description": "Full-window surfaces, opened from the Extensions drawer.",
           "x-since": "0.13.0",
@@ -484,7 +561,9 @@
                 "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
                 "description": "Id, unique within this point.",
                 "x-since": "0.13.0",
-                "examples": ["notes"]
+                "examples": [
+                  "notes"
+                ]
               },
               "title": {
                 "type": "string",
@@ -492,7 +571,9 @@
                 "maxLength": 64,
                 "description": "What Studio calls it.",
                 "x-since": "0.13.0",
-                "examples": ["Notes"]
+                "examples": [
+                  "Notes"
+                ]
               },
               "icon": {
                 "type": "string",
@@ -513,7 +594,9 @@
                 ],
                 "description": "Glyph beside the title. Defaults to `extension`.",
                 "x-since": "0.13.0",
-                "examples": ["notes"]
+                "examples": [
+                  "notes"
+                ]
               },
               "entry": {
                 "type": "string",
@@ -522,10 +605,16 @@
                 "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
                 "description": "What the section draws in Settings. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
                 "x-since": "0.13.0",
-                "examples": ["dist/notes.js"]
+                "examples": [
+                  "dist/notes.js"
+                ]
               }
             },
-            "required": ["id", "title", "entry"]
+            "required": [
+              "id",
+              "title",
+              "entry"
+            ]
           },
           "description": "Sections in Settings.",
           "x-since": "0.13.0",
@@ -546,7 +635,9 @@
                 "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
                 "description": "Language id, unique among this extension’s syntaxes. A chat code block whose fence names it (```gleam), or one of its extensions without the dot, is highlighted with it.",
                 "x-since": "0.13.0",
-                "examples": ["gleam"]
+                "examples": [
+                  "gleam"
+                ]
               },
               "title": {
                 "type": "string",
@@ -554,7 +645,9 @@
                 "maxLength": 64,
                 "description": "The language’s name.",
                 "x-since": "0.13.0",
-                "examples": ["Gleam"]
+                "examples": [
+                  "Gleam"
+                ]
               },
               "scopeName": {
                 "type": "string",
@@ -563,7 +656,9 @@
                 "pattern": "^[A-Za-z0-9_+-]+(?:\\.[A-Za-z0-9_+-]+)+$",
                 "description": "The grammar’s root scope, unique among this extension’s syntaxes; the grammar file’s own `scopeName` must match.",
                 "x-since": "0.13.0",
-                "examples": ["source.gleam"]
+                "examples": [
+                  "source.gleam"
+                ]
               },
               "path": {
                 "type": "string",
@@ -572,7 +667,9 @@
                 "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss][Oo][Nn])$",
                 "description": "A TextMate grammar in JSON, at most 1 MiB. Keys a TextMate engine does not read are dropped; every `#name` it includes must name a rule in a repository.",
                 "x-since": "0.13.0",
-                "examples": ["syntaxes/gleam.tmLanguage.json"]
+                "examples": [
+                  "syntaxes/gleam.tmLanguage.json"
+                ]
               },
               "configuration": {
                 "type": "string",
@@ -581,7 +678,9 @@
                 "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss][Oo][Nn])$",
                 "description": "A language configuration, at most 64 KiB: `comments`, `brackets`, `autoClosingPairs` and `surroundingPairs`, which the editor reads.",
                 "x-since": "0.13.0",
-                "examples": ["syntaxes/language-configuration.json"]
+                "examples": [
+                  "syntaxes/language-configuration.json"
+                ]
               },
               "extensions": {
                 "type": "array",
@@ -594,7 +693,11 @@
                 },
                 "description": "File-name suffixes the editor opens in this language, ignoring case. A longer suffix wins over a shorter one, and one of Studio’s own languages that drives completions (TypeScript, JavaScript, JSON, CSS, SCSS, Less, HTML, Markdown) is never replaced.",
                 "x-since": "0.13.0",
-                "examples": [[".gleam"]]
+                "examples": [
+                  [
+                    ".gleam"
+                  ]
+                ]
               },
               "filenames": {
                 "type": "array",
@@ -607,10 +710,19 @@
                 },
                 "description": "Exact file names the editor opens in this language, ignoring case; a name wins over any suffix.",
                 "x-since": "0.13.0",
-                "examples": [["gleam.toml"]]
+                "examples": [
+                  [
+                    "gleam.toml"
+                  ]
+                ]
               }
             },
-            "required": ["id", "title", "scopeName", "path"]
+            "required": [
+              "id",
+              "title",
+              "scopeName",
+              "path"
+            ]
           },
           "description": "Syntax highlighting for a language, in chat code blocks and the editor.",
           "x-since": "0.13.0",
@@ -631,7 +743,9 @@
                 "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
                 "description": "Id, unique among this extension’s editors.",
                 "x-since": "0.13.0",
-                "examples": ["todo"]
+                "examples": [
+                  "todo"
+                ]
               },
               "title": {
                 "type": "string",
@@ -639,7 +753,9 @@
                 "maxLength": 64,
                 "description": "Its name, in the editor’s Open with menu.",
                 "x-since": "0.13.0",
-                "examples": ["Todo list"]
+                "examples": [
+                  "Todo list"
+                ]
               },
               "icon": {
                 "type": "string",
@@ -660,7 +776,9 @@
                 ],
                 "description": "Glyph beside its name. Defaults to `extension`.",
                 "x-since": "0.13.0",
-                "examples": ["notes"]
+                "examples": [
+                  "notes"
+                ]
               },
               "entry": {
                 "type": "string",
@@ -669,7 +787,9 @@
                 "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
                 "description": "What the editor draws, in a frame of its own in the file’s tab: a `.js` or `.mjs` module whose `mount(root, studio)` draws into `root`. Its `studio.document` holds the file’s content and takes its edits; Studio keeps the unsaved state, saves and watches the file, and the frame never gets a path.",
                 "x-since": "0.13.0",
-                "examples": ["dist/todo.js"]
+                "examples": [
+                  "dist/todo.js"
+                ]
               },
               "extensions": {
                 "type": "array",
@@ -682,7 +802,11 @@
                 },
                 "description": "File-name suffixes it opens, with the dot, ignoring case. A longer suffix (`.todo.json`) wins over a shorter one (`.json`), and a file named only the suffix never matches. Give `extensions`, `filenames` or both.",
                 "x-since": "0.13.0",
-                "examples": [[".todo"]]
+                "examples": [
+                  [
+                    ".todo"
+                  ]
+                ]
               },
               "filenames": {
                 "type": "array",
@@ -695,24 +819,38 @@
                 },
                 "description": "Exact file names it opens, ignoring case; a name wins over any suffix.",
                 "x-since": "0.13.0",
-                "examples": [["TODO"]]
+                "examples": [
+                  [
+                    "TODO"
+                  ]
+                ]
               },
               "priority": {
                 "type": "string",
                 "maxLength": 16,
-                "enum": ["default", "option"],
+                "enum": [
+                  "default",
+                  "option"
+                ],
                 "description": "`default` (the default) opens matching files in this editor; `option` opens them in Studio’s text editor and offers this one under Open with. A file Studio’s own editor has a language for (`.json`, `.ts`, `.py`, `.md`, `package.json` and the like) or shows as an image is always `option`, whether the editor names it by suffix or by name, so installing an extension never changes how a person’s code opens. Either way the person can reopen the file in the text editor.",
                 "x-since": "0.13.0"
               },
               "contentKind": {
                 "type": "string",
                 "maxLength": 16,
-                "enum": ["text", "bytes"],
+                "enum": [
+                  "text",
+                  "bytes"
+                ],
                 "description": "`text` (the default) hands the editor the file as UTF-8 text and takes whole-text edits; `bytes` hands it the raw bytes, for a binary format, and takes whole-byte edits.",
                 "x-since": "0.13.0"
               }
             },
-            "required": ["id", "title", "entry"]
+            "required": [
+              "id",
+              "title",
+              "entry"
+            ]
           },
           "description": "Editors for files of a type, drawn in the file’s tab. Needs the `workspace-files:read` permission, and `workspace-files:write` to save; without it the file opens read only.",
           "x-since": "0.13.0",
@@ -733,7 +871,9 @@
                 "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
                 "description": "The command the key runs. Either a command this extension contributes in `contributes.commands`, or one of Studio’s own command actions (listed below), which a content extension may bind without any code.",
                 "x-since": "0.13.0",
-                "examples": ["panel.git.toggle"]
+                "examples": [
+                  "panel.git.toggle"
+                ]
               },
               "key": {
                 "type": "string",
@@ -741,17 +881,25 @@
                 "maxLength": 64,
                 "description": "The key chord: modifiers and one key joined by `+`. `Mod` is Cmd on macOS and Ctrl elsewhere. It can be changed or removed in Settings ▸ Shortcuts like any of Studio’s.",
                 "x-since": "0.13.0",
-                "examples": ["Mod+Alt+G"]
+                "examples": [
+                  "Mod+Alt+G"
+                ]
               },
               "when": {
                 "type": "string",
                 "maxLength": 16,
-                "enum": ["global", "workspace"],
+                "enum": [
+                  "global",
+                  "workspace"
+                ],
                 "description": "Where the key works. `workspace` only while a workspace is open. Defaults to `global`.",
                 "x-since": "0.13.0"
               }
             },
-            "required": ["command", "key"]
+            "required": [
+              "command",
+              "key"
+            ]
           },
           "description": "Keyboard shortcuts.",
           "x-since": "0.13.0",
@@ -779,7 +927,9 @@
                 "maxLength": 32,
                 "description": "A short label. Give `text`, `icon` or both.",
                 "x-since": "0.13.0",
-                "examples": ["Gleam"]
+                "examples": [
+                  "Gleam"
+                ]
               },
               "icon": {
                 "type": "string",
@@ -800,7 +950,9 @@
                 ],
                 "description": "A glyph before the text.",
                 "x-since": "0.13.0",
-                "examples": ["notes"]
+                "examples": [
+                  "notes"
+                ]
               },
               "tooltip": {
                 "type": "string",
@@ -816,10 +968,14 @@
                 "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
                 "description": "The command pressing the item runs. Without one, the item only shows. Either a command this extension contributes in `contributes.commands`, or one of Studio’s own command actions (listed below), which a content extension may bind without any code.",
                 "x-since": "0.13.0",
-                "examples": ["panel.git.toggle"]
+                "examples": [
+                  "panel.git.toggle"
+                ]
               }
             },
-            "required": ["id"]
+            "required": [
+              "id"
+            ]
           },
           "description": "Short status items, shown in the window’s band beside the top bar.",
           "x-since": "0.13.0",
@@ -840,7 +996,9 @@
                 "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
                 "description": "The key its value is read under (`settings.get` in a frame, `getModuleAppState` in a worker, both with `settings:own`).",
                 "x-since": "0.13.0",
-                "examples": ["serverUrl"]
+                "examples": [
+                  "serverUrl"
+                ]
               },
               "title": {
                 "type": "string",
@@ -848,7 +1006,9 @@
                 "maxLength": 64,
                 "description": "Its label in Settings.",
                 "x-since": "0.13.0",
-                "examples": ["Server URL"]
+                "examples": [
+                  "Server URL"
+                ]
               },
               "description": {
                 "type": "string",
@@ -860,12 +1020,21 @@
               "type": {
                 "type": "string",
                 "maxLength": 16,
-                "enum": ["string", "number", "integer", "boolean"],
+                "enum": [
+                  "string",
+                  "number",
+                  "integer",
+                  "boolean"
+                ],
                 "description": "The value’s type.",
                 "x-since": "0.13.0"
               },
               "default": {
-                "type": ["string", "number", "boolean"],
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ],
                 "maxLength": 4096,
                 "description": "The value read while the person has set none; of `type`.",
                 "x-since": "0.13.0"
@@ -874,7 +1043,11 @@
                 "type": "array",
                 "maxItems": 64,
                 "items": {
-                  "type": ["string", "number", "boolean"],
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ],
                   "maxLength": 256
                 },
                 "description": "The values allowed, of `type`; Settings shows a picker.",
@@ -921,7 +1094,11 @@
                 "x-since": "0.13.0"
               }
             },
-            "required": ["key", "title", "type"]
+            "required": [
+              "key",
+              "title",
+              "type"
+            ]
           },
           "description": "Settings Studio shows under the extension in Settings, with no code of its own; the extension’s code reads their values with `settings:own`.",
           "x-since": "0.13.0",
@@ -942,7 +1119,9 @@
                 "pattern": "^[a-z][a-z0-9_]*$",
                 "description": "The tool’s name on Studio’s MCP server. The worker serves it with `registerMcpTools`; a tool it registers that is not declared here is refused.",
                 "x-since": "0.13.0",
-                "examples": ["notes_search"]
+                "examples": [
+                  "notes_search"
+                ]
               },
               "description": {
                 "type": "string",
@@ -954,13 +1133,18 @@
               "access": {
                 "type": "string",
                 "maxLength": 16,
-                "enum": ["read", "operate"],
+                "enum": [
+                  "read",
+                  "operate"
+                ],
                 "description": "`read` changes nothing; `operate` may, and agents are asked before it runs where their settings say so.",
                 "x-since": "0.13.0"
               },
               "inputSchema": {
                 "type": "object",
-                "required": ["type"],
+                "required": [
+                  "type"
+                ],
                 "properties": {
                   "type": {
                     "const": "object"
@@ -976,12 +1160,19 @@
                         "type": "string"
                       }
                     },
-                    "required": ["query"]
+                    "required": [
+                      "query"
+                    ]
                   }
                 ]
               }
             },
-            "required": ["name", "description", "access", "inputSchema"]
+            "required": [
+              "name",
+              "description",
+              "access",
+              "inputSchema"
+            ]
           },
           "description": "Tools agents reach through Studio’s MCP server. Needs the `tools:contribute` permission.",
           "x-since": "0.13.0",
@@ -1010,17 +1201,24 @@
                 ],
                 "description": "Where Studio asks the worker, which serves it with `registerHooks`. A `.before` point may refuse or change what Studio is about to do; an `.after` point only hears what it did. The guide’s hooks topic says what each one carries.",
                 "x-since": "0.13.0",
-                "examples": ["agent.tool.before"]
+                "examples": [
+                  "agent.tool.before"
+                ]
               },
               "onError": {
                 "type": "string",
                 "maxLength": 8,
-                "enum": ["pass", "deny"],
+                "enum": [
+                  "pass",
+                  "deny"
+                ],
                 "description": "What a failed hook does: one that throws, answers after 2 s, answers something else, or whose worker crashed or did not start. `pass` (the default) lets the action go on as if it had passed; `deny` refuses it, naming the extension, so a guard fails closed. Ignored for an `.after` point.",
                 "x-since": "0.13.0"
               }
             },
-            "required": ["point"]
+            "required": [
+              "point"
+            ]
           },
           "description": "Hooks the worker runs before (or after) Studio acts: Studio calls them in the order of the extensions’ install keys, waiting at most 2 s on each. The approval names each point in plain words, and an update that adds one asks again.",
           "x-since": "0.13.0",
@@ -1103,7 +1301,14 @@
       "x-since": "0.13.0"
     }
   },
-  "required": ["manifestVersion", "id", "version", "engines", "tier", "name"],
+  "required": [
+    "manifestVersion",
+    "id",
+    "version",
+    "engines",
+    "tier",
+    "name"
+  ],
   "allOf": [
     {
       "if": {
@@ -1112,10 +1317,14 @@
             "const": "worker"
           }
         },
-        "required": ["tier"]
+        "required": [
+          "tier"
+        ]
       },
       "then": {
-        "required": ["main"]
+        "required": [
+          "main"
+        ]
       }
     }
   ]
