@@ -3599,6 +3599,16 @@ export const en = {
     },
     // src/renderer/src/components/settings/extensionContributions.ts
     extensionContributions: {
+      skill: (id: unknown) => `Skill “${id}”`,
+      hostedMcpServer: (name: unknown) => `MCP server ${name}, hosted`,
+      localMcpServer: (name: unknown) => `MCP server ${name}, run on this computer`,
+      provider: (name: unknown) => `Model provider ${name}`,
+      runs: (commandLine: unknown) => `Runs ${commandLine}`,
+      withEnvironment: (variables: unknown) => `With ${variables}`,
+      reaches: (url: unknown) => `Reaches ${url}`,
+      keySentTo: (origin: unknown) => `Your key for it is sent to ${origin} only`,
+      noKey: (origin: unknown) => `Calls ${origin}, with no key`,
+      extensionPathMeans: (token: unknown) => `${token} is the extension’s own folder`,
       door: (label: unknown) => `${label} door`,
       door2: (value: unknown) => `${value} door`,
       workspace: (label: unknown) => `${label} workspace`,
@@ -3607,6 +3617,7 @@ export const en = {
     // src/renderer/src/components/settings/ExtensionRow.tsx
     extensionRow: {
       adds: 'Adds',
+      forAgents: 'For your agents and chats',
       access: 'Access',
       needsCare: 'Needs care',
       also: 'Also',
@@ -4176,6 +4187,7 @@ export const en = {
       editorOpens: (editor: unknown, files: unknown) => `${editor}: ${files}`,
       hooks: 'Hooks into what your agents and Studio do',
       hooksFailClosed: 'If it fails or is slow, it refuses rather than lets the action through',
+      forAgents: 'For your agents and chats',
       needsCare: 'Needs care',
       also: 'Also',
       access: 'Access',

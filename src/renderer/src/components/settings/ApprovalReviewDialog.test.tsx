@@ -73,3 +73,48 @@ test('an extension with a custom editor says which files it opens in it', () => 
   expect(text).toContain('Opens your files in its own editor')
   expect(text).toContain('Todo list: .todo, TODO')
 })
+
+test('a local MCP server is approved with its whole command line and environment, and a provider with its key’s origin', () => {
+  const module = {
+    approval: { state: 'pending', fingerprint: 'sha256-x' },
+    extension: {
+      tier: 'declarative',
+      permissions: [],
+      contributes: {
+        customEditors: [],
+        skills: [{ id: 'review', path: 'skills/review' }],
+        mcpServers: [
+          {
+            id: 'search',
+            name: 'Search',
+            transport: 'stdio',
+            command: 'node',
+            args: ['${extensionPath}/dist/server.js', '--root', 'a b'],
+            env: [{ name: 'LOG_LEVEL', value: 'info' }],
+          },
+          { id: 'docs', name: 'Docs', transport: 'http', url: 'https://mcp.example.com/mcp' },
+        ],
+        providers: [
+          {
+            id: 'acme',
+            name: 'Acme',
+            baseUrl: 'https://api.example.com/v1',
+            models: [{ id: 'm' }],
+            apiKey: { label: 'Acme API key' },
+          },
+        ],
+      },
+    },
+    manifest: { id: 'local.tools', displayName: 'Tools' },
+    launch: { hasMainEntry: false },
+  } as unknown as ThirdPartyModuleView
+  const text = shown(module)
+  expect(text).toContain('Your agents will run its local MCP servers on this machine, with full access')
+  expect(text).not.toContain('runs no code of its own')
+  expect(text).toContain('Runs node ${extensionPath}/dist/server.js --root "a b"')
+  expect(text).toContain('${extensionPath} is the extension’s own folder')
+  expect(text).toContain('With LOG_LEVEL=info')
+  expect(text).toContain('Reaches https://mcp.example.com/mcp')
+  expect(text).toContain('Skill “review”')
+  expect(text).toContain('Your key for it is sent to https://api.example.com only')
+})

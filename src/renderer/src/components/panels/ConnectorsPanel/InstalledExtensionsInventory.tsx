@@ -335,7 +335,7 @@ export function InstalledExtensionsInventory({
       setUpdateRun({ status: 'idle' })
       if (updated) await settleAfterUpdate()
     },
-    [registryPlugins, workspaceRoot, actions, settleAfterUpdate],
+    [registryPlugins, workspaceRoot, settleAfterUpdate],
   )
 
   const startBannerUpdate = useCallback(

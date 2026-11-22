@@ -53,6 +53,12 @@ test('the approval says what each tier’s code can do, as this build enforces i
   assert.equal(grantsFullAccess(['backlog:read', 'workspace-files:write']), true)
   assert.match(extensionApprovalCopy('declarative'), /runs no code of its own/)
   assert.match(extensionApprovalCopy('content'), /runs nothing/)
+  // What it hands agents is said whatever its tier.
+  const local = extensionApprovalCopy('declarative', [], { localServers: true })
+  assert.match(local, /agents will run its local MCP servers on this machine, with full access/)
+  assert.doesNotMatch(local, /runs no code of its own/)
+  assert.match(extensionApprovalCopy('declarative', [], { providers: true }), /sent only to the address shown/)
+  assert.match(extensionApprovalCopy('worker', [], { localServers: true }), /its own code is not limited\. Your agents/)
 })
 
 // The at-a-glance table Settings → Extensions draws its warning glyphs from.

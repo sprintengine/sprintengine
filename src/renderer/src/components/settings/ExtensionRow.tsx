@@ -18,7 +18,8 @@ import {
   type AccessItem,
   type OverflowMenuItem,
 } from '../ui'
-import type { ExtensionContribution } from './extensionContributions'
+import { agentContributionLines, type ExtensionContribution } from './extensionContributions'
+import { AgentContributionList } from './AgentContributionList'
 import { RUN_STATE_LABEL, publisherName, type ExtensionRunState } from './extensionsModel'
 import { copy } from '../../../../shared/copy'
 
@@ -97,6 +98,7 @@ export function ExtensionDetails({
   actions,
 }: ExtensionDetailsProps): JSX.Element {
   const { manifest } = module
+  const agentLines = agentContributionLines(module.extension)
   return (
     <div className="flex flex-col">
       <div className="flex items-start gap-3 px-4 pb-3 pt-4">
@@ -130,6 +132,12 @@ export function ExtensionDetails({
                 </li>
               ))}
             </ul>
+          </section>
+        ) : null}
+        {agentLines.length > 0 ? (
+          <section aria-label={copy.settings.extensionRow.forAgents}>
+            <DetailsHeading>{copy.settings.extensionRow.forAgents}</DetailsHeading>
+            <AgentContributionList lines={agentLines} label={copy.settings.extensionRow.forAgents} />
           </section>
         ) : null}
         {care.length > 0 || standard.length > 0 ? (

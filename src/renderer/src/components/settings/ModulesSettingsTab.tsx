@@ -226,6 +226,14 @@ export function ModulesSettingsTab(): JSX.Element {
     setReviewing(installed)
   }, [awaitingReview, clearAwaitingReview, installedModules])
   const [detailsFor, setDetailsFor] = useState<string | null>(null)
+  // A folder just installed that asks nothing opens its details instead.
+  const { justInstalled, clearJustInstalled } = extensions
+  useEffect(() => {
+    if (!justInstalled) return
+    if (!installedModules.some((candidate) => candidate.manifest.id === justInstalled)) return
+    clearJustInstalled()
+    setDetailsFor(justInstalled)
+  }, [justInstalled, clearJustInstalled, installedModules])
   const [restartDismissed, setRestartDismissed] = useState<string | null>(restartDismissedFor)
   const ids = { review: useId(), installed: useId(), builtIn: useId(), builtInList: useId() }
 
