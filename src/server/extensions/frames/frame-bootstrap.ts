@@ -195,7 +195,7 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
   // over and takes its edits; the frame never sees the file's path.
   var editor = C.surface.point === 'customEditors'
   var documentListeners = { document: new Set(), 'document.flush': new Set() }
-  var document_ = editor ? (${EDITOR_DOCUMENT_SCRIPT})({
+  var document_ = editor ? (${input.surface.point === 'customEditors' ? EDITOR_DOCUMENT_SCRIPT : 'null'})({
     call: function (method, params) { return call(method, params) },
     on: function (name, listener) {
       documentListeners[name].add(listener)

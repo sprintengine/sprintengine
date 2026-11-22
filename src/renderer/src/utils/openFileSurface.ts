@@ -107,7 +107,7 @@ export function openFileSurface(input: OpenFileSurfaceInput): void {
 }
 
 function opensInExtensionEditor(workspaceId: string, path: string): boolean {
-  const folder = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === workspaceId)?.folderPath
+  const folder = useWorkspaceStore.getState().workspaces?.find((workspace) => workspace.id === workspaceId)?.folderPath
   if (!folder || !isPathOrChild(path, trimPath(folder))) return false
   return resolveExtensionEditor(workspaceId, path, extensionEditorsFor(path)) !== null
 }

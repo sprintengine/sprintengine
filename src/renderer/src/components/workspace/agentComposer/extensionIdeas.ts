@@ -61,6 +61,14 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
       'A scratchpad panel for each project that keeps my notes between sessions and lets me paste a note into a chat.',
   },
   {
+    id: 'editor',
+    surface: 'Editor',
+    title: copy.workspace.agentComposer.extensionIdeas.envFileForm,
+    description: copy.workspace.agentComposer.extensionIdeas.editEnvFilesAsAForm,
+    prompt:
+      'An editor that opens .env files as a form of names and values, marks the ones left empty, and keeps the comments as they are.',
+  },
+  {
     id: 'file-action',
     surface: 'Files action',
     title: copy.workspace.agentComposer.extensionIdeas.explainThisFile,

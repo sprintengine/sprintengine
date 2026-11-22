@@ -5187,6 +5187,8 @@ export const en = {
         perProjectNotesThatPersist: 'Per-project notes that persist.',
         explainThisFile: 'Explain this file',
         aChatThatWalksThrough: 'A chat that walks through any file.',
+        envFileForm: 'Env file editor',
+        editEnvFilesAsAForm: 'Open .env files as names and values.',
         secondOpinionReviewer: 'Second-opinion reviewer',
         reviewsWhatAnotherChatChanged: 'Reviews what another chat changed.',
         commitConventions: 'Commit conventions',
