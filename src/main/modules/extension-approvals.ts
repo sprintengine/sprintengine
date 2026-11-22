@@ -160,10 +160,7 @@ function readRecord(value: unknown): ExtensionApprovalRecord | null {
   const { fingerprint, access } = value as Record<string, unknown>
   if (typeof fingerprint !== 'string' || !fingerprint.startsWith('sha256-')) return null
   if (!access || typeof access !== 'object' || Array.isArray(access)) return null
-  const { permissions, tier, worker, background, tools, actions, editors, hooks } = access as Record<
-    string,
-    unknown
-  >
+  const { permissions, tier, worker, background, tools, actions, editors, hooks } = access as Record<string, unknown>
   const strings = (list: unknown): list is string[] =>
     Array.isArray(list) && list.every((entry) => typeof entry === 'string')
   if (!strings(permissions) || !strings(actions) || !strings(editors) || !strings(hooks)) return null

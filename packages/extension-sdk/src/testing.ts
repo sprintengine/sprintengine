@@ -821,9 +821,12 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
       for (const [point, handler] of entries) {
         if (!isExtensionHookPoint(point)) throw new Error(`"${point}" is not a hook point Studio has.`)
         if (listed && !listed.some((entry) => entry.point === point))
-          throw new Error(`Hook "${point}" from extension "${moduleId}" is not listed in its extension.json (contributes.hooks).`)
+          throw new Error(
+            `Hook "${point}" from extension "${moduleId}" is not listed in its extension.json (contributes.hooks).`,
+          )
         if (hookHandlers.has(point)) throw new Error(`Hook "${point}" is registered twice by extension "${moduleId}".`)
-        if (typeof handler !== 'function') throw new Error(`Hook "${point}" from extension "${moduleId}" has no handler.`)
+        if (typeof handler !== 'function')
+          throw new Error(`Hook "${point}" from extension "${moduleId}" has no handler.`)
       }
       for (const [point, handler] of entries)
         hookHandlers.set(point as ExtensionHookPoint, handler as (event: unknown) => unknown)

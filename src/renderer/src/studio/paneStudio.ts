@@ -141,8 +141,7 @@ async function askStudioWhere<M extends StudioMethod>(
   finish?: (params: StudioMethodParams<M>, offers: (capability: StudioCapability) => boolean) => StudioMethodParams<M>,
 ): Promise<StudioMethodResult<M>> {
   if ('mixed' in where) throw new Error(MIXED_MACHINES)
-  const paramsFor = (client: StudioClient) =>
-    finish ? finish(given, (offered) => client.supports(offered)) : given
+  const paramsFor = (client: StudioClient) => (finish ? finish(given, (offered) => client.supports(offered)) : given)
   if (where.machine === null) {
     const client = await windowStudioClient()
     if (!client.supports(capability)) throw new Error(unserved)

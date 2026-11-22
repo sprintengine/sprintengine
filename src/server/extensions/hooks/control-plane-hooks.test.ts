@@ -102,7 +102,13 @@ test('a prompt nobody hooks is sent as it was', async () => {
 
 test('a refused prompt is not sent, and the send says which extension refused it and why', async () => {
   const { hooks, heard } = fakeHooks(
-    () => ({ kind: 'deny', extensionId: 'local.quiet-hours', displayName: 'Quiet hours', reason: 'not now', failed: false }),
+    () => ({
+      kind: 'deny',
+      extensionId: 'local.quiet-hours',
+      displayName: 'Quiet hours',
+      reason: 'not now',
+      failed: false,
+    }),
     ['agent.prompt.before'],
   )
   const { controlPlane, sent, written } = plane(hooks)
@@ -128,7 +134,14 @@ test('a refused prompt is not sent, and the send says which extension refused it
         from: 'studio',
         prompt: 'deploy it',
       },
-      { agent: 'claude', where: 'terminal', workspaceId: 'ws-1', agentId: 'agent-1', from: 'studio', prompt: 'deploy it' },
+      {
+        agent: 'claude',
+        where: 'terminal',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        from: 'studio',
+        prompt: 'deploy it',
+      },
     ],
   )
   assert.deepEqual(
@@ -139,7 +152,8 @@ test('a refused prompt is not sent, and the send says which extension refused it
 
 test('a changed prompt is what the chat is sent, and an extension’s send runs its hooks as that extension', async () => {
   const { hooks, heard } = fakeHooks(
-    (_point, event) => ({ kind: 'continue', event: { ...event, prompt: `${String(event.prompt)} (reviewed)` } }) as never,
+    (_point, event) =>
+      ({ kind: 'continue', event: { ...event, prompt: `${String(event.prompt)} (reviewed)` } }) as never,
     ['agent.prompt.before'],
   )
   const { controlPlane, sent } = plane(hooks)

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import type { ExtensionHookHandlers } from '../../../packages/extension-sdk/src/hooks'
 import { readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative } from 'node:path'
 
@@ -255,6 +256,13 @@ export type MainHost = {
    * mistake that costs, so the default errs toward the audited, gated scope.
    */
   registerMcpTools(tools: McpToolRegistration[]): void
+  /**
+   * Serve the hooks an extension's extension.json lists. Only an extension's
+   * worker serves hooks: its process registers them with its server
+   * (server/extensions/workers/worker-session.ts), which runs them; a part of
+   * Studio's own in this process has none, and is refused.
+   */
+  registerHooks(handlers: ExtensionHookHandlers): void
   /**
    * Make one of the app's skills present in a workspace now, rather than at
    * the next spawn — how a module pre-installs the skill an agent will be told
@@ -1189,6 +1197,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       },
       registerMethods: (batch) => (refuseRetired(), enforce('registerMethods'), live.registerMethods(batch)),
       registerMcpTools: (tools) => (refuseRetired(), enforce('registerMcpTools'), live.registerMcpTools(tools)),
+      registerHooks: (handlers) => (refuseRetired(), enforce('registerHooks'), live.registerHooks(handlers)),
       watchModuleAppState: (cb) => (
         refuseRetired(),
         enforce('watchModuleAppState'),
@@ -1231,6 +1240,11 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       },
       registerMethods(batch) {
         registerMethods(moduleId, batch as unknown as ModuleMethodRegistrations)
+      },
+      registerHooks() {
+        throw new Error(
+          `Module "${moduleId}" registered hooks in Studio's own process: only an extension's worker serves hooks.`,
+        )
       },
       registerMcpTools(tools) {
         const thirdParty = isThirdParty(moduleId)

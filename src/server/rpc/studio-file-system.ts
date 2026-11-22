@@ -145,10 +145,7 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
     params: StudioMethodParams<M> & { commandId: string },
     asking: StudioFileSystemAsking,
     paths: Array<{ raw: string; purpose: 'read' | 'write'; notRoot?: boolean }>,
-    work: (
-      fs: StudioFileSystem,
-      placed: string[],
-    ) => Promise<StudioMethodResult<M> | { refused: Refused<R> }>,
+    work: (fs: StudioFileSystem, placed: string[]) => Promise<StudioMethodResult<M> | { refused: Refused<R> }>,
   ) {
     if (!fileSystem) return unserved(method)
     return options.once(
@@ -225,21 +222,29 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
       return ok({ path: at.ok ? at.path : null })
     },
     'files.writeText': (params, asking) =>
-      writing<'files.writeText', 'refused_by_extension'>('files.writeText', params, asking, [{ raw: params.path, purpose: 'write' }], async (fs, [path]) => {
-        // A client held to known folders writes only inside them: its own
-        // roots are those, whatever it named.
-        const owner = namesAnyPath(asking)
-        const roots = owner ? (params.roots ?? []) : await fs.writableRoots()
-        // A save the person made meets the extensions' hooks here, on the
-        // Studio that holds the file, after its path is placed and before a
-        // byte is written.
-        const hooked = params.save ? options.editorSaveHooks?.({ path: path!, text: params.text, grant: asking.grant }) : null
-        const decided = hooked ? await hooked : null
-        if (decided && !decided.ok) return { refused: refuse('refused_by_extension' as const, decided.message) }
-        const text = decided ? decided.text : params.text
-        await fs.writeText(path!, text, roots, owner)
-        return text === params.text ? {} : { text }
-      }),
+      writing<'files.writeText', 'refused_by_extension'>(
+        'files.writeText',
+        params,
+        asking,
+        [{ raw: params.path, purpose: 'write' }],
+        async (fs, [path]) => {
+          // A client held to known folders writes only inside them: its own
+          // roots are those, whatever it named.
+          const owner = namesAnyPath(asking)
+          const roots = owner ? (params.roots ?? []) : await fs.writableRoots()
+          // A save the person made meets the extensions' hooks here, on the
+          // Studio that holds the file, after its path is placed and before a
+          // byte is written.
+          const hooked = params.save
+            ? options.editorSaveHooks?.({ path: path!, text: params.text, grant: asking.grant })
+            : null
+          const decided = hooked ? await hooked : null
+          if (decided && !decided.ok) return { refused: refuse('refused_by_extension' as const, decided.message) }
+          const text = decided ? decided.text : params.text
+          await fs.writeText(path!, text, roots, owner)
+          return text === params.text ? {} : { text }
+        },
+      ),
     // It names no path: the picture goes to Studio's own picture folder.
     'files.saveDroppedImage': ({ mediaType, dataBase64, commandId }, asking) => {
       if (!fileSystem) return unserved('files.saveDroppedImage')

@@ -165,10 +165,7 @@ import { CLAUDE_AGENT_PROVIDER_ID, createClaudeAgentProvider } from './providers
 import { createCodexConversationProvider } from './providers/codex-conversation-provider'
 import { ACP_PROFILES, createAcpConversationProvider } from './providers/acp-conversation-provider'
 import { leadingCommandFor } from './conversation-commands/leading-command'
-import {
-  extensionHookRefusal,
-  type ExtensionHooks,
-} from '../server/extensions/hooks/extension-hooks'
+import { extensionHookRefusal, type ExtensionHooks } from '../server/extensions/hooks/extension-hooks'
 import { nobodyInvoker, type ExtensionInvoker } from './module-host/extension-invocation'
 import { cliForConversationProvider } from '../shared/conversation-harness'
 import { workspaceStorePath } from './workspace-store'
@@ -2763,11 +2760,13 @@ export class ConversationRuntime {
     return {
       before: (call) => {
         if (!hooks.wants('agent.tool.before')) return null
-        return hooks.run('agent.tool.before', { ...chat(), ...call }, invoker()).then((outcome) =>
-          outcome.kind === 'deny'
-            ? { kind: 'deny' as const, reason: extensionHookRefusal(outcome) }
-            : { kind: 'continue' as const, input: outcome.event.input },
-        )
+        return hooks
+          .run('agent.tool.before', { ...chat(), ...call }, invoker())
+          .then((outcome) =>
+            outcome.kind === 'deny'
+              ? { kind: 'deny' as const, reason: extensionHookRefusal(outcome) }
+              : { kind: 'continue' as const, input: outcome.event.input },
+          )
       },
       after: (call) => {
         if (hooks.wants('agent.tool.after')) hooks.notify('agent.tool.after', { ...chat(), ...call }, invoker())

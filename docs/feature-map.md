@@ -224,6 +224,17 @@ the window's choice of editor `src/renderer/src/modules/extension-editors.ts`, i
 `worker-env.ts`). Tests: `src/server/extensions/workers/worker-lifecycle.test.ts`,
 `src/server/extensions/workers/worker-invocations.test.ts`.
 
+**Agent hooks** (an extension's worker checks, changes or refuses what agents and Studio are about to do): the
+points in `packages/extension-sdk/src/hooks.ts`, the chain in `src/server/extensions/hooks/extension-hooks.ts`
+(who each runs as in `hook-invokers.ts`), served by `src/server/extensions/workers/worker-manager.ts` (`runHook`);
+wired at a Claude Code chat's tool calls (`src/main/providers/claude-agent-provider.ts`, through
+`src/main/conversation-runtime.ts`), the control plane's sends (`src/server/extensions/hooks/control-plane-hooks.ts`),
+launches (`src/main/conversation-launch-service.ts`, `src/main/agent-launch-service.ts`), new workspaces
+(`src/server/extensions/hooks/workspace-hooks.ts`) and editor saves (`src/server/rpc/studio-file-system.ts`). Wire:
+`files.writeText` `save` (capability `extension-hooks`). Sample: `packages/extension-sdk/examples/tool-guard/`;
+template `packages/extension-sdk/templates/hook-guard/`; guide `packages/extension-sdk/guide/hooks.md`. Tests:
+`src/server/extensions/hooks/extension-hooks.test.ts`, `src/main/providers/claude-agent-provider-extension-hooks.test.ts`.
+
 **Content contributions** (syntaxes, keybindings, status bar items, settings; no approval needed): checked by
 `packages/extension-sdk/src/content-syntaxes.ts`, served by `src/main/modules/extension-content.ts` and
 `src/main/modules/extension-declared-settings.ts`; drawn by `src/renderer/src/lib/highlight/contributedSyntaxes.ts`,

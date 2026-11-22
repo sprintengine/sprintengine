@@ -165,10 +165,11 @@ export type ExtensionHookHandlers = { [P in ExtensionHookPoint]?: ExtensionHookH
 
 // ── The table ───────────────────────────────────────────────────────────────
 
-type FieldCheck = (value: unknown) => string | null
+/** Why a value a hook hands back for a field does not fit it, or null. */
+export type ExtensionHookFieldCheck = (value: unknown) => string | null
 
 const text =
-  (max: number, min = 0): FieldCheck =>
+  (max: number, min = 0): ExtensionHookFieldCheck =>
   (value) =>
     typeof value !== 'string'
       ? 'must be text.'
@@ -178,7 +179,7 @@ const text =
           ? `must be at most ${max} characters.`
           : null
 
-const plainObject: FieldCheck = (value) => {
+const plainObject: ExtensionHookFieldCheck = (value) => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'must be an object.'
   try {
     if (JSON.stringify(value).length > EXTENSION_HOOK_TEXT_MAX_CHARS * 2) return 'is too large.'
@@ -192,7 +193,7 @@ export type ExtensionHookPointSpec = {
   /** False for a point that only observes: Studio does not wait, and the answer is ignored. */
   decides: boolean
   /** The fields a hook may change, each with its check. Empty: refuse or pass only. */
-  changes: Readonly<Record<string, FieldCheck>>
+  changes: Readonly<Record<string, ExtensionHookFieldCheck>>
   /** What the approval says it lets the extension do, in plain words. */
   approval: string
   /** For the guide: when it runs, and what an answer does. */
@@ -259,7 +260,8 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
     changes: {},
     approval: 'Hears about each workspace Studio makes',
     summary: 'Studio made a workspace. Observe only: Studio does not wait for it.',
-    event: "{ for: 'chat' | 'workspace'; workspaceId: string; name: string; folderPath: string | null; worktree: boolean }",
+    event:
+      "{ for: 'chat' | 'workspace'; workspaceId: string; name: string; folderPath: string | null; worktree: boolean }",
   },
   'editor.save.before': {
     decides: true,
@@ -297,7 +299,7 @@ function oneLine(value: string): string {
 /**
  * What a hook's `answer` decides for `event` at `point`: pass (nothing), a
  * refusal with its reason, or the event with the fields it may change
- * changed. A change to any other field, or a value that does not fit, is
+ * changed. A change to a field it may not change, or a value that does not fit, is
  * ignored and the event goes on as it was; an answer that is none of these
  * is `invalid`, which counts as the hook failing.
  */

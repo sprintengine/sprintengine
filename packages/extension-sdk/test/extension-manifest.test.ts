@@ -482,9 +482,7 @@ test('version is semver: a numeric prerelease identifier has no leading zero', (
 test('hooks are the worker tier’s, a point at most once, from the points Studio has, failing by pass or deny', () => {
   const worker = (hooks: unknown, extra: Raw = {}) =>
     base({ tier: 'worker', main: 'dist/main.cjs', contributes: { hooks }, ...extra })
-  const manifest = accepted(
-    worker([{ point: 'agent.tool.before', onError: 'deny' }, { point: 'agent.tool.after' }]),
-  )
+  const manifest = accepted(worker([{ point: 'agent.tool.before', onError: 'deny' }, { point: 'agent.tool.after' }]))
   assert.deepEqual(manifest.contributes.hooks, [
     { point: 'agent.tool.before', onError: 'deny' },
     { point: 'agent.tool.after' },
@@ -492,6 +490,10 @@ test('hooks are the worker tier’s, a point at most once, from the points Studi
   refusedAt(base({ tier: 'ui', contributes: { hooks: [{ point: 'agent.tool.before' }] } }), 'tier', /needs "worker"/)
   refusedAt(worker([{ point: 'agent.tool.during' }]), 'contributes.hooks[0].point')
   refusedAt(worker([{ point: 'agent.tool.before', onError: 'retry' }]), 'contributes.hooks[0].onError')
-  refusedAt(worker([{ point: 'agent.tool.before' }, { point: 'agent.tool.before' }]), 'contributes.hooks[1]', /duplicate point/)
+  refusedAt(
+    worker([{ point: 'agent.tool.before' }, { point: 'agent.tool.before' }]),
+    'contributes.hooks[1]',
+    /duplicate point/,
+  )
   refusedAt(worker([{ point: 'agent.tool.before', timeoutMs: 5000 }]), 'contributes.hooks[0].timeoutMs')
 })

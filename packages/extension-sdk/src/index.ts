@@ -422,7 +422,7 @@ export type MainHost = {
    * action go on, `{ change: { … } }` to change the fields the point allows,
    * or `{ deny: reason }` to refuse it. A point extension.json does not list,
    * or one registered twice, is refused. Studio waits on each handler for at
-   * most two seconds; decide before any other awaited call, since one that
+   * most two seconds; decide before awaiting anything else, since one that
    * fails or is slow counts as the hook failing. A hook runs as whoever set
    * off the action it guards, so what it asks of Studio is held to them. See
    * the guide's hooks topic.
@@ -1604,6 +1604,7 @@ export {
   EXTENSION_HOOK_TEXT_MAX_CHARS,
   EXTENSION_HOOK_TIME_LIMIT_MS,
   extensionHookApprovalLines,
+  extensionHookReference,
   isExtensionAfterHookPoint,
   isExtensionHookPoint,
   readExtensionHookAnswer,
@@ -1612,6 +1613,7 @@ export {
   type ExtensionHookAnswer,
   type ExtensionHookChanges,
   type ExtensionHookEvents,
+  type ExtensionHookFieldCheck,
   type ExtensionHookHandler,
   type ExtensionHookHandlers,
   type ExtensionHookOnError,

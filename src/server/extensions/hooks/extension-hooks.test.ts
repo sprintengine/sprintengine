@@ -69,13 +69,21 @@ test('a point no extension lists is not wanted, and runs nothing', async () => {
 test('the sample guard refuses rm -rf, naming itself, and lets anything else through', async () => {
   const hooks = start([{ id: 'tool-guard', name: 'Tool guard', main: GUARD, hooks: GUARD_HOOKS }])
   assert.equal(hooks.wants('agent.tool.before'), true)
-  for (const command of ['rm -rf build', 'cd app && rm -fr dist', 'rm -r -f node_modules', 'rm --recursive --force x']) {
+  for (const command of [
+    'rm -rf build',
+    'cd app && rm -fr dist',
+    'rm -r -f node_modules',
+    'rm --recursive --force x',
+  ]) {
     const outcome = await hooks.run('agent.tool.before', call(command), ownerInvoker())
     assert.equal(outcome.kind, 'deny', command)
     if (outcome.kind !== 'deny') continue
     assert.equal(outcome.extensionId, 'local.tool-guard')
     assert.equal(outcome.failed, false)
-    assert.match(extensionHookRefusal(outcome), /^The extension "Tool guard" \(local\.tool-guard\) refused this: it deletes files recursively and by force/u)
+    assert.match(
+      extensionHookRefusal(outcome),
+      /^The extension "Tool guard" \(local\.tool-guard\) refused this: it deletes files recursively and by force/u,
+    )
   }
   for (const command of ['rm build/out.txt', 'ls -rf', 'git rm -r src']) {
     const outcome = await hooks.run('agent.tool.before', call(command), ownerInvoker())
@@ -172,7 +180,10 @@ for (const onError of ['pass', 'deny'] as const) {
     else {
       assert.equal(outcome.kind, 'deny')
       assert.equal(outcome.kind === 'deny' && outcome.failed, true)
-      assert.match(outcome.kind === 'deny' ? outcome.reason : '', /^its hook failed, and it refuses when it fails: .*did not answer within 2s/u)
+      assert.match(
+        outcome.kind === 'deny' ? outcome.reason : '',
+        /^its hook failed, and it refuses when it fails: .*did not answer within 2s/u,
+      )
     }
   })
 }
@@ -236,18 +247,21 @@ test('a hook runs as the action’s invoker: a device without the permission is 
 })
 
 test('a hook the worker did not register, or one extension.json does not list, is refused at registration', async () => {
-  const hooks = start([
-    {
-      id: 'unregistered',
-      main: `exports.activate = () => undefined`,
-      hooks: [{ point: 'agent.tool.before', onError: 'deny' }],
-    },
-    {
-      id: 'unlisted',
-      main: `exports.activate = (studio) => studio.registerHooks({ 'editor.save.before': () => undefined })`,
-      hooks: [{ point: 'agent.tool.after' }],
-    },
-  ], { maxRestarts: 0, backoffMs: [10] })
+  const hooks = start(
+    [
+      {
+        id: 'unregistered',
+        main: `exports.activate = () => undefined`,
+        hooks: [{ point: 'agent.tool.before', onError: 'deny' }],
+      },
+      {
+        id: 'unlisted',
+        main: `exports.activate = (studio) => studio.registerHooks({ 'editor.save.before': () => undefined })`,
+        hooks: [{ point: 'agent.tool.after' }],
+      },
+    ],
+    { maxRestarts: 0, backoffMs: [10] },
+  )
   const outcome = await hooks.run('agent.tool.before', call('ls'), ownerInvoker())
   assert.match(outcome.kind === 'deny' ? outcome.reason : '', /registered no hook for "agent\.tool\.before"/u)
   // The worker whose registration was refused did not start.

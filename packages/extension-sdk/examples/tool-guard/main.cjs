@@ -41,7 +41,9 @@ exports.activate = (studio) => {
       const command = typeof event.input.command === 'string' ? event.input.command : null
       if (!SHELL_TOOLS.has(event.tool) || command === null) return undefined
       if (deletesByForce(command))
-        return { deny: 'it deletes files recursively and by force (rm -rf). Remove the files you mean by name instead.' }
+        return {
+          deny: 'it deletes files recursively and by force (rm -rf). Remove the files you mean by name instead.',
+        }
       return undefined
     },
     'agent.tool.after': (event) => {

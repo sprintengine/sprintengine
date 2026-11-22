@@ -325,7 +325,9 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ((capability !== STUDIO_EXTENSION_HOST_CAPABILITY && capability !== STUDIO_EXTENSION_EDITORS_CAPABILITY) ||
           options.modules !== undefined) &&
         (capability !== STUDIO_EXTENSION_HOOKS_CAPABILITY ||
-          (options.modules !== undefined && options.fileSystem !== undefined && options.editorSaveHooks !== undefined)) &&
+          (options.modules !== undefined &&
+            options.fileSystem !== undefined &&
+            options.editorSaveHooks !== undefined)) &&
         (capability !== STUDIO_ENVIRONMENT_READINESS_CAPABILITY || options.readiness !== undefined) &&
         (capability !== STUDIO_WINDOW_TICKETS_CAPABILITY || options.environmentAccess !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_ADOPT_CAPABILITY || options.adoption !== undefined) &&

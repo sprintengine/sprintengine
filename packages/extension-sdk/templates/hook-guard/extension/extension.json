@@ -1,0 +1,16 @@
+{
+  "$schema": "../node_modules/@sprintengine/extension-sdk/extension.schema.json",
+  "manifestVersion": 1,
+  "id": "{{id}}",
+  "version": "0.1.0",
+  "engines": {
+    "studio": ">={{studioVersion}}"
+  },
+  "tier": "worker",
+  "name": "{{displayName}}",
+  "description": "{{displayName}}, an extension for SprintEngine Studio.",
+  "main": "dist/main.cjs",
+  "contributes": {
+    "hooks": [{ "point": "agent.tool.before", "onError": "deny" }, { "point": "agent.tool.after" }]
+  }
+}

@@ -17,11 +17,7 @@ import {
   type ModuleMethodCallOutcome,
   type ModuleMethodCallRequest,
 } from '../../../main/module-host/main-host'
-import {
-  currentInvoker,
-  ownerInvoker,
-  type ExtensionInvoker,
-} from '../../../main/module-host/extension-invocation'
+import { currentInvoker, ownerInvoker, type ExtensionInvoker } from '../../../main/module-host/extension-invocation'
 import { resolveContainedEntry } from '../../../main/modules/entry-containment'
 import { moduleFileDigestIssuesSync } from '../../../main/modules/module-signature'
 import { createWorkerLog, type WorkerLog } from './worker-log'
@@ -678,7 +674,9 @@ export class ExtensionWorkers implements KernelWorkerPort {
     for (const point of points) {
       if (!isExtensionHookPoint(point)) throw new Error(`"${String(point)}" is not a hook point Studio has.`)
       if (!(entry.spec.declaredHooks ?? []).some((hook) => hook.point === point))
-        throw new Error(`Hook "${point}" from extension "${id}" is not listed in its extension.json (contributes.hooks).`)
+        throw new Error(
+          `Hook "${point}" from extension "${id}" is not listed in its extension.json (contributes.hooks).`,
+        )
       if (entry.hooks.has(point) || batch.has(point))
         throw new Error(`Hook "${point}" is registered twice by extension "${id}".`)
       batch.add(point)

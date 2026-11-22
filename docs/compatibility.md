@@ -11,13 +11,13 @@ a private data structure, and changing one is not a local edit.**
 
 ## What is versioned
 
-| Wire                                                                                  | Version                                 | Window                                           | Declared in                                     |
-| ------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------ | ----------------------------------------------- |
-| Tailnet transport — a paired phone or Studio reaching this one                        | `TAILNET_TRANSPORT_VERSION` (integer)   | current only (3)                                 | `src/main/automation/tailnet/tailnet-routes.ts` |
-| MCP                                                                                   | dated strings, newest first             | every entry in the list                          | `src/shared/mcp/protocol.ts`                    |
-| Extension manifest — an installed extension's `extension.json`                       | `engines.studio` (`>=x.y.z`)            | every manifest up to `STUDIO_EXTENSION_VERSION`  | `packages/extension-sdk/src/extension-manifest.ts` |
-| Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)     | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current       | `packages/studio-protocol/src/handshake.ts`     |
-| Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`) | current only (one version of slack when 2 ships) | `src/renderer/src/web/embed/embedProtocol.ts`   |
+| Wire                                                                                  | Version                                 | Window                                           | Declared in                                        |
+| ------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------ | -------------------------------------------------- |
+| Tailnet transport — a paired phone or Studio reaching this one                        | `TAILNET_TRANSPORT_VERSION` (integer)   | current only (3)                                 | `src/main/automation/tailnet/tailnet-routes.ts`    |
+| MCP                                                                                   | dated strings, newest first             | every entry in the list                          | `src/shared/mcp/protocol.ts`                       |
+| Extension manifest — an installed extension's `extension.json`                        | `engines.studio` (`>=x.y.z`)            | every manifest up to `STUDIO_EXTENSION_VERSION`  | `packages/extension-sdk/src/extension-manifest.ts` |
+| Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)     | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current       | `packages/studio-protocol/src/handshake.ts`        |
+| Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`) | current only (one version of slack when 2 ships) | `src/renderer/src/web/embed/embedProtocol.ts`      |
 
 One more version number is near these and is **not** a wire window: the
 backlog item schema version is a file format, and is not negotiated with a peer.
@@ -326,6 +326,23 @@ custom editors only where its Studio offers the new capability
 `extension-editors`; elsewhere the file opens in the text editor. An approval
 grows when an update adds an editor, gives one more files to open, or has one
 open its files by default where it was only offered.
+
+### Agent hooks (`extension-hooks`)
+
+A worker extension's `contributes.hooks` lets it check, change or refuse what
+the Studio's agents and the Studio itself are about to do, and hear what they
+did. Hooks run on the Studio that holds the action, so a client never runs
+another machine's extensions. What crosses the wire is small: the
+`ExtensionContributionsView` carries `hooks` (each point and its `onError`), so
+a client's approval names them; and a save the person makes in an editor is
+sent as `files.writeText` with `save: true`, which meets the Studio's
+`editor.save.before` hooks and may answer the `text` a hook wrote, or refuse
+with the new code `refused_by_extension`. A client sends `save` only to a
+Studio offering the new capability `extension-hooks` (offered with
+`extension-host`); an older Studio writes the file as before, with no hooks. A
+refusal of any other hooked action (a launch, a workspace, a prompt) comes back
+in the refusal that action already had, its words naming the extension. An
+approval grows when an update hooks a point the approved version did not.
 
 ### Permissions checked at the host; approvals replace trust (no compatibility)
 
@@ -996,6 +1013,11 @@ from a window is the chat's `conversation.markUnread`. The window's 14
 `workspace-sync:*`, `workspace-registry:*`, `workspace-backup:*` and
 `chats:projectless-*` IPC channels are gone; a desktop's window and its own
 Studio are one build.
+`extension-hooks` (2026-11-22) says the Studio runs its extensions' agent
+hooks, and that `files.writeText` takes `save: true` (an editor save the
+person made, which meets `editor.save.before`), answering `text` when a hook
+changed what was written, or `refused_by_extension`. Offered with
+`extension-host`. A client sends `save` only where it is offered.
 `extension-editors` (2026-11-22) says the Studio opens files in its
 extensions' custom editors: `extension.frame` takes `point: 'customEditors'`,
 and a frame's `files.read` and `files.write` carry bytes (`encoding: 'base64'`),

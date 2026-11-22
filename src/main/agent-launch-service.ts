@@ -40,11 +40,7 @@
  */
 import { randomUUID } from 'crypto'
 
-import {
-  ExtensionHookDenied,
-  runExtensionHook,
-  type ExtensionHooks,
-} from '../server/extensions/hooks/extension-hooks'
+import { ExtensionHookDenied, runExtensionHook, type ExtensionHooks } from '../server/extensions/hooks/extension-hooks'
 import { activeInvoker, ownerInvoker } from './module-host/extension-invocation'
 
 import type {

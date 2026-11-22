@@ -101,11 +101,11 @@ import { manifest } from './manifest'
 import { activate } from '../src/main'
 import { Notes } from '../src/notes'
 
-const main = createFakeMainHost({ manifest })                           // moduleId is local.<id>
+const main = createFakeMainHost({ manifest }) // moduleId is local.<id>
 await activate(main.host)
 await main.methods.operate('plan-in-chat', { where: 'palette', workspaceId: 'ws-app' }) // a command run
 main.services.conversations.emitEvent(ref, { type: 'turn_completed' }) // what the agent would do
-assert.deepEqual(main.undeclared, [])                                   // nothing used undeclared
+assert.deepEqual(main.undeclared, []) // nothing used undeclared
 
 const frame = createFakeFrameStudio({ manifest, main }) // a surface in its frame
 const studio = frame.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
@@ -139,19 +139,20 @@ the same name, and that every declared MCP tool is served.
 
 ## The other topics
 
-| Topic | Read it when |
-| --- | --- |
-| `surfaces` | Choosing what the extension adds to Studio, its tier, and which API does it |
-| `manifest` | Writing `extension/extension.json` |
-| `permissions` | Choosing permissions; what each one allows |
-| `rules` | Before writing a surface or a build change: the mistakes that cost earlier extensions time |
-| `api-renderer` | The `studio` a surface's `mount` is handed |
-| `api-main` | The worker's `activate(studio)`: methods, commands, MCP tools, services, storage |
-| `conversations` | Starting, prompting and reading the extension's own chats; one-shot text generation |
-| `brokers` | API keys and GitHub through the host |
-| `styling` | Drawing a surface: React or plain DOM, the `--sem-*` properties, your own CSS |
-| `troubleshooting` | Studio does not list, approve or run the extension |
-| `publishing` | Signing with extension.sig, packing, handing it to others |
+| Topic             | Read it when                                                                                              |
+| ----------------- | --------------------------------------------------------------------------------------------------------- |
+| `surfaces`        | Choosing what the extension adds to Studio, its tier, and which API does it                               |
+| `manifest`        | Writing `extension/extension.json`                                                                        |
+| `permissions`     | Choosing permissions; what each one allows                                                                |
+| `rules`           | Before writing a surface or a build change: the mistakes that cost earlier extensions time                |
+| `api-renderer`    | The `studio` a surface's `mount` is handed                                                                |
+| `api-main`        | The worker's `activate(studio)`: methods, commands, MCP tools, services, storage                          |
+| `hooks`           | Checking, changing or refusing agents' tool calls, prompts, launches and saves, and hearing what they did |
+| `conversations`   | Starting, prompting and reading the extension's own chats; one-shot text generation                       |
+| `brokers`         | API keys and GitHub through the host                                                                      |
+| `styling`         | Drawing a surface: React or plain DOM, the `--sem-*` properties, your own CSS                             |
+| `troubleshooting` | Studio does not list, approve or run the extension                                                        |
+| `publishing`      | Signing with extension.sig, packing, handing it to others                                                 |
 
 ## Done means
 

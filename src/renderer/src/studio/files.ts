@@ -145,7 +145,8 @@ export const filesApi: FilesApi = {
       STUDIO_FILE_SYSTEM_CAPABILITY,
       UNSERVED,
       // An older Studio has no hooks and refuses a field it does not read.
-      (params, offers) => (options.save && offers(STUDIO_EXTENSION_HOOKS_CAPABILITY) ? { ...params, save: true } : params),
+      (params, offers) =>
+        options.save && offers(STUDIO_EXTENSION_HOOKS_CAPABILITY) ? { ...params, save: true } : params,
     )
     return written.text === undefined ? {} : { text: written.text }
   },

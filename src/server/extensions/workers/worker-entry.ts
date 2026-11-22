@@ -302,7 +302,8 @@ function createStudio(start: WorkerInitMessage): Record<string, unknown> {
       const entries = Object.entries(handlers as Record<string, unknown>)
       for (const [point, handler] of entries) {
         if (typeof handler !== 'function') throw new Error(`Hook "${point}" has no handler.`)
-        if (hooks.has(point)) throw new Error(`Hook "${point}" is registered twice by extension "${start.extensionId}".`)
+        if (hooks.has(point))
+          throw new Error(`Hook "${point}" is registered twice by extension "${start.extensionId}".`)
       }
       const accepted = hostCall({ host: 'registerHooks' }, [entries.map(([point]) => point)]).then(() => {
         for (const [point, handler] of entries) hooks.set(point, handler as Fn)

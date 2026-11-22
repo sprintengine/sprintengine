@@ -11,6 +11,7 @@ import { join } from 'node:path'
 
 import { expect, test } from 'vitest'
 
+import { extensionHookReference } from '../src/hooks.js'
 import {
   EXTENSION_MANIFEST_SINCE,
   extensionManifestJsonSchema,
@@ -44,6 +45,19 @@ test('guide/manifest.md carries the reference the field table produces', () => {
     readFileSync(GUIDE_PATH, 'utf8') === expected,
     `The generated reference in guide/manifest.md is out of date. ${HOW}`,
   )
+})
+
+test('guide/hooks.md carries the table of points the hook table produces', () => {
+  const path = join(SDK, 'guide/hooks.md')
+  const open = '<!-- generated:extension-hook-reference:start -->'
+  const close = '<!-- generated:extension-hook-reference:end -->'
+  const guide = readFileSync(path, 'utf8')
+  const start = guide.indexOf(open)
+  const end = guide.indexOf(close)
+  assert.ok(start !== -1 && end > start, `guide/hooks.md must hold ${open} … ${close}.`)
+  const expected = `${guide.slice(0, start + open.length)}\n\n${extensionHookReference()}\n\n${guide.slice(end)}`
+  if (UPDATE) writeFileSync(path, expected)
+  assert.ok(readFileSync(path, 'utf8') === expected, `The generated table in guide/hooks.md is out of date. ${HOW}`)
 })
 
 test('the schema says what a pattern can of paths, and that the worker tier needs main', () => {

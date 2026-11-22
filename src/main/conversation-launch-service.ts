@@ -32,11 +32,7 @@
  * module that owns the chat, and a run worktree the chat works in instead of
  * the workspace checkout.
  */
-import {
-  ExtensionHookDenied,
-  runExtensionHook,
-  type ExtensionHooks,
-} from '../server/extensions/hooks/extension-hooks'
+import { ExtensionHookDenied, runExtensionHook, type ExtensionHooks } from '../server/extensions/hooks/extension-hooks'
 import { ownerInvoker, type ExtensionInvoker } from './module-host/extension-invocation'
 import { randomUUID } from 'crypto'
 

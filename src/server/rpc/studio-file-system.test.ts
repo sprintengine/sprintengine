@@ -434,7 +434,10 @@ test('a save the person made meets the extensions’ save hooks where the file i
     editorSaveHooks: ({ path, text, grant }) => {
       asked.push({ path, text, owner: grant.owner })
       if (text.includes('TODO'))
-        return Promise.resolve({ ok: false, message: 'The extension "Lint" (local.lint) refused this: a TODO is left.' })
+        return Promise.resolve({
+          ok: false,
+          message: 'The extension "Lint" (local.lint) refused this: a TODO is left.',
+        })
       return Promise.resolve({ ok: true, text: text.trimEnd() + '\n' })
     },
   })

@@ -1510,12 +1510,15 @@ export function createAppServices(
               launchAgent: (request) => shellTerminals.launch(request),
               resolveAgentPermissionPreset,
               createWorkspace: (input, actor, context) =>
-            createWorkspaceWithHooks(
-              localCore?.extensionHooks,
-              () => activeInvoker() ?? localCore?.hookInvokers.ofGatewayCaller(context) ?? ownerInvoker(null, 'the agent'),
-              input,
-              (request) => workspaceSyncService.createWorkspace(request, actor),
-            ),
+                createWorkspaceWithHooks(
+                  localCore?.extensionHooks,
+                  () =>
+                    activeInvoker() ??
+                    localCore?.hookInvokers.ofGatewayCaller(context) ??
+                    ownerInvoker(null, 'the agent'),
+                  input,
+                  (request) => workspaceSyncService.createWorkspace(request, actor),
+                ),
               studioDataDirs: () => [app.getPath('userData')],
               getScheduledAgents: () => resolveScheduledAgents(),
               ...withDefinedMachineSchedules(machineSchedulesOf(core)),
