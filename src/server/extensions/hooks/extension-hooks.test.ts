@@ -8,7 +8,12 @@ import { studioPrincipal } from '../../../../packages/studio-protocol/src/permis
 import type { ExtensionHookEvents } from '../../../../packages/extension-sdk/src/hooks'
 import { ownerInvoker, type ExtensionInvoker } from '../../../main/module-host/extension-invocation'
 import { startWorkerHarness, until, type TestExtension, type WorkerHarness } from '../../../../tests/extension-workers'
-import { createExtensionHooks, extensionHookRefusal, type ExtensionHooks } from './extension-hooks'
+import {
+  createExtensionHooks,
+  extensionHookRefusal,
+  type ExtensionHookSource,
+  type ExtensionHooks,
+} from './extension-hooks'
 
 // Extensions' hooks, run by the chain against real worker processes: each
 // extension that lists a point, in the order of its install key, as the
@@ -157,7 +162,13 @@ test('extensions run in the order of their install keys, each seeing the last on
     reason: 'saw echo hi!',
     failed: false,
   })
-  assert.equal(harness!.workers.status('local.c-third')?.state, 'idle', 'the third was never started')
+  let thirdLog = ''
+  try {
+    thirdLog = readFileSync(join(harness!.logDir, 'local.c-third.log'), 'utf8')
+  } catch {
+    // Never written: never asked either.
+  }
+  assert.doesNotMatch(thirdLog, /hook agent\.tool\.before/u, 'the third was never asked')
 })
 
 for (const onError of ['pass', 'deny'] as const) {
@@ -283,4 +294,116 @@ test('an agent.tool.before round trip to a running worker takes a few millisecon
   const p95 = samples[190]!
   console.info(`agent.tool.before round trip: median ${median.toFixed(2)}ms, p95 ${p95.toFixed(2)}ms`)
   assert.ok(median < 50, `median ${median}ms`)
+})
+
+test('six extensions hooking one point all run, kept warm outside the five on-demand places', async () => {
+  const letters = ['a', 'b', 'c', 'd', 'e', 'f']
+  const hooks = start(
+    letters.map((letter) => ({
+      id: `guard-${letter}`,
+      main: toolHook(`return { change: { input: { command: event.input.command + '${letter}' } } }`),
+      hooks: [{ point: 'agent.tool.before' }],
+    })),
+  )
+  // Started when switched on, before any hook is asked.
+  await until(
+    () => letters.every((letter) => harness!.workers.status(`local.guard-${letter}`)?.state === 'running'),
+    20_000,
+    'every hook worker to be running',
+  )
+  assert.deepEqual(await hooks.run('agent.tool.before', call('x:'), ownerInvoker()), {
+    kind: 'continue',
+    event: call('x:abcdef'),
+  })
+  // An idle sweep leaves them running.
+  await harness!.workers.reapIdle(Date.now() + 60 * 60_000)
+  assert.ok(letters.every((letter) => harness!.workers.status(`local.guard-${letter}`)?.state === 'running'))
+})
+
+test('a guard switched off while its hook runs passes, though it refuses when it fails', async () => {
+  const hooks = start([
+    {
+      id: 'leaves',
+      main: toolHook('await new Promise(() => undefined)'),
+      hooks: [{ point: 'agent.tool.before', onError: 'deny' }],
+    },
+  ])
+  await harness!.workers.startForHook('local.leaves')
+  const pending = hooks.run('agent.tool.before', call('ls'), ownerInvoker())
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  await harness!.workers.detach('local.leaves')
+  assert.deepEqual(await pending, { kind: 'continue', event: call('ls') })
+})
+
+test('a refusal whose reason is too long is malformed, and its onError decides', async () => {
+  const hooks = start([
+    {
+      id: 'wordy',
+      main: toolHook(`return { deny: 'x'.repeat(501) }`),
+      hooks: [{ point: 'agent.tool.before' }],
+    },
+  ])
+  assert.deepEqual(await hooks.run('agent.tool.before', call('ls'), ownerInvoker()), {
+    kind: 'continue',
+    event: call('ls'),
+  })
+})
+
+/** A source of stand-in participants, each answering after `ms` with `answer`. */
+function standIns(
+  list: Array<{ id: string; onError?: 'pass' | 'deny'; ms: number; answer?: unknown }>,
+  overrides: Partial<ExtensionHookSource> = {},
+): ExtensionHookSource {
+  return {
+    hooksListed: () => true,
+    hookParticipants: () =>
+      list.map((entry) => ({
+        extensionId: entry.id,
+        displayName: entry.id,
+        onError: entry.onError ?? 'pass',
+        fingerprint: 'f',
+      })),
+    startForHook: async () => undefined,
+    runHook: (id) => {
+      const entry = list.find((candidate) => candidate.id === id)!
+      return new Promise((resolve) => setTimeout(() => resolve(entry.answer), entry.ms))
+    },
+    stillServes: () => true,
+    ...overrides,
+  }
+}
+
+test('a tool decision has six seconds in all: once spent, each extension not yet asked is decided by its onError', async () => {
+  for (const onError of ['pass', 'deny'] as const) {
+    const hooks = createExtensionHooks()
+    hooks.bind(
+      standIns([
+        { id: 'local.a', ms: 400 },
+        { id: 'local.b', ms: 400 },
+        { id: 'local.c', ms: 10, onError, answer: { deny: 'never asked' } },
+      ]),
+    )
+    const began = Date.now()
+    const outcome = await hooks.run('agent.tool.before', call('ls'), ownerInvoker(), { budgetMs: 600 })
+    assert.ok(Date.now() - began < 1_200, 'the second is cut off at the budget, not its own two seconds')
+    if (onError === 'pass') assert.deepEqual(outcome, { kind: 'continue', event: call('ls') })
+    else {
+      assert.equal(outcome.kind, 'deny')
+      assert.match(outcome.kind === 'deny' ? outcome.reason : '', /ran out first|did not answer/u)
+    }
+  }
+})
+
+test('a chain that throws still refuses for a guard that refuses when it fails', async () => {
+  const hooks = createExtensionHooks()
+  hooks.bind(
+    standIns([{ id: 'local.closed', ms: 1, onError: 'deny', answer: { deny: 'x' } }], {
+      runHook: () => Promise.reject(new Error('broken')),
+      stillServes: () => {
+        throw new Error('the standing could not be read')
+      },
+    }),
+  )
+  const outcome = await hooks.run('agent.tool.before', call('ls'), ownerInvoker())
+  assert.equal(outcome.kind === 'deny' && outcome.extensionId, 'local.closed')
 })

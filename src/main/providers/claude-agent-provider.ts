@@ -46,6 +46,7 @@ import {
 import { builtinSkillSourceRoot, findBuiltinSkill } from '../builtin-skills'
 import { isOwnSkillEntry, skillDirStaysInRoot } from '../skills/skill-dir-containment'
 import { asRecord } from '../../shared/records'
+import { EXTENSION_HOOK_TOOL_BUDGET_MS } from '../../../packages/extension-sdk/src/hooks'
 import { CONVERSATION_DEFAULT_MODEL_ID, conversationPermissionModes } from '../../shared/conversation-harness'
 import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
 import { AGENT_IDENTITY_ENV_KEYS, MCP_CHANNEL_TOKEN_ENV, MCP_SECRET_ENV_PREFIX } from '../../shared/studio-env'
@@ -88,6 +89,7 @@ import {
   sameCommandNames,
 } from '../conversation-commands/claude'
 import { isBackgroundLaunchAck, isSubagentStep } from '../../shared/conversation/subagents'
+
 export { summarizeToolInput } from '../../shared/conversation/approvalSummary'
 import { cliStderrSummary, LOOKUP_TOOL_KINDS } from '../../shared/conversation/permissionModes'
 import { withMacosPrivacyFolderHint } from '../../shared/conversation/macosPrivacyFolders'
@@ -150,6 +152,9 @@ import type {
   ConversationProviderSideQuestionInput,
   ConversationToolHooks,
 } from './conversation-provider-adapter'
+
+/** How long Claude Code waits on Studio's PreToolUse hook, in seconds: four times the hooks' whole budget. */
+export const CLAUDE_PRE_TOOL_HOOK_TIMEOUT_S = (EXTENSION_HOOK_TOOL_BUDGET_MS / 1000) * 4
 
 export const CLAUDE_AGENT_PROVIDER_ID = 'claude-agent'
 // The CLI accepts these on --model regardless of account tier; they track the
@@ -1186,6 +1191,10 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
       hooks: {
         PreToolUse: [
           {
+            // Seconds, well beyond the six extensions' hooks may take in all
+            // (EXTENSION_HOOK_TOOL_BUDGET_MS): a CLI that gave up on the hook
+            // would run the call, past a guard that refuses when it fails.
+            timeout: CLAUDE_PRE_TOOL_HOOK_TIMEOUT_S,
             hooks: [
               async (input) => {
                 if (input.hook_event_name === 'PreToolUse') {

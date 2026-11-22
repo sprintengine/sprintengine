@@ -84,11 +84,16 @@ export function extensionHookRefusal(denied: { displayName: string; extensionId:
 export type ExtensionHooks = {
   /** Whether any extension listed `point`. Synchronous: the no-hook path awaits nothing. */
   wants(point: ExtensionHookPoint): boolean
-  /** Run a `before` point's chain. Never rejects. */
+  /**
+   * Run a `before` point's chain. Never rejects. `budgetMs` caps the whole
+   * chain (a tool decision's six seconds): once spent, each extension not yet
+   * asked is decided by its `onError`.
+   */
   run<P extends ExtensionHookPoint>(
     point: P,
     event: ExtensionHookEvents[P],
     invoker: ExtensionInvoker,
+    options?: { budgetMs?: number },
   ): Promise<ExtensionHookOutcome<ExtensionHookEvents[P]>>
   /** Tell an `after` point's hooks, without waiting for them. */
   notify<P extends ExtensionHookPoint>(point: P, event: ExtensionHookEvents[P], invoker: ExtensionInvoker): void
@@ -104,9 +109,6 @@ export type ExtensionHooksOptions = {
   timeLimitMs?: number
   startTimeoutMs?: number
 }
-
-/** An extension that left while its hook ran: it passes, whatever its `onError`. */
-class ParticipantGone extends Error {}
 
 function within<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -132,18 +134,27 @@ export function createExtensionHooks(options: ExtensionHooksOptions = {}): Exten
     point: P,
     event: ExtensionHookEvents[P],
     invoker: ExtensionInvoker,
+    budgetMs: number | undefined,
+    participants: readonly WorkerHookParticipant[],
   ): Promise<ExtensionHookOutcome<ExtensionHookEvents[P]>> {
     const workers = source
     if (!workers) return { kind: 'continue', event }
     const decides = EXTENSION_HOOK_SPECS[point].decides
+    const deadline = budgetMs === undefined ? Infinity : now() + budgetMs
     let current = event as Record<string, unknown>
-    for (const participant of workers.hookParticipants(point)) {
+    for (const participant of participants) {
       const { extensionId, displayName } = participant
       const startedAt = now()
       const elapsed = () => Math.round(now() - startedAt)
       const failClosed = decides && participant.onError === 'deny'
-      const failed = (problem: string, gone = false): ExtensionHookOutcome<ExtensionHookEvents[P]> | null => {
-        if (failClosed && !gone) {
+      const failed = (problem: string): ExtensionHookOutcome<ExtensionHookEvents[P]> | null => {
+        // One switched off, removed or changed no longer speaks for the person,
+        // whether its hook answered or failed: it passes, whatever its onError.
+        if (!workers.stillServes(extensionId, participant.fingerprint)) {
+          log(extensionId, `hook ${point} passed after ${elapsed()}ms: it was switched off or changed (${problem})`)
+          return null
+        }
+        if (failClosed) {
           log(extensionId, `hook ${point} refused after ${elapsed()}ms (onError: deny): ${problem}`)
           return {
             kind: 'deny',
@@ -156,22 +167,29 @@ export function createExtensionHooks(options: ExtensionHooksOptions = {}): Exten
         log(extensionId, `hook ${point} passed after ${elapsed()}ms because it failed: ${problem}`)
         return null
       }
+      const left = deadline - now()
+      if (left <= 0) {
+        // The action's whole time is spent: each one not yet asked is decided by its onError.
+        const outcome = failed(`the ${budgetMs! / 1000}s this action waits on all its hooks ran out first`)
+        if (outcome) return outcome
+        continue
+      }
       let answer: unknown
       try {
         // Its start is the worker's own wait (the supervisor's ready limit), not the hook's.
-        await within(workers.startForHook(extensionId), startTimeoutMs, 'its worker did not start')
+        await within(workers.startForHook(extensionId), Math.min(startTimeoutMs, left), 'its worker did not start')
+        const limit = Math.min(timeLimitMs, Math.max(1, deadline - now()))
         const hookStartedAt = now()
         answer = await within(
-          workers.runHook(extensionId, point, structuredClone(current), invoker, timeLimitMs),
+          workers.runHook(extensionId, point, structuredClone(current), invoker, limit),
           // A margin over the worker's own limit, so the worker's timeout is the one heard.
-          timeLimitMs + 50,
+          limit + 50,
           'it did not answer',
         )
-        if (!workers.stillServes(extensionId, participant.fingerprint))
-          throw new ParticipantGone('it was switched off or changed while its hook ran')
+        if (!workers.stillServes(extensionId, participant.fingerprint)) throw new Error('it answered after it left')
         log(extensionId, `hook ${point} answered in ${Math.round(now() - hookStartedAt)}ms`)
       } catch (error) {
-        const outcome = failed(messageOf(error), error instanceof ParticipantGone)
+        const outcome = failed(messageOf(error))
         if (outcome) return outcome
         continue
       }
@@ -199,16 +217,41 @@ export function createExtensionHooks(options: ExtensionHooksOptions = {}): Exten
     return { kind: 'continue', event: current as ExtensionHookEvents[P] }
   }
 
+  function run<P extends ExtensionHookPoint>(
+    point: P,
+    event: ExtensionHookEvents[P],
+    invoker: ExtensionInvoker,
+    options: { budgetMs?: number } = {},
+  ): Promise<ExtensionHookOutcome<ExtensionHookEvents[P]>> {
+    let participants: WorkerHookParticipant[] = []
+    try {
+      participants = source?.hookParticipants(point) ?? []
+    } catch (error) {
+      log('studio', `hook ${point}: its extensions could not be listed: ${messageOf(error)}`)
+    }
+    return runChain(point, event, invoker, options.budgetMs, participants).catch((error: unknown) => {
+      // Should the chain itself throw, a guard that refuses when it fails still does.
+      log('studio', `hook ${point} chain failed: ${messageOf(error)}`)
+      const closed = EXTENSION_HOOK_SPECS[point].decides
+        ? participants.find((participant) => participant.onError === 'deny')
+        : undefined
+      return closed
+        ? {
+            kind: 'deny' as const,
+            extensionId: closed.extensionId,
+            displayName: closed.displayName,
+            reason: `its hook could not be run, and it refuses when it fails: ${messageOf(error)}`,
+            failed: true,
+          }
+        : { kind: 'continue' as const, event }
+    })
+  }
+
   return {
     wants: (point) => source?.hooksListed(point) === true,
-    run: (point, event, invoker) =>
-      runChain(point, event, invoker).catch((error: unknown) => {
-        // Nothing in the chain throws; should it, the action goes on, as a failed hook's would.
-        log('studio', `hook ${point} chain failed: ${messageOf(error)}`)
-        return { kind: 'continue' as const, event }
-      }),
+    run,
     notify: (point, event, invoker) => {
-      if (source?.hooksListed(point)) void runChain(point, event, invoker).catch(() => undefined)
+      if (source?.hooksListed(point)) void run(point, event, invoker).catch(() => undefined)
     },
     bind(next) {
       source = next

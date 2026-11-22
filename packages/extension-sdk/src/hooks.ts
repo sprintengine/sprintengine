@@ -44,8 +44,16 @@ export const EXTENSION_HOOK_TIME_LIMIT_MS = 2_000
 /** The most characters a refusal's reason may hold; the agent and the person read it. */
 export const EXTENSION_HOOK_REASON_MAX_CHARS = 500
 
-/** The most characters a prompt or a terminal write a hook hands back may hold. */
-export const EXTENSION_HOOK_TEXT_MAX_CHARS = 100_000
+/** The most characters a prompt, a terminal write or a tool's input a hook hands back may hold, as the reference allows. */
+export const EXTENSION_HOOK_TEXT_MAX_CHARS = 16 * 1024 * 1024
+
+/**
+ * How long one tool call waits on all the extensions that hook it, together:
+ * once spent, each extension not yet asked is decided by its `onError`. The
+ * CLI is told to wait well beyond it, so a slow chain never lets a call through
+ * by timing out.
+ */
+export const EXTENSION_HOOK_TOOL_BUDGET_MS = 6_000
 
 /** The most characters a saved file's text a hook hands back may hold. */
 export const EXTENSION_HOOK_FILE_MAX_CHARS = 16 * 1024 * 1024
@@ -182,7 +190,7 @@ const text =
 const plainObject: ExtensionHookFieldCheck = (value) => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'must be an object.'
   try {
-    if (JSON.stringify(value).length > EXTENSION_HOOK_TEXT_MAX_CHARS * 2) return 'is too large.'
+    if (JSON.stringify(value).length > EXTENSION_HOOK_TEXT_MAX_CHARS) return 'is too large.'
   } catch {
     return 'must be JSON.'
   }
@@ -214,7 +222,7 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
   },
   'agent.prompt.before': {
     decides: true,
-    changes: { prompt: text(EXTENSION_HOOK_TEXT_MAX_CHARS, 1) },
+    changes: { prompt: text(EXTENSION_HOOK_TEXT_MAX_CHARS) },
     approval: 'Can check, change or refuse the messages Studio, extensions and other agents send your agents',
     summary:
       'Studio is about to hand an agent a message the person did not type: a notice Studio sends, an extension’s message, another agent’s `conversation.send`. A message the person sends is never hooked. Change `prompt`, or return `{ deny }` to refuse it.',
@@ -241,7 +249,7 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
   },
   'terminal.write.before': {
     decides: true,
-    changes: { text: text(EXTENSION_HOOK_TEXT_MAX_CHARS, 1) },
+    changes: { text: text(EXTENSION_HOOK_TEXT_MAX_CHARS) },
     approval: 'Can check, change or refuse what Studio and extensions type into your terminals',
     summary:
       'Studio is about to type into a terminal for someone other than a person at its keyboard: an extension’s or a tool’s raw write. Keystrokes from a person (on any machine) are never hooked, and a prompt to an agent takes `agent.prompt.before` instead. Change `text`, or return `{ deny }` to refuse the write.',
@@ -249,7 +257,7 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
   },
   'workspace.create.before': {
     decides: true,
-    changes: { name: text(200, 1) },
+    changes: { name: text(1024, 1) },
     approval: 'Can rename or refuse the workspaces Studio makes',
     summary:
       'Studio is about to make a workspace: for a new chat, or one an agent or extension asked for. Change `name`, or return `{ deny }` to refuse it.',
@@ -319,13 +327,13 @@ export function readExtensionHookAnswer(
     if (typeof reason !== 'string' || !oneLine(reason))
       return { kind: 'invalid', problem: 'a refusal’s reason must be text.' }
     const clean = oneLine(reason)
-    return {
-      kind: 'deny',
-      reason:
-        clean.length > EXTENSION_HOOK_REASON_MAX_CHARS
-          ? `${clean.slice(0, EXTENSION_HOOK_REASON_MAX_CHARS - 1)}…`
-          : clean,
-    }
+    // Too long is malformed, as the reference has it: the hook failed, and its onError decides.
+    if (clean.length > EXTENSION_HOOK_REASON_MAX_CHARS)
+      return {
+        kind: 'invalid',
+        problem: `a refusal's reason holds at most ${EXTENSION_HOOK_REASON_MAX_CHARS} characters.`,
+      }
+    return { kind: 'deny', reason: clean }
   }
   if (keys.length === 1 && keys[0] === 'change') {
     const change = (answer as { change: unknown }).change

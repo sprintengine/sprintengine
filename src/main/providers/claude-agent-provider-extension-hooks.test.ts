@@ -5,7 +5,12 @@ import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 
 import type { ConversationEvent } from '../../shared/conversation-runtime'
-import { CLAUDE_AGENT_PROVIDER_ID, createClaudeAgentProvider } from './claude-agent-provider'
+import {
+  CLAUDE_AGENT_PROVIDER_ID,
+  CLAUDE_PRE_TOOL_HOOK_TIMEOUT_S,
+  createClaudeAgentProvider,
+} from './claude-agent-provider'
+import { EXTENSION_HOOK_TOOL_BUDGET_MS } from '../../../packages/extension-sdk/src/hooks'
 import type { ConversationToolHooks, MockAdapterTurnInput } from './conversation-provider-adapter'
 import { createExtensionHooks, extensionHookRefusal } from '../../server/extensions/hooks/extension-hooks'
 import { ownerInvoker } from '../module-host/extension-invocation'
@@ -69,8 +74,10 @@ async function chat(toolHooks: ConversationToolHooks) {
   const root = await mkdtemp(join(tmpdir(), 'claude-hooks-'))
   roots.push(root)
   const ran: string[] = []
+  const options: Record<string, unknown>[] = []
   let calls = 0
   const query = (params: { prompt: AsyncIterable<Record<string, unknown>>; options: Record<string, unknown> }) => {
+    options.push(params.options)
     const all = params.options.hooks as Record<string, { hooks: Hook[] }[]>
     const pre = all.PreToolUse![0]!.hooks[0]!
     const post = all.PostToolUse![0]!.hooks[0]!
@@ -170,7 +177,7 @@ async function chat(toolHooks: ConversationToolHooks) {
     for await (const event of (await adapter.sendTurn(input)) as AsyncIterable<ConversationEvent>) events.push(event)
     return events
   }
-  return { adapter, run, ran }
+  return { adapter, run, ran, options }
 }
 
 const toolOutput = (events: ConversationEvent[]) => events.find((event) => event.type === 'tool_output')?.payload
@@ -250,3 +257,12 @@ for (const onError of ['pass', 'deny'] as const) {
     await adapter.disposeAll()
   })
 }
+
+test('Claude Code waits on the PreToolUse hook well past the hooks’ whole budget, so a slow chain never lets a call through', async () => {
+  expect(CLAUDE_PRE_TOOL_HOOK_TIMEOUT_S * 1000).toBeGreaterThanOrEqual(EXTENSION_HOOK_TOOL_BUDGET_MS * 2)
+  const { adapter, run, options } = await chat({ before: () => null, after: () => undefined })
+  await run('ls')
+  const pre = (options[0]!.hooks as Record<string, Array<{ timeout?: number }>>).PreToolUse![0]!
+  expect(pre.timeout).toBe(CLAUDE_PRE_TOOL_HOOK_TIMEOUT_S)
+  await adapter.disposeAll()
+})

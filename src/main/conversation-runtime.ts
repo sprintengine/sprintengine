@@ -166,6 +166,7 @@ import { createCodexConversationProvider } from './providers/codex-conversation-
 import { ACP_PROFILES, createAcpConversationProvider } from './providers/acp-conversation-provider'
 import { leadingCommandFor } from './conversation-commands/leading-command'
 import { extensionHookRefusal, type ExtensionHooks } from '../server/extensions/hooks/extension-hooks'
+import { EXTENSION_HOOK_TOOL_BUDGET_MS } from '../../packages/extension-sdk/src/hooks'
 import { nobodyInvoker, type ExtensionInvoker } from './module-host/extension-invocation'
 import { cliForConversationProvider } from '../shared/conversation-harness'
 import { workspaceStorePath } from './workspace-store'
@@ -2761,7 +2762,7 @@ export class ConversationRuntime {
       before: (call) => {
         if (!hooks.wants('agent.tool.before')) return null
         return hooks
-          .run('agent.tool.before', { ...chat(), ...call }, invoker())
+          .run('agent.tool.before', { ...chat(), ...call }, invoker(), { budgetMs: EXTENSION_HOOK_TOOL_BUDGET_MS })
           .then((outcome) =>
             outcome.kind === 'deny'
               ? { kind: 'deny' as const, reason: extensionHookRefusal(outcome) }

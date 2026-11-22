@@ -43,7 +43,8 @@ import { WorkerSlotPool, type WorkerSlot } from './worker-slots'
 //   its methods, an MCP tool, a command, a frame's `worker.request`, a
 //   listener it handed Studio) and is stopped after five idle minutes; at most
 //   five run at once, and one more waits for a place. A `background: true`
-//   worker starts when it is switched on, is never reaped, and at most sixteen
+//   worker, and one that hooks a point (kept warm for its hooks), starts when
+//   it is switched on, is never reaped, and at most sixteen
 //   run; the seventeenth waits, and Settings says why.
 // - Supervision: a worker must say it is ready within ten seconds and answer
 //   each call within thirty. One that crashes is started again after 500 ms,
@@ -141,6 +142,16 @@ type Entry = {
   tools: Set<string>
   hooks: Set<string>
   handlers: Map<string, McpToolRegistration['handler']>
+}
+
+/**
+ * Whether its worker stays running while it is on: a `background` one, and
+ * one that hooks a point, which is kept warm so a hook never waits for a
+ * place among the on-demand workers or for its start (as the reference
+ * keeps hook workers resident). It counts against the background places.
+ */
+function resident(spec: WorkerExtensionSpec): boolean {
+  return spec.background || (spec.declaredHooks?.length ?? 0) > 0
 }
 
 /** The approval it was started under is gone or changed: stop, do not restart. */
@@ -351,7 +362,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
     // Switching it off unloads it, and stops its worker without a restart.
     host.onShutdown(() => this.detach(spec.extensionId))
     if (spec.declaredTools.length > 0) this.options.toolsChanged?.()
-    if (spec.background) void this.ensure(spec.extensionId).catch(() => undefined)
+    if (resident(spec)) void this.ensure(spec.extensionId).catch(() => undefined)
   }
 
   /** Let go of an extension: its worker stops, and its tools leave the gateway. */
@@ -435,7 +446,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
       [...this.entries.values()]
         .filter(
           (entry) =>
-            !entry.spec.background &&
+            !resident(entry.spec) &&
             entry.state === 'running' &&
             entry.process !== null &&
             entry.process.inFlight() === 0 &&
@@ -510,14 +521,14 @@ export class ExtensionWorkers implements KernelWorkerPort {
     // The process before it finishes its shutdown hooks and gives back its place first.
     while (entry.stopping) await entry.stopping
     if (entry.generation !== generation) throw new Error(entry.message ?? 'The worker was stopped.')
-    const pool = spec.background ? this.backgroundPool : this.active
+    const pool = resident(spec) ? this.backgroundPool : this.active
     if (!entry.slot) {
       if (!pool.hasRoom())
         this.setState(
           entry,
           'waiting',
-          spec.background
-            ? `Waiting to start: ${pool.capacity} extensions already run in the background, the most Studio runs at once. It starts when one of them is switched off.`
+          resident(spec)
+            ? `Waiting to start: ${pool.capacity} extensions already run in the background, the most Studio runs at once (one that hooks Studio's actions is kept running there too). ${spec.background ? '' : 'Until it starts, its hooks pass, or refuse where it says it refuses when it fails. '}It starts when one of them is switched off.`
             : `Waiting to start: ${pool.capacity} extension workers are running, the most Studio runs at once. It starts when one of them stops.`,
         )
       entry.slot = await pool.acquire(signal)
