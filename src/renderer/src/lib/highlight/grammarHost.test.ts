@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
 
 import { build } from 'esbuild'
-import { afterAll, beforeAll, expect, test } from 'vitest'
+import { afterAll, beforeAll, expect, test, vi } from 'vitest'
 
 import { parseTextMateGrammar } from '../../../../../packages/extension-sdk/src/content-syntaxes'
 import { loadCodeLanguage, IncrementalCodeTokenizer } from './codeHighlight'
@@ -39,7 +39,9 @@ beforeAll(async () => {
       contents: [
         `import { parentPort } from 'node:worker_threads'`,
         `import { createGrammarTokenizer } from './grammarTokenizer'`,
-        `const tokenizer = createGrammarTokenizer()`,
+        // A descheduled runner must not leave a short line plain; the host's
+        // deadline is what these tests hold.
+        `const tokenizer = createGrammarTokenizer({ lineTimeLimitMs: 2000 })`,
         `parentPort.on('message', async (request) => parentPort.postMessage(await tokenizer.handle(request)))`,
       ].join('\n'),
       resolveDir: __dirname,
@@ -189,6 +191,10 @@ test('a grammar’s scope never stands in for another extension’s, or for one 
   expect(roles('const x', typed![0])).toEqual({ const: 'keyword' })
   // Studio's TypeScript is its own grammar on the window's thread, untouched.
   const engine = await loadCodeLanguage('typescript')
+  // The engine's per-line limit reads the clock; a descheduled runner must
+  // not leave the line plain (as codeHighlight.test.ts holds it too).
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(0)
   const [line] = new IncrementalCodeTokenizer(engine, 'typescript').update('interface Shape {}', true)
+  clock.mockRestore()
   expect(line!.tokens.find((token) => token.content === 'interface')?.color).toBe('var(--sem-syntax-keyword)')
 })

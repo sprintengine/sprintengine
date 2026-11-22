@@ -37,7 +37,13 @@ const LINE_TIME_LIMIT_MS = 50
 
 export type GrammarTokenizer = { handle(request: GrammarRequest): Promise<GrammarResponse> }
 
-export function createGrammarTokenizer(): GrammarTokenizer {
+export function createGrammarTokenizer(
+  options: {
+    /** The engine's own limit per line, checked between searches; the host's deadline is the one that holds. */
+    lineTimeLimitMs?: number
+  } = {},
+): GrammarTokenizer {
+  const lineTimeLimitMs = options.lineTimeLimitMs ?? LINE_TIME_LIMIT_MS
   const engine = createOnigurumaEngine(import('shiki/wasm'))
   const highlighters = new Map<string, Promise<HighlighterCore>>()
   const loaded = new Set<string>()
@@ -69,7 +75,7 @@ export function createGrammarTokenizer(): GrammarTokenizer {
             lang: request.language,
             theme: CODE_THEME,
             ...(state ? { grammarState: state } : {}),
-            tokenizeTimeLimit: LINE_TIME_LIMIT_MS,
+            tokenizeTimeLimit: lineTimeLimitMs,
           })
           state = highlighter.getLastGrammarState(tokens) ?? state
           const out: Array<[number, CodeRole | null]> = []
