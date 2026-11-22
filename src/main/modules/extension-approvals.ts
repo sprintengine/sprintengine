@@ -4,6 +4,7 @@ import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { tierRank, type ExtensionTier } from '../../../packages/extension-sdk/src/manifest-schema'
+import { extensionHookApprovalLines, isExtensionHookPoint } from '../../../packages/extension-sdk/src/hooks'
 import type { ExtensionManifest } from '../../shared/modules/third-party-manifest'
 
 // What the person approved an extension for, on this machine.
@@ -44,6 +45,12 @@ export type ExtensionAccess = {
    * to opening them by default, is asked for again.
    */
   editors: string[]
+  /**
+   * The points its worker hooks (`contributes.hooks`), sorted: a hook sees,
+   * and before an action may change or refuse, what the person's agents and
+   * Studio do, so one it did not hook before is asked for again.
+   */
+  hooks: string[]
 }
 
 export type ExtensionApprovalRecord = { fingerprint: string; access: ExtensionAccess }
@@ -64,6 +71,7 @@ export function extensionAccess(
     editors: manifest.contributes.customEditors
       .map((editor) => `${editor.id}=${editorFiles(editor).join(',')}|${editor.priority ?? 'default'}`)
       .sort(),
+    hooks: [...new Set(manifest.contributes.hooks.map((hook) => hook.point))].sort(),
   }
 }
 
@@ -132,6 +140,11 @@ export function accessGrowth(approved: ExtensionAccess, next: ExtensionAccess): 
     if (before && before.priority === 'option' && priority === 'default')
       growth.push(`the editor "${id}" opening its files by default`)
   }
+  for (const point of next.hooks)
+    if (!approved.hooks.includes(point)) {
+      const [line] = isExtensionHookPoint(point) ? extensionHookApprovalLines([point]) : []
+      growth.push(line ? `a hook: ${line.charAt(0).toLowerCase()}${line.slice(1)}` : `the hook "${point}"`)
+    }
   return growth
 }
 
@@ -147,10 +160,13 @@ function readRecord(value: unknown): ExtensionApprovalRecord | null {
   const { fingerprint, access } = value as Record<string, unknown>
   if (typeof fingerprint !== 'string' || !fingerprint.startsWith('sha256-')) return null
   if (!access || typeof access !== 'object' || Array.isArray(access)) return null
-  const { permissions, tier, worker, background, tools, actions, editors } = access as Record<string, unknown>
+  const { permissions, tier, worker, background, tools, actions, editors, hooks } = access as Record<
+    string,
+    unknown
+  >
   const strings = (list: unknown): list is string[] =>
     Array.isArray(list) && list.every((entry) => typeof entry === 'string')
-  if (!strings(permissions) || !strings(actions) || !strings(editors)) return null
+  if (!strings(permissions) || !strings(actions) || !strings(editors) || !strings(hooks)) return null
   if (!isTier(tier) || typeof worker !== 'boolean' || typeof background !== 'boolean') return null
   if (!tools || typeof tools !== 'object' || Array.isArray(tools)) return null
   const toolAccess = Object.entries(tools as Record<string, unknown>)
@@ -165,6 +181,7 @@ function readRecord(value: unknown): ExtensionApprovalRecord | null {
       tools: Object.fromEntries(toolAccess) as Record<string, 'read' | 'operate'>,
       actions: [...actions].sort(),
       editors: [...editors].sort(),
+      hooks: [...hooks].sort(),
     },
   }
 }

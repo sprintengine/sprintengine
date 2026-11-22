@@ -1178,6 +1178,52 @@
           "x-since": "0.13.0",
           "x-tier": "worker"
         },
+        "hooks": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "title": "HookContribution",
+            "additionalProperties": false,
+            "properties": {
+              "point": {
+                "type": "string",
+                "maxLength": 64,
+                "enum": [
+                  "agent.launch.before",
+                  "agent.prompt.before",
+                  "agent.tool.before",
+                  "agent.tool.after",
+                  "terminal.write.before",
+                  "workspace.create.before",
+                  "workspace.create.after",
+                  "editor.save.before"
+                ],
+                "description": "Where Studio asks the worker, which serves it with `registerHooks`. A `.before` point may refuse or change what Studio is about to do; an `.after` point only hears what it did. The guide’s hooks topic says what each one carries.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "agent.tool.before"
+                ]
+              },
+              "onError": {
+                "type": "string",
+                "maxLength": 8,
+                "enum": [
+                  "pass",
+                  "deny"
+                ],
+                "description": "What a failed hook does: one that throws, answers after 2 s, answers something else, or whose worker crashed or did not start. `pass` (the default) lets the action go on as if it had passed; `deny` refuses it, naming the extension, so a guard fails closed. Ignored for an `.after` point.",
+                "x-since": "0.13.0"
+              }
+            },
+            "required": [
+              "point"
+            ]
+          },
+          "description": "Hooks the worker runs before (or after) Studio acts: Studio calls them in the order of the extensions’ install keys, waiting at most 2 s on each. The approval names each point in plain words, and an update that adds one asks again.",
+          "x-since": "0.13.0",
+          "x-tier": "worker"
+        },
         "themes": {
           "type": "array",
           "maxItems": 0,
@@ -1218,12 +1264,6 @@
           "type": "array",
           "maxItems": 0,
           "description": "Reserved for events delivered to the worker; must be empty.",
-          "x-since": "0.13.0"
-        },
-        "hooks": {
-          "type": "array",
-          "maxItems": 0,
-          "description": "Reserved for hooks the worker runs around Studio actions; must be empty.",
           "x-since": "0.13.0"
         },
         "sidecars": {

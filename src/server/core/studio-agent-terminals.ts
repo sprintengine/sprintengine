@@ -1,5 +1,9 @@
 import { join } from 'node:path'
 
+import type { ExtensionHooks } from '../extensions/hooks/extension-hooks'
+import { controlPlaneHooks } from '../extensions/hooks/control-plane-hooks'
+import type { ExtensionInvoker } from '../../main/module-host/extension-invocation'
+
 import { createAgentControlPlane } from '../../main/agent-control-plane'
 import {
   createAgentLaunchNotices,
@@ -99,6 +103,9 @@ export type StudioAgentTerminalsDeps = {
   onChatIdle: (listener: (summary: { sessionId: string; workspaceId: string; agentId: string }) => void) => void
   setChatIdleThresholdMs: (value: unknown) => void
   host?: StudioTerminalHost
+  /** Extensions' hooks on what the control plane sends, run as each send's invoker. */
+  extensionHooks?: ExtensionHooks
+  chatInvoker?: (chat: { workspaceId: string; agentId: string }) => ExtensionInvoker
 }
 
 export type StudioAgentTerminals = NonNullable<ReturnType<typeof createStudioAgentTerminals>>
@@ -210,6 +217,9 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
   // The one way to type at a live agent, terminal or chat: concurrent prompts
   // serialise per session, and no window is needed.
   const controlPlane = createAgentControlPlane({
+    ...(deps.extensionHooks && deps.chatInvoker
+      ? { hooks: controlPlaneHooks(deps.extensionHooks, deps.chatInvoker) }
+      : {}),
     terminal: {
       list: () => runtime.sessions.listTerminals(),
       write: (sessionId, data) => runtime.sessions.writeTerminal(sessionId, data),

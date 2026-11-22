@@ -638,6 +638,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     agentLaunchSettings,
     conversations,
     subagents,
+    extensionHooks,
+    chatInvoker,
     onChatIdle: (listener) => {
       conversationRuntime.onSessionIdle(listener)
     },

@@ -24,6 +24,7 @@ const WORKER: ExtensionAccess = {
   tools: { notes_search: 'read' },
   actions: ['notes.open=chat.new'],
   editors: [],
+  hooks: [],
 }
 const NO_CONTRIBUTIONS = {
   commands: [],
@@ -33,6 +34,7 @@ const NO_CONTRIBUTIONS = {
   doors: [],
   settingsSections: [],
   mcpTools: [],
+  hooks: [],
   syntaxes: [],
   customEditors: [],
   keybindings: [],
@@ -86,6 +88,7 @@ test('what a manifest asks for, and that only content needs no approval', () => 
       tools: { notes_write: 'operate' },
       actions: ['b.run=chat.new'],
       editors: [],
+      hooks: [],
     },
   )
   assert.equal(extensionNeedsApproval({ tier: 'content' }), false)
@@ -181,4 +184,35 @@ test('the reader a host call uses sees a change to the approvals at once', async
     await writeExtensionApproval(dir, 'local.one', null)
     assert.equal(read().has('local.one'), false)
   })
+})
+
+test('a hook the approved version did not have is growth, said in the approval’s own words', () => {
+  const hooked = (points: string[]) => ({ ...WORKER, hooks: points })
+  assert.deepEqual(
+    extensionAccess({
+      permissions: [],
+      tier: 'worker',
+      main: 'dist/main.cjs',
+      contributes: {
+        ...NO_CONTRIBUTIONS,
+        hooks: [{ point: 'agent.tool.after' }, { point: 'agent.tool.before', onError: 'deny' }],
+      },
+    }).hooks,
+    ['agent.tool.after', 'agent.tool.before'],
+  )
+  assert.deepEqual(accessGrowth(hooked(['agent.tool.before']), hooked(['agent.tool.before'])), [])
+  assert.deepEqual(accessGrowth(hooked(['agent.tool.before', 'agent.tool.after']), hooked(['agent.tool.before'])), [])
+  assert.deepEqual(accessGrowth(hooked([]), hooked(['agent.tool.before', 'editor.save.before'])), [
+    'a hook: can check, change or refuse your agents’ tool calls',
+    'a hook: can check, change or refuse the files you save in the editor',
+  ])
+})
+
+test('an approval stored without the hooks it covers approves nothing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'approvals-hooks-'))
+  writeFileSync(
+    join(dir, 'extension-approvals.json'),
+    JSON.stringify({ 'local.old': { fingerprint: 'sha256-abc', access: { ...WORKER, hooks: undefined } } }),
+  )
+  assert.equal(readExtensionApprovalsSync(dir).has('local.old'), false)
 })

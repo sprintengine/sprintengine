@@ -4193,6 +4193,8 @@ export const en = {
       newInThisVersion: 'New in this version',
       opensFiles: 'Opens your files in its own editor',
       editorOpens: (editor: unknown, files: unknown) => `${editor}: ${files}`,
+      hooks: 'Hooks into what your agents and Studio do',
+      hooksFailClosed: 'If it fails or is slow, it refuses rather than lets the action through',
       needsCare: 'Needs care',
       also: 'Also',
       access: 'Access',

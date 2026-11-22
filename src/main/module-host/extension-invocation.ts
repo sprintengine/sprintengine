@@ -82,6 +82,11 @@ export function boundToRegistrant<A extends unknown[], R>(listener: (...args: A)
     registrant ? storage.run(registrant, () => listener(...args)) : storage.exit(() => listener(...args))
 }
 
+/** Who invoked the extension code running now, or null outside any extension's call. */
+export function activeInvoker(): ExtensionInvoker | null {
+  return storage.getStore() ?? null
+}
+
 /** Who invoked the extension code running now; the person when nothing did (its own work). */
 export function currentInvoker(): ExtensionInvoker {
   return storage.getStore() ?? ownerInvoker()

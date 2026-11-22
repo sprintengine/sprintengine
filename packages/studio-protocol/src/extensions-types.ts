@@ -131,6 +131,8 @@ export type ExtensionSettingContributionView = {
   multiline?: boolean
   placeholder?: string
 }
+/** A point the extension's worker hooks, and whether its failure refuses the action. */
+export type ExtensionHookContributionView = { point: string; onError?: 'pass' | 'deny' }
 export type ExtensionContributionsView = {
   commands: ExtensionCommandContributionView[]
   menus: ExtensionMenuContributionView[]
@@ -139,6 +141,7 @@ export type ExtensionContributionsView = {
   doors: ExtensionSurfaceContributionView[]
   settingsSections: ExtensionSurfaceContributionView[]
   mcpTools: ExtensionMcpToolContributionView[]
+  hooks: ExtensionHookContributionView[]
   syntaxes: ExtensionSyntaxContributionView[]
   customEditors: ExtensionCustomEditorContributionView[]
   keybindings: ExtensionKeybindingContributionView[]

@@ -104,6 +104,8 @@ type ControlPlaneFailureReason =
   | 'unsupported'
   | 'write_failed'
   | 'timeout'
+  /** An extension's hook refused it; the message names the extension and why. */
+  | 'refused'
 
 export type ControlPlaneResolution =
   | { ok: true; session: ControlPlaneSession }
@@ -230,6 +232,19 @@ export type ControlPlaneConversationPort = {
   interrupt(input: { sessionId: string }): Promise<{ ok: boolean; message?: string }>
 }
 
+/** What extensions' hooks make of something about to be sent: null when none hooks it. */
+export type ControlPlaneHookAnswer = Promise<{ ok: true; text: string } | { ok: false; message: string }> | null
+
+/**
+ * Extensions' hooks on what the plane hands an agent or types into a terminal
+ * (`agent.prompt.before`, `terminal.write.before`), asked inside the
+ * session's queue so writes to one session stay in order while a hook decides.
+ */
+export type ControlPlaneHooks = {
+  prompt(session: ControlPlaneSession, text: string): ControlPlaneHookAnswer
+  write(session: ControlPlaneSession, data: string): ControlPlaneHookAnswer
+}
+
 export type AgentControlPlaneDeps = {
   terminal: ControlPlaneTerminalPort
   /**
@@ -240,6 +255,7 @@ export type AgentControlPlaneDeps = {
   conversation?: ControlPlaneConversationPort
   now?: () => number
   delay?: (ms: number) => Promise<void>
+  hooks?: ControlPlaneHooks
 }
 
 const DEFAULT_SUBMIT_DELAY_MS = 50
@@ -383,10 +399,16 @@ export class AgentControlPlane {
           message: 'A conversation session cannot pre-fill text without sending it as a turn.',
         }
       }
-      return this.enqueue(session.sessionId, () => this.sendConversationTurn(session, text, options.origin))
+      return this.enqueue(session.sessionId, async () => {
+        const hooked = await this.hooked('prompt', session, text)
+        return hooked.ok ? this.sendConversationTurn(session, hooked.text, options.origin) : hooked
+      })
     }
 
-    return this.enqueue(session.sessionId, () => this.sendTerminalPrompt(session.sessionId, text, submit, options))
+    return this.enqueue(session.sessionId, async () => {
+      const hooked = await this.hooked('prompt', session, text)
+      return hooked.ok ? this.sendTerminalPrompt(session.sessionId, hooked.text, submit, options) : hooked
+    })
   }
 
   /** Send the carriage return that submits whatever is sitting at the prompt. */
@@ -483,10 +505,24 @@ export class AgentControlPlane {
       }
     }
     return this.enqueue<ControlPlaneSendResult>(session.sessionId, async () => {
-      const written = this.writeTerminal(session.sessionId, data)
+      const hooked = await this.hooked('write', session, data)
+      if (!hooked.ok) return hooked
+      const written = this.writeTerminal(session.sessionId, hooked.text)
       if (!written.ok) return written
       return { ok: true, sessionId: session.sessionId, transport: 'terminal', submitted: false }
     })
+  }
+
+  /** The text extensions' hooks leave to send, or their refusal. Nothing awaited when none hooks it. */
+  private async hooked(
+    kind: 'prompt' | 'write',
+    session: ControlPlaneSession,
+    text: string,
+  ): Promise<{ ok: true; text: string } | Extract<ControlPlaneSendResult, { ok: false }>> {
+    const pending = this.deps.hooks?.[kind](session, text)
+    if (!pending) return { ok: true, text }
+    const answer = await pending
+    return answer.ok ? answer : { ok: false, sessionId: session.sessionId, reason: 'refused', message: answer.message }
   }
 
   /** Read a session's retained output. */

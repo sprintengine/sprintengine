@@ -24,6 +24,7 @@ const SERIAL = [
   'src/server/extensions/workers/worker-lifecycle.test.ts',
   // Forks extension workers and times their hooks' limits and round trips.
   'src/server/extensions/hooks/extension-hooks.test.ts',
+  'src/main/providers/claude-agent-provider-extension-hooks.test.ts',
   // Builds the WSL server tree and runs real servers through a stand-in for
   // wsl.exe: heavy enough to starve the timing suites it would share a CPU with.
   'src/server/wsl/wsl-environment-manager.test.ts',
