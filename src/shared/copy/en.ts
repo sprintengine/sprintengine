@@ -604,6 +604,33 @@ export const en = {
       buildYourOwnExtension: 'Build your own extension',
       anAgentBuildsItWith: 'An agent builds it with you in a chat',
     },
+    // src/renderer/src/components/extensions/ExtensionEditorView.tsx
+    extensionEditorView: {
+      // The file view's words in a chat, for the same two moments.
+      changedOnDisk: 'This file changed on disk since you opened it. Your edits are not saved.',
+      goneOnDisk: 'This file is gone from disk. Your edits are not saved.',
+      reload: 'Load the file from disk',
+      keepMine: 'Save mine over it',
+      couldNotSave: 'Could not save',
+      couldNotOpen: (editor: unknown) => `${editor} could not open this file`,
+      openInTextEditor: 'Open in the text editor',
+      loading: 'Opening…',
+      saving: 'Saving…',
+      saved: 'Saved',
+      unsaved: 'Not saved yet',
+      readOnly: 'Read only',
+      save: 'Save',
+      by: (editor: unknown, extension: unknown) => `${editor}, from ${extension}`,
+      frameTitle: (editor: unknown, file: unknown) => `${editor}: ${file}`,
+    },
+    // src/renderer/src/components/extensions/EditorViewPicker.tsx
+    editorViewPicker: {
+      openWith: 'Open with…',
+      openWithFor: (file: unknown) => `Open ${file} with`,
+      textEditor: 'Text editor',
+      fromExtension: (editor: unknown, extension: unknown) => `${editor} (${extension})`,
+      current: 'Open now',
+    },
     // src/renderer/src/components/extensions/ExtensionTrustReview.tsx
     extensionTrustReview: {
       inlineMCPServerReviewIt: 'Inline MCP server — review it before trusting',
@@ -4155,6 +4182,8 @@ export const en = {
       approve: (displayName: unknown) => `Approve ${displayName}?`,
       approveAgain: (displayName: unknown) => `Approve ${displayName} again?`,
       newInThisVersion: 'New in this version',
+      opensFiles: 'Opens your files in its own editor',
+      editorOpens: (editor: unknown, files: unknown) => `${editor}: ${files}`,
       needsCare: 'Needs care',
       also: 'Also',
       access: 'Access',

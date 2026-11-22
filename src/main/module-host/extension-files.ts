@@ -31,6 +31,7 @@
 // Pure Node; the host's gate has already held the call to the extension's
 // `workspace-files:*` and the caller's `filesystem:*`.
 
+import { createHash } from 'node:crypto'
 import { constants, type Stats } from 'node:fs'
 import { lstat, open, readdir, readlink, realpath, stat, unlink, type FileHandle } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
@@ -46,7 +47,7 @@ const SKIPPED_FOLDERS = new Set(['.git', 'node_modules'])
 const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0
 
 export class ExtensionFileRefusal extends Error {
-  readonly code: 'invalid_params' | 'not_permitted' | 'action_failed'
+  readonly code: 'invalid_params' | 'not_permitted' | 'action_failed' | 'conflict'
   constructor(code: ExtensionFileRefusal['code'], message: string) {
     super(message)
     this.name = 'ExtensionFileRefusal'
@@ -198,17 +199,31 @@ async function openChecked(
   }
 }
 
+/** How a call carries a file's content: UTF-8 text, or its raw bytes in base64. */
+type FileEncoding = 'utf8' | 'base64'
+
+function encodingOf(value: unknown): FileEncoding {
+  if (value === undefined || value === 'utf8' || value === 'base64') return value ?? 'utf8'
+  throw new ExtensionFileRefusal('invalid_params', '"encoding" is utf8 or base64.')
+}
+
+function sha256Of(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
 export async function readExtensionFile(
   scope: ExtensionFilesScope,
   path: unknown,
-): Promise<{ content: string; size: number }> {
+  encoding?: unknown,
+): Promise<{ content: string; size: number; sha256: string }> {
+  const as = encodingOf(encoding)
   const { handle, shown, stats } = await openChecked(scope, path, constants.O_RDONLY)
   try {
     if (!stats.isFile()) throw new ExtensionFileRefusal('action_failed', `${shown} is not a file.`)
     if (stats.size > EXTENSION_FILE_MAX_BYTES)
       throw new ExtensionFileRefusal('action_failed', `${shown} is larger than 4 MiB.`)
     const bytes = await handle.readFile()
-    return { content: bytes.toString('utf8'), size: bytes.byteLength }
+    return { content: bytes.toString(as), size: bytes.byteLength, sha256: sha256Of(bytes) }
   } finally {
     await handle.close().catch(() => undefined)
   }
@@ -239,14 +254,34 @@ export async function statExtensionFile(
   }
 }
 
+export type ExtensionFileWriteOptions = {
+  /** `create: true` makes a new file and refuses one that exists. */
+  create?: boolean
+  /** How `content` is carried: UTF-8 text (the default), or bytes in base64. */
+  encoding?: unknown
+  /**
+   * Write only over a file whose bytes hash to this (sha256, hex), checked on
+   * the opened file before anything is truncated: a file changed or gone
+   * since it was read is refused with `conflict`.
+   */
+  expectedSha256?: unknown
+}
+
 export async function writeExtensionFile(
   scope: ExtensionFilesScope,
   path: unknown,
   content: unknown,
-  create: boolean,
-): Promise<{ size: number; created: boolean }> {
+  options: ExtensionFileWriteOptions = {},
+): Promise<{ size: number; created: boolean; sha256: string }> {
+  const create = options.create === true
+  const as = encodingOf(options.encoding)
+  const expected = options.expectedSha256
+  if (expected !== undefined && (typeof expected !== 'string' || !/^[0-9a-f]{64}$/u.test(expected)))
+    throw new ExtensionFileRefusal('invalid_params', '"expectedSha256" is the sha256 of the bytes it was read as, hex.')
   if (typeof content !== 'string') throw new ExtensionFileRefusal('invalid_params', '"content" is the text to write.')
-  const bytes = Buffer.from(content, 'utf8')
+  if (as === 'base64' && !/^[A-Za-z0-9+/]*={0,2}$/u.test(content))
+    throw new ExtensionFileRefusal('invalid_params', '"content" is base64.')
+  const bytes = Buffer.from(content, as)
   if (bytes.byteLength > EXTENSION_FILE_MAX_BYTES)
     throw new ExtensionFileRefusal('invalid_params', 'A file Studio writes for an extension is at most 4 MiB.')
   const parts = partsOf(path)
@@ -282,7 +317,11 @@ export async function writeExtensionFile(
   let handle: FileHandle
   let created: boolean
   if (create) await scope.betweenCheckAndOpen?.()
+  const conflict = () =>
+    new ExtensionFileRefusal('conflict', `${shown} changed since it was read, so it was not written.`)
   try {
+    // A conditional write is over a file that exists: one gone since it was read is a conflict too.
+    if (expected !== undefined) throw Object.assign(new Error('exists'), { code: 'EEXIST' })
     handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o644)
     created = true
   } catch (error) {
@@ -290,13 +329,28 @@ export async function writeExtensionFile(
       throw new ExtensionFileRefusal('action_failed', `${shown} cannot be written.`)
     if (create) throw new ExtensionFileRefusal('action_failed', `${shown} already exists.`)
     // It exists: the real path it names must be inside too, and opened as it is.
-    const opened = await openChecked(scope, shown, constants.O_WRONLY, true)
+    let opened: Awaited<ReturnType<typeof openChecked>>
+    try {
+      opened = await openChecked(scope, shown, expected === undefined ? constants.O_WRONLY : constants.O_RDWR, true)
+    } catch (refusal) {
+      if (expected !== undefined && refusal instanceof ExtensionFileRefusal && /does not exist/u.test(refusal.message))
+        throw conflict()
+      throw refusal
+    }
     if (!opened.stats.isFile()) {
       await opened.handle.close().catch(() => undefined)
       throw new ExtensionFileRefusal('action_failed', `${shown} is not a file.`)
     }
     handle = opened.handle
     created = false
+    if (expected !== undefined) {
+      // Read through the descriptor that will be written, so what is checked is what is replaced.
+      const now = opened.stats.size > EXTENSION_FILE_MAX_BYTES ? null : await handle.readFile()
+      if (!now || sha256Of(now) !== expected) {
+        await handle.close().catch(() => undefined)
+        throw conflict()
+      }
+    }
   }
   try {
     if (created) {
@@ -316,7 +370,7 @@ export async function writeExtensionFile(
       }
     } else await handle.truncate(0)
     await handle.write(bytes, 0, bytes.byteLength, 0)
-    return { size: bytes.byteLength, created }
+    return { size: bytes.byteLength, created, sha256: sha256Of(bytes) }
   } finally {
     await handle.close().catch(() => undefined)
   }

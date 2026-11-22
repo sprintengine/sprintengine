@@ -3278,6 +3278,7 @@ test('automation', async () => {
           settingsSections: [],
           mcpTools: [],
           syntaxes: [],
+          customEditors: [],
           keybindings: [],
           statusBarItems: [],
           settings: [],

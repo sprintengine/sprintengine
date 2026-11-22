@@ -72,6 +72,18 @@ export function ApprovalReviewDialog({
             </ul>
           </section>
         ) : null}
+        {module.extension.contributes.customEditors.length > 0 ? (
+          <section aria-label={t.opensFiles}>
+            <h3 className="mb-1.5 text-meta font-semibold text-[color:var(--text-muted)]">{t.opensFiles}</h3>
+            <ul className="list-disc space-y-0.5 pl-5 text-body text-[color:var(--text-strong)]">
+              {module.extension.contributes.customEditors.map((editor) => (
+                <li key={editor.id}>
+                  {t.editorOpens(editor.title, [...(editor.extensions ?? []), ...(editor.filenames ?? [])].join(', '))}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         {care.length > 0 ? (
           <section
             aria-label={t.needsCare}

@@ -1006,6 +1006,7 @@ describe('createFakeFrameStudio', () => {
     assert.deepEqual(await studio.host.call('files.read', { workspaceId: 'ws-app', path: 'docs/a.md' }), {
       content: 'A',
       size: 1,
+      sha256: '559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd',
     })
     await assert.rejects(
       studio.host.call('files.read', { workspaceId: 'ws-app', path: '../x' }),

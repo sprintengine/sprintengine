@@ -170,6 +170,16 @@ export const STUDIO_EXTENSION_HOST_CAPABILITY = 'extension-host' as const
 export const STUDIO_EXTENSION_FRAMES_CAPABILITY = 'extension-frames' as const
 
 /**
+ * This Studio opens files in its extensions' custom editors: `extension.frame`
+ * builds a custom editor's frame (`point: customEditors`), and a frame's
+ * `files.read` / `files.write` carry bytes, the file's sha256 and a write
+ * conditional on it. A client opens a file in an extension's editor only
+ * where its Studio offers this, and in its text editor elsewhere. Offered
+ * with `extension-host`.
+ */
+export const STUDIO_EXTENSION_EDITORS_CAPABILITY = 'extension-editors' as const
+
+/**
  * The agent CLIs on the Studio's machine: `cliRuntimes.*` (detect, install,
  * update) and `cliVersions.*` (whether each is behind its published version),
  * with their streams. Offered where the Studio holds the CLIs' detection.
@@ -466,6 +476,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_EXECUTION_HOSTS_CAPABILITY,
   STUDIO_EXTENSION_FRAMES_CAPABILITY,
   STUDIO_FILE_VIEWS_CAPABILITY,
+  STUDIO_EXTENSION_EDITORS_CAPABILITY,
 ] as const
 
 /**

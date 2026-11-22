@@ -5,7 +5,12 @@ import { desktopExtensionFrameUrl, EXTENSION_FRAME_HOST_PATH_PREFIX } from '../.
 import { extensionSurfaceId } from '../../../../shared/modules/extension-ids'
 import type { ExtensionSurfacePoint } from '../../../../shared/modules/third-party-manifest'
 import { sanitizeEntryMessage } from '../../../../shared/modules/entry-messages'
-import { createExtensionFrameHost, readWindowFrameTheme } from '../../modules/extension-frame-host'
+import {
+  createExtensionFrameHost,
+  readWindowFrameTheme,
+  type ExtensionFrameDocumentChannel,
+} from '../../modules/extension-frame-host'
+import type { StudioExtensionCallAnswer } from '../../../../../packages/studio-protocol/src/public'
 import {
   extensionSurfacesVersion,
   getExtensionSurface,
@@ -15,7 +20,7 @@ import {
 import { extensionsApi } from '../../studio/extensions'
 import { EmptyState } from '../ui/EmptyState'
 
-// One extension surface (a pane tab, a door, a settings section), drawn in a
+// One extension surface (a pane tab, a door, a settings section, a custom editor), drawn in a
 // sandboxed frame of its own: `allow-scripts` and nothing else, so its code
 // runs in an opaque origin with no reach into this window. Its document comes
 // from the window's Studio (`extension.frame`); a desktop window stages it
@@ -25,13 +30,36 @@ import { EmptyState } from '../ui/EmptyState'
 // through the bridge (extension-frame-host.ts) to that Studio, which checks
 // each as the extension and as this window's connection.
 
+/** What a custom editor's session reaches once its frame's document is built. */
+export type ExtensionEditorPort = {
+  /** A host call as this frame's (`extension.call`, naming its document): `files.read` and `files.write`. */
+  call(method: string, params: unknown): Promise<StudioExtensionCallAnswer>
+  sendDocument(document: unknown): void
+  requestFlush(id: number): void
+}
+
+/** A custom editor's link to the window's document session (ExtensionEditorView). */
+export type ExtensionEditorLink = {
+  document: ExtensionFrameDocumentChannel
+  /** The frame's document is built: the session reads, saves and reaches the frame through `port`. */
+  open(port: ExtensionEditorPort): void
+  /** The frame is listening for its document. */
+  frameReady(): void
+  /** The frame closed, or is about to be drawn again. */
+  close(): void
+}
+
 type ExtensionSurfaceMountProps = {
   extensionKey: string
   point: ExtensionSurfacePoint
   id: string
-  /** The workspace a panel was opened in. */
+  /** The workspace a panel or custom editor was opened in. */
   workspaceId?: string
+  /** A custom editor's document session. */
+  editor?: ExtensionEditorLink
   className?: string
+  /** Drawn under the frame's title for assistive tech: a custom editor names its file. */
+  title?: string
 }
 
 const DRAW_FAILED = 'The extension could not draw this.'
@@ -44,8 +72,13 @@ export function ExtensionSurfaceMount({
   point,
   id,
   workspaceId,
+  editor,
   className,
+  title,
 }: ExtensionSurfaceMountProps): ReactElement {
+  // Read when the frame opens, not a reason to open it again.
+  const editorRef = useRef(editor)
+  editorRef.current = editor
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   // What the frame's `load` does: set by the effect for the frame it opened.
   const onFrameLoad = useRef<() => void>(() => undefined)
@@ -103,17 +136,20 @@ export function ExtensionSurfaceMount({
       return wrapped ? ((outer?.frames[0] as Window | undefined) ?? null) : outer
     }
     let frameHash = ''
+    const call = async (method: string, params: unknown): Promise<StudioExtensionCallAnswer> => {
+      const answer = await extensionsApi.extensionCall({ moduleId: extensionKey, frame: frameHash, method, params })
+      if (answer.ok || answer.code !== 'frame_outdated') return answer
+      // Drawn before the extension's access grew: draw it again from the extension as it is now.
+      if (!closed) setGeneration((value) => value + 1)
+      return { ok: false, code: 'unavailable', message: answer.message }
+    }
+    const link = editorRef.current
     const bridge = createExtensionFrameHost({
       source: surfaceWindow,
       post: (message) => surfaceWindow()?.postMessage(message, '*'),
       ...(workspaceId ? { workspaceId } : {}),
-      call: async (method, params) => {
-        const answer = await extensionsApi.extensionCall({ moduleId: extensionKey, frame: frameHash, method, params })
-        if (answer.ok || answer.code !== 'frame_outdated') return answer
-        // Drawn before the extension's access grew: draw it again from the extension as it is now.
-        if (!closed) setGeneration((value) => value + 1)
-        return { ok: false, code: 'unavailable', message: answer.message }
-      },
+      ...(link ? { document: link.document, onFrameReady: () => link.frameReady() } : {}),
+      call,
       client: {
         toast: (params) => {
           host.toast({
@@ -163,6 +199,12 @@ export function ExtensionSurfaceMount({
       .extensionFrame({ moduleId: extensionKey, point, id, ...(theme ? { theme } : {}) })
       .then(async (document) => {
         frameHash = document.hash
+        if (!closed)
+          link?.open({
+            call,
+            sendDocument: (next) => bridge.sendDocument(next),
+            requestFlush: (flush) => bridge.requestFlush(flush),
+          })
         const stage = window.api?.stageExtensionFrame
         if (stage) {
           if (!(await stage(document.hash, document.html))) throw new Error('This window could not hold the frame.')
@@ -180,6 +222,7 @@ export function ExtensionSurfaceMount({
       }, fail)
     return () => {
       closed = true
+      link?.close()
       bridge.dispose()
       window.removeEventListener('message', receive)
       themes.disconnect()
@@ -207,7 +250,7 @@ export function ExtensionSurfaceMount({
           // The wrapper is Studio's own document, which runs no script (its
           // policy); the extension's frame inside it carries the sandbox.
           {...(src.wrapped ? {} : { sandbox: 'allow-scripts' })}
-          title={loaded.contribution.title}
+          title={title ?? loaded.contribution.title}
           data-extension={extensionKey}
           data-extension-surface={`${point}/${id}`}
           className="block h-full w-full border-0"

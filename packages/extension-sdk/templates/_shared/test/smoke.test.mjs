@@ -30,7 +30,7 @@ const raw = JSON.parse(readFileSync(join(extensionDir, 'extension.json'), 'utf8'
 const validated = validateExtensionManifest(raw, { authoring: true })
 const manifest = validated.ok ? validated.manifest : undefined
 
-const POINT_NAMES = { panels: 'panel', doors: 'door', settingsSections: 'settings section' }
+const POINT_NAMES = { panels: 'panel', doors: 'door', settingsSections: 'settings section', customEditors: 'editor' }
 
 const undeclaredMessage = (uses) =>
   uses

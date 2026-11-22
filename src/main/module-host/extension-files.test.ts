@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import {
   existsSync,
   linkSync,
@@ -48,6 +49,8 @@ function world() {
   return { scope: { root, forbidden: [studio] }, root, outside }
 }
 
+const sha = (content: string | Buffer) => createHash('sha256').update(content).digest('hex')
+
 async function refusal(work: Promise<unknown>): Promise<string> {
   try {
     await work
@@ -60,7 +63,7 @@ async function refusal(work: Promise<unknown>): Promise<string> {
 
 test('a file inside the workspace is read, stat’d and found', async () => {
   const { scope } = world()
-  assert.deepEqual(await readExtensionFile(scope, 'docs/notes.md'), { content: 'hello', size: 5 })
+  assert.deepEqual(await readExtensionFile(scope, 'docs/notes.md'), { content: 'hello', size: 5, sha256: sha('hello') })
   assert.equal((await statExtensionFile(scope, 'docs')).type, 'directory')
   const found = await searchExtensionFiles(scope, 'NOTES', undefined)
   assert.deepEqual(found, { paths: ['docs/notes.md'], truncated: false })
@@ -85,13 +88,24 @@ test('a search lists a link by its name and never walks through it', async () =>
 
 test('a write replaces a file in place, a create refuses one that exists, and neither goes through a link', async () => {
   const { scope, root, outside } = world()
-  assert.deepEqual(await writeExtensionFile(scope, 'docs/notes.md', 'bye', false), { size: 3, created: false })
+  assert.deepEqual(await writeExtensionFile(scope, 'docs/notes.md', 'bye'), {
+    size: 3,
+    created: false,
+    sha256: sha('bye'),
+  })
   assert.equal(readFileSync(join(root, 'docs', 'notes.md'), 'utf8'), 'bye')
-  assert.deepEqual(await writeExtensionFile(scope, 'docs/new.md', 'new', true), { size: 3, created: true })
-  assert.equal(await refusal(writeExtensionFile(scope, 'docs/new.md', 'again', true)), 'action_failed')
-  assert.equal(await refusal(writeExtensionFile(scope, 'docs/escape.txt', 'pwned', false)), 'not_permitted')
-  assert.equal(await refusal(writeExtensionFile(scope, 'docs/escape.txt', 'pwned', true)), 'action_failed')
-  assert.equal(await refusal(writeExtensionFile(scope, 'linked-out/new.txt', 'pwned', true)), 'not_permitted')
+  assert.deepEqual(await writeExtensionFile(scope, 'docs/new.md', 'new', { create: true }), {
+    size: 3,
+    created: true,
+    sha256: sha('new'),
+  })
+  assert.equal(await refusal(writeExtensionFile(scope, 'docs/new.md', 'again', { create: true })), 'action_failed')
+  assert.equal(await refusal(writeExtensionFile(scope, 'docs/escape.txt', 'pwned')), 'not_permitted')
+  assert.equal(await refusal(writeExtensionFile(scope, 'docs/escape.txt', 'pwned', { create: true })), 'action_failed')
+  assert.equal(
+    await refusal(writeExtensionFile(scope, 'linked-out/new.txt', 'pwned', { create: true })),
+    'not_permitted',
+  )
   assert.equal(readFileSync(join(outside, 'secret.txt'), 'utf8'), 'secret', 'nothing outside was touched')
 })
 
@@ -99,7 +113,7 @@ test('a file with a second name is refused, for reading and for writing', async 
   const { scope, root, outside } = world()
   linkSync(join(outside, 'secret.txt'), join(root, 'docs', 'alias.txt'))
   assert.equal(await refusal(readExtensionFile(scope, 'docs/alias.txt')), 'not_permitted')
-  assert.equal(await refusal(writeExtensionFile(scope, 'docs/alias.txt', 'pwned', false)), 'not_permitted')
+  assert.equal(await refusal(writeExtensionFile(scope, 'docs/alias.txt', 'pwned')), 'not_permitted')
   assert.equal(readFileSync(join(outside, 'secret.txt'), 'utf8'), 'secret')
 })
 
@@ -108,15 +122,12 @@ test('nothing is written or made under a .git folder', async () => {
   mkdirSync(join(root, '.git'))
   writeFileSync(join(root, '.git', 'config'), '[core]\n')
   symlinkSync(join(root, '.git'), join(root, 'innocent'))
-  assert.equal(
-    await refusal(writeExtensionFile(scope, '.git/config', '[core]\nfsmonitor = evil\n', false)),
-    'not_permitted',
-  )
-  assert.equal(await refusal(writeExtensionFile(scope, '.GIT/hooks-new', 'x', true)), 'not_permitted')
-  assert.equal(await refusal(writeExtensionFile(scope, 'innocent/config', 'x', false)), 'not_permitted')
-  assert.equal(await refusal(writeExtensionFile(scope, '.git', 'x', true)), 'not_permitted')
+  assert.equal(await refusal(writeExtensionFile(scope, '.git/config', '[core]\nfsmonitor = evil\n')), 'not_permitted')
+  assert.equal(await refusal(writeExtensionFile(scope, '.GIT/hooks-new', 'x', { create: true })), 'not_permitted')
+  assert.equal(await refusal(writeExtensionFile(scope, 'innocent/config', 'x')), 'not_permitted')
+  assert.equal(await refusal(writeExtensionFile(scope, '.git', 'x', { create: true })), 'not_permitted')
   assert.equal(readFileSync(join(root, '.git', 'config'), 'utf8'), '[core]\n')
-  assert.deepEqual(await readExtensionFile(scope, '.git/config'), { content: '[core]\n', size: 7 })
+  assert.equal((await readExtensionFile(scope, '.git/config')).content, '[core]\n')
 })
 
 // Another process swapping a folder above the file for a link out, after the
@@ -145,7 +156,6 @@ test('a folder above the file swapped for a link out between the check and the o
         { ...write.scope, betweenCheckAndOpen: swapDocsOut(write.root, write.outside) },
         'docs/notes.md',
         'x',
-        false,
       ),
     ),
     'not_permitted',
@@ -158,7 +168,7 @@ test('a folder above the file swapped for a link out between the check and the o
         { ...create.scope, betweenCheckAndOpen: swapDocsOut(create.root, create.outside) },
         'docs/new.md',
         'x',
-        true,
+        { create: true },
       ),
     ),
     'not_permitted',
@@ -171,4 +181,42 @@ test('a search does not read a folder that is now a link out', async () => {
   await swapDocsOut(root, outside)()
   assert.deepEqual((await searchExtensionFiles(scope, 'notes', undefined)).paths, ['docs-moved/notes.md'])
   assert.ok(existsSync(join(outside, 'docs', 'notes.md')))
+})
+
+test('bytes travel as base64, both ways', async () => {
+  const { scope, root } = world()
+  const bytes = Buffer.from([0, 255, 16, 128])
+  writeFileSync(join(root, 'docs', 'blob.bin'), bytes)
+  const read = await readExtensionFile(scope, 'docs/blob.bin', 'base64')
+  assert.deepEqual(read, { content: bytes.toString('base64'), size: 4, sha256: sha(bytes) })
+  const next = Buffer.from([1, 2, 3])
+  await writeExtensionFile(scope, 'docs/blob.bin', next.toString('base64'), { encoding: 'base64' })
+  assert.deepEqual(readFileSync(join(root, 'docs', 'blob.bin')), next)
+  assert.equal(await refusal(readExtensionFile(scope, 'docs/blob.bin', 'hex')), 'invalid_params')
+  assert.equal(
+    await refusal(writeExtensionFile(scope, 'docs/blob.bin', 'not base64!', { encoding: 'base64' })),
+    'invalid_params',
+  )
+})
+
+test('a write against the bytes it read is refused once the file changed or went, and nothing is written', async () => {
+  const { scope, root } = world()
+  const read = await readExtensionFile(scope, 'docs/notes.md')
+  writeFileSync(join(root, 'docs', 'notes.md'), 'changed by someone else')
+  assert.equal(
+    await refusal(writeExtensionFile(scope, 'docs/notes.md', 'mine', { expectedSha256: read.sha256 })),
+    'conflict',
+  )
+  assert.equal(readFileSync(join(root, 'docs', 'notes.md'), 'utf8'), 'changed by someone else')
+  const again = await readExtensionFile(scope, 'docs/notes.md')
+  assert.equal(
+    (await writeExtensionFile(scope, 'docs/notes.md', 'mine', { expectedSha256: again.sha256 })).sha256,
+    sha('mine'),
+  )
+  rmSync(join(root, 'docs', 'notes.md'))
+  assert.equal(
+    await refusal(writeExtensionFile(scope, 'docs/notes.md', 'mine', { expectedSha256: again.sha256 })),
+    'conflict',
+  )
+  assert.equal(existsSync(join(root, 'docs', 'notes.md')), false)
 })

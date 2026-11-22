@@ -97,6 +97,14 @@ export type ExtensionCommandAction = (typeof EXTENSION_COMMAND_ACTIONS)[number]
 export const EXTENSION_MENU_PLACES = ['backlog.item', 'file', 'notification'] as const
 export type ExtensionMenuPlace = (typeof EXTENSION_MENU_PLACES)[number]
 
+/** Whether a custom editor opens its files by default, or is offered under Open with. */
+export const EXTENSION_EDITOR_PRIORITIES = ['default', 'option'] as const
+export type ExtensionEditorPriority = (typeof EXTENSION_EDITOR_PRIORITIES)[number]
+
+/** What a custom editor is handed: the file as text, or its raw bytes. */
+export const EXTENSION_EDITOR_CONTENT_KINDS = ['text', 'bytes'] as const
+export type ExtensionEditorContentKind = (typeof EXTENSION_EDITOR_CONTENT_KINDS)[number]
+
 /** Contribution points held for later formats: each must be empty for now. */
 export const EXTENSION_RESERVED_POINTS: Readonly<Record<string, string>> = {
   themes: 'app color themes',
@@ -104,7 +112,6 @@ export const EXTENSION_RESERVED_POINTS: Readonly<Record<string, string>> = {
   iconThemes: 'file icon themes',
   fonts: 'font families',
   snippets: 'editor snippets',
-  customEditors: 'custom editors',
   newFiles: 'new file templates',
   events: 'events delivered to the worker',
   hooks: 'hooks the worker runs around Studio actions',
@@ -601,6 +608,89 @@ const CONTRIBUTES: ObjectNode = {
       since: V1,
       tier: 'content',
     },
+    customEditors: {
+      node: {
+        kind: 'array',
+        max: 16,
+        unique: byId,
+        items: {
+          kind: 'object',
+          title: 'CustomEditorContribution',
+          fields: {
+            id: {
+              node: idNode(),
+              required: true,
+              doc: 'Id, unique among this extension’s editors.',
+              since: V1,
+              example: 'todo',
+            },
+            title: {
+              node: displayText(64),
+              required: true,
+              doc: 'Its name, in the editor’s Open with menu.',
+              since: V1,
+              example: 'Todo list',
+            },
+            icon: iconField('Glyph beside its name.'),
+            entry: {
+              node: pathNode(UI_ENTRY_EXTENSIONS),
+              required: true,
+              doc: 'What the editor draws, in a frame of its own in the file’s tab: a `.js` or `.mjs` module whose `mount(root, studio)` draws into `root`. Its `studio.document` holds the file’s content and takes its edits; Studio keeps the unsaved state, saves and watches the file, and the frame never gets a path.',
+              since: V1,
+              example: 'dist/todo.js',
+            },
+            extensions: {
+              node: {
+                kind: 'array',
+                max: 32,
+                unique: { key: (item) => String(item).toLowerCase(), label: 'extension' },
+                items: {
+                  kind: 'string',
+                  min: 2,
+                  max: 64,
+                  pattern: FILE_SUFFIX_RE,
+                  patternMessage: 'must be a file-name suffix with its dot, such as .todo.',
+                },
+              },
+              doc: 'File-name suffixes it opens, with the dot, ignoring case. A longer suffix (`.todo.json`) wins over a shorter one (`.json`), and a file named only the suffix never matches. Give `extensions`, `filenames` or both.',
+              since: V1,
+              example: ['.todo'],
+            },
+            filenames: {
+              node: {
+                kind: 'array',
+                max: 32,
+                unique: { key: (item) => String(item).toLowerCase(), label: 'file name' },
+                items: {
+                  kind: 'string',
+                  min: 1,
+                  max: 128,
+                  pattern: PORTABLE_NAME_RE,
+                  patternMessage: 'must be a file name with no folder or characters Windows forbids.',
+                  check: (value) => (value === '.' || value === '..' ? 'must be a file name.' : null),
+                },
+              },
+              doc: 'Exact file names it opens, ignoring case; a name wins over any suffix.',
+              since: V1,
+              example: ['TODO'],
+            },
+            priority: {
+              node: { kind: 'string', max: 16, enum: EXTENSION_EDITOR_PRIORITIES },
+              doc: '`default` (the default) opens matching files in this editor; `option` opens them in Studio’s text editor and offers this one under Open with. Either way the person can reopen the file in the text editor.',
+              since: V1,
+            },
+            contentKind: {
+              node: { kind: 'string', max: 16, enum: EXTENSION_EDITOR_CONTENT_KINDS },
+              doc: '`text` (the default) hands the editor the file as UTF-8 text and takes whole-text edits; `bytes` hands it the raw bytes, for a binary format, and takes whole-byte edits.',
+              since: V1,
+            },
+          },
+        },
+      },
+      doc: 'Editors for files of a type, drawn in the file’s tab. Needs the `workspace-files:read` permission, and `workspace-files:write` to save; without it the file opens read only.',
+      since: V1,
+      tier: 'ui',
+    },
     keybindings: {
       node: {
         kind: 'array',
@@ -842,7 +932,7 @@ export const EXTENSION_MANIFEST_FIELDS: ObjectNode = {
     tier: {
       node: { kind: 'string', max: 16, enum: EXTENSION_TIERS },
       required: true,
-      doc: 'The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.',
+      doc: 'The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, custom editors, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.',
       since: V1,
       example: 'ui',
     },
@@ -938,6 +1028,13 @@ export type ExtensionSyntaxContribution = {
   extensions?: string[]
   filenames?: string[]
 }
+/** An editor for files of a type: a surface whose frame is handed a document. */
+export type ExtensionCustomEditorContribution = ExtensionSurfaceContribution & {
+  extensions?: string[]
+  filenames?: string[]
+  priority?: ExtensionEditorPriority
+  contentKind?: ExtensionEditorContentKind
+}
 export type ExtensionKeybindingContribution = { command: string; key: string; when?: 'global' | 'workspace' }
 export type ExtensionStatusBarItemContribution = {
   id: string
@@ -972,6 +1069,7 @@ export type ExtensionContributions = {
   settingsSections: ExtensionSurfaceContribution[]
   mcpTools: ExtensionMcpToolContribution[]
   syntaxes: ExtensionSyntaxContribution[]
+  customEditors: ExtensionCustomEditorContribution[]
   keybindings: ExtensionKeybindingContribution[]
   statusBarItems: ExtensionStatusBarItemContribution[]
   settings: ExtensionSettingContribution[]
@@ -997,8 +1095,8 @@ export type ExtensionManifest = {
   contributes: ExtensionContributions
 }
 
-/** The points a ui contribution's entry draws: one `mount` per contribution. */
-export const EXTENSION_SURFACE_POINTS = ['panels', 'doors', 'settingsSections'] as const
+/** The points a ui contribution's entry draws: one `mount` per contribution, each in a frame of its own. */
+export const EXTENSION_SURFACE_POINTS = ['panels', 'doors', 'settingsSections', 'customEditors'] as const
 export type ExtensionSurfacePoint = (typeof EXTENSION_SURFACE_POINTS)[number]
 
 export type ExtensionManifestResult = { ok: true; manifest: ExtensionManifest } | { ok: false; issues: ManifestIssue[] }
@@ -1021,6 +1119,7 @@ const EMPTY_CONTRIBUTIONS = (): ExtensionContributions => ({
   settingsSections: [],
   mcpTools: [],
   syntaxes: [],
+  customEditors: [],
   keybindings: [],
   statusBarItems: [],
   settings: [],
@@ -1125,6 +1224,18 @@ function crossFieldIssues(manifest: ExtensionManifest, options: ExtensionManifes
         message: problem.message,
       })
   })
+  contributes.customEditors.forEach((editor, index) => {
+    if ((editor.extensions?.length ?? 0) + (editor.filenames?.length ?? 0) === 0)
+      issues.push({
+        path: `contributes.customEditors[${index}]`,
+        message: 'must list at least one extension or file name.',
+      })
+  })
+  // An editor is handed a file of the person's workspace to read, so it asks
+  // for that as any frame reading files does; saving needs the write too.
+  if (contributes.customEditors.length > 0 && !manifest.permissions.includes('workspace-files:read')) {
+    issues.push({ path: 'contributes.customEditors', message: 'needs the "workspace-files:read" permission.' })
+  }
   if (contributes.mcpTools.length > 0 && !manifest.permissions.includes('tools:contribute')) {
     issues.push({ path: 'contributes.mcpTools', message: 'needs the "tools:contribute" permission.' })
   }

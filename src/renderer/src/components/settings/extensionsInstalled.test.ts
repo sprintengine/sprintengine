@@ -67,6 +67,7 @@ test('extensionsInstalled', async () => {
           settingsSections: [],
           mcpTools: [],
           syntaxes: [],
+          customEditors: [],
           keybindings: [],
           statusBarItems: [],
           settings: [],

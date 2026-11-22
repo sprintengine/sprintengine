@@ -101,6 +101,13 @@ export type ExtensionSyntaxContributionView = {
   extensions?: string[]
   filenames?: string[]
 }
+/** A custom editor: a surface that opens the files it names (`extension-editors`). */
+export type ExtensionCustomEditorContributionView = ExtensionSurfaceContributionView & {
+  extensions?: string[]
+  filenames?: string[]
+  priority?: 'default' | 'option'
+  contentKind?: 'text' | 'bytes'
+}
 export type ExtensionKeybindingContributionView = { command: string; key: string; when?: 'global' | 'workspace' }
 export type ExtensionStatusBarItemContributionView = {
   id: string
@@ -133,6 +140,7 @@ export type ExtensionContributionsView = {
   settingsSections: ExtensionSurfaceContributionView[]
   mcpTools: ExtensionMcpToolContributionView[]
   syntaxes: ExtensionSyntaxContributionView[]
+  customEditors: ExtensionCustomEditorContributionView[]
   keybindings: ExtensionKeybindingContributionView[]
   statusBarItems: ExtensionStatusBarItemContributionView[]
   settings: ExtensionSettingContributionView[]

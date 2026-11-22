@@ -33,6 +33,7 @@ const access = (over: Partial<ExtensionAccess> = {}): ExtensionAccess => ({
   background: false,
   tools: {},
   actions: [],
+  editors: [],
   ...over,
 })
 

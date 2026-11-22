@@ -26,6 +26,9 @@ import type { InternalRendererHost, RendererKernel } from './renderer-host'
 // - panels, doors and settings sections are drawn in a sandboxed frame each,
 //   from a document the Studio builds (ExtensionSurfaceMount, ExtensionFrame);
 //   they are offered only where the Studio draws frames (`extension-frames`);
+// - custom editors are frames too, which open the files they name in the
+//   editor (EditorPanel, ExtensionEditorView), only where the Studio also
+//   offers `extension-editors`;
 // - commands join the palette; one with an `action` runs that Studio
 //   command, one without calls the worker method of its id;
 // - menus add items to the backlog-item, file and notification menus, each
@@ -214,14 +217,26 @@ function registerContributions(
   extension: ExtensionManifest,
   isEnabled: (moduleId: string) => boolean,
   drawsFrames: boolean,
+  drawsEditors: boolean,
 ): void {
   const { contributes } = extension
   const live = () => !retired.has(key) && isEnabled(key)
-  // Surfaces only where the Studio draws them in frames.
-  const surfaces = drawsFrames ? contributes : { ...contributes, panels: [], doors: [], settingsSections: [] }
+  // Surfaces only where the Studio draws them in frames, and custom editors
+  // only where it also opens files in them; elsewhere a file opens in the
+  // text editor.
+  const surfaces = drawsFrames
+    ? { ...contributes, customEditors: drawsEditors ? contributes.customEditors : [] }
+    : { ...contributes, panels: [], doors: [], settingsSections: [], customEditors: [] }
   for (const point of EXTENSION_SURFACE_POINTS) {
     for (const contribution of surfaces[point]) {
-      registerExtensionSurface({ key, point, contribution, host })
+      registerExtensionSurface({
+        key,
+        point,
+        contribution,
+        host,
+        live,
+        extension: { name: extension.name, permissions: extension.permissions },
+      })
     }
   }
   for (const door of surfaces.doors) {
@@ -431,6 +446,7 @@ export function loadExtensionContributions(
   kernel: RendererKernel,
   served: ExtensionContributionsResult,
   drawsFrames: boolean,
+  drawsEditors = drawsFrames,
 ): CapabilityManifest[] {
   for (const [id, message] of Object.entries(served.failures)) recordError(id, message)
 
@@ -453,6 +469,7 @@ export function loadExtensionContributions(
         entry.extension as ExtensionManifest,
         (id) => kernel.isModuleEnabled(id),
         drawsFrames,
+        drawsEditors,
       )
       loadStates.set(entry.id, { status: 'loaded' })
       loadedSignatures.set(entry.id, servedSignature(entry))

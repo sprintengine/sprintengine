@@ -10,6 +10,7 @@
 //
 // Plain ES2019 in a string: it runs in the frame, not in the app.
 
+import { EDITOR_DOCUMENT_SCRIPT } from '../../../../packages/extension-sdk/src/editor-document-script'
 import { EXTENSION_FRAME_METHODS } from '../../../../packages/extension-sdk/src/services'
 import {
   EXTENSION_FRAME_CALL_DEADLINE_MS,
@@ -30,6 +31,7 @@ const FRAME_ERROR_CODES = [
   'timeout',
   'cancelled',
   'action_failed',
+  'conflict',
 ]
 
 export const FRAME_ROOT_ID = 'se-root'
@@ -110,10 +112,11 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     message.se = C.protocol
     try { host.postMessage(message, '*') } catch (_) {}
   }
-  function failure(code, message, retryable) {
+  function failure(code, message, retryable, document) {
     var error = new Error(String(message || 'The host call failed.'))
     error.code = C.codes.indexOf(code) >= 0 ? code : 'action_failed'
     error.retryable = Boolean(retryable)
+    if (document) error.document = document
     return error
   }
   function call(method, params, options) {
@@ -138,7 +141,7 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
       pending.set(id, function (message) {
         clearTimeout(timer)
         if (signal) signal.removeEventListener('abort', abort)
-        if (message.error) reject(failure(message.error.code, message.error.message, message.error.retryable))
+        if (message.error) reject(failure(message.error.code, message.error.message, message.error.retryable, message.error.document))
         else resolve(message.result)
       })
       post({ kind: 'req', id: id, method: String(method), params: params === undefined ? {} : params })
@@ -188,9 +191,31 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     }
     post({ kind: 'evt', event: E.failed, payload: { message: message } })
   }
+  // A custom editor's document (EDITOR_DOCUMENT_SCRIPT): the window hands it
+  // over and takes its edits; the frame never sees the file's path.
+  var editor = C.surface.point === 'customEditors'
+  var documentListeners = { document: new Set(), 'document.flush': new Set() }
+  var document_ = editor ? (${EDITOR_DOCUMENT_SCRIPT})({
+    call: function (method, params) { return call(method, params) },
+    on: function (name, listener) {
+      documentListeners[name].add(listener)
+      return function () { documentListeners[name].delete(listener) }
+    },
+    post: function (name, payload) { post({ kind: 'evt', event: name, payload: payload }) }
+  }) : undefined
+  if (editor) {
+    // Cmd/Ctrl+S inside the frame saves the file, as it does in Studio's own editor.
+    window.addEventListener('keydown', function (event) {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && String(event.key).toLowerCase() === 's') {
+        event.preventDefault()
+        post({ kind: 'evt', event: E.documentSave, payload: {} })
+      }
+    }, true)
+  }
   var studio = Object.freeze({
     api: Object.freeze({ version: 1 }),
     get surface() { return surface },
+    get document() { return document_ },
     host: Object.freeze({
       call: call,
       has: function (method) { return C.methods.indexOf(String(method)) >= 0 }
@@ -212,7 +237,7 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
   function start(workspaceId) {
     if (started) return
     started = true
-    if (typeof workspaceId === 'string' && C.surface.point === 'panels') {
+    if (typeof workspaceId === 'string' && (C.surface.point === 'panels' || C.surface.point === 'customEditors')) {
       surface = Object.freeze({ point: C.surface.point, id: C.surface.id, workspaceId: workspaceId })
     }
     document.documentElement.removeAttribute('data-se-waiting')
@@ -236,6 +261,10 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
       start(hello.workspaceId)
     } else if (message.kind === 'evt' && message.event === E.theme) {
       if (applyTheme(message.payload)) emit('theme', { colorScheme: theme.colorScheme })
+    } else if (message.kind === 'evt' && editor && (message.event === E.document || message.event === E.documentFlush)) {
+      Array.from(documentListeners[message.event]).forEach(function (listener) {
+        try { listener(message.payload) } catch (error) { console.error(error) }
+      })
     } else if (message.kind === 'evt' && message.event === E.push) {
       var push = message.payload
       if (push && typeof push.topic === 'string') emit('push', push.payload === undefined ? { topic: push.topic } : { topic: push.topic, payload: push.payload })

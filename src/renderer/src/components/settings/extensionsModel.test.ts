@@ -52,6 +52,7 @@ function view(
         settingsSections: [],
         mcpTools: [],
         syntaxes: [],
+        customEditors: [],
         keybindings: [],
         statusBarItems: [],
         settings: [],

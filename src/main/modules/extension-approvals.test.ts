@@ -23,6 +23,7 @@ const WORKER: ExtensionAccess = {
   background: false,
   tools: { notes_search: 'read' },
   actions: ['notes.open=chat.new'],
+  editors: [],
 }
 const NO_CONTRIBUTIONS = {
   commands: [],
@@ -33,6 +34,7 @@ const NO_CONTRIBUTIONS = {
   settingsSections: [],
   mcpTools: [],
   syntaxes: [],
+  customEditors: [],
   keybindings: [],
   statusBarItems: [],
   settings: [],
@@ -83,6 +85,7 @@ test('what a manifest asks for, and that only content needs no approval', () => 
       background: false,
       tools: { notes_write: 'operate' },
       actions: ['b.run=chat.new'],
+      editors: [],
     },
   )
   assert.equal(extensionNeedsApproval({ tier: 'content' }), false)
@@ -117,6 +120,30 @@ test('an update grows its access by a permission, a higher tier, a worker, backg
     ['the command "notes.open" running "settings.open"'],
     'the same command running another action is new',
   )
+})
+
+test('a new custom editor, or one that takes more files, asks again; one that takes fewer does not', () => {
+  const editor = (extensions: string[], filenames?: string[]) => ({
+    id: 'todo',
+    title: 'Todo list',
+    entry: 'editor.js',
+    extensions,
+    ...(filenames ? { filenames } : {}),
+  })
+  const access = (editors: ReturnType<typeof editor>[]) =>
+    extensionAccess({
+      permissions: ['workspace-files:read'],
+      tier: 'ui',
+      contributes: { ...NO_CONTRIBUTIONS, customEditors: editors },
+    })
+  const approved = access([editor(['.todo'], ['TODO'])])
+  assert.deepEqual(approved.editors, ['todo=.todo,todo'])
+  assert.deepEqual(accessGrowth(approved, approved), [])
+  assert.deepEqual(accessGrowth(approved, access([editor(['.TODO'])])), [])
+  assert.deepEqual(accessGrowth(approved, access([editor(['.todo', '.tasks'], ['TODO'])])), [
+    'the editor "todo" opening .tasks files too',
+  ])
+  assert.deepEqual(accessGrowth(access([]), approved), ['the editor "todo" opening .todo, todo files'])
 })
 
 test('approvals are kept per install key, forgotten on request, and nothing is approved by a bad file', async () => {

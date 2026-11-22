@@ -147,3 +147,82 @@ test('a frame whose document unloads loses the bridge at once', async () => {
   assert.deepEqual(called, [])
   assert.deepEqual(posted, [])
 })
+
+test('a custom editor’s edits are answered by the window’s document, never sent to the Studio', async () => {
+  const posted: Array<Record<string, unknown>> = []
+  const called: string[] = []
+  const flushed: Array<[number, boolean]> = []
+  let saves = 0
+  let readied = 0
+  const host = createExtensionFrameHost({
+    source: () => frame,
+    post: (message) => posted.push(message as Record<string, unknown>),
+    workspaceId: 'ws-1',
+    document: {
+      applyEdit: (params) =>
+        (params as { baseVersion: number }).baseVersion === 2
+          ? { ok: true }
+          : { ok: false, code: 'conflict', message: 'Changed outside.', document: { version: 2 } },
+      flushed: (id, ok) => void flushed.push([id, ok]),
+      save: () => void (saves += 1),
+    },
+    onFrameReady: () => void (readied += 1),
+    call: async (method) => {
+      called.push(method)
+      return { ok: true, result: null }
+    },
+    client: { toast: () => undefined, chatDraft: async () => ({}), openDoor: () => false, focusTab: () => false },
+    theme: () => ({ colorScheme: 'dark', tokens: {} }),
+    onReady: () => undefined,
+    onPaint: () => undefined,
+    onFailed: () => undefined,
+  })
+  const send = (data: unknown) => host.receive({ source: frame, data } as unknown as MessageEvent)
+  send({ se: 1, kind: 'evt', event: 'ready' })
+  assert.equal(readied, 1)
+  // An edit far past a frame's 64 KiB message: a document travels whole.
+  const big = 'x'.repeat(200 * 1024)
+  send({
+    se: 1,
+    kind: 'req',
+    id: 1,
+    method: 'document.applyEdit',
+    params: { baseVersion: 2, content: { kind: 'text', text: big } },
+  })
+  send({
+    se: 1,
+    kind: 'req',
+    id: 2,
+    method: 'document.applyEdit',
+    params: { baseVersion: 1, content: { kind: 'text', text: 'y' } },
+  })
+  send({ se: 1, kind: 'evt', event: 'document.flushed', payload: { id: 7, ok: true } })
+  send({ se: 1, kind: 'evt', event: 'document.save', payload: {} })
+  host.sendDocument({ version: 3 })
+  assert.deepEqual(called, [])
+  assert.deepEqual(posted.slice(1), [
+    { se: 1, kind: 'res', id: 1, result: null },
+    {
+      se: 1,
+      kind: 'res',
+      id: 2,
+      error: { code: 'conflict', message: 'Changed outside.', retryable: false, document: { version: 2 } },
+    },
+    { se: 1, kind: 'evt', event: 'document', payload: { version: 3 } },
+  ])
+  assert.deepEqual(flushed, [[7, true]])
+  assert.equal(saves, 1)
+})
+
+test('a frame that is not a custom editor has no document to edit', () => {
+  const { posted, called, send } = harness()
+  send({
+    se: 1,
+    kind: 'req',
+    id: 1,
+    method: 'document.applyEdit',
+    params: { baseVersion: 1, content: { kind: 'text', text: 'y' } },
+  })
+  assert.deepEqual(called, [])
+  assert.equal((posted[0]!.error as { code: string }).code, 'unknown_method')
+})

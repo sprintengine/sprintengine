@@ -35,12 +35,18 @@ import { jsonValueProblem } from './json-value.js'
 import { isModuleMethodName, MODULE_METHOD_MAX_CHARS } from './methods.js'
 import type { HostCapability } from './host-api.js'
 import type {
+  ExtensionEditorContent,
+  ExtensionEditorDocument,
+  ExtensionEditorDocumentApi,
+  ExtensionEditorEdit,
   ExtensionFrameError,
   ExtensionFrameErrorCode,
   ExtensionFrameMethod,
   ExtensionMountStudio,
   ExtensionSurface,
 } from './frame.js'
+import { EXTENSION_EDITOR_FLUSH_TIMEOUT_MS } from './custom-editors.js'
+import { EDITOR_DOCUMENT_SCRIPT, type EditorDocumentPort } from './editor-document-script.js'
 import type {
   MainHost,
   McpConnectionMetadata,
@@ -948,6 +954,34 @@ export type FakeFrameStudioOptions = FakeModuleIdentity & {
   colorScheme?: 'light' | 'dark'
   /** The clock the fakes stamp with. Default: `Date.now`. */
   now?: () => number
+  /**
+   * The file a custom editor is open on (`studio.document`, for a surface whose
+   * point is `customEditors`): its text, or its bytes, and whether Studio would
+   * save it. Default: empty text.
+   */
+  document?: { text: string; readOnly?: boolean } | { bytes: Uint8Array; readOnly?: boolean }
+}
+
+/** The document behind a custom editor's `studio.document`, as Studio holds it. */
+export type FakeEditorDocument = {
+  /** The document as it is now, at its version. */
+  current(): ExtensionEditorDocument
+  /** Its text, for a text document. */
+  readonly text: string | undefined
+  /** Its bytes, for a bytes document. */
+  readonly bytes: Uint8Array | undefined
+  /** Every edit Studio accepted, in order. */
+  edits: ExtensionEditorEdit[]
+  /** Every edit Studio refused, with the code it was refused with. */
+  refused: Array<{ edit: ExtensionEditorEdit; code: string }>
+  /** The file changed outside the editor (on disk, in the text editor): a new version is handed over. */
+  replace(content: string | Uint8Array): void
+  /**
+   * Save, as Studio does: ask the editor to hand over what it holds back
+   * (`onWillSave`), and wait for it. Resolves false when the editor did not
+   * answer within Studio's deadline or its listener failed.
+   */
+  save(): Promise<boolean>
 }
 
 export type FakeFrameStudio = {
@@ -979,6 +1013,8 @@ export type FakeFrameStudio = {
   setColorScheme(scheme: 'light' | 'dark'): void
   /** The `studio` one surface's `mount` is handed. */
   studio(surface: ExtensionSurface): ExtensionMountStudio
+  /** The document a custom editor's `studio.document` is open on. */
+  document: FakeEditorDocument
   /** Run a ui entry's `mount` into `root` as Studio does in the frame. Resolves to what closing it runs. */
   mount(
     entry: { mount: (root: HTMLElement, studio: ExtensionMountStudio) => unknown },
@@ -993,6 +1029,110 @@ type Registry = Record<string, (moduleId: string, ...args: never[]) => Promise<u
 
 function frameError(code: ExtensionFrameErrorCode, message: string): ExtensionFrameError {
   return Object.assign(new Error(message), { code, retryable: false })
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>)
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * The window's side of a custom editor's document, as Studio keeps it: it
+ * numbers each document it hands over, refuses an edit made against an older
+ * one with `conflict`, and asks the editor to flush before a save. The frame's
+ * side is Studio's own `studio.document` (EDITOR_DOCUMENT_SCRIPT), run here as
+ * it runs in the frame.
+ */
+function createFakeEditor(initial: NonNullable<FakeFrameStudioOptions['document']>): {
+  controller: FakeEditorDocument
+  api(): ExtensionEditorDocumentApi
+} {
+  const toContent = (value: string | Uint8Array): ExtensionEditorContent =>
+    typeof value === 'string' ? { kind: 'text', text: value } : { kind: 'bytes', bytes: value.slice().buffer }
+  let document: ExtensionEditorDocument = {
+    version: 1,
+    readOnly: initial.readOnly === true,
+    content: toContent('text' in initial ? initial.text : initial.bytes),
+  }
+  const ports = new Set<{ hear: (event: string, payload: unknown) => void }>()
+  const clone = (doc: ExtensionEditorDocument): ExtensionEditorDocument => structuredClone(doc)
+  const handOver = () => {
+    for (const port of ports) port.hear('document', clone(document))
+  }
+  let nextFlush = 1
+  const flushes = new Map<number, (ok: boolean) => void>()
+  const controller: FakeEditorDocument = {
+    current: () => clone(document),
+    get text() {
+      return document.content.kind === 'text' ? document.content.text : undefined
+    },
+    get bytes() {
+      return document.content.kind === 'bytes' ? new Uint8Array(document.content.bytes.slice(0)) : undefined
+    },
+    edits: [],
+    refused: [],
+    replace(value) {
+      document = { ...document, version: document.version + 1, content: toContent(value) }
+      handOver()
+    },
+    save() {
+      if (ports.size === 0) return Promise.resolve(true)
+      const id = nextFlush++
+      return new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => settle(false), EXTENSION_EDITOR_FLUSH_TIMEOUT_MS)
+        const settle = (ok: boolean) => {
+          clearTimeout(timer)
+          flushes.delete(id)
+          resolve(ok)
+        }
+        flushes.set(id, settle)
+        for (const port of ports) port.hear('document.flush', { id })
+      })
+    },
+  }
+  const factory = new Function(`return (${EDITOR_DOCUMENT_SCRIPT})`)() as (port: EditorDocumentPort) => unknown
+  return {
+    controller,
+    api() {
+      const listeners = new Map<string, Set<(payload: unknown) => void>>()
+      const port = {
+        hear(event: string, payload: unknown) {
+          for (const listener of [...(listeners.get(event) ?? [])]) listener(payload)
+        },
+      }
+      ports.add(port)
+      const api = factory({
+        async call(_method, params) {
+          await Promise.resolve()
+          const edit = structuredClone(params) as ExtensionEditorEdit
+          const refuse = (code: ExtensionFrameErrorCode, message: string, current?: ExtensionEditorDocument) => {
+            controller.refused.push({ edit, code })
+            throw Object.assign(frameError(code, message), current ? { document: current } : {})
+          }
+          if (document.readOnly) refuse('not_permitted', 'This document is read only.')
+          if (edit.content.kind !== document.content.kind)
+            refuse('invalid_params', `This editor edits ${document.content.kind}.`)
+          if (edit.baseVersion !== document.version)
+            refuse('conflict', 'The file changed outside this editor; edit the latest document.', clone(document))
+          document = { ...document, content: edit.content }
+          controller.edits.push(structuredClone(edit))
+          return null
+        },
+        on(event, listener) {
+          let set = listeners.get(event)
+          if (!set) listeners.set(event, (set = new Set()))
+          set.add(listener)
+          return () => set.delete(listener)
+        },
+        post(_event, payload) {
+          const { id, ok } = (payload ?? {}) as { id?: number; ok?: boolean }
+          if (typeof id === 'number') flushes.get(id)?.(ok === true)
+        },
+      }) as ExtensionEditorDocumentApi
+      queueMicrotask(() => port.hear('document', clone(document)))
+      return api
+    },
+  }
 }
 
 function filePathParts(path: unknown): string[] | null {
@@ -1122,11 +1262,16 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
       world.settings.set(p.key, p.value === null ? undefined : p.value)
       return { ok: true }
     },
-    'files.read': (p) => {
+    'files.read': async (p) => {
       const { byPath, key } = fileOf(p.workspaceId, p.path)
       const content = byPath.get(key)
       if (content === undefined) throw frameError('action_failed', `${key} does not exist.`)
-      return { content, size: new TextEncoder().encode(content).byteLength }
+      const bytes = new TextEncoder().encode(content)
+      return {
+        content: p.encoding === 'base64' ? Buffer.from(bytes).toString('base64') : content,
+        size: bytes.byteLength,
+        sha256: await sha256Hex(bytes),
+      }
     },
     'files.stat': (p) => {
       const { byPath, key } = fileOf(p.workspaceId, p.path)
@@ -1146,13 +1291,20 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
         .sort()
       return { paths: paths.slice(0, limit), truncated: paths.length > limit }
     },
-    'files.write': (p) => {
+    'files.write': async (p) => {
       const { byPath, key } = fileOf(p.workspaceId, p.path)
       if (typeof p.content !== 'string') throw frameError('invalid_params', '"content" is the text to write.')
       const exists = byPath.has(key)
       if (p.create === true && exists) throw frameError('action_failed', `${key} already exists.`)
-      byPath.set(key, p.content)
-      return { size: new TextEncoder().encode(p.content).byteLength, created: !exists }
+      if (typeof p.expectedSha256 === 'string') {
+        const now = byPath.get(key)
+        if (now === undefined || (await sha256Hex(new TextEncoder().encode(now))) !== p.expectedSha256)
+          throw frameError('conflict', `${key} changed since it was read, so it was not written.`)
+      }
+      const text = p.encoding === 'base64' ? Buffer.from(p.content, 'base64').toString('utf8') : p.content
+      byPath.set(key, text)
+      const bytes = new TextEncoder().encode(text)
+      return { size: bytes.byteLength, created: !exists, sha256: await sha256Hex(bytes) }
     },
     notify: (p) => {
       fake.notifications.push(validateNotify(moduleId, p))
@@ -1218,7 +1370,10 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
     return structuredClone(await serve[method as ExtensionFrameMethod](given))
   }
 
+  const editor = createFakeEditor(options.document ?? { text: '' })
+
   const fake: FakeFrameStudio = {
+    document: editor.controller,
     calls: [],
     undeclared: [],
     toasts: [],
@@ -1252,6 +1407,7 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
       return Object.freeze({
         api: Object.freeze({ version: 1 as const }),
         surface: Object.freeze({ ...surface }),
+        ...(surface.point === 'customEditors' ? { document: editor.api() } : {}),
         host: Object.freeze({
           call: (method: string, params: unknown) => call(method, params),
           has: (method: string) => extensionFrameMethod(method) !== undefined,
