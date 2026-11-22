@@ -90,6 +90,8 @@ import type { StudioPhoneReads } from '../backlog/backlog-domain'
 import { createStudioPhoneReadsHandlers } from './studio-phone-reads'
 import type { StudioChatLifecycleDomain } from '../chat-lifecycle/chat-lifecycle-domain'
 import { createStudioChatLifecycleHandlers } from './studio-chat-lifecycle'
+import { createStudioFileViewsHandlers } from './studio-file-views'
+import type { FileViews } from '../file-views/file-views'
 import type { StudioCanvasDomain } from '../canvas/canvas-domain'
 import { createStudioCanvasHandlers } from './studio-canvas'
 import {
@@ -283,6 +285,8 @@ export type StudioRpcRouterOptions = {
   phoneReads?: StudioPhoneReads
   /** The chats' records beyond their rest; without them, `chat-lifecycle`'s methods are answered `unavailable`. */
   chatLifecycle?: StudioChatLifecycleDomain
+  /** The files chats' agents showed; without them, `fileViews.*` is answered `unavailable`. */
+  fileViews?: Pick<FileViews, 'read' | 'write'>
   /** The machine's boards, for another device; without them, `canvas.*` is answered `unavailable`. */
   canvas?: StudioCanvasDomain
   uploads?: StudioUploads
@@ -2438,6 +2442,14 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 
     ...createStudioChatLifecycleHandlers({
       ...(options.chatLifecycle ? { lifecycle: options.chatLifecycle } : {}),
+      kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+    }),
+
+    // ── Files a chat's agent showed ────────────────────────────────────────
+    // Through the chat that showed them; each save once per command id.
+
+    ...createStudioFileViewsHandlers({
+      ...(options.fileViews ? { views: options.fileViews } : {}),
       kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
     }),
 

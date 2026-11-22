@@ -12,9 +12,8 @@
 //
 //   claude   (Claude Code, Z.AI, Kimi Claude) — the gateway, the hook and the
 //            app's skills already ride `--plugin-dir`; the person's synced
-//            servers go as `--mcp-config <file>`, the knowledge-activity hook
-//            joins the launch's one `--settings` document, and a module's
-//            skill is a plugin of its own beside the app's.
+//            servers go as `--mcp-config <file>`, and a module's skill is a
+//            plugin of its own beside the app's.
 //   codex    — `-c mcp_servers.<id>={…}` for the gateway and the synced
 //            servers, `-c hooks.<Event>=[…]` for the agent-state hook.
 //   opencode — `OPENCODE_CONFIG_CONTENT`: the agent-state plugin by `file://`
@@ -150,8 +149,6 @@ export type ClaudeLaunchInput = {
   dir: string
   /** The person's synced servers for this CLI; the gateway rides the app's plugin. */
   servers: readonly McpServerConfig[]
-  /** The knowledge-activity hook command, when this workspace opted in. */
-  knowledgeActivityCommand?: string | null
   /** One-skill plugin directories (a module's skill the prompt invokes). */
   skillPluginDirs?: ReadonlyArray<{ id: string; dir: string }>
   /** Skills the launch already carries as the app's own one-skill plugins. */
@@ -172,14 +169,10 @@ export async function buildClaudeLaunchIntegration(input: ClaudeLaunchInput): Pr
     const document = `${JSON.stringify(claudeMcpConfigDocument(input.servers), null, 2)}\n`
     args.push('--mcp-config', await writeLaunchFile(input.dir, 'claude-mcp', '.json', document))
   }
-  const settings = input.knowledgeActivityCommand
-    ? { hooks: knowledgeActivityHooks(input.knowledgeActivityCommand) }
-    : undefined
   const skillPluginDirs = input.skillPluginDirs ?? []
   return {
     args,
     env: {},
-    ...(settings ? { settings } : {}),
     ...(skillPluginDirs.length > 0 ? { pluginDirs: skillPluginDirs.map((plugin) => plugin.dir) } : {}),
     carries: {
       mcp: true,
@@ -188,11 +181,6 @@ export async function buildClaudeLaunchIntegration(input: ClaudeLaunchInput): Pr
     },
     skippedServers: [],
   }
-}
-
-/** The PostToolUse block the knowledge-activity hook has always registered. */
-export function knowledgeActivityHooks(command: string): Record<string, unknown> {
-  return { PostToolUse: [{ matcher: 'Read|Edit|Write', hooks: [{ type: 'command', command }] }] }
 }
 
 // ── Codex ───────────────────────────────────────────────────────────────────
@@ -392,8 +380,6 @@ export type PrepareLaunchIntegrationDeps = {
   bundledSkillPluginDir: (skillId: string) => string | null
   /** The directory holding a skill's SKILL.md (bundled, or a module's), or null for an unknown id. */
   skillSourceDir: (skillId: string) => string | null
-  /** The knowledge-activity hook command for this workspace, when it opted in. */
-  knowledgeActivityCommand: (workspaceRoot: string) => Promise<string | null>
   /** Whether git tracks a file, so a tidy never deletes a committed one. */
   gitTracks: (path: string) => Promise<boolean>
   warn?: (message: string) => void
@@ -455,7 +441,6 @@ export async function prepareLaunchIntegration(
     integration = await buildClaudeLaunchIntegration({
       dir,
       servers: resolved.servers,
-      knowledgeActivityCommand: await deps.knowledgeActivityCommand(input.workspaceRoot).catch(() => null),
       skillPluginDirs,
       bundledSkills,
     })

@@ -194,7 +194,6 @@ export type WorkspaceMarkUnreadResult =
 export type WorkspaceFieldsPatch = {
   folderPath?: string | null
   folderMissing?: boolean
-  memory?: Workspace['memory']
   settledAt?: number | null
   settledOverride?: Workspace['settledOverride']
   autoSettleEnabled?: boolean | null

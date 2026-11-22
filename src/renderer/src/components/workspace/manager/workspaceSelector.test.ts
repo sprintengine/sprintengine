@@ -125,7 +125,6 @@ const RENDERED_FIELD_CHANGES: { [K in keyof Workspace]?: Workspace[K] } = {
   templateId: 'template-2',
   layoutModel: layoutWith([agentTab, meshTab]),
   worktreeState: {} as Workspace['worktreeState'],
-  memory: {} as Workspace['memory'],
   editorState: {} as Workspace['editorState'],
   fileExplorerState: {} as Workspace['fileExplorerState'],
   moduleState: {} as Workspace['moduleState'],

@@ -157,10 +157,6 @@ export function registerCoreIpc(
         services.ssh?.environments.list().find((machine) => machine.id === id)?.destination ?? null,
     }),
   )
-  // Memory/knowledge-graph backend is foundational: agent context injection
-  // (TerminalView) and the Knowledge Graph settings tab
-  // depend on it, so it is always registered. The memory-graph capability
-  // module gates only the visualization panel (renderer side).
   registerDiagnosticsIpc(ipcMain, {
     writeDiagnosticLog,
     openDiagnosticsLogsFolder,

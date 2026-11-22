@@ -54,7 +54,6 @@ export type WorkspaceRegistryFieldStamps = {
   name: number
   layoutModel: number
   folderPath: number
-  memory: number
   settledAt: number
   settledOverride: number
   autoSettleEnabled: number
@@ -66,7 +65,6 @@ const WORKSPACE_REGISTRY_STAMPED_FIELDS = [
   'name',
   'layoutModel',
   'folderPath',
-  'memory',
   'settledAt',
   'settledOverride',
   'autoSettleEnabled',
@@ -133,7 +131,6 @@ export function emptyWorkspaceRegistryFieldStamps(): WorkspaceRegistryFieldStamp
     name: 0,
     layoutModel: 0,
     folderPath: 0,
-    memory: 0,
     settledAt: 0,
     settledOverride: 0,
     autoSettleEnabled: 0,

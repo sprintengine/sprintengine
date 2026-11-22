@@ -2,7 +2,6 @@ import type { Workspace } from '../../../../shared/workspace'
 import { isRetiredWorkspaceMode } from '../../../../shared/workspace-mode'
 import { isPlaceholderAgentName } from '../../utils/agentNames'
 import { normalizeAgentState, pickWorkspaceAgentName } from './agentsSlice'
-import { normalizeWorkspaceMemoryConfig } from './memorySlice'
 import {
   normalizeWorkspaceBacklogState,
   normalizeWorkspaceFileExplorerState,
@@ -80,7 +79,6 @@ export function normalizeWorkspaceForPartialize(workspace: Workspace): Workspace
     ...workspace,
     mode: normalizeWorkspaceMode(workspace.mode),
     moduleState: partializeWorkspaceModuleState(workspace.moduleState),
-    memory: normalizeWorkspaceMemoryConfig(workspace.memory),
     fileExplorerState: normalizeWorkspaceFileExplorerState(workspace.fileExplorerState),
     backlogState: normalizeWorkspaceBacklogState(workspace.backlogState),
     gitPanelState: normalizeWorkspaceGitPanelState(workspace.gitPanelState),

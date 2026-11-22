@@ -31,7 +31,7 @@ import { clearIgnored, enforceDiskLimit, evictOverLimit, evictSlot, measure } fr
 import { heldAction } from './pool-held-actions'
 import { FETCH_FAILURE_BACKOFF_MS, FETCH_FRESH_MS, catchUp, lease, reclaim, type CatchUpOutcome } from './pool-lease'
 import { recoverPool } from './pool-recovery'
-import { release, returnUnused } from './pool-return'
+import { release, releaseLeasesOf, returnUnused } from './pool-return'
 import type { PoolChat } from './pool-idle'
 import { reservationAt } from './pool-slot-steps'
 
@@ -745,6 +745,8 @@ export function createWorktreePoolService(deps: WorktreePoolServiceDeps) {
     release: (leaseId: string) => track(release(ctx, leaseId)),
     catchUp: (leaseId: string) => track(catchUp(ctx, leaseId)),
     returnUnused: (input: WorktreePoolReturnInput) => track(returnUnused(ctx, input)),
+    /** Give back the clean slots an agent (or every agent of a chat) leased for itself, its work being over. */
+    releaseLeasesOf: (owner: { workspaceId: string; agentId?: string }) => track(releaseLeasesOf(ctx, owner)),
     leaseAt,
     action: (input: WorktreePoolActionInput) => track(action(input)),
     snapshot,

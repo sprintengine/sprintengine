@@ -73,6 +73,10 @@ test('Studio’s own compaction before the cache expired says so', () => {
     postTokens: 30_000,
   }
   expect(compactionLabel(entry)).toBe('Context compacted · automatically, before the cache expired · 221k → 30k tokens')
+  const { beforeCacheExpiry: _before, ...asked } = entry
+  expect(compactionLabel({ ...asked, askedByAgent: true })).toBe(
+    'Context compacted · at the agent’s request · 221k → 30k tokens',
+  )
 })
 
 test('a handoff divider says what was left behind, and opens the file', () => {

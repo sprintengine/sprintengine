@@ -14,6 +14,7 @@ import { createSubagentTools } from './subagent-tools'
 import { createConversationPullRequestTools } from './conversation-pull-request-tools'
 import { createPullRequestTools } from '../../server/pull-requests/pull-request-tools'
 import { createLocalServerTools } from '../../server/local-servers/local-server-tools'
+import { createFileViewTools } from '../../server/file-views/file-view-tools'
 import { desktopGatewayTools } from './desktop-gateway-tools'
 import { createEditorTools } from './editor-tools'
 import { createMcpDispatcher, type McpDispatchGate } from './mcp-dispatch'
@@ -64,6 +65,7 @@ export function desktopToolParts(): Parameters<typeof desktopGatewayTools>[0] & 
       ...createConversationPullRequestTools(stub),
       ...createPullRequestTools(stub),
       ...createLocalServerTools(stub),
+      ...createFileViewTools(stub),
       ...createWorktreePoolTools(stub),
     ],
   }

@@ -41,6 +41,10 @@ function harness(
     writeEnd: ({ agentId }, end) => {
       agents[agentId] = { ...agents[agentId]!, subagentEnd: end }
     },
+    writeRound: ({ agentId }, round) => {
+      const { subagentEnd: _ended, ...rest } = agents[agentId]!
+      agents[agentId] = { ...rest, subagentRound: round } as AgentState
+    },
     removeAgent: ({ agentId }) => {
       calls.push(`remove ${agentId}`)
       delete agents[agentId]
@@ -232,6 +236,37 @@ test('the result is the last thing the agent said in its task, whatever came aft
   assert.deepEqual(await h.lifecycle.result(child), { text: 'Verdict: ship it.', truncated: false })
 })
 
+test('a resume starts a round only on one that ended, and the round ends as the task did', () => {
+  const h = harness()
+  assert.equal(h.lifecycle.beginRound(child, 'Look again'), null, 'still working')
+  assert.equal(h.lifecycle.beginRound(parent, 'Look again'), null, 'not a sub-agent')
+  h.lifecycle.onConversationEvent(event('turn_completed', child))
+  assert.deepEqual(h.lifecycle.beginRound(child, 'Look again'), { n: 2, startedAt: 500, task: 'Look again' })
+  assert.equal(h.agents[child.agentId]?.subagentEnd, undefined)
+  assert.equal(h.lifecycle.beginRound(child, 'Twice'), null, 'its round is running')
+  h.lifecycle.onConversationEvent(event('turn_failed', child, { message: 'Usage limit reached.' }, 900))
+  assert.deepEqual(h.agents[child.agentId]?.subagentEnd, { at: 900, status: 'failed', error: 'Usage limit reached.' })
+  assert.equal(h.lifecycle.beginRound(child, '')?.n, 3)
+  assert.equal(h.agents[child.agentId]?.subagentRound?.task, undefined)
+})
+
+test("after a resume the result is the round's last word, and never an earlier round's", async () => {
+  const agents = {
+    [child.agentId]: chat({
+      subagentOf: { agentId: parent.agentId, startedAt: 1 },
+      subagentRound: { n: 2, startedAt: 25 },
+      subagentEnd: { at: 40, status: 'completed' },
+    }),
+  }
+  const turns = [...textTurn('t1', 'Two problems.', 10), ...textTurn('t2', 'Both fixed.', 30)]
+  const h = harness(agents, { readEvents: async () => turns })
+  assert.deepEqual(await h.lifecycle.result(child), { text: 'Both fixed.', truncated: false })
+  // A round that said nothing has no result, rather than the first round's.
+  agents[child.agentId] = { ...agents[child.agentId]!, subagentRound: { n: 3, startedAt: 50 } }
+  agents[child.agentId] = { ...agents[child.agentId]!, subagentEnd: { at: 60, status: 'failed' } }
+  assert.equal(await h.lifecycle.result(child), null)
+})
+
 test('a long result is cut from its start, so the verdict survives', async () => {
   const verdict = 'Verdict: ship it.'
   const long = `${'word '.repeat(6_000)}\n\n${verdict}`
@@ -256,6 +291,7 @@ test("with the runtime: a mock sub-agent's turn ends it, leaves it at rest, and 
     writeEnd: ({ agentId }, end) => {
       agents[agentId] = { ...agents[agentId]!, subagentEnd: end }
     },
+    writeRound: () => undefined,
     removeAgent: () => undefined,
     session: (key) => {
       const listed = runtime.listSessions(key)

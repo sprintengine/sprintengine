@@ -117,12 +117,29 @@ export type ConversationEvent = {
  * has reset (`usage-resume`), a pull request the chat's agent asked the
  * desktop to watch needs a look (`pull-request-watch`), or the chat sat idle
  * with its prompt cache about to expire and was compacted while it was still
- * warm (`auto-compact`, the message being `/compact` itself), or the person
+ * warm (`auto-compact`, the message being `/compact` itself), or its agent
+ * asked for its own chat to be compacted once its turn ended
+ * (`agent-compact`, `/compact` too), or the person
  * wrote to an agent the chat spawned, and the chat is asked to pass it on
  * (`agent-message`, the `user_message` naming it in `subagentMessage`).
  */
 export type ConversationStudioMessageReason =
-  'agent-notice' | 'usage-resume' | 'pull-request-watch' | 'auto-compact' | 'subagent-task' | 'agent-message'
+  | 'agent-notice'
+  | 'usage-resume'
+  | 'pull-request-watch'
+  | 'auto-compact'
+  | 'subagent-task'
+  | 'agent-message'
+  | 'agent-compact'
+
+/**
+ * Whether a Studio message is its own `/compact`: before a cache expired, or
+ * at the chat's agent's request. Either is drawn as the compaction's divider
+ * alone, and its turn neither badges nor notifies.
+ */
+export function isStudioCompactionReason(reason: ConversationStudioMessageReason | undefined): boolean {
+  return reason === 'auto-compact' || reason === 'agent-compact'
+}
 
 /**
  * Who a `user_message` came from when it was not the person: the payload's
@@ -204,6 +221,7 @@ const STUDIO_MESSAGE_REASONS: readonly string[] = [
   'auto-compact',
   'subagent-task',
   'agent-message',
+  'agent-compact',
 ] satisfies ConversationStudioMessageReason[]
 
 /**

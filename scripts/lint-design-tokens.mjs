@@ -48,8 +48,8 @@
 //     violation; a `max` left ABOVE what the file spends is a violation too,
 //     naming the number to write; and an entry whose file no longer exists
 //     stops the guard (exit 2). Each entry MUST carry an inline comment that
-//     names the exception category (terminal ANSI / memory graph atmosphere
-//     / brand SVG) and what the file does. If this list grows beyond
+//     names the exception category (terminal ANSI / brand SVG) and what the
+//     file does. If this list grows beyond
 //     `ALLOW_LIST_CEILING` entries, the script emits
 //     a meta-finding rather than expanding silently — the redesign drains
 //     hex from chrome, it does not catalogue it.
@@ -71,8 +71,9 @@ const ALLOWED_EXT = new Set(['.tsx', '.ts'])
 const EXCLUDED_DIRS = new Set(['__preview__'])
 
 // Per-file rule exemptions. Each entry MUST cite the exception category
-// (a) terminal ANSI output, (b) memory graph atmosphere, or (c) brand SVG
-// asset — and explain why the rule cannot apply.
+// (a) terminal ANSI output or (c) brand SVG asset — and explain why the rule
+// cannot apply. ((b), the knowledge graph canvas's atmosphere, went with the
+// graph, 2026-11-21.)
 //
 // Each entry is COUNTED, not blanket. `max` says how many occurrences of each
 // listed rule the file is allowed; occurrence N+1 is a violation like any other,
@@ -86,14 +87,6 @@ const EXCLUDED_DIRS = new Set(['__preview__'])
 // exemption is not an exception, it is an unmonitored region.
 const PATH_EXEMPTIONS = [
   {
-    // (b) Memory graph atmosphere: graph node-type palette plus direct canvas
-    // paint colors. Pinned to this one canvas file: the graph is an atmospheric
-    // surface, not chrome.
-    path: 'src/renderer/src/components/memory/MemoryGraphCanvas.tsx',
-    rules: ['no-inline-hex'],
-    max: { 'no-inline-hex': 19 },
-  },
-  {
     // (c) Brand SVG asset: per-CLI badge identity colour.
     path: 'src/renderer/src/components/CliIcon.tsx',
     rules: ['no-inline-hex'],
@@ -102,8 +95,8 @@ const PATH_EXEMPTIONS = [
 ]
 
 // Five entries were retired when the list was measured, 2026-09-08. Three
-// (`panels/PlainTerminalPanel.tsx`, `panels/TerminalView.tsx`,
-// `memory/memoryGraphTypes.ts`) had drained to zero hex literals and were
+// (`panels/PlainTerminalPanel.tsx`, `panels/TerminalView.tsx`, and the
+// knowledge graph's types) had drained to zero hex literals and were
 // standing open over nothing; two (`brand/SprintEngineMark.tsx`,
 // `brand/SprintEngineWordmark.tsx`) named files that no longer exist. None of that
 // was visible while the exemption was blanket, which is the argument for the
@@ -399,8 +392,8 @@ const NATIVE_DIALOG_BASELINE = new Map([])
 // h-4 w-4 / h-[Npx] w-[Npx] ..." ...> opening tags. App-shell icons should use
 // the canonical `.icon-xs / .icon-sm / .icon-md / .icon-lg` utility classes
 // (12/14/16/20 px) or set width/height through CSS variables that resolve to
-// `--icon-*`. StatusDot (6 px contract), brand marks, memory-graph canvas
-// glyphs, and ANSI terminal output are intentionally not in this vocabulary
+// `--icon-*`. StatusDot (6 px contract), brand marks and ANSI terminal output
+// are intentionally not in this vocabulary
 // and stay as documented exceptions. The regex matches a single `<svg ...>`
 // opening tag whose body contains an ad-hoc paired height+width literal.
 // Allow either the standard Tailwind values or arbitrary `h-[…px]` values.
@@ -412,8 +405,8 @@ const AD_HOC_ICON_SIZE_INSIDE_TAG =
 // of every h-3 w-3 / h-3.5 w-3.5 / h-4 w-4 / h-[Npx] w-[Npx] svg literal so
 // this map is intentionally empty: any new ad-hoc icon size anywhere in the
 // renderer is a violation. StatusDot keeps its own 6 px contract; brand
-// marks (PATH_EXEMPTIONS), memory graph canvas glyphs (PATH_EXEMPTIONS), and
-// ANSI terminal output (PATH_EXEMPTIONS) are out of this vocabulary by
+// marks (PATH_EXEMPTIONS) and ANSI terminal output (PATH_EXEMPTIONS) are out
+// of this vocabulary by
 // design and are handled through the file-level exemption list, not here.
 const AD_HOC_ICON_SIZE_BASELINE = new Map([])
 

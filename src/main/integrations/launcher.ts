@@ -52,11 +52,12 @@ export const LAUNCHER_POINTER_NAME = 'current'
 /**
  * What the launcher can run, by name. The names are the command's first
  * argument, so they are part of every entry already written: never rename one.
+ * A name the launcher no longer knows (`knowledge-activity`, the retired
+ * knowledge graph's hook) exits quietly, so an entry left behind does nothing.
  */
 export const LAUNCHER_TARGETS = {
   'agent-state': 'hooks/sprintengine-agent-state.mjs',
   'status-line': 'hooks/sprintengine-status-line.mjs',
-  'knowledge-activity': 'hooks/claude-knowledge-activity.mjs',
   mcp: 'automation/mcp-stdio-bridge.mjs',
 } as const
 

@@ -248,9 +248,9 @@ test('designSystemAxes', async () => {
       // 6 → 5, 2026-09-28: the chat's Jump to latest moved onto the ladder
       // when the queued message began floating over the transcript.
       // 5 → 4, 2026-10-08: the composer's drop overlay moved onto the ladder.
-      'components/panels': 4,
+      // 4 → 3, 2026-11-21: the knowledge graph panel was removed.
+      'components/panels': 3,
       'components/ui': 1,
-      'components/memory': 1,
       'components/auxWindows': 1,
     },
     type: {
@@ -332,8 +332,8 @@ test('designSystemAxes', async () => {
       'components/backlog': 1,
       'components/diagnostics': 8,
       'components/htmlArtifact': 2,
-      'components/memory': 1,
-      'components/panels': 16,
+      // 16 → 15, 2026-11-21: the knowledge graph panel was removed.
+      'components/panels': 15,
       'components/settings': 3,
       'components/ui': 9,
       'components/usage': 2,

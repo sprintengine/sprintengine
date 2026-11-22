@@ -1534,7 +1534,6 @@ test('designSystemConformance', async () => {
       // artifact frame's bands, which drew their rule in a SURFACE token.
       const SWEPT = [
         'components/panels',
-        'components/memory',
         'components/ui',
         'components/htmlArtifact',
         'components/workspace/agentComposer',

@@ -8,7 +8,6 @@ const MENU_ACCELERATOR_COMMAND_IDS = new Set([
   'panel.files.toggle',
   'panel.editor.toggle',
   'panel.git.toggle',
-  'panel.knowledge-graph.toggle',
 ])
 
 const menuAcceleratorOverrides = new Map<string, string | null>()
@@ -183,11 +182,6 @@ export function createAppMenu(platform: NodeJS.Platform = process.platform): Men
           label: 'Toggle Workspace Pane',
           accelerator: menuAccelerator('pane.toggle', 'CmdOrCtrl+Alt+B'),
           click: (_, win) => sendMenuCommand(win ?? BrowserWindow.getFocusedWindow(), 'pane.toggle'),
-        },
-        {
-          label: 'Toggle Knowledge Graph',
-          accelerator: menuAccelerator('panel.knowledge-graph.toggle'),
-          click: (_, win) => sendMenuCommand(win ?? BrowserWindow.getFocusedWindow(), 'panel.knowledge-graph.toggle'),
         },
         { type: 'separator' },
         // Performance diagnostics is an engineering tool; only surface it when

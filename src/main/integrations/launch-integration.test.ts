@@ -80,26 +80,16 @@ test('a Claude launch takes the synced servers as one owner-only --mcp-config fi
   assert.equal((await readdir(dir)).length, 1)
 })
 
-test('a Claude launch with nothing synced passes no flag, and carries the knowledge hook in its settings', async () => {
+test('a Claude launch with nothing synced passes no flag and no settings', async () => {
   const dir = await tempDir('claude-empty')
   const integration = await buildClaudeLaunchIntegration({
     dir,
     servers: [],
-    knowledgeActivityCommand: "/bin/sh '/Users/dev/.sprintengine/bin/studio-run' knowledge-activity",
     bundledSkills: ['backlog'],
     skillPluginDirs: [{ id: 'canvas-draw', dir: '/Users/dev/skill-plugin' }],
   })
   assert.deepEqual(integration.args, [])
-  assert.deepEqual(integration.settings, {
-    hooks: {
-      PostToolUse: [
-        {
-          matcher: 'Read|Edit|Write',
-          hooks: [{ type: 'command', command: "/bin/sh '/Users/dev/.sprintengine/bin/studio-run' knowledge-activity" }],
-        },
-      ],
-    },
-  })
+  assert.equal(integration.settings, undefined)
   assert.deepEqual(integration.pluginDirs, ['/Users/dev/skill-plugin'])
   assert.deepEqual(integration.carries.skills, ['backlog', 'canvas-draw'])
   assert.deepEqual(await readdir(dir).catch(() => []), [])
@@ -217,7 +207,6 @@ function deps(overrides: Partial<PrepareLaunchIntegrationDeps> & { launchDir: st
     skillSourceDir: () => null,
     skill: () => null,
     homeDir: () => join(launchDir, 'home'),
-    knowledgeActivityCommand: async () => null,
     gitTracks: async () => false,
     ...rest,
   }

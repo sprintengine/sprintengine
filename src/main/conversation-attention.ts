@@ -1,5 +1,9 @@
 import type { AgentPhaseEvent } from '../shared/agent-runtime'
-import { readConversationMessageOrigin, type ConversationEvent } from '../shared/conversation-runtime'
+import {
+  isStudioCompactionReason,
+  readConversationMessageOrigin,
+  type ConversationEvent,
+} from '../shared/conversation-runtime'
 import type { AgentAttention } from './agent-attention'
 import { isTurnlessSubagentStep } from '../shared/conversation/subagents'
 
@@ -26,7 +30,7 @@ export function createConversationAttentionListener(attention: Pick<AgentAttenti
     if (
       event.type === 'user_message' &&
       turnId &&
-      readConversationMessageOrigin(event.payload?.origin)?.reason === 'auto-compact'
+      isStudioCompactionReason(readConversationMessageOrigin(event.payload?.origin)?.reason)
     )
       quietTurns.set(event.sessionId, turnId)
     const quiet = quietTurns.get(event.sessionId)

@@ -14,7 +14,6 @@ import { canvasRendererModule } from './canvas-module'
 import { designRendererModule } from './design-module'
 import { devToolsRendererModule } from './dev-tools-module'
 import { gitRendererModule } from './git-module'
-import { memoryRendererModule } from './memory-module'
 import { scheduledAgentsRendererModule } from './scheduled-agents-module'
 import { createRendererHost, type RendererModule } from './renderer-host'
 import { filesApi } from '../studio/files'
@@ -33,7 +32,6 @@ const BUNDLED_RENDERER_MODULES: RendererModule[] = [
   canvasRendererModule,
   designRendererModule,
   devToolsRendererModule,
-  memoryRendererModule,
   gitRendererModule,
   scheduledAgentsRendererModule,
 ]

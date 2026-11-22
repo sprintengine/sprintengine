@@ -9,6 +9,7 @@ import { createAppSettledChatDeletion } from '../../main/settled-chat-deletion-a
 import type { WorkspaceRegistryService } from '../../main/workspace-registry-service'
 import type { WorkspaceSyncService } from '../../main/workspace-sync-service'
 import { installWorktreePool } from '../../main/worktree-pool/active-pool'
+import { createAgentLeaseRelease } from '../../main/worktree-pool/agent-lease-release'
 import { createChatFolderGuard } from '../../main/worktree-pool/chat-folder-guard'
 import { createDependencyInstaller, installDependencyInstaller } from '../../main/worktree-pool/dependency-install'
 import { cachedDependencyInstallEnvironment } from '../../main/worktree-pool/install-environment'
@@ -148,6 +149,14 @@ export function createStudioWorktreePool(deps: StudioWorktreePoolDeps) {
   })
   installWorktreePool(pool)
   void pool.load()
+  // An agent's own leases (`worktree.lease`) go back once its work is over:
+  // its chat settled or removed, the agent removed, a sub-agent's task ended.
+  // Here, beside the records, rather than in a window's sweep, so it happens
+  // with no window open too (agent-lease-release.ts).
+  const log = diagnosticLogger('worktree-pool')
+  workspaceSyncService.subscribeEvents(
+    createAgentLeaseRelease({ release: (owner) => pool.releaseLeasesOf(owner), log }),
+  )
 
   // The dependency install an agent worktree runs when its project opted in
   // and its lockfile changed (worktree-pool/dependency-install.ts), with the

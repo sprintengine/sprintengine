@@ -25,13 +25,19 @@ import { test } from 'vitest'
 test('modelRegistry', async () => {
   const WS = 'modelregistry-test-ws'
 
+  // No shipped component docks on the nav rail any more; the side-keyed
+  // machinery stays generic, so a stand-in component exercises it here.
+  assert.equal(NAV_RAIL_COMPONENTS.size, 0, 'no shipped component is a rail switch')
+  const RAIL = 'nav-stand-in'
+  NAV_RAIL_COMPONENTS.add(RAIL)
+
   // addAgentTabTiled schedules its spawn-flash cleanup via window.setTimeout; node
   // has no window, so provide a no-op shim.
   const globalWithWindow = globalThis as unknown as { window?: { setTimeout: () => number } }
   if (!globalWithWindow.window) globalWithWindow.window = { setTimeout: () => 0 }
 
   // A workspace whose only open panel is the strip-less sidebar nav pane
-  // (Knowledge Graph) — the regression case where a terminal/agent used to spawn
+  // — the regression case where a terminal/agent used to spawn
   // buried under the sidebar.
   function navOnlyModel(): Model {
     const json: IJsonModel = {
@@ -44,7 +50,7 @@ test('modelRegistry', async () => {
             type: 'tabset',
             weight: 100,
             enableTabStrip: false,
-            children: [{ type: 'tab', name: 'Knowledge Graph', component: 'memory-graph' }],
+            children: [{ type: 'tab', name: 'Nav stand-in', component: RAIL }],
           },
         ],
       },
@@ -131,7 +137,7 @@ test('modelRegistry', async () => {
   }
 
   function navTabsets(model: Model): TabsetJson[] {
-    const nav = new Set(['memory-graph'])
+    const nav = new Set([RAIL])
     return tabsets(model).filter((tabset) => componentsOf(tabset).some((c) => nav.has(c)))
   }
 
@@ -139,10 +145,10 @@ test('modelRegistry', async () => {
   {
     const model = freshModel()
     registerModel(WS, model)
-    togglePanelRailComponent(WS, 'memory-graph', 'Knowledge Graph')
+    togglePanelRailComponent(WS, RAIL, 'Nav stand-in')
     const nav = navTabsets(model)
     assert.equal(nav.length, 1)
-    assert.deepEqual(componentsOf(nav[0]), ['memory-graph'])
+    assert.deepEqual(componentsOf(nav[0]), [RAIL])
     assert.equal(nav[0].enableTabStrip, false)
     unregisterModel(WS)
   }
@@ -151,9 +157,9 @@ test('modelRegistry', async () => {
   {
     const model = freshModel()
     registerModel(WS, model)
-    togglePanelRailComponent(WS, 'memory-graph', 'Knowledge Graph')
+    togglePanelRailComponent(WS, RAIL, 'Nav stand-in')
     assert.equal(navTabsets(model).length, 1)
-    togglePanelRailComponent(WS, 'memory-graph', 'Knowledge Graph')
+    togglePanelRailComponent(WS, RAIL, 'Nav stand-in')
     assert.equal(navTabsets(model).length, 0)
     unregisterModel(WS)
   }
@@ -171,10 +177,9 @@ test('modelRegistry', async () => {
     unregisterModel(WS)
   }
 
-  // The nav rail holds exactly one component: a door surface is instance-global
-  // and lives outside any workspace layout, so it is never one.
+  // A door surface is instance-global and lives outside any workspace layout,
+  // so it is never a rail component.
   {
-    assert.deepEqual([...NAV_RAIL_COMPONENTS], ['memory-graph'])
     assert.equal(NAV_RAIL_COMPONENTS.has('automations'), false)
   }
 
@@ -354,13 +359,13 @@ test('modelRegistry', async () => {
   }
 
   // With the nav rail open, file tabs land to its right and still to the left of
-  // terminals/agents: Files/Git/Knowledge -> Editor -> terminals/agents.
+  // terminals/agents: nav rail -> Editor -> terminals/agents.
   {
     const model = freshModel()
     registerModel(WS, model)
-    togglePanelRailComponent(WS, 'memory-graph', 'Knowledge Graph')
+    togglePanelRailComponent(WS, RAIL, 'Nav stand-in')
     assert.equal(focusOrAddFileTab(WS, '/tmp/app.ts', 'app.ts'), true)
-    assert.deepEqual(tabsets(model).map(componentsOf), [['memory-graph'], ['file-editor'], ['agent']])
+    assert.deepEqual(tabsets(model).map(componentsOf), [[RAIL], ['file-editor'], ['agent']])
     const nav = navTabsets(model)
     assert.equal(nav.length, 1)
     assert.equal(nav[0].enableTabStrip, false)
@@ -426,11 +431,11 @@ test('modelRegistry', async () => {
     const model = navOnlyModel()
     registerModel(WS, model)
     assert.equal(addTerminalTab(WS, 'term-1', 'Terminal'), true)
-    assert.deepEqual(tabsets(model).map(componentsOf), [['memory-graph'], ['terminal']])
+    assert.deepEqual(tabsets(model).map(componentsOf), [[RAIL], ['terminal']])
     // The nav pane stays a clean, strip-less sidebar — the terminal did not land in it.
     const nav = navTabsets(model)
     assert.equal(nav.length, 1)
-    assert.deepEqual(componentsOf(nav[0]), ['memory-graph'])
+    assert.deepEqual(componentsOf(nav[0]), [RAIL])
     assert.equal(nav[0].enableTabStrip, false)
     unregisterModel(WS)
   }
@@ -441,10 +446,10 @@ test('modelRegistry', async () => {
     const model = navOnlyModel()
     registerModel(WS, model)
     assert.equal(addAgentTabTiled(WS, 'a-9', 'Spawned agent'), true)
-    assert.deepEqual(tabsets(model).map(componentsOf), [['memory-graph'], ['agent']])
+    assert.deepEqual(tabsets(model).map(componentsOf), [[RAIL], ['agent']])
     const nav = navTabsets(model)
     assert.equal(nav.length, 1)
-    assert.deepEqual(componentsOf(nav[0]), ['memory-graph'])
+    assert.deepEqual(componentsOf(nav[0]), [RAIL])
     unregisterModel(WS)
   }
 
@@ -454,13 +459,13 @@ test('modelRegistry', async () => {
     const model = freshModel()
     registerModel(WS, model)
     // Opening Git selects the nav pane, making it the active tabset.
-    togglePanelRailComponent(WS, 'memory-graph', 'Knowledge Graph')
+    togglePanelRailComponent(WS, RAIL, 'Nav stand-in')
     assert.equal(addTerminalTab(WS, 'term-2', 'Terminal'), true)
-    assert.deepEqual(tabsets(model).map(componentsOf), [['memory-graph'], ['agent', 'terminal']])
+    assert.deepEqual(tabsets(model).map(componentsOf), [[RAIL], ['agent', 'terminal']])
     // The git nav pane was not used as the spawn target.
     const nav = navTabsets(model)
     assert.equal(nav.length, 1)
-    assert.deepEqual(componentsOf(nav[0]), ['memory-graph'])
+    assert.deepEqual(componentsOf(nav[0]), [RAIL])
     unregisterModel(WS)
   }
 
@@ -479,7 +484,7 @@ test('modelRegistry', async () => {
             type: 'tabset',
             weight: 18,
             enableTabStrip: false,
-            children: [{ type: 'tab', id: 'nav-memory-graph', name: 'Knowledge Graph', component: 'memory-graph' }],
+            children: [{ type: 'tab', id: 'nav-stand-in-tab', name: 'Nav stand-in', component: RAIL }],
           },
           { type: 'tabset', weight: 52, children: [{ type: 'tab', id: 'ed', name: 'Editor', component: 'editor' }] },
           {
@@ -496,7 +501,7 @@ test('modelRegistry', async () => {
   // Headless models never run the view layout pass, so seed the rects the capture
   // reads: root row 1000px wide, nav rail 180px ⇒ an 18% share.
   function seedNavRailRects(model: Model): void {
-    const navTab = model.getNodeById('nav-memory-graph')
+    const navTab = model.getNodeById('nav-stand-in-tab')
     const navTabset = navTab?.getParent()
     const rootRow = navTabset?.getParent()
     assert.ok(navTabset && rootRow, 'expected nav tabset under the root row')
@@ -542,7 +547,7 @@ test('modelRegistry', async () => {
   {
     const model = navRailDevModel()
     model.doAction(Actions.deleteTab('agent-x'))
-    const navW = tabsetWeight(model, 'memory-graph')
+    const navW = tabsetWeight(model, RAIL)
     const edW = tabsetWeight(model, 'editor')
     const fraction = navW / (navW + edW)
     assert.ok(Math.abs(fraction - 18 / 70) < 0.01, `expected the bug's ~0.257, got ${fraction}`)
@@ -557,7 +562,7 @@ test('modelRegistry', async () => {
     assert.ok(fraction != null)
     model.doAction(Actions.deleteTab('agent-x'))
     restoreRailWidthFraction(model, fraction!, 'left')
-    const navW = tabsetWeight(model, 'memory-graph')
+    const navW = tabsetWeight(model, RAIL)
     const edW = tabsetWeight(model, 'editor')
     const preserved = navW / (navW + edW)
     assert.ok(Math.abs(preserved - 0.18) < 0.005, `expected the rail pinned at 0.18, got ${preserved}`)
@@ -571,9 +576,9 @@ test('modelRegistry', async () => {
     const model = navRailDevModel()
     model.doAction(Actions.deleteTab('agent-x'))
     model.doAction(Actions.deleteTab('ed'))
-    const before = tabsetWeight(model, 'memory-graph')
+    const before = tabsetWeight(model, RAIL)
     restoreRailWidthFraction(model, 0.18, 'left')
-    assert.equal(tabsetWeight(model, 'memory-graph'), before, 'rail weight unchanged with no siblings')
+    assert.equal(tabsetWeight(model, RAIL), before, 'rail weight unchanged with no siblings')
   }
 
   // flashAgentTab re-applies the green spawn-flash classes to an agent tab that
@@ -880,5 +885,6 @@ test('modelRegistry', async () => {
     unregisterModel(WS)
   }
 
+  NAV_RAIL_COMPONENTS.delete(RAIL)
   console.log('modelRegistry.test.ts: ok')
 })

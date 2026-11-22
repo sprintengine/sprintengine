@@ -484,12 +484,6 @@
   --terminal-fg: #ececec;
   --terminal-cursor: var(--accent-primary);
 
-  /* Memory-graph atmosphere — faint radial glow behind the knowledge graph
-     canvas. Scoped to MemoryGraphCanvas: the graph is an atmospheric surface,
-     and this is the one gradient the app allows.
-     Dark default here; the light theme overrides it below. */
-  --memory-graph-atmosphere: radial-gradient(circle at 50% 45%, rgba(63, 148, 104, 0.08), transparent 48%);
-
   /* Type scale. The structural scales below are mode-invariant in the bundle,
      so they resolve the same under either data-mode and every theme inherits
      them. Reach them from markup through the Tailwind utilities declared in
@@ -731,10 +725,6 @@
 
   --terminal-bg: #fafafb;
   --terminal-fg: #202428;
-
-  /* Light atmosphere: a barely-there cool tint on the near-white canvas so the
-     graph still has depth without a blue vignette reading as a colour cast. */
-  --memory-graph-atmosphere: radial-gradient(circle at 50% 45%, rgba(47, 106, 74, 0.045), transparent 52%);
 }
 
 /* ── Theme catalogue ────────────────────────────────────────────────────────
@@ -1042,8 +1032,6 @@
   --terminal-ansi-bright-magenta: #b490ac;
   --terminal-ansi-bright-cyan: #90bcbc;
   --terminal-ansi-bright-white: #ecf0f4;
-
-  --memory-graph-atmosphere: radial-gradient(circle at 50% 45%, rgba(136, 192, 208, 0.06), transparent 50%);
 }
 
 /* Dracula — the dark violet palette with neon accents (draculatheme.com).
@@ -1135,8 +1123,6 @@
   --terminal-ansi-bright-magenta: #fc90e0;
   --terminal-ansi-bright-cyan: #a4fcfc;
   --terminal-ansi-bright-white: #ffffff;
-
-  --memory-graph-atmosphere: radial-gradient(circle at 50% 45%, rgba(188, 148, 248, 0.07), transparent 50%);
 }
 
 /* Catppuccin Mocha — the darkest flavour of Catppuccin's pastel palette
@@ -1229,8 +1215,6 @@
   --terminal-ansi-bright-magenta: #f4c4e8;
   --terminal-ansi-bright-cyan: #94e0d4;
   --terminal-ansi-bright-white: #a8acc8;
-
-  --memory-graph-atmosphere: radial-gradient(circle at 50% 45%, rgba(204, 168, 248, 0.06), transparent 50%);
 }
 
 /* Catppuccin Latte — the light flavour, stacked as Mocha is: Base is the
@@ -1332,8 +1316,6 @@
   --terminal-ansi-bright-magenta: #b04098;
   --terminal-ansi-bright-cyan: #007880;
   --terminal-ansi-bright-white: #484c64;
-
-  --memory-graph-atmosphere: radial-gradient(circle at 50% 45%, rgba(136, 56, 240, 0.05), transparent 52%);
 }
 
 /* Vellum — warm vintage-parchment light theme, drawn from an antique
@@ -1411,10 +1393,6 @@
 
   --terminal-bg: #f8f0e4;
   --terminal-fg: #2c2418;
-
-  /* Warm atmosphere: a barely-there terracotta tint on the parchment canvas so
-     the graph keeps depth without a colour cast. */
-  --memory-graph-atmosphere: radial-gradient(circle at 50% 45%, rgba(176, 68, 40, 0.05), transparent 52%);
 }
 
 /* Herbarium — green-forward light sibling of Vellum, pulling the sage/olive of
@@ -1503,9 +1481,6 @@
      rather than joining the chrome family. */
   --terminal-bg: #fcf4e8;
   --terminal-fg: #242818;
-
-  /* Faint emerald atmosphere leans the graph into the green identity. */
-  --memory-graph-atmosphere: radial-gradient(circle at 50% 45%, rgba(44, 124, 92, 0.06), transparent 52%);
 }
 
 /* Paper — the product's signature light theme: warm cream canvas, sage
@@ -1582,9 +1557,6 @@
 
   --terminal-bg: #f0ede2;
   --terminal-fg: #191613;
-
-  /* Faint green atmosphere leans the graph into the brand accent. */
-  --memory-graph-atmosphere: radial-gradient(circle at 50% 45%, rgba(47, 106, 74, 0.05), transparent 52%);
 }
 
 /* Sage — mid-tone muted gray-green ("slate, but green"). Desaturated relative
@@ -1648,8 +1620,6 @@
 
   --terminal-bg: #181c14;
   --terminal-fg: #e8e8d4;
-
-  --memory-graph-atmosphere: radial-gradient(circle at 50% 45%, rgba(68, 168, 124, 0.06), transparent 52%);
 }
 
 /* Herbarium Dark — the dark counterpart of Herbarium. Where Herbarium puts sage
@@ -1727,9 +1697,6 @@
      brief asks for. */
   --terminal-bg: #080c08;
   --terminal-fg: #e4e8d8;
-
-  /* Faint sage glow keeps the graph in the green identity against the dark. */
-  --memory-graph-atmosphere: radial-gradient(circle at 50% 45%, rgba(212, 220, 192, 0.06), transparent 50%);
 }
 
 * {
@@ -2338,9 +2305,8 @@ samp,
 
 /* Canonical SVG icon size utilities. Pair with the --icon-* token scale.
  * Use these instead of ad-hoc h-3/w-3, h-3.5/w-3.5, h-4/w-4, h-[Npx] sprinkles
- * on app-shell icons. StatusDot keeps its own 6 px contract; brand marks,
- * memory graph canvas glyphs, and ANSI terminal output are intentionally
- * outside this vocabulary. */
+ * on app-shell icons. StatusDot keeps its own 6 px contract; brand marks and
+ * ANSI terminal output are intentionally outside this vocabulary. */
 .icon-xs {
   width: var(--icon-xs);
   height: var(--icon-xs);
@@ -5124,6 +5090,24 @@ body:has([data-selection-pane]:focus-within)
  * cascade layer, so it outranks any utility. */
 [data-tool-step-body] > .ds-code-block {
   margin-block: 0;
+}
+
+/* The lines an agent pointed at in a file it showed (agentChat/fileView): the
+ * violet that says an agent is somewhere, as a tab or a Files row wears it, as
+ * a soft ground under the lines and a 2px edge beside their numbers, with the
+ * agent's note after the first line in the same ink. Monaco draws these by
+ * class name, so they are rules here rather than utilities. */
+.file-view .file-view-highlight {
+  background: var(--agent-trail-soft);
+}
+.file-view .file-view-highlight-edge {
+  border-left: 2px solid var(--agent-trail-ink);
+  margin-left: var(--sem-space-3xs);
+}
+.file-view .file-view-highlight-note {
+  color: var(--agent-trail-ink);
+  font-family: var(--sem-font-family-ui);
+  font-style: italic;
 }
 
 /* A table wider than the pane scrolls inside it, and the edge that hides

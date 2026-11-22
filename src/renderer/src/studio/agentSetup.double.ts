@@ -16,36 +16,12 @@ function blank(): Api {
   const none = { ok: false as const, message: copy.studio.agentSetupDouble.nothingSetUpHere }
   const choices = { enabled: [], dismissed: [] }
   return {
-    memoryResolveRoot: async ({ relativeRoot }) => ({
+    knowledgeResolveRoot: async ({ relativeRoot }) => ({
       ok: false,
       status: 'missing-workspace',
       relativeRoot,
       message: copy.studio.agentSetupDouble.noWorkspaceHere,
     }),
-    memoryIndex: async ({ relativeRoot }) => ({
-      ok: false,
-      status: 'missing-workspace',
-      relativeRoot,
-      message: copy.studio.agentSetupDouble.noWorkspaceHere,
-    }),
-    memoryReadPreview: async () => none,
-    memoryActivityInstall: async () => none,
-    memoryActivityUninstall: async () => none,
-    memoryActivityStartWatching: async () => ({ ok: true }),
-    memoryActivityGetStatus: async ({ workspaceRoot }) => ({
-      workspaceRoot,
-      isInstalled: false,
-      isWatching: false,
-      sessionsRecorded: 0,
-      totalEvents: 0,
-      eventsToday: 0,
-      lastEventAt: null,
-    }),
-    memoryActivityGetSynapses: async () => [],
-    memoryActivityIsInstalled: async () => false,
-    onMemoryActivityEvent: () => () => undefined,
-    onMemoryActivityStatus: () => () => undefined,
-    onMemoryActivitySynapses: () => () => undefined,
     mcpSync: async () => none,
     detectExistingAgentConfig: async () => ({ ok: true, mcpServers: [], skills: [], warnings: [] }),
     adoptAgentConfig: async () => none,

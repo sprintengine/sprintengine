@@ -782,8 +782,19 @@ export type ConversationSubagent = ConversationWireKey &
     /** The first line of its task. Empty when it was given none to show. */
     task: string
     startedAt: number
-    /** When its task ended, once it has. A follow-up sent later moves nothing here. */
+    /**
+     * When its task ended, once it has: after a resume, the latest round's
+     * task. A follow-up a person sends later moves nothing here.
+     */
     endedAt?: number
+    /**
+     * Which task its parent has it on, from the second: each `subagent.resume`
+     * gives it another in the same session, one row still. Absent for one on
+     * its first, and from a desktop that predates resuming.
+     */
+    round?: number
+    /** When the round named by `round` was sent; the status and `endedAt` are that round's. */
+    roundStartedAt?: number
     /** Why it failed, when it says. */
     error?: string
   }
@@ -877,6 +888,12 @@ function subagent(value: unknown): ConversationSubagent | null {
     ...(capabilities ? { capabilities } : {}),
     ...(clock(value.endedAt) ? { endedAt: value.endedAt } : {}),
     ...(text(value.error) && value.error ? { error: value.error } : {}),
+    ...(typeof value.round === 'number' &&
+    Number.isInteger(value.round) &&
+    value.round > 1 &&
+    clock(value.roundStartedAt)
+      ? { round: value.round, roundStartedAt: value.roundStartedAt }
+      : {}),
   }
 }
 

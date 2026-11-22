@@ -5,7 +5,6 @@ import { createInMemoryWorkspaceRegistryStore } from '../../../main/workspace-re
 import { createWorkspaceSyncService } from '../../../main/workspace-sync-service'
 import type { WorkspaceSyncCommand, WorkspaceSyncEvent } from '../../../shared/workspace-sync'
 import type { LayoutTemplate, Workspace } from '../../../shared/workspace'
-import { defaultWorkspaceMemoryConfig } from './slices/memorySlice'
 import { defaultWorkspaceWorktreeState } from './slices/worktreesSlice'
 import { terminalsDouble } from '../studio/terminals.double'
 
@@ -27,7 +26,6 @@ function workspace(id: string): Workspace {
     templateId: 'test',
     agents: {},
     layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
-    memory: defaultWorkspaceMemoryConfig(),
     worktreeState: defaultWorkspaceWorktreeState(),
     editorState: { openFiles: [], activeFilePath: null },
     createdAt: 1,

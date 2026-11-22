@@ -7,13 +7,12 @@
  * as a re-export shim, so every existing import site and test keeps working
  * unchanged.
  */
-import type { MemoryRootStatus } from './electron-api'
+import type { KnowledgeRootStatus } from './electron-api'
 import { basename } from './paths'
 
 /**
- * What a launch needs from the resolved Knowledge Graph root: the env vars that
- * tell the agent's tooling where the graph is, and the sentence that tells the
- * AGENT it exists.
+ * What a launch needs from the resolved knowledge folder: where it is, and the
+ * sentence that tells the AGENT it exists.
  *
  * That sentence is no longer appended to the user's prompt. It is the knowledge
  * section of the host-context document (`src/shared/host-context/document.ts`),
@@ -30,13 +29,13 @@ export type KnowledgeLaunchContext = {
  * Turn a resolved root into launch inputs. Shared because both launch paths
  * compose it: `TerminalView` for an interactively-spawned agent, and the
  * main-process AgentLaunchService for one launched with no window —
- * which must not silently drop the graph just because nobody is watching.
+ * which must not silently drop the pointer just because nobody is watching.
  *
  * An UNRESOLVABLE configured root still yields a line. Saying nothing would
  * leave the agent to guess another knowledge folder, which is exactly the
  * invention the line forbids.
  */
-export function knowledgeLaunchContext(status: MemoryRootStatus): KnowledgeLaunchContext {
+export function knowledgeLaunchContext(status: KnowledgeRootStatus): KnowledgeLaunchContext {
   if (status.ok) {
     return {
       rootPath: status.rootPath,
@@ -64,7 +63,7 @@ export type ProjectKnowledgeConfig = {
   inherited: boolean
 }
 
-/** One open project (deduped across its workspaces) for the Knowledge Graph settings list. */
+/** One open project (deduped across its workspaces) for the Knowledge settings list. */
 export type ProjectKnowledgeEntry = {
   /** Lowercased project-root path; stable React key + dedupe key. */
   key: string
@@ -97,7 +96,6 @@ function isPathInsideOrEqual(parentPath: string, childPath: string): boolean {
 export function resolveProjectKnowledgeConfig(
   workspaceRoot: string | null | undefined,
   projectKnowledgeRoots: Record<string, string | null> | null | undefined,
-  workspaceRelativeRoot?: string | null,
 ): ProjectKnowledgeConfig | null {
   const workspaceKey = normalizeProjectRootKey(workspaceRoot)
   if (!workspaceKey) return null
@@ -115,14 +113,7 @@ export function resolveProjectKnowledgeConfig(
     }
   }
 
-  if (best) return best
-  if (!workspaceRelativeRoot) return null
-
-  return {
-    projectRoot: workspaceKey,
-    relativeRoot: workspaceRelativeRoot,
-    inherited: false,
-  }
+  return best
 }
 
 function normalizePathParts(value: string): { drive: string | null; parts: string[] } {
@@ -169,20 +160,13 @@ export function relativePathBetween(fromPath: string, toPath: string): string | 
  * display name.
  */
 export function listOpenProjectKnowledge(
-  workspaces: ReadonlyArray<{
-    folderPath: string | null
-    memory?: { relativeRoot: string | null } | null
-  }>,
+  workspaces: ReadonlyArray<{ folderPath: string | null }>,
   projectKnowledgeRoots: Record<string, string | null> | null | undefined,
 ): ProjectKnowledgeEntry[] {
   const byKey = new Map<string, ProjectKnowledgeEntry>()
 
   for (const workspace of workspaces) {
-    const config = resolveProjectKnowledgeConfig(
-      workspace.folderPath,
-      projectKnowledgeRoots,
-      workspace.memory?.relativeRoot,
-    )
+    const config = resolveProjectKnowledgeConfig(workspace.folderPath, projectKnowledgeRoots)
     const projectRoot = config?.projectRoot ?? normalizeProjectRootKey(workspace.folderPath)
     if (!projectRoot) continue
 

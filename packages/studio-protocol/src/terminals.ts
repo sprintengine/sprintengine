@@ -91,8 +91,10 @@ export type TerminalSpawnMetadata = {
   // reasoningSelection; undefined means the CLI's own default effort, which
   // passes no flag. Travels with cliModel from the spawning surface.
   cliReasoning?: string
-  memoryRootPath?: string
-  memoryRelativeRoot?: string
+  // The project's knowledge folder, named to the agent in the host-context
+  // document: absolute when it resolved, relative as configured either way.
+  knowledgeRootPath?: string
+  knowledgeRelativeRoot?: string
   agentSession?: AgentSessionMetadata
   visible?: boolean
   mcpSettings?: McpSettings
@@ -521,8 +523,8 @@ const OPEN_STRINGS = {
   cliPermissionMode: 200,
   cliModel: 200,
   cliReasoning: 200,
-  memoryRootPath: PATH_CHARS,
-  memoryRelativeRoot: PATH_CHARS,
+  knowledgeRootPath: PATH_CHARS,
+  knowledgeRelativeRoot: PATH_CHARS,
   spawnSkillId: 200,
 } as const
 const OPEN_BOOLEANS = ['resume', 'shellOnly', 'visible', 'connectorLaunch'] as const

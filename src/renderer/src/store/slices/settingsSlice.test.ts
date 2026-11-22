@@ -36,11 +36,8 @@ import { test } from 'vitest'
 const MATCH_REPOSITORY = { mode: 'repository', instructions: '' }
 
 test('settingsSlice', async () => {
-  const workspaceWithMemoryRoot = {
+  const workspaceInProject = {
     folderPath: '/Users/example/project',
-    memory: {
-      relativeRoot: 'knowledge',
-    },
   } as Workspace
 
   const normalized = normalizeAppSettings(
@@ -81,7 +78,7 @@ test('settingsSlice', async () => {
       },
       recentWorkspaceFolders: [' /Users/example/project ', '/Users/example/project/', '', '/Users/example/other'],
     },
-    [workspaceWithMemoryRoot],
+    [workspaceInProject],
   )
 
   assert.equal(normalized.cliRuntimes.codex.command, 'codex-next')
@@ -328,9 +325,6 @@ test('settingsSlice', async () => {
     workspaces: [
       {
         folderPath: '/Users/example/project',
-        memory: {
-          relativeRoot: 'knowledge',
-        },
       } as Workspace,
     ],
     appSettings: defaultAppSettings(),
@@ -1360,8 +1354,8 @@ test('settingsSlice', async () => {
       { 'repo:logo': 'none' },
     )
 
-    // Unlike the knowledge roots beside it, the map is NOT pruned against the open
-    // workspaces: a person's choice has to survive closing every chat in it.
+    // The map is NOT pruned against the open workspaces: a person's choice has
+    // to survive closing every chat in it.
     assert.deepEqual(normalizeAppSettings({ projectColors: { 'repo:closed': 300 } }, []).projectColors, {
       'repo:closed': 300,
     })

@@ -519,3 +519,87 @@ export async function branchShadowing(run: SlotGitRunner, repoRoot: string, bran
   if (!remote) return null
   return `A branch “${branch}” would hide the branches of this repository’s remote “${remote}”, and git would read Studio’s branch in their place. Choose another branch prefix in Settings ▸ Worktrees, or another worktree name.`
 }
+
+/**
+ * Folders a build or an install writes, whose files are made again by running
+ * it once more: never anyone's work. A package archive (`npm pack`'s `*.tgz`)
+ * is the same.
+ */
+const BUILD_OUTPUT_FOLDERS: ReadonlySet<string> = new Set([
+  'node_modules',
+  'dist',
+  'build',
+  'out',
+  'coverage',
+  '.turbo',
+  '.next',
+  '.cache',
+])
+
+/** Whether an untracked path, relative to the slot, is build output by its name: in such a folder, or an archive. */
+export function isBuildOutputPath(path: string): boolean {
+  const parts = path.split('/')
+  const name = parts[parts.length - 1] ?? ''
+  return parts.slice(0, -1).some((part) => BUILD_OUTPUT_FOLDERS.has(part)) || /\.tgz$/iu.test(name)
+}
+
+/**
+ * The untracked paths of a slot that are left over from a build, not work:
+ * build output by name ({@link isBuildOutputPath}), in a folder the default
+ * branch (`base`) does not have at all. The case it is for: an agent built a
+ * package that lives only on another branch, and switched back, leaving the
+ * package's folder behind with nothing in it but its `dist`, its
+ * `node_modules` and a packed `.tgz`. Git tracks none of it on the default
+ * branch, so each lease of the slot met it as an uncommitted change and held
+ * the slot for a person, for good.
+ *
+ * Anything else untracked is a real change: a file outside a build folder, or
+ * build output in a folder the default branch has (where a `dist/` that is
+ * not ignored may be committed on purpose). Unreadable, nothing is a leftover.
+ */
+export async function buildLeftovers(
+  run: SlotGitRunner,
+  slotPath: string,
+  untrackedPaths: readonly string[],
+  base: string | null,
+): Promise<string[]> {
+  if (!base) return []
+  const candidates = untrackedPaths.filter(isBuildOutputPath)
+  if (candidates.length === 0) return []
+  // The base is read once: a base that does not resolve makes every folder
+  // look absent, so then nothing is a leftover.
+  const resolved = await run(slotPath, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`])
+  if (!resolved.ok || !resolved.stdout.trim()) return []
+  const known = new Map<string, boolean>()
+  const leftovers: string[] = []
+  for (const path of candidates) {
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+    // The repository's root is on every branch.
+    if (!folder) continue
+    let onBase = known.get(folder)
+    if (onBase === undefined) {
+      // Anything the base has at that path (a folder, or a file of the name) is not a folder it lacks.
+      onBase = (await run(slotPath, ['cat-file', '-e', `${base}:${folder}`])).ok
+      known.set(folder, onBase)
+    }
+    if (!onBase) leftovers.push(path)
+  }
+  return leftovers
+}
+
+/** Remove the build leftovers a clean return found ({@link buildLeftovers}): files only, each inside the slot. */
+export async function removeBuildLeftovers(slotPath: string, paths: readonly string[]): Promise<string[]> {
+  const removed: string[] = []
+  for (const relative of paths) {
+    if (relative.split('/').some((part) => part === '..' || part === '')) continue
+    const full = join(slotPath, ...relative.split('/'))
+    const isFile = await lstat(full).then(
+      (info) => info.isFile() || info.isSymbolicLink(),
+      () => false,
+    )
+    if (!isFile) continue
+    await rm(full, { force: true })
+    removed.push(relative)
+  }
+  return removed
+}

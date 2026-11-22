@@ -47,7 +47,6 @@ import type {
   WorkspaceId,
   WorkspaceWindowId,
   WorkspaceWindowState,
-  WorkspaceMemoryConfig,
   WorkspaceMode,
   WorkspaceWorktreeState,
 } from '../../../../shared/workspace'
@@ -395,12 +394,11 @@ export type WorkspacesSlice = WorkspacesSliceState & WorkspacesSliceActions
 
 // Cross-slice helpers passed in by workspaceStore.ts. Each is the same module-
 // scope function used inline today; deferring its move to the matching slice
-// (agents/layout/run-state/worktrees/memory). When those slices land, the deps
+// (agents/layout/run-state/worktrees). When those slices land, the deps
 // shrink. This explicit DI keeps workspacesSlice import-cycle-free.
 export interface WorkspacesSliceDependencies {
   defaultAgent: (id: AgentId, name?: string) => AgentState
   defaultEditorState: () => EditorState
-  defaultWorkspaceMemoryConfig: () => WorkspaceMemoryConfig
   defaultWorkspaceWorktreeState: () => WorkspaceWorktreeState
   normalizeAgentState: (agent: AgentState) => AgentState
   normalizeWorkspaceWorktreeState: (input: Partial<WorkspaceWorktreeState> | null | undefined) => WorkspaceWorktreeState
@@ -1408,7 +1406,7 @@ export function createWorkspacesSlice(
         }
         // Standard/dev templates: normalize nav-only tabsets to strip-less so a
         // user-saved template predating the nav-switch model never seeds a
-        // redundant tab strip on Files / Git / Knowledge Graph. When a seed
+        // redundant tab strip on a nav switch. When a seed
         // renames the lone tab or swaps it for a terminal, apply that transform.
         const baseStandardLayout = deps.hideNavRailTabStrip(templateLayout) ?? templateLayout
         const standardLayout =
@@ -1453,7 +1451,6 @@ export function createWorkspacesSlice(
           layoutModel: standardLayout,
           agents,
           worktreeState: deps.defaultWorkspaceWorktreeState(),
-          memory: deps.defaultWorkspaceMemoryConfig(),
           editorState: deps.defaultEditorState(),
           fileExplorerState: defaultWorkspaceFileExplorerState(),
           createdAt: Date.now(),

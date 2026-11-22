@@ -63,6 +63,7 @@ export const STUDIO_RESERVED_TOOLSET_NAMES: readonly string[] = [
   'backlog',
   'cli',
   'conversation',
+  'file',
   'marketplace',
   'module',
   'schedule',

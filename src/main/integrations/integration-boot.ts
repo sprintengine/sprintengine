@@ -165,12 +165,6 @@ export const BOOT_CLEANUP_KINDS: ReadonlySet<IntegrationLedgerEntry['kind']> = n
 export type BootCleanupInput = {
   ledger: IntegrationLedger
   listRoots: () => ScanRoot[]
-  /**
-   * Move a repository's knowledge-activity opt-in out of its settings before
-   * its hook entry goes (`knowledgeActivityLaunchCommand`), so the person's
-   * choice survives the clean-up. Resolves once the entry is out.
-   */
-  migrateKnowledgeActivity?: (repo: string) => Promise<void>
   runGit?: (cwd: string, args: string[]) => Promise<GitCommandResult>
   /** Stop before the next entry after this; what is left is tried at the next start or quit. */
   deadline?: number
@@ -186,14 +180,6 @@ export async function cleanRepositoriesAtBoot(input: BootCleanupInput): Promise<
     }).catch(() => [])
     await input.ledger.record(found)
     await input.ledger.markCleaned(REPOSITORY_CLEANUP_VERSION)
-  }
-  if (input.migrateKnowledgeActivity) {
-    const repos = new Set(
-      (await input.ledger.list())
-        .filter((entry) => entry.kind === 'knowledge-activity-hook' && entry.hostId === 'local' && entry.repo)
-        .map((entry) => entry.repo!),
-    )
-    for (const repo of repos) await input.migrateKnowledgeActivity(repo).catch(() => undefined)
   }
   return removeIntegrations(
     { ledger: input.ledger, scan: false, ...(input.runGit ? { runGit: input.runGit } : {}) },

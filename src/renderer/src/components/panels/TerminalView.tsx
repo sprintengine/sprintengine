@@ -99,8 +99,6 @@ type AgentExecutionRoot = {
   worktreePath: string | undefined
 }
 
-type MemoryLaunchContext = KnowledgeLaunchContext
-
 const EMPTY_MCP_SETTINGS: McpSettings = { syncEnabled: false, servers: {} }
 
 // Resolves after `count` animation frames: long enough for a layout change
@@ -148,28 +146,28 @@ function resolveAgentExecutionRoot(
   }
 }
 
-async function resolveMemoryLaunchContext(
+async function resolveKnowledgeLaunchContext(
   workspaceRoot: string | null,
   relativeRoot: string | null,
-): Promise<MemoryLaunchContext> {
+): Promise<KnowledgeLaunchContext> {
   const configuredRoot = relativeRoot?.trim()
   if (!configuredRoot) return { promptSuffix: null, rootPath: undefined, relativeRoot: undefined }
 
   const status = await agentSetupApi
-    .memoryResolveRoot({
+    .knowledgeResolveRoot({
       workspaceRoot,
       relativeRoot: configuredRoot,
     })
-    .catch((error): MemoryRootStatus => ({
+    .catch((error): KnowledgeRootStatus => ({
       ok: false,
       status: 'inaccessible',
       relativeRoot: configuredRoot,
       message: error instanceof Error ? error.message : appCopy.panels.terminalView.unableToResolveWorkspaceKnowledge,
     }))
 
-  // Resolved through `shared/project-knowledge` for the ENV VARS the spawn
-  // payload carries (`memoryRootPath` / `memoryRelativeRoot`). The sentence that
-  // tells the agent the graph exists is no longer read here: main builds it into
+  // Resolved through `shared/project-knowledge` for the pair the spawn payload
+  // carries (`knowledgeRootPath` / `knowledgeRelativeRoot`). The sentence that
+  // tells the agent the folder exists is not read here: main builds it into
   // the host-context document, from this same pair, for every launcher.
   return knowledgeLaunchContext(status)
 }
@@ -283,13 +281,10 @@ function TerminalViewOnThisComputer({
     message: folderStatusMessage,
   } = useWorkspaceFolderStatus(workspaceId)
   const workspaceFolderPath = useWorkspaceStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.folderPath)
-  const workspaceMemoryRelativeRoot = useWorkspaceStore(
-    (s) => s.workspaces.find((w) => w.id === workspaceId)?.memory.relativeRoot,
-  )
   const projectKnowledgeRoots = useWorkspaceStore((s) => s.appSettings.projectKnowledgeRoots)
-  const memoryConfig = useMemo(
-    () => resolveProjectKnowledgeConfig(workspaceFolderPath, projectKnowledgeRoots, workspaceMemoryRelativeRoot),
-    [workspaceFolderPath, projectKnowledgeRoots, workspaceMemoryRelativeRoot],
+  const knowledgeConfig = useMemo(
+    () => resolveProjectKnowledgeConfig(workspaceFolderPath, projectKnowledgeRoots),
+    [workspaceFolderPath, projectKnowledgeRoots],
   )
   const cliPermissionPreset = useWorkspaceStore((s) => {
     const workspace = s.workspaces.find((w) => w.id === workspaceId)
@@ -336,7 +331,7 @@ function TerminalViewOnThisComputer({
     cliRuntimes,
     hostId,
     mcpSettings,
-    memoryConfig,
+    knowledgeConfig,
     openFile,
     savedFolderPath,
     storedExecutionWorktreePath,
@@ -352,7 +347,7 @@ function TerminalViewOnThisComputer({
       cliRuntimes,
       hostId,
       mcpSettings,
-      memoryConfig,
+      knowledgeConfig,
       openFile,
       savedFolderPath,
       storedExecutionWorktreePath,
@@ -366,7 +361,7 @@ function TerminalViewOnThisComputer({
     cliRuntimes,
     hostId,
     mcpSettings,
-    memoryConfig,
+    knowledgeConfig,
     openFile,
     savedFolderPath,
     storedExecutionWorktreePath,
@@ -1211,13 +1206,13 @@ function TerminalViewOnThisComputer({
       ]
         .filter(Boolean)
         .join('\n')
-      const memoryContext = await resolveMemoryLaunchContext(
-        launchContext.memoryConfig?.projectRoot ?? folderReadyPath ?? null,
-        launchContext.memoryConfig?.relativeRoot ?? null,
+      const knowledgeContext = await resolveKnowledgeLaunchContext(
+        launchContext.knowledgeConfig?.projectRoot ?? folderReadyPath ?? null,
+        launchContext.knowledgeConfig?.relativeRoot ?? null,
       )
       if (disposed) return
       // The user's prompt, and only the user's prompt. Everything the HOST wants
-      // the agent to know — the attached design system, the Knowledge Graph — is
+      // the agent to know — the attached design system, the knowledge folder — is
       // built and delivered out of band by main (src/shared/host-context,
       // src/main/terminal-launch), because appending it here told the model the
       // user had said it, told a resumed session nothing at all, and never
@@ -1277,8 +1272,8 @@ function TerminalViewOnThisComputer({
               : {}),
             cliModel: finalAgent.cliModel,
             cliReasoning: finalAgent.cliReasoning,
-            memoryRootPath: memoryContext.rootPath,
-            memoryRelativeRoot: memoryContext.relativeRoot,
+            knowledgeRootPath: knowledgeContext.rootPath,
+            knowledgeRelativeRoot: knowledgeContext.relativeRoot,
             // A connector chat forwards its own connector-only MCP settings so the
             // spawn syncs that server into the worktree .mcp.json — never the
             // global appSettings.mcp. Ordinary agents fall through to the
@@ -1354,8 +1349,8 @@ function TerminalViewOnThisComputer({
             : {}),
           cliModel: finalAgent.cliModel,
           cliReasoning: finalAgent.cliReasoning,
-          memoryRootPath: memoryContext.rootPath,
-          memoryRelativeRoot: memoryContext.relativeRoot,
+          knowledgeRootPath: knowledgeContext.rootPath,
+          knowledgeRelativeRoot: knowledgeContext.relativeRoot,
           // A connector chat forwards its own connector-only MCP settings so the
           // spawn syncs that server into the worktree .mcp.json — never the
           // global appSettings.mcp. Ordinary agents fall through to the
