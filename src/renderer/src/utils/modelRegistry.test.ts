@@ -1,65 +1,32 @@
 import assert from 'node:assert/strict'
 
-import { Actions, Model, Rect, type IJsonModel } from 'flexlayout-react'
+import { Model, type IJsonModel } from 'flexlayout-react'
 import {
-  addAgentTabTiled,
   addNewAgentTab,
-  addTerminalTab,
   convertNewAgentTabToAgent,
   removeNewAgentTab,
   NEW_AGENT_TAB_COMPONENT,
-  captureRailWidthFraction,
   consumePendingAgentFlash,
   flashAgentTab,
   focusedAgentTabInLayout,
   focusOrAddFileTab,
   registerModel,
-  restoreRailWidthFraction,
   revealAgentTab,
   unregisterModel,
-  togglePanelRailComponent,
-  NAV_RAIL_COMPONENTS,
+  toggleEditorTab,
 } from './modelRegistry'
 import { test } from 'vitest'
 
 test('modelRegistry', async () => {
   const WS = 'modelregistry-test-ws'
 
-  // No shipped component docks on the nav rail any more; the side-keyed
-  // machinery stays generic, so a stand-in component exercises it here.
-  assert.equal(NAV_RAIL_COMPONENTS.size, 0, 'no shipped component is a rail switch')
-  const RAIL = 'nav-stand-in'
-  NAV_RAIL_COMPONENTS.add(RAIL)
-
-  // addAgentTabTiled schedules its spawn-flash cleanup via window.setTimeout; node
+  // The spawn flash schedules its cleanup via window.setTimeout; node
   // has no window, so provide a no-op shim.
   const globalWithWindow = globalThis as unknown as { window?: { setTimeout: () => number } }
   if (!globalWithWindow.window) globalWithWindow.window = { setTimeout: () => 0 }
 
-  // A workspace whose only open panel is the strip-less sidebar nav pane
-  // — the regression case where a terminal/agent used to spawn
-  // buried under the sidebar.
-  function navOnlyModel(): Model {
-    const json: IJsonModel = {
-      global: { tabSetEnableDrop: true, tabEnableClose: true },
-      borders: [],
-      layout: {
-        type: 'row',
-        children: [
-          {
-            type: 'tabset',
-            weight: 100,
-            enableTabStrip: false,
-            children: [{ type: 'tab', name: 'Nav stand-in', component: RAIL }],
-          },
-        ],
-      },
-    }
-    return Model.fromJson(json)
-  }
-
   // Minimal layout: a single agent tabset (stands in for the right-hand
-  // terminals/agents column the nav pane must never displace).
+  // terminals/agents column).
   function freshModel(): Model {
     const json: IJsonModel = {
       global: { tabSetEnableDrop: true, tabEnableClose: true },
@@ -134,53 +101,6 @@ test('modelRegistry', async () => {
 
   function tabNames(model: Model): string[] {
     return allTabs(model).map((tab) => tab.name ?? '')
-  }
-
-  function navTabsets(model: Model): TabsetJson[] {
-    const nav = new Set([RAIL])
-    return tabsets(model).filter((tabset) => componentsOf(tabset).some((c) => nav.has(c)))
-  }
-
-  // First nav toggle docks a strip-less LEFT pane holding only that switch.
-  {
-    const model = freshModel()
-    registerModel(WS, model)
-    togglePanelRailComponent(WS, RAIL, 'Nav stand-in')
-    const nav = navTabsets(model)
-    assert.equal(nav.length, 1)
-    assert.deepEqual(componentsOf(nav[0]), [RAIL])
-    assert.equal(nav[0].enableTabStrip, false)
-    unregisterModel(WS)
-  }
-
-  // Clicking the open switch again closes the nav pane.
-  {
-    const model = freshModel()
-    registerModel(WS, model)
-    togglePanelRailComponent(WS, RAIL, 'Nav stand-in')
-    assert.equal(navTabsets(model).length, 1)
-    togglePanelRailComponent(WS, RAIL, 'Nav stand-in')
-    assert.equal(navTabsets(model).length, 0)
-    unregisterModel(WS)
-  }
-
-  // Backlog is NOT a nav-rail component any more (store v74): it is a workspace
-  // pane tab, and the rail refuses it rather than docking a tab the layout can
-  // no longer render.
-  {
-    const model = freshModel()
-    registerModel(WS, model)
-    // The toggle path refuses it rather than falling through to the Editor's
-    // toggle and docking a 'backlog' document tab centre-stage.
-    assert.equal(togglePanelRailComponent(WS, 'backlog', 'Backlog'), false)
-    assert.ok(!allComponents(model).includes('backlog'))
-    unregisterModel(WS)
-  }
-
-  // A door surface is instance-global and lives outside any workspace layout,
-  // so it is never a rail component.
-  {
-    assert.equal(NAV_RAIL_COMPONENTS.has('automations'), false)
   }
 
   // Agent reveal activates the target workspace and focuses the concrete agent
@@ -313,12 +233,11 @@ test('modelRegistry', async () => {
     assert.deepEqual(tabNames(updatedModel), ['Agent', 'Spawned agent'])
   }
 
-  // The Editor is not a strip-less nav switch: its tabset keeps a tab strip so
-  // open files stay switchable.
+  // The Editor's tabset keeps a tab strip so open files stay switchable.
   {
     const model = freshModel()
     registerModel(WS, model)
-    togglePanelRailComponent(WS, 'editor', 'Editor')
+    toggleEditorTab(WS, 'Editor')
     const editorTabset = tabsets(model).find((tabset) => componentsOf(tabset).includes('editor'))
     assert.ok(editorTabset)
     assert.equal(editorTabset.enableTabStrip, undefined)
@@ -358,20 +277,6 @@ test('modelRegistry', async () => {
     unregisterModel(WS)
   }
 
-  // With the nav rail open, file tabs land to its right and still to the left of
-  // terminals/agents: nav rail -> Editor -> terminals/agents.
-  {
-    const model = freshModel()
-    registerModel(WS, model)
-    togglePanelRailComponent(WS, RAIL, 'Nav stand-in')
-    assert.equal(focusOrAddFileTab(WS, '/tmp/app.ts', 'app.ts'), true)
-    assert.deepEqual(tabsets(model).map(componentsOf), [[RAIL], ['file-editor'], ['agent']])
-    const nav = navTabsets(model)
-    assert.equal(nav.length, 1)
-    assert.equal(nav[0].enableTabStrip, false)
-    unregisterModel(WS)
-  }
-
   // With a file open, toggling the Editor switch focuses that surface instead of
   // stacking a second 'editor' welcome tab.
   {
@@ -391,7 +296,7 @@ test('modelRegistry', async () => {
     }
     const model = Model.fromJson(json)
     registerModel(WS, model)
-    togglePanelRailComponent(WS, 'editor', 'Editor')
+    toggleEditorTab(WS, 'Editor')
     assert.equal(allComponents(model).filter((c) => c === 'editor').length, 0)
     assert.equal(allComponents(model).filter((c) => c === 'file-editor').length, 1)
     unregisterModel(WS)
@@ -423,162 +328,6 @@ test('modelRegistry', async () => {
     assert.ok(fileTab)
     assert.equal(fileTab.enableClose, true)
     unregisterModel(WS)
-  }
-
-  // A terminal spawned when the sidebar nav pane is the only open panel docks as
-  // its own column to the RIGHT, never inside the strip-less nav pane.
-  {
-    const model = navOnlyModel()
-    registerModel(WS, model)
-    assert.equal(addTerminalTab(WS, 'term-1', 'Terminal'), true)
-    assert.deepEqual(tabsets(model).map(componentsOf), [[RAIL], ['terminal']])
-    // The nav pane stays a clean, strip-less sidebar — the terminal did not land in it.
-    const nav = navTabsets(model)
-    assert.equal(nav.length, 1)
-    assert.deepEqual(componentsOf(nav[0]), [RAIL])
-    assert.equal(nav[0].enableTabStrip, false)
-    unregisterModel(WS)
-  }
-
-  // An agent tiled when the sidebar nav pane is the only open panel docks as its
-  // own column to the RIGHT, never inside the nav pane.
-  {
-    const model = navOnlyModel()
-    registerModel(WS, model)
-    assert.equal(addAgentTabTiled(WS, 'a-9', 'Spawned agent'), true)
-    assert.deepEqual(tabsets(model).map(componentsOf), [[RAIL], ['agent']])
-    const nav = navTabsets(model)
-    assert.equal(nav.length, 1)
-    assert.deepEqual(componentsOf(nav[0]), [RAIL])
-    unregisterModel(WS)
-  }
-
-  // With the sidebar nav pane open AND active over an existing content tabset, a
-  // new terminal joins the content tabset rather than the active nav pane.
-  {
-    const model = freshModel()
-    registerModel(WS, model)
-    // Opening Git selects the nav pane, making it the active tabset.
-    togglePanelRailComponent(WS, RAIL, 'Nav stand-in')
-    assert.equal(addTerminalTab(WS, 'term-2', 'Terminal'), true)
-    assert.deepEqual(tabsets(model).map(componentsOf), [[RAIL], ['agent', 'terminal']])
-    // The git nav pane was not used as the spawn target.
-    const nav = navTabsets(model)
-    assert.equal(nav.length, 1)
-    assert.deepEqual(componentsOf(nav[0]), [RAIL])
-    unregisterModel(WS)
-  }
-
-  // --- Nav rail width is preserved when a sibling terminal/agent is closed ---
-
-  // solo-dev-shaped layout: strip-less nav rail (Git) + editor + agent, all
-  // siblings in the root row. Tabs carry ids so the agent can be deleted by id.
-  function navRailDevModel(): Model {
-    const json: IJsonModel = {
-      global: { tabSetEnableDrop: true, tabEnableClose: true },
-      borders: [],
-      layout: {
-        type: 'row',
-        children: [
-          {
-            type: 'tabset',
-            weight: 18,
-            enableTabStrip: false,
-            children: [{ type: 'tab', id: 'nav-stand-in-tab', name: 'Nav stand-in', component: RAIL }],
-          },
-          { type: 'tabset', weight: 52, children: [{ type: 'tab', id: 'ed', name: 'Editor', component: 'editor' }] },
-          {
-            type: 'tabset',
-            weight: 30,
-            children: [{ type: 'tab', id: 'agent-x', name: 'Agent', component: 'agent', config: { agentId: 'x' } }],
-          },
-        ],
-      },
-    }
-    return Model.fromJson(json)
-  }
-
-  // Headless models never run the view layout pass, so seed the rects the capture
-  // reads: root row 1000px wide, nav rail 180px ⇒ an 18% share.
-  function seedNavRailRects(model: Model): void {
-    const navTab = model.getNodeById('nav-stand-in-tab')
-    const navTabset = navTab?.getParent()
-    const rootRow = navTabset?.getParent()
-    assert.ok(navTabset && rootRow, 'expected nav tabset under the root row')
-    // `setRect` is internal from flexlayout 0.11 on — still on every node, no
-    // longer in the published types — and the view pass that calls it never
-    // runs here.
-    type Sized = { setRect(rect: Rect): void }
-    ;(rootRow as unknown as Sized).setRect(new Rect(0, 0, 1000, 800))
-    ;(navTabset as unknown as Sized).setRect(new Rect(0, 0, 180, 800))
-  }
-
-  // Reads the live weight of the tabset that holds a tab with the given component.
-  // toJson omits an attribute left at its default, so an absent weight is
-  // flexlayout's default of 100, not zero.
-  function tabsetWeight(model: Model, component: string): number {
-    type WeightedTabset = TabsetJson & { weight?: number }
-    let weight = 0
-    const walk = (node: WeightedTabset | undefined) => {
-      if (!node) return
-      if (node.type === 'tabset' && (node.children ?? []).some((c) => c.component === component)) {
-        weight = node.weight ?? 100
-      }
-      node.children?.forEach((child) => walk(child as WeightedTabset))
-    }
-    walk((model.toJson() as unknown as { layout: WeightedTabset }).layout)
-    return weight
-  }
-
-  // captureRailWidthFraction reports the rail's share of its parent row.
-  {
-    const model = navRailDevModel()
-    seedNavRailRects(model)
-    const fraction = captureRailWidthFraction(model, 'left')
-    assert.ok(fraction != null && Math.abs(fraction - 0.18) < 0.001, `expected 0.18, got ${fraction}`)
-    // A layout with no rail docked has no fraction to report. (The right rail —
-    // the Skills aside — was retired with the workspace pane, so 'left' is the
-    // only side there is.)
-    assert.equal(captureRailWidthFraction(freshModel(), 'left'), null)
-  }
-
-  // Regression: closing the agent WITHOUT re-pinning lets flexlayout spread the
-  // freed weight into the nav rail — it grows from 18% to ~26% of the row.
-  {
-    const model = navRailDevModel()
-    model.doAction(Actions.deleteTab('agent-x'))
-    const navW = tabsetWeight(model, RAIL)
-    const edW = tabsetWeight(model, 'editor')
-    const fraction = navW / (navW + edW)
-    assert.ok(Math.abs(fraction - 18 / 70) < 0.01, `expected the bug's ~0.257, got ${fraction}`)
-  }
-
-  // Fix: capture the rail before the close, delete the agent, then restore — the
-  // rail holds its 18% and the freed space flows to the editor instead.
-  {
-    const model = navRailDevModel()
-    seedNavRailRects(model)
-    const fraction = captureRailWidthFraction(model, 'left')
-    assert.ok(fraction != null)
-    model.doAction(Actions.deleteTab('agent-x'))
-    restoreRailWidthFraction(model, fraction!, 'left')
-    const navW = tabsetWeight(model, RAIL)
-    const edW = tabsetWeight(model, 'editor')
-    const preserved = navW / (navW + edW)
-    assert.ok(Math.abs(preserved - 0.18) < 0.005, `expected the rail pinned at 0.18, got ${preserved}`)
-    // The editor absorbed the closed agent's space (was 52%, now ~82%).
-    assert.ok(edW / (navW + edW) > 0.8, 'editor should absorb the freed space')
-  }
-
-  // restoreRailWidthFraction is a no-op when there are no content siblings left
-  // (rail alone fills the row) and ignores out-of-range fractions.
-  {
-    const model = navRailDevModel()
-    model.doAction(Actions.deleteTab('agent-x'))
-    model.doAction(Actions.deleteTab('ed'))
-    const before = tabsetWeight(model, RAIL)
-    restoreRailWidthFraction(model, 0.18, 'left')
-    assert.equal(tabsetWeight(model, RAIL), before, 'rail weight unchanged with no siblings')
   }
 
   // flashAgentTab re-applies the green spawn-flash classes to an agent tab that
@@ -832,18 +581,6 @@ test('modelRegistry', async () => {
     unregisterModel(WS)
   }
 
-  // A nav-only workspace (the sidebar panel alone) must not bury the surface
-  // inside the strip-less rail — same rule agent and terminal tabs already follow.
-  {
-    const model = navOnlyModel()
-    registerModel(WS, model)
-    addNewAgentTab(WS, 'Juno')
-    const hosting = tabsets(model).find((tabset) => componentsOf(tabset).includes(NEW_AGENT_TAB_COMPONENT))
-    assert.ok(hosting, 'the surface is somewhere')
-    assert.notEqual(hosting?.enableTabStrip, false, 'and never inside the strip-less nav pane')
-    unregisterModel(WS)
-  }
-
   // Two terminal panes: the + on one strip adds a tab there, and does not split
   // a third pane beside or below the other. This is the click the sticky button
   // actually makes — it knows which tabset it sits on.
@@ -885,6 +622,5 @@ test('modelRegistry', async () => {
     unregisterModel(WS)
   }
 
-  NAV_RAIL_COMPONENTS.delete(RAIL)
   console.log('modelRegistry.test.ts: ok')
 })
