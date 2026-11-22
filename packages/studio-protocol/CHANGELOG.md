@@ -4,6 +4,9 @@
 
 ### Added (agent hooks)
 
+- `AgentLaunchRecord` carries `startedBy` (`AgentLaunchStarter`): who asked
+  for the launch, kept on the agent's record so its extensions' hooks run as
+  them.
 - `ExtensionContributionsView` carries `hooks`: each point an extension's
   worker hooks (`agent.tool.before`, `editor.save.before`, …) and its
   `onError`, so a client's approval names them.

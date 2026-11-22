@@ -305,6 +305,13 @@ export function createAgentLaunchService(deps: AgentLaunchServiceDeps): AgentLau
       return { ok: false, code: 'prompt_reads_as_option', message: LAUNCH_PROMPT_READS_AS_OPTION_MESSAGE }
     }
 
+    // Who asked: kept on the record, and carried on the spawn for its launch
+    // hooks before the record is registered. A prompt an extension's call
+    // hands over is the extension's, not typed.
+    const caller = activeInvoker()
+    const startedBy = request.startedBy ?? caller?.starter
+    const promptHookAs =
+      request.promptHookAs ?? (caller ? { inputKind: 'launch' as const, from: 'extension' as const } : undefined)
     const record: AgentLaunchRecord = {
       agentId,
       name,
@@ -323,6 +330,7 @@ export function createAgentLaunchService(deps: AgentLaunchServiceDeps): AgentLau
             },
           }
         : {}),
+      ...(startedBy ? { startedBy } : {}),
     }
     // The caller's machine, else the workspace's. Absent from both, the spawn
     // reads the folder (a folder inside a distribution runs there) and
@@ -331,12 +339,6 @@ export function createAgentLaunchService(deps: AgentLaunchServiceDeps): AgentLau
     if (hostId) record.hostId = hostId
 
     const sessionId = newSessionId()
-    // Who asked, for its launch hooks before its record is registered; and a
-    // prompt an extension's call hands over is the extension's, not typed.
-    const caller = activeInvoker()
-    const startedBy = request.startedBy ?? caller?.starter
-    const promptHookAs =
-      request.promptHookAs ?? (caller ? { inputKind: 'launch' as const, from: 'extension' as const } : undefined)
     const spawned = await deps.terminal.spawn({
       sessionId,
       ...(startedBy ? { startedBy } : {}),
