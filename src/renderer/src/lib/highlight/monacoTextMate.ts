@@ -1,84 +1,75 @@
 import type * as Monaco from 'monaco-editor'
-import type { HighlighterCore } from 'shiki/core'
 
-import { CODE_THEME, loadCodeLanguage } from './codeHighlight'
+import { CODE_ROLES, type CodeRole } from './codeTheme'
+import {
+  DOCUMENT_DEADLINE_MS,
+  DOCUMENT_MAX_CHARS,
+  DOCUMENT_MAX_LINES,
+  tokenizeContributed,
+} from './contributedHighlight'
 import {
   activeContributedSyntaxes,
   contributedSyntaxContent,
   subscribeContributedSyntaxes,
   type ContributedSyntax,
 } from './contributedSyntaxes'
+import type { TokenLines } from './grammarHost'
 
-// The editor's half of an extension's language: a bridge from the Shiki
-// engine chat code blocks use to Monaco's tokens. Monaco highlights its own
-// languages with Monarch, which cannot read a TextMate grammar; Shiki already
-// runs TextMate grammars (its Oniguruma engine) for chat. So the editor asks
-// the same engine, with the same grammar loaded once, for each line, carrying
-// the grammar's state from line to line the way Monaco carries its own, and
-// names each token by its code colour (comment, keyword, string, number,
-// function, type): the names Monaco's themes colour. Chat and the editor agree
-// on what each token is because one tokenizer decides it.
-//
-// Each line has the limits Studio's own grammars have in chat (50 ms of
-// tokenizing; past it the rest of the line stays plain), and a grammar that
-// fails to load leaves the file plain.
+// The editor's half of an extension's language. Monaco highlights its own
+// languages with Monarch, which cannot read a TextMate grammar, and its
+// tokens providers are synchronous, so they would run an extension's grammar
+// on the window's thread. Instead the document is tokenized whole in the
+// grammar worker (grammarHost.ts, the same worker chat code blocks use, with
+// its deadline), and the answer comes back to Monaco as semantic tokens named
+// by their code colour (comment, keyword, string, number, function, type), the
+// names Monaco's themes colour. While a pass runs the previous colours stay,
+// shifted by the edits; a document past 500,000 characters or 20,000 lines,
+// and one whose extension's grammar failed, stays plain.
 
-/** Shiki's colours in the code theme are `var(--sem-syntax-<role>)`; Monaco's token for each. */
-const ROLE_TOKENS: Readonly<Record<string, string>> = {
+/** Monaco's semantic token type for each role, by the role's index in the legend. */
+const TOKEN_TYPES: Readonly<Record<CodeRole, string>> = {
   comment: 'comment',
   keyword: 'keyword',
   string: 'string',
   number: 'number',
-  function: 'entity.name.function',
+  function: 'function',
   type: 'type',
 }
 
-export function monacoTokenForColor(color: string | undefined): string {
-  const role = color ? /^var\(--sem-syntax-([a-z]+)\)$/.exec(color)?.[1] : undefined
-  return (role && ROLE_TOKENS[role]) ?? ''
+export const SEMANTIC_LEGEND = { tokenTypes: CODE_ROLES.map((role) => TOKEN_TYPES[role]), tokenModifiers: [] }
+
+/** Monaco's relative encoding of the worker's tokens: line, start, length, type, modifiers. */
+export function encodeSemanticTokens(lines: readonly string[], tokens: TokenLines): Uint32Array {
+  const data: number[] = []
+  let previousLine = 0
+  let previousStart = 0
+  tokens.forEach((line, lineIndex) => {
+    const text = lines[lineIndex] ?? ''
+    line.forEach(([offset, role], index) => {
+      if (!role) return
+      const end = line[index + 1]?.[0] ?? text.length
+      if (end <= offset) return
+      const deltaLine = lineIndex - previousLine
+      data.push(deltaLine, deltaLine === 0 ? offset - previousStart : offset, end - offset, CODE_ROLES.indexOf(role), 0)
+      previousLine = lineIndex
+      previousStart = offset
+    })
+  })
+  return new Uint32Array(data)
 }
 
-type GrammarState = ReturnType<HighlighterCore['getLastGrammarState']>
-
-type InternalStack = { equals(other: unknown): boolean }
-
-/** A line's end state: the grammar's own, which Monaco compares to stop re-tokenizing below an edit. */
-class LineState implements Monaco.languages.IState {
-  constructor(readonly grammar: GrammarState | undefined) {}
-  clone(): LineState {
-    return this
-  }
-  equals(other: Monaco.languages.IState): boolean {
-    if (!(other instanceof LineState)) return false
-    if (other.grammar === this.grammar) return true
-    const mine = (this.grammar as { getInternalStack?: () => InternalStack } | undefined)?.getInternalStack?.()
-    const theirs = (other.grammar as { getInternalStack?: () => InternalStack } | undefined)?.getInternalStack?.()
-    return Boolean(mine && theirs && mine.equals(theirs))
-  }
-}
-
-/** Monaco's tokens provider for one language, over the engine that has its grammar loaded. */
-export function textMateTokensProvider(engine: HighlighterCore, language: string): Monaco.languages.TokensProvider {
+/** The provider: a document's tokens from the worker, or none for it to stay plain. */
+export function semanticTokensProvider(language: string): Monaco.languages.DocumentSemanticTokensProvider {
   return {
-    getInitialState: () => new LineState(undefined),
-    tokenize(line, state) {
-      const previous = (state as LineState).grammar
-      try {
-        const lines = engine.codeToTokensBase(line, {
-          lang: language,
-          theme: CODE_THEME,
-          ...(previous ? { grammarState: previous } : {}),
-          tokenizeTimeLimit: 50,
-        })
-        const tokens = (lines[0] ?? []).map((token) => ({
-          startIndex: token.offset,
-          scopes: monacoTokenForColor(token.color),
-        }))
-        return { tokens, endState: new LineState(engine.getLastGrammarState(lines) ?? previous) }
-      } catch {
-        return { tokens: [{ startIndex: 0, scopes: '' }], endState: state }
-      }
+    getLegend: () => SEMANTIC_LEGEND,
+    async provideDocumentSemanticTokens(model) {
+      const text = model.getValue()
+      if (text.length > DOCUMENT_MAX_CHARS || model.getLineCount() > DOCUMENT_MAX_LINES) return null
+      const lines = text.split(/\r?\n/)
+      const tokens = await tokenizeContributed(language, lines, DOCUMENT_DEADLINE_MS)
+      return tokens ? { data: encodeSemanticTokens(lines, tokens) } : null
     },
+    releaseDocumentSemanticTokens() {},
   }
 }
 
@@ -86,38 +77,41 @@ const registered = new Set<string>()
 
 function register(monaco: typeof Monaco, entry: ContributedSyntax): void {
   const { language, syntax } = entry
-  monaco.languages.register({
-    id: language,
-    aliases: [syntax.title],
-    ...(syntax.extensions ? { extensions: [...syntax.extensions] } : {}),
-    ...(syntax.filenames ? { filenames: [...syntax.filenames] } : {}),
-  })
-  // Asked for the first time a model in this language is tokenized: the
-  // grammar is fetched and loaded then, not when the extension arrives.
-  monaco.languages.registerTokensProviderFactory(language, {
-    create: async () => {
-      const content = await contributedSyntaxContent(entry)
-      const configuration = content.configuration
-      if (configuration) {
+  // No suffixes or names here: Studio picks every editor's language itself
+  // (utils/files.ts), and never hands one of its own to an extension.
+  monaco.languages.register({ id: language, aliases: [syntax.title] })
+  monaco.languages.registerDocumentSemanticTokensProvider(language, semanticTokensProvider(language))
+  // The configuration (comments, brackets, pairs) is data: read on the
+  // window's thread, once, when a model in the language first appears.
+  monaco.languages.onLanguageEncountered(language, () => {
+    void contributedSyntaxContent(entry).then(
+      ({ configuration }) => {
+        if (!configuration) return
         monaco.languages.setLanguageConfiguration(language, {
           ...(configuration.comments ? { comments: configuration.comments } : {}),
           ...(configuration.brackets ? { brackets: configuration.brackets } : {}),
           ...(configuration.autoClosingPairs ? { autoClosingPairs: configuration.autoClosingPairs } : {}),
           ...(configuration.surroundingPairs ? { surroundingPairs: configuration.surroundingPairs } : {}),
         })
-      }
-      return textMateTokensProvider(await loadCodeLanguage(language), language)
-    },
+      },
+      () => undefined,
+    )
   })
 }
 
 /**
  * Register every language the window's extensions contribute with Monaco, now
- * and as they arrive. Monaco cannot unregister a language: one whose extension
- * left stays known, and no file opens in it any more (files.ts asks the
- * registry, which no longer lists it).
+ * and as they arrive, and turn on semantic colouring, which is how they are
+ * drawn. Monaco cannot unregister a language: one whose extension left stays
+ * known, and no file opens in it any more (files.ts asks the registry, which
+ * no longer lists it).
  */
 export function followContributedLanguages(monaco: typeof Monaco): () => void {
+  // Heard while the editor is still being built, before it holds the
+  // configuration an option is written to, so the option is set a tick later.
+  const editors = monaco.editor.onDidCreateEditor((editor) => {
+    queueMicrotask(() => editor.updateOptions({ 'semanticHighlighting.enabled': true } as Monaco.editor.IEditorOptions))
+  })
   const sync = () => {
     for (const entry of activeContributedSyntaxes()) {
       if (registered.has(entry.language)) continue
@@ -126,5 +120,9 @@ export function followContributedLanguages(monaco: typeof Monaco): () => void {
     }
   }
   sync()
-  return subscribeContributedSyntaxes(sync)
+  const stop = subscribeContributedSyntaxes(sync)
+  return () => {
+    stop()
+    editors.dispose()
+  }
 }

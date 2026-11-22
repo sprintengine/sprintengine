@@ -1,79 +1,96 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 
-import { parseTextMateGrammar } from '../../../../../packages/extension-sdk/src/content-syntaxes'
 import { parseExtensionManifest } from '../../../../shared/modules/third-party-manifest'
 
-// An extension's TextMate grammar, as the window's Studio serves it, colours a
-// chat code block fenced in its language and a file the editor opens in it,
-// through the one Shiki engine both use; the editor's tokens come from that
-// engine over Monaco's line-by-line contract. Studio's own languages that
-// drive completions are never replaced.
+// Which fences and files an extension's language colours, and how its tokens
+// reach a chat code block and the editor. An extension adds languages: a
+// fence, an alias or a suffix one of Studio's own grammars already handles
+// stays Studio's. The tokenizing itself happens in the grammar worker
+// (grammarHost.test.ts); here the worker's answer is stood in for.
 
 const SAMPLE = join(process.cwd(), 'packages/extension-sdk/examples/content-sample')
 const KEY = 'local.tally-language'
 const sample = parseExtensionManifest(readFileSync(join(SAMPLE, 'extension.json'), 'utf8'))
 if (!sample.ok) throw new Error('the sample extension does not validate')
 const syntax = sample.manifest.contributes.syntaxes[0]!
-const grammar = parseTextMateGrammar(readFileSync(join(SAMPLE, syntax.path), 'utf8'), syntax.scopeName)
-if (!grammar.ok) throw new Error('the sample grammar does not validate')
 
-const served = vi.hoisted(() => ({ requests: [] as unknown[] }))
+const asked = vi.hoisted(() => ({ lines: [] as unknown[] }))
+vi.mock('./grammarWorker?worker', () => ({
+  default: class {
+    onmessage: ((event: { data: unknown }) => void) | null = null
+    onerror = null
+    postMessage(request: { id: number; lines: string[] }) {
+      asked.lines.push(request.lines)
+      // The worker's answer for `move 42`: a keyword, a space, a number.
+      queueMicrotask(() =>
+        this.onmessage?.({
+          data: {
+            id: request.id,
+            ok: true,
+            lines: request.lines.map(() => [
+              [0, 'keyword'],
+              [4, null],
+              [5, 'number'],
+            ]),
+          },
+        }),
+      )
+    }
+    terminate() {}
+  },
+}))
 vi.mock('../../studio/extensions', () => ({
   windowHasStudio: () => true,
   extensionsApi: {
-    extensionContent: async (request: unknown) => {
-      served.requests.push(request)
-      return { kind: 'syntax', grammar: grammarForMock(), configuration: { comments: { lineComment: '#' } } }
-    },
+    extensionContent: async () => ({ kind: 'syntax', grammar: { scopeName: 'source.tally', patterns: [] } }),
   },
 }))
-// Read lazily: the mock factory is hoisted above this module's own setup.
-function grammarForMock() {
-  return (globalThis as { __tallyGrammar?: unknown }).__tallyGrammar
-}
-;(globalThis as { __tallyGrammar?: unknown }).__tallyGrammar = grammar.grammar
 
 const { setContributedSyntaxes, contributedSyntaxForFile, contributedSyntaxForFence } =
   await import('./contributedSyntaxes')
-const { IncrementalCodeTokenizer, loadCodeLanguage, normalizeCodeLanguage } = await import('./codeHighlight')
-const { textMateTokensProvider, monacoTokenForColor } = await import('./monacoTextMate')
+const { normalizeCodeLanguage } = await import('./codeHighlight')
+const { themedTokensOf, tokenizeContributed } = await import('./contributedHighlight')
+const { encodeSemanticTokens, semanticTokensProvider } = await import('./monacoTextMate')
 const { detectLanguage } = await import('../../utils/files')
 
+const LANGUAGE = `ext.${KEY}.tally`
+
 beforeEach(() => {
-  vi.spyOn(Date, 'now').mockReturnValue(0)
   setContributedSyntaxes([{ extensionId: KEY, extensionName: 'Tally language', syntaxes: [syntax] }])
 })
-afterEach(() => {
-  vi.restoreAllMocks()
-})
-
-const LANGUAGE = `ext.${KEY}.tally`
 
 test('a fence names a contributed language by its id or its suffix, and a file by its suffix', () => {
   expect(normalizeCodeLanguage('tally')).toBe(LANGUAGE)
   expect(contributedSyntaxForFence('TALLY')?.language).toBe(LANGUAGE)
   expect(contributedSyntaxForFile('books/2026.tally')?.language).toBe(LANGUAGE)
   expect(detectLanguage('books/2026.tally')).toBe(LANGUAGE)
-  expect(detectLanguage('notes.md')).toBe('markdown')
   // A file named only the suffix is not one of its files.
   expect(contributedSyntaxForFile('.tally')).toBeUndefined()
 })
 
-test('Studio’s languages that drive completions are never replaced; others are', () => {
+test('an extension never takes a fence, alias or suffix Studio’s own grammars handle', () => {
   setContributedSyntaxes([
     {
       extensionId: KEY,
       extensionName: 'Tally language',
-      syntaxes: [{ ...syntax, id: 'python', extensions: ['.ts', '.py'] }],
+      syntaxes: [{ ...syntax, id: 'bash', extensions: ['.sh', '.py', '.yml', '.tally'] }],
     },
   ])
+  // Fences: a bundled language, its alias, and a suffix that is one.
+  expect(normalizeCodeLanguage('bash')).toBe('bash')
+  expect(normalizeCodeLanguage('sh')).toBe('bash')
+  expect(normalizeCodeLanguage('py')).toBe('python')
+  expect(normalizeCodeLanguage('yml')).toBe('yaml')
+  // Files Studio opens in a language of its own.
+  expect(detectLanguage('run.sh')).toBe('shell')
+  expect(detectLanguage('main.py')).toBe('python')
   expect(detectLanguage('main.ts')).toBe('typescript')
-  expect(normalizeCodeLanguage('ts')).toBe('typescript')
-  expect(detectLanguage('main.py')).toBe(`ext.${KEY}.python`)
-  expect(normalizeCodeLanguage('python')).toBe(`ext.${KEY}.python`)
+  // What Studio does not know stays the extension's.
+  expect(normalizeCodeLanguage('tally')).toBe(`ext.${KEY}.bash`)
+  expect(detectLanguage('a.tally')).toBe(`ext.${KEY}.bash`)
 })
 
 test('an extension switched off contributes no language', () => {
@@ -82,51 +99,43 @@ test('an extension switched off contributes no language', () => {
   expect(detectLanguage('a.tally')).toBe('plaintext')
 })
 
-test('a chat code block in the contributed language is coloured by its grammar', async () => {
-  const language = normalizeCodeLanguage('tally')!
-  const engine = await loadCodeLanguage(language)
-  const [line, comment] = new IncrementalCodeTokenizer(engine, language).update(
-    'move 42.50 from Household:Shared to "rent"\n# paid',
-    true,
-  )
-  const colourOf = (text: string) => line!.tokens.find((token) => token.content.includes(text))?.color
-  expect(colourOf('move')).toBe('var(--sem-syntax-keyword)')
-  expect(colourOf('42.50')).toBe('var(--sem-syntax-number)')
-  expect(colourOf('Household')).toBe('var(--sem-syntax-type)')
-  expect(colourOf('rent')).toBe('var(--sem-syntax-string)')
-  expect(comment!.tokens[0]!.color).toBe('var(--sem-syntax-comment)')
-  expect(served.requests).toContainEqual({ moduleId: KEY, kind: 'syntax', id: 'tally' })
+test('a chat code block takes its colours from the worker’s answer', async () => {
+  const tokens = await tokenizeContributed(LANGUAGE, ['move 42'], 1000)
+  expect(asked.lines).toContainEqual(['move 42'])
+  expect(themedTokensOf('move 42', tokens![0])).toEqual([
+    { content: 'move', offset: 0, color: 'var(--sem-syntax-keyword)' },
+    { content: ' ', offset: 4 },
+    { content: '42', offset: 5, color: 'var(--sem-syntax-number)' },
+  ])
 })
 
-test('the editor gets the same tokens, line by line, carrying the grammar’s state across lines', async () => {
-  const language = normalizeCodeLanguage('tally')!
-  const provider = textMateTokensProvider(await loadCodeLanguage(language), language)
-  const first = provider.tokenize('move 3 to "open', provider.getInitialState())
-  const scopes = (result: typeof first, line: string) =>
-    result.tokens.map((token, index) => [
-      line.slice(token.startIndex, result.tokens[index + 1]?.startIndex ?? line.length),
-      token.scopes,
-    ])
-  expect(scopes(first, 'move 3 to "open')).toEqual([
-    ['move', 'keyword'],
-    [' ', ''],
-    ['3', 'number'],
-    [' ', ''],
-    ['to', 'keyword'],
-    [' ', ''],
-    ['"open', 'string'],
+test('the editor gets the same tokens as semantic tokens, and a document too large stays plain', async () => {
+  expect(
+    Array.from(
+      encodeSemanticTokens(
+        ['move 42', '', 'move 7'],
+        [
+          [
+            [0, 'keyword'],
+            [4, null],
+            [5, 'number'],
+          ],
+          [[0, null]],
+          [
+            [0, 'keyword'],
+            [4, null],
+            [5, 'number'],
+          ],
+        ],
+      ),
+    ),
+  ).toEqual([
+    // line, start, length, type (keyword = 1, number = 3), modifiers; relative to the token before
+    0, 0, 4, 1, 0, 0, 5, 2, 3, 0, 2, 0, 4, 1, 0, 0, 5, 1, 3, 0,
   ])
-  // The string left open runs on into the next line.
-  const second = provider.tokenize('still" move', first.endState)
-  expect(scopes(second, 'still" move')).toEqual([
-    ['still"', 'string'],
-    [' ', ''],
-    ['move', 'keyword'],
-  ])
-  // A line that ends where it began ends in the same state, so Monaco stops re-tokenizing there.
-  const again = provider.tokenize('move 3', provider.getInitialState())
-  expect(again.endState.equals(provider.tokenize('move 4', provider.getInitialState()).endState)).toBe(true)
-  expect(first.endState.equals(again.endState)).toBe(false)
-  expect(monacoTokenForColor('var(--sem-syntax-function)')).toBe('entity.name.function')
-  expect(monacoTokenForColor('#ffffff')).toBe('')
+  const provider = semanticTokensProvider(LANGUAGE)
+  const model = (text: string) => ({ getValue: () => text, getLineCount: () => text.split('\n').length }) as never
+  const tokens = await provider.provideDocumentSemanticTokens(model('move 42'), null, {} as never)
+  expect(tokens && 'data' in tokens ? Array.from(tokens.data) : null).toEqual([0, 0, 4, 1, 0, 0, 5, 2, 3, 0])
+  expect(await provider.provideDocumentSemanticTokens(model('x'.repeat(500_001)), null, {} as never)).toBeNull()
 })

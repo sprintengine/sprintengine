@@ -88,18 +88,21 @@ answers the least tier a manifest needs.
   serves more than one app. A chat code block fenced with the syntax's `id`,
   or one of its `extensions` without the dot, is highlighted with it, and so
   is a file the editor opens whose name is in `filenames` or ends in one of
-  `extensions` (the longest suffix wins, a name wins over any suffix). It
-  replaces Studio's own colours for those files, except where Studio's
-  language drives completions or diagnostics: TypeScript, JavaScript, JSON,
-  CSS, SCSS, Less, HTML and Markdown stay Studio's. `configuration` (at most
-  64 KiB) gives the editor comment markers, brackets, auto-closing and
-  surrounding pairs. Studio keeps only the keys a TextMate engine reads, and
-  refuses a grammar whose `scopeName` differs from the entry's or that
-  includes a `#name` no repository holds, or whose includes expand to more
-  than 10,000 rules; an include of another scope (an embedded `source.js`) is
-  allowed and stays plain. Code is coloured by what
-  each token is (comment, keyword, string, number, function, type), in the
-  active theme's colours.
+  `extensions` (the longest suffix wins, a name wins over any suffix). It adds
+  languages and never replaces one: a fence, an alias or a suffix Studio's own
+  grammars already highlight stays Studio's. `configuration` (at most 64 KiB)
+  gives the editor comment markers, brackets, auto-closing and surrounding
+  pairs. Studio keeps only the keys a TextMate engine reads, and refuses a
+  grammar whose `scopeName` differs from the entry's, that includes a `#name`
+  no repository holds, or whose includes expand to more than 10,000 rules; an
+  include of another scope (an embedded `source.js`) is allowed and stays
+  plain. Each extension's grammars run in a registry of their own, in a worker
+  apart from the window, so a scope name never stands in for Studio's or
+  another extension's. A code block has a second and a document two to be
+  coloured: past that the worker is stopped, the code stays plain, and the
+  extension's highlighting stays off until the window reloads. Code is
+  coloured by what each token is (comment, keyword, string, number, function,
+  type), in the active theme's colours.
 - **`keybindings`** bind a key chord to a command: one the extension
   contributes, or one of Studio's own command actions (the list under the
   reference), which a content extension may bind with no code. `Mod` is Cmd on

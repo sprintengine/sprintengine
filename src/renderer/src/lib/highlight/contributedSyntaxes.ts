@@ -6,14 +6,14 @@ import { extensionsApi, windowHasStudio } from '../../studio/extensions'
 // as the window's Studio serves them. A chat code block whose fence names one
 // (its id, or one of its file suffixes without the dot) and a file the editor
 // opens whose name or suffix one claims are highlighted with its TextMate
-// grammar, through the one Shiki engine both use (codeHighlight.ts for chat,
-// monacoTextMate.ts for the editor). The grammar itself is fetched once, the
-// first time something needs it, from the Studio (`extension.content`), which
-// read and checked it; the window never reads the extension's folder.
+// grammar, in the grammar worker (grammarHost.ts), for chat code blocks and
+// the editor alike. The grammar itself is fetched once, the first time
+// something needs it, from the Studio (`extension.content`), which read and
+// checked it; the window never reads the extension's folder.
 //
-// Studio's own languages that drive more than colour (completions,
-// diagnostics, Markdown's features) are never replaced: a syntax claiming
-// TypeScript's suffixes leaves those files TypeScript.
+// An extension never takes a fence, an alias or a file suffix Studio's own
+// grammars already highlight (codeHighlight.ts, utils/files.ts): it adds
+// languages, it does not replace them.
 
 export type ContributedSyntax = {
   /** The language's name in the highlighter and the editor: `ext.<install key>.<id>`. */
@@ -24,18 +24,6 @@ export type ContributedSyntax = {
 }
 
 export type ContributedSyntaxContent = Extract<ExtensionContent, { kind: 'syntax' }>
-
-/** Languages whose own services outrank a contributed grammar. */
-export const PROTECTED_LANGUAGES: ReadonlySet<string> = new Set([
-  'typescript',
-  'javascript',
-  'json',
-  'css',
-  'scss',
-  'less',
-  'html',
-  'markdown',
-])
 
 let syntaxes: readonly ContributedSyntax[] = []
 let enabled: (extensionId: string) => boolean = () => true

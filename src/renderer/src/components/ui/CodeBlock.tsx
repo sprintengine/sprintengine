@@ -18,6 +18,12 @@ import {
   type CodeLine,
 } from '../../lib/highlight/codeHighlight'
 import { contributedSyntaxesVersion, subscribeContributedSyntaxes } from '../../lib/highlight/contributedSyntaxes'
+import {
+  CODE_BLOCK_DEADLINE_MS,
+  isContributedLanguage,
+  themedTokensOf,
+  tokenizeContributed,
+} from '../../lib/highlight/contributedHighlight'
 import '../../../../../design-system/components/code-block/component.css'
 import { copy as appCopy } from '../../../../shared/copy'
 
@@ -84,6 +90,52 @@ function HighlightedSource({ code, language, streaming }: { code: string; langua
   // draws it again in that language.
   useSyncExternalStore(subscribeContributedSyntaxes, contributedSyntaxesVersion, contributedSyntaxesVersion)
   const normalized = normalizeCodeLanguage(language)
+  if (normalized && isContributedLanguage(normalized))
+    return <ContributedSource code={code} language={normalized} streaming={streaming} />
+  return <BundledSource code={code} normalized={normalized} streaming={streaming} />
+}
+
+/**
+ * A block in an extension's language: plain until the grammar worker answers,
+ * then coloured; plain for good if its grammar failed. Tokenized once the
+ * block is complete, never on the window's thread.
+ */
+function ContributedSource({ code, language, streaming }: { code: string; language: string; streaming?: boolean }) {
+  const [lines, setLines] = useState<{ code: string; lines: CodeLine[] } | null>(null)
+  useEffect(() => {
+    if (streaming) return
+    let cancelled = false
+    const texts = code.split('\n')
+    void tokenizeContributed(language, texts.slice(0, HIGHLIGHT_LINE_LIMIT), CODE_BLOCK_DEADLINE_MS).then((tokens) => {
+      if (cancelled || !tokens) return
+      setLines({ code, lines: texts.map((text, index) => ({ text, tokens: themedTokensOf(text, tokens[index]) })) })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [code, language, streaming])
+  if (!lines || lines.code !== code) return <code>{code}</code>
+  return (
+    <code>
+      {lines.lines.map((line, index) => (
+        <React.Fragment key={index}>
+          <TokenLine line={line} />
+          {index < lines.lines.length - 1 ? '\n' : null}
+        </React.Fragment>
+      ))}
+    </code>
+  )
+}
+
+function BundledSource({
+  code,
+  normalized,
+  streaming,
+}: {
+  code: string
+  normalized: string | null
+  streaming?: boolean
+}) {
   const tokenizer = useRef<{ language: string; value: IncrementalCodeTokenizer } | null>(null)
   const [ready, setReady] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)

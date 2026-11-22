@@ -49,7 +49,7 @@
       "rules": { "no-unsafe-optional-chaining": "off" }
     },
     {
-      "files": ["src/renderer/src/utils/monacoRuntime.ts"],
+      "files": ["src/renderer/src/utils/monacoRuntime.ts", "src/renderer/src/lib/highlight/contributedHighlight.ts"],
       // Vite's `?worker` imports have a default export that Vite synthesises at
       // build time (the worker's constructor); the rule reads the underlying
       // worker script, which has none, and cannot know about the suffix.

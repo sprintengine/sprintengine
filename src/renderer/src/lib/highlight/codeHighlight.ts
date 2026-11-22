@@ -1,12 +1,8 @@
 import { createHighlighterCore, type HighlighterCore, type GrammarState, type ThemedToken } from 'shiki/core'
 import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
 
-import {
-  PROTECTED_LANGUAGES,
-  contributedSyntax,
-  contributedSyntaxContent,
-  contributedSyntaxForFence,
-} from './contributedSyntaxes'
+import { CODE_THEME, CODE_THEME_REGISTRATION } from './codeTheme'
+import { contributedSyntaxForFence } from './contributedSyntaxes'
 
 const languages = {
   typescript: () => import('shiki/langs/typescript.mjs'),
@@ -65,21 +61,25 @@ const aliases: Record<string, string> = {
   docker: 'dockerfile',
   make: 'makefile',
 }
+/** Whether a fence name (or alias) is one of Studio's own languages. */
+export function isBundledCodeLanguage(language = ''): boolean {
+  const name = language.toLowerCase().trim()
+  return Object.hasOwn(languages, aliases[name] ?? name)
+}
+
 /**
- * The language a fence names: one of Studio's, or a language an extension
- * contributes (contributedSyntaxes.ts), which wins over Studio's own except
- * where Studio's drives more than colour.
+ * The language a fence names: one of Studio's, else a language an extension
+ * contributes (contributedSyntaxes.ts). An extension never takes a fence or
+ * alias Studio's bundled grammars already highlight.
  */
 export function normalizeCodeLanguage(language = ''): string | null {
   const name = language.toLowerCase().trim()
   const normalized = aliases[name] ?? name
-  const builtin = Object.hasOwn(languages, normalized) ? (normalized as Language) : null
-  if (builtin && PROTECTED_LANGUAGES.has(builtin)) return builtin
-  return contributedSyntaxForFence(name)?.language ?? builtin
+  if (Object.hasOwn(languages, normalized)) return normalized
+  return contributedSyntaxForFence(name)?.language ?? null
 }
 
-/** The theme every block is tokenized in: each colour a `--sem-syntax-*` role, so a theme change needs no new pass. */
-export const CODE_THEME = 'semantic-code'
+export { CODE_THEME }
 const THEME = CODE_THEME
 export const HIGHLIGHT_LINE_LIMIT = 2000
 let highlighter: Promise<HighlighterCore> | undefined
@@ -87,40 +87,16 @@ const loads = new Map<string, Promise<HighlighterCore>>()
 export function loadCodeLanguage(language: string): Promise<HighlighterCore> {
   let promise = loads.get(language)
   if (promise) return promise
-  const contributed = Object.hasOwn(languages, language) ? undefined : contributedSyntax(language)
-  if (!Object.hasOwn(languages, language) && !contributed)
-    return Promise.reject(new Error(`No grammar for ${language}.`))
+  // Only Studio's own grammars load here, on the window's thread; an
+  // extension's are tokenized in a worker of their own (grammarHost.ts).
+  if (!Object.hasOwn(languages, language)) return Promise.reject(new Error(`No bundled grammar for ${language}.`))
   highlighter ??= createHighlighterCore({
-    themes: [
-      {
-        name: THEME,
-        fg: 'var(--sem-syntax-foreground)',
-        bg: 'var(--sem-color-bg-surface-raised)',
-        settings: [
-          { scope: 'comment', settings: { foreground: 'var(--sem-syntax-comment)' } },
-          { scope: ['keyword', 'storage'], settings: { foreground: 'var(--sem-syntax-keyword)' } },
-          { scope: 'string', settings: { foreground: 'var(--sem-syntax-string)' } },
-          { scope: ['constant.numeric', 'constant.language'], settings: { foreground: 'var(--sem-syntax-number)' } },
-          {
-            scope: ['entity.name.function', 'support.function'],
-            settings: { foreground: 'var(--sem-syntax-function)' },
-          },
-          { scope: ['entity.name.type', 'support.type'], settings: { foreground: 'var(--sem-syntax-type)' } },
-        ],
-      },
-    ],
+    themes: [CODE_THEME_REGISTRATION],
     langs: [],
     engine: createOnigurumaEngine(import('shiki/wasm')),
   })
   promise = highlighter.then(async (engine) => {
-    if (contributed) {
-      // An extension's grammar, as its Studio checked and served it, under
-      // the language's own name so it never takes the place of Studio's.
-      const { grammar } = await contributedSyntaxContent(contributed)
-      await engine.loadLanguage({ ...grammar, name: language, scopeName: grammar.scopeName } as never)
-    } else {
-      await engine.loadLanguage(languages[language as Language])
-    }
+    await engine.loadLanguage(languages[language as Language])
     return engine
   })
   // A grammar that failed to load is tried again the next time.
