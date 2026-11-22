@@ -106,6 +106,14 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
     description: copy.workspace.agentComposer.extensionIdeas.aPaletteCommandThatCopies,
     prompt: 'A command in the palette that copies a link to the current branch on GitHub.',
   },
+  {
+    id: 'agent-kit',
+    surface: 'Skills and MCP',
+    title: copy.workspace.agentComposer.extensionIdeas.releaseNotesKit,
+    description: copy.workspace.agentComposer.extensionIdeas.aSkillAndAServerForReleaseNotes,
+    prompt:
+      'A skill that writes release notes from merged pull requests, with a local MCP server that lists the changes since the last tag.',
+  },
 ]
 
 /** How many show before "Show all": four, each a different surface. */

@@ -5184,6 +5184,8 @@ export const en = {
         toolsForMyIssueTracker: 'Tools for my issue tracker',
         guardForAgentCommands: 'A guard for agents’ commands',
         refuseRiskyCommandsBefore: 'Refuse risky commands before an agent runs them.',
+        releaseNotesKit: 'Release notes kit',
+        aSkillAndAServerForReleaseNotes: 'A skill and an MCP server every agent can use for release notes.',
         letAnyAgentSearchAnd: 'Let any agent search and update your tracker.',
         releaseDashboard: 'Release dashboard',
         openPRsAndCIStatus: 'Open PRs and CI status across projects.',
