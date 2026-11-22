@@ -104,6 +104,7 @@ const TEMPLATE_ORDER = [
   'blank',
   'panel',
   'door',
+  'editor',
   'chat-companion',
   'top-bar-item',
   'settings-section',

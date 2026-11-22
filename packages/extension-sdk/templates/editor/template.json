@@ -1,0 +1,12 @@
+{
+  "id": "editor",
+  "title": "Custom editor",
+  "summary": "An editor for .kv files: a form of keys and values that Studio opens, saves and keeps in step with disk.",
+  "permissions": [
+    "workspace-files:read",
+    "workspace-files:write"
+  ],
+  "capabilities": [
+    "editor"
+  ]
+}

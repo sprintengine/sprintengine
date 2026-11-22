@@ -48,8 +48,8 @@ Rules:
 | `backlog:read` | Read Backlog items | `getBacklogService` reads, a surface's `backlog.list`, `backlog.location` | `backlog:read` |
 | `backlog:operate` | Create Backlog items and change their status, triage, links and metadata | `getBacklogService` writes, a surface's `backlog.create`, `.updateStatus`, `.updateTriage`, `.addLink`, `.updateModuleMetadata` | `backlog:operate` |
 | `providers:read` | See which agents a chat can run on | `listChatRuntimes` | `providers:read` |
-| `workspace-files:read` | Read the files in your workspaces’ folders | a surface's `files.read`, `files.stat`, `files.search` | `filesystem:read` |
-| `workspace-files:write` | Change and create files in your workspaces’ folders | a surface's `files.write` | `filesystem:write` |
+| `workspace-files:read` | Read the files in your workspaces’ folders | a surface's `files.read`, `files.stat`, `files.search`; a custom editor's file (`customEditors` needs it) | `filesystem:read` |
+| `workspace-files:write` | Change and create files in your workspaces’ folders | a surface's `files.write`; saving a custom editor's file | `filesystem:write` |
 | `usage:read` | See token usage and cost of every agent session on this machine | `getUsageService`, a surface's `usage.query` | `workspace:read` |
 | `storage:own` | Save its own data | `getModuleStorage`, `getModuleDataDir`, a surface's `storage.*` | `extension:read` / `extension:operate` |
 | `settings:own` | Read the values of its own Settings section | `getModuleAppState`, `watchModuleAppState`, a surface's `settings.get`, `settings.set` | `extension:read` to read; `settings:write` to change one, as Studio's own settings need |

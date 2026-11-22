@@ -18,6 +18,7 @@ Pick the smallest surface and the lowest tier that do the job.
 | A tab in a workspace's pane | `panels[]` with an `entry` | `ui` | panel, blank |
 | A page of its own, with a row in the Extensions drawer | `doors[]` with an `entry` | `ui` | door |
 | Options in Settings | `settingsSections[]` with an `entry` | `ui` | settings-section |
+| An editor for files of a type (a form, a diagram, a binary format) | `customEditors[]` with an `entry` and its `extensions` or `filenames`; `workspace-files:read`, `:write` to save | `ui` | editor |
 | Tools agents call | `mcpTools[]`, served by the worker; `tools:contribute` | `worker` | mcp-tools |
 | Work with no window open, Node, or a service only the worker has | `main` | `worker` | chat-companion |
 
@@ -48,6 +49,7 @@ door. A cluster of controls belongs in a door.
 | Saving data | surface: `storage.*` (per workspace with `workspaceId`); worker: `getModuleStorage(studio)` (`list({ prefix })`, `getMany`, `watch`), `studio.getModuleDataDir()` past 1 MB | `storage:own` |
 | Settings values | surface: `settings.get`, `settings.set`; worker: `getModuleAppState`, `watchModuleAppState` | `settings:own` |
 | Files in a workspace's folder | surface: `files.read`, `files.stat`, `files.search`, `files.write` | `workspace-files:read`, `workspace-files:write` |
+| The file a custom editor is open on | custom editor: `studio.document` (`session()`, or `get`, `onDidChange`, `applyEdit`) | `workspace-files:read` (`:write` to save) |
 | A surface asking the worker | worker `studio.registerMethods<Contract>({ … })`, surface `studio.methods<Contract>().read` / `.operate`; worker → surface `studio.emit` / `studio.on('push', …)` | — |
 | Files inside the extension (WASM, data) | surface: bundle them (images and fonts as `data:` URLs); worker: `studio.getAssetPath('dist/worker.cjs')` | — |
 

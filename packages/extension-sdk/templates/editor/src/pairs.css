@@ -1,0 +1,18 @@
+.pairs {
+  padding: 12px 16px;
+  max-width: 720px;
+}
+.pairs__row {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+}
+.pairs__row .se-input {
+  flex: 1;
+}
+.pairs__bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
