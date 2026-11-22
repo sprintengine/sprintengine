@@ -32,7 +32,7 @@ export type IntegrationKind =
   | 'agent-state-hooks'
   /** Our `statusLine` in a Claude settings file (wrapping the person's own). */
   | 'status-line'
-  /** A reporter script copied under `.sprintengine/hooks` (older builds, or the knowledge-activity hook). */
+  /** A reporter script copied under `.sprintengine/hooks` by an older build. */
   | 'hook-script'
   /** The app's MCP gateway entry in a CLI's MCP config. */
   | 'mcp-gateway'
@@ -46,8 +46,6 @@ export type IntegrationKind =
   | 'claude-known-marketplace'
   /** A skill directory copied with the app's provenance marker. */
   | 'skill-copy'
-  /** The knowledge-activity hook entries in `.claude/settings.local.json`. */
-  | 'knowledge-activity-hook'
   /** Lines in a git exclude file, or the per-worktree excludes configuration. */
   | 'git-exclude'
   /** A `git worktree lock` this profile placed. */
@@ -60,6 +58,26 @@ export type IntegrationKind =
   | 'launcher'
   /** The WSL data directory (`~/.local/share/sprintengine-studio`) in a distribution. */
   | 'wsl-data'
+
+// Every kind this build knows. An entry of any other kind (one a retired
+// feature wrote) is dropped when the ledger is read: there is no removal for it.
+const INTEGRATION_KINDS: Record<IntegrationKind, true> = {
+  'agent-state-hooks': true,
+  'status-line': true,
+  'hook-script': true,
+  'mcp-gateway': true,
+  'mcp-approval': true,
+  'studio-plugin-copy': true,
+  'claude-plugin-setting': true,
+  'claude-known-marketplace': true,
+  'skill-copy': true,
+  'git-exclude': true,
+  'worktree-lock': true,
+  'tailnet-share': true,
+  'protocol-handler': true,
+  launcher: true,
+  'wsl-data': true,
+}
 
 export type IntegrationLedgerEntry = {
   kind: IntegrationKind
@@ -107,6 +125,7 @@ function isEntry(value: unknown): value is IntegrationLedgerEntry {
   const record = value as Record<string, unknown>
   return (
     typeof record.kind === 'string' &&
+    Object.hasOwn(INTEGRATION_KINDS, record.kind) &&
     typeof record.path === 'string' &&
     typeof record.marker === 'string' &&
     typeof record.hostId === 'string'

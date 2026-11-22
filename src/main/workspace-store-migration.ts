@@ -57,14 +57,12 @@ import { isMachinePath } from '../shared/machine-paths'
 //   (a module lists every `<key>.json`, so not `<key>.conflict-<hash>.json`);
 // - a cache (the backlog's links, the thread index): the store's copy stays,
 //   since a cache is rebuilt from the world;
-// - anything else (captures, recordings, the retired automations, review and
-//   knowledge-trace folders): both kept, the source as
-//   `<stem>.conflict-<hash><ext>`.
+// - anything else (captures, recordings, the retired automations and review
+//   folders): both kept, the source as `<stem>.conflict-<hash><ext>`.
 //
-// The retired folders go under `legacy/` in the store: nothing reads them
-// (shared/workspace-mode.ts retired the automations and review modes, and the
-// knowledge-trace folder was the retired knowledge graph's activity record),
-// but they were the person's, and deleting them is not this move's call.
+// The two retired folders go under `legacy/` in the store: nothing reads them
+// (shared/workspace-mode.ts retired both modes), but they were the person's,
+// and deleting them is not this move's call.
 //
 // Afterwards the `.gitignore` files that are exactly `*` (the ones older
 // builds wrote so their folders ignored themselves) go, every folder left
@@ -93,7 +91,6 @@ const AREAS: Record<string, Area> = {
   modules: { to: ['modules'], policy: () => 'config' },
   automations: { to: ['legacy', 'automations'], policy: () => 'keep-both' },
   review: { to: ['legacy', 'review'], policy: () => 'keep-both' },
-  'knowledge-trace': { to: ['legacy', 'knowledge-trace'], policy: () => 'keep-both' },
 }
 
 /**
