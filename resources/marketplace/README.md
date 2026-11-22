@@ -5,79 +5,52 @@ marketplace seed set. When published to `sprintengine/studio-releases`, this
 directory is the repository root.
 
 - Local registry path: `resources/marketplace/marketplace.json`
-- Seed plugin bundles: `resources/marketplace/plugins/<plugin-id>/`
 - First-party icon assets: `resources/marketplace/icons/`
 - Publisher public keys: `resources/marketplace/trusted-publishers.json`
 - Publish CI root workflow:
   `resources/marketplace/.github/workflows/marketplace-registry.yml`
-- Remote publication target for the T2.1 `RegistryClient` default:
+- Remote publication target for the `RegistryClient` default:
   `https://raw.githubusercontent.com/sprintengine/studio-releases/main/marketplace.json`
 
-Publishing keeps `marketplace.json`, `plugins/`, `icons/`,
+Publishing keeps `marketplace.json`, `icons/`, `skills/`,
 `trusted-publishers.json`, and `.github/workflows/marketplace-registry.yml` at
 the same relative paths.
 
-## Seed Plugins
+## What the index holds
 
-One population ships a committed `plugins/<id>/` bundle.
+Two kinds of row, and nothing else:
 
-**The signed MCP seeds are gone** (owner ruling 2026-09-08).
-`browser-automation-mcp` (Playwright), `repository-workflows-mcp` (GitHub),
-`current-docs-mcp` (Context7) and `api-reference-mcp` (openai-docs) each wrapped
-one MCP server that somebody else wrote and published it under our name. Being
-signed made them ours to vouch for, not ours to ship. Their four rows, their
-four `plugins/<id>/` directories and their four `icons/*.svg` are removed; the
-index is 18 rows and carries **no signed component at all**.
+- **Agent CLIs the app ships** (`cli: { pluginId }`, `provides: ['cli']`). The
+  plugin lives inside the app; installing it runs that plugin's `install` spec
+  through the CLI runtime installer. These are the 18 rows of this seed.
+- **Claude Code plugins** (tagged `claude-plugin`, `provides: ['skills']`, a
+  `source` on an allowlisted HTTPS host). Their skills install from content
+  bundled with the app under `skills/<id>/`, each folder checked byte for byte
+  against the digests the row records, and only on the person's approval.
 
-Nothing was re-signed and nothing needed to be. There is no index-wide
-signature: each signed entry carried its own `signature` over its own bytes, so
-removing four left the other eighteen byte-identical.
+Skills, MCP servers and model providers of an extension are not registry rows.
+An extension declares them as `contributes.skills`, `contributes.mcpServers`
+and `contributes.providers` in its own extension.json. The signed plugin
+bundle (`plugin.json` with `components.mcp` / `components.skills`) and the
+inline MCP row (`mcp.servers`) that once carried them are gone (2026-11-22),
+with the `plugins/` payload directory. A published index that still lists a
+bundle row, an inline MCP row or an `automation` row has that row left off the
+shelf; the rest of the index still reads.
 
-`trusted-publishers.json` stays, and not out of caution. All 13 agent-CLI rows
-set `publisher.verified: true`, and `validateInlineCliEntry` allows that claim
-only under a name listed there as verified — identity proven by the signed app
-bundle instead of by a detached signature. Deleting the file would fail all 13.
-The SprintEngine Labs key is a trust anchor for those rows now rather than for any
-signature, and the signature path itself is still exercised: the publish test
-signs a probe bundle with a throwaway key it generates and trusts for the length
-of the run.
+`trusted-publishers.json` stays: an agent-CLI row may set
+`publisher.verified: true` only under a name listed there as verified, its
+identity proven by the signed app bundle the plugin ships inside. No other row
+may claim a verified publisher.
 
-**The automation starters are gone** (2026-09-30). The five `*-automation`
-rows each installed a scheduled automation definition; automations became
-scheduled agents, which a person creates from New chat and an extension creates
-at runtime, so their rows, their `plugins/<id>/` bundles and their
-`icons/*.svg` marks are removed. A bundle that still declares an `automation`
-component no longer validates.
+Every entry in `marketplace.json` is hand-authored. This directory is the
+source of truth; it is published to `studio-releases`, not read back from it.
 
-Every entry in `marketplace.json` is now hand-authored. The generator that used
-to project most of it from a private catalogue-snapshot package
-(`scripts/generate-connector-catalogue.mjs`) went with the 256 snapshotted
-plugin entries it produced, and `scripts/sync-catalogue.mjs`, which pulled this
-seed back from `sprintengine/studio-releases`, went with the MCP catalogue it
-also fetched. This directory is the source of truth; it is published
-to `studio-releases`, not read back from it.
+## Source policy
 
-## Source policy and widened schema
-
-This seed is the first-party curated set and the shipped registry default — it
-is no longer the *only* source the app will consume:
-
-- **Allowlisted sources, not a single-repo pin**: the app downloader and the
-  registry verifier accept any bundle `source` that is HTTPS on an allowlisted
-  host (`github.com`, `api.github.com`, `raw.githubusercontent.com`, plus an
-  optional `SPRINTENGINE_MARKETPLACE_EXTRA_HOSTS` list), covering the entry URL and
-  every followed per-file `download_url`. First-party seed staging is still
-  scoped to `sprintengine/studio-releases` (via
-  `src/shared/marketplace/canonical-source.ts`), not implied by the source
-  string.
-- **Widened registry schema** (`src/shared/marketplace/manifest.ts`): registry
-  entries may omit `signature`, carry `categories[]`/`tags[]`, and use the
-  inline-MCP entry shape (`mcp.servers`, no bundle `source`) in place of a signed
-  bundle. Existing signed-bundle entries (this seed) stay valid unchanged.
-- **Trust is by signature + component kind, not by listing**: code-bearing
-  bundles (`module`/`cli`) keep the hard signature gate; unsigned
-  MCP/skills and inline-MCP entries install only through the community trust
-  prompt, and say so by declaring `publisher.verified: false`.
+- **Allowlisted sources, not a single-repo pin**: a row's `source` must be
+  HTTPS on an allowlisted host (`github.com`, `api.github.com`,
+  `raw.githubusercontent.com`, plus an optional
+  `SPRINTENGINE_MARKETPLACE_EXTRA_HOSTS` list).
 - **Registry read is config-swappable**: `SPRINTENGINE_MARKETPLACE_REGISTRY_URL`
   can point the read at a hosted catalogue's `GET /v1/registry`; this seed
   stays the offline/packaged fallback either way.
@@ -96,21 +69,13 @@ When validating a standalone registry checkout, pass that checkout as the root:
 npm run verify:marketplace-registry -- --root ../marketplace
 ```
 
-The verifier uses the shared marketplace schema validator for `marketplace.json`
-and delegates every *signed* plugin bundle to `sprintengine-extension plugin verify`,
-the same authoring CLI path used before publish. It also checks component file
-digests, allowlisted HTTPS source URLs (the host allowlist above, replacing the
-former canonical `plugins/<id>` pin), verified publisher signatures
-against `trusted-publishers.json`, registry entries against their
-`plugin.json`, icons, MCP component parseability, and absence of committed key
-material.
-
-An unsigned entry that ships a committed bundle gets an equivalent gate rather
-than the CLI one: its manifest must parse, it must carry no `module`/`cli`
-component, and its component digests must match the committed bytes. Two rules apply to every
-entry regardless of shape — an entry with no signature may not set
-`publisher.verified`, and every committed `plugins/<id>/` payload must be
-claimed by an entry the verifier actually checked.
+The verifier reads `marketplace.json` through the app's own schema validator
+and checks unique ids, allowlisted HTTPS sources, icons (an inline icon must be
+the bytes of the committed `icons/<id>.svg`), that each agent-CLI row names a
+plugin the app bundles and claims a verified publisher only under a trusted
+name, that bundled Claude plugin skill payloads match their recorded digests
+(and that no payload folder is unclaimed), and that no key material is
+committed.
 
 The published registry workflow checks out the studio's validation tooling
 and runs:

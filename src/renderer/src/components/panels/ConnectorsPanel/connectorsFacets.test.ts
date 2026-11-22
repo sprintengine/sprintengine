@@ -51,7 +51,9 @@ test('connectorsFacets', async () => {
       category: 'Payments',
       icon: 'stripe.svg',
       latest: 1,
-      provides: ['mcp', 'skills'],
+      provides: ['skills'],
+      tags: ['claude-plugin'],
+      source: 'https://github.com/acme/stripe',
       ...overrides,
     }
   }
@@ -83,7 +85,7 @@ test('connectorsFacets', async () => {
     const stripe = entries[0]
     assert.equal(stripe.source, 'registry')
     assert.equal(stripe.key, 'registry:stripe-mcp')
-    assert.deepEqual(stripe.componentLabels, ['MCP server', 'Skill pack'])
+    assert.deepEqual(stripe.componentLabels, ['Skill pack'])
     assert.equal(stripe.facet, 'Payments')
     // Browsing a registry row never makes it installed, and never launchable:
     // install is the only route to a launch.
@@ -236,12 +238,12 @@ test('connectorsFacets', async () => {
   }
 
   // --- registry entries by kind ---------------------------------
-  // The Plugins catalogue lists mcp and skills entries; cli entries keep their
-  // own canvas. Same normalized row shape from one builder.
+  // The Plugins catalogue lists skills entries (Claude Code plugins); cli
+  // entries keep their own canvas. Same normalized row shape from one builder.
   {
     const reviewSkills = plugin({ id: 'review-skills', name: 'Review', provides: ['skills'] })
     const cursorCli = plugin({ id: 'cursor-cli', name: 'Cursor', provides: ['cli'] })
-    const stack = plugin({ id: 'full-stack', name: 'Full stack', provides: ['mcp', 'skills', 'cli'] })
+    const stack = plugin({ id: 'full-stack', name: 'Full stack', provides: ['skills', 'cli'] })
     const all = [plugin(), reviewSkills, cursorCli, stack]
 
     assert.deepEqual(
@@ -252,7 +254,7 @@ test('connectorsFacets', async () => {
       registryEntriesForKinds(all, ['cli']).map((entry) => entry.id),
       ['cursor-cli', 'full-stack'],
     )
-    // The catalogue path is the same builder with mcp/skills: a cli-only one is
+    // The catalogue path is the same builder with skills: a cli-only one is
     // not listed.
     assert.deepEqual(
       buildConnectorEntries(all).map((entry) => entry.id),

@@ -153,7 +153,8 @@ Alongside those, three model providers are available for the app's own
 conversation agents: the Claude Agent SDK harness, OpenRouter and xAI.
 
 Adding another CLI does not require changing the app. A plugin manifest is
-enough — see [docs/plugin-authors/README.md](docs/plugin-authors/README.md).
+enough — see the ones the app ships in [resources/plugins/](resources/plugins/)
+and their contract in `src/shared/cli-plugin-manifest.ts`.
 
 ## Building from source
 
@@ -204,9 +205,8 @@ The app is meant to be built on rather than only used.
   what the permission vocabulary means.
 - **CLI plugins** teach the app to drive an agent CLI it has never seen: how to
   launch it, how to write its MCP config, how to install skills for it, and how
-  to tell when a turn is finished.
-  [docs/plugin-authors/README.md](docs/plugin-authors/README.md) covers manifests
-  and signed bundles.
+  to tell when a turn is finished. The manifests the app ships are in
+  [resources/plugins/](resources/plugins/).
 - **The studio's own agent-facing surface** — the `sprintengine-studio` plugin
   the app installs into every workspace it opens, the stdio bridge to the
   running app, and the opt-in skills that teach an agent to drive it — is documented in

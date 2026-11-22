@@ -19,8 +19,6 @@ import {
   type ExtensionScaffoldCreateResult,
   type ExtensionScaffoldTarget,
   type ExtensionScaffoldTargetInput,
-  type GithubExtensionInstallInput,
-  type GithubExtensionResolveResult,
   type HostedCardFeedReadResult,
   type HostedSourcesFeedReadResult,
   type MarketplacePluginRegistryInstallInput,
@@ -72,8 +70,6 @@ export type ExtensionsApi = {
   ): Promise<MarketplacePluginRegistryInstallResult>
   /** Remove a plugin and what it put in place; `pluginId` is its id or one of its modules'. */
   uninstallMarketplacePlugin(input: MarketplacePluginUninstallInput): Promise<MarketplacePluginUninstallResult>
-  resolveGithubExtension(input: { url: string }): Promise<GithubExtensionResolveResult>
-  installGithubExtension(input: GithubExtensionInstallInput): Promise<MarketplacePluginRegistryInstallResult>
   pluginsList(): Promise<PluginRegistryListResult>
   pluginsDetectAvailability(input?: PluginDetectAvailabilityInput): Promise<PluginAvailabilityResult>
   /** What launching a CLI at these settings would run. */
@@ -177,16 +173,6 @@ export const extensionsApi: ExtensionsApi = {
   uninstallMarketplacePlugin: (input) =>
     answered(
       () => extensions('marketplace.uninstall', { ...input, commandId: commandId() }),
-      (message) => ({ ok: false, message }),
-    ),
-  resolveGithubExtension: ({ url }) =>
-    answered(
-      () => extensions('marketplace.resolveGithub', { url }),
-      (message) => ({ ok: false, message }),
-    ),
-  installGithubExtension: (input) =>
-    answered(
-      () => extensions('marketplace.installGithub', { ...input, commandId: commandId() }),
       (message) => ({ ok: false, message }),
     ),
   pluginsList: () => extensions('cliPlugins.list', {}),

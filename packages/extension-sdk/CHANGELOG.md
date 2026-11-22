@@ -7,6 +7,19 @@ An extension is a declarative `extension.json` now, not a `manifest.json` and
 with no compatibility path: nothing migrates it, nothing reads it, and an
 extension built against 3.x must be rewritten to this one.
 
+### Skills, MCP servers and providers are contributions; the plugin bundle is gone
+
+- `contributes.skills`, `contributes.mcpServers` and `contributes.providers`
+  in extension.json are how an extension hands agents a skill, an MCP server
+  or a model provider. They replace the marketplace plugin bundle.
+- The `sprintengine-extension plugin` commands (`plugin scaffold`, `pack`,
+  `sign` and `verify`, and their `plugin-*` spellings) are gone, with the
+  `plugin.json` bundle helpers: `validateMarketplacePluginManifest`,
+  `parseMarketplacePluginManifest`, their authoring variants,
+  `MARKETPLACE_COMPONENT_KINDS`, `retiredMarketplaceComponentIssue` and the
+  component digest functions. Studio installs no bundle any more, so nothing
+  reads one.
+
 ### extension.json
 
 - An extension is a folder with `extension.json` at its root. It says what the

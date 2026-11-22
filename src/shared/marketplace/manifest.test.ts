@@ -1,82 +1,35 @@
 import assert from 'node:assert/strict'
 
-import {
-  MARKETPLACE_COMPONENT_KINDS,
-  canonicalManifestPayload,
-  parseMarketplaceIndex,
-  parseMarketplacePluginManifest,
-  validateMarketplaceIndex,
-  validateMarketplacePluginAuthoringManifest,
-  validateMarketplacePluginManifest,
-} from './manifest'
+import { MARKETPLACE_PROVIDES_KINDS, parseMarketplaceIndex, validateMarketplaceIndex } from './manifest'
 import { MARKETPLACE_CANONICAL_SOURCE } from './index'
 import { test } from 'vitest'
 
 test('manifest', async () => {
   const VALID_SIGNATURE = { algorithm: 'ed25519' as const, publicKey: 'YWJj', signature: 'ZGVm' }
-  const VALID_DIGEST = 'a'.repeat(64)
 
-  const VALID_PLUGIN = {
-    id: 'dev-helper',
-    displayName: 'Dev Helper',
-    version: 1,
-    publisher: 'SprintEngine Labs',
-    summary: 'Adds development helpers.',
-    category: 'dev-tools',
-    permissions: ['network', 'ipc:settings'],
-    signature: VALID_SIGNATURE,
-    components: {
-      mcp: { path: 'mcp/server.json', files: [{ path: 'mcp/server.json', sha256: VALID_DIGEST }] },
-      skills: { path: 'skills/pack', files: [{ path: 'skills/pack/SKILL.md', sha256: VALID_DIGEST }] },
-    },
-  }
-
+  // A Claude Code plugin row: the generated catalogue tags it, it names its
+  // source, and it provides skills.
   const VALID_MARKETPLACE = {
     schemaVersion: 1,
     plugins: [
       {
         id: 'dev-helper',
         name: 'Dev Helper',
-        publisher: { name: 'SprintEngine Labs', verified: true },
+        publisher: { name: 'Acme', verified: false },
         summary: 'Adds development helpers.',
         category: 'dev-tools',
         icon: 'icons/dev-helper.svg',
         latest: 1,
-        source: 'https://github.com/sprintengine/studio-releases/plugins/dev-helper',
-        provides: ['mcp', 'skills'],
-        signature: VALID_SIGNATURE,
+        tags: ['claude-plugin'],
+        source: 'https://github.com/acme/dev-helper',
+        provides: ['skills'],
       },
     ],
   }
 
-  // Inline-MCP entry: no bundle source, no signature, categories[]/tags[], and a
-  // raw MCP server config.
-  const VALID_INLINE_MCP_ENTRY = {
-    id: 'live-search-mcp',
-    name: 'Live Search MCP',
-    publisher: { name: 'Community Author', verified: false },
-    summary: 'Adds a hosted web search MCP server.',
-    categories: ['Search', 'Web'],
-    tags: ['search', 'web'],
-    icon: 'icons/live-search.svg',
-    latest: 1,
-    provides: ['mcp'],
-    mcp: {
-      servers: [
-        {
-          id: 'live-search',
-          name: 'Live Search',
-          transport: 'http',
-          url: 'https://mcp.example.com/mcp',
-          clients: ['codex', 'claude'],
-        },
-      ],
-    },
-  }
-
-  // Inline-CLI entry: no bundle source, no signature — the entry
-  // surfaces an app-bundled CLI plugin whose install spec the runtime installer
-  // executes; `cli.pluginId` names that plugin in the plugin registry.
+  // Inline-CLI entry: no source, no signature — the entry surfaces an
+  // app-bundled CLI plugin whose install spec the runtime installer executes;
+  // `cli.pluginId` names that plugin in the plugin registry.
   const VALID_INLINE_CLI_ENTRY = {
     id: 'claude-code',
     name: 'Claude Code',
@@ -87,6 +40,28 @@ test('manifest', async () => {
     latest: 1,
     provides: ['cli'],
     cli: { pluginId: 'claude-code' },
+  }
+
+  // What a published index may still list from before skills and MCP servers
+  // became an extension's contributions.
+  const RETIRED_BUNDLE_ROW = {
+    ...VALID_MARKETPLACE.plugins[0],
+    id: 'old-bundle',
+    tags: [],
+    signature: VALID_SIGNATURE,
+  }
+  const RETIRED_INLINE_MCP_ROW = {
+    id: 'live-search-mcp',
+    name: 'Live Search MCP',
+    publisher: { name: 'Community Author', verified: false },
+    summary: 'Adds a hosted web search MCP server.',
+    category: 'Search',
+    icon: 'icons/live-search.svg',
+    latest: 1,
+    provides: ['mcp'],
+    mcp: {
+      servers: [{ id: 'live-search', name: 'Live Search', transport: 'http', url: 'https://mcp.example.com/mcp' }],
+    },
   }
 
   function withoutField<T extends Record<string, unknown>>(value: T, field: string): Record<string, unknown> {
@@ -102,93 +77,11 @@ test('manifest', async () => {
   function assertRejectsAt(
     value: unknown,
     path: string,
-    validator: (
-      value: unknown,
-    ) => { ok: true } | { ok: false; issues: Array<{ path: string }> } = validateMarketplacePluginManifest,
+    validator: (value: unknown) => { ok: true } | { ok: false; issues: Array<{ path: string }> },
   ): void {
     const result = validator(value)
     assert.equal(result.ok, false, `${path} should be rejected`)
     if (!result.ok) assert.ok(issuePaths(result.issues).includes(path), `expected issue at ${path}`)
-  }
-
-  function testValidPluginManifest(): void {
-    const result = validateMarketplacePluginManifest(VALID_PLUGIN)
-    assert.equal(result.ok, true)
-    if (result.ok) {
-      assert.equal(result.manifest.source, 'third-party')
-      assert.deepEqual(result.manifest.permissions, ['network', 'ipc:settings'])
-      assert.equal(result.manifest.components.mcp?.path, 'mcp/server.json')
-      assert.equal(result.manifest.components.skills?.path, 'skills/pack')
-      // Agent CLIs ship with the app; a bundle cannot carry one.
-      assert.equal((result.manifest.components as Record<string, unknown>).cli, undefined)
-      assert.deepEqual(result.manifest.components.mcp?.files, [{ path: 'mcp/server.json', sha256: VALID_DIGEST }])
-    }
-  }
-
-  function testPluginMissingRequiredFields(): void {
-    for (const path of ['id', 'displayName', 'version', 'signature', 'components']) {
-      assertRejectsAt(withoutField(VALID_PLUGIN, path), path)
-    }
-  }
-
-  function testPluginRejectsInvalidComponentCases(): void {
-    assertRejectsAt({ ...VALID_PLUGIN, components: {} }, 'components')
-    assertRejectsAt({ ...VALID_PLUGIN, components: { mcp: {} } }, 'components.mcp.path')
-    assertRejectsAt({ ...VALID_PLUGIN, components: { mcp: { path: '../escape.json' } } }, 'components.mcp.path')
-    assertRejectsAt({ ...VALID_PLUGIN, components: { theme: { path: 'theme.json' } } }, 'components.theme')
-    assertRejectsAt({ ...VALID_PLUGIN, components: { mcp: { path: 'mcp/server.json' } } }, 'components.mcp.files')
-    assertRejectsAt(
-      {
-        ...VALID_PLUGIN,
-        components: { mcp: { path: 'mcp/server.json', files: [{ path: 'other/server.json', sha256: VALID_DIGEST }] } },
-      },
-      'components.mcp.files[0].path',
-    )
-    assertRejectsAt(
-      {
-        ...VALID_PLUGIN,
-        components: { mcp: { path: 'mcp/server.json', files: [{ path: 'mcp/server.json', sha256: 'BAD' }] } },
-      },
-      'components.mcp.files[0].sha256',
-    )
-    assertRejectsAt(
-      { ...VALID_PLUGIN, components: { mcp: { path: 'mcp/server.json', extra: true } } },
-      'components.mcp.extra',
-    )
-  }
-
-  function testPluginAuthoringManifestAllowsDraftWithoutDigests(): void {
-    const result = validateMarketplacePluginAuthoringManifest({
-      ...VALID_PLUGIN,
-      signature: undefined,
-      components: {
-        mcp: { path: 'mcp/server.json' },
-      },
-    })
-    assert.equal(result.ok, true)
-  }
-
-  function testPluginRejectsInvalidPermissionsThroughSdkValidator(): void {
-    assertRejectsAt({ ...VALID_PLUGIN, permissions: ['network', ''] }, 'permissions[1]')
-  }
-
-  function testPluginRejectsInvalidSignatureThroughSdkValidator(): void {
-    assertRejectsAt({ ...VALID_PLUGIN, signature: { algorithm: 'rsa' } }, 'signature.algorithm')
-  }
-
-  function testPluginCanonicalPayloadExcludesSignatureAndUnknownFields(): void {
-    const result = validateMarketplacePluginManifest({ ...VALID_PLUGIN, ignored: true })
-    assert.equal(result.ok, true)
-    if (!result.ok) return
-
-    const payload = canonicalManifestPayload(result.manifest)
-    assert.equal(payload.includes('signature'), false)
-    assert.equal(payload.includes('ignored'), false)
-    assert.ok(payload.includes('components'), 'plugin canonical payload includes validated bundle components')
-  }
-
-  function testParsePluginInvalidJson(): void {
-    assert.equal(parseMarketplacePluginManifest('{not json').ok, false)
   }
 
   function testValidMarketplaceIndex(): void {
@@ -197,46 +90,65 @@ test('manifest', async () => {
     if (result.ok) {
       const entry = result.marketplace.plugins[0]
       assert.equal(result.marketplace.schemaVersion, 1)
-      assert.equal(entry.publisher.verified, true)
-      assert.deepEqual(entry.provides, ['mcp', 'skills'])
+      assert.equal(entry.publisher.verified, false)
+      assert.deepEqual(entry.provides, ['skills'])
       // Legacy singular category parses and no widened fields are invented.
       assert.equal(entry.category, 'dev-tools')
       assert.equal(entry.categories, undefined)
-      assert.equal(entry.tags, undefined)
-      assert.equal(entry.mcp, undefined)
-    }
-  }
-
-  function testInlineMcpEntryValidates(): void {
-    const result = validateMarketplaceIndex({ ...VALID_MARKETPLACE, plugins: [VALID_INLINE_MCP_ENTRY] })
-    assert.equal(result.ok, true)
-    if (result.ok) {
-      const entry = result.marketplace.plugins[0]
-      assert.equal(entry.source, undefined)
+      assert.deepEqual(entry.tags, ['claude-plugin'])
       assert.equal(entry.signature, undefined)
-      assert.deepEqual(entry.provides, ['mcp'])
-      assert.deepEqual(entry.categories, ['Search', 'Web'])
-      assert.deepEqual(entry.tags, ['search', 'web'])
-      assert.equal(entry.category, 'Search') // derived from categories[0]
-      assert.equal(entry.mcp?.servers.length, 1)
-      assert.equal(entry.mcp?.servers[0].transport, 'http')
-      assert.equal(entry.mcp?.servers[0].url, 'https://mcp.example.com/mcp')
     }
   }
 
-  function testBundleEntryWithoutSignatureValidates(): void {
-    const unsigned = withoutField(VALID_MARKETPLACE.plugins[0], 'signature')
-    const result = validateMarketplaceIndex({ ...VALID_MARKETPLACE, plugins: [unsigned] })
-    assert.equal(result.ok, true)
-    if (result.ok) assert.equal(result.marketplace.plugins[0].signature, undefined)
+  function testProvidesIsSkillsOrCli(): void {
+    assert.deepEqual([...MARKETPLACE_PROVIDES_KINDS], ['skills', 'cli'])
+    for (const kind of ['theme', 'module']) {
+      assertRejectsAt(
+        { ...VALID_MARKETPLACE, plugins: [{ ...VALID_MARKETPLACE.plugins[0], provides: [kind] }] },
+        'plugins[0].provides[0]',
+        validateMarketplaceIndex,
+      )
+    }
+  }
+
+  // A plugin bundle (a source row that is not a Claude Code plugin), an inline
+  // MCP row and a row providing MCP servers are each left off the shelf: the
+  // index still reads, and every other row survives.
+  function testRetiredRowsAreLeftOffTheShelf(): void {
+    const rows = [
+      RETIRED_BUNDLE_ROW,
+      RETIRED_INLINE_MCP_ROW,
+      { ...VALID_MARKETPLACE.plugins[0], id: 'mcp-and-skills', provides: ['mcp', 'skills'] },
+      { ...VALID_MARKETPLACE.plugins[0], id: 'nightly-sweep-automation', provides: ['automation'] },
+    ]
+    for (const row of rows) {
+      const index = validateMarketplaceIndex({ ...VALID_MARKETPLACE, plugins: [row, VALID_MARKETPLACE.plugins[0]] })
+      assert.equal(index.ok, true, `${row.id}: ${JSON.stringify(!index.ok && index.issues)}`)
+      if (index.ok)
+        assert.deepEqual(
+          index.marketplace.plugins.map((plugin) => plugin.id),
+          ['dev-helper'],
+          `${row.id} is left off the shelf`,
+        )
+    }
+  }
+
+  function testEntryRejectsSourceAndCliTogether(): void {
+    const hybrid = { ...VALID_INLINE_CLI_ENTRY, source: 'https://github.com/acme/dev-helper' }
+    assertRejectsAt({ ...VALID_MARKETPLACE, plugins: [hybrid] }, 'plugins[0]', validateMarketplaceIndex)
+    const tagged = { ...VALID_MARKETPLACE.plugins[0], cli: { pluginId: 'claude-code' } }
+    assertRejectsAt({ ...VALID_MARKETPLACE, plugins: [tagged] }, 'plugins[0]', validateMarketplaceIndex)
+  }
+
+  function testEntryRejectsNeitherSourceNorCli(): void {
+    const bare = withoutField(VALID_MARKETPLACE.plugins[0], 'source')
+    assertRejectsAt({ ...VALID_MARKETPLACE, plugins: [bare] }, 'plugins[0]', validateMarketplaceIndex)
   }
 
   function testGeneratedClaudePluginShapedEntryValidates(): void {
-    // The shape a claude-plugins-official entry took in the frozen registry:
+    // The shape the generated catalogue writes for a Claude Code plugin:
     // unsigned, source-bearing, skills-providing, data-URI icon, categories +
-    // tags arrays, latest pinned to 1. No entry like this ships any more — the
-    // retirement (2026-09-06) removed all 256 — but the schema still has to
-    // accept one, because the format is what a signed skill bundle would use.
+    // tags arrays, latest pinned to 1.
     const generated = {
       id: 'anthropic-github',
       name: 'github',
@@ -244,7 +156,7 @@ test('manifest', async () => {
       summary: 'GitHub workflows for Claude Code.',
       category: 'development',
       categories: ['development'],
-      tags: ['git', 'automation'],
+      tags: ['git', 'automation', 'claude-plugin'],
       icon: 'data:image/svg+xml;base64,PHN2Zy8+',
       latest: 1,
       provides: ['skills'],
@@ -274,6 +186,7 @@ test('manifest', async () => {
       icon: 'data:image/svg+xml;base64,PHN2Zy8+',
       latest: 1,
       provides: ['skills'],
+      tags: ['claude-plugin'],
       source: 'https://github.com/huggingface/skills.git',
       skills: [
         { name: 'hf-cli', description: 'Hugging Face Hub CLI.', path: 'skills/hf-cli' },
@@ -334,6 +247,7 @@ test('manifest', async () => {
       icon: 'data:image/svg+xml;base64,PHN2Zy8+',
       latest: 1,
       provides: ['skills'],
+      tags: ['claude-plugin'],
       source: 'https://github.com/vercel/skills.git',
       skills: [{ name: 'vercel', description: 'Deploy.', path: 'skills/vercel', files, contentDigest: digest }],
     }
@@ -388,16 +302,6 @@ test('manifest', async () => {
     )
   }
 
-  function testEntryRejectsSourceAndMcpTogether(): void {
-    const hybrid = { ...VALID_MARKETPLACE.plugins[0], mcp: VALID_INLINE_MCP_ENTRY.mcp }
-    assertRejectsAt({ ...VALID_MARKETPLACE, plugins: [hybrid] }, 'plugins[0]', validateMarketplaceIndex)
-  }
-
-  function testEntryRejectsNeitherSourceNorMcp(): void {
-    const bare = withoutField(VALID_INLINE_MCP_ENTRY, 'mcp')
-    assertRejectsAt({ ...VALID_MARKETPLACE, plugins: [bare] }, 'plugins[0]', validateMarketplaceIndex)
-  }
-
   function testInlineCliEntryValidates(): void {
     const result = validateMarketplaceIndex({ ...VALID_MARKETPLACE, plugins: [VALID_INLINE_CLI_ENTRY] })
     assert.equal(result.ok, true, 'inline-CLI entry should validate')
@@ -419,11 +323,6 @@ test('manifest', async () => {
       validateMarketplaceIndex,
     )
     assertRejectsAt(
-      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_INLINE_CLI_ENTRY, mcp: VALID_INLINE_MCP_ENTRY.mcp }] },
-      'plugins[0]',
-      validateMarketplaceIndex,
-    )
-    assertRejectsAt(
       { ...VALID_MARKETPLACE, plugins: [{ ...VALID_INLINE_CLI_ENTRY, provides: ['cli', 'skills'] }] },
       'plugins[0].provides',
       validateMarketplaceIndex,
@@ -433,10 +332,10 @@ test('manifest', async () => {
       'plugins[0].cli.pluginId',
       validateMarketplaceIndex,
     )
-    // `cli` is the inline lane only: a bundle entry that says it provides an
-    // agent CLI is refused, because no bundle can install one.
+    // `cli` is the inline lane only: a Claude Code plugin that says it
+    // provides an agent CLI is refused, because agent CLIs ship with the app.
     assertRejectsAt(
-      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_MARKETPLACE.plugins[0], provides: ['mcp', 'cli'] }] },
+      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_MARKETPLACE.plugins[0], provides: ['skills', 'cli'] }] },
       'plugins[0].provides',
       validateMarketplaceIndex,
     )
@@ -447,33 +346,15 @@ test('manifest', async () => {
     )
   }
 
-  function testInlineMcpRejectsNonMcpProvides(): void {
-    const bad = { ...VALID_INLINE_MCP_ENTRY, provides: ['mcp', 'skills'] }
-    assertRejectsAt({ ...VALID_MARKETPLACE, plugins: [bad] }, 'plugins[0].provides', validateMarketplaceIndex)
-  }
-
-  function testInlineMcpRejectsInvalidAndEmptyServers(): void {
-    assertRejectsAt(
-      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_INLINE_MCP_ENTRY, mcp: { servers: [{ id: 'broken' }] } }] },
-      'plugins[0].mcp.servers[0]',
-      validateMarketplaceIndex,
-    )
-    assertRejectsAt(
-      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_INLINE_MCP_ENTRY, mcp: { servers: [] } }] },
-      'plugins[0].mcp.servers',
-      validateMarketplaceIndex,
-    )
-  }
-
   function testCategoriesAndTagsMustBeStringArrays(): void {
     assertRejectsAt(
-      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_INLINE_MCP_ENTRY, categories: 'Search' }] },
+      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_MARKETPLACE.plugins[0], categories: 'Search' }] },
       'plugins[0].categories',
       validateMarketplaceIndex,
     )
     assertRejectsAt(
-      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_INLINE_MCP_ENTRY, tags: [''] }] },
-      'plugins[0].tags[0]',
+      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_MARKETPLACE.plugins[0], tags: ['claude-plugin', ''] }] },
+      'plugins[0].tags[1]',
       validateMarketplaceIndex,
     )
   }
@@ -488,9 +369,8 @@ test('manifest', async () => {
   }
 
   function testMarketplaceMissingPluginFields(): void {
-    // source and signature are now optional; a bundle entry with source but no
-    // signature stays valid, and the source/mcp XOR check owns the missing-source
-    // rejection (covered by testEntryRejectsNeitherSourceNorMcp).
+    // signature is optional; the source/cli XOR check owns the missing-source
+    // rejection (covered by testEntryRejectsNeitherSourceNorCli).
     const required = ['id', 'name', 'publisher', 'summary', 'category', 'icon', 'latest', 'provides']
     for (const field of required) {
       const plugin = withoutField(VALID_MARKETPLACE.plugins[0], field)
@@ -513,7 +393,7 @@ test('manifest', async () => {
       validateMarketplaceIndex,
     )
     assertRejectsAt(
-      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_MARKETPLACE.plugins[0], provides: ['mcp', 'theme'] }] },
+      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_MARKETPLACE.plugins[0], provides: ['skills', 'theme'] }] },
       'plugins[0].provides[1]',
       validateMarketplaceIndex,
     )
@@ -528,91 +408,21 @@ test('manifest', async () => {
     assert.equal(parseMarketplaceIndex('{not json').ok, false)
   }
 
-  function testAutomationIsARetiredComponentKind(): void {
-    assert.deepEqual([...MARKETPLACE_COMPONENT_KINDS], ['mcp', 'skills'])
-    // A bundle built for an older Studio says why it is refused, not just that
-    // the kind is unknown.
-    const bundle = validateMarketplacePluginManifest({
-      ...VALID_PLUGIN,
-      components: {
-        ...VALID_PLUGIN.components,
-        automation: {
-          path: 'automation/automation.json',
-          files: [{ path: 'automation/automation.json', sha256: VALID_DIGEST }],
-        },
-      },
-    })
-    assert.equal(bundle.ok, false)
-    if (!bundle.ok) {
-      assert.deepEqual(issuePaths(bundle.issues), ['components.automation'])
-      assert.match(bundle.issues[0]?.message ?? '', /Automation components are no longer supported/)
-    }
-    // A registry still listing a retired row loses that row, and only that row.
-    const index = validateMarketplaceIndex({
-      ...VALID_MARKETPLACE,
-      plugins: [
-        { ...VALID_MARKETPLACE.plugins[0], id: 'nightly-sweep-automation', provides: ['automation'] },
-        VALID_MARKETPLACE.plugins[0],
-      ],
-    })
-    assert.equal(index.ok, true)
-    if (index.ok)
-      assert.deepEqual(
-        index.marketplace.plugins.map((plugin) => plugin.id),
-        ['dev-helper'],
-      )
-  }
-
-  // An extension ships as a folder with its own extension.json, never inside a
-  // bundle, and a bundle that still names one is told so. A registry row that
-  // says it provides one is not a row this Studio reads.
-  function testABundleNoLongerCarriesAnExtension(): void {
-    const bundle = validateMarketplacePluginManifest({
-      ...VALID_PLUGIN,
-      components: {
-        ...VALID_PLUGIN.components,
-        module: { path: 'module', files: [{ path: 'module/manifest.json', sha256: VALID_DIGEST }] },
-      },
-    })
-    assert.equal(bundle.ok, false)
-    if (!bundle.ok) {
-      assert.deepEqual(issuePaths(bundle.issues), ['components.module'])
-      assert.match(bundle.issues[0]?.message ?? '', /A bundle no longer carries an extension/)
-    }
-    assertRejectsAt(
-      { ...VALID_MARKETPLACE, plugins: [{ ...VALID_MARKETPLACE.plugins[0], provides: ['module'] }] },
-      'plugins[0].provides[0]',
-      validateMarketplaceIndex,
-    )
-  }
-
-  testValidPluginManifest()
-  testABundleNoLongerCarriesAnExtension()
-  testPluginMissingRequiredFields()
-  testPluginRejectsInvalidComponentCases()
-  testPluginAuthoringManifestAllowsDraftWithoutDigests()
-  testPluginRejectsInvalidPermissionsThroughSdkValidator()
-  testPluginRejectsInvalidSignatureThroughSdkValidator()
-  testPluginCanonicalPayloadExcludesSignatureAndUnknownFields()
-  testParsePluginInvalidJson()
   testValidMarketplaceIndex()
-  testInlineMcpEntryValidates()
-  testBundleEntryWithoutSignatureValidates()
+  testProvidesIsSkillsOrCli()
+  testRetiredRowsAreLeftOffTheShelf()
   testGeneratedClaudePluginShapedEntryValidates()
   testBundledSkillsValidateAndSurvive()
   testBundledSkillContentDigestsValidateAndSurvive()
-  testEntryRejectsSourceAndMcpTogether()
-  testEntryRejectsNeitherSourceNorMcp()
+  testEntryRejectsSourceAndCliTogether()
+  testEntryRejectsNeitherSourceNorCli()
   testInlineCliEntryValidates()
   testInlineCliRejectsOtherShapesAndBadPluginId()
-  testInlineMcpRejectsNonMcpProvides()
-  testInlineMcpRejectsInvalidAndEmptyServers()
   testCategoriesAndTagsMustBeStringArrays()
   testCanonicalSourceConstantExported()
   testMarketplaceMissingTopLevelFields()
   testMarketplaceMissingPluginFields()
   testMarketplaceRejectsNestedInvalidFields()
   testParseMarketplaceInvalidJson()
-  testAutomationIsARetiredComponentKind()
   console.log('marketplace manifest tests passed')
 })

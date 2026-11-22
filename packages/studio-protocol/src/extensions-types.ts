@@ -1,12 +1,4 @@
-import type {
-  AgentCli,
-  CliPermissionPreset,
-  CliRuntimeSettings,
-  McpClientTarget,
-  McpServerConfig,
-  McpSettings,
-  McpTransport,
-} from './agents.js'
+import type { AgentCli, CliPermissionPreset, CliRuntimeSettings } from './agents.js'
 import type { SkillHarness } from './agent-setup.js'
 import type { CardAction } from './agent-skills.js'
 import type { StudioModuleTrustStatus } from './providers.js'
@@ -66,7 +58,7 @@ export type CapabilityManifest = {
   source?: ModuleSource
   /** The permissions an extension asks for (shown when the person approves it). */
   permissions?: string[]
-  /** A plugin bundle's detached signature over its manifest. */
+  /** A detached signature over the manifest, when one was published. */
   signature?: ModuleSignature
 }
 
@@ -397,10 +389,10 @@ export type ModuleRegistrySnapshotWriteResult = { ok: boolean; message?: string 
 
 // ── The marketplace ─────────────────────────────────────────────────────────
 
-/** What a marketplace bundle carries; the module SDK's `MarketplaceComponentKind`. */
-export type MarketplaceComponentKind = 'mcp' | 'skills'
+/** What a marketplace install puts in place: a Claude Code plugin's skills. */
+export type MarketplaceComponentKind = 'skills'
 
-/** What a registry entry may say it provides: a bundle's kinds, or `cli` for an agent CLI the app ships. */
+/** What a registry entry may say it provides: a Claude Code plugin's skills, or `cli` for an agent CLI the app ships. */
 export type MarketplaceProvidesKind = MarketplaceComponentKind | 'cli'
 
 export type MarketplaceManifestIssue = { path: string; message: string }
@@ -429,8 +421,8 @@ export type MarketplacePluginSkill = {
 }
 
 /**
- * A registry entry: a bundle (has `source`), an inline MCP server list (has
- * `mcp`), or an agent CLI the app ships (has `cli`).
+ * A registry entry: a Claude Code plugin (has `source`, tagged
+ * `claude-plugin`) or an agent CLI the app ships (has `cli`).
  */
 export type MarketplacePluginEntry = {
   id: string
@@ -445,7 +437,6 @@ export type MarketplacePluginEntry = {
   provides: MarketplaceProvidesKind[]
   source?: string
   signature?: ModuleSignature
-  mcp?: { servers: McpServerConfig[] }
   cli?: { pluginId: string }
   skills?: MarketplacePluginSkill[]
 }
@@ -532,14 +523,11 @@ export type MarketplaceUpdateStatesResult =
   | { ok: false; message: string }
 
 /**
- * Where an install writes beside the module root: the workspace an MCP or
- * skill component goes into (one the Studio has open), the MCP settings and
- * CLIs it syncs, and the skill harnesses.
+ * Where an install writes: the workspace its skill copies go into (one the
+ * Studio has open), and the skill harnesses.
  */
 export type MarketplaceInstallEnvelope = {
   workspaceRoot?: string
-  mcpSettings?: McpSettings
-  mcpClients?: McpClientTarget[]
   skillHarnesses?: SkillHarness[]
 }
 
@@ -557,32 +545,9 @@ export type MarketplacePluginVerifyInput = { id: string }
 
 /** The content a trust review disclosed, pinned so the install refuses anything else. */
 export type MarketplaceTrustPin = {
-  commitSha?: string
   manifestSha256: string
   componentDigests: Record<string, string>
 }
-
-/** An MCP server as an install would write it: never the values of its environment or headers. */
-export type MarketplaceMcpServerDisclosure = {
-  id: string
-  name: string
-  transport: McpTransport
-  command?: string
-  args: string[]
-  url?: string
-  envKeys: string[]
-  headerKeys: string[]
-}
-
-/** A GitHub repository an extension is installed from, as the person named it. */
-export type GithubExtensionOrigin = {
-  url: string
-  owner: string
-  repo: string
-  ref?: string
-}
-
-export type MarketplaceInstallSource = { kind: 'registry' } | ({ kind: 'github'; sha: string } & GithubExtensionOrigin)
 
 export type MarketplacePluginTrustClassification = 'verified' | 'community' | 'unsigned' | 'invalid'
 
@@ -594,44 +559,11 @@ export type MarketplacePluginVerifyResult = {
   message?: string
   /** The files a skill payload installs, disclosed at the review. */
   files?: string[]
-  /** Every MCP server the install would add. */
-  mcpServers?: MarketplaceMcpServerDisclosure[]
   /** The signer's key fingerprint (sha256 of the public key), when signed. */
   keyFingerprint?: string
   /** What was disclosed, and the one-time token that installs exactly that; absent when nothing may be approved. */
   pin?: MarketplaceTrustPin
   trustToken?: string
-}
-
-export type GithubExtensionResolveInput = { url: string }
-
-export type GithubExtensionReviewChange = 'permissions' | 'mcp' | 'classification' | 'source'
-
-export type GithubExtensionInstalledState = {
-  version: number
-  sha?: string
-  /** What differs from what was approved last time; empty means nothing new to approve. */
-  changes: GithubExtensionReviewChange[]
-}
-
-export type GithubExtensionPreview = {
-  id: string
-  displayName: string
-  version: number
-  publisher: { name: string; verified: boolean }
-  summary: string
-  provides: MarketplaceComponentKind[]
-  origin: GithubExtensionOrigin
-  verify: MarketplacePluginVerifyResult & { classification: 'verified' | 'community' | 'unsigned' }
-  installed?: GithubExtensionInstalledState
-}
-
-export type GithubExtensionResolveResult =
-  | { ok: true; preview: GithubExtensionPreview; trustToken: string }
-  | { ok: false; message: string; issues?: MarketplaceManifestIssue[]; skillSource?: boolean }
-
-export type GithubExtensionInstallInput = MarketplaceInstallEnvelope & {
-  trustToken: string
 }
 
 export type MarketplacePluginUninstallInput = MarketplaceInstallEnvelope & { pluginId: string }
@@ -640,8 +572,6 @@ export type MarketplacePluginInstalledComponent = {
   kind: MarketplaceComponentKind
   id: string
   message?: string
-  serverIds?: string[]
-  servers?: McpServerConfig[]
   harnesses?: SkillHarness[]
   installedDirName?: string
 }
@@ -655,7 +585,6 @@ export type MarketplacePluginInstallResult =
       trust: StudioModuleTrustStatus
       loadEligible: boolean
       installed: MarketplacePluginInstalledComponent[]
-      mcpSettings?: McpSettings
       /** What a successful install left undone, said to the person. */
       notices?: string[]
     }
@@ -686,13 +615,11 @@ export type MarketplacePluginUninstallResult =
       ok: true
       id: string
       removed: MarketplacePluginInstalledComponent[]
-      mcpSettings?: McpSettings
     }
   | {
       ok: false
       message: string
       removed?: MarketplacePluginInstalledComponent[]
-      mcpSettings?: McpSettings
     }
 
 // ── The hosted feeds ────────────────────────────────────────────────────────

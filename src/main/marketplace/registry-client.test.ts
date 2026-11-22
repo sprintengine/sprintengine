@@ -16,7 +16,6 @@ import { test } from 'vitest'
 
 test('registry-client', async () => {
   const REGISTRY_URL = 'https://example.com/marketplace.json'
-  const VALID_SIGNATURE = { algorithm: 'ed25519' as const, publicKey: 'YWJj', signature: 'ZGVm' }
 
   type FetchRequest = { url: string; init: RequestInit }
 
@@ -65,14 +64,14 @@ test('registry-client', async () => {
     return {
       id: 'dev-helper',
       name: 'Dev Helper',
-      publisher: { name: 'SprintEngine Labs', verified: true },
+      publisher: { name: 'Acme', verified: false },
       summary: 'Adds development helpers.',
       category: 'dev-tools',
       icon: 'icons/dev-helper.svg',
       latest: 1,
+      tags: ['claude-plugin'],
       source: 'https://github.com/sprintengine/studio-releases/plugins/dev-helper',
-      provides: ['mcp', 'skills'],
-      signature: VALID_SIGNATURE,
+      provides: ['skills'],
       ...overrides,
     }
   }
@@ -529,30 +528,16 @@ test('registry-client', async () => {
     // capture + 304-round-trip. Proves the client is transport-agnostic (a payload
     // that parses under one URL and not the other would be a real parity break).
     const payload = validMarketplace([
-      validPlugin({ id: 'dev-helper', provides: ['mcp', 'skills'] }),
+      validPlugin({ id: 'dev-helper' }),
       validPlugin({
-        id: 'inline-weather',
-        name: 'Weather',
-        category: 'data',
+        id: 'codex',
+        name: 'Codex',
+        publisher: { name: 'SprintEngine Labs', verified: true },
+        category: 'Agent CLI',
+        tags: undefined,
         source: undefined,
-        signature: undefined,
-        provides: ['mcp'],
-        mcp: {
-          servers: [
-            {
-              id: 'weather',
-              name: 'Weather',
-              transport: 'stdio',
-              command: 'npx',
-              args: ['weather-mcp'],
-              enabled: true,
-              clients: ['claude-code'],
-              scope: 'workspace',
-              source: 'custom',
-              riskLevel: 'low',
-            },
-          ],
-        },
+        provides: ['cli'],
+        cli: { pluginId: 'codex' },
       }),
     ])
 
@@ -750,9 +735,6 @@ test('registry-client', async () => {
     const { createStudioMarketplace } = await import('./studio-marketplace')
     const marketplace = createStudioMarketplace({
       dataDir: () => tmpdir(),
-      mcpConfig: () => {
-        throw new Error('not used')
-      },
       openWorkspaceRoots: () => [],
       registryReader: {
         read: async () => {

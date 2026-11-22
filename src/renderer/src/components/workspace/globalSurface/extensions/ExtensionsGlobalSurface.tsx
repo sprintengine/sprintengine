@@ -49,7 +49,6 @@ import {
   type ExtensionsSurfaceTarget,
 } from './extensionsSurfaceTarget'
 import { publishSurfaceView } from '../../surfaceView'
-import { InstallFromGitHubDialog } from '../../../extensions/InstallFromGitHubDialog'
 import { agentSetupApi } from '../../../../studio/agentSetup'
 import { agentSkillsApi } from '../../../../studio/agentSkills'
 
@@ -119,8 +118,6 @@ export default function ExtensionsGlobalSurface(): JSX.Element {
   const [query, setQuery] = useState('')
   // The repository the Add-from-GitHub modal opens on ('' for an empty field).
   const [addRepo, setAddRepo] = useState<string | null>(null)
-  // Install extension from GitHub: open or not. The dialog owns its own URL.
-  const [installFromGitHub, setInstallFromGitHub] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
 
   const applyTarget = useCallback((target: ExtensionsSurfaceTarget) => {
@@ -257,7 +254,6 @@ export default function ExtensionsGlobalSurface(): JSX.Element {
     () => ({
       onAddFromFile: () => void addFromFile(),
       onAddFromGitHub: () => setAddRepo(''),
-      onInstallExtensionFromGitHub: () => setInstallFromGitHub(true),
     }),
     [addFromFile],
   )
@@ -325,22 +321,6 @@ export default function ExtensionsGlobalSurface(): JSX.Element {
         onAdded={openAddedSource}
         onRemoved={() => sources.refreshSources()}
         onConfigureGitHubToken={() => openSettingsOverlay({ initialTab: 'github' })}
-      />
-      <InstallFromGitHubDialog
-        open={installFromGitHub}
-        onClose={() => setInstallFromGitHub(false)}
-        workspaceRoot={activeWorkspaceRoot}
-        mcpSettings={connectors.mcpSettings}
-        onInstalled={(result) => {
-          // Servers the install wrote show up in the Installed tab without a reload.
-          if (result.mcpSettings) addMcpServers(Object.values(result.mcpSettings.servers))
-        }}
-        // A repository of skills pasted here goes where skill sources are added,
-        // with the URL carried over.
-        onAddSkillSource={(url) => {
-          setInstallFromGitHub(false)
-          setAddRepo(url)
-        }}
       />
     </CatalogueViewSwitchContext.Provider>
   )

@@ -1,21 +1,17 @@
 import type { JSX } from 'react'
 
-import type { MarketplaceMcpServerDisclosure } from '../../../../shared/electron-api'
 import type { CapabilityPermission } from '../../../../shared/modules/permissions'
 import { Badge, TruncatedText } from '../ui'
 import { PermissionChips } from '../settings/ThirdPartyModuleList'
 import { copy as appCopy } from '../../../../shared/copy'
 
-// What installing an extension would put on this machine, read out before the
-// person trusts it. Every surface that asks for that trust — the storefront's
-// detail panel, the update banner, an install from a GitHub URL — renders this
-// one body, so none of them can disclose less than the others.
+// What installing from the marketplace would put on this machine, read out
+// before the person trusts it. Every surface that asks for that trust — the
+// storefront's detail panel and the update banner — renders this one body, so
+// neither can disclose less than the other.
 //
 // Everything here came from main's verify, never from the registry entry the
-// renderer holds: the permissions from the manifest that was actually
-// downloaded, each MCP server exactly as the install would write it (the full
-// command line, the endpoint, the names of the environment variables and
-// headers it sets), and the commit the content is pinned to. The trust token
+// renderer holds: the skill folders that were actually staged. The trust token
 // verify issued installs exactly this and nothing else.
 
 export type ExtensionTrustReviewData = {
@@ -23,10 +19,8 @@ export type ExtensionTrustReviewData = {
   permissions: CapabilityPermission[]
   // A skill plugin's payload is files, not permissions.
   files?: string[]
-  mcpServers?: MarketplaceMcpServerDisclosure[]
-  // Where the content was read from, and the commit it is pinned to.
+  // Where the content was read from.
   sourceUrl?: string
-  commitSha?: string
   // The signer's key fingerprint (sha256 of the public key), when signed.
   keyFingerprint?: string
 }
@@ -42,13 +36,6 @@ const CLASSIFICATION_LABEL: Record<ExtensionTrustReviewData['classification'], s
 }
 
 function reviewCopy(review: ExtensionTrustReviewData): { heading: string; body: string } {
-  const inlineMcp = !review.sourceUrl && (review.mcpServers?.length ?? 0) > 0
-  if (inlineMcp) {
-    return {
-      heading: appCopy.extensions.extensionTrustReview.inlineMCPServerReviewIt,
-      body: appCopy.extensions.extensionTrustReview.runsALocalCommandOr,
-    }
-  }
   if (review.files?.length) {
     return {
       heading: appCopy.extensions.extensionTrustReview.unsignedPluginSkillsReviewBefore,
@@ -75,8 +62,6 @@ function reviewCopy(review: ExtensionTrustReviewData): { heading: string; body: 
 
 export function ExtensionTrustReview(props: ExtensionTrustReviewProps): JSX.Element {
   const copy = reviewCopy(props)
-  const servers = props.mcpServers ?? []
-  const inlineMcp = !props.sourceUrl && servers.length > 0
   return (
     <div className="space-y-2 rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface-raised)] p-3">
       <div>
@@ -101,11 +86,8 @@ export function ExtensionTrustReview(props: ExtensionTrustReviewProps): JSX.Elem
       ) : props.classification === 'unsigned' ? (
         <ReviewFact label={appCopy.extensions.extensionTrustReview.signingKey} value="None — not signed" />
       ) : null}
-      {props.commitSha ? (
-        <ReviewFact label={appCopy.extensions.extensionTrustReview.pinnedToCommit} value={props.commitSha} mono />
-      ) : null}
 
-      {inlineMcp || props.files?.length ? null : (
+      {props.files?.length ? null : (
         <div>
           <div className="text-meta font-semibold text-[color:var(--text-subtle)]">
             {appCopy.extensions.extensionTrustReview.accessItRequests}
@@ -117,7 +99,6 @@ export function ExtensionTrustReview(props: ExtensionTrustReviewProps): JSX.Elem
       )}
 
       {props.files?.length ? <TrustFileListing files={props.files} /> : null}
-      {servers.length > 0 ? <McpServerListing servers={servers} /> : null}
     </div>
   )
 }
@@ -133,56 +114,6 @@ function ReviewFact({ label, value, mono = false }: { label: string; value: stri
       />
     </div>
   )
-}
-
-// Each server as the install writes it: the whole command line, or the
-// endpoint, plus the names (never the values) of what it sets.
-function McpServerListing({ servers }: { servers: MarketplaceMcpServerDisclosure[] }) {
-  return (
-    <div>
-      <div className="text-meta font-semibold text-[color:var(--text-subtle)]">
-        {appCopy.extensions.extensionTrustReview.adds}
-        {servers.length}
-        {appCopy.extensions.extensionTrustReview.mCPServer}
-        {servers.length === 1 ? '' : 's'}
-      </div>
-      <ul className="mt-1 space-y-1.5">
-        {servers.map((server) => (
-          <li key={server.id} className="min-w-0">
-            <div className="flex items-center gap-1.5 text-meta text-[color:var(--text-muted)]">
-              {/* The transport is stated once, here; the name never says it. */}
-              <Badge className="shrink-0">{server.transport}</Badge>
-              <TruncatedText as="span" text={server.name} className="min-w-0 font-medium" />
-            </div>
-            <div className="mt-0.5 break-all font-mono text-meta leading-4 text-[color:var(--text-subtle)]">
-              {mcpServerCommandLine(server)}
-            </div>
-            {server.envKeys.length > 0 ? (
-              <div className="mt-0.5 text-meta leading-4 text-[color:var(--text-subtle)]">
-                {appCopy.extensions.extensionTrustReview.sets}
-                <span className="font-mono">{server.envKeys.join(', ')}</span>
-              </div>
-            ) : null}
-            {server.headerKeys.length > 0 ? (
-              <div className="mt-0.5 text-meta leading-4 text-[color:var(--text-subtle)]">
-                {appCopy.extensions.extensionTrustReview.sendsHeaders}
-                <span className="font-mono">{server.headerKeys.join(', ')}</span>
-              </div>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-// The command a stdio server runs, every argument included — an argument is
-// where `sh -c '…'` hides — or the endpoint an http/sse server connects to.
-export function mcpServerCommandLine(server: MarketplaceMcpServerDisclosure): string {
-  if (server.transport === 'stdio') {
-    return [server.command, ...server.args].filter(Boolean).join(' ') || '(no command)'
-  }
-  return server.url || '(no endpoint)'
 }
 
 // How many file rows show before the remainder collapses into a "+N more"

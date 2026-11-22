@@ -170,12 +170,12 @@ Then build the extension, sign it (`sprintengine-extension sign extension
 
 ### Skills and MCP servers
 
-An extension does not carry skills or MCP server definitions yet: those
-points of `contributes` are reserved and must be empty. A marketplace plugin
-bundle carries them (see [`docs/plugin-authors/README.md`](../plugin-authors/README.md)).
-An extension's worker serves MCP tools of its own through `contributes.mcpTools`
-and `registerMcpTools`, and can put one of Studio's own skills in a workspace
-with `ensureSkillInstalled`.
+An extension hands agents skills, MCP servers and model providers with
+`contributes.skills`, `contributes.mcpServers` and `contributes.providers` in
+its extension.json (the SDK guide's `manifest` topic). Its worker can also
+serve MCP tools of its own through `contributes.mcpTools` and
+`registerMcpTools`, and put one of Studio's own skills in a workspace with
+`ensureSkillInstalled`.
 
 ## Conversation providers
 

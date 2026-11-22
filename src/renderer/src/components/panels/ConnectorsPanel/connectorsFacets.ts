@@ -6,7 +6,7 @@
 //
 // One source feeds the grid: the marketplace registry
 // (`extensionsApi.readMarketplaceRegistry`) — installable plugins that `provides`
-// mcp/skills. A second source fed it until the third-party retirement
+// skills (Claude Code plugins). A second source fed it until the third-party retirement
 // (2026-09-08): the bundled MCP catalogue, sixteen servers nobody here
 // wrote, whose rows browsed beside the plugins and could launch before install
 // when the row paired a driving skill. It is gone, and with it the whole
@@ -129,7 +129,9 @@ export function connectorFacet(category: string): NamedFacet {
 }
 
 /**
- * The Plugins catalogue's entries: the registry's mcp and skills plugins.
+ * The Plugins catalogue's entries: the registry's skills plugins (Claude Code
+ * plugins). Registry rows that added MCP servers are gone: an extension
+ * contributes those now.
  *
  * This took a second `catalog` population until the third-party retirement
  * (2026-09-08) and is kept as its own function rather than collapsed
@@ -139,11 +141,11 @@ export function connectorFacet(category: string): NamedFacet {
  * An extension is not here: it installs from a folder, not from the registry.
  */
 export function buildConnectorEntries(plugins: MarketplacePluginEntry[]): ConnectorEntry[] {
-  return registryEntriesForKinds(plugins, ['mcp', 'skills'])
+  return registryEntriesForKinds(plugins, ['skills'])
 }
 
 // Registry plugins presented as normalized entries for a set of component
-// kinds. The Plugins catalogue uses mcp/skills — one row shape, one
+// kinds. The Plugins catalogue uses skills — one row shape, one
 // detail/install flow, no parallel presentation model.
 export function registryEntriesForKinds(
   plugins: MarketplacePluginEntry[],

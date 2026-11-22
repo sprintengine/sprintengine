@@ -7,16 +7,16 @@ import { test } from 'vitest'
 test('storefrontView', async () => {
   function plugin(overrides: Partial<MarketplacePluginEntry> = {}): MarketplacePluginEntry {
     return {
-      id: 'browser-automation-mcp',
-      name: 'Browser Automation MCP',
-      publisher: { name: 'SprintEngine Labs', verified: true },
-      summary: 'Playwright MCP server for browser inspection and UI automation.',
+      id: 'review-skills',
+      name: 'Review skills',
+      publisher: { name: 'Acme', verified: false },
+      summary: 'Skills for reviewing a change.',
       category: 'Testing',
-      icon: 'icons/browser-automation.svg',
+      icon: 'icons/review-skills.svg',
       latest: 1,
-      source: 'https://github.com/sprintengine/studio-releases/tree/main/plugins/browser-automation-mcp',
-      provides: ['mcp'],
-      signature: { algorithm: 'ed25519', publicKey: 'k', signature: 's' },
+      source: 'https://github.com/acme/review-skills',
+      provides: ['skills'],
+      tags: ['claude-plugin'],
       ...overrides,
     }
   }
@@ -37,7 +37,7 @@ test('storefrontView', async () => {
     assert.equal(externalSourceHref('file:///etc/passwd'), undefined)
     assert.equal(externalSourceHref('smb://host/share'), undefined)
     assert.equal(externalSourceHref('ms-msdt:/id'), undefined)
-    // Missing/absent and unparseable sources also fail closed (inline-MCP entries
+    // Missing/absent and unparseable sources also fail closed (inline-CLI entries
     // carry no source and must show no link).
     assert.equal(externalSourceHref(undefined), undefined)
     assert.equal(externalSourceHref('not a url'), undefined)
@@ -45,8 +45,8 @@ test('storefrontView', async () => {
 
   {
     // Each kind an entry provides reads as its label.
-    assert.deepEqual(componentKindLabels(plugin().provides), ['MCP server'])
-    assert.deepEqual(componentKindLabels(['mcp', 'skills', 'cli']), ['MCP server', 'Skill pack', 'Agent CLI'])
+    assert.deepEqual(componentKindLabels(plugin().provides), ['Skill pack'])
+    assert.deepEqual(componentKindLabels(['skills', 'cli']), ['Skill pack', 'Agent CLI'])
   }
 
   console.log('storefrontView.test.ts passed')

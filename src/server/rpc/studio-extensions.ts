@@ -95,10 +95,6 @@ export function createStudioExtensionsHandlers(options: StudioExtensionsHandlerO
       command('marketplace.update', commandId, asking, (domain) => domain.marketplace.update(input)),
     'marketplace.uninstall': ({ commandId, ...input }, asking) =>
       command('marketplace.uninstall', commandId, asking, (domain) => domain.marketplace.uninstall(input)),
-    'marketplace.resolveGithub': async ({ url }) =>
-      extensions ? ok(await extensions.marketplace.resolveGithub(url)) : unserved('marketplace.resolveGithub'),
-    'marketplace.installGithub': ({ commandId, ...input }, asking) =>
-      command('marketplace.installGithub', commandId, asking, (domain) => domain.marketplace.installGithub(input)),
 
     'cliPlugins.list': () => (extensions ? ok(extensions.cliPlugins()) : unserved('cliPlugins.list')),
     'cliPlugins.availability': async (input) =>

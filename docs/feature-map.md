@@ -249,7 +249,8 @@ CLI).
 `extension.settings`, `extension.setSetting`. Sample: `packages/extension-sdk/examples/content-sample/`. Tests:
 `packages/extension-sdk/test/content-contributions.test.ts`, `src/main/modules/extension-content.test.ts`.
 
-**Skills and plugins**: `src/main/skills/`, `src/server/agent-setup/`. Doc: `docs/plugin-authors/README.md`.
+**Skills and plugins**: `src/main/skills/`, `src/server/agent-setup/`, `src/main/marketplace/` (Claude Code
+plugins from the marketplace). Doc: `resources/marketplace/README.md`.
 
 **Artifacts** (published pages): `src/main/artifacts/`. Doc: `docs/design/artifacts.md`.
 

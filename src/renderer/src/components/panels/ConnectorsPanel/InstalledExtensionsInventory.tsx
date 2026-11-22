@@ -23,7 +23,7 @@ import type { MarketplacePluginEntry } from '../../../../../shared/marketplace/m
 import type { ExtensionTrustReviewData } from '../../extensions/ExtensionTrustReview'
 import type { AgentComposerConnector } from '../../workspace/agentComposer/useAgentComposer'
 import type { PluginRegistryListEntry } from '../../../../../shared/plugin-manifest'
-import type { McpServerConfig, McpSettings } from '../../../../../shared/workspace'
+import type { McpServerConfig } from '../../../../../shared/workspace'
 import {
   CloseIconButton,
   EmptyState,
@@ -76,9 +76,6 @@ import { copy as appCopy } from '../../../../../shared/copy'
 type InventoryActions = {
   onLaunchConnector?: (connector: AgentComposerConnector) => void
   onRemoveMcpServer?: (serverId: string) => void
-  // A module-bundle update can carry MCP servers; reflecting them in the store
-  // keeps the MCP group live without a re-list (the storefront install rule).
-  onUpsertMcpServer?: (server: McpServerConfig) => void
   // Keyed by the skill's directory name (the inventory row id for skills).
   onRemoveSkill?: (dirName: string) => void
   // "Use in agent → New agent…": spawn a fresh agent with the skill attached
@@ -106,7 +103,6 @@ export function InstalledExtensionsInventory({
   moduleOverrides,
   workspaceRoot,
   registryPlugins,
-  mcpSettings,
   kinds,
   sourceGrouping,
   paging,
@@ -121,9 +117,6 @@ export function InstalledExtensionsInventory({
   // action needs the full entry (updateFromRegistry input), and cli-only
   // entries are excluded from the banner's delta claims.
   registryPlugins?: MarketplacePluginEntry[]
-  // Forwarded into the update input so a bundle's MCP servers merge the same
-  // way the storefront install merges them.
-  mcpSettings?: McpSettings
   /**
    * Which primitives this mount is the inventory OF. The Extensions door's
    * catalogues each show one — the Plugins view's Installed tab lists MCP
@@ -313,7 +306,6 @@ export function InstalledExtensionsInventory({
             id: entry.id,
             ...(trustToken ? { trustToken } : {}),
             workspaceRoot: workspaceRoot ?? undefined,
-            mcpSettings,
           })
           if (!result.ok) {
             const summary = summarizeInstallResult(result)
@@ -329,9 +321,6 @@ export function InstalledExtensionsInventory({
             return
           }
           updated = true
-          if (result.mcpSettings && actions.onUpsertMcpServer) {
-            for (const server of Object.values(result.mcpSettings.servers)) actions.onUpsertMcpServer(server)
-          }
           setUpdateNotice({
             tone: 'good',
             message: appCopy.panels.connectorsPanel.installedExtensionsInventory.updatedToV(entry.name, result.version),
@@ -346,7 +335,7 @@ export function InstalledExtensionsInventory({
       setUpdateRun({ status: 'idle' })
       if (updated) await settleAfterUpdate()
     },
-    [registryPlugins, workspaceRoot, mcpSettings, actions, settleAfterUpdate],
+    [registryPlugins, workspaceRoot, actions, settleAfterUpdate],
   )
 
   const startBannerUpdate = useCallback(

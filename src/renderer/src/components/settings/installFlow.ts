@@ -15,11 +15,11 @@
 // issued. The token is the approval: main pinned it to exactly the content it
 // disclosed, and the renderer can carry it but never make one up.
 //
-// Trust split (T4b/T5): an 'unsigned' bundle is no longer a blanket block. A
-// bundle carries only MCP servers and skills, which are declarative, so an
-// unsigned one earns the same explicit trust prompt as community (installing
-// load-ineligible behind the token). 'invalid' still hard-blocks with no install
-// affordance. No permission is ever fabricated.
+// Trust split: an 'unsigned' entry is not a blanket block. A Claude Code
+// plugin carries only skills, which are declarative, so an unsigned one earns
+// the same explicit trust prompt as community (installing behind the token).
+// 'invalid' still hard-blocks with no install affordance. No permission is
+// ever fabricated.
 
 import type {
   MarketplacePluginRegistryInstallResult,
@@ -30,17 +30,16 @@ import type { ExtensionTrustReviewData } from '../extensions/ExtensionTrustRevie
 import { copy as appCopy } from '../../../../shared/copy'
 
 /**
- * Whether installing this bundle needs an open workspace.
+ * Whether installing this entry needs an open workspace.
  *
- * Both bundle kinds do: an MCP server syncs into `<workspaceRoot>/.mcp.json`
- * and a skill pack copies into the workspace's harness dirs. An inline agent
- * CLI row (`cli`) touches no project.
+ * A Claude Code plugin's skills copy into the workspace's harness dirs. An
+ * inline agent CLI row (`cli`) touches no project.
  *
  * Lives here rather than inline in `BrowseStorefront` so the rule can be
  * asserted without a renderer, like the rest of the flow.
  */
 export function installNeedsWorkspace(provides: readonly MarketplaceProvidesKind[]): boolean {
-  return provides.some((kind) => kind === 'mcp' || kind === 'skills')
+  return provides.includes('skills')
 }
 
 // The blocked classifications: signature problems that offer no install path.
@@ -85,9 +84,7 @@ export function trustReviewFromVerify(
     classification: verify.classification,
     permissions: verify.permissions,
     ...(verify.files?.length ? { files: verify.files } : {}),
-    ...(verify.mcpServers?.length ? { mcpServers: verify.mcpServers } : {}),
     ...(verify.sourceUrl ? { sourceUrl: verify.sourceUrl } : {}),
-    ...(verify.pin?.commitSha ? { commitSha: verify.pin.commitSha } : {}),
     ...(verify.keyFingerprint ? { keyFingerprint: verify.keyFingerprint } : {}),
   }
 }

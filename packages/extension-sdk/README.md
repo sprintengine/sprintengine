@@ -962,10 +962,6 @@ The pieces are exported for tooling: `signExtensionFiles`,
 `extensionContentFingerprint`, `computeModuleFileDigestsSync` and
 `moduleFileDigestIssuesSync` (`@sprintengine/extension-sdk/signing`, Node).
 
-A marketplace plugin bundle (`plugin.json`, components `mcp` and `skills`) is
-a separate thing: `sprintengine-extension plugin scaffold|sign|verify|pack`
-work on it, and a bundle naming a `module` component is refused.
-
 ## Installing
 
 `npm run dev:install` builds, validates, and copies `extension/` to

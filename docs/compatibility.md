@@ -1056,10 +1056,9 @@ its modules: the marketplace's registry and each installed entry against it
 (`cardFeed.get` with the `cardFeed.changed` stream, `sourcesFeed.get`), all
 under `providers:read`; Studio's own plugin in a workspace
 (`studioPlugin.status`) under `files:read`, in a folder the Studio knows for a
-client that is not an owner. Reviewing an entry or a GitHub repository,
-installing, updating and removing it (`marketplace.verify`, `.install`,
-`.update`, `.uninstall`, `.resolveGithub`, `.installGithub`) and making an
-extension project (`extensionScaffold.*`) are an owner's, with the reason in
+client that is not an owner. Reviewing an entry, installing, updating and
+removing it (`marketplace.verify`, `.install`, `.update`, `.uninstall`) and
+making an extension project (`extensionScaffold.*`) are an owner's, with the reason in
 the table: they fetch code to run on the machine, approve it, or write outside
 the folders the Studio knows. A review's one-time approval is spent by the
 install it approves, and checked by the Studio as strictly as before. The
@@ -1070,6 +1069,14 @@ Additive: a Studio without a desktop around it (a WSL or SSH server) leaves
 `extensions` out. The desktop's windows reach all of these only this way:
 their window IPC is gone, but for showing an extension's folder in the file
 manager, which stays the shell's.
+`marketplace.resolveGithub` and `marketplace.installGithub` (2026-11-13), the
+review and install of a plugin bundle from a GitHub repository, were removed on
+2026-11-22 with the plugin bundle and the inline MCP registry entry: skills, MCP
+servers and model providers arrive as contributions in an extension's
+extension.json. A Studio answers both `unknown_method`; the install envelope no
+longer carries `mcpSettings` or `mcpClients`, and a client that still sends them
+is not refused, they are dropped. Installing an extension from a repository
+returns with the catalogue.
 `artifacts` (2026-11-13) is where a desktop's Studio publishes its agents'
 pages: Settings ▸ Artifacts (`artifacts.settings`), setting the host up
 (`artifacts.setUp`, a mutation under its `commandId`), and the question an

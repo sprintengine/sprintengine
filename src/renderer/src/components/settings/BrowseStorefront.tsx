@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { isClaudeCodePluginEntry, type MarketplacePluginEntry } from '../../../../shared/marketplace/manifest'
-import type { McpServerConfig, McpSettings } from '../../../../shared/workspace'
 import { ExtensionTrustReview } from '../extensions/ExtensionTrustReview'
 import {
-  Badge,
   FOCUS_RING_CLASS,
   GhostButton,
   InlineNotice,
@@ -33,13 +31,11 @@ import { copy as appCopy } from '../../../../shared/copy'
 // T2.1 RegistryClient (the registry INDEX only, so it shows real
 // components-carried + version). Clicking Install runs the T3.4
 // verifyMarketplacePlugin IPC (main resolves the entry by id, downloads and
-// ed25519-verifies it, installs nothing), then verified plugins install directly,
-// signed community plugins show a trust prompt populated with what verify
-// disclosed — permissions, every MCP command line, the pinned commit — and install
-// with the one-time token verify issued; unsigned code and invalid bundles
-// hard-block with no install affordance. No permission is ever
-// fabricated (the index omits them; they come only from the verified signed
-// manifest), and there are no purchase/Buy affordances (D4). The install state
+// stages it, installs nothing), then the trust prompt shows what verify
+// disclosed — every skill the install would copy — and the install spends the
+// one-time token verify issued; an invalid entry hard-blocks with no install
+// affordance. Nothing is ever fabricated, and there are no purchase/Buy
+// affordances (D4). The install state
 // machine lives in the DOM-free `installFlow` view-model. The old aspect-square
 // browse grid lived here too; the Connectors ConnectorRow replaced it.
 
@@ -47,17 +43,13 @@ export function PluginDetailPanel({
   plugin,
   registryUrl,
   workspaceRoot,
-  mcpSettings,
   onInstalled,
-  onUpsertMcpServer,
   onClose,
 }: {
   plugin: MarketplacePluginEntry
   registryUrl: string | null
   workspaceRoot: string | null
-  mcpSettings: McpSettings
   onInstalled: () => void
-  onUpsertMcpServer: (server: McpServerConfig) => void
   onClose: () => void
 }) {
   const [flow, setFlow] = useState<InstallFlowState>({ status: 'idle' })
@@ -71,7 +63,6 @@ export function PluginDetailPanel({
 
   const trust = pluginTrust(plugin)
   const components = componentKindLabels(plugin.provides)
-  const inlineServers = plugin.mcp?.servers ?? []
   // Claude Code plugins (catalogue-generated, machine-tagged) install through
   // the claude-plugin adapter: their bundled skills copy into the workspace's
   // Claude skill dirs behind the unsigned trust prompt, which discloses the
@@ -82,10 +73,9 @@ export function PluginDetailPanel({
   // source. A non-http(s) value (file://, smb://, protocol-handler URL) would
   // reach shell.openExternal via the window-open handler, so it gets no link.
   const sourceHref = externalSourceHref(plugin.source)
-  // MCP servers and skill packs install into the open workspace; modules and
-  // CLIs install to the user dirs. Block install with an honest hint when a
-  // workspace-scoped component has no workspace, rather than letting the click
-  // fail downstream. The rule itself lives in `installFlow` so it can be
+  // A Claude Code plugin's skills install into the open workspace. Block
+  // install with an honest hint when there is no workspace, rather than
+  // letting the click fail downstream. The rule itself lives in `installFlow` so it can be
   // asserted without a renderer.
   const needsWorkspace = installNeedsWorkspace(plugin.provides)
   const workspaceBlocked = needsWorkspace && !workspaceRoot
@@ -100,16 +90,8 @@ export function PluginDetailPanel({
           // prompt disclosed, never whatever the source moved to since.
           ...(trustToken ? { trustToken } : {}),
           workspaceRoot: workspaceRoot ?? undefined,
-          mcpSettings,
         })
-        if (result.ok) {
-          // Reflect installed MCP servers in the store so the Installed tab's
-          // MCP rows update without a reload; re-list the other primitives.
-          if (result.mcpSettings) {
-            for (const server of Object.values(result.mcpSettings.servers)) onUpsertMcpServer(server)
-          }
-          onInstalled()
-        }
+        if (result.ok) onInstalled()
         setFlow(summarizeInstallResult(result))
       } catch (error) {
         setFlow({
@@ -118,14 +100,10 @@ export function PluginDetailPanel({
         })
       }
     },
-    [plugin, workspaceRoot, mcpSettings, onInstalled, onUpsertMcpServer],
+    [plugin, workspaceRoot, onInstalled],
   )
 
   const startInstall = useCallback(async () => {
-    // Inline-MCP entries verify too: there is no bundle to download, but main
-    // still resolves the entry itself, discloses each server exactly as it
-    // would be written, and issues the token — they are executable config, so
-    // they always route through the explicit trust prompt.
     if (!windowHasStudio()) {
       setFlow({ status: 'error', message: appCopy.settings.browseStorefront.updateAndRestartToInstall })
       return
@@ -185,26 +163,16 @@ export function PluginDetailPanel({
             {appCopy.settings.browseStorefront.provides}
           </div>
           <ul className="mt-1 space-y-1 text-body text-[color:var(--text-muted)]">
-            {/* Inline-MCP entries name the actual servers the trust grant adds;
-              bundle entries list their component kinds (their bundled skills,
-              when the catalogue enumerated them, get the section below). */}
-            {inlineServers.length > 0
-              ? inlineServers.map((server) => (
-                  <li key={server.id} className="flex min-w-0 items-center gap-1.5">
-                    <TruncatedText as="span" text={server.name} className="min-w-0" />
-                    {/* Not decorative: the transport is stated once, here. The
-                      server's name says what it is, never how it is spoken to. */}
-                    <Badge className="shrink-0">{server.transport}</Badge>
-                  </li>
-                ))
-              : components.map((label) => (
-                  <li key={label} className="flex gap-1.5">
-                    <span aria-hidden className="text-[color:var(--text-subtle)]">
-                      ·
-                    </span>
-                    <span>{label}</span>
-                  </li>
-                ))}
+            {/* The entry's kinds; its bundled skills, when the catalogue
+              enumerated them, get the section below. */}
+            {components.map((label) => (
+              <li key={label} className="flex gap-1.5">
+                <span aria-hidden className="text-[color:var(--text-subtle)]">
+                  ·
+                </span>
+                <span>{label}</span>
+              </li>
+            ))}
           </ul>
         </div>
 
@@ -212,7 +180,7 @@ export function PluginDetailPanel({
 
         {/* Phase-3 trust-gate install flow. Everything the prompt shows came from
           main's verify (via verifyMarketplacePlugin) and is never fabricated;
-          unsigned code and invalid bundles never reach an install affordance;
+          an invalid entry never reaches an install affordance;
           no purchase/Buy affordance anywhere (D4). */}
         <div className="mt-4 space-y-2">
           {installView.trustPrompt && installView.review ? (
@@ -348,17 +316,16 @@ function PluginSkillsList({ skills }: { skills: NonNullable<MarketplacePluginEnt
   )
 }
 
-type PluginTrustTier = 'verified' | 'community' | 'unsigned' | 'inline'
+type PluginTrustTier = 'verified' | 'community' | 'unsigned'
 export type PluginTrust = { tier: PluginTrustTier; tone: 'good' | 'neutral'; label: string }
 
 // The signing/trust tier disclosed on the card and detail header, read straight
-// from the registry entry (no download needed). Inline-MCP entries ship raw server
-// config; unsigned bundles carry no signature; signed bundles are Verified (matched
-// first-party publisher) or Community (everyone else). All three lower tiers are
-// untrusted until the user grants trust at install (D3). Verified is the quiet
+// from the registry entry (no download needed). An entry with no signature is
+// Unsigned; a signed one is Verified (matched first-party publisher) or
+// Community (everyone else). The lower tiers are untrusted until the user
+// grants trust at install (D3). Verified is the quiet
 // default (no dot); the rest surface the neutral dot to earn attention.
 export function pluginTrust(plugin: MarketplacePluginEntry): PluginTrust {
-  if (plugin.mcp) return { tier: 'inline', tone: 'neutral', label: appCopy.settings.browseStorefront.inlineMCP }
   if (!plugin.signature) return { tier: 'unsigned', tone: 'neutral', label: appCopy.settings.browseStorefront.unsigned }
   return plugin.publisher.verified
     ? { tier: 'verified', tone: 'good', label: appCopy.settings.browseStorefront.verified }

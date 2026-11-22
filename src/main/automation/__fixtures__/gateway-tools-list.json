@@ -342,7 +342,7 @@
     },
     {
       "name": "marketplace.list",
-      "sha256": "81239b0918786438c38a21c9ae30d92f33b058dc27e206d6f8ffc38e7850339b"
+      "sha256": "02c043927c31d57cfb7903fb0f45266af46ea83ab166f7ef850332891d4f2962"
     },
     {
       "name": "schedule.list",
@@ -792,7 +792,7 @@
     },
     {
       "name": "marketplace.list",
-      "sha256": "81239b0918786438c38a21c9ae30d92f33b058dc27e206d6f8ffc38e7850339b"
+      "sha256": "02c043927c31d57cfb7903fb0f45266af46ea83ab166f7ef850332891d4f2962"
     },
     {
       "name": "schedule.list",
@@ -954,7 +954,7 @@
     },
     {
       "name": "marketplace.list",
-      "sha256": "81239b0918786438c38a21c9ae30d92f33b058dc27e206d6f8ffc38e7850339b"
+      "sha256": "02c043927c31d57cfb7903fb0f45266af46ea83ab166f7ef850332891d4f2962"
     },
     {
       "name": "artifacts.list",

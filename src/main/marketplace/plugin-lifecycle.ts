@@ -2,38 +2,30 @@ import { cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import type {
-  MarketplacePluginInstallInput,
+  MarketplaceInstallEnvelope,
   MarketplacePluginInstalledComponent,
   MarketplacePluginRegistryInstallResult,
   MarketplacePluginUninstallInput,
   MarketplacePluginUninstallResult,
-  MarketplaceInstallSource,
-  McpClientTarget,
-  McpServerConfig,
-  McpSettings,
 } from '../../shared/electron-api'
 import type { MarketplacePluginEntry } from '../../shared/marketplace'
 import { isClaudeCodePluginEntry, validateMarketplaceIndex } from '../../shared/marketplace'
 import type { SkillHarness } from '../../shared/electron-api'
 import { SKILL_HARNESS_DIR, SKILL_PACK_HARNESSES } from '../../shared/skill-harnesses'
 import { uninstallSkill } from '../skills/install'
-import { installMarketplacePlugin, type MarketplacePluginInstallerServices } from '../modules/plugin-bundle-installer'
-import { normalizeMcpClients, normalizeMcpServerConfig } from '../mcp-config-service'
 import {
   defaultMarketplacePluginStagingRoot,
   downloadClaudeCodePluginSource,
-  downloadMarketplacePluginBundle,
   type MarketplaceInstallLog,
-  type MarketplacePluginDownloadFetch,
 } from './plugin-download'
-import { mcpDisclosureDigest } from './github-extension-source'
-import { bundleMcpDisclosure, inlineMcpTrustPin } from './plugin-verify'
 import type { MarketplaceResourceResolver } from './resources'
 import { trustPinsMatch, type TrustGrant } from './trust-tokens'
 import { isRecord } from '../../shared/records'
 
 const MARKETPLACE_PLUGIN_INSTALLS_FILENAME = 'marketplace-plugin-installs.json'
-const RECEIPT_COMPONENT_KINDS = new Set(['mcp', 'skills'])
+// A receipt records the skill copies a Claude Code plugin install wrote; a
+// store holding any other kind is not one this Studio wrote.
+const RECEIPT_COMPONENT_KINDS = new Set(['skills'])
 
 export type MarketplacePluginInstallReceipt = {
   id: string
@@ -43,14 +35,6 @@ export type MarketplacePluginInstallReceipt = {
   classification: 'verified' | 'community' | 'unsigned'
   installedAt: string
   components: MarketplacePluginInstalledComponent[]
-  // Where it came from; absent on a receipt written before this was recorded,
-  // which was always the registry.
-  source?: MarketplaceInstallSource
-  // What the approval covered, so an update from a GitHub URL can tell
-  // whether the person has to be asked again: the manifest's permissions and
-  // a digest of the MCP servers it adds (github-extension-source.ts).
-  permissions?: string[]
-  mcpDigest?: string
 }
 
 const INSTALL_STORE_SCHEMA_VERSION = 2
@@ -68,13 +52,11 @@ type FilesystemComponentBackup = {
 
 type PreviousInstallSnapshot = {
   filesystem: FilesystemComponentBackup[]
-  mcpSettings?: McpSettings
 }
 
-export type MarketplacePluginLifecycleServices = MarketplacePluginInstallerServices & {
+export type MarketplacePluginLifecycleServices = {
   receiptStorePath: string
   stagingRoot?: string
-  fetcher?: MarketplacePluginDownloadFetch
   /**
    * Harness dirs a Claude-plugin skill install fans out to when the caller
    * passes no explicit `skillHarnesses` (see resolveInstalledSkillHarnesses).
@@ -90,12 +72,11 @@ export type MarketplacePluginLifecycleServices = MarketplacePluginInstallerServi
  * One install or update, as main hands it to the lifecycle. The entry was
  * resolved in main — from the app's registry, or carried inside a trust
  * grant — and never came from the renderer. `grant` is the spent trust token:
- * the person's approval of exactly the content its pin names. An entry that
- * needs no approval (a verified publisher's signed bundle) installs without
- * one; everything else is refused without one, and a grant whose pin does not
- * match what was staged is refused whatever the tier.
+ * the person's approval of exactly the content its pin names. A Claude Code
+ * plugin is refused without one, and a grant whose pin does not match what
+ * was staged is refused too.
  */
-export type MarketplacePluginLifecycleInstallInput = Omit<MarketplacePluginInstallInput, 'localFolder'> & {
+export type MarketplacePluginLifecycleInstallInput = MarketplaceInstallEnvelope & {
   entry: MarketplacePluginEntry
   grant?: TrustGrant | null
 }
@@ -116,24 +97,13 @@ export function createMarketplacePluginLifecycleService(services: MarketplacePlu
 }
 
 // Read-only view of the install receipts for update detection: the receipt's
-// `version` is the bundle version that was installed (guaranteed equal to the
-// registry entry's `latest` at install time by the registry-mismatch gate).
+// `version` is the registry entry's `latest` at install time.
 export async function readMarketplacePluginInstallReceipts(
   receiptStorePath: string,
 ): Promise<{ ok: true; receipts: MarketplacePluginInstallReceipt[] } | { ok: false; message: string }> {
   const store = await loadInstallStore(receiptStorePath)
   if (!store.ok) return store
   return { ok: true, receipts: Object.values(store.store.plugins) }
-}
-
-// One receipt, by the bundle id it is keyed on; undefined when there is none
-// or the store cannot be read.
-export async function readMarketplacePluginInstallReceipt(
-  receiptStorePath: string,
-  id: string,
-): Promise<MarketplacePluginInstallReceipt | undefined> {
-  const store = await loadInstallStore(receiptStorePath)
-  return store.ok ? store.store.plugins[id] : undefined
 }
 
 async function installOrUpdateMarketplacePlugin(
@@ -156,473 +126,13 @@ async function installOrUpdateMarketplacePlugin(
   const store = storeResult.store
   const previous = store.plugins[entry.entry.id]
 
-  // Inline-MCP entries carry server configs directly (no bundle to download).
-  // Route them through the MCP config sync behind the same trust gate.
-  if (entry.entry.mcp) {
-    return installInlineMcpEntry(entry.entry, input, services, store, previous)
+  // Claude Code plugins are the one kind of row the marketplace installs:
+  // their content is Claude's plugin format, routed through the claude-plugin
+  // adapter (skills copied into workspace harness dirs) behind the trust gate.
+  if (!isClaudeCodePluginEntry(entry.entry)) {
+    return { ok: false, message: `${entry.entry.name} is not a Claude Code plugin, so there is nothing to install.` }
   }
-
-  // Claude Code plugins are not studio bundles: their content is Claude's
-  // plugin format, so they route through the claude-plugin adapter (skills
-  // copied into workspace harness dirs) behind the same unsigned trust gate.
-  if (isClaudeCodePluginEntry(entry.entry)) {
-    return installClaudeCodePluginEntry(entry.entry, input, services, store, previous)
-  }
-
-  const grant = input.grant ?? null
-  const download = await downloadMarketplacePluginBundle({
-    entry: entry.entry,
-    trustContext: services.trustContext(),
-    stagingRoot: services.stagingRoot ?? defaultMarketplacePluginStagingRoot(dirname(services.receiptStorePath)),
-    fetcher: services.fetcher,
-    // The commit the prompt's verify read, not wherever the branch is now.
-    ...(grant?.pin.commitSha ? { commitSha: grant.pin.commitSha } : {}),
-  })
-
-  if (!download.ok) {
-    return {
-      ok: false,
-      message: download.message,
-      sourceUrl: download.sourceUrl,
-      classification: download.classification,
-      trust: download.trust?.status,
-      loadEligible: false,
-      issues: download.issues,
-      updated: Boolean(previous),
-    }
-  }
-
-  // Never backwards: a registry index can re-list an older bundle — signed,
-  // valid, and with whatever it has since been fixed for.
-  if (previous && download.manifest.version < previous.version) {
-    await rm(download.stagedBundlePath, { recursive: true, force: true })
-    return {
-      ok: false,
-      sourceUrl: download.sourceUrl,
-      classification: download.classification,
-      updated: true,
-      message: rollbackMessage(entry.entry.name, download.manifest.version, previous.version),
-    }
-  }
-
-  // What was staged has to be what the prompt disclosed. A branch that moved
-  // is fetched at the pinned commit above, so a mismatch here is content that
-  // changed at the same commit or a seed that differs from it: nothing the
-  // person reviewed.
-  if (grant && !trustPinsMatch(grant.pin, download.pin)) {
-    await rm(download.stagedBundlePath, { recursive: true, force: true })
-    return pinMismatchResult(download.sourceUrl, download.classification, Boolean(previous))
-  }
-
-  // Community (signed, unverified publisher) and unsigned bundles both require
-  // the person's approval before install.
-  if ((download.classification === 'community' || download.classification === 'unsigned') && !grant) {
-    await rm(download.stagedBundlePath, { recursive: true, force: true })
-    return {
-      ok: false,
-      sourceUrl: download.sourceUrl,
-      classification: download.classification,
-      trust: download.trust.status,
-      loadEligible: download.loadEligible,
-      updated: Boolean(previous),
-      message:
-        download.classification === 'unsigned'
-          ? 'Unsigned marketplace plugin requires trust approval before install.'
-          : 'Community marketplace plugin requires trust approval before install.',
-      issues: [
-        { path: 'signature', message: 'Grant trust in the marketplace trust gate before installing this plugin.' },
-      ],
-    }
-  }
-
-  const installClassification: 'verified' | 'community' | 'unsigned' =
-    download.classification === 'verified'
-      ? 'verified'
-      : download.classification === 'unsigned'
-        ? 'unsigned'
-        : 'community'
-  const backupRoot = join(dirname(download.stagedBundlePath), `${entry.entry.id}-previous-${Date.now()}`)
-  try {
-    const previousSnapshot = previous
-      ? await createPreviousInstallSnapshot(previous, input, backupRoot)
-      : { ok: true as const, snapshot: undefined }
-    if (!previousSnapshot.ok) {
-      return {
-        ok: false,
-        message: `Could not snapshot previous marketplace plugin install: ${previousSnapshot.message}`,
-        sourceUrl: download.sourceUrl,
-        classification: installClassification,
-        trust: download.trust.status,
-        loadEligible: download.loadEligible,
-        updated: true,
-      }
-    }
-
-    const installInput: MarketplacePluginInstallInput = {
-      localFolder: download.stagedBundlePath,
-      workspaceRoot: input.workspaceRoot,
-      mcpSettings: input.mcpSettings,
-      mcpClients: input.mcpClients,
-      skillHarnesses: input.skillHarnesses,
-    }
-    const installed = await installMarketplacePlugin(installInput, services)
-    if (!installed.ok) {
-      const rollback = await rollbackInstalledComponents(
-        entry.entry.id,
-        installed.installed ?? [],
-        input,
-        services,
-        input.mcpSettings,
-      )
-      const restored = previousSnapshot.snapshot
-        ? await restorePreviousInstallSnapshot(previousSnapshot.snapshot, input, services)
-        : { ok: true as const }
-      return appendRestoreFailure(
-        appendRollbackFailure(
-          {
-            ...installed,
-            sourceUrl: download.sourceUrl,
-            classification: download.classification,
-            updated: Boolean(previous),
-          },
-          rollback,
-        ),
-        restored,
-      )
-    }
-
-    const receipt: MarketplacePluginInstallReceipt = {
-      id: installed.id,
-      displayName: installed.displayName,
-      version: installed.version,
-      sourceUrl: download.sourceUrl,
-      classification: installClassification,
-      installedAt: new Date().toISOString(),
-      components: installed.installed,
-      source: installSource(grant),
-      permissions: [...(download.manifest.permissions ?? [])],
-      mcpDigest: mcpDisclosureDigest(await bundleMcpDisclosure(download.stagedBundlePath, download.manifest)),
-    }
-    let finalMcpSettings = installed.mcpSettings ?? input.mcpSettings
-    if (previous) {
-      const staleComponents = componentsWithoutOverlap(previous.components, receipt.components)
-      if (staleComponents.length > 0) {
-        const removed = await uninstallReceipt(
-          { ...previous, components: staleComponents },
-          { ...input, pluginId: previous.id, mcpSettings: finalMcpSettings },
-          services,
-        )
-        if (!removed.ok) {
-          const rollback = await rollbackInstalledComponents(
-            receipt.id,
-            componentsWithoutOverlap(receipt.components, previous.components),
-            { ...input, mcpSettings: finalMcpSettings },
-            services,
-            finalMcpSettings,
-          )
-          const restored = previousSnapshot.snapshot
-            ? await restorePreviousInstallSnapshot(previousSnapshot.snapshot, input, services)
-            : { ok: true as const }
-          return appendRestoreFailure(
-            appendRollbackFailure(
-              {
-                ok: false,
-                message: `Could not remove previous marketplace plugin components: ${removed.message}`,
-                sourceUrl: download.sourceUrl,
-                classification: installClassification,
-                trust: installed.trust,
-                loadEligible: installed.loadEligible,
-                installed: receipt.components,
-                updated: true,
-              },
-              rollback,
-            ),
-            restored,
-          )
-        }
-        finalMcpSettings = removed.mcpSettings ?? finalMcpSettings
-      }
-    }
-
-    store.plugins[receipt.id] = receipt
-    try {
-      await writeInstallStore(services.receiptStorePath, store)
-    } catch (error) {
-      const rollback = await rollbackInstalledComponents(
-        receipt.id,
-        receipt.components,
-        input,
-        services,
-        finalMcpSettings,
-      )
-      const restored = previousSnapshot.snapshot
-        ? await restorePreviousInstallSnapshot(previousSnapshot.snapshot, input, services)
-        : { ok: true as const }
-      return appendRestoreFailure(
-        appendRollbackFailure(
-          {
-            ok: false,
-            message: `Could not write marketplace plugin install receipt: ${formatError(error)}`,
-            sourceUrl: download.sourceUrl,
-            classification: installClassification,
-            trust: installed.trust,
-            loadEligible: installed.loadEligible,
-            installed: receipt.components,
-            updated: Boolean(previous),
-          },
-          rollback,
-        ),
-        restored,
-      )
-    }
-
-    return {
-      ...installed,
-      ...(finalMcpSettings ? { mcpSettings: finalMcpSettings } : {}),
-      sourceUrl: download.sourceUrl,
-      classification: installClassification,
-      updated: Boolean(previous),
-    }
-  } finally {
-    await rm(download.stagedBundlePath, { recursive: true, force: true })
-    await rm(backupRoot, { recursive: true, force: true })
-  }
-}
-
-// A GitHub-URL install records the repository and the commit it was pinned
-// to; the pin is what the approval covered, so it is also what the next
-// update is compared against. Anything else came from the registry.
-function installSource(grant: TrustGrant | null): MarketplaceInstallSource {
-  if (grant?.source === 'github' && grant.github && grant.pin.commitSha) {
-    return { kind: 'github', ...grant.github, sha: grant.pin.commitSha }
-  }
-  return { kind: 'registry' }
-}
-
-// Install an inline-MCP registry entry: the servers ship in the entry itself,
-// so there is no bundle to download, verify, or sign. Because MCP config is
-// code-execution config written to agent CLIs, this NEVER installs without the
-// server-side trust grant, and is recorded with an honest 'unsigned' receipt.
-async function installInlineMcpEntry(
-  entry: MarketplacePluginEntry,
-  input: MarketplacePluginLifecycleInstallInput,
-  services: MarketplacePluginLifecycleServices,
-  store: MarketplacePluginInstallStore,
-  previous: MarketplacePluginInstallReceipt | undefined,
-): Promise<MarketplacePluginRegistryInstallResult> {
-  const updated = Boolean(previous)
-  if (previous && entry.latest < previous.version) {
-    return {
-      ok: false,
-      sourceUrl: '',
-      classification: 'unsigned',
-      updated,
-      message: rollbackMessage(entry.name, entry.latest, previous.version),
-    }
-  }
-  if (!input.grant) {
-    return {
-      ok: false,
-      sourceUrl: '',
-      classification: 'unsigned',
-      trust: 'unsigned',
-      loadEligible: false,
-      updated,
-      message: 'Inline MCP marketplace entry requires trust approval before install.',
-      issues: [
-        { path: 'mcp', message: 'Grant trust in the marketplace trust gate before installing this MCP server.' },
-      ],
-    }
-  }
-  // The servers written are the servers the prompt showed, command for command.
-  if (!trustPinsMatch(input.grant.pin, inlineMcpTrustPin(entry))) {
-    return pinMismatchResult('', 'unsigned', updated)
-  }
-
-  const workspaceRoot = input.workspaceRoot?.trim()
-  if (!workspaceRoot) {
-    return {
-      ok: false,
-      sourceUrl: '',
-      classification: 'unsigned',
-      updated,
-      message: 'Workspace root is required to install inline MCP marketplace entries.',
-    }
-  }
-
-  const servers: McpServerConfig[] = []
-  for (const raw of entry.mcp?.servers ?? []) {
-    const normalized = normalizeMcpServerConfig(raw, {
-      enabled: true,
-      scope: 'workspace',
-      source: 'custom',
-      clients: input.mcpClients?.length ? input.mcpClients : undefined,
-    })
-    if (!normalized) {
-      return {
-        ok: false,
-        sourceUrl: '',
-        classification: 'unsigned',
-        updated,
-        message: 'Inline MCP marketplace entry contains an invalid server configuration.',
-        issues: [{ path: 'mcp.servers', message: 'MCP server did not normalize through the app MCP parser.' }],
-      }
-    }
-    servers.push(normalized)
-  }
-  if (servers.length === 0) {
-    return {
-      ok: false,
-      sourceUrl: '',
-      classification: 'unsigned',
-      updated,
-      message: 'Inline MCP marketplace entry declares no servers.',
-    }
-  }
-
-  const backupRoot = join(dirname(services.receiptStorePath), `${entry.id}-inline-previous-${Date.now()}`)
-  try {
-    const previousSnapshot = previous
-      ? await createPreviousInstallSnapshot(previous, input, backupRoot)
-      : { ok: true as const, snapshot: undefined }
-    if (!previousSnapshot.ok) {
-      return {
-        ok: false,
-        sourceUrl: '',
-        classification: 'unsigned',
-        updated,
-        message: `Could not snapshot previous marketplace plugin install: ${previousSnapshot.message}`,
-      }
-    }
-
-    const nextSettings: McpSettings = {
-      syncEnabled: true,
-      servers: {
-        ...input.mcpSettings?.servers,
-        ...Object.fromEntries(servers.map((server) => [server.id, server])),
-      },
-    }
-    const clients = normalizeMcpClients(
-      input.mcpClients?.length ? input.mcpClients : servers.flatMap((server) => server.clients),
-    )
-    const sync = await services.mcpConfigService.sync({ workspaceRoot, settings: nextSettings, clients, write: true })
-    if (!sync.ok) {
-      const restored = previousSnapshot.snapshot
-        ? await restorePreviousInstallSnapshot(previousSnapshot.snapshot, input, services)
-        : { ok: true as const }
-      const issues = mcpSyncIssuesToMarketplaceIssues(sync.issues)
-      return appendRestoreFailure(
-        {
-          ok: false,
-          sourceUrl: '',
-          classification: 'unsigned',
-          updated,
-          message: sync.message,
-          ...(issues ? { issues } : {}),
-        },
-        restored,
-      )
-    }
-
-    const receipt: MarketplacePluginInstallReceipt = {
-      id: entry.id,
-      displayName: entry.name,
-      version: entry.latest,
-      sourceUrl: '',
-      classification: 'unsigned',
-      installedAt: new Date().toISOString(),
-      components: [installedInlineMcpComponent(servers)],
-    }
-
-    let finalMcpSettings = nextSettings
-    if (previous) {
-      const stale = componentsWithoutOverlap(previous.components, receipt.components)
-      if (stale.length > 0) {
-        const removed = await uninstallReceipt(
-          { ...previous, components: stale },
-          { ...input, pluginId: previous.id, mcpSettings: finalMcpSettings },
-          services,
-        )
-        if (!removed.ok) {
-          const rollback = await rollbackInstalledComponents(
-            receipt.id,
-            receipt.components,
-            { ...input, mcpSettings: finalMcpSettings },
-            services,
-            finalMcpSettings,
-          )
-          const restored = previousSnapshot.snapshot
-            ? await restorePreviousInstallSnapshot(previousSnapshot.snapshot, input, services)
-            : { ok: true as const }
-          return appendRestoreFailure(
-            appendRollbackFailure(
-              {
-                ok: false,
-                sourceUrl: '',
-                classification: 'unsigned',
-                trust: 'unsigned',
-                loadEligible: false,
-                installed: receipt.components,
-                updated: true,
-                message: `Could not remove previous marketplace plugin components: ${removed.message}`,
-              },
-              rollback,
-            ),
-            restored,
-          )
-        }
-        finalMcpSettings = removed.mcpSettings ?? finalMcpSettings
-      }
-    }
-
-    store.plugins[receipt.id] = receipt
-    try {
-      await writeInstallStore(services.receiptStorePath, store)
-    } catch (error) {
-      const rollback = await rollbackInstalledComponents(
-        receipt.id,
-        receipt.components,
-        input,
-        services,
-        finalMcpSettings,
-      )
-      const restored = previousSnapshot.snapshot
-        ? await restorePreviousInstallSnapshot(previousSnapshot.snapshot, input, services)
-        : { ok: true as const }
-      return appendRestoreFailure(
-        appendRollbackFailure(
-          {
-            ok: false,
-            sourceUrl: '',
-            classification: 'unsigned',
-            trust: 'unsigned',
-            loadEligible: false,
-            installed: receipt.components,
-            updated,
-            message: `Could not write marketplace plugin install receipt: ${formatError(error)}`,
-          },
-          rollback,
-        ),
-        restored,
-      )
-    }
-
-    return {
-      ok: true,
-      id: receipt.id,
-      displayName: receipt.displayName,
-      version: receipt.version,
-      trust: 'unsigned',
-      loadEligible: false,
-      installed: receipt.components,
-      mcpSettings: finalMcpSettings,
-      sourceUrl: '',
-      classification: 'unsigned',
-      updated,
-    }
-  } finally {
-    await rm(backupRoot, { recursive: true, force: true })
-  }
+  return installClaudeCodePluginEntry(entry.entry, input, services, store, previous)
 }
 
 // Claude Code plugins install by copying each staged `skills/<dir>` into the
@@ -813,15 +323,9 @@ async function installClaudeCodePluginEntry(
           harnesses: attempted,
           message: 'Partial copy rolled back.',
         }
-        const rollback = await rollbackInstalledComponents(
-          entry.id,
-          [...components, partial],
-          input,
-          services,
-          input.mcpSettings,
-        )
+        const rollback = await rollbackInstalledComponents(entry.id, [...components, partial], input)
         const restored = previousSnapshot.snapshot
-          ? await restorePreviousInstallSnapshot(previousSnapshot.snapshot, input, services)
+          ? await restorePreviousInstallSnapshot(previousSnapshot.snapshot)
           : { ok: true as const }
         return appendRestoreFailure(
           appendRollbackFailure(
@@ -875,21 +379,11 @@ async function installClaudeCodePluginEntry(
         })
       const stale = [...staleDirs, ...staleHarnessCopies]
       if (stale.length > 0) {
-        const removed = await uninstallReceipt(
-          { ...previous, components: stale },
-          { ...input, pluginId: previous.id },
-          services,
-        )
+        const removed = await uninstallReceipt({ ...previous, components: stale }, { ...input, pluginId: previous.id })
         if (!removed.ok) {
-          const rollback = await rollbackInstalledComponents(
-            receipt.id,
-            receipt.components,
-            input,
-            services,
-            input.mcpSettings,
-          )
+          const rollback = await rollbackInstalledComponents(receipt.id, receipt.components, input)
           const restored = previousSnapshot.snapshot
-            ? await restorePreviousInstallSnapshot(previousSnapshot.snapshot, input, services)
+            ? await restorePreviousInstallSnapshot(previousSnapshot.snapshot)
             : { ok: true as const }
           return appendRestoreFailure(
             appendRollbackFailure(
@@ -915,15 +409,9 @@ async function installClaudeCodePluginEntry(
     try {
       await writeInstallStore(services.receiptStorePath, store)
     } catch (error) {
-      const rollback = await rollbackInstalledComponents(
-        receipt.id,
-        receipt.components,
-        input,
-        services,
-        input.mcpSettings,
-      )
+      const rollback = await rollbackInstalledComponents(receipt.id, receipt.components, input)
       const restored = previousSnapshot.snapshot
-        ? await restorePreviousInstallSnapshot(previousSnapshot.snapshot, input, services)
+        ? await restorePreviousInstallSnapshot(previousSnapshot.snapshot)
         : { ok: true as const }
       return appendRestoreFailure(
         appendRollbackFailure(
@@ -974,26 +462,6 @@ async function installClaudeCodePluginEntry(
   }
 }
 
-function installedInlineMcpComponent(servers: McpServerConfig[]): MarketplacePluginInstalledComponent {
-  return {
-    kind: 'mcp',
-    id: servers.map((server) => server.id).join(','),
-    serverIds: servers.map((server) => server.id),
-    servers,
-    message: `Synced ${servers.length} inline MCP server${servers.length === 1 ? '' : 's'}.`,
-  }
-}
-
-function mcpSyncIssuesToMarketplaceIssues(
-  issues: Array<{ serverId?: string; client?: string; message: string }> | undefined,
-): Array<{ path: string; message: string }> | undefined {
-  if (!issues?.length) return undefined
-  return issues.map((issue) => ({
-    path: issue.serverId ? `servers.${issue.serverId}` : issue.client ? `clients.${issue.client}` : '',
-    message: issue.message,
-  }))
-}
-
 async function uninstallMarketplacePlugin(
   input: MarketplacePluginUninstallInput,
   services: MarketplacePluginLifecycleServices,
@@ -1007,7 +475,7 @@ async function uninstallMarketplacePlugin(
   const receipt = store.plugins[pluginId]
   if (!receipt) return { ok: false, message: `Marketplace plugin ${pluginId} is not installed.` }
 
-  const result = await uninstallReceipt(receipt, input, services)
+  const result = await uninstallReceipt(receipt, input)
   if (!result.ok) return result
 
   delete store.plugins[pluginId]
@@ -1018,80 +486,19 @@ async function uninstallMarketplacePlugin(
 async function uninstallReceipt(
   receipt: MarketplacePluginInstallReceipt,
   input: MarketplacePluginUninstallInput,
-  services: MarketplacePluginLifecycleServices,
 ): Promise<MarketplacePluginUninstallResult> {
   const removed: MarketplacePluginInstalledComponent[] = []
-  let nextMcpSettings = input.mcpSettings
 
   for (const component of [...receipt.components].reverse()) {
     try {
-      switch (component.kind) {
-        case 'mcp':
-          nextMcpSettings = await removeMcpComponent(component, input, services, nextMcpSettings)
-          break
-        case 'skills':
-          await removeSkillComponent(component, input)
-          break
-      }
+      await removeSkillComponent(component, input)
       removed.push(component)
     } catch (error) {
-      return {
-        ok: false,
-        message: error instanceof Error ? error.message : String(error),
-        removed,
-        ...(nextMcpSettings ? { mcpSettings: nextMcpSettings } : {}),
-      }
+      return { ok: false, message: error instanceof Error ? error.message : String(error), removed }
     }
   }
 
-  return {
-    ok: true,
-    id: receipt.id,
-    removed,
-    ...(nextMcpSettings ? { mcpSettings: nextMcpSettings } : {}),
-  }
-}
-
-async function removeMcpComponent(
-  component: MarketplacePluginInstalledComponent,
-  input: MarketplacePluginUninstallInput,
-  services: MarketplacePluginLifecycleServices,
-  currentSettings: McpSettings | undefined,
-): Promise<McpSettings> {
-  const workspaceRoot = input.workspaceRoot?.trim()
-  if (!workspaceRoot) throw new Error('Workspace root is required to uninstall MCP components.')
-
-  const serverIds = component.serverIds?.length
-    ? component.serverIds
-    : component.id
-        .split(',')
-        .map((id) => id.trim())
-        .filter(Boolean)
-  const currentServers = { ...currentSettings?.servers }
-  const disabledServers: Record<string, McpServerConfig> = {}
-  for (const serverId of serverIds) {
-    const server = currentServers[serverId] ?? component.servers?.find((candidate) => candidate.id === serverId)
-    delete currentServers[serverId]
-    if (server) disabledServers[serverId] = { ...server, enabled: false }
-  }
-
-  const syncSettings: McpSettings = {
-    syncEnabled: currentSettings?.syncEnabled ?? true,
-    servers: { ...currentServers, ...disabledServers },
-  }
-  const clients = input.mcpClients?.length ? input.mcpClients : clientsFromServers(Object.values(disabledServers))
-  const result = await services.mcpConfigService.sync({
-    workspaceRoot,
-    settings: syncSettings,
-    clients,
-    write: true,
-  })
-  if (!result.ok) throw new Error(result.message)
-
-  return {
-    syncEnabled: currentSettings?.syncEnabled ?? true,
-    servers: currentServers,
-  }
+  return { ok: true, id: receipt.id, removed }
 }
 
 async function removeSkillComponent(
@@ -1117,11 +524,6 @@ async function removeSkillComponent(
   if (!result.ok) throw new Error(result.message)
 }
 
-function clientsFromServers(servers: McpServerConfig[]): McpClientTarget[] {
-  const clients = servers.flatMap((server) => server.clients)
-  return clients.length ? Array.from(new Set(clients)) : ['codex', 'claude-code']
-}
-
 async function createPreviousInstallSnapshot(
   receipt: MarketplacePluginInstallReceipt,
   input: MarketplacePluginLifecycleInstallInput,
@@ -1140,10 +542,7 @@ async function createPreviousInstallSnapshot(
     }
     return {
       ok: true,
-      snapshot: {
-        filesystem,
-        mcpSettings: previousMcpSettings(receipt.components, input.mcpSettings),
-      },
+      snapshot: { filesystem },
     }
   } catch (error) {
     return { ok: false, message: formatError(error) }
@@ -1152,8 +551,6 @@ async function createPreviousInstallSnapshot(
 
 async function restorePreviousInstallSnapshot(
   snapshot: PreviousInstallSnapshot,
-  input: MarketplacePluginLifecycleInstallInput,
-  services: MarketplacePluginLifecycleServices,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   try {
     for (const backup of [...snapshot.filesystem].reverse()) {
@@ -1161,18 +558,6 @@ async function restorePreviousInstallSnapshot(
       if (!backup.existed) continue
       await mkdir(dirname(backup.originalPath), { recursive: true })
       await cp(backup.backupPath, backup.originalPath, { recursive: true, force: true })
-    }
-
-    const workspaceRoot = input.workspaceRoot?.trim()
-    if (snapshot.mcpSettings && workspaceRoot) {
-      const servers = Object.values(snapshot.mcpSettings.servers)
-      const result = await services.mcpConfigService.sync({
-        workspaceRoot,
-        settings: snapshot.mcpSettings,
-        clients: input.mcpClients?.length ? input.mcpClients : clientsFromServers(servers),
-        write: true,
-      })
-      if (!result.ok) return { ok: false, message: result.message }
     }
     return { ok: true }
   } catch (error) {
@@ -1230,24 +615,6 @@ function pinMismatchResult(
   }
 }
 
-function previousMcpSettings(
-  components: MarketplacePluginInstalledComponent[],
-  currentSettings: McpSettings | undefined,
-): McpSettings | undefined {
-  const mcpComponents = components.filter((component) => component.kind === 'mcp')
-  if (mcpComponents.length === 0) return undefined
-  const servers = { ...currentSettings?.servers }
-  for (const component of mcpComponents) {
-    for (const server of component.servers ?? []) {
-      servers[server.id] = { ...server, enabled: server.enabled ?? true }
-    }
-  }
-  return {
-    syncEnabled: currentSettings?.syncEnabled ?? true,
-    servers,
-  }
-}
-
 async function pathExists(path: string): Promise<boolean> {
   try {
     await stat(path)
@@ -1262,8 +629,6 @@ async function rollbackInstalledComponents(
   pluginId: string,
   components: MarketplacePluginInstalledComponent[],
   input: Omit<MarketplacePluginUninstallInput, 'pluginId'>,
-  services: MarketplacePluginLifecycleServices,
-  mcpSettings: McpSettings | undefined,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   if (components.length === 0) return { ok: true }
   const rollback = await uninstallReceipt(
@@ -1276,8 +641,7 @@ async function rollbackInstalledComponents(
       installedAt: new Date().toISOString(),
       components,
     },
-    { ...input, pluginId, mcpSettings },
-    services,
+    { ...input, pluginId },
   )
   if (rollback.ok) return { ok: true }
   return { ok: false, message: rollback.message }
@@ -1314,21 +678,7 @@ function componentsWithoutOverlap(
 
 function componentsOverlap(a: MarketplacePluginInstalledComponent, b: MarketplacePluginInstalledComponent): boolean {
   if (a.kind !== b.kind) return false
-  if (a.kind === 'mcp') {
-    const aServers = componentServerIds(a)
-    const bServers = componentServerIds(b)
-    return aServers.some((serverId) => bServers.includes(serverId))
-  }
   return (a.installedDirName ?? a.id) === (b.installedDirName ?? b.id)
-}
-
-function componentServerIds(component: MarketplacePluginInstalledComponent): string[] {
-  return component.serverIds?.length
-    ? component.serverIds
-    : component.id
-        .split(',')
-        .map((id) => id.trim())
-        .filter(Boolean)
 }
 
 function validateRegistryEntry(
@@ -1404,39 +754,7 @@ function validateReceipt(value: unknown, path: string): MarketplacePluginInstall
       validateReceiptComponent(component, `${path}.components[${index}]`),
     ),
   }
-  if (value.source !== undefined) receipt.source = validateReceiptSource(value.source, `${path}.source`)
-  if (value.permissions !== undefined) {
-    receipt.permissions = validateStringArray(value.permissions, `${path}.permissions`, isNonEmptyString)
-  }
-  if (value.mcpDigest !== undefined) {
-    if (typeof value.mcpDigest !== 'string' || !/^[0-9a-f]{64}$/.test(value.mcpDigest)) {
-      throw new Error(`${path}.mcpDigest: MCP digest must be a sha256 hex digest.`)
-    }
-    receipt.mcpDigest = value.mcpDigest
-  }
   return receipt
-}
-
-function validateReceiptSource(value: unknown, path: string): MarketplaceInstallSource {
-  if (!isRecord(value)) throw new Error(`${path}: source must be an object.`)
-  if (value.kind === 'registry') return { kind: 'registry' }
-  if (value.kind !== 'github') throw new Error(`${path}.kind: source kind must be registry or github.`)
-  for (const field of ['url', 'owner', 'repo', 'sha'] as const) {
-    if (!isNonEmptyString(value[field])) throw new Error(`${path}.${field}: ${field} is required.`)
-  }
-  if (value.ref !== undefined && !isNonEmptyString(value.ref)) throw new Error(`${path}.ref: ref must be a string.`)
-  return {
-    kind: 'github',
-    url: value.url as string,
-    owner: value.owner as string,
-    repo: value.repo as string,
-    sha: value.sha as string,
-    ...(value.ref !== undefined ? { ref: value.ref as string } : {}),
-  }
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0 && !value.includes('\0')
 }
 
 function validateReceiptComponent(value: unknown, path: string): MarketplacePluginInstalledComponent {
@@ -1455,22 +773,12 @@ function validateReceiptComponent(value: unknown, path: string): MarketplacePlug
       throw new Error(`${path}.installedDirName: installed directory name must be safe.`)
     component.installedDirName = value.installedDirName
   }
-  if (value.serverIds !== undefined)
-    component.serverIds = validateStringArray(value.serverIds, `${path}.serverIds`, isSafeIdentifier)
   if (value.harnesses !== undefined)
     component.harnesses = validateStringArray(
       value.harnesses,
       `${path}.harnesses`,
       isSafeIdentifier,
     ) as typeof component.harnesses
-  if (value.servers !== undefined) {
-    if (!Array.isArray(value.servers)) throw new Error(`${path}.servers: servers must be an array.`)
-    component.servers = value.servers.map((server, index) => {
-      if (!isRecord(server) || !isSafeIdentifier(server.id))
-        throw new Error(`${path}.servers[${index}].id: server id must be safe.`)
-      return server as McpServerConfig
-    })
-  }
   return component
 }
 

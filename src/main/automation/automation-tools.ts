@@ -59,9 +59,9 @@ import { scheduledAgentScheduleWords, type ScheduledAgentView } from '../../shar
 import type { LoadedPlugin } from '../../shared/plugin-manifest'
 import type { MarketplaceRegistryReadInput, MarketplaceRegistryReadResult } from '../../shared/electron-api'
 import {
-  MARKETPLACE_COMPONENT_KINDS,
-  type MarketplaceComponentKind,
+  MARKETPLACE_PROVIDES_KINDS,
   type MarketplacePluginEntry,
+  type MarketplaceProvidesKind,
 } from '../../shared/marketplace/manifest'
 import {
   BUNDLED_MODULE_IDS,
@@ -2007,7 +2007,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     name: 'marketplace.list',
     description:
       'Browse the extension marketplace index the app itself reads (same registry client, cache, and ' +
-      'bundled-first policy as the Plugins marketplace) — MCP servers, skill packs and agent CLIs. Filter by ' +
+      'bundled-first policy as the Plugins marketplace) — Claude Code plugins (skills) and agent CLIs. Filter by ' +
       'what an entry provides. Read-only: installing is ' +
       'a trust decision and is not on this surface. The result discloses where the index came from and ' +
       'whether it is a stale offline cache.',
@@ -2016,8 +2016,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       properties: {
         provides: {
           type: 'string',
-          enum: [...MARKETPLACE_COMPONENT_KINDS],
-          description: 'Only entries that bundle this component kind.',
+          enum: [...MARKETPLACE_PROVIDES_KINDS],
+          description: 'Only entries that provide this kind: skills (a Claude Code plugin) or cli (an agent CLI).',
         },
         query: {
           type: 'string',
@@ -2032,9 +2032,9 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (invalid) return invalid
       if (
         args.provides !== undefined &&
-        !MARKETPLACE_COMPONENT_KINDS.includes(args.provides as MarketplaceComponentKind)
+        !MARKETPLACE_PROVIDES_KINDS.includes(args.provides as MarketplaceProvidesKind)
       ) {
-        return failure('invalid_arguments', `"provides" must be one of: ${MARKETPLACE_COMPONENT_KINDS.join(', ')}.`)
+        return failure('invalid_arguments', `"provides" must be one of: ${MARKETPLACE_PROVIDES_KINDS.join(', ')}.`)
       }
       if (args.forceRefresh !== undefined && typeof args.forceRefresh !== 'boolean') {
         return failure('invalid_arguments', '"forceRefresh" must be a boolean when provided.')
@@ -2045,7 +2045,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (!read.ok) {
         return failure('marketplace_unavailable', `${read.message} (registry ${read.registryUrl}, state ${read.state})`)
       }
-      const provides = optionalString(args.provides) as MarketplaceComponentKind | undefined
+      const provides = optionalString(args.provides) as MarketplaceProvidesKind | undefined
       const query = optionalString(args.query)?.trim().toLowerCase()
       const all = read.marketplace.plugins
       const matched = all

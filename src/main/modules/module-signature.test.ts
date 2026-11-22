@@ -16,11 +16,8 @@ import { parseExtensionManifest } from '../../shared/modules/third-party-manifes
 import { approvalOf, approvedContext } from './extension-approvals.test-helper'
 import {
   classifyExtension,
-  classifySignedManifestTrust,
   extensionContentSync,
   isExtensionRunnable,
-  isLoadEligible,
-  verifyModuleSignature,
   type ExtensionStandingContext,
 } from './module-signature'
 
@@ -181,27 +178,4 @@ test('a symbolic link in the folder leaves nothing to approve, so it does not ru
     assert.equal(isExtensionRunnable(standing), false)
     assert.ok(standing.issues?.some((issue) => /symbolic link/.test(issue.message)))
   })
-})
-
-test('a bundle or provider manifest is trusted only by a publisher key Studio trusts', () => {
-  const unsigned = { id: 'bundle', name: 'Bundle', version: '1.0.0' }
-  assert.equal(classifySignedManifestTrust(unsigned, {}).status, 'unsigned')
-  const signer = generateModuleSigningKeyPair()
-  const signed = { ...unsigned, signature: signManifest(unsigned, signer.privateKeyPem) }
-  const renamed = { ...signed, name: 'Evil' }
-  assert.equal(verifyModuleSignature(signed).valid, true)
-  assert.equal(verifyModuleSignature(renamed).valid, false)
-  assert.equal(classifySignedManifestTrust(signed, {}).status, 'signed')
-  assert.equal(
-    classifySignedManifestTrust(signed, { trustedKeyFingerprints: new Set([signer.fingerprint]) }).status,
-    'trusted',
-  )
-  assert.equal(classifySignedManifestTrust(renamed, {}).status, 'invalid')
-})
-
-test('only a trusted bundle manifest is load eligible', () => {
-  assert.equal(isLoadEligible('trusted'), true)
-  assert.equal(isLoadEligible('signed'), false)
-  assert.equal(isLoadEligible('unsigned'), false)
-  assert.equal(isLoadEligible('invalid'), false)
 })

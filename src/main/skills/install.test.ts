@@ -8,7 +8,6 @@ import type { ScannedSkill, SkillFileRef } from '../../shared/skills'
 import {
   installSkill,
   installSkillDirectory,
-  PLUGIN_BUNDLE_SKILL_SOURCE_ID,
   planSkillInstall,
   readSkillProvenance,
   resolveSkillFilePath,
@@ -157,8 +156,8 @@ test('install', async () => {
     if (!result.ok) assert.match(result.message, /No agent CLI/)
   }
 
-  // A skill that is already a directory on this machine — a plugin bundle's skill
-  // component — installs by the same copy, subdirectories and all.
+  // A skill that is already a directory on this machine — Studio's own
+  // plugin's skills — installs by the same copy, subdirectories and all.
   async function installsALocalDirectory(): Promise<void> {
     const temp = await mkdtemp(join(tmpdir(), 'sprintengine-skill-localdir-'))
     const workspace = join(temp, 'ws')
@@ -173,6 +172,7 @@ test('install', async () => {
       sourceDir: source,
       dirName: 'my-skill',
       harnesses: ['agents', 'claude'],
+      provenance: { sourceId: 'studio-plugin', skillId: 'my-skill', commitSha: '1.0.0' },
     })
     assert.equal(result.ok, true, result.ok ? '' : result.message)
     if (!result.ok) return
@@ -184,13 +184,12 @@ test('install', async () => {
     )
     assert.ok(existsSync(join(workspace, '.claude', 'skills', 'my-skill', 'SKILL.md')), 'every harness gets a copy')
 
-    // A bundle is not a skill source, so the copy names one no source sync can
-    // match — and the marker was written into the copy, never back into the
-    // bundle the bytes were read from.
+    // The copy names who owns it — and the marker was written into the copy,
+    // never back into the directory the bytes were read from.
     assert.deepEqual(await readSkillProvenance(join(workspace, '.agents', 'skills', 'my-skill')), {
-      sourceId: PLUGIN_BUNDLE_SKILL_SOURCE_ID,
+      sourceId: 'studio-plugin',
       skillId: 'my-skill',
-      commitSha: '',
+      commitSha: '1.0.0',
     })
     assert.equal(await readSkillProvenance(source), null, 'the source directory is left exactly as it was')
 
@@ -199,6 +198,7 @@ test('install', async () => {
       sourceDir: join(temp, 'bundle', 'nothing-here'),
       dirName: 'nothing-here',
       harnesses: ['agents'],
+      provenance: { sourceId: 'studio-plugin', skillId: 'nothing-here', commitSha: '1.0.0' },
     })
     assert.equal(empty.ok, false, 'a directory with no files is refused, not silently installed')
   }
@@ -217,6 +217,7 @@ test('install', async () => {
       sourceDir: source,
       dirName: 'my-skill',
       harnesses: ['agents', 'claude'],
+      provenance: { sourceId: 'studio-plugin', skillId: 'my-skill', commitSha: '1.0.0' },
     })
 
     const removed = await uninstallSkill({
@@ -270,6 +271,7 @@ test('install', async () => {
       sourceDir: join(sourceRoot, 'writer'),
       dirName: 'writer',
       harnesses: ['agents'],
+      provenance: { sourceId: 'studio-plugin', skillId: 'writer', commitSha: '1.0.0' },
     })
     const after = await scanLocalSkillSource(sourceRoot)
 

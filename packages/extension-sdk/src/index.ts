@@ -37,7 +37,7 @@ export type ModuleSignature = {
  */
 export type ModuleFileDigests = Record<string, string>
 
-/** A plugin bundle's base manifest (`plugin.json`). An extension's own is `ExtensionManifest`. */
+/** A signed package's base manifest (`plugin.json`). An extension's own is `ExtensionManifest`. */
 export type CapabilityManifest = {
   id: string
   displayName: string
@@ -67,7 +67,7 @@ export type ModuleTrustStatus = 'trusted' | 'signed' | 'unsigned' | 'invalid'
 
 export { EXTENSION_PERMISSIONS, isExtensionPermission, type ExtensionPermission } from './permissions.js'
 
-/** A scope a plugin bundle's plugin.json lists: shown to the person as it is, never checked. */
+/** A scope a signed package's plugin.json lists: shown to the person as it is, never checked. */
 export type CapabilityPermission = string
 
 // ── Notifications ────────────────────────────────────────────────────────────

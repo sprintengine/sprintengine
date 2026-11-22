@@ -21,7 +21,7 @@ export {
   type ExtensionPermission,
 } from '../../../packages/extension-sdk/src/permissions'
 
-/** A scope a plugin bundle's plugin.json lists: shown as it is, never checked. */
+/** A scope a signed package's plugin.json lists: shown as it is, never checked. */
 export type CapabilityPermission = string
 
 // Plain, sentence-case descriptions for the approval: what the person allows.
