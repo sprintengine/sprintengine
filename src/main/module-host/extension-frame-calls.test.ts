@@ -7,6 +7,7 @@ import { test } from 'vitest'
 
 import { declaredSettingsReader, withDeclaredSettings } from '../modules/extension-declared-settings'
 import { createExtensionFrameCalls } from './extension-frame-calls'
+import { studioGrantPrincipal } from '../../../packages/studio-protocol/src/permissions'
 import { OWNER_PRINCIPAL, type ExtensionInvoker } from './extension-invocation'
 import { createModuleAppStateMirror } from './module-app-state-mirror'
 import { extensionManifest, writeExtensionFolder } from '../../../tests/extension-folder'
@@ -16,6 +17,12 @@ import { extensionManifest, writeExtensionFolder } from '../../../tests/extensio
 // there too, and `settings.get` reads it by the rule Settings reads it by.
 
 const OWNER: ExtensionInvoker = { principal: OWNER_PRINCIPAL, permissionCeiling: null, label: 'you' }
+/** A pairing that may use extensions, and may not change Studio's settings. */
+const PAIRED: ExtensionInvoker = {
+  principal: studioGrantPrincipal({ owner: false, scopes: ['extensions:read', 'extensions:operate'] }),
+  permissionCeiling: null,
+  label: 'the device "build-box"',
+}
 
 test('a frame’s settings.set is held to the declaration, and settings.get reads by it', async () => {
   const root = mkdtempSync(join(tmpdir(), 'frame-settings-'))
@@ -40,8 +47,8 @@ test('a frame’s settings.set is held to the declaration, and settings.get read
     appState: () => store,
     fileExclusions: () => [],
   })
-  const frame = (method: string, params: unknown) =>
-    call({ moduleId, frame: 'f'.repeat(64), method, params, clientId: 'c', commandId: 'k', invoker: OWNER })
+  const frame = (method: string, params: unknown, invoker: ExtensionInvoker = OWNER) =>
+    call({ moduleId, frame: 'f'.repeat(64), method, params, clientId: 'c', commandId: 'k', invoker })
 
   assert.deepEqual(await frame('settings.get', {}), { ok: true, result: { indent: 2 } })
   assert.deepEqual(await frame('settings.set', { key: 'indent', value: 12 }), {
@@ -52,4 +59,15 @@ test('a frame’s settings.set is held to the declaration, and settings.get read
   assert.deepEqual(await frame('settings.set', { key: 'indent', value: 5 }), { ok: true, result: { ok: true } })
   assert.deepEqual(await frame('settings.set', { key: 'note', value: 'free' }), { ok: true, result: { ok: true } })
   assert.deepEqual(await frame('settings.get', {}), { ok: true, result: { indent: 5, note: 'free' } })
+
+  // A frame drawn for someone who may not change Studio's settings: it still
+  // reads its own configuration to draw itself, and changes nothing.
+  assert.deepEqual(await frame('settings.get', {}, PAIRED), { ok: true, result: { indent: 5, note: 'free' } })
+  const refused = await frame('settings.set', { key: 'indent', value: 3 }, PAIRED)
+  assert.equal(refused.ok, false)
+  if (!refused.ok) {
+    assert.equal(refused.code, 'not_permitted')
+    assert.match(refused.message, /needs "settings:write"/)
+  }
+  assert.deepEqual(await frame('settings.get', {}, PAIRED), { ok: true, result: { indent: 5, note: 'free' } })
 })

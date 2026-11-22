@@ -55,6 +55,7 @@ export type ExtensionInvokerRequirement =
   | 'filesystem:write'
   | 'extension:read'
   | 'extension:operate'
+  | 'settings:write'
   | 'owner'
 
 export type ExtensionHostRequirement = {
@@ -303,8 +304,13 @@ export const EXTENSION_FRAME_METHODS: Readonly<Record<ExtensionFrameMethod, Exte
   'storage.list': inFrame('storage:own', 'extension:read'),
   'storage.set': inFrame('storage:own', 'extension:operate'),
   'storage.delete': inFrame('storage:own', 'extension:operate'),
+  // An extension reads its own configuration to draw its surfaces, so its
+  // frame reads its settings on behalf of whoever may open it; what it shows
+  // of them is the extension's responsibility. Changing them is changing one
+  // of Studio's settings, so whoever set the call off must hold
+  // `settings:write`, as Settings (`extension.setSetting`) needs.
   'settings.get': inFrame('settings:own', 'extension:read'),
-  'settings.set': inFrame('settings:own', 'extension:operate'),
+  'settings.set': inFrame('settings:own', 'settings:write'),
   // Machine-wide file access is not grantable; a workspace's folder is, and
   // whoever opened the surface must be able to read or write files there too.
   'files.read': inFrame('workspace-files:read', 'filesystem:read'),

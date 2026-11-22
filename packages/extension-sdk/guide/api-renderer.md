@@ -61,8 +61,8 @@ seconds, each at most 64 KiB.
 | `usage.query` | `{ query }` → as `getUsageService().query` | `usage:read` | `workspace:read` |
 | `storage.get`, `.list` | `{ key \| prefix, workspaceId? }` | `storage:own` | `extension:read` |
 | `storage.set`, `.delete` | `{ key, value?, workspaceId? }` | `storage:own` | `extension:operate` |
-| `settings.get` | `{}` → the extension's Settings values | `settings:own` | `extension:read` |
-| `settings.set` | `{ key, value }` (`null` removes it) | `settings:own` | `extension:operate` |
+| `settings.get` | `{}` → the extension's Settings values, each declared one its stored value while it fits, else its default | `settings:own` | `extension:read` |
+| `settings.set` | `{ key, value }` (`null` removes it); a declared setting is held to its declaration | `settings:own` | `settings:write` |
 | `files.read`, `.stat`, `.search` | `{ workspaceId, path }`, `{ workspaceId, query, limit? }` | `workspace-files:read` | `filesystem:read` |
 | `files.write` | `{ workspaceId, path, content, create? }` | `workspace-files:write` | `filesystem:write` |
 | `notify` | a bell row, as `MainHost.notify` | `notifications:show` | `extension:operate` |

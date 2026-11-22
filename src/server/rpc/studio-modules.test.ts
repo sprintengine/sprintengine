@@ -638,3 +638,56 @@ test('the window’s module report is an owner’s: a paired client holding exte
   })
   assert.deepEqual(reported, [snapshot])
 })
+
+test('a frame changes an extension’s settings only for a client that may change Studio’s settings', async () => {
+  // A real kernel running `acme.tuned`, which holds `settings:own`, over a store of its settings.
+  const kernel = createMainKernel({
+    resolveModuleManifest: (id) =>
+      id === 'acme.tuned'
+        ? {
+            id,
+            displayName: 'Tuned',
+            version: 1,
+            defaultEnabled: true,
+            source: 'third-party',
+            permissions: ['settings:own'],
+          }
+        : undefined,
+  })
+  const values: Record<string, unknown> = { indent: 2 }
+  kernel.hostFor('@host').provideService(
+    createServiceToken<{
+      get(moduleId: string): Record<string, unknown>
+      setValue(moduleId: string, key: string, value: unknown): void
+      subscribe(): () => void
+    }>('core.module-app-state'),
+    () => ({
+      get: () => ({ ...values }),
+      setValue: (_moduleId, key, value) => {
+        values[key] = value
+      },
+      subscribe: () => () => undefined,
+    }),
+  )
+  const hub = createStudioModuleHub()
+  hub.serveFrameCallsFrom((request) => kernel.callFrameMethod(request))
+
+  // Paired with extensions and without `settings:write`, as a tailnet browser or a narrow pairing is.
+  const paired = await caller(hub, (started) =>
+    pairFakeClient(started.auth, 'narrow', ['extensions:read', 'extensions:operate']),
+  )
+  assert.deepEqual(answerOf(await frameCall(paired.request, 'settings.get', {}, 'acme.tuned')), {
+    ok: true,
+    result: { indent: 2 },
+  })
+  const refused = answerOf(await frameCall(paired.request, 'settings.set', { key: 'indent', value: 4 }, 'acme.tuned'))
+  assert.equal((refused as { code?: string }).code, 'not_permitted')
+  assert.equal(values.indent, 2, 'nothing was written')
+
+  const owner = await caller(hub)
+  assert.deepEqual(
+    answerOf(await frameCall(owner.request, 'settings.set', { key: 'indent', value: 4 }, 'acme.tuned')),
+    { ok: true, result: { ok: true } },
+  )
+  assert.equal(values.indent, 4)
+})

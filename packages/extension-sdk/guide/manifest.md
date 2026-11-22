@@ -127,7 +127,11 @@ answers the least tier a manifest needs.
   declaration, else as its `default`, the same for Settings and for code, so
   a value kept from before an update narrowed the setting falls back. Studio
   shows and changes the values only on a connection allowed to change its
-  settings; elsewhere the section is read only.
+  settings; elsewhere the section is read only. The extension's own frame
+  reads them for anyone who may open it, since an extension needs its
+  configuration to draw itself, and what it shows of them is the extension's
+  responsibility; a frame's `settings.set` changes one only for someone who
+  holds `settings:write`. Settings has a "Reset to default" for each setting.
 
 Every point defaults to empty. The points held for later formats (themes,
 fonts, skills and the rest, listed under the reference) must be empty or
