@@ -1,25 +1,23 @@
-# Drop-in extensions and conversation providers
+# Installed extensions
 
-SprintEngine Studio picks up two kinds of addition from per-user folders,
-discovered on launch. Both folders are created (and seeded with a README) the
-first time the app runs — including on a packaged install — so there is always
-a discoverable place to drop things.
+SprintEngine Studio keeps the extensions installed on a machine in a per-user
+folder, discovered on launch. The folder is created (and seeded with a README)
+the first time the app runs, including on a packaged install, so there is
+always a discoverable place to look.
 
 | Kind | Folder | Manifest | Surfaced in |
 | --- | --- | --- | --- |
 | **Extension** | `~/.sprintengine/extensions/<publisher>.<id>/` | `extension.json` | Settings → Extensions, the Extensions door |
-| **Conversation provider** | `~/.sprintengine/plugins/<id>/` | `plugin.json` with `"kind": "provider"` | Settings → Providers |
 
 An extension's folder is named for its install key, `<publisher>.<id>`; one
-installed from a folder is `local.<id>`. A provider's folder name must equal
-its manifest `id`. Agent CLIs are not drop-in: they ship with the app, and
-nothing a user installs adds or replaces one. A provider in the plugins folder
-that reuses any built-in id is refused with the reason, and the built-in one
-stays.
+installed from a folder is `local.<id>`. Agent CLIs are not installed this
+way: they ship with the app, and nothing a user installs adds or replaces one.
+Model providers, skills and MCP servers come from extensions
+(`contributes.providers`, `contributes.skills`, `contributes.mcpServers`).
 
 The extension root can be relocated with the `SPRINTENGINE_USER_EXTENSION_ROOT`
 environment variable (the dev harness and a template's `dev:install` honour
-it); providers always resolve under `~/.sprintengine/plugins`.
+it).
 
 ## Extensions
 
@@ -168,26 +166,38 @@ Then build the extension, sign it (`sprintengine-extension sign extension
 --key …`, or `npm run dev:install` with the key at
 `~/.sprintengine/keys/<id>.key`), install it, and restart the app.
 
-### Skills and MCP servers
+### Skills, MCP servers and model providers
 
-An extension hands agents skills, MCP servers and model providers with
-`contributes.skills`, `contributes.mcpServers` and `contributes.providers` in
-its extension.json (the SDK guide's `manifest` topic). Its worker can also
-serve MCP tools of its own through `contributes.mcpTools` and
-`registerMcpTools`, and put one of Studio's own skills in a workspace with
+An extension hands the person's agents and chats skills, MCP servers and model
+providers with `contributes.skills`, `contributes.mcpServers` and
+`contributes.providers` in its extension.json (the SDK guide's `manifest`
+topic; the `agent-kit` template is a skill and a local MCP server). They are
+declarative: no worker runs for them.
+
+- **Skills** are folders holding a `SKILL.md`. Studio copies each into a
+  folder of its own and hands it to agents at launch, in every workspace on the
+  machine; nothing is written into a project. They ask for no approval and are
+  listed when the extension is installed.
+- **MCP servers** are a local command (`stdio`) each agent starts, or a hosted
+  server (`http`) it reaches. A hosted one asks for nothing and is listed at
+  install. A local one is approved once, at install, with its command,
+  arguments and environment shown; an update that changes them, or the files
+  of the extension they run, asks again, and until then the server is held
+  back.
+- **Model providers** are OpenAI-compatible endpoints chats can use. Each asks
+  for approval once, naming the origin its key goes to; the key is entered in
+  Settings, stored under `<publisher>.<id>/<provider id>`, never read from an
+  environment variable, and sent to that origin only. An update that moves a
+  provider to another origin asks again. A provider may not take the id of one
+  of Studio's own.
+
+An update that drops one of them takes it back from agents, and an uninstall
+takes back everything the extension handed them, the keys entered for its
+providers included.
+
+Its worker can also serve MCP tools of its own through `contributes.mcpTools`
+and `registerMcpTools`, and put one of Studio's own skills in a workspace with
 `ensureSkillInstalled`.
 
-## Conversation providers
-
-A conversation provider adds a model provider to Studio's chat: a
-`plugin.json` with `"kind": "provider"` naming the provider, its models and how
-it signs in (`providerType`, `models`, `auth`, and an OpenAI-compatible
-endpoint or an adapter). Drop it into `~/.sprintengine/plugins/<id>/`; it is
-picked up on the next launch. An executable adapter must be signed by a
-publisher you trust before it runs. `resources/plugins/claude-agent`,
-`openrouter` and `xai` in the app repository are worked examples, and
-`src/shared/plugin-manifest.ts` is the shape.
-
-Agent CLIs (`kind: "cli"`) are not loaded from this folder: they ship with the
-app, and their manifest contract is the app's own
-(`src/shared/cli-plugin-manifest.ts`), not part of the SDK.
+Agent CLIs (`kind: "cli"`) ship with the app, and their manifest contract is
+the app's own (`src/shared/cli-plugin-manifest.ts`), not part of the SDK.

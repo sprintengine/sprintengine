@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed (skills, MCP servers and model providers from extensions)
+
+- `ExtensionContributionsView` carries `skills`, `mcpServers` and
+  `providers` (`ExtensionSkillContributionView`,
+  `ExtensionMcpServerContributionView`, `ExtensionProviderContributionView`),
+  so a client's install review lists each skill and server, a local server's
+  command line and environment, and the origin a provider's key is sent to.
+- A provider's `source` (`StudioProviderListEntry`, and `PluginSource`) is
+  `bundled` or `extension`; `user` is gone with the provider folder. An
+  extension's provider's id is `<publisher>.<id>/<provider id>`, and
+  `providers.setSecret`, `.clearSecret` and `.secretStatus` take it as it is.
+
 ### Removed (plugin bundles, inline MCP entries and the GitHub bundle install)
 
 - **`marketplace.resolveGithub` and `marketplace.installGithub`**, with their

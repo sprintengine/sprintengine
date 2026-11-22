@@ -47,12 +47,12 @@ you change it.
 `tier` says the most authority the extension needs. Each tier carries what the
 ones below it do; a field or a contribution above the tier fails validation.
 
-| Tier          | What it may carry                                                                                                                                                         |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `content`     | Its name and images, and content Studio draws itself: syntaxes, keybindings, status bar items and settings. Nothing that runs, so it installs without an approval prompt. |
-| `declarative` | Commands that run Studio's own commands (`action`), menu items and top bar items for them. No permissions.                                                                |
-| `ui`          | Panels, doors and settings sections drawn by its own code, and permissions.                                                                                               |
-| `worker`      | `main`: code that runs in the background, serves commands without an `action`, methods and MCP tools.                                                                     |
+| Tier          | What it may carry                                                                                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `content`     | Its name and images, and content Studio draws itself: syntaxes, keybindings, status bar items and settings. Nothing that runs, so it installs without an approval prompt.             |
+| `declarative` | Commands that run Studio's own commands (`action`), menu items and top bar items for them, and the skills, MCP servers and model providers it hands agents and chats. No permissions. |
+| `ui`          | Panels, doors and settings sections drawn by its own code, and permissions.                                                                                                           |
+| `worker`      | `main`: code that runs in the background, serves commands without an `action`, methods and MCP tools.                                                                                 |
 
 Pick the lowest tier that does the job. The install review says what the tier
 means, and a lower tier asks less of the person. `requiredExtensionTier(manifest)`
@@ -158,9 +158,42 @@ answers the least tier a manifest needs.
   responsibility; a frame's `settings.set` changes one only for someone who
   holds `settings:write`. Settings has a "Reset to default" for each setting.
 
+- **`skills`**, **`mcpServers`** and **`providers`** are what the extension
+  hands the person's agents and chats, in every workspace on the machine. They
+  are declarative: no worker runs for them. Studio copies each skill into a
+  folder of its own and hands it to agents at launch, gives agents each MCP
+  server beside the person's own, and lists each provider in the model
+  picker; nothing is written into a project. An update that drops one takes it
+  back, and an uninstall takes back all of them.
+  - A skill names a `path`: a folder holding its `SKILL.md` and the files it
+    names. Agents see it as `<publisher>.<id>.<skill id>`. No approval is asked
+    for it; it is listed when the extension is installed.
+  - An MCP server is `stdio`, a command each agent starts on this machine
+    (`command`, `args`, and `env` as `{ "name", "value" }` pairs, values as
+    written: Studio reads none from its own environment), or `http`, a hosted
+    server agents reach at `url`. `${extensionPath}` in a command, an argument
+    or a value stands for the extension's installed folder:
+    `"command": "node", "args": ["${extensionPath}/dist/server.mjs"]`. Agents
+    see the server as `<publisher>_<id>_<server id>`. A hosted server asks
+    for no approval. A local one is approved at install with its command,
+    arguments and environment shown, and is bound to them and to the
+    extension's files it may run (all of them but extension.json, its images
+    and its skills' folders), so an update that changes any of them asks again;
+    until then agents do not get it.
+  - A provider is an OpenAI-compatible endpoint: `baseUrl` (https, or plain
+    http to localhost), the paths on it (`chatCompletionsPath`, by default
+    `/v1/chat/completions`, and `modelsPath` for a live model list), the
+    `models` to offer, and `apiKey` when it takes a key. Studio knows it as
+    `<publisher>.<id>/<provider id>` and keeps its key under that id. The person
+    enters the key in Settings; it is never read from an environment variable,
+    and it is sent to `baseUrl`'s origin only: a path that would leave it fails
+    validation, and a redirect is refused. A provider asks for approval once,
+    naming that origin, and again when an update moves it to another. It may
+    not take the id of one of Studio's own providers or agents.
+
 Every point defaults to empty. The points held for later formats (themes,
-fonts, skills and the rest, listed under the reference) must be empty or
-absent.
+fonts, agent providers run by an extension's own code and the rest, listed
+under the reference) must be empty or absent.
 
 ## Ids and install keys
 

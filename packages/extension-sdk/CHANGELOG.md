@@ -11,7 +11,34 @@ extension built against 3.x must be rewritten to this one.
 
 - `contributes.skills`, `contributes.mcpServers` and `contributes.providers`
   in extension.json are how an extension hands agents a skill, an MCP server
-  or a model provider. They replace the marketplace plugin bundle.
+  or a model provider. They replace the marketplace plugin bundle and the
+  provider folder (`~/.sprintengine/plugins`). Each is declarative, and they
+  are no longer reserved points.
+  - A skill (`{ id, path }`) names a folder holding a `SKILL.md`. Agents see it
+    as `<publisher>.<id>.<skill id>`. It asks for no approval.
+  - An MCP server is `stdio` (`command`, `args`, `env` as `{ name, value }`
+    pairs; `${extensionPath}` stands for the installed folder) or `http`
+    (`url`: https, or plain http to localhost). Agents see it as
+    `<publisher>_<id>_<server id>`. A hosted one asks for no approval. A local
+    one is approved at install, bound to its command, arguments, environment
+    and the extension's files it may run, so an update that changes any of them
+    asks again.
+  - A provider (`{ id, name, baseUrl, chatCompletionsPath?, modelsPath?,
+    models, apiKey? }`) is an OpenAI-compatible endpoint, known as
+    `<publisher>.<id>/<provider id>`. Its key is entered in Settings, never
+    read from the environment, and sent only to `baseUrl`'s origin; a path that
+    would leave that origin fails validation. It asks once, and again when an
+    update moves it to another origin.
+- New exports for the rules the validator, the install review and Studio
+  share: `EXTENSION_PATH_TOKEN`, `withExtensionPath`, `mcpCommandProblem`,
+  `extensionPathUseProblem`, `agentEndpointUrlProblem`, `providerPathProblem`,
+  `providerEndpoint`, `providerOrigin`, `extensionMcpServerName`,
+  `extensionProviderId`, `extensionSkillName`, `SKILL_FILE_MAX_BYTES` and
+  `SKILL_FOLDER_MAX_FILES`; types `ExtensionSkillContribution`,
+  `ExtensionMcpServerContribution` and `ExtensionProviderContribution`.
+- A new template, `agent-kit`: a skill and a local MCP server built from
+  TypeScript, with no worker. A project's smoke test now checks that each
+  skill's `SKILL.md` and each file a local server runs were built.
 - The `sprintengine-extension plugin` commands (`plugin scaffold`, `pack`,
   `sign` and `verify`, and their `plugin-*` spellings) are gone, with the
   `plugin.json` bundle helpers: `validateMarketplacePluginManifest`,

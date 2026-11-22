@@ -219,6 +219,23 @@ the window's choice of editor `src/renderer/src/modules/extension-editors.ts`, i
 `packages/extension-sdk/templates/editor/`. Tests: `packages/extension-sdk/test/custom-editors.test.ts`,
 `src/renderer/src/modules/extension-editor-session.test.ts`, `src/renderer/src/modules/extension-editors.test.ts`.
 
+**What extensions hand agents** (an extension's skills, MCP servers and model providers, `contributes.skills`,
+`.mcpServers`, `.providers`): the points and their shared rules in `packages/extension-sdk/src/extension-manifest.ts`
+and `packages/extension-sdk/src/agent-contributions.ts`; checked at install in
+`src/server/extensions/agent-contributions/install-checks.ts`; projected (skill copies, servers, providers, restart-safe)
+by `src/server/extensions/agent-contributions/projection.ts`, reconciled from `src/main/modules/module-lifecycle.ts`
+after every install, approval, switch and uninstall and at every start; what a local server or a provider asks for in
+`src/main/modules/extension-approvals.ts`. Reach: terminal launches in `src/main/integrations/launch-integration.ts`,
+Claude Code and Codex chats in `src/main/providers/claude-agent-provider.ts` and
+`src/main/providers/codex-conversation-provider.ts` (through `src/main/conversation-runtime.ts`), providers in
+`src/main/plugin-registry.ts` and `src/main/plugin-registry-instance.ts`, their keys in `src/main/secret-store.ts`, their
+requests held to the base URL's origin in `src/main/providers/openai-compatible-provider.ts`. Review:
+`src/renderer/src/components/settings/ApprovalReviewDialog.tsx` and `ExtensionRow.tsx`, through
+`src/renderer/src/components/settings/extensionContributions.ts`. Template `packages/extension-sdk/templates/agent-kit/`.
+Tests: `src/server/extensions/agent-contributions/projection.test.ts`, `packages/extension-sdk/test/agent-contributions.test.ts`,
+`src/main/integrations/launch-integration.test.ts`, `src/main/providers/extension-provider-key.test.ts`,
+`src/main/modules/extension-approvals.test.ts`.
+
 **Extension workers** (an extension's `main`, in a process of its own): `src/server/extensions/workers/`
 (`worker-manager.ts`, `worker-process.ts`, the fork's own `worker-entry.ts`, its environment in
 `worker-env.ts`). Tests: `src/server/extensions/workers/worker-lifecycle.test.ts`,
