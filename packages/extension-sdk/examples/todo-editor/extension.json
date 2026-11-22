@@ -1,0 +1,24 @@
+{
+  "$schema": "../../extension.schema.json",
+  "manifestVersion": 1,
+  "id": "todo-editor",
+  "version": "1.0.0",
+  "engines": { "studio": ">=0.13.0" },
+  "tier": "ui",
+  "name": "Todo editor",
+  "description": "Opens .todo files as a list of tasks to tick, add and remove. Studio saves them.",
+  "license": "MIT",
+  "permissions": ["workspace-files:read", "workspace-files:write"],
+  "contributes": {
+    "customEditors": [
+      {
+        "id": "todo",
+        "title": "Todo list",
+        "icon": "check",
+        "entry": "editor.js",
+        "extensions": [".todo"],
+        "filenames": ["TODO"]
+      }
+    ]
+  }
+}

@@ -193,12 +193,16 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
       }
       return { ok: true }
     },
-    'files.read': async (_request, params) => readExtensionFile(await filesScope(params), params.path),
+    'files.read': async (_request, params) => readExtensionFile(await filesScope(params), params.path, params.encoding),
     'files.stat': async (_request, params) => statExtensionFile(await filesScope(params), params.path),
     'files.search': async (_request, params) =>
       searchExtensionFiles(await filesScope(params), params.query, params.limit),
     'files.write': async (_request, params) =>
-      writeExtensionFile(await filesScope(params), params.path, params.content, params.create === true),
+      writeExtensionFile(await filesScope(params), params.path, params.content, {
+        create: params.create === true,
+        encoding: params.encoding,
+        expectedSha256: params.expectedSha256,
+      }),
     notify: (request, params) => {
       try {
         deps.emitNotification(request.moduleId, params as ModuleNotifyInput)

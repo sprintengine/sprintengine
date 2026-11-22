@@ -13,6 +13,8 @@ import {
 } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
+import { withFileWriteTurn } from './file-write-queue'
+
 // Reading and writing a file whose path was checked first. Every write (and
 // every read that is cheap to hold the same way) held to a folder, such as a
 // backlog item, an editor save or a file a paired device names, resolves the
@@ -149,14 +151,17 @@ export async function writeConfinedFile(
     if (bytes > options.maxBytes) throw new ConfinedFileTooLarge('writes', bytes, options.maxBytes)
   }
   const flags = constants.O_WRONLY | constants.O_CREAT | (options.exclusive ? constants.O_EXCL : 0)
-  const { handle } = await openConfined(path, flags, options.hardLinks ?? 'refuse')
-  try {
-    if (!options.exclusive) await handle.truncate(0)
-    if (options.mode !== undefined) await handle.chmod(options.mode)
-    await handle.writeFile(data, typeof data === 'string' ? 'utf-8' : undefined)
-  } finally {
-    await handle.close()
-  }
+  // In the file's turn with every other Studio writer of it (file-write-queue.ts).
+  await withFileWriteTurn(path, async () => {
+    const { handle } = await openConfined(path, flags, options.hardLinks ?? 'refuse')
+    try {
+      if (!options.exclusive) await handle.truncate(0)
+      if (options.mode !== undefined) await handle.chmod(options.mode)
+      await handle.writeFile(data, typeof data === 'string' ? 'utf-8' : undefined)
+    } finally {
+      await handle.close()
+    }
+  })
 }
 
 export type ConfinedReadOptions = {

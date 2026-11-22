@@ -53,6 +53,18 @@ import {
 } from '../ui'
 import { EditorDiskNotice, overwriteOnDiskConfirmation, type EditorDiskNoticeState } from './editor/EditorDiskNotice'
 import { filesApi } from '../../studio/files'
+import {
+  TEXT_EDITOR_VIEW,
+  chooseEditorView,
+  editorViewsVersion,
+  extensionEditorViewId,
+  extensionEditorsFor,
+  resolveExtensionEditor,
+  subscribeEditorViews,
+} from '../../modules/extension-editors'
+import { extensionSurfacesVersion, subscribeExtensionSurfaces } from '../../modules/extension-surfaces'
+import { ExtensionEditorView } from '../extensions/ExtensionEditorView'
+import { EditorViewPicker } from '../extensions/EditorViewPicker'
 import { gitApi } from '../../studio/git'
 import { copy as appCopy } from '../../../../shared/copy'
 
@@ -110,6 +122,14 @@ function openFileState(workspaceId: string, path: string) {
     ?.editorState?.openFiles.find((f) => f.path === path)
 }
 
+/** `path` relative to the workspace's folder, `/` between its parts; null outside it. */
+function workspaceRelativePath(folderPath: string | null, path: string | null): string | null {
+  if (!folderPath || !path) return null
+  const root = trimPath(folderPath)
+  if (!isPathOrChild(path, root) || path.length <= root.length + 1) return null
+  return path.slice(root.length + 1).replaceAll('\\', '/')
+}
+
 function readCssVar(name: string): string {
   if (typeof document === 'undefined') return ''
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -139,6 +159,14 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
   const agentTrail = useAgentFileTrail(workspaceId, null)
   const agentHere = activeFilePath !== null && agentTrail.marks.has(normalizePathKey(activeFilePath))
   const activeFile = openFiles.find((f) => f.path === activeFilePath)
+  // An extension's custom editor for the file, when one takes it (the
+  // person's choice, else the best `default` match) and the file is inside
+  // the workspace's folder, where an extension may read files.
+  useSyncExternalStore(subscribeExtensionSurfaces, extensionSurfacesVersion, extensionSurfacesVersion)
+  useSyncExternalStore(subscribeEditorViews, editorViewsVersion, editorViewsVersion)
+  const activeRelativePath = workspaceRelativePath(folderPath, activeFilePath)
+  const editorMatches = activeFilePath && activeRelativePath ? extensionEditorsFor(activeFilePath) : []
+  const extensionEditor = activeFilePath ? resolveExtensionEditor(workspaceId, activeFilePath, editorMatches) : null
   const isImage = Boolean(activeFilePath && activeFile && isImageFile(activeFile.path || activeFile.name))
   const activeFileHasRuntimeBuffer = activeFilePath ? hasEditorBuffer(workspaceId, activeFilePath) : false
   const activeFileContentReady =
@@ -466,7 +494,8 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
   // once when the watch starts too, for whatever changed while this tab was
   // not mounted to hear it. A folder that cannot be watched (an SSH machine's)
   // leaves the tab as it was before there was a watch.
-  const watchesDisk = Boolean(activeFilePath && activeFile && !isImage && activeFileContentReady)
+  // An extension's editor keeps its own document in step with disk.
+  const watchesDisk = Boolean(activeFilePath && activeFile && !isImage && activeFileContentReady && !extensionEditor)
   useEffect(() => {
     if (!watchesDisk || !activeFilePath) return
     const path = activeFilePath
@@ -773,12 +802,38 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
     return <EditorEmpty title={appCopy.panels.editorPanel.thisFileIsNoLonger} />
   }
 
+  const viewPicker =
+    editorMatches.length > 0 && activeFilePath ? (
+      <EditorViewPicker
+        workspaceId={workspaceId}
+        path={activeFilePath}
+        fileName={activeFile.name}
+        matches={editorMatches}
+        current={extensionEditor ? extensionEditorViewId(extensionEditor) : TEXT_EDITOR_VIEW}
+      />
+    ) : null
+
+  if (extensionEditor && activeFilePath && activeRelativePath) {
+    return (
+      <ExtensionEditorView
+        key={`${extensionEditorViewId(extensionEditor)}\u0000${activeFilePath}`}
+        workspaceId={workspaceId}
+        filePath={activeFilePath}
+        relativePath={activeRelativePath}
+        fileName={activeFile.name}
+        editor={extensionEditor}
+        picker={viewPicker}
+        onOpenInTextEditor={() => chooseEditorView(workspaceId, activeFilePath, TEXT_EDITOR_VIEW)}
+      />
+    )
+  }
+
   if (!activeFileContentReady) {
     return <EditorLoading label={appCopy.panels.editorPanel.loadingFile} />
   }
 
   const markdownModeToggle = isMarkdown ? (
-    <div className="absolute right-3 top-3 z-10">
+    <div>
       <Tooltip
         content={
           markdownPreviewTooLarge
@@ -859,7 +914,12 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
         />
       ) : null}
       <div className="relative flex-1 overflow-hidden">
-        {markdownModeToggle}
+        {markdownModeToggle || viewPicker ? (
+          <div className="absolute right-3 top-3 z-10 flex items-center gap-1">
+            {viewPicker}
+            {markdownModeToggle}
+          </div>
+        ) : null}
         {showPreview ? (
           <div className="h-full overflow-y-auto bg-[color:var(--bg-app)] px-8 pb-8 pt-8 [scrollbar-gutter:stable]">
             {/* The mode toggle floats over this same `relative` box at `top-3`

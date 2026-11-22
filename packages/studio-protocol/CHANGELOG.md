@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added (custom editors)
+
+- New capability **`extension-editors`**, offered with `extension-host`: a
+  client opens a file in an extension's custom editor only where its Studio
+  offers it, and in its text editor elsewhere. **`extension.frame`** takes
+  `point: 'customEditors'`.
+- A frame's **`files.read`** (through `extension.call`) takes
+  `encoding: 'base64'` and answers the file's `sha256`; **`files.write`** takes
+  `encoding` and `expectedSha256`, and answers `conflict` when the file's
+  bytes changed since. A client's custom editor reads and saves its file this
+  way, as the extension and as that connection.
+- `ExtensionContributionsView` carries `customEditors`.
+
 ### Added (content extensions)
 
 - **`extension.content`** `{ moduleId, kind: 'syntax', id }` (`extensions:read`,

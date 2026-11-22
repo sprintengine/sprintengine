@@ -42,6 +42,7 @@ export const EXTENSION_TEMPLATE_IDS: readonly string[] = [
   'blank',
   'panel',
   'door',
+  'editor',
   'chat-companion',
   'top-bar-item',
   'settings-section',

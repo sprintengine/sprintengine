@@ -1208,6 +1208,14 @@ export type BacklogItemView = {
 export type ModuleToastTone = 'neutral' | 'accent' | 'good' | 'warn' | 'error'
 
 export type {
+  ExtensionEditorContent,
+  ExtensionEditorDocument,
+  ExtensionEditorDocumentApi,
+  ExtensionEditorEdit,
+  ExtensionEditorEditError,
+  ExtensionEditorSession,
+  ExtensionEditorSessionOptions,
+  ExtensionFileEncoding,
   ExtensionFilePath,
   ExtensionFrameError,
   ExtensionFrameErrorCode,
@@ -1514,6 +1522,8 @@ export {
   EXTENSION_RESERVED_POINTS,
   EXTENSION_SIGNATURE_FILENAME,
   EXTENSION_SURFACE_POINTS,
+  EXTENSION_EDITOR_CONTENT_KINDS,
+  EXTENSION_EDITOR_PRIORITIES,
   EXTENSION_TIERS,
   LOCAL_EXTENSION_PUBLISHER,
   STUDIO_EXTENSION_VERSION,
@@ -1538,6 +1548,9 @@ export {
   type ExtensionCommandAction,
   type ExtensionCommandContribution,
   type ExtensionContributions,
+  type ExtensionCustomEditorContribution,
+  type ExtensionEditorContentKind,
+  type ExtensionEditorPriority,
   type ExtensionIcon,
   type ExtensionManifest,
   type ExtensionManifestResult,
@@ -1557,6 +1570,14 @@ export {
   type ExtensionTopBarItemContribution,
   type ManifestIssue,
 } from './extension-manifest.js'
+
+// Which custom editor opens a file, and how large its document may be.
+export {
+  EXTENSION_EDITOR_BYTES_MAX_BYTES,
+  EXTENSION_EDITOR_FLUSH_TIMEOUT_MS,
+  EXTENSION_EDITOR_TEXT_MAX_BYTES,
+  customEditorMatchRank,
+} from './custom-editors.js'
 
 // What a content extension's syntax files hold, checked the same way by the
 // author's tools, at install and each time Studio serves them.

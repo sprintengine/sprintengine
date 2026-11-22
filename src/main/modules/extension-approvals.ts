@@ -36,6 +36,14 @@ export type ExtensionAccess = {
   tools: Record<string, 'read' | 'operate'>
   /** Its commands that run one of Studio's own actions, as `<command>=<action>`, sorted. */
   actions: string[]
+  /**
+   * Its custom editors, the files each takes and whether it opens them by
+   * default, as `<editor>=<suffixes and names, lower case, sorted>|<priority>`,
+   * sorted: an editor opens the person's files in the extension's code, so a
+   * new one, one that takes more files, or one that goes from being offered
+   * to opening them by default, is asked for again.
+   */
+  editors: string[]
 }
 
 export type ExtensionApprovalRecord = { fingerprint: string; access: ExtensionAccess }
@@ -53,7 +61,16 @@ export function extensionAccess(
     actions: manifest.contributes.commands
       .flatMap((command) => (command.action === undefined ? [] : [`${command.id}=${command.action}`]))
       .sort(),
+    editors: manifest.contributes.customEditors
+      .map((editor) => `${editor.id}=${editorFiles(editor).join(',')}|${editor.priority ?? 'default'}`)
+      .sort(),
   }
+}
+
+function editorFiles(editor: { extensions?: string[]; filenames?: string[] }): string[] {
+  return [
+    ...new Set([...(editor.extensions ?? []), ...(editor.filenames ?? [])].map((name) => name.toLowerCase())),
+  ].sort()
 }
 
 /** Whether an extension at this access waits for the person's approval: anything beyond content does. */
@@ -97,6 +114,24 @@ export function accessGrowth(approved: ExtensionAccess, next: ExtensionAccess): 
       const [command, ...rest] = action.split('=')
       growth.push(`the command "${command}" running "${rest.join('=')}"`)
     }
+  const editorOf = (entry: string) => {
+    const [files = '', priority = 'default'] = entry.slice(entry.indexOf('=') + 1).split('|')
+    return { id: entry.slice(0, entry.indexOf('=')), files: files.split(','), priority }
+  }
+  const approvedEditors = new Map(approved.editors.map((entry) => [editorOf(entry).id, editorOf(entry)]))
+  for (const entry of next.editors) {
+    const { id, files, priority } = editorOf(entry)
+    const before = approvedEditors.get(id)
+    const added = before ? files.filter((file) => !before.files.includes(file)) : files
+    if (added.length > 0)
+      growth.push(
+        before
+          ? `the editor "${id}" opening ${added.join(', ')} files too`
+          : `the editor "${id}" opening ${added.join(', ')} files`,
+      )
+    if (before && before.priority === 'option' && priority === 'default')
+      growth.push(`the editor "${id}" opening its files by default`)
+  }
   return growth
 }
 
@@ -112,10 +147,10 @@ function readRecord(value: unknown): ExtensionApprovalRecord | null {
   const { fingerprint, access } = value as Record<string, unknown>
   if (typeof fingerprint !== 'string' || !fingerprint.startsWith('sha256-')) return null
   if (!access || typeof access !== 'object' || Array.isArray(access)) return null
-  const { permissions, tier, worker, background, tools, actions } = access as Record<string, unknown>
+  const { permissions, tier, worker, background, tools, actions, editors } = access as Record<string, unknown>
   const strings = (list: unknown): list is string[] =>
     Array.isArray(list) && list.every((entry) => typeof entry === 'string')
-  if (!strings(permissions) || !strings(actions)) return null
+  if (!strings(permissions) || !strings(actions) || !strings(editors)) return null
   if (!isTier(tier) || typeof worker !== 'boolean' || typeof background !== 'boolean') return null
   if (!tools || typeof tools !== 'object' || Array.isArray(tools)) return null
   const toolAccess = Object.entries(tools as Record<string, unknown>)
@@ -129,6 +164,7 @@ function readRecord(value: unknown): ExtensionApprovalRecord | null {
       background,
       tools: Object.fromEntries(toolAccess) as Record<string, 'read' | 'operate'>,
       actions: [...actions].sort(),
+      editors: [...editors].sort(),
     },
   }
 }

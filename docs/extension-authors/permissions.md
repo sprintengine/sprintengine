@@ -86,8 +86,8 @@ whoever set the call off must hold, in the Studio protocol's permission names.
 | `backlog:operate` | Create Backlog items and change them | `getBacklogService` writes; a surface's other `backlog.*` | `backlog:operate` |
 | `providers:read` | See which agents a chat can run on | `listChatRuntimes` | `providers:read` |
 | `usage:read` | See token usage and cost of every agent session | `getUsageService`, a surface's `usage.query` | `workspace:read` |
-| `workspace-files:read` | Read the files in your workspaces' folders | a surface's `files.read`, `files.stat`, `files.search` | `filesystem:read` |
-| `workspace-files:write` | Change and create files in your workspaces' folders | a surface's `files.write` | `filesystem:write` |
+| `workspace-files:read` | Read the files in your workspaces' folders | a surface's `files.read`, `files.stat`, `files.search`; a custom editor's file (`customEditors` needs it) | `filesystem:read` |
+| `workspace-files:write` | Change and create files in your workspaces' folders | a surface's `files.write`; saving a custom editor's file | `filesystem:write` |
 | `storage:own` | Save its own data | `getModuleStorage`, `getModuleDataDir`; a surface's `storage.*` | `extension:read` to read, `extension:operate` to write |
 | `settings:own` | Read the values of its own Settings section | `getModuleAppState`, `watchModuleAppState`; a surface's `settings.get`, `settings.set` | `extension:read` to read, `extension:operate` to write |
 | `secrets:own` | Store API keys and send them to the sites it names | `getSecretsService` | `extension:operate` |

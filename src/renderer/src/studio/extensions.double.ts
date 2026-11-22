@@ -60,6 +60,8 @@ function blank(): Api {
     listStudioModules: async () => [],
     listExtensionContributions: async () => ({ extensions: [], failures: {} }),
     drawsExtensionFrames: async () => true,
+    opensExtensionEditors: async () => true,
+    canWriteFiles: async () => true,
     extensionFrame: async () => ({ hash: '', html: '' }),
     extensionCall: async () => ({ ok: false, code: 'unavailable', message: NONE }),
     extensionContent: async () => {

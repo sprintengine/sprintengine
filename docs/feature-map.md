@@ -195,7 +195,7 @@ review `src/renderer/src/components/settings/ApprovalReviewDialog.tsx`. Wire: `e
 `docs/extension-authors/permissions.md`. Tests: `src/main/module-host/main-host.gate.test.ts`,
 `src/main/modules/extension-approvals.test.ts`.
 
-**Extension frames** (a panel, door or settings section drawn in a sandboxed frame, on every client): the
+**Extension frames** (a panel, door, settings section or custom editor drawn in a sandboxed frame, on every client): the
 document in `src/server/extensions/frames/` (`frame-document.ts`, `frame-bootstrap.ts`, the web listener's
 `frame-route.ts`), the desktop shell's `src/main/extension-frames/extension-frame-shell.ts`, the window's bridge
 `src/renderer/src/modules/extension-frame-host.ts` and mount
@@ -204,6 +204,20 @@ document in `src/server/extensions/frames/` (`frame-document.ts`, `frame-bootstr
 Wire: `extension.frame`, `extension.call`, `extension.contributions` (capability `extension-frames`). Tests:
 `src/server/extensions/frames/frame-document.test.ts`, `src/renderer/src/modules/extension-frame-host.test.ts`,
 `src/main/module-host/extension-frame-calls.test.ts`.
+
+**Custom editors** (an extension's editor for files of a type, in the file's tab, with a document session): the
+contribution in `packages/extension-sdk/src/extension-manifest.ts` and which editor takes a file in
+`packages/extension-sdk/src/custom-editors.ts`; the frame's `studio.document` in
+`packages/extension-sdk/src/editor-document-script.ts` (inlined by `src/server/extensions/frames/frame-bootstrap.ts`);
+the window's choice of editor `src/renderer/src/modules/extension-editors.ts`, its document session
+`src/renderer/src/modules/extension-editor-session.ts`, drawn by
+`src/renderer/src/components/extensions/ExtensionEditorView.tsx` and
+`src/renderer/src/components/extensions/EditorViewPicker.tsx` from
+`src/renderer/src/components/panels/EditorPanel.tsx`; reads and saves through `files.*` in
+`src/main/module-host/extension-files.ts`. Wire: `extension.frame` (`point: customEditors`), `extension.call`
+(capability `extension-editors`). Sample: `packages/extension-sdk/examples/todo-editor/`; template
+`packages/extension-sdk/templates/editor/`. Tests: `packages/extension-sdk/test/custom-editors.test.ts`,
+`src/renderer/src/modules/extension-editor-session.test.ts`, `src/renderer/src/modules/extension-editors.test.ts`.
 
 **Extension workers** (an extension's `main`, in a process of its own): `src/server/extensions/workers/`
 (`worker-manager.ts`, `worker-process.ts`, the fork's own `worker-entry.ts`, its environment in

@@ -80,6 +80,12 @@ import type {
 //   that drew the frame passes on. The call is checked here as the extension
 //   (its approval) and as this connection (its grant), and answers the
 //   method's result or the refusal's code and words.
+// - Under `extension-editors` as well: `extension.frame` also builds a custom
+//   editor's frame (`point: customEditors`), and the frame methods `files.read`
+//   and `files.write` carry bytes (`encoding: base64`), answer the file's
+//   sha256, and write only over the bytes that were read (`expectedSha256`,
+//   refused `conflict` otherwise): what a client's editor session reads and
+//   saves the file with, as the extension and as that connection.
 //   `extension.reportRegistry`: the module registry a window resolved, its window
 //   halves included, which the Studio's own `module.*` agent tools report. It
 //   is the window's own report, so an owner's only
@@ -156,8 +162,8 @@ export type StudioModuleCall = {
  */
 export type StudioModuleAnswer = { ok: true; result: unknown } | { ok: false; code: string; message: string }
 
-/** Which surface a frame draws. */
-export type StudioExtensionSurfacePoint = 'panels' | 'doors' | 'settingsSections'
+/** Which surface a frame draws. `customEditors` only where the Studio offers `extension-editors`. */
+export type StudioExtensionSurfacePoint = 'panels' | 'doors' | 'settingsSections' | 'customEditors'
 
 /** `extension.frame`'s params. */
 export type StudioExtensionFrameRequest = {
@@ -453,8 +459,13 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
     capability: STUDIO_EXTENSION_FRAMES_CAPABILITY,
     params: (value) => {
       if (!moduleId(value.moduleId)) return studioParamsRefused('"moduleId" is the extension\'s install key.')
-      if (value.point !== 'panels' && value.point !== 'doors' && value.point !== 'settingsSections')
-        return studioParamsRefused('"point" is panels, doors or settingsSections.')
+      if (
+        value.point !== 'panels' &&
+        value.point !== 'doors' &&
+        value.point !== 'settingsSections' &&
+        value.point !== 'customEditors'
+      )
+        return studioParamsRefused('"point" is panels, doors, settingsSections or customEditors.')
       if (typeof value.id !== 'string' || value.id.length === 0 || value.id.length > MAX_SURFACE_ID_CHARS)
         return studioParamsRefused('"id" is the contribution\'s id in extension.json.')
       if (value.theme !== undefined && (typeof value.theme !== 'string' || value.theme.length > MAX_SURFACE_ID_CHARS))

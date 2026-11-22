@@ -528,9 +528,10 @@ async function loadRendererModuleBatch(refresh: boolean): Promise<void> {
     // Older preload bundles may not carry the bridge yet; treat that as "no
     // third-party renderer entries" rather than failing the boot.
     if (!windowHasStudio()) return
-    const [served, drawsFrames] = await Promise.all([
+    const [served, drawsFrames, drawsEditors] = await Promise.all([
       extensionsApi.listExtensionContributions(),
       extensionsApi.drawsExtensionFrames(),
+      extensionsApi.opensExtensionEditors(),
     ])
     const { loadExtensionContributions, reconcileExtensionContributions, contributionsForRefresh } =
       await import('./extension-contributions')
@@ -541,6 +542,7 @@ async function loadRendererModuleBatch(refresh: boolean): Promise<void> {
       rendererHost,
       refresh ? contributionsForRefresh(served) : served,
       drawsFrames,
+      drawsEditors,
     )
     thirdPartyRendererManifests = [...kept, ...loaded]
     // The languages they contribute: data, so every served extension's join

@@ -18,10 +18,10 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-function view(tier: 'ui' | 'worker', permissions: string[]): ThirdPartyModuleView {
+function view(tier: 'ui' | 'worker', permissions: string[], customEditors: unknown[] = []): ThirdPartyModuleView {
   return {
     approval: { state: 'pending', fingerprint: 'sha256-x' },
-    extension: { tier, permissions },
+    extension: { tier, permissions, contributes: { customEditors } },
     manifest: { id: 'local.deck', displayName: 'Deck' },
     launch: { hasMainEntry: tier === 'worker' },
   } as unknown as ThirdPartyModuleView
@@ -60,4 +60,16 @@ test('a ui extension that may change project files is approved as full access', 
 
 test('a worker is approved as full access', () => {
   expect(shown(view('worker', []))).toContain('on this machine with full access')
+})
+
+test('an extension with a custom editor says which files it opens in it', () => {
+  const text = shown(
+    view(
+      'ui',
+      ['workspace-files:read'],
+      [{ id: 'todo', title: 'Todo list', entry: 'editor.js', extensions: ['.todo'], filenames: ['TODO'] }],
+    ),
+  )
+  expect(text).toContain('Opens your files in its own editor')
+  expect(text).toContain('Todo list: .todo, TODO')
 })

@@ -15,7 +15,7 @@ extension built against 3.x must be rewritten to this one.
   most authority it needs (`tier`: `content`, `declarative`, `ui` or
   `worker`), its `permissions`, its worker (`main`) and what it adds to Studio
   (`contributes`: `commands`, `menus`, `topBarItems`, `panels`, `doors`,
-  `settingsSections`, `mcpTools`). Other point names are reserved and must be
+  `settingsSections`, `customEditors`, `mcpTools`). Other point names are reserved and must be
   empty.
 - `validateExtensionManifest(raw, { authoring })` and `parseExtensionManifest`
   are the one validator, used by Studio, the CLI and the templates. Unknown
@@ -197,6 +197,39 @@ main })` take the parsed extension.json; the install key defaults to
   `sprintengine-extension pack` runs them too. `keybindingProblem`,
   `settingValueProblem` and `extensionSettingDefaults` answer the rest.
 - `examples/content-sample/` is a content extension carrying one of each.
+
+### Custom editors
+
+- `customEditors` (`ui` tier) open the person's files of a type in the
+  extension's own editor, drawn in a frame in the file's tab: by suffix
+  (`extensions`) or exact name (`filenames`), `priority` `default` (opens
+  matching files) or `option` (offered under Open with), and `contentKind`
+  `text` or `bytes`. A file Studio's own editor has a language for, by suffix
+  or by name, is only ever offered. A document is at most 1 MiB of text or
+  768 KiB of bytes (`EXTENSION_EDITOR_TEXT_MAX_BYTES`,
+  `EXTENSION_EDITOR_BYTES_MAX_BYTES`).
+  It needs `workspace-files:read`, and
+  `workspace-files:write` to save; without it the file opens read only. A
+  new editor, or one that takes more files, is asked for again on update. No
+  longer reserved.
+- A custom editor's `studio.document`: `get`, `onDidChange`, `applyEdit`
+  (whole-document edits against a version, refused `conflict` with the
+  current document when it moved), `onWillSave`, and `session()`, the sync in
+  one call (`decode`, `encode`, `merge`, `change`, `flush`, `onReplace`).
+  Studio keeps the unsaved state, saves and watches the file. Types:
+  `ExtensionEditorDocumentApi` and its kin; `customEditorMatchRank` says how
+  well an editor matches a file.
+- `files.read` takes `encoding: 'base64'` for a file's bytes and answers its
+  `sha256`; `files.write` takes `encoding` and `expectedSha256`, and is
+  refused `conflict` when the file changed since it was read. Writes to one
+  file take turns. The error codes `conflict` and `missing` (the file or
+  folder named is not there) are new.
+- `createFakeFrameStudio({ document })` gives a custom editor its document in
+  a test, the same `studio.document` the frame runs, with
+  `frame.document.replace`, `.save`, `.edits` and `.refused`.
+- The `editor` template: a `.kv` file as a form of keys and values.
+  `examples/todo-editor/` is a custom editor for `.todo` files, in plain
+  JavaScript with no build.
 
 ## 3.0.0-beta.1
 

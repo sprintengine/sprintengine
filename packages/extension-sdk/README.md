@@ -45,6 +45,7 @@ scaffolds a project that already builds, passes its own tests and installs.
 | `blank` | One small panel: the smallest extension that draws something | `ui` |
 | `panel` | A notes panel, saved in the extension's app state | `ui` |
 | `door` | A full-window door listing the open workspaces | `ui` |
+| `editor` | A custom editor for `.kv` files: a form of keys and values Studio opens, saves and keeps in step with disk | `ui` |
 | `chat-companion` | A worker that starts and follows chats of its own, and a panel to drive it | `worker` |
 | `top-bar-item` | A top bar button opening a focus-timer door | `ui` |
 | `settings-section` | A section in Settings, and a command that opens Settings | `ui` |

@@ -311,6 +311,22 @@ the surface. The approval of a `ui` extension says its code runs isolated and
 can do only what the person allows, unless it holds `workspace-files:write`,
 which is full access; a worker's says full access, as before.
 
+### Custom editors (`extension-editors`)
+
+An extension's `customEditors` open the person's files of a type in a frame
+like any other surface (`extension.frame` with `point: 'customEditors'`).
+The frame gets the file's content and a version, never its path; the window
+that drew it keeps the document, answers its edits (an edit against an older
+version is refused `conflict`) and reads and saves the file through the
+Studio as the frame's own calls (`files.read`, `files.write`), checked as the
+extension (`workspace-files:read`, `:write`) and as that window's connection
+(`filesystem:read`, `:write`). Those two methods carry bytes in base64 and the
+file's sha256, and a write may be conditional on it. A client opens files in
+custom editors only where its Studio offers the new capability
+`extension-editors`; elsewhere the file opens in the text editor. An approval
+grows when an update adds an editor, gives one more files to open, or has one
+open its files by default where it was only offered.
+
 ### Permissions checked at the host; approvals replace trust (no compatibility)
 
 The permission vocabulary changed at once (owner ruling: there are no users
@@ -980,6 +996,12 @@ from a window is the chat's `conversation.markUnread`. The window's 14
 `workspace-sync:*`, `workspace-registry:*`, `workspace-backup:*` and
 `chats:projectless-*` IPC channels are gone; a desktop's window and its own
 Studio are one build.
+`extension-editors` (2026-11-22) says the Studio opens files in its
+extensions' custom editors: `extension.frame` takes `point: 'customEditors'`,
+and a frame's `files.read` and `files.write` carry bytes (`encoding: 'base64'`),
+the file's `sha256` and a write conditional on it (`expectedSha256`, refused
+`conflict`). Offered with `extension-host`. A client opens a file in an
+extension's editor only where it is offered, and in its text editor elsewhere.
 `extension-frames` (2026-11-21) says the Studio draws its extensions'
 surfaces in frames: `extension.frame` (the document one surface is drawn from)
 and `extension.call` (a frame's host call, once per command id, naming the

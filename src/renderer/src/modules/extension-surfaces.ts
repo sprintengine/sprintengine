@@ -1,5 +1,5 @@
 // The surfaces approved extensions declare (panels, doors, settings
-// sections), each drawn in a sandboxed frame (ExtensionFrame) from a document
+// sections, custom editors), each drawn in a sandboxed frame (ExtensionFrame) from a document
 // the Studio builds.
 //
 // The surfaces are registered from the extensions' extension.json
@@ -16,6 +16,10 @@ export type LoadedExtensionSurface = {
   contribution: ExtensionSurfaceContribution
   /** The extension's scoped host, for what a frame's admitted client calls do in this window. */
   host: InternalRendererHost
+  /** Whether it may be offered now: the extension is switched on and still served. Absent: always. */
+  live?: () => boolean
+  /** The extension's name and the permissions it holds, as its extension.json says them. */
+  extension?: { name: string; permissions: readonly string[] }
 }
 
 const surfaces = new Map<string, LoadedExtensionSurface>()
@@ -67,6 +71,13 @@ export function getExtensionSurface(
   id: string,
 ): LoadedExtensionSurface | undefined {
   return surfaces.get(surfaceKey(key, point, id))
+}
+
+/** Every surface of one point, in a stable order: extension, then contribution. */
+export function getExtensionSurfacesOf(point: ExtensionSurfacePoint): LoadedExtensionSurface[] {
+  return [...surfaces.values()]
+    .filter((surface) => surface.point === point && (surface.live?.() ?? true))
+    .sort((a, b) => a.key.localeCompare(b.key) || a.contribution.id.localeCompare(b.contribution.id))
 }
 
 /** The panels of every extension that is on, in a stable order: extension, then panel. */

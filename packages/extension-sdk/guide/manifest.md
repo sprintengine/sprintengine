@@ -47,12 +47,12 @@ you change it.
 `tier` says the most authority the extension needs. Each tier carries what the
 ones below it do; a field or a contribution above the tier fails validation.
 
-| Tier | What it may carry |
-| --- | --- |
-| `content` | Its name and images, and content Studio draws itself: syntaxes, keybindings, status bar items and settings. Nothing that runs, so it installs without an approval prompt. |
-| `declarative` | Commands that run Studio's own commands (`action`), menu items and top bar items for them. No permissions. |
-| `ui` | Panels, doors and settings sections drawn by its own code, and permissions. |
-| `worker` | `main`: code that runs in the background, serves commands without an `action`, methods and MCP tools. |
+| Tier          | What it may carry                                                                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `content`     | Its name and images, and content Studio draws itself: syntaxes, keybindings, status bar items and settings. Nothing that runs, so it installs without an approval prompt. |
+| `declarative` | Commands that run Studio's own commands (`action`), menu items and top bar items for them. No permissions.                                                                |
+| `ui`          | Panels, doors and settings sections drawn by its own code, and permissions.                                                                                               |
+| `worker`      | `main`: code that runs in the background, serves commands without an `action`, methods and MCP tools.                                                                     |
 
 Pick the lowest tier that does the job. The install review says what the tier
 means, and a lower tier asks less of the person. `requiredExtensionTier(manifest)`
@@ -70,11 +70,34 @@ answers the least tier a manifest needs.
   title is the item's label; the context says what it was picked on.
 - **`topBarItems`** are buttons in the top bar. Each runs a contributed
   `command` or opens a contributed `door`, never both.
-- **`panels`**, **`doors`** and **`settingsSections`** are drawn by the
+- **`panels`**, **`doors`**, **`settingsSections`** and **`customEditors`** are drawn by the
   extension. Each names an `entry`: an ESM bundle exporting
   `mount(root, studio)`. A panel is a tab in a workspace's pane, offered by the
   pane's + menu. A door is a full-window surface with a row in the Extensions
   drawer. A settings section sits in Settings.
+- **`customEditors`** open the person's files of a type in the extension's
+  own editor, drawn in a frame in the file's tab like a panel. An editor names
+  the file-name suffixes (`extensions`, with the dot) and exact file names
+  (`filenames`) it takes, ignoring case: a name beats any suffix, a longer
+  suffix a shorter one, and a file named only the suffix never matches. With
+  `priority: "default"` (the default) a matching file opens in it from the
+  Files tree, an agent's `editor.open` or a link in a chat; with `"option"` it
+  opens in Studio's text editor and the editor is offered under Open with.
+  A file Studio's own editor has a language for (`.json`, `.ts`, `.py`,
+  `.md`, `package.json` and the like, by its last suffix) or shows as an
+  image is only ever offered, whatever the priority and whether the editor
+  names it by suffix or by name, so installing an extension never changes how
+  a person's code opens. The person can always reopen the file in the text
+  editor, and back. Its
+  `entry`'s `mount` gets `studio.document`: the file as text, or as raw bytes
+  with `contentKind: "bytes"`, never its path. Studio keeps the unsaved state,
+  saves the file (its Save, or Cmd/Ctrl+S in the editor), and watches it on
+  disk. A file of more than 1 MiB of text, or 768 KiB of bytes, does not open
+  in a custom editor: a save is one request to the Studio, and bytes travel in
+  base64. Needs the `workspace-files:read` permission, and
+  `workspace-files:write` to save; without it the file opens read only. A new
+  editor, or one that takes more files, is asked for again when the extension
+  updates. See the `api-renderer` topic.
 - **`mcpTools`** are tools agents reach through Studio's MCP server. Declare
   each one here, with what agents are told it does and whether it changes
   anything; the worker serves them with `registerMcpTools`. A tool the worker
@@ -194,7 +217,7 @@ markers.
 | `version` | string | yes | 0.13.0 |  | The extension’s version, semver. |
 | `engines` | object | yes | 0.13.0 |  | The Studio versions it runs on. |
 | `engines.studio` | string | yes | 0.13.0 |  | The oldest Studio it runs on, as `>=x.y.z`: at least the newest “since” of any field it uses. |
-| `tier` | `content` \| `declarative` \| `ui` \| `worker` | yes | 0.13.0 |  | The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation. |
+| `tier` | `content` \| `declarative` \| `ui` \| `worker` | yes | 0.13.0 |  | The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, custom editors, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation. |
 | `name` | string | yes | 0.13.0 |  | Display name. |
 | `description` | string |  | 0.13.0 |  | One or two sentences shown with the name. |
 | `icon` | string |  | 0.13.0 |  | A square image shown beside the name. |
@@ -244,6 +267,15 @@ markers.
 | `contributes.syntaxes[].configuration` | string |  | 0.13.0 |  | A language configuration, at most 64 KiB: `comments`, `brackets`, `autoClosingPairs` and `surroundingPairs`, which the editor reads. |
 | `contributes.syntaxes[].extensions` | string[] (at most 32) |  | 0.13.0 |  | File-name suffixes the editor opens in this language, ignoring case. A longer suffix wins over a shorter one, and one of Studio’s own languages that drives completions (TypeScript, JavaScript, JSON, CSS, SCSS, Less, HTML, Markdown) is never replaced. |
 | `contributes.syntaxes[].filenames` | string[] (at most 32) |  | 0.13.0 |  | Exact file names the editor opens in this language, ignoring case; a name wins over any suffix. |
+| `contributes.customEditors` | object[] (at most 16) |  | 0.13.0 | ui | Editors for files of a type, drawn in the file’s tab. Needs the `workspace-files:read` permission, and `workspace-files:write` to save; without it the file opens read only. |
+| `contributes.customEditors[].id` | string | yes | 0.13.0 |  | Id, unique among this extension’s editors. |
+| `contributes.customEditors[].title` | string | yes | 0.13.0 |  | Its name, in the editor’s Open with menu. |
+| `contributes.customEditors[].icon` | `extension` \| `chat` \| `branch` \| `folder` \| `schedule` \| `spark` \| `lock` \| `settings` \| `check` \| `warning` \| `copy` \| `notes` |  | 0.13.0 |  | Glyph beside its name. Defaults to `extension`. |
+| `contributes.customEditors[].entry` | string | yes | 0.13.0 |  | What the editor draws, in a frame of its own in the file’s tab: a `.js` or `.mjs` module whose `mount(root, studio)` draws into `root`. Its `studio.document` holds the file’s content and takes its edits; Studio keeps the unsaved state, saves and watches the file, and the frame never gets a path. |
+| `contributes.customEditors[].extensions` | string[] (at most 32) |  | 0.13.0 |  | File-name suffixes it opens, with the dot, ignoring case. A longer suffix (`.todo.json`) wins over a shorter one (`.json`), and a file named only the suffix never matches. Give `extensions`, `filenames` or both. |
+| `contributes.customEditors[].filenames` | string[] (at most 32) |  | 0.13.0 |  | Exact file names it opens, ignoring case; a name wins over any suffix. |
+| `contributes.customEditors[].priority` | `default` \| `option` |  | 0.13.0 |  | `default` (the default) opens matching files in this editor; `option` opens them in Studio’s text editor and offers this one under Open with. A file Studio’s own editor has a language for (`.json`, `.ts`, `.py`, `.md`, `package.json` and the like) or shows as an image is always `option`, whether the editor names it by suffix or by name, so installing an extension never changes how a person’s code opens. Either way the person can reopen the file in the text editor. |
+| `contributes.customEditors[].contentKind` | `text` \| `bytes` |  | 0.13.0 |  | `text` (the default) hands the editor the file as UTF-8 text and takes whole-text edits; `bytes` hands it the raw bytes, for a binary format, and takes whole-byte edits. |
 | `contributes.keybindings` | object[] (at most 64) |  | 0.13.0 | content | Keyboard shortcuts. |
 | `contributes.keybindings[].command` | string | yes | 0.13.0 |  | The command the key runs. Either a command this extension contributes in `contributes.commands`, or one of Studio’s own command actions (listed below), which a content extension may bind without any code. |
 | `contributes.keybindings[].key` | string | yes | 0.13.0 |  | The key chord: modifiers and one key joined by `+`. `Mod` is Cmd on macOS and Ctrl elsewhere. It can be changed or removed in Settings ▸ Shortcuts like any of Studio’s. |
@@ -273,7 +305,7 @@ markers.
 | `contributes.mcpTools[].access` | `read` \| `operate` | yes | 0.13.0 |  | `read` changes nothing; `operate` may, and agents are asked before it runs where their settings say so. |
 | `contributes.mcpTools[].inputSchema` | JSON Schema object | yes | 0.13.0 |  | The tool’s parameters, as a JSON Schema for an object: what agents see, before the worker has ever run. The schema the worker registers must take no more than this one (no parameter it leaves out, none it requires dropped). A tool that takes none says `{ "type": "object", "properties": {} }`. |
 
-Reserved, and must be empty for now: `contributes.themes`, `contributes.terminalThemes`, `contributes.iconThemes`, `contributes.fonts`, `contributes.snippets`, `contributes.customEditors`, `contributes.newFiles`, `contributes.events`, `contributes.hooks`, `contributes.sidecars`, `contributes.agentProviders`, `contributes.skills`, `contributes.mcpServers`, `contributes.providers`.
+Reserved, and must be empty for now: `contributes.themes`, `contributes.terminalThemes`, `contributes.iconThemes`, `contributes.fonts`, `contributes.snippets`, `contributes.newFiles`, `contributes.events`, `contributes.hooks`, `contributes.sidecars`, `contributes.agentProviders`, `contributes.skills`, `contributes.mcpServers`, `contributes.providers`.
 
 Icons: `extension`, `chat`, `branch`, `folder`, `schedule`, `spark`, `lock`, `settings`, `check`, `warning`, `copy`, `notes`.
 

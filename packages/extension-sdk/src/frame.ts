@@ -1,6 +1,6 @@
 // What a surface's code sees inside its frame.
 //
-// A panel, door or settings section runs in a sandboxed frame of its own, on
+// A panel, door, settings section or custom editor runs in a sandboxed frame of its own, on
 // every client: no Node, no network, no reach into the app's window. Its
 // `mount(root, studio)` is handed the `studio` below, and that object is the
 // only way out of the frame: `studio.host.call(method, params)` asks Studio to
@@ -28,6 +28,9 @@ import type { ModuleMethodAnswer, ModuleMethodContract, ModuleMethodContracts, M
 
 /** A path inside a workspace's folder, relative to it, with `/` between its parts. */
 export type ExtensionFilePath = string
+
+/** How `files.read` and `files.write` carry a file's content: as text, or its bytes in base64. */
+export type ExtensionFileEncoding = 'utf8' | 'base64'
 
 /** Every host method a frame may call, with what it takes and answers. */
 export type ExtensionFrameMethods = {
@@ -82,8 +85,15 @@ export type ExtensionFrameMethods = {
   /** Set one value of its Settings section; `null` removes it. */
   'settings.set': { params: { key: string; value: unknown }; result: { ok: true } }
   // ── Files in a workspace's folder ──
-  /** A text file's content (UTF-8), up to 4 MiB. */
-  'files.read': { params: { workspaceId: string; path: ExtensionFilePath }; result: { content: string; size: number } }
+  /**
+   * A file's content, up to 4 MiB: UTF-8 text, or with `encoding: 'base64'`
+   * its raw bytes in base64. `sha256` is of its bytes, for a later
+   * `files.write`'s `expectedSha256`.
+   */
+  'files.read': {
+    params: { workspaceId: string; path: ExtensionFilePath; encoding?: ExtensionFileEncoding }
+    result: { content: string; size: number; sha256: string }
+  }
   'files.stat': {
     params: { workspaceId: string; path: ExtensionFilePath }
     result: { type: 'file' | 'directory' | 'other'; size: number; modifiedAt: number }
@@ -93,10 +103,23 @@ export type ExtensionFrameMethods = {
     params: { workspaceId: string; query: string; limit?: number }
     result: { paths: ExtensionFilePath[]; truncated: boolean }
   }
-  /** Write a text file. `create: true` makes a new one and refuses one that exists. */
+  /**
+   * Write a file: `content` is UTF-8 text, or with `encoding: 'base64'` its
+   * bytes in base64. `create: true` makes a new one and refuses one that
+   * exists with `conflict`. With `expectedSha256` it writes only over a file whose bytes
+   * still hash to it, and refuses with `conflict` otherwise (one gone too),
+   * so nothing changed meanwhile is written over unseen.
+   */
   'files.write': {
-    params: { workspaceId: string; path: ExtensionFilePath; content: string; create?: boolean }
-    result: { size: number; created: boolean }
+    params: {
+      workspaceId: string
+      path: ExtensionFilePath
+      content: string
+      create?: boolean
+      encoding?: ExtensionFileEncoding
+      expectedSha256?: string
+    }
+    result: { size: number; created: boolean; sha256: string }
   }
   // ── Telling the person ──
   notify: { params: ModuleNotifyInput; result: { ok: true } }
@@ -135,17 +158,102 @@ export type ExtensionFrameErrorCode =
   | 'timeout'
   | 'cancelled'
   | 'action_failed'
+  /** A document edit or a conditional write was made against a version that is no longer the current one. */
+  | 'conflict'
+  /** The file or folder named is not there. */
+  | 'missing'
 
 /** What a rejected `host.call` rejects with. */
 export type ExtensionFrameError = Error & { code: ExtensionFrameErrorCode; retryable: boolean }
 
 /** Which contribution a `mount` draws, and where. */
 export type ExtensionSurface = {
-  point: 'panels' | 'doors' | 'settingsSections'
+  point: 'panels' | 'doors' | 'settingsSections' | 'customEditors'
   /** The contribution's id in extension.json. */
   id: string
-  /** The workspace a panel was opened in; absent for doors and settings sections. */
+  /** The workspace a panel or custom editor was opened in; absent for doors and settings sections. */
   workspaceId?: string
+}
+
+// ── Custom editors ──────────────────────────────────────────────────────────
+
+/** A custom editor's document: the file's text, or its raw bytes (`contentKind: "bytes"`). */
+export type ExtensionEditorContent = { kind: 'text'; text: string } | { kind: 'bytes'; bytes: ArrayBuffer }
+
+/**
+ * The file a custom editor is open on, as Studio holds it now. Studio keeps
+ * the unsaved state, saves the file and watches it on disk; the editor only
+ * ever sees this, never a path.
+ */
+export type ExtensionEditorDocument = {
+  /**
+   * Rises each time Studio hands over a document (the file changed outside
+   * the editor: on disk, in Studio's text editor, or reloaded). An edit names
+   * the version it was made against; an accepted edit keeps it.
+   */
+  version: number
+  /** Studio will not save it: the extension may not write files, or whoever opened it may not. */
+  readOnly: boolean
+  content: ExtensionEditorContent
+}
+
+/** A whole-document edit, made against the document of `baseVersion`. */
+export type ExtensionEditorEdit = { baseVersion: number; content: ExtensionEditorContent }
+
+/** What a refused edit rejects with: `conflict` carries the document as it is now. */
+export type ExtensionEditorEditError = ExtensionFrameError & { document?: ExtensionEditorDocument }
+
+export type ExtensionEditorSessionOptions<T> = {
+  /** From the document's content to the editor's own value. Default: the text, for a text document. */
+  decode?: (content: ExtensionEditorContent) => T
+  /** From the editor's value to whole-document content. Default: the value as text. */
+  encode?: (value: T) => ExtensionEditorContent
+  /**
+   * When an edit is refused because the document changed outside first, the
+   * value to send instead: `base` is what the editor last had accepted,
+   * `outside` the new document, `mine` the edit that was refused. Without
+   * it the outside document wins, the edit is dropped and `onReplace` hears
+   * it, so nothing outside is written over unseen.
+   */
+  merge?: (base: T, outside: T, mine: T) => T
+  /** How long `change` waits for more before it sends an edit. Default: 250 ms. */
+  debounceMs?: number
+}
+
+/** The document kept in step with Studio in one call (`studio.document.session()`). */
+export type ExtensionEditorSession<T> = {
+  /** The editor's value now: what it changed it to, or the document Studio last handed over. */
+  readonly value: T
+  readonly readOnly: boolean
+  /** The editor's new value; sent to Studio as an edit shortly after, one at a time. */
+  change(value: T): void
+  /** Settles once every change so far reached Studio, or was refused with nothing newer to send. */
+  flush(): Promise<void>
+  /** Hear the value replaced from outside (the file changed, a conflict dropped an edit): draw it. */
+  onReplace(listener: (value: T) => void): { dispose(): void }
+  dispose(): void
+}
+
+/** `studio.document`, in a custom editor's frame only. */
+export type ExtensionEditorDocumentApi = {
+  /** The document now, once Studio handed the first one over. */
+  get(): Promise<ExtensionEditorDocument>
+  /** Hear each document Studio hands over; the current one is heard first. */
+  onDidChange(listener: (document: ExtensionEditorDocument) => void): { dispose(): void }
+  /**
+   * Replace the document's content. Rejects with `conflict` (and the current
+   * `document`) when `baseVersion` is not the current version, `not_permitted`
+   * when it is read only, and `too_large` past 1 MiB of text or 768 KiB of
+   * bytes (`EXTENSION_EDITOR_TEXT_MAX_BYTES`, `EXTENSION_EDITOR_BYTES_MAX_BYTES`).
+   */
+  applyEdit(edit: ExtensionEditorEdit): Promise<void>
+  /**
+   * Hear Studio about to save: hand over any edit still held back (a
+   * debounce) before the returned promise settles. Studio waits up to 1 s.
+   */
+  onWillSave(listener: () => void | Promise<void>): { dispose(): void }
+  /** Document sync in one call: resolves once the first document is in. */
+  session<T = string>(options?: ExtensionEditorSessionOptions<T>): Promise<ExtensionEditorSession<T>>
 }
 
 /** The theme the frame is drawn in; its colours are the `THEME_TOKENS` custom properties. */
@@ -181,6 +289,8 @@ export type ExtensionMountStudio = {
    * throw: a refusal, the worker's or Studio's, is an answer.
    */
   methods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(): ModuleMethodsClient<Cs>
+  /** The file a custom editor is open on; absent in every other surface. */
+  readonly document?: ExtensionEditorDocumentApi
   /** The theme now; `on('theme')` hears it change. */
   readonly theme: ExtensionFrameTheme
   /** Hear the theme change, or the worker's events. Returns the way to stop hearing. */

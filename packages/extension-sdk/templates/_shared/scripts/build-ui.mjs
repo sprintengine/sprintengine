@@ -3,7 +3,7 @@
 //
 //   node scripts/build-ui.mjs [--project <dir>]
 //
-// A panel's, door's or settings section's `entry` is `dist/<name>.js` (or
+// A panel's, door's, settings section's or custom editor's `entry` is `dist/<name>.js` (or
 // `.mjs`), built from `src/<name>.tsx` (or `.ts`, `.jsx`, `.js`). Studio
 // imports the built file on its own, with nothing beside it to resolve an
 // import against, so each bundle carries everything it imports, React
@@ -26,7 +26,7 @@ const entries = [
   ...new Set(sdk.EXTENSION_SURFACE_POINTS.flatMap((point) => manifest.contributes[point].map((item) => item.entry))),
 ]
 if (entries.length === 0) {
-  console.log('No panels, doors or settings sections to build.')
+  console.log('No panels, doors, settings sections or editors to build.')
   process.exit(0)
 }
 

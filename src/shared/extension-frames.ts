@@ -84,7 +84,18 @@ export const EXTENSION_FRAME_EVENTS = {
   failed: 'failed',
   /** frame → host: the frame's document is unloading (`pagehide`); the host drops the bridge. */
   leaving: 'leaving',
+  /** host → custom editor: the file's document, at a new version. */
+  document: 'document',
+  /** host → custom editor: a save is coming; hand over what you hold back (`id`). */
+  documentFlush: 'document.flush',
+  /** custom editor → host: the flush `id` is done (`ok`: its listeners settled without failing). */
+  documentFlushed: 'document.flushed',
+  /** custom editor → host: the person pressed Cmd/Ctrl+S inside the frame. */
+  documentSave: 'document.save',
 } as const
+
+/** The request a custom editor's frame makes with an edit; the window answers it, never the Studio. */
+export const EXTENSION_EDITOR_APPLY_EDIT = 'document.applyEdit'
 
 /**
  * Per frame, enforced by the host: a message is at most 64 KiB, and a frame

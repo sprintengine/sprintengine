@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -70,4 +70,57 @@ test('a frame’s settings.set is held to the declaration, and settings.get read
     assert.match(refused.message, /needs "settings:write"/)
   }
   assert.deepEqual(await frame('settings.get', {}, PAIRED), { ok: true, result: { indent: 5, note: 'free' } })
+})
+
+// A custom editor's document is read and saved through these same calls, as
+// the extension and as whoever opened it: an extension not approved to read
+// files gets nothing, one not approved to write saves nothing, and a write
+// against bytes that changed since is refused.
+test('a custom editor’s file reads and saves are held to the extension’s file permissions', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'frame-editor-'))
+  writeFileSync(join(folder, 'list.todo'), '- [ ] one\n')
+  const workspaces = {
+    get: async (id: string) => (id === 'ws' ? { id, name: 'ws', folderPath: folder, mode: 'standard' } : null),
+    list: async () => [],
+  }
+  const callsFor = (grant: string[]) => {
+    const call = createExtensionFrameCalls({
+      grantOf: () => ({ grant, outdated: false }),
+      service: (key) => (key === 'core.workspace-context' ? workspaces : undefined),
+      callModuleMethod: async () => ({ ok: false, code: 'extension_unavailable', message: 'none' }) as never,
+      emitNotification: () => undefined,
+      appState: () => undefined,
+      fileExclusions: () => [],
+    })
+    return (method: string, params: unknown) =>
+      call({
+        moduleId: 'local.todo-editor',
+        frame: 'f'.repeat(64),
+        method,
+        params,
+        clientId: 'c',
+        commandId: 'k',
+        invoker: OWNER,
+      })
+  }
+  const path = { workspaceId: 'ws', path: 'list.todo' }
+
+  const none = callsFor([])
+  const refused = await none('files.read', path)
+  assert.equal(refused.ok, false)
+  if (!refused.ok) assert.equal(refused.code, 'not_permitted')
+
+  const readOnly = callsFor(['workspace-files:read'])
+  const read = await readOnly('files.read', { ...path, encoding: 'base64' })
+  assert.ok(read.ok)
+  const { content, sha256 } = (read.ok ? read.result : {}) as { content: string; sha256: string }
+  assert.equal(Buffer.from(content, 'base64').toString('utf8'), '- [ ] one\n')
+  const write = await readOnly('files.write', { ...path, content: 'x', expectedSha256: sha256 })
+  assert.equal(write.ok ? 'written' : write.code, 'not_permitted')
+
+  const writer = callsFor(['workspace-files:read', 'workspace-files:write'])
+  writeFileSync(join(folder, 'list.todo'), '- [x] one\n')
+  const stale = await writer('files.write', { ...path, content: '- [ ] two\n', expectedSha256: sha256 })
+  assert.equal(stale.ok ? 'written' : stale.code, 'conflict')
+  assert.equal(readFileSync(join(folder, 'list.todo'), 'utf8'), '- [x] one\n')
 })

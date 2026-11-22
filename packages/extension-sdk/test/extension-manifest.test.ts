@@ -71,6 +71,7 @@ test('the smallest manifest validates, with no permissions and every point empty
     settingsSections: [],
     mcpTools: [],
     syntaxes: [],
+    customEditors: [],
     keybindings: [],
     statusBarItems: [],
     settings: [],

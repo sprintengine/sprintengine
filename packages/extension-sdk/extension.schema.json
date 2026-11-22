@@ -69,7 +69,7 @@
         "ui",
         "worker"
       ],
-      "description": "The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.",
+      "description": "The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, custom editors, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.",
       "x-since": "0.13.0",
       "examples": [
         "ui"
@@ -728,6 +728,134 @@
           "x-since": "0.13.0",
           "x-tier": "content"
         },
+        "customEditors": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "title": "CustomEditorContribution",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "description": "Id, unique among this extension’s editors.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "todo"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "Its name, in the editor’s Open with menu.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "Todo list"
+                ]
+              },
+              "icon": {
+                "type": "string",
+                "maxLength": 32,
+                "enum": [
+                  "extension",
+                  "chat",
+                  "branch",
+                  "folder",
+                  "schedule",
+                  "spark",
+                  "lock",
+                  "settings",
+                  "check",
+                  "warning",
+                  "copy",
+                  "notes"
+                ],
+                "description": "Glyph beside its name. Defaults to `extension`.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "notes"
+                ]
+              },
+              "entry": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
+                "description": "What the editor draws, in a frame of its own in the file’s tab: a `.js` or `.mjs` module whose `mount(root, studio)` draws into `root`. Its `studio.document` holds the file’s content and takes its edits; Studio keeps the unsaved state, saves and watches the file, and the frame never gets a path.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "dist/todo.js"
+                ]
+              },
+              "extensions": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 64,
+                  "pattern": "^\\.[A-Za-z0-9_+-][A-Za-z0-9_.+-]*$"
+                },
+                "description": "File-name suffixes it opens, with the dot, ignoring case. A longer suffix (`.todo.json`) wins over a shorter one (`.json`), and a file named only the suffix never matches. Give `extensions`, `filenames` or both.",
+                "x-since": "0.13.0",
+                "examples": [
+                  [
+                    ".todo"
+                  ]
+                ]
+              },
+              "filenames": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[^<>:\"/\\\\|?*\\u0000-\\u001f]+$"
+                },
+                "description": "Exact file names it opens, ignoring case; a name wins over any suffix.",
+                "x-since": "0.13.0",
+                "examples": [
+                  [
+                    "TODO"
+                  ]
+                ]
+              },
+              "priority": {
+                "type": "string",
+                "maxLength": 16,
+                "enum": [
+                  "default",
+                  "option"
+                ],
+                "description": "`default` (the default) opens matching files in this editor; `option` opens them in Studio’s text editor and offers this one under Open with. A file Studio’s own editor has a language for (`.json`, `.ts`, `.py`, `.md`, `package.json` and the like) or shows as an image is always `option`, whether the editor names it by suffix or by name, so installing an extension never changes how a person’s code opens. Either way the person can reopen the file in the text editor.",
+                "x-since": "0.13.0"
+              },
+              "contentKind": {
+                "type": "string",
+                "maxLength": 16,
+                "enum": [
+                  "text",
+                  "bytes"
+                ],
+                "description": "`text` (the default) hands the editor the file as UTF-8 text and takes whole-text edits; `bytes` hands it the raw bytes, for a binary format, and takes whole-byte edits.",
+                "x-since": "0.13.0"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "entry"
+            ]
+          },
+          "description": "Editors for files of a type, drawn in the file’s tab. Needs the `workspace-files:read` permission, and `workspace-files:write` to save; without it the file opens read only.",
+          "x-since": "0.13.0",
+          "x-tier": "ui"
+        },
         "keybindings": {
           "type": "array",
           "maxItems": 64,
@@ -1078,12 +1206,6 @@
           "type": "array",
           "maxItems": 0,
           "description": "Reserved for editor snippets; must be empty.",
-          "x-since": "0.13.0"
-        },
-        "customEditors": {
-          "type": "array",
-          "maxItems": 0,
-          "description": "Reserved for custom editors; must be empty.",
           "x-since": "0.13.0"
         },
         "newFiles": {

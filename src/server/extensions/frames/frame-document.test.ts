@@ -131,3 +131,22 @@ test('the frame’s bootstrap answers the window that drew it, and says when its
     'before the extension can run',
   )
 })
+
+test('only a custom editor’s document carries `studio.document`, and its script cannot close the bootstrap', () => {
+  const editor = buildExtensionFrameDocument({
+    surface: { point: 'customEditors', id: 'todo' },
+    entryPath: 'editor.js',
+    entryCode: ENTRY,
+    theme: EXTENSION_FRAME_THEMES.dark!,
+  })
+  const panel = buildExtensionFrameDocument({
+    surface: { point: 'panels', id: 'p' },
+    entryPath: 'p.js',
+    entryCode: ENTRY,
+    theme: EXTENSION_FRAME_THEMES.dark!,
+  })
+  assert.ok(editor.includes("port.call('document.applyEdit'"))
+  assert.equal(editor.split('</script>').length - 1, 1)
+  assert.ok(!panel.includes('document.applyEdit'), 'another surface carries none of it')
+  assert.match(editor, /"point":"customEditors"/)
+})
