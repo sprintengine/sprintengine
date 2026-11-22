@@ -158,7 +158,7 @@ test('designSystemAxes', async () => {
     // the skills and connector pickers) takes `MENU_ITEM_CLASS`, which spells no
     // radius at all; and four header bands that drew themselves at their own
     // height — the kit's `WorkspacePanel` and `FilePreviewPane`, the
-    // knowledge-graph drawer, both HTML-artifact bands — gave up their local
+    // since-removed graph panel's drawer, both HTML-artifact bands — gave up their local
     // buttons for `ui/PanelHeader` and the kit primitives inside it.
     // The 2026-08-06 radius drop — workspace 174 → 169 — was the spawn
     // consolidation: `AgentComposerPopover` was deleted outright and its
