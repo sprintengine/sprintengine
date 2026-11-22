@@ -92,6 +92,7 @@ function controllerOf(model: EditorDocumentModel, more: Partial<ExtensionEditorC
       asked.push('asked')
       return 'stay'
     },
+    askUnsent: async () => false,
     flushTimeoutMs: 20,
     ...more,
   })
@@ -145,10 +146,20 @@ test('leaving a binary document with unsaved edits for a view that cannot keep t
   assert.equal(model.dirty(), false, 'saved before it went')
 })
 
-test('an editor whose frame does not hand over its edits is not left, and says why', async () => {
-  const { controller } = await opened(bytesModel(), {}, { flushes: false })
-  assert.equal(await controller.prepareToLeave('other-editor'), false)
+test('a frame that does not hand over its edits never traps the tab: the person may drop them and go, or stay', async () => {
+  let dropUnsent = false
+  const { controller, model } = await opened(bytesModel(), { askUnsent: async () => dropUnsent }, { flushes: false })
+  controller.document.applyEdit({ baseVersion: 1, content: { kind: 'bytes', bytes: new Uint8Array([5]).buffer } })
+  assert.equal(await controller.prepareToLeave('other-editor', 'bytes'), false, 'Cancel stays')
   assert.equal(controller.session.state().saveError, LEAVE_FLUSH_FAILED)
+  dropUnsent = true
+  assert.equal(await controller.prepareToLeave('other-editor', 'bytes'), true)
+  assert.deepEqual([...(model.get() ?? [])], [5], 'what the editor had handed over stays')
+
+  // A frame that failed is let go: leaving no longer waits on it at all.
+  dropUnsent = false
+  controller.closeFrame()
+  assert.equal(await controller.prepareToLeave('other-editor', 'bytes'), true)
 })
 
 test('a file that could not be opened stays an error, and no frame reads it again', async () => {

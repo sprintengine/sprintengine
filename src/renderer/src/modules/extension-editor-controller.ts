@@ -8,8 +8,9 @@
 // again by every frame that is put up to show it.
 //
 // Leaving (Open with…, closing the tab, drawing the frame again) first asks
-// the frame for the edits it holds back. A frame that does not answer keeps
-// the person where they are, with the reason. Unsaved edits a view cannot
+// the frame for the edits it holds back. When it does not answer, the person
+// may drop what it still holds and go on (what it handed over stays), or
+// stay; a frame that failed is let go of at once, so it never traps the tab. Unsaved edits a view cannot
 // show (bytes in the text editor, or in an editor of text; text in an editor
 // of bytes; bytes when the tab closes) ask first: save, discard, or stay.
 
@@ -49,6 +50,11 @@ export type ExtensionEditorControllerOptions = {
   discard(): void
   /** Ask the person what to do with unsaved edits the next view cannot show. */
   askUnsaved(): Promise<UnsavedChoice>
+  /**
+   * The frame did not hand over the edits it holds back: true to drop them
+   * and go on (what it handed over before stays), false to stay.
+   */
+  askUnsent(): Promise<boolean>
   flushTimeoutMs?: number
 }
 
@@ -162,7 +168,9 @@ export function createExtensionEditorController(options: ExtensionEditorControll
       const state = session.state()
       // Nothing to keep: a file that never opened, or a frame not yet drawn.
       if (state.status !== 'ready') return true
-      if (!(await flushFrame())) {
+      // A frame that does not answer never keeps the person in: they may
+      // drop what it still holds and go on, or stay and try again.
+      if (!(await flushFrame()) && !(await options.askUnsent())) {
         session.reportError(LEAVE_FLUSH_FAILED)
         return false
       }

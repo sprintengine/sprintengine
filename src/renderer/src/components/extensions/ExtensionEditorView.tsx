@@ -141,7 +141,7 @@ function ExtensionEditorBody({
 }: Props & { canWrite: boolean }): ReactElement {
   const contentKind = editor.contribution.contentKind ?? 'text'
   const readOnly = !canWrite || !(editor.extension?.permissions ?? []).includes('workspace-files:write')
-  const { choose } = useConfirmDialog()
+  const { choose, confirm: confirmDialog } = useConfirmDialog()
 
   const controller = useMemo(
     () =>
@@ -167,6 +167,14 @@ function ExtensionEditorBody({
           })
           return choice === 'confirm' ? 'save' : choice === 'alternate' ? 'discard' : 'stay'
         },
+        askUnsent: () =>
+          confirmDialog({
+            title: t.unsentTitle,
+            body: t.unsentBody,
+            confirmLabel: t.dropUnsent,
+            cancelLabel: t.stay,
+            tone: 'danger',
+          }),
       }),
     // The confirm dialog is read when it asks, not a reason for a new document.
     // oxlint-disable-next-line react-hooks/exhaustive-deps

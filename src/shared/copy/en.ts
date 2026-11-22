@@ -627,6 +627,10 @@ export const en = {
         'These changes are not saved yet, and leaving this editor would lose them. Save them first, or discard them.',
       discard: 'Discard',
       stay: 'Cancel',
+      unsentTitle: 'The editor did not hand over its latest changes',
+      unsentBody:
+        'It did not answer in time. Changes it already handed over stay; the ones it still holds are lost if you go on.',
+      dropUnsent: 'Discard unsent changes and continue',
     },
     // src/renderer/src/components/extensions/EditorViewPicker.tsx
     editorViewPicker: {

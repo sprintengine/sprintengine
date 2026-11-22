@@ -99,7 +99,11 @@ export function ExtensionSurfaceMount({
     setSrc(null)
     setFailure(null)
     const fail = (error: unknown) => {
-      if (!closed) setFailure(sanitizeEntryMessage(error instanceof Error ? error.message : String(error), DRAW_FAILED))
+      if (closed) return
+      setFailure(sanitizeEntryMessage(error instanceof Error ? error.message : String(error), DRAW_FAILED))
+      // A custom editor stops waiting on a frame that failed: leaving it, or
+      // saving, never hangs on a flush nobody will answer.
+      editorRef.current?.close()
     }
     const host = loaded.host
     // A frame leaves its document only to go nowhere: the desktop shell and a
