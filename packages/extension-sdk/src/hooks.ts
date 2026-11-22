@@ -142,8 +142,14 @@ export type ExtensionHookEvents = {
     workspaceId: string | null
     /** The agent CLI in it, when it runs one. */
     agent: string | null
-    /** What is about to be typed, as bytes the terminal reads (a `\r` is Enter). */
+    /** Who is typing it: Studio itself, or an extension. */
+    from: 'studio' | 'extension'
+    /** What kind of write it is: an extension's (`send`) or Studio's own (`notice`). */
+    inputKind: 'send' | 'notice'
+    /** What is about to be typed, as bytes the terminal reads, without the Enter that ends it. */
     text: string
+    /** Whether Enter is pressed after `text`. */
+    enter: boolean
   }
   'workspace.create.before': {
     /** What it is made for: a new chat, or a workspace an agent or extension asked for. */
@@ -180,7 +186,7 @@ export type ExtensionHookChanges = {
   'agent.launch.before': Record<string, never>
   'agent.prompt.before': { prompt: string }
   'agent.tool.before': { input: Record<string, unknown> }
-  'terminal.write.before': { text: string }
+  'terminal.write.before': { text: string; enter: boolean }
   'workspace.create.before': { name: string }
   'editor.save.before': { text: string }
 }
@@ -210,6 +216,8 @@ const text =
         : value.length > max
           ? `must be at most ${max} characters.`
           : null
+
+const bool: ExtensionHookFieldCheck = (value) => (typeof value === 'boolean' ? null : 'must be true or false.')
 
 const plainObject: ExtensionHookFieldCheck = (value) => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'must be an object.'
@@ -273,11 +281,12 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
   },
   'terminal.write.before': {
     decides: true,
-    changes: { text: text(EXTENSION_HOOK_TEXT_MAX_CHARS) },
+    changes: { text: text(EXTENSION_HOOK_TEXT_MAX_CHARS), enter: bool },
     approval: 'Can check, change or refuse what Studio and extensions type into your terminals',
     summary:
-      'Studio is about to type into a terminal for someone other than a person at its keyboard: an extension’s or a tool’s raw write. Keystrokes from a person (on any machine) are never hooked, and a prompt to an agent takes `agent.prompt.before` instead. Change `text`, or return `{ deny }` to refuse the write.',
-    event: '{ terminalId: string; workspaceId: string | null; agent: string | null; text: string }',
+      'Studio is about to type into a terminal for someone other than a person at its keyboard: an extension’s or a tool’s raw write. Keystrokes from a person (on any machine) are never hooked, and a prompt to an agent takes `agent.prompt.before` instead. Change `text` or `enter`, or return `{ deny }` to refuse the write.',
+    event:
+      "{ terminalId: string; workspaceId: string | null; agent: string | null; from: 'studio' | 'extension'; inputKind: 'send' | 'notice'; text: string; enter: boolean }",
   },
   'workspace.create.before': {
     decides: true,

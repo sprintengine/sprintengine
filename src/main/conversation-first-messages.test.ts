@@ -7,6 +7,7 @@ import { test } from 'vitest'
 import type { ConversationSessionActionResult, ConversationSessionSummary } from '../shared/conversation-runtime'
 import { emptyAgentLaunchSettings } from '../shared/launch-settings'
 import { createConversationGatewayHost } from '../server/core/conversation-host'
+import type { ExtensionHookOutcome, ExtensionHooks } from '../server/extensions/hooks/extension-hooks'
 import { createConversationLaunchService } from './conversation-launch-service'
 import { ConversationAttachmentStore } from './conversation-attachment-store'
 import { ConversationRuntime } from './conversation-runtime'
@@ -14,6 +15,7 @@ import {
   createPendingFirstMessages,
   FIRST_MESSAGE_CLIENT_ID,
   firstMessageCommandId,
+  firstMessageSettled,
   recoverFirstMessages,
   type PendingFirstMessage,
 } from './conversation-first-messages'
@@ -352,6 +354,93 @@ test('at the next start, a transient refusal keeps the first message for the sta
     assert.deepEqual(await store.all(), {}, 'a recorded refusal lets it go')
     await assert.rejects(readFile(store.imagePath(commandId, picture)), 'its picture goes with it')
   } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+// An extension's refusal is its last word on the message: sent again at the
+// next start, it would only be refused again.
+test('a first message an extension refused is settled, and not sent again', async () => {
+  const refused = { ok: false as const, code: 'refused_by_extension', message: 'The extension "Guard" refused this' }
+  assert.equal(await firstMessageSettled(refused, async () => false), true)
+  assert.equal(await firstMessageSettled({ ok: false, code: 'busy', message: 'busy' }, async () => true), false)
+})
+
+// A first message sent again after a stop is no longer anyone typing: through
+// a host for Studio's own sends it meets the extensions' `agent.prompt.before`
+// as `recovery`, and what a hook leaves is what the chat is sent.
+test('a first message sent again at the next start meets the prompt hooks as a recovery', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'first-messages-hooks-'))
+  const workspaceRoot = join(dir, 'repo')
+  await mkdir(workspaceRoot)
+  const mock = createMockConversationProvider()
+  const told: string[] = []
+  const adapter = {
+    ...mock,
+    sendTurn: (input: Parameters<typeof mock.sendTurn>[0]) => {
+      told.push(input.message)
+      return mock.sendTurn({ ...input, message: '/tools' })
+    },
+  }
+  const heard: Array<Record<string, unknown>> = []
+  const hooks: ExtensionHooks = {
+    wants: (point) => point === 'agent.prompt.before',
+    run: async (_point, event) => {
+      heard.push(event as Record<string, unknown>)
+      const prompt = (event as { prompt: string }).prompt
+      return { kind: 'continue', event: { ...event, prompt: `${prompt} (checked)` } } as ExtensionHookOutcome<never>
+    },
+    notify: () => undefined,
+    bind: () => undefined,
+  }
+  const runtime = new ConversationRuntime({
+    adapters: [adapter],
+    getProviderById: () => undefined,
+    extensionHooks: hooks,
+  })
+  const chat = { workspaceId: 'workspace', agentId: 'lost' }
+  try {
+    const started = await runtime.startSession({
+      workspaceRoot,
+      ...chat,
+      providerId: mock.id,
+      modelId: 'mock-model',
+      permissionPreset: 'bypass',
+    })
+    assert.ok(started.ok)
+    const store = createPendingFirstMessages({ filePath: join(dir, 'first.json') })
+    const commandId = firstMessageCommandId('client:phone:lost')
+    await store.keep(commandId, { launchCommandId: 'client:phone:lost', message: 'hello lost', at: 1 }, [])
+    // As the core recovers them (studio-core.ts).
+    const host = createConversationGatewayHost(
+      runtime,
+      () => workspaceRoot,
+      () => [{ workspaceRoot, workspaceId: 'workspace' }],
+      () => 'bypass',
+      undefined,
+      undefined,
+      undefined,
+      { sendHookAs: { inputKind: 'recovery', from: 'studio' } },
+    )
+    await recoverFirstMessages({
+      store,
+      findChat: () => chat,
+      send: async (target, id, kept) => {
+        const sent = await host.command({ workspaceRoot, ...target }, FIRST_MESSAGE_CLIENT_ID, id, {
+          kind: 'send',
+          message: kept.message,
+        })
+        return sent.ok ? { ok: true } : { ok: false, message: sent.message ?? 'refused' }
+      },
+      answered: (target, id) => host.sentBefore({ workspaceRoot, ...target }, FIRST_MESSAGE_CLIENT_ID, id),
+      warn: (warning) => assert.fail(warning),
+    })
+    assert.equal(heard.length, 1)
+    assert.equal(heard[0]?.inputKind, 'recovery')
+    assert.equal(heard[0]?.from, 'studio')
+    assert.equal(told.at(-1), 'hello lost (checked)')
+  } finally {
+    await runtime.shutdown()
     await rm(dir, { recursive: true, force: true })
   }
 })

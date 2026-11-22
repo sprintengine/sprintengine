@@ -75,7 +75,9 @@ function session(partial: Partial<TerminalSessionSnapshot>): TerminalSessionSnap
   } as TerminalSessionSnapshot
 }
 
-function harness(options: { focused?: boolean; files?: TourFileSnapshot[] } = {}) {
+function harness(
+  options: { focused?: boolean; files?: TourFileSnapshot[]; hookPrompt?: TourServiceDeps['hookPrompt'] } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), 'sprintengine-tours-'))
   temps.push(dir)
   const files = options.files ?? [RETRY]
@@ -119,6 +121,7 @@ function harness(options: { focused?: boolean; files?: TourFileSnapshot[] } = {}
     requestAttention: (key) => attention.push(key),
     listTerminals: () => terminals,
     writeTerminal: (sessionId, data) => writes.push({ sessionId, data }),
+    ...(options.hookPrompt ? { hookPrompt: options.hookPrompt } : {}),
     setTimeout: (run, ms) => {
       const id = timers.length + 1
       timers.push({ at: clock + ms, run, id })
@@ -279,6 +282,33 @@ test('a question is typed in at once when the author has finished its turn — p
   assert.ok(h.writes[0].data.endsWith('Why three lines?\x1b[201~'))
   await h.advance(2_000)
   assert.deepEqual(h.writes[1], { sessionId: 's1', data: '\r' })
+})
+
+// A tour's prompt is Studio's, typed to its author: the extensions'
+// `agent.prompt.before` checks it first. What a hook leaves is typed; a
+// refusal types nothing, and the question says why.
+test('a tour’s prompt meets the prompt hooks: typed as changed, or not at all when refused', async () => {
+  const hooked: string[] = []
+  const h = harness({
+    hookPrompt: async (_session, text) => {
+      hooked.push(text)
+      return text.includes('secret')
+        ? { ok: false, message: 'The extension "Guard" (acme.guard) refused this: no secrets' }
+        : { ok: true, text: `${text} (checked)` }
+    },
+  })
+  const tour = await created(h)
+  h.setTerminals([session({ agentState: { phase: 'idle', since: 0, source: 'hook' } })])
+  const refused = await h.service.ask('ws-1', tour.id, 'options', 'Print the secret')
+  assert.ok(refused.ok)
+  assert.equal(refused.value.state, 'failed')
+  assert.equal(refused.value.error, 'The extension "Guard" (acme.guard) refused this: no secrets')
+  assert.equal(h.writes.length, 0, 'nothing typed')
+
+  const asked = await h.service.ask('ws-1', tour.id, 'options', 'Why three lines?')
+  assert.equal(asked.ok && asked.value.state, 'sent')
+  assert.equal(hooked.length, 2)
+  assert.ok(h.writes[0]?.data.endsWith('Why three lines? (checked)\x1b[201~'))
 })
 
 test('a question waits while the author is working or blocked on a prompt, and goes when its turn ends', async () => {

@@ -7,7 +7,9 @@ import { test } from 'vitest'
 
 import type { ConversationSubagent } from '../../../packages/conversation-protocol/src/public'
 import type { AgentState } from '../../shared/agent-state'
-import type { ConversationEvent } from '../../shared/conversation-runtime'
+import type { ConversationEvent, ConversationPromptHookAs } from '../../shared/conversation-runtime'
+import { ownerInvoker } from '../../main/module-host/extension-invocation'
+import type { ExtensionHookOutcome, ExtensionHooks } from '../extensions/hooks/extension-hooks'
 import type { McpConnectionContext, McpToolResult } from '../../shared/modules/mcp-tools'
 import { createSubagentTools } from '../../main/automation/subagent-tools'
 import { SUBAGENT_TASK_ORIGIN } from '../../main/conversation-launch-service'
@@ -114,12 +116,13 @@ function reviewerRecords(): Record<string, AgentState> {
 }
 
 /** This machine's chats over one folder and one set of records: booted again, it is the app after a restart. */
-function boot(workspaceRoot: string, agents: Record<string, AgentState>) {
+function boot(workspaceRoot: string, agents: Record<string, AgentState>, extensionHooks?: ExtensionHooks) {
   const provider = recordingProvider()
   const record = { name: 'Project', createdAt: 1, agents } as unknown as ConversationListWorkspace
   const runtime = new ConversationRuntime({
     adapters: [provider.adapter],
     getProviderById: () => undefined,
+    ...(extensionHooks ? { extensionHooks, starterInvoker: () => ownerInvoker(null, 'the parent agent') } : {}),
     heldChatMode: ({ agentId }) => {
       const agent = agents[agentId]
       return agent?.conversationModeHeld && agent.conversationMode !== 'default' ? agent.conversationMode : undefined
@@ -130,7 +133,7 @@ function boot(workspaceRoot: string, agents: Record<string, AgentState>) {
     reasoningEffortOf: ({ agentId }: { agentId: string }) => agents[agentId]?.conversationReasoningEffort,
     subagentChanges: () => () => undefined,
   }
-  const host = (origin?: typeof SUBAGENT_TASK_ORIGIN) =>
+  const host = (origin?: typeof SUBAGENT_TASK_ORIGIN, hookAs?: ConversationPromptHookAs) =>
     createConversationGatewayHost(
       runtime,
       () => workspaceRoot,
@@ -139,7 +142,7 @@ function boot(workspaceRoot: string, agents: Record<string, AgentState>) {
       undefined,
       undefined,
       undefined,
-      { ...registry, ...(origin ? { sendOrigin: origin } : {}) },
+      { ...registry, ...(origin ? { sendOrigin: origin } : {}), ...(hookAs ? { sendHookAs: hookAs } : {}) },
     )
   const latest = (agentId: string) => {
     const listed = runtime.listSessions({ workspaceId: WORKSPACE, agentId })
@@ -175,7 +178,6 @@ function boot(workspaceRoot: string, agents: Record<string, AgentState>) {
     if (event.type === 'user_message') userMessages.push(event)
   })
 
-  const taskHost = host(SUBAGENT_TASK_ORIGIN)
   const tools = createSubagentTools({
     launch: async () => {
       throw new Error('A resume starts nothing new.')
@@ -183,7 +185,9 @@ function boot(workspaceRoot: string, agents: Record<string, AgentState>) {
     resolveAgentPermissionPreset: () => 'bypass',
     isKnownCli: () => true,
     subagents: lifecycle,
-    sendTask: async ({ workspaceId, agentId }, message) => {
+    // As the gateway sends it: the parent's words, for the prompt hooks, as the parent.
+    sendTask: async ({ workspaceId, agentId }, message, starter) => {
+      const taskHost = host(SUBAGENT_TASK_ORIGIN, { inputKind: 'subagent', from: 'agent', starter })
       const key = taskHost.resolveKey(workspaceId, agentId)
       if (!key) return { ok: false, message: 'No folder.' }
       const sent = await taskHost.command(key, 'studio-subagent-tasks', randomUUID(), { kind: 'send', message })
@@ -201,10 +205,10 @@ function boot(workspaceRoot: string, agents: Record<string, AgentState>) {
 }
 
 /** A reviewer that has done its first task, as the launch sends it, and is at rest. */
-async function fixture() {
+async function fixture(extensionHooks?: ExtensionHooks) {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'subagent-resume-'))
   const agents = reviewerRecords()
-  const app = boot(workspaceRoot, agents)
+  const app = boot(workspaceRoot, agents, extensionHooks)
   const first = await app.runtime.startSession({
     workspaceRoot,
     workspaceId: WORKSPACE,
@@ -307,6 +311,46 @@ test('after a restart, a resume starts the CLI on its own session again, with th
     assert.equal(turn.modelId, 'gpt-6.1-sol')
     assert.equal(turn.reasoningEffort, 'high')
     assert.equal(turn.mode, 'ask')
+  } finally {
+    await f.close()
+  }
+})
+
+// The next task is the parent agent's words: it meets the extensions'
+// `agent.prompt.before` at the runtime's door, through the chat's host, as the
+// parent; a refusal ends the round as failed, in the extension's words.
+test('a resumed task meets the prompt hooks as the parent agent’s, and a refusal fails the round', async () => {
+  const heard: Array<{ event: Record<string, unknown>; invoker: string }> = []
+  const hooks: ExtensionHooks = {
+    wants: (point) => point === 'agent.prompt.before',
+    run: async (_point, event, invoker) => {
+      heard.push({ event: event as Record<string, unknown>, invoker: invoker.label })
+      return {
+        kind: 'deny',
+        extensionId: 'acme.guard',
+        displayName: 'Guard',
+        reason: 'no second rounds',
+        failed: false,
+      } as ExtensionHookOutcome<never>
+    },
+    notify: () => undefined,
+    bind: () => undefined,
+  }
+  const f = await fixture(hooks)
+  try {
+    heard.length = 0
+    const resumed = await f.app.call('subagent.resume', ROUND_2)
+    assert.equal(heard.length, 1)
+    assert.equal(heard[0]?.invoker, 'the parent agent')
+    assert.equal(heard[0]?.event.inputKind, 'subagent')
+    assert.equal(heard[0]?.event.from, 'agent')
+    assert.equal(heard[0]?.event.prompt, 'Round 2: check the two fixes.')
+    assert.equal(f.app.provider.turns.length, 1, 'the refused task never reaches the CLI')
+    assert.equal(body(resumed).status, 'failed')
+    assert.match(
+      String(f.agents[REVIEWER]?.subagentEnd?.error),
+      /"Guard" \(acme\.guard\) refused this: no second rounds/,
+    )
   } finally {
     await f.close()
   }

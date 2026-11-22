@@ -42,8 +42,6 @@
 // when its ceiling is `bypass`, and never through an agent's tool call that is
 // capped below it.
 
-import { extensionHookRefusal, type ExtensionHooks } from '../../server/extensions/hooks/extension-hooks'
-import { currentInvoker } from './extension-invocation'
 import { randomUUID } from 'crypto'
 
 import { conversationWorkingRoot, type AgentState } from '../../shared/agent-state'
@@ -164,8 +162,6 @@ export type ModuleConversationDeps = {
    */
   getCallerPermissionCeiling?: () => CliPermissionPreset | null
   newCommandId?: () => string
-  /** Extensions' `agent.prompt.before` hooks on a message an extension sends its own chat, run as its caller. */
-  extensionHooks?: ExtensionHooks | null
 }
 
 export type ModuleConversationModuleRegistry = {
@@ -557,6 +553,8 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
     const permissionMode =
       permissionPreset && permissionPreset === input.permissionPreset ? input.permissionMode : undefined
     const launched = await deps.launch({
+      // The extension's prompt, not a person's: the extensions' prompt hooks check it.
+      promptHookAs: { inputKind: 'launch', from: 'extension' },
       workspaceId: input.workspaceId.trim(),
       ...(input.cli ? { cli: input.cli } : {}),
       ...(input.model ? { cliModel: input.model } : {}),
@@ -783,32 +781,15 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
         if (!owned) return notOwned(ref)
         const sessionId = await sessionFor(ref, owned)
         if (typeof sessionId !== 'string') return sessionId
-        let message = input.message
-        if (deps.extensionHooks?.wants('agent.prompt.before')) {
-          const outcome = await deps.extensionHooks.run(
-            'agent.prompt.before',
-            {
-              agent: null,
-              where: 'chat',
-              workspaceId: ref.workspaceId,
-              agentId: ref.agentId,
-              terminalId: null,
-              from: 'extension',
-              inputKind: 'send',
-              prompt: message,
-            },
-            currentInvoker(),
-          )
-          // Refused before the runtime heard it; the words name the extension.
-          if (outcome.kind === 'deny') return failure('runtime_refused', extensionHookRefusal(outcome))
-          message = outcome.event.prompt
-        }
         // Answered when the turn ends, as a send is everywhere else.
         return deps.runtime
           .sendTurn({
             sessionId,
             commandId: runtimeCommandId(moduleId, input.commandId),
-            message,
+            message: input.message,
+            // Checked by the extensions' prompt hooks in the runtime, as the
+            // extension's caller; a refusal names the extension.
+            hookAs: { inputKind: 'send', from: 'extension' },
             ...(input.skills?.length ? { skills: input.skills.map((id) => ({ id })) } : {}),
             ...(input.attachments?.length ? { attachments: input.attachments } : {}),
             ...(input.steer === true ? { steer: true } : {}),

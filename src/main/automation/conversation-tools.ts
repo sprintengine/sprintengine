@@ -352,6 +352,8 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
         const launched = await deps.launch(
           {
             startedBy: gatewayCallerStarter(context, deps.resolveAgentPermissionPreset),
+            // An agent's words, not a person's: the extensions' prompt hooks check them.
+            promptHookAs: { inputKind: 'launch', from: 'agent' },
             ...(projectlessFolder
               ? { newChatIn: { folderPath: projectlessFolder } }
               : { workspaceId, ...(args.newChat === true ? { newChat: true } : {}) }),

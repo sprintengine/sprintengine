@@ -1,6 +1,6 @@
 import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { LAUNCH_PROMPT_READS_AS_OPTION_MESSAGE, launchPromptReadsAsOption } from '../../shared/agent-launch'
-import type { AgentState } from '../../shared/agent-state'
+import type { AgentStarter, AgentState } from '../../shared/agent-state'
 import { parseCliPermissionPreset, type CliPermissionPreset } from '../../shared/cli-permission-preset'
 import { cliForConversationProvider, conversationProviderForCli } from '../../shared/conversation-harness'
 import {
@@ -122,6 +122,8 @@ export type SubagentToolsDeps = {
   sendTask?: (
     chat: { workspaceId: string; agentId: string },
     message: string,
+    /** Who sends it, for the extensions' prompt hooks it meets. */
+    starter: AgentStarter,
   ) => Promise<{ ok: true } | { ok: false; message: string }>
   /** Whether a provider's chats pick up their CLI session again, for a sub-agent with no session listed now. */
   providerResumes?: (providerId: string) => boolean
@@ -458,6 +460,8 @@ export function createSubagentTools(deps: SubagentToolsDeps): McpToolRegistratio
         try {
           launched = await deps.launch({
             startedBy: gatewayCallerStarter(context, deps.resolveAgentPermissionPreset),
+            // The parent agent's task, which the extensions' prompt hooks check.
+            promptHookAs: { inputKind: 'subagent', from: 'agent' },
             workspaceId: parent.workspaceId,
             cli,
             prompt,
@@ -665,7 +669,7 @@ export function createSubagentTools(deps: SubagentToolsDeps): McpToolRegistratio
         // Settles when the round's turn does: a refusal, or a send that never
         // reached the chat, ends the round as failed, which a turn that ran has
         // already ended (and then this changes nothing).
-        void sendTask(chat, args.task).then(
+        void sendTask(chat, args.task, gatewayCallerStarter(context, deps.resolveAgentPermissionPreset)).then(
           (sent) => {
             if (!sent.ok) lifecycle.fail(chat, sent.message)
           },

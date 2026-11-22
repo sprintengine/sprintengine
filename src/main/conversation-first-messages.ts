@@ -175,8 +175,9 @@ export type FirstMessageSendResult = { ok: true } | { ok: false; message: string
 
 /**
  * Whether a send's answer settles a first message for good: the chat took
- * it, or another command holds its id, or it refused it in an answer its log
- * keeps (`answered`, asked only then). A refusal the log did not keep (busy,
+ * it, or another command holds its id, or an extension refused it (its last
+ * word: sent again, it would be refused again), or it refused it in an answer
+ * its log keeps (`answered`, asked only then). A refusal the log did not keep (busy,
  * an agent that would not start, a failure on the way) settles nothing: the
  * message is kept, and goes again.
  */
@@ -184,7 +185,7 @@ export async function firstMessageSettled(
   sent: FirstMessageSendResult,
   answered: () => Promise<boolean>,
 ): Promise<boolean> {
-  if (sent.ok || sent.code === 'command_id_conflict') return true
+  if (sent.ok || sent.code === 'command_id_conflict' || sent.code === 'refused_by_extension') return true
   if (sent.code === 'busy') return false
   return answered().catch(() => false)
 }

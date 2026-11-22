@@ -95,6 +95,7 @@ import { forkedAgentPatch, forkName } from '../../shared/conversation/fork'
 import {
   runsTurnMode,
   type ConversationMessageOrigin,
+  type ConversationPromptHookAs,
   type ConversationSessionSummary,
 } from '../../shared/conversation-runtime'
 import { installedStudioPlatform, installStudioPlatform, type StudioPlatform } from '../platform/platform'
@@ -493,6 +494,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   const conversationRuntime = new ConversationRuntime({
     extensionHooks,
     chatInvoker,
+    // A send that names who it is from (a launch's first message) runs as them.
+    starterInvoker: (startedBy) => hookInvokers.ofAgent({ startedBy }),
     secretStore: getSharedCredentialStore(),
     approvalRules,
     attachmentStore: new ConversationAttachmentStore(dataDir),
@@ -1115,7 +1118,15 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // `lifecycleList` is for a door that advertises `conversation-lifecycle`
   // (the tailnet lane and the Studio RPC): its list leaves settled chats out,
   // in the sidebar's order.
-  const createConversationHost = (hostOptions: { origin?: ConversationMessageOrigin; lifecycleList?: boolean } = {}) =>
+  // `hookAs` is for sends nobody typed that the extensions' prompt hooks
+  // check (a sub-agent's next task, a first message resent after a stop).
+  const createConversationHost = (
+    hostOptions: {
+      origin?: ConversationMessageOrigin
+      hookAs?: ConversationPromptHookAs
+      lifecycleList?: boolean
+    } = {},
+  ) =>
     createConversationGatewayHost(
       conversations,
       (workspaceId) => workspaceRegistry.getRecord(workspaceId)?.folderPath ?? null,
@@ -1151,6 +1162,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
           attachmentImagesRoot(),
         ],
         ...(hostOptions.lifecycleList ? { lifecycleList: true } : {}),
+        ...(hostOptions.hookAs ? { sendHookAs: hostOptions.hookAs } : {}),
         ...(hostOptions.origin
           ? { sendOrigin: hostOptions.origin }
           : {
@@ -1357,7 +1369,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       return null
     },
     send: async (chat, commandId, message) => {
-      const host = createConversationHost(message.subagentTask ? { origin: SUBAGENT_TASK_ORIGIN } : {})
+      // Not the person typing now: the extensions' prompt hooks check it again.
+      const host = createConversationHost({
+        ...(message.subagentTask ? { origin: SUBAGENT_TASK_ORIGIN } : {}),
+        hookAs: { inputKind: 'recovery', from: 'studio' },
+      })
       const key = host.resolveKey(chat.workspaceId, chat.agentId)
       if (!key) return { ok: false, message: 'The chat is no longer there.' }
       // Its pictures go from where they were kept, as a held message's do.
@@ -1454,7 +1470,13 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     after: firstPlan,
     conversations,
     // A schedule's run is the person's own, on the schedule they keep.
-    launch: (request) => conversationLaunchService.launch({ ...request, startedBy: { kind: 'person' } }),
+    // Its prompt is not typed now, so the extensions' prompt hooks check it.
+    launch: (request) =>
+      conversationLaunchService.launch({
+        ...request,
+        startedBy: { kind: 'person' },
+        promptHookAs: { inputKind: 'launch', from: 'studio' },
+      }),
     createConversationHost: () => createConversationHost(),
     workspaceRecords: () => workspaceRegistry.getRecords(),
     gitHost: (hostId) => (hostId ? hosts.get(hostId) : null),

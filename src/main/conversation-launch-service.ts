@@ -48,6 +48,7 @@ import type {
   ConversationCliRuntimeOverrides,
   ConversationImageAttachment,
   ConversationMcpServer,
+  ConversationPromptHookAs,
   ConversationSendTurnInput,
   ConversationSessionActionResult,
   ConversationStartSessionInput,
@@ -195,6 +196,13 @@ export type ConversationLaunchRequest = {
    * Absent, the extension whose call this is, else no one.
    */
   startedBy?: AgentStarter
+  /**
+   * What the first message is when nobody typed it (an agent's, an
+   * extension's or a schedule's launch): it meets the extensions'
+   * `agent.prompt.before` in the runtime, as `startedBy`. Absent, the prompt is
+   * a person's own and is never hooked.
+   */
+  promptHookAs?: Omit<ConversationPromptHookAs, 'starter'>
   launchCommandId?: string
   /**
    * The scheduled agent whose run this is. Written on the workspace a new
@@ -313,7 +321,15 @@ export type ConversationLaunchServiceDeps = {
   send: (
     input: Pick<
       ConversationSendTurnInput,
-      'sessionId' | 'commandId' | 'message' | 'skills' | 'attachments' | 'reasoningEffort' | 'mode' | 'origin'
+      | 'sessionId'
+      | 'commandId'
+      | 'message'
+      | 'skills'
+      | 'attachments'
+      | 'reasoningEffort'
+      | 'mode'
+      | 'origin'
+      | 'hookAs'
     >,
   ) => Promise<ConversationSessionActionResult>
   /**
@@ -923,6 +939,7 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
             ...(subagentOf ? { origin: SUBAGENT_TASK_ORIGIN } : {}),
             ...(skills.length > 0 ? { skills: skills.map((id) => ({ id })) } : {}),
             ...(request.attachments?.length ? { attachments: request.attachments } : {}),
+            ...(request.promptHookAs ? { hookAs: { ...request.promptHookAs, starter: startedBy } } : {}),
           })
           const settled = await settle(sent)
           if (!sent.ok)

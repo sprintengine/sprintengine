@@ -38,6 +38,7 @@ import { invokerCeiling } from './module-host/extension-invocation'
 import type {
   ConversationEvent,
   ConversationInterruptInput,
+  ConversationPromptHookAs,
   ConversationListSessionsInput,
   ConversationListSessionsResult,
   ConversationRespondToRequestInput,
@@ -48,6 +49,10 @@ import type {
   ConversationStartSessionResult,
   ConversationStopSessionInput,
 } from '../shared/conversation-runtime'
+
+// What an extension's companion sends its agent: the extensions' prompt hooks
+// check it in the runtime, as an extension's input, never a person's.
+const COMPANION_PROMPT: ConversationPromptHookAs = { inputKind: 'companion', from: 'extension' }
 
 // The slice of ConversationRuntime the companion service drives. The live app
 // passes its shared ConversationRuntime; contract tests pass a ConversationRuntime
@@ -498,7 +503,7 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
       // rejects this run promptly even while a slow turn is still streaming. A
       // sendTurn that fails to start settles the collector itself.
       const sendPromise = runtime
-        .sendTurn({ sessionId, message })
+        .sendTurn({ sessionId, message, hookAs: COMPANION_PROMPT })
         .then((sent) => {
           if (!sent.ok) settleCollector(collector, { ok: false, message: sent.message })
           return sent
@@ -563,7 +568,11 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
     if (entry.pendingInterrupt) await entry.pendingInterrupt
     const sessionId = entry.sessionId
     if (!sessionId) throw new Error('Companion session is not spawned.')
-    const sendPromise = runtime.sendTurn({ sessionId, message: consumePreamble(entry, message) })
+    const sendPromise = runtime.sendTurn({
+      sessionId,
+      message: consumePreamble(entry, message),
+      hookAs: COMPANION_PROMPT,
+    })
     entry.pendingSend = sendPromise
     const sent = await sendPromise
     if (!sent.ok) throw new Error(`Companion chat turn failed: ${sent.message}`)

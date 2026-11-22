@@ -83,6 +83,8 @@ test('conversation.create forwards the launch and answers with the ids a pane fo
   ])
   // An agent's chat keeps that it was the agent's, under its own ceiling.
   assert.deepEqual((requests[0] as { startedBy?: unknown }).startedBy, { kind: 'agent', ceiling: null })
+  // Its prompt is the agent's, which the extensions' prompt hooks check.
+  assert.deepEqual((requests[0] as { promptHookAs?: unknown }).promptHookAs, { inputKind: 'launch', from: 'agent' })
   assert.equal(result.isError, undefined)
   assert.deepEqual((result.structuredContent as { conversation: unknown }).conversation, {
     workspaceId: 'ws-1',
@@ -290,10 +292,17 @@ test("conversation.create takes a mode its chat runs, at that mode's level and u
   )
 })
 
-/** The launch requests as they were, but for who started them (asserted where it matters). */
+/** The launch requests as they were, but for who started them and what their prompt is (asserted where it matters). */
 function withoutStarter<T>(requests: T[]): T[] {
   return requests.map((request) => {
-    const { startedBy: _starter, ...rest } = request as T & { startedBy?: unknown }
+    const {
+      startedBy: _starter,
+      promptHookAs: _hookAs,
+      ...rest
+    } = request as T & {
+      startedBy?: unknown
+      promptHookAs?: unknown
+    }
     return rest as T
   })
 }

@@ -183,6 +183,7 @@ import { createServerGatewayBackends, launchSettingsGatewayDeps } from '../serve
 import { SERVER_EVENTS, SERVER_METHODS, SHELL_METHODS } from '../server/desktop/server-methods'
 import { createWorkspaceWithHooks } from '../server/extensions/hooks/workspace-hooks'
 import { activeInvoker, ownerInvoker } from './module-host/extension-invocation'
+import { extensionHookRefusal } from '../server/extensions/hooks/extension-hooks'
 import { createRemoteCore, createRemoteGitHubTokenStore, type ShellServerLink } from './server-supervisor/remote-core'
 import { anyWindowFocused, broadcastToAllWindows } from './window-broadcast'
 
@@ -1327,6 +1328,34 @@ export function createAppServices(
     // The author's terminal is the server's: read, typed into and launched there.
     listTerminals: () => shellTerminals.list(),
     writeTerminal: (sessionId, data) => shellTerminals.write(sessionId, data),
+    // A tour's prompt is Studio's, typed to its author: the extensions' prompt
+    // hooks check it first, as whoever started that agent.
+    hookPrompt: (session, text) => {
+      const hooks = localCore?.extensionHooks
+      if (!hooks?.wants('agent.prompt.before')) return null
+      const chat =
+        session.workspaceId && session.agentId ? { workspaceId: session.workspaceId, agentId: session.agentId } : null
+      return hooks
+        .run(
+          'agent.prompt.before',
+          {
+            agent: session.cli ?? null,
+            where: 'terminal',
+            workspaceId: session.workspaceId ?? null,
+            agentId: session.agentId ?? null,
+            terminalId: session.sessionId,
+            from: 'studio',
+            inputKind: 'tour',
+            prompt: text,
+          },
+          (chat ? localCore?.chatInvoker(chat) : undefined) ?? ownerInvoker(null, 'Studio'),
+        )
+        .then((outcome) =>
+          outcome.kind === 'deny'
+            ? { ok: false as const, message: extensionHookRefusal(outcome) }
+            : { ok: true as const, text: outcome.event.prompt },
+        )
+    },
     launchAgent: async (request) => {
       const launched = await shellTerminals.launch(request)
       return launched.ok ? { ok: true, agentId: launched.agentId } : { ok: false, message: launched.message }

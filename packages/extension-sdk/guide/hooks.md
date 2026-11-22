@@ -90,13 +90,19 @@ machine by that machine's.
   when they want an approval, which bypass and auto never do, so a hook
   there could not be relied on. Agents in terminals are not hooked yet either:
   their CLI hooks report to Studio and do not wait for an answer.
-- `agent.prompt.before`: what Studio, an extension or another agent hands a
-  live agent through Studio (a notice when another agent finishes, an
-  extension's message to its own chat or through the agent control plane,
-  another agent's `conversation.send`), in a chat or a terminal. A message the
-  person sends, from any machine, is never hooked.
+- `agent.prompt.before`: every message to an agent that nobody typed, in a
+  chat or a terminal, with `inputKind` saying which: the first message of a
+  chat an agent, an extension or a schedule starts (`launch`); another
+  agent's `conversation.send`, and an extension's message to its own chat or
+  through the agent control plane (`send`); a sub-agent's task, started or
+  resumed (`subagent`); an extension's background agent's (`companion`);
+  Studio's notices (`notice`); a first message sent again after a stop cut it
+  off (`recovery`); and a tour's prompt typed to its author (`tour`). A chat's
+  are all checked at the one door every message to a chat comes through. A
+  message the person types, from any machine, is never hooked.
 - `terminal.write.before`: raw writes Studio, an extension or a tool makes
-  into a terminal. A person's keystrokes, from any machine, are never hooked.
+  into a terminal, with the Enter that ends one as its own field (`enter`).
+  A person's keystrokes, from any machine, are never hooked.
 - `agent.launch.before`: every new chat (from a window, a phone, a paired
   machine, an agent or an extension) and every agent started in a terminal.
   It refuses; it changes nothing.
@@ -116,7 +122,7 @@ machine by that machine's.
 | `agent.prompt.before` | `{ agent: string \| null; where: 'chat' \| 'terminal'; workspaceId: string \| null; agentId: string \| null; terminalId: string \| null; from: 'studio' \| 'extension' \| 'agent'; inputKind: 'launch' \| 'send' \| 'subagent' \| 'companion' \| 'notice' \| 'recovery' \| 'tour'; prompt: string }` | `{ deny }`, `{ change }` or nothing | `prompt` | Studio is about to hand an agent a message the person did not type (`inputKind` says which): a new agent’s first message from an agent, an extension or a schedule; another agent’s or an extension’s message; a sub-agent’s task; an extension’s background agent’s; a notice Studio sends; a first message sent again after a stop; a tour’s prompt. A message the person types, on any machine, is never hooked. Change `prompt`, or return `{ deny }` to refuse it. |
 | `agent.tool.before` | `{ agent: string; workspaceId: string; agentId: string; tool: string; input: Record<string, unknown>; callId: string \| null }` | `{ deny }`, `{ change }` or nothing | `input` | An agent in a chat is about to run a tool. Return `{ deny }` to refuse the call (the agent reads the reason) or change `input`; the chat’s permission mode still asks the person as usual. Claude Code chats only for now: other runtimes have no hook before a tool runs that Studio can answer. |
 | `agent.tool.after` | `{ agent: string; workspaceId: string; agentId: string; tool: string; input: Record<string, unknown>; callId: string \| null; output: unknown; failed: boolean }` | nothing: it observes | — | An agent in a chat finished a tool call, or it failed. Observe only: Studio does not wait for it. Claude Code chats only for now. |
-| `terminal.write.before` | `{ terminalId: string; workspaceId: string \| null; agent: string \| null; text: string }` | `{ deny }`, `{ change }` or nothing | `text` | Studio is about to type into a terminal for someone other than a person at its keyboard: an extension’s or a tool’s raw write. Keystrokes from a person (on any machine) are never hooked, and a prompt to an agent takes `agent.prompt.before` instead. Change `text`, or return `{ deny }` to refuse the write. |
+| `terminal.write.before` | `{ terminalId: string; workspaceId: string \| null; agent: string \| null; from: 'studio' \| 'extension'; inputKind: 'send' \| 'notice'; text: string; enter: boolean }` | `{ deny }`, `{ change }` or nothing | `text`, `enter` | Studio is about to type into a terminal for someone other than a person at its keyboard: an extension’s or a tool’s raw write. Keystrokes from a person (on any machine) are never hooked, and a prompt to an agent takes `agent.prompt.before` instead. Change `text` or `enter`, or return `{ deny }` to refuse the write. |
 | `workspace.create.before` | `{ for: 'chat' \| 'workspace'; name: string \| null; folderPath: string \| null; worktree: boolean }` | `{ deny }`, `{ change }` or nothing | `name` | Studio is about to make a workspace: for a new chat, or one an agent or extension asked for. Change `name`, or return `{ deny }` to refuse it. |
 | `workspace.create.after` | `{ for: 'chat' \| 'workspace'; workspaceId: string; name: string; folderPath: string \| null; worktree: boolean }` | nothing: it observes | — | Studio made a workspace. Observe only: Studio does not wait for it. |
 | `editor.save.before` | `{ path: string; text: string }` | `{ deny }`, `{ change }` or nothing | `text` | The person is about to save a text file from Studio’s editor, on whichever machine holds it. Change `text` (format on save), and the editor shows what was saved; or return `{ deny }` to refuse the save, and the editor shows the reason and keeps the edits unsaved. |

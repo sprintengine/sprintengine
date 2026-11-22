@@ -33,7 +33,7 @@ function create(launched: ConversationLaunchResult = LAUNCHED) {
   const [registration] = createConversationTools({
     launch: async (request) => {
       // Who started it is asserted in conversation-tools.test.ts.
-      const { startedBy: _starter, ...rest } = request
+      const { startedBy: _starter, promptHookAs: _hookAs, ...rest } = request
       requests.push(rest)
       return launched
     },

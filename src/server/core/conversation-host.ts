@@ -49,6 +49,7 @@ import type {
   ConversationKey,
   ConversationImageAttachment,
   ConversationMessageOrigin,
+  ConversationPromptHookAs,
   ConversationPermissionPreset,
   ConversationSessionActionResult,
   ConversationSessionFrame,
@@ -669,6 +670,13 @@ export type ConversationRegistryLink = {
    * Absent, a send is the person's, from a paired device.
    */
   sendOrigin?: ConversationMessageOrigin
+  /**
+   * The sends through this host are not words a person typed (a sub-agent's
+   * next task, a first message resent after a stop): each meets the
+   * extensions' `agent.prompt.before` in the runtime, as this kind of input.
+   * Absent, a send is a person's and is never hooked.
+   */
+  sendHookAs?: ConversationPromptHookAs
   /**
    * The effort the chat's agent record keeps (a New chat's pick, or one
    * changed in the chat since), which a window's chat view sends every turn
@@ -2096,6 +2104,7 @@ export function createConversationGatewayHost(
                 ...written,
                 ...stamp,
                 ...(registry.sendOrigin ? { origin: registry.sendOrigin } : {}),
+                ...(registry.sendHookAs ? { hookAs: registry.sendHookAs } : {}),
               })
             chatSessions.add(session.sessionId)
             const attachments: ConversationImageAttachment[] = []
@@ -2203,6 +2212,7 @@ export function createConversationGatewayHost(
                 ...written,
                 ...stamp,
                 ...(registry.sendOrigin ? { origin: registry.sendOrigin } : {}),
+                ...(registry.sendHookAs ? { hookAs: registry.sendHookAs } : {}),
               })
             } finally {
               stopWatching?.()
