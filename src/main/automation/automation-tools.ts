@@ -86,11 +86,14 @@ import type { WorkspaceMutationActor } from '../workspace-sync-service'
 import { getWorkspaceChangeSummary } from '../workspace-change-summary'
 import {
   capLaunchPermissionPreset,
+  gatewayCallerStarter,
   launchPermissionCeiling,
   refuseScheduledAgentRun,
   resolveNamedPermissionMode,
   type AgentPermissionResolver,
+  type AgentStarterResolver,
 } from './launch-permission-cap'
+import type { AgentStarter } from '../../shared/agent-state'
 import { normalizeExecutionHostId, type ExecutionHostId } from '../../shared/execution-host'
 import { newAgentIdSuffix } from '../../shared/agent-ids'
 import type { StartedDependencyInstall } from '../worktree-pool/dependency-install'
@@ -175,6 +178,8 @@ export type AutomationBackends = {
    * launch-permission-cap.ts.
    */
   resolveAgentPermissionPreset: AgentPermissionResolver
+  /** Who started an agent here, as its record keeps it (`gatewayCallerStarter`). */
+  agentStarterOf?: AgentStarterResolver
   /**
    * Mint a workspace in main's registry. Synchronous and
    * window-independent: `workspace.create` no longer asks a renderer to build
@@ -183,7 +188,12 @@ export type AutomationBackends = {
   createWorkspace(
     input: WorkspaceCreateRequest,
     actor: WorkspaceMutationActor,
-  ): { ok: true; result: WorkspaceCreateResult } | { ok: false; reason: string; message: string }
+    /** The calling connection, for extensions' hooks to run as. */
+    context?: McpConnectionContext,
+  ):
+    | { ok: true; result: WorkspaceCreateResult }
+    | { ok: false; reason: string; message: string }
+    | Promise<{ ok: true; result: WorkspaceCreateResult } | { ok: false; reason: string; message: string }>
   /** Read-only backlog listing for a workspace root (files + frontmatter, no writes). */
   listBacklogItems(workspaceRoot: string): Promise<BacklogListItemsResult>
   /** Read one backlog item (validated backlog/ relative path). */
@@ -373,6 +383,8 @@ type LaunchPlan = {
   spawnSkillId?: string
   /** The agent whose tool call this is (`launchCallerOf`), recorded on the session it starts. */
   launchedBy?: AgentLaunchCaller
+  /** Who asked, as the gateway caller stands (`gatewayCallerStarter`): what the launch's hooks run as. */
+  startedBy?: AgentStarter
 }
 
 type LaunchWorktree = { path: string; branch: string }
@@ -835,6 +847,9 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       ...(plan.host ? { host: plan.host } : {}),
       ...(plan.spawnSkillId ? { spawnSkillId: plan.spawnSkillId } : {}),
       ...(plan.launchedBy ? { launchedBy: plan.launchedBy } : {}),
+      ...(plan.startedBy ? { startedBy: plan.startedBy } : {}),
+      // A gateway caller's prompt is no one typing: the prompt hooks check it.
+      ...(plan.prompt?.trim() ? { promptHookAs: { inputKind: 'launch' as const, from: 'agent' as const } } : {}),
     })
     if (!launched.ok) return failure(launched.code, launched.message)
     const { agentId, sessionId } = launched
@@ -1061,13 +1076,14 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       // Synchronous authority: the id comes back from the same call that
       // committed it, which is what retired the delegate-to-renderer round trip
       // and its 7s bus-confirmation poll.
-      const outcome = backends.createWorkspace(
+      const outcome = await backends.createWorkspace(
         {
           name: optionalString(args.name),
           folderPath: optionalString(args.folderPath),
           templateId: optionalString(args.templateId),
         },
         'gateway',
+        context,
       )
       if (!outcome.ok) return failure(outcome.reason, outcome.message)
       return success({ workspace: workspaceProjection(outcome.result.workspace) })
@@ -1233,6 +1249,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
           worktreeName: options.worktreeName,
           worktreeBaseRef: options.worktreeBaseRef,
           launchedBy: launchCallerOf(context),
+          startedBy: gatewayCallerStarter(context, backends.resolveAgentPermissionPreset, backends.agentStarterOf),
         },
         { afterStart: link },
       )
@@ -1766,6 +1783,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
         ...(requestedPreset ? { permissionPreset: requestedPreset } : {}),
         worktreeRequested: false,
         launchedBy: launchCallerOf(context),
+        startedBy: gatewayCallerStarter(context, backends.resolveAgentPermissionPreset, backends.agentStarterOf),
       })
       if (!('agentId' in launched)) return launched
       return success({
@@ -2386,6 +2404,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
           // ensure above wrote nothing for a launch that does.
           spawnSkillId: BACKLOG_SKILL_ID,
           launchedBy: launchCallerOf(context),
+          startedBy: gatewayCallerStarter(context, backends.resolveAgentPermissionPreset, backends.agentStarterOf),
         },
         {
           // Assigned once the agent exists, after its worktree's install.

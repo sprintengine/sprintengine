@@ -49,6 +49,7 @@ export const EXTENSION_TEMPLATE_IDS: readonly string[] = [
   'backlog-action',
   'file-action',
   'mcp-tools',
+  'hook-guard',
 ]
 export const EXTENSION_PART_IDS: readonly string[] = ['main', 'mcp', 'settings', 'door']
 

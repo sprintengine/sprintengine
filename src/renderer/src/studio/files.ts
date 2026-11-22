@@ -2,6 +2,7 @@ import {
   STUDIO_FILE_SYSTEM_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
   type ContentSearchResult,
+  type StudioEditorSave,
   type FileWatchEvent,
   type ProjectLogo,
   type StudioCapability,
@@ -47,8 +48,19 @@ export type FilesApi = {
   checkWorkspaceFolder(path: string): Promise<WorkspaceFolderCheckResult>
   detectProjectLogo(folderPath: string): Promise<ProjectLogo | null>
   readProjectIconFile(filePath: string): Promise<ProjectLogo | null>
-  /** `roots` are the folders of the project the file was opened in: a save there does not write through a link out of them. */
-  writefile(path: string, content: string, options?: { roots?: readonly string[] }): Promise<void>
+  /**
+   * `roots` are the folders of the project the file was opened in: a save
+   * there does not write through a link out of them. `save` is a save the
+   * person made in an editor: the Studio that holds the file runs its
+   * extensions' `editor.save.before` hooks, and the
+   * answer's `text` is what was written when a hook changed it. A hook's
+   * refusal rejects with code `refused_by_extension`.
+   */
+  writefile(
+    path: string,
+    content: string,
+    options?: { roots?: readonly string[]; save?: StudioEditorSave },
+  ): Promise<{ text?: string }>
   saveDroppedImage(input: { mediaType: string; dataBase64: string }): Promise<string>
   createFile(parentDir: string, name: string): Promise<string>
   createDir(parentDir: string, name: string): Promise<string>
@@ -122,12 +134,14 @@ export const filesApi: FilesApi = {
   detectProjectLogo: async (folderPath) => (await call('files.projectLogo', { folderPath })).logo,
   readProjectIconFile: async (path) => (await call('files.projectIcon', { path })).logo,
   writefile: async (path, text, options = {}) => {
-    await call('files.writeText', {
+    const written = await call('files.writeText', {
       commandId: randomId(),
       path,
       text,
       ...(options.roots === undefined ? {} : { roots: [...options.roots] }),
+      ...(options.save ? { save: options.save } : {}),
     })
+    return written.text === undefined ? {} : { text: written.text }
   },
   saveDroppedImage: async (input) =>
     (

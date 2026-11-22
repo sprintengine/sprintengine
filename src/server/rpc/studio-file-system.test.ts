@@ -30,6 +30,7 @@ import {
 } from './studio-rpc.test-helper'
 import { studioWindowGrant } from './studio-frame-port'
 import { createStudioRpcRouter } from './studio-rpc-router'
+import type { StudioEditorSaveHooks } from './studio-file-system'
 
 // The files on this machine by path (`file-system`, and the search, stat,
 // picture and repository-root reads `chat.ts` declares) over the owner
@@ -58,10 +59,17 @@ function disk() {
   return { base, workspace, store, outside }
 }
 
-async function serve(options: { trash?: (path: string) => Promise<void>; files?: boolean } = {}) {
+async function serve(
+  options: {
+    trash?: (path: string) => Promise<void>
+    files?: boolean
+    editorSaveHooks?: StudioEditorSaveHooks
+  } = {},
+) {
   const at = disk()
   const trashed: string[] = []
   const started = await startTestServer({
+    ...(options.editorSaveHooks ? { editorSaveHooks: options.editorSaveHooks } : {}),
     ...(options.files === false
       ? {}
       : {
@@ -418,4 +426,52 @@ test('a closed connection’s searches end, in a slot clear of any window’s', 
     await new Promise((resolve) => setTimeout(resolve, 10))
   assert.deepEqual(slots.released, slots.searched)
   assert.ok(slots.searched[0]! >= 1_000_000_000, 'its slot is clear of any window’s webContents id')
+})
+
+test('a save the person made meets the extensions’ save hooks where the file is: changed, refused, or left alone', async () => {
+  const asked: Array<{
+    path: string
+    text: string
+    owner: boolean
+    workspaceId: string | null
+    languageId: string | null
+  }> = []
+  const { started, workspace } = await serve({
+    editorSaveHooks: ({ path, text, grant, workspaceId, languageId }) => {
+      asked.push({ path, text, owner: grant.owner, workspaceId, languageId })
+      if (text.includes('TODO'))
+        return Promise.resolve({
+          ok: false,
+          message: 'The extension "Lint" (local.lint) refused this: a TODO is left.',
+        })
+      return Promise.resolve({ ok: true, text: text.trimEnd() + '\n' })
+    },
+  })
+  const owner = await client(started.path, OWNER_TOKEN)
+  const file = join(workspace, 'saved.txt')
+
+  // Changed: the hook's text is written, and answered.
+  // The editor says which workspace the file was opened in, and its language.
+  const saved = await owner.request('files.writeText', {
+    commandId: cid(),
+    path: file,
+    text: 'one   \n\n',
+    save: { workspaceId: 'ws-1', languageId: 'plaintext' },
+  })
+  assert.deepEqual(resultOf(saved), { text: 'one\n' })
+  assert.equal(readFileSync(file, 'utf8'), 'one\n')
+  assert.deepEqual(asked, [
+    { path: file, text: 'one   \n\n', owner: true, workspaceId: 'ws-1', languageId: 'plaintext' },
+  ])
+
+  // Refused: nothing is written, and the refusal names the extension.
+  const refused = await owner.request('files.writeText', { commandId: cid(), path: file, text: 'TODO', save: {} })
+  assert.equal(codeOf(refused), 'refused_by_extension')
+  assert.match((refused as { error?: { message?: string } }).error?.message ?? '', /"Lint" \(local\.lint\)/u)
+  assert.equal(readFileSync(file, 'utf8'), 'one\n')
+
+  // Any other write is not a save the person made: no hook.
+  assert.deepEqual(resultOf(await owner.request('files.writeText', { commandId: cid(), path: file, text: 'TODO' })), {})
+  assert.equal(readFileSync(file, 'utf8'), 'TODO')
+  assert.equal(asked.length, 2)
 })

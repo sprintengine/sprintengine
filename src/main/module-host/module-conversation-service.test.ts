@@ -365,6 +365,8 @@ test('the owner drives its chat through the runtime, never with a remembered rul
     sessionId: 'conv_1',
     commandId: 'cmd',
     message: 'go',
+    // The extensions' prompt hooks check it in the runtime, as the extension's.
+    hookAs: { inputKind: 'send', from: 'extension' },
     skills: [{ id: 'review' }],
     steer: true,
   })

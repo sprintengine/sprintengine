@@ -29,6 +29,8 @@ import {
   type ThirdPartyModuleListResult,
   studioScopesGrant,
 } from '../../../packages/studio-protocol/src/public'
+import type { AgentStarter } from '../../shared/agent-state'
+import type { StudioEditorSaveHooks } from './studio-file-system'
 import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
 import type {
   StudioEnvironmentWork,
@@ -220,6 +222,8 @@ export type StudioRpcRouterOptions = {
   files?: StudioFiles
   /** The files on this machine by path; without it, `files.*` by path is answered `unavailable`. */
   fileSystem?: StudioFileSystem
+  /** Extensions' `editor.save.before` hooks on a save the person made. */
+  editorSaveHooks?: StudioEditorSaveHooks
   /** Git on this machine; without it, `git.*`, `github.*` and `versionControl.*` are answered `unavailable`. */
   git?: StudioGit
   /** The worktrees its agents run in, and deleting settled chats; without it, `worktrees.*` and `settledChats.*` are answered `unavailable`. */
@@ -412,6 +416,11 @@ export function studioErrorId(): string {
 }
 
 /** The receipt key a client's command id is held under. */
+/** Who a connection is, as an agent it starts keeps it: the person, or that client. */
+export function starterOfGrant(grant: StudioGrant): AgentStarter {
+  return grant.owner ? { kind: 'person' } : { kind: 'client', clientId: grant.clientId }
+}
+
 export function studioRuntimeCommandId(grant: StudioGrant, commandId: string): string {
   return grant.owner ? `owner:${commandId}` : `client:${grant.clientId}:${commandId}`
 }
@@ -775,7 +784,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     if (found) return { ok: true, result: { conversation: found } }
     let pending = creating.get(launchCommandId)
     if (!pending) {
-      pending = backend.create(capped, launchCommandId).catch((error: unknown) => ({
+      pending = backend.create(capped, launchCommandId, starterOfGrant(grant)).catch((error: unknown) => ({
         ok: false as const,
         code: 'conversation_start_failed',
         message: error instanceof Error ? error.message : String(error),
@@ -866,6 +875,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       principal: studioGrantPrincipal(grant),
       permissionCeiling: grant.ceiling,
       label: grant.owner ? 'you' : `"${grant.name}"`,
+      starter: starterOfGrant(grant),
     }
   }
   /**
@@ -972,6 +982,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   // for them is who may name which path (`studio-file-system.ts`).
   const fileSystem = createStudioFileSystemHandlers({
     ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
+    ...(options.editorSaveHooks ? { editorSaveHooks: options.editorSaveHooks } : {}),
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
   })

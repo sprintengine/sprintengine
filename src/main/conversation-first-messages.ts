@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import type { ConversationImageAttachment } from '../shared/conversation-runtime'
+import type { ConversationImageAttachment, ConversationPromptHookAs } from '../shared/conversation-runtime'
 import { writeFileAtomic } from '../server/platform/atomic-file'
 
 // The first messages of chats a launch made, kept on disk until each is
@@ -47,6 +47,12 @@ export type PendingFirstMessage = {
   mode?: 'plan' | 'ask'
   /** Sent as the agent's own task to a sub-agent, rather than as the person's words. */
   subagentTask?: true
+  /**
+   * Who sent it when nobody typed it (an agent's, an extension's or a
+   * schedule's launch): sent again, it meets the extensions' prompt hooks as
+   * a `recovery`. Absent, a person typed it, and it is never hooked.
+   */
+  from?: 'studio' | 'extension' | 'agent'
   /** Its pictures, written to the disk before it was listed. */
   images?: PendingFirstMessageImage[]
   /** When it was kept, for the diagnostics. */
@@ -175,8 +181,9 @@ export type FirstMessageSendResult = { ok: true } | { ok: false; message: string
 
 /**
  * Whether a send's answer settles a first message for good: the chat took
- * it, or another command holds its id, or it refused it in an answer its log
- * keeps (`answered`, asked only then). A refusal the log did not keep (busy,
+ * it, or another command holds its id, or an extension refused it (its last
+ * word: sent again, it would be refused again), or it refused it in an answer
+ * its log keeps (`answered`, asked only then). A refusal the log did not keep (busy,
  * an agent that would not start, a failure on the way) settles nothing: the
  * message is kept, and goes again.
  */
@@ -184,7 +191,7 @@ export async function firstMessageSettled(
   sent: FirstMessageSendResult,
   answered: () => Promise<boolean>,
 ): Promise<boolean> {
-  if (sent.ok || sent.code === 'command_id_conflict') return true
+  if (sent.ok || sent.code === 'command_id_conflict' || sent.code === 'refused_by_extension') return true
   if (sent.code === 'busy') return false
   return answered().catch(() => false)
 }
@@ -239,4 +246,13 @@ export async function recoverFirstMessages(deps: {
 /** The command id a launch's first message goes under: its launch's, so a resent create names the same one. */
 export function firstMessageCommandId(launchCommandId: string): string {
   return `${launchCommandId}:first`
+}
+
+/**
+ * What a first message sent again after a stop is, for the extensions' prompt
+ * hooks: a `recovery` from whoever sent it, when nobody typed it; nothing for
+ * a person's own words, which no hook ever sees.
+ */
+export function recoveryHookAs(message: Pick<PendingFirstMessage, 'from'>): ConversationPromptHookAs | undefined {
+  return message.from ? { inputKind: 'recovery', from: message.from } : undefined
 }

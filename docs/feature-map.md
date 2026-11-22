@@ -224,6 +224,23 @@ the window's choice of editor `src/renderer/src/modules/extension-editors.ts`, i
 `worker-env.ts`). Tests: `src/server/extensions/workers/worker-lifecycle.test.ts`,
 `src/server/extensions/workers/worker-invocations.test.ts`.
 
+**Agent hooks** (an extension's worker checks, changes or refuses what agents and Studio are about to do): the
+points in `packages/extension-sdk/src/hooks.ts`, the chain in `src/server/extensions/hooks/extension-hooks.ts`
+(who each runs as in `hook-invokers.ts`), served by `src/server/extensions/workers/worker-manager.ts` (`runHook`);
+wired at a Claude Code chat's tool calls (`src/main/providers/claude-agent-provider.ts`, through
+`src/main/conversation-runtime.ts`), launches at one door per runtime (a chat's first session in
+`src/main/conversation-runtime.ts`, a terminal's spawn in `src/server/extensions/hooks/launch-hooks.ts`), every
+message nobody typed at the runtime's `sendTurn` (`hookAs`, set by each of Studio's own senders), terminal agents'
+prompts and raw writes (`src/server/extensions/hooks/control-plane-hooks.ts`) and a tour's prompt
+(`src/main/tours/tour-service.ts`), new workspaces (`src/main/conversation-launch-service.ts`, before a new chat's
+worktree is cut, and `src/server/extensions/hooks/workspace-hooks.ts`) and editor saves
+(`src/server/rpc/studio-file-system.ts`). Wire: `files.writeText` `save`. Sample:
+`packages/extension-sdk/examples/tool-guard/`; template `packages/extension-sdk/templates/hook-guard/`; guide
+`packages/extension-sdk/guide/hooks.md`. Tests: `src/server/extensions/hooks/extension-hooks.test.ts`,
+`src/server/extensions/hooks/launch-hooks.test.ts`, `src/main/conversation-runtime-hooks.test.ts`,
+`src/main/providers/claude-agent-provider-extension-hooks.test.ts` (and its opt-in `.live.test.ts` against the real
+CLI).
+
 **Content contributions** (syntaxes, keybindings, status bar items, settings; no approval needed): checked by
 `packages/extension-sdk/src/content-syntaxes.ts`, served by `src/main/modules/extension-content.ts` and
 `src/main/modules/extension-declared-settings.ts`; drawn by `src/renderer/src/lib/highlight/contributedSyntaxes.ts`,

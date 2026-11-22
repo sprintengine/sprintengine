@@ -3,7 +3,7 @@ import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host
 import type { DistributionMachine } from '../wsl/distribution-machine'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, isAbsolute, join, relative, sep } from 'node:path'
 
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import {
@@ -62,6 +62,9 @@ import {
   type TailnetShareService,
 } from '../../main/automation/tailnet/tailnet-share-service'
 import { createTailnetFileUploads, TAILNET_UPLOADS_DIRNAME } from '../../main/automation/tailnet/tailnet-file-uploads'
+import { tailnetDeviceGrant } from '../../main/automation/tailnet/tailnet-studio-endpoint'
+import { extensionHookRefusal } from '../extensions/hooks/extension-hooks'
+import { invokerOfGrant } from '../extensions/hooks/hook-invokers'
 import { listKnownWorkspaceRoots, uniqueResolvedRoots } from '../../main/workspace-roots'
 
 // The Studio RPC over a core: the owner socket in `<dataDir>/run` that local
@@ -103,6 +106,32 @@ export function createStudioRpc(
   const shares = createTailnetShareService()
   const service = createStudioRpcService({
     ...(options.hostKind ? { hostKind: options.hostKind } : {}),
+    // A save the person made in an editor, on whichever client, meets this
+    // Studio's extensions' hooks, as the connection that saved.
+    editorSaveHooks: ({ path, text, grant, workspaceId, languageId }) =>
+      core.extensionHooks.wants('editor.save.before')
+        ? core.extensionHooks
+            .run(
+              'editor.save.before',
+              {
+                path,
+                workspaceId,
+                // Where the file is in the workspace's folder, when it is in it.
+                relativePath: pathInFolder(
+                  workspaceId ? core.workspaceRegistry.getRecord(workspaceId)?.folderPath : null,
+                  path,
+                ),
+                languageId,
+                text,
+              },
+              invokerOfGrant(grant),
+            )
+            .then((outcome) =>
+              outcome.kind === 'deny'
+                ? { ok: false as const, message: extensionHookRefusal(outcome) }
+                : { ok: true as const, text: outcome.event.text },
+            )
+        : null,
     // How this Studio is updated: the host says (a desktop itself, a WSL or
     // SSH server by the desktop that manages it, a hand-started one by hand).
     ...(options.updates ? { updates: options.updates } : {}),
@@ -304,6 +333,14 @@ export function createStudioRpc(
       void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Local app socket', message })
     },
   })
+  // A chat a paired device or app started runs its extensions' hooks as that
+  // client, read as it stands at each hook (hook-invokers.ts).
+  core.hookInvokers.bindClients((clientId) => {
+    const device = /^tailnet:(.+)$/.exec(clientId)?.[1]
+    if (device === undefined) return service.appGrantFor(clientId)
+    const found = gateway.getTailnetStatus().devices.find((candidate) => candidate.id === device)
+    return found ? tailnetDeviceGrant(found) : null
+  })
   // An app's tools reach the chats it started, and as far as its pairing says.
   gateway.linkClientTools({
     reachOf: (clientId) => service.toolReachOf(clientId),
@@ -464,4 +501,12 @@ export function createStudioTailnetDomain(gateway: StudioGateway, shares: Tailne
       onChanged: (listener) => gateway.onMeshChanged(listener),
     },
   }
+}
+
+/** `path` relative to `folder`, with forward slashes, when it is inside it; else null. */
+export function pathInFolder(folder: string | null | undefined, path: string): string | null {
+  if (!folder) return null
+  const inside = relative(folder, path)
+  if (!inside || inside.startsWith('..') || isAbsolute(inside)) return null
+  return inside.split(sep).join('/')
 }

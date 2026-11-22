@@ -37,6 +37,9 @@ export type TestExtension = {
     access: 'read' | 'operate'
     inputSchema?: Record<string, unknown>
   }>
+  hooks?: Array<{ point: string; onError?: 'pass' | 'deny' }>
+  /** Its display name; the id when absent. */
+  name?: string
 }
 
 export type WorkerHarness = {
@@ -83,10 +86,17 @@ export function startWorkerHarness(
     folders[key] = writeExtensionFolder(join(root, key), {
       manifest: extensionManifest({
         id: extension.id,
-        name: extension.id,
+        name: extension.name ?? extension.id,
         permissions: extension.permissions ?? [],
         ...(extension.background ? { background: true } : {}),
-        ...(extension.mcpTools ? { contributes: { mcpTools: extension.mcpTools } } : {}),
+        ...(extension.mcpTools || extension.hooks
+          ? {
+              contributes: {
+                ...(extension.mcpTools ? { mcpTools: extension.mcpTools } : {}),
+                ...(extension.hooks ? { hooks: extension.hooks } : {}),
+              },
+            }
+          : {}),
       }),
       files: { 'dist/main.cjs': extension.main },
     })

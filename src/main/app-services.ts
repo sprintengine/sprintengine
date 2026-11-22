@@ -181,6 +181,8 @@ import { createStudioModuleHub } from '../server/rpc/studio-modules'
 import type { StudioRpcService } from './studio-rpc/studio-rpc-service'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from '../server/desktop/gateway-backends'
 import { SERVER_EVENTS, SERVER_METHODS, SHELL_METHODS } from '../server/desktop/server-methods'
+import { createWorkspaceWithHooks } from '../server/extensions/hooks/workspace-hooks'
+import { activeInvoker, ownerInvoker } from './module-host/extension-invocation'
 import { createRemoteCore, createRemoteGitHubTokenStore, type ShellServerLink } from './server-supervisor/remote-core'
 import { anyWindowFocused, broadcastToAllWindows } from './window-broadcast'
 
@@ -935,6 +937,8 @@ export function createAppServices(
   // in process this one's, null where no pty can start; out of process the
   // server's, which the shell reads through `shellTerminals`.
   const coreTerminals = !server && 'agentTerminals' in core ? core.agentTerminals : null
+  // The core when it runs in this process: its extensions' hooks are this process's to run.
+  const localCore = !server && 'extensionHooks' in core ? core : null
   const shellTerminals: ShellTerminals = server ? remoteShellTerminals(server.rpc) : localShellTerminals(coreTerminals)
   // Every launch the shell starts itself (a tour's author) goes to the core's launch service.
   const agentLaunchService = coreTerminals?.launchService ?? null
@@ -1323,6 +1327,11 @@ export function createAppServices(
     // The author's terminal is the server's: read, typed into and launched there.
     listTerminals: () => shellTerminals.list(),
     writeTerminal: (sessionId, data) => shellTerminals.write(sessionId, data),
+    // A tour's prompt is Studio's, typed to its author: the extensions' prompt
+    // hooks check it first, where the author's terminal runs (this process, or
+    // the Studio server's), as whoever started that agent.
+    hookPrompt: (session, text) =>
+      shellTerminals.hookPrompt(session.sessionId, text, { inputKind: 'tour', from: 'studio' }),
     launchAgent: async (request) => {
       const launched = await shellTerminals.launch(request)
       return launched.ok ? { ok: true, agentId: launched.agentId } : { ok: false, message: launched.message }
@@ -1505,7 +1514,19 @@ export function createAppServices(
                 : {}),
               launchAgent: (request) => shellTerminals.launch(request),
               resolveAgentPermissionPreset,
-              createWorkspace: (input, actor) => workspaceSyncService.createWorkspace(input, actor),
+              // Who started a calling agent, as its record keeps it.
+              agentStarterOf: ({ workspaceId, agentId }) =>
+                workspaceId ? workspaceRegistry.getRecord(workspaceId)?.agents[agentId]?.startedBy : undefined,
+              createWorkspace: (input, actor, context) =>
+                createWorkspaceWithHooks(
+                  localCore?.extensionHooks,
+                  () =>
+                    activeInvoker() ??
+                    localCore?.hookInvokers.ofGatewayCaller(context) ??
+                    ownerInvoker(null, 'the agent'),
+                  input,
+                  (request) => workspaceSyncService.createWorkspace(request, actor),
+                ),
               studioDataDirs: () => [app.getPath('userData')],
               getScheduledAgents: () => resolveScheduledAgents(),
               ...withDefinedMachineSchedules(machineSchedulesOf(core)),
@@ -2116,6 +2137,8 @@ export function createAppServices(
     moduleRegistryMirror,
     /** The core's, in process (for the module host's tokens); null out of process. */
     agentControlPlane: coreTerminals?.controlPlane ?? null,
+    /** The core's extensions' hooks, in process; null out of process (the server runs its own). */
+    extensionHooks: localCore?.extensionHooks ?? null,
     agentLaunchService,
     conversationTerminalHandoff,
     /** What the shell reads of the terminals and asks of them, in either mode (shell-terminals.ts). */

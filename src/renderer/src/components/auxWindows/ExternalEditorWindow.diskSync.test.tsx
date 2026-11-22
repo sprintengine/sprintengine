@@ -35,6 +35,7 @@ const windowClose = vi.fn(async () => undefined)
     writefile: async (path: string, content: string) => {
       writes.push({ path, content })
       disk.set(path, content)
+      return {}
     },
     readdir: async () => [],
     watchPath: async (path: string, cb: (event: FileWatchEvent) => void) => {

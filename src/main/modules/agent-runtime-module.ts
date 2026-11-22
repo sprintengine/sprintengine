@@ -1,3 +1,4 @@
+import type { ExtensionHooks } from '../../server/extensions/hooks/extension-hooks'
 import type { AppServices } from '../app-services'
 import type { StudioPlatform } from '../../server/platform/platform'
 import type { ConversationCliRuntimeOverrides } from '../../shared/conversation-runtime'
@@ -101,7 +102,10 @@ export type AgentRuntimeServices = Pick<
   | 'conversationModelCatalog'
   | 'createConversationHost'
 > &
-  Partial<Pick<AppServices, 'terminalRuntime' | 'agentControlPlane' | 'agentLaunchService' | 'sprintengineAuth'>>
+  Partial<Pick<AppServices, 'terminalRuntime' | 'agentControlPlane' | 'agentLaunchService' | 'sprintengineAuth'>> & {
+    /** Extensions' agent hooks, where the core runs in this process. */
+    extensionHooks?: ExtensionHooks | null
+  }
 
 export function createAgentRuntimeModule(
   services: AgentRuntimeServices,
@@ -133,7 +137,10 @@ export function createAgentRuntimeModule(
       // A module can create a workspace with no window open; the id it gets
       // back is the one main just committed.
       host.provideService(WorkspaceServiceToken, () =>
-        createModuleWorkspaceService({ workspaceSync: services.workspaceSyncService }),
+        createModuleWorkspaceService({
+          workspaceSync: services.workspaceSyncService,
+          extensionHooks: services.extensionHooks ?? null,
+        }),
       )
       // Read-only workspace context (id → root/name/mode), read from the same
       // registry the create flow writes. Closing a workspace deletes its

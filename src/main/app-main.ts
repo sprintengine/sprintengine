@@ -141,6 +141,9 @@ const extensionWorkers = createExtensionWorkers({
   stateChanged: () => services.moduleHub.deliverChanged(),
 })
 if (!serverHost) app.once('will-quit', () => void extensionWorkers.workers.close())
+// In process, the core's actions ask these workers' hooks; out of process the
+// server binds its own.
+if (!serverHost) services.studioCore.extensionHooks.bind(extensionWorkers.workers)
 const thirdPartyMainLoad = planInstalledExtensions(
   discoverUserModulesSync(defaultUserModuleRoot(), readExtensionStanding()),
   () => extensionWorkers.workers,

@@ -103,6 +103,17 @@ export type ConversationChatToolsDeps = {
   resolveAgentPermissionPreset: AgentPermissionResolver
   /** Absent where this process has no chats to drive. */
   chats?: ConversationChatControl
+  /**
+   * Extensions' `agent.prompt.before` hooks on a message one agent sends
+   * another chat, run as the caller: the message to send, or a refusal naming
+   * the extension; null at once when no extension hooks the point.
+   */
+  promptHook?: (input: {
+    workspaceId: string
+    agentId: string
+    message: string
+    context: McpConnectionContext | undefined
+  }) => Promise<{ ok: true; message: string } | { ok: false; message: string }> | null
 }
 
 type Target = { key: ConversationKey; workspaceId: string; agentId: string }
@@ -255,7 +266,18 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
         const ceiling = launchPermissionCeiling(context, deps.resolveAgentPermissionPreset)
         const refused = refuseDrivingLooserChat(await chats.permissionOf(target.key), ceiling)
         if (refused) return toolError(refused.code, refused.message)
-        const message = headedMessage(chats, context, args.message)
+        let message = headedMessage(chats, context, args.message)
+        const hooked = deps.promptHook?.({
+          workspaceId: target.workspaceId,
+          agentId: target.agentId,
+          message,
+          context,
+        })
+        if (hooked) {
+          const decided = await hooked
+          if (!decided.ok) return toolError('refused_by_extension', decided.message)
+          message = decided.message
+        }
         const working = chatStateOf(await chats.session(target.workspaceId, target.agentId))
         const steer = args.mode === 'steer'
         const sentAt = (chats.now ?? Date.now)()

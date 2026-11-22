@@ -154,6 +154,11 @@ test('a call is held to every invoker the worker serves then: their common permi
   assert.deepEqual([...held.principal.permissions], ['extension:read'])
   assert.equal(held.permissionCeiling, 'auto')
   assert.match(held.label, /this device and the agent/)
+  // What it starts keeps a starter: the one they share, else no one.
+  const agent = { kind: 'agent', ceiling: 'auto' } as const
+  const twoCalls = heldToAll(ownerInvoker(null, 'the agent', agent), [ownerInvoker('auto', 'the agent', agent)])
+  assert.deepEqual(twoCalls.starter, agent)
+  assert.deepEqual(held.starter, { kind: 'nobody' }, 'the person and a device share no starter')
 })
 
 const POLLER = `

@@ -28,6 +28,41 @@ import { SERVICE_FAKES } from '../src/testing-services.js'
 const ROOT = '/Users/dev/projects/app'
 
 describe('createFakeMainHost', () => {
+  test('a point’s handlers run in registration order, and the disposer takes them back out', async () => {
+    const fake = createFakeMainHost({
+      manifest: {
+        id: 'guard',
+        tier: 'worker',
+        main: 'dist/main.cjs',
+        contributes: { hooks: [{ point: 'agent.prompt.before' }] },
+      } as never,
+    })
+    fake.host.registerHooks({ 'agent.prompt.before': (event) => ({ change: { prompt: `${event.prompt} one` } }) })
+    const second = fake.host.registerHooks({
+      'agent.prompt.before': (event) =>
+        event.prompt.startsWith('no') ? { deny: 'not that' } : { change: { prompt: `${event.prompt} two` } },
+    })
+    const event = {
+      agent: null,
+      where: 'chat' as const,
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      terminalId: null,
+      from: 'extension' as const,
+      inputKind: 'send' as const,
+      prompt: 'go',
+    }
+    const changed = await fake.hooks.fire('agent.prompt.before', event)
+    assert.equal(changed.kind === 'change' && (changed.event as { prompt: string }).prompt, 'go one two')
+    assert.deepEqual(await fake.hooks.fire('agent.prompt.before', { ...event, prompt: 'no' }), {
+      kind: 'deny',
+      reason: 'not that',
+    })
+    second()
+    const after = await fake.hooks.fire('agent.prompt.before', event)
+    assert.equal(after.kind === 'change' && (after.event as { prompt: string }).prompt, 'go one')
+  })
+
   test('has a fake for every service the SDK publishes, and nothing else', () => {
     assert.deepEqual(Object.keys(SERVICE_FAKES).sort(), EXTENSION_HOST_SERVICES.map((service) => service.key).sort())
   })

@@ -111,6 +111,10 @@ export function createWorkspaceSyncService(options: WorkspaceSyncServiceOptions)
       return failure(validation.reason, validation.message)
     }
 
+    // An agent a window adds (a tab strip's new terminal or chat) is the
+    // person's: its record says so, so its hooks run as them.
+    validation.command = personStartsWindowAgents(validation.command, state())
+
     // Tombstones and per-field last-write-wins are the registry's call, not the
     // bus's: a rejection here means the window is behind, and it reverts its
     // optimistic apply to main's value rather than keeping one main refused.
@@ -979,4 +983,38 @@ function isBounds(value: unknown): value is { x: number; y: number; width: numbe
 
 function clone<T>(value: T): T {
   return globalThis.structuredClone ? globalThis.structuredClone(value) : JSON.parse(JSON.stringify(value))
+}
+
+/** A window's command with each agent it adds marked as the person's; anything else as it came. */
+export function personStartsWindowAgents(
+  command: WorkspaceSyncCommand,
+  current: WorkspaceSyncState,
+): WorkspaceSyncCommand {
+  const person = { kind: 'person' as const }
+  if (command.type === 'workspace.update_agent') {
+    const { workspaceId, agentId, patch } = command.payload
+    const known = current.workspaces.find((workspace) => workspace.id === workspaceId)?.agents[agentId]
+    if (!patch || known || patch.startedBy) return command
+    return { ...command, payload: { ...command.payload, patch: { ...patch, startedBy: person } } }
+  }
+  if (command.type === 'workspace.created') {
+    const agents = command.payload.workspace.agents ?? {}
+    if (Object.values(agents).every((agent) => agent?.startedBy)) return command
+    return {
+      ...command,
+      payload: {
+        ...command.payload,
+        workspace: {
+          ...command.payload.workspace,
+          agents: Object.fromEntries(
+            Object.entries(agents).map(([id, agent]) => [
+              id,
+              agent && !agent.startedBy ? { ...agent, startedBy: person } : agent,
+            ]),
+          ),
+        },
+      },
+    }
+  }
+  return command
 }

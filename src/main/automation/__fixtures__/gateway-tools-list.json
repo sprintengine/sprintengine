@@ -402,11 +402,11 @@
     },
     {
       "name": "extension.create",
-      "sha256": "a225de0e35839cb5e80e1d49d27d1e3669c952613ee5b895eaa9584e653c9bba"
+      "sha256": "c006c111f68642130d684955b1d963e26e38193e18f525cbe10a2b23f934aab4"
     },
     {
       "name": "extension.guide",
-      "sha256": "c3f829431abf23c3bdb8c0dd398d802f9ee2739761eabfe621124012212f6c77"
+      "sha256": "346d0085c296906692d6e3736fae3f302c0cc06fd07cecf728d9beef91f25af9"
     },
     {
       "name": "plugin.search",
@@ -852,11 +852,11 @@
     },
     {
       "name": "extension.create",
-      "sha256": "a225de0e35839cb5e80e1d49d27d1e3669c952613ee5b895eaa9584e653c9bba"
+      "sha256": "c006c111f68642130d684955b1d963e26e38193e18f525cbe10a2b23f934aab4"
     },
     {
       "name": "extension.guide",
-      "sha256": "c3f829431abf23c3bdb8c0dd398d802f9ee2739761eabfe621124012212f6c77"
+      "sha256": "346d0085c296906692d6e3736fae3f302c0cc06fd07cecf728d9beef91f25af9"
     },
     {
       "name": "plugin.search",

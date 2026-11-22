@@ -27,9 +27,11 @@ import {
 } from '../agent-launch-notices'
 import {
   capLaunchPermissionPreset,
+  gatewayCallerStarter,
   launchPermissionCeiling,
   resolveNamedPermissionMode,
   type AgentPermissionResolver,
+  type AgentStarterResolver,
 } from './launch-permission-cap'
 
 /**
@@ -72,6 +74,8 @@ export type ConversationToolsDeps = {
   ) => ReturnType<ConversationLaunchService['launch']>
   /** The calling agent's own preset, which a chat it starts may not exceed (launch-permission-cap.ts). */
   resolveAgentPermissionPreset: AgentPermissionResolver
+  /** Who started a calling agent, as its record keeps it: what a chat it starts keeps as its own starter. */
+  agentStarterOf?: AgentStarterResolver
   /** A CLI's permission modes as `cli.runtime.list` gives them, for a caller that names one. */
   permissionModesOf?: (cli: string) => readonly CliPermissionModeSpec[]
   /** A chat's rest and visit clock, written to the desktop's own record (conversation-lifecycle.ts). */
@@ -350,6 +354,9 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
         }
         const launched = await deps.launch(
           {
+            startedBy: gatewayCallerStarter(context, deps.resolveAgentPermissionPreset, deps.agentStarterOf),
+            // An agent's words, not a person's: the extensions' prompt hooks check them.
+            promptHookAs: { inputKind: 'launch', from: 'agent' },
             ...(projectlessFolder
               ? { newChatIn: { folderPath: projectlessFolder } }
               : { workspaceId, ...(args.newChat === true ? { newChat: true } : {}) }),

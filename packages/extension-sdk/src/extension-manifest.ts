@@ -29,6 +29,13 @@ import {
 } from './manifest-schema.js'
 import { SCOPE_NAME_RE } from './content-syntaxes.js'
 import { EXTENSION_PERMISSIONS, type ExtensionPermission } from './permissions.js'
+import {
+  EXTENSION_HOOK_ON_ERROR,
+  EXTENSION_HOOK_POINTS,
+  EXTENSION_HOOK_TIME_LIMIT_MS,
+  type ExtensionHookOnError,
+  type ExtensionHookPoint,
+} from './hooks.js'
 
 export { EXTENSION_TIERS, type ExtensionTier, type ManifestIssue } from './manifest-schema.js'
 
@@ -114,7 +121,6 @@ export const EXTENSION_RESERVED_POINTS: Readonly<Record<string, string>> = {
   snippets: 'editor snippets',
   newFiles: 'new file templates',
   events: 'events delivered to the worker',
-  hooks: 'hooks the worker runs around Studio actions',
   sidecars: 'background processes',
   agentProviders: 'agent providers',
   skills: 'agent skills (a plugin bundle carries them for now)',
@@ -866,6 +872,34 @@ const CONTRIBUTES: ObjectNode = {
       since: V1,
       tier: 'worker',
     },
+    hooks: {
+      node: {
+        kind: 'array',
+        max: EXTENSION_HOOK_POINTS.length,
+        unique: { key: (item) => String((item as { point: string }).point), label: 'point' },
+        items: {
+          kind: 'object',
+          title: 'HookContribution',
+          fields: {
+            point: {
+              node: { kind: 'string', max: 64, enum: EXTENSION_HOOK_POINTS },
+              required: true,
+              doc: 'Where Studio asks the worker, which serves it with `registerHooks`. A `.before` point may refuse or change what Studio is about to do; an `.after` point only hears what it did. The guide’s hooks topic says what each one carries.',
+              since: V1,
+              example: 'agent.tool.before',
+            },
+            onError: {
+              node: { kind: 'string', max: 8, enum: EXTENSION_HOOK_ON_ERROR },
+              doc: `What a failed hook does: one that throws, answers after ${EXTENSION_HOOK_TIME_LIMIT_MS / 1000} s, answers something else, or whose worker crashed or did not start. \`pass\` (the default) lets the action go on as if it had passed; \`deny\` refuses it, naming the extension, so a guard fails closed. Ignored for an \`.after\` point.`,
+              since: V1,
+            },
+          },
+        },
+      },
+      doc: `Hooks the worker runs before (or after) Studio acts: Studio calls them in the order of the extensions’ install keys, waiting at most ${EXTENSION_HOOK_TIME_LIMIT_MS / 1000} s on each. The approval names each point in plain words, and an update that adds one asks again.`,
+      since: V1,
+      tier: 'worker',
+    },
     ...Object.fromEntries(
       Object.entries(EXTENSION_RESERVED_POINTS).map(([point, purpose]): [string, FieldSpec] => [
         point,
@@ -1011,6 +1045,8 @@ export type ExtensionTopBarItemContribution = {
 }
 /** A panel, door or settings section: drawn by its own `entry`. */
 export type ExtensionSurfaceContribution = { id: string; title: string; icon?: ExtensionIcon; entry: string }
+/** A point the worker hooks, and what its failure does. */
+export type ExtensionHookContribution = { point: ExtensionHookPoint; onError?: ExtensionHookOnError }
 export type ExtensionMcpToolContribution = {
   name: string
   description: string
@@ -1068,6 +1104,7 @@ export type ExtensionContributions = {
   doors: ExtensionSurfaceContribution[]
   settingsSections: ExtensionSurfaceContribution[]
   mcpTools: ExtensionMcpToolContribution[]
+  hooks: ExtensionHookContribution[]
   syntaxes: ExtensionSyntaxContribution[]
   customEditors: ExtensionCustomEditorContribution[]
   keybindings: ExtensionKeybindingContribution[]
@@ -1118,6 +1155,7 @@ const EMPTY_CONTRIBUTIONS = (): ExtensionContributions => ({
   doors: [],
   settingsSections: [],
   mcpTools: [],
+  hooks: [],
   syntaxes: [],
   customEditors: [],
   keybindings: [],

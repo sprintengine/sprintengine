@@ -327,6 +327,24 @@ custom editors only where its Studio offers the new capability
 grows when an update adds an editor, gives one more files to open, or has one
 open its files by default where it was only offered.
 
+### Agent hooks (no compatibility)
+
+A worker extension's `contributes.hooks` lets it check, change or refuse what
+the Studio's agents and the Studio itself are about to do, and hear what they
+did. Hooks run on the Studio that holds the action, so a client never runs
+another machine's extensions. What crosses the wire is small: the
+`ExtensionContributionsView` carries `hooks` (each point and its `onError`), so
+a client's approval names them; and a save the person makes in an editor is
+sent as `files.writeText` with `save` (the workspace it was opened in and its
+language), which meets the Studio's
+`editor.save.before` hooks and may answer the `text` a hook wrote, or refuse
+with the new code `refused_by_extension`. There is no capability for it: a
+client always sends `save` for a save the person made, as a window and its
+Studio are one build. A
+refusal of any other hooked action (a launch, a workspace, a prompt) comes back
+in the refusal that action already had, its words naming the extension. An
+approval grows when an update hooks a point the approved version did not.
+
 ### Permissions checked at the host; approvals replace trust (no compatibility)
 
 The permission vocabulary changed at once (owner ruling: there are no users

@@ -553,6 +553,8 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
     const permissionMode =
       permissionPreset && permissionPreset === input.permissionPreset ? input.permissionMode : undefined
     const launched = await deps.launch({
+      // The extension's prompt, not a person's: the extensions' prompt hooks check it.
+      promptHookAs: { inputKind: 'launch', from: 'extension' },
       workspaceId: input.workspaceId.trim(),
       ...(input.cli ? { cli: input.cli } : {}),
       ...(input.model ? { cliModel: input.model } : {}),
@@ -785,6 +787,9 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
             sessionId,
             commandId: runtimeCommandId(moduleId, input.commandId),
             message: input.message,
+            // Checked by the extensions' prompt hooks in the runtime, as the
+            // extension's caller; a refusal names the extension.
+            hookAs: { inputKind: 'send', from: 'extension' },
             ...(input.skills?.length ? { skills: input.skills.map((id) => ({ id })) } : {}),
             ...(input.attachments?.length ? { attachments: input.attachments } : {}),
             ...(input.steer === true ? { steer: true } : {}),

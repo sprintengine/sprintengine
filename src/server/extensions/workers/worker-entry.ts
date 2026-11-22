@@ -46,6 +46,8 @@ const pendingHost = new Map<number, { resolve: (value: unknown) => void; reject:
 const callbacks = new Map<number, Fn>()
 const methods = new Map<string, MethodRegistration>()
 const tools = new Map<string, Fn>()
+// Each point's handlers, in the order they were registered.
+const hooks = new Map<string, Fn[]>()
 const startupHooks: Hook[] = []
 const shutdownBeginHooks: Hook[] = []
 const shutdownHooks: Hook[] = []
@@ -295,6 +297,30 @@ function createStudio(start: WorkerInitMessage): Record<string, unknown> {
       registrations.push(accepted)
       accepted.catch((error: unknown) => report('studio.registerMcpTools was refused', error))
     },
+    // Several handlers may serve one point; they run in the order they were
+    // registered. What it answers takes them back out.
+    registerHooks: (handlers: unknown) => {
+      if (handlers === null || typeof handlers !== 'object' || Array.isArray(handlers))
+        throw new Error(`Extension "${start.extensionId}" registers its hooks as an object of point to handler.`)
+      const entries = Object.entries(handlers as Record<string, unknown>) as Array<[string, Fn]>
+      for (const [point, handler] of entries)
+        if (typeof handler !== 'function') throw new Error(`Hook "${point}" has no handler.`)
+      let disposed = false
+      const accepted = hostCall({ host: 'registerHooks' }, [entries.map(([point]) => point)]).then(() => {
+        if (disposed) return
+        for (const [point, handler] of entries) hooks.set(point, [...(hooks.get(point) ?? []), handler])
+      })
+      registrations.push(accepted)
+      accepted.catch((error: unknown) => report('studio.registerHooks was refused', error))
+      return () => {
+        disposed = true
+        for (const [point, handler] of entries) {
+          const left = hooks.get(point)?.filter((each) => each !== handler)
+          // A point it served stays served: with no handler left, it passes.
+          if (left) hooks.set(point, left)
+        }
+      }
+    },
     ensureSkillInstalled: (root: unknown, skillId: unknown) =>
       hostCall({ host: 'ensureSkillInstalled' }, [root, skillId]),
     getSkillStatus: (root: unknown, skillId: unknown) => hostCall({ host: 'getSkillStatus' }, [root, skillId]),
@@ -391,6 +417,12 @@ async function serve(call: WorkerCallMessage): Promise<unknown> {
       if (!handler) throw new Error(`The worker serves no MCP tool "${call.name}".`)
       return await handler(call.args, call.context)
     }
+    case 'hook': {
+      const handlers = hooks.get(call.point)
+      if (!handlers) throw new Error(`The worker registered no hook for "${call.point}".`)
+      // One answer for them all; Studio reads it (readExtensionHookAnswer).
+      return await chainHookHandlers(handlers, call.event)
+    }
     case 'callback': {
       const callback = callbacks.get(call.callback)
       if (!callback) throw new Error('That listener is not the worker’s.')
@@ -458,3 +490,29 @@ process.on('disconnect', () => process.exit(0))
 // A call into Studio nobody awaited (a handle's `dispose()`, say) that Studio
 // refused is the extension's to hear in its log, not a crash.
 process.on('unhandledRejection', (error) => report('a call nobody awaited failed', error))
+
+/**
+ * One point's handlers, in the order they were registered, as one answer:
+ * each is handed the event as the ones before it changed it; a refusal, or an
+ * answer that is neither nothing nor a change, ends the run and is the answer;
+ * the changes are merged. The same as `chainExtensionHookHandlers` in
+ * packages/extension-sdk/src/hooks.ts, kept here because this bundle imports
+ * nothing but Node's own modules.
+ */
+async function chainHookHandlers(handlers: readonly Fn[], event: unknown): Promise<unknown> {
+  if (handlers.length === 1) return await handlers[0]!(event)
+  let current = event
+  const changed: Record<string, unknown> = {}
+  for (const handler of handlers) {
+    const answer = await handler(current)
+    if (answer === undefined || answer === null) continue
+    const change =
+      typeof answer === 'object' && !Array.isArray(answer) && Object.keys(answer).length === 1
+        ? (answer as { change?: unknown }).change
+        : undefined
+    if (change === null || typeof change !== 'object' || Array.isArray(change)) return answer
+    current = { ...(current as Record<string, unknown>), ...(change as Record<string, unknown>) }
+    Object.assign(changed, change)
+  }
+  return Object.keys(changed).length > 0 ? { change: changed } : undefined
+}

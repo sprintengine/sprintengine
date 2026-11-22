@@ -118,6 +118,17 @@ export type McpSettings = {
 export type AgentLaunchCaller = { workspaceId: string; agentId?: string }
 
 /**
+ * Who asked for a launch, as the agent's record keeps it: the person, a paired
+ * app or device by its client id, another agent under its own ceiling, or no
+ * one Studio can name. Its extensions' hooks run as them.
+ */
+export type AgentLaunchStarter =
+  | { kind: 'person' }
+  | { kind: 'client'; clientId: string }
+  | { kind: 'agent'; ceiling: CliPermissionPreset | null }
+  | { kind: 'nobody' }
+
+/**
  * The launch-time decisions the Studio made, in the agent record's vocabulary.
  *
  * Everything here is something a window could not re-derive from the raw
@@ -147,6 +158,8 @@ export type AgentLaunchRecord = {
   hostId?: ExecutionHostId
   /** The agent that asked for this launch through a tool, as the request named it. */
   launchedBy?: AgentLaunchCaller
+  /** Who asked for it, kept on the agent's record so its later hooks run as them. */
+  startedBy?: AgentLaunchStarter
 }
 
 // ── Where a session is ──────────────────────────────────────────────────────

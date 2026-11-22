@@ -277,7 +277,7 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
       }
       return null
     },
-    async create(request, launchCommandId) {
+    async create(request, launchCommandId, startedBy) {
       // Made last before the launch, so a create refused above leaves no empty folder.
       let projectlessFolder: string | null = null
       if (request.noProject) {
@@ -289,6 +289,7 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
         }
       }
       const launched = await deps.launch({
+        startedBy,
         ...(projectlessFolder
           ? { newChatIn: { folderPath: projectlessFolder } }
           : { workspaceId: request.workspaceId, ...(request.newChat ? { newChat: true } : {}) }),

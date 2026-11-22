@@ -31,6 +31,7 @@ import {
   studioPrincipal,
   type StudioPrincipal,
 } from '../../../packages/studio-protocol/src/permissions'
+import type { AgentStarter } from '../../shared/agent-state'
 import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
 import { clampPresetToCeiling } from '../../shared/permission-ceiling'
 
@@ -41,13 +42,36 @@ export type ExtensionInvoker = {
   permissionCeiling: CliPermissionPreset | null
   /** Who it is, for a refusal's words: "this device", "this app", "the agent". */
   label: string
+  /**
+   * Who that is, for what it starts: an agent or chat started during the
+   * invocation keeps it, so its later hooks run as the same someone.
+   */
+  starter?: AgentStarter
 }
 
 /** The person at this machine: every permission, no ceiling. */
 export const OWNER_PRINCIPAL: StudioPrincipal = studioPrincipal({ owner: true, permissions: STUDIO_PERMISSIONS })
 
-export function ownerInvoker(permissionCeiling: CliPermissionPreset | null = null, label = 'you'): ExtensionInvoker {
-  return { principal: OWNER_PRINCIPAL, permissionCeiling, label }
+export function ownerInvoker(
+  permissionCeiling: CliPermissionPreset | null = null,
+  label = 'you',
+  starter: AgentStarter = { kind: 'person' },
+): ExtensionInvoker {
+  return { principal: OWNER_PRINCIPAL, permissionCeiling, label, starter }
+}
+
+/**
+ * Someone Studio cannot name any more (a paired app since revoked): holds no
+ * permission, and a chat it starts runs on Manual. What an action no one
+ * known set off runs as.
+ */
+export function nobodyInvoker(label = 'someone Studio no longer knows'): ExtensionInvoker {
+  return {
+    principal: studioPrincipal({ owner: false, permissions: [] }),
+    permissionCeiling: 'manual',
+    label,
+    starter: { kind: 'nobody' },
+  }
 }
 
 const storage = new AsyncLocalStorage<ExtensionInvoker>()
@@ -71,6 +95,11 @@ export function boundToRegistrant<A extends unknown[], R>(listener: (...args: A)
   const registrant = storage.getStore()
   return (...args: A) =>
     registrant ? storage.run(registrant, () => listener(...args)) : storage.exit(() => listener(...args))
+}
+
+/** Who invoked the extension code running now, or null outside any extension's call. */
+export function activeInvoker(): ExtensionInvoker | null {
+  return storage.getStore() ?? null
 }
 
 /** Who invoked the extension code running now; the person when nothing did (its own work). */

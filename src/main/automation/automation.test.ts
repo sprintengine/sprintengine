@@ -3277,6 +3277,7 @@ test('automation', async () => {
           doors: [],
           settingsSections: [],
           mcpTools: [],
+          hooks: [],
           syntaxes: [],
           customEditors: [],
           keybindings: [],

@@ -5,6 +5,7 @@ import { extensionApprovalCopy, grantsFullAccess } from '../../../../shared/modu
 import { AccessCareList, AccessChips, InlineNotice, RefreshIcon, type AccessItem } from '../ui'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/Modal'
 import { copy } from '../../../../shared/copy'
+import { extensionHookApprovalLines } from '../../../../../packages/extension-sdk/src/hooks'
 
 // Review → approve and turn on, in one step. The dialog is the consent: what
 // the extension is (its tier, said plainly: a worker's code runs with full
@@ -43,6 +44,9 @@ export function ApprovalReviewDialog({
   const growth = approval.state === 'pending' ? approval.growth : undefined
   const ready = !busy && approval.state === 'pending'
   const t = copy.settings.approvalReviewDialog
+  const hooks = module.extension.contributes.hooks ?? []
+  const hookLines = extensionHookApprovalLines(hooks.map((hook) => hook.point))
+  const failsClosed = hooks.some((hook) => hook.onError === 'deny' && !hook.point.endsWith('.after'))
   return (
     <Modal open onClose={onCancel} labelledBy={titleId} size="standard">
       <ModalHeader
@@ -81,6 +85,17 @@ export function ApprovalReviewDialog({
                   {t.editorOpens(editor.title, [...(editor.extensions ?? []), ...(editor.filenames ?? [])].join(', '))}
                 </li>
               ))}
+            </ul>
+          </section>
+        ) : null}
+        {hookLines.length > 0 ? (
+          <section aria-label={t.hooks}>
+            <h3 className="mb-1.5 text-meta font-semibold text-[color:var(--text-muted)]">{t.hooks}</h3>
+            <ul className="list-disc space-y-0.5 pl-5 text-body text-[color:var(--text-strong)]">
+              {hookLines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+              {failsClosed ? <li>{t.hooksFailClosed}</li> : null}
             </ul>
           </section>
         ) : null}

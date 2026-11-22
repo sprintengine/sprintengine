@@ -105,7 +105,8 @@ export function registerCoreIpc(
               (found) => found.isDirectory(),
               () => false,
             ),
-          launch: services.conversationLaunchService.launch,
+          // The person's own window.
+          launch: (request) => services.conversationLaunchService.launch({ ...request, startedBy: { kind: 'person' } }),
           newProjectlessFolder: createProjectlessChatFolder,
         },
         input,

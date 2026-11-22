@@ -24,7 +24,10 @@ type Request = ConversationSendRequest<ConversationImageAttachment>
 
 test("the runtime's input is the request with the session and what only Studio's own senders set", () => {
   expectExact<
-    Omit<ConversationSendTurnInput, 'sessionId' | 'commandId' | 'commandFingerprint' | 'origin' | 'subagentMessage'>,
+    Omit<
+      ConversationSendTurnInput,
+      'sessionId' | 'commandId' | 'commandFingerprint' | 'origin' | 'hookAs' | 'subagentMessage'
+    >,
     Omit<Request, 'queue'>
   >(true)
   // `session.send` is the same request, its pictures by their uploads and the
@@ -32,7 +35,10 @@ test("the runtime's input is the request with the session and what only Studio's
   // what it carries (a picture, a file's path here) and nothing else.
   expectExact<
     Omit<StudioMethodParams<'session.send'>, 'commandId' | 'attachments' | 'fileUploadIds'>,
-    Omit<ConversationSendTurnInput, 'commandId' | 'commandFingerprint' | 'origin' | 'subagentMessage' | 'attachments'>
+    Omit<
+      ConversationSendTurnInput,
+      'commandId' | 'commandFingerprint' | 'origin' | 'hookAs' | 'subagentMessage' | 'attachments'
+    >
   >(true)
 })
 

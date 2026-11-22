@@ -70,6 +70,7 @@ test('the smallest manifest validates, with no permissions and every point empty
     doors: [],
     settingsSections: [],
     mcpTools: [],
+    hooks: [],
     syntaxes: [],
     customEditors: [],
     keybindings: [],
@@ -476,4 +477,23 @@ test('version is semver: a numeric prerelease identifier has no leading zero', (
   for (const version of ['1.0.0', '1.0.0-0', '1.0.0-alpha.1', '1.0.0-0a', '1.0.0+001']) accepted(base({ version }))
   for (const version of ['1.0.0-01', '1.0.0-alpha.01', '01.0.0', '1.0'])
     refusedAt(base({ version }), 'version', /semver/)
+})
+
+test('hooks are the worker tier’s, a point at most once, from the points Studio has, failing by pass or deny', () => {
+  const worker = (hooks: unknown, extra: Raw = {}) =>
+    base({ tier: 'worker', main: 'dist/main.cjs', contributes: { hooks }, ...extra })
+  const manifest = accepted(worker([{ point: 'agent.tool.before', onError: 'deny' }, { point: 'agent.tool.after' }]))
+  assert.deepEqual(manifest.contributes.hooks, [
+    { point: 'agent.tool.before', onError: 'deny' },
+    { point: 'agent.tool.after' },
+  ])
+  refusedAt(base({ tier: 'ui', contributes: { hooks: [{ point: 'agent.tool.before' }] } }), 'tier', /needs "worker"/)
+  refusedAt(worker([{ point: 'agent.tool.during' }]), 'contributes.hooks[0].point')
+  refusedAt(worker([{ point: 'agent.tool.before', onError: 'retry' }]), 'contributes.hooks[0].onError')
+  refusedAt(
+    worker([{ point: 'agent.tool.before' }, { point: 'agent.tool.before' }]),
+    'contributes.hooks[1]',
+    /duplicate point/,
+  )
+  refusedAt(worker([{ point: 'agent.tool.before', timeoutMs: 5000 }]), 'contributes.hooks[0].timeoutMs')
 })

@@ -46,6 +46,11 @@ export const EXTENSION_GUIDE_TOPICS: readonly ExtensionGuideTopic[] = [
     id: 'api-main',
     summary: 'The worker’s activate(studio): methods, commands, MCP tools, services, storage, notifications.',
   },
+  {
+    id: 'hooks',
+    summary:
+      'Agent hooks: checking, changing or refusing what agents and Studio are about to do (tool calls, prompts, launches, saves), and hearing what they did.',
+  },
   { id: 'conversations', summary: "The extension's own chats, and one-shot text generation." },
   { id: 'brokers', summary: 'API keys and GitHub through the host, never a token in the extension.' },
   {

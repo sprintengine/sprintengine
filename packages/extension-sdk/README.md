@@ -52,6 +52,7 @@ scaffolds a project that already builds, passes its own tests and installs.
 | `backlog-action` | A Backlog item menu command whose worker starts a planning chat per item | `worker` |
 | `file-action` | A Files-tree menu command whose worker files a Backlog item naming the files | `worker` |
 | `mcp-tools` | A worker serving declared tools to any agent through Studio's MCP server | `worker` |
+| `hook-guard` | A worker hooking agents' tool calls: refuses one that matches a rule, and logs each that finishes | `worker` |
 
 Templates combine. `--with` adds parts on top of the one you start from, and
 `sprintengine-extension add <part>...` adds them to a project you already have:

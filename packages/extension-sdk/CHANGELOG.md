@@ -183,6 +183,32 @@ main })` take the parsed extension.json; the install key defaults to
 - The approval says what a `ui` extension's code can do: it runs isolated,
   and can do only what the person allows. A worker's still says full access.
 
+### Agent hooks
+
+- `contributes.hooks` (worker tier) lists the points the worker hooks, each
+  with `onError: "pass"` (the default) or `"deny"`: `agent.launch.before`,
+  `agent.prompt.before`, `agent.tool.before`, `agent.tool.after`,
+  `terminal.write.before`, `workspace.create.before`,
+  `workspace.create.after` and `editor.save.before`. It is no longer
+  reserved.
+- `studio.registerHooks({ point: handler })` serves them. A handler answers
+  nothing, `{ change: { … } }` (only the fields its point allows) or
+  `{ deny: reason }`; Studio runs each extension's in the order of install
+  keys, waits at most two seconds on each (a worker's start is not counted),
+  and a hook that fails passes, or refuses with `onError: "deny"`. A hook runs
+  as whoever set off the action, so its calls into Studio are held to them.
+- `EXTENSION_HOOK_POINTS`, `EXTENSION_HOOK_SPECS` (what each point carries,
+  may change and says in the approval), `EXTENSION_HOOK_TIME_LIMIT_MS`,
+  `readExtensionHookAnswer` and the event types (`ExtensionHookEvents`,
+  `ExtensionAgentToolCall`, `ExtensionHookHandlers`, …).
+- `createFakeMainHost` serves hooks: `fake.hooks.fire(point, event)` runs the
+  worker's and says what it decided; `fake.hooks.registered()` lists them.
+- The approval names each hooked point in plain words, and an update that
+  hooks a new one asks again.
+- A `hook-guard` template, the `hooks` guide topic, and
+  `examples/tool-guard/`: a guard refusing `rm -rf` with an after hook that
+  logs.
+
 ### Content contributions
 
 - Four points, all `content` tier, so an extension carrying only them installs

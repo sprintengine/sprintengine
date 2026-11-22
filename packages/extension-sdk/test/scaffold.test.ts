@@ -181,6 +181,7 @@ test('the templates on offer, the copies that must not drift, and the refusals',
     'backlog-action',
     'file-action',
     'mcp-tools',
+    'hook-guard',
   ])
 
   // ── Copies that must not drift ─────────────────────────────────────────────

@@ -46,5 +46,7 @@ export function agentStateFromLaunchRecord(
     ...(record.cliPermissionMode ? { cliPermissionMode: record.cliPermissionMode } : {}),
     ...(record.connectorMcpSettings ? { connectorMcpSettings: record.connectorMcpSettings } : {}),
     ...(record.spawnSkillId ? { spawnSkillId: record.spawnSkillId } : {}),
+    // Who asked for it: what the agent's later hooks run as.
+    ...(record.startedBy ? { startedBy: record.startedBy } : {}),
   }
 }

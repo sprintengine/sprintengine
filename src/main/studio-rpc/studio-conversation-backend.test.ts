@@ -66,9 +66,10 @@ test('a create carries New chat’s options to the launch service, and "No proje
   await create(
     { workspaceId: 'ws-1', newChat: true, worktree: true, worktreeName: 'fix', effort: 'high', prompt: 'fix it' },
     'launch-1',
+    { kind: 'person' },
   )
-  await create({ workspaceId: 'ws-1', newChat: true, inWorktree: '/Users/dev/app-wt' }, 'launch-2')
-  await create({ noProject: true, prompt: 'fix it' }, 'launch-3')
+  await create({ workspaceId: 'ws-1', newChat: true, inWorktree: '/Users/dev/app-wt' }, 'launch-2', { kind: 'person' })
+  await create({ noProject: true, prompt: 'fix it' }, 'launch-3', { kind: 'person' })
   assert.deepEqual(launched, [
     {
       workspaceId: 'ws-1',
@@ -78,9 +79,21 @@ test('a create carries New chat’s options to the launch service, and "No proje
       reasoningEffort: 'high',
       prompt: 'fix it',
       launchCommandId: 'launch-1',
+      startedBy: { kind: 'person' },
     },
-    { workspaceId: 'ws-1', newChat: true, existingWorktreePath: '/Users/dev/app-wt', launchCommandId: 'launch-2' },
-    { newChatIn: { folderPath: '/Users/dev/No project/fix-it-abc123' }, prompt: 'fix it', launchCommandId: 'launch-3' },
+    {
+      workspaceId: 'ws-1',
+      newChat: true,
+      existingWorktreePath: '/Users/dev/app-wt',
+      launchCommandId: 'launch-2',
+      startedBy: { kind: 'person' },
+    },
+    {
+      newChatIn: { folderPath: '/Users/dev/No project/fix-it-abc123' },
+      prompt: 'fix it',
+      launchCommandId: 'launch-3',
+      startedBy: { kind: 'person' },
+    },
   ])
   assert.deepEqual(made, ['fix it'])
 })
@@ -99,7 +112,7 @@ test('a "No project" create the launch refuses leaves no empty folder behind', a
         mkdirSync(folder)
         return folder
       },
-    }).create({ noProject: true, prompt: 'fix it' }, 'launch-1')
+    }).create({ noProject: true, prompt: 'fix it' }, 'launch-1', { kind: 'person' })
     assert.equal(outcome.ok, false)
     assert.equal(existsSync(folder), false)
   } finally {

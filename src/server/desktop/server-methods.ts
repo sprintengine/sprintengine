@@ -58,6 +58,12 @@ export const SERVER_METHODS = {
   agentLaunch: 'agents.launch',
   /** `{ sessionId, data }` → nothing: typed into one of the server's terminals (a tour's question). */
   terminalWrite: 'terminals.write',
+  /**
+   * `{ sessionId, text, hookAs }` → what to type, or the refusal: a prompt
+   * Studio types to a terminal agent (a tour's), through the extensions'
+   * prompt hooks where the terminal runs.
+   */
+  terminalHookPrompt: 'terminals.hook-prompt',
   /** `{ sessionId }` → `AgentCompactResult`: Compact on an agent tab, typed through the server's control plane. */
   agentCompact: 'agents.compact',
   /** `{ sessionId }` → `ConversationPeekSessionState | null`: what the peek card reads of a terminal agent. */

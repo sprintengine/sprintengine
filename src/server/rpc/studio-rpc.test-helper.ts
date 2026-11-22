@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from 'node:fs/promises'
+import type { StudioEditorSaveHooks } from './studio-file-system'
 import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
 import type { DistributionMachine } from '../wsl/distribution-machine'
 import { connect, type Socket } from 'node:net'
@@ -386,6 +387,7 @@ export async function startTestServer(
     tools?: ClientToolRegistry
     files?: StudioFiles
     fileSystem?: StudioFileSystem
+    editorSaveHooks?: StudioEditorSaveHooks
     git?: StudioGit
     worktrees?: StudioWorktrees
     workspaceSync?: StudioWorkspaceSync
@@ -449,6 +451,7 @@ export async function startTestServer(
     ...(input.tools ? { tools: input.tools } : {}),
     ...(input.files ? { files: input.files } : {}),
     ...(input.fileSystem ? { fileSystem: input.fileSystem } : {}),
+    ...(input.editorSaveHooks ? { editorSaveHooks: input.editorSaveHooks } : {}),
     ...(input.git ? { git: input.git } : {}),
     ...(input.worktrees ? { worktrees: input.worktrees } : {}),
     ...(input.workspaceSync ? { workspaceSync: input.workspaceSync } : {}),

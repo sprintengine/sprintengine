@@ -42,6 +42,7 @@ function extension(id: string, contributes: Partial<Contributes> = {}, over: Par
       doors: [],
       settingsSections: [],
       mcpTools: [],
+      hooks: [],
       syntaxes: [],
       customEditors: [],
       keybindings: [],

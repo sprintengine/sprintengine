@@ -47,7 +47,7 @@ function blank(): Api {
     }),
     detectProjectLogo: async () => null,
     readProjectIconFile: async () => null,
-    writefile: async () => undefined,
+    writefile: async () => ({}),
     saveDroppedImage: async () => '/tmp/pasted.png',
     createFile: async (parent, name) => `${parent}/${name}`,
     createDir: async (parent, name) => `${parent}/${name}`,

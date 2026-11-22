@@ -13,6 +13,7 @@
 
 import type { ModuleChatRuntimeOption } from './conversation.js'
 import type { HostCapability } from './host-api.js'
+import type { ExtensionHookHandlers } from './hooks.js'
 
 // ── Manifest ─────────────────────────────────────────────────────────────────
 
@@ -415,6 +416,21 @@ export type MainHost = {
    * actionable enable error instead of running.
    */
   registerMcpTools(tools: McpToolRegistration[]): void
+  /**
+   * Serve the hooks your extension.json lists (`contributes.hooks`): a
+   * handler per point, handed the event and answering nothing to let the
+   * action go on, `{ change: { … } }` to change the fields the point allows,
+   * or `{ deny: reason }` to refuse it. A point extension.json does not list
+   * is refused. Call it again to serve a point with more handlers: they run
+   * in the order registered, each handed the event as the ones before changed
+   * it, and the first refusal ends the run. What it answers takes these
+   * handlers back out. Studio waits on a point's handlers for at most two
+   * seconds together; decide before awaiting something else, since one that
+   * fails or is slow counts as the hook failing. A hook runs as whoever set
+   * off the action it guards, so what it asks of Studio is held to them. See
+   * the guide's hooks topic.
+   */
+  registerHooks(handlers: ExtensionHookHandlers): () => void
   /**
    * Make a skill present in a workspace now, rather than at the next agent
    * launch — how you pre-install the skill an agent will be told to invoke.
@@ -1560,6 +1576,7 @@ export {
   type ExtensionMenuPlace,
   type ExtensionSurfaceContribution,
   type ExtensionSurfacePoint,
+  type ExtensionHookContribution,
   type ExtensionKeybindingContribution,
   type ExtensionSettingContribution,
   type ExtensionSettingType,
@@ -1578,6 +1595,38 @@ export {
   EXTENSION_EDITOR_TEXT_MAX_BYTES,
   customEditorMatchRank,
 } from './custom-editors.js'
+
+// Agent hooks: the points a worker hooks, what each event carries and what a
+// hook may answer.
+export {
+  EXTENSION_HOOK_FILE_MAX_CHARS,
+  EXTENSION_HOOK_ON_ERROR,
+  EXTENSION_HOOK_POINTS,
+  EXTENSION_HOOK_REASON_MAX_CHARS,
+  EXTENSION_HOOK_SPECS,
+  EXTENSION_HOOK_TEXT_MAX_CHARS,
+  EXTENSION_HOOK_TIME_LIMIT_MS,
+  EXTENSION_HOOK_TOOL_BUDGET_MS,
+  EXTENSION_PROMPT_INPUT_KINDS,
+  extensionHookApprovalLines,
+  extensionHookReference,
+  isExtensionAfterHookPoint,
+  isExtensionHookPoint,
+  readExtensionHookAnswer,
+  type ExtensionAfterHookPoint,
+  type ExtensionAgentToolCall,
+  type ExtensionHookAnswer,
+  type ExtensionHookChanges,
+  type ExtensionHookEvents,
+  type ExtensionHookFieldCheck,
+  type ExtensionHookHandler,
+  type ExtensionHookHandlers,
+  type ExtensionHookOnError,
+  type ExtensionHookPoint,
+  type ExtensionHookPointSpec,
+  type ExtensionHookVerdict,
+  type ExtensionPromptInputKind,
+} from './hooks.js'
 
 // What a content extension's syntax files hold, checked the same way by the
 // author's tools, at install and each time Studio serves them.

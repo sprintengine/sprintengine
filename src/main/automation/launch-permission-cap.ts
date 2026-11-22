@@ -6,6 +6,7 @@ import {
   parseCliPermissionPreset,
   type CliPermissionPreset,
 } from '../../shared/cli-permission-preset'
+import type { AgentStarter } from '../../shared/agent-state'
 import { parseCliPermissionModeId, type CliPermissionModeSpec } from '../../shared/cli-permission-mode'
 import type { McpConnectionContext } from '../../shared/modules/mcp-tools'
 
@@ -55,6 +56,47 @@ export function launchPermissionCeiling(
     resolve({ agentId: metadata.agentId, ...(metadata.workspaceId ? { workspaceId: metadata.workspaceId } : {}) }) ??
     STRICTEST_PRESET
   )
+}
+
+/** Who started an agent of this app, as its record keeps it (`AgentState.startedBy`). */
+export type AgentStarterResolver = (agent: { workspaceId?: string; agentId: string }) => AgentStarter | undefined
+
+/**
+ * Who a gateway caller is, as an agent or chat it starts keeps it: a paired
+ * device by its client id; an agent here as whoever started that agent, as its
+ * record keeps it (a paired app's or device's chat stays theirs, and one
+ * Studio cannot name stays no one's); any other (the person's own, or a
+ * caller with no record) as an agent under its own launch ceiling
+ * (`launchPermissionCeiling`), and under its starter's too when that was an
+ * agent.
+ */
+export function gatewayCallerStarter(
+  context: McpConnectionContext | undefined,
+  resolve: AgentPermissionResolver,
+  starterOf?: AgentStarterResolver,
+): AgentStarter {
+  const metadata = context?.metadata
+  if (metadata?.kind === 'remote-tailnet')
+    return metadata.deviceId ? { kind: 'client', clientId: `tailnet:${metadata.deviceId}` } : { kind: 'nobody' }
+  const ceiling = launchPermissionCeiling(context, resolve)
+  const stored =
+    metadata?.kind === 'studio-agent' && metadata.agentId
+      ? starterOf?.({
+          agentId: metadata.agentId,
+          ...(metadata.workspaceId ? { workspaceId: metadata.workspaceId } : {}),
+        })
+      : undefined
+  if (stored?.kind === 'client' || stored?.kind === 'nobody') return stored
+  const storedCeiling = stored?.kind === 'agent' ? stored.ceiling : null
+  return {
+    kind: 'agent',
+    ceiling:
+      storedCeiling === null
+        ? ceiling
+        : ceiling === null || isLooserCliPermissionPreset(ceiling, storedCeiling)
+          ? storedCeiling
+          : ceiling,
+  }
 }
 
 /**

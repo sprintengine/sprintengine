@@ -1,6 +1,6 @@
 import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { LAUNCH_PROMPT_READS_AS_OPTION_MESSAGE, launchPromptReadsAsOption } from '../../shared/agent-launch'
-import type { AgentState } from '../../shared/agent-state'
+import type { AgentStarter, AgentState } from '../../shared/agent-state'
 import { parseCliPermissionPreset, type CliPermissionPreset } from '../../shared/cli-permission-preset'
 import { cliForConversationProvider, conversationProviderForCli } from '../../shared/conversation-harness'
 import {
@@ -27,8 +27,10 @@ import type { SubagentLifecycle } from '../subagent-lifecycle'
 import type { ConversationChatControl } from './conversation-chat-tools'
 import {
   capLaunchPermissionPreset,
+  gatewayCallerStarter,
   launchPermissionCeiling,
   type AgentPermissionResolver,
+  type AgentStarterResolver,
 } from './launch-permission-cap'
 
 /**
@@ -100,6 +102,8 @@ export type SubagentToolsDeps = {
   launch: ConversationLaunchService['launch']
   /** The calling agent's own preset, which a sub-agent may not exceed (launch-permission-cap.ts). */
   resolveAgentPermissionPreset: AgentPermissionResolver
+  /** Who started a calling agent, as its record keeps it: what a chat it starts keeps as its own starter. */
+  agentStarterOf?: AgentStarterResolver
   /** Whether this machine has the CLI at all. */
   isKnownCli: (cli: string) => boolean
   /** The CLI's and the model's names as the pickers show them, for a sub-agent's default title. */
@@ -121,6 +125,8 @@ export type SubagentToolsDeps = {
   sendTask?: (
     chat: { workspaceId: string; agentId: string },
     message: string,
+    /** Who sends it, for the extensions' prompt hooks it meets. */
+    starter: AgentStarter,
   ) => Promise<{ ok: true } | { ok: false; message: string }>
   /** Whether a provider's chats pick up their CLI session again, for a sub-agent with no session listed now. */
   providerResumes?: (providerId: string) => boolean
@@ -456,6 +462,9 @@ export function createSubagentTools(deps: SubagentToolsDeps): McpToolRegistratio
         starting.set(startKey, (starting.get(startKey) ?? 0) + 1)
         try {
           launched = await deps.launch({
+            startedBy: gatewayCallerStarter(context, deps.resolveAgentPermissionPreset, deps.agentStarterOf),
+            // The parent agent's task, which the extensions' prompt hooks check.
+            promptHookAs: { inputKind: 'subagent', from: 'agent' },
             workspaceId: parent.workspaceId,
             cli,
             prompt,
@@ -663,7 +672,11 @@ export function createSubagentTools(deps: SubagentToolsDeps): McpToolRegistratio
         // Settles when the round's turn does: a refusal, or a send that never
         // reached the chat, ends the round as failed, which a turn that ran has
         // already ended (and then this changes nothing).
-        void sendTask(chat, args.task).then(
+        void sendTask(
+          chat,
+          args.task,
+          gatewayCallerStarter(context, deps.resolveAgentPermissionPreset, deps.agentStarterOf),
+        ).then(
           (sent) => {
             if (!sent.ok) lifecycle.fail(chat, sent.message)
           },

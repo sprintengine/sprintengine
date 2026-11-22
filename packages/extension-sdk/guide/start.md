@@ -147,6 +147,7 @@ the same name, and that every declared MCP tool is served.
 | `rules` | Before writing a surface or a build change: the mistakes that cost earlier extensions time |
 | `api-renderer` | The `studio` a surface's `mount` is handed |
 | `api-main` | The worker's `activate(studio)`: methods, commands, MCP tools, services, storage |
+| `hooks` | Checking, changing or refusing agents' tool calls, prompts, launches and saves, and hearing what they did |
 | `conversations` | Starting, prompting and reading the extension's own chats; one-shot text generation |
 | `brokers` | API keys and GitHub through the host |
 | `styling` | Drawing a surface: React or plain DOM, the `--sem-*` properties, your own CSS |
