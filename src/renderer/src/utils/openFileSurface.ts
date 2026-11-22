@@ -5,6 +5,8 @@ import { queueEditorLanding } from './agentEditorReveal'
 import { openExternalFileWindow } from '../components/auxWindows/openFileWindow'
 import type { EditorRange } from '../../../shared/editor-reveal'
 import { rememberFileVisit } from './recentFileVisits'
+import { extensionEditorsFor, resolveExtensionEditor } from '../modules/extension-editors'
+import { isPathOrChild, trimPath } from './paths'
 
 export type OpenFileSurfaceInput = {
   workspaceId: string
@@ -54,7 +56,10 @@ export function openFileSurface(input: OpenFileSurfaceInput): void {
   if (fileSurfaceRedirect?.(input)) return
   if (!input.background && input.takeFocus !== false) rememberFileVisit(input.path)
   const store = useWorkspaceStore.getState()
-  if (store.openFilesInExternalWindow) {
+  // The pop-out window is Studio's text editor alone: a file an extension's
+  // editor opens by default opens in the workspace's editor pane, where that
+  // editor is drawn, whichever window text files go to.
+  if (store.openFilesInExternalWindow && !opensInExtensionEditor(input.workspaceId, input.path)) {
     // A file link's line hint must survive the user's separate-window
     // preference, just like an explicit range from an editor reveal.
     const range =
@@ -99,6 +104,12 @@ export function openFileSurface(input: OpenFileSurfaceInput): void {
       column: input.column,
     })
   }
+}
+
+function opensInExtensionEditor(workspaceId: string, path: string): boolean {
+  const folder = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === workspaceId)?.folderPath
+  if (!folder || !isPathOrChild(path, trimPath(folder))) return false
+  return resolveExtensionEditor(workspaceId, path, extensionEditorsFor(path)) !== null
 }
 
 /**

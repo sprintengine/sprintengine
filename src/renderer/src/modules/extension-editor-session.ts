@@ -284,6 +284,8 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
         }
       frameHolds = content
       if (!sameContent(model.get(), content)) model.set(content, 'frame')
+      // The unsaved flag may move after the content's own listeners ran.
+      update({})
       return { ok: true }
     },
     diskChanged: () => diskChanged(),
