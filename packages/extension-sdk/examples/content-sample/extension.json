@@ -19,7 +19,7 @@
         "extensions": [".tally"]
       }
     ],
-    "keybindings": [{ "command": "panel.git.toggle", "key": "Mod+Alt+G", "when": "workspace" }],
+    "keybindings": [{ "command": "usage.show", "key": "Mod+Alt+U" }],
     "statusBarItems": [
       {
         "id": "tally",

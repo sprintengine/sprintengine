@@ -5,8 +5,8 @@ so it installs without an approval prompt:
 
 - a TextMate grammar for `.tally` files, which highlights them in the editor
   and highlights a chat code block fenced as `tally`;
-- a keyboard shortcut, `Mod+Alt+G`, bound to one of Studio's own commands
-  (show or hide the Git panel);
+- a keyboard shortcut, `Mod+Alt+U`, bound to one of Studio's own commands
+  (show usage);
 - a status item that opens the command palette;
 - two settings, shown under the extension in Settings.
 

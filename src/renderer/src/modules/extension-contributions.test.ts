@@ -563,12 +563,12 @@ test('the sample content extension binds its key, shows its status item and its 
 
   // Its key is bound to Studio's own command, as a command of the extension's
   // titled as Studio's, so Settings ▸ Shortcuts lists it under the extension.
-  const bound = kernel.getModuleCommand(`${key}.run.panel.git.toggle`)
+  const bound = kernel.getModuleCommand(`${key}.run.usage.show`)
   assert.ok(bound, 'the keybinding registers a command')
-  assert.deepEqual(bound.defaultKeybindings, ['primary+alt+g'], "Mod is the platform's primary modifier")
+  assert.deepEqual(bound.defaultKeybindings, ['primary+alt+u'], "Mod is the platform's primary modifier")
   assert.equal(bound.category, 'Tally language')
   await bound.run({} as never)
-  assert.deepEqual(ran, ['panel.git.toggle'])
+  assert.deepEqual(ran, ['usage.show'])
 
   // The status item sits in the band, after the extension's own buttons.
   const status = kernel.getTopBarItems().find((item) => item.id === `${key}:status.tally`)
