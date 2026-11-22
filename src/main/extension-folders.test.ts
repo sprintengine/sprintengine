@@ -1,27 +1,25 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
-import { ensureExtensionFolders, MODULE_FOLDER_README, PLUGIN_FOLDER_README } from './extension-folders'
+import { ensureExtensionFolders, MODULE_FOLDER_README } from './extension-folders'
 
 function tmpRoot(): string {
   return mkdtempSync(join(tmpdir(), 'sprintengine-ext-folders-'))
 }
 
-test('creates both roots and seeds READMEs', () => {
+test('creates the extensions folder and seeds its README', () => {
   const base = tmpRoot()
   try {
     const moduleRoot = join(base, 'modules')
-    const pluginRoot = join(base, 'plugins')
-    const result = ensureExtensionFolders({ moduleRoot, pluginRoot })
+    const result = ensureExtensionFolders({ moduleRoot })
 
     assert.equal(result.errors.length, 0)
     assert.equal(result.moduleRoot, moduleRoot)
-    assert.equal(result.pluginRoot, pluginRoot)
     assert.equal(readFileSync(join(moduleRoot, 'README.md'), 'utf8'), MODULE_FOLDER_README)
-    assert.equal(readFileSync(join(pluginRoot, 'README.md'), 'utf8'), PLUGIN_FOLDER_README)
+    assert.match(MODULE_FOLDER_README, /skills, MCP servers and model providers/)
   } finally {
     rmSync(base, { recursive: true, force: true })
   }
@@ -31,11 +29,10 @@ test('is idempotent and never overwrites an edited README', () => {
   const base = tmpRoot()
   try {
     const moduleRoot = join(base, 'modules')
-    const pluginRoot = join(base, 'plugins')
-    ensureExtensionFolders({ moduleRoot, pluginRoot })
+    ensureExtensionFolders({ moduleRoot })
 
     writeFileSync(join(moduleRoot, 'README.md'), 'user edited', 'utf8')
-    const second = ensureExtensionFolders({ moduleRoot, pluginRoot })
+    const second = ensureExtensionFolders({ moduleRoot })
 
     assert.equal(second.errors.length, 0)
     assert.equal(readFileSync(join(moduleRoot, 'README.md'), 'utf8'), 'user edited')
@@ -48,19 +45,13 @@ test('leaves an already-installed extension folder untouched', () => {
   const base = tmpRoot()
   try {
     const moduleRoot = join(base, 'modules')
-    const pluginRoot = join(base, 'plugins')
-    ensureExtensionFolders({ moduleRoot, pluginRoot })
-    writeFileSync(join(moduleRoot, 'README.md'), MODULE_FOLDER_README, 'utf8')
+    const installed = join(moduleRoot, 'local.weather-deck')
+    mkdirSync(installed, { recursive: true })
+    writeFileSync(join(installed, 'extension.json'), '{}', 'utf8')
+    ensureExtensionFolders({ moduleRoot })
 
-    // Pre-existing install: a module folder is present before the second run.
-    const installed = join(moduleRoot, 'weather-deck')
-    ensureExtensionFolders({ moduleRoot, pluginRoot })
-    writeFileSync(join(pluginRoot, 'README.md'), PLUGIN_FOLDER_README, 'utf8')
-
-    assert.equal(existsSync(moduleRoot), true)
-    assert.equal(existsSync(pluginRoot), true)
-    // The seeding step does not remove or alter sibling install folders.
-    assert.equal(existsSync(installed), false)
+    assert.equal(readFileSync(join(installed, 'extension.json'), 'utf8'), '{}')
+    assert.equal(existsSync(join(moduleRoot, 'README.md')), true)
   } finally {
     rmSync(base, { recursive: true, force: true })
   }

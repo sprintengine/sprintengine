@@ -112,10 +112,10 @@ test('secret-store', async () => {
     assert.doesNotMatch(JSON.stringify(status), /sk-env-secret/)
   }
 
-  // Only a provider that ships with Studio has its auth.env read. A user
-  // provider's key comes from Settings, whatever the environment holds.
+  // Only a provider that ships with Studio has its auth.env read. An
+  // extension's provider's key comes from Settings, whatever the environment holds.
   async function testUserProviderNeverReadsTheEnvironment(): Promise<void> {
-    const userProvider: LoadedConversationProvider = { ...provider, source: 'user' }
+    const userProvider: LoadedConversationProvider = { ...provider, source: 'extension' }
     const store = createStore({
       files: createMemoryFiles(),
       encryptionAvailable: true,

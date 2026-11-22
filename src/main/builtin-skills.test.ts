@@ -115,7 +115,7 @@ test('builtin-skills', async () => {
         },
       },
       {
-        source: 'user',
+        source: 'extension',
         manifestPath: join(temp, 'plugins', 'pi', 'plugin.json'),
         pluginRoot: join(temp, 'plugins', 'pi'),
         manifest: {
@@ -142,7 +142,7 @@ test('builtin-skills', async () => {
         },
       },
       {
-        source: 'user',
+        source: 'extension',
         manifestPath: join(temp, 'plugins', 'shim', 'plugin.json'),
         pluginRoot: join(temp, 'plugins', 'shim'),
         manifest: {

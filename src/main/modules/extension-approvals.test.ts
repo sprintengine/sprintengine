@@ -15,6 +15,7 @@ import {
   writeExtensionApproval,
   type ExtensionAccess,
 } from './extension-approvals'
+import type { ExtensionManifest } from '../../shared/modules/third-party-manifest'
 
 const WORKER: ExtensionAccess = {
   permissions: ['storage:own'],
@@ -28,7 +29,7 @@ const WORKER: ExtensionAccess = {
   localServers: [],
   providers: [],
 }
-const NO_CONTRIBUTIONS = {
+const NO_CONTRIBUTIONS: ExtensionManifest['contributes'] = {
   commands: [],
   menus: [],
   topBarItems: [],

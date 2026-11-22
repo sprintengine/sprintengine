@@ -72,6 +72,9 @@ test('extensionsInstalled', async () => {
           keybindings: [],
           statusBarItems: [],
           settings: [],
+          skills: [],
+          mcpServers: [],
+          providers: [],
         },
       },
       approval: approved

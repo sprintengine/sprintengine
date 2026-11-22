@@ -1740,7 +1740,7 @@ test('conversation-runtime', async () => {
               sha256: '0'.repeat(64),
             },
           },
-          source: 'user',
+          source: 'extension',
           manifestPath: '/fixtures/unsigned-adapter/plugin.json',
           pluginRoot: '/fixtures/unsigned-adapter',
           adapter: {

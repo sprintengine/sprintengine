@@ -3283,6 +3283,9 @@ test('automation', async () => {
           keybindings: [],
           statusBarItems: [],
           settings: [],
+          skills: [],
+          mcpServers: [],
+          providers: [],
         },
       },
       approval:
