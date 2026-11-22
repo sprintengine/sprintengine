@@ -30,6 +30,7 @@ import {
 } from './studio-rpc.test-helper'
 import { studioWindowGrant } from './studio-frame-port'
 import { createStudioRpcRouter } from './studio-rpc-router'
+import type { StudioEditorSaveHooks } from './studio-file-system'
 
 // The files on this machine by path (`file-system`, and the search, stat,
 // picture and repository-root reads `chat.ts` declares) over the owner
@@ -62,7 +63,7 @@ async function serve(
   options: {
     trash?: (path: string) => Promise<void>
     files?: boolean
-    editorSaveHooks?: Parameters<typeof startTestServer>[0]['editorSaveHooks']
+    editorSaveHooks?: StudioEditorSaveHooks
   } = {},
 ) {
   const at = disk()
