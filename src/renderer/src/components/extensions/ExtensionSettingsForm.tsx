@@ -42,10 +42,11 @@ export function ExtensionSettingsForm({
   if (state.status === 'failed') return <EmptyState title="These settings could not be read" body={state.message} />
   if (state.status === 'loading') return <SettingCard aria-busy="true">{null}</SettingCard>
 
-  const save = async (setting: ExtensionSettingContribution, value: ExtensionSettingValue | null) => {
+  const save = async (setting: ExtensionSettingContribution, value: ExtensionSettingValue | null): Promise<boolean> => {
     const answer = await extensionsApi.setExtensionSetting({ moduleId: extensionKey, key: setting.key, value })
     if (answer.ok) setState({ status: 'ready', values: answer.values })
     else showToast({ tone: 'warn', title: `${setting.title} was not changed`, description: answer.message })
+    return answer.ok
   }
   return (
     <SettingCard>
@@ -54,7 +55,7 @@ export function ExtensionSettingsForm({
           key={setting.key}
           setting={setting}
           value={state.values[setting.key]}
-          onSave={(value) => void save(setting, value)}
+          onSave={(value) => save(setting, value)}
         />
       ))}
     </SettingCard>
@@ -68,7 +69,7 @@ function SettingField({
 }: {
   setting: ExtensionSettingContribution
   value: ExtensionSettingValue | undefined
-  onSave: (value: ExtensionSettingValue | null) => void
+  onSave: (value: ExtensionSettingValue | null) => Promise<boolean>
 }): ReactElement {
   const labelId = useId()
   const helpId = setting.description ? `${labelId}-help` : undefined
@@ -81,7 +82,7 @@ function SettingField({
     return row(
       <Switch
         checked={value === true}
-        onChange={(next) => onSave(next)}
+        onChange={(next) => void onSave(next)}
         ariaLabelledBy={labelId}
         ariaDescribedBy={helpId}
       />,
@@ -97,7 +98,7 @@ function SettingField({
           label: setting.enumLabels?.[index] ?? String(choice),
         }))}
         value={selected === -1 ? null : String(selected)}
-        onChange={(index) => onSave(choices[Number(index)]!)}
+        onChange={(index) => void onSave(choices[Number(index)]!)}
         size="sm"
         {...(setting.placeholder ? { placeholder: setting.placeholder } : {})}
       />,
@@ -109,7 +110,11 @@ function SettingField({
   )
 }
 
-/** Text or a number, saved when the field is left or Enter is pressed; emptied, it goes back to its default. */
+/**
+ * Text or a number, saved when the field is left or Enter is pressed; emptied,
+ * a number goes back to its default. A value the Studio refuses puts the field
+ * back to what is kept.
+ */
 function TextField({
   setting,
   value,
@@ -118,7 +123,7 @@ function TextField({
 }: {
   setting: ExtensionSettingContribution
   value: ExtensionSettingValue | undefined
-  onSave: (value: ExtensionSettingValue | null) => void
+  onSave: (value: ExtensionSettingValue | null) => Promise<boolean>
   labelId: string
 }): ReactElement {
   const shown = value === undefined ? '' : String(value)
@@ -127,14 +132,15 @@ function TextField({
   const numeric = setting.type === 'number' || setting.type === 'integer'
   const commit = () => {
     if (draft === shown) return
-    if (draft.trim() === '' && numeric) return onSave(null)
-    if (!numeric) return onSave(draft)
     const number = Number(draft)
-    if (!Number.isFinite(number)) {
+    if (numeric && draft.trim() !== '' && !Number.isFinite(number)) {
       setDraft(shown)
       return
     }
-    onSave(number)
+    const value = !numeric ? draft : draft.trim() === '' ? null : number
+    void onSave(value).then((saved) => {
+      if (!saved) setDraft(shown)
+    })
   }
   const shared = {
     'aria-labelledby': labelId,
