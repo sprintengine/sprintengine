@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 
+import { EXTENSION_IDEAS } from './extensionIdeas'
 import { JSDOM } from 'jsdom'
 import { CHAT_COMPOSER_PLACEHOLDER } from './composerPlaceholder'
 import { standInImageDecoding } from '../../../../../../tests/image-decoding'
@@ -4102,7 +4103,7 @@ test('NewAgentPanel', async () => {
       // Where it goes is the extensions home, not the project the door was on.
       assert.equal(door.folderChip()?.getAttribute('data-extension-folder'), 'home')
       assert.equal(door.view.container.querySelector('[data-project-trigger]'), null, 'no project picker')
-      assert.ok(text.includes('Show all 11'))
+      assert.ok(text.includes(`Show all ${EXTENSION_IDEAS.length}`))
 
       const idea = door.view.find((el) => el.tagName === 'BUTTON' && (el.textContent ?? '').includes('PR review badge'))
       assert.ok(idea, 'the first idea is offered')
