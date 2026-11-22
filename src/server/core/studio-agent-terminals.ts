@@ -1,9 +1,11 @@
 import { join } from 'node:path'
 
 import type { ExtensionHooks } from '../extensions/hooks/extension-hooks'
-import { guardTerminalSpawn } from '../extensions/hooks/launch-hooks'
+import type { ConversationPromptHookAs } from '../../shared/conversation-runtime'
+import type { AgentStarter } from '../../shared/agent-state'
+import { guardTerminalSpawn, hookTerminalPrompt, spawnInvokerOf } from '../extensions/hooks/launch-hooks'
 import { controlPlaneHooks } from '../extensions/hooks/control-plane-hooks'
-import { activeInvoker, ownerInvoker, type ExtensionInvoker } from '../../main/module-host/extension-invocation'
+import { ownerInvoker, type ExtensionInvoker } from '../../main/module-host/extension-invocation'
 
 import { createAgentControlPlane } from '../../main/agent-control-plane'
 import {
@@ -107,6 +109,8 @@ export type StudioAgentTerminalsDeps = {
   /** Extensions' hooks on what the control plane sends, run as each send's invoker. */
   extensionHooks?: ExtensionHooks
   chatInvoker?: (chat: { workspaceId: string; agentId: string }) => ExtensionInvoker
+  /** An agent's starter, as a hook on what it does runs, held to its preset (hook-invokers.ts `ofAgent`). */
+  agentInvoker?: (agent: { startedBy?: AgentStarter; cliPermissionPreset?: unknown }) => ExtensionInvoker
 }
 
 export type StudioAgentTerminals = NonNullable<ReturnType<typeof createStudioAgentTerminals>>
@@ -224,11 +228,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
       runtime.sessions.spawnTerminal(viewer, payload),
     live: (sessionId) => runtime.sessions.listTerminals().some((session) => session.sessionId === sessionId),
     hooks: deps.extensionHooks,
-    invokerOf: (payload) =>
-      activeInvoker() ??
-      (payload.workspaceId && payload.agentId && deps.chatInvoker
-        ? deps.chatInvoker({ workspaceId: payload.workspaceId, agentId: payload.agentId })
-        : ownerInvoker(null, 'you')),
+    invokerOf: spawnInvokerOf(deps),
   })
 
   const controlPlane = createAgentControlPlane({
@@ -380,7 +380,8 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
   // through the same launch.
   const handoff = createConversationTerminalHandoff({
     runtime: conversations,
-    launch: (request) => launchService.launch(request),
+    // The person's own Resume in terminal.
+    launch: (request) => launchService.launch({ ...request, startedBy: { kind: 'person' } }),
     cliResumesSessions: (cli) => cliResumeCapabilities(cli).resumeSession,
     permissionPresetsForCli,
     chatName: (workspaceId, agentId) => workspaceRegistry.getRecord(workspaceId)?.agents[agentId]?.name,
@@ -444,6 +445,24 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
     await agentState.stop()
   }
   /** Every pty ends (its painted screen kept), and the prompts are written. */
+  /**
+   * A prompt Studio types to a terminal agent that nobody typed (a tour's),
+   * through the extensions' `agent.prompt.before` first, where the terminal
+   * runs: what to type, or the refusal naming the extension.
+   */
+  async function hookPrompt(
+    sessionId: string,
+    text: string,
+    hookAs: Omit<ConversationPromptHookAs, 'starter'>,
+  ): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
+    const session = runtime.sessions.listTerminals().find((candidate) => candidate.sessionId === sessionId)
+    const chat =
+      session?.workspaceId && session.agentId ? { workspaceId: session.workspaceId, agentId: session.agentId } : null
+    return hookTerminalPrompt(deps.extensionHooks, session ?? { sessionId }, text, hookAs, () =>
+      chat && deps.chatInvoker ? deps.chatInvoker(chat) : ownerInvoker(null, 'Studio'),
+    )
+  }
+
   async function shutdown(): Promise<void> {
     for (const stop of stopFollowingPower.splice(0)) stop()
     stopFollowingChats()
@@ -464,6 +483,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
     list,
     onChanged: (listener: () => void) => runtime.subscribeSessionsChanged(listener),
     endWorkspaceTerminals,
+    hookPrompt,
     stopAgentState,
     shutdown,
   }

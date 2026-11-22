@@ -3,6 +3,7 @@ import { compactDeps, type StudioAgentTerminals } from '../server/core/studio-ag
 import { SERVER_EVENTS, SERVER_METHODS } from '../server/desktop/server-methods'
 import type { AgentLaunchRequest, AgentLaunchResult } from '../shared/agent-launch'
 import type { TerminalSessionSnapshot } from '../shared/electron-api'
+import type { ConversationPromptHookAs } from '../shared/conversation-runtime'
 import type { ConversationPeekSessionState } from './conversation-peek/service'
 import { compactTerminalAgent, type AgentCompactResult } from './ipc/agent-compact-ipc'
 
@@ -19,6 +20,15 @@ export type ShellTerminals = {
   list(): TerminalSessionSnapshot[]
   /** Type into a session. */
   write(sessionId: string, data: string): void
+  /**
+   * A prompt Studio is about to type to a terminal agent that nobody typed (a
+   * tour's), through the extensions' prompt hooks where the session runs.
+   */
+  hookPrompt(
+    sessionId: string,
+    text: string,
+    hookAs: Omit<ConversationPromptHookAs, 'starter'>,
+  ): Promise<{ ok: true; text: string } | { ok: false; message: string }>
   launch(request: AgentLaunchRequest): Promise<AgentLaunchResult>
   /** Compact on an agent tab (agent-compact-ipc.ts), checked and typed where the session runs. */
   compact(sessionId: unknown): Promise<AgentCompactResult>
@@ -34,6 +44,8 @@ export function localShellTerminals(terminals: StudioAgentTerminals | null): She
   return {
     list: () => terminals?.runtime.sessions.listTerminals() ?? [],
     write: (sessionId, data) => terminals?.runtime.sessions.writeTerminal(sessionId, data),
+    hookPrompt: (sessionId, text, hookAs) =>
+      terminals ? terminals.hookPrompt(sessionId, text, hookAs) : Promise.resolve({ ok: true, text }),
     launch: (request) =>
       terminals
         ? terminals.launchService.launch(request)
@@ -59,6 +71,15 @@ export function remoteShellTerminals(rpc: Pick<ControlRpc, 'on' | 'call'>): Shel
     write: (sessionId, data) => {
       void rpc.call(SERVER_METHODS.terminalWrite, { sessionId, data }).catch(() => undefined)
     },
+    // A server that cannot be asked types nothing: the hooks are its to run.
+    hookPrompt: (sessionId, text, hookAs) =>
+      rpc
+        .call<{ ok: true; text: string } | { ok: false; message: string }>(SERVER_METHODS.terminalHookPrompt, {
+          sessionId,
+          text,
+          hookAs,
+        })
+        .catch((error: unknown) => ({ ok: false as const, message: unanswered(error) })),
     launch: (request) =>
       rpc
         .call<AgentLaunchResult>(SERVER_METHODS.agentLaunch, request, { timeoutMs: LAUNCH_TIMEOUT_MS })

@@ -1,5 +1,7 @@
 import { homedir } from 'node:os'
 import { machineSchedulesOf, withDefinedMachineSchedules } from '../../shared/machine-schedules'
+import type { ConversationPromptHookAs } from '../../shared/conversation-runtime'
+import { EXTENSION_PROMPT_INPUT_KINDS } from '../../../packages/extension-sdk/src/hooks'
 import { backgroundWorkOf, quitStopsOf } from '../core/background-work'
 
 import { SHELL_TOOLSETS, serverAutomationTools } from './shell-toolsets'
@@ -385,6 +387,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
             : {}),
           launchAgent: (request) => launchAgent(request),
           resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
+          agentStarterOf: core.agentStarterOf,
           createWorkspace: (input, actor, context) =>
             createWorkspaceWithHooks(
               core.extensionHooks,
@@ -763,6 +766,19 @@ function serveShellTerminalRequests(
     const input = params as { sessionId?: unknown; data?: unknown } | null
     if (typeof input?.sessionId === 'string' && typeof input.data === 'string')
       terminals?.runtime.sessions.writeTerminal(input.sessionId, input.data)
+  })
+  rpc.handle(SERVER_METHODS.terminalHookPrompt, (params) => {
+    const input = params as { sessionId?: unknown; text?: unknown; hookAs?: unknown } | null
+    const hookAs = input?.hookAs as { inputKind?: unknown; from?: unknown } | undefined
+    if (
+      typeof input?.sessionId !== 'string' ||
+      typeof input.text !== 'string' ||
+      !(EXTENSION_PROMPT_INPUT_KINDS as readonly unknown[]).includes(hookAs?.inputKind) ||
+      !['studio', 'extension', 'agent'].includes(String(hookAs?.from))
+    )
+      throw new Error('A prompt to hook names its session, its text and what it is.')
+    if (!terminals) return { ok: true, text: input.text }
+    return terminals.hookPrompt(input.sessionId, input.text, hookAs as Omit<ConversationPromptHookAs, 'starter'>)
   })
   rpc.handle(SERVER_METHODS.agentCompact, (params) => {
     if (!terminals) return { ok: false, message: TERMINALS_UNAVAILABLE }

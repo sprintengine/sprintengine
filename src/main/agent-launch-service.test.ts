@@ -14,6 +14,7 @@ import {
   type AgentLaunchWorkspace,
 } from './agent-launch-service'
 import { test } from 'vitest'
+import { ownerInvoker, runAsInvoker } from './module-host/extension-invocation'
 
 test('agent-launch-service', async () => {
   const tests: Array<{ name: string; body: () => Promise<void> | void }> = []
@@ -110,6 +111,34 @@ test('agent-launch-service', async () => {
     assert.equal(spawn.resume, true)
     assert.equal(spawn.cliSessionId, '5d1c2a3e-chat-session', 'the spawn resumes the named session')
     assert.equal(spawn.initialPrompt, undefined, 'a resumed conversation is not sent a message nobody typed')
+  })
+
+  // Who asked, and what its prompt is when nobody typed it, ride on the spawn:
+  // the terminal's launch and prompt hooks run before its record is
+  // registered. An extension's call is the extension's; a launch that says
+  // neither carries neither.
+  run('the spawn carries who asked and what a prompt nobody typed is, for the terminal’s hooks', async () => {
+    const app = harness()
+    await app.service.launch({
+      workspaceId: 'ws-1',
+      cli: 'claude-code',
+      prompt: 'fix the build',
+      startedBy: { kind: 'agent', ceiling: 'auto' },
+      promptHookAs: { inputKind: 'launch', from: 'agent' },
+    })
+    assert.deepEqual(app.spawns[0]!.startedBy, { kind: 'agent', ceiling: 'auto' })
+    assert.deepEqual(app.spawns[0]!.initialPromptHookAs, { inputKind: 'launch', from: 'agent' })
+
+    const extension = ownerInvoker('auto', 'the extension’s caller', { kind: 'client', clientId: 'tailnet:dev-1' })
+    await runAsInvoker(extension, () =>
+      app.service.launch({ workspaceId: 'ws-1', cli: 'claude-code', prompt: 'from an extension' }),
+    )
+    assert.deepEqual(app.spawns[1]!.startedBy, { kind: 'client', clientId: 'tailnet:dev-1' })
+    assert.deepEqual(app.spawns[1]!.initialPromptHookAs, { inputKind: 'launch', from: 'extension' })
+
+    await app.service.launch({ workspaceId: 'ws-1', cli: 'claude-code', prompt: 'typed' })
+    assert.equal(app.spawns[2]!.startedBy, undefined)
+    assert.equal(app.spawns[2]!.initialPromptHookAs, undefined, 'a person’s prompt is never hooked')
   })
 
   run('a resume is refused on a CLI that cannot resume, rather than started fresh', async () => {

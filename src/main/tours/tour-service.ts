@@ -694,6 +694,10 @@ export function createTourService(deps: TourServiceDeps) {
       ...(live.value.author.cliId ? { cli: live.value.author.cliId } : {}),
       prompt: tourAskSeed({ tour: live.value, step, question }),
       cwd: live.value.repoRoot,
+      // The person asked; the prompt that carries their question is the
+      // tour's, which the extensions' prompt hooks check.
+      startedBy: { kind: 'person' },
+      promptHookAs: { inputKind: 'tour', from: 'studio' },
     })
     if (!launched.ok) return { ok: false, message: launched.message }
     const tour = tours.get(tourId)!

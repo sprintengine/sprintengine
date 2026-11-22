@@ -109,14 +109,17 @@ machine by that machine's.
   their CLI hooks report to Studio and do not wait for an answer.
 - `agent.prompt.before`: every message to an agent that nobody typed, in a
   chat or a terminal, with `inputKind` saying which: the first message of a
-  chat an agent, an extension or a schedule starts (`launch`); another
+  chat or terminal agent an agent, an extension or a schedule starts
+  (`launch`, and a refused one starts no terminal agent); another
   agent's `conversation.send`, and an extension's message to its own chat or
   through the agent control plane (`send`); a sub-agent's task, started or
   resumed (`subagent`); an extension's background agent's (`companion`);
   Studio's notices (`notice`); a first message sent again after a stop cut it
-  off (`recovery`); and a tour's prompt typed to its author (`tour`). A chat's
-  are all checked at the one door every message to a chat comes through. A
-  message the person types, from any machine, is never hooked.
+  off (`recovery`); and a tour's prompt typed to its author (`tour`), checked
+  on the Studio that runs the author's terminal. A chat's are all checked at
+  the one door every message to a chat comes through, once: a retried send
+  already carried out runs no hook again. A message the person types, from
+  any machine, is never hooked, even when it is sent again after a stop.
 - `terminal.write.before`: raw writes Studio, an extension or a tool makes
   into a terminal, with the Enter that ends one as its own field (`enter`).
   A person's keystrokes, from any machine, are never hooked.

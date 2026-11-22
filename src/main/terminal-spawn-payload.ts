@@ -1,4 +1,6 @@
 import type { AgentLaunchRecord, TerminalOpenParams } from '../../packages/studio-protocol/src/public'
+import type { AgentStarter } from '../shared/agent-state'
+import type { ConversationPromptHookAs } from '../shared/conversation-runtime'
 
 /**
  * What the terminal runtime starts a session from: a client's `terminal.open`
@@ -17,6 +19,12 @@ export type TerminalSpawnPayload = TerminalOpenParams & {
   // a window that launched an agent already HAS its record, and projecting
   // over it would fight the store.
   agentRecord?: AgentLaunchRecord
+  // Set only by the AgentLaunchService, and never by a client's open: who
+  // asked for the agent, which its launch hooks run as before its record is
+  // registered, and what its `initialPrompt` is when nobody typed it, which
+  // the prompt hooks then check before it is handed over.
+  startedBy?: AgentStarter
+  initialPromptHookAs?: Omit<ConversationPromptHookAs, 'starter'>
   // The payload is flat. In-process callers must flatten any metadata
   // themselves. Typed `never` so handing over a still-nested set of spawn
   // arguments fails to compile instead of silently dropping every field in it.

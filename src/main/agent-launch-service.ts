@@ -73,6 +73,7 @@ import { normalizeExecutionHostId } from '../shared/execution-host'
 import { isMachinePath } from '../shared/machine-paths'
 import type { CliPermissionPreset } from '../shared/cli-permission-preset'
 import type { TerminalSpawnPayload } from './terminal-spawn-payload'
+import { activeInvoker } from './module-host/extension-invocation'
 
 /**
  * Terminal geometry for a session no view has bound to yet. The first
@@ -330,8 +331,16 @@ export function createAgentLaunchService(deps: AgentLaunchServiceDeps): AgentLau
     if (hostId) record.hostId = hostId
 
     const sessionId = newSessionId()
+    // Who asked, for its launch hooks before its record is registered; and a
+    // prompt an extension's call hands over is the extension's, not typed.
+    const caller = activeInvoker()
+    const startedBy = request.startedBy ?? caller?.starter
+    const promptHookAs =
+      request.promptHookAs ?? (caller ? { inputKind: 'launch' as const, from: 'extension' as const } : undefined)
     const spawned = await deps.terminal.spawn({
       sessionId,
+      ...(startedBy ? { startedBy } : {}),
+      ...(initialPrompt && promptHookAs ? { initialPromptHookAs: promptHookAs } : {}),
       cols: UNBOUND_TERMINAL_COLS,
       rows: UNBOUND_TERMINAL_ROWS,
       cwd,

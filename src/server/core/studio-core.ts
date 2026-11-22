@@ -658,6 +658,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     subagents,
     extensionHooks,
     chatInvoker,
+    agentInvoker: (agent) => hookInvokers.ofAgent(agent),
     onChatIdle: (listener) => {
       conversationRuntime.onSessionIdle(listener)
     },

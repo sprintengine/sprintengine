@@ -23,6 +23,8 @@
 import type { AgentLaunchCaller } from '../../packages/studio-protocol/src/public'
 import type { CliPermissionPreset } from './electron-api'
 import type { ExecutionHostId } from './execution-host'
+import type { AgentStarter } from './agent-state'
+import type { ConversationPromptHookAs } from './conversation-runtime'
 
 export type AgentLaunchRequest = {
   workspaceId: string
@@ -88,6 +90,18 @@ export type AgentLaunchRequest = {
    * it or its chat started, and no others. Absent for a launch the person made.
    */
   launchedBy?: AgentLaunchCaller
+  /**
+   * Who asked for the agent: what its launch hooks run as. Absent, the
+   * extension whose call this is, else no one is named and the agent's record
+   * decides.
+   */
+  startedBy?: AgentStarter
+  /**
+   * What `prompt` is when nobody typed it (an agent's, an extension's or
+   * Studio's own launch): the extensions' prompt hooks check it before the
+   * agent is handed it. Absent, a person typed it, and it is never hooked.
+   */
+  promptHookAs?: Omit<ConversationPromptHookAs, 'starter'>
 }
 
 /** An agent of this app that asked for a launch: its chat (workspace) and, when it declared one, its own id. */
