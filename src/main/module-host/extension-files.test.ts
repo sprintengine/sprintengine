@@ -220,3 +220,21 @@ test('a write against the bytes it read is refused once the file changed or went
   )
   assert.equal(existsSync(join(root, 'docs', 'notes.md')), false)
 })
+
+test('two saves against the same bytes: one is written whole, the other is refused, never a mix', async () => {
+  const { scope, root } = world()
+  const read = await readExtensionFile(scope, 'docs/notes.md')
+  // Both checks pass before either writes, as two windows saving at once would.
+  const paused = { ...scope, beforeCommit: () => new Promise<void>((resolve) => setTimeout(resolve, 30)) }
+  const outcomes = await Promise.all(
+    ['AAAAAAAA', 'BB'].map((content) =>
+      writeExtensionFile(paused, 'docs/notes.md', content, { expectedSha256: read.sha256 }).then(
+        () => 'written',
+        (error: ExtensionFileRefusal) => error.code,
+      ),
+    ),
+  )
+  assert.deepEqual([...outcomes].sort(), ['conflict', 'written'])
+  const now = readFileSync(join(root, 'docs', 'notes.md'), 'utf8')
+  assert.ok(now === 'AAAAAAAA' || now === 'BB', `the file holds one save whole, not "${now}"`)
+})

@@ -16,11 +16,23 @@
 //    during the check is caught as well.
 // 5. A file with more than one name (`nlink > 1`) is refused: a hard link
 //    could alias a file outside the folder without any link to follow.
-// 6. A write never opens with `O_TRUNC`: it truncates with `ftruncate` once the
-//    checks passed. A create opens with `O_EXCL`, so it never writes through
-//    a file or link that appeared meanwhile. Nothing is written under a
-//    `.git` folder, whose configuration and hooks git runs.
-// 7. A search walks with `lstat`, never follows a link, and checks each
+// 6. A write never opens with `O_TRUNC`: it writes the new bytes over the
+//    old once the checks passed, then cuts the file to their length with
+//    `ftruncate`, so the file is never seen emptied. A create opens with
+//    `O_EXCL`, so it never writes through a file or link that appeared
+//    meanwhile. Nothing is written under a `.git` folder, whose
+//    configuration and hooks git runs.
+// 7. Writes to one file take turns (`withFileLock`): a write's check of the
+//    bytes it expects (`expectedSha256`) and its write are one step, so two
+//    saves against the same bytes never both pass and leave a mix.
+//
+// A write is not committed by renaming a finished copy over the file: Node
+// renames by path, not inside the folder descriptor the checks hold, so a
+// folder swapped for a link between the check and the rename would put the
+// file outside the workspace. In place, the descriptor keeps the write where
+// it was checked; the cost is a moment in which a reader outside Studio may
+// see the new bytes over the tail of the old.
+// 8. A search walks with `lstat`, never follows a link, and checks each
 //    folder's real path before reading it.
 //
 // What stays: on Windows `O_NOFOLLOW` does not exist, and outside Linux the
@@ -47,7 +59,7 @@ const SKIPPED_FOLDERS = new Set(['.git', 'node_modules'])
 const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0
 
 export class ExtensionFileRefusal extends Error {
-  readonly code: 'invalid_params' | 'not_permitted' | 'action_failed' | 'conflict'
+  readonly code: 'invalid_params' | 'not_permitted' | 'action_failed' | 'conflict' | 'missing'
   constructor(code: ExtensionFileRefusal['code'], message: string) {
     super(message)
     this.name = 'ExtensionFileRefusal'
@@ -62,6 +74,8 @@ export type ExtensionFilesScope = {
   forbidden: readonly string[]
   /** Tests only: runs between the check and the open, where another process could swap a path. */
   betweenCheckAndOpen?: () => Promise<void>
+  /** Tests only: runs once a write's checks passed, just before it changes the file. */
+  beforeCommit?: () => Promise<void>
 }
 
 function inside(parent: string, child: string): boolean {
@@ -96,6 +110,24 @@ async function realRoot(scope: ExtensionFilesScope): Promise<{ root: string; for
 function contained(real: string, root: string, forbidden: readonly string[], shown: string): void {
   if (!inside(root, real) || forbidden.some((folder) => inside(folder, real)))
     throw new ExtensionFileRefusal('not_permitted', `${shown} is outside the workspace’s folder.`)
+}
+
+// The writes waiting for each file, by its real path: a write takes its turn
+// after the one before it settles. Studio's server is the one process that
+// writes for extensions, so a queue here orders every client's saves.
+const fileTurns = new Map<string, Promise<unknown>>()
+
+function withFileLock<T>(target: string, work: () => Promise<T>): Promise<T> {
+  // Case-insensitive file systems (macOS, Windows by default) name one file many ways.
+  const key = process.platform === 'linux' ? target : target.toLowerCase()
+  const before = fileTurns.get(key) ?? Promise.resolve()
+  const turn = before.catch(() => undefined).then(work)
+  const settled = turn.catch(() => undefined)
+  fileTurns.set(key, settled)
+  void settled.then(() => {
+    if (fileTurns.get(key) === settled) fileTurns.delete(key)
+  })
+  return turn
 }
 
 function missing(error: unknown): boolean {
@@ -164,7 +196,7 @@ async function openChecked(
     real = await realpath(join(root, ...parts))
   } catch (error) {
     throw new ExtensionFileRefusal(
-      'action_failed',
+      missing(error) ? 'missing' : 'action_failed',
       missing(error) ? `${shown} does not exist.` : `${shown} cannot be read.`,
     )
   }
@@ -241,7 +273,7 @@ export async function statExtensionFile(
     real = await realpath(join(root, ...parts))
   } catch (error) {
     throw new ExtensionFileRefusal(
-      'action_failed',
+      missing(error) ? 'missing' : 'action_failed',
       missing(error) ? `${shown} does not exist.` : `${shown} cannot be read.`,
     )
   }
@@ -299,7 +331,7 @@ export async function writeExtensionFile(
   try {
     folder = await realpath(join(root, ...parts.slice(0, -1)))
   } catch {
-    throw new ExtensionFileRefusal('action_failed', `The folder ${dirname(shown)} does not exist.`)
+    throw new ExtensionFileRefusal('missing', `The folder ${dirname(shown)} does not exist.`)
   }
   contained(folder, root, forbidden, shown)
   if (inGitFolder(root, folder) || basename(shown).toLowerCase() === '.git')
@@ -311,69 +343,80 @@ export async function writeExtensionFile(
   try {
     folderChecked = await stat(folder)
   } catch {
-    throw new ExtensionFileRefusal('action_failed', `The folder ${dirname(shown)} does not exist.`)
+    throw new ExtensionFileRefusal('missing', `The folder ${dirname(shown)} does not exist.`)
   }
   const target = join(folder, basename(shown))
-  let handle: FileHandle
-  let created: boolean
-  if (create) await scope.betweenCheckAndOpen?.()
-  const conflict = () =>
-    new ExtensionFileRefusal('conflict', `${shown} changed since it was read, so it was not written.`)
-  try {
-    // A conditional write is over a file that exists: one gone since it was read is a conflict too.
-    if (expected !== undefined) throw Object.assign(new Error('exists'), { code: 'EEXIST' })
-    handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o644)
-    created = true
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException | null)?.code !== 'EEXIST')
-      throw new ExtensionFileRefusal('action_failed', `${shown} cannot be written.`)
-    if (create) throw new ExtensionFileRefusal('action_failed', `${shown} already exists.`)
-    // It exists: the real path it names must be inside too, and opened as it is.
-    let opened: Awaited<ReturnType<typeof openChecked>>
+  // One write at a time to a file, from every client and window: the check
+  // and the write below are one step for whoever else saves it.
+  return withFileLock(target, async () => {
+    let handle: FileHandle
+    let created: boolean
+    if (create) await scope.betweenCheckAndOpen?.()
+    const conflict = () =>
+      new ExtensionFileRefusal('conflict', `${shown} changed since it was read, so it was not written.`)
     try {
-      opened = await openChecked(scope, shown, expected === undefined ? constants.O_WRONLY : constants.O_RDWR, true)
-    } catch (refusal) {
-      if (expected !== undefined && refusal instanceof ExtensionFileRefusal && /does not exist/u.test(refusal.message))
-        throw conflict()
-      throw refusal
-    }
-    if (!opened.stats.isFile()) {
-      await opened.handle.close().catch(() => undefined)
-      throw new ExtensionFileRefusal('action_failed', `${shown} is not a file.`)
-    }
-    handle = opened.handle
-    created = false
-    if (expected !== undefined) {
-      // Read through the descriptor that will be written, so what is checked is what is replaced.
-      const now = opened.stats.size > EXTENSION_FILE_MAX_BYTES ? null : await handle.readFile()
-      if (!now || sha256Of(now) !== expected) {
-        await handle.close().catch(() => undefined)
-        throw conflict()
-      }
-    }
-  }
-  try {
-    if (created) {
-      // The new file is where the check said, under the folder it checked.
-      const now = await descriptorPath(handle, target).catch(() => '')
+      // A conditional write is over a file that exists: one gone since it was read is a conflict too.
+      if (expected !== undefined) throw Object.assign(new Error('exists'), { code: 'EEXIST' })
+      handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o644)
+      created = true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException | null)?.code !== 'EEXIST')
+        throw new ExtensionFileRefusal('action_failed', `${shown} cannot be written.`)
+      if (create) throw new ExtensionFileRefusal('action_failed', `${shown} already exists.`)
+      // It exists: the real path it names must be inside too, and opened as it is.
+      let opened: Awaited<ReturnType<typeof openChecked>>
       try {
-        if (dirname(now) !== folder) {
-          const where = await stat(dirname(now)).catch(() => null)
-          if (!where || where.dev !== folderChecked.dev || where.ino !== folderChecked.ino)
-            throw new ExtensionFileRefusal('not_permitted', `${shown} moved while it was made, so nothing was written.`)
-        }
-        contained(now, root, forbidden, shown)
-      } catch (error) {
-        // The empty file the open made, where the swapped folder pointed, is taken away again.
-        if (now) await unlink(now).catch(() => undefined)
-        throw error
+        opened = await openChecked(scope, shown, expected === undefined ? constants.O_WRONLY : constants.O_RDWR, true)
+      } catch (refusal) {
+        if (expected !== undefined && refusal instanceof ExtensionFileRefusal && refusal.code === 'missing')
+          throw conflict()
+        throw refusal
       }
-    } else await handle.truncate(0)
-    await handle.write(bytes, 0, bytes.byteLength, 0)
-    return { size: bytes.byteLength, created, sha256: sha256Of(bytes) }
-  } finally {
-    await handle.close().catch(() => undefined)
-  }
+      if (!opened.stats.isFile()) {
+        await opened.handle.close().catch(() => undefined)
+        throw new ExtensionFileRefusal('action_failed', `${shown} is not a file.`)
+      }
+      handle = opened.handle
+      created = false
+      if (expected !== undefined) {
+        // Read through the descriptor that will be written, so what is checked is what is replaced.
+        const now = opened.stats.size > EXTENSION_FILE_MAX_BYTES ? null : await handle.readFile()
+        if (!now || sha256Of(now) !== expected) {
+          await handle.close().catch(() => undefined)
+          throw conflict()
+        }
+      }
+    }
+    try {
+      if (created) {
+        // The new file is where the check said, under the folder it checked.
+        const now = await descriptorPath(handle, target).catch(() => '')
+        try {
+          if (dirname(now) !== folder) {
+            const where = await stat(dirname(now)).catch(() => null)
+            if (!where || where.dev !== folderChecked.dev || where.ino !== folderChecked.ino)
+              throw new ExtensionFileRefusal(
+                'not_permitted',
+                `${shown} moved while it was made, so nothing was written.`,
+              )
+          }
+          contained(now, root, forbidden, shown)
+        } catch (error) {
+          // The empty file the open made, where the swapped folder pointed, is taken away again.
+          if (now) await unlink(now).catch(() => undefined)
+          throw error
+        }
+      }
+      await scope.beforeCommit?.()
+      // The new content goes over the old, then the file is cut to its
+      // length: a reader never finds it emptied in between.
+      await handle.write(bytes, 0, bytes.byteLength, 0)
+      if (!created) await handle.truncate(bytes.byteLength)
+      return { size: bytes.byteLength, created, sha256: sha256Of(bytes) }
+    } finally {
+      await handle.close().catch(() => undefined)
+    }
+  })
 }
 
 export async function searchExtensionFiles(
