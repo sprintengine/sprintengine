@@ -1,16 +1,16 @@
-// Your tests, in TypeScript: `npm test` bundles test/*.test.ts and runs them
-// with `node --test` (see AGENTS.md). Drive the source with the SDK's fakes,
-// handing them `manifest` from ./manifest.
+// Your tests, in TypeScript: `npm test` runs test/*.test.ts with `node --test`,
+// loading the source as Studio loads it (see AGENTS.md). Drive the source with
+// the SDK's fakes, handing them `manifest` from ./manifest.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { createElement } from 'react'
+import { createFakeFrameStudio } from '@sprintengine/extension-sdk/testing'
 
-import { createFakeFrameStudio, renderToHtml } from '@sprintengine/extension-sdk/testing'
-
-import { GreetingSettings, greetingFrom } from '../src/greeting'
+import { greetingFrom, saveGreeting } from '../extension/src/greeting'
 import { manifest } from './manifest'
+
+const surface = { point: 'settingsSections', id: 'greeting' } as const
 
 test('the greeting follows the name and the tone', () => {
   assert.equal(greetingFrom({}), 'Hello, there.')
@@ -18,13 +18,20 @@ test('the greeting follows the name and the tone', () => {
   assert.equal(greetingFrom({ name: 'Ada', tone: 'loud' }), 'Hello, Ada.')
 })
 
-test('the section shows what was saved', async () => {
+test('the section greets with what was saved', async () => {
   const frame = createFakeFrameStudio({ manifest, settings: { name: 'Night shift', tone: 'warm' } })
-  const studio = frame.studio({ point: 'settingsSections', id: 'greeting' })
-  const initial = await studio.host.call('settings.get', {})
-  const html = await renderToHtml(createElement(GreetingSettings, { studio, initial }))
-  assert.match(html, /Good to see you, Night shift!/)
+  const saved = await frame.studio(surface).host.call('settings.get', {})
+  assert.equal(greetingFrom(saved), 'Good to see you, Night shift!')
   assert.deepEqual(frame.undeclared, [], 'everything it used is declared in extension/extension.json')
+})
+
+test('what the section saves Studio keeps, and an emptied name is cleared', async () => {
+  const frame = createFakeFrameStudio({ manifest })
+  const studio = frame.studio(surface)
+  await saveGreeting(studio, 'tone', 'warm')
+  await saveGreeting(studio, 'name', 'Ada')
+  await saveGreeting(studio, 'name', '')
+  assert.deepEqual(frame.settings(), { tone: 'warm' })
 })
 
 test('the command opens Settings without any code of its own', () => {

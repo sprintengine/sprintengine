@@ -1,17 +1,17 @@
-// Your tests, in TypeScript: `npm test` bundles test/*.test.ts and runs them
-// with `node --test` (see AGENTS.md). Drive the source with the SDK's fakes:
-// the worker against a fake main host whose chats you can make the agent
-// answer in, the panel against a fake renderer that calls the worker's methods.
+// Your tests, in TypeScript: `npm test` runs test/*.test.ts with `node --test`,
+// loading the source as Studio loads it (see AGENTS.md). Drive the source with
+// the SDK's fakes: the worker against a fake main host whose chats you can make
+// the agent answer in, the panel's calls against a fake frame that reaches the
+// worker's methods.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { createElement } from 'react'
+import { createFakeFrameStudio, createFakeMainHost } from '@sprintengine/extension-sdk/testing'
 
-import { createFakeFrameStudio, createFakeMainHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
-
-import { CompanionPanel } from '../src/companion'
-import { activate } from '../src/main'
+import { chatLabel } from '../extension/src/companion'
+import { activate } from '../extension/src/main'
+import type { CompanionMethods } from '../extension/src/protocol'
 import { manifest } from './manifest'
 
 test('starting a summary opens a chat, and its end is announced', async () => {
@@ -59,12 +59,17 @@ test('a bad request is answered, not thrown', async () => {
   })
 })
 
-test('the panel draws, and reaches the worker’s methods', async () => {
+test('the panel reaches the worker’s methods, and names each chat with how it is doing', async () => {
   const main = createFakeMainHost({ manifest })
   activate(main.host)
   const frame = createFakeFrameStudio({ manifest, main })
   const studio = frame.studio({ point: 'panels', id: 'chats', workspaceId: 'ws-app' })
-  assert.match(await renderToHtml(createElement(CompanionPanel, { studio })), /Summarise this project/)
-  assert.deepEqual(await studio.methods().read('list', {}), { ok: true, result: [] })
+  const methods = studio.methods<CompanionMethods>()
+  assert.deepEqual(await methods.read('list', {}), { ok: true, result: [] })
+  const started = await methods.operate('start', { workspaceId: 'ws-app' })
+  assert.ok(started.ok, JSON.stringify(started))
+  const listed = await methods.read('list', {})
+  assert.ok(listed.ok)
+  assert.match(chatLabel(listed.result[0]!), /^Project summary · /)
   assert.deepEqual(frame.undeclared, [])
 })

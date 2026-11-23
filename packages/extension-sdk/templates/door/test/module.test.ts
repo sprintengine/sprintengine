@@ -1,15 +1,13 @@
-// Your tests, in TypeScript: `npm test` bundles test/*.test.ts and runs them
-// with `node --test` (see AGENTS.md). Drive the source with the SDK's fakes,
-// handing them `manifest` from ./manifest.
+// Your tests, in TypeScript: `npm test` runs test/*.test.ts with `node --test`,
+// loading the source as Studio loads it (see AGENTS.md). Drive the source with
+// the SDK's fakes, handing them `manifest` from ./manifest.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { createElement } from 'react'
+import { createFakeFrameStudio } from '@sprintengine/extension-sdk/testing'
 
-import { createFakeFrameStudio, renderToHtml } from '@sprintengine/extension-sdk/testing'
-
-import { WorkspacesView } from '../src/workspaces'
+import { workspaceFacts } from '../extension/src/workspaces'
 import { manifest } from './manifest'
 
 test('the door lists the open workspaces, and shows where the picked one lives', async () => {
@@ -26,8 +24,16 @@ test('the door lists the open workspaces, and shows where the picked one lives',
     workspaces.map((workspace) => workspace.name),
     ['App', 'Docs'],
   )
-
-  const html = await renderToHtml(createElement(WorkspacesView, { workspaces, selectedId: 'ws-docs', onSelect() {} }))
-  assert.match(html, /\/Users\/dev\/projects\/docs/)
+  assert.deepEqual(workspaceFacts(workspaces[1]!), [
+    ['Folder', '/Users/dev/projects/docs'],
+    ['Type', 'standard'],
+  ])
   assert.deepEqual(frame.undeclared, [], 'everything it used is declared in extension/extension.json')
+})
+
+test('a workspace without a folder says so', () => {
+  assert.equal(
+    workspaceFacts({ id: 'ws-scratch', name: 'Scratch', folderPath: null, mode: 'standard' })[0]?.[1],
+    'None (a workspace without a folder)',
+  )
 })

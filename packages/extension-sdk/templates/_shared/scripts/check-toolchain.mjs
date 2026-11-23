@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Is this machine, and this project, ready to build a SprintEngine Studio
+// Is this machine, and this project, ready to work on a SprintEngine Studio
 // extension? Run it before anything else:
 //
 //   node scripts/check-toolchain.mjs [--project <dir>]
 //
 // Prints one line per check and what to do about each failure. Exit 1 when
-// something blocks the build; notes alone exit 0.
+// something blocks the dev loop; notes alone exit 0.
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -31,7 +31,8 @@ const version = (command, args = ['--version']) => {
   return result.status === 0 ? result.stdout.trim().split('\n')[0] : null
 }
 
-// The SDK and its CLI need Node 22.15 or newer.
+// The SDK and its CLI need Node 22.15 or newer: the first with the module
+// hooks and type stripping that load the extension's TypeScript as written.
 const [major, minor] = process.versions.node.split('.').map(Number)
 if (major > 23 || (major === 23 && minor >= 5) || (major === 22 && minor >= 15)) ok(`node ${process.versions.node}`)
 else bad(`node ${process.versions.node} is too old: install Node 22.15 or newer (https://nodejs.org).`)
@@ -83,13 +84,12 @@ if (!existsSync(packagePath)) {
     } catch {
       bad('@sprintengine/extension-sdk is not installed: run `npm install`.')
     }
-    for (const tool of ['esbuild', 'typescript']) {
-      try {
-        require.resolve(`${tool}/package.json`)
-        ok(`${tool} installed`)
-      } catch {
-        bad(`${tool} is not installed: run \`npm install\`.`)
-      }
+    // Only the type-checker: nothing is built, Studio loads the source as written.
+    try {
+      require.resolve('typescript/package.json')
+      ok('typescript installed')
+    } catch {
+      bad('typescript is not installed: run `npm install`.')
     }
   }
 }
@@ -98,7 +98,7 @@ if (!existsSync(packagePath)) {
 
 const extensionsRoot = process.env.SPRINTENGINE_USER_EXTENSION_ROOT || join(homedir(), '.sprintengine', 'extensions')
 if (existsSync(extensionsRoot)) ok(`Studio's extensions folder: ${extensionsRoot}`)
-else note(`${extensionsRoot} does not exist yet; Studio creates it on first launch, and dev:install creates it too.`)
+else note(`${extensionsRoot} does not exist yet; Studio creates it on first launch.`)
 
 const keysDir = join(homedir(), '.sprintengine', 'keys')
 if (existsSync(keysDir)) ok(`signing keys folder: ${keysDir}`)

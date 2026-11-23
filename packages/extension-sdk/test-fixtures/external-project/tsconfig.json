@@ -7,8 +7,10 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
     "resolveJsonModule": true,
     "types": []
   },
-  "include": ["src"]
+  "include": ["extension/src", "test"]
 }

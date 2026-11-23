@@ -8,10 +8,11 @@
 // the command line and one made from the app are the same project.
 //
 // A template is a folder holding `template.json` (what the picker shows) and
-// the project files, among them `extension/extension.json`. `templates/_shared/`
-// holds the files every project gets — the dev-loop scripts, the smoke test,
-// the agent instructions — and a template's own file of the same path wins
-// over the shared one. Text files carry `{{placeholder}}` tokens (see
+// the project files, among them `extension/extension.json` and its source in
+// `extension/src/`, which Studio loads as written: there is no build step.
+// `templates/_shared/` holds the files every project gets — package.json with
+// the dev loop's scripts, tsconfig.json, the agent instructions — and a
+// template's own file of the same path wins over the shared one. Text files carry `{{placeholder}}` tokens (see
 // `placeholderValues`), and a file named `gitignore` is written as
 // `.gitignore`: npm drops dot-gitignore files from a published tarball, so the
 // template cannot ship one under its real name.
@@ -405,19 +406,20 @@ function dependOnTarball(packageJson: string, spec: string): string {
 // the files it adds (placeholders as in a template). Adding one copies its
 // files, merges its contributions, permissions and `main` into
 // extension/extension.json and raises `tier` to what the result needs, adds
-// its scripts and devDependencies to package.json, and wires its registration
-// into the worker by inserting an import and a call at the top of `activate`
-// in src/main.ts. A part that needs the worker brings it first (`main`).
+// any scripts and devDependencies it names to package.json, and wires its
+// registration into the worker by inserting an import and a call at the top
+// of `activate` in the worker's source (`main`, under extension/). A part that
+// needs the worker brings it first (`main`).
 //
-// The build composes on its own: `npm run build` runs `build:ui` and
-// `build:main` when they exist, and build:ui builds every surface
-// extension.json names, so adding a door is adding its contribution.
+// Nothing else composes: Studio loads each surface and the worker from source,
+// so adding a door is adding its file and its contribution.
 
 const PARTS_DIR = '_parts'
 const PART_MANIFEST = 'part.json'
 // The order parts are listed and applied in.
 const PART_ORDER = ['main', 'mcp', 'settings', 'door']
-const WORKER_SOURCE = 'src/main.ts'
+/** Where the extension's files are, in the project: `main` and every `entry` are relative to it. */
+const EXTENSION_DIR = 'extension'
 const CONTRIBUTION_POINTS = Object.keys(
   (EXTENSION_MANIFEST_FIELDS.fields.contributes!.node as { fields: Record<string, unknown> }).fields,
 )
@@ -664,14 +666,11 @@ function wireRegistration(source: string, importLine: string, call: string): str
   return lines.join('\n')
 }
 
-// `additions` the record lacks, placed before `anchor` (the `build` script, so
-// a part's `build:main` sits beside `build:ui`), the rest kept in order.
-function withScripts(record: Record<string, string> | undefined, additions: Record<string, string>, anchor: string) {
+// `additions` the record lacks, after what it has: a script the project
+// already defines is the author's, and stays as it is.
+function withScripts(record: Record<string, string> | undefined, additions: Record<string, string>) {
   const missing = Object.entries(additions).filter(([key]) => record?.[key] === undefined)
-  const entries = Object.entries(record ?? {})
-  const at = entries.findIndex(([key]) => key === anchor)
-  entries.splice(at === -1 ? entries.length : at, 0, ...missing)
-  return Object.fromEntries(entries)
+  return Object.fromEntries([...Object.entries(record ?? {}), ...missing])
 }
 
 function unionInto(list: unknown, additions: readonly string[]): string[] {
@@ -707,8 +706,8 @@ function isTier(value: unknown): value is ExtensionTier {
 
 /**
  * Add parts to an existing extension project: their files, contributions,
- * permissions and worker, the tier that carries them, build scripts and
- * devDependencies, and the call that registers them in the worker. Expected
+ * permissions and worker, the tier that carries them, any scripts and
+ * devDependencies they name, and the call that registers them in the worker. Expected
  * failures come back as a result, never a throw; nothing is written unless
  * the whole addition can be.
  */
@@ -811,23 +810,29 @@ export async function addModuleParts(options: AddModulePartsOptions): Promise<Ad
       files.add(copy.relativePath)
     }
 
+    // The worker's source, where a part's registration is wired in: `main` as
+    // the merged manifest names it. A worker that is not TypeScript or
+    // JavaScript source is told about in a note instead.
+    const workerSource =
+      typeof ordered.main === 'string' ? `${EXTENSION_DIR}/${ordered.main}` : `${EXTENSION_DIR}/src/main.ts`
     const notes: string[] = []
     for (const part of planned.plan) {
-      pkg.scripts = withScripts(pkg.scripts, part.scripts, 'build')
+      pkg.scripts = withScripts(pkg.scripts, part.scripts)
       pkg.devDependencies = { ...part.devDependencies, ...pkg.devDependencies }
       if (part.register) {
-        const absolute = join(dir, WORKER_SOURCE)
-        const wired = existsSync(absolute)
-          ? wireRegistration(readFileSync(absolute, 'utf8'), part.register.import, part.register.call)
-          : null
+        const absolute = join(dir, workerSource)
+        const wired =
+          /\.[cm]?[jt]s$/.test(workerSource) && existsSync(absolute)
+            ? wireRegistration(readFileSync(absolute, 'utf8'), part.register.import, part.register.call)
+            : null
         if (wired === null) {
           notes.push(
-            `Call ${part.register.call} from activate in ${WORKER_SOURCE}, after \`${part.register.import}\`; ` +
+            `Call ${part.register.call} from activate in ${workerSource}, after \`${part.register.import}\`; ` +
               'it could not be wired in automatically.',
           )
         } else {
           writeFileSync(absolute, wired)
-          files.add(WORKER_SOURCE)
+          files.add(workerSource)
         }
       }
     }

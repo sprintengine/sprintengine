@@ -1,0 +1,24 @@
+{
+  "name": "{{id}}",
+  "version": "0.1.0",
+  "private": true,
+  "description": "{{displayName}} — a SprintEngine Studio extension ({{templateTitle}} template).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.15"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "sprintengine-extension test",
+    "validate": "sprintengine-extension validate extension",
+    "check": "npm run typecheck && npm test && sprintengine-extension check extension",
+    "dev": "sprintengine-extension dev watch extension --check --shot extension/.sprintengine/shots",
+    "pack": "sprintengine-extension pack extension",
+    "keygen": "sprintengine-extension keygen --out \"~/.sprintengine/keys/{{id}}.key\""
+  },
+  "devDependencies": {
+    "@sprintengine/extension-sdk": "^{{sdkVersion}}",
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.2"
+  }
+}

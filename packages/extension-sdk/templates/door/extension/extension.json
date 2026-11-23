@@ -9,16 +9,14 @@
   "tier": "ui",
   "name": "{{displayName}}",
   "description": "{{displayName}}, an extension for SprintEngine Studio.",
-  "permissions": [
-    "workspace:read"
-  ],
+  "permissions": ["workspace:read"],
   "contributes": {
     "doors": [
       {
         "id": "workspaces",
         "title": "{{displayName}}",
         "icon": "folder",
-        "entry": "dist/workspaces.js"
+        "entry": "src/workspaces.ts"
       }
     ]
   }

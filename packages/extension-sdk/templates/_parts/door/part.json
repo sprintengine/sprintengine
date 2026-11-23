@@ -10,16 +10,10 @@
         "id": "door",
         "title": "{{displayName}}",
         "icon": "extension",
-        "entry": "dist/door.js"
+        "entry": "src/door.ts"
       }
     ]
   },
-  "scripts": {
-    "build:ui": "node scripts/build-ui.mjs"
-  },
-  "devDependencies": {
-    "@types/react": "^19.3.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
-  }
+  "scripts": {},
+  "devDependencies": {}
 }

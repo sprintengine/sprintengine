@@ -3,25 +3,17 @@
   "title": "Settings section",
   "summary": "A section in Settings whose values Studio keeps, and the worker reads with getModuleAppState.",
   "requires": [],
-  "permissions": [
-    "settings:own"
-  ],
+  "permissions": ["settings:own"],
   "contributes": {
     "settingsSections": [
       {
         "id": "settings",
         "title": "{{displayName}}",
         "icon": "settings",
-        "entry": "dist/settings.js"
+        "entry": "src/settings.ts"
       }
     ]
   },
-  "scripts": {
-    "build:ui": "node scripts/build-ui.mjs"
-  },
-  "devDependencies": {
-    "@types/react": "^19.3.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
-  }
+  "scripts": {},
+  "devDependencies": {}
 }

@@ -145,7 +145,7 @@ describe('sprintengine-extension init', () => {
       contributes: Record<string, Array<{ id?: string; name?: string }>>
     }
     assert.equal(manifest.tier, 'worker')
-    assert.equal(manifest.main, 'dist/main.cjs')
+    assert.equal(manifest.main, 'src/main.ts')
     assert.deepEqual(manifest.permissions, ['workspace:read', 'tools:contribute', 'settings:own'])
     assert.deepEqual(
       manifest.contributes.settingsSections?.map((section) => section.id),
@@ -155,12 +155,22 @@ describe('sprintengine-extension init', () => {
       manifest.contributes.mcpTools?.map((tool) => tool.name),
       ['composed_about'],
     )
+    // Studio loads the worker from source: a part brings no build.
     const pkg = readJson(join(dir, 'package.json')) as { scripts: Record<string, string> }
-    assert.match(pkg.scripts['build:main'] ?? '', /esbuild src\/main\.ts/)
-    const main = readFileSync(join(dir, 'src', 'main.ts'), 'utf8')
+    assert.equal(pkg.scripts['build:main'], undefined)
+    assert.equal(
+      pkg.scripts.dev,
+      'sprintengine-extension dev watch extension --check --shot extension/.sprintengine/shots',
+    )
+    const main = readFileSync(join(dir, 'extension', 'src', 'main.ts'), 'utf8')
     assert.match(main, /import \{ registerTools \} from '\.\/mcp-tools'/)
     assert.match(main, /export function activate\(studio: MainHost\): void \{\n {2}registerTools\(studio\)\n/)
-    for (const file of ['src/settings.tsx', 'test/main.test.ts', 'test/mcp-tools.test.ts', 'test/settings.test.ts']) {
+    for (const file of [
+      'extension/src/settings.ts',
+      'test/main.test.ts',
+      'test/mcp-tools.test.ts',
+      'test/settings.test.ts',
+    ]) {
       assert.equal(existsSync(join(dir, file)), true, `${file} comes with its part`)
     }
   })
@@ -186,8 +196,10 @@ describe('sprintengine-extension init', () => {
       scripts: Record<string, string>
       devDependencies: Record<string, string>
     }
-    assert.ok(pkg.devDependencies.react && pkg.devDependencies['react-dom'], 'a surface brings React')
-    assert.equal(pkg.scripts['build:ui'], 'node scripts/build-ui.mjs')
+    // A surface is drawn from source with DOM APIs: no React, no build to add.
+    assert.equal(pkg.devDependencies.react, undefined)
+    assert.equal(pkg.scripts['build:ui'], undefined)
+    assert.equal(existsSync(join(dir, 'extension', 'src', 'door.ts')), true)
 
     const again = runCli(['add', 'main', '--project', dir])
     assert.equal(again.status, 1)
@@ -208,12 +220,11 @@ describe('sprintengine-extension init', () => {
   test('add refuses to write over a file the project changed', () => {
     const dir = join(workDir, 'blank-then-settings')
     assert.equal(runCli(['init', dir, '--template', 'blank']).status, 0)
-    mkdirSync(join(dir, 'src'), { recursive: true })
-    writeFileSync(join(dir, 'src', 'settings.tsx'), '// mine\n')
+    writeFileSync(join(dir, 'extension', 'src', 'settings.ts'), '// mine\n')
     const clash = runCli(['add', 'settings', '--project', dir])
     assert.equal(clash.status, 1)
-    assert.match(clash.stderr, /already in the project: src\/settings\.tsx/)
-    assert.equal(readFileSync(join(dir, 'src', 'settings.tsx'), 'utf8'), '// mine\n')
+    assert.match(clash.stderr, /already in the project: extension\/src\/settings\.ts/)
+    assert.equal(readFileSync(join(dir, 'extension', 'src', 'settings.ts'), 'utf8'), '// mine\n')
     assert.equal(
       (readJson(join(dir, 'extension', 'extension.json')).contributes as Record<string, unknown>).settingsSections,
       undefined,

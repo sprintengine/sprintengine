@@ -4,8 +4,8 @@ import { join } from 'node:path'
 
 import { test } from 'vitest'
 
-// What the templates' workers are built and declared as, now that a worker
-// runs as plain Node in a process of its own and is stopped when idle.
+// What the templates' workers are declared as, now that a worker runs as
+// plain Node in a process of its own, from source, and is stopped when idle.
 
 const TEMPLATES = join(process.cwd(), 'packages/extension-sdk/templates')
 
@@ -17,22 +17,22 @@ test('a template that keeps listening across idle periods runs in the background
   assert.equal(manifest.background, true)
 })
 
-test('no template leaves electron out of its worker bundle', () => {
-  const files = readdirSync(TEMPLATES, { withFileTypes: true }).flatMap((entry) => {
-    if (!entry.isDirectory()) return []
-    if (entry.name === '_parts')
-      return readdirSync(join(TEMPLATES, '_parts'), { withFileTypes: true })
-        .filter((part) => part.isDirectory())
-        .map((part) => join(TEMPLATES, '_parts', part.name, 'part.json'))
-    return [join(TEMPLATES, entry.name, 'package.json')]
-  })
-  for (const file of files) {
-    let text = ''
-    try {
-      text = readFileSync(file, 'utf8')
-    } catch {
-      continue
+test('every template worker is its source, which Studio loads in Node as written', () => {
+  const workers = readdirSync(TEMPLATES, { withFileTypes: true }).flatMap((entry) => {
+    if (!entry.isDirectory() || entry.name.startsWith('_')) return []
+    const manifest = JSON.parse(readFileSync(join(TEMPLATES, entry.name, 'extension/extension.json'), 'utf8')) as {
+      main?: string
     }
-    assert.ok(!text.includes('--external:electron'), `${file} still leaves electron external`)
+    return manifest.main ? [{ template: entry.name, main: manifest.main }] : []
+  })
+  assert.ok(workers.length > 0)
+  for (const { template, main } of workers) {
+    assert.equal(main, 'src/main.ts', `${template}: main is the worker's source`)
+    // Node strips its types: an enum or a namespace needs code, and fails to load.
+    const source = readFileSync(join(TEMPLATES, template, 'extension', main), 'utf8')
+    assert.ok(
+      !/^\s*(?:export\s+)?(?:const\s+)?(?:enum|namespace)\s/m.test(source),
+      `${template}: only erasable TypeScript`,
+    )
   }
 })

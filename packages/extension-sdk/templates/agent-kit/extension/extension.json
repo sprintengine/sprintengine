@@ -18,7 +18,7 @@
         "description": "Counts the words in a text, for keeping to a budget.",
         "transport": "stdio",
         "command": "node",
-        "args": ["${extensionPath}/dist/server.mjs"]
+        "args": ["${extensionPath}/src/stdio.mjs"]
       }
     ]
   }

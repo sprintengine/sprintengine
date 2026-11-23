@@ -2,12 +2,8 @@
   "id": "mcp",
   "title": "MCP tools",
   "summary": "Tools any agent in a workspace can call through Studio's MCP server, declared in extension.json and served by the worker.",
-  "requires": [
-    "main"
-  ],
-  "permissions": [
-    "tools:contribute"
-  ],
+  "requires": ["main"],
+  "permissions": ["tools:contribute"],
   "contributes": {
     "mcpTools": [
       {

@@ -1,13 +1,13 @@
-// Your tests, in TypeScript: `npm test` bundles test/*.test.ts and runs them
-// with `node --test` (see AGENTS.md). Drive the source with the SDK's fakes,
-// handing them `manifest` from ./manifest.
+// Your tests, in TypeScript: `npm test` runs test/*.test.ts with `node --test`,
+// loading the source as Studio loads it (see AGENTS.md). Drive the source with
+// the SDK's fakes, handing them `manifest` from ./manifest.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { createFakeMainHost } from '@sprintengine/extension-sdk/testing'
 
-import { activate } from '../src/main'
+import { activate } from '../extension/src/main'
 import { manifest } from './manifest'
 
 test('an agent can count words', async () => {

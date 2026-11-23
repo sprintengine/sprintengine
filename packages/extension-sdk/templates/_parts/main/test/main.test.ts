@@ -1,12 +1,12 @@
-// The worker, against the SDK's fake main host. `npm test` bundles
-// test/*.test.ts and runs them with `node --test` (see AGENTS.md).
+// The worker, against the SDK's fake main host. `npm test` runs
+// test/*.test.ts with `node --test` (see AGENTS.md).
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { createFakeMainHost } from '@sprintengine/extension-sdk/testing'
 
-import { activate } from '../src/main'
+import { activate } from '../extension/src/main'
 import { manifest } from './manifest'
 
 test('a surface can ask when the worker started', async () => {

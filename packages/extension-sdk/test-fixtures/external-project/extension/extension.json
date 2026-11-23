@@ -22,7 +22,7 @@
     "storage:own",
     "notifications:show"
   ],
-  "main": "dist/main.cjs",
+  "main": "src/main.ts",
   "contributes": {
     "commands": [
       { "id": "forecast.refresh", "title": "Refresh the forecast", "when": "workspace" },
@@ -30,8 +30,8 @@
     ],
     "menus": [{ "where": "file", "command": "forecast.refresh" }],
     "topBarItems": [{ "id": "deck", "title": "Weather Deck", "icon": "spark", "door": "deck" }],
-    "panels": [{ "id": "probe", "title": "Probe", "icon": "notes", "entry": "dist/probe.js" }],
-    "doors": [{ "id": "deck", "title": "Weather Deck", "icon": "spark", "entry": "dist/door.js" }],
+    "panels": [{ "id": "probe", "title": "Probe", "icon": "notes", "entry": "src/probe.ts" }],
+    "doors": [{ "id": "deck", "title": "Weather Deck", "icon": "spark", "entry": "src/door.ts" }],
     "mcpTools": [
       {
         "name": "weather_deck_forecast",
