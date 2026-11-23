@@ -228,8 +228,9 @@ const httpsUrl = (): SchemaNode => ({
 })
 
 const IMAGE_EXTENSIONS = ['.png', '.svg', '.jpg', '.jpeg', '.webp'] as const
-const SCRIPT_EXTENSIONS = ['.js', '.mjs', '.cjs'] as const
-const UI_ENTRY_EXTENSIONS = ['.js', '.mjs'] as const
+// TypeScript loads as written: Studio strips its types (source-hooks.ts, source-modules.ts).
+const SCRIPT_EXTENSIONS = ['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts'] as const
+const UI_ENTRY_EXTENSIONS = ['.js', '.mjs', '.ts', '.mts', '.tsx', '.jsx'] as const
 
 const iconField = (doc: string): FieldSpec => ({
   node: { kind: 'string', max: 32, enum: EXTENSION_ICONS },
@@ -248,7 +249,7 @@ const surfaceObject = (title: string, entryDoc: string): ObjectNode => ({
     entry: {
       node: pathNode(UI_ENTRY_EXTENSIONS),
       required: true,
-      doc: `${entryDoc} A \`.js\` or \`.mjs\` module whose \`mount(root, studio)\` draws into \`root\` and may return a cleanup function.`,
+      doc: `${entryDoc} A module (\`.js\`, \`.mjs\`, or \`.ts\`, \`.mts\`, \`.tsx\`, \`.jsx\` loaded as written) whose \`mount(root, studio)\` draws into \`root\` and may return a cleanup function; it imports only its own files, by relative paths.`,
       since: V1,
       example: 'dist/notes.js',
     },
@@ -906,7 +907,7 @@ const CONTRIBUTES: ObjectNode = {
           },
         },
       },
-      doc: `Hooks the worker runs before (or after) Studio acts: Studio calls them in the order of the extensions’ install keys, waiting at most ${EXTENSION_HOOK_TIME_LIMIT_MS / 1000} s on each. The approval names each point in plain words, and an update that adds one asks again.`,
+      doc: `Hooks the worker runs before (or after) Studio acts: Studio calls them in order, the installed extensions by install key and then the development folders in the order they were registered, waiting at most ${EXTENSION_HOOK_TIME_LIMIT_MS / 1000} s on each. The approval names each point in plain words, and an update that adds one asks again.`,
       since: V1,
       tier: 'worker',
     },
@@ -1220,7 +1221,7 @@ export const EXTENSION_MANIFEST_FIELDS: ObjectNode = {
     },
     main: {
       node: pathNode(SCRIPT_EXTENSIONS),
-      doc: 'The worker’s entry: a module whose `activate(studio)` (its default export, or a named `activate`) registers what it serves. Worker tier only, and required by it.',
+      doc: 'The worker’s entry: a module (`.js`, `.mjs`, `.cjs`, or `.ts`, `.mts`, `.cts` loaded as written) whose `activate(studio)` (its default export, or a named `activate`) registers what it serves. Worker tier only, and required by it.',
       since: V1,
       tier: 'worker',
       example: 'dist/main.js',

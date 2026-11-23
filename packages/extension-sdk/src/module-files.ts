@@ -36,8 +36,26 @@ import {
  * - `pack`: the folder as `sprintengine-extension pack` will copy it, with those
  *   paths left out. What `sign` records, so a module can be signed in its
  *   source tree and still match once packed.
+ * - `development`: a development folder, the author's working copy, which
+ *   Studio loads where it is. node_modules, .git, key files, every dotted
+ *   folder (an editor's or a tool's, such as `.sprintengine/`) and symbolic
+ *   links are left out rather than refused, at any depth: none of them is
+ *   ever served or run from the folder, and their churn is not an edit. It
+ *   holds at most `DEVELOPMENT_FOLDER_MAX_FILES` files and
+ *   `DEVELOPMENT_FOLDER_MAX_BYTES` bytes, so a folder pointed at the wrong
+ *   place (a home folder) is refused rather than read whole.
  */
-export type ModuleFileWalk = 'installed' | 'pack'
+export type ModuleFileWalk = 'installed' | 'pack' | 'development'
+
+/** The most files a development folder may hold (what is left out does not count). */
+export const DEVELOPMENT_FOLDER_MAX_FILES = 2000
+/** The most bytes a development folder's files may hold together. */
+export const DEVELOPMENT_FOLDER_MAX_BYTES = 50 * 1024 * 1024
+
+/** Whether a development folder leaves a path out: what pack leaves out, and anything dotted. */
+export function isDevelopmentSkippedPath(relativePath: string): boolean {
+  return isPackExcludedPath(relativePath) || relativePath.split('/').some((segment) => segment.startsWith('.'))
+}
 
 export type ModuleFileDigestOptions = { walk?: ModuleFileWalk }
 
@@ -50,8 +68,12 @@ export function computeModuleFileDigestsSync(
   options: ModuleFileDigestOptions = {},
 ): ModuleFileDigestsResult {
   const walk = options.walk ?? 'installed'
+  const development = walk === 'development'
   const found: ModuleFileDigests = {}
   const issues: ThirdPartyManifestIssue[] = []
+  let count = 0
+  let bytes = 0
+  let tooBig = false
 
   const visit = (absoluteDir: string, relativeDir: string): void => {
     let names: string[]
@@ -62,9 +84,12 @@ export function computeModuleFileDigestsSync(
       return
     }
     for (const name of names) {
+      if (tooBig) return
       const relativePath = relativeDir ? `${relativeDir}/${name}` : name
       if (relativePath === EXTENSION_SIGNATURE_FILENAME) continue
       const issuePath = fileIssuePath(relativePath)
+      // A dotted file or folder at any depth is a tool's (.gitignore, .vscode/), never served.
+      if (development && (name.startsWith('.') || isDevelopmentSkippedPath(relativePath))) continue
       if (!isSafeManifestRelativePath(relativePath)) {
         issues.push({ path: issuePath, message: 'has a name extension.sig cannot record.' })
         continue
@@ -87,12 +112,27 @@ export function computeModuleFileDigestsSync(
         continue
       }
       if (entry.isSymbolicLink()) {
+        // A link in a working copy is left out: Studio never follows one out of the folder.
+        if (development) continue
         issues.push({ path: issuePath, message: 'is a symbolic link; an extension ships regular files only.' })
       } else if (entry.isDirectory()) {
         visit(absolutePath, relativePath)
       } else if (!entry.isFile()) {
+        if (development) continue
         issues.push({ path: issuePath, message: 'is not a regular file; an extension ships regular files only.' })
       } else {
+        if (development) {
+          count += 1
+          bytes += entry.size
+          if (count > DEVELOPMENT_FOLDER_MAX_FILES || bytes > DEVELOPMENT_FOLDER_MAX_BYTES) {
+            tooBig = true
+            issues.push({
+              path: 'files',
+              message: `a development folder holds at most ${DEVELOPMENT_FOLDER_MAX_FILES} files and ${DEVELOPMENT_FOLDER_MAX_BYTES / 1024 / 1024} MiB, leaving out node_modules, .git and dotted folders.`,
+            })
+            return
+          }
+        }
         found[relativePath] = createHash('sha256').update(readFileSync(absolutePath)).digest('hex')
       }
     }

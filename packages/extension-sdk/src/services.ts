@@ -325,6 +325,8 @@ export const EXTENSION_FRAME_METHODS: Readonly<Record<ExtensionFrameMethod, Exte
   'chat.draft': inFrame('chat:draft', 'conversation:create', 'client'),
   'doors.open': inFrame(null, 'extension:read', 'client'),
   'tabs.focus': inFrame(null, 'workspace:read', 'client'),
+  // Its own log: nothing beyond the extension, read by whoever may open it.
+  'log.write': inFrame(null, 'extension:read'),
 }
 
 /** The frame method `name` names, or undefined. */

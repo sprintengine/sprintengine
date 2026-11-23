@@ -192,8 +192,8 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 1024,
-      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss]|\\.[Cc][Jj][Ss])$",
-      "description": "The worker’s entry: a module whose `activate(studio)` (its default export, or a named `activate`) registers what it serves. Worker tier only, and required by it.",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss]|\\.[Cc][Jj][Ss]|\\.[Tt][Ss]|\\.[Mm][Tt][Ss]|\\.[Cc][Tt][Ss])$",
+      "description": "The worker’s entry: a module (`.js`, `.mjs`, `.cjs`, or `.ts`, `.mts`, `.cts` loaded as written) whose `activate(studio)` (its default export, or a named `activate`) registers what it serves. Worker tier only, and required by it.",
       "x-since": "0.13.0",
       "x-tier": "worker",
       "examples": [
@@ -454,8 +454,8 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 1024,
-                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
-                "description": "What the panel draws, as a tab in a workspace’s pane. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss]|\\.[Tt][Ss]|\\.[Mm][Tt][Ss]|\\.[Tt][Ss][Xx]|\\.[Jj][Ss][Xx])$",
+                "description": "What the panel draws, as a tab in a workspace’s pane. A module (`.js`, `.mjs`, or `.ts`, `.mts`, `.tsx`, `.jsx` loaded as written) whose `mount(root, studio)` draws into `root` and may return a cleanup function; it imports only its own files, by relative paths.",
                 "x-since": "0.13.0",
                 "examples": [
                   "dist/notes.js"
@@ -528,8 +528,8 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 1024,
-                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
-                "description": "What the door draws when it is open. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss]|\\.[Tt][Ss]|\\.[Mm][Tt][Ss]|\\.[Tt][Ss][Xx]|\\.[Jj][Ss][Xx])$",
+                "description": "What the door draws when it is open. A module (`.js`, `.mjs`, or `.ts`, `.mts`, `.tsx`, `.jsx` loaded as written) whose `mount(root, studio)` draws into `root` and may return a cleanup function; it imports only its own files, by relative paths.",
                 "x-since": "0.13.0",
                 "examples": [
                   "dist/notes.js"
@@ -602,8 +602,8 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 1024,
-                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
-                "description": "What the section draws in Settings. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss]|\\.[Tt][Ss]|\\.[Mm][Tt][Ss]|\\.[Tt][Ss][Xx]|\\.[Jj][Ss][Xx])$",
+                "description": "What the section draws in Settings. A module (`.js`, `.mjs`, or `.ts`, `.mts`, `.tsx`, `.jsx` loaded as written) whose `mount(root, studio)` draws into `root` and may return a cleanup function; it imports only its own files, by relative paths.",
                 "x-since": "0.13.0",
                 "examples": [
                   "dist/notes.js"
@@ -784,7 +784,7 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 1024,
-                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss]|\\.[Tt][Ss]|\\.[Mm][Tt][Ss]|\\.[Tt][Ss][Xx]|\\.[Jj][Ss][Xx])$",
                 "description": "What the editor draws, in a frame of its own in the file’s tab: a `.js` or `.mjs` module whose `mount(root, studio)` draws into `root`. Its `studio.document` holds the file’s content and takes its edits; Studio keeps the unsaved state, saves and watches the file, and the frame never gets a path.",
                 "x-since": "0.13.0",
                 "examples": [
@@ -1220,7 +1220,7 @@
               "point"
             ]
           },
-          "description": "Hooks the worker runs before (or after) Studio acts: Studio calls them in the order of the extensions’ install keys, waiting at most 2 s on each. The approval names each point in plain words, and an update that adds one asks again.",
+          "description": "Hooks the worker runs before (or after) Studio acts: Studio calls them in order, the installed extensions by install key and then the development folders in the order they were registered, waiting at most 2 s on each. The approval names each point in plain words, and an update that adds one asks again.",
           "x-since": "0.13.0",
           "x-tier": "worker"
         },

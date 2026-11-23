@@ -1060,6 +1060,8 @@ export type FakeFrameStudio = {
   focusedTabs: Array<{ workspaceId: string; kind: 'chat' | 'file'; id: string }>
   /** Bell rows raised with `notify`. */
   notifications: ModuleNotifyInput[]
+  /** Lines written to its log (`log.write`), in order. */
+  logs: Array<{ level: 'info' | 'warn' | 'error'; message: string }>
   /** Every surface that called `ready()`, in order. */
   readied: ExtensionSurface[]
   /** The world the surface reads and writes: the main fake's when given one. */
@@ -1408,6 +1410,13 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
       if (opened) fake.openedDoors.push(p.id as string)
       return { opened }
     },
+    'log.write': (p) => {
+      if (typeof p.message !== 'string' || p.message.length === 0)
+        throw frameError('invalid_params', '"message" is a string.')
+      const level = p.level === 'info' || p.level === 'warn' ? p.level : 'error'
+      fake.logs.push({ level, message: p.message })
+      return { ok: true as const }
+    },
   }
 
   async function call(method: string, params: unknown): Promise<unknown> {
@@ -1442,6 +1451,7 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
     openedDoors: [],
     focusedTabs: [],
     notifications: [],
+    logs: [],
     readied: [],
     services: { workspaces: world.workspaces, ...world.handles },
     settings: () => world.settings.all(),

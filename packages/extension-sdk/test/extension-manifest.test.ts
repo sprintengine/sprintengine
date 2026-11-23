@@ -190,16 +190,22 @@ test('a path that leaves the extension, or means something else on another platf
   assert.equal(isSafeExtensionPath('dist/console.js'), true, 'a name that only starts like a device name is fine')
 })
 
-test('a ui entry is a .js or .mjs module; the worker may also be .cjs', () => {
+test('a ui entry is a module Studio loads as written: JavaScript, TypeScript or JSX; a worker no JSX', () => {
   const ui = (entry: string) => base({ tier: 'ui', contributes: { panels: [panel({ entry })] } })
-  accepted(ui('dist/notes.js'))
-  accepted(ui('dist/notes.mjs'))
-  refusedAt(ui('dist/notes.cjs'), 'contributes.panels[0].entry', /must end in \.js, \.mjs/)
-  refusedAt(ui('dist/notes.tsx'), 'contributes.panels[0].entry', /must end in/)
-  for (const main of ['dist/main.js', 'dist/main.mjs', 'dist/main.cjs']) {
+  for (const entry of [
+    'src/notes.js',
+    'src/notes.mjs',
+    'src/notes.ts',
+    'src/notes.mts',
+    'src/notes.tsx',
+    'src/notes.jsx',
+  ])
+    accepted(ui(entry))
+  refusedAt(ui('src/notes.cjs'), 'contributes.panels[0].entry', /must end in \.js, \.mjs/)
+  for (const main of ['src/main.js', 'src/main.mjs', 'src/main.cjs', 'src/main.ts', 'src/main.mts', 'src/main.cts']) {
     accepted(base({ tier: 'worker', main }))
   }
-  refusedAt(base({ tier: 'worker', main: 'dist/main.ts' }), 'main', /must end in \.js, \.mjs, \.cjs/)
+  refusedAt(base({ tier: 'worker', main: 'src/main.tsx' }), 'main', /must end in \.js, \.mjs, \.cjs/)
   refusedAt(base({ icon: 'assets/icon.gif' }), 'icon', /must end in/)
 })
 

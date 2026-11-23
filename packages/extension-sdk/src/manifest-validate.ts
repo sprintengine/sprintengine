@@ -88,8 +88,13 @@ function validateStringArray(value: unknown, path: string, issues: ThirdPartyMan
 export function isPackExcludedPath(path: string): boolean {
   const segments = path.split('/')
   const name = segments[segments.length - 1] ?? ''
+  // `.sprintengine/` is the dev loop's own (its shots): never part of what ships.
   return (
-    segments.includes('node_modules') || segments.includes('.git') || name.endsWith('.key') || name.endsWith('.pem')
+    segments.includes('node_modules') ||
+    segments.includes('.git') ||
+    segments.includes('.sprintengine') ||
+    name.endsWith('.key') ||
+    name.endsWith('.pem')
   )
 }
 
