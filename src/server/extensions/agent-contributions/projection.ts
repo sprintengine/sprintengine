@@ -167,7 +167,7 @@ async function reconcile(input: ReconcileInput): Promise<ReconcileResult> {
     const { contributes } = candidate.extension
     if (contributes.skills.length + contributes.mcpServers.length + contributes.providers.length === 0) continue
     try {
-      next.extensions[candidate.key] = await projectExtension(root, candidate, input.protectedProviderIds)
+      next.extensions[candidate.key] = await projectExtension(root, candidate, input.protectedProviderIds, input.warn)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       failed.push({ key: candidate.key, message })
@@ -188,6 +188,7 @@ async function projectExtension(
   root: string,
   candidate: ProjectionCandidate,
   protectedProviderIds: ReadonlySet<string> | undefined,
+  warn: ((message: string) => void) | undefined,
 ): Promise<ProjectedExtension> {
   const { key, extension, moduleRoot } = candidate
   const files = candidate.standing.verifiedFiles
@@ -202,14 +203,18 @@ async function projectExtension(
       throw new Error(`skill "${skill.id}" holds more than ${SKILL_FOLDER_MAX_FILES} files.`)
     return { skill, files: listed.map((path) => ({ path, rest: path.slice(prefix.length), digest: files[path]! })) }
   })
-  for (const provider of extension.contributes.providers)
-    if (protectedProviderIds?.has(provider.id))
-      throw new Error(`provider "${provider.id}" takes the id of one of Studio’s own.`)
+  // Refused at install; one that a later Studio's own provider takes the id
+  // of is left out alone, and the rest of the extension is still handed out.
+  const usableProviders = extension.contributes.providers.filter((provider) => {
+    if (!protectedProviderIds?.has(provider.id)) return true
+    warn?.(`Extension "${key}": its provider "${provider.id}" takes the id of one of Studio’s own, so it is left out.`)
+    return false
+  })
   const mcpServers = extension.contributes.mcpServers.map((server) => projectedServer(key, moduleRoot, server))
   const contentDigest = candidate.standing.contentDigest
   const runsLocal = mcpServers.some((server) => server.transport === 'stdio')
   if (runsLocal && !contentDigest) throw new Error('its files were not verified.')
-  const providers = extension.contributes.providers.map((provider): ProjectedProvider => ({
+  const providers = usableProviders.map((provider): ProjectedProvider => ({
     id: extensionProviderId(key, provider.id),
     localId: provider.id,
     name: provider.name,

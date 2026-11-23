@@ -22,6 +22,7 @@ import { expect, test, vi } from 'vitest'
 
 import { createModuleLifecycle } from '../../../main/modules/module-lifecycle'
 import { watchUserModuleRoot } from '../../../main/modules/user-module-watch'
+import { reconcileInstalledAgentContributions } from './reconcile-installed'
 import { createModuleRegistryMirror } from '../../../main/modules/registry-mirror'
 import { NO_EXTENSION_RUN } from '../../../main/modules/third-party-module-view'
 import { extensionManifest, writeExtensionFolder } from '../../../../tests/extension-folder'
@@ -407,6 +408,28 @@ test('a provider that takes a built-in’s id is refused', async () => {
   const result = await start().install(source({ providers: [{ ...provider(), id: 'openrouter' }] }))
   expect(result.ok).toBe(false)
   if (!result.ok) expect(result.message).toMatch(/contributes\.providers\[0\]\.id .*Studio’s own/)
+})
+
+test('a provider a later Studio’s own takes the id of is left out alone; the rest of its extension is still handed out', async () => {
+  const { dataDir, moduleRoot, start, source, warnings } = setup()
+  const lifecycle = start()
+  const installed = await lifecycle.install(
+    source({ providers: [provider()], skills: [{ id: 'review', path: 'skills/review' }] }),
+  )
+  if (!installed.ok || installed.approval.state !== 'pending') throw new Error('a provider asks')
+  await lifecycle.approve(KEY, installed.approval.fingerprint)
+  expect(projectedProviders(dataDir)).toHaveLength(1)
+
+  // A later Studio ships a provider of its own under that id.
+  await reconcileInstalledAgentContributions({
+    dataDir,
+    moduleRoot,
+    protectedProviderIds: () => new Set(['acme']),
+    warn: (message) => warnings.push(message),
+  })
+  expect(projectedProviders(dataDir)).toEqual([])
+  expect(launchExtensionContributions(dataDir).skills.map((skill) => skill.name)).toEqual(['local.tools.review'])
+  expect(warnings.join('\n')).toMatch(/provider "acme" takes the id of one of Studio’s own, so it is left out/)
 })
 
 test('a projection a crash interrupted is never read half done, and the next start puts it right', async () => {
