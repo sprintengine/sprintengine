@@ -30,7 +30,11 @@
 // checked against its digest as it is read, so what agents read is what was
 // approved (or listed). Its SKILL.md is copied under its namespaced name, with
 // every frontmatter key but its description dropped (skill-frontmatter.ts). A local MCP server runs from the install folder, which
-// is only projected while the approval covers the files there.
+// is only projected while the approval covers the files there, and is handed
+// to a launch or a chat only while that folder's content is still what the
+// approval covered: checked again at every read, cached for two seconds. So a
+// folder rewritten under its approval (by hand, by another Studio sharing it,
+// or before a reconcile that failed) never has its new code run.
 
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -47,7 +51,11 @@ import {
 import type { McpServerConfig } from '../../../shared/electron-api'
 import type { ConversationMcpServer } from '../../../shared/conversation-runtime'
 import type { ExtensionManifest } from '../../../shared/modules/third-party-manifest'
-import { isExtensionRunnable, type ExtensionStanding } from '../../../main/modules/module-signature'
+import {
+  extensionContentSync,
+  isExtensionRunnable,
+  type ExtensionStanding,
+} from '../../../main/modules/module-signature'
 import { projectedSkillText } from './skill-frontmatter'
 import { writeFileAtomic } from '../../platform/atomic-file'
 
@@ -94,6 +102,11 @@ export type ProjectedExtension = {
   skills: ProjectedSkill[]
   mcpServers: McpServerConfig[]
   providers: ProjectedProvider[]
+  /**
+   * With a local MCP server: the installed folder it runs from, and that
+   * folder's content digest as it was projected, which its approval covers.
+   */
+  runsFrom?: { moduleRoot: string; contentDigest: string }
 }
 
 export type AgentContributionState = { extensions: Record<string, ProjectedExtension> }
@@ -103,7 +116,7 @@ export type ProjectionCandidate = {
   key: string
   extension: Pick<ExtensionManifest, 'name' | 'version' | 'contributes'>
   moduleRoot: string
-  standing: Pick<ExtensionStanding, 'signature' | 'approval' | 'verifiedFiles'>
+  standing: Pick<ExtensionStanding, 'signature' | 'approval' | 'verifiedFiles' | 'contentDigest'>
 }
 
 export type ReconcileInput = {
@@ -193,6 +206,9 @@ async function projectExtension(
     if (protectedProviderIds?.has(provider.id))
       throw new Error(`provider "${provider.id}" takes the id of one of Studio’s own.`)
   const mcpServers = extension.contributes.mcpServers.map((server) => projectedServer(key, moduleRoot, server))
+  const contentDigest = candidate.standing.contentDigest
+  const runsLocal = mcpServers.some((server) => server.transport === 'stdio')
+  if (runsLocal && !contentDigest) throw new Error('its files were not verified.')
   const providers = extension.contributes.providers.map((provider): ProjectedProvider => ({
     id: extensionProviderId(key, provider.id),
     localId: provider.id,
@@ -260,6 +276,7 @@ async function projectExtension(
     })),
     mcpServers,
     providers,
+    ...(runsLocal && contentDigest ? { runsFrom: { moduleRoot, contentDigest } } : {}),
   }
 }
 
@@ -390,9 +407,51 @@ export function projectedExtensions(dataDir: string): ProjectedExtension[] {
     .map((key) => extensions[key]!)
 }
 
-/** Every MCP server the extensions hand agents. */
+/** How long a folder's content digest is trusted before it is taken again. */
+const FOLDER_DIGEST_TTL_MS = 2_000
+const folderDigests = new Map<string, { at: number; digest: string | null }>()
+const reportedMismatches = new Set<string>()
+
+/**
+ * Whether an installed folder's content digest is `expected` now. A match is
+ * trusted for two seconds; anything else is taken again at the next read, so
+ * a folder updated and approved since is handed out at once.
+ */
+function folderMatches(moduleRoot: string, expected: string): boolean {
+  const now = Date.now()
+  const cached = folderDigests.get(moduleRoot)
+  if (cached?.digest === expected && now - cached.at < FOLDER_DIGEST_TTL_MS) return true
+  const content = extensionContentSync(moduleRoot)
+  const digest = content.ok ? content.fingerprint : null
+  folderDigests.set(moduleRoot, { at: now, digest })
+  return digest === expected
+}
+
+/**
+ * The servers an extension may hand a launch or a chat now: a local one only
+ * while its folder holds what its approval covered. Fails closed: a folder
+ * that changed, or cannot be read, keeps its local servers out, with a line in
+ * the log, until a projection from the folder as it is now (and the approval
+ * that covers it) hands them out again.
+ */
+function serversToHand(extension: ProjectedExtension): McpServerConfig[] {
+  if (!extension.mcpServers.some((server) => server.transport === 'stdio')) return extension.mcpServers
+  const runsFrom = extension.runsFrom
+  if (runsFrom && folderMatches(runsFrom.moduleRoot, runsFrom.contentDigest)) return extension.mcpServers
+  const now = runsFrom ? (folderDigests.get(runsFrom.moduleRoot)?.digest ?? '') : ''
+  const report = `${extension.key}\0${runsFrom?.contentDigest ?? ''}\0${now}`
+  if (!reportedMismatches.has(report)) {
+    reportedMismatches.add(report)
+    console.warn(
+      `[extensions] Extension "${extension.key}": its local MCP servers were left out: its files are not what was approved.`,
+    )
+  }
+  return extension.mcpServers.filter((server) => server.transport !== 'stdio')
+}
+
+/** Every MCP server the extensions hand agents now. */
 export function projectedMcpServers(dataDir: string): McpServerConfig[] {
-  return projectedExtensions(dataDir).flatMap((extension) => extension.mcpServers)
+  return projectedExtensions(dataDir).flatMap(serversToHand)
 }
 
 /** Every skill the extensions hand agents, with the plugin directory that carries it. */
@@ -427,7 +486,7 @@ export function chatExtensionContributions(dataDir: string): ChatExtensionContri
   const extensions = projectedExtensions(dataDir)
   return {
     mcpServers: extensions.flatMap((extension) =>
-      extension.mcpServers.map((server) => ({
+      serversToHand(extension).map((server) => ({
         id: server.id,
         name: server.name,
         transport: server.transport,

@@ -140,6 +140,13 @@ export type ModuleLifecycle = {
     request: StudioExtensionFrameRequest,
   ): Promise<{ ok: true; hash: string; html: string } | { ok: false; message: string }>
   reportRegistry(snapshot: unknown): ModuleRegistrySnapshotWriteResult
+  /**
+   * Project what the extensions hand agents again, from the folder as it is
+   * now: for a change made outside these calls (the drop-in folder's watcher
+   * hears one), so an extension rewritten, removed or copied in by hand is
+   * retracted or handed out at once.
+   */
+  reproject(): Promise<void>
 }
 
 const INELIGIBLE_WORDS: Record<ModuleResolutionErrorCode, string> = {
@@ -290,6 +297,8 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     },
 
     reportRegistry: (snapshot) => deps.registry.write(snapshot),
+
+    reproject: () => oneAtATime(project),
 
     setEnabled: (moduleId, enabled) =>
       oneAtATime(async () => {

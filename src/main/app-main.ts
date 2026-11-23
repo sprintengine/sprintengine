@@ -250,9 +250,9 @@ if (!serverHost)
 // What runs here, listed and changed over the Studio RPC (`module.*`). Out of
 // process the server's kernel holds the modules and serves it
 // (server-modules.ts); this process's kernel is empty.
-if (!serverHost)
-  services.moduleHub.serveLifecycleFrom(
-    createModuleLifecycle({
+const moduleLifecycle = serverHost
+  ? null
+  : createModuleLifecycle({
       dataDir: app.getPath('userData'),
       moduleRoot: defaultUserModuleRoot,
       // A worker whose approval is gone or changed stops, and the windows hear.
@@ -306,14 +306,17 @@ if (!serverHost)
           declaredMethods: (id) => moduleLoad.kernel.declaredMethods(id),
         }
       },
-    }),
-  )
+    })
+if (moduleLifecycle) services.moduleHub.serveLifecycleFrom(moduleLifecycle)
 // A module copied into the drop-in folder while Studio runs is listed at once,
 // not after a reload. Out of process the server watches (server-modules.ts).
-if (!serverHost) {
+if (moduleLifecycle) {
   // A worker whose extension was removed from the folder (and its approval with it) stops.
+  // What extensions hand agents follows the folder too: a server whose files
+  // changed under its approval is retracted, not run until the next start.
   const stopWatchingModules = watchUserModuleRoot(defaultUserModuleRoot(), () => {
     extensionWorkers.workers.reconcile()
+    void moduleLifecycle.reproject()
     services.moduleHub.deliverChanged()
   })
   app.once('will-quit', stopWatchingModules)

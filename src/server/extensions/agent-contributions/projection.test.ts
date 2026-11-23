@@ -4,13 +4,24 @@
 // uninstalled, the approval each asks for or does not, and a projection a
 // crash interrupted, put right by the next start.
 
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 import { createModuleLifecycle } from '../../../main/modules/module-lifecycle'
+import { watchUserModuleRoot } from '../../../main/modules/user-module-watch'
 import { createModuleRegistryMirror } from '../../../main/modules/registry-mirror'
 import { NO_EXTENSION_RUN } from '../../../main/modules/third-party-module-view'
 import { extensionManifest, writeExtensionFolder } from '../../../../tests/extension-folder'
@@ -275,6 +286,72 @@ test('a local MCP server is approved once at install; a changed command asks aga
   expect(launchExtensionContributions(dataDir).servers).toEqual([])
 })
 
+/** Install a local server and approve it: the lifecycle, and the installed server file. */
+async function approvedLocalServer(setupResult: ReturnType<typeof setup>) {
+  const { dataDir, moduleRoot, start, source } = setupResult
+  const lifecycle = start()
+  const installed = await lifecycle.install(source({ mcpServers: [stdio()] }))
+  if (!installed.ok || installed.approval.state !== 'pending') throw new Error('expected a pending approval')
+  await lifecycle.approve(KEY, installed.approval.fingerprint)
+  expect(launchExtensionContributions(dataDir).servers).toHaveLength(1)
+  return { lifecycle, serverFile: join(moduleRoot, KEY, 'dist', 'server.js') }
+}
+
+test('a local server whose installed files are rewritten on disk is retracted when the folder watcher hears it', async () => {
+  const context = setup()
+  const { dataDir, moduleRoot } = context
+  const { lifecycle, serverFile } = await approvedLocalServer(context)
+  // What the app's watcher does (app-main.ts, server-modules.ts).
+  const stop = watchUserModuleRoot(moduleRoot, () => void lifecycle.reproject(), 50)
+  try {
+    // The folder replaced in place, as a template's `npm run dev:install`
+    // does: copied to a staging folder beside it, changed, and renamed over
+    // it. A watch is live a moment after it is made, so the replacement is
+    // made again until one is heard.
+    const installed = dirname(dirname(serverFile))
+    const staging = join(moduleRoot, '.staging')
+    const deadline = Date.now() + 10_000
+    for (let edit = 0; projectedExtensions(dataDir).length > 0; edit += 1) {
+      if (Date.now() > deadline) throw new Error('the watcher never re-projected')
+      cpSync(installed, staging, { recursive: true })
+      writeFileSync(join(staging, 'dist', 'server.js'), `console.log('rewritten ${edit}')\n`)
+      rmSync(installed, { recursive: true, force: true })
+      renameSync(staging, installed)
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+  } finally {
+    stop()
+  }
+  expect(readAgentContributions(dataDir).extensions).toEqual({})
+  expect(launchExtensionContributions(dataDir).servers).toEqual([])
+})
+
+test('a launch or a chat leaves out a local server whose folder no longer holds what was approved, with no re-projection', async () => {
+  const context = setup()
+  const { dataDir } = context
+  const { serverFile } = await approvedLocalServer(context)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    // Rewritten under the approval: by hand, by another Studio sharing the
+    // folder, or before a reconcile that failed. The state still names it.
+    writeFileSync(serverFile, "console.log('not what was approved')\n")
+    vi.setSystemTime(Date.now() + 3_000)
+    expect(readAgentContributions(dataDir).extensions[KEY]?.mcpServers).toHaveLength(1)
+    expect(launchExtensionContributions(dataDir).servers).toEqual([])
+    expect(chatExtensionContributions(dataDir).mcpServers).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/"local\.tools": its local MCP servers were left out/))
+
+    // Put back as approved: handed out again.
+    writeFileSync(serverFile, 'console.log(1)\n')
+    vi.setSystemTime(Date.now() + 3_000)
+    expect(launchExtensionContributions(dataDir).servers).toHaveLength(1)
+  } finally {
+    vi.useRealTimers()
+    warn.mockRestore()
+  }
+})
+
 test('switching an extension off retracts what it hands agents; switching it on brings it back', async () => {
   const { dataDir, start, source } = setup()
   const lifecycle = start()
@@ -366,7 +443,6 @@ test('a state naming a generation without its completion mark hands nothing out 
   const { generation, pluginDir } = projectedExtensions(dataDir)[0]!
   // A folder that lost its mark (its copy was cut short and the state written
   // by hand, or the disk lost the last write): never read.
-  const { rmSync } = await import('node:fs')
   rmSync(join(pluginDir!, '.complete'))
   const statePath = join(root, 'state.json')
   writeFileSync(statePath, readFileSync(statePath, 'utf8'))
