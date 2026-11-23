@@ -188,8 +188,11 @@ answers the least tier a manifest needs.
     which files a command reads), so an update that changes any of them asks
     again; until then agents do not get it.
   - A provider is an OpenAI-compatible endpoint: `baseUrl` (https, or plain
-    http to localhost), the paths on it (`chatCompletionsPath`, by default
-    `/v1/chat/completions`, and `modelsPath` for a live model list), the
+    http to localhost), the paths joined after its own path
+    (`chatCompletionsPath`, by default `/v1/chat/completions`, and
+    `modelsPath` for a live model list: a base of
+    `https://api.example.com/openai` and `/v1/chat/completions` call
+    `https://api.example.com/openai/v1/chat/completions`), the
     `models` to offer, and `apiKey` when it takes a key. Studio knows it as
     `<publisher>.<id>/<provider id>` and keeps its key under that id. The person
     enters the key in Settings; it is never read from an environment variable,
@@ -364,9 +367,9 @@ markers.
 | `contributes.providers` | object[] (at most 8) |  | 0.13.0 | declarative | Model providers for chats: OpenAI-compatible endpoints. The person approves each at install, seeing the origin its key goes to; an update that adds one or moves it to another origin asks again. |
 | `contributes.providers[].id` | string | yes | 0.13.0 |  | Id, unique among this extension’s providers. Studio knows it, and keeps its key, as `<publisher>.<id>/<provider id>`. |
 | `contributes.providers[].name` | string | yes | 0.13.0 |  | Its name in the model picker. |
-| `contributes.providers[].baseUrl` | string | yes | 0.13.0 |  | The OpenAI-compatible API’s base: `https`, or plain `http` to localhost. Its key is sent to this origin and no other, and the install review names it. |
-| `contributes.providers[].chatCompletionsPath` | string |  | 0.13.0 |  | The chat completions path on that origin. Defaults to `/v1/chat/completions`. |
-| `contributes.providers[].modelsPath` | string |  | 0.13.0 |  | A models path on that origin answering `{ data: [{ id }] }`, for the picker to list what the endpoint offers now. |
+| `contributes.providers[].baseUrl` | string | yes | 0.13.0 |  | The OpenAI-compatible API’s base: `https`, or plain `http` to localhost. Its key is sent to this origin and no other, and the install review names it. A path on it is kept: the request paths are joined after it, so `https://api.example.com/openai` and `/v1/chat/completions` make `https://api.example.com/openai/v1/chat/completions`. |
+| `contributes.providers[].chatCompletionsPath` | string |  | 0.13.0 |  | The chat completions path, joined after `baseUrl`’s own path. Defaults to `/v1/chat/completions`. |
+| `contributes.providers[].modelsPath` | string |  | 0.13.0 |  | A models path, joined after `baseUrl`’s own path, answering `{ data: [{ id }] }`, for the picker to list what the endpoint offers now. |
 | `contributes.providers[].models` | object[] (at most 64) | yes | 0.13.0 |  | Models to offer, the first being the default. At least one. |
 | `contributes.providers[].models[].id` | string | yes | 0.13.0 |  | The model id the endpoint takes. |
 | `contributes.providers[].models[].name` | string |  | 0.13.0 |  | Its name in the picker. |

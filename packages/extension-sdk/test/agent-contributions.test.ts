@@ -157,8 +157,25 @@ test('a provider path cannot move the request to another origin', () => {
     expect(providerPathProblem(bad), bad).not.toBeNull()
   expect(providerPathProblem('/api/v1/chat/completions')).toBeNull()
   expect(issues(manifest({ providers: [{ ...provider, chatCompletionsPath: '//evil.example/x' }] }))).toHaveLength(1)
-  expect(providerEndpoint('https://api.example.com/base', '/v1/models').href).toBe('https://api.example.com/v1/models')
-  expect(() => providerEndpoint('https://api.example.com', '//evil.example/x')).toThrow(/leaves/)
+  expect(providerEndpoint('https://api.example.com/base', '/v1/models').href).toBe(
+    'https://api.example.com/base/v1/models',
+  )
+  // A vendor's documented base with its path: the request paths follow it.
+  expect(providerEndpoint('https://host.example/openai/v1', '/chat/completions').href).toBe(
+    'https://host.example/openai/v1/chat/completions',
+  )
+  expect(providerEndpoint('https://host.example/openai/v1/', '/models').href).toBe(
+    'https://host.example/openai/v1/models',
+  )
+  expect(providerEndpoint('https://api.example.com', '/v1/models').href).toBe('https://api.example.com/v1/models')
+  // A base whose own path would carry the request to another host fails validation and at request time.
+  expect(() => providerEndpoint('https://api.example.com//evil.example', '/x')).toThrow(/leaves/)
+  expect(
+    issues(manifest({ providers: [{ ...provider, baseUrl: 'https://api.example.com//evil.example' }] })).join('\n'),
+  ).toMatch(/chatCompletionsPath: leaves the origin/)
+  // Refused again at request time, whatever the manifest said.
+  expect(() => providerEndpoint('https://api.example.com', '//evil.example/x')).toThrow(/single \//)
+  expect(() => providerEndpoint('https://api.example.com/base', 'https://evil.example/x')).toThrow(/single \//)
   expect(providerOrigin('https://api.example.com:8443/v1')).toBe('https://api.example.com:8443')
 })
 

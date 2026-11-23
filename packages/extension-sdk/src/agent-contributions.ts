@@ -90,10 +90,16 @@ export function providerPathProblem(path: string): string | null {
   return null
 }
 
-/** Where a provider request goes: `path` on `baseUrl`, held to the base URL's origin. */
+/**
+ * Where a provider request goes: `path` after `baseUrl`'s own path, so a base
+ * of `https://host/openai/v1` and a path of `/chat/completions` make
+ * `https://host/openai/v1/chat/completions`. Held to the base URL's origin.
+ */
 export function providerEndpoint(baseUrl: string, path: string): URL {
   const base = new URL(baseUrl)
-  const url = new URL(path, base)
+  const problem = providerPathProblem(path)
+  if (problem) throw new Error(`The provider path ${path} ${problem}`)
+  const url = new URL(`${base.pathname.replace(/\/+$/, '')}${path}`, base.origin)
   if (url.origin !== base.origin) throw new Error(`The provider path ${path} leaves ${base.origin}.`)
   return url
 }

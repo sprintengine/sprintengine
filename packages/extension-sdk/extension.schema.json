@@ -1414,7 +1414,7 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 2048,
-                "description": "The OpenAI-compatible API’s base: `https`, or plain `http` to localhost. Its key is sent to this origin and no other, and the install review names it.",
+                "description": "The OpenAI-compatible API’s base: `https`, or plain `http` to localhost. Its key is sent to this origin and no other, and the install review names it. A path on it is kept: the request paths are joined after it, so `https://api.example.com/openai` and `/v1/chat/completions` make `https://api.example.com/openai/v1/chat/completions`.",
                 "x-since": "0.13.0",
                 "examples": [
                   "https://api.example.com"
@@ -1424,14 +1424,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256,
-                "description": "The chat completions path on that origin. Defaults to `/v1/chat/completions`.",
+                "description": "The chat completions path, joined after `baseUrl`’s own path. Defaults to `/v1/chat/completions`.",
                 "x-since": "0.13.0"
               },
               "modelsPath": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256,
-                "description": "A models path on that origin answering `{ data: [{ id }] }`, for the picker to list what the endpoint offers now.",
+                "description": "A models path, joined after `baseUrl`’s own path, answering `{ data: [{ id }] }`, for the picker to list what the endpoint offers now.",
                 "x-since": "0.13.0"
               },
               "models": {

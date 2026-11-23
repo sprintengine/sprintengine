@@ -41,6 +41,7 @@ import {
   agentEndpointUrlProblem,
   extensionPathUseProblem,
   mcpCommandProblem,
+  providerEndpoint,
   providerPathProblem,
 } from './agent-contributions.js'
 
@@ -1045,18 +1046,18 @@ const CONTRIBUTES: ObjectNode = {
             baseUrl: {
               node: { kind: 'string', min: 1, max: 2048, check: agentEndpointUrlProblem },
               required: true,
-              doc: 'The OpenAI-compatible API’s base: `https`, or plain `http` to localhost. Its key is sent to this origin and no other, and the install review names it.',
+              doc: 'The OpenAI-compatible API’s base: `https`, or plain `http` to localhost. Its key is sent to this origin and no other, and the install review names it. A path on it is kept: the request paths are joined after it, so `https://api.example.com/openai` and `/v1/chat/completions` make `https://api.example.com/openai/v1/chat/completions`.',
               since: V1,
               example: 'https://api.example.com',
             },
             chatCompletionsPath: {
               node: { kind: 'string', min: 1, max: 256, check: providerPathProblem },
-              doc: 'The chat completions path on that origin. Defaults to `/v1/chat/completions`.',
+              doc: 'The chat completions path, joined after `baseUrl`’s own path. Defaults to `/v1/chat/completions`.',
               since: V1,
             },
             modelsPath: {
               node: { kind: 'string', min: 1, max: 256, check: providerPathProblem },
-              doc: 'A models path on that origin answering `{ data: [{ id }] }`, for the picker to list what the endpoint offers now.',
+              doc: 'A models path, joined after `baseUrl`’s own path, answering `{ data: [{ id }] }`, for the picker to list what the endpoint offers now.',
               since: V1,
             },
             models: {
@@ -1526,6 +1527,18 @@ function crossFieldIssues(manifest: ExtensionManifest, options: ExtensionManifes
   contributes.providers.forEach((provider, index) => {
     if (provider.models.length === 0)
       issues.push({ path: `contributes.providers[${index}].models`, message: 'must list at least one model.' })
+    for (const field of ['chatCompletionsPath', 'modelsPath'] as const) {
+      const path = provider[field] ?? (field === 'chatCompletionsPath' ? '/v1/chat/completions' : undefined)
+      if (path === undefined || agentEndpointUrlProblem(provider.baseUrl) || providerPathProblem(path)) continue
+      try {
+        providerEndpoint(provider.baseUrl, path)
+      } catch {
+        issues.push({
+          path: `contributes.providers[${index}].${field}`,
+          message: `leaves the origin of baseUrl once joined to its path.`,
+        })
+      }
+    }
   })
   if (contributes.mcpTools.length > 0 && !manifest.permissions.includes('tools:contribute')) {
     issues.push({ path: 'contributes.mcpTools', message: 'needs the "tools:contribute" permission.' })

@@ -120,7 +120,8 @@ test('a chat turn sends the key to the base URL’s origin only, and refuses to 
   expect(events.map((event) => event.type)).toContain('turn_completed')
   expect(sent).toHaveLength(1)
   expect(new URL(sent[0]!.url).origin).toBe('https://api.example.com')
-  expect(sent[0]!.url).toBe('https://api.example.com/v1/chat/completions')
+  // The base URL's own path is kept, the request path joined after it.
+  expect(sent[0]!.url).toBe('https://api.example.com/base/v1/chat/completions')
   expect(sent[0]!.headers.Authorization).toBe('Bearer sk-entered')
   expect(sent[0]!.redirect).toBe('error')
 })
@@ -160,7 +161,7 @@ test('the model list is asked of the same origin, without following a redirect',
   expect(models).toEqual({ ok: true, models: [{ id: 'acme-small' }] })
   expect(sent).toEqual([
     {
-      url: 'https://api.example.com/v1/models',
+      url: 'https://api.example.com/base/v1/models',
       headers: expect.objectContaining({ Authorization: 'Bearer sk-entered' }),
       redirect: 'error',
     },
