@@ -351,7 +351,11 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     resolveGatewayTools: resolveTools,
     clientTools: {
       ready: () => clientGateway.ready(),
-      fallback: (context, name) => clientGateway.fallback(context, name),
+      // A tool reached by name before its toolset is listed is held to its caller too.
+      fallback: (context, name) => {
+        const tool = clientGateway.fallback(context, name)
+        return tool ? bindDevToolsToCaller([tool], callerInvoker)[0]! : null
+      },
       track: (context, notify) => clientGateway.track(context, notify),
     },
     logDiagnostic: (diagnostic) => {
