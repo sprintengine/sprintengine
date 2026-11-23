@@ -5090,8 +5090,9 @@ export default function WorkspaceManager() {
   })
   // An install link (`sprintengine://extensions/…`) main handed this window:
   // it opens the extension's page in Settings → Extensions, and never installs.
+  // Only where the operating system hands links over: a browser tab has none.
   useEffect(() => {
-    if (typeof window.api.onExtensionLinkOpen !== 'function') return
+    if (!clientSupports('deep-links') || typeof window.api.onExtensionLinkOpen !== 'function') return
     return window.api.onExtensionLinkOpen((link) => {
       if (!link.ok) {
         showToast({ tone: 'error', title: 'Couldn’t open that extension link', description: link.message })
