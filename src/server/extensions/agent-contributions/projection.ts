@@ -7,7 +7,7 @@
 //
 //   state.json                 which generation of each extension is current
 //   <key>/<generation>/        one extension's projection: a copy of each of
-//                              its skills (`skills/<publisher>.<id>.<skill id>/`) and, when it
+//                              its skills (`skills/<skill name>/`, skill-frontmatter.ts) and, when it
 //                              has skills, a plugin manifest so the folder is
 //                              itself a plugin directory an agent loads
 //
@@ -29,12 +29,13 @@
 // A skill's files are copied from the digests its standing was judged on, each
 // checked against its digest as it is read, so what agents read is what was
 // approved (or listed). Its SKILL.md is copied under its namespaced name, with
-// every frontmatter key but its description dropped (skill-frontmatter.ts). A local MCP server runs from the install folder, which
-// is only projected while the approval covers the files there, and is handed
-// to a launch or a chat only while that folder's content is still what the
-// approval covered: checked again at every read, cached for two seconds. So a
-// folder rewritten under its approval (by hand, by another Studio sharing it,
-// or before a reconcile that failed) never has its new code run.
+// every frontmatter key but its description dropped (skill-frontmatter.ts).
+// A local MCP server runs from the install folder, which is only projected
+// while the approval covers the files there, and is handed to a launch or a
+// chat only while that folder's content is still what the approval covered:
+// checked again at every read, cached for two seconds. So a folder rewritten
+// under its approval (by hand, by another Studio sharing it, or before a
+// reconcile that failed) never has its new code run.
 
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -45,7 +46,6 @@ import { SKILL_FILE_MAX_BYTES, SKILL_FOLDER_MAX_FILES } from '../../../../packag
 import {
   extensionMcpServerName,
   extensionProviderId,
-  extensionSkillName,
   withExtensionPath,
 } from '../../../../packages/extension-sdk/src/agent-contributions'
 import type { McpServerConfig } from '../../../shared/electron-api'
@@ -56,7 +56,7 @@ import {
   isExtensionRunnable,
   type ExtensionStanding,
 } from '../../../main/modules/module-signature'
-import { projectedSkillText } from './skill-frontmatter'
+import { extensionSkillName, projectedSkillText } from './skill-frontmatter'
 import { writeFileAtomic } from '../../platform/atomic-file'
 
 /** Under the data folder: every extension's projection, and the state naming the current ones. */
@@ -71,7 +71,7 @@ const LAYOUT = 2
 export type ProjectedSkill = {
   /** Its id in extension.json. */
   id: string
-  /** The name agents see it by: `<publisher>.<id>.<skill id>`. */
+  /** The name agents see it by (`extensionSkillName`): `x<8 hex of the install key's hash>-<skill id>`. */
   name: string
   /** The copied folder holding its SKILL.md, named `name` as the SKILL.md's own `name` is. */
   dir: string
@@ -162,12 +162,20 @@ async function reconcile(input: ReconcileInput): Promise<ReconcileResult> {
   const current = readStateFile(root)
   const next: AgentContributionState = { extensions: {} }
   const failed: ReconcileResult['failed'] = []
+  // Each skill name agents are handed, so no two extensions hand out one.
+  const skillNames = new Set<string>()
   for (const candidate of input.extensions) {
     if (!input.enabled(candidate.key) || !isExtensionRunnable(candidate.standing as ExtensionStanding)) continue
     const { contributes } = candidate.extension
     if (contributes.skills.length + contributes.mcpServers.length + contributes.providers.length === 0) continue
     try {
-      next.extensions[candidate.key] = await projectExtension(root, candidate, input.protectedProviderIds, input.warn)
+      next.extensions[candidate.key] = await projectExtension(
+        root,
+        candidate,
+        skillNames,
+        input.protectedProviderIds,
+        input.warn,
+      )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       failed.push({ key: candidate.key, message })
@@ -187,13 +195,25 @@ async function reconcile(input: ReconcileInput): Promise<ReconcileResult> {
 async function projectExtension(
   root: string,
   candidate: ProjectionCandidate,
+  skillNames: Set<string>,
   protectedProviderIds: ReadonlySet<string> | undefined,
   warn: ((message: string) => void) | undefined,
 ): Promise<ProjectedExtension> {
   const { key, extension, moduleRoot } = candidate
   const files = candidate.standing.verifiedFiles
   if (!files) throw new Error('its files were not verified.')
-  const skills = extension.contributes.skills.map((skill) => {
+  // A name an earlier extension's skill took (its hash met this one's) is
+  // left out alone, never handed out twice.
+  const named = extension.contributes.skills.filter((skill) => {
+    const name = extensionSkillName(key, skill.id)
+    if (!skillNames.has(name)) return true
+    warn?.(
+      `Extension "${key}": its skill "${skill.id}" would be named ${name}, which another extension's has, so it is left out.`,
+    )
+    return false
+  })
+  for (const skill of named) skillNames.add(extensionSkillName(key, skill.id))
+  const skills = named.map((skill) => {
     const prefix = `${skill.path.replace(/\/+$/, '')}/`
     const listed = Object.keys(files)
       .filter((path) => path.startsWith(prefix))

@@ -167,11 +167,14 @@ answers the least tier a manifest needs.
   back, and an uninstall takes back all of them.
   - A skill names a `path`: a folder holding its `SKILL.md` and the files it
     names. No approval is asked for it; it is listed when the extension is
-    installed. Studio's copy is named `<publisher>.<id>.<skill id>`, in its
-    folder's name and in its `SKILL.md`'s `name`, so two extensions' skills of
-    one name, or one of the person's own, never collide. Codex, Grok, OpenCode
-    and Cursor list it by that name; Claude Code lists it under the
-    extension's plugin, `<publisher>--<id>`. The copy's frontmatter keeps only
+    installed. Studio's copy is named `x<8 hex>-<skill id>`, such as
+    `x1f2e3d4c-review`, in its folder's name and in its `SKILL.md`'s `name`:
+    the hex is of a hash of the install key, so two extensions' skills of one
+    name, or one of the person's own, never collide, and the name keeps to the
+    Agent Skills rule (lowercase letters, digits and single hyphens, at most
+    64 characters; a long skill id is cut). Codex, Grok, OpenCode and Cursor
+    list it by that name; Claude Code lists it under the extension's plugin,
+    as `<publisher>--<id>:x<8 hex>-<skill id>`. The copy's frontmatter keeps only
     `name` and `description`: a skill is words for agents, so a key that
     grants tools or runs commands (`allowed-tools`, `hooks`, any other) is
     dropped, and the install review lists it as ignored.
@@ -351,7 +354,7 @@ markers.
 | `contributes.hooks[].point` | `agent.launch.before` \| `agent.prompt.before` \| `agent.tool.before` \| `agent.tool.after` \| `terminal.write.before` \| `workspace.create.before` \| `workspace.create.after` \| `editor.save.before` | yes | 0.13.0 |  | Where Studio asks the worker, which serves it with `registerHooks`. A `.before` point may refuse or change what Studio is about to do; an `.after` point only hears what it did. The guide’s hooks topic says what each one carries. |
 | `contributes.hooks[].onError` | `pass` \| `deny` |  | 0.13.0 |  | What a failed hook does: one that throws, answers after 2 s, answers something else, or whose worker crashed or did not start. `pass` (the default) lets the action go on as if it had passed; `deny` refuses it, naming the extension, so a guard fails closed. Ignored for an `.after` point. |
 | `contributes.skills` | object[] (at most 64) |  | 0.13.0 | declarative | Skills the person’s agents can use, in every workspace on this machine. Studio copies each into a folder of its own and hands it to agents at launch; it never writes into a project. Listed when the extension is installed; no approval is asked for them. |
-| `contributes.skills[].id` | string | yes | 0.13.0 |  | Id, unique among this extension’s skills. Agents are handed a copy named `<publisher>.<id>.<skill id>`, its frontmatter holding only `name` and `description`. |
+| `contributes.skills[].id` | string | yes | 0.13.0 |  | Id, unique among this extension’s skills. Agents are handed a copy named `x<8 hex of a hash of the install key>-<skill id>`, its frontmatter holding only `name` and `description`. |
 | `contributes.skills[].path` | string | yes | 0.13.0 |  | A folder holding the skill: its `SKILL.md` (at most 256 KiB) and any files it names, 256 files at most. |
 | `contributes.mcpServers` | object[] (at most 16) |  | 0.13.0 | declarative | MCP servers the person’s agents get, in every workspace on this machine. A `stdio` server’s command, arguments, environment and the extension’s files are part of what the person approves at install, so an update that changes any of them asks again; an `http` server is listed when the extension is installed and asks nothing. |
 | `contributes.mcpServers[].id` | string | yes | 0.13.0 |  | Id, unique among this extension’s servers. Agents see the server as `<publisher>_<id>_<server id>`. |

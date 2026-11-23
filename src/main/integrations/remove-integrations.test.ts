@@ -560,7 +560,7 @@ test('a launch skill copy another Studio sharing the home has since made its own
     await mkdir(source, { recursive: true })
     await writeFile(join(source, 'SKILL.md'), 'review\n')
     const skillsDir = join(root, 'home', '.codex', 'skills')
-    const skill = { id: 'local.tools.review', version: 'gen1' }
+    const skill = { id: 'x1a2b3c4d-review', version: 'gen1' }
     const copy = await ensureUserLevelSkillCopy({ skillsDir, skill, sourceDir: source, cli: 'codex', owner: '/data/a' })
     await ledger.flush()
     // The other Studio found it gone (this one retracted it, say) and made its own.

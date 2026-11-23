@@ -23,6 +23,7 @@ import { expect, test, vi } from 'vitest'
 import { createModuleLifecycle } from '../../../main/modules/module-lifecycle'
 import { watchUserModuleRoot } from '../../../main/modules/user-module-watch'
 import { reconcileInstalledAgentContributions } from './reconcile-installed'
+import { extensionSkillName } from './skill-frontmatter'
 import { createModuleRegistryMirror } from '../../../main/modules/registry-mirror'
 import { NO_EXTENSION_RUN } from '../../../main/modules/third-party-module-view'
 import { extensionManifest, writeExtensionFolder } from '../../../../tests/extension-folder'
@@ -39,7 +40,7 @@ import {
 
 const SKILL = '---\nname: review\ndescription: Review a change.\n---\nLook at the diff.\n'
 /** SKILL as agents are handed it: under its namespaced name. */
-const PROJECTED_SKILL = '---\nname: local.tools.review\ndescription: Review a change.\n---\nLook at the diff.\n'
+const PROJECTED_SKILL = `---\nname: ${extensionSkillName('local.tools', 'review')}\ndescription: Review a change.\n---\nLook at the diff.\n`
 
 function setup(protectedIds: string[] = []) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agent-contributions-'))
@@ -95,6 +96,8 @@ const provider = (baseUrl = 'https://api.example.com') => ({
 })
 
 const KEY = 'local.tools'
+const REVIEW = extensionSkillName(KEY, 'review')
+const SHIP = extensionSkillName(KEY, 'ship')
 
 test('a skill is listed, asks nothing, and its copy follows every install, update and uninstall', async () => {
   const { dataDir, start, source, root } = setup()
@@ -103,7 +106,7 @@ test('a skill is listed, asks nothing, and its copy follows every install, updat
   expect(installed).toMatchObject({ ok: true, moduleId: KEY, approval: { state: 'not-needed' } })
 
   const [first] = launchExtensionContributions(dataDir).skills
-  expect(first).toMatchObject({ name: 'local.tools.review' })
+  expect(first).toMatchObject({ name: REVIEW })
   expect(readFileSync(join(first!.dir, 'SKILL.md'), 'utf8')).toBe(PROJECTED_SKILL)
   // The projection folder is a plugin directory agents load as it is.
   expect(JSON.parse(readFileSync(join(first!.pluginDir, '.claude-plugin', 'plugin.json'), 'utf8')).name).toBe(
@@ -134,17 +137,14 @@ test('a skill is listed, asks nothing, and its copy follows every install, updat
       { 'skills/ship/SKILL.md': '---\nname: ship\n---\nShip it.\n' },
     ),
   )
-  expect(launchExtensionContributions(dataDir).skills.map((skill) => skill.name)).toEqual([
-    'local.tools.review',
-    'local.tools.ship',
-  ])
+  expect(launchExtensionContributions(dataDir).skills.map((skill) => skill.name)).toEqual([REVIEW, SHIP])
 
   // Removed by an update: retracted, its copy deleted.
   const before = launchExtensionContributions(dataDir).skills[0]!.pluginDir
   await lifecycle.install(source({ skills: [{ id: 'ship', path: 'skills/ship' }] }, { 'skills/ship/SKILL.md': 'x' }))
   const after = launchExtensionContributions(dataDir).skills
-  expect(after.map((skill) => skill.name)).toEqual(['local.tools.ship'])
-  expect(existsSync(join(after[0]!.pluginDir, 'skills', 'local.tools.review'))).toBe(false)
+  expect(after.map((skill) => skill.name)).toEqual([SHIP])
+  expect(existsSync(join(after[0]!.pluginDir, 'skills', REVIEW))).toBe(false)
   expect(existsSync(before)).toBe(false)
 
   // Uninstalled: nothing of it is left.
@@ -197,7 +197,7 @@ test('two extensions’ skills of the same name are both handed out, each under 
   })
   expect(await lifecycle.install(other)).toMatchObject({ ok: true })
   const skills = launchExtensionContributions(dataDir).skills
-  expect(skills.map((skill) => skill.name)).toEqual(['local.checks.review', 'local.tools.review'])
+  expect(skills.map((skill) => skill.name)).toEqual([extensionSkillName('local.checks', 'review'), REVIEW])
   for (const skill of skills) {
     // The folder an agent finds it in, and the name its SKILL.md gives, are both the namespaced one.
     expect(skill.dir.endsWith(skill.name)).toBe(true)
@@ -439,7 +439,7 @@ test('a provider a later Studio’s own takes the id of is left out alone; the r
     warn: (message) => warnings.push(message),
   })
   expect(projectedProviders(dataDir)).toEqual([])
-  expect(launchExtensionContributions(dataDir).skills.map((skill) => skill.name)).toEqual(['local.tools.review'])
+  expect(launchExtensionContributions(dataDir).skills.map((skill) => skill.name)).toEqual([REVIEW])
   expect(warnings.join('\n')).toMatch(/provider "acme" takes the id of one of Studio’s own, so it is left out/)
 })
 
@@ -486,5 +486,5 @@ test('a state naming a generation without its completion mark hands nothing out 
   rmSync(pluginDir!, { recursive: true, force: true })
   await start().uninstall('local.nothing')
   expect(projectedExtensions(dataDir).map((extension) => extension.generation)).toEqual([generation])
-  expect(existsSync(join(pluginDir!, 'skills', 'local.tools.review', 'SKILL.md'))).toBe(true)
+  expect(existsSync(join(pluginDir!, 'skills', REVIEW, 'SKILL.md'))).toBe(true)
 })

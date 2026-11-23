@@ -10,7 +10,6 @@ import {
   agentEndpointUrlProblem,
   extensionMcpServerName,
   extensionProviderId,
-  extensionSkillName,
   mcpCommandProblem,
   providerEndpoint,
   providerOrigin,
@@ -192,5 +191,4 @@ test('what Studio calls each is namespaced by the install key', () => {
   expect(extensionProviderId('acme.models', 'large')).toBe('acme.models/large')
   expect(extensionMcpServerName('acme.tools', 'search')).toBe('acme_tools_search')
   expect(extensionMcpServerName('acme-co.tools', 'search')).not.toBe(extensionMcpServerName('acme.co-tools', 'search'))
-  expect(extensionSkillName('acme.tools', 'review')).toBe('acme.tools.review')
 })

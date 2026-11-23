@@ -122,8 +122,3 @@ export function extensionProviderId(installKey: string, providerId: string): str
 export function extensionMcpServerName(installKey: string, serverId: string): string {
   return `${installKey.replace('.', '_')}_${serverId}`
 }
-
-/** The name an extension's skill is handed to agents under: `<publisher>.<id>.<skillId>`. */
-export function extensionSkillName(installKey: string, skillId: string): string {
-  return `${installKey}.${skillId}`
-}

@@ -1658,7 +1658,6 @@ export {
   extensionMcpServerName,
   extensionPathUseProblem,
   extensionProviderId,
-  extensionSkillName,
   mcpCommandProblem,
   providerEndpoint,
   providerOrigin,

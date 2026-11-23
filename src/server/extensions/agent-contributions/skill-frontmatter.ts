@@ -7,9 +7,34 @@
 // their own. So the copy keeps only `name` and `description`, and every other
 // key is dropped and listed on the install review as ignored.
 //
-// The copy's `name` is the namespaced one (`<publisher>.<id>.<skill id>`),
-// which is also its folder's name: two extensions' `review` skills cannot
-// collide, and neither can stand in for a skill of the person's own.
+// The copy's `name` is a namespaced one (`extensionSkillName`), which is also
+// its folder's name: two extensions' `review` skills cannot collide, and
+// neither can stand in for a skill of the person's own.
+
+import { createHash } from 'node:crypto'
+
+/** The longest skill name the Agent Skills specification allows. */
+const SKILL_NAME_MAX_LENGTH = 64
+
+const tag = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 8)
+
+/**
+ * The name an extension's skill is handed to agents under, and its copy's
+ * folder: `x<8 hex of a sha256 of the install key>-<skill id>`, such as
+ * `x1f2e3d4c-review`. The Agent Skills specification allows only lowercase
+ * letters, digits and single hyphens, at most 64 characters, and some agents
+ * skip a skill whose name breaks it or differs from its folder's; the install
+ * key (`<publisher>.<id>`) holds a dot, so it is carried as its hash. A skill
+ * id too long to fit is cut, and the hash then covers the skill id too. The
+ * projection leaves out a skill whose name an earlier extension's already
+ * took, so two extensions never hand agents one name.
+ */
+export function extensionSkillName(installKey: string, skillId: string): string {
+  const name = `x${tag(installKey)}-${skillId}`
+  if (name.length <= SKILL_NAME_MAX_LENGTH) return name
+  const cut = skillId.slice(0, SKILL_NAME_MAX_LENGTH - 10).replace(/-+$/, '')
+  return `x${tag(`${installKey}/${skillId}`)}-${cut}`
+}
 
 /** The frontmatter keys a projected skill keeps besides its name, which Studio writes. */
 const KEPT_KEYS = new Set(['description'])

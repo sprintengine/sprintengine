@@ -922,7 +922,7 @@ const CONTRIBUTES: ObjectNode = {
             id: {
               node: idNode(),
               required: true,
-              doc: 'Id, unique among this extension’s skills. Agents are handed a copy named `<publisher>.<id>.<skill id>`, its frontmatter holding only `name` and `description`.',
+              doc: 'Id, unique among this extension’s skills. Agents are handed a copy named `x<8 hex of a hash of the install key>-<skill id>`, its frontmatter holding only `name` and `description`.',
               since: V1,
               example: 'review-checklist',
             },

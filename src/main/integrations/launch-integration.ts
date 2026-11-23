@@ -582,8 +582,8 @@ async function userLevelLaunchSkills(
   return present
 }
 
-/** An extension skill's name as agents see it: `<publisher>.<id>.<skill id>`. */
-const EXTENSION_SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)*$/
+/** An extension skill's name as agents see it: `x<8 hex>-<skill id>` (extensionSkillName in skill-frontmatter.ts). */
+const EXTENSION_SKILL_NAME = /^x[0-9a-f]{8}-[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 /**
  * Take out the app's copies of extension skills no extension hands agents any
