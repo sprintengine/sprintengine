@@ -275,6 +275,24 @@ Agents' tools: `src/main/automation/extension-dev-tools.ts` (`extension.dev.*`, 
 `src/main/automation/extension-dev-tools.test.ts`, `src/main/modules/extension-surface-entries.test.ts`,
 `src/server/extensions/workers/worker-entry.test.ts`.
 
+**The extension catalogue** (browsing, installing from a catalogue entry or a git URL, updates, the kill
+list, install links): the format, its schema and the release entry in
+`packages/extension-sdk/src/catalogue.ts` (`catalogue.schema.json`, guide `packages/extension-sdk/guide/catalogue.md`),
+a commit's folder written out in `packages/extension-sdk/src/git-source.ts`, the CLI's
+`packages/extension-sdk/src/release-entry.ts`. Studio's side in `src/server/extensions/catalogue/`:
+`extension-catalogue.ts` (the checks, installs, updates and views, hung off the lifecycle in
+`src/main/modules/module-lifecycle.ts`), `catalogue-checkout.ts`, `catalogue-fetch.ts` (the addresses Studio
+reads, `EXTENSION_CATALOGUE_BASE`), `catalogue-files.ts` (what it keeps in the data folder), `kill-list.ts`
+and `claude-plugin-extension.ts`; a killed version is held back in `src/main/modules/module-signature.ts`. The
+page: `src/renderer/src/components/settings/ExtensionCatalogueBrowse.tsx`, from
+`src/renderer/src/components/settings/ModulesSettingsTab.tsx`; install links in
+`src/shared/extension-install-link.ts` and `src/main/extension-link-router.ts`. Wire: `extension.catalogues`,
+`extension.catalogueEntry`, `extension.catalogueImage`, `extension.catalogueAdd`, `extension.catalogueRemove`,
+`extension.installFrom`, `extension.update` (`packages/studio-protocol/src/modules.ts`). Tests:
+`packages/extension-sdk/test/catalogue.test.ts`, `src/server/extensions/catalogue/extension-catalogue.test.ts`,
+`src/shared/extension-install-link.test.ts`, `src/main/extension-link-router.test.ts`,
+`src/renderer/src/components/settings/ModulesSettingsTab.test.tsx`.
+
 **Agent hooks** (an extension's worker checks, changes or refuses what agents and Studio are about to do): the
 points in `packages/extension-sdk/src/hooks.ts`, the chain in `src/server/extensions/hooks/extension-hooks.ts`
 (who each runs as in `hook-invokers.ts`), served by `src/server/extensions/workers/worker-manager.ts` (`runHook`);

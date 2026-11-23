@@ -18,6 +18,7 @@ import {
   LinkButton,
   OutlineButton,
   PrimaryButton,
+  RowButton,
   SegmentedControl,
   SettingCard,
   Spinner,
@@ -77,7 +78,7 @@ function ListingMark({
     <CatalogueImage
       catalogue={catalogue}
       image={listing.icon}
-      className="shrink-0 rounded-[var(--radius-md)] object-cover"
+      className="size-full shrink-0 rounded-[var(--radius-md)] object-cover"
     />
   ) : (
     <ExtensionIcon name={listing.name} size={size} />
@@ -96,15 +97,11 @@ function ListingRow({
   const state = installState(listing)
   return (
     <li>
-      <button
-        type="button"
-        onClick={onOpen}
-        className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2.5 text-left hover:bg-[color:var(--surface-hover)]"
-      >
+      <RowButton onClick={onOpen} className="gap-3 px-4 py-2.5">
         <span className="size-7 overflow-hidden">
           <ListingMark catalogue={catalogue} listing={listing} size={28} />
         </span>
-        <span className="min-w-0">
+        <span className="min-w-0 flex-1">
           <span className="block text-body font-medium text-[color:var(--text-strong)]">{listing.name}</span>
           <span className="block text-meta leading-4 text-[color:var(--text-muted)]">
             {listing.label} · v{listing.version}
@@ -126,7 +123,7 @@ function ListingRow({
                   ? state.words
                   : null}
         </span>
-      </button>
+      </RowButton>
     </li>
   )
 }
@@ -155,7 +152,7 @@ export function ExtensionCatalogueBrowse({
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<string | null>(null)
   const current = catalogues.find((catalogue) => catalogue.id === selected) ?? catalogues[0]
-  const entries = current?.entries ?? []
+  const entries = useMemo(() => current?.entries ?? [], [current])
   const categories = useMemo(() => listingCategories(entries), [entries])
   const visible = entries.filter((listing) => listingMatches(listing, query, category))
   useEffect(() => setCategory(null), [selected])

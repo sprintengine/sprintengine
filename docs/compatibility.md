@@ -352,6 +352,23 @@ installed extension with the same key, nor the other way round. An installed
 extension's approval still binds its files' content. An approval from one of
 Studio's own agents (proven by its launch token) is refused.
 
+### The extension catalogue (no compatibility)
+
+Studio browses, installs and updates extensions from catalogues: the
+official and community ones, read over HTTPS from Studio's catalogue
+repository, and any the owner adds by git URL (`catalogue.json` at its root,
+read at `main`). Format 1 of the catalogue, the kill list, the owner records
+and the release lock is the SDK's (`packages/extension-sdk/src/catalogue.ts`,
+`catalogue.schema.json`); Studio reads a catalogue tolerantly (an entry it
+cannot read is skipped) and a catalogue in a newer format is refused with
+"update Studio". On the wire: `extension.catalogues`, `extension.catalogueEntry`
+and `extension.catalogueImage` (read with `extensions:read`), and
+`extension.catalogueAdd`, `extension.catalogueRemove`, `extension.installFrom`
+and `extension.update` (an owner's). `ThirdPartyModuleView` gains `origin` (the
+trust label from where it came from), `killed` and `update`, and its launch
+status `killed`. All of it rides on `extension-host`: a window and its Studio
+are one build, so there is no older peer to serve.
+
 ### Agent hooks (no compatibility)
 
 A worker extension's `contributes.hooks` lets it check, change or refuse what

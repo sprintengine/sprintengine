@@ -60,7 +60,12 @@ export function parseExtensionInstallLink(value: string): ExtensionInstallLink {
     return refused(malformed)
   }
   const match = /^\/([^/]+)\/?$/.exec(url.pathname)
-  const id = match ? decodeURIComponent(match[1]!) : ''
+  let id = ''
+  try {
+    id = match ? decodeURIComponent(match[1]!) : ''
+  } catch {
+    return refused(malformed)
+  }
   if (url.hostname !== 'extensions' || url.hash || !isExtensionInstallKey(id))
     return refused('That extension link does not name an extension as <publisher>.<id>.')
   const keys = [...url.searchParams.keys()]

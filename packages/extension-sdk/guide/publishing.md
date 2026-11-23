@@ -78,6 +78,11 @@ every save. A development folder whose id an installed extension has stands
 in for it once the person approves that, under its own approval; remove the folder
 and the installed one asks for its own approval again.
 
+People also install from a catalogue (Settings → Extensions → Browse) or a
+git URL; Studio checks out the commit and installs the extension's folder
+under the repository owner's name. Listing an extension in a catalogue is the
+`catalogue` topic: `npx sprintengine-extension release-entry` prints the entry.
+
 ## The SDK itself
 
 Projects depend on `@sprintengine/extension-sdk` from npm. To try an

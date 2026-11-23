@@ -2,6 +2,18 @@
 
 ## 4.0.0-beta.1
 
+### The extension catalogue
+
+- `@sprintengine/extension-sdk/catalogue`: catalogue format 1 (`Catalogue`,
+  `CatalogueEntry`, `CatalogueRelease`), a strict `validateCatalogue`, the
+  tolerant `readCatalogue` Studio runs, `selectCatalogueRelease`, and the kill
+  list, owner records and release lock beside it. `catalogue.schema.json`
+  ships for editors; the `catalogue` guide topic carries the reference.
+- `sprintengine-extension release-entry [dir]` prints the release entry a
+  catalogue lists for the committed HEAD: its commit, the content hash Studio
+  checks at install, tier, `minimumStudio`, permissions and contributions, the
+  folder's `source.path`, and the id it is listed under.
+
 An extension is a declarative `extension.json` now, not a `manifest.json` and
 `register*` calls. There are no users of the old format yet, so it is gone
 with no compatibility path: nothing migrates it, nothing reads it, and an
