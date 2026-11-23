@@ -44,7 +44,7 @@ export function ExtensionStateLabel({ state }: { state: ExtensionRunState }): JS
       <LifecycleGlyph state="done" live={false} />
     ) : state === 'pending' ? (
       <RefreshIcon className="icon-sm shrink-0 text-[color:var(--text-muted)]" />
-    ) : state === 'failed' ? (
+    ) : state === 'failed' || state === 'killed' ? (
       <LifecycleGlyph state="failed" live={false} />
     ) : (
       <LifecycleGlyph state="blocked" live={false} />
@@ -53,7 +53,7 @@ export function ExtensionStateLabel({ state }: { state: ExtensionRunState }): JS
     <span
       className={[
         'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-meta',
-        state === 'failed'
+        state === 'failed' || state === 'killed'
           ? 'text-[color:var(--tone-error)]'
           : state === 'off'
             ? 'text-[color:var(--text-subtle)]'
@@ -328,12 +328,15 @@ export function InstalledTrailing({
   return (
     <>
       <ExtensionStateLabel state={state} />
-      <Switch
-        checked={enabled}
-        disabled={pending}
-        ariaLabel={copy.settings.extensionRow.enable(name)}
-        onChange={onToggle}
-      />
+      {/* A killed version cannot be switched back on: there is nothing for the switch to do. */}
+      {state === 'killed' ? null : (
+        <Switch
+          checked={enabled}
+          disabled={pending}
+          ariaLabel={copy.settings.extensionRow.enable(name)}
+          onChange={onToggle}
+        />
+      )}
     </>
   )
 }

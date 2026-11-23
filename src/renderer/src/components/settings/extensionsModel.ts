@@ -27,9 +27,10 @@ export function isApproved(module: Pick<ThirdPartyModuleView, 'approval'>): bool
  * - `pending` — on, but its main entry waits on the next launch (Starts after restart);
  * - `off` — off (Off);
  * - `waiting` — on, but its worker waits for a place: too many already run (Waiting to start), with why as a notice;
- * - `failed` — it could not start (Couldn't start), with the reason as a notice.
+ * - `failed` — it could not start (Couldn't start), with the reason as a notice;
+ * - `killed` — Studio's kill list removed this version (Switched off by Studio), with why as a notice.
  */
-export type ExtensionRunState = 'running' | 'on' | 'pending' | 'off' | 'waiting' | 'failed'
+export type ExtensionRunState = 'running' | 'on' | 'pending' | 'off' | 'waiting' | 'failed' | 'killed'
 
 export const RUN_STATE_LABEL: Record<ExtensionRunState, string> = {
   running: 'Running',
@@ -38,6 +39,7 @@ export const RUN_STATE_LABEL: Record<ExtensionRunState, string> = {
   off: 'Off',
   waiting: 'Waiting to start',
   failed: 'Couldn’t start',
+  killed: 'Switched off by Studio',
 }
 
 export type ExtensionProblem =
@@ -95,6 +97,7 @@ export function runState(
   rendererLoadState: ThirdPartyRendererLoadState | undefined,
   contributionError?: string,
 ): ExtensionRunState {
+  if (module.killed) return 'killed'
   if (moduleProblem(module, rendererLoadState, contributionError)) return 'failed'
   const mainLoaded = module.launch.mainLoaded === true
   // Switched off, a worker stops at once.

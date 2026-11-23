@@ -376,7 +376,13 @@ export function ModulesSettingsTab(): JSX.Element {
         }
       : null,
     onReveal: extensions.reveal ? (module) => void extensions.reveal?.(module) : null,
-    onUpdate: extensions.update ? (module) => void extensions.update?.(module) : null,
+    // The details close first: an update that asks again opens its review, which the popover would cover.
+    onUpdate: extensions.update
+      ? (module) => {
+          setDetailsFor(null)
+          void extensions.update?.(module)
+        }
+      : null,
     onCopyId: (module) => {
       void window.api
         .clipboardWriteText(module.manifest.id)

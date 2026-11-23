@@ -49,7 +49,10 @@ vi.mock('../../studio/moduleLifecycle', () => ({
       installFromCalls.push(from)
       return { ok: false, message: 'not here' }
     },
-    update: async () => ({ ok: false, message: 'not here' }),
+    update: async (id: string) => {
+      updateCalls.push(id)
+      return { ok: false, message: 'not here' }
+    },
     addCatalogue: async (url: string) => {
       addCatalogueCalls.push(url)
       return { ok: true, catalogue: { id: `git:${url}`, kind: 'added', name: 'Acme', url, entries: [] } }
@@ -230,6 +233,7 @@ let setEnabledAnswer: { ok: true; module: null } | { ok: false; message: string 
 const approveCalls: Array<[string, string]> = []
 const uninstallCalls: string[] = []
 const installFromCalls: unknown[] = []
+const updateCalls: string[] = []
 const addCatalogueCalls: string[] = []
 const catalogueEntryCalls: Array<[string, string]> = []
 const restartApp = vi.fn(async () => ({ restarting: false }))
@@ -246,6 +250,7 @@ beforeEach(() => {
   setEnabledAnswer = { ok: true, module: null }
   uninstallCalls.length = 0
   installFromCalls.length = 0
+  updateCalls.length = 0
   addCatalogueCalls.length = 0
   catalogueEntryCalls.length = 0
   restartApp.mockClear()
@@ -614,4 +619,37 @@ test('an install link naming a catalogue not added asks before adding it, and ad
   expect(addCatalogueCalls).toEqual([])
   expect(catalogueEntryCalls).toEqual([])
   expect(installFromCalls).toEqual([])
+})
+
+test('an update held for review says why, and reviewing it closes the details for the approval to show', async () => {
+  installed = [{ ...DECISION_LOG, update: { version: '1.1.0', held: 'access', growth: ['the "network" permission'] } }]
+  await mount()
+  expect(rowOf('Decision Log').textContent).toContain(
+    'Version 1.1.0 waits for your review: it asks for the "network" permission.',
+  )
+  await click(button('Decision Log'))
+  const details = document.querySelector('[role="dialog"][aria-label="Decision Log details"]')!
+  // A press, as a pointer makes it: down, then the click.
+  const review = button('Review version 1.1.0', details)!
+  await act(async () => {
+    review.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  })
+  await click(review)
+  expect(updateCalls).toEqual(['local.decision-log'])
+  expect(document.querySelector('[aria-label="Decision Log details"]')).toBeNull()
+})
+
+test('a version Studio’s kill list removed says so, with why, and has no switch', async () => {
+  installed = [
+    {
+      ...DECISION_LOG,
+      killed: { reason: 'It sends your files away.', advisoryUrl: 'https://example.com/advisory' },
+      launch: { ...DECISION_LOG.launch, status: 'killed' },
+    },
+  ]
+  await mount()
+  const row = rowOf('Decision Log')
+  expect(row.textContent).toContain('Switched off by Studio')
+  expect(row.textContent).toContain('its kill list removed this version. It sends your files away.')
+  expect(row.querySelector('[role="switch"]')).toBeNull()
 })
