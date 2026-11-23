@@ -9,6 +9,10 @@
   `ExtensionMcpServerContributionView`, `ExtensionProviderContributionView`),
   so a client's install review lists each skill and server, a local server's
   command line and environment, and the origin a provider's key is sent to.
+- `ThirdPartyModuleView.ignoredSkillKeys` names, by skill id, the
+  frontmatter keys of a skill's SKILL.md that agents are not handed (anything
+  but `name` and `description`), so the install review can list them as
+  ignored.
 - A provider's `source` (`StudioProviderListEntry`, and `PluginSource`) is
   `bundled` or `extension`; `user` is gone with the provider folder. An
   extension's provider's id is `<publisher>.<id>/<provider id>`, and

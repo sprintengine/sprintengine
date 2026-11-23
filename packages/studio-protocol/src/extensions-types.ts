@@ -269,6 +269,12 @@ export type ThirdPartyModuleView = {
   launch: ThirdPartyModuleLaunchView
   /** Names of the MCP tools its main half registered this server run. */
   mcpTools?: string[]
+  /**
+   * By skill id, the frontmatter keys its SKILL.md holds that agents are not
+   * handed (anything but `name` and `description`), for the install review to
+   * list as ignored. Absent when there are none.
+   */
+  ignoredSkillKeys?: Record<string, string[]>
 }
 
 export type ModuleManifestIssue = { path: string; message: string }

@@ -61,16 +61,27 @@ export type AgentContributionLine = {
 
 /**
  * The skills, MCP servers and model providers an extension hands agents and
- * chats, as its install review and its details list them: a local server's
- * whole command line and environment, a hosted one's URL, and the origin a
- * provider's key goes to.
+ * chats, as its install review and its details list them: a skill's
+ * frontmatter keys agents are not handed (`ignoredSkillKeys`, by skill id), a
+ * local server's whole command line and environment, a hosted one's URL, and
+ * the origin a provider's key goes to.
  */
-export function agentContributionLines(extension: Pick<ExtensionManifestView, 'contributes'>): AgentContributionLine[] {
+export function agentContributionLines(
+  extension: Pick<ExtensionManifestView, 'contributes'>,
+  ignoredSkillKeys: Readonly<Record<string, readonly string[]>> = {},
+): AgentContributionLine[] {
   const t = copy.settings.extensionContributions
   const quoted = (value: string) => (/[\s"']/.test(value) ? JSON.stringify(value) : value)
   const { skills = [], mcpServers = [], providers = [] } = extension.contributes
   const lines: AgentContributionLine[] = []
-  for (const skill of skills) lines.push({ kind: 'skill', title: t.skill(skill.id), details: [] })
+  for (const skill of skills) {
+    const ignored = Object.hasOwn(ignoredSkillKeys, skill.id) ? (ignoredSkillKeys[skill.id] ?? []) : []
+    lines.push({
+      kind: 'skill',
+      title: t.skill(skill.id),
+      details: ignored.length > 0 ? [t.ignoredKeys(ignored.join(', '))] : [],
+    })
+  }
   for (const server of mcpServers) {
     if (server.transport === 'http') {
       lines.push({ kind: 'mcp-hosted', title: t.hostedMcpServer(server.name), details: [t.reaches(server.url ?? '')] })

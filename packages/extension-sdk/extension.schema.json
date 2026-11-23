@@ -1237,7 +1237,7 @@
                 "minLength": 1,
                 "maxLength": 63,
                 "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-                "description": "Id, unique among this extension’s skills. Agents see the skill as `<publisher>.<id>.<skill id>`.",
+                "description": "Id, unique among this extension’s skills. Agents are handed a copy named `<publisher>.<id>.<skill id>`, its frontmatter holding only `name` and `description`.",
                 "x-since": "0.13.0",
                 "examples": [
                   "review-checklist"

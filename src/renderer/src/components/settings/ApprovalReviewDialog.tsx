@@ -53,7 +53,7 @@ export function ApprovalReviewDialog({
   const failsClosed = hooks.some((hook) => hook.onError === 'deny' && !hook.point.endsWith('.after'))
   // Every skill, MCP server and provider it hands agents, the local servers'
   // command lines and the providers' key origins included: what approving lets run.
-  const agentLines = agentContributionLines(module.extension)
+  const agentLines = agentContributionLines(module.extension, module.ignoredSkillKeys)
   const reach = {
     localServers: agentLines.some((line) => line.kind === 'mcp-local'),
     providers: agentLines.some((line) => line.kind === 'provider'),

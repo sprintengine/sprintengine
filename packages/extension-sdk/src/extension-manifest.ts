@@ -921,7 +921,7 @@ const CONTRIBUTES: ObjectNode = {
             id: {
               node: idNode(),
               required: true,
-              doc: 'Id, unique among this extension’s skills. Agents see the skill as `<publisher>.<id>.<skill id>`.',
+              doc: 'Id, unique among this extension’s skills. Agents are handed a copy named `<publisher>.<id>.<skill id>`, its frontmatter holding only `name` and `description`.',
               since: V1,
               example: 'review-checklist',
             },

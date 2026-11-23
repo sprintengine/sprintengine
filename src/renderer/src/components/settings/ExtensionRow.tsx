@@ -98,7 +98,7 @@ export function ExtensionDetails({
   actions,
 }: ExtensionDetailsProps): JSX.Element {
   const { manifest } = module
-  const agentLines = agentContributionLines(module.extension)
+  const agentLines = agentContributionLines(module.extension, module.ignoredSkillKeys)
   return (
     <div className="flex flex-col">
       <div className="flex items-start gap-3 px-4 pb-3 pt-4">

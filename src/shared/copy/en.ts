@@ -3600,6 +3600,7 @@ export const en = {
     // src/renderer/src/components/settings/extensionContributions.ts
     extensionContributions: {
       skill: (id: unknown) => `Skill “${id}”`,
+      ignoredKeys: (keys: unknown) => `Ignored in its SKILL.md, so agents are not handed it: ${keys}`,
       hostedMcpServer: (name: unknown) => `MCP server ${name}, hosted`,
       localMcpServer: (name: unknown) => `MCP server ${name}, run on this computer`,
       provider: (name: unknown) => `Model provider ${name}`,

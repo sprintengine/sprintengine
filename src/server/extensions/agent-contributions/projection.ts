@@ -7,7 +7,7 @@
 //
 //   state.json                 which generation of each extension is current
 //   <key>/<generation>/        one extension's projection: a copy of each of
-//                              its skills (`skills/<skill id>/`) and, when it
+//                              its skills (`skills/<publisher>.<id>.<skill id>/`) and, when it
 //                              has skills, a plugin manifest so the folder is
 //                              itself a plugin directory an agent loads
 //
@@ -28,7 +28,8 @@
 //
 // A skill's files are copied from the digests its standing was judged on, each
 // checked against its digest as it is read, so what agents read is what was
-// approved (or listed). A local MCP server runs from the install folder, which
+// approved (or listed). Its SKILL.md is copied under its namespaced name, with
+// every frontmatter key but its description dropped (skill-frontmatter.ts). A local MCP server runs from the install folder, which
 // is only projected while the approval covers the files there.
 
 import { createHash } from 'node:crypto'
@@ -47,6 +48,7 @@ import type { McpServerConfig } from '../../../shared/electron-api'
 import type { ConversationMcpServer } from '../../../shared/conversation-runtime'
 import type { ExtensionManifest } from '../../../shared/modules/third-party-manifest'
 import { isExtensionRunnable, type ExtensionStanding } from '../../../main/modules/module-signature'
+import { projectedSkillText } from './skill-frontmatter'
 import { writeFileAtomic } from '../../platform/atomic-file'
 
 /** Under the data folder: every extension's projection, and the state naming the current ones. */
@@ -55,7 +57,7 @@ const STATE_FILE = 'state.json'
 const COMPLETE_MARK = '.complete'
 const STAGING_PREFIX = '.staging-'
 /** Bumped when what a generation holds changes shape, so every one is built again. */
-const LAYOUT = 1
+const LAYOUT = 2
 
 /** A skill as agents get it. */
 export type ProjectedSkill = {
@@ -63,7 +65,7 @@ export type ProjectedSkill = {
   id: string
   /** The name agents see it by: `<publisher>.<id>.<skill id>`. */
   name: string
-  /** The copied folder holding its SKILL.md. */
+  /** The copied folder holding its SKILL.md, named `name` as the SKILL.md's own `name` is. */
   dir: string
 }
 
@@ -207,6 +209,7 @@ async function projectExtension(
         layout: LAYOUT,
         key,
         name: extension.name,
+        version: extension.version,
         skills: skills.map(({ skill, files }) => [skill.id, files.map((file) => [file.rest, file.digest])]),
       }),
     )
@@ -222,9 +225,12 @@ async function projectExtension(
           const bytes = await readVerified(join(moduleRoot, ...file.path.split('/')), file.digest)
           if (file.rest === 'SKILL.md' && bytes.length > SKILL_FILE_MAX_BYTES)
             throw new Error(`skill "${skill.id}" has a SKILL.md over ${SKILL_FILE_MAX_BYTES / 1024} KiB.`)
-          const target = join(staging, 'skills', skill.id, ...file.rest.split('/'))
+          const name = extensionSkillName(key, skill.id)
+          const target = join(staging, 'skills', name, ...file.rest.split('/'))
           await mkdir(dirname(target), { recursive: true, mode: 0o700 })
-          await writeFile(target, bytes, { mode: 0o600 })
+          await writeFile(target, file.rest === 'SKILL.md' ? projectedSkillText(bytes.toString('utf8'), name) : bytes, {
+            mode: 0o600,
+          })
         }
       await mkdir(join(staging, '.claude-plugin'), { recursive: true, mode: 0o700 })
       await writeFile(
@@ -250,7 +256,7 @@ async function projectExtension(
     skills: skills.map(({ skill }) => ({
       id: skill.id,
       name: extensionSkillName(key, skill.id),
-      dir: join(folder, 'skills', skill.id),
+      dir: join(folder, 'skills', extensionSkillName(key, skill.id)),
     })),
     mcpServers,
     providers,

@@ -14,8 +14,10 @@ extension built against 3.x must be rewritten to this one.
   or a model provider. They replace the marketplace plugin bundle and the
   provider folder (`~/.sprintengine/plugins`). Each is declarative, and they
   are no longer reserved points.
-  - A skill (`{ id, path }`) names a folder holding a `SKILL.md`. Agents see it
-    as `<publisher>.<id>.<skill id>`. It asks for no approval.
+  - A skill (`{ id, path }`) names a folder holding a `SKILL.md`. Agents are
+    handed a copy named `<publisher>.<id>.<skill id>` (its folder and its
+    `name`), whose frontmatter keeps only `name` and `description`; any other
+    key is dropped and listed as ignored at install. It asks for no approval.
   - An MCP server is `stdio` (`command`, `args`, `env` as `{ name, value }`
     pairs; `${extensionPath}` stands for the installed folder) or `http`
     (`url`: https, or plain http to localhost). Agents see it as
