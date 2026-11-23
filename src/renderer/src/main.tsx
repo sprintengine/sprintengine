@@ -7,6 +7,7 @@ import './assets/index.css'
 import { ConfirmDialogProvider } from './components/ui'
 import { SshPromptDialogHost } from './components/environments/SshPromptDialog'
 import { ArtifactsSetupQuestionHost } from './components/settings/ArtifactsSetupQuestion'
+import { DevFolderApprovalHost } from './components/settings/DevFolderApprovalHost'
 import AuxWindowApp from './components/auxWindows/AuxWindowApp'
 import WorkspaceManager from './components/workspace/WorkspaceManager'
 import { RootErrorBoundary } from './components/workspace/RootErrorBoundary'
@@ -198,6 +199,7 @@ if (isDiagnosticsWindow) {
           <WorkspaceManager />
           <SshPromptDialogHost />
           <ArtifactsSetupQuestionHost />
+          <DevFolderApprovalHost />
         </ConfirmDialogProvider>
       </RootErrorBoundary>,
     )

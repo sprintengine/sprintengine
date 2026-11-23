@@ -9,11 +9,8 @@
   "tier": "worker",
   "name": "{{displayName}}",
   "description": "{{displayName}}, an extension for SprintEngine Studio.",
-  "permissions": [
-    "tools:contribute",
-    "workspace:read"
-  ],
-  "main": "dist/main.cjs",
+  "permissions": ["tools:contribute", "workspace:read"],
+  "main": "src/main.ts",
   "contributes": {
     "mcpTools": [
       {

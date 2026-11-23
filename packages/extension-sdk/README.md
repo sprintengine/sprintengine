@@ -31,12 +31,12 @@ alone. Node 22.15 or newer.
 npx -p @sprintengine/extension-sdk sprintengine-extension init my-extension --template panel
 cd my-extension
 npm install
-npm run check        # typecheck, build, tests (smoke test and yours), validate
-npm run dev:install  # side-load into Studio on this machine
+npm run dev          # load extension/ into Studio; it reloads on every save
+npm run check        # typecheck, tests, then validate and check the extension
 ```
 
 `init <dir> --template <id> [--with <part,...>] [--id <id>] [--name <display name>]`
-scaffolds a project that already builds, passes its own tests and installs.
+scaffolds a project that already loads in Studio and passes its own tests. There is no build step.
 `--sdk-tarball <file>` depends on a local SDK build instead of the npm release
 (for working on the SDK itself). Templates:
 
@@ -101,22 +101,21 @@ stale one.
 ### Project layout
 
 ```
-extension/extension.json  the manifest; extension/ is the folder Studio installs
-extension/dist/           build output: one self-contained bundle per ui entry, main.cjs for the worker
-src/<name>.tsx            a surface, exporting mount(root, studio); builds to dist/<name>.js
-src/main.ts               the worker, exporting activate(studio) (templates that have one)
-test/smoke.test.mjs       loads the built extension the way Studio does
+extension/extension.json  the manifest; extension/ is the folder Studio loads
+extension/src/<name>.ts   a surface, exporting mount(root, studio), loaded as written
+extension/src/main.ts     the worker, exporting activate(studio) (templates that have one)
 test/manifest.ts          extension.json, validated, for your tests
 test/*.test.ts            your tests, in TypeScript (see Testing)
-scripts/                  build-ui.mjs, validate.mjs, dev-install.mjs, check-toolchain.mjs
+scripts/                  check-toolchain.mjs
 IDEA.md                   the brief
 ```
 
-The scripts: `build:ui` (`node scripts/build-ui.mjs`, bundling each ui entry
-extension.json names from `src/<name>.tsx`, React included), `build:main`
-(esbuild, CommonJS, everything bundled: a worker runs as plain Node), `build`, `test`, `validate`,
-`check` (typecheck, build, test, validate), `dev:install` and `keygen`. The
-build writes `extension/dist/` and never touches extension.json.
+The scripts: `typecheck`, `test` (`sprintengine-extension test`), `validate`,
+`check` (typecheck, test, then `sprintengine-extension check extension`), `dev`
+(`sprintengine-extension dev watch extension --check --shot …`: Studio loads
+the folder where it is and again on every save), `pack` and `keygen`. Studio
+transpiles TypeScript and JSX as it reads them; a surface imports only its own
+files by relative paths (guide topic `dev-loop`).
 
 ## What an extension is
 
@@ -266,13 +265,11 @@ const html = await renderToHtml(createElement(Notes, { studio }))
 - **`renderToHtml(node)`** renders a React tree in Node, waiting for `lazy`
   components. It is a server render: no effects run.
 
-A scaffolded project's tests are TypeScript: `npm test` bundles
-`test/**/*.test.ts` with esbuild into `test/.build/` and runs them with
-`node --test` beside the smoke test. The smoke test validates extension.json,
-checks that each ui entry is built, imports nothing and exports `mount`,
-activates the worker against the fake main host, and checks that every command
-without an `action` has an `operate` method, every declared MCP tool is
-served, and nothing undeclared is used.
+A scaffolded project's tests are TypeScript: `npm test` runs every
+`*.test.ts` with `node --test`, TypeScript loaded as written, as Studio loads
+it. `sprintengine-extension check` validates extension.json, builds each
+surface's modules and checks its `mount` export, and activates the worker
+against the fake main host, saying where anything fails at its file and line.
 
 ## What the host provides
 
@@ -967,16 +964,13 @@ The pieces are exported for tooling: `signExtensionFiles`,
 
 ## Installing
 
-`npm run dev:install` builds, validates, and copies `extension/` to
-`~/.sprintengine/extensions/local.<id>/` (or under
-`$SPRINTENGINE_USER_EXTENSION_ROOT`), replacing the old copy and leaving out
-symbolic links, `node_modules`, `.git` and key files. When a key is at hand
-(`--key`, `$SPRINTENGINE_SIGNING_KEY`, or `~/.sprintengine/keys/<id>.key`;
-`--no-sign` skips it) it signs the installed copy. Studio waits for you to
-approve it in Settings → Extensions, and asks again after each rebuild copied
-in this way, since the approval binds to exact contents. Settings → Extensions
-can also install a folder (`extension/`, or a packed copy); installed that way,
-a new build keeps its approval when it asks for no more access.
+`npm run dev` registers `extension/` with the Studio on this machine as a
+development folder: Studio loads it from where it is, with no copy, and again
+on every save. Studio waits for you to approve it once in Settings →
+Extensions; a save keeps the approval unless it asks for more. To install a
+copy instead, `npm run pack` and install the packed folder from Settings →
+Extensions; an update installed that way keeps its approval when it asks for
+no more access.
 
 ## Files a surface shows
 

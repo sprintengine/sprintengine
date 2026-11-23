@@ -188,7 +188,7 @@ export function ExtensionListRow({
       ? [
           {
             id: 'uninstall',
-            label: appCopy.settings.thirdPartyModuleList.uninstall,
+            label: module.development ? 'Remove development folder' : appCopy.settings.thirdPartyModuleList.uninstall,
             destructive: true,
             disabled: pending,
             onSelect: () => actions.onUninstall?.(module),
@@ -208,6 +208,7 @@ export function ExtensionListRow({
   const source = sourceLabel(module)
   const facts = [
     ...(source ? [{ term: 'Source', description: source }] : []),
+    ...(module.development ? [{ term: 'Folder', description: module.development.folder }] : []),
     { term: 'Signature', description: signatureFact(module) },
     { term: 'Approved', description: approvalFact(module) },
   ]
@@ -257,7 +258,7 @@ export function ExtensionListRow({
               ) : null}
               {actions.onUninstall ? (
                 <GhostButton size="xs" tone="danger" disabled={pending} onClick={() => actions.onUninstall?.(module)}>
-                  {appCopy.settings.thirdPartyModuleList.uninstall}
+                  {module.development ? 'Remove development folder' : appCopy.settings.thirdPartyModuleList.uninstall}
                 </GhostButton>
               ) : null}
             </>

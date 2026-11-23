@@ -15,6 +15,7 @@ import type {
   ExtensionContributionsResult,
   ExtensionFrameDocument,
   StudioExtensionApproval,
+  StudioExtensionDevFolder,
   ModuleRegistrySnapshot,
   ModuleRegistrySnapshotWriteResult,
   ThirdPartyModuleListResult,
@@ -273,6 +274,36 @@ export type StudioModulesMethodMap = {
     params: { moduleId: string; commandId: string }
     result: { ok: true; removedModuleIds: string[] } | { ok: false; message: string }
   }
+  /**
+   * The development folders registered here, in the order they load (after
+   * every installed extension): each with the extension it holds, or why none.
+   */
+  'extension.devFolders': { params: Record<string, never>; result: { folders: StudioExtensionDevFolder[] } }
+  /**
+   * Register a folder on this machine as a development folder: its extension
+   * loads from where it is, under `local.<id>`, and Studio reads it again on
+   * every save. It runs once the person approves it (`extension.approve`);
+   * a save asks again only when it asks for more. Registering one already
+   * registered reads it again now.
+   */
+  'extension.devLoad': {
+    params: { path: string; commandId: string }
+    result:
+      | { ok: true; moduleId: string; path: string; added: boolean; approval: StudioExtensionApproval }
+      | {
+          ok: false
+          code: 'invalid_argument' | 'extension_invalid' | 'unavailable'
+          message: string
+          issues?: Array<{ path: string; message: string }>
+        }
+  }
+  /** Take a development folder out; its approval goes with it. */
+  'extension.devUnload': {
+    params: { path: string; commandId: string }
+    result:
+      | { ok: true; path: string; moduleId: string | null }
+      | { ok: false; code: 'not_found' | 'unavailable'; message: string; loaded?: string[] }
+  }
   /** Every extension installed here, with its approval, signature, origin and launch state. */
   'extension.installed': { params: Record<string, never>; result: ThirdPartyModuleListResult }
   /** What the approved extensions add to a client, as their extension.json declares it. */
@@ -377,6 +408,14 @@ function namedModule(value: Record<string, unknown>): StudioParsed<{ moduleId: s
   return studioParams({ moduleId: value.moduleId, commandId: command.params })
 }
 
+function devFolderParams(value: Record<string, unknown>): StudioParsed<{ path: string; commandId: string }> {
+  if (typeof value.path !== 'string' || value.path.trim().length === 0 || value.path.length > MAX_PATH_CHARS)
+    return studioParamsRefused('"path" is the development folder on this machine.')
+  const command = commandIdOf(value)
+  if (!command.ok) return command
+  return studioParams({ path: value.path, commandId: command.params })
+}
+
 export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> = {
   'extension.read': {
     scope: 'extensions:read',
@@ -441,6 +480,17 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
     },
   },
   'extension.uninstall': { ...lifecycle, params: namedModule },
+  // A development folder is a path on this machine, and what runs from it is
+  // the owner's to choose: listing them names paths, so it is the owner's too.
+  'extension.devFolders': {
+    scope: null,
+    owner: STUDIO_MODULES_OWNER,
+    mutation: false,
+    capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+    params: studioNoParams,
+  },
+  'extension.devLoad': { ...lifecycle, params: devFolderParams },
+  'extension.devUnload': { ...lifecycle, params: devFolderParams },
   'extension.installed': {
     scope: 'extensions:read',
     mutation: false,

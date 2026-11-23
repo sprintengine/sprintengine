@@ -1,12 +1,12 @@
 // The MCP tools, called the way an agent calls them, against the SDK's fake
-// main host. `npm test` bundles test/*.test.ts and runs them with `node --test`.
+// main host. `npm test` runs test/*.test.ts with `node --test`.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { createFakeMainHost } from '@sprintengine/extension-sdk/testing'
 
-import { activate } from '../src/main'
+import { activate } from '../extension/src/main'
 import { manifest } from './manifest'
 
 test('an agent can ask which extension this is', async () => {

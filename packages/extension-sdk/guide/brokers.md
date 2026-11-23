@@ -57,7 +57,7 @@ export function activate(studio: MainHost): void {
   it yourself, and treat it as untrusted input.
 - Names are per extension; another extension cannot read or use yours.
 
-Never put a key in extension.json, the bundle, app state, storage
+Never put a key in extension.json, the extension's source, app state, storage
 or a settings value: all of those are readable files.
 
 ## GitHub (`github:api` permission)

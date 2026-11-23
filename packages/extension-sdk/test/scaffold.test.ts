@@ -1,23 +1,23 @@
-// Every bundled template scaffolds into a project Studio would accept, and
-// that project's own dev loop runs end to end.
+// Every bundled template scaffolds into a project Studio would accept, loaded
+// the way Studio loads it: from source, with no build step.
 //
 // For each template: scaffold into a temporary folder; validate
 // extension/extension.json with this package's validator, as an author's tools
-// hold it; type-check the project against this package's SOURCE (a paths
-// mapping, so the test never depends on dist/ being current); then run the
-// project's real scripts — `npm run build`, `npm test` (the smoke test loads
-// the built extension as Studio does), `npm run validate`, and
-// `scripts/dev-install.mjs` into a throwaway extensions root — and check the
-// installed copy is extension/ exactly, under `local.<id>`.
+// hold it; check every file it names is source in extension/ and that nothing
+// of a build is left (no dist/, no bundler, no React); type-check the project
+// against this package's SOURCE (a paths mapping, so the test never depends on
+// dist/ being current); build each surface's module graph as Studio's frame
+// does; activate the worker from source against the fake main host, as
+// `sprintengine-extension check` does; and run the project's own tests with
+// `node --test` and the SDK's TypeScript hooks, as `sprintengine-extension
+// test` does.
 //
 // The projects resolve packages through one shared node_modules: the
-// repository's own react, @types and esbuild, symlinked, plus this SDK
-// transpiled from source into @sprintengine/extension-sdk.
+// repository's own @types and the SDK's runtime dependencies, symlinked, plus
+// this SDK transpiled from source into @sprintengine/extension-sdk.
 //
-// Also: the scaffolder's refusals, the placeholder and tarball handling, the
-// copies that must not drift — the build scripts the parts share with the
-// templates — projects composed from parts (`parts`, `addModuleParts`) running
-// the same loop, a signed install, and what the smoke test catches.
+// Also: the scaffolder's refusals, the placeholder and tarball handling, and
+// projects composed from parts (`parts`, `addModuleParts`) loading the same way.
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -27,21 +27,26 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { buildSync } from 'esbuild'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import {
   EXTENSION_MANIFEST_SINCE,
+  EXTENSION_SURFACE_POINTS,
   isExtensionPermission,
   requiredExtensionTier,
   validateExtensionManifest,
+  type ExtensionManifest,
 } from '../src/index.js'
 import {
   addModuleParts,
@@ -50,11 +55,16 @@ import {
   sanitizeDisplayText,
   scaffoldModuleProject,
 } from '../src/scaffold.js'
+import { buildSurfaceModules, formatSourceProblem } from '../src/source-modules.js'
 
 const REPO = process.cwd()
 const SDK = join(REPO, 'packages/extension-sdk')
 const TEMPLATES = join(SDK, 'templates')
 const SDK_VERSION = '4.0.0-beta.1'
+
+const PROJECT_SCRIPTS = ['typecheck', 'test', 'validate', 'check', 'dev', 'pack', 'keygen']
+const BUILD_SCRIPTS = ['build', 'build:ui', 'build:main', 'build:server', 'build:test', 'dev:install']
+const PROJECT_DEV_DEPENDENCIES = ['@sprintengine/extension-sdk', '@types/node', 'typescript']
 
 function walk(dir: string, prefix = ''): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -73,14 +83,14 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
 /** A node_modules the scaffolded projects resolve through. */
 function sharedNodeModules(root: string): string {
   const nodeModules = join(root, 'node_modules')
-  mkdirSync(join(nodeModules, '.bin'), { recursive: true })
-  for (const name of ['react', 'react-dom', 'scheduler', 'esbuild', '@types']) {
+  mkdirSync(nodeModules, { recursive: true })
+  for (const name of ['@types', 'sucrase', 'es-module-lexer']) {
     symlinkSync(join(REPO, 'node_modules', name), join(nodeModules, name))
   }
-  symlinkSync(join(REPO, 'node_modules', 'esbuild', 'bin', 'esbuild'), join(nodeModules, '.bin', 'esbuild'))
 
   // The SDK as a project installs it, transpiled from source: one file per
-  // source file, so `./signing`, `./testing` and the CLI exist as they do in dist/.
+  // source file, so `./signing`, `./testing` and the source hooks exist as
+  // they do in dist/.
   const sdkPackage = join(nodeModules, '@sprintengine', 'extension-sdk')
   const sources = readdirSync(join(SDK, 'src')).filter((name) => name.endsWith('.ts'))
   buildSync({
@@ -101,6 +111,7 @@ function sharedNodeModules(root: string): string {
       exports: {
         '.': sub('index'),
         './signing': sub('signing'),
+        './source': sub('source-modules'),
         './testing': sub('testing'),
       },
       bin: { 'sprintengine-extension': './dist/cli.js' },
@@ -123,47 +134,160 @@ function typecheckAgainstSource(dir: string, env: NodeJS.ProcessEnv): void {
       },
     }),
   )
-  run(join(REPO, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.scaffold-test.json'], dir, env)
-  rmSync(join(dir, 'tsconfig.scaffold-test.json'))
+  try {
+    run(join(REPO, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.scaffold-test.json'], dir, env)
+  } finally {
+    rmSync(join(dir, 'tsconfig.scaffold-test.json'))
+  }
 }
 
-function readManifest(dir: string) {
+function readManifest(dir: string): ExtensionManifest {
   const raw: unknown = JSON.parse(readFileSync(join(dir, 'extension/extension.json'), 'utf8'))
   const result = validateExtensionManifest(raw, { authoring: true })
   assert.ok(result.ok, `${dir}: ${JSON.stringify(result.ok ? [] : result.issues)}`)
   return result.manifest
 }
 
+/** A file of the extension folder, as Studio reads a development folder's, or null. */
+function extensionReader(extensionDir: string): (path: string) => string | null {
+  return (path) => {
+    const file = join(extensionDir, path)
+    return existsSync(file) && statSync(file).isFile() ? readFileSync(file, 'utf8') : null
+  }
+}
+
+/** Each surface's module graph builds as the frame builds it: relative imports only, every one found. */
+function buildSurfaces(dir: string, manifest: ExtensionManifest): void {
+  const read = extensionReader(join(dir, 'extension'))
+  for (const point of EXTENSION_SURFACE_POINTS) {
+    for (const surface of manifest.contributes[point]) {
+      const graph = buildSurfaceModules(surface.entry, read)
+      assert.ok(graph.ok, `${dir}: ${surface.entry}: ${graph.ok ? '' : formatSourceProblem(graph.problem)}`)
+      assert.equal(graph.modules.at(-1)?.path, surface.entry)
+    }
+  }
+}
+
+// Set up in beforeAll: the preloads below live in the shared work folder.
+let testHooks = ''
+let activateProbe = ''
+
+/** The project's tests, run as `sprintengine-extension test` runs them: node --test, TypeScript as written. */
+function runProjectTests(dir: string): string {
+  const files = walk(join(dir, 'test'))
+    .filter((file) => /\.test\.(?:ts|mts|js|mjs)$/.test(file))
+    .map((file) => join('test', file))
+  assert.ok(files.length > 0, `${dir}: no tests`)
+  return run(process.execPath, ['--import', pathToFileURL(testHooks).href, '--test', ...files], dir, env)
+}
+
+/** The worker, loaded from source and activated against the fake main host, as `check` does. */
+function activateWorker(dir: string): void {
+  run(process.execPath, [activateProbe, join(dir, 'extension')], dir, env)
+}
+
+function assertNoBuild(dir: string, label: string, manifest: ExtensionManifest): void {
+  const files = walk(dir).filter((file) => !file.startsWith('node_modules/'))
+  assert.ok(!files.some((file) => /(^|\/)dist\//.test(file)), `${label}: a dist/ folder was written`)
+  for (const file of files) {
+    if (!/\.(?:ts|mts|mjs|js)$/.test(file)) continue
+    const text = readFileSync(join(dir, file), 'utf8')
+    assert.ok(!/from ['"](?:react|react-dom|esbuild)/.test(text), `${label}: ${file} imports a build tool or React`)
+  }
+  const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>
+    devDependencies: Record<string, string>
+  }
+  for (const script of PROJECT_SCRIPTS) assert.ok(pkg.scripts[script], `${label}: package.json has no "${script}"`)
+  for (const script of BUILD_SCRIPTS) assert.equal(pkg.scripts[script], undefined, `${label}: "${script}" is a build`)
+  assert.deepEqual(Object.keys(pkg.devDependencies).sort(), PROJECT_DEV_DEPENDENCIES, `${label}: devDependencies`)
+
+  // Every file extension.json names is in extension/, as written.
+  const declared = [
+    ...(manifest.main ? [manifest.main] : []),
+    ...EXTENSION_SURFACE_POINTS.flatMap((point) => manifest.contributes[point].map((surface) => surface.entry)),
+    ...manifest.contributes.skills.map((skill) => `${skill.path.replace(/\/+$/, '')}/SKILL.md`),
+    ...manifest.contributes.mcpServers.flatMap((server) =>
+      server.transport === 'stdio'
+        ? [server.command ?? '', ...(server.args ?? [])]
+            .filter((part) => part.startsWith('${extensionPath}/'))
+            .map((part) => part.slice('${extensionPath}/'.length))
+        : [],
+    ),
+  ]
+  for (const file of declared) {
+    assert.ok(existsSync(join(dir, 'extension', file)), `${label}: extension/${file} is named but missing`)
+    assert.ok(!file.startsWith('dist/'), `${label}: ${file} names a build output`)
+  }
+}
+
 // One test per template, and one each for the composed projects and the
-// tarball, rather than one test for the lot: each template's dev loop is a
-// handful of real `tsc`, `npm` and `node` processes (a few seconds alone), and
-// summed over every template under one test's timeout they ran past it on a
-// loaded machine. Split, each test's budget covers one project's loop.
+// tarball, rather than one test for the lot: each template's loop is a few
+// real `tsc` and `node` processes (a few seconds alone), and summed over every
+// template under one test's timeout they ran past it on a loaded machine.
+// Split, each test's budget covers one project.
 const templates = listModuleTemplates(TEMPLATES)
 const base = { templateId: 'blank', displayName: 'X', sdkVersion: SDK_VERSION, templatesRoot: TEMPLATES }
 let work = ''
 let env: NodeJS.ProcessEnv = {}
 
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), 'sprintengine-scaffold-'))
-  const nodeModules = sharedNodeModules(work)
+  // Its real path: the source hooks hold a file to the folder they are rooted
+  // at by path, and the temporary folder may sit behind a symbolic link.
+  work = realpathSync(mkdtempSync(join(tmpdir(), 'sprintengine-scaffold-')))
+  sharedNodeModules(work)
   const { SPRINTENGINE_SIGNING_KEY: _ownKey, ...inherited } = process.env
   env = {
     ...inherited,
-    PATH: `${join(nodeModules, '.bin')}:${process.env.PATH ?? ''}`,
-    // Keep the dev loop away from the real ~/.sprintengine: no key is found,
-    // and the install lands in a throwaway extensions root.
+    // Keep everything away from the real ~/.sprintengine.
     HOME: join(work, 'home'),
     SPRINTENGINE_USER_EXTENSION_ROOT: join(work, 'installed'),
     npm_config_update_notifier: 'false',
   }
+  const hooks = pathToFileURL(join(work, 'node_modules/@sprintengine/extension-sdk/dist/source-hooks.js')).href
+  testHooks = join(work, 'test-hooks.mjs')
+  writeFileSync(testHooks, `import { installTypeScriptHooks } from '${hooks}'\ninstallTypeScriptHooks(process.cwd())\n`)
+  activateProbe = join(work, 'activate-probe.mjs')
+  writeFileSync(
+    activateProbe,
+    [
+      "import assert from 'node:assert/strict'",
+      "import { readFileSync } from 'node:fs'",
+      "import { join, resolve } from 'node:path'",
+      "import { pathToFileURL } from 'node:url'",
+      `import { installTypeScriptHooks } from '${hooks}'`,
+      "import { validateExtensionManifest } from '@sprintengine/extension-sdk'",
+      "import { createFakeMainHost } from '@sprintengine/extension-sdk/testing'",
+      'const root = resolve(process.argv[2])',
+      'installTypeScriptHooks(root)',
+      "const result = validateExtensionManifest(JSON.parse(readFileSync(join(root, 'extension.json'), 'utf8')), { authoring: true })",
+      'assert.ok(result.ok, JSON.stringify(result.ok ? [] : result.issues))',
+      'const { manifest } = result',
+      'const entry = await import(pathToFileURL(join(root, manifest.main)).href)',
+      'const activate = entry.activate ?? entry.default',
+      "assert.equal(typeof activate, 'function', `${manifest.main} exports activate`)",
+      'const main = createFakeMainHost({ manifest })',
+      'await activate(main.host)',
+      'await main.startup()',
+      'const methods = main.methods.declared()',
+      'for (const command of manifest.contributes.commands.filter((command) => !command.action)) {',
+      "  assert.ok(methods.some((method) => method.name === command.id && method.access === 'operate'), command.id)",
+      '}',
+      'const tools = main.tools.list().map((tool) => tool.name)',
+      'for (const tool of manifest.contributes.mcpTools) assert.ok(tools.includes(tool.name), tool.name)',
+      'assert.deepEqual(main.undeclared, [])',
+      'await main.shutdown()',
+      'main.dispose()',
+      '',
+    ].join('\n'),
+  )
 })
 
 afterAll(() => {
   if (work) rmSync(work, { recursive: true, force: true })
 })
 
-test('the templates on offer, the copies that must not drift, and the refusals', async () => {
+test('the templates on offer, what no template or part carries, and the refusals', async () => {
   // ── The templates on offer ─────────────────────────────────────────────────
   const templateIds = templates.map((template) => template.id)
   const dirs = readdirSync(TEMPLATES, { withFileTypes: true })
@@ -184,19 +308,28 @@ test('the templates on offer, the copies that must not drift, and the refusals',
     'hook-guard',
     'agent-kit',
   ])
-
-  // ── Copies that must not drift ─────────────────────────────────────────────
-  // A part builds what it adds exactly as the templates do.
-  const scriptsOf = (path: string) =>
-    (JSON.parse(readFileSync(join(TEMPLATES, path), 'utf8')) as { scripts: Record<string, string> }).scripts
-  const companion = scriptsOf('chat-companion/package.json')
-  assert.equal(scriptsOf('_parts/main/part.json')['build:main'], companion['build:main'])
-  assert.equal(scriptsOf('_parts/door/part.json')['build:ui'], companion['build:ui'])
-  assert.equal(scriptsOf('_parts/settings/part.json')['build:ui'], companion['build:ui'])
   assert.deepEqual(
     listModuleParts(TEMPLATES).map((part) => part.id),
     ['main', 'mcp', 'settings', 'door'],
   )
+
+  // ── Nothing to build ───────────────────────────────────────────────────────
+  // Every project shares one package.json, and a part adds no script or
+  // dependency: there is no build for it to join.
+  for (const id of templateIds) {
+    assert.equal(existsSync(join(TEMPLATES, id, 'package.json')), false, `${id}: the shared package.json is the one`)
+  }
+  for (const part of listModuleParts(TEMPLATES)) {
+    const raw = JSON.parse(readFileSync(join(TEMPLATES, '_parts', part.id, 'part.json'), 'utf8')) as {
+      main?: string
+      scripts: Record<string, string>
+      devDependencies: Record<string, string>
+    }
+    assert.deepEqual(raw.scripts, {}, `${part.id}: a part adds no script`)
+    assert.deepEqual(raw.devDependencies, {}, `${part.id}: a part adds no dependency`)
+    if (raw.main !== undefined) assert.equal(raw.main, 'src/main.ts')
+  }
+  assert.deepEqual(readdirSync(join(TEMPLATES, '_shared', 'scripts')), ['check-toolchain.mjs'])
 
   // ── Refusals ───────────────────────────────────────────────────────────────
   const refused = async (options: Partial<Parameters<typeof scaffoldModuleProject>[0]>, code: string) => {
@@ -242,7 +375,7 @@ test('the templates on offer, the copies that must not drift, and the refusals',
 
 // ── Every template ─────────────────────────────────────────────────────────
 for (const template of templates) {
-  test(`template "${template.id}" scaffolds a project Studio accepts, and its dev loop runs`, async () => {
+  test(`template "${template.id}" scaffolds a project Studio loads from source, and its tests pass`, async () => {
     const id = `demo-${template.id}`
     const dir = join(work, template.id)
     const idea = template.id === 'panel' ? '# My idea\n\nA scratchpad.' : undefined
@@ -269,19 +402,26 @@ for (const template of templates) {
       'AGENTS.md',
       'CLAUDE.md',
       '.gitignore',
-      'test/smoke.test.mjs',
       'test/manifest.ts',
       'test/module.test.ts',
-      'scripts/build-ui.mjs',
       'scripts/check-toolchain.mjs',
-      'scripts/dev-install.mjs',
-      'scripts/validate.mjs',
     ]) {
       assert.ok(files.includes(required), `${template.id}: ${required} is missing`)
     }
-    for (const gone of ['plugin.json', 'module/manifest.json']) {
+    for (const gone of [
+      'plugin.json',
+      'module/manifest.json',
+      'test/smoke.test.mjs',
+      'scripts/build-ui.mjs',
+      'scripts/dev-install.mjs',
+      'scripts/validate.mjs',
+    ]) {
       assert.ok(!files.includes(gone), `${template.id}: ${gone} is a layout extensions no longer have`)
     }
+    assert.ok(
+      files.every((file) => !file.startsWith('src/')),
+      `${template.id}: source lives in extension/src, not src/`,
+    )
     for (const file of files) {
       const text = readFileSync(join(dir, file), 'utf8')
       assert.ok(!/\{\{\w+\}\}/.test(text), `${template.id}: ${file} still has a placeholder`)
@@ -289,13 +429,8 @@ for (const template of templates) {
     assert.equal(readFileSync(join(dir, 'CLAUDE.md'), 'utf8').trim(), '@AGENTS.md')
     if (idea) assert.equal(readFileSync(join(dir, 'IDEA.md'), 'utf8'), `${idea}\n`)
     const gitignore = readFileSync(join(dir, '.gitignore'), 'utf8')
-    for (const pattern of ['node_modules/', 'packed/', '*.key', '*.pem', '.DS_Store']) {
+    for (const pattern of ['node_modules/', 'packed/', '.sprintengine/', '*.key', '*.pem', '.DS_Store']) {
       assert.ok(gitignore.includes(pattern), `${template.id}: .gitignore does not ignore ${pattern}`)
-    }
-    // extension/ is what ships, build included: nothing may ignore its dist.
-    for (const line of gitignore.split('\n').map((entry) => entry.trim())) {
-      if (!line || line.startsWith('#')) continue
-      assert.ok(!/(^|\/)dist\/?$/.test(line), `${template.id}: .gitignore ignores the build (${line})`)
     }
 
     // The manifest, as Studio reads it.
@@ -310,45 +445,23 @@ for (const template of templates) {
     }
     const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
     assert.equal(pkg.devDependencies['@sprintengine/extension-sdk'], `^${SDK_VERSION}`)
-    for (const script of ['typecheck', 'build', 'test', 'validate', 'check', 'dev:install', 'keygen']) {
-      assert.ok(pkg.scripts[script], `${template.id}: package.json has no "${script}" script`)
-    }
+    assertNoBuild(dir, template.id, manifest)
 
+    // Loaded as Studio loads it, and its own tests.
     typecheckAgainstSource(dir, env)
-
-    // The project's own dev loop. The build never rewrites extension.json.
-    const manifestPath = join(dir, 'extension/extension.json')
-    const declared = readFileSync(manifestPath, 'utf8')
-    run('npm', ['run', 'build', '--silent'], dir, env)
-    assert.equal(readFileSync(manifestPath, 'utf8'), declared, `${template.id}: the build rewrote extension.json`)
-    for (const point of ['panels', 'doors', 'settingsSections'] as const) {
-      for (const surface of manifest.contributes[point]) {
-        assert.ok(existsSync(join(dir, 'extension', surface.entry)), `${template.id}: ${surface.entry} was not built`)
-      }
-    }
-    if (manifest.main) assert.ok(existsSync(join(dir, 'extension', manifest.main)), `${template.id}: no worker`)
-    run('npm', ['test', '--silent'], dir, env)
-    run('npm', ['run', 'validate', '--silent'], dir, env)
-    const installed = run(process.execPath, ['scripts/dev-install.mjs'], dir, env)
-    assert.match(installed, new RegExp(`Installed ${id} 0\\.1\\.0 \\(unsigned`), installed)
-
-    const installedDir = join(work, 'installed', `local.${id}`)
-    assert.deepEqual(
-      walk(installedDir).sort(),
-      walk(join(dir, 'extension')).sort(),
-      `${template.id}: installed as built`,
-    )
-    assert.equal(readFileSync(join(installedDir, 'extension.json'), 'utf8'), declared)
-    assert.equal(readFileSync(manifestPath, 'utf8'), declared, `${template.id}: dev:install rewrote extension.json`)
+    buildSurfaces(dir, manifest)
+    if (manifest.main) activateWorker(dir)
+    runProjectTests(dir)
+    assert.ok(!walk(dir).some((file) => /(^|\/)dist\//.test(file)), `${template.id}: testing wrote a dist/`)
   })
 }
 
 // ── Projects composed from parts ───────────────────────────────────────────
-test('projects composed from parts run the same loop, and a signed install verifies', async () => {
-  // The door is added to the mcp-tools project its template test above built.
+test('projects composed from parts load the same way', async () => {
+  // The door is added to the mcp-tools project its template test above made.
   assert.ok(existsSync(join(work, 'mcp-tools', 'extension', 'extension.json')), 'the mcp-tools template test ran first')
   // Every part on the smallest template, and a door added to a project with
-  // no surface at all: each runs the whole loop, its parts' tests included.
+  // no surface at all: each loads and runs its tests, its parts' included.
   const composed = join(work, 'composed')
   const scaffoldedComposed = await scaffoldModuleProject({
     dir: composed,
@@ -362,35 +475,36 @@ test('projects composed from parts run the same loop, and a signed install verif
   assert.ok(scaffoldedComposed.ok, scaffoldedComposed.ok ? '' : scaffoldedComposed.message)
   const composedManifest = readManifest(composed)
   assert.equal(composedManifest.tier, 'worker', 'the worker raised the tier')
-  assert.equal(composedManifest.main, 'dist/main.cjs')
+  assert.equal(composedManifest.main, 'src/main.ts')
   assert.deepEqual(composedManifest.permissions, ['tools:contribute', 'settings:own'])
   assert.deepEqual(
     composedManifest.contributes.mcpTools.map((tool) => tool.name),
     ['demo_composed_about'],
   )
-  assert.match(readFileSync(join(composed, 'src/main.ts'), 'utf8'), /^ {2}registerTools\(studio\)$/m)
+  assert.match(readFileSync(join(composed, 'extension/src/main.ts'), 'utf8'), /^ {2}registerTools\(studio\)$/m)
 
   const toolsDir = join(work, 'mcp-tools')
   const addedDoor = await addModuleParts({ dir: toolsDir, parts: ['door'], templatesRoot: TEMPLATES })
   assert.ok(addedDoor.ok, addedDoor.ok ? '' : addedDoor.message)
   assert.deepEqual(addedDoor.ok && addedDoor.added, ['door'])
-  const toolsPkg = JSON.parse(readFileSync(join(toolsDir, 'package.json'), 'utf8'))
-  assert.equal(toolsPkg.scripts['build:ui'], 'node scripts/build-ui.mjs', 'the door brought its build')
-  assert.ok(toolsPkg.devDependencies.react, 'and React')
-  for (const dir of [composed, toolsDir]) {
+  assert.ok(existsSync(join(toolsDir, 'extension/src/door.ts')), 'the door brought its source')
+  for (const [dir, label] of [
+    [composed, 'composed'],
+    [toolsDir, 'mcp-tools with a door'],
+  ] as const) {
+    const manifest = readManifest(dir)
+    assertNoBuild(dir, label, manifest)
     typecheckAgainstSource(dir, env)
-    run('npm', ['run', 'build', '--silent'], dir, env)
-    run('npm', ['test', '--silent'], dir, env)
-    run('npm', ['run', 'validate', '--silent'], dir, env)
+    buildSurfaces(dir, manifest)
+    activateWorker(dir)
+    runProjectTests(dir)
   }
-  const composedTests = run('npm', ['test'], composed, env)
+  const composedTests = runProjectTests(composed)
   for (const name of [
-    'the door renders',
+    'the door is declared, and its source exports mount',
     'an agent can ask which extension this is',
     'the section shows what was saved',
     'a surface can ask when the worker started',
-    'door "door": dist/door.js loads on its own and exports mount',
-    'settings section "settings": dist/settings.js loads on its own and exports mount',
   ]) {
     assert.ok(composedTests.includes(name), `the composed project ran "${name}"`)
   }
@@ -412,50 +526,18 @@ test('projects composed from parts run the same loop, and a signed install verif
   const addedMcp = await addModuleParts({ dir: blankDir, parts: ['mcp'], templatesRoot: TEMPLATES })
   assert.deepEqual(addedMcp.ok && addedMcp.added, ['main', 'mcp'])
   assert.equal(readManifest(blankDir).tier, 'worker')
+  activateWorker(blankDir)
 
-  // A signed install: dev:install signs the installed copy with the key it
-  // finds, and the SDK's verify accepts it.
-  const cli = join(work, 'node_modules/@sprintengine/extension-sdk/dist/cli.js')
-  const key = join(work, 'signing.key')
-  run(process.execPath, [cli, 'keygen', '--out', key], work, env)
-  const signed = run(process.execPath, ['scripts/dev-install.mjs'], composed, {
-    ...env,
-    SPRINTENGINE_SIGNING_KEY: key,
-  })
-  assert.match(signed, /Installed demo-composed 0\.1\.0 \(signed/, signed)
-  const installedComposed = join(work, 'installed', 'local.demo-composed')
-  run(process.execPath, [cli, 'verify', installedComposed], work, env)
-  assert.equal(existsSync(join(composed, 'extension', 'extension.sig')), false, 'the project itself is not signed')
-
-  // ── What the smoke test catches ────────────────────────────────────────────
-  const manifestPath = join(composed, 'extension', 'extension.json')
-  const declared = readFileSync(manifestPath, 'utf8')
-  const smoke = () => spawnSync('node', ['--test', 'test/smoke.test.mjs'], { cwd: composed, env, encoding: 'utf8' })
-
-  // A worker that calls into Studio for what its manifest does not ask for.
-  const unasked = JSON.parse(declared) as { permissions: string[]; contributes: Record<string, unknown> }
-  unasked.permissions = unasked.permissions.filter((permission) => permission !== 'tools:contribute')
-  unasked.contributes.mcpTools = []
-  writeFileSync(manifestPath, JSON.stringify(unasked, null, 2))
-  const refused = smoke()
-  assert.notEqual(refused.status, 0)
-  assert.match(refused.stdout, /was not approved for "tools:contribute"/)
-
-  // A command without an action that the worker does not serve.
-  const withCommand = JSON.parse(declared) as { contributes: Record<string, unknown> }
-  withCommand.contributes.commands = [{ id: 'refresh', title: 'Refresh' }]
-  writeFileSync(manifestPath, JSON.stringify(withCommand, null, 2))
-  const unserved = smoke()
-  assert.notEqual(unserved.status, 0)
-  assert.match(unserved.stdout, /command "refresh" has no action/)
-
-  // A surface that leaves an import in its bundle.
-  writeFileSync(manifestPath, declared)
-  writeFileSync(join(composed, 'extension/dist/door.js'), "import { x } from 'react'\nexport function mount() {}\n")
-  const unbundled = smoke()
-  assert.notEqual(unbundled.status, 0)
-  assert.match(unbundled.stdout, /does not load on its own/)
-  run('npm', ['run', 'build', '--silent'], composed, env)
+  // A worker that is not where the template puts it is still the one wired.
+  const moved = join(work, 'moved')
+  assert.ok((await scaffoldModuleProject({ ...base, id: 'moved', dir: moved, parts: ['main'] })).ok)
+  const movedManifest = JSON.parse(readFileSync(join(moved, 'extension/extension.json'), 'utf8'))
+  movedManifest.main = 'src/worker.ts'
+  writeFileSync(join(moved, 'extension/extension.json'), JSON.stringify(movedManifest, null, 2))
+  writeFileSync(join(moved, 'extension/src/worker.ts'), readFileSync(join(moved, 'extension/src/main.ts'), 'utf8'))
+  const addedToMoved = await addModuleParts({ dir: moved, parts: ['mcp'], templatesRoot: TEMPLATES })
+  assert.ok(addedToMoved.ok && addedToMoved.files.includes('extension/src/worker.ts'))
+  assert.match(readFileSync(join(moved, 'extension/src/worker.ts'), 'utf8'), /registerTools\(studio\)/)
 })
 
 test('a local SDK tarball stands in for the npm release', async () => {

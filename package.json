@@ -177,6 +177,14 @@
         ]
       },
       {
+        "from": "packages/extension-sdk",
+        "to": "extension-sdk-runtime",
+        "filter": [
+          "package.json",
+          "dist/**/*"
+        ]
+      },
+      {
         "from": "resources/icon.png",
         "to": "icon.png"
       },
@@ -340,6 +348,7 @@
     "electron": "^45.2.1",
     "electron-builder": "^26.18.0",
     "electron-vite": "6.0.0",
+    "es-module-lexer": "^3.0.5",
     "esbuild": "^0.28.2",
     "flexlayout-react": "^0.11.1",
     "immer": "^11.2.9",
@@ -360,6 +369,7 @@
     "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",
     "shiki": "4.5.0",
+    "sucrase": "^3.35.1",
     "tailwindcss": "^4.0.6",
     "typescript": "^7.0.2",
     "unified": "^11.0.5",

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { afterEach, test } from 'vitest'
@@ -355,4 +355,62 @@ test('a worker that stops between starting and taking a call answers that it is 
   const tool = harness.load.kernel.mcpToolRegistrations().find((entry) => entry.registration.name === 'brief_ping')!
   const result = await tool.registration.handler({}, undefined)
   assert.match(JSON.stringify(result.content), /extension_unavailable/)
+})
+
+test('a worker written in TypeScript loads as written, its own relative imports included', async () => {
+  harness = await startWorkerHarness([
+    {
+      id: 'typed',
+      mainPath: 'src/main.ts',
+      main: `import { greet } from './greet'
+export default function activate(studio: { registerMethods(methods: object): void }): void {
+  studio.registerMethods({
+    ping: { access: 'read', params: (v: unknown) => ({ ok: true, params: v }), handler: () => ({ ok: true, result: greet('typed') }) },
+  })
+}
+`,
+      sources: { 'src/greet.ts': 'export function greet(name: string): string {\n  return `Hello, ${name}`\n}\n' },
+    },
+  ])
+  const answer = await ping('typed')
+  assert.ok(answer.ok && answer.answer.ok, JSON.stringify(answer))
+  assert.equal(answer.answer.result, 'Hello, typed')
+})
+
+test('a worker that fails to activate is reported at its file and line', async () => {
+  harness = await startWorkerHarness([
+    {
+      id: 'thrower',
+      mainPath: 'src/main.ts',
+      main: "import './greet'\nexport default function activate(): void {}\n",
+      sources: { 'src/greet.ts': "const name: string = 'x'\nthrow new Error(`no ${name}`)\n" },
+    },
+  ])
+  const answer = await ping('thrower')
+  assert.ok(!answer.ok || !answer.answer.ok)
+  assert.match(JSON.stringify(answer), /src\/greet\.ts:2:7 no x/u)
+})
+
+test('a development folder swapped for a link before its worker starts is refused, and read again', async () => {
+  const moved: string[] = []
+  harness = await startWorkerHarness([worker('dev', { development: true })], {
+    developmentFolderMoved: (moduleId) => moved.push(moduleId),
+  })
+  const folder = harness.folders['local.dev']!
+  // Other code at another place, and the registered folder now a link to it.
+  const elsewhere = `${folder}-elsewhere`
+  mkdirSync(elsewhere)
+  writeFileSync(join(elsewhere, 'extension.json'), readFileSync(join(folder, 'extension.json'), 'utf8'))
+  mkdirSync(join(elsewhere, 'dist'))
+  writeFileSync(
+    join(elsewhere, 'dist', 'main.cjs'),
+    "exports.activate = (studio) => studio.registerMethods({ ping: { access: 'read', params: (v) => ({ ok: true, params: v }), handler: () => ({ ok: true, result: 'other code' }) } })\n",
+  )
+  renameSync(folder, `${folder}-before`)
+  symlinkSync(elsewhere, folder)
+  const answer = await ping('dev')
+  assert.ok(!answer.ok || !answer.answer.ok, JSON.stringify(answer))
+  assert.ok(!JSON.stringify(answer).includes('other code'))
+  assert.match(harness.workers.status('local.dev')?.message ?? '', /now leads to/u)
+  assert.deepEqual(moved, ['local.dev'])
 })

@@ -9,10 +9,8 @@
   "tier": "worker",
   "name": "{{displayName}}",
   "description": "{{displayName}}, an extension for SprintEngine Studio.",
-  "permissions": [
-    "backlog:operate"
-  ],
-  "main": "dist/main.cjs",
+  "permissions": ["backlog:operate"],
+  "main": "src/main.ts",
   "contributes": {
     "commands": [
       {

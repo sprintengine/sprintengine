@@ -9,6 +9,13 @@
 //   pack             validate an extension folder and assemble an installable copy
 //   sign             write extension.sig, a detached ed25519 signature, beside extension.json
 //   verify           check an extension folder the way the studio will
+//   validate         check an extension folder (or its extension.json) as Studio will load it (--json)
+//   inspect          what it contributes and the access it asks for (--json)
+//   test             run its tests with its own Vitest or node --test, TS and JSX as written (--json)
+//   check            validate, activate its worker, build each surface (--json)
+//   dev              load a development folder into the running Studio, watch it,
+//                    and drive its worker (--json)
+//   shot             a PNG of one of its surfaces as Studio draws it (--json)
 //
 // sign records the sha256 of every file the extension ships, extension.json
 // included, in extension.sig and signs those digests, so the signature covers
@@ -42,6 +49,22 @@ const USAGE = `sprintengine-extension — pack, sign, and verify SprintEngine St
 
 Usage:
   sprintengine-extension init <dir> --template <id> [--with <part,...>] [--id <module-id>] [--name <name>] [--sdk-tarball <file>] [--force]
+  sprintengine-extension validate <dir|extension.json> [--json]
+  sprintengine-extension inspect <dir> [--json]
+  sprintengine-extension test [dir] [--json]
+  sprintengine-extension check [dir] [--json]
+  sprintengine-extension dev load <dir> [--json]
+  sprintengine-extension dev reload [<dir|key>] [--json]
+  sprintengine-extension dev watch <dir> [--check] [--shot <out-dir> [--shot-panel <id>]] [--json]
+  sprintengine-extension dev unload <dir|key> [--json]
+  sprintengine-extension dev list [--json]
+  sprintengine-extension dev logs <dir|key> [--json]
+  sprintengine-extension dev request <dir|key> <method> [--data <json>] [--read] [--timeout-ms <ms>] [--json]
+  sprintengine-extension dev hook <dir|key> <point> --data <json> [--json]
+  sprintengine-extension dev emit <dir|key> <topic> [--data <json>] [--json]
+  sprintengine-extension list [--json]
+  sprintengine-extension logs <key|dir> [--after <seq>] [--json]
+  sprintengine-extension shot <dir|key> [--panel <id> | --door <id> | --settings <id>] [--theme light|dark] [--width <px>] [--height <px>] [--out <file.png>] [--json]
   sprintengine-extension add <part>... [--project <dir>] [--force]
   sprintengine-extension keygen [--out <file>] [--force]
   sprintengine-extension pack <extension-dir> [--out <dir>] [--force]
@@ -63,6 +86,37 @@ and the tier it needs into extension/extension.json, adds its build script,
 and wires a worker part into src/main.ts. A part that needs the worker brings
 it too. Run it with no part to list them.
 
+validate, inspect, test and check work on an extension folder (the one
+holding extension.json; a project's extension/ is found from the project)
+without Studio. With --json each prints one object, {ok, result} or {ok:false,
+error:{code, message, data?, nextSteps?}}: branch on error.code. Exit codes: 0
+ok, 1 an error, 2 the extension is invalid (extension_invalid), 3 it needs
+approval (approval_required); test exits with the runner's
+code. validate takes the folder or its extension.json, and checks its skill
+folders and the host calls its code writes out (an unknown studio.host.call
+method, one its permissions or tier cannot use) at their file and line. test
+runs every *.test.ts, .tsx, .mts, .js, .jsx and .mjs with the project's own
+Vitest when it has one installed, else node --test; TypeScript and JSX load
+as Studio loads them. test and check run the extension's code on this machine, outside
+Studio: only on code you trust.
+
+dev and shot drive the SprintEngine Studio running on this machine (found in
+its data folder; --data-dir names another). dev load registers the folder as
+a development folder: Studio loads it from where it is, with no build, and
+again on every save. Nothing in it runs until the person approves it in
+Studio's window, which asks them as soon as it is registered (also Settings >
+Extensions); nothing on the command line approves, so an agent can register a
+folder but never approve one. One whose key an installed extension has
+replaces it only once approved; the installed one runs until then. dev load
+exits 3 (approval_required) while it waits. dev watch loads it, prints
+"waiting for approval in Studio" and waits, then prints what happens:
+reloaded, log lines (errors at file:line:col), status, approval, and with
+--check a check (the folder offline, and how Studio runs it now), with --shot
+a fresh PNG, after each save. Ctrl-C removes the folder again if the watch
+added it. dev reload reads one development folder, or every one, again now.
+dev request, hook, emit and shot reach development folders only. list and
+logs cover installed extensions too.
+
 keygen writes an ed25519 private key (PKCS#8 PEM) to --out
 (default module-signing.key); a leading ~ is your home folder, on Windows too.
 Keep it out of the extension's folder and out of version control; sign derives
@@ -70,8 +124,8 @@ the public key from it.
 
 pack validates <extension-dir>/extension.json, checks that every file it names
 is there, and copies the extension into --out (default packed/<id>) as an
-installable folder. node_modules, .git, key files (*.key, *.pem) and symbolic
-links are never copied.
+installable folder. node_modules, .git, .sprintengine (the dev loop's shots),
+key files (*.key, *.pem) and symbolic links are never copied.
 
 sign validates extension.json, records the sha256 of every file the extension
 ships (everything pack copies, extension.json included) in extension.sig, and
@@ -231,7 +285,8 @@ function pack(args: string[]): void {
     verbatimSymlinks: true,
     filter: (src) => {
       const name = basename(src)
-      if (name === 'node_modules' || name === '.git') return false
+      // The dev loop's own folder (its shots) never ships, as node_modules and .git never do.
+      if (name === 'node_modules' || name === '.git' || name === '.sprintengine') return false
       if (lstatSync(src).isSymbolicLink()) {
         skipped.push(`${relative(sourceDir, src)} (a symbolic link)`)
         return false
@@ -366,7 +421,7 @@ async function init(args: string[]): Promise<void> {
     `Created ${id} from the ${values.template} template${withParts} in ${target} (${result.files.length} files).`,
   )
   for (const note of result.notes ?? []) console.log(`To do: ${note}`)
-  console.log('Next: npm install, then npm run check; npm run dev:install side-loads it into Studio.')
+  console.log('Next: npm install, then npm run dev: Studio loads it from where it is and again on every save.')
 }
 
 async function add(args: string[]): Promise<void> {
@@ -395,30 +450,36 @@ async function add(args: string[]): Promise<void> {
 }
 
 const [command, ...rest] = process.argv.slice(2)
-switch (command) {
-  case 'init':
-    init(rest).catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)))
-    break
-  case 'add':
-    add(rest).catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)))
-    break
-  case 'keygen':
-    keygen(rest)
-    break
-  case 'pack':
-    pack(rest)
-    break
-  case 'sign':
-    signCommand(rest)
-    break
-  case 'verify':
-    verifyCommand(rest)
-    break
-  case undefined:
-  case '--help':
-  case '-h':
-    console.log(USAGE)
-    break
-  default:
-    fail(`Unknown command "${command}".\n\n${USAGE}`)
-}
+const authoring = new Set(['validate', 'inspect', 'test', 'check', 'dev', 'shot', 'list', 'logs'])
+if (command && authoring.has(command)) {
+  import('./cli-commands.js')
+    .then(({ runAuthoringCommand }) => runAuthoringCommand(command, rest))
+    .catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)))
+} else
+  switch (command) {
+    case 'init':
+      init(rest).catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)))
+      break
+    case 'add':
+      add(rest).catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)))
+      break
+    case 'keygen':
+      keygen(rest)
+      break
+    case 'pack':
+      pack(rest)
+      break
+    case 'sign':
+      signCommand(rest)
+      break
+    case 'verify':
+      verifyCommand(rest)
+      break
+    case undefined:
+    case '--help':
+    case '-h':
+      console.log(USAGE)
+      break
+    default:
+      fail(`Unknown command "${command}".\n\n${USAGE}`)
+  }

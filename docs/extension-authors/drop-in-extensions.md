@@ -10,24 +10,26 @@ always a discoverable place to look.
 | **Extension** | `~/.sprintengine/extensions/<publisher>.<id>/` | `extension.json` | Settings → Extensions, the Extensions door |
 
 An extension's folder is named for its install key, `<publisher>.<id>`; one
-installed from a folder is `local.<id>`. Agent CLIs are not installed this
+installed from a folder is `local.<id>`. A development folder (below) is not
+copied there: it loads from where it is, under `local.<id>`. Agent CLIs are not installed this
 way: they ship with the app, and nothing a user installs adds or replaces one.
 Model providers, skills and MCP servers come from extensions
 (`contributes.providers`, `contributes.skills`, `contributes.mcpServers`).
 
 The extension root can be relocated with the `SPRINTENGINE_USER_EXTENSION_ROOT`
-environment variable (the dev harness and a template's `dev:install` honour
-it).
+environment variable (the dev harness honours it).
 
 ## Extensions
 
 An extension adds to Studio what its `extension.json` declares: commands,
 items in the Backlog, Files and notification menus, top bar buttons, panels in
 a workspace's pane, doors in the Extensions drawer, settings sections, and MCP
-tools agents can call. Its code is optional and comes in two kinds: a ui
-entry per panel, door or settings section (an ESM bundle exporting
-`mount(root, studio)`), and a worker (`main`, a CommonJS bundle exporting
-`activate(studio)`) that serves its commands, methods and tools and reaches
+tools agents can call. Its code is optional, loaded as written with no build
+step, and comes in two kinds: an entry per panel, door, settings section or
+custom editor (a module exporting `mount(root, studio)`, in TypeScript, JSX or
+JavaScript, importing its own files by relative paths), and a worker (`main`,
+a module exporting `activate(studio)`, TypeScript with its types stripped by
+Node, or JavaScript) that serves its commands, methods and tools and reaches
 the host's services — chats of its own with the app's agents, Backlog reads
 and writes, token usage, the person's own activity. Anything beyond content
 runs only once the person approved it, and every call it makes into Studio is
@@ -52,9 +54,10 @@ may do (the `permissions` reference).
   extension asking for a newer one than this app is refused with a message
   saying so — never shown as merely "waiting for approval". extension.json is read from
   Studio 0.13.0 (`EXTENSION_MANIFEST_SINCE`).
-- **Surfaces bring their own drawing.** A ui entry is imported as a blob
-  module into Studio's window, so it bundles everything it imports, React
-  included; Studio shares no React or UI kit with it. It styles with Studio's
+- **Surfaces bring their own drawing.** An entry runs in a sandboxed frame of
+  its own with the files it imports by relative paths; a package by name is
+  refused, so a library is copied into the extension or bundled by the author.
+  Studio shares no React or UI kit with it. It styles with Studio's
   `--sem-*` CSS custom properties and calls `studio.ready()` once drawn, and
   Studio measures the time from opening to that call.
 - **Commands without an `action` run worker code.** Studio calls the worker
@@ -64,9 +67,11 @@ may do (the `permissions` reference).
   contributed door.
 - Test without the app. `@sprintengine/extension-sdk/testing` has fake hosts
   that keep this app's rules (the permissions it checks, storage's limits, chat
-  ownership, the MCP tools extension.json declares); a scaffolded project runs its TypeScript tests and
-  a smoke test that loads the built extension the way the app does on
-  `npm run check`. See the SDK README's "Testing".
+  ownership, the MCP tools extension.json declares); a scaffolded project's
+  `npm run check` typechecks it, runs its TypeScript tests with `node --test`
+  and runs `sprintengine-extension check`, which activates the worker against
+  the fake host and loads each surface's modules as the app does. See the SDK
+  README's "Testing".
 - What runs is the Studio server's to change: Settings installs a folder,
   approves it, switches it on or off and uninstalls it through the server
   (`extension.install`, `extension.approve`, `extension.setEnabled`,
@@ -82,18 +87,39 @@ may do (the `permissions` reference).
   writes `extension.sig` beside extension.json: the sha256 of every file the
   extension ships (extension.json included) and an ed25519 signature over
   them, so the signature covers the code and the declaration together.
-- Install a folder from **Settings → Extensions**, or with a template's
-  `npm run dev:install`, which copies the project's `extension/` folder to
-  `~/.sprintengine/extensions/local.<id>/` and signs the copy when your key is
-  at `~/.sprintengine/keys/<id>.key`. Symbolic links are left out of the
+- Install a folder from **Settings → Extensions**: Studio copies it to
+  `~/.sprintengine/extensions/local.<id>/`. Symbolic links are left out of the
   copy, and Settings names them; a folder with `node_modules`, `.git` or key
-  files in it is refused, and `pack` leaves those out. A newly installed
-  extension without a worker appears as soon as it is approved; one with a
-  worker starts, surfaces and all, with the next start of Studio.
+  files in it is refused, and `pack` leaves those out. An install, an
+  approval or an update loads live, worker and surfaces alike, with no
+  restart of Studio.
+- **Develop in a development folder.** A template's `npm run dev`
+  (`sprintengine-extension dev watch`), `sprintengine-extension dev load
+  <dir>`, or Settings → Extensions → Install → As a development folder
+  registers a folder holding extension.json with the Studio on this machine.
+  It loads from where it is, under `local.<id>`, after every installed
+  extension and in the order the folders were registered (the order their
+  hooks run in), and again within a moment of every save: its worker restarts
+  on the new code and its surfaces redraw on every client. `node_modules`,
+  `.git`, dotted files and folders and symbolic links in it are left out; it
+  holds at most 2000 files and 50 MiB. Anyone on this machine, an agent
+  included, may register one, but nothing runs from it until the person
+  approves it in Studio's window, which asks them at once (or Settings →
+  Extensions); every folder asks once. One whose key an installed extension
+  has stands in for it only once the person approves that, and the installed
+  one runs until then. The CLI's `dev watch` prints
+  each reload, a check, a PNG of a surface (`shot`) and the worker's and
+  frames' log lines at their file and line; the SDK guide's `dev-loop` topic
+  is the reference.
 - **Approval binds to access and contents.** An extension beyond content waits
-  for the person to approve it, and the approval binds to a fingerprint over
-  its permissions, tier, worker and background and the digests of every file,
-  so different bytes under the same install key never inherit it. A new
+  for the person to approve it, and an installed extension's approval binds to
+  a fingerprint over its permissions, tier, worker and background and the
+  digests of every file, so different bytes under the same install key never
+  inherit it. A development folder's binds to its real path and its access,
+  not its files: saves keep it, a save that asks for more asks again, and
+  removing the folder forgets it. Settings marks it "Development folder", and
+  its approval never covers the installed extension with its key, nor the
+  other way round. An agent Studio launched cannot approve either. A new
   version installed through Studio keeps the approval when it asks for no
   more. An `extension.sig` is a badge (verified, by a publisher key Studio
   trusts) and approves nothing; a changed, missing or extra file after signing
@@ -111,7 +137,8 @@ may do (the `permissions` reference).
 - **The worker runs in a Node process of its own**, forked by the Studio
   server, with no Electron APIs and a clean environment. It starts when something needs it and is
   stopped after five idle minutes, unless extension.json says
-  `background: true`. Bundle everything into it.
+  `background: true`. Once packed it has no `node_modules`: the SDK comes from
+  the Studio running it, and anything else is copied into the extension.
 
 ### Creating a workspace from the worker
 
@@ -162,9 +189,10 @@ cat > resources/marketplace/trusted-publishers.dev.json <<'JSON'
 JSON
 ```
 
-Then build the extension, sign it (`sprintengine-extension sign extension
---key …`, or `npm run dev:install` with the key at
-`~/.sprintengine/keys/<id>.key`), install it, and restart the app.
+Then sign the extension (`sprintengine-extension sign extension --key …`),
+pack it (`sprintengine-extension pack extension`), install the packed copy,
+and restart the app so it reads the dev key. A development folder's
+signature is not read, so this is for an installed copy.
 
 ### Skills, MCP servers and model providers
 

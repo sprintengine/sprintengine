@@ -67,6 +67,19 @@ export type LoadMainModulesResult = {
     overrides: ModuleEnablementOverrides,
     options: MainModuleLiveUpdateOptions,
   ): Promise<MainModuleLiveUpdateReport>
+  /**
+   * Load these modules again, or for the first time, and let go of `removed`:
+   * an extension whose files, approval or folder changed while Studio runs (a
+   * save in a development folder, an install, an approval). Each one's main
+   * half is unregistered (its worker stops, its tools and methods leave) and
+   * registered again from its new `CapabilityModule`, where it is enabled and
+   * eligible. The maps the kernel reads (roots, files, tools, approvals,
+   * ineligible) are the caller's, already updated in place.
+   */
+  replaceModules(
+    update: { modules: readonly CapabilityModule[]; removed: readonly string[] },
+    overrides: ModuleEnablementOverrides,
+  ): Promise<MainModuleLiveUpdateReport>
 }
 
 // How long an asynchronous registerMain may take before its module is dropped.
@@ -158,7 +171,9 @@ export function loadMainModules(options: {
   /** Handed the kernel as soon as it exists, before any module registers (the workers bind to it). */
   onKernel?: (kernel: MainKernel) => void
 }): LoadMainModulesResult {
-  const { modules, overrides = {}, provideServices, ineligible, launchErrors = [] } = options
+  const { overrides = {}, provideServices, ineligible, launchErrors = [] } = options
+  // Changed in place by `replaceModules`.
+  const modules = [...options.modules]
   const registerTimeoutMs = options.registerTimeoutMs ?? REGISTER_MAIN_TIMEOUT_MS
   const byId = new Map(modules.map((module) => [module.manifest.id, module]))
   const resolution = resolveModuleEnablement(
@@ -334,6 +349,68 @@ export function loadMainModules(options: {
       return {
         loaded: [...activeMainModules].filter((id) => liveModuleIds.has(id)).sort(),
         disabled: [...liveModuleIds].filter((id) => !nextEnabled.has(id)).sort(),
+        errors: liveErrors,
+      }
+    },
+    async replaceModules(update, nextOverrides): Promise<MainModuleLiveUpdateReport> {
+      const touched = new Set([...update.removed, ...update.modules.map((module) => module.manifest.id)])
+      // Taken down first, the newest last loaded first.
+      for (const id of [...touched].reverse()) {
+        if (activeMainModules.has(id)) {
+          await kernel.unregisterModule(id)
+          activeMainModules.delete(id)
+        }
+        activeManifestOnlyModules.delete(id)
+        const at = loaded.indexOf(id)
+        if (at >= 0) loaded.splice(at, 1)
+      }
+      for (const id of update.removed) {
+        const at = modules.findIndex((module) => module.manifest.id === id)
+        if (at >= 0) modules.splice(at, 1)
+        byId.delete(id)
+      }
+      for (const module of update.modules) {
+        const at = modules.findIndex((candidate) => candidate.manifest.id === module.manifest.id)
+        if (at >= 0) modules[at] = module
+        else modules.push(module)
+        byId.set(module.manifest.id, module)
+      }
+      const nextResolution = resolveModuleEnablement(
+        modules.map((module) => module.manifest),
+        nextOverrides,
+        { ineligible },
+      )
+      const liveErrors: MainModuleLoadError[] = []
+      for (const id of nextResolution.order) {
+        if (!touched.has(id)) continue
+        const module = byId.get(id)
+        if (!module) continue
+        if (!module.registerMain) {
+          activeManifestOnlyModules.add(id)
+          continue
+        }
+        try {
+          const registered = module.registerMain(kernel.hostFor(id))
+          if (isThenable(registered)) await settleRegistration(id, registered, registerTimeoutMs)
+          activeMainModules.add(id)
+          loaded.push(id)
+          if (kernel.isStarted()) await kernel.runStartupForModule(id)
+        } catch (err) {
+          await kernel.unregisterModule(id)
+          activeMainModules.delete(id)
+          const loadError = { id, message: errorMessage(err) }
+          liveErrors.push(loadError)
+          notifyLoadError(loadError)
+        }
+      }
+      // What failed before and loads now is no longer an error.
+      for (const id of touched) {
+        for (let at = errors.length - 1; at >= 0; at -= 1) if (errors[at]!.id === id) errors.splice(at, 1)
+      }
+      errors.push(...liveErrors)
+      return {
+        loaded: [...touched].filter((id) => activeMainModules.has(id)).sort(),
+        disabled: [...touched].filter((id) => !nextResolution.order.includes(id)).sort(),
         errors: liveErrors,
       }
     },

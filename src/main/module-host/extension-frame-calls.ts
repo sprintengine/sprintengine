@@ -30,6 +30,8 @@ import {
 import type { ModuleMethodCallOutcome, ModuleMethodCallRequest } from './main-host'
 import type { ModuleAppStateMirror } from './module-app-state-mirror'
 import { moduleEventPayloadProblem } from '../../shared/modules/events'
+import { extensionDevEvents } from '../../server/extensions/dev/dev-events'
+import { FRAME_LOG_LIMIT, FRAME_LOG_WINDOW_MS } from '../../server/extensions/frames/frame-bootstrap'
 
 /** One frame call, as the router hands it over. */
 export type ExtensionFrameCallRequest = {
@@ -62,6 +64,21 @@ export type ExtensionFrameCallDeps = {
   appState(): Pick<ModuleAppStateMirror, 'get' | 'setValue'> | undefined
   /** Folders no `files.*` call may reach even inside a workspace. */
   fileExclusions(): readonly string[]
+  /** A line in the extension's log file (`log.write`), beside its worker's. */
+  frameLog?: (moduleId: string, line: string) => void
+}
+
+// At most FRAME_LOG_LIMIT lines per extension in each window, whatever its frames send.
+const frameLogWindows = new Map<string, { since: number; count: number }>()
+function frameLogAdmits(moduleId: string, now = Date.now()): boolean {
+  const window = frameLogWindows.get(moduleId)
+  if (!window || now - window.since > FRAME_LOG_WINDOW_MS) {
+    frameLogWindows.set(moduleId, { since: now, count: 1 })
+    return true
+  }
+  window.count += 1
+  // One more than a frame's own bound: its notice that it dropped lines.
+  return window.count <= FRAME_LOG_LIMIT + 1
 }
 
 /** The frame methods the window that drew the frame carries out. */
@@ -213,6 +230,15 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
     },
     'worker.read': (request, params) => worker(request, 'read', params),
     'worker.operate': (request, params) => worker(request, 'operate', params),
+    'log.write': async (request, params) => {
+      const level = params.level === 'info' || params.level === 'warn' ? params.level : 'error'
+      const message = text(params, 'message', 4000).replace(/[\r\n]+/gu, ' ')
+      // Held per extension too: a frame that ignores its own bound is cut off here.
+      if (!frameLogAdmits(request.moduleId)) return { ok: true }
+      extensionDevEvents.add({ key: request.moduleId, kind: 'log', source: 'frame', level, message })
+      deps.frameLog?.(request.moduleId, `[frame] ${message}`)
+      return { ok: true }
+    },
   }
 
   return async function callFrameMethod(request: ExtensionFrameCallRequest): Promise<StudioExtensionCallAnswer> {

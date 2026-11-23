@@ -22,7 +22,7 @@
 // in the test suite, this says it before a bundle that cannot start is written.
 
 import { execFileSync } from 'node:child_process'
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
@@ -132,6 +132,25 @@ export async function buildWslServerTree({ outDir = DEFAULT_WSL_SERVER_DIR } = {
   for (const name of WSL_RESOURCES) {
     cpSync(join(ROOT, 'resources', name), join(outDir, 'resources', name), { recursive: true })
   }
+  // The extension SDK a worker imports when it does not carry it
+  // (worker-process.ts `resolveExtensionSdkRoot`). A tree without it would
+  // start and fail every such worker, so it is never left out: built here
+  // when this checkout has not built it, and the build stops if it cannot be.
+  const sdk = join(ROOT, 'packages', 'extension-sdk')
+  if (!existsSync(join(sdk, 'dist', 'index.js')))
+    execFileSync(
+      process.execPath,
+      [join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(sdk, 'tsconfig.json')],
+      {
+        cwd: ROOT,
+        stdio: 'inherit',
+      },
+    )
+  if (!existsSync(join(sdk, 'dist', 'index.js')))
+    throw new Error('packages/extension-sdk/dist could not be built, so the server tree would ship no SDK for workers.')
+  const runtime = join(outDir, 'resources', 'extension-sdk-runtime')
+  cpSync(join(sdk, 'dist'), join(runtime, 'dist'), { recursive: true })
+  cpSync(join(sdk, 'package.json'), join(runtime, 'package.json'))
   return outDir
 }
 

@@ -1,13 +1,13 @@
-// Your tests, in TypeScript: `npm test` bundles test/*.test.ts and runs them
-// with `node --test` (see AGENTS.md). Drive the source with the SDK's fakes,
-// handing them `manifest` from ./manifest.
+// Your tests, in TypeScript: `npm test` runs test/*.test.ts with `node --test`,
+// loading the source as Studio loads it (see AGENTS.md). Drive the source with
+// the SDK's fakes, handing them `manifest` from ./manifest.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { createFakeFrameStudio } from '@sprintengine/extension-sdk/testing'
 
-import { formatPairs, parsePairs, type Pair } from '../src/pairs'
+import { formatPairs, parsePairs, type Pair } from '../extension/src/pairs'
 import { manifest } from './manifest'
 
 const surface = { point: 'customEditors', id: 'pairs', workspaceId: 'ws-app' } as const

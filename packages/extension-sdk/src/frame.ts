@@ -142,6 +142,14 @@ export type ExtensionFrameMethods = {
     params: { method: string; params?: unknown }
     result: ModuleMethodAnswer<ModuleMethodContract>
   }
+  // ── Its log ──
+  /**
+   * A line in the extension's log, as `[frame]`: what `sprintengine-extension
+   * dev watch` and `logs` print. The frame's own `console.error` and
+   * `console.warn`, and what it throws, arrive here already, at their file
+   * and line; at most 20 lines every 10 seconds are kept.
+   */
+  'log.write': { params: { level?: 'info' | 'warn' | 'error'; message: string }; result: { ok: true } }
 }
 
 export type ExtensionFrameMethod = keyof ExtensionFrameMethods

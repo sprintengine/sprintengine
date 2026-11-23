@@ -1,14 +1,14 @@
-// Your tests, in TypeScript: `npm test` bundles test/*.test.ts and runs them
-// with `node --test` (see AGENTS.md). Drive the worker with the SDK's fake
-// main host, handing it `manifest` from ./manifest, and run the command the
-// way Studio does: its method, with what the menu was picked on.
+// Your tests, in TypeScript: `npm test` runs test/*.test.ts with `node --test`,
+// loading the source as Studio loads it (see AGENTS.md). Drive the worker with
+// the SDK's fake main host, handing it `manifest` from ./manifest, and run the
+// command the way Studio does: its method, with what the menu was picked on.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { createFakeMainHost } from '@sprintengine/extension-sdk/testing'
 
-import { activate } from '../src/main'
+import { activate } from '../extension/src/main'
 import { manifest } from './manifest'
 
 test('planning an item starts a chat that names it', async () => {

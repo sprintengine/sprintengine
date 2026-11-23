@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -13,7 +13,11 @@ import { extensionManifest, HELLO_MOUNT_SOURCE, writeExtensionFolder } from '../
 import { EXTENSION_FRAME_THEMES } from '../../shared/extension-frame-themes.generated'
 import { extensionFrameDocuments } from '../../server/extensions/frames/frame-cache'
 import { extensionFrameHash } from '../../server/extensions/frames/frame-document'
-import { createExtensionApprovalReader, writeExtensionApproval } from './extension-approvals'
+import {
+  createExtensionApprovalReader,
+  readExtensionApprovalsSync,
+  writeExtensionApproval,
+} from './extension-approvals'
 import { createExtensionFrameGrant } from './extension-frame-grant'
 import { approvalOf } from './extension-approvals.test-helper'
 import { NO_EXTENSION_RUN } from './third-party-module-view'
@@ -200,4 +204,79 @@ test('an approved extension’s surface is drawn from its verified entry, in the
   // Switched off: no frame.
   await lifecycle.setEnabled('local.deck', false)
   assert.equal((await lifecycle.frame({ moduleId: 'local.deck', point: 'doors', id: 'deck' })).ok, false)
+})
+
+test('a development folder registered over an installed extension waits for the person, who approves it in its place; removing it forgets its approval under every key', async () => {
+  const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'module-lifecycle-')))
+  dirs.push(dataDir)
+  const root = join(dataDir, 'modules')
+  const deck = (files: Record<string, string>) => ({
+    manifest: extensionManifest({
+      id: 'deck',
+      tier: 'ui',
+      main: undefined,
+      contributes: { doors: [{ id: 'deck', title: 'Deck', entry: 'dist/door.js' }] },
+    }),
+    files,
+  })
+  const installed = writeExtensionFolder(join(root, 'local.deck'), deck({ 'dist/door.js': HELLO_MOUNT_SOURCE }))
+  await writeExtensionApproval(dataDir, 'local.deck', approvalOf(installed))
+  const work = realpathSync(mkdtempSync(join(tmpdir(), 'module-lifecycle-work-')))
+  dirs.push(work)
+  const folder = writeExtensionFolder(join(work, 'deck'), deck({ 'dist/door.js': HELLO_MOUNT_SOURCE }))
+  const lifecycle = createModuleLifecycle({
+    dataDir,
+    moduleRoot: () => root,
+    view: () => null,
+    applyEnablement: async () => ({ ok: true }),
+    changed: () => undefined,
+    ...quiet(),
+    registry: createModuleRegistryMirror(),
+  })
+
+  // An agent registers it: nothing approves it, and the installed one runs on.
+  const loaded = await lifecycle.devLoad(folder)
+  assert.ok(loaded.ok)
+  assert.equal(loaded.approval.state, 'pending')
+  const listed = await lifecycle.devFolders()
+  assert.equal(listed[0]!.waiting, true)
+  assert.deepEqual(
+    (await lifecycle.contributions()).extensions.map((extension) => extension.id),
+    ['local.deck'],
+    'the installed one is what clients draw',
+  )
+  const views = (await lifecycle.installed()).modules
+  assert.equal(views.length, 2, 'both are listed: the installed one, and the folder waiting to replace it')
+  const waiting = views.find((view) => view.development)!
+  assert.equal(waiting.development?.waiting, true)
+  assert.equal(views.find((view) => !view.development)!.approval.state, 'approved')
+
+  // The person approves the folder, named by its own fingerprint: it stands in.
+  assert.equal(waiting.approval.state, 'pending')
+  const approved = await lifecycle.approve(
+    'local.deck',
+    waiting.approval.state === 'pending' ? waiting.approval.fingerprint : '',
+  )
+  assert.deepEqual(approved, { ok: true })
+  const after = await lifecycle.devFolders()
+  assert.equal(after[0]!.waiting, undefined)
+  assert.equal(after[0]!.approval?.state, 'approved')
+
+  // Its id changes, so discovery no longer finds it under that key; removing
+  // it still forgets the approval it was given.
+  writeExtensionFolder(folder, {
+    ...deck({ 'dist/door.js': HELLO_MOUNT_SOURCE }),
+    manifest: extensionManifest({
+      id: 'deck2',
+      tier: 'ui',
+      main: undefined,
+      contributes: { doors: [{ id: 'deck', title: 'Deck', entry: 'dist/door.js' }] },
+    }),
+  })
+  const removed = await lifecycle.devUnload({ path: folder })
+  assert.ok(removed.ok)
+  assert.equal(
+    [...readExtensionApprovalsSync(dataDir).values()].some((record) => record.devFolder === folder),
+    false,
+  )
 })

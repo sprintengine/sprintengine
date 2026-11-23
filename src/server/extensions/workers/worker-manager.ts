@@ -20,7 +20,9 @@ import {
 import { currentInvoker, ownerInvoker, type ExtensionInvoker } from '../../../main/module-host/extension-invocation'
 import { resolveContainedEntry } from '../../../main/modules/entry-containment'
 import { moduleFileDigestIssuesSync } from '../../../main/modules/module-signature'
+import { devFolderStillResolves } from '../../../main/modules/extension-dev-folders'
 import { createWorkerLog, type WorkerLog } from './worker-log'
+import { extensionDevEvents } from '../dev/dev-events'
 import { startWorkerProcess, WorkerCallError, type WorkerProcess } from './worker-process'
 import {
   WORKER_CALL_TIMEOUT_MS,
@@ -71,6 +73,13 @@ export type WorkerExtensionSpec = {
   declaredTools: readonly ExtensionMcpToolContribution[]
   /** The points extension.json lists (`contributes.hooks`); absent, none. */
   declaredHooks?: readonly ExtensionHookContribution[]
+  /**
+   * A development folder, at `order` among them: its files are the author's
+   * working copy, read as they are when its worker starts (a save restarts it,
+   * reloadInstalledExtensions), so they are not held to `verifiedFiles`. Its
+   * hooks run after every installed extension's.
+   */
+  development?: { order: number }
 }
 
 /** An extension that hooks a point, as the hook chain asks it. */
@@ -109,6 +118,12 @@ export type ExtensionWorkersOptions = {
   toolsChanged?: () => void
   /** A worker's state changed: tell the windows. */
   stateChanged?: (moduleId: string) => void
+  /**
+   * A development folder's worker was refused at its start because the folder
+   * (or a parent) no longer leads where it was registered: read the
+   * extensions again, so it waits to be registered, and approved, again.
+   */
+  developmentFolderMoved?: (moduleId: string) => void
   maxActive?: number
   maxBackground?: number
   idleReapMs?: number
@@ -119,6 +134,8 @@ export type ExtensionWorkersOptions = {
   maxRestarts?: number
   /** For tests: what runs the entry. */
   execPath?: string
+  /** Studio's SDK package, for workers that import it without carrying it (resolveExtensionSdkRoot). */
+  sdkRoot?: string | null
 }
 
 type Entry = {
@@ -152,6 +169,25 @@ type Entry = {
  */
 function resident(spec: WorkerExtensionSpec): boolean {
   return spec.background || (spec.declaredHooks?.length ?? 0) > 0
+}
+
+/**
+ * Its log file, and each line as a `log` event too (dev-events.ts), so `dev
+ * watch` prints what the worker printed and what Studio did with it.
+ */
+function teeToDevEvents(extensionId: string, log: WorkerLog): WorkerLog {
+  return (line) => {
+    log(line)
+    const studio = line.startsWith('[studio] ')
+    const stderr = line.startsWith('[stderr] ')
+    extensionDevEvents.add({
+      key: extensionId,
+      kind: 'log',
+      source: studio ? 'studio' : 'worker',
+      level: stderr || /did not start|crashed|errored|failed/u.test(line) ? 'error' : 'info',
+      message: line.replace(/^\[(?:stdout|stderr|studio)\] /u, ''),
+    })
+  }
 }
 
 /** The approval it was started under is gone or changed: stop, do not restart. */
@@ -334,7 +370,11 @@ export class ExtensionWorkers implements KernelWorkerPort {
     // Its main is held to its folder before anything forks it.
     resolveContainedEntry(spec.root, spec.main, 'main')
     if (spec.verifiedFiles[spec.main] === undefined)
-      throw new Error('main is not among the extension’s files that were verified.')
+      throw new Error(
+        spec.development
+          ? `main names ${spec.main}, which is not in the development folder.`
+          : 'main is not among the extension’s files that were verified.',
+      )
     const problem = this.options.toolNameProblem(
       spec.extensionId,
       spec.declaredTools.map((tool) => tool.name),
@@ -343,7 +383,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
     const entry: Entry = {
       spec,
       host,
-      log: createWorkerLog(this.options.logDir, spec.extensionId),
+      log: teeToDevEvents(spec.extensionId, createWorkerLog(this.options.logDir, spec.extensionId)),
       state: 'idle',
       restarts: 0,
       generation: 0,
@@ -365,11 +405,26 @@ export class ExtensionWorkers implements KernelWorkerPort {
     if (resident(spec)) void this.ensure(spec.extensionId).catch(() => undefined)
   }
 
+  /** Extensions about to be loaded again after a change (extension-reload.ts): their detach says so. */
+  private readonly reloading = new Set<string>()
+
+  /** Mark extensions the kernel is about to load again, so stopping their workers is told as a reload. */
+  willReload(moduleIds: readonly string[]): void {
+    for (const id of moduleIds) this.reloading.add(id)
+  }
+
   /** Let go of an extension: its worker stops, and its tools leave the gateway. */
   async detach(moduleId: string): Promise<void> {
     const entry = this.entries.get(moduleId)
+    const reloading = this.reloading.delete(moduleId)
     if (!entry) return
-    await this.stop(entry, 'stopped', `Extension "${moduleId}" was switched off, so its worker stopped.`)
+    await this.stop(
+      entry,
+      'stopped',
+      reloading
+        ? `Extension "${moduleId}" changed, so its worker stopped to start again as it is now.`
+        : `Extension "${moduleId}" was switched off, so its worker stopped.`,
+    )
     this.entries.delete(moduleId)
     if (entry.spec.declaredTools.length > 0) this.options.toolsChanged?.()
   }
@@ -405,7 +460,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
     if (!standing) return `Extension "${id}" is no longer installed, so its worker stopped.`
     if (!standing.runnable) return `Extension "${id}" changed and waits for your approval, so its worker stopped.`
     if (standing.fingerprint !== entry.spec.fingerprint)
-      return `Extension "${id}" changed since its worker started, so the worker stopped. Restart Studio to run it as it is now.`
+      return `Extension "${id}" changed since its worker started, so the worker stopped; Studio loads it again as it is now.`
     return null
   }
 
@@ -464,8 +519,16 @@ export class ExtensionWorkers implements KernelWorkerPort {
   // ── Starting and stopping ──────────────────────────────────────────────────
 
   private setState(entry: Entry, state: WorkerRunState, message?: string): void {
+    const before = entry.state
     entry.state = state
     entry.message = message
+    if (state !== before)
+      extensionDevEvents.add({
+        key: entry.spec.extensionId,
+        kind: 'status',
+        state,
+        message: message ?? `Its worker is ${state}.`,
+      })
     this.options.stateChanged?.(entry.spec.extensionId)
   }
 
@@ -474,7 +537,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
     if (!record)
       return `Extension "${entry.spec.extensionId}" is no longer approved (or was uninstalled), so its worker stopped.`
     if (record.fingerprint !== entry.spec.fingerprint)
-      return `Extension "${entry.spec.extensionId}" changed since its worker started, so the worker stopped. Restart Studio to run it as it is now.`
+      return `Extension "${entry.spec.extensionId}" changed since its worker started, so the worker stopped; Studio loads it again as it is now.`
     return null
   }
 
@@ -538,9 +601,23 @@ export class ExtensionWorkers implements KernelWorkerPort {
     try {
       const why = this.approvalProblem(entry)
       if (why) throw new ApprovalChanged(why)
-      const changed = moduleFileDigestIssuesSync(spec.root, spec.verifiedFiles, {
-        label: 'digests it was approved with',
-      })
+      // A development folder's files are not bound by its approval, its
+      // place is: one swapped for a link since the last reconcile (or with a
+      // parent swapped) would run other code under the first one's approval.
+      if (spec.development) {
+        const still = devFolderStillResolves(spec.root)
+        if (!still.ok) {
+          this.options.developmentFolderMoved?.(spec.extensionId)
+          throw new ApprovalChanged(
+            `Extension "${spec.extensionId}"'s development folder ${spec.root} ${still.now ? `now leads to ${still.now}` : 'is gone'}, so its worker was not started. Register the folder again; the person approves it again.`,
+          )
+        }
+      }
+      const changed = spec.development
+        ? []
+        : moduleFileDigestIssuesSync(spec.root, spec.verifiedFiles, {
+            label: 'digests it was approved with',
+          })
       if (changed.length > 0)
         throw new ApprovalChanged(
           `Extension "${spec.extensionId}"'s files changed after it was approved, so its worker was not started: ${changed
@@ -634,6 +711,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
       dataDir,
       services: SERVICE_SHAPES,
       provided,
+      ...(this.options.sdkRoot ? { sdkRoot: this.options.sdkRoot } : {}),
     }
   }
 
@@ -697,12 +775,13 @@ export class ExtensionWorkers implements KernelWorkerPort {
   // ── Hooks ──────────────────────────────────────────────────────────────────
 
   /**
-   * The extensions that list `point`, in the order of their install keys:
+   * The extensions that list `point`, the installed ones in the order of
+   * their install keys, then the development folders in registration order:
    * the ones loaded and not stopped for good. An errored one is listed, so its
    * failure is its `onError`'s to decide.
    */
   hookParticipants(point: ExtensionHookPoint): WorkerHookParticipant[] {
-    const listed: WorkerHookParticipant[] = []
+    const listed: Array<WorkerHookParticipant & { order: number }> = []
     for (const entry of this.entries.values()) {
       if (entry.state === 'stopped') continue
       const hook = entry.spec.declaredHooks?.find((candidate) => candidate.point === point)
@@ -712,9 +791,13 @@ export class ExtensionWorkers implements KernelWorkerPort {
         displayName: entry.spec.displayName,
         onError: hook.onError ?? 'pass',
         fingerprint: entry.spec.fingerprint,
+        // Installed ones first, by install key; then the development folders, in the order they were registered.
+        order: entry.spec.development ? entry.spec.development.order : -1,
       })
     }
-    return listed.sort((a, b) => (a.extensionId < b.extensionId ? -1 : a.extensionId > b.extensionId ? 1 : 0))
+    return listed
+      .sort((a, b) => a.order - b.order || (a.extensionId < b.extensionId ? -1 : a.extensionId > b.extensionId ? 1 : 0))
+      .map(({ order: _order, ...participant }) => participant)
   }
 
   /** Whether any loaded extension lists `point`: cheap, for the call sites' no-hook path. */

@@ -1,12 +1,14 @@
 import { readModuleOverridesSync } from '../../../main/module-host/enablement-store'
 import { readExtensionStandingContextSync } from '../../../main/modules/extension-standing-context'
-import { discoverUserModules } from '../../../main/modules/user-module-registry'
+import { discoverUserModules, type InstalledModule } from '../../../main/modules/user-module-registry'
 import { reconcileAgentContributions, type ReconcileResult } from './projection'
 
 export type ReconcileInstalledInput = {
   dataDir: string
   /** Where installed extensions live. */
   moduleRoot: string
+  /** What was discovered for this change already; read now when absent. */
+  modules?: readonly InstalledModule[]
   /** Ids a provider may not take: Studio's own providers' and agent CLIs'. */
   protectedProviderIds?: () => ReadonlySet<string>
   warn?: (message: string) => void
@@ -18,7 +20,9 @@ export type ReconcileInstalledInput = {
  * every start and after every install, approval, switch and uninstall.
  */
 export async function reconcileInstalledAgentContributions(input: ReconcileInstalledInput): Promise<ReconcileResult> {
-  const { modules } = await discoverUserModules(input.moduleRoot, readExtensionStandingContextSync(input.dataDir))
+  const modules =
+    input.modules ??
+    (await discoverUserModules(input.moduleRoot, readExtensionStandingContextSync(input.dataDir))).modules
   const overrides = readModuleOverridesSync(input.dataDir)
   return reconcileAgentContributions({
     dataDir: input.dataDir,

@@ -12,7 +12,13 @@ import { windowStudioClient, windowStudioIsAnotherMachine } from './windowStudio
 // id made for the call. None throws: a refusal, Studio's or the connection's,
 // is an answer the caller shows.
 
-type Lifecycle = 'extension.setEnabled' | 'extension.install' | 'extension.approve' | 'extension.uninstall'
+type Lifecycle =
+  | 'extension.setEnabled'
+  | 'extension.install'
+  | 'extension.approve'
+  | 'extension.uninstall'
+  | 'extension.devLoad'
+  | 'extension.devUnload'
 type Params<M extends Lifecycle> = Omit<StudioModulesMethodMap[M]['params'], 'commandId'>
 type Result<M extends Lifecycle> = StudioModulesMethodMap[M]['result']
 
@@ -22,6 +28,9 @@ export type ModuleLifecycleClient = {
   /** Approve it as the person was shown it: `fingerprint` from `extension.installed`. */
   approve(moduleId: string, fingerprint: string): Promise<Result<'extension.approve'>>
   uninstall(moduleId: string): Promise<Result<'extension.uninstall'>>
+  /** Register a development folder: its extension loads from where it is, and again on every save. */
+  devLoad(path: string): Promise<Result<'extension.devLoad'>>
+  devUnload(path: string): Promise<Result<'extension.devUnload'>>
 }
 
 function commandId(): string {
@@ -29,7 +38,7 @@ function commandId(): string {
   return crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
-const refused = (message: string) => ({ ok: false as const, message })
+const refused = (message: string) => ({ ok: false as const, code: 'unavailable' as const, message })
 
 /** One lifecycle command over a client: Studio's answer, or why it could not be asked. */
 export async function sendModuleLifecycle<M extends Lifecycle>(
@@ -61,6 +70,8 @@ export function moduleLifecycleOver(client: () => Promise<StudioClient>): Module
     install: (path) => send('extension.install', { path }),
     approve: (moduleId, fingerprint) => send('extension.approve', { moduleId, fingerprint }),
     uninstall: (moduleId) => send('extension.uninstall', { moduleId }),
+    devLoad: (path) => send('extension.devLoad', { path }),
+    devUnload: (path) => send('extension.devUnload', { path }),
   }
 }
 

@@ -9,12 +9,8 @@
   "tier": "worker",
   "name": "{{displayName}}",
   "description": "{{displayName}}, an extension for SprintEngine Studio.",
-  "permissions": [
-    "conversation:own",
-    "chat:draft",
-    "notifications:show"
-  ],
-  "main": "dist/main.cjs",
+  "permissions": ["conversation:own", "chat:draft", "notifications:show"],
+  "main": "src/main.ts",
   "background": true,
   "contributes": {
     "panels": [
@@ -22,7 +18,7 @@
         "id": "chats",
         "title": "{{displayName}}",
         "icon": "chat",
-        "entry": "dist/companion.js"
+        "entry": "src/companion.ts"
       }
     ]
   }

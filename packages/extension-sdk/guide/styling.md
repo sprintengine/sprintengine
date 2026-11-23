@@ -7,36 +7,38 @@ React: whatever the surface draws with, it brings.
 
 ## The entry
 
-Each ui `entry` in extension.json is one ESM file that Studio loads into the
-frame on its own. Nothing beside it resolves, so the file must hold everything
-it imports, React included. The template's `scripts/build-ui.mjs` builds
-`extension/dist/<name>.js` from `src/<name>.tsx` for each entry extension.json
-names, bundled whole.
+Each surface's `entry` in extension.json is a module Studio loads into the
+frame as written: TypeScript and JSX have their types and JSX removed, and the
+files it imports by relative paths come with it. A package by name (`react`,
+anything from `node_modules`) is refused: nothing resolves it. Plain DOM is
+the default, and what the templates do:
 
-```tsx
-import { useEffect } from 'react'
-import { createRoot } from 'react-dom/client'
-import type { ExtensionMount, ExtensionMountStudio } from '@sprintengine/extension-sdk'
-
-function Hello({ studio }: { studio: ExtensionMountStudio }) {
-  useEffect(() => studio.ready(), [])
-  return <p className="se-heading">Hello.</p>
-}
+```ts
+import type { ExtensionMount } from '@sprintengine/extension-sdk'
 
 export const mount: ExtensionMount = (root, studio) => {
-  const view = createRoot(root)
-  view.render(<Hello studio={studio} />)
-  return () => view.unmount()
+  const heading = root.ownerDocument.createElement('p')
+  heading.className = 'se-heading'
+  heading.textContent = 'Hello.'
+  root.append(heading)
+  studio.ready()
+  return () => heading.remove()
 }
 ```
 
-- **Return a cleanup.** Studio calls it when the surface closes. Unmount what
-  you rendered, stop timers, drop listeners.
+- **Return a cleanup.** Studio calls it when the surface closes. Remove what
+  you drew, stop timers, drop listeners.
 - **Call `studio.ready()` once your content is drawn**, not when `mount`
   starts. Studio measures how long a surface takes from being opened to that
   call. A surface that loads data says ready after the first real paint of it.
-- **Plain DOM works too.** A small surface needs no React: build elements with
-  `document.createElement` and append them to `root`.
+- **JSX works, in the classic form.** In a `.tsx` or `.jsx` file `<b>x</b>`
+  calls `h('b', null, 'x')` and `<>` is `Fragment`. Import both from a file of
+  your own: a few lines that build DOM elements, or a small library's ESM
+  file copied into the extension.
+- **A framework is yours to bring.** To draw with React or another library,
+  copy its ESM build into the extension, or bundle it yourself into one file
+  under `extension/` and import that by a relative path. Studio shares none
+  with extensions.
 
 ## Colours
 
@@ -81,16 +83,25 @@ The frame is the surface's own document: a `<style>` in its head, rules on
 `body`, and any class names you like touch nothing of Studio's. Write plain
 CSS or inline styles on the properties above.
 
+A frame cannot import a CSS file: keep the stylesheet in a string in one of
+your modules and append it in `mount`.
+
 ```ts
-import css from './notes.css'   // esbuild: --loader:.css=text
+// styles.ts
+export const STYLES = `
+.notes { display: flex; flex-direction: column; height: 100%; }
+.notes__state { color: var(--text-muted); }
+`
+
+// notes.ts
+import { STYLES } from './styles'
 
 export const mount: ExtensionMount = (root, studio) => {
-  const style = document.createElement('style')
-  style.textContent = css
-  document.head.append(style)
-  const view = createRoot(root)
-  view.render(<Notes studio={studio} />)
-  return () => view.unmount()
+  const style = root.ownerDocument.createElement('style')
+  style.textContent = STYLES
+  root.ownerDocument.head.append(style)
+  // … draw into root, then studio.ready()
+  return () => style.remove()
 }
 ```
 
@@ -110,7 +121,8 @@ export const mount: ExtensionMount = (root, studio) => {
 
 ## Images, fonts and other files
 
-The frame reaches no network and no file: bundle what it shows. Inline images
-and fonts as `data:` URLs (esbuild's `dataurl` loader), or build `blob:` URLs
+The frame reaches no network and no file: what it shows comes from its own
+modules. Inline images and fonts as `data:` URLs in a module it imports (an
+`export const LOGO = 'data:image/svg+xml;base64,…'`), or build `blob:` URLs
 from bytes you hold. Data the surface reads from a workspace comes through
 `files.read` (permission `workspace-files:read`).

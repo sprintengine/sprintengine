@@ -533,11 +533,18 @@ async function loadRendererModuleBatch(refresh: boolean): Promise<void> {
       extensionsApi.drawsExtensionFrames(),
       extensionsApi.opensExtensionEditors(),
     ])
-    const { loadExtensionContributions, reconcileExtensionContributions, contributionsForRefresh } =
-      await import('./extension-contributions')
+    const {
+      loadExtensionContributions,
+      reconcileExtensionContributions,
+      contributionsForRefresh,
+      forgetChangedExtensions,
+    } = await import('./extension-contributions')
     // What the Studio no longer serves (uninstalled, not approved) leaves first.
     const before = thirdPartyRendererManifests
-    const kept = reconcileExtensionContributions(before, served)
+    const reconciled = reconcileExtensionContributions(before, served)
+    // What it serves changed (a development folder's save, an update) is taken out, to register again.
+    const changed = refresh ? forgetChangedExtensions(served, (id) => rendererHost.forgetModule(id)) : []
+    const kept = reconciled.filter((manifest) => !changed.includes(manifest.id))
     const loaded = loadExtensionContributions(
       rendererHost,
       refresh ? contributionsForRefresh(served) : served,

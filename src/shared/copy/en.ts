@@ -4192,7 +4192,6 @@ export const en = {
       needsCare: 'Needs care',
       also: 'Also',
       access: 'Access',
-      startsAfterARestart: 'Starts after a restart',
       cancel: 'Cancel',
       approveAndTurnOn: 'Approve and turn on',
     },

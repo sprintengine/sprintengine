@@ -920,6 +920,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       | 'extension.install'
       | 'extension.approve'
       | 'extension.uninstall'
+      | 'extension.devLoad'
+      | 'extension.devUnload'
       | 'extension.setSetting'
       | 'extension.reportRegistry',
     R,
@@ -2360,6 +2362,16 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       ),
     'extension.uninstall': ({ moduleId, commandId }, context) =>
       lifecycleCommand('extension.uninstall', context, commandId, (lifecycle) => lifecycle.uninstall(moduleId)),
+    // Development folders: the owner's, by their place on this disk.
+    'extension.devFolders': async () => {
+      const lifecycle = options.modules?.lifecycle()
+      if (!lifecycle) return unserved('extension.devFolders')
+      return { ok: true, result: { folders: await lifecycle.devFolders() } }
+    },
+    'extension.devLoad': ({ path, commandId }, context) =>
+      lifecycleCommand('extension.devLoad', context, commandId, (lifecycle) => lifecycle.devLoad(path)),
+    'extension.devUnload': ({ path, commandId }, context) =>
+      lifecycleCommand('extension.devUnload', context, commandId, (lifecycle) => lifecycle.devUnload({ path })),
     // The installed extensions and what they add to a client, read now; the
     // registry a window resolved, kept here.
     'extension.installed': async (_params, asking) => {
@@ -2618,6 +2630,17 @@ type PathAsker = { context: StudioRequestContext; grant: { owner: boolean } }
 function withFolderNamesOnly(installed: ThirdPartyModuleListResult): ThirdPartyModuleListResult {
   return {
     ...installed,
+    modules: installed.modules.map((module) =>
+      module.development
+        ? {
+            ...module,
+            development: {
+              ...module.development,
+              folder: module.development.folder.split(/[\\/]/u).filter(Boolean).at(-1) ?? '',
+            },
+          }
+        : module,
+    ),
     rejected: installed.rejected.map((entry) => {
       const segments = entry.path.split(/[\\/]/u).filter(Boolean)
       if (segments.length > 1 && segments.at(-1) === 'extension.json') segments.pop()

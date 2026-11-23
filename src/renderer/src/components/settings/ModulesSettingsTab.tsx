@@ -74,10 +74,13 @@ const BUILT_IN_MANIFESTS: CapabilityManifest[] = MODULE_CATEGORY_GROUPS.flatMap(
 function InstallMenu({
   installing,
   onFromFolder,
+  onDevelopmentFolder,
   onBrowse,
 }: {
   installing: boolean
   onFromFolder: () => void
+  /** A folder that loads where it is and again on every save, for building an extension. */
+  onDevelopmentFolder: () => void
   onBrowse: () => void
 }): JSX.Element {
   const [open, setOpen] = useState(false)
@@ -108,6 +111,9 @@ function InstallMenu({
     >
       <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onFromFolder)} onKeyDown={rove}>
         {appCopy.settings.modulesSettingsTab.fromAFolder}
+      </MenuItem>
+      <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onDevelopmentFolder)} onKeyDown={rove}>
+        As a development folder
       </MenuItem>
       <MenuItem icon={<PluginsGlyph className="icon-sm" />} onClick={pick(onBrowse)} onKeyDown={rove}>
         {appCopy.settings.modulesSettingsTab.browseMarketplace}
@@ -300,15 +306,19 @@ export function ModulesSettingsTab(): JSX.Element {
     },
   }
 
+  // A development folder waiting to replace an installed extension is listed
+  // beside it under the same id, so a row is told apart by its folder.
+  const rowId = (module: ThirdPartyModuleView) =>
+    module.development ? `dev:${module.development.folder}` : module.manifest.id
   const row = (module: ThirdPartyModuleView) => (
     <ExtensionListRow
-      key={module.manifest.id}
+      key={rowId(module)}
       module={module}
       overrides={overrides}
       actions={actions}
-      detailsOpen={detailsFor === module.manifest.id}
+      detailsOpen={detailsFor === rowId(module)}
       onDetailsOpenChange={(open) =>
-        setDetailsFor((current) => (open ? module.manifest.id : current === module.manifest.id ? null : current))
+        setDetailsFor((current) => (open ? rowId(module) : current === rowId(module) ? null : current))
       }
     />
   )
@@ -327,6 +337,7 @@ export function ModulesSettingsTab(): JSX.Element {
             <InstallMenu
               installing={extensions.installing}
               onFromFolder={() => void extensions.installFromFolder()}
+              onDevelopmentFolder={() => void extensions.installFromFolder('development')}
               onBrowse={() => openSettingsOverlay({ initialTab: EXTENSIONS_BROWSE_DEEPLINK })}
             />
           </>

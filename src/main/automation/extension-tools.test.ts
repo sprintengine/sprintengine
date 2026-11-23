@@ -87,7 +87,7 @@ describe('extension.create', () => {
       'extension/extension.json',
       'package.json',
       'scripts/check-toolchain.mjs',
-      'test/smoke.test.mjs',
+      'test/manifest.ts',
     ]) {
       assert.ok(existsSync(join(folder, file)), `${file} is written`)
     }
@@ -102,9 +102,9 @@ describe('extension.create', () => {
     assert.equal(structured(result).folder, folder)
     assert.deepEqual(structured(result).parts, ['main'])
     const manifest = JSON.parse(readFileSync(join(folder, 'extension', 'extension.json'), 'utf8'))
-    assert.equal(manifest.main, 'dist/main.cjs', 'the main part is wired in')
+    assert.equal(manifest.main, 'src/main.ts', 'the main part is wired in')
     assert.equal(manifest.tier, 'worker')
-    assert.ok(existsSync(join(folder, 'src', 'main.ts')))
+    assert.ok(existsSync(join(folder, 'extension', 'src', 'main.ts')))
 
     const parent = join(work, 'projects')
     mkdirSync(parent)

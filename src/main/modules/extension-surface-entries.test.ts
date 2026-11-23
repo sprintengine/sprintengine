@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { realpathSync, symlinkSync } from 'fs'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { basename, join } from 'path'
@@ -14,9 +15,10 @@ import {
 import { capabilityManifestOf, EXTENSION_SURFACE_POINTS } from '../../shared/modules/third-party-manifest'
 import type { ExtensionStandingContext } from './module-signature'
 import { approvedContext } from './extension-approvals.test-helper'
+import { extensionAccess } from './extension-approvals'
 import {
   collectExtensionContributions,
-  readExtensionSurfaceEntry,
+  readSurfaceModules,
   surfaceEntriesView as rendererEntryView,
 } from './extension-surface-entries'
 import { discoverUserModules, type InstalledModule } from './user-module-registry'
@@ -37,8 +39,8 @@ async function offeredAndDrawn(modules: readonly InstalledModule[]) {
     let failed: string | null = null
     for (const point of EXTENSION_SURFACE_POINTS) {
       for (const contribution of installed.extension.contributes[point]) {
-        const read = await readExtensionSurfaceEntry(installed, point, contribution.id)
-        if (read.ok) code[read.entryPath] = read.code
+        const read = await readSurfaceModules(installed, point, contribution.id)
+        if (read.ok) code[read.entryPath] = read.modules.at(-1)!.code
         else failed = read.message
       }
     }
@@ -298,4 +300,50 @@ test('an entry that changed after verification is not served', async () => {
       'A surface’s entry changed after the extension was verified, so it was not drawn.',
     )
   })
+})
+
+test('a development folder’s surface imports only files it holds: never through a linked folder', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'surface-entries-dev-root-'))
+  const work = realpathSync(await mkdtemp(join(tmpdir(), 'surface-entries-dev-')))
+  const outside = realpathSync(await mkdtemp(join(tmpdir(), 'surface-entries-outside-')))
+  try {
+    await writeFile(join(outside, 'private.js'), 'export const secret = "kept outside"\n')
+    const folder = writeExtensionFolder(join(work, 'notes'), {
+      manifest: extensionManifest({
+        id: 'notes',
+        tier: 'ui',
+        main: undefined,
+        contributes: { panels: [{ id: 'p', title: 'P', entry: 'src/panel.js' }] },
+      }),
+      files: {
+        'src/panel.js':
+          'import { secret } from "../linked/private.js"\nexport function mount(root) { root.textContent = secret }\n',
+      },
+    })
+    symlinkSync(outside, join(folder, 'linked'))
+    const pending = (await discoverUserModules(root, { approvals: new Map(), devFolders: [folder] })).modules[0]!
+    const approval = pending.standing.approval
+    assert.equal(approval.state, 'pending')
+    const ctx: ExtensionStandingContext = {
+      approvals: new Map([
+        [
+          'local.notes',
+          {
+            fingerprint: approval.state === 'pending' ? approval.fingerprint : '',
+            access: extensionAccess(pending.extension, {}),
+            devFolder: folder,
+          },
+        ],
+      ]),
+      devFolders: [folder],
+    }
+    const module = (await discoverUserModules(root, ctx)).modules.find((candidate) => candidate.development)!
+    assert.equal(module.standing.approval.state, 'approved')
+    const read = await readSurfaceModules(module, 'panels', 'p')
+    assert.equal(read.ok, false, 'the import through the link is not read')
+    assert.match(read.ok ? '' : read.message, /linked\/private\.js/)
+    assert.ok(!JSON.stringify(read).includes('kept outside'))
+  } finally {
+    for (const dir of [root, work, outside]) await rm(dir, { recursive: true, force: true })
+  }
 })

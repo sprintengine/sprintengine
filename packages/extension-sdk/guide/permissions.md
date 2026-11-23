@@ -36,9 +36,22 @@ Rules:
   `declarative` extension runs none of its own code, so it asks for nothing.
 - The list is closed: a name the SDK does not know fails validation, so a typo
   is caught before anyone reads it.
-- The approval is bound to your permissions, tier, worker and files. A new
-  version keeps it when it asks for no more; asking for more asks the person
-  again, and shows them what is new.
+- An installed extension's approval is bound to its permissions, tier,
+  worker and files. A new version keeps it when it asks for no more; asking
+  for more asks the person again, and shows them what is new.
+- A development folder (the `dev-loop` topic) is approved once, for that
+  folder and for what it may do, not for its code: its permissions, tier,
+  worker and background, its MCP tools and their access, the Studio actions
+  its commands run, its custom editors and hooks, its local MCP servers'
+  command, arguments and environment, and its providers' key origins. Saves
+  keep the approval; a save that asks for more of any of those waits for the
+  person again (`dev watch` prints `approval` with what grew); asking for
+  less keeps it. Settings marks it "Development folder" and shows its folder,
+  and the approval says its code is a working copy. Removing the folder
+  forgets its approval. It never covers an installed extension with the same
+  key, nor the installed one's the folder.
+- Only the person approves. An agent asks them to approve in Settings →
+  Extensions; Studio refuses an approval from an agent it launched.
 
 | Permission | The approval says | Ask for it when you use | Whoever set the call off needs |
 | --- | --- | --- | --- |
@@ -71,9 +84,11 @@ themselves need none either: commands, menu items, top bar items, panels,
 doors and settings sections are covered by the tier. Declaring
 `contributes.mcpTools` is the exception: it needs `tools:contribute`.
 
-The smoke test (`test/smoke.test.mjs`) activates the worker against the SDK's
-fake host, which refuses what the real host refuses, from the same table
-(`EXTENSION_HOST_SERVICES` and `EXTENSION_MAIN_HOST_METHODS` in the SDK), so it
-cannot fall behind the host; every refusal is also listed in `undeclared`,
-which a clean extension leaves empty. A surface's tests do the same with
-`createFakeFrameStudio`, from the same table (`EXTENSION_FRAME_METHODS`).
+`npm run check` activates the worker against the SDK's fake host
+(`createFakeMainHost`), which refuses what the real host refuses, from the
+same table (`EXTENSION_HOST_SERVICES` and `EXTENSION_MAIN_HOST_METHODS` in the
+SDK), so it cannot fall behind the host; in your tests every refusal is also
+listed in `undeclared`, which a clean extension leaves empty. A surface's tests
+do the same with `createFakeFrameStudio`, from the same table
+(`EXTENSION_FRAME_METHODS`). `npx sprintengine-extension inspect extension`
+prints the access the person will be asked to approve.

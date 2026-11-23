@@ -2,7 +2,7 @@ import React, { useId, type JSX } from 'react'
 
 import type { ThirdPartyModuleView } from '../../../../shared/modules/manifest'
 import { extensionApprovalCopy, grantsFullAccess } from '../../../../shared/modules/permissions'
-import { AccessCareList, AccessChips, InlineNotice, RefreshIcon, type AccessItem } from '../ui'
+import { AccessCareList, AccessChips, InlineNotice, type AccessItem } from '../ui'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/Modal'
 import { copy } from '../../../../shared/copy'
 import { extensionHookApprovalLines } from '../../../../../packages/extension-sdk/src/hooks'
@@ -78,6 +78,11 @@ export function ApprovalReviewDialog({
             {extensionApprovalCopy(module.extension.tier, module.extension.permissions, reach)}
           </p>
         )}
+        {module.development ? (
+          <InlineNotice tone="warn">
+            {`A development folder, ${module.development.folder}${module.development.waiting ? '. Approving it replaces the installed extension with its id, which runs until then' : module.development.overrides ? ', in place of the installed extension with its id' : ''}. Studio runs its code as it is on disk and again after every save, so you approve what it may do, not one version of its code. A save that asks for more asks you again.`}
+          </InlineNotice>
+        ) : null}
         {growth && growth.length > 0 ? (
           <section aria-label={t.newInThisVersion}>
             <h3 className="mb-1.5 text-meta font-semibold text-[color:var(--text-muted)]">{t.newInThisVersion}</h3>
@@ -136,12 +141,6 @@ export function ApprovalReviewDialog({
         ) : null}
       </ModalBody>
       <ModalFooter>
-        {module.launch.hasMainEntry ? (
-          <span className="mr-auto inline-flex items-center gap-1.5 text-meta text-[color:var(--text-muted)]">
-            <RefreshIcon className="icon-xs shrink-0" />
-            {t.startsAfterARestart}
-          </span>
-        ) : null}
         <ModalButton variant="ghost" onClick={onCancel}>
           {t.cancel}
         </ModalButton>

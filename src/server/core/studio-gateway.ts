@@ -24,7 +24,8 @@ import {
 } from '../../main/automation/conversation-lifecycle'
 import { gatewayCallerStarter, launchPermissionCeiling } from '../../main/automation/launch-permission-cap'
 import { tailnetDeviceGrant } from '../../main/automation/tailnet/tailnet-studio-endpoint'
-import { ownerInvoker } from '../../main/module-host/extension-invocation'
+import { ownerInvoker, type ExtensionInvoker } from '../../main/module-host/extension-invocation'
+import { bindDevToolsToCaller } from '../../main/automation/extension-dev-tools'
 import { extensionHookRefusal } from '../extensions/hooks/extension-hooks'
 import { studioGrantPrincipal, studioPrincipal } from '../../../packages/studio-protocol/src/permissions'
 import { createStudioGatewayTools } from '../../main/automation/studio-gateway-tools'
@@ -230,6 +231,20 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     ...core.worktrees.tools,
   ]
 
+  const callerInvoker = (context: McpConnectionContext | undefined): ExtensionInvoker => {
+    const starter = gatewayCallerStarter(context, core.resolveAgentPermissionPreset, core.agentStarterOf)
+    if (context?.metadata.kind !== 'remote-tailnet')
+      return ownerInvoker(launchPermissionCeiling(context, core.resolveAgentPermissionPreset), 'the agent', starter)
+    const deviceId = context.metadata.deviceId
+    const device = automation?.getTailnetStatus().devices.find((candidate) => candidate.id === deviceId)
+    const grant = device ? tailnetDeviceGrant(device) : null
+    return {
+      principal: grant ? studioGrantPrincipal(grant) : studioPrincipal({ owner: false, permissions: [] }),
+      permissionCeiling: grant?.ceiling ?? 'manual',
+      label: `the device "${context.metadata.deviceName ?? deviceId ?? 'unknown'}"`,
+      starter,
+    }
+  }
   // The gateway's own tools: what no client may offer under the same family.
   const resolveGatewayTools = createStudioGatewayTools({
     resolveModuleTools: () => options.resolveModuleTools?.() ?? [],
@@ -241,20 +256,7 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     // the device stands now, so a narrowed or revoked device holds less at once.
     // What the extension starts for its caller keeps who that is: the device,
     // or whoever started the calling agent, as its record keeps it.
-    callerInvoker: (context) => {
-      const starter = gatewayCallerStarter(context, core.resolveAgentPermissionPreset, core.agentStarterOf)
-      if (context?.metadata.kind !== 'remote-tailnet')
-        return ownerInvoker(launchPermissionCeiling(context, core.resolveAgentPermissionPreset), 'the agent', starter)
-      const deviceId = context.metadata.deviceId
-      const device = automation?.getTailnetStatus().devices.find((candidate) => candidate.id === deviceId)
-      const grant = device ? tailnetDeviceGrant(device) : null
-      return {
-        principal: grant ? studioGrantPrincipal(grant) : studioPrincipal({ owner: false, permissions: [] }),
-        permissionCeiling: grant?.ceiling ?? 'manual',
-        label: `the device "${context.metadata.deviceName ?? deviceId ?? 'unknown'}"`,
-        starter,
-      }
-    },
+    callerInvoker,
     warn: (details) => {
       void writeDiagnosticLog({
         level: 'warning',
@@ -317,11 +319,17 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   // The order agents have always listed: the shell's toolsets in the slots
   // the browser and canvas tools held, Studio's own tools, then any app's.
   const hideTool = options.hideTool
-  const resolveTools = (context?: McpConnectionContext) => [
-    ...clientGateway.builtIns(context),
-    ...(hideTool ? resolveGatewayTools().filter((tool) => !hideTool(tool.name)) : resolveGatewayTools()),
-    ...clientGateway.apps(context),
-  ]
+  // The dev loop's tools that run extension code are held to who calls them
+  // (extension-dev-tools.ts), whether this process serves them or the shell does.
+  const resolveTools = (context?: McpConnectionContext) =>
+    bindDevToolsToCaller(
+      [
+        ...clientGateway.builtIns(context),
+        ...(hideTool ? resolveGatewayTools().filter((tool) => !hideTool(tool.name)) : resolveGatewayTools()),
+        ...clientGateway.apps(context),
+      ],
+      callerInvoker,
+    )
 
   const automationService = createAutomationService({
     resolveUserDataDir: () => platform.paths.dataDir(),
@@ -343,7 +351,11 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     resolveGatewayTools: resolveTools,
     clientTools: {
       ready: () => clientGateway.ready(),
-      fallback: (context, name) => clientGateway.fallback(context, name),
+      // A tool reached by name before its toolset is listed is held to its caller too.
+      fallback: (context, name) => {
+        const tool = clientGateway.fallback(context, name)
+        return tool ? bindDevToolsToCaller([tool], callerInvoker)[0]! : null
+      },
       track: (context, notify) => clientGateway.track(context, notify),
     },
     logDiagnostic: (diagnostic) => {

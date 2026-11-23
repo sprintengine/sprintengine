@@ -2,17 +2,20 @@
 
 `extension/extension.json` is the extension: what it is, what it adds to
 Studio, and the most authority it needs. Every path in it is relative to the
-folder that holds it, `extension/`, which is the folder Studio installs.
+folder that holds it, `extension/`, which is the folder Studio loads as a
+development folder and the folder you pack.
 
 One validator reads it, the same one in Studio, the `sprintengine-extension`
 CLI and the project's scripts: `validateExtensionManifest(raw, { authoring })`
 from `@sprintengine/extension-sdk`. It is strict. A key it does not know is
 refused, at every level, so nothing reaches the install review that Studio
-does not read. `node scripts/validate.mjs` runs it the way an author should
-(`authoring: true`).
+does not read. `npx sprintengine-extension validate extension` (`npm run
+validate`) runs it the way an author should (`authoring: true`), and checks
+the files it names too.
 
-The build never writes extension.json. You write it, and it changes only when
-you change it.
+Nothing writes extension.json but you, and it changes only when you change
+it. In a development folder a save to it reloads the extension like any other
+file.
 
 ## A whole manifest
 
@@ -27,14 +30,14 @@ you change it.
   "name": "Notes",
   "description": "A scratchpad beside your work.",
   "permissions": ["storage:own"],
-  "main": "dist/main.cjs",
+  "main": "src/main.ts",
   "contributes": {
     "commands": [
       { "id": "notes.clear", "title": "Clear notes" },
       { "id": "notes.show-backlog", "title": "Show the Backlog", "action": "panel.backlog.toggle" }
     ],
     "menus": [{ "where": "backlog.item", "command": "notes.clear" }],
-    "panels": [{ "id": "notes", "title": "Notes", "icon": "notes", "entry": "dist/notes.js" }]
+    "panels": [{ "id": "notes", "title": "Notes", "icon": "notes", "entry": "src/notes.ts" }]
   }
 }
 ```
@@ -71,8 +74,9 @@ answers the least tier a manifest needs.
 - **`topBarItems`** are buttons in the top bar. Each runs a contributed
   `command` or opens a contributed `door`, never both.
 - **`panels`**, **`doors`**, **`settingsSections`** and **`customEditors`** are drawn by the
-  extension. Each names an `entry`: an ESM bundle exporting
-  `mount(root, studio)`. A panel is a tab in a workspace's pane, offered by the
+  extension. Each names an `entry`: a module exporting `mount(root, studio)`,
+  loaded as written with the files it imports by relative paths (the `rules`
+  topic). A panel is a tab in a workspace's pane, offered by the
   pane's + menu. A door is a full-window surface with a row in the Extensions
   drawer. A settings section sits in Settings.
 - **`customEditors`** open the person's files of a type in the extension's
@@ -182,8 +186,9 @@ answers the least tier a manifest needs.
     (`command`, `args`, and `env` as `{ "name", "value" }` pairs, values as
     written: Studio reads none from its own environment), or `http`, a hosted
     server agents reach at `url`. `${extensionPath}` in a command, an argument
-    or a value stands for the extension's installed folder:
-    `"command": "node", "args": ["${extensionPath}/dist/server.mjs"]`. Agents
+    or a value stands for the extension's folder (the installed copy, or the
+    development folder itself):
+    `"command": "node", "args": ["${extensionPath}/src/server.mjs"]`. Agents
     see the server as `<publisher>_<id>_<server id>`. A hosted server asks
     for no approval. A local one is approved at install with its command,
     arguments and environment shown, and is bound to them and to every file
@@ -212,8 +217,9 @@ under the reference) must be empty or absent.
 
 `id` is kebab-case, at most 63 characters. Studio installs an extension under
 `<publisher>.<id>`: the publisher comes from where it was installed from, and
-a folder install is `local`, so a project's `dev:install` lands in
-`~/.sprintengine/extensions/local.<id>/`. The install key is what
+a folder install is `local`, so a packed copy installed from a folder lands
+in `~/.sprintengine/extensions/local.<id>/`. A development folder loads under
+the same key, `local.<id>`, from where it is. The install key is what
 `studio.moduleId` answers and what storage and approval are keyed by, so never
 change `id` after you release. Ids starting `studio-` or `sprintengine-` install
 only from Studio's own catalogue.
@@ -237,8 +243,10 @@ providing module is off, is `studio.supports(name)`: ask before relying on it.
 `main`, each `entry`, `icon`, `cover` and `screenshots` are paths relative to
 `extension/`, with `/` between folders. A path that leaves the folder (`..`),
 starts at the root, uses a backslash or a drive letter, or names a Windows
-device (`CON`, `NUL`, …) is refused. A ui `entry` ends in `.js` or `.mjs`;
-`main` in `.js`, `.cjs` or `.mjs`.
+device (`CON`, `NUL`, …) is refused. A surface's `entry` ends in `.js`,
+`.mjs`, `.ts`, `.mts`, `.tsx` or `.jsx`; `main` in `.js`, `.cjs`, `.mjs`,
+`.ts`, `.mts` or `.cts`. TypeScript and JSX load as written (the `rules`
+topic).
 
 ## Signing
 
@@ -273,7 +281,7 @@ markers.
 | `repository` | string |  | 0.13.0 |  | Where its source lives. |
 | `homepage` | string |  | 0.13.0 |  | Its home page. |
 | `permissions` | `workspace:read` \| `workspace:operate` \| `conversation:read` \| `backlog:read` \| `backlog:operate` \| `providers:read` \| `usage:read` \| `workspace-files:read` \| `workspace-files:write` \| `storage:own` \| `settings:own` \| `secrets:own` \| `notifications:show` \| `conversation:own` \| `conversation:bypass` \| `chat:draft` \| `schedules:own` \| `agents:generate` \| `agents:companion` \| `github:api` \| `tools:contribute`[] (at most 32) |  | 0.13.0 | ui | What it asks the person to allow. `content` and `declarative` extensions hold none. |
-| `main` | string |  | 0.13.0 | worker | The worker’s entry: a module whose `activate(studio)` (its default export, or a named `activate`) registers what it serves. Worker tier only, and required by it. |
+| `main` | string |  | 0.13.0 | worker | The worker’s entry: a module (`.js`, `.mjs`, `.cjs`, or `.ts`, `.mts`, `.cts` loaded as written) whose `activate(studio)` (its default export, or a named `activate`) registers what it serves. Worker tier only, and required by it. |
 | `background` | boolean |  | 0.13.0 | worker | `true` keeps the worker running while the extension is on. |
 | `contributes` | object |  | 0.13.0 |  | What it adds to Studio. Every point defaults to empty. |
 | `contributes.commands` | object[] (at most 256) |  | 0.13.0 | declarative | Command palette entries. |
@@ -294,17 +302,17 @@ markers.
 | `contributes.panels[].id` | string | yes | 0.13.0 |  | Id, unique within this point. |
 | `contributes.panels[].title` | string | yes | 0.13.0 |  | What Studio calls it. |
 | `contributes.panels[].icon` | `extension` \| `chat` \| `branch` \| `folder` \| `schedule` \| `spark` \| `lock` \| `settings` \| `check` \| `warning` \| `copy` \| `notes` |  | 0.13.0 |  | Glyph beside the title. Defaults to `extension`. |
-| `contributes.panels[].entry` | string | yes | 0.13.0 |  | What the panel draws, as a tab in a workspace’s pane. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function. |
+| `contributes.panels[].entry` | string | yes | 0.13.0 |  | What the panel draws, as a tab in a workspace’s pane. A module (`.js`, `.mjs`, or `.ts`, `.mts`, `.tsx`, `.jsx` loaded as written) whose `mount(root, studio)` draws into `root` and may return a cleanup function; it imports only its own files, by relative paths. |
 | `contributes.doors` | object[] (at most 8) |  | 0.13.0 | ui | Full-window surfaces, opened from the Extensions drawer. |
 | `contributes.doors[].id` | string | yes | 0.13.0 |  | Id, unique within this point. |
 | `contributes.doors[].title` | string | yes | 0.13.0 |  | What Studio calls it. |
 | `contributes.doors[].icon` | `extension` \| `chat` \| `branch` \| `folder` \| `schedule` \| `spark` \| `lock` \| `settings` \| `check` \| `warning` \| `copy` \| `notes` |  | 0.13.0 |  | Glyph beside the title. Defaults to `extension`. |
-| `contributes.doors[].entry` | string | yes | 0.13.0 |  | What the door draws when it is open. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function. |
+| `contributes.doors[].entry` | string | yes | 0.13.0 |  | What the door draws when it is open. A module (`.js`, `.mjs`, or `.ts`, `.mts`, `.tsx`, `.jsx` loaded as written) whose `mount(root, studio)` draws into `root` and may return a cleanup function; it imports only its own files, by relative paths. |
 | `contributes.settingsSections` | object[] (at most 4) |  | 0.13.0 | ui | Sections in Settings. |
 | `contributes.settingsSections[].id` | string | yes | 0.13.0 |  | Id, unique within this point. |
 | `contributes.settingsSections[].title` | string | yes | 0.13.0 |  | What Studio calls it. |
 | `contributes.settingsSections[].icon` | `extension` \| `chat` \| `branch` \| `folder` \| `schedule` \| `spark` \| `lock` \| `settings` \| `check` \| `warning` \| `copy` \| `notes` |  | 0.13.0 |  | Glyph beside the title. Defaults to `extension`. |
-| `contributes.settingsSections[].entry` | string | yes | 0.13.0 |  | What the section draws in Settings. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function. |
+| `contributes.settingsSections[].entry` | string | yes | 0.13.0 |  | What the section draws in Settings. A module (`.js`, `.mjs`, or `.ts`, `.mts`, `.tsx`, `.jsx` loaded as written) whose `mount(root, studio)` draws into `root` and may return a cleanup function; it imports only its own files, by relative paths. |
 | `contributes.syntaxes` | object[] (at most 16) |  | 0.13.0 | content | Syntax highlighting for a language, in chat code blocks and the editor. |
 | `contributes.syntaxes[].id` | string | yes | 0.13.0 |  | Language id, unique among this extension’s syntaxes. A chat code block whose fence names it (```gleam), or one of its extensions without the dot, is highlighted with it. |
 | `contributes.syntaxes[].title` | string | yes | 0.13.0 |  | The language’s name. |
@@ -350,7 +358,7 @@ markers.
 | `contributes.mcpTools[].description` | string | yes | 0.13.0 |  | What agents are told the tool does. |
 | `contributes.mcpTools[].access` | `read` \| `operate` | yes | 0.13.0 |  | `read` changes nothing; `operate` may, and agents are asked before it runs where their settings say so. |
 | `contributes.mcpTools[].inputSchema` | JSON Schema object | yes | 0.13.0 |  | The tool’s parameters, as a JSON Schema for an object: what agents see, before the worker has ever run. The schema the worker registers must take no more than this one (no parameter it leaves out, none it requires dropped). A tool that takes none says `{ "type": "object", "properties": {} }`. |
-| `contributes.hooks` | object[] (at most 8) |  | 0.13.0 | worker | Hooks the worker runs before (or after) Studio acts: Studio calls them in the order of the extensions’ install keys, waiting at most 2 s on each. The approval names each point in plain words, and an update that adds one asks again. |
+| `contributes.hooks` | object[] (at most 8) |  | 0.13.0 | worker | Hooks the worker runs before (or after) Studio acts: Studio calls them in order, the installed extensions by install key and then the development folders in the order they were registered, waiting at most 2 s on each. The approval names each point in plain words, and an update that adds one asks again. |
 | `contributes.hooks[].point` | `agent.launch.before` \| `agent.prompt.before` \| `agent.tool.before` \| `agent.tool.after` \| `terminal.write.before` \| `workspace.create.before` \| `workspace.create.after` \| `editor.save.before` | yes | 0.13.0 |  | Where Studio asks the worker, which serves it with `registerHooks`. A `.before` point may refuse or change what Studio is about to do; an `.after` point only hears what it did. The guide’s hooks topic says what each one carries. |
 | `contributes.hooks[].onError` | `pass` \| `deny` |  | 0.13.0 |  | What a failed hook does: one that throws, answers after 2 s, answers something else, or whose worker crashed or did not start. `pass` (the default) lets the action go on as if it had passed; `deny` refuses it, naming the extension, so a guard fails closed. Ignored for an `.after` point. |
 | `contributes.skills` | object[] (at most 64) |  | 0.13.0 | declarative | Skills the person’s agents can use, in every workspace on this machine. Studio copies each into a folder of its own and hands it to agents at launch; it never writes into a project. Listed when the extension is installed; no approval is asked for them. |

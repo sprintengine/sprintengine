@@ -73,7 +73,17 @@ export type ExtensionAccess = {
   providers: string[]
 }
 
-export type ExtensionApprovalRecord = { fingerprint: string; access: ExtensionAccess }
+export type ExtensionApprovalRecord = {
+  fingerprint: string
+  access: ExtensionAccess
+  /**
+   * The development folder this approval is for, by its real path: present
+   * only for one. It holds while that folder asks for no more than `access`,
+   * whatever its code does between saves; it never covers another folder, or
+   * an installed extension under the same key.
+   */
+  devFolder?: string
+}
 
 type AccessManifest = Pick<ExtensionManifest, 'permissions' | 'tier' | 'main' | 'background' | 'contributes'>
 
@@ -166,6 +176,34 @@ export function extensionApprovalFingerprint(access: ExtensionAccess, contentDig
 }
 
 /**
+ * The fingerprint a development folder's approval is bound to: everything it
+ * may do (each part of `access`, its local MCP servers by their command,
+ * arguments and environment), and the folder itself. Not its files: a
+ * development folder is the author's working copy, and binding its code would
+ * ask again at every save. So the code is not what the person approved; what
+ * it may reach is, and a save that asks for more asks again.
+ */
+export function devFolderApprovalFingerprint(access: ExtensionAccess, folder: string): string {
+  const canonical = [
+    `dev-folder:${folder}`,
+    `permissions:${[...access.permissions].sort().join(',')}`,
+    `tier:${access.tier}`,
+    `worker:${access.worker ? 1 : 0}`,
+    `background:${access.background ? 1 : 0}`,
+    `tools:${Object.entries(access.tools)
+      .map(([name, level]) => `${name}=${level}`)
+      .sort()
+      .join(',')}`,
+    `actions:${[...access.actions].sort().join(',')}`,
+    `editors:${[...access.editors].sort().join(',')}`,
+    `hooks:${[...access.hooks].sort().join(',')}`,
+    `localServers:${[...access.localServers].sort().join(',')}`,
+    `providers:${[...access.providers].sort().join(',')}`,
+  ].join('\0')
+  return `sha256-${createHash('sha256').update(canonical).digest('hex')}`
+}
+
+/**
  * What `next` asks for beyond `approved`, in words for the person: each
  * permission it adds, a higher tier, a worker, a background worker, and each
  * contribution that carries authority, judged per entry: an MCP tool agents
@@ -240,7 +278,8 @@ const isTier = (value: unknown): value is ExtensionTier =>
 
 function readRecord(value: unknown): ExtensionApprovalRecord | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const { fingerprint, access } = value as Record<string, unknown>
+  const { fingerprint, access, devFolder } = value as Record<string, unknown>
+  if (devFolder !== undefined && typeof devFolder !== 'string') return null
   if (typeof fingerprint !== 'string' || !fingerprint.startsWith('sha256-')) return null
   if (!access || typeof access !== 'object' || Array.isArray(access)) return null
   const { permissions, tier, worker, background, tools, actions, editors, hooks, localServers, providers } =
@@ -255,6 +294,7 @@ function readRecord(value: unknown): ExtensionApprovalRecord | null {
   if (!toolAccess.every(([, value]) => value === 'read' || value === 'operate')) return null
   return {
     fingerprint,
+    ...(typeof devFolder === 'string' ? { devFolder } : {}),
     access: {
       permissions: [...permissions].sort(),
       tier,

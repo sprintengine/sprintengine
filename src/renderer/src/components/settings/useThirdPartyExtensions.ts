@@ -60,31 +60,38 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   // module copied into the drop-in folder while Studio runs.
   useEffect(() => (windowHasStudio() ? extensionsApi.onThirdPartyModulesChanged(() => void load()) : undefined), [load])
 
-  const installFromFolder = useCallback(async () => {
-    setInstalling(true)
-    setMessage(null)
-    try {
-      const result = await addThirdPartyModuleFromFolder(window.api, lifecycle)
-      if (result.status === 'failed') setMessage({ tone: 'error', text: result.message })
-      if (result.status === 'installed') {
-        // Links were left out of the copy: say which, so nothing is missing
-        // without a word.
-        if (result.strippedLinks.length > 0) {
-          setMessage({
-            tone: 'warn',
-            text: `Symbolic links were left out: ${result.strippedLinks.join(', ')}. An extension ships regular files only.`,
-          })
+  const installFromFolder = useCallback(
+    async (as: 'install' | 'development' = 'install') => {
+      setInstalling(true)
+      setMessage(null)
+      try {
+        const result = await addThirdPartyModuleFromFolder(window.api, lifecycle, as)
+        if (result.status === 'failed') setMessage({ tone: 'error', text: result.message })
+        if (result.status === 'installed') {
+          // Links were left out of the copy: say which, so nothing is missing
+          // without a word.
+          if (result.strippedLinks.length > 0) {
+            setMessage({
+              tone: 'warn',
+              text: `Symbolic links were left out: ${result.strippedLinks.join(', ')}. An extension ships regular files only.`,
+            })
+          }
+          await load()
+          // A development folder that waits is asked about by the window
+          // itself (DevFolderApprovalHost), wherever it was registered from.
+          if (result.approval?.state === 'pending' && result.id) {
+            if (as !== 'development') setAwaitingReview(result.id)
+          }
+          // One that asks nothing still shows what it added, its skills and
+          // hosted MCP servers among it: the install's own review.
+          else if (result.id) setJustInstalled(result.id)
         }
-        await load()
-        if (result.approval?.state === 'pending' && result.id) setAwaitingReview(result.id)
-        // One that asks nothing still shows what it added, its skills and
-        // hosted MCP servers among it: the install's own review.
-        else if (result.id) setJustInstalled(result.id)
+      } finally {
+        setInstalling(false)
       }
-    } finally {
-      setInstalling(false)
-    }
-  }, [lifecycle, load])
+    },
+    [lifecycle, load],
+  )
 
   // Approve and turn on, in one step: the review is the consent, and an
   // approved extension left off would make the person find a second switch
@@ -124,6 +131,20 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
     async (module: ThirdPartyModuleView) => {
       if (!lifecycle) return
       const name = module.manifest.displayName
+      // A development folder is only taken out: its files are the author's, and stay.
+      if (module.development) {
+        setPendingId(module.manifest.id)
+        setMessage(null)
+        try {
+          const result = await lifecycle.devUnload(module.development.folder)
+          if (!result.ok) setMessage({ tone: 'error', text: result.message || `Couldn’t remove ${name}.` })
+          await refreshThirdPartyRendererModules()
+          await load()
+        } finally {
+          setPendingId(null)
+        }
+        return
+      }
       const confirmed = await confirmDialog({
         title: copy.settings.useThirdPartyExtensions.uninstall(name),
         // What leaves and what stays. What the app kept for it outside any

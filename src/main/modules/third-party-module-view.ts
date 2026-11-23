@@ -51,6 +51,15 @@ export function toThirdPartyModuleView(
     launch: launchViewFor(module, run, enablementOverrides),
     mcpTools: run.mcpTools(module.key),
     ...ignoredSkillKeysView(module),
+    ...(module.development
+      ? {
+          development: {
+            folder: module.moduleRoot,
+            overrides: module.development.overrides,
+            ...(module.development.waiting ? { waiting: true } : {}),
+          },
+        }
+      : {}),
   }
 }
 
@@ -107,7 +116,9 @@ function mainEntryLaunchView(
       expectedToLoad: false,
       message:
         standing.approval.state === 'unavailable'
-          ? 'It holds files an extension cannot ship, so there is nothing to approve. Install it again.'
+          ? module.development
+            ? 'Its folder cannot be read as a development folder (too many files, or unreadable), so there is nothing to approve.'
+            : 'It holds files an extension cannot ship, so there is nothing to approve. Install it again.'
           : 'It waits for your approval before it runs.',
     }
   }

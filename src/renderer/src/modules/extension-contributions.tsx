@@ -53,8 +53,10 @@ export type ExtensionContributionsState = { status: 'loaded' } | { status: 'erro
 
 const LOAD_FAILURE_FALLBACK = 'The extension’s contributions could not be added.'
 
-// Each key is registered at most once per window session. An extension added
-// after install and approval joins live; an update needs the window reloaded.
+// Each key is registered once per version it is served at. An extension added
+// after install and approval joins live, and one served changed (its
+// extension.json, or its files: a development folder's save, an update) is
+// taken out and registered again, so its open surfaces draw again.
 const loadStates = new Map<string, ExtensionContributionsState>()
 
 export function getExtensionContributionsState(moduleId: string): ExtensionContributionsState | undefined {
@@ -69,7 +71,7 @@ type Retired = { manifest: CapabilityManifest; surfaces: LoadedExtensionSurface[
 const retired = new Map<string, Retired>()
 
 function servedSignature(entry: ExtensionContributionsResult['extensions'][number]): string {
-  return JSON.stringify(entry.extension)
+  return JSON.stringify([entry.extension, entry.revision ?? null])
 }
 
 /**
@@ -112,12 +114,33 @@ function recordError(id: string, message: string): void {
 }
 
 /**
- * The extensions a live refresh may add: ones this window has not registered,
- * and without a worker, whose methods the server loads only at its next start.
+ * Take out each registered extension the Studio now serves changed, so the
+ * refresh registers it again as it is: `forget` drops what it registered with
+ * the window's kernel. Returns their ids.
  */
+export function forgetChangedExtensions(
+  served: ExtensionContributionsResult,
+  forget: (moduleId: string) => void,
+): string[] {
+  const changed: string[] = []
+  for (const entry of served.extensions) {
+    if (!loadStates.has(entry.id)) continue
+    const previous = retired.get(entry.id)?.signature ?? loadedSignatures.get(entry.id)
+    if (previous === servedSignature(entry)) continue
+    retired.delete(entry.id)
+    retireExtensionSurfaces(entry.id)
+    forget(entry.id)
+    loadStates.delete(entry.id)
+    loadedSignatures.delete(entry.id)
+    changed.push(entry.id)
+  }
+  return changed
+}
+
+/** The extensions a live refresh may add: ones this window has not registered (or has just taken out). */
 export function contributionsForRefresh(served: ExtensionContributionsResult): ExtensionContributionsResult {
   return {
-    extensions: served.extensions.filter((entry) => entry.extension.tier !== 'worker' && !loadStates.has(entry.id)),
+    extensions: served.extensions.filter((entry) => !loadStates.has(entry.id)),
     failures: Object.fromEntries(Object.entries(served.failures).filter(([id]) => !loadStates.has(id))),
   }
 }

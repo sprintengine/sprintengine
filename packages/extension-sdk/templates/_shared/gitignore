@@ -1,9 +1,8 @@
 node_modules/
 packed/
-# What `npm run build:test` bundles from test/*.test.ts.
-test/.build/
-# extension/dist is NOT ignored: extension/ is the folder Studio installs,
-# build included, so the repository holds exactly what you ship.
+# What `npm run dev` and `sprintengine-extension shot` write: screenshots to
+# look at, never shipped (Studio skips dotted folders in an extension).
+.sprintengine/
 *.key
 *.pem
 *.tgz.tmp

@@ -149,6 +149,10 @@
       "sha256": "460822b4f173ad7182db01c7a1e8a206233bde35bdb0a861a2e9f36b305252dc"
     },
     {
+      "name": "visual.extension_shot",
+      "sha256": "86c86f077da95a1c8e1c81ef842589e2a39e0b0b41264d5a040d834f97c69ef8"
+    },
+    {
       "name": "conversation.create",
       "sha256": "d0a9e391d155b9776d558eaa2df6332ca7c8d827f1db64a6df48d39eaf6bc238"
     },
@@ -402,11 +406,39 @@
     },
     {
       "name": "extension.create",
-      "sha256": "be68ebdbdd2f936c11f4c05f04d30576cb7f9925da0d4c2d113994c7e551c4a3"
+      "sha256": "bd152a953739a77b320d8018673e67e4a105c42b310c261aa41b48ab46376c64"
     },
     {
       "name": "extension.guide",
-      "sha256": "346d0085c296906692d6e3736fae3f302c0cc06fd07cecf728d9beef91f25af9"
+      "sha256": "e73e62ed752a019a32bd25bceacda7df17c37f34dc07693ee62a5072c4079558"
+    },
+    {
+      "name": "extension.dev.load",
+      "sha256": "f897505bf65dba2db977e58c8e3276f6a5ad74f402bdd1cc4378bc3df5e2624e"
+    },
+    {
+      "name": "extension.dev.unload",
+      "sha256": "a7ae6127f62c2b43aa8dacf2762a3bebd45bdb65aab9cd29f21a3a9950f56488"
+    },
+    {
+      "name": "extension.dev.list",
+      "sha256": "ab8ec91db89bc5a1af2f1a5a020845159ad40adbc48dfed98030f499c000e2f5"
+    },
+    {
+      "name": "extension.dev.events",
+      "sha256": "0bf0d70aaa460da7edbd8d3fd81aa114c8d0c94c8836239bc660f7923ed83c8c"
+    },
+    {
+      "name": "extension.dev.request",
+      "sha256": "0739cdd6de6413e84c0b5e583c123d678cc30dc812df27ff7d5e29633701a6a2"
+    },
+    {
+      "name": "extension.dev.hook",
+      "sha256": "d7ad0b22df200157e5b73e3f0988c536b57cb33942bfd100cf40ac7a8bcf5488"
+    },
+    {
+      "name": "extension.dev.emit",
+      "sha256": "038d4d63b1a18f3cb7c4a5753c4ef5f8a5cd0855fe288ec6af0a23ca39e6c9d5"
     },
     {
       "name": "plugin.search",
@@ -599,6 +631,10 @@
       "sha256": "460822b4f173ad7182db01c7a1e8a206233bde35bdb0a861a2e9f36b305252dc"
     },
     {
+      "name": "visual.extension_shot",
+      "sha256": "86c86f077da95a1c8e1c81ef842589e2a39e0b0b41264d5a040d834f97c69ef8"
+    },
+    {
       "name": "conversation.create",
       "sha256": "d0a9e391d155b9776d558eaa2df6332ca7c8d827f1db64a6df48d39eaf6bc238"
     },
@@ -852,11 +888,39 @@
     },
     {
       "name": "extension.create",
-      "sha256": "be68ebdbdd2f936c11f4c05f04d30576cb7f9925da0d4c2d113994c7e551c4a3"
+      "sha256": "bd152a953739a77b320d8018673e67e4a105c42b310c261aa41b48ab46376c64"
     },
     {
       "name": "extension.guide",
-      "sha256": "346d0085c296906692d6e3736fae3f302c0cc06fd07cecf728d9beef91f25af9"
+      "sha256": "e73e62ed752a019a32bd25bceacda7df17c37f34dc07693ee62a5072c4079558"
+    },
+    {
+      "name": "extension.dev.load",
+      "sha256": "f897505bf65dba2db977e58c8e3276f6a5ad74f402bdd1cc4378bc3df5e2624e"
+    },
+    {
+      "name": "extension.dev.unload",
+      "sha256": "a7ae6127f62c2b43aa8dacf2762a3bebd45bdb65aab9cd29f21a3a9950f56488"
+    },
+    {
+      "name": "extension.dev.list",
+      "sha256": "ab8ec91db89bc5a1af2f1a5a020845159ad40adbc48dfed98030f499c000e2f5"
+    },
+    {
+      "name": "extension.dev.events",
+      "sha256": "0bf0d70aaa460da7edbd8d3fd81aa114c8d0c94c8836239bc660f7923ed83c8c"
+    },
+    {
+      "name": "extension.dev.request",
+      "sha256": "0739cdd6de6413e84c0b5e583c123d678cc30dc812df27ff7d5e29633701a6a2"
+    },
+    {
+      "name": "extension.dev.hook",
+      "sha256": "d7ad0b22df200157e5b73e3f0988c536b57cb33942bfd100cf40ac7a8bcf5488"
+    },
+    {
+      "name": "extension.dev.emit",
+      "sha256": "038d4d63b1a18f3cb7c4a5753c4ef5f8a5cd0855fe288ec6af0a23ca39e6c9d5"
     },
     {
       "name": "plugin.search",

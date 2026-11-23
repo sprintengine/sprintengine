@@ -8,14 +8,19 @@ import { createModuleLifecycle, liveModuleIds } from '../../main/modules/module-
 import { bundledRegistryIds } from '../../main/plugin-registry-instance'
 import type { ExtensionRunView } from '../../main/modules/third-party-module-view'
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
-import { planInstalledExtensions, readInstalledStanding } from '../extensions/extension-plan'
+import { installedStandingOf, planInstalledExtensions } from '../extensions/extension-plan'
+import { createExtensionDiscovery } from '../extensions/extension-discovery'
+import { createExtensionReloader, type ExtensionReloader } from '../extensions/extension-reload'
+import { watchDevFolders } from '../extensions/dev/dev-folder-watch'
+import type { ExtensionDevBackend } from '../../main/automation/extension-dev-tools'
+import type { ExtensionHookPoint } from '../../../packages/extension-sdk/src/hooks'
+import { readDevFoldersSync } from '../../main/modules/extension-dev-folders'
 import { createExtensionWorkers } from '../extensions/workers/worker-manager'
-import { resolveWorkerEntryPath } from '../extensions/workers/worker-process'
+import { resolveExtensionSdkRoot, resolveWorkerEntryPath } from '../extensions/workers/worker-process'
 import { join } from 'node:path'
-import { readExtensionStandingContextSync } from '../../main/modules/extension-standing-context'
 import { createExtensionApprovalReader } from '../../main/modules/extension-approvals'
 import { createExtensionFrameGrant } from '../../main/modules/extension-frame-grant'
-import { defaultUserModuleRoot, discoverUserModulesSync } from '../../main/modules/user-module-registry'
+import { defaultUserModuleRoot } from '../../main/modules/user-module-registry'
 import { watchUserModuleRoot } from '../../main/modules/user-module-watch'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import { createStudioModuleHub, type StudioModules } from '../rpc/studio-modules'
@@ -48,6 +53,8 @@ export type ServerModules = {
   readonly registry: ModuleRegistryMirror
   isEnabled(moduleId: string): boolean
   scheduledAgents(): ScheduledAgentsService | null
+  /** What the extension dev loop's tools reach (extension-dev-tools.ts); null before the kernel loads. */
+  devBackend(): ExtensionDevBackend | null
   startup(): void
   shutdownBegin(): Promise<void>
   shutdown(): Promise<void>
@@ -90,14 +97,24 @@ export function createServerModules(deps: {
   let load: LoadMainModulesResult | null = null
   let gateway: StudioGateway | null = null
   const approvals = createExtensionApprovalReader(dataDir)
+  // The extensions on disk, discovered once per change (extension-discovery.ts).
+  const discovery = createExtensionDiscovery({ moduleRoot: defaultUserModuleRoot, dataDir })
   // Every worker extension's code runs in a process of its own.
   const { workers, bind: bindWorkers } = createExtensionWorkers({
     entryPath: resolveWorkerEntryPath(),
+    sdkRoot: resolveExtensionSdkRoot(platform.paths.resourcesDir(), platform.paths.appRoot() ?? process.cwd()),
     logDir: join(platform.paths.logsDir(), 'extensions'),
     approvals,
-    installed: () => readInstalledStanding(defaultUserModuleRoot(), dataDir),
+    installed: () => installedStandingOf(discovery.current()),
     toolsChanged: () => gateway?.notifyToolsListChanged(),
     stateChanged: () => hub.deliverChanged(),
+    // Read again, it is no longer loaded: registering it again asks again.
+    developmentFolderMoved: () => {
+      discovery.invalidate()
+      void lifecycle.reproject(discovery.current().modules)
+      void reloader?.reload()
+      hub.deliverChanged()
+    },
   })
   // The core's actions ask these workers' hooks (extension-hooks.ts).
   core.extensionHooks.bind(workers)
@@ -106,6 +123,16 @@ export function createServerModules(deps: {
   let ineligible: Record<string, ModuleResolutionErrorCode> = {}
   // The installed extensions, by id: each is switched on and off live.
   let moduleRootsById: Record<string, string> = {}
+  // Keeps what the kernel loaded the extensions as in step with the disk while Studio runs.
+  let reloader: ExtensionReloader | null = null
+  const discoverNow = () => discovery.current()
+  // Every save in a development folder: read that folder again, and load what changed.
+  const devWatch = watchDevFolders((folder) => {
+    discovery.folderChanged(folder)
+    workers.reconcile()
+    void lifecycle.reproject(discovery.current().modules)
+    void reloader?.reload()
+  })
 
   // The overrides, already written, applied to the running kernel.
   async function applyEnablement(
@@ -133,8 +160,11 @@ export function createServerModules(deps: {
     // Every client following `extension.changed` lists and loads them again,
     // and a worker whose approval is gone or changed stops.
     changed: () => {
+      discovery.invalidate()
       workers.reconcile()
       hub.deliverChanged()
+      devWatch.follow(readDevFoldersSync(dataDir))
+      void reloader?.reload()
     },
     run: () => extensionRunView(),
     // Every client following `extension.settingsChanged` reads them again.
@@ -182,12 +212,9 @@ export function createServerModules(deps: {
     load(nextGateway) {
       gateway = nextGateway
       const overrides = readOverrides()
-      const thirdParty = planInstalledExtensions(
-        discoverUserModulesSync(defaultUserModuleRoot(), readExtensionStandingContextSync(dataDir)),
-        () => workers,
-      )
-      ineligible = thirdParty.ineligible
-      moduleRootsById = thirdParty.moduleRoots
+      const plan = planInstalledExtensions(discoverNow(), () => workers)
+      ineligible = plan.ineligible
+      moduleRootsById = plan.moduleRoots
       // The schedules are the core's; the kernel holds them under the
       // person's Scheduled agents switch.
       const bundled = [
@@ -198,7 +225,7 @@ export function createServerModules(deps: {
         ),
       ]
       const byId = new Map<string, CapabilityManifest>(
-        [AGENT_RUNTIME_MANIFEST, ...bundled.map((m) => m.manifest), ...thirdParty.modules.map((m) => m.manifest)].map(
+        [AGENT_RUNTIME_MANIFEST, ...bundled.map((m) => m.manifest), ...plan.modules.map((m) => m.manifest)].map(
           (manifest) => [manifest.id, manifest],
         ),
       )
@@ -221,36 +248,50 @@ export function createServerModules(deps: {
         },
       )
       load = loadMainModules({
-        modules: [agentRuntime, ...bundled, ...thirdParty.modules],
+        modules: [agentRuntime, ...bundled, ...plan.modules],
         overrides,
-        moduleRoots: thirdParty.moduleRoots,
-        moduleVerifiedFiles: thirdParty.verifiedFiles,
-        moduleMcpTools: thirdParty.mcpTools,
+        moduleRoots: plan.moduleRoots,
+        moduleVerifiedFiles: plan.verifiedFiles,
+        moduleMcpTools: plan.mcpTools,
         // What each extension runs under; its calls are refused once that approval is gone.
-        extensionApprovals: thirdParty.approvals,
+        extensionApprovals: plan.approvals,
         currentApprovals: approvals,
         resolveFrameGrant: createExtensionFrameGrant({ approvals, dataDir }),
         onKernel: bindWorkers,
         frameFileExclusions: () => [dataDir, defaultUserModuleRoot()],
-        ineligible: thirdParty.ineligible,
-        launchErrors: thirdParty.launchErrors,
+        ineligible: plan.ineligible,
+        launchErrors: plan.launchErrors,
         deliverModuleEvent: (event) => hub.deliverEvent(event),
         deliverModuleNotification: (notification) => hub.deliverNotification(notification),
         // A module tool that would shadow one of the gateway's own is refused
         // at registration, naming the tool it collides with.
         coreMcpToolNames: () => nextGateway.coreToolNames(),
       })
-      manifests = [
-        agentRuntime.manifest,
-        ...bundled.map((m) => m.manifest),
-        ...thirdParty.modules.map((m) => m.manifest),
-      ]
+      manifests = [agentRuntime.manifest, ...bundled.map((m) => m.manifest), ...plan.modules.map((m) => m.manifest)]
       recompute(overrides)
       // An extension's schedules are held to its permissions, and wait while it is not here.
       core.attachModules({
         permissions: (moduleId) => byId.get(moduleId)?.permissions,
         loaded: () => [...enabled],
       })
+      // Changes while it runs load live: a development folder's save, an install, an approval.
+      reloader = createExtensionReloader({
+        plan,
+        discover: discoverNow,
+        workers: () => workers,
+        load: () => load,
+        overrides: readOverrides,
+        reloaded: ({ removed }) => {
+          for (const key of removed) byId.delete(key)
+          for (const module of plan.modules) byId.set(module.manifest.id, module.manifest)
+          manifests = [agentRuntime.manifest, ...bundled.map((m) => m.manifest), ...plan.modules.map((m) => m.manifest)]
+          recompute(readOverrides())
+          gateway?.notifyToolsListChanged()
+          hub.deliverChanged()
+        },
+        log: (message) => deps.log(`[extensions] ${message}`),
+      })
+      devWatch.follow(readDevFoldersSync(dataDir))
       if (load.report.errors.length > 0) {
         deps.log(`module load errors: ${load.report.errors.map((error) => `${error.id}: ${error.message}`).join('; ')}`)
       }
@@ -258,6 +299,20 @@ export function createServerModules(deps: {
     mcpTools: () => load?.kernel.mcpToolRegistrations() ?? [],
     isEnabled: (moduleId) => enabled.has(moduleId),
     scheduledAgents: () => load?.kernel.hostFor('@host').getService(ScheduledAgentsServiceToken) ?? null,
+    devBackend: () => {
+      const current = load
+      if (!current) return null
+      return {
+        lifecycle: () => lifecycle,
+        callModuleMethod: (request) => current.kernel.callModuleMethod(request),
+        runHook: async (moduleId, point, event, invoker) => {
+          await workers.startForHook(moduleId)
+          return workers.runHook(moduleId, point as ExtensionHookPoint, event, invoker, 10_000)
+        },
+        emit: (moduleId, topic, payload) =>
+          hub.deliverEvent({ sourceModuleId: moduleId, topic, payload, emittedAt: Date.now() }),
+      }
+    },
     startup() {
       const current = load
       if (current) void current.ready.then(() => current.kernel.runStartup())
@@ -267,15 +322,18 @@ export function createServerModules(deps: {
       // What extensions hand agents follows the folder too: a server whose
       // files changed under its approval is retracted, not run until the next start.
       stopWatchingModules ??= watchUserModuleRoot(defaultUserModuleRoot(), () => {
+        discovery.invalidate()
         workers.reconcile()
-        void lifecycle.reproject()
+        void lifecycle.reproject(discovery.current().modules)
         hub.deliverChanged()
+        void reloader?.reload()
       })
     },
     shutdownBegin: () => load?.kernel.runShutdownBegin() ?? Promise.resolve(),
     shutdown: async () => {
       stopWatchingModules?.()
       stopWatchingModules = null
+      devWatch.close()
       await (load?.kernel.runShutdown() ?? Promise.resolve())
       await workers.close()
     },

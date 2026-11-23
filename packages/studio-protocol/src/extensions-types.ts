@@ -275,6 +275,33 @@ export type ThirdPartyModuleView = {
    * list as ignored. Absent when there are none.
    */
   ignoredSkillKeys?: Record<string, string[]>
+  /**
+   * A development folder the owner registered: loaded from where it is and
+   * read again on every save (`extension.devLoad`). `folder` is its place on
+   * that disk for a connection that may name any path, its name otherwise;
+   * `overrides` when it stands in for an installed extension with its key,
+   * and `waiting` while that waits for the person's approval (the installed
+   * one runs until then).
+   */
+  development?: { folder: string; overrides: boolean; waiting?: boolean }
+}
+
+/** One development folder, as `extension.devFolders` lists it: the extension in it, or why there is none. */
+export type StudioExtensionDevFolder = {
+  /** Its real path on the Studio's disk. */
+  path: string
+  moduleId?: string
+  name?: string
+  approval?: StudioExtensionApproval
+  /** It stands in for an installed extension with its key. */
+  overrides?: boolean
+  /**
+   * It waits for the person to approve it in place of the installed extension
+   * with its key, which runs until then.
+   */
+  waiting?: boolean
+  /** Why it holds no extension Studio loads. */
+  error?: string
 }
 
 export type ModuleManifestIssue = { path: string; message: string }
@@ -297,6 +324,12 @@ export type ExtensionContributions = {
   id: string
   manifest: CapabilityManifest
   extension: ExtensionManifestView
+  /**
+   * The content identity of its files as served now: it moves with every
+   * change to them (a development folder's save, an update), so a client
+   * draws its open surfaces again.
+   */
+  revision?: string
 }
 
 /**

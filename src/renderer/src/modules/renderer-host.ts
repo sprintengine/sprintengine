@@ -1255,6 +1255,13 @@ export type RendererKernel = {
    */
   setModuleEnablementResolver(resolver: (moduleId: string) => boolean): void
   /**
+   * Take out everything one module registered (panels, commands, actions,
+   * sections, doors, top bar items, surfaces, its subscriptions), so an
+   * extension whose extension.json or files changed while the window is open
+   * can register again as it is now.
+   */
+  forgetModule(moduleId: string): void
+  /**
    * Read that same resolver, for the few shell helpers that need "is this
    * module on?" but must not import the workspace store — importing it from a
    * module the store's own slices reach would close a cycle. Absent a resolver
@@ -2237,6 +2244,35 @@ export function createRendererHost(): RendererKernel {
         launchers.push({ ...surface.launcher, surfaceId: surface.id, moduleId: surface.moduleId })
       }
       return launchers
+    },
+    forgetModule(moduleId) {
+      for (const [id, owner] of [...panelModules]) {
+        if (owner !== moduleId) continue
+        panelModules.delete(id)
+        panels.delete(id)
+      }
+      const owned = <T extends { moduleId: string }>(map: Map<string, T>) => {
+        for (const [id, entry] of [...map]) if (entry.moduleId === moduleId) map.delete(id)
+      }
+      owned(workspaceTypes)
+      owned(backlogItemActions)
+      owned(fileActions)
+      owned(notificationActionProviders)
+      owned(moduleCommands)
+      owned(settingsSections)
+      owned(sidebarNavEntries)
+      owned(doorBadges)
+      owned(topBarItems)
+      owned(globalSurfaces)
+      owned(modalSurfaces)
+      owned(backlogLinkProviders)
+      for (const subscriber of [...moduleEventSubscribers])
+        if (subscriber.moduleId === moduleId) moduleEventSubscribers.delete(subscriber)
+      for (const watcher of [...moduleAppStateWatchers]) {
+        if (watcher.moduleId !== moduleId) continue
+        watcher.detach?.()
+        moduleAppStateWatchers.delete(watcher)
+      }
     },
     setModuleEnablementResolver(resolver) {
       moduleEnabledResolver = resolver

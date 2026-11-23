@@ -2,12 +2,7 @@ import type { ExtensionMcpToolContribution } from '../../../packages/extension-s
 import type { ModuleFileDigests, ModuleResolutionErrorCode } from '../../shared/modules/manifest'
 import type { CapabilityModule, MainModuleLoadError } from '../../main/module-host/load-modules'
 import { isExtensionRunnable } from '../../main/modules/module-signature'
-import { readExtensionStandingContextSync } from '../../main/modules/extension-standing-context'
-import {
-  discoverUserModulesSync,
-  type InstalledModule,
-  type ModuleRejection,
-} from '../../main/modules/user-module-registry'
+import type { InstalledModule, ModuleRejection, UserModuleListResult } from '../../main/modules/user-module-registry'
 import type { ExtensionWorkers, InstalledStanding } from './workers/worker-manager'
 
 // The installed extensions as one Studio server's module kernel loads them.
@@ -45,6 +40,13 @@ export type InstalledExtensionsPlan = {
   approvals: Record<string, ExtensionLoadedApproval>
   ineligible: Record<string, ModuleResolutionErrorCode>
   launchErrors: MainModuleLoadError[]
+  /**
+   * What each extension was loaded as: its folder, whether it may run, the
+   * approval it runs under, its files and its extension.json. When this
+   * changes (a save in a development folder, an update, an approval), the
+   * kernel loads it again (`reloadInstalledExtensions`).
+   */
+  identities: Record<string, string>
 }
 
 export function planInstalledExtensions(
@@ -58,6 +60,7 @@ export function planInstalledExtensions(
     mcpTools: {},
     approvals: {},
     ineligible: {},
+    identities: {},
     launchErrors: input.rejected.map((rejection) => ({
       id: rejection.path,
       message: rejection.issues.map((issue) => `${issue.path ? `${issue.path}: ` : ''}${issue.message}`).join('; '),
@@ -65,6 +68,15 @@ export function planInstalledExtensions(
   }
   for (const installed of input.modules) {
     const { key, standing, extension } = installed
+    plan.identities[key] = JSON.stringify([
+      installed.moduleRoot,
+      isExtensionRunnable(standing),
+      standing.signature,
+      standing.approval.state === 'approved' ? standing.approval.fingerprint : standing.approval.state,
+      standing.contentDigest ?? null,
+      installed.development?.order ?? null,
+      extension,
+    ])
     plan.moduleRoots[key] = installed.moduleRoot
     plan.mcpTools[key] = extension.contributes.mcpTools
     if (!isExtensionRunnable(standing) || !standing.verifiedFiles) {
@@ -95,6 +107,7 @@ export function planInstalledExtensions(
             fingerprint,
             declaredTools: extension.contributes.mcpTools,
             declaredHooks: extension.contributes.hooks,
+            ...(installed.development ? { development: { order: installed.development.order } } : {}),
           },
           host,
         ),
@@ -104,15 +117,13 @@ export function planInstalledExtensions(
 }
 
 /**
- * The installed extensions as discovery finds them now, for the workers to
- * hold what runs against: whether each may run as it is, and the approval it
- * is approved under. Reads and digests every folder, so it is read when
- * something changed, not per call.
+ * The extensions as discovery found them (extension-discovery.ts), for the
+ * workers to hold what runs against: whether each may run as it is, and the
+ * approval it is approved under.
  */
-export function readInstalledStanding(moduleRoot: string, dataDir: string): Map<string, InstalledStanding> {
-  const { modules } = discoverUserModulesSync(moduleRoot, readExtensionStandingContextSync(dataDir))
+export function installedStandingOf(discovered: UserModuleListResult): Map<string, InstalledStanding> {
   return new Map(
-    modules.map((module) => [
+    discovered.modules.map((module) => [
       module.key,
       {
         runnable: isExtensionRunnable(module.standing),

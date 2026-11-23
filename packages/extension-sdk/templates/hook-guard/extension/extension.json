@@ -9,7 +9,7 @@
   "tier": "worker",
   "name": "{{displayName}}",
   "description": "{{displayName}}, an extension for SprintEngine Studio.",
-  "main": "dist/main.cjs",
+  "main": "src/main.ts",
   "contributes": {
     "hooks": [{ "point": "agent.tool.before", "onError": "deny" }, { "point": "agent.tool.after" }]
   }

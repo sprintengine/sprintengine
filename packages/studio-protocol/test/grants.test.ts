@@ -107,6 +107,10 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'extension.setEnabled',
   'extension.approve',
   'extension.uninstall',
+  // A development folder is a path on this disk, and what runs from it is the owner's to choose.
+  'extension.devFolders',
+  'extension.devLoad',
+  'extension.devUnload',
   'conversationImport.import',
   'conversationImport.scan',
   'launchSettings.changed',

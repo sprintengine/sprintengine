@@ -1,13 +1,11 @@
 {
   "id": "main",
   "title": "Worker",
-  "summary": "src/main.ts, built to main: Node in Studio's background, for services, MCP tools, the commands extension.json declares without an action, and the methods its surfaces call.",
+  "summary": "extension/src/main.ts, the worker: Node in Studio's background, for services, MCP tools, the commands extension.json declares without an action, and the methods its surfaces call.",
   "requires": [],
   "permissions": [],
-  "main": "dist/main.cjs",
+  "main": "src/main.ts",
   "contributes": {},
-  "scripts": {
-    "build:main": "esbuild src/main.ts --bundle --format=cjs --platform=node --target=node22 --outfile=extension/dist/main.cjs"
-  },
+  "scripts": {},
   "devDependencies": {}
 }

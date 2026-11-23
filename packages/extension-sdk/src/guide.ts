@@ -25,7 +25,12 @@ export const EXTENSION_GUIDE_TOPICS: readonly ExtensionGuideTopic[] = [
   {
     id: 'start',
     summary:
-      'Read first: what an extension is, the project layout, the first steps, the build-install-trust loop, testing without Studio, and what done means.',
+      'Read first: what an extension is, the project layout, the first steps, the no-build dev loop (npm run dev, approve once, save and read what came back), testing without Studio, and what done means.',
+  },
+  {
+    id: 'dev-loop',
+    summary:
+      'The sprintengine-extension commands (validate, inspect, test, check, dev load/watch/…, shot): every flag, the --json answers, the watch events, error and exit codes.',
   },
   {
     id: 'surfaces',
@@ -36,7 +41,8 @@ export const EXTENSION_GUIDE_TOPICS: readonly ExtensionGuideTopic[] = [
   { id: 'permissions', summary: 'Every permission, what it allows, and which the host enforces.' },
   {
     id: 'rules',
-    summary: 'The mistakes that cost earlier extensions time: bundle shape, styling, trust, storage, untrusted input.',
+    summary:
+      'The mistakes that cost earlier extensions time: how source loads, styling, approval, storage, untrusted input.',
   },
   {
     id: 'api-renderer',
@@ -55,7 +61,7 @@ export const EXTENSION_GUIDE_TOPICS: readonly ExtensionGuideTopic[] = [
   { id: 'brokers', summary: 'API keys and GitHub through the host, never a token in the extension.' },
   {
     id: 'styling',
-    summary: 'Drawing a surface in its frame: React or plain DOM, the theme properties, Studio’s kit, your own CSS.',
+    summary: 'Drawing a surface in its frame: plain DOM or JSX, the theme properties, Studio’s kit, your own CSS.',
   },
   {
     id: 'troubleshooting',

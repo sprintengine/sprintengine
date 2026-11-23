@@ -43,7 +43,11 @@ textarea.se-input{height:auto;padding:6px 8px;resize:vertical}
 export type FrameDocumentInput = {
   surface: { point: string; id: string }
   entryPath: string
-  entryCode: string
+  /** The entry and the modules it imports, as source-modules.ts builds them. */
+  modules: ReadonlyArray<{ path: string; code: string }>
+  token: string
+  /** Why its code cannot load (`file:line:col message`): the frame shows it instead. */
+  problem?: string
   /** The theme to draw it in; null when this server does not know the client's, which then sends it before anything shows. */
   theme: ExtensionFrameTheme | null
 }
@@ -72,7 +76,9 @@ export function buildExtensionFrameDocument(input: FrameDocumentInput): string {
     `<div id="${FRAME_ROOT_ID}"></div>`,
     `<script>${frameBootstrapScript({
       entryPath: input.entryPath,
-      entryCode: input.entryCode,
+      modules: input.modules,
+      token: input.token,
+      ...(input.problem ? { problem: input.problem } : {}),
       surface: input.surface,
       colorScheme: scheme,
     })}</script>`,

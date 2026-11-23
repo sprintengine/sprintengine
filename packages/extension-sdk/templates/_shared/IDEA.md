@@ -4,6 +4,10 @@ Started from the **{{templateTitle}}** template. Replace this page with what the
 extension is for: the person it helps, what they do with it, and what "working"
 looks like. The agent building it reads this first.
 
+To see it in Studio as it is now: `npm install`, then `npm run dev`. That
+loads `extension/` into the running Studio, with no build step, and reloads it
+on every save; approve it once in Settings → Extensions.
+
 ## What it does
 
 -

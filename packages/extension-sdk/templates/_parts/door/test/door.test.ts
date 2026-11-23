@@ -1,19 +1,17 @@
-// The door, rendered against the SDK's fake frame studio. `npm test` bundles
-// test/*.test.ts and runs them with `node --test`.
+// The door. `npm test` runs test/*.test.ts with `node --test`; a test has no
+// DOM, so what the door draws is in the shots `npm run dev` writes.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { createElement } from 'react'
-
-import { createFakeFrameStudio, renderToHtml } from '@sprintengine/extension-sdk/testing'
-
-import { Door } from '../src/door'
+import { DOOR_TEXT, mount } from '../extension/src/door'
 import { manifest } from './manifest'
 
-test('the door renders', async () => {
-  const frame = createFakeFrameStudio({ manifest })
-  const studio = frame.studio({ point: 'doors', id: 'door' })
-  assert.match(await renderToHtml(createElement(Door, { studio })), /Nothing here yet/)
-  assert.deepEqual(frame.undeclared, [])
+test('the door is declared, and its source exports mount', () => {
+  assert.deepEqual(
+    manifest.contributes.doors.filter((door) => door.id === 'door').map((door) => door.entry),
+    ['src/door.ts'],
+  )
+  assert.equal(typeof mount, 'function')
+  assert.match(DOOR_TEXT.heading, /Nothing here yet/)
 })

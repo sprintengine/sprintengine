@@ -1,14 +1,14 @@
-// Your tests, in TypeScript: `npm test` bundles test/*.test.ts and runs them
-// with `node --test` (see AGENTS.md). The MCP server answers one message at a
-// time through `handle`, so it is tested without starting a process.
+// Your tests, in TypeScript: `npm test` runs test/*.test.ts with `node --test`
+// (see AGENTS.md). The MCP server answers one message at a time through
+// `handle`, so it is tested without starting a process; the last test starts
+// it as an agent does, with plain `node`.
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { countWords, handle } from '../src/server'
+import { countWords, handle } from '../extension/src/server.mjs'
 import { manifest } from './manifest'
 
 test('the server says who it is and that it serves tools', () => {
@@ -41,19 +41,18 @@ test('count_words counts, and a call without text is refused', () => {
   assert.equal(countWords('  spaced   out  '), 2)
 })
 
-test('extension.json hands agents the skill and the server the build makes', () => {
+test('extension.json hands agents the skill and the server, run from source', () => {
   assert.deepEqual(
     manifest.contributes.skills.map((skill) => skill.id),
     ['word-budget'],
   )
   const [server] = manifest.contributes.mcpServers
   assert.equal(server?.transport, 'stdio')
-  assert.deepEqual(server?.args, ['${extensionPath}/dist/server.mjs'])
+  assert.deepEqual(server?.args, ['${extensionPath}/src/stdio.mjs'])
 })
 
-test('the built server answers over stdio, as an agent starts it', () => {
-  const program = fileURLToPath(new URL('../../extension/dist/server.mjs', import.meta.url))
-  assert.ok(existsSync(program), 'extension/dist/server.mjs is missing: run `npm run build` first.')
+test('the server answers over stdio, as an agent starts it', () => {
+  const program = fileURLToPath(new URL('../extension/src/stdio.mjs', import.meta.url))
   const run = spawnSync(process.execPath, [program], {
     input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`,
     encoding: 'utf8',

@@ -8,6 +8,7 @@ import { EXTENSION_FRAME_THEMES } from '../../../shared/extension-frame-themes.g
 import { createExtensionFrameCache } from './frame-cache'
 import { buildExtensionFrameDocument, extensionFrameHash } from './frame-document'
 import { createExtensionFrameRoute } from './frame-route'
+import { frameBootstrapScript } from './frame-bootstrap'
 
 // The one document every client draws a surface from, and the web listener's
 // route that serves it to a browser tab.
@@ -18,7 +19,8 @@ function documentFor(theme = EXTENSION_FRAME_THEMES.dark!) {
   return buildExtensionFrameDocument({
     surface: { point: 'doors', id: 'deck' },
     entryPath: 'dist/door.js',
-    entryCode: ENTRY,
+    modules: [{ path: 'dist/panel.js', code: ENTRY }],
+    token: 'se-module-test-',
     theme,
   })
 }
@@ -38,7 +40,8 @@ test('a theme this server does not know keeps the body hidden until the window s
   const html = buildExtensionFrameDocument({
     surface: { point: 'panels', id: 'p' },
     entryPath: 'p.js',
-    entryCode: ENTRY,
+    modules: [{ path: 'dist/panel.js', code: ENTRY }],
+    token: 'se-module-test-',
     theme: null,
   })
   assert.match(html, /<html class="dark" data-se-waiting>/)
@@ -136,17 +139,48 @@ test('only a custom editor’s document carries `studio.document`, and its scrip
   const editor = buildExtensionFrameDocument({
     surface: { point: 'customEditors', id: 'todo' },
     entryPath: 'editor.js',
-    entryCode: ENTRY,
+    modules: [{ path: 'dist/panel.js', code: ENTRY }],
+    token: 'se-module-test-',
     theme: EXTENSION_FRAME_THEMES.dark!,
   })
   const panel = buildExtensionFrameDocument({
     surface: { point: 'panels', id: 'p' },
     entryPath: 'p.js',
-    entryCode: ENTRY,
+    modules: [{ path: 'dist/panel.js', code: ENTRY }],
+    token: 'se-module-test-',
     theme: EXTENSION_FRAME_THEMES.dark!,
   })
   assert.ok(editor.includes("port.call('document.applyEdit'"))
   assert.equal(editor.split('</script>').length - 1, 1)
   assert.ok(!panel.includes('document.applyEdit'), 'another surface carries none of it')
   assert.match(editor, /"point":"customEditors"/)
+})
+
+test('the bootstrap is a script that parses, and loads every module, each by its own token', () => {
+  const script = frameBootstrapScript({
+    entryPath: 'src/panel.ts',
+    modules: [
+      { path: 'src/dom.ts', code: 'export const h = 1\n' },
+      { path: 'src/panel.ts', code: "import { h } from 'se-module-abc-0'\nexport function mount() {}\n" },
+    ],
+    token: 'se-module-abc-',
+    surface: { point: 'panels', id: 'p' },
+    colorScheme: 'dark',
+  })
+  // Throws on a syntax error: an escape lost between this file and the frame.
+  assert.doesNotThrow(() => new Function(script))
+  assert.match(script, /new RegExp\(C\.token \+ '\(\[0-9\]\+\)', 'g'\)/)
+  assert.match(script, /stack\.split\('\\n'\)/)
+})
+
+test('a surface whose code cannot load says so at its file and line, in the frame', () => {
+  const html = buildExtensionFrameDocument({
+    surface: { point: 'panels', id: 'p' },
+    entryPath: 'src/panel.ts',
+    modules: [],
+    token: 'se-module-none-',
+    problem: 'src/panel.ts:3:7 Unexpected token',
+    theme: null,
+  })
+  assert.match(html, /src\/panel\.ts:3:7 Unexpected token/)
 })

@@ -20,14 +20,19 @@ import type { ExtensionStandingContext } from './modules/module-signature'
 import { createExtensionApprovalReader } from './modules/extension-approvals'
 import { createExtensionFrameGrant } from './modules/extension-frame-grant'
 import { readExtensionStandingContextSync } from './modules/extension-standing-context'
-import { planInstalledExtensions, readInstalledStanding } from '../server/extensions/extension-plan'
+import { installedStandingOf, planInstalledExtensions } from '../server/extensions/extension-plan'
+import { createExtensionDiscovery } from '../server/extensions/extension-discovery'
 import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
-import { resolveWorkerEntryPath } from '../server/extensions/workers/worker-process'
+import { resolveWorkerEntryPath, resolveExtensionSdkRoot } from '../server/extensions/workers/worker-process'
 import { join } from 'node:path'
 import { registerAppRestartIpc } from './ipc/app-restart-ipc'
 import { handleExtensionFrameScheme, stagedExtensionFrames } from './extension-frames/extension-frame-shell'
 import { defaultUserModuleRoot, discoverUserModulesSync } from './modules/user-module-registry'
 import { watchUserModuleRoot } from './modules/user-module-watch'
+import { readDevFoldersSync } from './modules/extension-dev-folders'
+import { createExtensionReloader } from '../server/extensions/extension-reload'
+import { watchDevFolders } from '../server/extensions/dev/dev-folder-watch'
+import type { ExtensionHookPoint } from '../../packages/extension-sdk/src/hooks'
 import { createModuleLifecycle, liveModuleIds } from './modules/module-lifecycle'
 import { bundledRegistryIds } from './plugin-registry-instance'
 import { attachBuildSkewWatch, createBuildSkewWatch } from './build-skew'
@@ -129,17 +134,39 @@ const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
 // resolver orders it first because every dependent declares
 // `dependsOn: ['agent-runtime']`. See docs/extension-authors/drop-in-extensions.md.
 const moduleOverrides = readModuleEnablementOverrides()
+// Every save in a development folder: read it again, and load what changed.
+// Out of process the server watches them (server-modules.ts).
+// The extensions on disk, discovered once per change (extension-discovery.ts):
+// a save reads its folder alone again.
+const extensionDiscovery = createExtensionDiscovery({
+  moduleRoot: defaultUserModuleRoot,
+  dataDir: app.getPath('userData'),
+})
+const devFolderWatch = watchDevFolders((folder) => {
+  extensionDiscovery.folderChanged(folder)
+  extensionWorkers.workers.reconcile()
+  void moduleLifecycle?.reproject(extensionDiscovery.current().modules)
+  void extensionReloader?.reload()
+})
 
 const extensionApprovals = createExtensionApprovalReader(app.getPath('userData'))
 // Every worker extension's code runs in a process of its own
 // (src/server/extensions/workers). Out of process the server holds them.
 const extensionWorkers = createExtensionWorkers({
   entryPath: resolveWorkerEntryPath(),
+  sdkRoot: resolveExtensionSdkRoot(app.isPackaged ? process.resourcesPath : null, app.getAppPath()),
   logDir: join(app.getPath('logs'), 'extensions'),
   approvals: extensionApprovals,
-  installed: () => readInstalledStanding(defaultUserModuleRoot(), app.getPath('userData')),
+  installed: () => installedStandingOf(extensionDiscovery.current()),
   toolsChanged: () => services.automationService?.notifyToolsListChanged(),
   stateChanged: () => services.moduleHub.deliverChanged(),
+  // Read again, it is no longer loaded: registering it again asks again.
+  developmentFolderMoved: () => {
+    extensionDiscovery.invalidate()
+    void moduleLifecycle?.reproject(extensionDiscovery.current().modules)
+    void extensionReloader?.reload()
+    services.moduleHub.deliverChanged()
+  },
 })
 if (!serverHost) app.once('will-quit', () => void extensionWorkers.workers.close())
 // In process, the core's actions ask these workers' hooks; out of process the
@@ -257,8 +284,11 @@ const moduleLifecycle = serverHost
       moduleRoot: defaultUserModuleRoot,
       // A worker whose approval is gone or changed stops, and the windows hear.
       changed: () => {
+        extensionDiscovery.invalidate()
         extensionWorkers.workers.reconcile()
         services.moduleHub.deliverChanged()
+        devFolderWatch.follow(readDevFoldersSync(app.getPath('userData')))
+        void extensionReloader?.reload()
       },
       settingsChanged: (moduleId) => services.moduleHub.deliverSettingsChanged(moduleId),
       // What this session's kernel holds, read only when an extension list is
@@ -308,6 +338,31 @@ const moduleLifecycle = serverHost
       },
     })
 if (moduleLifecycle) services.moduleHub.serveLifecycleFrom(moduleLifecycle)
+// Changes while the app runs load live: a development folder's save, an
+// install, an approval (src/server/extensions/extension-reload.ts). Out of
+// process the server does this.
+const extensionReloader = moduleLifecycle
+  ? createExtensionReloader({
+      plan: thirdPartyMainLoad,
+      discover: () => extensionDiscovery.current(),
+      workers: () => extensionWorkers.workers,
+      load: () => moduleLoad,
+      overrides: readModuleEnablementOverrides,
+      reloaded: ({ removed }) => {
+        for (const key of removed) moduleManifestsById.delete(key)
+        for (const module of thirdPartyMainLoad.modules) moduleManifestsById.set(module.manifest.id, module.manifest)
+        mainModuleManifests.splice(
+          2,
+          mainModuleManifests.length - 2,
+          ...thirdPartyMainLoad.modules.map((module) => module.manifest),
+        )
+        recomputeMainEnablement(readModuleEnablementOverrides())
+        services.automationService?.notifyToolsListChanged()
+        services.moduleHub.deliverChanged()
+      },
+      log: (message) => console.warn(`[extensions] ${message}`),
+    })
+  : null
 // A module copied into the drop-in folder while Studio runs is listed at once,
 // not after a reload. Out of process the server watches (server-modules.ts).
 if (moduleLifecycle) {
@@ -315,11 +370,15 @@ if (moduleLifecycle) {
   // What extensions hand agents follows the folder too: a server whose files
   // changed under its approval is retracted, not run until the next start.
   const stopWatchingModules = watchUserModuleRoot(defaultUserModuleRoot(), () => {
+    extensionDiscovery.invalidate()
     extensionWorkers.workers.reconcile()
-    void moduleLifecycle.reproject()
+    void moduleLifecycle.reproject(extensionDiscovery.current().modules)
     services.moduleHub.deliverChanged()
+    void extensionReloader?.reload()
   })
   app.once('will-quit', stopWatchingModules)
+  devFolderWatch.follow(readDevFoldersSync(app.getPath('userData')))
+  app.once('will-quit', () => devFolderWatch.close())
 }
 // Automation server ← Scheduled agents module: resolved per tool call so a live
 // module disable/enable cycle is reflected immediately (service absent ⇒ the
@@ -336,6 +395,18 @@ services.setModuleEnabledResolver((moduleId) => enabledMainModuleIds.has(moduleI
 // constructed above, before loadMainModules ran; this seam hands it the live
 // registry, and the per-request evaluation makes the tools visible immediately.
 services.setModuleMcpToolsResolver(() => moduleLoad.kernel.mcpToolRegistrations())
+// The extension dev loop's tools (extension-dev-tools.ts), over this kernel.
+if (moduleLifecycle)
+  services.setExtensionDevBackend(() => ({
+    lifecycle: () => moduleLifecycle,
+    callModuleMethod: (request) => moduleLoad.kernel.callModuleMethod(request),
+    runHook: async (moduleId, point, event, invoker) => {
+      await extensionWorkers.workers.startForHook(moduleId)
+      return extensionWorkers.workers.runHook(moduleId, point as ExtensionHookPoint, event, invoker, 10_000)
+    },
+    emit: (moduleId, topic, payload) =>
+      services.moduleHub.deliverEvent({ sourceModuleId: moduleId, topic, payload, emittedAt: Date.now() }),
+  }))
 void app.whenReady().then(() => {
   // The hosted relay's leftover pairings and push tokens (retired-relay-state.ts).
   // Best effort and off the startup path; tailnet pairings are never touched.
