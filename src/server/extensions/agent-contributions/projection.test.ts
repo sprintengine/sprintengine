@@ -205,6 +205,17 @@ test('two extensions’ skills of the same name are both handed out, each under 
   }
 })
 
+test('an update that changes only the version rebuilds the plugin folder, so it names the new version', async () => {
+  const { dataDir, start, source } = setup()
+  const lifecycle = start()
+  const skills = [{ id: 'review', path: 'skills/review' }]
+  await lifecycle.install(source({ skills }))
+  await lifecycle.install(source({ skills }))
+  const [skill] = launchExtensionContributions(dataDir).skills
+  const manifest = JSON.parse(readFileSync(join(skill!.pluginDir, '.claude-plugin', 'plugin.json'), 'utf8'))
+  expect(manifest.version).toBe('1.0.2')
+})
+
 test('a skill folder without a SKILL.md is refused at install, naming the field', async () => {
   const { start, source } = setup()
   const result = await start().install(source({ skills: [{ id: 'empty', path: 'skills/empty' }] }))
