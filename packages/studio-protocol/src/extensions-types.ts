@@ -207,6 +207,8 @@ export type ThirdPartyModuleLaunchStatus =
   | 'awaiting_approval'
   /** Its signature or its files are broken; it never runs. */
   | 'blocked_invalid'
+  /** The kill list holds this version: it is switched off and what it added is retracted. */
+  | 'killed'
   | 'launch_error'
 
 /**
@@ -284,6 +286,101 @@ export type ThirdPartyModuleView = {
    * one runs until then).
    */
   development?: { folder: string; overrides: boolean; waiting?: boolean }
+  /** Where it came from, and the trust label that says so. */
+  origin?: StudioExtensionOrigin
+  /** The kill list holds this version: it never runs here. */
+  killed?: { reason: string; advisoryUrl?: string }
+  /** A newer release the catalogue it came from lists: to install, or held for review and why. */
+  update?: StudioExtensionUpdate
+}
+
+/**
+ * Where an installed extension came from. The label is decided by that,
+ * never by the extension's own words: `Official` for Studio's catalogue,
+ * `Community · <owner>` for the community catalogue, the catalogue's name and
+ * the owner in its git URL for one the person added, `Unverified` for a git
+ * URL, `Local` for a folder and `Dev` for a development folder.
+ */
+export type StudioExtensionOrigin = {
+  kind: 'official' | 'community' | 'catalogue' | 'git' | 'folder' | 'development'
+  label: string
+  /** The catalogue it updates from (`official`, `community`, `git:<url>`). */
+  catalogue?: string
+  catalogueName?: string
+  /** The git source it was checked out from, and the commit. */
+  source?: StudioCatalogueSource
+  commit?: string
+}
+
+/**
+ * A newer release than the installed one. `held`: it was left uninstalled
+ * for the person to review, because it asks for more access (`growth`), moved
+ * to another repository or folder, or its owner was renamed or changed hands
+ * (updates pause until it is installed again).
+ */
+export type StudioExtensionUpdate = {
+  version: string
+  held?: 'access' | 'repository' | 'owner'
+  growth?: string[]
+}
+
+export type StudioCatalogueSource = { url: string; ref: string; path?: string }
+
+export type StudioCatalogueImage = { path: string; sha256: string; alt: string }
+
+/** One extension a catalogue lists, as Browse shows it. */
+export type StudioCatalogueListing = {
+  /** Its install key, `<publisher>.<id>`. */
+  id: string
+  name: string
+  publisher: string
+  description?: string
+  categories: string[]
+  /** The release this Studio would install, or the one needing the least newer Studio. */
+  version: string
+  installable: boolean
+  /** The Studio the offered release needs, when this one is older. */
+  needsStudio?: string
+  tier: 'content' | 'declarative' | 'ui' | 'worker'
+  permissions: string[]
+  contributes: Array<{ kind: string; name: string }>
+  /** The trust label from the catalogue's address. */
+  label: string
+  icon?: StudioCatalogueImage
+  /** Installed here: its version, and whether from this catalogue. */
+  installed?: { version: string; fromHere: boolean }
+  killed?: { reason: string; advisoryUrl?: string }
+}
+
+/** One catalogue, as Browse lists it: its last copy, and why it could not be read now. */
+export type StudioCatalogueView = {
+  /** `official`, `community`, or `git:<url>` for one the person added. */
+  id: string
+  kind: 'official' | 'community' | 'added'
+  name: string
+  url?: string
+  fetchedAt?: number
+  error?: string
+  entries: StudioCatalogueListing[]
+}
+
+/** One extension's page: the listing, and what the page shows beyond it. */
+export type StudioCatalogueEntryView = StudioCatalogueListing & {
+  catalogue: string
+  catalogueName: string
+  source: StudioCatalogueSource
+  commit: string
+  license?: string
+  repository?: string
+  homepage?: string
+  updatedAt?: string
+  changelog?: string
+  images?: { cover?: StudioCatalogueImage; screenshots?: StudioCatalogueImage[] }
+  releases: Array<{ version: string; minimumStudio: string; updatedAt?: string }>
+  /** Other catalogues listing the same id. An install stays with the catalogue it came from. */
+  alsoListedBy: Array<{ id: string; name: string }>
+  /** Installed here from another source: what it was installed from. */
+  installedFrom?: StudioExtensionOrigin
 }
 
 /** One development folder, as `extension.devFolders` lists it: the extension in it, or why there is none. */

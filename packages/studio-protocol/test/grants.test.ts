@@ -107,6 +107,11 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'extension.setEnabled',
   'extension.approve',
   'extension.uninstall',
+  // Catalogues added here, and what is installed or updated from one or from a git URL.
+  'extension.catalogueAdd',
+  'extension.catalogueRemove',
+  'extension.installFrom',
+  'extension.update',
   // A development folder is a path on this disk, and what runs from it is the owner's to choose.
   'extension.devFolders',
   'extension.devLoad',

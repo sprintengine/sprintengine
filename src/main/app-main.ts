@@ -20,6 +20,7 @@ import type { ExtensionStandingContext } from './modules/module-signature'
 import { createExtensionApprovalReader } from './modules/extension-approvals'
 import { createExtensionFrameGrant } from './modules/extension-frame-grant'
 import { readExtensionStandingContextSync } from './modules/extension-standing-context'
+import { catalogueNotification } from '../server/extensions/catalogue/extension-catalogue'
 import { installedStandingOf, planInstalledExtensions } from '../server/extensions/extension-plan'
 import { createExtensionDiscovery } from '../server/extensions/extension-discovery'
 import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
@@ -324,6 +325,8 @@ const moduleLifecycle = serverHost
         if (scheduledAgentsError) return { ok: false, message: scheduledAgentsError.message }
         return { ok: true }
       },
+      // Kill-list and update notices ring the bell of every client.
+      catalogue: { notify: (notice) => services.moduleHub.deliverNotification(catalogueNotification(notice)) },
       view: () => {
         const overrides = readModuleEnablementOverrides()
         return {
@@ -337,7 +340,11 @@ const moduleLifecycle = serverHost
         }
       },
     })
-if (moduleLifecycle) services.moduleHub.serveLifecycleFrom(moduleLifecycle)
+if (moduleLifecycle) {
+  services.moduleHub.serveLifecycleFrom(moduleLifecycle)
+  // The kill list and automatic updates, for as long as the app runs.
+  moduleLifecycle.catalogue.start()
+}
 // Changes while the app runs load live: a development folder's save, an
 // install, an approval (src/server/extensions/extension-reload.ts). Out of
 // process the server does this.

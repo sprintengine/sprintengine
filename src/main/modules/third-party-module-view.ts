@@ -50,6 +50,7 @@ export function toThirdPartyModuleView(
     ...(module.standing.signer ? { signer: module.standing.signer } : {}),
     launch: launchViewFor(module, run, enablementOverrides),
     mcpTools: run.mcpTools(module.key),
+    ...(module.standing.killed ? { killed: module.standing.killed } : {}),
     ...ignoredSkillKeysView(module),
     ...(module.development
       ? {
@@ -99,6 +100,14 @@ function mainEntryLaunchView(
   const id = module.key
   const { standing } = module
   const hasMainEntry = module.extension.tier === 'worker' && Boolean(module.extension.main)
+  if (standing.killed) {
+    return {
+      status: 'killed',
+      hasMainEntry,
+      expectedToLoad: false,
+      message: `Studio switched it off: its kill list removed this version. ${standing.killed.reason}`,
+    }
+  }
   if (standing.signature === 'invalid') {
     return {
       status: 'blocked_invalid',

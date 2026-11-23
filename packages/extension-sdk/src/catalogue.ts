@@ -394,7 +394,14 @@ export function catalogueVersionProblem(raw: unknown): string | null {
  * their limit are trimmed. Only a catalogue whose format or header cannot be
  * read fails.
  */
-export function readCatalogue(raw: unknown): { ok: true; catalogue: Catalogue } | { ok: false; message: string } {
+export function readCatalogue(
+  raw: unknown,
+  options: {
+    /** Which source URLs to keep: HTTPS and SSH git URLs unless said otherwise (a development Studio's file URLs). */
+    fetchable?: (url: string) => boolean
+  } = {},
+): { ok: true; catalogue: Catalogue } | { ok: false; message: string } {
+  const fetchable = options.fetchable ?? isAllowedGitUrl
   const problem = catalogueVersionProblem(raw)
   if (problem) return { ok: false, message: `The catalogue ${problem}` }
   const record = raw as Record<string, unknown>
@@ -409,7 +416,7 @@ export function readCatalogue(raw: unknown): { ok: true; catalogue: Catalogue } 
     if (extensions.length >= CATALOGUE_ENTRY_LIMIT) break
     const entry = readNodeTolerant(ENTRY_NODE, item) as CatalogueEntry | undefined
     if (!entry || seen.has(entry.id)) continue
-    if (!isAllowedGitUrl(entry.source.url) || entry.releases.length === 0) continue
+    if (!fetchable(entry.source.url) || entry.releases.length === 0) continue
     seen.add(entry.id)
     extensions.push({ ...entry, categories: entry.categories ?? [] })
   }

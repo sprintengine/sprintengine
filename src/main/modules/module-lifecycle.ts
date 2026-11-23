@@ -53,6 +53,11 @@ import { agentContributionIssues } from '../../server/extensions/agent-contribut
 import { extensionDevEvents } from '../../server/extensions/dev/dev-events'
 import { readFile } from 'node:fs/promises'
 import { reconcileInstalledAgentContributions } from '../../server/extensions/agent-contributions/reconcile-installed'
+import {
+  createExtensionCatalogue,
+  type ExtensionCatalogue,
+  type ExtensionCatalogueDeps,
+} from '../../server/extensions/catalogue/extension-catalogue'
 
 // What runs on a Studio, changed through its server (`extension.setEnabled`,
 // `extension.install`, `extension.approve`, `extension.uninstall`) and read
@@ -132,9 +137,13 @@ export type ModuleLifecycleDeps = {
   protectedProviderIds?: () => ReadonlySet<string>
   /** Something worth a line in the log. */
   warn?: (message: string) => void
+  /** The catalogue's own seams and its notices (catalogue/extension-catalogue.ts). */
+  catalogue?: Omit<ExtensionCatalogueDeps, 'dataDir' | 'installChecked' | 'installed' | 'killListChanged' | 'warn'>
 }
 
 export type ModuleLifecycle = {
+  /** Browsing, installing from a catalogue or a git URL, updates and the kill list. */
+  readonly catalogue: ExtensionCatalogue
   list(): StudioModuleSummary[]
   setEnabled(moduleId: string, enabled: boolean | null): Promise<Answer<'extension.setEnabled'>>
   install(path: string): Promise<Answer<'extension.install'>>
@@ -299,7 +308,77 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     ...(result.waiting ?? []),
   ]
 
+  // Install the extension in a folder: a folder the person picked (`local`),
+  // or one the catalogue checked out (its publisher, the repository's owner).
+  const installFolder = async (
+    path: string,
+    options: { publisher?: string; official?: boolean } = {},
+  ): Promise<Answer<'extension.install'>> => {
+    try {
+      const context = standingContext()
+      // Read before the copy replaces it: the version an update replaces,
+      // and whether the person approved it as it is.
+      const before = await installedOnly()
+      const result = await installModuleFolder(path, deps.moduleRoot(), context, {
+        ...(deps.protectedProviderIds ? { protectedProviderIds: deps.protectedProviderIds() } : {}),
+        ...options,
+      })
+      if (!result.ok)
+        return {
+          ok: false as const,
+          message: result.message,
+          ...(result.rejected.issues.length > 0 ? { issues: result.rejected.issues } : {}),
+        }
+      let approval = approvalView(result.standing.approval)
+      const previous = before.find((module) => module.key === result.id)
+      const record = readExtensionApprovalsSync(deps.dataDir).get(result.id)
+      // An update of an approved extension that asks for no more access
+      // keeps its approval, its new code included: trust once per access.
+      if (
+        result.standing.approval.state === 'pending' &&
+        previous?.standing.approval.state === 'approved' &&
+        record &&
+        record.devFolder === undefined &&
+        accessGrowth(record.access, extensionAccess(result.extension, result.standing.verifiedFiles)).length === 0
+      ) {
+        const carried = await writeExtensionApproval(deps.dataDir, result.id, {
+          fingerprint: result.standing.approval.fingerprint,
+          access: extensionAccess(result.extension, result.standing.verifiedFiles),
+        })
+        if (carried.ok) approval = { state: 'approved', fingerprint: result.standing.approval.fingerprint }
+      }
+      await project()
+      deps.changed()
+      return { ok: true as const, moduleId: result.id, approval, strippedLinks: result.strippedLinks }
+    } catch (error) {
+      return failed(error)
+    }
+  }
+  const catalogue = createExtensionCatalogue({
+    ...deps.catalogue,
+    dataDir: deps.dataDir,
+    ...(deps.warn ? { warn: deps.warn } : {}),
+    installChecked: (dir, options) => oneAtATime(() => installFolder(dir, options)),
+    installed: async () => {
+      const { modules, waiting = [] } = await discoverUserModules(deps.moduleRoot(), standingContext())
+      return [...modules, ...waiting].map((module) => ({
+        key: module.key,
+        manifest: module.extension,
+        approval: module.standing.approval.state,
+        development: module.development !== undefined,
+        killed: module.standing.killed !== undefined,
+      }))
+    },
+    // A killed version stops, and what it handed agents is taken back.
+    killListChanged: async () => {
+      await oneAtATime(() => project())
+      deps.changed()
+    },
+  })
+
   return {
+    catalogue,
+
     list() {
       const view = deps.view()
       return view ? summarizeModules(view) : []
@@ -312,7 +391,9 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
       return {
         // A folder waiting to stand in for an installed one is listed beside
         // it, for the person to review; the installed one is what runs.
-        modules: [...modules, ...waiting].map((module) => toThirdPartyModuleView(module, run, overrides)),
+        modules: catalogue.annotate(
+          [...modules, ...waiting].map((module) => toThirdPartyModuleView(module, run, overrides)),
+        ),
         rejected,
       }
     },
@@ -552,47 +633,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
         return { ok: true, module: view && manifest ? summarize(view, manifest) : null }
       }),
 
-    install: (path) =>
-      oneAtATime(async () => {
-        try {
-          const context = standingContext()
-          // Read before the copy replaces it: the version an update replaces,
-          // and whether the person approved it as it is.
-          const before = await installedOnly()
-          const result = await installModuleFolder(path, deps.moduleRoot(), context, {
-            ...(deps.protectedProviderIds ? { protectedProviderIds: deps.protectedProviderIds() } : {}),
-          })
-          if (!result.ok)
-            return {
-              ok: false as const,
-              message: result.message,
-              ...(result.rejected.issues.length > 0 ? { issues: result.rejected.issues } : {}),
-            }
-          let approval = approvalView(result.standing.approval)
-          const previous = before.find((module) => module.key === result.id)
-          const record = context.approvals.get(result.id)
-          // An update of an approved extension that asks for no more access
-          // keeps its approval, its new code included: trust once per access.
-          if (
-            result.standing.approval.state === 'pending' &&
-            previous?.standing.approval.state === 'approved' &&
-            record &&
-            record.devFolder === undefined &&
-            accessGrowth(record.access, extensionAccess(result.extension, result.standing.verifiedFiles)).length === 0
-          ) {
-            const carried = await writeExtensionApproval(deps.dataDir, result.id, {
-              fingerprint: result.standing.approval.fingerprint,
-              access: extensionAccess(result.extension, result.standing.verifiedFiles),
-            })
-            if (carried.ok) approval = { state: 'approved', fingerprint: result.standing.approval.fingerprint }
-          }
-          await project()
-          deps.changed()
-          return { ok: true as const, moduleId: result.id, approval, strippedLinks: result.strippedLinks }
-        } catch (error) {
-          return failed(error)
-        }
-      }),
+    install: (path) => oneAtATime(() => installFolder(path)),
 
     approve: (moduleId, fingerprint) =>
       oneAtATime(async () => {
@@ -613,6 +654,11 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
             ) ?? candidates[0]
           if (!target) return { ok: false, message: `Extension "${moduleId}" is not installed.` }
           const { standing } = target
+          if (standing.killed)
+            return {
+              ok: false,
+              message: `Studio’s kill list removed this version of "${moduleId}": ${standing.killed.reason}`,
+            }
           if (standing.signature === 'invalid')
             return {
               ok: false,
@@ -659,6 +705,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           // Nothing about it outlives it: its approval, enablement, stored secrets.
           const revoked = await writeExtensionApproval(deps.dataDir, moduleId, null)
           await forgetModules(deps.dataDir, [moduleId])
+          await catalogue.forget(moduleId)
           await project()
           deps.changed()
           if (!revoked.ok)

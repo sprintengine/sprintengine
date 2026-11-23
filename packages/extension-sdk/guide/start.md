@@ -201,6 +201,7 @@ declared MCP tool must be among them.
 | `styling` | Drawing a surface: plain DOM or JSX, the theme's properties, your own CSS |
 | `troubleshooting` | Studio does not list, approve or run the extension |
 | `publishing` | Signing with extension.sig, packing, handing it to others |
+| `catalogue` | Listing it in a catalogue: release entries, updates, the kill list, install links |
 
 ## Done means
 

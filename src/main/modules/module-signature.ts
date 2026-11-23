@@ -23,6 +23,7 @@ import { compareModuleFileDigests } from '../../../packages/extension-sdk/src/ma
 import { EXTENSION_SIGNATURE_FILENAME } from '../../../packages/extension-sdk/src/extension-manifest'
 
 import type { ModuleFileDigests } from '../../shared/modules/manifest'
+import { findKilled, type KillList } from '../../../packages/extension-sdk/src/catalogue'
 import type { ExtensionManifest } from '../../shared/modules/third-party-manifest'
 import {
   accessGrowth,
@@ -44,6 +45,14 @@ export type ExtensionStandingContext = {
   devFolders?: readonly string[]
   /** Studio's data folder: no development folder may be inside it (or the extensions folder). */
   dataDir?: string
+  /** The kill list as last read: a version on it never runs. */
+  killList?: KillList | null
+  /**
+   * The keys Studio installed from a catalogue or a git URL, under their
+   * repository owner: `official` for Studio's official catalogue, which alone
+   * may install a reserved key. A folder install's key is `local` and needs none.
+   */
+  installedFrom?: ReadonlyMap<string, 'official' | 'other'>
 }
 
 export type ModuleTrustIssue = { path: string; message: string }
@@ -73,6 +82,8 @@ export type ExtensionStanding = {
   approval: ExtensionApprovalStanding
   /** The content identity of its folder, when every file could be digested. */
   contentDigest?: string
+  /** The kill list holds this version: it never runs, and everything it added is retracted. */
+  killed?: { reason: string; advisoryUrl?: string }
   /**
    * When it may run: the digests its files were checked against. The loader
    * and the window-code server hold the files to these again before using them.
@@ -83,6 +94,7 @@ export type ExtensionStanding = {
 /** Whether an extension may be drawn and run: approved (or content only) and not broken. */
 export function isExtensionRunnable(standing: ExtensionStanding): boolean {
   return (
+    standing.killed === undefined &&
     standing.signature !== 'invalid' &&
     standing.verifiedFiles !== undefined &&
     (standing.approval.state === 'approved' || standing.approval.state === 'not-needed')
@@ -110,6 +122,23 @@ export function extensionContentSync(root: string): ExtensionContentResult {
  *   person's approval names exactly its fingerprint now.
  */
 export function classifyExtension(
+  root: string,
+  key: string,
+  manifest: Pick<ExtensionManifest, 'permissions' | 'tier' | 'main' | 'background' | 'contributes'> & {
+    version?: string
+  },
+  ctx: ExtensionStandingContext,
+): ExtensionStanding {
+  const judged = classifyInstalled(root, key, manifest, ctx)
+  const entry = manifest.version !== undefined ? findKilled(ctx.killList ?? null, key, manifest.version) : null
+  if (!entry) return judged
+  return {
+    ...judged,
+    killed: { reason: entry.reason, ...(entry.advisoryUrl ? { advisoryUrl: entry.advisoryUrl } : {}) },
+  }
+}
+
+function classifyInstalled(
   root: string,
   key: string,
   manifest: Pick<ExtensionManifest, 'permissions' | 'tier' | 'main' | 'background' | 'contributes'>,
