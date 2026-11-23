@@ -1,4 +1,4 @@
-import { readdirSync, watch, type Dirent, type FSWatcher } from 'node:fs'
+import { lstatSync, readdirSync, watch, type Dirent, type FSWatcher } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
 import { isDevelopmentSkippedPath } from '../../../../packages/extension-sdk/src/module-files'
@@ -24,12 +24,30 @@ type TreeWatch = { close(): void }
 
 /**
  * Linux: one watch per folder under `folder` that is not left out
- * (node_modules, .git, dotted folders), never through a link, and new folders
- * followed as they appear.
+ * (node_modules, .git, dotted folders), only on folders (never a file or a
+ * link), and new folders followed as they appear. A folder deleted or
+ * replaced (`src/` removed and made again) lets go of its watch and those
+ * under it, and the new one is followed in its place.
  */
-function watchTreeByFolder(folder: string, onEvent: (name: string | null) => void, onError: () => void): TreeWatch {
+export function watchTreeByFolder(
+  folder: string,
+  onEvent: (name: string | null) => void,
+  onError: () => void,
+): TreeWatch & { watching(): string[] } {
   const watchers = new Map<string, FSWatcher>()
+  const evict = (dir: string) => {
+    for (const [path, watcher] of watchers) {
+      if (path !== dir && !path.startsWith(`${dir}${sep}`)) continue
+      watcher.close()
+      watchers.delete(path)
+    }
+  }
   const add = (dir: string) => {
+    try {
+      if (!lstatSync(dir).isDirectory()) return
+    } catch {
+      return
+    }
     if (watchers.has(dir)) return
     const rel = relative(folder, dir).split(sep).join('/')
     if (rel && isDevelopmentSkippedPath(rel)) return
@@ -38,7 +56,12 @@ function watchTreeByFolder(folder: string, onEvent: (name: string | null) => voi
       watcher = watch(dir, { persistent: false }, (event, name) => {
         const path = typeof name === 'string' ? (rel ? `${rel}/${name}` : name) : null
         onEvent(path)
-        if (event === 'rename' && typeof name === 'string') add(join(dir, name))
+        if (event === 'rename' && typeof name === 'string') {
+          // Gone, made, or replaced: whatever was watched there is let go, and what is there now followed.
+          const child = join(dir, name)
+          evict(child)
+          add(child)
+        }
       })
     } catch {
       return
@@ -64,6 +87,7 @@ function watchTreeByFolder(folder: string, onEvent: (name: string | null) => voi
       for (const watcher of watchers.values()) watcher.close()
       watchers.clear()
     },
+    watching: () => [...watchers.keys()],
   }
 }
 
