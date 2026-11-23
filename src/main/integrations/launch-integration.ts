@@ -197,6 +197,8 @@ export async function buildClaudeLaunchIntegration(input: ClaudeLaunchInput): Pr
 export type CodexLaunchInput = {
   gateway: McpServerConfig | null
   servers: readonly McpServerConfig[]
+  /** The installed extensions' servers among them, whose env stays in their table. */
+  extensionServerIds?: ReadonlySet<string>
   /** The agent-state hook: the command every registered event runs. */
   agentState?: { spec: PluginAgentStateSpec; command: string } | null
 }
@@ -213,7 +215,7 @@ export function buildCodexLaunchIntegration(input: CodexLaunchInput): LaunchInte
     ...(input.gateway ? [input.gateway] : []),
     ...input.servers.filter((server) => server.id !== STUDIO_MCP_SERVER_ID),
   ]
-  const mcp = codexMcpOverrideArgs(servers)
+  const mcp = codexMcpOverrideArgs(servers, process.env, input.extensionServerIds)
   const hookArgs = input.agentState ? codexAgentStateHookArgs(input.agentState.spec, input.agentState.command) : []
   return {
     args: [...mcp.args, ...hookArgs],
@@ -448,7 +450,8 @@ export async function prepareLaunchIntegration(
   // says: switching the extension off is how they are taken away. A server of
   // the person's under the same name is theirs, and wins.
   const own = new Set(resolved.servers.map((server) => server.id))
-  const servers = [...resolved.servers, ...extensions.servers.filter((server) => !own.has(server.id))]
+  const handedExtensionServers = extensions.servers.filter((server) => !own.has(server.id))
+  const servers = [...resolved.servers, ...handedExtensionServers]
   const extensionSkills: LaunchSkill[] = extensions.skills.map((skill) => ({ id: skill.name, sourceDir: skill.dir }))
   const dir = deps.launchFilesDir()
   const gatewayEntry = deps.gateway(input.hostId)
@@ -481,6 +484,7 @@ export async function prepareLaunchIntegration(
     integration = buildCodexLaunchIntegration({
       gateway: gatewayEntry ? launchGatewayServer(gatewayEntry, input.cli, { passIdentityByName: true }) : null,
       servers,
+      extensionServerIds: new Set(handedExtensionServers.map((server) => server.id)),
       agentState: stateSpec && command ? { spec: stateSpec, command } : null,
     })
     await removeCodexManagedBlockFromWorkspace(input.workspaceRoot, mayDelete).catch(() => false)

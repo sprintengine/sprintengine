@@ -425,6 +425,28 @@ test('an extension’s servers reach every route whatever the person’s sync sa
   assert.ok('local_tools_search' in JSON.parse(await readFile(join(root, '.mcp.json'), 'utf8')).mcpServers)
 })
 
+test('a Codex launch keeps an extension server’s env in its table, out of the terminal’s environment', async () => {
+  const launchDir = await tempDir('extension-env')
+  const extensionServer = server({
+    id: 'local_tools_search',
+    clients: [],
+    scope: 'user',
+    env: { PYTHONPATH: '/Users/dev/ext/py' },
+  })
+  const prepared = await prepareLaunchIntegration(
+    input(launchDir, 'codex'),
+    deps({
+      launchDir,
+      spec: () => ({ route: 'codex' }),
+      extensionContributions: () => ({ servers: [extensionServer], skills: [] }),
+    }),
+  )
+  assert.ok(prepared.ok && prepared.integration)
+  assert.equal(prepared.integration.env.PYTHONPATH, undefined)
+  const entry = prepared.integration.args.find((arg) => arg.startsWith('mcp_servers.local_tools_search='))
+  assert.match(entry ?? '', /"env" = \{ "PYTHONPATH" = "\/Users\/dev\/ext\/py" \}/)
+})
+
 test('a server of the person’s own under an extension server’s name is theirs, and wins', async () => {
   const launchDir = await tempDir('extension-own')
   const { contributions } = await extensionFixture(launchDir)

@@ -1934,6 +1934,26 @@ test("a chat's own MCP servers reach Codex as config overrides for its app-serve
   expect(codexMcpServerArgs([], {})).toEqual({ args: [], env: {} })
 })
 
+test('an installed extension’s server keeps its env in its own table, out of the app-server’s environment', () => {
+  const extension = {
+    id: 'local_tools_search',
+    name: 'Search',
+    transport: 'stdio' as const,
+    command: 'node',
+    env: { PYTHONPATH: '/Users/dev/ext/py' },
+  }
+  const own = { id: 'mine', name: 'Mine', transport: 'stdio' as const, command: 'x', env: { MY_TOKEN: 't' } }
+  expect(codexMcpServerArgs([extension, own], {}, new Set([extension.id]))).toEqual({
+    args: [
+      '-c',
+      'mcp_servers.local_tools_search={ "command" = "node", "env" = { "PYTHONPATH" = "/Users/dev/ext/py" } }',
+      '-c',
+      'mcp_servers.mine={ "command" = "x", "env_vars" = ["MY_TOKEN"] }',
+    ],
+    env: { MY_TOKEN: 't' },
+  })
+})
+
 test("no MCP server's env value or header value is on the Codex app-server's command line", () => {
   const secret = 'sk-test-0123456789abcdef'
   const rendered = codexMcpServerArgs(
