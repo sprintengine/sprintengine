@@ -68,6 +68,11 @@ export const EXTENSION_GUIDE_TOPICS: readonly ExtensionGuideTopic[] = [
     summary: 'Studio does not list, trust or run the extension: what it shows, the cause, the fix.',
   },
   { id: 'publishing', summary: 'Signing with extension.sig, packing, and handing an extension to others.' },
+  {
+    id: 'catalogue',
+    summary:
+      'Listing an extension in a catalogue: the format, release entries, what Studio checks at install, updates, the kill list and install links.',
+  },
 ]
 
 /**

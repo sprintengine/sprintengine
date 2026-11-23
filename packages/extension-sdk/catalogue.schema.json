@@ -1,0 +1,511 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sprintengine.dev/schemas/catalogue.schema.json",
+  "type": "object",
+  "title": "SprintEngine Studio extension catalogue",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "maxLength": 2048,
+      "description": "JSON Schema URL for editor completion. Studio ignores it.",
+      "x-since": "0.13.0"
+    },
+    "catalogueVersion": {
+      "const": 1,
+      "description": "The catalogue format. Raised only for a change an older Studio cannot ignore.",
+      "x-since": "0.13.0"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "The catalogue’s display name.",
+      "x-since": "0.13.0",
+      "examples": [
+        "Community extensions"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 39,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+      "description": "The account that publishes the catalogue.",
+      "x-since": "0.13.0",
+      "examples": [
+        "sprintengine"
+      ]
+    },
+    "extensions": {
+      "type": "array",
+      "maxItems": 2048,
+      "items": {
+        "type": "object",
+        "title": "CatalogueEntry",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 104,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "`<publisher>.<id>`: the publisher is the repository owner, lowercased, and the id is the manifest’s `id`. Studio installs under this key.",
+            "x-since": "0.13.0",
+            "examples": [
+              "acme.notes"
+            ]
+          },
+          "source": {
+            "type": "object",
+            "title": "CatalogueSource",
+            "additionalProperties": false,
+            "properties": {
+              "url": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "HTTPS or SSH URL of the extension’s git repository.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "https://github.com/acme/notes.git"
+                ]
+              },
+              "ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "The branch or tag the author publishes from. Each release pins an exact commit.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "main"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+",
+                "description": "The folder inside the repository that holds `extension.json`, so one repository can publish many extensions. Omit it at the root.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "extensions/notes"
+                ]
+              }
+            },
+            "required": [
+              "url",
+              "ref"
+            ],
+            "description": "Where the extension’s source lives.",
+            "x-since": "0.13.0"
+          },
+          "ownerId": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "description": "The repository owner’s numeric id, recorded when the extension was first listed. A name can be renamed or taken again; the id cannot. An install records it, and a change pauses updates.",
+            "x-since": "0.13.0",
+            "examples": [
+              1234567
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Listing text.",
+            "x-since": "0.13.0"
+          },
+          "categories": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "Lowercase slugs to filter the catalogue by, each listed once, at most 16.",
+            "x-since": "0.13.0",
+            "examples": [
+              [
+                "productivity"
+              ]
+            ]
+          },
+          "releases": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "title": "CatalogueRelease",
+              "additionalProperties": false,
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+                  "description": "The manifest’s `version` for this release.",
+                  "x-since": "0.13.0",
+                  "examples": [
+                    "1.2.0"
+                  ]
+                },
+                "commit": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[0-9a-f]{40}$",
+                  "description": "The full commit Studio checks out for this release. A listed version keeps its commit: a tag moved later never replaces it.",
+                  "x-since": "0.13.0"
+                },
+                "contentHash": {
+                  "type": "string",
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "The content identity of the extension’s installed files, as Studio computes it at install (`sprintengine-extension release-entry` prints it). Studio refuses bytes that differ.",
+                  "x-since": "0.13.0"
+                },
+                "tier": {
+                  "type": "string",
+                  "maxLength": 16,
+                  "enum": [
+                    "content",
+                    "declarative",
+                    "ui",
+                    "worker"
+                  ],
+                  "description": "The manifest’s `tier`.",
+                  "x-since": "0.13.0",
+                  "examples": [
+                    "ui"
+                  ]
+                },
+                "minimumStudio": {
+                  "type": "string",
+                  "maxLength": 32,
+                  "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$",
+                  "description": "The manifest’s `engines.studio` without `>=`. An older Studio lists the extension but does not install this release.",
+                  "x-since": "0.13.0",
+                  "examples": [
+                    "0.13.0"
+                  ]
+                },
+                "permissions": {
+                  "type": "array",
+                  "maxItems": 21,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "enum": [
+                      "workspace:read",
+                      "workspace:operate",
+                      "conversation:read",
+                      "backlog:read",
+                      "backlog:operate",
+                      "providers:read",
+                      "usage:read",
+                      "workspace-files:read",
+                      "workspace-files:write",
+                      "storage:own",
+                      "settings:own",
+                      "secrets:own",
+                      "notifications:show",
+                      "conversation:own",
+                      "conversation:bypass",
+                      "chat:draft",
+                      "schedules:own",
+                      "agents:generate",
+                      "agents:companion",
+                      "github:api",
+                      "tools:contribute"
+                    ]
+                  },
+                  "description": "Every permission the release asks for. Studio refuses an install whose manifest asks for different ones.",
+                  "x-since": "0.13.0",
+                  "examples": [
+                    [
+                      "notifications:show"
+                    ]
+                  ]
+                },
+                "contributes": {
+                  "type": "array",
+                  "maxItems": 256,
+                  "items": {
+                    "type": "object",
+                    "title": "CatalogueContribution",
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "enum": [
+                          "commands",
+                          "menus",
+                          "topBarItems",
+                          "panels",
+                          "doors",
+                          "settingsSections",
+                          "mcpTools",
+                          "hooks",
+                          "syntaxes",
+                          "customEditors",
+                          "keybindings",
+                          "statusBarItems",
+                          "settings",
+                          "skills",
+                          "mcpServers",
+                          "providers"
+                        ],
+                        "description": "The contribution point.",
+                        "x-since": "0.13.0",
+                        "examples": [
+                          "panels"
+                        ]
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160,
+                        "description": "What the item is called: its id, or its command for a menu or keybinding.",
+                        "x-since": "0.13.0",
+                        "examples": [
+                          "notes"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "name"
+                    ]
+                  },
+                  "description": "What the release adds, one item per contribution. Studio refuses an install whose manifest adds something else.",
+                  "x-since": "0.13.0"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "The manifest’s `name`.",
+                  "x-since": "0.13.0",
+                  "examples": [
+                    "Notes"
+                  ]
+                },
+                "license": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "SPDX license expression.",
+                  "x-since": "0.13.0",
+                  "examples": [
+                    "MIT"
+                  ]
+                },
+                "repository": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "pattern": "^https:\\/\\/[^\\s]+$",
+                  "description": "Source repository page.",
+                  "x-since": "0.13.0",
+                  "examples": [
+                    "https://github.com/acme/notes"
+                  ]
+                },
+                "homepage": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "pattern": "^https:\\/\\/[^\\s]+$",
+                  "description": "Project homepage.",
+                  "x-since": "0.13.0"
+                },
+                "updatedAt": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:Z|[+-]\\d{2}:\\d{2}))?$",
+                  "description": "When this release was published.",
+                  "x-since": "0.13.0",
+                  "examples": [
+                    "2026-11-20"
+                  ]
+                },
+                "changelog": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000,
+                  "description": "What changed in this release, as plain text.",
+                  "x-since": "0.13.0"
+                },
+                "images": {
+                  "type": "object",
+                  "title": "CatalogueImages",
+                  "additionalProperties": false,
+                  "properties": {
+                    "icon": {
+                      "type": "object",
+                      "title": "CatalogueImage",
+                      "additionalProperties": false,
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+",
+                          "description": "The file in the catalogue repository, relative to the folder the catalogue file is in. Studio refuses bytes that differ from `sha256`.",
+                          "x-since": "0.13.0",
+                          "examples": [
+                            "images/acme.notes/cover.png"
+                          ]
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "pattern": "^[0-9a-f]{64}$",
+                          "description": "SHA-256 of the image’s bytes.",
+                          "x-since": "0.13.0"
+                        },
+                        "alt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256,
+                          "description": "What the image shows, for screen readers.",
+                          "x-since": "0.13.0",
+                          "examples": [
+                            "The notes panel"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "sha256",
+                        "alt"
+                      ],
+                      "description": "Square icon.",
+                      "x-since": "0.13.0"
+                    },
+                    "cover": {
+                      "type": "object",
+                      "title": "CatalogueImage",
+                      "additionalProperties": false,
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+",
+                          "description": "The file in the catalogue repository, relative to the folder the catalogue file is in. Studio refuses bytes that differ from `sha256`.",
+                          "x-since": "0.13.0",
+                          "examples": [
+                            "images/acme.notes/cover.png"
+                          ]
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "pattern": "^[0-9a-f]{64}$",
+                          "description": "SHA-256 of the image’s bytes.",
+                          "x-since": "0.13.0"
+                        },
+                        "alt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256,
+                          "description": "What the image shows, for screen readers.",
+                          "x-since": "0.13.0",
+                          "examples": [
+                            "The notes panel"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "sha256",
+                        "alt"
+                      ],
+                      "description": "Wide cover shown at the top of the extension’s page.",
+                      "x-since": "0.13.0"
+                    },
+                    "screenshots": {
+                      "type": "array",
+                      "maxItems": 6,
+                      "items": {
+                        "type": "object",
+                        "title": "CatalogueImage",
+                        "additionalProperties": false,
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512,
+                            "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+",
+                            "description": "The file in the catalogue repository, relative to the folder the catalogue file is in. Studio refuses bytes that differ from `sha256`.",
+                            "x-since": "0.13.0",
+                            "examples": [
+                              "images/acme.notes/cover.png"
+                            ]
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[0-9a-f]{64}$",
+                            "description": "SHA-256 of the image’s bytes.",
+                            "x-since": "0.13.0"
+                          },
+                          "alt": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256,
+                            "description": "What the image shows, for screen readers.",
+                            "x-since": "0.13.0",
+                            "examples": [
+                              "The notes panel"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "sha256",
+                          "alt"
+                        ]
+                      },
+                      "description": "Screenshots, at most 6.",
+                      "x-since": "0.13.0"
+                    }
+                  },
+                  "description": "Images stored in the catalogue repository, shown before anything is installed.",
+                  "x-since": "0.13.0"
+                }
+              },
+              "required": [
+                "version",
+                "commit",
+                "contentHash",
+                "tier",
+                "minimumStudio",
+                "permissions",
+                "contributes"
+              ]
+            },
+            "description": "Installable releases, newest first, at most 32. Studio installs the first whose `minimumStudio` it meets, so keep older releases listed when one raises `engines.studio`.",
+            "x-since": "0.13.0"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "releases"
+        ]
+      },
+      "description": "Listed extensions, at most 2048. Each `id` appears once; Studio keeps the first. An entry this Studio cannot read is skipped, never fatal.",
+      "x-since": "0.13.0"
+    }
+  },
+  "required": [
+    "catalogueVersion",
+    "name",
+    "owner",
+    "extensions"
+  ]
+}

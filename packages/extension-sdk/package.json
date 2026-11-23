@@ -43,7 +43,16 @@
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
     },
-    "./extension.schema.json": "./extension.schema.json"
+    "./catalogue": {
+      "types": "./dist/catalogue.d.ts",
+      "default": "./dist/catalogue.js"
+    },
+    "./release-entry": {
+      "types": "./dist/release-entry.d.ts",
+      "default": "./dist/release-entry.js"
+    },
+    "./extension.schema.json": "./extension.schema.json",
+    "./catalogue.schema.json": "./catalogue.schema.json"
   },
   "bin": {
     "sprintengine-extension": "./dist/cli.js"
@@ -53,6 +62,7 @@
     "guide",
     "templates",
     "extension.schema.json",
+    "catalogue.schema.json",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
