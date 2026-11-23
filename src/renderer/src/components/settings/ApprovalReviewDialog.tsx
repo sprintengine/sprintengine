@@ -80,7 +80,7 @@ export function ApprovalReviewDialog({
         )}
         {module.development ? (
           <InlineNotice tone="warn">
-            {`A development folder, ${module.development.folder}${module.development.overrides ? ', in place of the installed extension with its id' : ''}. Studio runs its code as it is on disk and again after every save, so you approve what it may do, not one version of its code. A save that asks for more asks you again.`}
+            {`A development folder, ${module.development.folder}${module.development.waiting ? '. Approving it replaces the installed extension with its id, which runs until then' : module.development.overrides ? ', in place of the installed extension with its id' : ''}. Studio runs its code as it is on disk and again after every save, so you approve what it may do, not one version of its code. A save that asks for more asks you again.`}
           </InlineNotice>
         ) : null}
         {growth && growth.length > 0 ? (

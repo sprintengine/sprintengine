@@ -279,9 +279,11 @@ export type ThirdPartyModuleView = {
    * A development folder the owner registered: loaded from where it is and
    * read again on every save (`extension.devLoad`). `folder` is its place on
    * that disk for a connection that may name any path, its name otherwise;
-   * `overrides` when it stands in for an installed extension with its key.
+   * `overrides` when it stands in for an installed extension with its key,
+   * and `waiting` while that waits for the person's approval (the installed
+   * one runs until then).
    */
-  development?: { folder: string; overrides: boolean }
+  development?: { folder: string; overrides: boolean; waiting?: boolean }
 }
 
 /** One development folder, as `extension.devFolders` lists it: the extension in it, or why there is none. */
@@ -293,6 +295,11 @@ export type StudioExtensionDevFolder = {
   approval?: StudioExtensionApproval
   /** It stands in for an installed extension with its key. */
   overrides?: boolean
+  /**
+   * It waits for the person to approve it in place of the installed extension
+   * with its key, which runs until then.
+   */
+  waiting?: boolean
   /** Why it holds no extension Studio loads. */
   error?: string
 }

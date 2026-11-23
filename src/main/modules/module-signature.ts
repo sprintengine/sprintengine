@@ -42,6 +42,8 @@ export type ExtensionStandingContext = {
   approvals: ReadonlyMap<string, ExtensionApprovalRecord>
   /** The development folders the owner registered here, by real path, in registration order. */
   devFolders?: readonly string[]
+  /** Studio's data folder: no development folder may be inside it (or the extensions folder). */
+  dataDir?: string
 }
 
 export type ModuleTrustIssue = { path: string; message: string }
@@ -170,8 +172,10 @@ export function classifyExtension(
  * out) for the content identity a reload compares, but approval is not bound
  * to them: it holds while the folder asks for no more than the person
  * approved for this folder (`devFolderApprovalFingerprint`), and asks again
- * when it asks for more. Its signature is not read: a working copy is not
- * what anybody signed.
+ * when it asks for more. Every folder asks once, even one that asks for
+ * nothing: registering is something an agent may do, approving is the
+ * person's. Its signature is not read: a working copy is not what anybody
+ * signed.
  */
 export function classifyDevelopmentExtension(
   folder: string,
@@ -182,7 +186,6 @@ export function classifyDevelopmentExtension(
   const scan = computeModuleFileDigestsSync(folder, { walk: 'development' })
   if (!scan.ok) return { signature: 'unsigned', issues: scan.issues, approval: { state: 'unavailable' } }
   const content = { contentDigest: extensionContentFingerprint(scan.files), verifiedFiles: scan.files }
-  if (!extensionNeedsApproval(manifest)) return { signature: 'unsigned', approval: { state: 'not-needed' }, ...content }
   // Its local servers are bound to their command, arguments and environment,
   // not to the files they may run: those are the working copy.
   const access = extensionAccess(manifest, {})

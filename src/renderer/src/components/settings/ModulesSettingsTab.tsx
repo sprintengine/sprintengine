@@ -306,15 +306,19 @@ export function ModulesSettingsTab(): JSX.Element {
     },
   }
 
+  // A development folder waiting to replace an installed extension is listed
+  // beside it under the same id, so a row is told apart by its folder.
+  const rowId = (module: ThirdPartyModuleView) =>
+    module.development ? `dev:${module.development.folder}` : module.manifest.id
   const row = (module: ThirdPartyModuleView) => (
     <ExtensionListRow
-      key={module.manifest.id}
+      key={rowId(module)}
       module={module}
       overrides={overrides}
       actions={actions}
-      detailsOpen={detailsFor === module.manifest.id}
+      detailsOpen={detailsFor === rowId(module)}
       onDetailsOpenChange={(open) =>
-        setDetailsFor((current) => (open ? module.manifest.id : current === module.manifest.id ? null : current))
+        setDetailsFor((current) => (open ? rowId(module) : current === rowId(module) ? null : current))
       }
     />
   )

@@ -77,7 +77,11 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
             })
           }
           await load()
-          if (result.approval?.state === 'pending' && result.id) setAwaitingReview(result.id)
+          // A development folder that waits is asked about by the window
+          // itself (DevFolderApprovalHost), wherever it was registered from.
+          if (result.approval?.state === 'pending' && result.id) {
+            if (as !== 'development') setAwaitingReview(result.id)
+          }
           // One that asks nothing still shows what it added, its skills and
           // hosted MCP servers among it: the install's own review.
           else if (result.id) setJustInstalled(result.id)

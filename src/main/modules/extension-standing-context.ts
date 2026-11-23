@@ -12,5 +12,6 @@ export function readExtensionStandingContextSync(dataDir: string): ExtensionStan
     approvals: readExtensionApprovalsSync(dataDir),
     trustedKeyFingerprints: readTrustedMarketplacePublisherFingerprintsSync(),
     devFolders: readDevFoldersSync(dataDir),
+    dataDir,
   }
 }

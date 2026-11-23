@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -10,6 +10,7 @@ import { extensionAccess, devFolderApprovalFingerprint, type ExtensionApprovalRe
 import { approvalOf } from './extension-approvals.test-helper'
 import type { ExtensionStandingContext } from './module-signature'
 import { discoverUserModulesSync } from './user-module-registry'
+import { resolveDevFolder } from './extension-dev-folders'
 
 // Development folders: loaded where they are, after the installed extensions,
 // in the order they were registered; approved for what they may do, not for
@@ -81,19 +82,38 @@ test('development folders load after every installed extension, in the order the
   )
 })
 
-test('a development folder stands in for the installed extension with its key, and a second claim is refused', () => {
+test('a development folder with an installed extension’s key waits for the person; the installed one runs until then', () => {
   const root = tempDir()
-  writeExtension(join(root, 'local.notes'), 'notes')
+  const installed = join(root, 'local.notes')
+  writeExtension(installed, 'notes')
   const folder = join(tempDir(), 'notes')
   const again = join(tempDir(), 'notes-copy')
   writeExtension(folder, 'notes')
   writeExtension(again, 'notes')
-  const { modules, rejected } = discoverUserModulesSync(root, { approvals: new Map(), devFolders: [folder, again] })
-  assert.equal(modules.length, 1)
-  assert.equal(modules[0]!.moduleRoot, folder)
-  assert.deepEqual(modules[0]!.development, { order: 0, overrides: true })
-  assert.equal(rejected.length, 1)
-  assert.match(rejected[0]!.issues[0]!.message, /already the development folder/)
+  // Registered by anyone, an agent included: the installed one keeps running.
+  const registered = discoverUserModulesSync(root, {
+    approvals: new Map([['local.notes', approvalOf(installed)]]),
+    devFolders: [folder, again],
+  })
+  assert.equal(registered.modules.length, 1)
+  assert.equal(registered.modules[0]!.moduleRoot, installed)
+  assert.equal(registered.modules[0]!.standing.approval.state, 'approved')
+  assert.equal(registered.waiting?.length, 1)
+  assert.equal(registered.waiting![0]!.moduleRoot, folder)
+  assert.deepEqual(registered.waiting![0]!.development, { order: 0, overrides: true, waiting: true })
+  assert.equal(registered.waiting![0]!.standing.approval.state, 'pending')
+  assert.equal(registered.rejected.length, 1)
+  assert.match(registered.rejected[0]!.issues[0]!.message, /already the development folder/)
+  // Approved by the person for that folder: it stands in.
+  const approved = discoverUserModulesSync(root, {
+    approvals: new Map([['local.notes', devRecord(folder)]]),
+    devFolders: [folder],
+  })
+  assert.equal(approved.modules.length, 1)
+  assert.equal(approved.modules[0]!.moduleRoot, folder)
+  assert.deepEqual(approved.modules[0]!.development, { order: 0, overrides: true })
+  assert.equal(approved.modules[0]!.standing.approval.state, 'approved')
+  assert.equal(approved.waiting, undefined)
 })
 
 test('a development folder cannot borrow the installed extension’s approval, nor give it one', () => {
@@ -102,18 +122,58 @@ test('a development folder cannot borrow the installed extension’s approval, n
   writeExtension(installed, 'notes')
   const folder = join(tempDir(), 'notes')
   writeExtension(folder, 'notes')
-  // Approved as installed: the development folder in its place still waits.
+  // Approved as installed: the development folder with its key still waits.
   const borrowed = discoverUserModulesSync(root, {
     approvals: new Map([['local.notes', approvalOf(installed)]]),
     devFolders: [folder],
   })
-  assert.equal(borrowed.modules[0]!.standing.approval.state, 'pending')
+  assert.equal(borrowed.waiting?.[0]!.standing.approval.state, 'pending')
   // Approved as a development folder: once it is taken out, the installed one waits.
   const lent = discoverUserModulesSync(root, {
     approvals: new Map([['local.notes', devRecord(folder)]]),
     devFolders: [],
   })
   assert.equal(lent.modules[0]!.standing.approval.state, 'pending')
+})
+
+test('every development folder asks once, even one that asks for nothing', () => {
+  const root = tempDir()
+  const folder = join(tempDir(), 'notes')
+  writeExtension(folder, 'notes')
+  const first = discoverUserModulesSync(root, { approvals: new Map(), devFolders: [folder] }).modules[0]!
+  assert.equal(first.standing.approval.state, 'pending')
+  const approved = discoverUserModulesSync(root, {
+    approvals: new Map([['local.notes', devRecord(folder)]]),
+    devFolders: [folder],
+  }).modules[0]!
+  assert.equal(approved.standing.approval.state, 'approved')
+})
+
+test('a folder swapped for a link since it was registered is not loaded; nor is one inside Studio’s folders', () => {
+  const root = tempDir()
+  const parent = tempDir()
+  const folder = join(parent, 'notes')
+  writeExtension(folder, 'notes')
+  const elsewhere = join(tempDir(), 'elsewhere')
+  writeExtension(elsewhere, 'notes')
+  const ctx: ExtensionStandingContext = {
+    approvals: new Map([['local.notes', devRecord(folder)]]),
+    devFolders: [folder],
+  }
+  assert.equal(discoverUserModulesSync(root, ctx).modules[0]!.standing.approval.state, 'approved')
+  rmSync(folder, { recursive: true })
+  symlinkSync(elsewhere, folder)
+  const swapped = discoverUserModulesSync(root, ctx)
+  assert.equal(swapped.modules.length, 0)
+  assert.match(swapped.rejected[0]!.issues[0]!.message, /now leads to/)
+  const dataDir = tempDir()
+  const inData = join(dataDir, 'notes')
+  writeExtension(inData, 'notes')
+  const inside = discoverUserModulesSync(root, { approvals: new Map(), devFolders: [inData], dataDir })
+  assert.equal(inside.modules.length, 0)
+  assert.match(inside.rejected[0]!.issues[0]!.message, /keeps for itself/)
+  assert.equal(resolveDevFolder(inData, [root, dataDir]).ok, false)
+  assert.equal(resolveDevFolder(elsewhere, [root, dataDir]).ok, true)
 })
 
 test('an approval names its folder: another folder with the same extension is not approved by it', () => {

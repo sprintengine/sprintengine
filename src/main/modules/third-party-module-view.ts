@@ -52,7 +52,13 @@ export function toThirdPartyModuleView(
     mcpTools: run.mcpTools(module.key),
     ...ignoredSkillKeysView(module),
     ...(module.development
-      ? { development: { folder: module.moduleRoot, overrides: module.development.overrides } }
+      ? {
+          development: {
+            folder: module.moduleRoot,
+            overrides: module.development.overrides,
+            ...(module.development.waiting ? { waiting: true } : {}),
+          },
+        }
       : {}),
   }
 }

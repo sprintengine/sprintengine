@@ -292,7 +292,7 @@ export type StudioModulesMethodMap = {
       | { ok: true; moduleId: string; path: string; added: boolean; approval: StudioExtensionApproval }
       | {
           ok: false
-          code: 'invalid_argument' | 'extension_invalid' | 'approval_stale' | 'unavailable'
+          code: 'invalid_argument' | 'extension_invalid' | 'unavailable'
           message: string
           issues?: Array<{ path: string; message: string }>
         }

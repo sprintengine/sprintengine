@@ -1,6 +1,6 @@
 import { readFileSync, realpathSync, statSync } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, sep } from 'node:path'
 
 // The development folders the owner registered on this server: extensions
 // Studio loads straight from where they are, with no install copy, and reads
@@ -54,25 +54,63 @@ export type DevFolderResolution = { ok: true; path: string } | { ok: false; code
 /**
  * A folder on this server, as the one place it is: absolute, existing, a
  * directory, through every link to it. Two names for one folder are one
- * development folder, and approving one never approves another.
+ * development folder, and approving one never approves another. One inside
+ * `refused` (the extensions folder, Studio's data folder) is refused: what is
+ * installed there is held to its files, and a development folder is not.
  */
-export function resolveDevFolder(path: string): DevFolderResolution {
+export function resolveDevFolder(path: string, refused: readonly string[] = []): DevFolderResolution {
   if (!isAbsolute(path))
     return {
       ok: false,
       code: 'invalid_argument',
       message: `${path} is not an absolute path. Name the folder as an absolute path on the machine Studio runs on.`,
     }
+  let real: string
   try {
-    const real = realpathSync(path)
+    real = realpathSync(path)
     if (!statSync(real).isDirectory())
       return { ok: false, code: 'invalid_argument', message: `${path} is not a folder.` }
-    return { ok: true, path: real }
   } catch {
     return {
       ok: false,
       code: 'invalid_argument',
       message: `${path} is not a folder on the machine Studio runs on.`,
     }
+  }
+  const inside = insideRefusedRoot(real, refused)
+  if (inside)
+    return {
+      ok: false,
+      code: 'invalid_argument',
+      message: `${path} is inside ${inside}, which Studio keeps for itself. Develop the extension in a folder of your own.`,
+    }
+  return { ok: true, path: real }
+}
+
+/** The refused root `real` is, or is inside, by real path; null when none. */
+export function insideRefusedRoot(real: string, refused: readonly string[]): string | null {
+  for (const root of refused) {
+    let realRoot: string
+    try {
+      realRoot = realpathSync(root)
+    } catch {
+      continue
+    }
+    if (real === realRoot || real.startsWith(realRoot.endsWith(sep) ? realRoot : `${realRoot}${sep}`)) return root
+  }
+  return null
+}
+
+/**
+ * Whether a registered folder is still the one place it was registered as:
+ * the same real path, so a folder (or one of its parents) swapped for a link
+ * since is not loaded under the approval the first one was given.
+ */
+export function devFolderStillResolves(folder: string): { ok: true } | { ok: false; now: string | null } {
+  try {
+    const real = realpathSync(folder)
+    return real === folder ? { ok: true } : { ok: false, now: real }
+  } catch {
+    return { ok: false, now: null }
   }
 }

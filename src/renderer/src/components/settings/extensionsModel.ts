@@ -139,7 +139,11 @@ export function restartBannerTitle(waiting: readonly Pick<ThirdPartyModuleView, 
 export function sourceLabel(module: Pick<ThirdPartyModuleView, 'manifest' | 'development'>): string | null {
   // Said plainly wherever it is listed: its code is a working copy, read again on every save.
   if (module.development)
-    return module.development.overrides ? 'Development folder, in place of the installed one' : 'Development folder'
+    return module.development.waiting
+      ? 'Development folder, waiting to replace the installed one'
+      : module.development.overrides
+        ? 'Development folder, in place of the installed one'
+        : 'Development folder'
   return module.manifest.publisher === 'local' ? 'Local build' : null
 }
 

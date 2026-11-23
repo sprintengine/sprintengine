@@ -22,6 +22,7 @@ import {
   type ExtensionStandingContext,
 } from './module-signature'
 import { resolveContainedPath } from './entry-containment'
+import { devFolderStillResolves, insideRefusedRoot } from './extension-dev-folders'
 import { contentFileIssues } from './extension-content'
 import { readStudioEnv } from '../../shared/studio-env'
 import { agentContributionIssues } from '../../server/extensions/agent-contributions/install-checks'
@@ -62,14 +63,21 @@ export type InstalledModule = {
    * A development folder the owner registered (extension-dev-folders.ts):
    * loaded from `moduleRoot` where it is, at `order` among the development
    * folders, and `overrides` when an installed extension has its key, which
-   * it stands in for while it is registered.
+   * it stands in for while it is registered, once the person approved that;
+   * `waiting` until then (`UserModuleListResult.waiting`).
    */
-  development?: { order: number; overrides: boolean }
+  development?: { order: number; overrides: boolean; waiting?: boolean }
 }
 
 export type UserModuleListResult = {
   modules: InstalledModule[]
   rejected: ModuleRejection[]
+  /**
+   * Development folders whose key an installed extension has, waiting for the
+   * person to approve them in its place: until then the installed one runs,
+   * and these load nowhere. Listed so they can be reviewed.
+   */
+  waiting?: InstalledModule[]
 }
 
 export type InstallModuleResult =
@@ -203,25 +211,73 @@ function installedModule(
   }
 }
 
+/** One development folder as read now: its extension and how it stands, or why it holds none. */
+export type DevelopmentFolderEntry =
+  | { ok: true; key: string; extension: ExtensionManifest; standing: ExtensionStanding }
+  | { ok: false; rejection: ModuleRejection }
+
+/**
+ * Read one registered development folder now. It must still be the one place
+ * it was registered as (the same real path: a folder or a parent swapped for
+ * a link since is not loaded under the first one's approval), and not inside
+ * the extensions folder or Studio's data folder.
+ */
+export function readDevelopmentFolder(
+  folder: string,
+  root: string,
+  ctx: ExtensionStandingContext,
+): DevelopmentFolderEntry {
+  const manifestPath = join(folder, EXTENSION_MANIFEST_FILENAME)
+  const refuse = (message: string): DevelopmentFolderEntry => ({
+    ok: false,
+    rejection: { path: manifestPath, issues: [{ path: '', message }] },
+  })
+  const inside = insideRefusedRoot(folder, [root, ...(ctx.dataDir ? [ctx.dataDir] : [])])
+  if (inside) return refuse(`${folder} is inside ${inside}, which Studio keeps for itself; remove it.`)
+  const still = devFolderStillResolves(folder)
+  if (!still.ok)
+    return refuse(
+      still.now
+        ? `${folder} now leads to ${still.now}. Register the folder again (dev load) to load it from there.`
+        : `${folder} is gone. Remove it, or register it again once it is back.`,
+    )
+  const loaded = loadDevelopmentManifest(folder)
+  if (!loaded.ok) return loaded
+  const key = extensionInstallKey(LOCAL_EXTENSION_PUBLISHER, loaded.extension.id)
+  return {
+    ok: true,
+    key,
+    extension: loaded.extension,
+    standing: classifyDevelopmentExtension(folder, key, loaded.extension, ctx),
+  }
+}
+
 // The order every extension loads in, the order its hooks run in among
 // others': the installed ones by install key, then the development folders in
 // the order they were registered. A development folder whose key an installed
-// extension has takes its place; a second folder claiming a key one already
-// holds is refused, naming the first.
-function withDevelopmentFolders(installed: UserModuleListResult, ctx: ExtensionStandingContext): UserModuleListResult {
-  installed.modules.sort((a, b) => a.key.localeCompare(b.key))
+// extension has takes its place only once the person approved it for that key
+// (an agent may register a folder; only the person approves); until then it
+// waits, and the installed one keeps running. A second folder claiming a key
+// one already holds is refused, naming the first. `read` reads one folder
+// (readDevelopmentFolder, or a cache of it).
+export function withDevelopmentFolders(
+  installed: UserModuleListResult,
+  ctx: ExtensionStandingContext,
+  read: (folder: string) => DevelopmentFolderEntry,
+): UserModuleListResult {
+  const modules = [...installed.modules].sort((a, b) => a.key.localeCompare(b.key))
   const folders = ctx.devFolders ?? []
-  if (folders.length === 0) return installed
-  const modules = [...installed.modules]
+  if (folders.length === 0) return { modules, rejected: installed.rejected }
   const rejected = [...installed.rejected]
+  const waiting: InstalledModule[] = []
   const claimed = new Map<string, string>()
   folders.forEach((folder, order) => {
-    const loaded = loadDevelopmentManifest(folder)
-    if (!loaded.ok) {
-      rejected.push(loaded.rejection)
+    const entry = read(folder)
+    if (!entry.ok) {
+      rejected.push(entry.rejection)
       return
     }
-    const key = extensionInstallKey(LOCAL_EXTENSION_PUBLISHER, loaded.extension.id)
+    const { key, extension, standing } = entry
     const first = claimed.get(key)
     if (first) {
       rejected.push({
@@ -232,18 +288,25 @@ function withDevelopmentFolders(installed: UserModuleListResult, ctx: ExtensionS
     }
     claimed.set(key, folder)
     const at = modules.findIndex((module) => module.key === key)
-    if (at >= 0) modules.splice(at, 1)
-    modules.push({
+    const module: InstalledModule = {
       key,
       publisher: LOCAL_EXTENSION_PUBLISHER,
-      manifest: capabilityManifestOf(key, LOCAL_EXTENSION_PUBLISHER, loaded.extension),
-      extension: loaded.extension,
+      manifest: capabilityManifestOf(key, LOCAL_EXTENSION_PUBLISHER, extension),
+      extension,
       moduleRoot: folder,
-      standing: classifyDevelopmentExtension(folder, key, loaded.extension, ctx),
+      standing,
       development: { order, overrides: at >= 0 },
-    })
+    }
+    if (at >= 0) {
+      if (ctx.approvals.get(key)?.devFolder !== folder) {
+        waiting.push({ ...module, development: { order, overrides: true, waiting: true } })
+        return
+      }
+      modules.splice(at, 1)
+    }
+    modules.push(module)
   })
-  return { modules, rejected }
+  return { modules, rejected, ...(waiting.length > 0 ? { waiting } : {}) }
 }
 
 /** A development folder's extension.json, read as Studio reads an installed one. */
@@ -296,10 +359,11 @@ export async function discoverUserModules(root: string, ctx: ExtensionStandingCo
     if (loaded.ok) result.modules.push(installedModule(loaded.extension, entry.name, moduleRoot, ctx))
     else result.rejected.push(loaded.rejection)
   }
-  return withDevelopmentFolders(result, ctx)
+  return withDevelopmentFolders(result, ctx, (folder) => readDevelopmentFolder(folder, root, ctx))
 }
 
-export function discoverUserModulesSync(root: string, ctx: ExtensionStandingContext): UserModuleListResult {
+/** The installed extensions alone, validated and classified, by install key: no development folder. */
+export function discoverInstalledModulesSync(root: string, ctx: ExtensionStandingContext): UserModuleListResult {
   const result: UserModuleListResult = { modules: [], rejected: [] }
   for (const entry of readDirSafeSync(root)) {
     if (!entry.isDirectory() || isHiddenModuleDir(entry.name)) continue
@@ -308,7 +372,14 @@ export function discoverUserModulesSync(root: string, ctx: ExtensionStandingCont
     if (loaded.ok) result.modules.push(installedModule(loaded.extension, entry.name, moduleRoot, ctx))
     else result.rejected.push(loaded.rejection)
   }
-  return withDevelopmentFolders(result, ctx)
+  result.modules.sort((a, b) => a.key.localeCompare(b.key))
+  return result
+}
+
+export function discoverUserModulesSync(root: string, ctx: ExtensionStandingContext): UserModuleListResult {
+  return withDevelopmentFolders(discoverInstalledModulesSync(root, ctx), ctx, (folder) =>
+    readDevelopmentFolder(folder, root, ctx),
+  )
 }
 
 /**
