@@ -680,7 +680,7 @@ export function readKillList(raw: unknown): { ok: true; list: KillList } | { ok:
   for (const item of raw.extensions.slice(0, KILL_LIST_ENTRY_LIMIT)) {
     if (!isPlainObject(item)) continue
     const id = readNodeTolerant(KILL_ENTRY_NODE.fields.id!.node, item.id)
-    if (typeof id !== 'string' || byId.has(id)) continue
+    if (typeof id !== 'string') continue
     const reason = readNodeTolerant(KILL_ENTRY_NODE.fields.reason!.node, item.reason)
     const advisoryUrl = readNodeTolerant(KILL_ENTRY_NODE.fields.advisoryUrl!.node, item.advisoryUrl)
     const versions =
@@ -689,11 +689,23 @@ export function readKillList(raw: unknown): { ok: true; list: KillList } | { ok:
       item.versions.every((version) => typeof version === 'string' && SEMVER_RE.test(version))
         ? [...new Set(item.versions as string[])]
         : undefined
+    // A repeated id kills what every entry for it kills: the versions together,
+    // and every version once any entry names none. Its first words stand.
+    const before = byId.get(id)
+    const merged = before
+      ? before.versions && versions
+        ? [...new Set([...before.versions, ...versions])]
+        : undefined
+      : versions
     byId.set(id, {
       id,
-      reason: typeof reason === 'string' ? reason : 'Removed for the safety of Studio’s users.',
-      ...(versions ? { versions } : {}),
-      ...(typeof advisoryUrl === 'string' ? { advisoryUrl } : {}),
+      reason: before?.reason ?? (typeof reason === 'string' ? reason : 'Removed for the safety of Studio’s users.'),
+      ...(merged ? { versions: merged } : {}),
+      ...(before?.advisoryUrl
+        ? { advisoryUrl: before.advisoryUrl }
+        : !before && typeof advisoryUrl === 'string'
+          ? { advisoryUrl }
+          : {}),
     })
   }
   return { ok: true, list: { killListVersion: 1, generatedAt, extensions: [...byId.values()] } }

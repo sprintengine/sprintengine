@@ -4,7 +4,8 @@
 // `sprintengine-extension release-entry` over a local git repository.
 
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -32,7 +33,7 @@ import {
   validateExtensionManifest,
   type ExtensionManifest,
 } from '../src/extension-manifest.js'
-import { fetchGitCommit, materializeGitTree } from '../src/git-source.js'
+import { fetchGitCommit, materializeGitTree, runGit } from '../src/git-source.js'
 import { computeModuleFileDigestsSync } from '../src/module-files.js'
 import { extensionContentFingerprint } from '../src/signing.js'
 
@@ -200,6 +201,23 @@ describe('the kill list', () => {
     expect(findKilled(read.list, 'acme.notes', '5.0.0')).not.toBeNull()
     expect(findKilled(read.list, 'acme.two', '1.0.0')).not.toBeNull()
   })
+
+  test('a repeated id kills what every entry for it kills', () => {
+    const read = readKillList(
+      list([
+        { id: 'acme.notes', versions: ['1.0.0'], reason: 'First.' },
+        { id: 'acme.notes', versions: ['1.1.0'], reason: 'Second.' },
+        { id: 'acme.all', versions: ['1.0.0'], reason: 'One version.' },
+        { id: 'acme.all', reason: 'Every version.' },
+      ]),
+    )
+    expect(read.ok).toBe(true)
+    if (!read.ok) return
+    expect(findKilled(read.list, 'acme.notes', '1.0.0')?.reason).toBe('First.')
+    expect(findKilled(read.list, 'acme.notes', '1.1.0')).not.toBeNull()
+    expect(findKilled(read.list, 'acme.notes', '1.2.0')).toBeNull()
+    expect(findKilled(read.list, 'acme.all', '9.0.0')).not.toBeNull()
+  })
 })
 
 describe('a release against the manifest it was made from', () => {
@@ -313,6 +331,21 @@ describe('git sources and release-entry', () => {
     return { dir, folder }
   }
 
+  /** Run `work` with git reading this as the person's global configuration. */
+  async function withGlobalConfig<T>(config: Record<string, string>, action: () => Promise<T>): Promise<T> {
+    const file = join(work, `gitconfig-${Math.random().toString(36).slice(2)}`)
+    writeFileSync(file, '')
+    for (const [key, value] of Object.entries(config)) execFileSync('git', ['config', '--file', file, key, value])
+    const before = process.env.GIT_CONFIG_GLOBAL
+    process.env.GIT_CONFIG_GLOBAL = file
+    try {
+      return await action()
+    } finally {
+      if (before === undefined) delete process.env.GIT_CONFIG_GLOBAL
+      else process.env.GIT_CONFIG_GLOBAL = before
+    }
+  }
+
   const run = (args: string[]) => {
     const { status, stdout } = spawnSync(process.execPath, [cli, ...args, '--json'], { encoding: 'utf8' })
     return { status, answer: JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') }
@@ -392,6 +425,68 @@ describe('git sources and release-entry', () => {
     } finally {
       await fetched.dispose()
     }
+  })
+
+  /** A bare repository whose one commit holds these files (made without a working tree, so any spelling works). */
+  function bareWith(files: Record<string, string>): string {
+    const bare = join(work, `bare-${Math.random().toString(36).slice(2)}.git`)
+    git(work, 'init', '--quiet', '--bare', bare)
+    const env = { ...process.env, GIT_INDEX_FILE: join(bare, 'scratch-index') }
+    for (const [path, text] of Object.entries(files)) {
+      const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: bare, input: text, encoding: 'utf8' })
+      execFileSync('git', ['update-index', '--add', '--cacheinfo', `100644,${blob.trim()},${path}`], { cwd: bare, env })
+    }
+    const tree = execFileSync('git', ['write-tree'], { cwd: bare, env, encoding: 'utf8' }).trim()
+    const commit = execFileSync('git', ['commit-tree', tree, '-m', 'files'], {
+      cwd: bare,
+      encoding: 'utf8',
+      env: {
+        ...env,
+        GIT_AUTHOR_NAME: 'Dev',
+        GIT_AUTHOR_EMAIL: 'dev@example.com',
+        GIT_COMMITTER_NAME: 'Dev',
+        GIT_COMMITTER_EMAIL: 'dev@example.com',
+      },
+    }).trim()
+    git(bare, 'update-ref', 'refs/heads/main', commit)
+    return bare
+  }
+
+  test('two spellings of one folder are refused, not only of one file', async () => {
+    const bare = bareWith({ 'extension.json': '{}', 'Dir/a.js': 'a', 'dir/b.js': 'b' })
+    const fetched = await fetchGitCommit({ url: `file://${bare}`, ref: 'main', allowFileUrls: true })
+    try {
+      await expect(
+        materializeGitTree({
+          repository: fetched.repository,
+          commit: fetched.commit,
+          destination: join(work, `out-${Math.random().toString(36).slice(2)}`),
+        }),
+      ).rejects.toThrow(/two paths a filesystem would read as one/)
+    } finally {
+      await fetched.dispose()
+    }
+  })
+
+  test('a fetch past its size is stopped while it downloads', async () => {
+    const bare = bareWith({ 'big.bin': randomBytes(4 * 1024 * 1024).toString('base64') })
+    await expect(
+      fetchGitCommit({ url: `file://${bare}`, ref: 'main', allowFileUrls: true, maxBytes: 64 * 1024 }),
+    ).rejects.toThrow(/larger than Studio downloads/)
+  })
+
+  test('git runs here see an empty hooks folder and no automatic maintenance, whatever the person configured', async () => {
+    const hooks = join(work, `hooks-${Math.random().toString(36).slice(2)}`)
+    mkdirSync(hooks)
+    const read = (key: string) =>
+      withGlobalConfig({ 'core.hooksPath': hooks, 'maintenance.auto': 'true', 'gc.auto': '1' }, () =>
+        runGit(['config', '--get', key], { cwd: work }),
+      ).then((out) => out.toString('utf8').trim())
+    const hooksPath = await read('core.hooksPath')
+    expect(hooksPath).not.toBe(hooks)
+    expect(readdirSync(hooksPath)).toEqual([])
+    expect(await read('maintenance.auto')).toBe('false')
+    expect(await read('gc.auto')).toBe('0')
   })
 
   test('a file:// URL is fetched only when allowed', async () => {
