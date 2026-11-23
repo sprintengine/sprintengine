@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -26,6 +26,8 @@ beforeAll(() => {
     ['cli.ts', 'cli.js'],
     ['check-worker.ts', 'check-worker.js'],
     ['test-register.ts', 'test-register.js'],
+    // What the Vitest config `test` writes imports, beside it in dist/.
+    ['source-modules.ts', 'source-modules.js'],
   ] as const)
     buildSync({
       entryPoints: [join(process.cwd(), 'packages/extension-sdk/src', entry)],
@@ -152,6 +154,110 @@ test('test runs the project’s tests as written and exits with the runner’s c
   assert.equal(failing.status, 1)
   assert.equal(failing.answer.error?.code, 'extension_tests_failed')
 })
+
+test('validate takes the manifest file itself, as well as its folder', () => {
+  const dir = extension('cli-manifest-file', GOOD)
+  const valid = run(['validate', join(dir, 'extension.json')])
+  assert.equal(valid.status, 0)
+  assert.equal(valid.answer.result?.key, 'local.cli-manifest-file')
+})
+
+test('a skill folder Studio would refuse fails validate and check, as it fails loading', () => {
+  const over = {
+    contributes: {
+      panels: [{ id: 'p', title: 'P', entry: 'src/panel.ts' }],
+      skills: [
+        { id: 'missing', path: 'skills/missing' },
+        { id: 'empty', path: 'skills/empty' },
+      ],
+    },
+  }
+  const dir = extension('cli-skills', GOOD, over)
+  mkdirSync(join(dir, 'skills', 'empty'), { recursive: true })
+  writeFileSync(join(dir, 'skills', 'empty', 'notes.md'), 'no SKILL.md here\n')
+  for (const command of ['validate', 'check']) {
+    const answer = run([command, dir])
+    assert.equal(answer.status, 2)
+    assert.equal(answer.answer.error?.code, 'extension_invalid')
+    const issues = answer.answer.error?.data?.issues as Array<{ path: string; message: string }>
+    assert.deepEqual(
+      issues.filter((issue) => issue.path.startsWith('contributes.skills')).map((issue) => issue.path),
+      ['contributes.skills[0].path', 'contributes.skills[1].path'],
+    )
+    assert.match(issues.find((issue) => issue.path === 'contributes.skills[1].path')!.message, /SKILL\.md/u)
+  }
+  writeFileSync(join(dir, 'skills', 'empty', 'SKILL.md'), '---\nname: empty\ndescription: d\n---\n')
+  mkdirSync(join(dir, 'skills', 'missing'), { recursive: true })
+  writeFileSync(join(dir, 'skills', 'missing', 'SKILL.md'), '---\nname: missing\ndescription: d\n---\n')
+  assert.equal(run(['validate', dir]).status, 0)
+})
+
+test('validate checks the host calls written out, at their file and line', () => {
+  const dir = extension('cli-host-calls', {
+    ...GOOD,
+    'src/panel.ts': [
+      'export async function mount(root: HTMLElement, studio: any): Promise<void> {',
+      "  await studio.host.call('storage.get', { key: 'k' })",
+      "  await studio.host.call('files.read', { workspaceId: 'w', path: 'a' })",
+      "  await studio.host.call('nope.method', {})",
+      "  if (studio.host.has('later.method')) await studio.host.call('later.method', {})",
+      "  // studio.host.call('also.nope', {})",
+      '  await studio.document.get()',
+      '}',
+      '',
+    ].join('\n'),
+    'src/main.ts': 'export function activate(studio: any): void {\n  studio.listChatRuntimes()\n}\n',
+  })
+  const answer = run(['validate', dir])
+  assert.equal(answer.status, 2)
+  assert.equal(answer.answer.error?.code, 'extension_invalid')
+  const messages = (answer.answer.error?.data?.issues as Array<{ message: string }>).map((issue) => issue.message)
+  const all = messages.join('\n')
+  assert.match(
+    all,
+    /src\/panel\.ts:3:9 studio\.host\.call\("files\.read"\) needs the "workspace-files:read" permission/u,
+  )
+  assert.match(all, /src\/panel\.ts:4:9 studio\.host\.call\("nope\.method"\) names no host method/u)
+  assert.match(all, /src\/panel\.ts:7:9 studio\.document is there only in a custom editor's frame/u)
+  assert.match(all, /src\/main\.ts:2:3 studio\.listChatRuntimes\(\) needs the "providers:read" permission/u)
+  // Declared, feature-detected or in a comment: not issues.
+  assert.doesNotMatch(all, /storage\.get|later\.method|also\.nope/u)
+  // `check` refuses the same surface.
+  const checked = run(['check', dir])
+  assert.equal(checked.status, 2)
+})
+
+test('test runs .tsx and .jsx tests, their JSX removed as Studio removes it', () => {
+  const dir = extension('cli-jsx-tests', GOOD)
+  writeFileSync(
+    join(dir, 'src', 'view.tsx'),
+    'export const h = (tag: string, _props: unknown, ...children: unknown[]) => ({ tag, children })\nexport const View = (): unknown => <b>hi</b>\n',
+  )
+  writeFileSync(
+    join(dir, 'view.test.tsx'),
+    "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { View, h } from './src/view'\ntest('draws', () => assert.deepEqual(View(), { tag: 'b', children: ['hi'] }))\nvoid h\n",
+  )
+  const answer = run(['test', dir])
+  assert.equal(answer.status, 0, answer.stderr)
+  assert.equal(answer.answer.result?.runner, 'node:test')
+  assert.deepEqual(answer.answer.result?.files, ['view.test.tsx'])
+})
+
+test('test uses the project’s own Vitest when it has one installed', () => {
+  const vitest = join(process.cwd(), 'node_modules', 'vitest')
+  if (!existsSync(join(vitest, 'vitest.mjs'))) return
+  const dir = extension('cli-vitest', GOOD)
+  writeFileSync(join(dir, 'package.json'), '{"name":"cli-vitest","private":true,"type":"module"}')
+  mkdirSync(join(dir, 'node_modules'), { recursive: true })
+  symlinkSync(vitest, join(dir, 'node_modules', 'vitest'), 'dir')
+  writeFileSync(
+    join(dir, 'greet.test.ts'),
+    "import { expect, test } from 'vitest'\nimport { greet } from './src/greet'\ntest('greets', () => expect(greet('a')).toBe('Hello, a'))\n",
+  )
+  const answer = run(['test', dir])
+  assert.equal(answer.status, 0, answer.stderr)
+  assert.equal(answer.answer.result?.runner, 'vitest')
+}, 60_000)
 
 test('with no Studio running, dev and shot are studio_unavailable, exit 1', () => {
   const answer = run(['dev', 'list'])

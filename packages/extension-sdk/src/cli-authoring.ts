@@ -3,7 +3,17 @@
 // answers in words, or with `--json` one object (cli-output.ts).
 
 import { spawn } from 'node:child_process'
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+  mkdirSync,
+} from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -21,9 +31,11 @@ import {
   parseExtensionManifest,
   type ExtensionManifest,
 } from './extension-manifest.js'
+import { surfaceHostCallIssues, workerHostCallIssues } from './host-calls.js'
 import { computeModuleFileDigestsSync, isDevelopmentSkippedPath } from './module-files.js'
 import { extensionContentFingerprint } from './signing.js'
 import { buildSurfaceModules, formatSourceProblem } from './source-modules.js'
+import { skillFolderIssues } from './skill-folders.js'
 
 type Issue = { path: string; message: string }
 
@@ -100,10 +112,18 @@ export function checkSurfaces(root: string, manifest: ExtensionManifest): Surfac
       } catch {
         exportsMount = false
       }
+      // The host calls its files write out, against what Studio offers this extension.
+      const hostCalls = graph.modules.flatMap((module) =>
+        surfaceHostCallIssues(module.path, read(module.path) ?? '', point, manifest),
+      )
+      const problems = [
+        ...(exportsMount ? [] : [`${surface.entry} must export mount(root, studio).`]),
+        ...hostCalls.map((issue) => formatSourceProblem(issue)),
+      ]
       checks.push(
-        exportsMount
+        problems.length === 0
           ? { ...base, ok: true, modules: graph.modules.length }
-          : { ...base, ok: false, problem: `${surface.entry} must export mount(root, studio).` },
+          : { ...base, ok: false, modules: graph.modules.length, problem: problems.join('; ') },
       )
     }
   }
@@ -122,12 +142,21 @@ export type ValidatedExtension = {
 /**
  * The folder checked as Studio will load it, strictly: extension.json (every
  * field, the tier, `engines.studio` covering what it uses), every file it
- * names, the content it serves, the worker's file type, and each surface's
- * imports. Throws `extension_invalid` with every issue.
+ * names, the content it serves, its skill folders, the worker's file type,
+ * each surface's imports, and the host calls its code writes out. `dir` is
+ * the folder, or its manifest file. Throws `extension_invalid` with every issue.
  */
 export function validateExtensionFolder(dir: string): ValidatedExtension {
-  const root = resolve(dir)
-  const manifestPath = join(root, EXTENSION_MANIFEST_FILENAME)
+  const named = resolve(dir)
+  const isFile = (() => {
+    try {
+      return statSync(named).isFile()
+    } catch {
+      return false
+    }
+  })()
+  const root = isFile ? dirname(named) : named
+  const manifestPath = isFile ? named : join(root, EXTENSION_MANIFEST_FILENAME)
   if (!existsSync(manifestPath))
     throw new CliError('extension_invalid', `No ${EXTENSION_MANIFEST_FILENAME} in ${root}.`, {
       issues: [{ path: '', message: `${EXTENSION_MANIFEST_FILENAME} not found` }],
@@ -149,6 +178,12 @@ export function validateExtensionFolder(dir: string): ValidatedExtension {
   }
   if (manifest.main && !WORKER_EXTENSIONS.some((extension) => manifest.main!.toLowerCase().endsWith(extension)))
     issues.push({ path: 'main', message: `a worker's main is ${WORKER_EXTENSIONS.join(', ')}.` })
+  const workerSource = manifest.main ? reader(root)(manifest.main) : null
+  if (manifest.main && workerSource !== null)
+    for (const issue of workerHostCallIssues(manifest.main, workerSource, manifest))
+      issues.push({ path: 'main', message: formatSourceProblem(issue) })
+  // The skill folders it hands agents, checked as Studio checks them when it loads it.
+  issues.push(...skillFolderIssues(manifest, root))
   manifest.contributes.syntaxes.forEach((syntax, index) => {
     const read = reader(root)
     const grammar = read(syntax.path)
@@ -250,7 +285,7 @@ export function inspectExtension(validated: ValidatedExtension): Record<string, 
 
 // ── test ─────────────────────────────────────────────────────────────────────
 
-const TEST_FILE = /\.test\.(?:ts|mts|js|mjs)$/u
+const TEST_FILE = /\.test\.(?:ts|tsx|mts|js|jsx|mjs)$/u
 
 function findTests(root: string): string[] {
   const found: string[] = []
@@ -278,22 +313,81 @@ function findTests(root: string): string[] {
   return found
 }
 
+/** The project's own Vitest, when it has one installed: its CLI entry. */
+function projectVitest(root: string): string | null {
+  try {
+    const manifest = createRequire(join(root, 'package.json')).resolve('vitest/package.json')
+    const entry = join(dirname(manifest), 'vitest.mjs')
+    return existsSync(entry) ? entry : null
+  } catch {
+    return null
+  }
+}
+
 /**
- * Run the project's tests: every `*.test.ts` (`.mts`, `.js`, `.mjs`) under
- * `dir`, leaving out node_modules, dist and dotted folders, with `node
- * --test`, TypeScript loaded as Studio loads it. They run on this machine,
- * outside Studio: only on code you trust.
+ * The Vitest config `test` writes for a project with Vitest: its sources
+ * transpiled as Studio transpiles them (types and classic `h()` JSX removed,
+ * every line kept), and the test files `test` found.
+ */
+function vitestConfig(): string {
+  const sourceModules = JSON.stringify(pathToFileURL(join(HERE, 'source-modules.js')).href)
+  return `// Written by \`sprintengine-extension test\`. Do not edit.
+import { transpileExtensionSource } from ${sourceModules}
+
+const SOURCE = /\\.(?:ts|tsx|mts|jsx)$/
+export default {
+  // Studio's transpiler alone: neither of Vite's (esbuild before Vite 8, Oxc since).
+  esbuild: false,
+  oxc: false,
+  plugins: [
+    {
+      name: 'sprintengine-extension-sources',
+      enforce: 'pre',
+      transform(code, id) {
+        const file = id.split('?')[0]
+        if (!SOURCE.test(file) || file.includes('/node_modules/')) return null
+        return { code: transpileExtensionSource(file, code), map: null }
+      },
+    },
+  ],
+  test: {
+    include: ['**/*.test.{ts,tsx,mts,js,jsx,mjs}'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.*/**'],
+  },
+}
+`
+}
+
+/**
+ * Run the project's tests: every `*.test.ts` (`.tsx`, `.mts`, `.js`, `.jsx`,
+ * `.mjs`) under `dir`, leaving out node_modules, dist and dotted folders.
+ * With the project's own Vitest when it has one installed, else with `node
+ * --test`; either way TypeScript and JSX load as Studio loads them. They run
+ * on this machine, outside Studio: only on code you trust.
  */
 export async function runExtensionTests(
   dir: string,
   json: boolean,
-): Promise<{ runner: string; code: number; files: string[] }> {
+): Promise<{ runner: 'vitest' | 'node:test'; code: number; files: string[] }> {
   const root = resolve(dir)
   const files = findTests(root)
-  if (files.length === 0) throw new CliError('not_found', `No test files (*.test.ts, .mts, .js, .mjs) under ${root}.`)
-  const register = pathToFileURL(join(HERE, 'test-register.js')).href
+  if (files.length === 0)
+    throw new CliError('not_found', `No test files (*.test.ts, .tsx, .mts, .js, .jsx, .mjs) under ${root}.`)
+  const vitest = projectVitest(root)
+  let args: string[]
+  if (vitest) {
+    // `.sprintengine/` is the CLI's own folder in a project, as its shots are.
+    const configDir = join(root, '.sprintengine', 'test')
+    mkdirSync(configDir, { recursive: true })
+    const config = join(configDir, 'vitest.config.mjs')
+    writeFileSync(config, vitestConfig())
+    // Relative to the root, as Vitest matches them against the files it finds there.
+    args = [vitest, 'run', '--config', config, '--root', root, ...files.map((file) => relative(root, file))]
+  } else {
+    args = ['--import', pathToFileURL(join(HERE, 'test-register.js')).href, '--test', ...files]
+  }
   const code = await new Promise<number>((settle) => {
-    const child = spawn(process.execPath, ['--import', register, '--test', ...files], {
+    const child = spawn(process.execPath, args, {
       cwd: root,
       env: { ...process.env, SPRINTENGINE_EXTENSION_TEST_ROOT: root },
       // With --json the answer alone is on stdout; what the runner prints goes to stderr.
@@ -302,7 +396,11 @@ export async function runExtensionTests(
     child.on('close', (exit) => settle(exit ?? 1))
     child.on('error', () => settle(1))
   })
-  return { runner: 'node:test', code, files: files.map((file) => relative(root, file).split(sep).join('/')) }
+  return {
+    runner: vitest ? 'vitest' : 'node:test',
+    code,
+    files: files.map((file) => relative(root, file).split(sep).join('/')),
+  }
 }
 
 // ── check ────────────────────────────────────────────────────────────────────
