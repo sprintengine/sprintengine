@@ -1,7 +1,8 @@
 # Building a SprintEngine Studio extension
 
-An extension is a folder Studio installs: `extension.json` at its root, saying
-what the extension is and what it adds, and the built JavaScript beside it.
+An extension is a folder Studio loads: `extension.json` at its root, saying
+what the extension is and what it adds, and its source beside it. There is no
+build step: Studio reads the TypeScript and JavaScript as you wrote them.
 It adds to Studio by declaring, not by registering at runtime: commands, menu
 items, top bar items, panels, doors, settings sections and MCP tools are all
 listed in extension.json, and Studio draws the ones the extension's code does
@@ -9,13 +10,15 @@ not.
 
 Code comes in two kinds, and each is optional:
 
-- **A ui entry** for each panel, door or settings section: an ESM bundle
-  exporting `mount(root, studio)`. Studio loads it into a sandboxed frame of
-  its own, on every client, and hands it the frame's root to draw in.
-- **The worker**, `main`: a CommonJS bundle exporting `activate(studio)`. It
-  runs in a Node process of its own, started when something needs it (or kept
-  running, with `background: true`), and serves the extension's commands,
-  methods and MCP tools.
+- **A surface entry** for each panel, door, settings section or custom
+  editor: a module (`.ts`, `.tsx`, `.js`, …) exporting `mount(root, studio)`.
+  Studio loads it, and the files it imports by relative paths, into a
+  sandboxed frame of its own, on every client, and hands it the frame's root
+  to draw in.
+- **The worker**, `main`: a module (`.ts`, `.js`, …) exporting
+  `activate(studio)`. It runs in a Node process of its own, started when
+  something needs it (or kept running, with `background: true`), and serves
+  the extension's commands, methods, hooks and MCP tools.
 
 The contract is `@sprintengine/extension-sdk` and nothing else; an extension
 never imports Studio's source. The SDK's type declarations
@@ -31,18 +34,17 @@ method and what the types do not say. Studio serves it to agents with the
 this:
 
 ```
-extension/extension.json  the manifest; extension/ is the folder Studio installs
-extension/dist/           build output: one bundle per ui entry, main.cjs for the worker
-src/<name>.tsx            a surface: exports mount(root, studio); builds to dist/<name>.js
-src/main.ts               the worker: exports activate(studio) (templates that have one)
-test/smoke.test.mjs       loads the built extension the way Studio does
+extension/extension.json  the manifest; extension/ is the folder Studio loads and you pack
+extension/src/<name>.ts   a surface: exports mount(root, studio)
+extension/src/main.ts     the worker: exports activate(studio) (templates that have one)
 test/manifest.ts          extension.json, validated, for your tests
 test/*.test.ts            the project's own tests, against the SDK's fake hosts
-scripts/                  build-ui.mjs, validate.mjs, dev-install.mjs, check-toolchain.mjs
+scripts/check-toolchain.mjs  is this machine ready
 IDEA.md                   what the person wants — read it first
 ```
 
-The build writes `extension/dist/` and never touches extension.json.
+Every `entry` and `main` in extension.json names a source file under
+`extension/src/`. Nothing writes extension.json but you.
 
 ## First steps in a project
 
@@ -61,56 +63,98 @@ The build writes `extension/dist/` and never touches extension.json.
    `npx sprintengine-extension add main|mcp|settings|door` adds its files and
    test, merges its contributions and permissions into extension.json, raises
    `tier` when it needs to, and wires it in.
-5. When it works, `npm run dev:install` and tell the person what to click to
-   try it (the loop below).
+5. Start the loop below and keep it running while you work.
 
 ## The loop
 
 ```sh
-npm run check        # typecheck → build → tests (smoke + test/*.test.ts) → validate. Run it after every change.
-npm run dev:install  # build, validate, copy extension/ to ~/.sprintengine/extensions/local.<id>/, sign it if a key exists
+npm run dev     # sprintengine-extension dev watch extension --check --shot extension/.sprintengine/shots
 ```
 
-Then in Studio: **Settings → Extensions**, find the extension, approve it.
-Only the person can approve it; never try to do it for them. The approval
-tells them what it asks for, and what its code can do: a `ui` extension's
-runs isolated in frames and can do only what they allow; a worker's runs with
-full access to this machine. `extension.status` (a Studio tool) says whether Studio sees the
-installed extension, whether it is approved, and why it is not running when it
-is not.
+`npm run dev` registers `extension/` with the Studio running on this machine as
+a **development folder**: Studio loads it from where it is, under
+`local.<id>`, and reads it again every time a file in it is saved. It keeps
+running and prints what happens; add `--json` (`npm run dev -- --json`) for one
+JSON object per line. The `dev-loop` topic is the full reference.
 
-- An approval is bound to exact contents and access. Every rebuild copied in by
-  `dev:install` is new contents, so it is approved again after each. That is
-  the design, not a bug. A signature does not approve anything (the
-  `publishing` topic).
-- Say what the person should click and what they should see. You cannot see
-  Studio's window; they can.
+1. **Approve it once.** The first run of an extension that runs code stops
+   with `approval_required` (exit code 3), naming the fingerprint. Only the
+   person approves: ask them to open **Settings → Extensions**, where the
+   extension is marked "Development folder", read what it asks for, and
+   approve it. Never approve it yourself. Then run `npm run dev` again.
+2. **Edit and save.** Each save prints `reloaded`: the worker restarted on the
+   new code and every open surface redrew, on every client. There is nothing
+   to build, copy or reinstall.
+3. **Read what came back.** After each reload `--check` prints a `check`
+   (extension.json valid, the worker activated against the SDK's fake host,
+   each surface's imports resolved) and `--shot` writes a PNG of the first
+   surface as Studio draws it, to `extension/.sprintengine/shots/`. Open the
+   PNG and look at it. Lines the worker prints arrive as `[worker]`, and the
+   frames' `console.error`, `console.warn` and uncaught errors as `[frame]`,
+   each at the file and line: `[frame] src/panel.ts:28:17 Cannot read
+   properties of undefined`. Fix it at that place and save again.
+4. **When it asks for more.** A save that adds a permission, a hook, an MCP
+   tool or anything else the approval did not cover prints `approval` with
+   what grew, and the extension waits until the person approves again. Asking
+   for less, or changing only code, never asks again.
+5. **Before you call it done**, `npm run check` (typecheck, tests, check), then
+   `npm run pack` for the folder to hand over (the `publishing` topic).
+
+`extension.status` (a Studio tool) says whether Studio sees the extension,
+whether it is approved, and why it is not running when it is not. Say what the
+person should click and what they should see: the PNG shows you a surface, but
+only they can try it in Studio's window.
+
+Without `npm run dev`: `npx sprintengine-extension dev load extension` once
+does the same registration, and the folder stays loaded (and reloads on save)
+until `dev unload`.
+
+## How the source loads
+
+- A surface imports only its own files, by relative paths: `./list` finds
+  `list.tsx`, `list.ts`, … or `list/index.*`, and `./list.js` finds
+  `list.ts`. A package by name (`react`, or a value from the SDK) is refused,
+  with the file and line: copy the package's ESM files into the extension, or
+  bundle it yourself and import the bundle. `import type` from the SDK is
+  fine; types are removed.
+- JSX is the classic form: `<b>x</b>` calls `h('b', null, 'x')` and `<>` is
+  `Fragment`. Import both from a file of your own; nothing supplies them.
+- The worker runs in Node with its types stripped (Node's own transpiler): no
+  `enum`, no `namespace`, no JSX. Relative imports may leave out the
+  extension. `@sprintengine/extension-sdk` resolves from the extension's own
+  `node_modules` if it has one, else from the SDK of the Studio running it.
+- Nothing type-checks at load: `npm run typecheck` (part of `npm run check`)
+  is the only type check.
 
 ## Testing without Studio
 
 `@sprintengine/extension-sdk/testing` has fake hosts that keep the host's rules:
 the permissions every call needs (from the same table Studio's gate reads),
 storage's key and size limits, chat ownership, and the MCP tools extension.json
-declares. Write tests in `test/*.test.ts`; `npm test` bundles them with esbuild
-and runs them with `node --test`:
+declares. Write tests in `test/*.test.ts` with `node:test`; `npm test`
+(`sprintengine-extension test`) runs them with `node --test`, loading
+TypeScript the way Studio loads the extension:
 
 ```ts
-import { createElement } from 'react'
-import { createFakeFrameStudio, createFakeMainHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { createFakeFrameStudio, createFakeMainHost } from '@sprintengine/extension-sdk/testing'
 import { manifest } from './manifest'
-import { activate } from '../src/main'
-import { Notes } from '../src/notes'
+import { activate } from '../extension/src/main'
+import { loadNotes } from '../extension/src/notes'
 
-const main = createFakeMainHost({ manifest })                           // moduleId is local.<id>
-await activate(main.host)
-await main.methods.operate('plan-in-chat', { where: 'palette', workspaceId: 'ws-app' }) // a command run
-main.services.conversations.emitEvent(ref, { type: 'turn_completed' }) // what the agent would do
-assert.deepEqual(main.undeclared, [])                                   // nothing used undeclared
+test('the worker and the panel', async () => {
+  const main = createFakeMainHost({ manifest })                           // moduleId is local.<id>
+  await activate(main.host)
+  await main.methods.operate('plan-in-chat', { where: 'palette', workspaceId: 'ws-app' }) // a command run
+  main.services.conversations.emitEvent(ref, { type: 'turn_completed' }) // what the agent would do
+  assert.deepEqual(main.undeclared, [])                                   // nothing used undeclared
 
-const frame = createFakeFrameStudio({ manifest, main }) // a surface in its frame
-const studio = frame.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
-assert.match(await renderToHtml(createElement(Notes, { studio })), /Saved/)
-await studio.host.call('files.read', { workspaceId: 'ws-app', path: 'a.md' }) // rejects: not declared
+  const frame = createFakeFrameStudio({ manifest, main }) // a surface in its frame
+  const studio = frame.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
+  assert.equal(await loadNotes(studio), '')
+  await studio.host.call('files.read', { workspaceId: 'ws-app', path: 'a.md' }) // rejects: not declared
+})
 ```
 
 Every service and host method has a fake you can arrange and read back:
@@ -125,41 +169,44 @@ watch hears), `github.respond(...)` / `respondGraphql(...)` /
 `scheduledAgents.fire(id)` (a run, with its chat and `onRun`),
 `main.setChatRuntimes(...)`. On a surface's side: `frame.toasts`,
 `frame.drafts`, `frame.openedDoors`, `frame.focusedTabs`, `frame.readied`
-(the surfaces that called `ready()`), `frame.settings()`, `frame.file(...)`,
-`frame.emit(topic, payload)` (a worker event), `frame.setColorScheme(...)`,
-and `frame.mount(entry, surface, root)` runs a `mount` into a root you give
-it. Pass `invoker: [...]` to call as a paired device or browser that holds
-only those permissions. Pass `capabilities: [...]` to test a worker's host
-without one.
+(the surfaces that called `ready()`), `frame.logs` (its `log.write` lines),
+`frame.settings()`, `frame.file(...)`, `frame.emit(topic, payload)` (a worker
+event), `frame.setColorScheme(...)`, and `frame.mount(entry, surface, root)`
+runs a `mount` into a root you give it. Pass `invoker: [...]` to call as a
+paired device or browser that holds only those permissions. Pass
+`capabilities: [...]` to test a worker's host without one.
 
-`renderToHtml` is a server render: effects do not run. The smoke test checks that
-each ui entry is a self-contained bundle exporting `mount`, that the worker
-activates, that every command without an `action` has an `operate` method of
-the same name, and that every declared MCP tool is served.
+A test has no DOM. Keep what a surface asks Studio for, and how it reads the
+answer, in functions a test can call, and look at the drawing in the PNGs
+`npm run dev` writes. `npm run check` also activates the worker against the
+fake host and lists the methods, MCP tools and hooks it registered: every
+command without an `action` needs an `operate` method of its name, and every
+declared MCP tool must be among them.
 
 ## The other topics
 
 | Topic | Read it when |
 | --- | --- |
+| `dev-loop` | The `sprintengine-extension` commands: every flag, the `--json` answers, events, error and exit codes |
 | `surfaces` | Choosing what the extension adds to Studio, its tier, and which API does it |
 | `manifest` | Writing `extension/extension.json` |
-| `permissions` | Choosing permissions; what each one allows |
-| `rules` | Before writing a surface or a build change: the mistakes that cost earlier extensions time |
+| `permissions` | Choosing permissions; what each one allows; how an approval holds |
+| `rules` | Before writing a surface or a worker: the mistakes that cost earlier extensions time |
 | `api-renderer` | The `studio` a surface's `mount` is handed |
 | `api-main` | The worker's `activate(studio)`: methods, commands, MCP tools, services, storage |
 | `hooks` | Checking, changing or refusing agents' tool calls, prompts, launches and saves, and hearing what they did |
 | `conversations` | Starting, prompting and reading the extension's own chats; one-shot text generation |
 | `brokers` | API keys and GitHub through the host |
-| `styling` | Drawing a surface: React or plain DOM, the `--sem-*` properties, your own CSS |
+| `styling` | Drawing a surface: plain DOM or JSX, the theme's properties, your own CSS |
 | `troubleshooting` | Studio does not list, approve or run the extension |
 | `publishing` | Signing with extension.sig, packing, handing it to others |
 
 ## Done means
 
 - `npm run check` passes with no warnings you have not explained.
-- `npm run dev:install` succeeded, and you told the person exactly what to
-  click and what they should see.
+- The last `npm run dev` reload printed a passing `check`, no `[frame]` or
+  `[worker]` errors, and a PNG that shows what the person asked for; you told
+  them exactly what to click and what they should see.
 - `tier` and `permissions` in extension.json are the minimum the extension
   needs; `IDEA.md` says what it does now.
-- The smoke test still passes; add your own `test/*.test.ts` for logic worth
-  pinning.
+- Your own `test/*.test.ts` pin the logic worth pinning.

@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### Added (development folders and the extension dev loop)
+
+- **`extension.devFolders`** (an owner's): the development folders
+  registered on the Studio, in the order they load (after every installed
+  extension), each as a `StudioExtensionDevFolder`: its real `path`, the
+  extension in it (`moduleId`, `name`, `approval`), `overrides` when it
+  stands in for an installed extension with its key, or the `error` that
+  says why it holds none.
+- **`extension.devLoad`** `{ path, commandId }` (an owner's): registers a
+  folder on the Studio's machine as a development folder, loaded from where
+  it is under `local.<id>` and read again on every save; registering one
+  already registered reads it again. Answers `moduleId`, `path`, `added` and
+  its `approval`, or `invalid_argument`, `extension_invalid` (with
+  `issues`), `approval_stale` or `unavailable`. It runs once the person
+  approves it with `extension.approve`.
+- **`extension.devUnload`** `{ path, commandId }` (an owner's): takes one
+  out, with its approval; answers its `path` and `moduleId`, or `not_found`
+  (with the folders `loaded`) or `unavailable`.
+- `ThirdPartyModuleView.development` (`{ folder, overrides }`) marks an
+  extension loaded from a development folder; `folder` is its path for a
+  connection that may name any path, its name otherwise.
+- `ExtensionContributions.revision`: the content identity of an extension's
+  files as served now. It moves with every save of a development folder and
+  every update, and `extension.changed` follows, so a client draws the
+  extension's open surfaces again.
+- `extension.call` carries a frame's new `log.write` `{ level?, message }`:
+  a line in the extension's log, at most 20 every 10 seconds per extension.
+- All behind the existing `extension-host` capability: a window and its
+  Studio are one build.
+
 ### Changed (skills, MCP servers and model providers from extensions)
 
 - `ExtensionContributionsView` carries `skills`, `mcpServers` and

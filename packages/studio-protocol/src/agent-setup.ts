@@ -237,6 +237,7 @@ export type StudioAreaSkillId =
   | 'studio-scheduled-agents'
   | 'studio-diff-tours'
   | 'studio-workspaces'
+  | 'studio-extensions'
   | 'studio-ship'
 
 /** What the person has decided, per skill. Absent from both lists: never asked. */
@@ -300,6 +301,7 @@ const STUDIO_AREA_SKILL_IDS: readonly StudioAreaSkillId[] = [
   'studio-scheduled-agents',
   'studio-diff-tours',
   'studio-workspaces',
+  'studio-extensions',
   'studio-ship',
 ]
 

@@ -190,8 +190,8 @@ Studio reads it through `src/shared/modules/third-party-manifest.ts`. Tests:
 **Approvals and the host gate** (what an extension may call, and who for): every call an extension makes
 into Studio passes `src/main/module-host/extension-host-gate.ts`, against the table in
 `packages/extension-sdk/src/services.ts` (permissions in `permissions.ts`) and the invoker in
-`src/main/module-host/extension-invocation.ts`. Approvals: `src/main/modules/extension-approvals.ts`, the
-review `src/renderer/src/components/settings/ApprovalReviewDialog.tsx`. Wire: `extension.approve`. Doc:
+`src/main/module-host/extension-invocation.ts`. Approvals: `src/main/modules/extension-approvals.ts` (an installed extension's bound to its files, a development folder's to
+its folder and access), the review `src/renderer/src/components/settings/ApprovalReviewDialog.tsx`. Wire: `extension.approve`. Doc:
 `docs/extension-authors/permissions.md`. Tests: `src/main/module-host/main-host.gate.test.ts`,
 `src/main/modules/extension-approvals.test.ts`.
 
@@ -238,8 +238,38 @@ Tests: `src/server/extensions/agent-contributions/projection.test.ts`, `packages
 
 **Extension workers** (an extension's `main`, in a process of its own): `src/server/extensions/workers/`
 (`worker-manager.ts`, `worker-process.ts`, the fork's own `worker-entry.ts`, its environment in
-`worker-env.ts`). Tests: `src/server/extensions/workers/worker-lifecycle.test.ts`,
+`worker-env.ts`; its TypeScript loaded as written by `packages/extension-sdk/src/source-hooks.ts`). Tests: `src/server/extensions/workers/worker-lifecycle.test.ts`,
 `src/server/extensions/workers/worker-invocations.test.ts`.
+
+**The extension dev loop** (no build step; a development folder loaded where it is and again on every save; the
+`sprintengine-extension` CLI): source as written in `packages/extension-sdk/src/source-modules.ts` (a surface's
+types, JSX and relative imports, gathered by `src/main/modules/extension-surface-entries.ts` `readSurfaceModules`
+into the frame document of `src/server/extensions/frames/frame-bootstrap.ts`) and
+`packages/extension-sdk/src/source-hooks.ts` (a worker's types, installed by
+`src/server/extensions/workers/worker-entry.ts`). Development folders in `src/main/modules/extension-dev-folders.ts`,
+loaded after the installed extensions by `src/main/modules/user-module-registry.ts` and registered through
+`src/main/modules/module-lifecycle.ts` (`devLoad`, `devUnload`, `devFolders`); a save heard by
+`src/server/extensions/dev/dev-folder-watch.ts` and loaded live, as an install or an approval is, by
+`src/server/extensions/extension-reload.ts`; what happened kept in `src/server/extensions/dev/dev-events.ts`. Their
+approval: `devFolderApprovalFingerprint` in `src/main/modules/extension-approvals.ts` and
+`classifyDevelopmentExtension` in `src/main/modules/module-signature.ts`; shown by
+`src/renderer/src/components/settings/ThirdPartyModuleList.tsx` and
+`src/renderer/src/components/settings/ApprovalReviewDialog.tsx`, added from
+`src/renderer/src/components/settings/addThirdPartyModuleFromFolder.ts`; surfaces redrawn on a `revision` by
+`src/renderer/src/modules/extension-contributions.tsx`. The CLI: `packages/extension-sdk/src/cli.ts` (usage),
+`cli-commands.ts`, `cli-authoring.ts` (`validate`, `inspect`, `test`, `check`, with `check-worker.ts`), `cli-dev.ts`
+(`dev …`, `shot`), `cli-output.ts` (`--json`, error and exit codes) and `cli-studio.ts` (the gateway's local socket).
+Agents' tools: `src/main/automation/extension-dev-tools.ts` (`extension.dev.*`) and
+`src/main/automation/extension-shot-tool.ts` (`visual.extension_shot`), drawn by
+`src/main/extension-frames/extension-shot.ts`. Wire: `extension.devFolders`, `extension.devLoad`,
+`extension.devUnload` (an owner's), a contribution's `revision`, an installed view's `development`
+(`packages/studio-protocol/src/modules.ts`). Templates `packages/extension-sdk/templates/`; guide
+`packages/extension-sdk/guide/dev-loop.md` and `packages/extension-sdk/guide/start.md`; the agents' skill
+`resources/studio-plugin/sprintengine-studio/skills/studio-extensions/SKILL.md`. Tests:
+`packages/extension-sdk/test/source-modules.test.ts`, `packages/extension-sdk/test/cli-authoring.test.ts`,
+`src/main/modules/extension-dev-folders.test.ts`, `src/server/extensions/extension-reload.test.ts`,
+`src/main/automation/extension-dev-tools.test.ts`, `src/main/modules/extension-surface-entries.test.ts`,
+`src/server/extensions/workers/worker-entry.test.ts`.
 
 **Agent hooks** (an extension's worker checks, changes or refuses what agents and Studio are about to do): the
 points in `packages/extension-sdk/src/hooks.ts`, the chain in `src/server/extensions/hooks/extension-hooks.ts`

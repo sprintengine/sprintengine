@@ -8,7 +8,7 @@ from `activate` with `studio.registerHooks`:
 ```json
 {
   "tier": "worker",
-  "main": "dist/main.cjs",
+  "main": "src/main.ts",
   "contributes": {
     "hooks": [{ "point": "agent.tool.before", "onError": "deny" }, { "point": "agent.tool.after" }]
   }
@@ -62,11 +62,12 @@ ignored.
 ## Order, time and failure
 
 - Studio runs the hooks of every extension that lists a point, one after
-  another, in the order of their install keys (`local.a-guard` before
-  `local.b-format`). Each sees the event as the ones before it changed it.
-  Studio has no separate development folders: an extension you are working
-  on is installed under its key like any other, and takes its place in the
-  same order.
+  another: the installed extensions first, in the order of their install keys
+  (`local.a-guard` before `local.b-format`), then the development folders, in
+  the order they were registered (the `dev-loop` topic). A development folder
+  that stands in for an installed extension with its key runs in the
+  development folders' place, not the installed one's. Each sees the event as
+  the ones before it changed it.
 - Each extension's hooks for a point have **two seconds** together. A worker that is not running is started
   first, and its start is not counted.
 - A hook that throws, answers late, answers something that is not one of the
@@ -177,6 +178,16 @@ const verdict = await fake.hooks.fire('agent.tool.before', {
 assert.equal(verdict.kind, 'deny')
 ```
 
+Against the running Studio, with the extension loaded as a development folder
+(`npm run dev`), `dev hook` runs your worker's hook with an event you make up
+and answers what it decided; nothing else in Studio happens:
+
+```sh
+npx sprintengine-extension dev hook extension agent.tool.before --json \
+  --data '{"agent":"claude-agent","workspaceId":"ws-1","agentId":"agent-1","tool":"Bash","input":{"command":"rm -rf build"},"callId":null}'
+```
+
 The approval names each point you hook in plain words ("Can check, change or
-refuse your agents' tool calls in Claude Code chats"), and an update that
-hooks a point the approved version did not asks the person again.
+refuse your agents' tool calls in Claude Code chats"), and an update, or a
+save in a development folder, that hooks a point the approved version did not
+asks the person again.

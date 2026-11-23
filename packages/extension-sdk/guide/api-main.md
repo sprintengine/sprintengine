@@ -1,12 +1,15 @@
 # The worker (`main`)
 
 The worker is the extension's background code: `main` in extension.json, a
-CommonJS bundle. It exports `activate`, as a named export or its default.
+module (`.ts`, `.mts`, `.cts`, `.js`, `.mjs` or `.cjs`) loaded as written,
+with no build. It exports `activate`, as a named export or its default.
 Studio runs it in a Node process of its own, one per extension, with a clean
-environment (none of Studio's variables or the shell's credentials), loads
-`main` there with `require` and calls `activate` with a `studio` object. Its
+environment (none of Studio's variables or the shell's credentials), strips
+its TypeScript types in place (Node's own transpiler, every line and column
+kept), loads `main` there and calls `activate` with a `studio` object. Its
 output goes to the extension's log, in Studio's logs folder under
-`extensions/`.
+`extensions/`, and to `sprintengine-extension dev watch` as `[worker]` lines.
+A worker that fails to activate says where: `src/greet.ts:4:7 message`.
 
 When it runs:
 
@@ -24,6 +27,9 @@ When it runs:
   within thirty. A worker that crashes is started again after half a second,
   two seconds and five; after a fourth crash it stays stopped, shown as failed
   in Settings and in the bell, until it is switched off and on again.
+- **Restarted on the new code** when a development folder it comes from is
+  saved, or an update is installed or approved: Studio loads it again live,
+  without a restart of Studio.
 - **Stopped** when it is switched off or uninstalled, or its approval changes
   (an update installed): it has two seconds for its `onShutdown` hooks, then
   it is ended. A call still running fails with words that say why.
@@ -58,11 +64,16 @@ Use a worker only when the idea needs Node, a service only the worker has, a
 command that runs your code, MCP tools, or work with no window open. It takes
 the `worker` tier, the most the person is asked to allow.
 
-Bundle it as one CommonJS file with everything bundled (a worker runs as
-plain Node; `electron` is never there to require): the installed extension has no `node_modules` (the template's
-`build:main` does this). It may start worker threads from other files it
-ships: build each as its own CommonJS bundle into `extension/dist/` and start
-it with `new Worker(studio.getAssetPath('dist/thread.cjs'))`.
+Write only erasable TypeScript: an `enum`, a `namespace` or a parameter
+property needs code, so it fails to load, and there is no JSX. Relative imports
+may leave out the extension (`./methods` finds `methods.ts`, and `./methods.js`
+does too). A worker runs as plain Node: `electron` is never there to require.
+`@sprintengine/extension-sdk` resolves from the extension's own
+`node_modules` when it has one, else from the SDK of the Studio running it; a
+packed extension has no `node_modules`, so copy any other package into the
+extension or bundle it and import the bundle. It may start worker threads from
+other files it ships: ship each as JavaScript and start it with
+`new Worker(studio.getAssetPath('src/thread.mjs'))`.
 
 ## Commands
 
@@ -94,14 +105,15 @@ export function activate(studio: MainHost): void {
 }
 ```
 
-The smoke test fails when a command without an `action` has no `operate`
-method of its name.
+`npm run check` lists the methods the worker registered: a command without an
+`action` needs an `operate` method of its name there, and in Studio it does
+nothing useful without one.
 
 ## `studio`
 
 | Member | Notes |
 | --- | --- |
-| `moduleId`, `supports(capability)` | Your install key (`local.<id>` for a folder install); ask `supports` before using a capability. |
+| `moduleId`, `supports(capability)` | Your install key (`local.<id>` for a folder install and a development folder); ask `supports` before using a capability. |
 | `listChatRuntimes()` | `Promise<[{ id, label, available, models, lastSelected }]>`: the agent runtimes a chat can run on, with missing ones `available: false`. `id` is the runtime id every `cli` takes. May probe (cached a minute). `supports('chat-runtimes')`. `providers:read`. |
 | `registerMethods<Contract>(methods)` | Methods the surfaces call with `studio.methods<Contract>()`, and the methods your commands run: each `{ access: 'read' \| 'operate', params, handler }`. `params` validates what was sent (`{ ok: true, params }` or `{ ok: false, message }`, answered `invalid_params`); the handler gets `(params, { clientId, commandId? })` and answers `{ ok: true, result }` (JSON) or `{ ok: false, code, message }`. Names: a lower-case letter, then letters, digits, dots, dashes. Needs no permission. |
 | `emit(topic, payload?)` | Push a signal to every open surface (`studio.on('push', cb)`). No replay. |

@@ -16,6 +16,9 @@ import { createAutomationTools } from '../automation/automation-tools'
 import { createBrowserTools } from '../automation/browser-tools'
 import { createCanvasTools } from '../automation/canvas-tools'
 import { createEditorTools } from '../automation/editor-tools'
+import { createExtensionDevTools } from '../automation/extension-dev-tools'
+import { createExtensionShotTool } from '../automation/extension-shot-tool'
+import { createExtensionTools } from '../automation/extension-tools'
 import { createTailnetTools } from '../automation/tailnet/tailnet-tools'
 import { createTourTools } from '../automation/tour-tools'
 import { createConversationChatTools } from '../automation/conversation-chat-tools'
@@ -63,6 +66,15 @@ test('studio-plugin-skills', async () => {
     // A schedule tool's refusal to a chat a scheduled agent started, not a tool.
     'scheduled_run_refused',
     'too_large',
+    // The extension CLI's error codes (sprintengine-extension --json), which
+    // studio-extensions tells an agent to branch on.
+    'approval_required',
+    'approval_stale',
+    'extension_check_failed',
+    'extension_invalid',
+    'extension_tests_failed',
+    'shot_failed',
+    'studio_unavailable',
   ])
 
   /**
@@ -88,6 +100,9 @@ test('studio-plugin-skills', async () => {
       ...createTourTools({} as never),
       ...createPullRequestTools({} as never),
       ...createConversationChatTools({} as never),
+      ...createExtensionTools({} as never),
+      ...createExtensionDevTools({} as never),
+      createExtensionShotTool(() => Promise.reject(new Error('not drawn here'))),
     ]
     return new Set(registrations.map((registration) => registration.name.replace(/\./g, '_')))
   }

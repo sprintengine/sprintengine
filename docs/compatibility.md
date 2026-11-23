@@ -277,7 +277,8 @@ every client that draws extensions (owner ruling: there are no users yet, so
 nothing keeps the in-window mount). The frame's document is built by the
 Studio (`extension.frame`, under the new capability `extension-frames`): its
 policy (no network, `sandbox allow-scripts`), the theme's tokens and Studio's
-kit, a bootstrap that builds `studio`, and the extension's verified entry. A
+kit, a bootstrap that builds `studio`, and the extension's verified entry
+with the modules it imports, transpiled as written. A
 browser loads it from the Studio's `/ext-frame/<hash>`, inside the Studio's
 wrapper document `/ext-frame-host/<hash>` on the same origin, whose policy
 (`frame-src` naming that one document, no script) keeps the frame from being
@@ -326,6 +327,30 @@ custom editors only where its Studio offers the new capability
 `extension-editors`; elsewhere the file opens in the text editor. An approval
 grows when an update adds an editor, gives one more files to open, or has one
 open its files by default where it was only offered.
+
+### Development folders and the extension dev loop (no compatibility)
+
+An extension loads without a build step: a surface's entry and the files it
+imports, and a worker's `main`, are read as written, TypeScript and JSX
+included. The frame document carries the gathered modules instead of one
+bundle, so nothing on the wire names a build. A development folder is a folder
+on the Studio's machine the owner registers (`extension.devLoad`,
+`extension.devUnload`, listed by `extension.devFolders`, each an owner's): it
+loads from where it is, after the installed extensions, and again on every
+save. `ThirdPartyModuleView.development` marks one, naming its folder only to a
+connection that may name any path, and `ExtensionContributions.revision`
+moves with every change to an extension's files, so a client that hears
+`extension.changed` redraws the surfaces whose revision moved. An install, an
+approval or an update now loads live, without restarting Studio, and the
+clients hear `extension.changed` as before. All of it rides on
+`extension-host`, with no capability of its own: a window and its Studio are
+one build.
+
+A development folder's approval is bound to its real path and its access, not
+to its files, and is forgotten when the folder is removed; it never covers an
+installed extension with the same key, nor the other way round. An installed
+extension's approval still binds its files' content. An approval from one of
+Studio's own agents (proven by its launch token) is refused.
 
 ### Agent hooks (no compatibility)
 

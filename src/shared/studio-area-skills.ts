@@ -29,7 +29,8 @@ export type { StudioAreaSkillChoices, StudioAreaSkillId }
 
 /**
  * Where the skill is offered. `settings` is the one with no surface of its own:
- * the workspaces skill is about the app as a whole, so it is only a switch.
+ * the workspaces skill is about the app as a whole, and the extensions skill
+ * about work in a project of the person's, so each is only a switch.
  */
 type StudioAreaSkillSurface = 'backlog' | 'design' | 'canvas' | 'scheduled-agents' | 'diff' | 'settings'
 
@@ -80,6 +81,13 @@ export const STUDIO_AREA_SKILLS: readonly StudioAreaSkill[] = [
     id: 'studio-workspaces',
     name: 'Workspaces',
     gives: 'Teaches agents to drive workspaces, terminals, the editor and the in-app browser.',
+    surface: 'settings',
+  },
+  {
+    id: 'studio-extensions',
+    name: 'Extensions',
+    gives:
+      'Teaches agents to build, debug and ship a Studio extension: the no-build dev loop, approvals and the guide.',
     surface: 'settings',
   },
   {

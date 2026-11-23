@@ -3,10 +3,11 @@
 The short list. Each one cost an earlier extension real time; the details and
 fixes follow.
 
-1. **Bundle everything.** A ui entry is one ESM file Studio imports as a blob
-   module: nothing beside it resolves, so it holds every import, React
-   included. The worker is one CommonJS file with nothing external.
-   The template's `build:ui` and `build:main` do this.
+1. **No build, and only your own files.** Studio loads the source as
+   written. A surface imports its own files by relative paths and nothing by
+   a package name; the worker imports Node's own modules, its own files and
+   the SDK. Anything else is copied into `extension/`, or bundled and the
+   bundle imported.
 2. **Declare, don't register.** Commands, menus, top bar items, panels, doors,
    settings sections and MCP tools are listed in extension.json. Code draws a
    surface (`mount`) or serves a command or tool (`activate`); it never adds
@@ -14,14 +15,15 @@ fixes follow.
 3. **Lowest tier, fewest permissions.** The tier and the permissions are what
    the person is asked to allow. A field above the tier fails validation.
 4. **A surface is a sandboxed frame.** No network, no Node, nothing of
-   Studio's window: bundle everything it shows, and ask Studio for the rest
+   Studio's window: ship everything it shows in the extension, and ask Studio for the rest
    with `studio.host.call`. Style with the theme's properties (`--bg-surface`,
    `--text-default`, …) and Studio's kit classes (`se-button`, …).
 5. **Relative URLs resolve to nothing** in a surface. Inline images and fonts
    as `data:` URLs.
-6. **Any change to `extension/` is new contents.** An approval binds to exact
-   contents and access, and a signature to exact files. Rebuild →
-   `dev:install` → approve again, or sign again.
+6. **The person approves, once per access.** A development folder's approval
+   holds across saves while it asks for no more; asking for more waits for
+   them again. Never approve on their behalf. A signature binds exact files:
+   sign the folder you pack, after the last change.
 7. **Store with the host**: `getModuleStorage` in the worker, `storage.*` and
    `settings.*` from a surface.
    Never JSON files in the home folder; never a raw `localStorage` key.
@@ -32,25 +34,37 @@ fixes follow.
    let it pick a path, URL or command unchecked, never put it in `innerHTML`.
 10. **No status dots.** Say a state in words, a lifecycle glyph or a timer.
 
-## Build and load
+## How source loads
 
-**A ui entry is self-contained.** Studio reads the bundle's text and imports it
-as a blob module. A bare `import 'react'` has nothing to answer it; a relative
-import has no folder to look in; a dynamic `import()` of a chunk of your own
-finds nothing. Bundle each entry whole, with no code splitting and nothing
-external. Studio shares no React and no component kit with extensions: a
-surface brings what it draws with. The smoke test fails on a bundle that still
-imports something.
+**A surface loads its own files, and nothing else.** Studio reads the entry,
+removes its types and JSX (every line kept where it was, so an error's line is
+the line in your file) and gathers every file it imports by a relative path
+(`./list` finds `list.tsx`, `list.ts`, … or `list/index.*`; `./list.js` finds
+`list.ts`). A package by name (`import 'react'`) is refused, at the file and
+line: nothing resolves it. Copy the package's ESM files into the extension, or
+bundle it yourself and import the bundle. An `import(variable)` cannot load;
+an import cycle cannot either. A transpiled file is at most 1 MiB, and a
+surface loads at most 500 modules. Studio shares no React and no component kit
+with extensions: a surface brings what it draws with.
 
-**The worker is CommonJS with nothing external.** It runs as plain Node in a
-process of its own, where `electron` is never there to require, and the
-installed folder has no `node_modules`; anything left external is missing at
-load. `react` has
-no business in the worker. Worker threads are fine: bundle each as its own
-CommonJS file in `extension/dist/` and start it with
-`new Worker(studio.getAssetPath('dist/thread.cjs'))` (not a path you build
-from `__dirname`, which skips the check that the file is the one you
-installed).
+**JSX is the classic form.** `<b>x</b>` calls `h('b', null, 'x')`, and `<>`
+is `Fragment`: import both from a file of your own. There is no runtime to
+find them.
+
+**The worker's TypeScript is only types.** Studio strips its types with Node's
+own transpiler, so an `enum`, a `namespace` or a parameter property (code
+TypeScript would write for you) fails to load, and there is no JSX. Relative
+imports may leave out the extension. It runs as plain Node in a process of
+its own, where `electron` is never there to require. A packed extension has no
+`node_modules`: `@sprintengine/extension-sdk` comes from the Studio running
+it, and any other package must be copied in or bundled. `react` has no
+business in the worker. Worker threads are fine: ship each thread's file as
+JavaScript and start it with
+`new Worker(studio.getAssetPath('src/thread.mjs'))` (not a path you build
+from `__dirname`, which skips the check that the file is the one approved).
+
+**Nothing type-checks at load.** Types are removed, not checked: `npm run
+typecheck` (in `npm run check`) is the only type check.
 
 **`activate` must finish.** A throw or a rejected promise is a load error. Do
 slow work lazily, in a handler or an `onStartup` hook.
@@ -60,15 +74,15 @@ screen, and return a cleanup that undoes everything the surface started.
 
 ## The manifest
 
-**The build never writes extension.json.** You change it; the build only
-writes `extension/dist/`. Nothing records digests in it.
+**Nothing writes extension.json but you.** Nothing records digests in it.
+A save to it reloads the extension like any other file.
 
 **Unknown keys fail.** A misspelt field is not ignored, it is refused. Run
 `npm run validate`.
 
 **A command without `action` is worker code.** It runs the worker method of
-its name (access `operate`); without that method the smoke test fails, and in
-Studio the command does nothing useful. A command that only opens something
+its name (access `operate`); without that method the command does nothing
+useful in Studio, and `npm run check` lists no method of its name. A command that only opens something
 Studio already has is declarative: give it an `action`.
 
 **Menus and top bar items name what you contribute.** A menu item names one of
@@ -79,14 +93,24 @@ extension.json does not list is refused.
 
 ## Approval and signing
 
-**Any change under `extension/` is new contents.** A person's approval binds to
-the extension's permissions, tier and worker and to the digests of every file
-in the folder. After each rebuild copied in by `dev:install` it is approved
-again.
+**A development folder is approved for what it may do, not for its code.**
+The approval binds the folder's real path and its access (permissions, tier,
+worker, background, MCP tools and their access, the Studio actions its
+commands run, custom editors, hooks, local MCP servers' command, arguments and
+environment, providers' key origins). A save keeps it; a save that asks for
+more waits for the person again; asking for less keeps it. Removing the folder
+forgets it. Only the person approves: an agent Studio launched is refused
+when it tries, and must not look for another way.
+
+**An installed extension is approved for its exact files.** Its approval binds
+the digests of every file in its installed folder as well as its access, so a
+change to an installed copy is tampering, not an update. A development
+folder's approval never covers an installed extension with the same key, and
+the installed one's never covers the folder.
 
 **A signed extension changed after signing is refused, whatever was approved.**
-`dev:install` signs the installed copy whenever your key exists. If you signed
-`extension/` for publishing, sign it again after every build.
+Sign the folder you pack, after its last change. A development folder's
+`extension.sig` is not read.
 
 **Keys never live in the project.** `~/.sprintengine/keys/<id>.key`, mode 600.
 The validators fail on key files in the project.

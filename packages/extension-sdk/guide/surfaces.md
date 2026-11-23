@@ -55,7 +55,7 @@ door. A cluster of controls belongs in a door.
 | Files in a workspace's folder | surface: `files.read`, `files.stat`, `files.search`, `files.write` | `workspace-files:read`, `workspace-files:write` |
 | The file a custom editor is open on | custom editor: `studio.document` (`session()`, or `get`, `onDidChange`, `applyEdit`) | `workspace-files:read` (`:write` to save) |
 | A surface asking the worker | worker `studio.registerMethods<Contract>({ … })`, surface `studio.methods<Contract>().read` / `.operate`; worker → surface `studio.emit` / `studio.on('push', …)` | — |
-| Files inside the extension (WASM, data) | surface: bundle them (images and fonts as `data:` URLs); worker: `studio.getAssetPath('dist/worker.cjs')` | — |
+| Files inside the extension (WASM, data) | surface: put them in a module it imports (images and fonts as `data:` URLs); worker: `studio.getAssetPath('src/data.json')` | — |
 
 The details are in the `api-renderer`, `api-main`, `conversations`, `brokers`
 and `styling` topics.

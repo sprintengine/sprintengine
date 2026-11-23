@@ -39,9 +39,8 @@ extension built against 3.x must be rewritten to this one.
   `extensionProviderId`, `SKILL_FILE_MAX_BYTES` and
   `SKILL_FOLDER_MAX_FILES`; types `ExtensionSkillContribution`,
   `ExtensionMcpServerContribution` and `ExtensionProviderContribution`.
-- A new template, `agent-kit`: a skill and a local MCP server built from
-  TypeScript, with no worker. A project's smoke test now checks that each
-  skill's `SKILL.md` and each file a local server runs were built.
+- A new template, `agent-kit`: a skill and a local MCP server in plain
+  JavaScript, with no worker.
 - The `sprintengine-extension plugin` commands (`plugin scaffold`, `pack`,
   `sign` and `verify`, and their `plugin-*` spellings) are gone, with the
   `plugin.json` bundle helpers: `validateMarketplacePluginManifest`,
@@ -77,12 +76,12 @@ extension built against 3.x must be rewritten to this one.
 
 ### Code
 
-- A panel, door or settings section names an `entry`: a self-contained ESM
-  bundle exporting `mount(root, studio)`, which draws into `root`, calls
+- A panel, door or settings section names an `entry`: a module exporting
+  `mount(root, studio)`, loaded as written (see "No build step"), which draws into `root`, calls
   `studio.ready()` once drawn, and may return a cleanup. Studio loads it into
   a sandboxed frame of its own and shares no React or UI kit with it, so it
-  bundles what it draws with (see "Surfaces run in frames").
-- The worker is `main`: a CommonJS bundle exporting `activate(studio)`, named
+  brings what it draws with (see "Surfaces run in frames").
+- The worker is `main`: a module exporting `activate(studio)`, named
   or as its default. It registers its methods (`registerMethods`) and serves
   the MCP tools extension.json declares (`registerMcpTools`; a tool not
   declared is refused, and the declaration's description and access win). A
@@ -95,7 +94,7 @@ extension built against 3.x must be rewritten to this one.
   Every call into Studio crosses to Studio's process, so these answer
   promises now: `MainHost.getModuleAppState`, a conversation service's
   `list`, a companion's `attach` and `status`. A companion's validator may
-  answer a promise. Bundle the worker with nothing external.
+  answer a promise.
 - Work a call into the worker sets going (a timer, say) may call Studio only
   while that call lasts; after it ends Studio refuses it. Only a
   `background: true` worker's own work, from `activate` and its startup hooks
@@ -137,11 +136,8 @@ extension built against 3.x must be rewritten to this one.
   `file-action`, `mcp-tools`. `workspace-type` is gone. Parts: `main`, `mcp`,
   `settings`, `door`; `add` merges a part's contributions and permissions into
   extension.json and raises `tier` when it must.
-- A project keeps the installable folder in `extension/` (`extension.json`,
-  `extension/dist/`). `build:ui` bundles each ui entry from `src/<name>.tsx`,
-  React included; `build:main` builds the worker. `dev:install` copies
-  `extension/` to `~/.sprintengine/extensions/local.<id>/` and signs the
-  installed copy when a key is at hand.
+- A project keeps the extension in `extension/` (`extension.json`, its
+  source in `extension/src/`); see "No build step" for its scripts.
 - `createFakeMainHost({ manifest })` and `createFakeFrameStudio({ manifest,
 main })` take the parsed extension.json; the install key defaults to
   `local.<id>`. `registrations`, `render.*`, `runCommand` and
@@ -236,8 +232,9 @@ main })` take the parsed extension.json; the install key defaults to
   reserved.
 - `studio.registerHooks({ point: handler })` serves them. A handler answers
   nothing, `{ change: { … } }` (only the fields its point allows) or
-  `{ deny: reason }`; Studio runs each extension's in the order of install
-  keys, waits at most two seconds on each (a worker's start is not counted),
+  `{ deny: reason }`; Studio runs the installed extensions' in the order of
+  their install keys, then the development folders' in the order they were
+  registered, waits at most two seconds on each (a worker's start is not counted),
   and a hook that fails passes, or refuses with `onError: "deny"`. A hook runs
   as whoever set off the action, so its calls into Studio are held to them.
 - `EXTENSION_HOOK_POINTS`, `EXTENSION_HOOK_SPECS` (what each point carries,
@@ -299,6 +296,72 @@ main })` take the parsed extension.json; the install key defaults to
 - The `editor` template: a `.kv` file as a form of keys and values.
   `examples/todo-editor/` is a custom editor for `.todo` files, in plain
   JavaScript with no build.
+
+
+### No build step: development folders and the dev loop
+
+- Studio loads an extension's source as written, installed and development
+  extensions alike. A surface's `entry` may be `.js`, `.mjs`, `.ts`, `.mts`,
+  `.tsx` or `.jsx`: types and JSX are removed with every line kept, and JSX is
+  the classic form calling `h()` and `Fragment`, which the author imports from
+  a file of their own. A surface imports only its own files, by relative paths
+  (`./list` finds `list.tsx`, `list.ts`, … and `list/index.*`; `./list.js`
+  finds `list.ts`); a package by name is refused, at its file and line. A
+  transpiled file is at most 1 MiB, and a surface loads at most 500 modules.
+- A worker's `main` may be `.js`, `.cjs`, `.mjs`, `.ts`, `.mts` or `.cts`,
+  stripped of its types by Node's own transpiler (no `enum`, `namespace` or
+  JSX), with extensionless relative imports. `@sprintengine/extension-sdk`
+  resolves from the extension's own `node_modules`, else from the SDK of the
+  Studio running it.
+- A new subpath, `@sprintengine/extension-sdk/source`: how Studio and the CLI
+  transpile and gather a surface's modules (`transpileExtensionSource`,
+  `buildSurfaceModules`, `moduleCandidatePaths`, `formatSourceProblem`,
+  `EXTENSION_MODULE_EXTENSIONS`, `MAX_TRANSPILED_SOURCE_BYTES`,
+  `MAX_SURFACE_MODULES`). The SDK now depends on `sucrase` and
+  `es-module-lexer`.
+- Development folders: a folder holding extension.json that the owner
+  registers on a Studio (`sprintengine-extension dev load`, or Settings →
+  Extensions → Install → As a development folder). It loads from where it is,
+  under `local.<id>`, after every installed extension, in registration order,
+  and its hooks run in that order. One whose key an installed extension has
+  stands in for it while registered. `node_modules`, `.git`, dotted files and
+  folders and symbolic links in it are left out; it holds at most 2000 files
+  and 50 MiB.
+  Saving a file reloads it within a moment: its worker restarts on the new
+  code and its surfaces redraw on every client.
+- A development folder is approved once, for its folder and its access, not
+  its code: a save keeps the approval, a save that asks for more asks again,
+  asking for less keeps it, and removing the folder forgets it. Its approval
+  and an installed extension's with the same key never cover each other. Its
+  `extension.sig` is not read. An agent Studio launched cannot approve.
+  Installed extensions are unchanged: their approval binds their files.
+- An install, an approval or an update loads live, without restarting Studio.
+- Errors at their file and line: a frame's `console.error` and `console.warn`,
+  uncaught errors and unhandled rejections reach the extension's log as
+  `[frame] src/panel.ts:28:17 message` (at most 20 lines every 10 seconds),
+  through the new frame host method `log.write` (no permission;
+  `createFakeFrameStudio` keeps them in `frame.logs`). A worker that fails to
+  activate says `src/greet.ts:4:7 message`, and a surface whose code does not
+  load draws its error in the frame at its file, line and column.
+- New CLI commands, each with `--json` printing `{ ok: true, result }` or
+  `{ ok: false, error: { code, message, data?, nextSteps? } }`, and exit
+  codes 0 (ok), 1 (an error), 2 (`extension_invalid`) and 3
+  (`approval_required`, `approval_stale`); the codes are `CLI_ERROR_CODES`.
+  `validate`, `inspect`, `test` (the project's tests with `node --test`,
+  TypeScript as written) and `check` (validate, activate the worker against
+  the fake host, build each surface) run on this machine without Studio.
+  `dev load`, `watch`, `unload`, `list`, `logs`, `request`, `hook` and `emit`
+  drive the running Studio through its gateway's local socket (`--data-dir`
+  for another profile); `dev watch` prints one JSON object per line
+  (`loaded`, `check`, `shot`, `shot_failed`, `reloaded`, `log`, `status`,
+  `approval`, `unloaded`, `disconnected`). `shot` writes a PNG of a surface
+  as the desktop app draws it. The `dev-loop` guide topic is the reference.
+- Templates have no build: the source is in `extension/src/`, and the scripts
+  are `typecheck`, `test`, `validate`, `check`, `dev`
+  (`sprintengine-extension dev watch extension --check --shot
+  extension/.sprintengine/shots`), `pack` and `keygen`. `build:ui`,
+  `build:main`, `dev:install`, `scripts/validate.mjs` and the smoke test are
+  gone; templates draw with plain DOM and keep their styles in a string.
 
 ## 3.0.0-beta.1
 

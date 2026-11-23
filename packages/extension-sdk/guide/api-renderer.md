@@ -1,7 +1,8 @@
 # The surface's `studio`
 
-Each panel, door, settings section and custom editor in extension.json names an `entry`: an
-ESM bundle exporting `mount`. Studio draws the surface in a sandboxed frame of
+Each panel, door, settings section and custom editor in extension.json names an `entry`: a
+module exporting `mount` (`.ts`, `.tsx`, `.js`, … loaded as written, with the
+files it imports by relative paths; the `rules` topic). Studio draws the surface in a sandboxed frame of
 its own, on every client (the desktop app, a desktop window paired with
 another machine, a browser), loads the entry there and calls `mount` with the
 frame's root element and a `studio` object:

@@ -61,8 +61,20 @@ that changed since is refused rather than approved unseen.
   permission, no higher tier, no new worker, no background worker, no new MCP
   tool, no tool that may now change things, no command running a Studio
   action it did not run. Otherwise it waits for the person, who is shown what
-  is new. A version that kept its approval runs on until Studio starts again,
-  held to what both versions were approved for.
+  is new. A version that kept its approval, or one the person approves, loads
+  at once, without restarting Studio.
+- A development folder, which Studio loads from where it is and again on
+  every save, is approved once for that folder and its access: the
+  fingerprint covers its real path, permissions, tier, worker, background, MCP
+  tools and their access, the Studio actions its commands run, custom
+  editors, hooks, local MCP servers' command, arguments and environment, and
+  providers' key origins, but not its files. A save keeps the approval, a
+  save that asks for more waits for the person again, and asking for less
+  keeps it. Removing the folder forgets it. It never covers an installed
+  extension with the same key, nor the installed one's the folder, so a
+  development folder cannot change an installed extension silently.
+- Only the person approves: Studio refuses an approval from one of its own
+  agents.
 - An extension that only carries content (`tier: "content"`) needs no
   approval.
 - Uninstalling forgets the approval.
@@ -129,7 +141,7 @@ Its own methods (`registerMethods`), events (`emit`) and files
   "engines": { "studio": ">=0.13.0" },
   "tier": "worker",
   "name": "Workspace Dashboard",
-  "main": "dist/main.cjs",
+  "main": "src/main.ts",
   "permissions": ["workspace:read", "conversation:own", "secrets:own"]
 }
 ```
