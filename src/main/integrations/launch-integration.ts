@@ -32,7 +32,7 @@
 // session: every agent dies with the app, so `pruneLaunchFiles` empties the
 // directory at the next start.
 
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -585,6 +585,22 @@ async function userLevelLaunchSkills(
 /** An extension skill's name as agents see it: `x<8 hex>-<skill id>` (extensionSkillName in skill-frontmatter.ts). */
 const EXTENSION_SKILL_NAME = /^x[0-9a-f]{8}-[a-z0-9]+(?:-[a-z0-9]+)*$/
 
+// One change at a time to each copy in a CLI's skills folder, within this
+// process: two launches at once must not each replace the copy, or one retract
+// what the other has just published.
+const copyChains = new Map<string, Promise<unknown>>()
+
+function oneCopyAtATime<T>(destination: string, work: () => Promise<T>): Promise<T> {
+  const previous = copyChains.get(destination) ?? Promise.resolve()
+  const run = previous.then(work, work)
+  const settled = run.catch(() => undefined)
+  copyChains.set(destination, settled)
+  void settled.then(() => {
+    if (copyChains.get(destination) === settled) copyChains.delete(destination)
+  })
+  return run
+}
+
 /**
  * Take out the app's copies of extension skills no extension hands agents any
  * more (it was uninstalled, switched off or updated without them), so a
@@ -601,11 +617,13 @@ async function removeRetractedExtensionSkillCopies(
   for (const name of names) {
     if (!EXTENSION_SKILL_NAME.test(name) || current.has(name)) continue
     const destination = join(skillsDir, name)
-    const manifest = await readManagedSkillManifest(destination).catch(() => null)
-    if (!manifest || manifest.id !== name || manifest.owner !== owner) continue
-    const hash = await hashSkillDirectory(destination, new Set([MANAGED_SKILL_MANIFEST_FILE])).catch(() => null)
-    if (hash !== manifest.installedSkillHash) continue
-    await rm(destination, { recursive: true, force: true }).catch(() => undefined)
+    await oneCopyAtATime(destination, async () => {
+      const manifest = await readManagedSkillManifest(destination).catch(() => null)
+      if (!manifest || manifest.id !== name || manifest.owner !== owner) return
+      const hash = await hashSkillDirectory(destination, new Set([MANAGED_SKILL_MANIFEST_FILE])).catch(() => null)
+      if (hash !== manifest.installedSkillHash) return
+      await rm(destination, { recursive: true, force: true }).catch(() => undefined)
+    })
   }
 }
 
@@ -631,6 +649,15 @@ export async function ensureUserLevelSkillCopy(input: {
 }): Promise<string | null> {
   const destination = join(input.skillsDir, input.skill.id)
   const sourceHash = await hashSkillDirectory(input.sourceDir)
+  // Whose it is, and replacing it, in one step no other launch here interleaves with.
+  return oneCopyAtATime(destination, () => replaceSkillCopy(input, destination, sourceHash))
+}
+
+async function replaceSkillCopy(
+  input: Parameters<typeof ensureUserLevelSkillCopy>[0],
+  destination: string,
+  sourceHash: string,
+): Promise<string> {
   if (existsSync(destination)) {
     const manifest = await readManagedSkillManifest(destination)
     if (!manifest || manifest.id !== input.skill.id) return destination
@@ -639,7 +666,7 @@ export async function ensureUserLevelSkillCopy(input: {
     if (current !== manifest.installedSkillHash) return destination
     if (manifest.sourceHash === sourceHash && manifest.version === input.skill.version) return destination
   }
-  const staging = join(input.skillsDir, `.${input.skill.id}.staging-${process.pid}`)
+  const staging = join(input.skillsDir, `.${input.skill.id}.staging-${process.pid}-${randomUUID()}`)
   try {
     await copySkillDirectory(input.sourceDir, staging)
     await writeManagedSkillManifest({

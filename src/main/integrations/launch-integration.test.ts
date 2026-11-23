@@ -332,6 +332,39 @@ test('a skill of the same name the person keeps is theirs, and is never written 
   assert.equal(await readFile(join(skillsDir, 'backlog', 'SKILL.md'), 'utf8'), 'theirs\n')
 })
 
+test('two launches copying one skill at once each finish, and leave one whole copy and no staging folder', async () => {
+  const root = await tempDir('concurrent-skill')
+  const sources = await Promise.all(
+    ['one', 'two'].map(async (word) => {
+      const source = join(root, 'source', word, 'x1a2b3c4d-review')
+      await mkdir(source, { recursive: true })
+      await writeFile(join(source, 'SKILL.md'), `${word}\n`)
+      return source
+    }),
+  )
+  const skillsDir = join(root, 'skills')
+  const copies = await Promise.all(
+    sources.flatMap((sourceDir, index) =>
+      [1, 2, 3].map(() =>
+        ensureUserLevelSkillCopy({
+          skillsDir,
+          skill: { id: 'x1a2b3c4d-review', version: `gen${index}` },
+          sourceDir,
+          cli: 'codex',
+          owner: '/data/studio',
+        }),
+      ),
+    ),
+  )
+  const destination = join(skillsDir, 'x1a2b3c4d-review')
+  assert.ok(copies.every((copy) => copy === destination))
+  assert.deepEqual(await readdir(skillsDir), ['x1a2b3c4d-review'])
+  const manifest = JSON.parse(await readFile(join(destination, MANAGED_SKILL_MANIFEST_FILE), 'utf8'))
+  assert.equal(manifest.owner, '/data/studio')
+  // The copy is whole: what its manifest says it is.
+  assert.equal(await readFile(join(destination, 'SKILL.md'), 'utf8'), manifest.version === 'gen0' ? 'one\n' : 'two\n')
+})
+
 test('the launch files are emptied at the next start', async () => {
   const dir = await tempDir('prune')
   await buildClaudeLaunchIntegration({ dir, servers: [server({ id: 'docs' })] })
