@@ -4,11 +4,15 @@ import { afterEach, test } from 'vitest'
 
 import type { StudioModuleEvent, StudioModuleNotification } from '../../../packages/studio-protocol/src/public'
 import { createMainKernel, createServiceToken } from '../../main/module-host/main-host'
+import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 import type { ModuleUsageRegistry } from '../../shared/modules/activity-service'
 import type { ModuleBacklogRegistry } from '../../shared/modules/backlog-service'
 import type { ModuleMethodParsed } from '../../shared/modules/methods'
 import { createStudioModuleHub, type StudioModules } from './studio-modules'
 import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
+
+// The catalogue is not what these tests are about.
+const NO_CATALOGUE = {} as ModuleLifecycle['catalogue']
 
 // `extension.events` and `extension.notifications` over the owner socket: the
 // capability, the scope, the module filter, and the bell's kept rows sent
@@ -563,6 +567,7 @@ test('the installed list names a folder Studio could not read by its place only 
     setSetting: async () => ({ ok: false, message: 'none' }),
     reportRegistry: () => ({ ok: true }),
     reproject: async () => undefined,
+    catalogue: NO_CATALOGUE,
   })
   const owner = await caller(hub)
   assert.deepEqual(answerOf(await owner.request('extension.installed', {})), { modules: [], rejected })
@@ -602,6 +607,7 @@ test('a change to what runs is an owner’s: a paired client holding extensions:
     setSetting: async () => ({ ok: false, message: 'none' }),
     reportRegistry: () => ({ ok: true }),
     reproject: async () => undefined,
+    catalogue: NO_CATALOGUE,
   })
   const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['extensions:operate']))
   assert.deepEqual(answerOf(await paired.request('extension.list', {})), { modules: [] })
@@ -636,6 +642,7 @@ test('the window’s module report is an owner’s: a paired client holding exte
     setSetting: async () => ({ ok: false, message: 'none' }),
     reportRegistry: (snapshot) => (reported.push(snapshot), { ok: true }),
     reproject: async () => undefined,
+    catalogue: NO_CATALOGUE,
   })
   const snapshot = { modules: [] }
   const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['extensions:operate']))

@@ -390,6 +390,9 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
           'extension.notifications',
           'extension.list',
           'extension.installed',
+          'extension.catalogues',
+          'extension.catalogueEntry',
+          'extension.catalogueImage',
           'extension.contributions',
           'extension.frame',
           'extension.call',
@@ -496,6 +499,11 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
           'extension.approve',
           'extension.uninstall',
           'extension.reportRegistry',
+          // Catalogues added here, and what is installed or updated from one or from a git URL.
+          'extension.catalogueAdd',
+          'extension.catalogueRemove',
+          'extension.installFrom',
+          'extension.update',
           // Development folders are paths on this machine.
           'extension.devFolders',
           'extension.devLoad',

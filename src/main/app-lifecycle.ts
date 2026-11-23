@@ -6,12 +6,8 @@ import { DEEP_LINK_SCHEMES, withoutDeepLinks } from '../shared/deep-link-scheme'
 import { CHAT_LINK_OPEN_CHANNEL, chatLinkFromArgv, type ChatLink } from '../shared/deep-link'
 import { createChatLinkRouter } from './chat-link-router'
 import { registerChatLinkIpc, routeSecondLaunch } from './chat-link-ipc'
-import { createExtensionLinkRouter } from './extension-link-router'
-import {
-  EXTENSION_LINK_OPEN_CHANNEL,
-  EXTENSION_LINK_READY_CHANNEL,
-  extensionLinkFromArgv,
-} from '../shared/extension-install-link'
+import { createExtensionLinkRouter, registerExtensionLinkIpc } from './extension-link-router'
+import { EXTENSION_LINK_OPEN_CHANNEL, extensionLinkFromArgv } from '../shared/extension-install-link'
 import { registerLinuxUrlHandler, systemLinuxUrlHandlerDeps } from './linux-url-handler'
 import { BOOT_WORKSPACE_SYNC_BUDGET_MS, runBootDiscovery, settleWithin } from './boot-discovery'
 import { discoverAndBroadcastCliModels } from './model-discovery/discovery-pass'
@@ -383,12 +379,11 @@ export function registerAppLifecycle({
       backgroundPresence.onWindowOpened()
     },
   })
-  ipcMain.on(EXTENSION_LINK_READY_CHANNEL, (event) => {
-    if (!isWorkspaceWindowWebContents(event.sender)) return
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) return
-    extensionLinks.ready(win)
-    win.once('closed', () => extensionLinks.gone(win))
+  registerExtensionLinkIpc({
+    ipcMain,
+    router: extensionLinks,
+    windowOf: (contents) => BrowserWindow.fromWebContents(contents),
+    isWorkspaceWindow: isWorkspaceWindowWebContents,
   })
   function openExtensionLinkFrom(argv: readonly string[]): boolean {
     const link = extensionLinkFromArgv(argv)

@@ -56,6 +56,9 @@ const ACCOUNT = shell(
 )
 const DIAGNOSTICS = shell("This app's own logs and processes.")
 const CHAT_LINK = shell("A chat link from the operating system, opened in one of this app's windows.")
+const EXTENSION_LINK = shell(
+  "An install link from the operating system: an extension's page opened in one of this app's windows, never an install.",
+)
 
 /** Moves to the protocol: terminals and the agents that run in them. */
 const terminals = server('terminals')
@@ -266,6 +269,8 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'chat-link:open': CHAT_LINK('push'),
   'chat-link:ready': CHAT_LINK('send'),
   'chat-link:unready': CHAT_LINK('send'),
+  'extension-link:open': EXTENSION_LINK('push'),
+  'extension-link:ready': EXTENSION_LINK('send'),
 
   // ── The server: moves to the Studio protocol ──
   'agent:compact': terminals('invoke'),

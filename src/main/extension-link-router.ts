@@ -1,4 +1,8 @@
-import { parseExtensionInstallLink, type ExtensionInstallLink } from '../shared/extension-install-link'
+import {
+  EXTENSION_LINK_READY_CHANNEL,
+  parseExtensionInstallLink,
+  type ExtensionInstallLink,
+} from '../shared/extension-install-link'
 
 // Where an install link (`sprintengine://extensions/…`) lands: the workspace
 // window that last said it is listening opens the extension's page in
@@ -56,4 +60,30 @@ export function createExtensionLinkRouter<W>(deps: {
       if (at !== -1) listening.splice(at, 1)
     },
   }
+}
+
+type LinkContents = { on(event: 'did-navigate' | 'render-process-gone', listener: () => void): unknown }
+type LinkWindow = { once(event: 'closed', listener: () => void): unknown }
+
+/** A workspace window saying it is listening for install links, and going away. */
+export function registerExtensionLinkIpc<C extends LinkContents, W extends LinkWindow>(deps: {
+  ipcMain: { on(channel: string, listener: (event: { sender: C }) => void): unknown }
+  router: Pick<ExtensionLinkRouter<W>, 'ready' | 'gone'>
+  windowOf: (contents: C) => W | null
+  isWorkspaceWindow: (contents: C) => boolean
+}): void {
+  const watched = new WeakSet<C>()
+  deps.ipcMain.on(EXTENSION_LINK_READY_CHANNEL, (event) => {
+    const contents = event.sender
+    const win = deps.isWorkspaceWindow(contents) ? deps.windowOf(contents) : null
+    if (!win) return
+    if (!watched.has(contents)) {
+      watched.add(contents)
+      const gone = () => deps.router.gone(win)
+      contents.on('did-navigate', gone)
+      contents.on('render-process-gone', gone)
+      win.once('closed', gone)
+    }
+    deps.router.ready(win)
+  })
 }
