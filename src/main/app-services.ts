@@ -134,7 +134,12 @@ import { EDITOR_REVEAL_PENDING_CHANNEL } from '../shared/editor-reveal'
 import { createTourTools } from './automation/tour-tools'
 import { createVisualTools } from './automation/visual-tools'
 import { createElectronVisualPreview } from './visual/visual-preview-window'
+import { shootExtensionSurface } from './extension-frames/extension-shot'
+import { createExtensionShotTool } from './automation/extension-shot-tool'
+import type { McpToolRegistration } from '../shared/modules/mcp-tools'
+import type { StudioClient } from '../../packages/client-runtime/src/public'
 import { createExtensionTools } from './automation/extension-tools'
+import { createExtensionDevTools, type ExtensionDevBackend } from './automation/extension-dev-tools'
 import { createPluginTools } from './automation/plugin-tools'
 import { resolveScaffoldRoots } from './extension-scaffold'
 import { createAppTourService } from './tours/tour-app'
@@ -1099,6 +1104,7 @@ export function createAppServices(
   // constructed before modules load, so until the seam is wired the registry
   // reads empty — and because the tool set is evaluated per request, module
   // tools appear on the very next call once modules are up.
+  let resolveExtensionDevBackend: () => ExtensionDevBackend | null = () => null
   let resolveModuleMcpTools: () => ReadonlyArray<McpToolContribution> = () => []
   // The renderer's module registry, mirrored here. Empty until a
   // window pushes one; consumers report "not yet known" rather than "no
@@ -1423,7 +1429,16 @@ export function createAppServices(
     }),
   )
   // `visual.preview` draws in a hidden window of this app, so the shell serves it.
-  const visualTools = createVisualTools(createElectronVisualPreview(listWorkspaceWindows))
+  // The shell's connection to its Studio, once `desktopShell` below exists.
+  let shellClient: () => StudioClient | null = () => null
+  const visualTools: McpToolRegistration[] = [
+    ...createVisualTools(createElectronVisualPreview(listWorkspaceWindows)),
+    // A picture of an extension's surface, for its author (extension-shot.ts):
+    // drawn here, its calls answered by the Studio over the shell's own connection.
+    createExtensionShotTool((input) =>
+      shootExtensionSurface({ client: (): StudioClient | null => shellClient() }, input),
+    ),
+  ]
   const tourTools = createTourTools({
     service: tourService,
     hasWorkspace: (workspaceId) =>
@@ -1435,7 +1450,14 @@ export function createAppServices(
   // Extensions door lists. In process the gateway's own; out of process the
   // server's (desktop-server.ts).
   const extensionTools = coreExtensions
-    ? createExtensionTools({ scaffold: coreExtensions.scaffold, guideRoot: () => resolveScaffoldRoots().guideRoot })
+    ? [
+        ...createExtensionTools({
+          scaffold: coreExtensions.scaffold,
+          guideRoot: () => resolveScaffoldRoots().guideRoot,
+        }),
+        // The dev loop: in process over app-main's kernel, handed over once it loads.
+        ...createExtensionDevTools({ backend: () => resolveExtensionDevBackend() }),
+      ]
     : []
   const pluginTools = skillsService
     ? createPluginTools({
@@ -1752,6 +1774,7 @@ export function createAppServices(
   const logDesktopTools = (message: string) => {
     void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Desktop tools', message })
   }
+  shellClient = () => desktopShell?.client() ?? null
   // The shell, a client of its own server: in process over a port main holds
   // both ends of, out of process over one it brokers to the server. It offers
   // what only a screen or a terminal can serve.
@@ -2136,6 +2159,9 @@ export function createAppServices(
     },
     setModuleMcpToolsResolver(resolver: () => ReadonlyArray<McpToolContribution>): void {
       resolveModuleMcpTools = resolver
+    },
+    setExtensionDevBackend(resolver: () => ExtensionDevBackend | null): void {
+      resolveExtensionDevBackend = resolver
     },
     moduleRegistryMirror,
     /** The core's, in process (for the module host's tokens); null out of process. */

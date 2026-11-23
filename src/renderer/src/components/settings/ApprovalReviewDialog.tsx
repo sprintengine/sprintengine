@@ -78,6 +78,11 @@ export function ApprovalReviewDialog({
             {extensionApprovalCopy(module.extension.tier, module.extension.permissions, reach)}
           </p>
         )}
+        {module.development ? (
+          <InlineNotice tone="warn">
+            {`A development folder, ${module.development.folder}${module.development.overrides ? ', in place of the installed extension with its id' : ''}. Studio runs its code as it is on disk and again after every save, so you approve what it may do, not one version of its code. A save that asks for more asks you again.`}
+          </InlineNotice>
+        ) : null}
         {growth && growth.length > 0 ? (
           <section aria-label={t.newInThisVersion}>
             <h3 className="mb-1.5 text-meta font-semibold text-[color:var(--text-muted)]">{t.newInThisVersion}</h3>

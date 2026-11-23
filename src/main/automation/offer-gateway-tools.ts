@@ -36,6 +36,8 @@ export const BUILT_IN_TOOL_TIMEOUTS_MS: Readonly<Record<string, number>> = {
   'canvas.edit': 45_000,
   'canvas.layout': 45_000,
   'canvas.screenshot': 45_000,
+  // Builds the surface's document, waits up to 8 s for it to settle, then captures.
+  'visual.extension_shot': 45_000,
   // A launch may cut a worktree, then waits up to 20 s for a live session.
   'agent.launch': 120_000,
   'backlog.work': 120_000,

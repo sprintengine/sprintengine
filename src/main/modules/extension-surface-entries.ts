@@ -1,6 +1,13 @@
 import { createHash } from 'crypto'
-import { existsSync } from 'fs'
-import { readFile } from 'fs/promises'
+import { existsSync, lstatSync, readFileSync } from 'fs'
+
+import {
+  buildSurfaceModules,
+  formatSourceProblem,
+  type SourceProblem,
+  type SurfaceModule,
+} from '../../../packages/extension-sdk/src/source-modules'
+import { isDevelopmentSkippedPath } from '../../../packages/extension-sdk/src/module-files'
 
 import type {
   ExtensionContributionsResult,
@@ -67,7 +74,8 @@ function resolveRendererEntries(installed: InstalledModule): RendererEntriesReso
       return { servable: false, view: { availability: 'error', message: `The surface entry ${path} is missing.` } }
     }
     // Runnable means the files were verified; an entry outside that set was
-    // never vouched for, whatever is on disk under its name now.
+    // never vouched for, whatever is on disk under its name now. A
+    // development folder's are its files as they were last read.
     const expectedSha256 = installed.standing.verifiedFiles?.[path]
     if (expectedSha256 === undefined) {
       return {
@@ -99,32 +107,72 @@ export function collectExtensionContributions(modules: readonly InstalledModule[
       }
       continue
     }
-    result.extensions.push({ id: installed.key, manifest: installed.manifest, extension: installed.extension })
+    result.extensions.push({
+      id: installed.key,
+      manifest: installed.manifest,
+      extension: installed.extension,
+      ...(installed.standing.contentDigest ? { revision: installed.standing.contentDigest } : {}),
+    })
   }
   return result
 }
 
-/** One surface's entry, read now and checked against the bytes it was verified with. */
-export async function readExtensionSurfaceEntry(
+/** A surface's modules as its frame loads them, or why it cannot be drawn. */
+export type SurfaceModulesAnswer =
+  | { ok: true; entryPath: string; modules: SurfaceModule[]; token: string }
+  /** `problem`: the author's code is at fault, at its file and line (a syntax error, a bad import). */
+  | { ok: false; message: string; problem?: SourceProblem }
+
+/**
+ * One surface's entry and every module it imports, read now: an installed
+ * extension's checked against the bytes it was verified with, a development
+ * folder's as it is on disk (its approval is not bound to its code). Each
+ * TypeScript or JSX file is transpiled as it is read (source-modules.ts).
+ */
+export async function readSurfaceModules(
   installed: InstalledModule,
   point: StudioExtensionSurfacePoint,
   id: string,
-): Promise<{ ok: true; entryPath: string; code: string } | { ok: false; message: string }> {
+): Promise<SurfaceModulesAnswer> {
   const contribution = installed.extension.contributes[point].find((surface) => surface.id === id)
   if (!contribution) return { ok: false, message: `Extension "${installed.key}" has no ${point} "${id}".` }
   const resolution = resolveRendererEntries(installed)
   if (!resolution.servable)
     return { ok: false, message: resolution.view.message ?? `Extension "${installed.key}" draws nothing now.` }
-  const entry = resolution.entries.find((candidate) => candidate.path === contribution.entry)
-  if (!entry) return { ok: false, message: READ_FAILURE_MESSAGE }
-  try {
-    // The bytes drawn are the bytes hashed: read once, checked, then used.
-    const bytes = await readFile(entry.absolute)
-    if (createHash('sha256').update(bytes).digest('hex') !== entry.expectedSha256)
-      return { ok: false, message: CHANGED_MESSAGE }
-    return { ok: true, entryPath: entry.path, code: bytes.toString('utf8') }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    return { ok: false, message: sanitizeEntryMessage(message, READ_FAILURE_MESSAGE) }
+  const verified = installed.standing.verifiedFiles ?? {}
+  const development = installed.development !== undefined
+  let changed = false
+  const cache = new Map<string, string | null>()
+  const read = (path: string): string | null => {
+    if (cache.has(path)) return cache.get(path)!
+    let text: string | null = null
+    try {
+      // Only a file among those it was read with: a development folder's
+      // digests are taken over what it serves (no node_modules, no dotted
+      // folders), an installed one's are what was approved.
+      const expected = verified[path]
+      if (expected !== undefined || development) {
+        const absolute = resolveContainedEntry(installed.moduleRoot, path, 'entry')
+        const info = lstatSync(absolute)
+        if (info.isFile() && (expected !== undefined || !isDevelopmentSkippedPath(path))) {
+          const bytes = readFileSync(absolute)
+          if (!development && createHash('sha256').update(bytes).digest('hex') !== expected) changed = true
+          else text = bytes.toString('utf8')
+        }
+      }
+    } catch {
+      text = null
+    }
+    cache.set(path, text)
+    return text
   }
+  const graph = buildSurfaceModules(contribution.entry, read)
+  if (changed) return { ok: false, message: CHANGED_MESSAGE }
+  if (!graph.ok)
+    return {
+      ok: false,
+      message: sanitizeEntryMessage(formatSourceProblem(graph.problem), READ_FAILURE_MESSAGE),
+      problem: graph.problem,
+    }
+  return { ok: true, entryPath: contribution.entry, modules: graph.modules, token: graph.token }
 }

@@ -31,6 +31,21 @@ export function resolveWorkerEntryPath(dir: string = __dirname): string {
   return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!
 }
 
+/**
+ * Studio's own copy of the extension SDK package, which a worker's
+ * `import … from '@sprintengine/extension-sdk'` loads when the extension does
+ * not carry one: beside the app in an installed build (`extension-sdk-runtime`,
+ * package.json `build.extraResources`), the checkout's in development. Null
+ * when it is not there (a checkout whose SDK was never built).
+ */
+export function resolveExtensionSdkRoot(resourcesDir: string | null, appRoot: string): string | null {
+  const candidates = [
+    ...(resourcesDir ? [join(resourcesDir, 'extension-sdk-runtime')] : []),
+    join(appRoot, 'packages', 'extension-sdk'),
+  ]
+  return candidates.find((candidate) => existsSync(join(candidate, 'dist', 'index.js'))) ?? null
+}
+
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 
 /** A call the server makes into a worker, but for the invocation it runs as. */

@@ -25,7 +25,9 @@ export type AddThirdPartyModuleOutcome =
  */
 export async function addThirdPartyModuleFromFolder(
   api: Partial<Pick<ElectronApi, 'openDir'>>,
-  lifecycle: Pick<ModuleLifecycleClient, 'install'> | null,
+  lifecycle: (Pick<ModuleLifecycleClient, 'install'> & Partial<Pick<ModuleLifecycleClient, 'devLoad'>>) | null,
+  /** `development`: register the folder itself, which loads where it is and again on every save. */
+  as: 'install' | 'development' = 'install',
 ): Promise<AddThirdPartyModuleOutcome> {
   if (typeof api.openDir !== 'function' || !lifecycle) {
     return { status: 'failed', message: copy.settings.addThirdPartyModuleFromFolder.canTInstallExtensionsIn }
@@ -35,7 +37,13 @@ export async function addThirdPartyModuleFromFolder(
     const folder = await api.openDir()
     if (!folder) return { status: 'cancelled' }
 
-    const result = await lifecycle.install(folder)
+    const devLoad = lifecycle.devLoad
+    if (as === 'development' && !devLoad)
+      return { status: 'failed', message: 'This Studio cannot load development folders.' }
+    const result =
+      as === 'development' && devLoad
+        ? await devLoad(folder).then((answer) => (answer.ok ? { ...answer, strippedLinks: [] as string[] } : answer))
+        : await lifecycle.install(folder)
     if (!result.ok) {
       return {
         status: 'failed',

@@ -16,7 +16,7 @@ import type { ExtensionStandingContext } from './module-signature'
 import { approvedContext } from './extension-approvals.test-helper'
 import {
   collectExtensionContributions,
-  readExtensionSurfaceEntry,
+  readSurfaceModules,
   surfaceEntriesView as rendererEntryView,
 } from './extension-surface-entries'
 import { discoverUserModules, type InstalledModule } from './user-module-registry'
@@ -37,8 +37,8 @@ async function offeredAndDrawn(modules: readonly InstalledModule[]) {
     let failed: string | null = null
     for (const point of EXTENSION_SURFACE_POINTS) {
       for (const contribution of installed.extension.contributes[point]) {
-        const read = await readExtensionSurfaceEntry(installed, point, contribution.id)
-        if (read.ok) code[read.entryPath] = read.code
+        const read = await readSurfaceModules(installed, point, contribution.id)
+        if (read.ok) code[read.entryPath] = read.modules.at(-1)!.code
         else failed = read.message
       }
     }

@@ -36,13 +36,23 @@ const FRAME_ERROR_CODES = [
 ]
 
 export const FRAME_ROOT_ID = 'se-root'
+/** The most lines a frame logs (`log.write`) in one window of `FRAME_LOG_WINDOW_MS`; past it, one notice. */
+export const FRAME_LOG_LIMIT = 20
+export const FRAME_LOG_WINDOW_MS = 10_000
 export const FRAME_TOKENS_ID = 'se-tokens'
 
 export type FrameBootstrapInput = {
   /** The entry's path in extension.json, for the words of a failure. */
   entryPath: string
-  /** The entry's source: an ES module exporting `mount`. */
-  entryCode: string
+  /**
+   * The entry and every module it imports, each after what it imports, the
+   * entry last (source-modules.ts): ES modules, the entry exporting `mount`.
+   * In each, `<token><n>` stands for the module at index `n`.
+   */
+  modules: ReadonlyArray<{ path: string; code: string }>
+  token: string
+  /** Why its code cannot load, at its file and line: shown in the frame, and logged, instead of running it. */
+  problem?: string
   /** The surface, before the host says which workspace it was opened in. */
   surface: { point: string; id: string }
   colorScheme: 'light' | 'dark'
@@ -95,7 +105,11 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     surface: input.surface,
     colorScheme: input.colorScheme,
     entryPath: input.entryPath,
-    entry: input.entryCode,
+    modules: input.modules,
+    token: input.token,
+    problem: input.problem ?? null,
+    logLimit: FRAME_LOG_LIMIT,
+    logWindowMs: FRAME_LOG_WINDOW_MS,
   })
   return `${PRELUDE};(function (C) {
   var E = C.events
@@ -181,8 +195,75 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     theme = { colorScheme: next.colorScheme }
     return true
   }
+  // Where the extension's code is: each module's blob URL, by the file it came from.
+  var sources = {}
+  function located(text) {
+    var out = String(text)
+    Object.keys(sources).forEach(function (url) { out = out.split(url).join(sources[url]) })
+    return out
+  }
+  // The first place in a stack that is the extension's own file, as file:line:col.
+  function placeOf(error) {
+    var stack = error && typeof error.stack === 'string' ? error.stack : ''
+    var urls = Object.keys(sources)
+    var lines = stack.split('\\n')
+    for (var i = 0; i < lines.length; i++) {
+      for (var j = 0; j < urls.length; j++) {
+        var at = lines[i].indexOf(urls[j] + ':')
+        if (at < 0) continue
+        var rest = /^:(\\d+):(\\d+)/.exec(lines[i].slice(at + urls[j].length))
+        if (rest) return sources[urls[j]] + ':' + rest[1] + ':' + rest[2]
+      }
+    }
+    return ''
+  }
+  // What the frame prints reaches the extension's log as [frame] lines, at
+  // most C.logLimit in each C.logWindowMs, and the same line once a window.
+  var logged = 0
+  var logWindow = 0
+  var seen = {}
+  var noticed = false
+  function log(level, message) {
+    var now = Date.now()
+    if (now - logWindow > C.logWindowMs) { logWindow = now; logged = 0; seen = {}; noticed = false }
+    var line = located(message).slice(0, 2000)
+    if (seen[line]) return
+    seen[line] = true
+    if (logged >= C.logLimit) {
+      if (noticed) return
+      noticed = true
+      line = 'More lines were dropped: a frame logs at most ' + C.logLimit + ' every ' + (C.logWindowMs / 1000) + ' s.'
+    }
+    logged++
+    call('log.write', { level: level, message: line }).catch(function () {})
+  }
+  function describe(value) {
+    if (value instanceof Error) {
+      var place = placeOf(value)
+      return (place ? place + ' ' : '') + String(value.message || value)
+    }
+    if (typeof value === 'string') return value
+    try { return JSON.stringify(value) } catch (_) { return String(value) }
+  }
+  ;['error', 'warn'].forEach(function (level) {
+    var original = console[level]
+    console[level] = function () {
+      var args = Array.prototype.slice.call(arguments)
+      try { log(level === 'warn' ? 'warn' : 'error', args.map(describe).join(' ')) } catch (_) {}
+      return original.apply(console, args)
+    }
+  })
+  window.addEventListener('error', function (event) {
+    var file = event.filename && sources[event.filename]
+    var place = file ? file + ':' + event.lineno + ':' + event.colno + ' ' : (event.error ? (placeOf(event.error) ? placeOf(event.error) + ' ' : '') : '')
+    log('error', place + String(event.message || (event.error && event.error.message) || 'An error was thrown.'))
+  })
+  window.addEventListener('unhandledrejection', function (event) {
+    log('error', 'Unhandled rejection: ' + describe(event.reason))
+  })
   function fail(error) {
-    var message = String((error && error.message) || error).slice(0, 500)
+    var message = located(error instanceof Error ? describe(error) : String((error && error.message) || error)).slice(0, 500)
+    log('error', message)
     var root = document.getElementById(C.rootId)
     if (root) {
       var line = document.createElement('p')
@@ -242,9 +323,18 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
       surface = Object.freeze({ point: C.surface.point, id: C.surface.id, workspaceId: workspaceId })
     }
     document.documentElement.removeAttribute('data-se-waiting')
-    var url = URL.createObjectURL(new Blob([C.entry], { type: 'text/javascript' }))
-    import(url).then(function (entry) {
-      URL.revokeObjectURL(url)
+    if (C.problem) return fail(C.problem)
+    // Each module after the ones it imports: their tokens become their URLs.
+    var urls = []
+    // The token is letters, digits and dashes (source-modules.ts): nothing to escape.
+    var pattern = new RegExp(C.token + '([0-9]+)', 'g')
+    C.modules.forEach(function (module, index) {
+      var code = module.code.replace(pattern, function (_, n) { return urls[Number(n)] || '' })
+      var url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))
+      urls[index] = url
+      sources[url] = module.path
+    })
+    import(urls[urls.length - 1]).then(function (entry) {
       if (!entry || typeof entry.mount !== 'function') throw new Error(C.entryPath + ' must export mount(root, studio).')
       return entry.mount(document.getElementById(C.rootId), studio)
     }).catch(fail)

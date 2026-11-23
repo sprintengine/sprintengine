@@ -112,7 +112,7 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
     description:
       'Create a new SprintEngine Studio extension (one that adds panels, pages, commands, menu items, Settings ' +
       'sections, MCP tools, chats and more to Studio) as a project ready to build: extension/extension.json, ' +
-      'TypeScript source, tests against the SDK fake hosts, the build, validate and dev-install ' +
+      'TypeScript source that loads with no build step, tests against the SDK fake hosts, and the check and dev-loop ' +
       'scripts, and IDEA.md holding the brief. Use it whenever you are asked to build an extension, plugin or ' +
       'module for SprintEngine Studio, rather than writing those files yourself. It never writes over anything: ' +
       'the folder must be new or empty, and one that already holds an extension is handed back untouched. The ' +
@@ -224,8 +224,8 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
           nextSteps: [
             `Work in ${made.folder}: read IDEA.md, then follow the guide below.`,
             'npm install, then node scripts/check-toolchain.mjs, then npm run check (a fresh project passes).',
-            'Change the project toward the brief, running npm run check after every change.',
-            'npm run dev:install, then tell the person to approve it in Studio: Settings → Extensions.',
+            'npm run dev in a background terminal: it loads extension/ into Studio as a development folder and reloads it on every save. If it exits with approval_required, tell the person to approve it in Studio: Settings → Extensions.',
+            'Change the project toward the brief. Each save prints reloaded, a check and a PNG of the panel to read; fix every log line at file:line. Run npm run check before you finish.',
           ],
           topics: topicIndex(),
         },
@@ -238,7 +238,7 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
     name: EXTENSION_GUIDE_TOOL,
     description:
       'Read the guide to building SprintEngine Studio extensions with @sprintengine/extension-sdk, one topic at a ' +
-      'time: how to start and the build-install-trust loop (start), which API adds which surface (surfaces), the ' +
+      'time: how to start and the dev loop with no build step (start, dev-loop), which API adds which surface (surfaces), the ' +
       'manifest, permissions, the rules that bite, the renderer and main host APIs, chats, brokers, the UI kit, ' +
       'troubleshooting a module Studio will not list, trust or run, and publishing. Read `start` before working ' +
       'on an extension project; without a topic the answer lists them all.',

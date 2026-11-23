@@ -47,6 +47,7 @@ import {
 import { createStudioGateway, type StudioGateway } from '../core/studio-gateway'
 import { WORKTREE_QUIT_WAIT_MS } from '../core/studio-worktree-pool'
 import { createExtensionTools } from '../../main/automation/extension-tools'
+import { createExtensionDevTools } from '../../main/automation/extension-dev-tools'
 import { createPluginTools } from '../../main/automation/plugin-tools'
 import { resolveScaffoldRoots } from '../../main/extension-scaffold'
 import { createStudioRpc } from '../core/studio-rpc'
@@ -419,6 +420,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         scaffold: extensions.scaffold,
         guideRoot: () => resolveScaffoldRoots().guideRoot,
       }),
+      // The extension dev loop, over this server's kernel.
+      ...createExtensionDevTools({ backend: () => modules.devBackend() }),
       ...createPluginTools({
         listSources: () => core.agents.skills.skills.listSources(),
         getScan: (input) => core.agents.skills.skills.getScan(input),

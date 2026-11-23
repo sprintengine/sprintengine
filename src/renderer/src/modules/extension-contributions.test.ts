@@ -9,6 +9,7 @@ import { resolveModuleEnablement } from '../../../shared/modules/resolve'
 import { createRendererHost, type ModuleMethodCall, type RendererKernel } from './renderer-host'
 import {
   contributionsForRefresh,
+  forgetChangedExtensions,
   getExtensionContributionsState as getThirdPartyRendererLoadState,
   loadExtensionContributions,
   reconcileExtensionContributions as reconcileThirdPartyRendererEntries,
@@ -404,7 +405,7 @@ test('serving failures are recorded, and a duplicate key keeps its first definit
   assert.deepEqual(getThirdPartyRendererLoadState('acme.dupe'), { status: 'loaded' })
 })
 
-test('a live refresh adds only extensions this window has not registered, and none with a worker', async () => {
+test('a live refresh adds the extensions this window has not registered, a worker’s too', async () => {
   const kernel = createRendererHost()
   const newlyInstalled = served([
     {
@@ -416,13 +417,13 @@ test('a live refresh adds only extensions this window has not registered, and no
   const eligible = contributionsForRefresh(newlyInstalled)
   assert.deepEqual(
     eligible.extensions.map((entry) => entry.id),
-    ['acme.refresh-ui'],
-    'a worker’s methods load only at the server’s next start',
+    ['acme.refresh-ui', 'acme.refresh-worker'],
+    'the server loads a worker live too',
   )
   const fresh = await loadThirdPartyRendererEntries(kernel, eligible)
   assert.deepEqual(
     fresh.map((manifest) => manifest.id),
-    ['acme.refresh-ui'],
+    ['acme.refresh-ui', 'acme.refresh-worker'],
   )
   assert.deepEqual(
     contributionsForRefresh(newlyInstalled).extensions,
@@ -434,6 +435,32 @@ test('a live refresh adds only extensions this window has not registered, and no
     {},
     'an update failure cannot overwrite the state of an extension already registered',
   )
+})
+
+test('an extension served changed is taken out and registered again, its surfaces with it', async () => {
+  const kernel = createRendererHost()
+  const before = served([{ key: 'acme.edited', contributes: { panels: [{ id: 'p', title: 'P', entry: 'p.ts' }] } }])
+  await loadThirdPartyRendererEntries(kernel, contributionsForRefresh(before))
+  const drawn = getExtensionSurface('acme.edited', 'panels', 'p')
+  assert.ok(drawn)
+  const unchanged = forgetChangedExtensions(before, (id) => kernel.forgetModule(id))
+  assert.deepEqual(unchanged, [], 'served as it was, it stays')
+  // A save in its development folder: the same extension.json, other files.
+  const saved = served([{ key: 'acme.edited', contributes: { panels: [{ id: 'p', title: 'P', entry: 'p.ts' }] } }])
+  saved.extensions[0]!.revision = 'sha256-after-the-save'
+  const forgotten: string[] = []
+  assert.deepEqual(
+    forgetChangedExtensions(saved, (id) => {
+      forgotten.push(id)
+      kernel.forgetModule(id)
+    }),
+    ['acme.edited'],
+  )
+  assert.deepEqual(forgotten, ['acme.edited'])
+  assert.equal(getExtensionSurface('acme.edited', 'panels', 'p'), undefined, 'its open surface is let go')
+  await loadThirdPartyRendererEntries(kernel, contributionsForRefresh(saved))
+  const redrawn = getExtensionSurface('acme.edited', 'panels', 'p')
+  assert.ok(redrawn && redrawn !== drawn, 'a new surface, so an open frame draws it again')
 })
 
 test('an extension switched off and then uninstalled is offered nowhere and draws nothing, and comes back only as it was', async () => {

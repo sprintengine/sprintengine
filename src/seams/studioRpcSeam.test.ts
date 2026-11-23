@@ -423,6 +423,9 @@ test('every method the server serves has its call in the SDK, under the same sco
     'extension.install': 'request',
     'extension.approve': 'request',
     'extension.uninstall': 'request',
+    'extension.devFolders': 'request',
+    'extension.devLoad': 'request',
+    'extension.devUnload': 'request',
     // The extensions installed there, what they add to a client, and the window's report.
     'extension.installed': 'request',
     'extension.contributions': 'request',

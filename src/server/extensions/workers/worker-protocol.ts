@@ -99,6 +99,11 @@ export type WorkerInitMessage = {
   provided: string[]
   /** The invocation its activation runs as. */
   invocation: string
+  /**
+   * The SDK package of the Studio running it, for a worker whose source
+   * imports `@sprintengine/extension-sdk` and does not carry it (source-hooks.ts).
+   */
+  sdkRoot?: string
 }
 
 export type WorkerCallMessage = { t: 'call'; id: number; invocation: string } & (

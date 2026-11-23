@@ -24,6 +24,8 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { isAbsolute, relative, resolve } from 'node:path'
 
+import { installTypeScriptHooks, placeInFolder } from '../../../../packages/extension-sdk/src/source-hooks'
+
 import type {
   ServerToWorkerMessage,
   WorkerArg,
@@ -69,6 +71,18 @@ function toWorkerError(error: unknown): WorkerError {
   return { message: String(error) }
 }
 
+/** Where in the extension's own files an error was thrown, as `file:line:col` (source-hooks.ts). */
+function placeOf(error: unknown): string {
+  return init?.root ? placeInFolder(error, init.root) : ''
+}
+
+/** An error the extension must fix, with where it is when that is one of its files. */
+function locatedWorkerError(error: unknown): WorkerError {
+  const shaped = toWorkerError(error)
+  const place = placeOf(error)
+  return place ? { ...shaped, message: `${place} ${shaped.message}` } : shaped
+}
+
 function fromWorkerError(error: WorkerError): Error {
   const made = new Error(error.message)
   if (error.name) made.name = error.name
@@ -78,7 +92,10 @@ function fromWorkerError(error: WorkerError): Error {
 
 /** What went wrong in something the extension could not be told about directly, for its log. */
 function report(what: string, error: unknown): void {
-  process.stderr.write(`[studio] ${what}: ${error instanceof Error ? error.message : String(error)}\n`)
+  const place = placeOf(error)
+  process.stderr.write(
+    `[studio] ${what}: ${place ? `${place} ` : ''}${error instanceof Error ? error.message : String(error)}\n`,
+  )
 }
 
 function isPlain(value: unknown): value is Record<string, unknown> | unknown[] {
@@ -380,12 +397,17 @@ async function runHooks(hooks: readonly Hook[], label: string): Promise<void> {
 
 async function activate(start: WorkerInitMessage): Promise<void> {
   try {
+    // Its TypeScript loads as written, types stripped in place (source-hooks.ts).
+    installTypeScriptHooks(
+      start.root,
+      start.sdkRoot ? { fallbackPackages: { '@sprintengine/extension-sdk': start.sdkRoot } } : {},
+    )
     const entry = createRequire(start.entryPath)(start.entryPath) as Record<string, unknown>
     await resolveActivate(entry)(createStudio(start))
     // Whatever it registered while starting is accepted, or it did not start.
     await Promise.all(registrations)
   } catch (error) {
-    send({ t: 'fatal', error: toWorkerError(error) })
+    send({ t: 'fatal', error: locatedWorkerError(error) })
     // The server kills it on `fatal`; leave on our own if it cannot.
     setTimeout(() => process.exit(1), 1000).unref()
     return

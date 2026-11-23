@@ -45,6 +45,13 @@ export type InstalledExtensionsPlan = {
   approvals: Record<string, ExtensionLoadedApproval>
   ineligible: Record<string, ModuleResolutionErrorCode>
   launchErrors: MainModuleLoadError[]
+  /**
+   * What each extension was loaded as: its folder, whether it may run, the
+   * approval it runs under, its files and its extension.json. When this
+   * changes (a save in a development folder, an update, an approval), the
+   * kernel loads it again (`reloadInstalledExtensions`).
+   */
+  identities: Record<string, string>
 }
 
 export function planInstalledExtensions(
@@ -58,6 +65,7 @@ export function planInstalledExtensions(
     mcpTools: {},
     approvals: {},
     ineligible: {},
+    identities: {},
     launchErrors: input.rejected.map((rejection) => ({
       id: rejection.path,
       message: rejection.issues.map((issue) => `${issue.path ? `${issue.path}: ` : ''}${issue.message}`).join('; '),
@@ -65,6 +73,15 @@ export function planInstalledExtensions(
   }
   for (const installed of input.modules) {
     const { key, standing, extension } = installed
+    plan.identities[key] = JSON.stringify([
+      installed.moduleRoot,
+      isExtensionRunnable(standing),
+      standing.signature,
+      standing.approval.state === 'approved' ? standing.approval.fingerprint : standing.approval.state,
+      standing.contentDigest ?? null,
+      installed.development?.order ?? null,
+      extension,
+    ])
     plan.moduleRoots[key] = installed.moduleRoot
     plan.mcpTools[key] = extension.contributes.mcpTools
     if (!isExtensionRunnable(standing) || !standing.verifiedFiles) {
@@ -95,6 +112,7 @@ export function planInstalledExtensions(
             fingerprint,
             declaredTools: extension.contributes.mcpTools,
             declaredHooks: extension.contributes.hooks,
+            ...(installed.development ? { development: { order: installed.development.order } } : {}),
           },
           host,
         ),

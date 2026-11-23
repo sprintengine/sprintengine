@@ -1,4 +1,5 @@
 import { lstat, realpath, rm } from 'node:fs/promises'
+import type { StudioExtensionApproval, StudioExtensionDevFolder } from '../../../packages/studio-protocol/src/public'
 import { basename, dirname } from 'node:path'
 
 import type {
@@ -28,12 +29,19 @@ import { forgetModules, isModuleIdSegment } from './forget-modules'
 import type { ModuleRegistryMirror } from './registry-mirror'
 import { approvalView } from './extension-approval-view'
 import { toThirdPartyModuleView, type ExtensionRunView } from './third-party-module-view'
-import { collectExtensionContributions, readExtensionSurfaceEntry } from './extension-surface-entries'
+import { collectExtensionContributions, readSurfaceModules } from './extension-surface-entries'
+import { formatSourceProblem } from '../../../packages/extension-sdk/src/source-modules'
 import { isExtensionRunnable } from './module-signature'
 import { pinExtensionFrame } from './extension-frame-grant'
 import { readExtensionStandingContextSync } from './extension-standing-context'
 import { accessGrowth, extensionAccess, writeExtensionApproval } from './extension-approvals'
-import { discoverUserModules, installModuleFolder } from './user-module-registry'
+import { discoverUserModules, installModuleFolder, loadDevelopmentManifest } from './user-module-registry'
+import { MAX_DEV_FOLDERS, readDevFoldersSync, resolveDevFolder, writeDevFolders } from './extension-dev-folders'
+import { contentFileIssues } from './extension-content'
+import { resolveContainedPath } from './entry-containment'
+import { agentContributionIssues } from '../../server/extensions/agent-contributions/install-checks'
+import { extensionDevEvents } from '../../server/extensions/dev/dev-events'
+import { readFile } from 'node:fs/promises'
 import { reconcileInstalledAgentContributions } from '../../server/extensions/agent-contributions/reconcile-installed'
 
 // What runs on a Studio, changed through its server (`extension.setEnabled`,
@@ -140,6 +148,16 @@ export type ModuleLifecycle = {
     request: StudioExtensionFrameRequest,
   ): Promise<{ ok: true; hash: string; html: string } | { ok: false; message: string }>
   reportRegistry(snapshot: unknown): ModuleRegistrySnapshotWriteResult
+  /** The development folders registered here, in their order, each with the extension it holds or why none. */
+  devFolders(): Promise<StudioExtensionDevFolder[]>
+  /**
+   * Register a development folder (or read one already registered again).
+   * With `approve`, the fingerprint the person was shown, approve it as it is
+   * when that is what it asks for now: the caller decides who may.
+   */
+  devLoad(path: string, options?: { approve?: string }): Promise<DevLoadAnswer>
+  /** Take a development folder out, by its path or its extension's key: only takes access away. */
+  devUnload(target: { path: string } | { moduleId: string }): Promise<DevUnloadAnswer>
   /**
    * Project what the extensions hand agents again, from the folder as it is
    * now: for a change made outside these calls (the drop-in folder's watcher
@@ -148,6 +166,27 @@ export type ModuleLifecycle = {
    */
   reproject(): Promise<void>
 }
+
+/** `extension.devLoad`'s answer: the key it loads under, and how its approval stands. */
+export type DevLoadAnswer =
+  | {
+      ok: true
+      moduleId: string
+      path: string
+      /** False when the folder was registered already, and this read it again. */
+      added: boolean
+      approval: StudioExtensionApproval
+    }
+  | {
+      ok: false
+      code: 'invalid_argument' | 'extension_invalid' | 'approval_stale' | 'unavailable'
+      message: string
+      issues?: Array<{ path: string; message: string }>
+    }
+
+export type DevUnloadAnswer =
+  | { ok: true; path: string; moduleId: string | null }
+  | { ok: false; code: 'not_found' | 'unavailable'; message: string; loaded?: string[] }
 
 const INELIGIBLE_WORDS: Record<ModuleResolutionErrorCode, string> = {
   duplicate_id: 'Another module has the same id.',
@@ -196,6 +235,28 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
   }
   const installed = async (moduleId: string) =>
     (await discoverUserModules(deps.moduleRoot(), standingContext())).modules.find((module) => module.key === moduleId)
+  // The installed extensions alone, as if no development folder were
+  // registered: what an install updates and an uninstall removes.
+  const installedOnly = async () =>
+    (await discoverUserModules(deps.moduleRoot(), { ...standingContext(), devFolders: [] })).modules
+  // What an install checks of a folder's content and of what it hands agents,
+  // checked of a development folder when it is registered and when it is read again.
+  const developmentIssues = async (
+    folder: string,
+    extension: Parameters<typeof contentFileIssues>[0] & Parameters<typeof agentContributionIssues>[0],
+  ) => [
+    ...(await contentFileIssues(extension, async (path, maxBytes) => {
+      try {
+        const file = resolveContainedPath(folder, path, path)
+        const info = await lstat(file)
+        if (!info.isFile() || info.size > maxBytes) return null
+        return await readFile(file, 'utf8')
+      } catch {
+        return null
+      }
+    })),
+    ...(await agentContributionIssues(extension, folder, deps.protectedProviderIds?.())),
+  ]
   const failed = (error: unknown) => ({
     ok: false as const,
     message: error instanceof Error ? error.message : String(error),
@@ -280,12 +341,17 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
       const target = await installed(moduleId)
       if (!target || !isExtensionRunnable(target.standing)) return unavailable
       if (readModuleOverridesSync(deps.dataDir)[moduleId] === false) return unavailable
-      const entry = await readExtensionSurfaceEntry(target, point, id)
-      if (!entry.ok) return entry
+      const entry = await readSurfaceModules(target, point, id)
+      // The author's own mistake (a syntax error, an import that cannot
+      // load) is drawn in the frame, which logs it at its file and line; a
+      // development folder's next save draws it again.
+      if (!entry.ok && !entry.problem) return entry
       const html = buildExtensionFrameDocument({
         surface: { point, id },
-        entryPath: entry.entryPath,
-        entryCode: entry.code,
+        entryPath: target.extension.contributes[point].find((surface) => surface.id === id)?.entry ?? '',
+        ...(entry.ok
+          ? { modules: entry.modules, token: entry.token }
+          : { modules: [], token: 'se-module-none-', problem: formatSourceProblem(entry.problem!) }),
         theme:
           theme !== undefined && Object.hasOwn(EXTENSION_FRAME_THEMES, theme) ? EXTENSION_FRAME_THEMES[theme]! : null,
       })
@@ -299,6 +365,145 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     reportRegistry: (snapshot) => deps.registry.write(snapshot),
 
     reproject: () => oneAtATime(project),
+
+    async devFolders() {
+      const folders = readDevFoldersSync(deps.dataDir)
+      const { modules, rejected } = await discoverUserModules(deps.moduleRoot(), standingContext())
+      return folders.map((path) => {
+        const module = modules.find((candidate) => candidate.development && candidate.moduleRoot === path)
+        if (module)
+          return {
+            path,
+            moduleId: module.key,
+            name: module.extension.name,
+            approval: approvalView(module.standing.approval),
+            overrides: module.development?.overrides === true,
+          }
+        const rejection = rejected.find(
+          (entry) => entry.path === path || entry.path.startsWith(`${path}/`) || entry.path.startsWith(`${path}\\`),
+        )
+        return {
+          path,
+          error:
+            rejection?.issues.map((issue) => `${issue.path ? `${issue.path}: ` : ''}${issue.message}`).join('; ') ??
+            'It holds no extension Studio can read.',
+        }
+      })
+    },
+
+    devLoad: (path, options = {}) =>
+      oneAtATime(async (): Promise<DevLoadAnswer> => {
+        try {
+          const resolved = resolveDevFolder(path)
+          if (!resolved.ok) return { ok: false, code: resolved.code, message: resolved.message }
+          const folder = resolved.path
+          const folders = readDevFoldersSync(deps.dataDir)
+          const added = !folders.includes(folder)
+          if (added && folders.length >= MAX_DEV_FOLDERS)
+            return {
+              ok: false,
+              code: 'invalid_argument',
+              message: `Studio holds at most ${MAX_DEV_FOLDERS} development folders; remove one first.`,
+            }
+          // Read before it is registered, so a folder that holds no extension is not kept.
+          const loaded = loadDevelopmentManifest(folder)
+          if (!loaded.ok)
+            return {
+              ok: false,
+              code: 'extension_invalid',
+              message: `${folder} holds no extension Studio can load.`,
+              issues: loaded.rejection.issues,
+            }
+          const issues = await developmentIssues(folder, loaded.extension)
+          if (issues.length > 0)
+            return { ok: false, code: 'extension_invalid', message: `${issues[0]!.path} ${issues[0]!.message}`, issues }
+          if (added) await writeDevFolders(deps.dataDir, [...folders, folder])
+          const module = (await discoverUserModules(deps.moduleRoot(), standingContext())).modules.find(
+            (candidate) => candidate.development && candidate.moduleRoot === folder,
+          )
+          if (!module) {
+            // Another folder holds its key: say so, and leave this one out.
+            if (added) await writeDevFolders(deps.dataDir, folders)
+            const { rejected } = await discoverUserModules(deps.moduleRoot(), {
+              ...standingContext(),
+              devFolders: [...folders, folder],
+            })
+            const rejection = rejected.find((entry) => entry.path.startsWith(folder))
+            return {
+              ok: false,
+              code: 'extension_invalid',
+              message: rejection?.issues[0]?.message ?? `${folder} holds no extension Studio can load.`,
+              ...(rejection ? { issues: rejection.issues } : {}),
+            }
+          }
+          let approval = approvalView(module.standing.approval)
+          if (options.approve !== undefined && module.standing.approval.state === 'pending') {
+            if (module.standing.approval.fingerprint !== options.approve)
+              return {
+                ok: false,
+                code: 'approval_stale',
+                message: `${module.key} asks for something other than what that fingerprint approves. Review what it asks for now, and approve that.`,
+              }
+            const written = await writeExtensionApproval(
+              deps.dataDir,
+              module.key,
+              approvalRecordFor(module, options.approve),
+            )
+            if (!written.ok) return { ok: false, code: 'unavailable', message: written.message }
+            approval = { state: 'approved', fingerprint: options.approve }
+          }
+          if (added)
+            extensionDevEvents.add({ key: module.key, kind: 'loaded', message: `Development folder ${folder} loaded.` })
+          await project()
+          deps.changed()
+          return { ok: true, moduleId: module.key, path: folder, added, approval }
+        } catch (error) {
+          return { ok: false, code: 'unavailable', message: failed(error).message }
+        }
+      }),
+
+    devUnload: (target) =>
+      oneAtATime(async (): Promise<DevUnloadAnswer> => {
+        try {
+          const folders = readDevFoldersSync(deps.dataDir)
+          const { modules } = await discoverUserModules(deps.moduleRoot(), standingContext())
+          let folder: string | undefined
+          if ('moduleId' in target) {
+            folder = modules.find((module) => module.development && module.key === target.moduleId)?.moduleRoot
+          } else {
+            const resolved = resolveDevFolder(target.path)
+            const candidate = resolved.ok ? resolved.path : target.path
+            folder = folders.find((entry) => entry === candidate || entry === target.path)
+          }
+          if (!folder || !folders.includes(folder))
+            return {
+              ok: false,
+              code: 'not_found',
+              message: 'That is not a development folder registered here.',
+              loaded: folders,
+            }
+          const moduleId = modules.find((module) => module.development && module.moduleRoot === folder)?.key ?? null
+          await writeDevFolders(
+            deps.dataDir,
+            folders.filter((entry) => entry !== folder),
+          )
+          // Its approval is for that folder alone: it goes with it.
+          const approvals = standingContext().approvals
+          if (moduleId && approvals.get(moduleId)?.devFolder === folder)
+            await writeExtensionApproval(deps.dataDir, moduleId, null)
+          if (moduleId)
+            extensionDevEvents.add({
+              key: moduleId,
+              kind: 'unloaded',
+              message: `Development folder ${folder} removed.`,
+            })
+          await project()
+          deps.changed()
+          return { ok: true, path: folder, moduleId }
+        } catch (error) {
+          return { ok: false, code: 'unavailable', message: failed(error).message }
+        }
+      }),
 
     setEnabled: (moduleId, enabled) =>
       oneAtATime(async () => {
@@ -323,7 +528,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           const context = standingContext()
           // Read before the copy replaces it: the version an update replaces,
           // and whether the person approved it as it is.
-          const before = (await discoverUserModules(deps.moduleRoot(), context)).modules
+          const before = await installedOnly()
           const result = await installModuleFolder(path, deps.moduleRoot(), context, {
             ...(deps.protectedProviderIds ? { protectedProviderIds: deps.protectedProviderIds() } : {}),
           })
@@ -342,6 +547,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
             result.standing.approval.state === 'pending' &&
             previous?.standing.approval.state === 'approved' &&
             record &&
+            record.devFolder === undefined &&
             accessGrowth(record.access, extensionAccess(result.extension, result.standing.verifiedFiles)).length === 0
           ) {
             const carried = await writeExtensionApproval(deps.dataDir, result.id, {
@@ -385,10 +591,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
               ok: false,
               message: `Extension "${moduleId}" changed since you reviewed it. Review what it asks for now, and approve that.`,
             }
-          const written = await writeExtensionApproval(deps.dataDir, moduleId, {
-            fingerprint,
-            access: extensionAccess(target.extension, standing.verifiedFiles),
-          })
+          const written = await writeExtensionApproval(deps.dataDir, moduleId, approvalRecordFor(target, fingerprint))
           if (!written.ok) return { ok: false, message: written.message }
           await project()
           deps.changed()
@@ -402,8 +605,14 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
       oneAtATime(async () => {
         try {
           if (!isModuleIdSegment(moduleId)) return { ok: false, message: 'That is not a module id.' }
-          const target = await installed(moduleId)
-          if (!target) return { ok: false, message: `Extension "${moduleId}" is not installed.` }
+          const target = (await installedOnly()).find((module) => module.key === moduleId)
+          if (!target)
+            return {
+              ok: false,
+              message: readDevFoldersSync(deps.dataDir).length
+                ? `Extension "${moduleId}" is not installed. A development folder is taken out with Remove, not uninstalled.`
+                : `Extension "${moduleId}" is not installed.`,
+            }
           const contained = await containedModuleFolder(deps.moduleRoot(), target.moduleRoot)
           if (!contained.ok) return { ok: false, message: contained.message }
           await rm(contained.path, { recursive: true, force: true })
@@ -455,4 +664,19 @@ async function containedModuleFolder(
   } catch {
     return refused
   }
+}
+
+/** What approving an extension as it is now records: for a development folder, bound to that folder. */
+function approvalRecordFor(
+  target: {
+    extension: Parameters<typeof extensionAccess>[0]
+    standing: { verifiedFiles?: Parameters<typeof extensionAccess>[1] }
+    moduleRoot: string
+    development?: object
+  },
+  fingerprint: string,
+) {
+  if (target.development)
+    return { fingerprint, access: extensionAccess(target.extension, {}), devFolder: target.moduleRoot }
+  return { fingerprint, access: extensionAccess(target.extension, target.standing.verifiedFiles) }
 }

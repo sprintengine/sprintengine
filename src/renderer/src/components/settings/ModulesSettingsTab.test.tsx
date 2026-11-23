@@ -254,6 +254,7 @@ test('the page is Extensions, with Browse marketplace and an Install menu, and s
   const menu = document.querySelector('[role="menu"][aria-label="Install"]')!
   expect([...menu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim())).toEqual([
     'From a folder',
+    'As a development folder',
     'Browse marketplace',
   ])
   // No trailing ellipsis on any label.

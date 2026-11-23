@@ -22,7 +22,7 @@
 // in the test suite, this says it before a bundle that cannot start is written.
 
 import { execFileSync } from 'node:child_process'
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
@@ -131,6 +131,14 @@ export async function buildWslServerTree({ outDir = DEFAULT_WSL_SERVER_DIR } = {
     cpSync(join(ROOT, 'resources', 'wsl-server', name), join(outDir, name))
   for (const name of WSL_RESOURCES) {
     cpSync(join(ROOT, 'resources', name), join(outDir, 'resources', name), { recursive: true })
+  }
+  // The extension SDK a worker imports when it does not carry it
+  // (worker-process.ts `resolveExtensionSdkRoot`), when this checkout built it.
+  const sdk = join(ROOT, 'packages', 'extension-sdk')
+  if (existsSync(join(sdk, 'dist', 'index.js'))) {
+    const runtime = join(outDir, 'resources', 'extension-sdk-runtime')
+    cpSync(join(sdk, 'dist'), join(runtime, 'dist'), { recursive: true })
+    cpSync(join(sdk, 'package.json'), join(runtime, 'package.json'))
   }
   return outDir
 }

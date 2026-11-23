@@ -496,6 +496,10 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
           'extension.approve',
           'extension.uninstall',
           'extension.reportRegistry',
+          // Development folders are paths on this machine.
+          'extension.devFolders',
+          'extension.devLoad',
+          'extension.devUnload',
         ],
       ],
       [

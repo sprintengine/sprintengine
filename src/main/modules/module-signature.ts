@@ -26,6 +26,7 @@ import type { ModuleFileDigests } from '../../shared/modules/manifest'
 import type { ExtensionManifest } from '../../shared/modules/third-party-manifest'
 import {
   accessGrowth,
+  devFolderApprovalFingerprint,
   extensionAccess,
   extensionApprovalFingerprint,
   extensionNeedsApproval,
@@ -39,6 +40,8 @@ export type ExtensionStandingContext = {
   /** Accepted publisher key fingerprints (trusted-publishers.json). */
   trustedKeyFingerprints?: ReadonlySet<string>
   approvals: ReadonlyMap<string, ExtensionApprovalRecord>
+  /** The development folders the owner registered here, by real path, in registration order. */
+  devFolders?: readonly string[]
 }
 
 export type ModuleTrustIssue = { path: string; message: string }
@@ -143,7 +146,9 @@ export function classifyExtension(
   const content = { contentDigest: contentDigest!, verifiedFiles: scan.files }
   if (!extensionNeedsApproval(manifest)) return { signature, ...signed, approval: { state: 'not-needed' }, ...content }
   const fingerprint = extensionApprovalFingerprint(access, contentDigest!)
-  const record = ctx.approvals.get(key)
+  // A development folder's approval never covers the installed extension under its key.
+  const found = ctx.approvals.get(key)
+  const record = found && found.devFolder === undefined ? found : undefined
   if (record?.fingerprint === fingerprint)
     return { signature, ...signed, approval: { state: 'approved', fingerprint }, ...content }
   return {
@@ -155,6 +160,48 @@ export function classifyExtension(
       growth: record ? accessGrowth(record.access, access) : [],
       reapproval: record !== undefined,
     },
+    ...content,
+  }
+}
+
+/**
+ * A development folder's standing, decided from the folder now. Its files are
+ * digested as they are (node_modules, .git, dotted folders and links left
+ * out) for the content identity a reload compares, but approval is not bound
+ * to them: it holds while the folder asks for no more than the person
+ * approved for this folder (`devFolderApprovalFingerprint`), and asks again
+ * when it asks for more. Its signature is not read: a working copy is not
+ * what anybody signed.
+ */
+export function classifyDevelopmentExtension(
+  folder: string,
+  key: string,
+  manifest: Pick<ExtensionManifest, 'permissions' | 'tier' | 'main' | 'background' | 'contributes'>,
+  ctx: ExtensionStandingContext,
+): ExtensionStanding {
+  const scan = computeModuleFileDigestsSync(folder, { walk: 'development' })
+  if (!scan.ok) return { signature: 'unsigned', issues: scan.issues, approval: { state: 'unavailable' } }
+  const content = { contentDigest: extensionContentFingerprint(scan.files), verifiedFiles: scan.files }
+  if (!extensionNeedsApproval(manifest)) return { signature: 'unsigned', approval: { state: 'not-needed' }, ...content }
+  // Its local servers are bound to their command, arguments and environment,
+  // not to the files they may run: those are the working copy.
+  const access = extensionAccess(manifest, {})
+  const fingerprint = devFolderApprovalFingerprint(access, folder)
+  const found = ctx.approvals.get(key)
+  const record = found?.devFolder === folder ? found : undefined
+  if (record) {
+    const growth = accessGrowth(record.access, access)
+    if (growth.length === 0)
+      return { signature: 'unsigned', approval: { state: 'approved', fingerprint: record.fingerprint }, ...content }
+    return {
+      signature: 'unsigned',
+      approval: { state: 'pending', fingerprint, growth, reapproval: true },
+      ...content,
+    }
+  }
+  return {
+    signature: 'unsigned',
+    approval: { state: 'pending', fingerprint, growth: [], reapproval: false },
     ...content,
   }
 }

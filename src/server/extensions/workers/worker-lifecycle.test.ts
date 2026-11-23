@@ -356,3 +356,37 @@ test('a worker that stops between starting and taking a call answers that it is 
   const result = await tool.registration.handler({}, undefined)
   assert.match(JSON.stringify(result.content), /extension_unavailable/)
 })
+
+test('a worker written in TypeScript loads as written, its own relative imports included', async () => {
+  harness = await startWorkerHarness([
+    {
+      id: 'typed',
+      mainPath: 'src/main.ts',
+      main: `import { greet } from './greet'
+export default function activate(studio: { registerMethods(methods: object): void }): void {
+  studio.registerMethods({
+    ping: { access: 'read', params: (v: unknown) => ({ ok: true, params: v }), handler: () => ({ ok: true, result: greet('typed') }) },
+  })
+}
+`,
+      sources: { 'src/greet.ts': 'export function greet(name: string): string {\n  return `Hello, ${name}`\n}\n' },
+    },
+  ])
+  const answer = await ping('typed')
+  assert.ok(answer.ok && answer.answer.ok, JSON.stringify(answer))
+  assert.equal(answer.answer.result, 'Hello, typed')
+})
+
+test('a worker that fails to activate is reported at its file and line', async () => {
+  harness = await startWorkerHarness([
+    {
+      id: 'thrower',
+      mainPath: 'src/main.ts',
+      main: "import './greet'\nexport default function activate(): void {}\n",
+      sources: { 'src/greet.ts': "const name: string = 'x'\nthrow new Error(`no ${name}`)\n" },
+    },
+  ])
+  const answer = await ping('thrower')
+  assert.ok(!answer.ok || !answer.answer.ok)
+  assert.match(JSON.stringify(answer), /src\/greet\.ts:2:7 no x/u)
+})

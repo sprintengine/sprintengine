@@ -27,8 +27,12 @@ import {
 
 export type TestExtension = {
   id: string
-  /** Its worker, as CommonJS. */
+  /** Its worker, as CommonJS (or as `sources[mainPath]`). */
   main: string
+  /** Its worker's file, when not `dist/main.cjs`: `main` is written there. */
+  mainPath?: string
+  /** More of its files, by path: modules its worker imports. */
+  sources?: Record<string, string>
   permissions?: string[]
   background?: boolean
   mcpTools?: Array<{
@@ -88,6 +92,7 @@ export function startWorkerHarness(
         id: extension.id,
         name: extension.name ?? extension.id,
         permissions: extension.permissions ?? [],
+        ...(extension.mainPath ? { main: extension.mainPath } : {}),
         ...(extension.background ? { background: true } : {}),
         ...(extension.mcpTools || extension.hooks
           ? {
@@ -98,7 +103,7 @@ export function startWorkerHarness(
             }
           : {}),
       }),
-      files: { 'dist/main.cjs': extension.main },
+      files: { [extension.mainPath ?? 'dist/main.cjs']: extension.main, ...extension.sources },
     })
   }
   const context = approvedContext(folders)
