@@ -1,5 +1,6 @@
 import {
   STUDIO_EXTENSION_HOST_CAPABILITY,
+  type StudioExtensionInstallSource,
   type StudioModulesMethodMap,
 } from '../../../../packages/studio-protocol/src/public'
 import type { StudioClient } from '../../../../packages/client-runtime/src/public'
@@ -19,6 +20,10 @@ type Lifecycle =
   | 'extension.uninstall'
   | 'extension.devLoad'
   | 'extension.devUnload'
+  | 'extension.installFrom'
+  | 'extension.update'
+  | 'extension.catalogueAdd'
+  | 'extension.catalogueRemove'
 type Params<M extends Lifecycle> = Omit<StudioModulesMethodMap[M]['params'], 'commandId'>
 type Result<M extends Lifecycle> = StudioModulesMethodMap[M]['result']
 
@@ -31,6 +36,13 @@ export type ModuleLifecycleClient = {
   /** Register a development folder: its extension loads from where it is, and again on every save. */
   devLoad(path: string): Promise<Result<'extension.devLoad'>>
   devUnload(path: string): Promise<Result<'extension.devUnload'>>
+  /** Install from a catalogue entry or a git URL; it never installs from a link alone. */
+  installFrom(from: StudioExtensionInstallSource): Promise<Result<'extension.installFrom'>>
+  /** Install the newer release the catalogue an extension came from lists. */
+  update(moduleId: string): Promise<Result<'extension.update'>>
+  /** Add a catalogue by its git URL, once the person said yes. */
+  addCatalogue(url: string): Promise<Result<'extension.catalogueAdd'>>
+  removeCatalogue(url: string): Promise<Result<'extension.catalogueRemove'>>
 }
 
 function commandId(): string {
@@ -72,6 +84,10 @@ export function moduleLifecycleOver(client: () => Promise<StudioClient>): Module
     uninstall: (moduleId) => send('extension.uninstall', { moduleId }),
     devLoad: (path) => send('extension.devLoad', { path }),
     devUnload: (path) => send('extension.devUnload', { path }),
+    installFrom: (from) => send('extension.installFrom', { from }),
+    update: (moduleId) => send('extension.update', { moduleId }),
+    addCatalogue: (url) => send('extension.catalogueAdd', { url }),
+    removeCatalogue: (url) => send('extension.catalogueRemove', { url }),
   }
 }
 

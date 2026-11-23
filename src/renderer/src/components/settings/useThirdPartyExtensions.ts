@@ -8,6 +8,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
 import type { ActionResult } from '../ui'
 import { windowModuleLifecycle } from '../../studio/moduleLifecycle'
+import type { StudioExtensionInstallSource } from '../../../../../packages/studio-protocol/src/public'
 import { addThirdPartyModuleFromFolder } from './addThirdPartyModuleFromFolder'
 import { extensionsApi, windowHasStudio } from '../../studio/extensions'
 import { copy } from '../../../../shared/copy'
@@ -91,6 +92,69 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
       }
     },
     [lifecycle, load],
+  )
+
+  // An install the catalogue made (from an entry, a git URL, or an update):
+  // it waits for review, or shows what it added, as a folder install does.
+  const afterInstall = useCallback(
+    async (
+      result:
+        | { ok: true; moduleId: string; approval: { state: string }; strippedLinks: string[]; leftOut?: string[] }
+        | { ok: false; message: string },
+    ): Promise<boolean> => {
+      if (!result.ok) {
+        setMessage({ tone: 'error', text: result.message })
+        return false
+      }
+      const notes = [
+        ...(result.strippedLinks.length > 0
+          ? [`Symbolic links were left out: ${result.strippedLinks.join(', ')}.`]
+          : []),
+        ...(result.leftOut && result.leftOut.length > 0
+          ? [
+              `Studio does not install a Claude Code plugin’s ${result.leftOut.join(', ')}; its skills and MCP servers are installed.`,
+            ]
+          : []),
+      ]
+      if (notes.length > 0) setMessage({ tone: 'warn', text: notes.join(' ') })
+      await refreshThirdPartyRendererModules()
+      await load()
+      if (result.approval.state === 'pending') setAwaitingReview(result.moduleId)
+      else setJustInstalled(result.moduleId)
+      return true
+    },
+    [load],
+  )
+
+  const installFrom = useCallback(
+    async (from: StudioExtensionInstallSource): Promise<boolean> => {
+      if (!lifecycle) return false
+      setInstalling(true)
+      setMessage(null)
+      try {
+        return await afterInstall(await lifecycle.installFrom(from))
+      } catch (error) {
+        setMessage({ tone: 'error', text: errorMessage(error, 'Couldn’t install it.') })
+        return false
+      } finally {
+        setInstalling(false)
+      }
+    },
+    [afterInstall, lifecycle],
+  )
+
+  const update = useCallback(
+    async (module: ThirdPartyModuleView) => {
+      if (!lifecycle) return
+      setPendingId(module.manifest.id)
+      setMessage(null)
+      try {
+        await afterInstall(await lifecycle.update(module.manifest.id))
+      } finally {
+        setPendingId(null)
+      }
+    },
+    [afterInstall, lifecycle],
   )
 
   // Approve and turn on, in one step: the review is the consent, and an
@@ -210,6 +274,8 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
     justInstalled,
     clearJustInstalled,
     uninstall: canUninstall ? uninstall : null,
+    installFrom: lifecycle ? installFrom : null,
+    update: lifecycle ? update : null,
     reveal: typeof window.api.revealThirdPartyModule === 'function' ? reveal : null,
     reload: load,
   }

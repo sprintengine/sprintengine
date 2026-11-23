@@ -6,6 +6,12 @@ import { DEEP_LINK_SCHEMES, withoutDeepLinks } from '../shared/deep-link-scheme'
 import { CHAT_LINK_OPEN_CHANNEL, chatLinkFromArgv, type ChatLink } from '../shared/deep-link'
 import { createChatLinkRouter } from './chat-link-router'
 import { registerChatLinkIpc, routeSecondLaunch } from './chat-link-ipc'
+import { createExtensionLinkRouter } from './extension-link-router'
+import {
+  EXTENSION_LINK_OPEN_CHANNEL,
+  EXTENSION_LINK_READY_CHANNEL,
+  extensionLinkFromArgv,
+} from '../shared/extension-install-link'
 import { registerLinuxUrlHandler, systemLinuxUrlHandlerDeps } from './linux-url-handler'
 import { BOOT_WORKSPACE_SYNC_BUDGET_MS, runBootDiscovery, settleWithin } from './boot-discovery'
 import { discoverAndBroadcastCliModels } from './model-discovery/discovery-pass'
@@ -359,6 +365,37 @@ export function registerAppLifecycle({
     isWorkspaceWindow: isWorkspaceWindowWebContents,
   })
 
+  // An install link (`sprintengine://extensions/…`, extension-link-router.ts)
+  // opens an extension's page in a workspace window's Settings, and never installs.
+  const extensionLinks = createExtensionLinkRouter<BrowserWindow>({
+    send: (win, link) => {
+      if (!win.isDestroyed()) win.webContents.send(EXTENSION_LINK_OPEN_CHANNEL, link)
+    },
+    focus: (win) => {
+      if (win.isDestroyed()) return
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+    },
+    openWindow: () => {
+      if (!app.isReady() || shutdownRun !== null) return
+      createMainWindow({ diagnosticsEnabled })
+      backgroundPresence.onWindowOpened()
+    },
+  })
+  ipcMain.on(EXTENSION_LINK_READY_CHANNEL, (event) => {
+    if (!isWorkspaceWindowWebContents(event.sender)) return
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return
+    extensionLinks.ready(win)
+    win.once('closed', () => extensionLinks.gone(win))
+  })
+  function openExtensionLinkFrom(argv: readonly string[]): boolean {
+    const link = extensionLinkFromArgv(argv)
+    if (link) extensionLinks.open(link)
+    return link !== null
+  }
+
   // The single-instance lock itself is taken by the entry (index.ts), before any
   // service is built, so a second launch exits without paying for the service
   // graph. This process holds it, and hears every later launch here.
@@ -374,6 +411,7 @@ export function registerAppLifecycle({
       // and Linux left the tray as the only way back in. A launch carrying a
       // chat link gets its window from the link router, which raises the one
       // the chat opens in, or opens one.
+      if (openExtensionLinkFrom(argv)) return
       routeSecondLaunch(argv, {
         openChatLink: (link) => chatLinks.open(link),
         openWindow: openWindowFromBackground,
@@ -389,6 +427,7 @@ export function registerAppLifecycle({
     event.preventDefault()
     handleAuthCallback([callbackUrl])
     openChatLinkFrom([callbackUrl])
+    openExtensionLinkFrom([callbackUrl])
   })
 
   let hostedFeedPoller: HostedFeedPoller | null = null
@@ -678,6 +717,7 @@ export function registerAppLifecycle({
     handleAuthCallback(process.argv)
     // A link that launched the app on Windows or Linux is one of its arguments.
     openChatLinkFrom(process.argv)
+    openExtensionLinkFrom(process.argv)
 
     app.on('activate', () => {
       // A Dock click while the quit's shutdown runs opens nothing, as for the

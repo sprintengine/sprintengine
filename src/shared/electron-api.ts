@@ -1,6 +1,7 @@
 import type { ClientCapability } from './client-capabilities'
 import type { AttachedFileBytes, AttachedFilePreview } from './attached-files'
 import type { ChatLink } from './deep-link'
+import type { ExtensionInstallLink } from './extension-install-link'
 import type { AgentNotificationMode } from './agent-notifications'
 import type { PreviewOpenAnswer, PreviewPort, PreviewSummary } from './web-client'
 import type {
@@ -253,6 +254,12 @@ export type ElectronApi = {
    * link that launched the app waits in main until then (chat-link-router.ts).
    */
   onChatLinkOpen: (cb: (link: ChatLink) => void) => () => void
+  /**
+   * An install link (`sprintengine://extensions/…`) for this window: it opens
+   * the extension's page in Settings → Extensions, never an install.
+   * Subscribing tells main the window is listening.
+   */
+  onExtensionLinkOpen?: (cb: (link: ExtensionInstallLink) => void) => () => void
   // The pane, or one tab, in a window of its own (ipc/pane-popout.ts). The
   // first six are the owner window's half, the last three the pop-out's.
   panePopOutOpen: (input: PanePopOutOpenInput) => Promise<PanePopOutOpenResult>

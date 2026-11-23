@@ -15,6 +15,7 @@ import { ModulesSettingsTab } from './ModulesSettingsTab'
 import { COMING_SOON_IDS, MODULE_CATEGORY_GROUPS } from './ModuleControls'
 import type { StudioModuleSummary } from '../../../../../packages/studio-protocol/src/public'
 import { adoptExtensionsDouble } from '../../studio/extensions.double'
+import { requestExtensionPage } from './extensionPageRequest'
 
 // What the window's Studio is extended with: answered from this test's own stand-in for the window.
 vi.mock('../../studio/extensions', () => import('../../studio/extensions.double'))
@@ -44,12 +45,48 @@ vi.mock('../../studio/moduleLifecycle', () => ({
       approveCalls.push([id, fingerprint])
       return { ok: true }
     },
+    installFrom: async (from: unknown) => {
+      installFromCalls.push(from)
+      return { ok: false, message: 'not here' }
+    },
+    update: async () => ({ ok: false, message: 'not here' }),
+    addCatalogue: async (url: string) => {
+      addCatalogueCalls.push(url)
+      return { ok: true, catalogue: { id: `git:${url}`, kind: 'added', name: 'Acme', url, entries: [] } }
+    },
+    removeCatalogue: async () => ({ ok: true }),
     uninstall: async (id: string) => {
       uninstallCalls.push(id)
       installed = installed.filter((candidate) => candidate.manifest.id !== id)
       return { ok: true, removedModuleIds: [id] }
     },
   }),
+}))
+
+// The catalogues the window's Studio reads: one community listing.
+vi.mock('../../studio/extensionCatalogue', () => ({
+  extensionCatalogueApi: {
+    catalogues: async () => [
+      { id: 'official', kind: 'official', name: 'Official', entries: [] },
+      { id: 'community', kind: 'community', name: 'Community', entries: [NOTES_LISTING] },
+    ],
+    entry: async (catalogue: string, id: string) => {
+      catalogueEntryCalls.push([catalogue, id])
+      return {
+        ok: true,
+        entry: {
+          ...NOTES_LISTING,
+          catalogue,
+          catalogueName: 'Community',
+          source: { url: 'https://github.com/acme/notes.git', ref: 'main' },
+          commit: 'a'.repeat(40),
+          releases: [{ version: '1.0.0', minimumStudio: '0.13.0' }],
+          alsoListedBy: [],
+        },
+      }
+    },
+    image: async () => null,
+  },
 }))
 
 vi.mock('../../modules/extension-contributions', async (importOriginal) => ({
@@ -166,6 +203,20 @@ const TAMPERED = module('acme.tampered', 'Tampered', {
   launch: { status: 'blocked_invalid', mainLoaded: false },
 })
 
+const NOTES_LISTING = {
+  id: 'acme.notes',
+  name: 'Notes',
+  publisher: 'acme',
+  description: 'Take notes.',
+  categories: ['productivity'],
+  version: '1.0.0',
+  installable: true,
+  tier: 'declarative' as const,
+  permissions: [],
+  contributes: [{ kind: 'skills', name: 'notes' }],
+  label: 'Community · acme',
+}
+
 let installed: ThirdPartyModuleView[] = []
 let installAnswer:
   | { ok: true; moduleId: string; approval: { state: 'pending'; fingerprint: string }; strippedLinks: string[] }
@@ -178,6 +229,9 @@ const enableCalls: Array<[string, boolean | null]> = []
 let setEnabledAnswer: { ok: true; module: null } | { ok: false; message: string } = { ok: true, module: null }
 const approveCalls: Array<[string, string]> = []
 const uninstallCalls: string[] = []
+const installFromCalls: unknown[] = []
+const addCatalogueCalls: string[] = []
+const catalogueEntryCalls: Array<[string, string]> = []
 const restartApp = vi.fn(async () => ({ restarting: false }))
 let root: Root | null = null
 let host: HTMLElement | null = null
@@ -191,6 +245,9 @@ beforeEach(() => {
   enableCalls.length = 0
   setEnabledAnswer = { ok: true, module: null }
   uninstallCalls.length = 0
+  installFromCalls.length = 0
+  addCatalogueCalls.length = 0
+  catalogueEntryCalls.length = 0
   restartApp.mockClear()
   ;(window as unknown as { api: unknown }).api = {
     listThirdPartyModules: async () => ({ modules: installed, rejected: [] }),
@@ -246,16 +303,17 @@ const click = async (element: Element | undefined | null) => {
 }
 const modal = () => document.querySelector('[role="dialog"][aria-modal="true"]')
 
-test('the page is Extensions, with Browse marketplace and an Install menu, and says nothing about itself', async () => {
+test('the page is Extensions, with Browse and an Install menu, and says nothing about itself', async () => {
   await mount()
   expect(panel().querySelector('h3')?.textContent).toBe('Extensions')
-  expect(button('Browse marketplace', panel())).toBeTruthy()
+  expect(button('Browse', panel())).toBeTruthy()
   await click(button('Install', panel()))
   const menu = document.querySelector('[role="menu"][aria-label="Install"]')!
   expect([...menu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim())).toEqual([
     'From a folder',
     'As a development folder',
-    'Browse marketplace',
+    'From a git URL',
+    'From a catalogue',
   ])
   // No trailing ellipsis on any label.
   expect(buttons().some((candidate) => (candidate.textContent?.trim() ?? '').endsWith('…'))).toBe(false)
@@ -532,4 +590,28 @@ test('a folder the Studio refuses says why', async () => {
     [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.trim() === 'From a folder'),
   )
   expect(panel().textContent).toContain('It needs Studio 9.0.0 or newer.')
+})
+
+test('an install link opens the extension’s page and installs nothing until Install is pressed', async () => {
+  requestExtensionPage({ catalogue: 'community', id: 'acme.notes' })
+  await mount()
+  await act(async () => {})
+  const page = panel().querySelector('article[aria-label="Notes"]')
+  expect(page).toBeTruthy()
+  expect(page?.textContent).toContain('Community · acme')
+  expect(catalogueEntryCalls).toEqual([['community', 'acme.notes']])
+  expect(installFromCalls).toEqual([])
+  await click(button('Install', page!))
+  expect(installFromCalls).toEqual([{ catalogue: 'community', id: 'acme.notes' }])
+})
+
+test('an install link naming a catalogue not added asks before adding it, and adds nothing when declined', async () => {
+  requestExtensionPage({ catalogue: 'git:https://github.com/acme/catalogue.git', id: 'acme.notes' })
+  await mount()
+  await act(async () => {})
+  expect(modal()?.textContent).toContain('Add catalogue https://github.com/acme/catalogue.git?')
+  await click(button('Cancel', modal()!))
+  expect(addCatalogueCalls).toEqual([])
+  expect(catalogueEntryCalls).toEqual([])
+  expect(installFromCalls).toEqual([])
 })

@@ -47,7 +47,8 @@
     "packages/extension-sdk/src/permissions.ts",
     "packages/extension-sdk/src/custom-editors.ts",
     "packages/extension-sdk/src/hooks.ts",
-    "packages/extension-sdk/src/editor-document-script.ts"
+    "packages/extension-sdk/src/editor-document-script.ts",
+    "packages/extension-sdk/src/catalogue.ts"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "compilerOptions": {
