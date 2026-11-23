@@ -9,7 +9,8 @@ import {
   type McpToolRegistration,
   type McpToolResult,
 } from '../../shared/modules/mcp-tools'
-import { currentInvoker, type ExtensionInvoker } from '../module-host/extension-invocation'
+import { currentInvoker, runAsInvoker, type ExtensionInvoker } from '../module-host/extension-invocation'
+import { isMostPermissiveCliPermissionPreset } from '../../shared/cli-permission-preset'
 import type { ModuleMethodCallOutcome, ModuleMethodCallRequest } from '../module-host/main-host'
 import type { ModuleLifecycle } from '../modules/module-lifecycle'
 import { extensionDevEvents, type ExtensionDevEvents } from '../../server/extensions/dev/dev-events'
@@ -27,11 +28,12 @@ import { extensionDevEvents, type ExtensionDevEvents } from '../../server/extens
 //   extension.dev.emit     send its open frames a push, as its worker would
 //
 // Development folders are paths on this machine, so a paired device's call is
-// refused. `approve` approves a folder as it is only for a caller that is not
-// one of Studio's own agents (proven by its launch token): the owner at a
-// terminal. Any process of the owner's can already write the approvals file,
-// so this is not a wall; it keeps Studio's agents to the rule that the person
-// approves.
+// refused. An agent may register a folder, but nothing here approves one: the
+// person does, in Studio's window, where a registration that waits asks them
+// (or in Settings > Extensions). `request`, `hook` and `emit` reach only a
+// registered development folder's extension, never an installed one, and run
+// as their caller (`bindDevToolsToCaller`): what a worker starts for a capped
+// agent is no looser than that agent.
 
 export const EXTENSION_DEV_TOOL_NAMES = [
   'extension.dev.load',
@@ -85,9 +87,45 @@ function refusedRemote(context: McpConnectionContext | undefined): McpToolResult
     : null
 }
 
-/** Whether the caller is one of Studio's own agents, as its launch token proves. */
-function isStudioAgent(context: McpConnectionContext | undefined): boolean {
-  return context?.metadata.kind === 'studio-agent' && context.metadata.verified === true
+/** The tools that run extension code for their caller: run as that caller. */
+const RUN_AS_CALLER = new Set(['extension.dev.request', 'extension.dev.hook'])
+/** Answered by the desktop shell over its own connection, which holds no caller: refused to a capped one. */
+const REFUSED_TO_CAPPED = new Set(['visual.extension_shot'])
+
+/**
+ * The gateway's tools with the dev loop's held to who calls them: a request
+ * or a hook runs as its caller (an agent here is the person under its own
+ * launch ceiling), so a chat the worker starts for a `manual` agent runs on
+ * `manual`. A shot's surface calls are answered over the shell's own
+ * connection, which cannot carry a ceiling, so a capped agent is refused one.
+ */
+export function bindDevToolsToCaller(
+  tools: McpToolRegistration[],
+  callerInvoker: (context: McpConnectionContext | undefined) => ExtensionInvoker,
+): McpToolRegistration[] {
+  return tools.map((tool) => {
+    if (RUN_AS_CALLER.has(tool.name))
+      return {
+        ...tool,
+        handler: (args, context) => runAsInvoker(callerInvoker(context), () => tool.handler(args, context)),
+      }
+    if (REFUSED_TO_CAPPED.has(tool.name))
+      return {
+        ...tool,
+        handler: (args, context) => {
+          const ceiling = callerInvoker(context).permissionCeiling
+          if (ceiling !== null && !isMostPermissiveCliPermissionPreset(ceiling))
+            return Promise.resolve(
+              toolError(
+                'not_permitted',
+                `A picture runs the surface's calls as the person, and this agent runs on ${ceiling}: ask the person to take it (sprintengine-extension shot).`,
+              ),
+            )
+          return tool.handler(args, context)
+        },
+      }
+    return tool
+  })
 }
 
 function stringArg(args: Record<string, unknown>, key: string, max = 4096): string | null {
@@ -103,16 +141,40 @@ function lifecycleOf(deps: ExtensionDevToolsDeps): ModuleLifecycle | McpToolResu
 const isResult = (value: unknown): value is McpToolResult =>
   isRecord(value) && Array.isArray((value as { content?: unknown }).content)
 
-/** The key a call names: `moduleId`, or the development folder at `path`. */
+/** Whether `path` is `folder` or inside it, with either separator. */
+export function isInFolder(path: string, folder: string): boolean {
+  return path === folder || path.startsWith(`${folder}/`) || path.startsWith(`${folder}\\`)
+}
+
+/**
+ * The development folder's extension a call names: `moduleId`, or the
+ * development folder at `path`. An installed extension is refused: the dev
+ * loop drives the author's own working copy, nothing the person installed.
+ */
 async function moduleIdOf(lifecycle: ModuleLifecycle, args: Record<string, unknown>): Promise<string | McpToolResult> {
   const moduleId = stringArg(args, 'moduleId', 200)
-  if (moduleId) return moduleId
-  const path = stringArg(args, 'path')
-  if (!path) return toolError('invalid_arguments', 'Name the extension: "moduleId", or the development folder "path".')
+  const path = moduleId ? null : stringArg(args, 'path')
+  if (!moduleId && !path)
+    return toolError('invalid_arguments', 'Name the extension: "moduleId", or the development folder "path".')
   const folders = await lifecycle.devFolders()
-  const found = folders.find((folder) => folder.path === path || path.startsWith(`${folder.path}/`))
+  const waiting = (folder: { waiting?: boolean; moduleId?: string }) =>
+    toolError(
+      'approval_required',
+      `${folder.moduleId} waits for the person to approve it in place of the installed extension with its key, in Studio's window.`,
+    )
+  if (moduleId) {
+    const named = folders.find((folder) => folder.moduleId === moduleId)
+    if (named?.waiting) return waiting(named)
+    if (named) return moduleId
+    return toolError(
+      'not_found',
+      `${moduleId} is not a development folder's extension here. The dev tools drive development folders only; installed extensions are refused.`,
+    )
+  }
+  const found = folders.find((folder) => isInFolder(path!, folder.path))
   if (!found) return toolError('not_found', `${path} is not a development folder registered here.`)
   if (!found.moduleId) return toolError('extension_invalid', found.error ?? `${path} holds no extension Studio loads.`)
+  if (found.waiting) return waiting(found)
   return found.moduleId
 }
 
@@ -132,20 +194,14 @@ export function createExtensionDevTools(deps: ExtensionDevToolsDeps): McpToolReg
       description:
         'Register a folder holding an extension.json as a development folder: Studio loads it from where it is, ' +
         'with no build and no install copy, and reads it again on every save (its worker restarts, its panels ' +
-        'redraw). Registering one already registered reads it again now. Anything that runs code waits for the ' +
-        "person's approval: the answer's `approval.state` is `pending` with the `fingerprint` to show them, and " +
-        'Settings > Extensions shows the folder with Review and approve. A save asks again only when it asks for more.',
+        'redraw). Registering one already registered reads it again now. Nothing in it runs until the person ' +
+        "approves it in Studio's window, which asks them as soon as it is registered (also Settings > Extensions): " +
+        "the answer's `approval.state` is `pending` until then. Poll `extension.dev.list`, or follow " +
+        '`extension.dev.events`, to see it approved. A save asks again only when it asks for more. One whose key an ' +
+        'installed extension has stands in for it only once the person approves that; the installed one runs until then.',
       inputSchema: {
         type: 'object',
-        properties: {
-          path: pathSchema,
-          approve: {
-            type: 'string',
-            description:
-              'The fingerprint the person approved, from an earlier answer. Refused for an agent Studio launched: ' +
-              'the person approves in Settings.',
-          },
-        },
+        properties: { path: pathSchema },
         required: ['path'],
         additionalProperties: false,
       },
@@ -156,17 +212,14 @@ export function createExtensionDevTools(deps: ExtensionDevToolsDeps): McpToolReg
         const path = stringArg(args, 'path')
         if (!path || !isAbsolute(path))
           return toolError('invalid_arguments', '"path" is the folder, as an absolute path on this machine.')
-        const approve = args.approve === undefined ? undefined : stringArg(args, 'approve', 128)
-        if (args.approve !== undefined && !approve?.startsWith('sha256-'))
-          return toolError('invalid_arguments', '"approve" is the fingerprint Studio gave, `sha256-…`.')
-        if (approve && isStudioAgent(context))
+        if (args.approve !== undefined)
           return toolError(
-            'approval_required',
-            'An agent does not approve extensions: ask the person to approve it in Settings > Extensions, where it is listed as a development folder.',
+            'invalid_arguments',
+            "Nothing over this connection approves an extension: the person approves it in Studio's window.",
           )
         const lifecycle = lifecycleOf(deps)
         if (isResult(lifecycle)) return lifecycle
-        const answer = await lifecycle.devLoad(path, approve ? { approve } : {})
+        const answer = await lifecycle.devLoad(path)
         if (!answer.ok)
           return devError(answer.code, answer.message, answer.issues ? { issues: answer.issues } : undefined)
         return toolSuccess({ ...answer, latestEvent: events.latest() })

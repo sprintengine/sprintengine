@@ -414,7 +414,7 @@
     },
     {
       "name": "extension.dev.load",
-      "sha256": "d856e4bfedbd3976a69f798a2eff7ed1ae04bc99a1a0f49c93889840be514aad"
+      "sha256": "f897505bf65dba2db977e58c8e3276f6a5ad74f402bdd1cc4378bc3df5e2624e"
     },
     {
       "name": "extension.dev.unload",
@@ -896,7 +896,7 @@
     },
     {
       "name": "extension.dev.load",
-      "sha256": "d856e4bfedbd3976a69f798a2eff7ed1ae04bc99a1a0f49c93889840be514aad"
+      "sha256": "f897505bf65dba2db977e58c8e3276f6a5ad74f402bdd1cc4378bc3df5e2624e"
     },
     {
       "name": "extension.dev.unload",

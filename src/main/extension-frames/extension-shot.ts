@@ -77,6 +77,13 @@ export async function shootExtensionSurface(
 ): Promise<ExtensionShotResult> {
   const client = deps.client()
   if (!client) throw new Error('This desktop is not connected to its Studio yet; try again in a moment.')
+  // Only a development folder's extension is pictured: its author's working
+  // copy, never one the person installed.
+  const { folders } = await client.request('extension.devFolders', {})
+  if (!folders.some((folder) => folder.moduleId === input.moduleId && !folder.waiting))
+    throw new Error(
+      `${input.moduleId} is not a development folder's extension here. Shots are taken of development folders only; installed extensions are refused.`,
+    )
   const document = await client.request('extension.frame', {
     moduleId: input.moduleId,
     point: input.point,
