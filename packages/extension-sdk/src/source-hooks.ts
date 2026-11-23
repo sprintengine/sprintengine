@@ -65,10 +65,19 @@ export type TypeScriptHookOptions = {
   /**
    * Packages to load from Studio's own copy when the extension does not carry
    * one, by name: a worker's `import … from '@sprintengine/extension-sdk'`
-   * resolves to the SDK of the Studio running it.
+   * resolves to the SDK of the Studio running it. That copy ships without
+   * the SDK's own dependencies, so a subpath that needs them
+   * (`FALLBACK_REFUSED_SUBPATHS`) is refused, saying so.
    */
   fallbackPackages?: Record<string, string>
 }
+
+/**
+ * Subpaths of a fallback package Studio's copy cannot serve: they import the
+ * SDK's dependencies (sucrase, es-module-lexer), which that copy leaves out.
+ * An extension that uses one carries the SDK in its own node_modules.
+ */
+export const FALLBACK_REFUSED_SUBPATHS: ReadonlySet<string> = new Set(['./source'])
 
 /**
  * Load TypeScript under `root` as written, from now on, in this process.
@@ -101,7 +110,12 @@ export function installTypeScriptHooks(root: string, options: TypeScriptHookOpti
       } catch (error) {
         for (const [name, dir] of fallback) {
           if (specifier !== name && !specifier.startsWith(`${name}/`)) continue
-          const file = packageFile(dir, specifier === name ? '.' : `.${specifier.slice(name.length)}`)
+          const subpath = specifier === name ? '.' : `.${specifier.slice(name.length)}`
+          if (FALLBACK_REFUSED_SUBPATHS.has(subpath))
+            throw new Error(
+              `${specifier} needs the SDK's own dependencies, which the copy Studio lends a worker leaves out: add ${name} to the extension's dependencies to use it.`,
+            )
+          const file = packageFile(dir, subpath)
           if (file && isFile(file)) return { url: pathToFileURL(file).href, shortCircuit: true }
         }
         const parentUrl = context.parentURL

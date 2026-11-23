@@ -133,13 +133,24 @@ export async function buildWslServerTree({ outDir = DEFAULT_WSL_SERVER_DIR } = {
     cpSync(join(ROOT, 'resources', name), join(outDir, 'resources', name), { recursive: true })
   }
   // The extension SDK a worker imports when it does not carry it
-  // (worker-process.ts `resolveExtensionSdkRoot`), when this checkout built it.
+  // (worker-process.ts `resolveExtensionSdkRoot`). A tree without it would
+  // start and fail every such worker, so it is never left out: built here
+  // when this checkout has not built it, and the build stops if it cannot be.
   const sdk = join(ROOT, 'packages', 'extension-sdk')
-  if (existsSync(join(sdk, 'dist', 'index.js'))) {
-    const runtime = join(outDir, 'resources', 'extension-sdk-runtime')
-    cpSync(join(sdk, 'dist'), join(runtime, 'dist'), { recursive: true })
-    cpSync(join(sdk, 'package.json'), join(runtime, 'package.json'))
-  }
+  if (!existsSync(join(sdk, 'dist', 'index.js')))
+    execFileSync(
+      process.execPath,
+      [join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(sdk, 'tsconfig.json')],
+      {
+        cwd: ROOT,
+        stdio: 'inherit',
+      },
+    )
+  if (!existsSync(join(sdk, 'dist', 'index.js')))
+    throw new Error('packages/extension-sdk/dist could not be built, so the server tree would ship no SDK for workers.')
+  const runtime = join(outDir, 'resources', 'extension-sdk-runtime')
+  cpSync(join(sdk, 'dist'), join(runtime, 'dist'), { recursive: true })
+  cpSync(join(sdk, 'package.json'), join(runtime, 'package.json'))
   return outDir
 }
 
