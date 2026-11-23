@@ -69,7 +69,7 @@
         "ui",
         "worker"
       ],
-      "description": "The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, custom editors, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.",
+      "description": "The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items, and the skills, MCP servers and model providers it hands agents and chats), `ui` (panels, doors, settings sections, custom editors, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.",
       "x-since": "0.13.0",
       "examples": [
         "ui"
@@ -1224,6 +1224,284 @@
           "x-since": "0.13.0",
           "x-tier": "worker"
         },
+        "skills": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "title": "SkillContribution",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "description": "Id, unique among this extension’s skills. Agents are handed a copy named `x<8 hex of a hash of the install key>-<skill id>`, its frontmatter holding only `name` and `description`.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "review-checklist"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+$",
+                "description": "A folder holding the skill: its `SKILL.md` (at most 256 KiB) and any files it names, 256 files at most.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "skills/review-checklist"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "path"
+            ]
+          },
+          "description": "Skills the person’s agents can use, in every workspace on this machine. Studio copies each into a folder of its own and hands it to agents at launch; it never writes into a project. Listed when the extension is installed; no approval is asked for them.",
+          "x-since": "0.13.0",
+          "x-tier": "declarative"
+        },
+        "mcpServers": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "title": "McpServerContribution",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "description": "Id, unique among this extension’s servers. Agents see the server as `<publisher>_<id>_<server id>`.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "search"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "Its name, for the person.",
+                "x-since": "0.13.0"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "What it gives agents, in a sentence.",
+                "x-since": "0.13.0"
+              },
+              "transport": {
+                "type": "string",
+                "maxLength": 8,
+                "enum": [
+                  "stdio",
+                  "http"
+                ],
+                "description": "`stdio`: a local command each agent starts, with `command`. `http`: a hosted server agents reach at `url`.",
+                "x-since": "0.13.0"
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "What a `stdio` server runs: a program on the PATH, such as `node` or `npx`, or a file the extension ships, as `${extensionPath}/bin/server`.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "node"
+                ]
+              },
+              "args": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                "description": "Its arguments. `${extensionPath}` stands for the extension’s installed folder.",
+                "x-since": "0.13.0",
+                "examples": [
+                  [
+                    "${extensionPath}/dist/server.js"
+                  ]
+                ]
+              },
+              "env": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "title": "McpServerEnvironmentVariable",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                      "description": "The variable’s name.",
+                      "x-since": "0.13.0"
+                    },
+                    "value": {
+                      "type": "string",
+                      "maxLength": 1024,
+                      "description": "Its value, as written: Studio reads none from its own environment. `${extensionPath}` stands for the installed folder.",
+                      "x-since": "0.13.0"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "value"
+                  ]
+                },
+                "description": "Environment variables the command runs with, shown on the install review.",
+                "x-since": "0.13.0"
+              },
+              "url": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048,
+                "description": "Where an `http` server is: `https`, or plain `http` to localhost.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "https://mcp.example.com/mcp"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "transport"
+            ]
+          },
+          "description": "MCP servers the person’s agents get, in every workspace on this machine. A `stdio` server’s command, arguments, environment and the extension’s files are part of what the person approves at install, so an update that changes any of them asks again; an `http` server is listed when the extension is installed and asks nothing.",
+          "x-since": "0.13.0",
+          "x-tier": "declarative"
+        },
+        "providers": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "title": "ProviderContribution",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "description": "Id, unique among this extension’s providers. Studio knows it, and keeps its key, as `<publisher>.<id>/<provider id>`.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "acme-models"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "Its name in the model picker.",
+                "x-since": "0.13.0"
+              },
+              "baseUrl": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048,
+                "description": "The OpenAI-compatible API’s base: `https`, or plain `http` to localhost. Its key is sent to this origin and no other, and the install review names it. A path on it is kept: the request paths are joined after it, so `https://api.example.com/openai` and `/v1/chat/completions` make `https://api.example.com/openai/v1/chat/completions`.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "https://api.example.com"
+                ]
+              },
+              "chatCompletionsPath": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "The chat completions path, joined after `baseUrl`’s own path. Defaults to `/v1/chat/completions`.",
+                "x-since": "0.13.0"
+              },
+              "modelsPath": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "A models path, joined after `baseUrl`’s own path, answering `{ data: [{ id }] }`, for the picker to list what the endpoint offers now.",
+                "x-since": "0.13.0"
+              },
+              "models": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "title": "ProviderModel",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "pattern": "^[^\\s\\u0000-\\u001f]+$",
+                      "description": "The model id the endpoint takes.",
+                      "x-since": "0.13.0",
+                      "examples": [
+                        "acme-large"
+                      ]
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "description": "Its name in the picker.",
+                      "x-since": "0.13.0"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                },
+                "description": "Models to offer, the first being the default. At least one.",
+                "x-since": "0.13.0"
+              },
+              "apiKey": {
+                "type": "object",
+                "title": "ProviderApiKey",
+                "additionalProperties": false,
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "description": "What the key is called where the person enters it, in Settings.",
+                    "x-since": "0.13.0",
+                    "examples": [
+                      "Acme API key"
+                    ]
+                  }
+                },
+                "required": [
+                  "label"
+                ],
+                "description": "The provider takes an API key, entered in Settings and sent as a bearer token. Never read from an environment variable.",
+                "x-since": "0.13.0"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "baseUrl",
+              "models"
+            ]
+          },
+          "description": "Model providers for chats: OpenAI-compatible endpoints. The person approves each at install, seeing the origin its key goes to; an update that adds one or moves it to another origin asks again.",
+          "x-since": "0.13.0",
+          "x-tier": "declarative"
+        },
         "themes": {
           "type": "array",
           "maxItems": 0,
@@ -1275,25 +1553,7 @@
         "agentProviders": {
           "type": "array",
           "maxItems": 0,
-          "description": "Reserved for agent providers; must be empty.",
-          "x-since": "0.13.0"
-        },
-        "skills": {
-          "type": "array",
-          "maxItems": 0,
-          "description": "Reserved for agent skills (a plugin bundle carries them for now); must be empty.",
-          "x-since": "0.13.0"
-        },
-        "mcpServers": {
-          "type": "array",
-          "maxItems": 0,
-          "description": "Reserved for MCP server definitions (a plugin bundle carries them for now); must be empty.",
-          "x-since": "0.13.0"
-        },
-        "providers": {
-          "type": "array",
-          "maxItems": 0,
-          "description": "Reserved for model providers (the provider folder carries them for now); must be empty.",
+          "description": "Reserved for agent providers run by an extension’s own code; must be empty.",
           "x-since": "0.13.0"
         }
       },

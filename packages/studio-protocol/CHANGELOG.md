@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### Changed (skills, MCP servers and model providers from extensions)
+
+- `ExtensionContributionsView` carries `skills`, `mcpServers` and
+  `providers` (`ExtensionSkillContributionView`,
+  `ExtensionMcpServerContributionView`, `ExtensionProviderContributionView`),
+  so a client's install review lists each skill and server, a local server's
+  command line and environment, and the origin a provider's key is sent to.
+- `ThirdPartyModuleView.ignoredSkillKeys` names, by skill id, the
+  frontmatter keys of a skill's SKILL.md that agents are not handed (anything
+  but `name` and `description`), so the install review can list them as
+  ignored.
+- A provider's `source` (`StudioProviderListEntry`, and `PluginSource`) is
+  `bundled` or `extension`; `user` is gone with the provider folder. An
+  extension's provider's id is `<publisher>.<id>/<provider id>`, and
+  `providers.setSecret`, `.clearSecret` and `.secretStatus` take it as it is.
+
+### Removed (plugin bundles, inline MCP entries and the GitHub bundle install)
+
+- **`marketplace.resolveGithub` and `marketplace.installGithub`**, with their
+  shapes (`GithubExtensionOrigin`, `GithubExtensionPreview`,
+  `GithubExtensionResolveResult`, `GithubExtensionInstallInput`, …) and the
+  `github` arm of `MarketplaceInstallSource`, which is gone with it. Installing
+  an extension from a GitHub repository returns later, with the catalogue.
+- **The plugin bundle and the inline MCP entry**: a registry row no longer
+  carries `mcp`, `MarketplaceProvidesKind` and `MarketplaceComponentKind` no
+  longer name `mcp`, `MarketplacePluginVerifyResult` no longer carries
+  `mcpServers` (`MarketplaceMcpServerDisclosure` is gone),
+  `MarketplaceTrustPin` no longer carries `commitSha`, and an installed
+  component no longer carries `serverIds` or `servers`. The install envelope
+  and the install and uninstall results no longer carry `mcpSettings`, nor
+  the envelope `mcpClients`. The marketplace installs Claude Code plugins'
+  skills and lists the agent CLIs the app ships; skills, MCP servers and
+  model providers now arrive as contributions in an extension's
+  extension.json (`contributes.skills`, `.mcpServers`, `.providers`).
+
 ### Added (agent hooks)
 
 - `AgentLaunchRecord` carries `startedBy` (`AgentLaunchStarter`): who asked

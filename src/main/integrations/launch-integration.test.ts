@@ -332,6 +332,39 @@ test('a skill of the same name the person keeps is theirs, and is never written 
   assert.equal(await readFile(join(skillsDir, 'backlog', 'SKILL.md'), 'utf8'), 'theirs\n')
 })
 
+test('two launches copying one skill at once each finish, and leave one whole copy and no staging folder', async () => {
+  const root = await tempDir('concurrent-skill')
+  const sources = await Promise.all(
+    ['one', 'two'].map(async (word) => {
+      const source = join(root, 'source', word, 'x1a2b3c4d-review')
+      await mkdir(source, { recursive: true })
+      await writeFile(join(source, 'SKILL.md'), `${word}\n`)
+      return source
+    }),
+  )
+  const skillsDir = join(root, 'skills')
+  const copies = await Promise.all(
+    sources.flatMap((sourceDir, index) =>
+      [1, 2, 3].map(() =>
+        ensureUserLevelSkillCopy({
+          skillsDir,
+          skill: { id: 'x1a2b3c4d-review', version: `gen${index}` },
+          sourceDir,
+          cli: 'codex',
+          owner: '/data/studio',
+        }),
+      ),
+    ),
+  )
+  const destination = join(skillsDir, 'x1a2b3c4d-review')
+  assert.ok(copies.every((copy) => copy === destination))
+  assert.deepEqual(await readdir(skillsDir), ['x1a2b3c4d-review'])
+  const manifest = JSON.parse(await readFile(join(destination, MANAGED_SKILL_MANIFEST_FILE), 'utf8'))
+  assert.equal(manifest.owner, '/data/studio')
+  // The copy is whole: what its manifest says it is.
+  assert.equal(await readFile(join(destination, 'SKILL.md'), 'utf8'), manifest.version === 'gen0' ? 'one\n' : 'two\n')
+})
+
 test('the launch files are emptied at the next start', async () => {
   const dir = await tempDir('prune')
   await buildClaudeLaunchIntegration({ dir, servers: [server({ id: 'docs' })] })
@@ -361,4 +394,160 @@ test("a Codex launch hands the synced servers' env values and headers to the ter
   assert.deepEqual(integration.env, { STRIPE_TEST_SECRET_KEY: secret, SPRINTENGINE_MCP_SECRET_1: secret })
   assert.match(integration.args[1], /"env_vars" = \["STRIPE_TEST_SECRET_KEY"\]/u)
   assert.match(integration.args[3], /"env_http_headers" = \{ "X-Api-Key" = "SPRINTENGINE_MCP_SECRET_1" \}/u)
+})
+
+// ── What installed extensions hand every launch ─────────────────────────────
+
+async function extensionFixture(launchDir: string) {
+  const pluginDir = join(launchDir, 'projection', 'local.tools', 'gen1')
+  for (const id of ['review', 'ship']) {
+    await mkdir(join(pluginDir, 'skills', id), { recursive: true })
+    await writeFile(join(pluginDir, 'skills', id, 'SKILL.md'), `---\nname: ${id}\n---\nDo it.\n`)
+  }
+  return {
+    pluginDir,
+    contributions: {
+      servers: [server({ id: 'local_tools_search', clients: [], scope: 'user', source: 'custom' })],
+      skills: ['review', 'ship'].map((id) => ({
+        name: `x1a2b3c4d-${id}`,
+        dir: join(pluginDir, 'skills', id),
+        pluginDir,
+        version: 'gen1',
+      })),
+    },
+  }
+}
+
+test('an extension’s servers reach every route whatever the person’s sync says, and its skills ride each route’s channel', async () => {
+  const launchDir = await tempDir('extension')
+  const { pluginDir, contributions } = await extensionFixture(launchDir)
+  const withExtensions = (route: PluginLaunchIntegrationSpec) =>
+    deps({ launchDir, spec: () => route, extensionContributions: () => contributions })
+
+  const claude = await prepareLaunchIntegration(input(launchDir, 'claude-code'), withExtensions({ route: 'claude' }))
+  assert.ok(claude.ok && claude.integration)
+  assert.deepEqual(claude.integration.pluginDirs, [pluginDir], 'one folder carries both skills, handed once')
+  assert.deepEqual(claude.integration.carries.skills, ['x1a2b3c4d-review', 'x1a2b3c4d-ship'])
+  const config = claude.integration.args[claude.integration.args.indexOf('--mcp-config') + 1]!
+  assert.deepEqual(Object.keys(JSON.parse(await readFile(config, 'utf8')).mcpServers), ['local_tools_search'])
+
+  const codex = await prepareLaunchIntegration(
+    input(launchDir, 'codex'),
+    withExtensions({ route: 'codex', userSkillsDir: '.codex/skills' }),
+  )
+  assert.ok(codex.ok && codex.integration)
+  assert.ok(codex.integration.args.some((arg) => arg.startsWith('mcp_servers.local_tools_search=')))
+  assert.deepEqual(codex.integration.carries.skills, ['x1a2b3c4d-review', 'x1a2b3c4d-ship'])
+  const codexSkills = join(launchDir, 'home', '.codex', 'skills')
+  assert.ok(existsSync(join(codexSkills, 'x1a2b3c4d-review', 'SKILL.md')))
+  assert.ok(existsSync(join(codexSkills, 'x1a2b3c4d-review', MANAGED_SKILL_MANIFEST_FILE)))
+
+  const opencode = await prepareLaunchIntegration(input(launchDir, 'opencode'), withExtensions({ route: 'opencode' }))
+  assert.ok(opencode.ok && opencode.integration)
+  const content = JSON.parse(opencode.integration.env.OPENCODE_CONFIG_CONTENT!)
+  assert.ok('local_tools_search' in content.mcp)
+  assert.deepEqual(
+    content.skills.paths,
+    contributions.skills.map((skill) => skill.dir),
+  )
+
+  const cursor = await prepareLaunchIntegration(input(launchDir, 'cursor'), withExtensions({ route: 'cursor' }))
+  assert.ok(cursor.ok && cursor.integration)
+  const root = cursor.integration.args[1]!
+  assert.ok(existsSync(join(root, 'skills', 'x1a2b3c4d-ship', 'SKILL.md')))
+  assert.ok('local_tools_search' in JSON.parse(await readFile(join(root, '.mcp.json'), 'utf8')).mcpServers)
+})
+
+test('a Codex launch keeps an extension server’s env in its table, out of the terminal’s environment', async () => {
+  const launchDir = await tempDir('extension-env')
+  const extensionServer = server({
+    id: 'local_tools_search',
+    clients: [],
+    scope: 'user',
+    env: { PYTHONPATH: '/Users/dev/ext/py' },
+  })
+  const prepared = await prepareLaunchIntegration(
+    input(launchDir, 'codex'),
+    deps({
+      launchDir,
+      spec: () => ({ route: 'codex' }),
+      extensionContributions: () => ({ servers: [extensionServer], skills: [] }),
+    }),
+  )
+  assert.ok(prepared.ok && prepared.integration)
+  assert.equal(prepared.integration.env.PYTHONPATH, undefined)
+  const entry = prepared.integration.args.find((arg) => arg.startsWith('mcp_servers.local_tools_search='))
+  assert.match(entry ?? '', /"env" = \{ "PYTHONPATH" = "\/Users\/dev\/ext\/py" \}/)
+})
+
+test('a server of the person’s own under an extension server’s name is theirs, and wins', async () => {
+  const launchDir = await tempDir('extension-own')
+  const { contributions } = await extensionFixture(launchDir)
+  const settings: McpSettings = {
+    syncEnabled: true,
+    servers: { local_tools_search: server({ id: 'local_tools_search', command: '/bin/cat' }) },
+  }
+  const prepared = await prepareLaunchIntegration(
+    input(launchDir, 'codex', { settings }),
+    deps({ launchDir, spec: () => ({ route: 'codex' }), extensionContributions: () => contributions }),
+  )
+  assert.ok(prepared.ok && prepared.integration)
+  const args = prepared.integration.args.filter((arg) => arg.startsWith('mcp_servers.local_tools_search='))
+  assert.equal(args.length, 1)
+  assert.match(args[0]!, /\/bin\/cat/)
+})
+
+test('two Studios sharing a home each keep to their own copies of extension skills', async () => {
+  const launchDir = await tempDir('extension-shared')
+  const { contributions } = await extensionFixture(launchDir)
+  const codex = { route: 'codex' as const, userSkillsDir: '.codex/skills' }
+  const studio = (owner: string, skills = contributions.skills) =>
+    deps({
+      launchDir,
+      spec: () => codex,
+      extensionContributions: () => ({ servers: [], skills }),
+      skillCopyOwner: () => owner,
+    })
+  await prepareLaunchIntegration(input(launchDir, 'codex'), studio('/data/release'))
+  const skillsDir = join(launchDir, 'home', '.codex', 'skills')
+  const review = join(skillsDir, 'x1a2b3c4d-review')
+  const owner = async () => JSON.parse(await readFile(join(review, MANAGED_SKILL_MANIFEST_FILE), 'utf8')).owner
+  assert.equal(await owner(), '/data/release')
+
+  // The other Studio hands out none of them: it removes none of the first one's copies.
+  await prepareLaunchIntegration(input(launchDir, 'codex'), studio('/data/dev', []))
+  assert.deepEqual((await readdir(skillsDir)).sort(), ['x1a2b3c4d-review', 'x1a2b3c4d-ship'])
+  // It hands out the same skill, changed: it leaves the first one's copy as it is.
+  await writeFile(join(contributions.skills[0]!.dir, 'SKILL.md'), 'changed\n')
+  await prepareLaunchIntegration(input(launchDir, 'codex'), studio('/data/dev'))
+  assert.equal(await owner(), '/data/release')
+  assert.notEqual(await readFile(join(review, 'SKILL.md'), 'utf8'), 'changed\n')
+
+  // The first one retracts its own.
+  await prepareLaunchIntegration(input(launchDir, 'codex'), studio('/data/release', []))
+  assert.deepEqual(await readdir(skillsDir), [])
+})
+
+test('a retracted extension skill’s copy in a CLI’s skills folder goes at the next launch; the person’s own stays', async () => {
+  const launchDir = await tempDir('extension-retract')
+  const { contributions } = await extensionFixture(launchDir)
+  const codex = { route: 'codex' as const, userSkillsDir: '.codex/skills' }
+  await prepareLaunchIntegration(
+    input(launchDir, 'codex'),
+    deps({ launchDir, spec: () => codex, extensionContributions: () => contributions }),
+  )
+  const skillsDir = join(launchDir, 'home', '.codex', 'skills')
+  // One of the person's own, named like an extension skill but not the app's copy.
+  await mkdir(join(skillsDir, 'x0f0f0f0f-mine'), { recursive: true })
+  await writeFile(join(skillsDir, 'x0f0f0f0f-mine', 'SKILL.md'), 'mine')
+
+  await prepareLaunchIntegration(
+    input(launchDir, 'codex'),
+    deps({
+      launchDir,
+      spec: () => codex,
+      extensionContributions: () => ({ servers: [], skills: contributions.skills.slice(1) }),
+    }),
+  )
+  assert.deepEqual((await readdir(skillsDir)).sort(), ['x0f0f0f0f-mine', 'x1a2b3c4d-ship'])
 })

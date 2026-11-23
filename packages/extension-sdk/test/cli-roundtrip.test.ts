@@ -8,8 +8,6 @@
 //      verification, reading the identical bytes.
 //   3. `pack` fails with actionable errors on invalid manifests and never
 //      copies key material.
-//   4. The same for a plugin bundle (`plugin scaffold`, `sign`, `verify`,
-//      `pack`), which carries MCP servers and skills and never an extension.
 //
 // The CLI is exercised as a real subprocess (bundled from source with esbuild,
 // the same toolchain `npm run build` uses) so argument parsing, exit codes,
@@ -25,13 +23,11 @@ import { buildSync } from 'esbuild'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import { EXTENSION_MANIFEST_SINCE } from '../src/extension-manifest.js'
-import { parseMarketplacePluginManifest } from '../src/plugin-manifest.js'
 import {
   computeModuleFileDigestsSync,
   moduleFileDigestIssuesSync,
   parseExtensionSignature,
   verifyExtensionSignature,
-  verifyModuleSignature,
 } from '../src/signing.js'
 
 type CliRun = { status: number | null; stdout: string; stderr: string }
@@ -215,156 +211,8 @@ test('pack copies an installable folder, never key material, and the copy still 
   assert.match(inside.stderr, /outside the extension folder/)
 })
 
-test('a plugin bundle scaffolds, signs, verifies and packs, and the SDK reads what the CLI wrote', () => {
-  const pluginDir = join(workDir, 'marketplace-plugin-fixture')
-  const scaffold = runCli(['plugin', 'scaffold', 'marketplace-plugin-fixture', '--out', pluginDir])
-  assert.equal(scaffold.status, 0, scaffold.stderr)
-  assert.ok(existsSync(join(pluginDir, 'plugin.json')))
-  assert.ok(existsSync(join(pluginDir, 'mcp', 'server.json')))
-  assert.ok(existsSync(join(pluginDir, 'skills', 'marketplace-plugin-fixture', 'SKILL.md')))
-  assert.equal(existsSync(join(pluginDir, 'module')), false, 'a plugin bundle carries no extension')
-  const scaffoldedMcp = JSON.parse(readFileSync(join(pluginDir, 'mcp', 'server.json'), 'utf8')) as {
-    servers?: Array<{ source?: string }>
-  }
-  assert.equal(scaffoldedMcp.servers?.[0]?.source, 'custom', 'scaffolded marketplace MCPs must not look bundled')
-
-  const signed = runCli(['plugin', 'sign', pluginDir, '--key', keyPath])
-  assert.equal(signed.status, 0, signed.stderr)
-  const parsed = parseMarketplacePluginManifest(readFileSync(join(pluginDir, 'plugin.json'), 'utf8'))
-  assert.ok(parsed.ok, parsed.ok ? '' : JSON.stringify(parsed.issues))
-  if (!parsed.ok) return
-  assert.equal(parsed.manifest.components.mcp?.files?.[0]?.path, 'mcp/server.json')
-  assert.match(parsed.manifest.components.mcp?.files?.[0]?.sha256 ?? '', /^[a-f0-9]{64}$/)
-  const { valid, fingerprint } = verifyModuleSignature(parsed.manifest)
-  assert.equal(valid, true)
-
-  const verified = runCli(['plugin', 'verify', pluginDir])
-  assert.equal(verified.status, 0, verified.stderr)
-  assert.match(verified.stdout, /plugin signature valid/)
-  assert.ok(verified.stdout.includes(fingerprint!), 'the CLI reports the signer fingerprint the SDK computes')
-
-  writeFileSync(join(pluginDir, 'leaked-plugin.key'), 'not really a key')
-  const outDir = join(workDir, 'packed-plugin-fixture')
-  const packed = runCli(['plugin', 'pack', pluginDir, '--out', outDir])
-  assert.equal(packed.status, 0, packed.stderr)
-  assert.ok(existsSync(join(outDir, 'plugin.json')))
-  assert.ok(existsSync(join(outDir, 'mcp', 'server.json')))
-  assert.equal(existsSync(join(outDir, 'leaked-plugin.key')), false, 'key files are never packed')
-  assert.equal(runCli(['plugin', 'verify', outDir]).status, 0)
-
-  writeFileSync(join(outDir, 'stale-signing.pem'), 'stale key material from an earlier pack')
-  writeFileSync(join(outDir, 'mcp', 'stale-plugin.key'), 'stale key material from an earlier pack')
-  const forced = runCli(['plugin', 'pack', pluginDir, '--out', outDir, '--force'])
-  assert.equal(forced.status, 0, forced.stderr)
-  assert.equal(existsSync(join(outDir, 'stale-signing.pem')), false, 'force pack must remove stale .pem files')
-  assert.equal(existsSync(join(outDir, 'mcp', 'stale-plugin.key')), false, 'force pack must remove stale .key files')
-  assert.equal(runCli(['plugin', 'verify', outDir]).status, 0)
-
-  // A component's bytes changed: plugin.json is untouched, so its signature
-  // is still good, and the digests are what catch it.
-  writeFileSync(join(pluginDir, 'mcp', 'server.json'), `${JSON.stringify({ servers: [] }, null, 2)}\n`)
-  const componentTamper = runCli(['plugin', 'verify', pluginDir])
-  assert.equal(componentTamper.status, 1)
-  assert.match(componentTamper.stderr, /component digests/i)
-
-  // plugin.json itself changed: the signature fails.
-  const manifestPath = join(pluginDir, 'plugin.json')
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
-  writeFileSync(manifestPath, JSON.stringify({ ...manifest, displayName: 'Tampered Marketplace Plugin' }, null, 2))
-  const tampered = runCli(['plugin', 'verify', pluginDir])
-  assert.equal(tampered.status, 1)
-  assert.match(tampered.stderr, /INVALID signature/)
-  const reread = parseMarketplacePluginManifest(readFileSync(manifestPath, 'utf8'))
-  assert.ok(reread.ok)
-  if (reread.ok) assert.equal(verifyModuleSignature(reread.manifest).valid, false)
-})
-
-test('a plugin bundle carries no extension and no agent CLI', () => {
-  for (const kind of ['cli', 'module']) {
-    const pluginDir = join(workDir, `${kind}-component-plugin-fixture`)
-    const scaffold = runCli([
-      'plugin',
-      'scaffold',
-      `${kind}-component-plugin-fixture`,
-      '--out',
-      pluginDir,
-      '--component',
-      kind,
-    ])
-    assert.equal(scaffold.status, 1)
-    assert.match(scaffold.stderr, /must be one of: mcp, skills\./)
-    assert.equal(existsSync(pluginDir), false)
-  }
-
-  // A hand-written plugin.json with a module component is refused with the reason.
-  const pluginDir = join(workDir, 'module-bundle-fixture')
-  assert.equal(
-    runCli(['plugin', 'scaffold', 'module-bundle-fixture', '--out', pluginDir, '--component', 'mcp']).status,
-    0,
-  )
-  const manifest = JSON.parse(readFileSync(join(pluginDir, 'plugin.json'), 'utf8'))
-  manifest.components.module = { path: 'module' }
-  writeFileSync(join(pluginDir, 'plugin.json'), JSON.stringify(manifest, null, 2))
-  const signed = runCli(['plugin', 'sign', pluginDir, '--key', keyPath])
-  assert.equal(signed.status, 1)
-  assert.match(signed.stderr, /components\.module: A bundle no longer carries an extension/)
-})
-
-test('plugin verify says an unsigned bundle is unsigned, and pack refuses a missing component', () => {
-  const unsignedDir = join(workDir, 'unsigned-plugin-fixture')
-  assert.equal(
-    runCli(['plugin', 'scaffold', 'unsigned-plugin-fixture', '--out', unsignedDir, '--component', 'mcp']).status,
-    0,
-  )
-  const unsigned = runCli(['plugin', 'verify', unsignedDir])
-  assert.equal(unsigned.status, 1)
-  assert.match(unsigned.stderr, /unsigned/)
-
-  const pluginDir = join(workDir, 'missing-component-plugin-fixture')
-  assert.equal(
-    runCli(['plugin', 'scaffold', 'missing-component-plugin-fixture', '--out', pluginDir, '--component', 'mcp']).status,
-    0,
-  )
-  assert.equal(runCli(['plugin', 'sign', pluginDir, '--key', keyPath]).status, 0)
-  rmSync(join(pluginDir, 'mcp', 'server.json'))
-  const packed = runCli(['plugin', 'pack', pluginDir])
-  assert.equal(packed.status, 1)
-  assert.match(packed.stderr, /declared path.*does not exist/)
-})
-
-// A registry entry's `provides` has to equal the kinds the app derives from
-// the bundle, and the app derives them by filtering MARKETPLACE_COMPONENT_KINDS,
-// so an author who copies the order out of their own plugin.json must find the
-// canonical one there, whatever order they typed the --component flags in. Both
-// writers of plugin.json (scaffold and sign) keep it, and both print the exact
-// `provides` array to paste.
-test('plugin.json lists its components in the canonical order, whatever order they were given', () => {
-  const pluginDir = join(workDir, 'component-order-plugin')
-  const scaffolded = runCli([
-    'plugin',
-    'scaffold',
-    'component-order-plugin-fixture',
-    '--out',
-    pluginDir,
-    '--component',
-    'skills',
-    '--component',
-    'mcp',
-  ])
-  assert.equal(scaffolded.status, 0, scaffolded.stderr)
-  const canonical = ['mcp', 'skills']
-  assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(pluginDir, 'plugin.json'), 'utf8')).components), canonical)
-  assert.match(scaffolded.stdout, /Registry entry "provides": \["mcp","skills"\]/)
-
-  // A hand-scrambled plugin.json is re-ordered by `plugin sign` before it is signed.
-  const manifest = JSON.parse(readFileSync(join(pluginDir, 'plugin.json'), 'utf8'))
-  manifest.components = { skills: manifest.components.skills, mcp: manifest.components.mcp }
-  writeFileSync(join(pluginDir, 'plugin.json'), `${JSON.stringify(manifest, null, 2)}\n`)
-  const signed = runCli(['plugin', 'sign', pluginDir, '--key', keyPath])
-  assert.equal(signed.status, 0, signed.stderr)
-  assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(pluginDir, 'plugin.json'), 'utf8')).components), canonical)
-  assert.match(signed.stdout, /Registry entry "provides": \["mcp","skills"\]/)
-  const verified = runCli(['plugin', 'verify', pluginDir])
-  assert.equal(verified.status, 0, verified.stderr)
-  assert.match(verified.stdout, /Registry entry "provides": \["mcp","skills"\]/)
+test('the plugin bundle commands are gone: skills and MCP servers are contributions in extension.json', () => {
+  const run = runCli(['plugin', 'scaffold', 'gone-plugin-fixture'])
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, /Unknown command "plugin"/)
 })

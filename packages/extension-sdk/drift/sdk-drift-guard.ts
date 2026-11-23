@@ -218,7 +218,7 @@ function expectType<_T extends true>(): void {}
 
 // Exact mirrors (any structural difference, including optional-property
 // drift, is a failure).
-// A plugin bundle's base manifest is one the Studio protocol can list: the
+// A signed package's base manifest is one the Studio protocol can list: the
 // protocol's view adds only that an extension's version is a semver string.
 expectType<IsExact<Omit<AppCapabilityManifest, 'version'>, Omit<SdkCapabilityManifest, 'version'>>>()
 expectType<Extends<SdkCapabilityManifest, AppCapabilityManifest>>()

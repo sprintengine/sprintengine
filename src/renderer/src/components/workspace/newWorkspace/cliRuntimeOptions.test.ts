@@ -43,10 +43,10 @@ test('cliRuntimeOptions', async () => {
   ): PluginCatalogEntry => ({ resumeSession: false, sessionIdFromCaller: false, agentStateCapable: true, ...entry })
 
   const plugins: PluginCatalogEntry[] = [
-    cliEntry({ id: 'opencode', displayName: 'OpenCode', source: 'user', version: 1, binary: 'opencode' }),
+    cliEntry({ id: 'opencode', displayName: 'OpenCode', source: 'extension', version: 1, binary: 'opencode' }),
     cliEntry({ id: 'codex', displayName: 'Codex', source: 'bundled', version: 1, binary: 'codex' }),
     cliEntry({ id: 'claude-code', displayName: 'Claude Code', source: 'bundled', version: 1, binary: 'claude' }),
-    cliEntry({ id: 'codex', displayName: 'Codex Duplicate', source: 'user', version: 2, binary: 'codex-next' }),
+    cliEntry({ id: 'codex', displayName: 'Codex Duplicate', source: 'extension', version: 2, binary: 'codex-next' }),
   ]
 
   assert.deepEqual(
@@ -54,9 +54,9 @@ test('cliRuntimeOptions', async () => {
     [
       { value: 'codex', label: 'Codex', source: 'bundled' },
       { value: 'claude-code', label: 'Claude Code', source: 'bundled' },
-      { value: 'opencode', label: 'OpenCode', source: 'user' },
+      { value: 'opencode', label: 'OpenCode', source: 'extension' },
     ],
-    'catalog orders bundled before user entries, labels from displayName, and dedupes ids',
+    'catalog orders bundled before other entries, labels from displayName, and dedupes ids',
   )
   // Bundled CLIs ship NO model ids (no speculative entitlement guesses): the
   // fallback catalog exposes model UI via allowCustomId with no rows until the
@@ -121,7 +121,7 @@ test('cliRuntimeOptions', async () => {
       cliEntry({
         id: 'no-hooks-cli',
         displayName: 'No Hooks',
-        source: 'user',
+        source: 'extension',
         version: 1,
         binary: 'nh',
         agentStateCapable: false,
@@ -143,7 +143,7 @@ test('cliRuntimeOptions', async () => {
   // projected boolean is the whole gate.
   assert.deepEqual(
     buildAgentCliCatalog([
-      cliEntry({ id: 'future-cli', displayName: 'Future CLI', source: 'user', version: 1, binary: 'future' }),
+      cliEntry({ id: 'future-cli', displayName: 'Future CLI', source: 'extension', version: 1, binary: 'future' }),
     ]).map(({ value }) => value),
     ['future-cli'],
     'a hook-capable future CLI is selectable purely from its manifest projection',
@@ -193,7 +193,7 @@ test('cliRuntimeOptions', async () => {
   assert.deepEqual(
     selectAgentCliCatalog('ready', plugins).map((option) => option.value),
     ['codex', 'claude-code', 'opencode'],
-    'ready status surfaces installed plugins (incl. opencode) before user entries',
+    'ready status surfaces installed plugins (incl. opencode) before other entries',
   )
   assert.deepEqual(
     selectAgentCliCatalog('loading', plugins, { opencode: { command: 'opencode' } }).map(({ value, label }) => ({
@@ -243,8 +243,8 @@ test('cliRuntimeOptions', async () => {
   // orderInstalledPlugins: bundled-first, deduped, full entries preserved.
   assert.deepEqual(
     orderInstalledPlugins(plugins).map((entry) => `${entry.id}:${entry.source}`),
-    ['codex:bundled', 'claude-code:bundled', 'opencode:user'],
-    'installed plugin rows order bundled before user and dedupe by id',
+    ['codex:bundled', 'claude-code:bundled', 'opencode:extension'],
+    'installed plugin rows order bundled before the rest and dedupe by id',
   )
   assert.deepEqual(orderInstalledPlugins(null), [], 'null entries yield no rows')
   assert.equal(
@@ -308,7 +308,7 @@ test('cliRuntimeOptions', async () => {
     // `aider` is an unbundled id with no manifest modelSelection and no bundled
     // fallback catalog — the clean "no model UI anywhere" case. (opencode is no
     // longer usable here: it is now a canonical bundled CLI with its own catalog.)
-    cliEntry({ id: 'aider', displayName: 'Aider', source: 'user', version: 1, binary: 'aider' }),
+    cliEntry({ id: 'aider', displayName: 'Aider', source: 'extension', version: 1, binary: 'aider' }),
   ]
   const modelCatalog = buildAgentCliCatalog(modelPlugins, {
     'claude-code': { command: '', models: [' opus ', 'haiku', 'haiku'] },
@@ -680,7 +680,7 @@ test('the merge clock defaults to now and is threaded through the picker entry p
 test('a CLI with no declared modelSelection surfaces no model UI even when discovery reported models', () => {
   assert.deepEqual(
     buildAgentCliCatalog(
-      [mergeCliEntry({ id: 'aider', displayName: 'Aider', source: 'user', version: 1, binary: 'aider' })],
+      [mergeCliEntry({ id: 'aider', displayName: 'Aider', source: 'extension', version: 1, binary: 'aider' })],
       undefined,
       { aider: { models: [{ id: 'some/model' }], fetchedAt: '2026-09-22T10:00:00Z', source: 'argv-probe' } },
     ).find((option) => option.value === 'aider')?.modelSelection,

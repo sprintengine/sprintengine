@@ -145,9 +145,8 @@ test('workspace-skills-service', async () => {
 
   function bundledRegistry(): PluginRegistry {
     const registry = createPluginRegistry(
-      createAppPluginRegistryOptions(
-        join(process.cwd(), 'resources', 'plugins'),
-        join(process.cwd(), 'node_modules', '.cache', 'sprintengine', 'plugins-none'),
+      createAppPluginRegistryOptions(join(process.cwd(), 'resources', 'plugins'), () =>
+        join(process.cwd(), '.does-not-exist'),
       ),
     )
     registry.loadSync()
@@ -446,7 +445,9 @@ test('workspace-skills-service', async () => {
 
     // Loaded through the real registry, so the manifest is validated exactly as a
     // shipped plugin would be rather than hand-built into the shape the map wants.
-    const registry = createPluginRegistry(createAppPluginRegistryOptions(bundledPluginRoot, join(temp, 'user-plugins')))
+    const registry = createPluginRegistry(
+      createAppPluginRegistryOptions(bundledPluginRoot, () => join(temp, 'no-extensions')),
+    )
     const report = registry.loadSync()
     assert.deepEqual(report.rejected, [], 'the fixture manifest is accepted as written')
     const plugins = registry.list()

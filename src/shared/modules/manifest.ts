@@ -97,8 +97,8 @@ export const CANVAS_MODULE_DEFAULT_ENABLED = true
  */
 export const LIVE_ENABLED_MODULE_IDS: readonly string[] = ['scheduled-agents']
 
-// How a plugin bundle's or a provider's signed manifest is classified (see
-// module-signature.ts): 'trusted' (signed by a publisher key Studio trusts),
+// How a provider's signed manifest is classified (see
+// plugin-registry.ts): 'trusted' (signed by a publisher key Studio trusts),
 // 'signed' (another key), 'unsigned', 'invalid'. Installed extensions are
 // judged by the person's approval instead (`ExtensionApprovalState`).
 /** Whether a bundle's or a provider's code is one Studio may run; the Studio protocol's, as a provider list reports it. */

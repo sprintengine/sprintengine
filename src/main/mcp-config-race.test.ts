@@ -24,7 +24,6 @@ const PARALLEL = 6
 function pluginLookup(): PluginLookup {
   const registry = createPluginRegistry({
     bundledRoot: join(process.cwd(), 'resources', 'plugins'),
-    userRoot: join(process.cwd(), '.does-not-exist', 'sprintengine', 'plugins'),
   })
   registry.loadSync()
   return (id) => {

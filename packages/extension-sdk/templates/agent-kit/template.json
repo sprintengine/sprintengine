@@ -1,0 +1,7 @@
+{
+  "id": "agent-kit",
+  "title": "Skills and MCP server",
+  "summary": "A skill your agents can use and a local MCP server they start, handed to every agent on this machine. No worker.",
+  "permissions": [],
+  "capabilities": ["skills", "mcp-servers"]
+}

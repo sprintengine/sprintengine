@@ -184,6 +184,21 @@ import {
   type ConversationTranscriptLimits,
   type TranscriptSyncResult,
 } from './conversation-transcript-reader'
+import {
+  chatExtensionContributions,
+  type ChatExtensionContributions,
+} from '../server/extensions/agent-contributions/projection'
+import { studioPlatform } from '../server/platform/platform'
+
+// What the installed extensions hand a chat, read from this machine's data
+// folder; nothing where no platform is installed (a test's runtime).
+function defaultChatExtensionContributions(): ChatExtensionContributions {
+  try {
+    return chatExtensionContributions(studioPlatform().paths.dataDir())
+  } catch {
+    return { mcpServers: [], pluginDirs: [] }
+  }
+}
 
 /** What a terminal needs to resume a chat's CLI session (`terminalHandoffTarget`). */
 export type ConversationTerminalHandoffTarget = {
@@ -366,6 +381,10 @@ export type ConversationRuntimeOptions = {
   // agent), on this machine, where its CLI runs. Null leaves it out; the chat
   // runs without Studio's tools rather than not at all.
   resolveStudioMcpServer?: () => Promise<ConversationMcpServer | null>
+  // What installed extensions hand a CLI chat on this machine: their MCP
+  // servers and their skills' plugin folders. Read at each start; the default
+  // reads the extensions' projection in this machine's data folder.
+  extensionContributions?: () => ChatExtensionContributions
   // Asked before a session starts and before every turn: brings the chat's
   // folder back when the worktree pool gave it back while the chat sat idle
   // (worktree-pool/chat-folder-guard.ts), so the agent never runs in a folder
@@ -629,14 +648,18 @@ export class ConversationRuntime {
     const studioGateway = options.resolveStudioMcpServer
       ? { resolveStudioMcpServer: options.resolveStudioMcpServer }
       : {}
+    // And what the installed extensions hand agents (Claude Code and Codex chats).
+    const extensionContributions = {
+      extensionContributions: options.extensionContributions ?? defaultChatExtensionContributions,
+    }
     const defaultAdapters = [
       createMockConversationProvider(),
       createOpenAiCompatibleProvider({
         getProviderById: this.getProviderById,
         resolveSecret: (providerId) => this.resolveSecret(providerId),
       }),
-      createClaudeAgentProvider(studioGateway),
-      createCodexConversationProvider(studioGateway),
+      createClaudeAgentProvider({ ...studioGateway, ...extensionContributions }),
+      createCodexConversationProvider({ ...studioGateway, ...extensionContributions }),
       ...ACP_PROFILES.map((profile) => createAcpConversationProvider(profile, studioGateway)),
     ]
     for (const adapter of options.adapters ?? defaultAdapters) {

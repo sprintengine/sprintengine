@@ -46,10 +46,7 @@ test('installFlow', async () => {
         classification: 'community',
         permissions: ['network', 'filesystem:read-workspace'],
         keyFingerprint: 'f'.repeat(64),
-        pin: { commitSha: 'a'.repeat(40), manifestSha256: 'b'.repeat(64), componentDigests: {} },
-        mcpServers: [
-          { id: 's', name: 'S', transport: 'stdio', command: 'node', args: ['s.js'], envKeys: ['K'], headerKeys: [] },
-        ],
+        pin: { manifestSha256: 'b'.repeat(64), componentDigests: {} },
       }),
     )
     assert.equal(outcome.kind, 'needs-trust')
@@ -58,11 +55,7 @@ test('installFlow', async () => {
     assert.deepEqual(outcome.review, {
       classification: 'community',
       permissions: ['network', 'filesystem:read-workspace'],
-      mcpServers: [
-        { id: 's', name: 'S', transport: 'stdio', command: 'node', args: ['s.js'], envKeys: ['K'], headerKeys: [] },
-      ],
       sourceUrl: 'https://github.com/sprintengine/studio-releases/tree/main/plugins/x',
-      commitSha: 'a'.repeat(40),
       keyFingerprint: 'f'.repeat(64),
     })
   }
@@ -325,10 +318,9 @@ test('installFlow', async () => {
   }
 
   // --- installNeedsWorkspace -------------------------------------------------
-  // Both bundle kinds write into a project; only the inline-CLI lane does not.
+  // A Claude Code plugin's skills write into a project; the inline-CLI lane does not.
   {
     assert.equal(installNeedsWorkspace(['cli']), false)
-    assert.equal(installNeedsWorkspace(['mcp']), true)
     assert.equal(installNeedsWorkspace(['skills']), true)
     assert.equal(installNeedsWorkspace([]), false)
   }

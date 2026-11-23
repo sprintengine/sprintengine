@@ -84,13 +84,11 @@ export type CatalogueSearchScope = 'tab' | 'sources'
 
 /**
  * What the plus after the last tab adds: a source (a folder on this machine,
- * or a repository of skills on GitHub) — and, where the door offers it, an
- * extension installed straight from its own repository.
+ * or a repository of skills on GitHub).
  */
 export type CatalogueAddMenu = {
   onAddFromFile: () => void
   onAddFromGitHub: () => void
-  onInstallExtensionFromGitHub?: () => void
 }
 
 export function CatalogueSurface<T>({
@@ -610,15 +608,6 @@ function AddSourceMenu({ add }: { add: CatalogueAddMenu }): JSX.Element {
           label: copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.addSkillSourceFromGitHub,
           onSelect: add.onAddFromGitHub,
         },
-        ...(add.onInstallExtensionFromGitHub
-          ? [
-              {
-                id: 'install-extension-github',
-                label: copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.installExtensionFromGitHub,
-                onSelect: add.onInstallExtensionFromGitHub,
-              },
-            ]
-          : []),
       ]}
       renderTriggerControl={(props, opened) => (
         <Tooltip

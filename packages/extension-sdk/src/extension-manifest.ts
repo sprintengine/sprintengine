@@ -36,6 +36,14 @@ import {
   type ExtensionHookOnError,
   type ExtensionHookPoint,
 } from './hooks.js'
+import {
+  EXTENSION_PATH_TOKEN,
+  agentEndpointUrlProblem,
+  extensionPathUseProblem,
+  mcpCommandProblem,
+  providerEndpoint,
+  providerPathProblem,
+} from './agent-contributions.js'
 
 export { EXTENSION_TIERS, type ExtensionTier, type ManifestIssue } from './manifest-schema.js'
 
@@ -122,11 +130,13 @@ export const EXTENSION_RESERVED_POINTS: Readonly<Record<string, string>> = {
   newFiles: 'new file templates',
   events: 'events delivered to the worker',
   sidecars: 'background processes',
-  agentProviders: 'agent providers',
-  skills: 'agent skills (a plugin bundle carries them for now)',
-  mcpServers: 'MCP server definitions (a plugin bundle carries them for now)',
-  providers: 'model providers (the provider folder carries them for now)',
+  agentProviders: 'agent providers run by an extension’s own code',
 }
+
+/** The most a contributed skill's SKILL.md may hold. */
+export const SKILL_FILE_MAX_BYTES = 256 * 1024
+/** The most files a contributed skill's folder may hold. */
+export const SKILL_FOLDER_MAX_FILES = 256
 
 // ── Field rules ─────────────────────────────────────────────────────────────
 
@@ -900,6 +910,204 @@ const CONTRIBUTES: ObjectNode = {
       since: V1,
       tier: 'worker',
     },
+    skills: {
+      node: {
+        kind: 'array',
+        max: 64,
+        unique: byId,
+        items: {
+          kind: 'object',
+          title: 'SkillContribution',
+          fields: {
+            id: {
+              node: idNode(),
+              required: true,
+              doc: 'Id, unique among this extension’s skills. Agents are handed a copy named `x<8 hex of a hash of the install key>-<skill id>`, its frontmatter holding only `name` and `description`.',
+              since: V1,
+              example: 'review-checklist',
+            },
+            path: {
+              node: pathNode(),
+              required: true,
+              doc: `A folder holding the skill: its \`SKILL.md\` (at most ${SKILL_FILE_MAX_BYTES / 1024} KiB) and any files it names, ${SKILL_FOLDER_MAX_FILES} files at most.`,
+              since: V1,
+              example: 'skills/review-checklist',
+            },
+          },
+        },
+      },
+      doc: 'Skills the person’s agents can use, in every workspace on this machine. Studio copies each into a folder of its own and hands it to agents at launch; it never writes into a project. Listed when the extension is installed; no approval is asked for them.',
+      since: V1,
+      tier: 'declarative',
+    },
+    mcpServers: {
+      node: {
+        kind: 'array',
+        max: 16,
+        unique: byId,
+        items: {
+          kind: 'object',
+          title: 'McpServerContribution',
+          fields: {
+            id: {
+              node: idNode(),
+              required: true,
+              doc: 'Id, unique among this extension’s servers. Agents see the server as `<publisher>_<id>_<server id>`.',
+              since: V1,
+              example: 'search',
+            },
+            name: { node: displayText(64), required: true, doc: 'Its name, for the person.', since: V1 },
+            description: { node: displayText(256), doc: 'What it gives agents, in a sentence.', since: V1 },
+            transport: {
+              node: { kind: 'string', max: 8, enum: ['stdio', 'http'] },
+              required: true,
+              doc: '`stdio`: a local command each agent starts, with `command`. `http`: a hosted server agents reach at `url`.',
+              since: V1,
+            },
+            command: {
+              node: { kind: 'string', min: 1, max: 256, check: mcpCommandProblem },
+              doc: `What a \`stdio\` server runs: a program on the PATH, such as \`node\` or \`npx\`, or a file the extension ships, as \`${EXTENSION_PATH_TOKEN}/bin/server\`.`,
+              since: V1,
+              example: 'node',
+            },
+            args: {
+              node: {
+                kind: 'array',
+                max: 64,
+                items: { kind: 'string', max: 1024, check: extensionPathUseProblem },
+              },
+              doc: `Its arguments. \`${EXTENSION_PATH_TOKEN}\` stands for the extension’s installed folder.`,
+              since: V1,
+              example: [`${EXTENSION_PATH_TOKEN}/dist/server.js`],
+            },
+            env: {
+              node: {
+                kind: 'array',
+                max: 32,
+                unique: { key: (item) => String((item as { name: string }).name), label: 'variable' },
+                items: {
+                  kind: 'object',
+                  title: 'McpServerEnvironmentVariable',
+                  fields: {
+                    name: {
+                      node: {
+                        kind: 'string',
+                        min: 1,
+                        max: 128,
+                        pattern: /^[A-Za-z_][A-Za-z0-9_]*$/,
+                        patternMessage: 'must be an environment variable name.',
+                      },
+                      required: true,
+                      doc: 'The variable’s name.',
+                      since: V1,
+                    },
+                    value: {
+                      node: { kind: 'string', max: 1024, check: extensionPathUseProblem },
+                      required: true,
+                      doc: `Its value, as written: Studio reads none from its own environment. \`${EXTENSION_PATH_TOKEN}\` stands for the installed folder.`,
+                      since: V1,
+                    },
+                  },
+                },
+              },
+              doc: 'Environment variables the command runs with, shown on the install review.',
+              since: V1,
+            },
+            url: {
+              node: { kind: 'string', min: 1, max: 2048, check: agentEndpointUrlProblem },
+              doc: 'Where an `http` server is: `https`, or plain `http` to localhost.',
+              since: V1,
+              example: 'https://mcp.example.com/mcp',
+            },
+          },
+        },
+      },
+      doc: 'MCP servers the person’s agents get, in every workspace on this machine. A `stdio` server’s command, arguments, environment and the extension’s files are part of what the person approves at install, so an update that changes any of them asks again; an `http` server is listed when the extension is installed and asks nothing.',
+      since: V1,
+      tier: 'declarative',
+    },
+    providers: {
+      node: {
+        kind: 'array',
+        max: 8,
+        unique: byId,
+        items: {
+          kind: 'object',
+          title: 'ProviderContribution',
+          fields: {
+            id: {
+              node: idNode(),
+              required: true,
+              doc: 'Id, unique among this extension’s providers. Studio knows it, and keeps its key, as `<publisher>.<id>/<provider id>`.',
+              since: V1,
+              example: 'acme-models',
+            },
+            name: { node: displayText(64), required: true, doc: 'Its name in the model picker.', since: V1 },
+            baseUrl: {
+              node: { kind: 'string', min: 1, max: 2048, check: agentEndpointUrlProblem },
+              required: true,
+              doc: 'The OpenAI-compatible API’s base: `https`, or plain `http` to localhost. Its key is sent to this origin and no other, and the install review names it. A path on it is kept: the request paths are joined after it, so `https://api.example.com/openai` and `/v1/chat/completions` make `https://api.example.com/openai/v1/chat/completions`.',
+              since: V1,
+              example: 'https://api.example.com',
+            },
+            chatCompletionsPath: {
+              node: { kind: 'string', min: 1, max: 256, check: providerPathProblem },
+              doc: 'The chat completions path, joined after `baseUrl`’s own path. Defaults to `/v1/chat/completions`.',
+              since: V1,
+            },
+            modelsPath: {
+              node: { kind: 'string', min: 1, max: 256, check: providerPathProblem },
+              doc: 'A models path, joined after `baseUrl`’s own path, answering `{ data: [{ id }] }`, for the picker to list what the endpoint offers now.',
+              since: V1,
+            },
+            models: {
+              node: {
+                kind: 'array',
+                max: 64,
+                unique: byId,
+                items: {
+                  kind: 'object',
+                  title: 'ProviderModel',
+                  fields: {
+                    id: {
+                      node: { kind: 'string', min: 1, max: 200, pattern: /^[^\s\u0000-\u001f]+$/ },
+                      required: true,
+                      doc: 'The model id the endpoint takes.',
+                      since: V1,
+                      example: 'acme-large',
+                    },
+                    name: { node: displayText(64), doc: 'Its name in the picker.', since: V1 },
+                  },
+                },
+              },
+              required: true,
+              doc: 'Models to offer, the first being the default. At least one.',
+              since: V1,
+            },
+            apiKey: {
+              node: {
+                kind: 'object',
+                title: 'ProviderApiKey',
+                fields: {
+                  label: {
+                    node: displayText(64),
+                    required: true,
+                    doc: 'What the key is called where the person enters it, in Settings.',
+                    since: V1,
+                    example: 'Acme API key',
+                  },
+                },
+              },
+              doc: 'The provider takes an API key, entered in Settings and sent as a bearer token. Never read from an environment variable.',
+              since: V1,
+            },
+          },
+        },
+      },
+      doc: 'Model providers for chats: OpenAI-compatible endpoints. The person approves each at install, seeing the origin its key goes to; an update that adds one or moves it to another origin asks again.',
+      since: V1,
+      tier: 'declarative',
+    },
     ...Object.fromEntries(
       Object.entries(EXTENSION_RESERVED_POINTS).map(([point, purpose]): [string, FieldSpec] => [
         point,
@@ -966,7 +1174,7 @@ export const EXTENSION_MANIFEST_FIELDS: ObjectNode = {
     tier: {
       node: { kind: 'string', max: 16, enum: EXTENSION_TIERS },
       required: true,
-      doc: 'The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, custom editors, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.',
+      doc: 'The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items, and the skills, MCP servers and model providers it hands agents and chats), `ui` (panels, doors, settings sections, custom editors, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.',
       since: V1,
       example: 'ui',
     },
@@ -1096,6 +1304,30 @@ export type ExtensionSettingContribution = {
   placeholder?: string
 }
 
+/** A skill: a folder holding a SKILL.md, handed to agents. */
+export type ExtensionSkillContribution = { id: string; path: string }
+/** An MCP server agents get: a local command (`stdio`) or a hosted server (`http`). */
+export type ExtensionMcpServerContribution = {
+  id: string
+  name: string
+  description?: string
+  transport: 'stdio' | 'http'
+  command?: string
+  args?: string[]
+  env?: Array<{ name: string; value: string }>
+  url?: string
+}
+/** An OpenAI-compatible model provider for chats. */
+export type ExtensionProviderContribution = {
+  id: string
+  name: string
+  baseUrl: string
+  chatCompletionsPath?: string
+  modelsPath?: string
+  models: Array<{ id: string; name?: string }>
+  apiKey?: { label: string }
+}
+
 export type ExtensionContributions = {
   commands: ExtensionCommandContribution[]
   menus: ExtensionMenuContribution[]
@@ -1110,6 +1342,9 @@ export type ExtensionContributions = {
   keybindings: ExtensionKeybindingContribution[]
   statusBarItems: ExtensionStatusBarItemContribution[]
   settings: ExtensionSettingContribution[]
+  skills: ExtensionSkillContribution[]
+  mcpServers: ExtensionMcpServerContribution[]
+  providers: ExtensionProviderContribution[]
 }
 
 export type ExtensionManifest = {
@@ -1161,6 +1396,9 @@ const EMPTY_CONTRIBUTIONS = (): ExtensionContributions => ({
   keybindings: [],
   statusBarItems: [],
   settings: [],
+  skills: [],
+  mcpServers: [],
+  providers: [],
 })
 
 /** Compare two `x.y.z` versions. */
@@ -1274,6 +1512,34 @@ function crossFieldIssues(manifest: ExtensionManifest, options: ExtensionManifes
   if (contributes.customEditors.length > 0 && !manifest.permissions.includes('workspace-files:read')) {
     issues.push({ path: 'contributes.customEditors', message: 'needs the "workspace-files:read" permission.' })
   }
+  contributes.mcpServers.forEach((server, index) => {
+    const path = `contributes.mcpServers[${index}]`
+    if (server.transport === 'stdio') {
+      if (server.command === undefined) issues.push({ path, message: 'a stdio server needs a command.' })
+      if (server.url !== undefined) issues.push({ path: `${path}.url`, message: 'is for an http server only.' })
+    } else {
+      if (server.url === undefined) issues.push({ path, message: 'an http server needs a url.' })
+      for (const field of ['command', 'args', 'env'] as const)
+        if (server[field] !== undefined)
+          issues.push({ path: `${path}.${field}`, message: 'is for a stdio server only.' })
+    }
+  })
+  contributes.providers.forEach((provider, index) => {
+    if (provider.models.length === 0)
+      issues.push({ path: `contributes.providers[${index}].models`, message: 'must list at least one model.' })
+    for (const field of ['chatCompletionsPath', 'modelsPath'] as const) {
+      const path = provider[field] ?? (field === 'chatCompletionsPath' ? '/v1/chat/completions' : undefined)
+      if (path === undefined || agentEndpointUrlProblem(provider.baseUrl) || providerPathProblem(path)) continue
+      try {
+        providerEndpoint(provider.baseUrl, path)
+      } catch {
+        issues.push({
+          path: `contributes.providers[${index}].${field}`,
+          message: `leaves the origin of baseUrl once joined to its path.`,
+        })
+      }
+    }
+  })
   if (contributes.mcpTools.length > 0 && !manifest.permissions.includes('tools:contribute')) {
     issues.push({ path: 'contributes.mcpTools', message: 'needs the "tools:contribute" permission.' })
   }

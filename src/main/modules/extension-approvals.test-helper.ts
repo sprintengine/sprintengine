@@ -12,7 +12,7 @@ export function approvalOf(folder: string): ExtensionApprovalRecord {
   if (!parsed.ok) throw new Error(`${folder}: extension.json is invalid`)
   const scan = computeModuleFileDigestsSync(folder)
   if (!scan.ok) throw new Error(`${folder}: its files cannot all be digested`)
-  const access = extensionAccess(parsed.manifest)
+  const access = extensionAccess(parsed.manifest, scan.files)
   return { fingerprint: extensionApprovalFingerprint(access, extensionContentFingerprint(scan.files)), access }
 }
 

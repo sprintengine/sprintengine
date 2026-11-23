@@ -57,9 +57,6 @@ export type SkillInstallProvenance = {
   commitSha: string
 }
 
-/** Provenance for a copy that came from a plugin bundle, not from a skill source. */
-export const PLUGIN_BUNDLE_SKILL_SOURCE_ID = 'plugin-bundle'
-
 type SkillProvenanceRecord = SkillInstallProvenance & { installedAt: string }
 
 /**
@@ -283,10 +280,10 @@ export async function installSkill(options: InstallSkillOptions): Promise<SkillI
 }
 
 /**
- * Install a skill that is already a directory on this machine — a plugin
- * bundle's skill component. It goes through the same plan/stage/copy path as a
- * repository skill so a bundle cannot reach outside its own directory either;
- * only where the bytes are read from differs.
+ * Install a skill that is already a directory on this machine — Studio's own
+ * plugin's skills. It goes through the same plan/stage/copy path as a
+ * repository skill so a directory cannot reach outside itself either; only
+ * where the bytes are read from differs.
  */
 export async function installSkillDirectory(options: {
   workspaceRoot: string
@@ -294,12 +291,11 @@ export async function installSkillDirectory(options: {
   dirName: string
   harnesses: readonly SkillHarness[]
   /**
-   * Who owns the copy. Omitted means the plugin-bundle marker, which no sync
-   * claims. A bundle the app itself ships and refreshes names itself instead,
-   * so a later sync can tell an app-shipped copy from someone's own edit
-   * (backlog/2026-09-06-sprintengine-studio-ships-as-a-plugin.md).
+   * Who owns the copy. A plugin the app itself ships and refreshes names
+   * itself, so a later sync can tell an app-shipped copy from someone's own
+   * edit.
    */
-  provenance?: SkillInstallProvenance
+  provenance: SkillInstallProvenance
 }): Promise<SkillInstallResult> {
   const entries = await listLocalTree(options.sourceDir)
   if (entries.length === 0) {
@@ -324,13 +320,7 @@ export async function installSkillDirectory(options: {
     skill,
     harnesses: options.harnesses,
     readFile: (file) => readFile(join(options.sourceDir, ...file.path.split('/'))),
-    // A bundle is not a skill source, so no source sync ever owns this copy —
-    // unless the caller names one that does.
-    provenance: options.provenance ?? {
-      sourceId: PLUGIN_BUNDLE_SKILL_SOURCE_ID,
-      skillId: options.dirName,
-      commitSha: '',
-    },
+    provenance: options.provenance,
   })
 }
 

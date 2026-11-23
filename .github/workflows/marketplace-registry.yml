@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate registry and plugin signatures
+      - name: Validate registry
         run: npm run verify:marketplace-registry
 
       - name: Exercise valid and tampered submissions

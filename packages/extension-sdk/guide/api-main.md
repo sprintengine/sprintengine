@@ -292,9 +292,8 @@ however you like; it is per machine and never synced.
 
 ## Skills
 
-An extension does not ship skills yet: `contributes.skills` is reserved and
-must be empty (a plugin bundle carries skills for now). The worker can still
-put one of Studio's own skills in a workspace before it starts a chat that
+An extension ships its own skills with `contributes.skills` in extension.json
+(the `manifest` topic). The worker can also put one of Studio's own skills in a workspace before it starts a chat that
 uses it. `ensureSkillInstalled(root, id)` writes it; `getSkillStatus(root, id)`
 answers the same question without writing, for a door that shows "installed
 in this project". Both never throw and answer a `ModuleSkillStatus`

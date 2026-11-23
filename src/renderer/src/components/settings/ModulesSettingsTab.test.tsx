@@ -97,6 +97,9 @@ function module(
         keybindings: [],
         statusBarItems: [],
         settings: [],
+        skills: [],
+        mcpServers: [],
+        providers: [],
         ...contributes,
       },
     },
@@ -251,7 +254,6 @@ test('the page is Extensions, with Browse marketplace and an Install menu, and s
   const menu = document.querySelector('[role="menu"][aria-label="Install"]')!
   expect([...menu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim())).toEqual([
     'From a folder',
-    'From GitHub',
     'Browse marketplace',
   ])
   // No trailing ellipsis on any label.

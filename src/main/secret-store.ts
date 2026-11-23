@@ -1,5 +1,5 @@
 import { dirname, join } from 'path'
-import { mkdir, readFile, unlink, writeFile } from 'fs/promises'
+import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises'
 
 import type {
   ConversationSecretClearResult,
@@ -197,7 +197,7 @@ export class ProviderSecretStore {
 
   private resolveDescriptor(providerId: string): ProviderSecretDescriptor {
     const normalizedProviderId = providerId.trim()
-    if (!/^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/.test(normalizedProviderId)) {
+    if (!isCredentialId(normalizedProviderId)) {
       return { ok: false, message: 'Provider id is invalid.' }
     }
 
@@ -207,9 +207,10 @@ export class ProviderSecretStore {
     const auth = owner.manifest.auth
     if (!auth) return { ok: false, message: 'Conversation provider does not declare a secret.' }
 
-    // The environment is read only for a provider that ships with Studio. The
-    // registry refuses a user provider that names a variable; this keeps one
-    // that reached here some other way from reading it.
+    // The environment is read only for a provider or CLI that ships with
+    // Studio. An extension's provider carries no variable name at all (its
+    // key is entered in Settings); this keeps one that reached here some
+    // other way from reading one.
     const envName = owner.source === 'bundled' ? auth.env?.trim() || null : null
     return {
       ok: true,
@@ -220,9 +221,39 @@ export class ProviderSecretStore {
     }
   }
 
+  /**
+   * Forget every key kept under `prefix` (an uninstalled extension's
+   * `<publisher>.<id>/`), in memory and on disk, so a later install of the
+   * same key starts with none.
+   */
+  async forgetUnder(prefix: string): Promise<void> {
+    for (const key of [...this.inMemorySecrets.keys()]) if (key.startsWith(prefix)) this.inMemorySecrets.delete(key)
+    const dir = join(this.resolveUserDataDir(), 'provider-secrets')
+    const encoded = encodeURIComponent(prefix)
+    const names = await readdir(dir).catch(() => [] as string[])
+    await Promise.all(
+      names
+        .filter((name) => name.startsWith(encoded))
+        .map((name) => this.files.unlink(join(dir, name)).catch(() => undefined)),
+    )
+  }
+
   private secretPath(storageKey: string): string {
     return join(this.resolveUserDataDir(), 'provider-secrets', `${encodeURIComponent(storageKey)}.bin`)
   }
+}
+
+/**
+ * A credential's id: a built-in provider's or CLI's (`openrouter`), or an
+ * extension's provider, namespaced by its install key
+ * (`<publisher>.<id>/<provider id>`).
+ */
+const KEBAB = '[a-z0-9]+(?:-[a-z0-9]+)*'
+const BUILT_IN_CREDENTIAL_ID = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/
+const EXTENSION_CREDENTIAL_ID = new RegExp(`^${KEBAB}\\.${KEBAB}/${KEBAB}$`)
+
+function isCredentialId(id: string): boolean {
+  return id.length <= 200 && (BUILT_IN_CREDENTIAL_ID.test(id) || EXTENSION_CREDENTIAL_ID.test(id))
 }
 
 // The installed platform's cipher, looked up on each use as the Electron one

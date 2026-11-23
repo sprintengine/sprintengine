@@ -29,6 +29,7 @@ import { handleExtensionFrameScheme, stagedExtensionFrames } from './extension-f
 import { defaultUserModuleRoot, discoverUserModulesSync } from './modules/user-module-registry'
 import { watchUserModuleRoot } from './modules/user-module-watch'
 import { createModuleLifecycle, liveModuleIds } from './modules/module-lifecycle'
+import { bundledRegistryIds } from './plugin-registry-instance'
 import { attachBuildSkewWatch, createBuildSkewWatch } from './build-skew'
 import { registerCoreIpc } from './register-core-ipc'
 import { markStartup } from './startup-timeline'
@@ -249,9 +250,9 @@ if (!serverHost)
 // What runs here, listed and changed over the Studio RPC (`module.*`). Out of
 // process the server's kernel holds the modules and serves it
 // (server-modules.ts); this process's kernel is empty.
-if (!serverHost)
-  services.moduleHub.serveLifecycleFrom(
-    createModuleLifecycle({
+const moduleLifecycle = serverHost
+  ? null
+  : createModuleLifecycle({
       dataDir: app.getPath('userData'),
       moduleRoot: defaultUserModuleRoot,
       // A worker whose approval is gone or changed stops, and the windows hear.
@@ -273,6 +274,9 @@ if (!serverHost)
         }
       },
       registry: services.moduleRegistryMirror,
+      // An extension's provider may not take a built-in's id.
+      protectedProviderIds: bundledRegistryIds,
+      warn: (message) => console.warn(`[extensions] ${message}`),
       applyEnablement: async (overrides) => {
         const report = await moduleLoad.applyEnablement(overrides, {
           liveModuleIds: liveModuleIds(Object.keys(thirdPartyMainLoad.moduleRoots), moduleLoad.report.errors),
@@ -302,14 +306,17 @@ if (!serverHost)
           declaredMethods: (id) => moduleLoad.kernel.declaredMethods(id),
         }
       },
-    }),
-  )
+    })
+if (moduleLifecycle) services.moduleHub.serveLifecycleFrom(moduleLifecycle)
 // A module copied into the drop-in folder while Studio runs is listed at once,
 // not after a reload. Out of process the server watches (server-modules.ts).
-if (!serverHost) {
+if (moduleLifecycle) {
   // A worker whose extension was removed from the folder (and its approval with it) stops.
+  // What extensions hand agents follows the folder too: a server whose files
+  // changed under its approval is retracted, not run until the next start.
   const stopWatchingModules = watchUserModuleRoot(defaultUserModuleRoot(), () => {
     extensionWorkers.workers.reconcile()
+    void moduleLifecycle.reproject()
     services.moduleHub.deliverChanged()
   })
   app.once('will-quit', stopWatchingModules)
@@ -361,7 +368,7 @@ void app.whenReady().then(() => {
   handleExtensionFrameScheme(protocol, stagedExtensionFrames)
 })
 if (DIAGNOSTICS_ENABLED) {
-  console.info('[modules] extension roots:', extensionFolders.moduleRoot, extensionFolders.pluginRoot)
+  console.info('[modules] extension root:', extensionFolders.moduleRoot)
   if (extensionFolders.errors.length > 0) {
     console.warn('[modules] extension folder setup errors:', extensionFolders.errors)
   }

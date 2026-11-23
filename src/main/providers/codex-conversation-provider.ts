@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { ChatExtensionContributions } from '../../server/extensions/agent-contributions/projection'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -246,6 +247,9 @@ export type CodexConversationProviderOptions = {
   // The app's MCP gateway on the machine the chat's `codex` runs on. Null
   // leaves it out; the chat runs without Studio's tools rather than not at all.
   resolveStudioMcpServer?: StudioMcpServerResolver
+  // What installed extensions hand the chat: their MCP servers, beside the
+  // session's own. Read at each start.
+  extensionContributions?: () => ChatExtensionContributions
   // The size of Codex's log database on the chat's machine, read when a start
   // times out. Tests stand in; the default lists the Codex home folder there.
   readCodexLogBytes?: (env: NodeJS.ProcessEnv) => Promise<number | null>
@@ -1264,7 +1268,12 @@ export function createCodexConversationProvider(
       // issued its own gateway token as it starts (its environment names the
       // chat), and Codex starts a server with only the variables its entry
       // names, so the entry names the token's and never carries it: these
-      // overrides are the app-server's command line.
+      // overrides are the app-server's command line. An installed
+      // extension's servers join them unless one of the session's own has
+      // the same name.
+      const extensionServers = (options.extensionContributions?.().mcpServers ?? []).filter(
+        (server) => !(state.input.mcpServers ?? []).some((own) => own.id === server.id),
+      )
       const mcpServers = withStudioGateway(
         gateway
           ? studioGatewayForChat(
@@ -1273,7 +1282,7 @@ export function createCodexConversationProvider(
               { byName: true },
             )
           : null,
-        state.input.mcpServers ?? [],
+        [...(state.input.mcpServers ?? []), ...extensionServers],
       )
       // The gateway and the session's own MCP servers, as config overrides
       // on top of the person's own `config.toml`, for this process only.
@@ -1282,7 +1291,7 @@ export function createCodexConversationProvider(
       // name, so the app-server starts one gateway, the launch's. Their env
       // and header values go in the app-server's environment, which the
       // overrides name.
-      const mcp = codexMcpServerArgs(mcpServers, env)
+      const mcp = codexMcpServerArgs(mcpServers, env, new Set(extensionServers.map((server) => server.id)))
       const transport = (options.createTransport ?? createCodexRpcTransport)({
         command,
         cwd: state.input.workspaceRoot ?? '',
@@ -2026,6 +2035,8 @@ const CODEX_MCP_STATUS: Readonly<Record<string, AgentMcpServerStatus>> = {
 export function codexMcpServerArgs(
   servers: readonly ConversationMcpServer[],
   base: Readonly<Record<string, string | undefined>>,
+  /** Servers whose env stays in their table: an installed extension's (codex-mcp-overrides.ts). */
+  inlineEnvIds: ReadonlySet<string> = new Set(),
 ): { args: string[]; env: Record<string, string> } {
   const carrier = codexMcpEnv(base)
   const args = servers.flatMap((server) => {
@@ -2034,7 +2045,8 @@ export function codexMcpServerArgs(
         `Codex cannot be given the MCP server "${server.name || server.id}": its id "${server.id}" is not a Codex config key.`,
       )
     }
-    return ['-c', `mcp_servers.${server.id}=${tomlInlineTable(codexMcpServerFields(server, carrier))}`]
+    const fields = codexMcpServerFields(server, carrier, { inlineEnv: inlineEnvIds.has(server.id) })
+    return ['-c', `mcp_servers.${server.id}=${tomlInlineTable(fields)}`]
   })
   return { args, env: carrier.env }
 }

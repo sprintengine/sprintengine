@@ -12,6 +12,7 @@
 // moves fast, so version churn must not leak past this adapter. The package
 // is ESM-only and the main bundle is CJS, so the SDK is loaded via dynamic
 // import on first use.
+import type { ChatExtensionContributions } from '../../server/extensions/agent-contributions/projection'
 import {
   saveToolResultImages,
   toolImagesNotShown,
@@ -170,6 +171,9 @@ export const CLAUDE_AGENT_SESSION_ENV_KEY = 'SPRINTENGINE_CONVERSATION_SESSION_I
 type SdkQueryFunction = typeof import('@anthropic-ai/claude-agent-sdk').query
 
 export type ClaudeAgentProviderOptions = {
+  // What installed extensions hand the chat: their MCP servers beside the
+  // session's own, and their skills as plugin folders. Read at each start.
+  extensionContributions?: () => ChatExtensionContributions
   // Injectable seams for tests; defaults wire the real SDK + CLI detection.
   loadQuery?: () => Promise<SdkQueryFunction>
   resolveExecutable?: (cliRuntimes?: ConversationCliRuntimeOverrides) => Promise<string>
@@ -1059,10 +1063,12 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     assertSpawnWanted(state, generation)
     const instructions = await readWorkspaceInstructions(state.workspaceRoot)
     const studioGateway = await options.resolveStudioMcpServer?.().catch(() => null)
-    const mcpServers = claudeMcpLaunch(
-      studioGateway ? withAgentIdentity(studioGateway, env) : null,
-      state.mcpServers ?? [],
-    )
+    const extensions = options.extensionContributions?.() ?? { mcpServers: [], pluginDirs: [] }
+    const sessionServerIds = new Set((state.mcpServers ?? []).map((server) => server.id))
+    const mcpServers = claudeMcpLaunch(studioGateway ? withAgentIdentity(studioGateway, env) : null, [
+      ...(state.mcpServers ?? []),
+      ...extensions.mcpServers.filter((server) => !sessionServerIds.has(server.id)),
+    ])
     // Only a chat that has the gateway has the pool's tools, and only one in a
     // git checkout has a repository to lease a worktree of.
     const leasesWorktrees = Boolean(studioGateway) && (await isInGitCheckout(state.workspaceRoot))
@@ -1092,7 +1098,9 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     }
     state.skillPluginDir = skillPlugin
     state.projectCommands = projectCommands
-    const plugins = [skillPlugin, projectCommands?.dir].filter((dir): dir is string => Boolean(dir))
+    const plugins = [skillPlugin, projectCommands?.dir, ...extensions.pluginDirs].filter((dir): dir is string =>
+      Boolean(dir),
+    )
     // A resume walks the session file back from its newest entry; a gap a
     // crash left in it would bring back only the messages after the gap.
     let savedCostUsd = 0

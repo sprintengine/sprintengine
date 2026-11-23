@@ -17,7 +17,6 @@ test('mcp-config-service', async () => {
   async function main(): Promise<void> {
     const registry = createPluginRegistry({
       bundledRoot: BUNDLED_ROOT,
-      userRoot: join(process.cwd(), '.does-not-exist', 'sprintengine', 'plugins'),
     })
     const report = registry.loadSync()
     assert.deepEqual(report.rejected, [], `bundled plugins should validate: ${JSON.stringify(report.rejected)}`)
@@ -1034,7 +1033,6 @@ test('mcp-config-service', async () => {
 test('a sync whose output matches the file on disk leaves every file untouched', async () => {
   const registry = createPluginRegistry({
     bundledRoot: join(process.cwd(), 'resources', 'plugins'),
-    userRoot: join(process.cwd(), '.does-not-exist', 'sprintengine', 'plugins'),
   })
   registry.loadSync()
   const lookupPlugin: PluginLookup = (id) => {

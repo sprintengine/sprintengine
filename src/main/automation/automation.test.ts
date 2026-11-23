@@ -38,7 +38,7 @@ import type { LaunchedAgentLink } from '../agent-launch-notices'
 import type { WorktreeDependencyInstallView } from '../../shared/ipc/worktree-pool'
 import type { LoadedPlugin, PluginManifest } from '../../shared/plugin-manifest'
 import type { MarketplaceRegistryReadInput } from '../../shared/electron-api'
-import type { MarketplaceComponentKind } from '../../shared/marketplace/manifest'
+import type { MarketplaceProvidesKind } from '../../shared/marketplace/manifest'
 import type { CapabilityManifest, ThirdPartyModuleView } from '../../shared/modules/manifest'
 import {
   EMPTY_MODULE_SURFACES,
@@ -3283,6 +3283,9 @@ test('automation', async () => {
           keybindings: [],
           statusBarItems: [],
           settings: [],
+          skills: [],
+          mcpServers: [],
+          providers: [],
         },
       },
       approval:
@@ -3655,19 +3658,20 @@ test('automation', async () => {
           category: 'Insight',
           icon: 'cloud',
           latest: 3,
-          provides: ['skills'] as MarketplaceComponentKind[],
+          provides: ['skills'] as MarketplaceProvidesKind[],
           source: 'https://example.test/weather.zip',
           tags: ['forecast'],
         },
         {
-          id: 'railway-mcp',
+          id: 'railway-cli',
           name: 'Railway',
           publisher: { name: 'Railway', verified: false },
           summary: 'Deploy from an agent.',
           category: 'Connectivity',
           icon: 'train',
           latest: 1,
-          provides: ['mcp'] as MarketplaceComponentKind[],
+          provides: ['cli'] as MarketplaceProvidesKind[],
+          cli: { pluginId: 'railway' },
         },
       ],
     }
@@ -3706,11 +3710,15 @@ test('automation', async () => {
       ['weather-skills'],
       'a provides filter over the same index',
     )
-    assert.equal((await tool(tools, 'marketplace.list').handler({ provides: 'module' })).isError, true)
+    assert.equal(
+      (await tool(tools, 'marketplace.list').handler({ provides: 'mcp' })).isError,
+      true,
+      'MCP servers are an extension’s contributions, not a registry kind',
+    )
     const searched = await tool(tools, 'marketplace.list').handler({ query: 'RAILWAY' })
     assert.deepEqual(
       (searched.structuredContent as { plugins: Array<{ id: string }> }).plugins.map((plugin) => plugin.id),
-      ['railway-mcp'],
+      ['railway-cli'],
     )
     await tool(tools, 'marketplace.list').handler({ forceRefresh: true })
     assert.deepEqual(reads, [undefined, undefined, undefined, { forceRefresh: true }])

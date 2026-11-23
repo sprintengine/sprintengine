@@ -31,7 +31,7 @@
     "src/shared/**/*",
     "packages/extension-sdk/src/index.ts",
     "packages/extension-sdk/src/manifest-validate.ts",
-    "packages/extension-sdk/src/plugin-manifest.ts",
+    "packages/extension-sdk/src/agent-contributions.ts",
     "packages/extension-sdk/src/host-api.ts",
     "packages/extension-sdk/src/conversation.ts",
     "packages/extension-sdk/src/brokers.ts",

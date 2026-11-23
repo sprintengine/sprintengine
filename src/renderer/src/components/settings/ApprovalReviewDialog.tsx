@@ -6,14 +6,18 @@ import { AccessCareList, AccessChips, InlineNotice, RefreshIcon, type AccessItem
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/Modal'
 import { copy } from '../../../../shared/copy'
 import { extensionHookApprovalLines } from '../../../../../packages/extension-sdk/src/hooks'
+import { agentContributionLines } from './extensionContributions'
+import { AgentContributionList } from './AgentContributionList'
 
 // Review → approve and turn on, in one step. The dialog is the consent: what
 // the extension is (its tier, said plainly: a worker's code runs with full
 // access to this machine, a ui extension's runs isolated unless it asks to
 // change project files, which is full access too), what needs care with a short why for each,
 // the rest as quiet pills, and for an update, what it asks beyond what was
-// approved before. Approving names the fingerprint the person was shown, so a
-// change since is refused rather than approved unseen.
+// approved before, and what it hands agents and chats: a local MCP server's
+// whole command line and environment, a provider's key origin. Approving
+// names the fingerprint the person was shown, so a change since is refused
+// rather than approved unseen.
 
 export type ApprovalReviewDialogProps = {
   module: ThirdPartyModuleView | null
@@ -47,6 +51,13 @@ export function ApprovalReviewDialog({
   const hooks = module.extension.contributes.hooks ?? []
   const hookLines = extensionHookApprovalLines(hooks.map((hook) => hook.point))
   const failsClosed = hooks.some((hook) => hook.onError === 'deny' && !hook.point.endsWith('.after'))
+  // Every skill, MCP server and provider it hands agents, the local servers'
+  // command lines and the providers' key origins included: what approving lets run.
+  const agentLines = agentContributionLines(module.extension, module.ignoredSkillKeys)
+  const reach = {
+    localServers: agentLines.some((line) => line.kind === 'mcp-local'),
+    providers: agentLines.some((line) => line.kind === 'provider'),
+  }
   return (
     <Modal open onClose={onCancel} labelledBy={titleId} size="standard">
       <ModalHeader
@@ -57,13 +68,14 @@ export function ApprovalReviewDialog({
       />
       <ModalBody className="space-y-4">
         {module.extension.tier === 'worker' ||
+        reach.localServers ||
         (module.extension.tier === 'ui' && grantsFullAccess(module.extension.permissions)) ? (
           <InlineNotice tone="warn">
-            {extensionApprovalCopy(module.extension.tier, module.extension.permissions)}
+            {extensionApprovalCopy(module.extension.tier, module.extension.permissions, reach)}
           </InlineNotice>
         ) : (
           <p className="text-body text-[color:var(--text-default)]">
-            {extensionApprovalCopy(module.extension.tier, module.extension.permissions)}
+            {extensionApprovalCopy(module.extension.tier, module.extension.permissions, reach)}
           </p>
         )}
         {growth && growth.length > 0 ? (
@@ -97,6 +109,12 @@ export function ApprovalReviewDialog({
               ))}
               {failsClosed ? <li>{t.hooksFailClosed}</li> : null}
             </ul>
+          </section>
+        ) : null}
+        {agentLines.length > 0 ? (
+          <section aria-label={t.forAgents}>
+            <h3 className="mb-1.5 text-meta font-semibold text-[color:var(--text-muted)]">{t.forAgents}</h3>
+            <AgentContributionList lines={agentLines} label={t.forAgents} />
           </section>
         ) : null}
         {care.length > 0 ? (

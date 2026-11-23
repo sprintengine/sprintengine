@@ -24,7 +24,6 @@ import {
   type StudioMarketplace,
   type StudioMarketplaceDeps,
 } from '../../main/marketplace/studio-marketplace'
-import type { McpConfigService } from '../../main/mcp-config-service'
 import { getPluginManifest, listPluginRegistryEntries } from '../../main/plugin-registry-instance'
 import { permissionRenderKey } from '../../main/plugin-render'
 import type { StudioPaths } from '../platform/studio-paths'
@@ -52,8 +51,7 @@ export type StudioExtensions = {
 
 export type StudioExtensionsDeps = {
   paths: StudioPaths
-  mcpConfig: () => McpConfigService
-  /** The workspaces the Studio has open: where an install may write MCP configs and skill copies. */
+  /** The workspaces the Studio has open: where an install may write skill copies. */
   openWorkspaceRoots: () => string[]
   /** What is installed or trusted here changed. */
   changed?: () => void
@@ -64,7 +62,7 @@ export type StudioExtensionsDeps = {
   studioPluginStatus?: (workspaceRoot: string | null) => Promise<StudioPluginStatus>
   /** Test seams. */
   feedClients?: () => HostedFeedClients
-  marketplace?: Pick<StudioMarketplaceDeps, 'registryReader' | 'fetcher'>
+  marketplace?: Pick<StudioMarketplaceDeps, 'registryReader'>
 }
 
 const failed = (error: unknown) => ({
@@ -75,7 +73,6 @@ const failed = (error: unknown) => ({
 export function createStudioExtensions(deps: StudioExtensionsDeps): StudioExtensions {
   const marketplace = createStudioMarketplace({
     dataDir: () => deps.paths.dataDir(),
-    mcpConfig: deps.mcpConfig,
     openWorkspaceRoots: deps.openWorkspaceRoots,
     ...(deps.changed ? { changed: deps.changed } : {}),
     ...deps.marketplace,

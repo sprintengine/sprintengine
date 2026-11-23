@@ -345,6 +345,23 @@ refusal of any other hooked action (a launch, a workspace, a prompt) comes back
 in the refusal that action already had, its words naming the extension. An
 approval grows when an update hooks a point the approved version did not.
 
+### Skills, MCP servers and model providers from extensions (no compatibility)
+
+An extension's `contributes.skills`, `.mcpServers` and `.providers` replace the
+plugin bundle and the provider folder (`~/.sprintengine/plugins`), which are
+gone with nothing reading what they left (owner ruling: there are no users
+yet). What they hand agents is projected on the Studio the extension is
+installed on and reaches the agents and chats that Studio runs, so a client
+never runs another machine's servers. What crosses the wire is small: the
+`ExtensionContributionsView` carries the three lists, so a client's install
+review shows a local server's command line and environment and a provider's
+key origin; a provider's `source` is `bundled` or `extension`, and an
+extension's provider id, `<publisher>.<id>/<provider id>`, goes through
+`providers.*` as it is. There is no capability for it: a window and its Studio
+are one build. An approval grows when an update adds a local MCP server or
+changes its command, arguments, environment or the files it runs, and when it
+adds a provider or moves one to another origin.
+
 ### Permissions checked at the host; approvals replace trust (no compatibility)
 
 The permission vocabulary changed at once (owner ruling: there are no users
@@ -396,9 +413,9 @@ surfaces), `openWorkspace`, `openModalSurface`, `setSurfaceView`; the worker's
 `registerMain` and `registerSkills`; and the window-shared React, UI kit and
 door shell (`@sprintengine/extension-sdk/ui` and `/surface`). A worker keeps
 `registerMethods` and `registerMcpTools`; the tools it registers must be
-declared in `contributes.mcpTools`. A plugin bundle no longer carries an
-extension: its `module` component is refused, and the bundle carries MCP
-servers and skills only.
+declared in `contributes.mcpTools`. (A plugin bundle stopped carrying an
+extension here; the bundle itself has since gone, its MCP servers and skills
+now an extension's own contributions.)
 
 The Studio protocol changed with it, in place: `extension.rendererEntries`
 answers each extension's `extension` (its manifest) and `entries` (the source
@@ -1056,10 +1073,9 @@ its modules: the marketplace's registry and each installed entry against it
 (`cardFeed.get` with the `cardFeed.changed` stream, `sourcesFeed.get`), all
 under `providers:read`; Studio's own plugin in a workspace
 (`studioPlugin.status`) under `files:read`, in a folder the Studio knows for a
-client that is not an owner. Reviewing an entry or a GitHub repository,
-installing, updating and removing it (`marketplace.verify`, `.install`,
-`.update`, `.uninstall`, `.resolveGithub`, `.installGithub`) and making an
-extension project (`extensionScaffold.*`) are an owner's, with the reason in
+client that is not an owner. Reviewing an entry, installing, updating and
+removing it (`marketplace.verify`, `.install`, `.update`, `.uninstall`) and
+making an extension project (`extensionScaffold.*`) are an owner's, with the reason in
 the table: they fetch code to run on the machine, approve it, or write outside
 the folders the Studio knows. A review's one-time approval is spent by the
 install it approves, and checked by the Studio as strictly as before. The
@@ -1070,6 +1086,14 @@ Additive: a Studio without a desktop around it (a WSL or SSH server) leaves
 `extensions` out. The desktop's windows reach all of these only this way:
 their window IPC is gone, but for showing an extension's folder in the file
 manager, which stays the shell's.
+`marketplace.resolveGithub` and `marketplace.installGithub` (2026-11-13), the
+review and install of a plugin bundle from a GitHub repository, were removed on
+2026-11-22 with the plugin bundle and the inline MCP registry entry: skills, MCP
+servers and model providers arrive as contributions in an extension's
+extension.json. A Studio answers both `unknown_method`; the install envelope no
+longer carries `mcpSettings` or `mcpClients`, and a client that still sends them
+is not refused, they are dropped. Installing an extension from a repository
+returns with the catalogue.
 `artifacts` (2026-11-13) is where a desktop's Studio publishes its agents'
 pages: Settings ▸ Artifacts (`artifacts.settings`), setting the host up
 (`artifacts.setUp`, a mutation under its `commandId`), and the question an

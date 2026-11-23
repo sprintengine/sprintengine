@@ -145,9 +145,8 @@ The `welcome`'s `grant` is what the connection may do:
   `extension.reportRegistry` (the registry a
   window resolved) is an owner's: it is the report of the Studio's own window.
 - No scope installs code either: the marketplace's reviews, installs, updates
-  and uninstalls, a GitHub repository's review and install
-  (`marketplace.verify`, `.install`, `.update`, `.uninstall`,
-  `.resolveGithub`, `.installGithub`, `STUDIO_MARKETPLACE_OWNER`) and a new
+  and uninstalls (`marketplace.verify`, `.install`, `.update`, `.uninstall`,
+  `STUDIO_MARKETPLACE_OWNER`) and a new
   extension project (`extensionScaffold.*`, `STUDIO_SCAFFOLD_OWNER`) are an
   owner's. What could be installed and what can run (`marketplace.read`,
   `.updateStates`, `cliPlugins.*`, `cardFeed.get`, `sourcesFeed.get`) is

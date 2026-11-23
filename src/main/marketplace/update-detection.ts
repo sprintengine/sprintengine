@@ -28,15 +28,11 @@ export async function readMarketplaceUpdateStates(
 
   // Receipts are the authoritative installed set for marketplace installs;
   // their version is pinned to the registry `latest` that was installed.
-  const installed: InstalledEntry[] = []
-  for (const receipt of receiptsRead.receipts) {
-    // An extension installed from a GitHub URL updates from its repository
-    // (a new `marketplace.resolveGithub` review), not the registry: a registry entry
-    // that happens to share its id says nothing about it.
-    if (receipt.source?.kind !== 'github') {
-      installed.push({ id: receipt.id, displayName: receipt.displayName, installedVersion: receipt.version })
-    }
-  }
+  const installed: InstalledEntry[] = receiptsRead.receipts.map((receipt) => ({
+    id: receipt.id,
+    displayName: receipt.displayName,
+    installedVersion: receipt.version,
+  }))
 
   const registry = await services.registryReader.read(input)
   if (!registry.ok) {

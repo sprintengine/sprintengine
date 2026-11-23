@@ -46,7 +46,6 @@ beforeAll(() => {
   __resetPluginRegistryForTest()
   const registry = createPluginRegistry({
     bundledRoot: join(process.cwd(), 'resources', 'plugins'),
-    userRoot: join(temp, 'no-user-plugins'),
   })
   const report = registry.loadSync()
   assert.deepEqual(report.rejected, [], 'bundled manifests load clean')

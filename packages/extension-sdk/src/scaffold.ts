@@ -112,6 +112,7 @@ const TEMPLATE_ORDER = [
   'file-action',
   'mcp-tools',
   'hook-guard',
+  'agent-kit',
 ]
 
 // dist/scaffold.js (published) and src/scaffold.ts (in the repository) both sit

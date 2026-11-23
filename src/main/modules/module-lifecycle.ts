@@ -34,6 +34,7 @@ import { pinExtensionFrame } from './extension-frame-grant'
 import { readExtensionStandingContextSync } from './extension-standing-context'
 import { accessGrowth, extensionAccess, writeExtensionApproval } from './extension-approvals'
 import { discoverUserModules, installModuleFolder } from './user-module-registry'
+import { reconcileInstalledAgentContributions } from '../../server/extensions/agent-contributions/reconcile-installed'
 
 // What runs on a Studio, changed through its server (`extension.setEnabled`,
 // `extension.install`, `extension.approve`, `extension.uninstall`) and read
@@ -109,6 +110,10 @@ export type ModuleLifecycleDeps = {
   run: () => ExtensionRunView
   /** The registry a window resolved, kept for the agents' `module.*` tools. */
   registry: Pick<ModuleRegistryMirror, 'write'>
+  /** Ids an extension's provider may not take: Studio's own providers' and agent CLIs'. */
+  protectedProviderIds?: () => ReadonlySet<string>
+  /** Something worth a line in the log. */
+  warn?: (message: string) => void
 }
 
 export type ModuleLifecycle = {
@@ -135,6 +140,13 @@ export type ModuleLifecycle = {
     request: StudioExtensionFrameRequest,
   ): Promise<{ ok: true; hash: string; html: string } | { ok: false; message: string }>
   reportRegistry(snapshot: unknown): ModuleRegistrySnapshotWriteResult
+  /**
+   * Project what the extensions hand agents again, from the folder as it is
+   * now: for a change made outside these calls (the drop-in folder's watcher
+   * hears one), so an extension rewritten, removed or copied in by hand is
+   * retracted or handed out at once.
+   */
+  reproject(): Promise<void>
 }
 
 const INELIGIBLE_WORDS: Record<ModuleResolutionErrorCode, string> = {
@@ -188,6 +200,23 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     ok: false as const,
     message: error instanceof Error ? error.message : String(error),
   })
+  // What the extensions hand agents and chats (their skills, MCP servers and
+  // providers) follows every change here, and is put right at every start:
+  // a projection a crash interrupted is finished or undone before anything
+  // reads it (agent-contributions/projection.ts).
+  const project = async (): Promise<void> => {
+    try {
+      await reconcileInstalledAgentContributions({
+        dataDir: deps.dataDir,
+        moduleRoot: deps.moduleRoot(),
+        ...(deps.protectedProviderIds ? { protectedProviderIds: deps.protectedProviderIds } : {}),
+        ...(deps.warn ? { warn: deps.warn } : {}),
+      })
+    } catch (error) {
+      deps.warn?.(`What extensions hand agents could not be projected: ${failed(error).message}`)
+    }
+  }
+  void oneAtATime(project)
 
   return {
     list() {
@@ -269,6 +298,8 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
 
     reportRegistry: (snapshot) => deps.registry.write(snapshot),
 
+    reproject: () => oneAtATime(project),
+
     setEnabled: (moduleId, enabled) =>
       oneAtATime(async () => {
         if (!isModuleIdSegment(moduleId)) return { ok: false, message: 'That is not a module id.' }
@@ -277,6 +308,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
         else overrides[moduleId] = enabled
         const written = await writeModuleOverrides(deps.dataDir, overrides)
         if (!written.ok) return { ok: false, message: written.message ?? 'The choice could not be saved.' }
+        await project()
         // Kept for the next start even when applying it now fails.
         const applied = await deps.applyEnablement(overrides).catch(failed)
         if (!applied.ok) return { ok: false, message: applied.message }
@@ -292,7 +324,9 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           // Read before the copy replaces it: the version an update replaces,
           // and whether the person approved it as it is.
           const before = (await discoverUserModules(deps.moduleRoot(), context)).modules
-          const result = await installModuleFolder(path, deps.moduleRoot(), context)
+          const result = await installModuleFolder(path, deps.moduleRoot(), context, {
+            ...(deps.protectedProviderIds ? { protectedProviderIds: deps.protectedProviderIds() } : {}),
+          })
           if (!result.ok)
             return {
               ok: false as const,
@@ -308,14 +342,15 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
             result.standing.approval.state === 'pending' &&
             previous?.standing.approval.state === 'approved' &&
             record &&
-            accessGrowth(record.access, extensionAccess(result.extension)).length === 0
+            accessGrowth(record.access, extensionAccess(result.extension, result.standing.verifiedFiles)).length === 0
           ) {
             const carried = await writeExtensionApproval(deps.dataDir, result.id, {
               fingerprint: result.standing.approval.fingerprint,
-              access: extensionAccess(result.extension),
+              access: extensionAccess(result.extension, result.standing.verifiedFiles),
             })
             if (carried.ok) approval = { state: 'approved', fingerprint: result.standing.approval.fingerprint }
           }
+          await project()
           deps.changed()
           return { ok: true as const, moduleId: result.id, approval, strippedLinks: result.strippedLinks }
         } catch (error) {
@@ -352,9 +387,10 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
             }
           const written = await writeExtensionApproval(deps.dataDir, moduleId, {
             fingerprint,
-            access: extensionAccess(target.extension),
+            access: extensionAccess(target.extension, standing.verifiedFiles),
           })
           if (!written.ok) return { ok: false, message: written.message }
+          await project()
           deps.changed()
           return { ok: true }
         } catch (error) {
@@ -374,6 +410,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           // Nothing about it outlives it: its approval, enablement, stored secrets.
           const revoked = await writeExtensionApproval(deps.dataDir, moduleId, null)
           await forgetModules(deps.dataDir, [moduleId])
+          await project()
           deps.changed()
           if (!revoked.ok)
             return {

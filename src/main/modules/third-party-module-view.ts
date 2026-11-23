@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import type {
   ModuleEnablementOverrides,
   ThirdPartyModuleLaunchView,
@@ -9,6 +12,7 @@ import { approvalView } from './extension-approval-view'
 import { isExtensionRunnable } from './module-signature'
 import { surfaceEntriesView } from './extension-surface-entries'
 import type { InstalledModule } from './user-module-registry'
+import { ignoredSkillKeys } from '../../server/extensions/agent-contributions/skill-frontmatter'
 
 // One installed extension as `extension.installed` answers it: what is on disk,
 // whether the person approved it as it is, its signature, and whether it runs
@@ -46,7 +50,24 @@ export function toThirdPartyModuleView(
     ...(module.standing.signer ? { signer: module.standing.signer } : {}),
     launch: launchViewFor(module, run, enablementOverrides),
     mcpTools: run.mcpTools(module.key),
+    ...ignoredSkillKeysView(module),
   }
+}
+
+/** Each skill's frontmatter keys its projected copy drops, for the install review to list as ignored. */
+function ignoredSkillKeysView(module: InstalledModule): { ignoredSkillKeys?: Record<string, string[]> } {
+  const ignored: Record<string, string[]> = {}
+  for (const skill of module.extension.contributes.skills) {
+    let text: string
+    try {
+      text = readFileSync(join(module.moduleRoot, ...skill.path.split('/'), 'SKILL.md'), 'utf8')
+    } catch {
+      continue
+    }
+    const keys = ignoredSkillKeys(text)
+    if (keys.length > 0) ignored[skill.id] = keys
+  }
+  return Object.keys(ignored).length > 0 ? { ignoredSkillKeys: ignored } : {}
 }
 
 function launchViewFor(

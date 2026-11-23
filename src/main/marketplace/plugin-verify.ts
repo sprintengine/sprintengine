@@ -1,35 +1,17 @@
-import { createHash } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 
-import type {
-  MarketplaceManifestIssue,
-  MarketplacePluginAuthoringManifest,
-  MarketplacePluginEntry,
-} from '../../shared/marketplace'
+import type { MarketplaceManifestIssue, MarketplacePluginEntry } from '../../shared/marketplace'
 import { isClaudeCodePluginEntry, validateMarketplaceIndex } from '../../shared/marketplace'
-import type {
-  MarketplaceMcpServerDisclosure,
-  MarketplacePluginVerifyResult,
-  MarketplaceTrustPin,
-  McpServerConfig,
-} from '../../shared/electron-api'
-import type { CapabilityPermission } from '../../shared/modules/permissions'
-import { normalizeMcpServerConfig } from '../mcp-config-service'
-import type { ModuleTrustContext } from '../modules/module-signature'
-import { readBundleMcpServers } from '../modules/plugin-bundle-installer'
+import type { MarketplacePluginVerifyResult } from '../../shared/electron-api'
 import {
   defaultMarketplacePluginStagingRoot,
   downloadClaudeCodePluginSource,
-  downloadMarketplacePluginBundle,
   type MarketplaceInstallLog,
-  type MarketplacePluginDownloadFetch,
 } from './plugin-download'
 import type { MarketplaceResourceResolver } from './resources'
 
 export type MarketplacePluginVerifierServices = {
-  trustContext: () => ModuleTrustContext
   stagingRoot?: string
-  fetcher?: MarketplacePluginDownloadFetch
   /** Test seam for packaged resource resolution (bundled claude-plugin skills). */
   packagedResourceResolver?: MarketplaceResourceResolver
   log?: MarketplaceInstallLog
@@ -64,17 +46,15 @@ async function verifyMarketplacePlugin(
     }
   }
 
-  // An inline-MCP entry's servers ARE its content: there is nothing to
-  // download, and the disclosure is the servers exactly as they would be
-  // written. Its pin is a digest of that list.
-  if (registryEntry.entry.mcp) {
-    const servers = inlineMcpServers(registryEntry.entry)
+  // Claude Code plugins are the one kind of row the marketplace installs.
+  if (!isClaudeCodePluginEntry(registryEntry.entry)) {
+    const message = `${registryEntry.entry.name} is not a Claude Code plugin, so there is nothing to install.`
     return {
-      classification: 'unsigned',
+      classification: 'invalid',
       permissions: [],
-      sourceUrl: '',
-      mcpServers: servers.map(describeMcpServer),
-      pin: inlineMcpTrustPin(registryEntry.entry),
+      sourceUrl: sourceUrlFromEntry(entry),
+      issues: [{ path: 'entry', message }],
+      message,
     }
   }
 
@@ -83,81 +63,38 @@ async function verifyMarketplacePlugin(
   // listing at the trust prompt — never a fabricated one. Content resolves
   // from the bundled catalogue payload and is digest-checked, so this is
   // local file reads: near-instant, zero network.
-  if (isClaudeCodePluginEntry(registryEntry.entry)) {
-    services.log?.('claude-plugin:verify-start', { entryId: registryEntry.entry.id })
-    const claude = await downloadClaudeCodePluginSource({
-      entry: registryEntry.entry,
-      stagingRoot: services.stagingRoot ?? defaultMarketplacePluginStagingRoot(),
-      packagedResourceResolver: services.packagedResourceResolver,
-      log: services.log,
-    })
-    if (!claude.ok) {
-      services.log?.('claude-plugin:verify-failed', { entryId: registryEntry.entry.id, message: claude.message })
-      return {
-        classification: 'invalid',
-        permissions: [],
-        sourceUrl: claude.sourceUrl,
-        issues: [{ path: 'source', message: claude.message }],
-        message: claude.message,
-      }
-    }
-    try {
-      services.log?.('claude-plugin:verify-ok', { entryId: registryEntry.entry.id, files: claude.skillDirs.length })
-      return {
-        classification: 'unsigned',
-        permissions: [],
-        sourceUrl: claude.sourceUrl,
-        files: claude.skillDirs.map((dir) => `skills/${dir}`),
-        // The bundled-content identity this listing came from; the install
-        // re-checks exactly this pin so a catalogue/app update cannot swap
-        // content between the trust grant and the install.
-        pin: claude.pin,
-      }
-    } finally {
-      await rm(claude.stagedPath, { recursive: true, force: true })
-    }
-  }
-
-  const download = await downloadMarketplacePluginBundle({
+  services.log?.('claude-plugin:verify-start', { entryId: registryEntry.entry.id })
+  const claude = await downloadClaudeCodePluginSource({
     entry: registryEntry.entry,
-    trustContext: services.trustContext(),
     stagingRoot: services.stagingRoot ?? defaultMarketplacePluginStagingRoot(),
-    fetcher: services.fetcher,
+    packagedResourceResolver: services.packagedResourceResolver,
+    log: services.log,
   })
-
-  if (!download.ok) {
+  if (!claude.ok) {
+    services.log?.('claude-plugin:verify-failed', { entryId: registryEntry.entry.id, message: claude.message })
     return {
-      classification: download.classification ?? 'invalid',
+      classification: 'invalid',
       permissions: [],
-      sourceUrl: download.sourceUrl,
-      issues: download.issues ?? [{ path: 'source', message: download.message }],
-      message: download.message,
+      sourceUrl: claude.sourceUrl,
+      issues: [{ path: 'source', message: claude.message }],
+      message: claude.message,
     }
   }
-
   try {
-    const servers = await bundleMcpDisclosure(download.stagedBundlePath, download.manifest)
+    services.log?.('claude-plugin:verify-ok', { entryId: registryEntry.entry.id, files: claude.skillDirs.length })
     return {
-      classification: download.classification,
-      permissions: [...((download.manifest.permissions ?? []) as CapabilityPermission[])],
-      sourceUrl: download.sourceUrl,
-      ...(servers.length > 0 ? { mcpServers: servers } : {}),
-      ...(download.trust.fingerprint ? { keyFingerprint: download.trust.fingerprint } : {}),
-      pin: download.pin,
+      classification: 'unsigned',
+      permissions: [],
+      sourceUrl: claude.sourceUrl,
+      files: claude.skillDirs.map((dir) => `skills/${dir}`),
+      // The bundled-content identity this listing came from; the install
+      // re-checks exactly this pin so a catalogue/app update cannot swap
+      // content between the trust grant and the install.
+      pin: claude.pin,
     }
   } finally {
-    await rm(download.stagedBundlePath, { recursive: true, force: true })
+    await rm(claude.stagedPath, { recursive: true, force: true })
   }
-}
-
-// Every MCP server a staged bundle would add, as the prompt discloses it. The
-// lifecycle reads the same list off what it installs, so a receipt can say
-// what was approved.
-export async function bundleMcpDisclosure(
-  stage: string,
-  manifest: MarketplacePluginAuthoringManifest,
-): Promise<MarketplaceMcpServerDisclosure[]> {
-  return (await readBundleMcpServers(stage, manifest)).map(describeMcpServer)
 }
 
 function validateRegistryEntry(
@@ -184,34 +121,4 @@ function validateRegistryEntry(
 
 function sourceUrlFromEntry(entry: MarketplacePluginEntry): string {
   return typeof entry?.source === 'string' ? entry.source.trim() : ''
-}
-
-// An inline entry's servers through the app's own MCP parser — the same one
-// the install writes through, so what is disclosed is what is written.
-function inlineMcpServers(entry: MarketplacePluginEntry): McpServerConfig[] {
-  return (entry.mcp?.servers ?? []).flatMap((raw) => {
-    const server = normalizeMcpServerConfig(raw, { enabled: true, scope: 'workspace', source: 'custom' })
-    return server ? [server] : []
-  })
-}
-
-// The pin of an inline entry: its server list as the registry states it.
-export function inlineMcpTrustPin(entry: MarketplacePluginEntry): MarketplaceTrustPin {
-  const manifestSha256 = createHash('sha256')
-    .update(JSON.stringify(entry.mcp?.servers ?? []), 'utf8')
-    .digest('hex')
-  return { manifestSha256, componentDigests: {} }
-}
-
-function describeMcpServer(server: McpServerConfig): MarketplaceMcpServerDisclosure {
-  return {
-    id: server.id,
-    name: server.name,
-    transport: server.transport,
-    ...(server.command ? { command: server.command } : {}),
-    args: [...(server.args ?? [])],
-    ...(server.url ? { url: server.url } : {}),
-    envKeys: [...new Set([...Object.keys(server.env ?? {}), ...(server.envVarNames ?? [])])].sort(),
-    headerKeys: Object.keys(server.headers ?? {}).sort(),
-  }
 }

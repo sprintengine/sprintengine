@@ -14,9 +14,8 @@ import { test } from 'vitest'
 test('agent-skill-installer', async () => {
   function bundledRegistry(): PluginRegistry {
     const registry = createPluginRegistry(
-      createAppPluginRegistryOptions(
-        join(process.cwd(), 'resources', 'plugins'),
-        join(process.cwd(), 'node_modules', '.cache', 'sprintengine', 'plugins-none'),
+      createAppPluginRegistryOptions(join(process.cwd(), 'resources', 'plugins'), () =>
+        join(process.cwd(), '.does-not-exist'),
       ),
     )
     registry.loadSync()

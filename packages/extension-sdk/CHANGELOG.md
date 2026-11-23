@@ -7,6 +7,49 @@ An extension is a declarative `extension.json` now, not a `manifest.json` and
 with no compatibility path: nothing migrates it, nothing reads it, and an
 extension built against 3.x must be rewritten to this one.
 
+### Skills, MCP servers and providers are contributions; the plugin bundle is gone
+
+- `contributes.skills`, `contributes.mcpServers` and `contributes.providers`
+  in extension.json are how an extension hands agents a skill, an MCP server
+  or a model provider. They replace the marketplace plugin bundle and the
+  provider folder (`~/.sprintengine/plugins`). Each is declarative, and they
+  are no longer reserved points.
+  - A skill (`{ id, path }`) names a folder holding a `SKILL.md`. Agents are
+    handed a copy named `x<8 hex of a hash of the install key>-<skill id>`
+    (its folder and its `name`, within the Agent Skills naming rule), whose
+    frontmatter keeps only `name` and `description`; any other
+    key is dropped and listed as ignored at install. It asks for no approval.
+  - An MCP server is `stdio` (`command`, `args`, `env` as `{ name, value }`
+    pairs; `${extensionPath}` stands for the installed folder) or `http`
+    (`url`: https, or plain http to localhost). Agents see it as
+    `<publisher>_<id>_<server id>`. A hosted one asks for no approval. A local
+    one is approved at install, bound to its command, arguments, environment
+    and every file the extension ships, so an update that changes any of them
+    asks again.
+  - A provider (`{ id, name, baseUrl, chatCompletionsPath?, modelsPath?,
+    models, apiKey? }`) is an OpenAI-compatible endpoint, known as
+    `<publisher>.<id>/<provider id>`. Its key is entered in Settings, never
+    read from the environment, and sent only to `baseUrl`'s origin; a path that
+    would leave that origin fails validation. It asks once, and again when an
+    update moves it to another origin.
+- New exports for the rules the validator, the install review and Studio
+  share: `EXTENSION_PATH_TOKEN`, `withExtensionPath`, `mcpCommandProblem`,
+  `extensionPathUseProblem`, `agentEndpointUrlProblem`, `providerPathProblem`,
+  `providerEndpoint`, `providerOrigin`, `extensionMcpServerName`,
+  `extensionProviderId`, `SKILL_FILE_MAX_BYTES` and
+  `SKILL_FOLDER_MAX_FILES`; types `ExtensionSkillContribution`,
+  `ExtensionMcpServerContribution` and `ExtensionProviderContribution`.
+- A new template, `agent-kit`: a skill and a local MCP server built from
+  TypeScript, with no worker. A project's smoke test now checks that each
+  skill's `SKILL.md` and each file a local server runs were built.
+- The `sprintengine-extension plugin` commands (`plugin scaffold`, `pack`,
+  `sign` and `verify`, and their `plugin-*` spellings) are gone, with the
+  `plugin.json` bundle helpers: `validateMarketplacePluginManifest`,
+  `parseMarketplacePluginManifest`, their authoring variants,
+  `MARKETPLACE_COMPONENT_KINDS`, `retiredMarketplaceComponentIssue` and the
+  component digest functions. Studio installs no bundle any more, so nothing
+  reads one.
+
 ### extension.json
 
 - An extension is a folder with `extension.json` at its root. It says what the

@@ -1819,7 +1819,7 @@ test('AgentChatView', async () => {
   ): ConversationProviderListEntry {
     return {
       displayName: overrides.id,
-      source: 'user',
+      source: 'extension',
       version: 1,
       providerType: 'model-provider',
       models: [],

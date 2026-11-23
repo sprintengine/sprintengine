@@ -6,8 +6,7 @@ import { showToast } from '../../store/toastStore'
 import { studioModuleSwitchStore, useWorkspaceStore } from '../../store/workspaceStore'
 import { windowModuleSwitches } from '../../studio/moduleSwitches'
 import type { StudioModuleSummary } from '../../../../../packages/studio-protocol/src/public'
-import { ChevronDownIcon, FolderPlusIcon, GithubSettingsIcon } from '../AppIcons'
-import { InstallFromGitHubDialog } from '../extensions/InstallFromGitHubDialog'
+import { ChevronDownIcon, FolderPlusIcon } from '../AppIcons'
 import {
   ActionResultMessage,
   GhostButton,
@@ -75,12 +74,10 @@ const BUILT_IN_MANIFESTS: CapabilityManifest[] = MODULE_CATEGORY_GROUPS.flatMap(
 function InstallMenu({
   installing,
   onFromFolder,
-  onFromGitHub,
   onBrowse,
 }: {
   installing: boolean
   onFromFolder: () => void
-  onFromGitHub: () => void
   onBrowse: () => void
 }): JSX.Element {
   const [open, setOpen] = useState(false)
@@ -111,9 +108,6 @@ function InstallMenu({
     >
       <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onFromFolder)} onKeyDown={rove}>
         {appCopy.settings.modulesSettingsTab.fromAFolder}
-      </MenuItem>
-      <MenuItem icon={<GithubSettingsIcon className="icon-sm" />} onClick={pick(onFromGitHub)} onKeyDown={rove}>
-        {appCopy.settings.modulesSettingsTab.fromGitHub}
       </MenuItem>
       <MenuItem icon={<PluginsGlyph className="icon-sm" />} onClick={pick(onBrowse)} onKeyDown={rove}>
         {appCopy.settings.modulesSettingsTab.browseMarketplace}
@@ -216,16 +210,11 @@ export function ModulesSettingsTab(): JSX.Element {
   const studioModules = useStudioModules()
   const setModuleEnabled = studioModules.switchModule
   const openSettingsOverlay = useWorkspaceStore((state) => state.openSettingsOverlay)
-  const mcpSettings = useWorkspaceStore((state) => state.appSettings.mcp)
-  const workspaceRoot = useWorkspaceStore(
-    (state) => state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId)?.folderPath ?? null,
-  )
   const extensions = useThirdPartyExtensions(setModuleEnabled)
 
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<ExtensionFilter>('all')
   const [builtInExpanded, setBuiltInExpanded] = useState(false)
-  const [installFromGitHub, setInstallFromGitHub] = useState(false)
   const [reviewing, setReviewing] = useState<ThirdPartyModuleView | null>(null)
   // A folder just installed that waits for approval opens its review at once.
   const { awaitingReview, clearAwaitingReview, modules: installedModules } = extensions
@@ -237,6 +226,14 @@ export function ModulesSettingsTab(): JSX.Element {
     setReviewing(installed)
   }, [awaitingReview, clearAwaitingReview, installedModules])
   const [detailsFor, setDetailsFor] = useState<string | null>(null)
+  // A folder just installed that asks nothing opens its details instead.
+  const { justInstalled, clearJustInstalled } = extensions
+  useEffect(() => {
+    if (!justInstalled) return
+    if (!installedModules.some((candidate) => candidate.manifest.id === justInstalled)) return
+    clearJustInstalled()
+    setDetailsFor(justInstalled)
+  }, [justInstalled, clearJustInstalled, installedModules])
   const [restartDismissed, setRestartDismissed] = useState<string | null>(restartDismissedFor)
   const ids = { review: useId(), installed: useId(), builtIn: useId(), builtInList: useId() }
 
@@ -330,7 +327,6 @@ export function ModulesSettingsTab(): JSX.Element {
             <InstallMenu
               installing={extensions.installing}
               onFromFolder={() => void extensions.installFromFolder()}
-              onFromGitHub={() => setInstallFromGitHub(true)}
               onBrowse={() => openSettingsOverlay({ initialTab: EXTENSIONS_BROWSE_DEEPLINK })}
             />
           </>
@@ -484,14 +480,6 @@ export function ModulesSettingsTab(): JSX.Element {
             if (ok) setReviewing(null)
           })
         }}
-      />
-
-      <InstallFromGitHubDialog
-        open={installFromGitHub}
-        onClose={() => setInstallFromGitHub(false)}
-        workspaceRoot={workspaceRoot}
-        mcpSettings={mcpSettings}
-        onInstalled={() => void extensions.reload()}
       />
     </div>
   )

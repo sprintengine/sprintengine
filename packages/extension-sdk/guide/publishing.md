@@ -75,9 +75,9 @@ unreleased SDK, depend on a local tarball
 — the scaffolder's `--sdk-tarball` option sets that up, and a project Studio
 scaffolds depends on the copy that ships with Studio.
 
-## Plugin bundles are something else
+## Skills, MCP servers and providers
 
-A marketplace plugin bundle (`plugin.json`) carries MCP server configs and
-skills, not an extension. `sprintengine-extension plugin scaffold|sign|verify|pack`
-work on those; see the plugin author guide in the app repository. A bundle
-that names a `module` component is refused.
+An extension hands agents a skill, an MCP server or a model provider with
+`contributes.skills`, `contributes.mcpServers` and `contributes.providers` in
+its extension.json (the `manifest` topic), and publishes them the way it
+publishes everything else. There is no separate bundle for them.

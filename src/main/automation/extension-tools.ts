@@ -50,6 +50,7 @@ export const EXTENSION_TEMPLATE_IDS: readonly string[] = [
   'file-action',
   'mcp-tools',
   'hook-guard',
+  'agent-kit',
 ]
 export const EXTENSION_PART_IDS: readonly string[] = ['main', 'mcp', 'settings', 'door']
 

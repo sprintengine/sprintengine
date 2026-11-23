@@ -21,7 +21,7 @@ export {
   type ExtensionPermission,
 } from '../../../packages/extension-sdk/src/permissions'
 
-/** A scope a plugin bundle's plugin.json lists: shown as it is, never checked. */
+/** A scope a signed package's plugin.json lists: shown as it is, never checked. */
 export type CapabilityPermission = string
 
 // Plain, sentence-case descriptions for the approval: what the person allows.
@@ -90,7 +90,37 @@ export function grantsFullAccess(permissions: readonly string[]): boolean {
  * A `worker` extension's code runs on this machine with full access; Studio
  * checks only the calls it makes into Studio.
  */
-export function extensionApprovalCopy(tier: ExtensionTier, permissions: readonly string[] = []): string {
+/** What an extension hands agents and chats that its approval has to speak to. */
+export type ExtensionAgentReach = {
+  /** It has a local (stdio) MCP server: a command the person's agents run on this machine. */
+  localServers?: boolean
+  /** It adds a model provider: an endpoint the key the person enters is sent to. */
+  providers?: boolean
+}
+
+export function extensionApprovalCopy(
+  tier: ExtensionTier,
+  permissions: readonly string[] = [],
+  agents: ExtensionAgentReach = {},
+): string {
+  // Whatever its tier, what it hands agents is said too: a local MCP server
+  // runs with the agent's own access, which is the person's.
+  const reach = [
+    ...(agents.localServers
+      ? [
+          'Your agents will run its local MCP servers on this machine, with full access to your account: read each command, its arguments and its environment below. An update that changes them, or the files they run, asks again.',
+        ]
+      : []),
+    ...(agents.providers
+      ? ['Chats can use its model providers; a key you enter for one is sent only to the address shown below.']
+      : []),
+  ]
+  if (tier === 'declarative' && reach.length > 0) return reach.join(' ')
+  const base = tierApprovalCopy(tier, permissions)
+  return reach.length > 0 ? `${base} ${reach.join(' ')}` : base
+}
+
+function tierApprovalCopy(tier: ExtensionTier, permissions: readonly string[]): string {
   if (tier === 'ui' && grantsFullAccess(permissions))
     return 'Its code runs isolated, but it asks to change the files in your workspaces, and a project’s files can run code: approving it gives it full access to your account on this machine.'
   switch (tier) {

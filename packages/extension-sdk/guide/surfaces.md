@@ -21,6 +21,9 @@ Pick the smallest surface and the lowest tier that do the job.
 | An editor for files of a type (a form, a diagram, a binary format) | `customEditors[]` with an `entry` and its `extensions` or `filenames`; `workspace-files:read`, `:write` to save | `ui` | editor |
 | Tools agents call | `mcpTools[]`, served by the worker; `tools:contribute` | `worker` | mcp-tools |
 | Checks on what agents and Studio do (tool calls, prompts, launches, saves) | `hooks[]`, served by the worker (`registerHooks`) | `worker` | hook-guard |
+| A skill every agent on the machine can use | `skills[]`, a folder holding a `SKILL.md` | `declarative` | agent-kit |
+| An MCP server of your own (a local command, or a hosted URL) for every agent | `mcpServers[]` | `declarative` | agent-kit |
+| A model provider for chats (an OpenAI-compatible endpoint) | `providers[]` | `declarative` | — |
 | Work with no window open, Node, or a service only the worker has | `main` | `worker` | chat-companion |
 
 A command's context tells the worker how it ran (`where`), the workspace, and

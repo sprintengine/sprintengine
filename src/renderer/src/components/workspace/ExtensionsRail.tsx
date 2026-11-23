@@ -3,8 +3,7 @@ import React, { useCallback, useMemo, useState } from 'react'
 import { windowModuleLifecycle } from '../../studio/moduleLifecycle'
 import { addThirdPartyModuleFromFolder } from '../settings/addThirdPartyModuleFromFolder'
 import { FolderPlusIcon } from '../AppIcons'
-import { InstallFromGitHubDialog } from '../extensions/InstallFromGitHubDialog'
-import { ActionResultMessage, ContextMenu, MenuItem, Spinner } from '../ui'
+import { ActionResultMessage, Spinner } from '../ui'
 import type { ActionResult } from '../ui'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { ModuleContributionBoundary } from '../../modules/ModuleContributionBoundary'
@@ -61,16 +60,8 @@ export function ExtensionsRail({ collapsed }: ExtensionsRailProps) {
   const drawerRows = useExtensionsDrawerRows()
   const badges = useExtensionsRowBadges()
   const openSettingsOverlay = useWorkspaceStore((state) => state.openSettingsOverlay)
-  const activeWorkspaceRoot = useWorkspaceStore(
-    (state) => state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId)?.folderPath ?? null,
-  )
-  const mcpSettings = useWorkspaceStore((state) => state.appSettings.mcp)
   const [installing, setInstalling] = useState(false)
   const [installMessage, setInstallMessage] = useState<ActionResult | null>(null)
-  // "Add extension" asks where from: a folder on this machine, or a
-  // repository on GitHub. The menu opens under the button.
-  const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null)
-  const [installFromGitHub, setInstallFromGitHub] = useState(false)
 
   const addExtensionFromFolder = useCallback(async () => {
     if (installing) return
@@ -183,44 +174,11 @@ export function ExtensionsRail({ collapsed }: ExtensionsRailProps) {
               : copy.workspace.extensionsRail.addExtension)
           }
           disabled={installing}
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect()
-            setAddMenu({ x: rect.left, y: rect.bottom + 4 })
-          }}
+          // An extension is added from a folder on this machine.
+          onClick={() => void addExtensionFromFolder()}
         />
         {!collapsed ? <ActionResultMessage message={installMessage} className="mt-2" /> : null}
       </div>
-      {addMenu ? (
-        <ContextMenu
-          x={addMenu.x}
-          y={addMenu.y}
-          ariaLabel={copy.workspace.extensionsRail.addExtension}
-          onClose={() => setAddMenu(null)}
-        >
-          <MenuItem
-            onClick={() => {
-              setAddMenu(null)
-              void addExtensionFromFolder()
-            }}
-          >
-            {copy.workspace.extensionsRail.fromAFolder}
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              setAddMenu(null)
-              setInstallFromGitHub(true)
-            }}
-          >
-            {copy.workspace.extensionsRail.fromGitHub}
-          </MenuItem>
-        </ContextMenu>
-      ) : null}
-      <InstallFromGitHubDialog
-        open={installFromGitHub}
-        onClose={() => setInstallFromGitHub(false)}
-        workspaceRoot={activeWorkspaceRoot}
-        mcpSettings={mcpSettings}
-      />
       <div
         role="list"
         aria-label={copy.workspace.extensionsRail.extensions}

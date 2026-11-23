@@ -22,6 +22,9 @@ function contributes(over: Partial<Contributes> = {}): Pick<ExtensionManifestVie
       keybindings: [],
       statusBarItems: [],
       settings: [],
+      skills: [],
+      mcpServers: [],
+      providers: [],
       ...over,
     },
   }

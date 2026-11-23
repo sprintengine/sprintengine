@@ -1,8 +1,7 @@
-// A plugin bundle's base manifest (`plugin.json`): its identity, permissions
-// and signature, and the canonical bytes that signature covers. The bundle
-// validator (plugin-manifest.ts) adds its `components`. An extension's own
-// manifest is extension.json (extension-manifest.ts); this file no longer
-// reads one.
+// A signed package's base manifest: its identity, permissions and signature,
+// and the canonical bytes that signature covers. Studio's marketplace reads
+// each registry row's identity through it. An extension's own manifest is
+// extension.json (extension-manifest.ts); this file does not read one.
 //
 // Also home to the path rules every package format shares: what a safe
 // relative path is, which paths a pack leaves out, and how two digest maps
@@ -85,8 +84,7 @@ function validateStringArray(value: unknown, path: string, issues: ThirdPartyMan
 // Paths `sprintengine-extension pack` never ships: dependency trees, version
 // control and key material. Signing leaves them out for the same reason, so a
 // packed copy digests exactly as its source did — and an installed module that
-// has one of them was not installed from a pack. Shared with the plugin bundle
-// digest walk, which refuses the same paths.
+// has one of them was not installed from a pack.
 export function isPackExcludedPath(path: string): boolean {
   const segments = path.split('/')
   const name = segments[segments.length - 1] ?? ''

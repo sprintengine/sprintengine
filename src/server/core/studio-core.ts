@@ -360,7 +360,6 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   const extensions = options.extensions
     ? createStudioExtensions({
         paths: platform.paths,
-        mcpConfig: () => agents.services.mcpConfig,
         openWorkspaceRoots: () => listKnownWorkspaceRoots(workspaceSyncService.getSnapshot()),
         ...options.extensions,
       })

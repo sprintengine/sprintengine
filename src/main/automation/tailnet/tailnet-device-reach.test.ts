@@ -421,8 +421,6 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
           'marketplace.install',
           'marketplace.update',
           'marketplace.uninstall',
-          'marketplace.resolveGithub',
-          'marketplace.installGithub',
           'extensionScaffold.home',
           'extensionScaffold.target',
           'extensionScaffold.create',

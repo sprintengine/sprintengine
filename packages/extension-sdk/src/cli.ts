@@ -9,17 +9,13 @@
 //   pack             validate an extension folder and assemble an installable copy
 //   sign             write extension.sig, a detached ed25519 signature, beside extension.json
 //   verify           check an extension folder the way the studio will
-//   plugin scaffold  create a plugin bundle skeleton
-//   plugin pack      validate and assemble an installable plugin bundle
-//   plugin sign      write a detached ed25519 signature into plugin.json
-//   plugin verify    check a plugin bundle the way the studio will
 //
 // sign records the sha256 of every file the extension ships, extension.json
 // included, in extension.sig and signs those digests, so the signature covers
 // the declaration and the code together; the app trusts an extension by its
 // publisher key only when the folder matches them exactly.
 
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -35,27 +31,10 @@ import type { ThirdPartyManifestIssue } from './manifest-validate.js'
 import { parseLanguageConfiguration, parseTextMateGrammar } from './content-syntaxes.js'
 import { computeModuleFileDigestsSync, moduleFileDigestIssuesSync } from './module-files.js'
 import {
-  MARKETPLACE_COMPONENT_KINDS,
-  parseMarketplacePluginAuthoringManifest,
-  parseMarketplacePluginManifest,
-  validateMarketplacePluginAuthoringManifest,
-  type MarketplaceComponentKind,
-  type MarketplaceManifestIssue,
-  type MarketplacePluginAuthoringManifest,
-  type MarketplacePluginComponents,
-  type MarketplacePluginManifest,
-} from './plugin-manifest.js'
-import {
-  computeMarketplacePluginComponentsWithDigestsSync,
-  marketplaceComponentDigestMismatchIssuesSync,
-} from './plugin-component-digests.js'
-import {
   generateModuleSigningKeyPair,
   parseExtensionSignature,
   signExtensionFiles,
-  signManifest,
   verifyExtensionSignature,
-  verifyModuleSignature,
   type ExtensionSignature,
 } from './signing.js'
 
@@ -68,10 +47,6 @@ Usage:
   sprintengine-extension pack <extension-dir> [--out <dir>] [--force]
   sprintengine-extension sign <extension-dir> --key <private-key.pem>
   sprintengine-extension verify <extension-dir>
-  sprintengine-extension plugin scaffold <plugin-id> [--out <dir>] [--component <kind>]... [--force]
-  sprintengine-extension plugin pack <plugin-dir> [--out <dir>] [--force]
-  sprintengine-extension plugin sign <plugin-dir> --key <private-key.pem>
-  sprintengine-extension plugin verify <plugin-dir>
 
 init creates an extension project in <dir> from a template: the extension, its
 build and dev-loop scripts, and the agent instructions that send whichever agent
@@ -105,20 +80,9 @@ signs those digests with --key. Sign again after any change to its files.
 verify validates extension.json, checks extension.sig's signature, and checks
 that the files pack would copy are exactly the ones it lists, byte for byte:
 exit 0 with the signer fingerprint when all of that holds, exit 1 when the
-extension is unsigned or was changed after signing.
+extension is unsigned or was changed after signing.`
 
-plugin scaffold creates plugin.json plus component placeholders for mcp and
-skills by default. Pass --component repeatedly to scaffold
-only the kinds you want.
-
-plugin sign writes component file digests into the normalized plugin.json bundle
-manifest before signing it. plugin pack validates plugin.json through the
-marketplace plugin validator, verifies the signature and component digests, and
-copies the bundle while excluding key material.`
-
-type CliIssue = ThirdPartyManifestIssue | MarketplaceManifestIssue
-
-function fail(message: string, issues?: CliIssue[]): never {
+function fail(message: string, issues?: ThirdPartyManifestIssue[]): never {
   console.error(message)
   for (const issue of issues ?? []) {
     console.error(`  - ${issue.path === '' ? 'manifest' : issue.path}: ${issue.message}`)
@@ -167,38 +131,6 @@ function readSignature(extensionDir: string): ExtensionSignature | null {
   return parsed.signature
 }
 
-function readPluginAuthoringManifest(pluginDir: string): {
-  manifestPath: string
-  manifest: MarketplacePluginAuthoringManifest
-} {
-  const manifestPath = join(pluginDir, 'plugin.json')
-  if (!existsSync(manifestPath)) {
-    fail(`No plugin.json in ${pluginDir}.`)
-  }
-  const result = parseMarketplacePluginAuthoringManifest(readFileSync(manifestPath, 'utf8'))
-  if (!result.ok) {
-    fail(`Invalid plugin manifest at ${manifestPath}:`, result.issues)
-  }
-  return { manifestPath, manifest: result.manifest }
-}
-
-function readPluginManifest(pluginDir: string): { manifestPath: string; manifest: MarketplacePluginManifest } {
-  const manifestPath = join(pluginDir, 'plugin.json')
-  if (!existsSync(manifestPath)) {
-    fail(`No plugin.json in ${pluginDir}.`)
-  }
-  const result = parseMarketplacePluginManifest(readFileSync(manifestPath, 'utf8'))
-  if (!result.ok) {
-    fail(`Invalid plugin manifest at ${manifestPath}:`, result.issues)
-  }
-  return { manifestPath, manifest: result.manifest }
-}
-
-function writeJson(path: string, value: unknown): void {
-  mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, JSON.stringify(value, null, 2) + '\n')
-}
-
 function displayNameFromId(id: string): string {
   return id
     .split('-')
@@ -207,113 +139,9 @@ function displayNameFromId(id: string): string {
     .join(' ')
 }
 
-function componentId(pluginId: string, suffix: string): string {
-  const maxBaseLength = 63 - suffix.length - 1
-  const base = pluginId.slice(0, maxBaseLength).replace(/-+$/g, '') || 'plugin'
-  return `${base}-${suffix}`
-}
-
 function isInsideOrEqual(parent: string, candidate: string): boolean {
   const rel = relative(parent, candidate)
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
-}
-
-function pluginComponentsFromKinds(kinds: MarketplaceComponentKind[], id: string): MarketplacePluginComponents {
-  const components: MarketplacePluginComponents = {}
-  for (const kind of kinds) {
-    switch (kind) {
-      case 'mcp':
-        components.mcp = { path: 'mcp/server.json' }
-        break
-      case 'skills':
-        components.skills = { path: `skills/${id}` }
-        break
-    }
-  }
-  return components
-}
-
-function parseComponentKinds(raw: unknown): MarketplaceComponentKind[] {
-  const requested = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [...MARKETPLACE_COMPONENT_KINDS]
-  const kinds: MarketplaceComponentKind[] = []
-  const issues: MarketplaceManifestIssue[] = []
-  for (const [index, value] of requested.entries()) {
-    if (typeof value !== 'string' || !MARKETPLACE_COMPONENT_KINDS.includes(value as MarketplaceComponentKind)) {
-      issues.push({
-        path: `component[${index}]`,
-        message: `must be one of: ${MARKETPLACE_COMPONENT_KINDS.join(', ')}.`,
-      })
-      continue
-    }
-    if (!kinds.includes(value as MarketplaceComponentKind)) kinds.push(value as MarketplaceComponentKind)
-  }
-  if (issues.length > 0) fail('Invalid --component value:', issues)
-  // Canonical order, whatever order the flags were typed in (G13). See
-  // `canonicalComponentOrder` for why this is not cosmetic.
-  return MARKETPLACE_COMPONENT_KINDS.filter((kind) => kinds.includes(kind))
-}
-
-/**
- * The plugin's components, keyed in `MARKETPLACE_COMPONENT_KINDS` order (G13).
- *
- * This looks cosmetic and is not. A registry entry's `provides` array must
- * equal the kinds of the bundle it points at, and the app derives that list by
- * filtering `MARKETPLACE_COMPONENT_KINDS` — so `provides` is ALWAYS in canonical
- * order on the app's side, while an author reading their own plugin.json copies
- * whatever order they happen to see there. `["skills","mcp"]` against a bundle
- * the downloader reads as `mcp, skills` is a registry mismatch that fails at
- * install, on the user's machine, with a message about a list that looks
- * identical to the one they wrote. Writing plugin.json in the canonical order is
- * how the two are kept from disagreeing at the only point an author looks.
- */
-function canonicalComponentOrder(components: MarketplacePluginComponents): MarketplacePluginComponents {
-  const ordered: MarketplacePluginComponents = {}
-  for (const kind of MARKETPLACE_COMPONENT_KINDS) {
-    const component = components[kind]
-    if (component !== undefined) ordered[kind] = component
-  }
-  return ordered
-}
-
-/** The `provides` list a registry entry for this bundle must carry, verbatim. */
-function providesForComponents(components: MarketplacePluginComponents): MarketplaceComponentKind[] {
-  return MARKETPLACE_COMPONENT_KINDS.filter((kind) => components[kind] !== undefined)
-}
-
-function assertPluginComponentDigestsMatch(pluginDir: string, manifest: MarketplacePluginManifest): void {
-  const issues = marketplaceComponentDigestMismatchIssuesSync(pluginDir, manifest, {
-    bytesLabel: 'current bytes',
-    blockedFileMessage: (path) => `component file "${path}" cannot be signed or packed.`,
-  })
-  if (issues.length > 0) fail(`Plugin component digests do not match ${pluginDir}:`, issues)
-}
-
-function uniqueSiblingPath(parent: string, name: string): string {
-  let attempt = 0
-  while (true) {
-    const candidate = join(parent, `.${name}.${process.pid}.${Date.now()}.${attempt}`)
-    if (!existsSync(candidate)) return candidate
-    attempt += 1
-  }
-}
-
-function publishPackedDirectory(tempDir: string, outDir: string): void {
-  const outParent = dirname(outDir)
-  const previousDir = existsSync(outDir) ? uniqueSiblingPath(outParent, `${basename(outDir)}.previous`) : null
-  if (previousDir) renameSync(outDir, previousDir)
-  try {
-    renameSync(tempDir, outDir)
-  } catch (error) {
-    if (previousDir) {
-      try {
-        renameSync(previousDir, outDir)
-      } catch {
-        // Best effort rollback; the original error is more useful to callers.
-      }
-    }
-    throw error
-  }
-  if (previousDir) rmSync(previousDir, { recursive: true, force: true })
 }
 
 // A leading `~` is the home folder. The templates' `keygen` script quotes it,
@@ -486,228 +314,6 @@ function verifyCommand(args: string[]): void {
   console.log(`Signer fingerprint: ${fingerprint}`)
 }
 
-function pluginScaffold(args: string[]): void {
-  const { values, positionals } = parseArgs({
-    args,
-    options: {
-      out: { type: 'string' },
-      force: { type: 'boolean' },
-      component: { type: 'string', multiple: true },
-    },
-    allowPositionals: true,
-  })
-  const id = positionals[0]
-  if (!id) fail(`plugin scaffold requires a plugin id.\n\n${USAGE}`)
-  const displayName = displayNameFromId(id)
-  const components = pluginComponentsFromKinds(parseComponentKinds(values.component), id)
-  const outDir = resolve(values.out ?? id)
-  if (existsSync(outDir) && !values.force) {
-    fail(`${outDir} already exists. Pass --force to scaffold into it.`)
-  }
-  const draft = {
-    id,
-    displayName,
-    version: 1,
-    publisher: 'Your Name',
-    category: 'dev-tools',
-    summary: `${displayName} marketplace plugin.`,
-    defaultEnabled: false,
-    permissions: ['network'],
-    components,
-  }
-  const draftValidation = validateMarketplacePluginAuthoringManifest(draft)
-  if (!draftValidation.ok) {
-    fail('plugin scaffold cannot create a valid plugin.json from those inputs:', draftValidation.issues)
-  }
-  mkdirSync(outDir, { recursive: true })
-
-  writeJson(join(outDir, 'plugin.json'), {
-    ...draftValidation.manifest,
-    components: canonicalComponentOrder(draftValidation.manifest.components),
-  })
-
-  if (components.mcp) {
-    writeJson(join(outDir, components.mcp.path), {
-      servers: [
-        {
-          id: componentId(id, 'mcp'),
-          name: `${displayName} MCP`,
-          transport: 'stdio',
-          command: 'node',
-          args: ['server.js'],
-          clients: ['codex'],
-          scope: 'workspace',
-          source: 'custom',
-          riskLevel: 'local-command',
-        },
-      ],
-    })
-  }
-  if (components.skills) {
-    const skillDir = join(outDir, components.skills.path)
-    mkdirSync(skillDir, { recursive: true })
-    writeFileSync(
-      join(skillDir, 'SKILL.md'),
-      `---\nname: ${id}\ndescription: ${displayName} skill placeholder.\n---\n\nDescribe when and how this skill should be used.\n`,
-    )
-  }
-  console.log(`Scaffolded marketplace plugin ${id} at ${outDir}`)
-  console.log(`Registry entry "provides": ${JSON.stringify(providesForComponents(components))}`)
-  console.log(
-    'Run `sprintengine-extension keygen`, then `sprintengine-extension plugin sign`, then `sprintengine-extension plugin verify`.',
-  )
-}
-
-function pluginPack(args: string[]): void {
-  const { values, positionals } = parseArgs({
-    args,
-    options: { out: { type: 'string' }, force: { type: 'boolean' } },
-    allowPositionals: true,
-  })
-  const pluginDir = positionals[0]
-  if (!pluginDir) fail(`plugin pack requires a plugin directory.\n\n${USAGE}`)
-  const sourceDir = resolve(pluginDir)
-  const { manifest } = readPluginManifest(sourceDir)
-  const { valid } = verifyModuleSignature(manifest)
-  if (!valid) {
-    fail(`${manifest.id} has an INVALID signature. Re-sign the plugin before packing it.`)
-  }
-  assertPluginComponentDigestsMatch(sourceDir, manifest)
-
-  const outDir = resolve(values.out ?? join('packed', manifest.id))
-  if (existsSync(outDir) && !values.force) {
-    fail(`${outDir} already exists. Pass --force to overwrite it.`)
-  }
-  if (isInsideOrEqual(sourceDir, outDir)) {
-    fail('The plugin pack output directory must be outside the plugin directory.')
-  }
-
-  const skipped: string[] = []
-  const outParent = dirname(outDir)
-  mkdirSync(outParent, { recursive: true })
-  const tempDir = uniqueSiblingPath(outParent, `${basename(outDir)}.tmp`)
-  try {
-    cpSync(sourceDir, tempDir, {
-      recursive: true,
-      force: true,
-      filter: (src) => {
-        const name = basename(src)
-        if (name === 'node_modules' || name === '.git') return false
-        if (name.endsWith('.key') || name.endsWith('.pem')) {
-          skipped.push(name)
-          return false
-        }
-        return true
-      },
-    })
-    publishPackedDirectory(tempDir, outDir)
-  } catch (error) {
-    rmSync(tempDir, { recursive: true, force: true })
-    fail(`Could not pack plugin to ${outDir}: ${error instanceof Error ? error.message : 'unknown error'}`)
-  }
-  for (const name of skipped) {
-    console.warn(`Skipped ${name}: key material is never packed into a plugin.`)
-  }
-  console.log(`Packed ${manifest.id} (signature valid) to ${outDir}`)
-}
-
-function pluginSign(args: string[]): void {
-  const { values, positionals } = parseArgs({
-    args,
-    options: { key: { type: 'string' } },
-    allowPositionals: true,
-  })
-  const pluginDir = positionals[0]
-  if (!pluginDir) fail(`plugin sign requires a plugin directory.\n\n${USAGE}`)
-  if (!values.key)
-    fail('plugin sign requires --key <private-key.pem> (create one with `sprintengine-extension keygen`).')
-  const keyPath = resolve(values.key)
-  if (!existsSync(keyPath)) fail(`Signing key not found: ${keyPath}`)
-
-  const pluginRoot = resolve(pluginDir)
-  const { manifestPath, manifest } = readPluginAuthoringManifest(pluginRoot)
-  const { signature: _prior, ...unsigned } = manifest
-  const componentsWithDigests = computeMarketplacePluginComponentsWithDigestsSync(pluginRoot, unsigned.components, {
-    blockedFileMessage: (path) => `component file "${path}" cannot be signed or packed.`,
-  })
-  if (!componentsWithDigests.ok) {
-    fail(`Plugin component files are not packable in ${pluginRoot}:`, componentsWithDigests.issues)
-  }
-  const unsignedWithDigests: MarketplacePluginAuthoringManifest = {
-    ...unsigned,
-    // G13: the signed manifest is written back in canonical component order, so
-    // the `provides` an author copies out of it is the one the registry
-    // mismatch gate computes.
-    components: canonicalComponentOrder(componentsWithDigests.components),
-  }
-  let signature
-  try {
-    signature = signManifest(unsignedWithDigests, readFileSync(keyPath, 'utf8'))
-  } catch (error) {
-    fail(`Could not sign with ${keyPath}: ${error instanceof Error ? error.message : 'unknown error'}`)
-  }
-  const signed: MarketplacePluginManifest = { ...unsignedWithDigests, signature }
-  writeFileSync(manifestPath, JSON.stringify(signed, null, 2) + '\n')
-  const { fingerprint } = verifyModuleSignature(signed)
-  console.log(`Signed plugin ${manifest.id}; wrote normalized manifest to ${manifestPath}`)
-  console.log(`Signer fingerprint: ${fingerprint}`)
-  console.log(`Registry entry "provides": ${JSON.stringify(providesForComponents(unsignedWithDigests.components))}`)
-}
-
-function pluginVerify(args: string[]): void {
-  const { positionals } = parseArgs({ args, allowPositionals: true })
-  const pluginDir = positionals[0]
-  if (!pluginDir) fail(`plugin verify requires a plugin directory.\n\n${USAGE}`)
-
-  const sourceDir = resolve(pluginDir)
-  const authoring = readPluginAuthoringManifest(sourceDir)
-  if (!authoring.manifest.signature) {
-    fail(
-      `${authoring.manifest.id} is unsigned. The app will refuse to install it; sign it with \`sprintengine-extension plugin sign\`.`,
-    )
-  }
-  const { manifest } = readPluginManifest(sourceDir)
-  const { valid, fingerprint } = verifyModuleSignature(manifest)
-  if (!valid) {
-    fail(
-      `${manifest.id} has an INVALID signature (plugin.json changed after signing, or wrong key). ` +
-        'The app will refuse to install it. Re-sign the plugin.',
-    )
-  }
-  assertPluginComponentDigestsMatch(sourceDir, manifest)
-  console.log(`${manifest.id}: plugin signature valid`)
-  console.log(`Signer fingerprint: ${fingerprint}`)
-  console.log(`Registry entry "provides": ${JSON.stringify(providesForComponents(manifest.components))}`)
-}
-
-function pluginCommand(args: string[]): void {
-  const [command, ...rest] = args
-  switch (command) {
-    case 'scaffold':
-      pluginScaffold(rest)
-      break
-    case 'pack':
-      pluginPack(rest)
-      break
-    case 'sign':
-      pluginSign(rest)
-      break
-    case 'verify':
-      pluginVerify(rest)
-      break
-    case undefined:
-    case '--help':
-    case '-h':
-      console.log(USAGE)
-      break
-    default:
-      fail(`Unknown plugin command "${command}".\n\n${USAGE}`)
-  }
-}
-
-// The scaffolder is loaded only for `init`: it finds its templates relative to
-// its own file, which a bundle of this CLI need not preserve for the other
-// commands.
 async function init(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
@@ -807,21 +413,6 @@ switch (command) {
     break
   case 'verify':
     verifyCommand(rest)
-    break
-  case 'plugin':
-    pluginCommand(rest)
-    break
-  case 'plugin-scaffold':
-    pluginScaffold(rest)
-    break
-  case 'plugin-pack':
-    pluginPack(rest)
-    break
-  case 'plugin-sign':
-    pluginSign(rest)
-    break
-  case 'plugin-verify':
-    pluginVerify(rest)
     break
   case undefined:
   case '--help':

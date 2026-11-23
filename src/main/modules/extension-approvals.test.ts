@@ -15,6 +15,7 @@ import {
   writeExtensionApproval,
   type ExtensionAccess,
 } from './extension-approvals'
+import type { ExtensionManifest } from '../../shared/modules/third-party-manifest'
 
 const WORKER: ExtensionAccess = {
   permissions: ['storage:own'],
@@ -25,8 +26,10 @@ const WORKER: ExtensionAccess = {
   actions: ['notes.open=chat.new'],
   editors: [],
   hooks: [],
+  localServers: [],
+  providers: [],
 }
-const NO_CONTRIBUTIONS = {
+const NO_CONTRIBUTIONS: ExtensionManifest['contributes'] = {
   commands: [],
   menus: [],
   topBarItems: [],
@@ -40,6 +43,9 @@ const NO_CONTRIBUTIONS = {
   keybindings: [],
   statusBarItems: [],
   settings: [],
+  skills: [],
+  mcpServers: [],
+  providers: [],
 }
 
 function withDataDir(fn: (dir: string) => Promise<void>): Promise<void> {
@@ -89,10 +95,130 @@ test('what a manifest asks for, and that only content needs no approval', () => 
       actions: ['b.run=chat.new'],
       editors: [],
       hooks: [],
+      localServers: [],
+      providers: [],
     },
   )
-  assert.equal(extensionNeedsApproval({ tier: 'content' }), false)
-  for (const tier of ['declarative', 'ui', 'worker'] as const) assert.equal(extensionNeedsApproval({ tier }), true)
+  assert.equal(extensionNeedsApproval({ tier: 'content', contributes: NO_CONTRIBUTIONS }), false)
+  for (const tier of ['ui', 'worker'] as const)
+    assert.equal(extensionNeedsApproval({ tier, contributes: NO_CONTRIBUTIONS }), true)
+  const commanded = { ...NO_CONTRIBUTIONS, commands: [{ id: 'a.run', title: 'A', action: 'chat.new' as const }] }
+  assert.equal(extensionNeedsApproval({ tier: 'declarative', contributes: commanded }), true)
+})
+
+const STDIO = {
+  id: 'search',
+  name: 'Search',
+  transport: 'stdio' as const,
+  command: 'node',
+  args: ['${extensionPath}/dist/server.js'],
+  env: [{ name: 'LOG_LEVEL', value: 'info' }],
+}
+const HTTP = { id: 'docs', name: 'Docs', transport: 'http' as const, url: 'https://mcp.example.com/mcp' }
+const PROVIDER = {
+  id: 'acme',
+  name: 'Acme',
+  baseUrl: 'https://api.example.com',
+  models: [{ id: 'acme-large' }],
+  apiKey: { label: 'Acme API key' },
+}
+const FILES = {
+  'extension.json': 'm1',
+  'dist/server.js': 's1',
+  'skills/review/SKILL.md': 'k1',
+  'assets/icon.png': 'i1',
+}
+const agentAccess = (contributes: Partial<typeof NO_CONTRIBUTIONS>, files: Record<string, string> = FILES) =>
+  extensionAccess(
+    {
+      permissions: [],
+      tier: 'declarative',
+      contributes: { ...NO_CONTRIBUTIONS, skills: [{ id: 'review', path: 'skills/review' }], ...contributes },
+    },
+    files,
+  )
+
+test('skills and hosted MCP servers ask nothing; a local MCP server or a provider asks', () => {
+  const declarative = (contributes: Partial<typeof NO_CONTRIBUTIONS>) =>
+    extensionNeedsApproval({ tier: 'declarative', contributes: { ...NO_CONTRIBUTIONS, ...contributes } })
+  assert.equal(declarative({ skills: [{ id: 'review', path: 'skills/review' }] }), false)
+  assert.equal(declarative({ mcpServers: [HTTP] }), false)
+  assert.equal(declarative({ mcpServers: [HTTP, STDIO] }), true)
+  assert.equal(declarative({ providers: [PROVIDER] }), true)
+  // A skill or a hosted server is not part of what an approval is bound to.
+  const approved = agentAccess({ mcpServers: [STDIO] })
+  assert.deepEqual(accessGrowth(approved, agentAccess({ mcpServers: [STDIO, HTTP] })), [])
+})
+
+test('a local MCP server is bound to its command, arguments, environment and the files it may run', () => {
+  const approved = agentAccess({ mcpServers: [STDIO] })
+  assert.equal(approved.localServers.length, 1)
+  assert.match(approved.localServers[0]!, /^search=sha256-[0-9a-f]{64}$/)
+  const changed = 'the local MCP server "search", with a changed command, environment or files'
+  assert.deepEqual(accessGrowth(approved, agentAccess({ mcpServers: [{ ...STDIO, command: 'bun' }] })), [changed])
+  assert.deepEqual(accessGrowth(approved, agentAccess({ mcpServers: [{ ...STDIO, args: ['--x'] }] })), [changed])
+  assert.deepEqual(
+    accessGrowth(approved, agentAccess({ mcpServers: [{ ...STDIO, env: [{ name: 'LOG_LEVEL', value: 'debug' }] }] })),
+    [changed],
+  )
+  assert.deepEqual(
+    accessGrowth(approved, agentAccess({ mcpServers: [STDIO] }, { ...FILES, 'dist/server.js': 's2' })),
+    [changed],
+    'the code it runs changed',
+  )
+  assert.deepEqual(
+    accessGrowth(approved, agentAccess({ mcpServers: [STDIO] }, { ...FILES, 'dist/extra.js': 'x1' })),
+    [changed],
+    'a file it may run was added',
+  )
+  // Every file it ships counts, a skill's folder and an image included: a
+  // command may run a script kept beside a SKILL.md, or a file named like an
+  // image. Only the signature does not.
+  for (const files of [
+    { ...FILES, 'extension.json': 'm2' },
+    { ...FILES, 'skills/review/SKILL.md': 'k2' },
+    { ...FILES, 'assets/icon.png': 'i2' },
+  ])
+    assert.deepEqual(accessGrowth(approved, agentAccess({ mcpServers: [STDIO] }, files)), [changed])
+  assert.deepEqual(
+    accessGrowth(approved, agentAccess({ mcpServers: [STDIO] }, { ...FILES, 'extension.sig': 'sig2' })),
+    [],
+  )
+  // A command pointing into a skill's folder: the code it runs changing asks again.
+  const inSkill = { ...STDIO, args: ['${extensionPath}/skills/review/server.js'] }
+  const skillFiles = { ...FILES, 'skills/review/server.js': 'c1' }
+  assert.deepEqual(
+    accessGrowth(
+      agentAccess({ mcpServers: [inSkill] }, skillFiles),
+      agentAccess({ mcpServers: [inSkill] }, { ...skillFiles, 'skills/review/server.js': 'c2' }),
+    ),
+    [changed],
+  )
+  assert.deepEqual(accessGrowth(approved, agentAccess({ mcpServers: [{ ...STDIO, id: 'other' }] })), [
+    'the local MCP server "other"',
+  ])
+  assert.deepEqual(accessGrowth(approved, agentAccess({})), [], 'dropping it is no growth')
+  assert.notEqual(
+    extensionApprovalFingerprint(approved, 'abc'),
+    extensionApprovalFingerprint(agentAccess({ mcpServers: [{ ...STDIO, command: 'bun' }] }), 'abc'),
+  )
+})
+
+test('a provider is bound to the origin its key is sent to', () => {
+  const approved = agentAccess({ providers: [PROVIDER] })
+  assert.deepEqual(approved.providers, ['acme=https://api.example.com'])
+  assert.deepEqual(
+    accessGrowth(approved, agentAccess({ providers: [{ ...PROVIDER, baseUrl: 'https://api.example.com/v2' }] })),
+    [],
+    'another path on the same origin',
+  )
+  assert.deepEqual(
+    accessGrowth(approved, agentAccess({ providers: [{ ...PROVIDER, baseUrl: 'https://elsewhere.example.com' }] })),
+    ['the model provider "acme" sending its key to https://elsewhere.example.com instead of https://api.example.com'],
+  )
+  assert.deepEqual(accessGrowth(agentAccess({}), approved), [
+    'the model provider "acme", sending its key to https://api.example.com',
+  ])
 })
 
 test('an update grows its access by a permission, a higher tier, a worker, background or a contribution that carries authority, and only so', () => {

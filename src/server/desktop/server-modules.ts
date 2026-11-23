@@ -5,6 +5,7 @@ import type { McpToolContribution } from '../../main/module-host/main-host'
 import { ScheduledAgentsServiceToken } from '../../main/module-host/service-tokens'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from '../../main/modules/agent-runtime-module'
 import { createModuleLifecycle, liveModuleIds } from '../../main/modules/module-lifecycle'
+import { bundledRegistryIds } from '../../main/plugin-registry-instance'
 import type { ExtensionRunView } from '../../main/modules/third-party-module-view'
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
 import { planInstalledExtensions, readInstalledStanding } from '../extensions/extension-plan'
@@ -125,36 +126,38 @@ export function createServerModules(deps: {
     return { ok: true }
   }
   // What runs here, listed and changed over the Studio RPC (`module.*`).
-  hub.serveLifecycleFrom(
-    createModuleLifecycle({
-      dataDir,
-      moduleRoot: defaultUserModuleRoot,
-      applyEnablement,
-      // Every client following `extension.changed` lists and loads them again,
-      // and a worker whose approval is gone or changed stops.
-      changed: () => {
-        workers.reconcile()
-        hub.deliverChanged()
-      },
-      run: () => extensionRunView(),
-      // Every client following `extension.settingsChanged` reads them again.
-      settingsChanged: (moduleId) => hub.deliverSettingsChanged(moduleId),
-      registry,
-      view: () => {
-        const current = load
-        if (!current) return null
-        const overrides = readOverrides()
-        return {
-          manifests: () => manifests,
-          enabled: (id) => overrides[id] ?? manifests.find((manifest) => manifest.id === id)?.defaultEnabled ?? false,
-          running: (id) => current.isRunning(id),
-          ineligible: (id) => ineligible[id],
-          loadError: (id) => current.report.errors.find((error) => error.id === id)?.message,
-          declaredMethods: (id) => current.kernel.declaredMethods(id),
-        }
-      },
-    }),
-  )
+  const lifecycle = createModuleLifecycle({
+    dataDir,
+    moduleRoot: defaultUserModuleRoot,
+    applyEnablement,
+    // Every client following `extension.changed` lists and loads them again,
+    // and a worker whose approval is gone or changed stops.
+    changed: () => {
+      workers.reconcile()
+      hub.deliverChanged()
+    },
+    run: () => extensionRunView(),
+    // Every client following `extension.settingsChanged` reads them again.
+    settingsChanged: (moduleId) => hub.deliverSettingsChanged(moduleId),
+    registry,
+    // An extension's provider may not take a built-in's id.
+    protectedProviderIds: bundledRegistryIds,
+    warn: (message) => deps.log(`[extensions] ${message}`),
+    view: () => {
+      const current = load
+      if (!current) return null
+      const overrides = readOverrides()
+      return {
+        manifests: () => manifests,
+        enabled: (id) => overrides[id] ?? manifests.find((manifest) => manifest.id === id)?.defaultEnabled ?? false,
+        running: (id) => current.isRunning(id),
+        ineligible: (id) => ineligible[id],
+        loadError: (id) => current.report.errors.find((error) => error.id === id)?.message,
+        declaredMethods: (id) => current.kernel.declaredMethods(id),
+      }
+    },
+  })
+  hub.serveLifecycleFrom(lifecycle)
 
   const extensionRunView = (): ExtensionRunView => {
     const current = load
@@ -261,8 +264,11 @@ export function createServerModules(deps: {
       // A module copied into the drop-in folder while Studio runs is listed
       // at once, not after a reload.
       // A worker whose extension was removed from the folder (and its approval with it) stops.
+      // What extensions hand agents follows the folder too: a server whose
+      // files changed under its approval is retracted, not run until the next start.
       stopWatchingModules ??= watchUserModuleRoot(defaultUserModuleRoot(), () => {
         workers.reconcile()
+        void lifecycle.reproject()
         hub.deliverChanged()
       })
     },

@@ -1,76 +1,37 @@
-// Extension marketplace bundle + registry contracts.
+// The marketplace.json registry index contract the app reads.
 //
-// A marketplace plugin is a thin bundle over primitives the studio already owns:
-// MCP configs and skill packs. The
-// bundle manifest validator lives in the published SDK so authoring tools and
-// the app cannot drift on the signing-critical plugin.json shape, including
-// component file digests. This module re-exports that plugin contract and adds
-// the marketplace.json registry index contract used by the app.
+// The index lists two kinds of row: an agent CLI the app already ships
+// (`cli`, surfaced as catalogue content) and a Claude Code plugin (tagged
+// `claude-plugin`, its skills bundled with the app). Skills, MCP servers and
+// model providers of an extension arrive as contributions in that
+// extension's own extension.json, never as a registry row.
 
 import type {
-  MarketplaceComponentKind as StudioMarketplaceComponentKind,
   MarketplaceIndex,
-  MarketplaceManifestIssue as StudioMarketplaceManifestIssue,
+  MarketplaceManifestIssue,
   MarketplacePluginEntry,
   MarketplacePluginSkill,
   MarketplacePluginSkillFile,
   MarketplaceProvidesKind,
   MarketplacePublisher,
-  McpServerConfig,
   ModuleSignature,
 } from '../../../packages/studio-protocol/src/public'
-// Inline-MCP registry entries carry raw MCP server configs; validate them through
-// the same normalizer the app uses everywhere else (shared/mcp, node-free) so an
-// inline entry cannot express a server the app would reject.
-import { normalizeMcpServerConfig } from '../mcp/normalize-server'
 import {
   validateBundleBaseManifest,
   type ThirdPartyManifestIssue,
 } from '../../../packages/extension-sdk/src/manifest-validate'
-import {
-  MARKETPLACE_COMPONENT_KINDS,
-  type MarketplaceComponentKind,
-  type MarketplaceManifestIssue,
-} from '../../../packages/extension-sdk/src/plugin-manifest'
 import { isRecord } from '../records'
 
-export { canonicalManifestPayload } from '../../../packages/extension-sdk/src/manifest-validate'
+// What a registry entry may say it provides: the skills a Claude Code plugin
+// carries, or `cli` for the inline-CLI lane — a first-party agent CLI the app
+// already ships. An extension can neither add an agent CLI nor replace one.
+export const MARKETPLACE_PROVIDES_KINDS: readonly MarketplaceProvidesKind[] = ['skills', 'cli']
 
-export {
-  MARKETPLACE_COMPONENT_KINDS,
-  parseMarketplacePluginAuthoringManifest,
-  parseMarketplacePluginManifest,
-  retiredMarketplaceComponentIssue,
-  validateMarketplacePluginAuthoringManifest,
-  validateMarketplacePluginManifest,
-  type MarketplaceComponentKind,
-  type MarketplaceManifestIssue,
-  type MarketplacePluginAuthoringManifest,
-  type MarketplacePluginComponents,
-  type MarketplacePluginManifest,
-} from '../../../packages/extension-sdk/src/plugin-manifest'
-
-// What a registry entry may say it provides: the kinds a bundle can carry,
-// plus `cli` for the inline-CLI lane — a first-party agent CLI the app already
-// ships, surfaced as catalogue content. `cli` is not a bundle component; an
-// extension can neither add an agent CLI nor replace one.
-const MARKETPLACE_PROVIDES_KINDS: readonly MarketplaceProvidesKind[] = Array.from(
-  new Set<MarketplaceProvidesKind>([...MARKETPLACE_COMPONENT_KINDS, 'cli']),
-)
-
-type MarketplaceInlineMcp = NonNullable<MarketplacePluginEntry['mcp']>
 type MarketplaceInlineCli = NonNullable<MarketplacePluginEntry['cli']>
-
-// The protocol carries the SDK's plugin contract under its own names; these
-// fail to compile if the two ever say different things.
-type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
-const componentKindsAgree: Same<MarketplaceComponentKind, StudioMarketplaceComponentKind> = true
-const issuesAgree: Same<MarketplaceManifestIssue, StudioMarketplaceManifestIssue> = true
-void componentKindsAgree
-void issuesAgree
 
 export type {
   MarketplaceIndex,
+  MarketplaceManifestIssue,
   MarketplacePluginEntry,
   MarketplacePluginSkill,
   MarketplacePluginSkillFile,
@@ -80,8 +41,8 @@ export type {
 
 // Machine tag the generated catalogue stamps on Claude Code plugin entries
 // (content in Claude's plugin format — `.claude-plugin/plugin.json` + skills
-// dirs — not a studio bundle). Both the storefront affordance and the
-// install pipeline branch on it, so the check lives here, once.
+// dirs). Both the storefront affordance and the install pipeline branch on
+// it, so the check lives here, once.
 const CLAUDE_PLUGIN_TAG = 'claude-plugin'
 
 export function isClaudeCodePluginEntry(entry: Pick<MarketplacePluginEntry, 'tags'>): boolean {
@@ -93,8 +54,9 @@ export type MarketplaceIndexResult =
 
 const PROVIDES_KIND_SET = new Set<string>(MARKETPLACE_PROVIDES_KINDS)
 // Kinds a registry row once provided and this Studio no longer installs: the
-// automation starters, retired when automations became scheduled agents.
-const RETIRED_PROVIDES_KINDS = new Set<string>(['automation'])
+// automation starters, retired when automations became scheduled agents, and
+// MCP servers, which an extension now contributes in its extension.json.
+const RETIRED_PROVIDES_KINDS = new Set<string>(['automation', 'mcp'])
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0 && !value.includes('\0')
@@ -310,39 +272,6 @@ function validateStringArray(
   return items.length === value.length ? items : undefined
 }
 
-function validateInlineMcp(
-  value: unknown,
-  path: string,
-  issues: MarketplaceManifestIssue[],
-): MarketplaceInlineMcp | undefined {
-  if (!isRecord(value)) {
-    issues.push({ path, message: 'mcp must be an object.' })
-    return undefined
-  }
-  if (!Array.isArray(value.servers) || value.servers.length === 0) {
-    issues.push({ path: `${path}.servers`, message: 'mcp.servers must be a non-empty array.' })
-    return undefined
-  }
-  const servers: McpServerConfig[] = []
-  value.servers.forEach((server, index) => {
-    const normalized = normalizeMcpServerConfig(server, {
-      enabled: true,
-      clients: ['codex', 'claude-code'],
-      scope: 'workspace',
-      source: 'custom',
-    })
-    if (!normalized) {
-      issues.push({
-        path: `${path}.servers[${index}]`,
-        message: 'mcp server must normalize through the app MCP parser.',
-      })
-      return
-    }
-    servers.push(normalized)
-  })
-  return servers.length === value.servers.length ? { servers } : undefined
-}
-
 // Same shape the SDK bundle manifest probe enforces for entry ids; an inline
 // CLI's pluginId is a plugin-registry directory name, so it obeys the same
 // lowercase id grammar.
@@ -379,8 +308,15 @@ function validateMarketplaceEntry(
   }
   // A row for a retired kind is left off the shelf rather than failing the
   // index: a published registry that still lists one must not take every other
-  // row down with it.
+  // row down with it. That includes a plugin bundle (a `source` row that is not
+  // a Claude Code plugin) and an inline MCP server list (`mcp`), both of which
+  // an extension's contributions replaced.
   if (Array.isArray(value.provides) && value.provides.some((kind) => RETIRED_PROVIDES_KINDS.has(String(kind)))) {
+    return undefined
+  }
+  if (value.mcp !== undefined) return undefined
+  const claudePlugin = Array.isArray(value.tags) && value.tags.includes(CLAUDE_PLUGIN_TAG)
+  if (value.source !== undefined && value.cli === undefined && !claudePlugin) {
     return undefined
   }
   const startIssues = issues.length
@@ -423,15 +359,13 @@ function validateMarketplaceEntry(
     issues.push({ path: `${path}.category`, message: 'category or categories[] is required.' })
   }
 
-  // Bundle (source) XOR inline-MCP (mcp) XOR inline-CLI (cli): exactly one shape.
+  // Claude Code plugin (source) XOR inline-CLI (cli): exactly one shape.
   const hasSource = value.source !== undefined
-  const hasMcp = value.mcp !== undefined
   const hasCli = value.cli !== undefined
-  const shapeCount = Number(hasSource) + Number(hasMcp) + Number(hasCli)
-  if (shapeCount > 1) {
-    issues.push({ path, message: 'entry must be exactly one of: bundle (source), inline-MCP (mcp), inline-CLI (cli).' })
-  } else if (shapeCount === 0) {
-    issues.push({ path, message: 'entry must declare a bundle source, an inline mcp block, or an inline cli block.' })
+  if (hasSource && hasCli) {
+    issues.push({ path, message: 'entry must be exactly one of: Claude Code plugin (source), inline-CLI (cli).' })
+  } else if (!hasSource && !hasCli) {
+    issues.push({ path, message: 'entry must declare a Claude Code plugin source or an inline cli block.' })
   }
 
   let source: string | undefined
@@ -444,16 +378,8 @@ function validateMarketplaceEntry(
     if (provides?.includes('cli')) {
       issues.push({
         path: `${path}.provides`,
-        message: 'bundle entries cannot provide cli: agent CLIs ship with the app.',
+        message: 'Claude Code plugin entries cannot provide cli: agent CLIs ship with the app.',
       })
-    }
-  }
-
-  let mcp: MarketplaceInlineMcp | undefined
-  if (hasMcp) {
-    mcp = validateInlineMcp(value.mcp, `${path}.mcp`, issues)
-    if (provides && (provides.length !== 1 || provides[0] !== 'mcp')) {
-      issues.push({ path: `${path}.provides`, message: "inline-MCP entries must set provides to ['mcp']." })
     }
   }
 
@@ -488,7 +414,6 @@ function validateMarketplaceEntry(
   if (tags && tags.length > 0) entry.tags = tags
   if (source !== undefined) entry.source = source
   if (baseProbe.manifest.signature) entry.signature = baseProbe.manifest.signature as ModuleSignature
-  if (mcp) entry.mcp = mcp
   if (cli) entry.cli = cli
   if (skills && skills.length > 0) entry.skills = skills
   return entry

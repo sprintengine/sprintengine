@@ -38,8 +38,6 @@ function blank(): Api {
     installMarketplacePluginFromRegistry: async () => ({ ok: false, message: NONE }),
     updateMarketplacePluginFromRegistry: async () => ({ ok: false, message: NONE }),
     uninstallMarketplacePlugin: async () => ({ ok: false, message: NONE }),
-    resolveGithubExtension: async () => ({ ok: false, message: NONE }),
-    installGithubExtension: async () => ({ ok: false, message: NONE }),
     pluginsList: async () => ({ ok: true, plugins: [] }),
     pluginsDetectAvailability: async () => ({ ok: true, availability: {} }),
     agentLaunchPreview: async () => ({ ok: false, message: NONE }),

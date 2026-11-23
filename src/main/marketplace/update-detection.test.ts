@@ -22,13 +22,14 @@ test('update-detection', async () => {
     return {
       id,
       name: `${id} Plugin`,
-      publisher: { name: 'SprintEngine Labs', verified: true },
+      publisher: { name: 'Acme', verified: false },
       summary: `${id} summary.`,
       category: 'dev-tools',
       icon: `icons/${id}.svg`,
       latest,
-      provides: ['mcp'],
-      source: `https://github.com/sprintengine/studio-releases/tree/main/plugins/${id}`,
+      provides: ['skills'],
+      tags: ['claude-plugin'],
+      source: `https://github.com/acme/${id}`,
     }
   }
 
@@ -61,7 +62,7 @@ test('update-detection', async () => {
           displayName: `${receipt.id} Plugin`,
           version: receipt.version,
           sourceUrl: '',
-          classification: 'community',
+          classification: 'unsigned',
           installedAt: '2026-08-01T00:00:00.000Z',
           components: [],
         },
@@ -125,7 +126,7 @@ test('update-detection', async () => {
   async function testAnInstallCanBeAheadOfRegistry(): Promise<void> {
     await withTempDir(async (temp) => {
       const svc = services(temp, okRegistry([registryEntry('ahead', 2)]))
-      // A registry that re-lists an older bundle than the one installed.
+      // A registry that re-lists an older version than the one installed.
       await writeReceiptStore(svc.receiptStorePath, [{ id: 'ahead', version: 3 }])
 
       const availability = availabilityOf(await readMarketplaceUpdateStates(svc), 'ahead')

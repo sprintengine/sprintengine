@@ -642,9 +642,6 @@ export const en = {
     },
     // src/renderer/src/components/extensions/ExtensionTrustReview.tsx
     extensionTrustReview: {
-      inlineMCPServerReviewIt: 'Inline MCP server — review it before trusting',
-      runsALocalCommandOr:
-        'Runs a local command or connects to a remote endpoint. Trusting it adds and starts the server below.',
       unsignedPluginSkillsReviewBefore: 'Unsigned plugin skills — review before trusting',
       skillsAreInstructionsYourAgents:
         'Skills are instructions your agents follow. This plugin is unsigned; trusting it adds the skills below to this workspace.',
@@ -656,12 +653,8 @@ export const en = {
       communityExtensionReviewItsAccess: 'Community extension — review its access',
       unverifiedPublisherItsCodeRuns: 'Unverified publisher. Its code runs with the app’s access, not in a sandbox.',
       signingKey: 'Signing key',
-      pinnedToCommit: 'Pinned to commit',
       accessItRequests: 'Access it requests',
       adds: 'Adds ',
-      mCPServer: ' MCP server',
-      sets: 'Sets ',
-      sendsHeaders: 'Sends headers ',
       toTheWorkspace: ' to the workspace',
     },
     // src/renderer/src/components/extensions/ExtensionsHomeSurface.tsx
@@ -675,18 +668,6 @@ export const en = {
       thingsTheStudioIsMade: ' things the studio is made of.',
       buildYourOwnExtension: 'Build your own extension',
       describeItAndAnAgent: 'Describe it and an agent builds it with you, using the SDK.',
-    },
-    // src/renderer/src/components/extensions/InstallFromGitHubDialog.tsx
-    installFromGitHubDialog: {
-      updateAndRestartTheApp: 'Update and restart the app to install from GitHub.',
-      installExtensionFromGitHub: 'Install extension from GitHub',
-      repositoryURL: 'Repository URL',
-      readingTheRepositoryAtIts: 'Reading the repository at its latest commit…',
-      thisCanTBeInstalled: 'This can’t be installed.',
-      addItAsASkill: 'Add it as a skill source instead',
-      itAddsMCPServersOr: 'It adds MCP servers or skills to a project. Open that project, then install.',
-      done: 'Done',
-      cancel: 'Cancel',
     },
   },
   find: {
@@ -3462,7 +3443,6 @@ export const en = {
       viewSource: 'View source',
       cancel: 'Cancel',
       skills: 'Skills · ',
-      inlineMCP: 'Inline MCP',
       unsigned: 'Unsigned',
       verified: 'Verified',
       community: 'Community',
@@ -3619,6 +3599,17 @@ export const en = {
     },
     // src/renderer/src/components/settings/extensionContributions.ts
     extensionContributions: {
+      skill: (id: unknown) => `Skill “${id}”`,
+      ignoredKeys: (keys: unknown) => `Ignored in its SKILL.md, so agents are not handed it: ${keys}`,
+      hostedMcpServer: (name: unknown) => `MCP server ${name}, hosted`,
+      localMcpServer: (name: unknown) => `MCP server ${name}, run on this computer`,
+      provider: (name: unknown) => `Model provider ${name}`,
+      runs: (commandLine: unknown) => `Runs ${commandLine}`,
+      withEnvironment: (variables: unknown) => `With ${variables}`,
+      reaches: (url: unknown) => `Reaches ${url}`,
+      keySentTo: (origin: unknown) => `Your key for it is sent to ${origin} only`,
+      noKey: (origin: unknown) => `Calls ${origin}, with no key`,
+      extensionPathMeans: (token: unknown) => `${token} is the extension’s own folder`,
       door: (label: unknown) => `${label} door`,
       door2: (value: unknown) => `${value} door`,
       workspace: (label: unknown) => `${label} workspace`,
@@ -3627,6 +3618,7 @@ export const en = {
     // src/renderer/src/components/settings/ExtensionRow.tsx
     extensionRow: {
       adds: 'Adds',
+      forAgents: 'For your agents and chats',
       access: 'Access',
       needsCare: 'Needs care',
       also: 'Also',
@@ -3836,7 +3828,6 @@ export const en = {
     modulesSettingsTab: {
       install: 'Install',
       fromAFolder: 'From a folder',
-      fromGitHub: 'From GitHub',
       browseMarketplace: 'Browse marketplace',
       comingSoon: 'Coming soon',
       alwaysOn: 'Always on',
@@ -4197,6 +4188,7 @@ export const en = {
       editorOpens: (editor: unknown, files: unknown) => `${editor}: ${files}`,
       hooks: 'Hooks into what your agents and Studio do',
       hooksFailClosed: 'If it fails or is slow, it refuses rather than lets the action through',
+      forAgents: 'For your agents and chats',
       needsCare: 'Needs care',
       also: 'Also',
       access: 'Access',
@@ -5193,6 +5185,8 @@ export const en = {
         toolsForMyIssueTracker: 'Tools for my issue tracker',
         guardForAgentCommands: 'A guard for agents’ commands',
         refuseRiskyCommandsBefore: 'Refuse risky commands before an agent runs them.',
+        releaseNotesKit: 'Release notes kit',
+        aSkillAndAServerForReleaseNotes: 'A skill and an MCP server every agent can use for release notes.',
         letAnyAgentSearchAnd: 'Let any agent search and update your tracker.',
         releaseDashboard: 'Release dashboard',
         openPRsAndCIStatus: 'Open PRs and CI status across projects.',
@@ -5543,8 +5537,6 @@ export const en = {
       addingExtension: 'Adding extension…',
       addExtension: 'Add extension',
       addingExtensionFromAFolder: 'Adding extension from a folder',
-      fromAFolder: 'From a folder…',
-      fromGitHub: 'From GitHub…',
       extensions: 'Extensions',
     },
     globalSurface: {
@@ -5641,7 +5633,6 @@ export const en = {
             updateAvailable: (label: unknown) => `${label} — update available`,
             addSource: 'Add source',
             addSkillSourceFromGitHub: 'Add skill source from GitHub…',
-            installExtensionFromGitHub: 'Install extension from GitHub…',
           },
           // src/renderer/src/components/workspace/globalSurface/extensions/catalogue/catalogueTabs.ts
           catalogueTabs: {

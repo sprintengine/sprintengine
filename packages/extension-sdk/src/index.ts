@@ -37,7 +37,7 @@ export type ModuleSignature = {
  */
 export type ModuleFileDigests = Record<string, string>
 
-/** A plugin bundle's base manifest (`plugin.json`). An extension's own is `ExtensionManifest`. */
+/** A signed package's base manifest (`plugin.json`). An extension's own is `ExtensionManifest`. */
 export type CapabilityManifest = {
   id: string
   displayName: string
@@ -67,7 +67,7 @@ export type ModuleTrustStatus = 'trusted' | 'signed' | 'unsigned' | 'invalid'
 
 export { EXTENSION_PERMISSIONS, isExtensionPermission, type ExtensionPermission } from './permissions.js'
 
-/** A scope a plugin bundle's plugin.json lists: shown to the person as it is, never checked. */
+/** A scope a signed package's plugin.json lists: shown to the person as it is, never checked. */
 export type CapabilityPermission = string
 
 // ── Notifications ────────────────────────────────────────────────────────────
@@ -1544,6 +1544,8 @@ export {
   LOCAL_EXTENSION_PUBLISHER,
   STUDIO_EXTENSION_VERSION,
   EXTENSION_SETTING_TYPES,
+  SKILL_FILE_MAX_BYTES,
+  SKILL_FOLDER_MAX_FILES,
   compareStudioVersions,
   extensionInstallKey,
   extensionSettingDefaults,
@@ -1571,8 +1573,11 @@ export {
   type ExtensionManifest,
   type ExtensionManifestResult,
   type ExtensionManifestValidationOptions,
+  type ExtensionMcpServerContribution,
   type ExtensionMcpToolContribution,
   type ExtensionMenuContribution,
+  type ExtensionProviderContribution,
+  type ExtensionSkillContribution,
   type ExtensionMenuPlace,
   type ExtensionSurfaceContribution,
   type ExtensionSurfacePoint,
@@ -1644,8 +1649,24 @@ export {
   type TextMateGrammar,
 } from './content-syntaxes.js'
 
-// The base of a plugin bundle's plugin.json, and the path rules every package
-// format shares.
+// What an extension hands agents and chats (skills, MCP servers, model
+// providers): the path token, the URL and origin rules, and the names Studio
+// gives each, shared by the validator, the install review and the host.
+export {
+  EXTENSION_PATH_TOKEN,
+  agentEndpointUrlProblem,
+  extensionMcpServerName,
+  extensionPathUseProblem,
+  extensionProviderId,
+  mcpCommandProblem,
+  providerEndpoint,
+  providerOrigin,
+  providerPathProblem,
+  withExtensionPath,
+} from './agent-contributions.js'
+
+// The path rules every package format shares, and the permission vocabulary
+// check.
 export {
   canonicalManifestPayload,
   compareModuleFileDigests,
@@ -1658,29 +1679,6 @@ export {
   type ThirdPartyManifestIssue,
   type ThirdPartyManifestResult,
 } from './manifest-validate.js'
-
-// ── Marketplace plugin bundle authoring ─────────────────────────────────────
-// A marketplace plugin is a signed bundle manifest (`plugin.json`) that points
-// at existing primitives: MCP configs and skill directories. An extension
-// ships as an extension.json of its own, never inside a bundle. The app re-exports these helpers from its shared
-// marketplace module, so SDK authors and the studio verify the same shape.
-
-export {
-  MARKETPLACE_COMPONENT_KINDS,
-  parseMarketplacePluginAuthoringManifest,
-  parseMarketplacePluginManifest,
-  validateMarketplacePluginAuthoringManifest,
-  validateMarketplacePluginManifest,
-  type MarketplaceComponent,
-  type MarketplaceComponentFileDigest,
-  type MarketplaceComponentKind,
-  type MarketplaceManifestIssue,
-  type MarketplacePluginAuthoringManifest,
-  type MarketplacePluginAuthoringManifestResult,
-  type MarketplacePluginComponents,
-  type MarketplacePluginManifest,
-  type MarketplacePluginManifestResult,
-} from './plugin-manifest.js'
 
 // ── Every host method and what a call needs ─────────────────────────────────
 // The table Studio's gate checks every call against, which a scaffolded

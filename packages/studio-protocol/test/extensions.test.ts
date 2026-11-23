@@ -20,8 +20,6 @@ test('what fetches, approves, installs or removes an extension’s code, and a n
     'marketplace.install': STUDIO_MARKETPLACE_OWNER,
     'marketplace.update': STUDIO_MARKETPLACE_OWNER,
     'marketplace.uninstall': STUDIO_MARKETPLACE_OWNER,
-    'marketplace.resolveGithub': STUDIO_MARKETPLACE_OWNER,
-    'marketplace.installGithub': STUDIO_MARKETPLACE_OWNER,
     'extensionScaffold.home': STUDIO_SCAFFOLD_OWNER,
     'extensionScaffold.target': STUDIO_SCAFFOLD_OWNER,
     'extensionScaffold.create': STUDIO_SCAFFOLD_OWNER,
@@ -32,15 +30,9 @@ test('what fetches, approves, installs or removes an extension’s code, and a n
     assert.equal(spec.owner, owned[method as keyof typeof owned], `${method}'s owner rule`)
   }
   // The installs are commands under the client's id; a review issues a fresh approval each time.
-  for (const method of [
-    'marketplace.install',
-    'marketplace.update',
-    'marketplace.uninstall',
-    'marketplace.installGithub',
-  ] as const)
+  for (const method of ['marketplace.install', 'marketplace.update', 'marketplace.uninstall'] as const)
     assert.equal(STUDIO_EXTENSIONS_METHODS[method].mutation, true, method)
-  for (const method of ['marketplace.verify', 'marketplace.resolveGithub'] as const)
-    assert.equal(STUDIO_EXTENSIONS_METHODS[method].mutation, false, method)
+  assert.equal(STUDIO_EXTENSIONS_METHODS['marketplace.verify'].mutation, false)
 })
 
 test('reading what could be installed and what can run is the narrowest read each needs', () => {
@@ -102,16 +94,10 @@ test('an install names its entry and the approval its review issued, never the e
   assert.equal(refusal(parseStudioMethodParams('marketplace.install', { id: 'pr-radar' })), 'invalid_params')
   assert.equal(refusal(parseStudioMethodParams('marketplace.install', { commandId: 'c', id: '' })), 'invalid_params')
   assert.equal(
-    refusal(parseStudioMethodParams('marketplace.install', { commandId: 'c', id: 'x', mcpSettings: 'all' })),
+    refusal(parseStudioMethodParams('marketplace.install', { commandId: 'c', id: 'x', skillHarnesses: 'all' })),
     'invalid_params',
-  )
-  assert.equal(
-    refusal(parseStudioMethodParams('marketplace.installGithub', { commandId: 'c' })),
-    'invalid_params',
-    'a GitHub install without its approval',
   )
   assert.equal(refusal(parseStudioMethodParams('marketplace.uninstall', { commandId: 'c' })), 'invalid_params')
-  assert.equal(refusal(parseStudioMethodParams('marketplace.resolveGithub', { url: '   ' })), 'invalid_params')
   assert.equal(refusal(parseStudioMethodParams('marketplace.read', { forceRefresh: 'yes' })), 'invalid_params')
 })
 

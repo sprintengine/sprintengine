@@ -1,5 +1,4 @@
-// What vouches for an installed extension, and for the signed manifests of
-// plugin bundles and providers.
+// What vouches for an installed extension.
 //
 // The pure sign/verify logic and the walk that digests an extension's folder
 // live in the published SDK (packages/extension-sdk/src/signing.ts) so the app
@@ -15,17 +14,15 @@ import { join } from 'node:path'
 import {
   computeModuleFileDigestsSync,
   extensionContentFingerprint,
-  manifestFingerprint,
   moduleFileDigestIssuesSync,
   parseExtensionSignature,
   verifyExtensionSignature,
   verifyModuleSignature,
-  type SignedManifest,
 } from '../../../packages/extension-sdk/src/signing'
 import { compareModuleFileDigests } from '../../../packages/extension-sdk/src/manifest-validate'
 import { EXTENSION_SIGNATURE_FILENAME } from '../../../packages/extension-sdk/src/extension-manifest'
 
-import type { ModuleFileDigests, ModuleTrustStatus } from '../../shared/modules/manifest'
+import type { ModuleFileDigests } from '../../shared/modules/manifest'
 import type { ExtensionManifest } from '../../shared/modules/third-party-manifest'
 import {
   accessGrowth,
@@ -35,28 +32,16 @@ import {
   type ExtensionApprovalRecord,
 } from './extension-approvals'
 
-export type { ModuleTrustStatus } from '../../shared/modules/manifest'
-export { manifestFingerprint, moduleFileDigestIssuesSync, verifyModuleSignature }
-export type { SignedManifest }
-
-/** What a bundle's or a provider's signed manifest is judged against: the publisher keys Studio trusts. */
-export type ModuleTrustContext = {
-  /** Accepted publisher key fingerprints (trusted-publishers.json). */
-  trustedKeyFingerprints?: ReadonlySet<string>
-}
+export { moduleFileDigestIssuesSync, verifyModuleSignature }
 
 /** What an installed extension is judged against: the person's approvals, and the trusted publisher keys. */
-export type ExtensionStandingContext = ModuleTrustContext & {
+export type ExtensionStandingContext = {
+  /** Accepted publisher key fingerprints (trusted-publishers.json). */
+  trustedKeyFingerprints?: ReadonlySet<string>
   approvals: ReadonlyMap<string, ExtensionApprovalRecord>
 }
 
 export type ModuleTrustIssue = { path: string; message: string }
-
-export type ModuleTrust = {
-  status: ModuleTrustStatus
-  /** sha256 of the signer's normalized public key (hex), when signed. */
-  fingerprint?: string
-}
 
 /** How an extension's files are signed: by a publisher key Studio trusts, another key, none, or not matching. */
 export type ExtensionSignatureStatus = 'verified' | 'signed' | 'unsigned' | 'invalid'
@@ -154,9 +139,9 @@ export function classifyExtension(
   }
   const signed = signer !== undefined ? { signer } : {}
   if (!scan.ok) return { signature, ...signed, issues: scan.issues, approval: { state: 'unavailable' } }
-  const access = extensionAccess(manifest)
+  const access = extensionAccess(manifest, scan.files)
   const content = { contentDigest: contentDigest!, verifiedFiles: scan.files }
-  if (!extensionNeedsApproval(access)) return { signature, ...signed, approval: { state: 'not-needed' }, ...content }
+  if (!extensionNeedsApproval(manifest)) return { signature, ...signed, approval: { state: 'not-needed' }, ...content }
   const fingerprint = extensionApprovalFingerprint(access, contentDigest!)
   const record = ctx.approvals.get(key)
   if (record?.fingerprint === fingerprint)
@@ -172,29 +157,4 @@ export function classifyExtension(
     },
     ...content,
   }
-}
-
-// Trust for a manifest alone — a plugin bundle's plugin.json or a provider
-// manifest, whose bytes are covered by per-component digests checked
-// separately. Never use it for an extension on disk: it does not look at the
-// extension's code (classifyExtensionTrust does).
-export function classifySignedManifestTrust(manifest: SignedManifest, ctx: ModuleTrustContext): ModuleTrust {
-  if (!manifest.signature) return { status: 'unsigned' }
-  const { valid, fingerprint } = verifyModuleSignature(manifest)
-  if (!valid) return { status: 'invalid', fingerprint }
-  const keyAccepted = fingerprint !== undefined && (ctx.trustedKeyFingerprints?.has(fingerprint) ?? false)
-  return keyAccepted ? { status: 'trusted', fingerprint } : { status: 'signed', fingerprint }
-}
-
-// Whether a bundle manifest carries a valid signature by a trusted publisher
-// key: a statement about the manifest only.
-export function isSignedByTrustedPublisher(manifest: SignedManifest, ctx: ModuleTrustContext): boolean {
-  if (!manifest.signature) return false
-  const { valid, fingerprint } = verifyModuleSignature(manifest)
-  return valid && fingerprint !== undefined && (ctx.trustedKeyFingerprints?.has(fingerprint) ?? false)
-}
-
-// Only a bundle or provider manifest signed by a trusted key is eligible.
-export function isLoadEligible(trust: ModuleTrustStatus): boolean {
-  return trust === 'trusted'
 }

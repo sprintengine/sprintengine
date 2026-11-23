@@ -231,7 +231,6 @@ test('installedInventoryUpdates', async () => {
             moduleOverrides: {},
             workspaceRoot: '/repo',
             registryPlugins: [acmeKitEntry, cursorEntry] as never,
-            mcpSettings: { syncEnabled: false, servers: {} } as never,
           }),
         )
       })
@@ -408,7 +407,6 @@ test('installedInventoryUpdates', async () => {
           workspaceRoot: '/repo',
           kinds: ['mcp'],
           sourceGrouping: { sources, records: [] } as never,
-          mcpSettings: { syncEnabled: true, servers: {} } as never,
         }),
       )
     })

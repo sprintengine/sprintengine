@@ -28,6 +28,8 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   // so installing asks once, there and then.
   const [awaitingReview, setAwaitingReview] = useState<string | null>(null)
   const clearAwaitingReview = useCallback(() => setAwaitingReview(null), [])
+  const [justInstalled, setJustInstalled] = useState<string | null>(null)
+  const clearJustInstalled = useCallback(() => setJustInstalled(null), [])
   const forgetModules = useWorkspaceStore((state) => state.forgetModules)
   const { confirm: confirmDialog } = useConfirmDialog()
   const [lifecycle] = useState(() => windowModuleLifecycle())
@@ -75,6 +77,9 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
         }
         await load()
         if (result.approval?.state === 'pending' && result.id) setAwaitingReview(result.id)
+        // One that asks nothing still shows what it added, its skills and
+        // hosted MCP servers among it: the install's own review.
+        else if (result.id) setJustInstalled(result.id)
       }
     } finally {
       setInstalling(false)
@@ -181,6 +186,8 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
     approveAndEnable,
     awaitingReview,
     clearAwaitingReview,
+    justInstalled,
+    clearJustInstalled,
     uninstall: canUninstall ? uninstall : null,
     reveal: typeof window.api.revealThirdPartyModule === 'function' ? reveal : null,
     reload: load,

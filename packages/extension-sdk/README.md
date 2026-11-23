@@ -144,13 +144,16 @@ in it is relative to that folder.
 
 - **`tier`** is the most authority the extension needs: `content` (a name and
   images), `declarative` (commands that run Studio's own commands, menu items
-  and top bar items for them), `ui` (panels, doors and settings sections drawn
+  and top bar items for them, and the skills, MCP servers and model providers
+  it hands agents and chats), `ui` (panels, doors and settings sections drawn
   by its own code, and permissions), `worker` (`main`, background code). Each
   carries what the ones below it do; anything above the tier fails validation.
 - **`contributes`** is everything it adds: `commands`, `menus`
   (`backlog.item`, `file`, `notification`), `topBarItems`, `panels`, `doors`,
-  `settingsSections`, `mcpTools`. Other point names are reserved and must be
-  empty.
+  `settingsSections`, `customEditors`, `mcpTools`, `hooks`, the content points
+  (`syntaxes`, `keybindings`, `statusBarItems`, `settings`) and what it hands
+  agents and chats (`skills`, `mcpServers`, `providers`). Other point names are
+  reserved and must be empty.
 - **A ui entry** (`panels[].entry`, `doors[].entry`,
   `settingsSections[].entry`) is a self-contained ESM bundle exporting
   `mount(root, studio)`. Studio draws the surface in a sandboxed frame of its
@@ -609,7 +612,7 @@ unsubscriber answers it at once.
 - `emit(topic, payload?)` — an event to your surfaces (below).
 - `ensureSkillInstalled(workspaceRoot, skillId)` / `getSkillStatus(…)` — put
   one of Studio's own skills in a workspace, or ask without writing. An
-  extension ships no skills of its own yet (`contributes.skills` is reserved).
+  extension's own skills are `contributes.skills` in its extension.json.
 - `getModuleAppState(key)` (a promise) / `watchModuleAppState(cb)` — the
   extension's app state (what its surfaces and settings section write),
   read-only, persisted, so the worker sees the person's settings with no
@@ -961,10 +964,6 @@ The pieces are exported for tooling: `signExtensionFiles`,
 `verifyExtensionSignature`, `parseExtensionSignature`,
 `extensionContentFingerprint`, `computeModuleFileDigestsSync` and
 `moduleFileDigestIssuesSync` (`@sprintengine/extension-sdk/signing`, Node).
-
-A marketplace plugin bundle (`plugin.json`, components `mcp` and `skills`) is
-a separate thing: `sprintengine-extension plugin scaffold|sign|verify|pack`
-work on it, and a bundle naming a `module` component is refused.
 
 ## Installing
 

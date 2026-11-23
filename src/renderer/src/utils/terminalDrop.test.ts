@@ -216,7 +216,7 @@ test('terminalDrop', async () => {
     {
       id: 'pi',
       displayName: 'Pi',
-      source: 'user',
+      source: 'extension',
       version: 1,
       binary: 'pi',
       resumeSession: false,
