@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import { installState, listingCategories, listingMatches } from './extensionCatalogueModel'
+import { categoryWords, installState, listingCategories, listingMatches } from './extensionCatalogueModel'
 
 const listing = {
   id: 'acme.notes',
@@ -37,4 +37,16 @@ test('the page offers install, update, or says why not', () => {
     words: 'Needs Studio 9.0.0',
   })
   expect(installState({ ...listing, killed: { reason: 'x' } }).kind).toBe('blocked')
+})
+
+test('categories spelled several ways fold into one, for the chips and the filter', () => {
+  const syntax = { ...listing, id: 'acme.gleam', categories: ['syntax'] }
+  const languages = { ...listing, id: 'acme.zig', categories: ['languages', 'syntaxes'] }
+  expect(listingCategories([syntax, languages, listing])).toEqual(['languages', 'productivity', 'writing'])
+  expect(listingMatches(syntax, '', 'languages')).toBe(true)
+  expect(listingMatches(languages, '', 'syntax')).toBe(true)
+  expect(listingMatches(listing, '', 'languages')).toBe(false)
+  expect(categoryWords('languages')).toBe('Code languages')
+  expect(categoryWords('music-tools')).toBe('Music tools')
+  expect(listingMatches(syntax, 'code languages', null)).toBe(true)
 })

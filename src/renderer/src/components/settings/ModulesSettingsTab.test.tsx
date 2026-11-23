@@ -34,8 +34,8 @@ vi.mock('../../modules', async (importOriginal) => ({
 
 // What runs on the window's Studio is changed through it (`extension.approve`,
 // `extension.uninstall`); this stands in for the window's connection.
-vi.mock('../../studio/moduleLifecycle', () => ({
-  windowModuleLifecycle: () => ({
+vi.mock('../../studio/moduleLifecycle', () => {
+  const lifecycle = () => ({
     setEnabled: async (id: string, enabled: boolean | null) => {
       enableCalls.push([id, enabled])
       return setEnabledAnswer
@@ -47,10 +47,10 @@ vi.mock('../../studio/moduleLifecycle', () => ({
     },
     installFrom: async (from: unknown) => {
       installFromCalls.push(from)
-      return { ok: false, message: 'not here' }
+      return installFromAnswer
     },
-    update: async (id: string) => {
-      updateCalls.push(id)
+    update: async (id: string, version?: string) => {
+      updateCalls.push(version ? `${id}@${version}` : id)
       return { ok: false, message: 'not here' }
     },
     addCatalogue: async (url: string) => {
@@ -63,16 +63,14 @@ vi.mock('../../studio/moduleLifecycle', () => ({
       installed = installed.filter((candidate) => candidate.manifest.id !== id)
       return { ok: true, removedModuleIds: [id] }
     },
-  }),
-}))
+  })
+  return { windowModuleLifecycle: lifecycle, windowCatalogueLifecycle: lifecycle }
+})
 
 // The catalogues the window's Studio reads: one community listing.
 vi.mock('../../studio/extensionCatalogue', () => ({
   extensionCatalogueApi: {
-    catalogues: async () => [
-      { id: 'official', kind: 'official', name: 'Official', entries: [] },
-      { id: 'community', kind: 'community', name: 'Community', entries: [NOTES_LISTING] },
-    ],
+    catalogues: async () => cataloguesServed,
     entry: async (catalogue: string, id: string) => {
       catalogueEntryCalls.push([catalogue, id])
       return {
@@ -233,12 +231,19 @@ let setEnabledAnswer: { ok: true; module: null } | { ok: false; message: string 
 const approveCalls: Array<[string, string]> = []
 const uninstallCalls: string[] = []
 const installFromCalls: unknown[] = []
+let installFromAnswer: { ok: false; message: string; folders?: string[] } = { ok: false, message: 'not here' }
 const updateCalls: string[] = []
 const addCatalogueCalls: string[] = []
 const catalogueEntryCalls: Array<[string, string]> = []
 const restartApp = vi.fn(async () => ({ restarting: false }))
 let root: Root | null = null
 let host: HTMLElement | null = null
+
+const defaultCatalogues = (): unknown[] => [
+  { id: 'official', kind: 'official', name: 'Official', entries: [] },
+  { id: 'community', kind: 'community', name: 'Community', entries: [NOTES_LISTING] },
+]
+let cataloguesServed = defaultCatalogues()
 
 beforeEach(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -250,6 +255,8 @@ beforeEach(() => {
   setEnabledAnswer = { ok: true, module: null }
   uninstallCalls.length = 0
   installFromCalls.length = 0
+  installFromAnswer = { ok: false, message: 'not here' }
+  cataloguesServed = defaultCatalogues()
   updateCalls.length = 0
   addCatalogueCalls.length = 0
   catalogueEntryCalls.length = 0
@@ -307,6 +314,12 @@ const click = async (element: Element | undefined | null) => {
   await act(async () => {})
 }
 const modal = () => document.querySelector('[role="dialog"][aria-modal="true"]')
+const typeInto = async (input: HTMLInputElement, value: string) => {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
 
 test('the page is Extensions, with Browse and an Install menu, and says nothing about itself', async () => {
   await mount()
@@ -607,7 +620,10 @@ test('an install link opens the extension’s page and installs nothing until In
   expect(catalogueEntryCalls).toEqual([['community', 'acme.notes']])
   expect(installFromCalls).toEqual([])
   await click(button('Install', page!))
-  expect(installFromCalls).toEqual([{ catalogue: 'community', id: 'acme.notes' }])
+  // The release the page showed: a catalogue that lists another now is refused.
+  expect(installFromCalls).toEqual([
+    { catalogue: 'community', id: 'acme.notes', version: NOTES_LISTING.version, commit: 'a'.repeat(40) },
+  ])
 })
 
 test('an install link naming a catalogue not added asks before adding it, and adds nothing when declined', async () => {
@@ -619,6 +635,50 @@ test('an install link naming a catalogue not added asks before adding it, and ad
   expect(addCatalogueCalls).toEqual([])
   expect(catalogueEntryCalls).toEqual([])
   expect(installFromCalls).toEqual([])
+})
+
+test('a git URL install names its folder, and a marketplace’s plugin folders are offered to pick from', async () => {
+  await mount()
+  await click(button('Install', panel()))
+  await click(
+    [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.trim() === 'From a git URL'),
+  )
+  const dialog = modal()!
+  expect(dialog.textContent).toContain('Install from a git URL')
+  const [url] = [...dialog.querySelectorAll('input')] as HTMLInputElement[]
+  await typeInto(url!, 'https://github.com/acme/plugins.git#v2')
+  installFromAnswer = {
+    ok: false,
+    message:
+      'That repository is a Claude Code plugin marketplace. Name the folder of the plugin to install: plugins/review-kit.',
+    folders: ['plugins/review-kit'],
+  }
+  await click(button('Install', dialog))
+  expect(installFromCalls).toEqual([{ git: 'https://github.com/acme/plugins.git', ref: 'v2' }])
+
+  // The dialog comes back with the answer, the URL kept, and the folders to pick from.
+  const again = modal()!
+  expect(again.textContent).toContain('plugin marketplace')
+  expect(([...again.querySelectorAll('input')][0] as HTMLInputElement).value).toBe(
+    'https://github.com/acme/plugins.git#v2',
+  )
+  await click(button('plugins/review-kit', again))
+  await click(button('Install', again))
+  expect(installFromCalls.at(-1)).toEqual({
+    git: 'https://github.com/acme/plugins.git',
+    ref: 'v2',
+    path: 'plugins/review-kit',
+  })
+})
+
+test('an install link naming the community catalogue, removed here, asks before adding it back', async () => {
+  cataloguesServed = [{ id: 'official', kind: 'official', name: 'Official', entries: [] }]
+  requestExtensionPage({ catalogue: 'community', id: 'acme.notes' })
+  await mount()
+  await act(async () => {})
+  expect(modal()?.textContent).toContain('Add the community catalogue?')
+  await click(button('Add catalogue', modal()!))
+  expect(addCatalogueCalls).toEqual(['community'])
 })
 
 test('an update held for review says why, and reviewing it closes the details for the approval to show', async () => {
@@ -635,7 +695,8 @@ test('an update held for review says why, and reviewing it closes the details fo
     review.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
   })
   await click(review)
-  expect(updateCalls).toEqual(['local.decision-log'])
+  // The version the row showed, so a catalogue that lists another now is refused.
+  expect(updateCalls).toEqual(['local.decision-log@1.1.0'])
   expect(document.querySelector('[aria-label="Decision Log details"]')).toBeNull()
 })
 

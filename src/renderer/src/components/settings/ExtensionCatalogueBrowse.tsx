@@ -26,6 +26,7 @@ import {
 import { ExtensionIcon } from '../ui/ExtensionIcon'
 import { accessItems } from './extensionsModel'
 import {
+  categoryWords,
   contributionWords,
   installState,
   listingCategories,
@@ -191,7 +192,7 @@ export function ExtensionCatalogueBrowse({
                 pressed={category === slug}
                 onClick={() => setCategory(category === slug ? null : slug)}
               >
-                {slug}
+                {categoryWords(slug)}
               </ChipButton>
             ))}
           </div>
@@ -211,6 +212,12 @@ export function ExtensionCatalogueBrowse({
           Read from {current.url}.{' '}
           <LinkButton size="inherit" onClick={() => onRemoveCatalogue(current.url!)}>
             Remove this catalogue
+          </LinkButton>
+        </p>
+      ) : current?.kind === 'community' && onRemoveCatalogue ? (
+        <p className="text-meta text-[color:var(--text-muted)]">
+          <LinkButton size="inherit" onClick={() => onRemoveCatalogue('community')}>
+            Remove the community catalogue
           </LinkButton>
         </p>
       ) : null}
@@ -252,8 +259,9 @@ export function ExtensionCataloguePage({
   id: string
   busy: boolean
   onBack: () => void
-  onInstall: ((catalogue: string, id: string) => void) | null
-  onUpdate: ((id: string) => void) | null
+  /** Install the release this page shows: its version and commit. */
+  onInstall: ((catalogue: string, id: string, release: { version: string; commit: string }) => void) | null
+  onUpdate: ((id: string, version: string) => void) | null
 }): JSX.Element {
   const [entry, setEntry] = useState<StudioCatalogueEntryView | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
@@ -321,11 +329,14 @@ export function ExtensionCataloguePage({
         </div>
         <div>
           {state.kind === 'install' && onInstall ? (
-            <PrimaryButton busy={busy} onClick={() => onInstall(catalogue, entry.id)}>
+            <PrimaryButton
+              busy={busy}
+              onClick={() => onInstall(catalogue, entry.id, { version: entry.version, commit: entry.commit })}
+            >
               Install
             </PrimaryButton>
           ) : state.kind === 'update' && onUpdate ? (
-            <PrimaryButton busy={busy} onClick={() => onUpdate(entry.id)}>
+            <PrimaryButton busy={busy} onClick={() => onUpdate(entry.id, state.version)}>
               Update to {state.version}
             </PrimaryButton>
           ) : state.kind === 'installed' ? (

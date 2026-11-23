@@ -4,7 +4,7 @@ import {
   type StudioModulesMethodMap,
 } from '../../../../packages/studio-protocol/src/public'
 import type { StudioClient } from '../../../../packages/client-runtime/src/public'
-import { windowStudioClient, windowStudioIsAnotherMachine } from './windowStudioClient'
+import { windowStudioClient, windowStudioIsAnotherMachine, windowStudioWelcome } from './windowStudioClient'
 
 // What runs on the window's Studio, changed from Settings: switching a module
 // on or off, installing an extension from a folder, approving it, and
@@ -38,8 +38,8 @@ export type ModuleLifecycleClient = {
   devUnload(path: string): Promise<Result<'extension.devUnload'>>
   /** Install from a catalogue entry or a git URL; it never installs from a link alone. */
   installFrom(from: StudioExtensionInstallSource): Promise<Result<'extension.installFrom'>>
-  /** Install the newer release the catalogue an extension came from lists. */
-  update(moduleId: string): Promise<Result<'extension.update'>>
+  /** Install the newer release the catalogue an extension came from lists: `version`, the one the person was shown. */
+  update(moduleId: string, version?: string): Promise<Result<'extension.update'>>
   /** Add a catalogue by its git URL, once the person said yes. */
   addCatalogue(url: string): Promise<Result<'extension.catalogueAdd'>>
   removeCatalogue(url: string): Promise<Result<'extension.catalogueRemove'>>
@@ -85,7 +85,7 @@ export function moduleLifecycleOver(client: () => Promise<StudioClient>): Module
     devLoad: (path) => send('extension.devLoad', { path }),
     devUnload: (path) => send('extension.devUnload', { path }),
     installFrom: (from) => send('extension.installFrom', { from }),
-    update: (moduleId) => send('extension.update', { moduleId }),
+    update: (moduleId, version) => send('extension.update', { moduleId, ...(version ? { version } : {}) }),
     addCatalogue: (url) => send('extension.catalogueAdd', { url }),
     removeCatalogue: (url) => send('extension.catalogueRemove', { url }),
   }
@@ -101,5 +101,21 @@ export function windowModuleLifecycle(
   api: Parameters<typeof windowStudioClient>[0] | undefined = typeof window === 'undefined' ? undefined : window.api,
 ): ModuleLifecycleClient | null {
   if (typeof api?.studioWindowTicket !== 'function' || windowStudioIsAnotherMachine(api)) return null
+  return moduleLifecycleOver(() => windowStudioClient(api))
+}
+
+/**
+ * The lifecycle over this window's Studio, for what names nothing on this
+ * window's disk: installing from a catalogue or a git URL, approving what it
+ * installed, reviewing an update, and adding or removing a catalogue. Any
+ * window with a Studio, a browser tab included; null when its Studio says this
+ * window's grant is not its owner's (the Studio refuses one anyway). Folder
+ * installs and development folders stay `windowModuleLifecycle`'s.
+ */
+export function windowCatalogueLifecycle(
+  api: Parameters<typeof windowStudioClient>[0] | undefined = typeof window === 'undefined' ? undefined : window.api,
+): ModuleLifecycleClient | null {
+  if (typeof api?.studioWindowTicket !== 'function') return null
+  if (windowStudioWelcome(api)?.grant.owner === false) return null
   return moduleLifecycleOver(() => windowStudioClient(api))
 }

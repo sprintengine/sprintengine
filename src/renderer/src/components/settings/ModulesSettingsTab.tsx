@@ -26,6 +26,8 @@ import { ExtensionIcon } from '../ui/ExtensionIcon'
 import { ExtensionCatalogueBrowse, ExtensionCataloguePage } from './ExtensionCatalogueBrowse'
 import { onExtensionPageRequest, takeExtensionPageRequest, type ExtensionPageRequest } from './extensionPageRequest'
 import { useExtensionCatalogues } from './useExtensionCatalogues'
+import { GitInstallDialog, type GitInstallRequest } from './GitInstallDialog'
+import { extensionCatalogueApi } from '../../studio/extensionCatalogue'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
 import {
   accessItems,
@@ -264,7 +266,7 @@ export function ModulesSettingsTab(): JSX.Element {
     async (url: string): Promise<string | null> => {
       if (!addCatalogue) return null
       const confirmed = await confirmDialog({
-        title: `Add catalogue ${url}?`,
+        title: url === 'community' ? 'Add the community catalogue?' : `Add catalogue ${url}?`,
         body:
           'Studio reads the extensions it lists from then on and labels them with its name and owner. ' +
           'Nothing is installed until you press Install on an extension’s page.',
@@ -285,8 +287,17 @@ export function ModulesSettingsTab(): JSX.Element {
     async (request: ExtensionPageRequest) => {
       setView('browse')
       let catalogue = request.catalogue
-      if (catalogue.startsWith('git:') && !catalogueState.catalogues.some((known) => known.id === catalogue)) {
-        const added = await askToAddCatalogue(catalogue.slice(4))
+      // The community catalogue too, once the person removed it. Asked of the
+      // Studio now: a link that opened Settings comes before its first list.
+      const known = async () => {
+        try {
+          return (await extensionCatalogueApi.catalogues()).some((candidate) => candidate.id === catalogue)
+        } catch {
+          return catalogueState.catalogues.some((candidate) => candidate.id === catalogue)
+        }
+      }
+      if ((catalogue.startsWith('git:') || catalogue === 'community') && !(await known())) {
+        const added = await askToAddCatalogue(catalogue.startsWith('git:') ? catalogue.slice(4) : catalogue)
         if (!added) return
         catalogue = added
       }
@@ -303,23 +314,22 @@ export function ModulesSettingsTab(): JSX.Element {
     take()
     return onExtensionPageRequest(take)
   }, [openRequestedPage])
-  const installFromGit = extensions.installFrom
-    ? async () => {
-        const value = await promptDialog({
-          title: 'Install from a git URL',
-          body:
-            'An HTTPS or SSH URL of a repository holding extension.json, or a Claude Code plugin (its skills and ' +
-            'MCP servers are installed). Add #<branch, tag or commit> to pick one. It is labelled Unverified.',
-          inputLabel: 'Git URL',
-          placeholder: 'https://github.com/acme/notes.git',
-          required: true,
-          confirmLabel: 'Install',
-        })
-        if (!value) return
-        const [git, ref] = value.trim().split('#', 2) as [string, string | undefined]
-        await extensions.installFrom?.({ git, ...(ref ? { ref } : {}) })
-      }
-    : null
+  // From a git URL: the URL and an optional folder. A refusal comes back to
+  // the dialog, with a marketplace's plugin folders to pick from.
+  const [gitDialog, setGitDialog] = useState<{ url: string; folders: string[]; message?: string } | null>(null)
+  const installFromGit = extensions.installFrom ? () => setGitDialog({ url: '', folders: [] }) : null
+  const submitGitInstall = async (request: GitInstallRequest) => {
+    setGitDialog(null)
+    const outcome = await extensions.installFrom?.(request)
+    if (outcome && !outcome.ok) {
+      extensions.dismissMessage()
+      setGitDialog({
+        url: `${request.git}${request.ref ? `#${request.ref}` : ''}`,
+        folders: outcome.folders ?? [],
+        message: outcome.message,
+      })
+    }
+  }
   const ids = { review: useId(), installed: useId(), builtIn: useId(), builtInList: useId() }
 
   const { modules } = extensions
@@ -465,17 +475,19 @@ export function ModulesSettingsTab(): JSX.Element {
               onBack={() => setPage(null)}
               onInstall={
                 extensions.installFrom
-                  ? (catalogue, id) =>
-                      void extensions.installFrom?.({ catalogue, id }).then((ok) => {
-                        if (ok) void catalogueState.reload()
+                  ? (catalogue, id, release) =>
+                      void extensions.installFrom?.({ catalogue, id, ...release }).then((outcome) => {
+                        // Installed, or refused because the catalogue lists another now: read it again.
+                        void catalogueState.reload()
+                        return outcome
                       })
                   : null
               }
               onUpdate={
                 extensions.update
-                  ? (id) => {
+                  ? (id, version) => {
                       const module = extensions.modules.find((candidate) => candidate.manifest.id === id)
-                      if (module) void extensions.update?.(module).then(() => catalogueState.reload())
+                      if (module) void extensions.update?.(module, version).then(() => catalogueState.reload())
                     }
                   : null
               }
@@ -510,7 +522,7 @@ export function ModulesSettingsTab(): JSX.Element {
                 catalogueState.remove
                   ? (url) =>
                       void confirmDialog({
-                        title: `Remove catalogue ${url}?`,
+                        title: url === 'community' ? 'Remove the community catalogue?' : `Remove catalogue ${url}?`,
                         body: 'What you installed from it stays, and no longer updates.',
                         confirmLabel: 'Remove',
                         tone: 'danger',
@@ -643,6 +655,15 @@ export function ModulesSettingsTab(): JSX.Element {
         </>
       )}
 
+      {gitDialog ? (
+        <GitInstallDialog
+          initialUrl={gitDialog.url}
+          folders={gitDialog.folders}
+          {...(gitDialog.message ? { message: gitDialog.message } : {})}
+          onCancel={() => setGitDialog(null)}
+          onSubmit={(request) => void submitGitInstall(request)}
+        />
+      ) : null}
       <ApprovalReviewDialog
         module={reviewing}
         icon={reviewing ? <ExtensionMark module={reviewing} doorIcon={null} size={40} /> : null}

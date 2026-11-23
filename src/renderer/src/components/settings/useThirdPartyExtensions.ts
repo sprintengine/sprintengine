@@ -7,7 +7,7 @@ import { showToast } from '../../store/toastStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
 import type { ActionResult } from '../ui'
-import { windowModuleLifecycle } from '../../studio/moduleLifecycle'
+import { windowCatalogueLifecycle, windowModuleLifecycle } from '../../studio/moduleLifecycle'
 import type { StudioExtensionInstallSource } from '../../../../../packages/studio-protocol/src/public'
 import { addThirdPartyModuleFromFolder } from './addThirdPartyModuleFromFolder'
 import { extensionsApi, windowHasStudio } from '../../studio/extensions'
@@ -17,6 +17,9 @@ import { copy } from '../../../../shared/copy'
 // and installs, approves and uninstalls through the window's Studio
 // (`extension.*`), which owns what runs there. The page and its rows only
 // render what this hands them.
+
+/** How an install from a catalogue or a git URL ended; a marketplace's refusal names its plugin folders. */
+export type InstallOutcome = { ok: true } | { ok: false; message: string; folders?: string[] }
 
 export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled: boolean) => void) {
   const [modules, setModules] = useState<ThirdPartyModuleView[]>([])
@@ -34,6 +37,9 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   const forgetModules = useWorkspaceStore((state) => state.forgetModules)
   const { confirm: confirmDialog } = useConfirmDialog()
   const [lifecycle] = useState(() => windowModuleLifecycle())
+  // Installing from a catalogue or a git URL names nothing on this window's
+  // disk, so any window whose Studio lets its owner do it may (a browser tab too).
+  const [catalogueLifecycle] = useState(() => windowCatalogueLifecycle())
 
   const load = useCallback(async () => {
     if (!windowHasStudio()) {
@@ -101,10 +107,14 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
       result:
         | { ok: true; moduleId: string; approval: { state: string }; strippedLinks: string[]; leftOut?: string[] }
         | { ok: false; message: string },
-    ): Promise<boolean> => {
+    ): Promise<InstallOutcome> => {
       if (!result.ok) {
         setMessage({ tone: 'error', text: result.message })
-        return false
+        return {
+          ok: false,
+          message: result.message,
+          ...('folders' in result ? { folders: result.folders as string[] } : {}),
+        }
       }
       const notes = [
         ...(result.strippedLinks.length > 0
@@ -112,7 +122,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
           : []),
         ...(result.leftOut && result.leftOut.length > 0
           ? [
-              `Studio does not install a Claude Code plugin’s ${result.leftOut.join(', ')}; its skills and MCP servers are installed.`,
+              `Studio installed the Claude Code plugin’s skills and MCP servers. Left out: ${result.leftOut.join('; ')}.`,
             ]
           : []),
       ]
@@ -121,40 +131,44 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
       await load()
       if (result.approval.state === 'pending') setAwaitingReview(result.moduleId)
       else setJustInstalled(result.moduleId)
-      return true
+      return { ok: true }
     },
     [load],
   )
 
   const installFrom = useCallback(
-    async (from: StudioExtensionInstallSource): Promise<boolean> => {
-      if (!lifecycle) return false
+    async (from: StudioExtensionInstallSource): Promise<InstallOutcome> => {
+      if (!catalogueLifecycle) return { ok: false, message: 'This window cannot install on its Studio.' }
       setInstalling(true)
       setMessage(null)
       try {
-        return await afterInstall(await lifecycle.installFrom(from))
+        return await afterInstall(await catalogueLifecycle.installFrom(from))
       } catch (error) {
-        setMessage({ tone: 'error', text: errorMessage(error, 'Couldn’t install it.') })
-        return false
+        const text = errorMessage(error, 'Couldn’t install it.')
+        setMessage({ tone: 'error', text })
+        return { ok: false, message: text }
       } finally {
         setInstalling(false)
       }
     },
-    [afterInstall, lifecycle],
+    [afterInstall, catalogueLifecycle],
   )
 
+  // "Review version X" and "Update to X": exactly the version the person was
+  // shown; a catalogue that lists another now is refused, and the row reloads.
   const update = useCallback(
-    async (module: ThirdPartyModuleView) => {
-      if (!lifecycle) return
+    async (module: ThirdPartyModuleView, version = module.update?.version) => {
+      if (!catalogueLifecycle) return
       setPendingId(module.manifest.id)
       setMessage(null)
       try {
-        await afterInstall(await lifecycle.update(module.manifest.id))
+        const outcome = await afterInstall(await catalogueLifecycle.update(module.manifest.id, version))
+        if (!outcome.ok) await load()
       } finally {
         setPendingId(null)
       }
     },
-    [afterInstall, lifecycle],
+    [afterInstall, catalogueLifecycle, load],
   )
 
   // Approve and turn on, in one step: the review is the consent, and an
@@ -164,12 +178,13 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   // showed: an extension that changed since is refused, not approved unseen.
   const approveAndEnable = useCallback(
     async (module: ThirdPartyModuleView): Promise<boolean> => {
-      if (!lifecycle || module.approval.state !== 'pending') return false
+      if (!catalogueLifecycle || module.approval.state !== 'pending') return false
       const id = module.manifest.id
       setPendingId(id)
       setMessage(null)
       try {
-        const result = await lifecycle.approve(id, module.approval.fingerprint)
+        // An install from a browser tab is approved there too: approving names nothing on a disk.
+        const result = await catalogueLifecycle.approve(id, module.approval.fingerprint)
         if (!result.ok) {
           setMessage({ tone: 'error', text: result.message || `Couldn’t approve ${module.manifest.displayName}.` })
           await load()
@@ -186,7 +201,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
         setPendingId(null)
       }
     },
-    [lifecycle, load, onSetEnabled],
+    [catalogueLifecycle, load, onSetEnabled],
   )
 
   const canUninstall = lifecycle !== null
@@ -274,8 +289,8 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
     justInstalled,
     clearJustInstalled,
     uninstall: canUninstall ? uninstall : null,
-    installFrom: lifecycle ? installFrom : null,
-    update: lifecycle ? update : null,
+    installFrom: catalogueLifecycle ? installFrom : null,
+    update: catalogueLifecycle ? update : null,
     reveal: typeof window.api.revealThirdPartyModule === 'function' ? reveal : null,
     reload: load,
   }

@@ -2,17 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { StudioCatalogueView } from '../../../../../packages/studio-protocol/src/public'
 import { extensionCatalogueApi } from '../../studio/extensionCatalogue'
-import { windowModuleLifecycle } from '../../studio/moduleLifecycle'
+import { windowCatalogueLifecycle } from '../../studio/moduleLifecycle'
 
 // The catalogues Browse lists: their last copies at once, then read again from
-// where they live. Adding and removing one is the owner's, and the page asks
-// the person before it adds one.
+// where they live. Adding and removing one is the owner's, from any window
+// with a Studio (a browser tab too), and the page asks the person before it
+// adds one.
 
 export function useExtensionCatalogues(active: boolean) {
   const [catalogues, setCatalogues] = useState<StudioCatalogueView[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [lifecycle] = useState(() => windowModuleLifecycle())
+  const [lifecycle] = useState(() => windowCatalogueLifecycle())
   const fetchedOnce = useRef(false)
 
   const load = useCallback(async (refresh: boolean) => {
