@@ -284,7 +284,8 @@ test('review says the code runs with full access, and approves the fingerprint i
   expect(dialog.textContent).toContain('Runs chats with your agents')
   expect(dialog.textContent).toContain('Starts, messages and stops chats')
   expect(dialog.querySelector('ul[aria-label="Also"]')?.textContent).toContain('Saves its own data')
-  expect(dialog.textContent).toContain('Starts after a restart')
+  // Approving loads it at once: nothing says it waits for a restart.
+  expect(dialog.textContent).not.toContain('restart')
   // A signature is a badge, not a gate: no box to tick.
   expect(dialog.querySelector('input[type="checkbox"]')).toBeNull()
   const approve = button('Approve and turn on', dialog)!

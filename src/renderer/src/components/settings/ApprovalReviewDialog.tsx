@@ -2,7 +2,7 @@ import React, { useId, type JSX } from 'react'
 
 import type { ThirdPartyModuleView } from '../../../../shared/modules/manifest'
 import { extensionApprovalCopy, grantsFullAccess } from '../../../../shared/modules/permissions'
-import { AccessCareList, AccessChips, InlineNotice, RefreshIcon, type AccessItem } from '../ui'
+import { AccessCareList, AccessChips, InlineNotice, type AccessItem } from '../ui'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/Modal'
 import { copy } from '../../../../shared/copy'
 import { extensionHookApprovalLines } from '../../../../../packages/extension-sdk/src/hooks'
@@ -141,12 +141,6 @@ export function ApprovalReviewDialog({
         ) : null}
       </ModalBody>
       <ModalFooter>
-        {module.launch.hasMainEntry ? (
-          <span className="mr-auto inline-flex items-center gap-1.5 text-meta text-[color:var(--text-muted)]">
-            <RefreshIcon className="icon-xs shrink-0" />
-            {t.startsAfterARestart}
-          </span>
-        ) : null}
         <ModalButton variant="ghost" onClick={onCancel}>
           {t.cancel}
         </ModalButton>
