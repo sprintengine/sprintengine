@@ -5,8 +5,9 @@
 // not ask for, a worker it does not have), and `studio.document` outside a
 // custom editor; a worker's `studio.<method>(…)` that needs a permission it
 // does not ask for. Only literal calls: a method named at run time is not
-// checked. A call guarded by `studio.host.has('<method>')` with the same
-// literal is feature detection, and an unknown method there is not an issue.
+// checked, and text inside a comment or a string is not a call. A call
+// guarded by `studio.host.has('<method>')` with the same literal is feature
+// detection, and an unknown method there is not an issue.
 
 import type { ExtensionManifest, ExtensionSurfacePoint } from './extension-manifest.js'
 import { EXTENSION_FRAME_METHODS, EXTENSION_MAIN_HOST_METHODS } from './services.js'
@@ -16,49 +17,94 @@ export type HostCallIssue = { file: string; line: number; column: number; messag
 /** What of extension.json a host call is checked against. */
 export type HostCallManifest = Pick<ExtensionManifest, 'permissions' | 'main'>
 
-/** `source` with its comments blanked (newlines kept), so a call in a comment is not read as one. */
-function withoutComments(source: string): string {
+const blank = (text: string) => text.replace(/[^\n]/gu, ' ')
+
+/**
+ * `source` as code alone, every offset kept: comments and the text inside
+ * string literals and template literals blanked (newlines and the quotes
+ * themselves kept), and a template's `${…}` kept as the code it is. So a call
+ * written inside a comment or a string is not read as a call.
+ */
+function codeOnly(source: string): string {
   let out = ''
   let index = 0
-  let quote: string | null = null
+  // Where each open `${` returns to: the template it is in, at this brace depth.
+  const templates: number[] = []
+  let depth = 0
+  let mode: 'code' | 'template' = 'code'
   while (index < source.length) {
     const char = source[index]!
     const next = source[index + 1]
-    if (quote) {
-      out += char
+    if (mode === 'template') {
       if (char === '\\') {
-        out += next ?? ''
+        out += blank(source.slice(index, index + 2))
         index += 2
-        continue
+      } else if (char === '`') {
+        out += char
+        index += 1
+        mode = 'code'
+      } else if (char === '$' && next === '{') {
+        out += '${'
+        index += 2
+        templates.push(depth)
+        depth += 1
+        mode = 'code'
+      } else {
+        out += blank(char)
+        index += 1
       }
-      if (char === quote) quote = null
-      index += 1
       continue
     }
-    if (char === '"' || char === "'" || char === '`') {
-      quote = char
+    if (char === '"' || char === "'") {
+      let end = index + 1
+      while (end < source.length && source[end] !== char && source[end] !== '\n') end += source[end] === '\\' ? 2 : 1
+      out += char + blank(source.slice(index + 1, end)) + (source[end] === char ? char : '')
+      index = source[end] === char ? end + 1 : end
+      continue
+    }
+    if (char === '`') {
       out += char
       index += 1
+      mode = 'template'
       continue
     }
     if (char === '/' && next === '/') {
-      while (index < source.length && source[index] !== '\n') {
-        out += ' '
-        index += 1
-      }
+      const end = source.indexOf('\n', index)
+      const stop = end < 0 ? source.length : end
+      out += blank(source.slice(index, stop))
+      index = stop
       continue
     }
     if (char === '/' && next === '*') {
       const end = source.indexOf('*/', index + 2)
       const stop = end < 0 ? source.length : end + 2
-      out += source.slice(index, stop).replace(/[^\n]/gu, ' ')
+      out += blank(source.slice(index, stop))
       index = stop
       continue
+    }
+    if (char === '{') depth += 1
+    if (char === '}') {
+      depth -= 1
+      if (templates.length > 0 && templates.at(-1) === depth) {
+        templates.pop()
+        out += char
+        index += 1
+        mode = 'template'
+        continue
+      }
     }
     out += char
     index += 1
   }
   return out
+}
+
+/** The literal method name a call's quote at `quote` opens in `source`, or null when it is not a plain literal. */
+function literalAt(source: string, quote: number): string | null {
+  const mark = source[quote]!
+  const match = /^([^'"`\\$\n]*)/u.exec(source.slice(quote + 1))
+  const name = match?.[1] ?? ''
+  return source[quote + 1 + name.length] === mark ? name : null
 }
 
 function place(source: string, offset: number): { line: number; column: number } {
@@ -67,8 +113,9 @@ function place(source: string, offset: number): { line: number; column: number }
 }
 
 const DOT = String.raw`\s*\??\.\s*`
-const HOST_CALL = new RegExp(String.raw`\bstudio${DOT}host${DOT}call\s*\(\s*(['"\x60])([^'"\x60\\$]*)\1`, 'gu')
-const HOST_HAS = new RegExp(String.raw`\bstudio${DOT}host${DOT}has\s*\(\s*(['"\x60])([^'"\x60\\$]*)\1`, 'gu')
+// Matched on the code alone (codeOnly); the method's literal is read from the source at the quote.
+const HOST_CALL = new RegExp(String.raw`\bstudio${DOT}host${DOT}call\s*\(\s*(?=['"\x60])`, 'gu')
+const HOST_HAS = new RegExp(String.raw`\bstudio${DOT}host${DOT}has\s*\(\s*(?=['"\x60])`, 'gu')
 const METHODS = new RegExp(String.raw`\bstudio${DOT}methods\s*(?:<[^>()]*>\s*)?\(`, 'gu')
 const DOCUMENT = new RegExp(String.raw`\bstudio${DOT}document\b`, 'gu')
 const WORKER_CALL = new RegExp(String.raw`\bstudio${DOT}([A-Za-z_$][\w$]*)\s*\(`, 'gu')
@@ -83,12 +130,14 @@ export function surfaceHostCallIssues(
   surface: ExtensionSurfacePoint,
   manifest: HostCallManifest,
 ): HostCallIssue[] {
-  const code = withoutComments(source)
+  const code = codeOnly(source)
   const issues: HostCallIssue[] = []
   const at = (offset: number, message: string) => issues.push({ file, ...place(code, offset), message })
-  const detected = new Set([...code.matchAll(HOST_HAS)].map((match) => match[2]!))
+  const literal = (match: RegExpMatchArray) => literalAt(source, match.index! + match[0].length)
+  const detected = new Set([...code.matchAll(HOST_HAS)].map(literal).filter((name) => name !== null))
   for (const match of code.matchAll(HOST_CALL)) {
-    const method = match[2]!
+    const method = literal(match)
+    if (method === null) continue
     const requirement = Object.hasOwn(EXTENSION_FRAME_METHODS, method)
       ? EXTENSION_FRAME_METHODS[method as keyof typeof EXTENSION_FRAME_METHODS]
       : undefined
@@ -115,7 +164,7 @@ export function surfaceHostCallIssues(
 
 /** The issues with the host calls a worker's file writes out: a call that needs a permission it does not ask for. */
 export function workerHostCallIssues(file: string, source: string, manifest: HostCallManifest): HostCallIssue[] {
-  const code = withoutComments(source)
+  const code = codeOnly(source)
   const issues: HostCallIssue[] = []
   for (const match of code.matchAll(WORKER_CALL)) {
     const method = match[1]!
