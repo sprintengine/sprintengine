@@ -24,33 +24,39 @@ async function until(check: () => boolean, what: string): Promise<void> {
   }
 }
 
-test('only folders are watched; a folder deleted and made again keeps being followed', async () => {
-  const folder = realpathSync(mkdtempSync(join(tmpdir(), 'se-dev-watch-')))
-  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'se-dev-watch-outside-')))
-  made.push(folder, outside)
-  mkdirSync(join(folder, 'src'))
-  writeFileSync(join(folder, 'src', 'panel.ts'), 'export {}\n')
-  mkdirSync(join(folder, 'node_modules', 'x'), { recursive: true })
-  symlinkSync(outside, join(folder, 'linked'))
-  const heard: string[] = []
-  const watch = watchTreeByFolder(
-    folder,
-    (name) => {
-      if (name) heard.push(name)
-    },
-    () => undefined,
-  )
-  try {
-    assert.deepEqual(watch.watching().sort(), [folder, join(folder, 'src')])
-
-    rmSync(join(folder, 'src'), { recursive: true })
-    await until(() => !watch.watching().includes(join(folder, 'src')), 'the gone folder to be let go')
+// Linux's watch: elsewhere a development folder is watched whole, and a
+// single folder's watch does not hear its subfolders go on every runner.
+test.skipIf(process.platform !== 'linux')(
+  'only folders are watched; a folder deleted and made again keeps being followed',
+  async () => {
+    const folder = realpathSync(mkdtempSync(join(tmpdir(), 'se-dev-watch-')))
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'se-dev-watch-outside-')))
+    made.push(folder, outside)
     mkdirSync(join(folder, 'src'))
-    await until(() => watch.watching().includes(join(folder, 'src')), 'the new folder to be followed')
-    heard.splice(0)
-    writeFileSync(join(folder, 'src', 'panel.ts'), 'export const saved = 1\n')
-    await until(() => heard.includes('src/panel.ts'), 'a save in the new src/')
-  } finally {
-    watch.close()
-  }
-}, 30_000)
+    writeFileSync(join(folder, 'src', 'panel.ts'), 'export {}\n')
+    mkdirSync(join(folder, 'node_modules', 'x'), { recursive: true })
+    symlinkSync(outside, join(folder, 'linked'))
+    const heard: string[] = []
+    const watch = watchTreeByFolder(
+      folder,
+      (name) => {
+        if (name) heard.push(name)
+      },
+      () => undefined,
+    )
+    try {
+      assert.deepEqual(watch.watching().sort(), [folder, join(folder, 'src')])
+
+      rmSync(join(folder, 'src'), { recursive: true })
+      await until(() => !watch.watching().includes(join(folder, 'src')), 'the gone folder to be let go')
+      mkdirSync(join(folder, 'src'))
+      await until(() => watch.watching().includes(join(folder, 'src')), 'the new folder to be followed')
+      heard.splice(0)
+      writeFileSync(join(folder, 'src', 'panel.ts'), 'export const saved = 1\n')
+      await until(() => heard.includes('src/panel.ts'), 'a save in the new src/')
+    } finally {
+      watch.close()
+    }
+  },
+  30_000,
+)
