@@ -160,6 +160,13 @@ const extensionWorkers = createExtensionWorkers({
   installed: () => installedStandingOf(extensionDiscovery.current()),
   toolsChanged: () => services.automationService?.notifyToolsListChanged(),
   stateChanged: () => services.moduleHub.deliverChanged(),
+  // Read again, it is no longer loaded: registering it again asks again.
+  developmentFolderMoved: () => {
+    extensionDiscovery.invalidate()
+    void moduleLifecycle?.reproject(extensionDiscovery.current().modules)
+    void extensionReloader?.reload()
+    services.moduleHub.deliverChanged()
+  },
 })
 if (!serverHost) app.once('will-quit', () => void extensionWorkers.workers.close())
 // In process, the core's actions ask these workers' hooks; out of process the

@@ -108,6 +108,13 @@ export function createServerModules(deps: {
     installed: () => installedStandingOf(discovery.current()),
     toolsChanged: () => gateway?.notifyToolsListChanged(),
     stateChanged: () => hub.deliverChanged(),
+    // Read again, it is no longer loaded: registering it again asks again.
+    developmentFolderMoved: () => {
+      discovery.invalidate()
+      void lifecycle.reproject(discovery.current().modules)
+      void reloader?.reload()
+      hub.deliverChanged()
+    },
   })
   // The core's actions ask these workers' hooks (extension-hooks.ts).
   core.extensionHooks.bind(workers)

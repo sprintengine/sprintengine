@@ -3,7 +3,7 @@
 // are, loaded the way server-modules.ts loads them, each worker forked from
 // the built entry (tests/extension-worker.ts).
 
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -16,6 +16,7 @@ import {
 } from '../src/main/module-host/load-modules'
 import { createServiceToken, WORKSPACE_GIT_INFO_SERVICE_KEY } from '../src/main/module-host/main-host'
 import { approvedContext } from '../src/main/modules/extension-approvals.test-helper'
+import { extensionAccess } from '../src/main/modules/extension-approvals'
 import { discoverUserModulesSync } from '../src/main/modules/user-module-registry'
 import type { ModuleNotifyInput } from '../src/shared/modules/notifications'
 import { planInstalledExtensions } from '../src/server/extensions/extension-plan'
@@ -44,6 +45,8 @@ export type TestExtension = {
   hooks?: Array<{ point: string; onError?: 'pass' | 'deny' }>
   /** Its display name; the id when absent. */
   name?: string
+  /** Registered as an approved development folder (`<scratch>/work/<id>`), not installed. */
+  development?: boolean
 }
 
 export type WorkerHarness = {
@@ -57,6 +60,8 @@ export type WorkerHarness = {
   bell: Array<{ moduleId: string; input: ModuleNotifyInput }>
   toolsChanged: () => number
   logDir: string
+  /** Each extension's folder, by install key: a development folder's by its real path. */
+  folders: Record<string, string>
   close(): Promise<void>
 }
 
@@ -82,12 +87,15 @@ export function startWorkerHarness(
   options: Partial<Omit<ExtensionWorkersOptions, 'gate' | 'toolNameProblem' | 'notify' | 'approvals'>> = {},
   services: Record<string, unknown> = {},
 ): WorkerHarness {
-  const scratch = mkdtempSync(join(tmpdir(), 'extension-workers-'))
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'extension-workers-')))
   const root = join(scratch, 'extensions')
   const folders: Record<string, string> = {}
+  const devFolders: string[] = []
   for (const extension of extensions) {
     const key = `local.${extension.id}`
-    folders[key] = writeExtensionFolder(join(root, key), {
+    const folder = extension.development ? join(scratch, 'work', extension.id) : join(root, key)
+    if (extension.development) devFolders.push(folder)
+    folders[key] = writeExtensionFolder(folder, {
       manifest: extensionManifest({
         id: extension.id,
         name: extension.name ?? extension.id,
@@ -106,7 +114,19 @@ export function startWorkerHarness(
       files: { [extension.mainPath ?? 'dist/main.cjs']: extension.main, ...extension.sources },
     })
   }
-  const context = approvedContext(folders)
+  const installedFolders = Object.fromEntries(
+    Object.entries(folders).filter(([, folder]) => !devFolders.includes(folder)),
+  )
+  const context = { ...approvedContext(installedFolders), devFolders }
+  // Each development folder approved as the person would, for that folder.
+  for (const module of discoverUserModulesSync(root, context).modules) {
+    if (!module.development || module.standing.approval.state !== 'pending') continue
+    context.approvals.set(module.key, {
+      fingerprint: module.standing.approval.fingerprint,
+      access: extensionAccess(module.extension, {}),
+      devFolder: module.moduleRoot,
+    })
+  }
   const approvals = new Map([...context.approvals].map(([key, record]) => [key, { fingerprint: record.fingerprint }]))
   const installed = new Map<string, InstalledStanding>(
     [...approvals].map(([key, { fingerprint }]) => [key, { runnable: true, fingerprint }]),
@@ -153,6 +173,7 @@ export function startWorkerHarness(
     bell,
     toolsChanged: () => toolsChanged,
     logDir,
+    folders,
     close: () => workers.close(),
   }
 }

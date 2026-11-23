@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { afterEach, test } from 'vitest'
@@ -389,4 +389,28 @@ test('a worker that fails to activate is reported at its file and line', async (
   const answer = await ping('thrower')
   assert.ok(!answer.ok || !answer.answer.ok)
   assert.match(JSON.stringify(answer), /src\/greet\.ts:2:7 no x/u)
+})
+
+test('a development folder swapped for a link before its worker starts is refused, and read again', async () => {
+  const moved: string[] = []
+  harness = await startWorkerHarness([worker('dev', { development: true })], {
+    developmentFolderMoved: (moduleId) => moved.push(moduleId),
+  })
+  const folder = harness.folders['local.dev']!
+  // Other code at another place, and the registered folder now a link to it.
+  const elsewhere = `${folder}-elsewhere`
+  mkdirSync(elsewhere)
+  writeFileSync(join(elsewhere, 'extension.json'), readFileSync(join(folder, 'extension.json'), 'utf8'))
+  mkdirSync(join(elsewhere, 'dist'))
+  writeFileSync(
+    join(elsewhere, 'dist', 'main.cjs'),
+    "exports.activate = (studio) => studio.registerMethods({ ping: { access: 'read', params: (v) => ({ ok: true, params: v }), handler: () => ({ ok: true, result: 'other code' }) } })\n",
+  )
+  renameSync(folder, `${folder}-before`)
+  symlinkSync(elsewhere, folder)
+  const answer = await ping('dev')
+  assert.ok(!answer.ok || !answer.answer.ok, JSON.stringify(answer))
+  assert.ok(!JSON.stringify(answer).includes('other code'))
+  assert.match(harness.workers.status('local.dev')?.message ?? '', /now leads to/u)
+  assert.deepEqual(moved, ['local.dev'])
 })

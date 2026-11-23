@@ -20,6 +20,7 @@ import {
 import { currentInvoker, ownerInvoker, type ExtensionInvoker } from '../../../main/module-host/extension-invocation'
 import { resolveContainedEntry } from '../../../main/modules/entry-containment'
 import { moduleFileDigestIssuesSync } from '../../../main/modules/module-signature'
+import { devFolderStillResolves } from '../../../main/modules/extension-dev-folders'
 import { createWorkerLog, type WorkerLog } from './worker-log'
 import { extensionDevEvents } from '../dev/dev-events'
 import { startWorkerProcess, WorkerCallError, type WorkerProcess } from './worker-process'
@@ -117,6 +118,12 @@ export type ExtensionWorkersOptions = {
   toolsChanged?: () => void
   /** A worker's state changed: tell the windows. */
   stateChanged?: (moduleId: string) => void
+  /**
+   * A development folder's worker was refused at its start because the folder
+   * (or a parent) no longer leads where it was registered: read the
+   * extensions again, so it waits to be registered, and approved, again.
+   */
+  developmentFolderMoved?: (moduleId: string) => void
   maxActive?: number
   maxBackground?: number
   idleReapMs?: number
@@ -594,6 +601,18 @@ export class ExtensionWorkers implements KernelWorkerPort {
     try {
       const why = this.approvalProblem(entry)
       if (why) throw new ApprovalChanged(why)
+      // A development folder's files are not bound by its approval, its
+      // place is: one swapped for a link since the last reconcile (or with a
+      // parent swapped) would run other code under the first one's approval.
+      if (spec.development) {
+        const still = devFolderStillResolves(spec.root)
+        if (!still.ok) {
+          this.options.developmentFolderMoved?.(spec.extensionId)
+          throw new ApprovalChanged(
+            `Extension "${spec.extensionId}"'s development folder ${spec.root} ${still.now ? `now leads to ${still.now}` : 'is gone'}, so its worker was not started. Register the folder again; the person approves it again.`,
+          )
+        }
+      }
       const changed = spec.development
         ? []
         : moduleFileDigestIssuesSync(spec.root, spec.verifiedFiles, {
