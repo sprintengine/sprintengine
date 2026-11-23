@@ -337,6 +337,67 @@ describe('installing from a git URL', () => {
     expect(view?.approval.state).toBe('pending')
   })
 
+  test('a plugin’s MCP servers in both places are merged, and everything dropped is named', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'review-kit', {
+      '.claude-plugin/plugin.json': JSON.stringify({
+        name: 'review-kit',
+        version: '1.0.0',
+        outputStyles: './styles',
+        lspServers: {},
+        mcpServers: {
+          lint: { command: 'node', args: ['other.js'] },
+          search: { type: 'sse', url: 'https://search.example.com/sse', headers: { Authorization: 'x' } },
+        },
+      }),
+      'skills/checklist/SKILL.md': '---\nname: checklist\ndescription: A review checklist.\n---\nCheck it.\n',
+      '.mcp.json': JSON.stringify({ mcpServers: { lint: { command: 'node', args: ['server.js'] } } }),
+    })
+    const answer = await env.lifecycle.catalogue.installFrom({ git: repo.url })
+    expect(answer).toMatchObject({ ok: true })
+    const leftOut = answer.ok ? (answer.leftOut ?? []) : []
+    expect(leftOut).toEqual(
+      expect.arrayContaining([
+        'output styles',
+        'plugin.json\'s "lspServers"',
+        'plugin.json\'s MCP server "lint" (.mcp.json\'s of that name is used)',
+        'the HTTP headers of MCP server "search"',
+        'the SSE transport of MCP server "search" (Studio reaches it over HTTP)',
+      ]),
+    )
+    const [view] = await env.installed()
+    expect(view?.extension.contributes.mcpServers).toEqual([
+      { id: 'lint', name: 'lint', transport: 'stdio', command: 'node', args: ['server.js'] },
+      { id: 'search', name: 'search', transport: 'http', url: 'https://search.example.com/sse' },
+    ])
+  })
+
+  test('a plugin marketplace repository names its plugin folders, and one installs by its folder', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'plugins', {
+      '.claude-plugin/marketplace.json': JSON.stringify({
+        name: 'acme',
+        owner: { name: 'Acme' },
+        plugins: [
+          { name: 'review-kit', source: './plugins/review-kit' },
+          { name: 'remote', source: { source: 'github' } },
+        ],
+      }),
+      'plugins/review-kit/.claude-plugin/plugin.json': JSON.stringify({ name: 'review-kit', version: '1.0.0' }),
+      'plugins/review-kit/skills/checklist/SKILL.md':
+        '---\nname: checklist\ndescription: A review checklist.\n---\nCheck it.\n',
+    })
+    const root = await env.lifecycle.catalogue.installFrom({ git: repo.url })
+    expect(root).toMatchObject({ ok: false, folders: ['plugins/review-kit'] })
+    expect(!root.ok && root.message).toMatch(
+      /plugin marketplace\. Name the folder of the plugin to install: plugins\/review-kit/,
+    )
+    expect(await env.lifecycle.catalogue.installFrom({ git: repo.url, path: 'plugins/review-kit' })).toMatchObject({
+      ok: true,
+      moduleId: 'acme.review-kit',
+    })
+  })
+
   test('an install from a catalogue is not taken over by a git URL', async () => {
     const env = setup()
     const repo = env.repository('acme', 'notes', notesFiles())

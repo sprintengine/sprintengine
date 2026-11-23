@@ -39,7 +39,37 @@ export type CheckedOut = {
   dispose(): Promise<void>
 }
 
-export type CheckOutResult = { ok: true; checkedOut: CheckedOut } | { ok: false; message: string }
+export type CheckOutResult =
+  | { ok: true; checkedOut: CheckedOut }
+  | {
+      ok: false
+      message: string
+      /** A Claude Code plugin marketplace's plugin folders, when the folder checked out is one. */
+      folders?: string[]
+    }
+
+/**
+ * The plugin folders a Claude Code plugin marketplace lists
+ * (`.claude-plugin/marketplace.json`, its plugins' relative `source`s), or
+ * null when the folder is not one.
+ */
+function marketplaceFolders(dir: string): string[] | null {
+  let raw: unknown
+  try {
+    raw = JSON.parse(readFileSync(join(dir, '.claude-plugin', 'marketplace.json'), 'utf8'))
+  } catch {
+    return null
+  }
+  const plugins = (raw as { plugins?: unknown } | null)?.plugins
+  if (!Array.isArray(plugins)) return null
+  const folders = plugins.flatMap((plugin) => {
+    const source = (plugin as { source?: unknown } | null)?.source
+    if (typeof source !== 'string') return []
+    const folder = source.replace(/^\.\/+/, '').replace(/\/+$/, '')
+    return folder && !folder.startsWith('/') && !folder.split('/').includes('..') ? [folder] : []
+  })
+  return [...new Set(folders)].sort().slice(0, 100)
+}
 
 /**
  * The publisher a source takes: the owner of its repository. A `file://` URL
@@ -96,10 +126,18 @@ export async function checkOutExtension(input: {
     try {
       source = readFileSync(join(dir, EXTENSION_MANIFEST_FILENAME), 'utf8')
     } catch {
+      // A marketplace holds its plugins in folders: say which, to name one.
+      const folders = input.claudePlugins ? marketplaceFolders(dir) : null
       await dispose()
+      if (folders && folders.length > 0)
+        return {
+          ok: false,
+          message: `${input.path ? `${input.path} of that repository` : 'That repository'} is a Claude Code plugin marketplace. Name the folder of the plugin to install: ${folders.join(', ')}.`,
+          folders,
+        }
       return {
         ok: false,
-        message: `There is no ${EXTENSION_MANIFEST_FILENAME} in ${input.path ? `${input.path} of ` : ''}that repository at ${fetched.commit.slice(0, 12)}.`,
+        message: `There is no ${EXTENSION_MANIFEST_FILENAME} in ${input.path ? `${input.path} of ` : ''}that repository at ${fetched.commit.slice(0, 12)}. If the extension is in a folder of it, name the folder.`,
       }
     }
     const parsed = parseExtensionManifest(source)
