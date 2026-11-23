@@ -579,10 +579,16 @@ async function removeKnownMarketplace(entry: IntegrationLedgerEntry): Promise<Re
  * copy — its managed manifest names it, and its bytes hash to what was
  * written. One someone edited, or replaced with their own, stays.
  */
-async function removeLaunchSkillCopy(path: string): Promise<Result> {
+async function removeLaunchSkillCopy(entry: IntegrationLedgerEntry): Promise<Result> {
+  const { path } = entry
   if (!existsSync(path)) return skip(ALREADY_GONE)
   const manifest = await readManagedSkillManifest(path)
   if (!manifest || manifest.id !== basename(path)) return skip('It is no longer Studio’s copy.')
+  // A Studio sharing the home with this one (a release and a dev build) may
+  // have replaced it with a copy of its own since: that one is left alone.
+  const owner = entry.detail?.owner
+  if (typeof owner === 'string' && manifest.owner !== owner)
+    return skip('It is another Studio’s copy now, so it was left alone.')
   const current = await hashSkillDirectory(path, new Set([MANAGED_SKILL_MANIFEST_FILE]))
   if (current !== manifest.installedSkillHash) return skip('It was changed since Studio copied it, so it was kept.')
   await rm(path, { recursive: true, force: true })
@@ -710,7 +716,7 @@ async function removeEntry(
       return removed
     }
     case 'skill-copy': {
-      if (entry.marker === LAUNCH_SKILL_COPY_MARKER) return removeLaunchSkillCopy(entry.path)
+      if (entry.marker === LAUNCH_SKILL_COPY_MARKER) return removeLaunchSkillCopy(entry)
       if ((await readSkillProvenance(entry.path))?.sourceId !== STUDIO_PLUGIN_SOURCE_ID) {
         return skip(existsSync(entry.path) ? 'It is no longer Studio’s copy.' : ALREADY_GONE)
       }

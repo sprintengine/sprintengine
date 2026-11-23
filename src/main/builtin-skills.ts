@@ -36,6 +36,12 @@ export type ManagedSkillManifest = {
   installedSkillHash: string
   installedAt: string
   updatedAt: string
+  /**
+   * The data folder of the Studio that made the copy, for a copy in a skills
+   * folder two Studios share (a CLI's user skills folder): each replaces and
+   * removes only its own.
+   */
+  owner?: string
 }
 
 /**
@@ -181,6 +187,7 @@ export async function writeManagedSkillManifest(input: {
   skill: Pick<BuiltinSkill, 'id' | 'version'>
   sourceHash: string
   now?: string
+  owner?: string
 }): Promise<void> {
   const timestamp = input.now ?? new Date().toISOString()
   const manifest: ManagedSkillManifest = {
@@ -192,6 +199,7 @@ export async function writeManagedSkillManifest(input: {
     installedSkillHash: await hashSkillDirectory(input.destinationDir),
     installedAt: timestamp,
     updatedAt: timestamp,
+    ...(input.owner !== undefined ? { owner: input.owner } : {}),
   }
   await writeConfinedFile(
     await realFolderPath(join(input.destinationDir, MANAGED_SKILL_MANIFEST_FILE)),

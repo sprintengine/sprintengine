@@ -393,6 +393,12 @@ export type PrepareLaunchIntegrationDeps = {
   gitTracks: (path: string) => Promise<boolean>
   /** What installed extensions hand every agent on this machine now. */
   extensionContributions?: () => LaunchExtensionContributions
+  /**
+   * This Studio's data folder, which its copies in a CLI's user skills folder
+   * are marked with: another Studio sharing the home (a release and a dev
+   * build) leaves them alone, and this one leaves the other's alone.
+   */
+  skillCopyOwner?: () => string
   warn?: (message: string) => void
 }
 
@@ -549,6 +555,7 @@ async function userLevelLaunchSkills(
   if (!spec.userSkillsDir) return []
   const skillsDir = join(deps.homeDir(), ...spec.userSkillsDir.split('/'))
   const present: string[] = []
+  const owner = deps.skillCopyOwner?.()
   const wanted: Array<{ skill: { id: string; version: string }; source: string }> = []
   for (const skillId of new Set(input.skillIds)) {
     const skill = deps.skill(skillId)
@@ -558,12 +565,16 @@ async function userLevelLaunchSkills(
   for (const skill of extensions.skills)
     wanted.push({ skill: { id: skill.name, version: skill.version }, source: skill.dir })
   for (const { skill, source } of wanted) {
-    const result = await ensureUserLevelSkillCopy({ skillsDir, skill, sourceDir: source, cli: input.cli }).catch(
-      () => null,
-    )
+    const result = await ensureUserLevelSkillCopy({
+      skillsDir,
+      skill,
+      sourceDir: source,
+      cli: input.cli,
+      ...(owner !== undefined ? { owner } : {}),
+    }).catch(() => null)
     if (result) present.push(skill.id)
   }
-  await removeRetractedExtensionSkillCopies(skillsDir, new Set(extensions.skills.map((skill) => skill.name)))
+  await removeRetractedExtensionSkillCopies(skillsDir, new Set(extensions.skills.map((skill) => skill.name)), owner)
   return present
 }
 
@@ -574,16 +585,20 @@ const EXTENSION_SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9]+(?:-[a-z0-9]+)
  * Take out the app's copies of extension skills no extension hands agents any
  * more (it was uninstalled, switched off or updated without them), so a
  * retracted skill does not wait for the app to quit. Only an untouched copy
- * the app made: one the person edited, or their own folder of that name,
- * stays.
+ * this Studio made (its manifest names `owner`): one the person edited, their
+ * own folder of that name, or another Studio's copy, stays.
  */
-async function removeRetractedExtensionSkillCopies(skillsDir: string, current: ReadonlySet<string>): Promise<void> {
+async function removeRetractedExtensionSkillCopies(
+  skillsDir: string,
+  current: ReadonlySet<string>,
+  owner: string | undefined,
+): Promise<void> {
   const names = await readdir(skillsDir).catch(() => [] as string[])
   for (const name of names) {
     if (!EXTENSION_SKILL_NAME.test(name) || current.has(name)) continue
     const destination = join(skillsDir, name)
     const manifest = await readManagedSkillManifest(destination).catch(() => null)
-    if (!manifest || manifest.id !== name) continue
+    if (!manifest || manifest.id !== name || manifest.owner !== owner) continue
     const hash = await hashSkillDirectory(destination, new Set([MANAGED_SKILL_MANIFEST_FILE])).catch(() => null)
     if (hash !== manifest.installedSkillHash) continue
     await rm(destination, { recursive: true, force: true }).catch(() => undefined)
@@ -596,25 +611,45 @@ export const LAUNCH_SKILL_COPY_MARKER = 'managed-manifest'
 /**
  * Make `<skillsDir>/<id>` this skill: written when absent, refreshed when it is
  * the app's untouched copy of older bytes, left alone when it is anyone
- * else's. Returns the directory, or null when nothing usable is there.
+ * else's, another Studio's copy included (its manifest names another
+ * `owner`). The copy and its manifest are made in a staging folder beside it
+ * and renamed into place together, so a copy is never seen without the
+ * manifest that marks it the app's. Returns the directory, or null when
+ * nothing usable is there.
  */
 export async function ensureUserLevelSkillCopy(input: {
   skillsDir: string
   skill: { id: string; version: string }
   sourceDir: string
   cli: string
+  /** This Studio's data folder, the copy's owner. */
+  owner?: string
 }): Promise<string | null> {
   const destination = join(input.skillsDir, input.skill.id)
   const sourceHash = await hashSkillDirectory(input.sourceDir)
   if (existsSync(destination)) {
     const manifest = await readManagedSkillManifest(destination)
     if (!manifest || manifest.id !== input.skill.id) return destination
+    if (manifest.owner !== undefined && manifest.owner !== input.owner) return destination
     const current = await hashSkillDirectory(destination, new Set([MANAGED_SKILL_MANIFEST_FILE]))
     if (current !== manifest.installedSkillHash) return destination
     if (manifest.sourceHash === sourceHash && manifest.version === input.skill.version) return destination
   }
-  await copySkillDirectory(input.sourceDir, destination)
-  await writeManagedSkillManifest({ destinationDir: destination, skill: input.skill, sourceHash })
+  const staging = join(input.skillsDir, `.${input.skill.id}.staging-${process.pid}`)
+  try {
+    await copySkillDirectory(input.sourceDir, staging)
+    await writeManagedSkillManifest({
+      destinationDir: staging,
+      skill: input.skill,
+      sourceHash,
+      ...(input.owner !== undefined ? { owner: input.owner } : {}),
+    })
+    await rm(destination, { recursive: true, force: true })
+    await rename(staging, destination)
+  } catch (error) {
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined)
+    throw error
+  }
   recordIntegrationWrite({
     kind: 'skill-copy',
     path: destination,
@@ -622,6 +657,7 @@ export async function ensureUserLevelSkillCopy(input: {
     hostId: 'local',
     cli: input.cli,
     createdFile: true,
+    ...(input.owner !== undefined ? { detail: { owner: input.owner } } : {}),
   })
   return destination
 }

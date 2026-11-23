@@ -714,6 +714,7 @@ export function createAppServices(
         homeDir: () => homedir(),
         gitTracks: (path) => gitTracksPath(dirname(path), basename(path)),
         extensionContributions: () => launchExtensionContributions(app.getPath('userData')),
+        skillCopyOwner: () => app.getPath('userData'),
         warn: (message) => {
           void writeDiagnosticLog({ level: 'warning', title: 'Launch integration', message, source: 'terminal' })
         },

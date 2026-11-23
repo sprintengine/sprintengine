@@ -442,6 +442,37 @@ test('a server of the person’s own under an extension server’s name is their
   assert.match(args[0]!, /\/bin\/cat/)
 })
 
+test('two Studios sharing a home each keep to their own copies of extension skills', async () => {
+  const launchDir = await tempDir('extension-shared')
+  const { contributions } = await extensionFixture(launchDir)
+  const codex = { route: 'codex' as const, userSkillsDir: '.codex/skills' }
+  const studio = (owner: string, skills = contributions.skills) =>
+    deps({
+      launchDir,
+      spec: () => codex,
+      extensionContributions: () => ({ servers: [], skills }),
+      skillCopyOwner: () => owner,
+    })
+  await prepareLaunchIntegration(input(launchDir, 'codex'), studio('/data/release'))
+  const skillsDir = join(launchDir, 'home', '.codex', 'skills')
+  const review = join(skillsDir, 'local.tools.review')
+  const owner = async () => JSON.parse(await readFile(join(review, MANAGED_SKILL_MANIFEST_FILE), 'utf8')).owner
+  assert.equal(await owner(), '/data/release')
+
+  // The other Studio hands out none of them: it removes none of the first one's copies.
+  await prepareLaunchIntegration(input(launchDir, 'codex'), studio('/data/dev', []))
+  assert.deepEqual((await readdir(skillsDir)).sort(), ['local.tools.review', 'local.tools.ship'])
+  // It hands out the same skill, changed: it leaves the first one's copy as it is.
+  await writeFile(join(contributions.skills[0]!.dir, 'SKILL.md'), 'changed\n')
+  await prepareLaunchIntegration(input(launchDir, 'codex'), studio('/data/dev'))
+  assert.equal(await owner(), '/data/release')
+  assert.notEqual(await readFile(join(review, 'SKILL.md'), 'utf8'), 'changed\n')
+
+  // The first one retracts its own.
+  await prepareLaunchIntegration(input(launchDir, 'codex'), studio('/data/release', []))
+  assert.deepEqual(await readdir(skillsDir), [])
+})
+
 test('a retracted extension skill’s copy in a CLI’s skills folder goes at the next launch; the person’s own stays', async () => {
   const launchDir = await tempDir('extension-retract')
   const { contributions } = await extensionFixture(launchDir)
