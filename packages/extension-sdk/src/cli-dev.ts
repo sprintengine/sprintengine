@@ -3,7 +3,7 @@
 // where it is and again on every save; `dev watch` follows what happens to it
 // (one JSON object per line with --json) until Ctrl-C.
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 
 import { CliError, type Output } from './cli-output.js'
@@ -13,6 +13,15 @@ import { EXTENSION_MANIFEST_FILENAME, parseExtensionManifest } from './extension
 
 type Approval = { state: string; fingerprint?: string; growth?: string[] }
 type LoadAnswer = { moduleId: string; path: string; added: boolean; approval: Approval; latestEvent?: number }
+type Launch = { status?: string; message?: string; mainLoaded?: boolean }
+type ListedFolder = {
+  path: string
+  moduleId?: string
+  approval?: Approval
+  waiting?: boolean
+  error?: string
+  launch?: Launch
+}
 type DevEvent = {
   seq: number
   key: string
@@ -25,23 +34,43 @@ type DevEvent = {
   fingerprint?: string
 }
 
-/** The words a refusal for approval carries: what it would be granted, and how to approve it. */
-function approvalRequired(answer: LoadAnswer, dir: string, inspectLine: string): CliError {
-  const fingerprint = answer.approval.fingerprint ?? ''
+/** Said while a folder waits: only the person approves, in Studio's window. */
+const WAITING_WORDS = 'waiting for approval in Studio'
+
+/**
+ * The refusal while a folder waits for approval: what it would be granted.
+ * Nothing here approves it, and no line to copy does: Studio's window asks
+ * the person as soon as it is registered (also Settings > Extensions).
+ */
+function approvalRequired(answer: LoadAnswer, inspectLine: string): CliError {
   return new CliError(
     'approval_required',
-    `${answer.moduleId} is loaded from ${answer.path} and waits for approval before anything in it runs.`,
+    `${answer.moduleId} is loaded from ${answer.path}, ${WAITING_WORDS}: nothing in it runs until the person approves it there.`,
     {
       moduleId: answer.moduleId,
       path: answer.path,
-      fingerprint,
       ...(answer.approval.growth?.length ? { growth: answer.approval.growth } : {}),
     },
     [
-      `Show the person what it asks for (${inspectLine}) and ask them to approve it in Studio: Settings > Extensions, where it is listed as a development folder.`,
-      `Or, if you are the person: sprintengine-extension dev load ${dir} --approve ${fingerprint}`,
+      `Studio's window asks the person to approve it now (also Settings > Extensions). What it asks for: ${inspectLine}.`,
+      'sprintengine-extension dev watch waits for the approval and goes on by itself.',
     ],
   )
+}
+
+/** A path as Studio names it: through every link, so a folder reached by a link is the folder. */
+function canonical(path: string): string {
+  const absolute = resolve(path)
+  try {
+    return realpathSync(absolute)
+  } catch {
+    return absolute
+  }
+}
+
+/** Whether `path` is `folder` or inside it, with either separator. */
+function isInFolder(path: string, folder: string): boolean {
+  return path === folder || path.startsWith(`${folder}/`) || path.startsWith(`${folder}\\`)
 }
 
 async function withStudio<T>(dataDir: string | undefined, work: (studio: StudioTools) => Promise<T>): Promise<T> {
@@ -56,11 +85,9 @@ async function withStudio<T>(dataDir: string | undefined, work: (studio: StudioT
 /** The extension a command names: a folder (its development folder) or an install key. */
 async function moduleIdOf(studio: StudioTools, target: string): Promise<string> {
   if (/^[a-z0-9-]+\.[a-z0-9-]+$/u.test(target) && !existsSync(target)) return target
-  const folder = resolve(target)
-  const listed = (await studio.call('extension.dev.list', {})) as {
-    folders?: Array<{ path: string; moduleId?: string; error?: string }>
-  }
-  const found = (listed.folders ?? []).find((entry) => entry.path === folder || folder.startsWith(`${entry.path}/`))
+  const folder = canonical(target)
+  const listed = (await studio.call('extension.dev.list', {})) as { folders?: ListedFolder[] }
+  const found = (listed.folders ?? []).find((entry) => isInFolder(folder, entry.path))
   if (found?.moduleId) return found.moduleId
   if (found) throw new CliError('extension_invalid', found.error ?? `${folder} holds no extension Studio loads.`)
   throw new CliError('not_found', `${folder} is not a development folder loaded in Studio.`, undefined, [
@@ -68,44 +95,90 @@ async function moduleIdOf(studio: StudioTools, target: string): Promise<string> 
   ])
 }
 
-export async function devLoad(output: Output, dir: string, options: { approve?: string; dataDir?: string }) {
-  const path = resolve(dir)
+export async function devLoad(output: Output, dir: string, options: { dataDir?: string }) {
+  const path = canonical(dir)
   validateExtensionFolder(path)
-  const answer = await withStudio(options.dataDir, (studio) =>
-    studio.call('extension.dev.load', { path, ...(options.approve ? { approve: options.approve } : {}) }),
-  )
+  const answer = await withStudio(options.dataDir, (studio) => studio.call('extension.dev.load', { path }))
   const loaded = answer as unknown as LoadAnswer
-  if (loaded.approval.state === 'pending') throw approvalRequired(loaded, dir, `sprintengine-extension inspect ${dir}`)
+  if (loaded.approval.state === 'pending') throw approvalRequired(loaded, `sprintengine-extension inspect ${dir}`)
   output.done(loaded as unknown as Record<string, unknown>, [
     `${loaded.added ? 'Loaded' : 'Reloaded'} ${loaded.moduleId} from ${loaded.path} (${loaded.approval.state}).`,
     'Studio reads it again on every save. `sprintengine-extension dev watch` follows what happens to it.',
   ])
 }
 
+/**
+ * Read development folders again now: `target`'s, or every one registered.
+ * For a folder whose saves Studio does not hear (a network share).
+ */
+export async function devReload(output: Output, target: string | undefined, options: { dataDir?: string }) {
+  const answers = await withStudio(options.dataDir, async (studio) => {
+    const listed = ((await studio.call('extension.dev.list', {})) as { folders?: ListedFolder[] }).folders ?? []
+    let paths = listed.map((folder) => folder.path)
+    if (target !== undefined) {
+      const byKey = /^[a-z0-9-]+\.[a-z0-9-]+$/u.test(target) && !existsSync(target)
+      const path = byKey ? null : canonical(target)
+      const found = listed.find((folder) => (byKey ? folder.moduleId === target : isInFolder(path!, folder.path)))
+      if (!found)
+        throw new CliError(
+          'not_found',
+          `${target} is not a development folder loaded in Studio.`,
+          undefined,
+          byKey ? undefined : [`sprintengine-extension dev load ${target}`],
+        )
+      paths = [found.path]
+    }
+    const loaded: LoadAnswer[] = []
+    for (const path of paths) loaded.push((await studio.call('extension.dev.load', { path })) as unknown as LoadAnswer)
+    return loaded
+  })
+  output.done(
+    { reloaded: answers },
+    answers.length === 0
+      ? 'No development folders.'
+      : answers.map(
+          (answer) =>
+            `Reloaded ${answer.moduleId} from ${answer.path}${answer.approval.state === 'pending' ? ` (${WAITING_WORDS})` : ''}.`,
+        ),
+  )
+}
+
 export async function devUnload(output: Output, target: string, options: { dataDir?: string }) {
   const looksLikeKey = /^[a-z0-9-]+\.[a-z0-9-]+$/u.test(target) && !existsSync(target)
   const answer = await withStudio(options.dataDir, (studio) =>
-    studio.call('extension.dev.unload', looksLikeKey ? { moduleId: target } : { path: resolve(target) }),
+    studio.call('extension.dev.unload', looksLikeKey ? { moduleId: target } : { path: canonical(target) }),
   )
   output.done(answer, `Removed ${String(answer.path)} from Studio's development folders.`)
 }
 
 export async function devList(output: Output, options: { dataDir?: string }) {
   const answer = await withStudio(options.dataDir, (studio) => studio.call('extension.dev.list', {}))
-  const folders = (answer.folders ?? []) as Array<{
-    path: string
-    moduleId?: string
-    approval?: Approval
-    error?: string
-  }>
+  const folders = (answer.folders ?? []) as ListedFolder[]
   output.done(
     answer,
     folders.length === 0
       ? 'No development folders.'
       : folders.map((folder) =>
           folder.moduleId
-            ? `${folder.moduleId}  ${folder.approval?.state ?? ''}  ${folder.path}`
+            ? `${folder.moduleId}  ${folder.waiting || folder.approval?.state === 'pending' ? WAITING_WORDS : (folder.approval?.state ?? '')}  ${folder.path}`
             : `(invalid)  ${folder.path}: ${folder.error ?? ''}`,
+        ),
+  )
+}
+
+/** Every third-party extension Studio has, installed or a development folder, as `extension.list` reports it. */
+export async function listExtensions(output: Output, options: { dataDir?: string }) {
+  const answer = await withStudio(options.dataDir, (studio) => studio.call('extension.list', { source: 'third-party' }))
+  const modules = (answer.modules ?? []) as Array<Record<string, unknown>>
+  output.done(
+    answer,
+    modules.length === 0
+      ? 'No extensions installed.'
+      : modules.map((module) =>
+          [module.id, module.version, module.enabled ? 'on' : 'off', module.reason ?? module.status ?? '']
+            .filter((part) => part !== undefined && part !== '')
+            .map(String)
+            .join('  '),
         ),
   )
 }
@@ -117,7 +190,7 @@ function eventWords(event: DevEvent): string {
     case 'reloaded':
       return `↻ reloaded ${event.key}`
     case 'approval':
-      return `! ${event.key} ${event.message} Approve it in Settings > Extensions (fingerprint ${event.fingerprint ?? ''}).`
+      return `! ${event.key} ${event.message} (${WAITING_WORDS})`
     case 'status':
       return `${event.key} is ${event.state ?? ''}${event.message ? `: ${event.message}` : ''}`
     default:
@@ -138,16 +211,20 @@ export async function devRequest(
   output: Output,
   target: string,
   method: string,
-  options: { data?: unknown; access?: 'read' | 'operate'; dataDir?: string },
+  options: { data?: unknown; access?: 'read' | 'operate'; timeoutMs?: number; dataDir?: string },
 ) {
   const answer = await withStudio(options.dataDir, async (studio) => {
     const moduleId = await moduleIdOf(studio, target)
-    return studio.call('extension.dev.request', {
-      moduleId,
-      method,
-      access: options.access ?? 'operate',
-      ...(options.data === undefined ? {} : { params: options.data }),
-    })
+    return studio.call(
+      'extension.dev.request',
+      {
+        moduleId,
+        method,
+        access: options.access ?? 'operate',
+        ...(options.data === undefined ? {} : { params: options.data }),
+      },
+      options.timeoutMs,
+    )
   })
   output.done(answer, JSON.stringify(answer.result, null, 2))
 }
@@ -219,7 +296,7 @@ function surfaceOf(dir: string | null, options: ShotOptions): { point: string; i
 }
 
 export async function takeShot(studio: StudioTools, target: string, options: ShotOptions) {
-  const folder = existsSync(target) ? resolve(target) : null
+  const folder = existsSync(target) ? canonical(target) : null
   const moduleId = await moduleIdOf(studio, target)
   const surface = surfaceOf(folder, options)
   const base =
@@ -260,70 +337,115 @@ export async function shot(output: Output, target: string, options: ShotOptions)
 
 // ── dev watch ────────────────────────────────────────────────────────────────
 
+/** How a folder's extension stands in Studio now, from `extension.dev.list`: for a watch's check. */
+async function liveStatus(
+  studio: StudioTools,
+  path: string,
+): Promise<{ ok: boolean; status: string; message?: string }> {
+  const listed = ((await studio.call('extension.dev.list', {})) as { folders?: ListedFolder[] }).folders ?? []
+  const folder = listed.find((entry) => entry.path === path)
+  if (!folder) return { ok: false, status: 'not_loaded', message: `${path} is not loaded in Studio.` }
+  if (!folder.moduleId) return { ok: false, status: 'invalid', ...(folder.error ? { message: folder.error } : {}) }
+  if (folder.waiting || folder.approval?.state === 'pending') return { ok: false, status: 'awaiting_approval' }
+  const status = folder.launch?.status ?? 'unknown'
+  return {
+    ok: status === 'runs_worker' || status === 'runs_without_worker',
+    status,
+    ...(folder.launch?.message ? { message: folder.launch.message } : {}),
+  }
+}
+
+/** Wait until the person approved `path` in Studio, checking every second. */
+async function untilApproved(studio: StudioTools, path: string): Promise<void> {
+  for (;;) {
+    await new Promise((settle) => setTimeout(settle, 1000))
+    const listed = ((await studio.call('extension.dev.list', {})) as { folders?: ListedFolder[] }).folders ?? []
+    const folder = listed.find((entry) => entry.path === path)
+    if (!folder) throw new CliError('not_found', `${path} was removed from Studio while it waited for approval.`)
+    if (folder.moduleId && !folder.waiting && folder.approval?.state !== 'pending') return
+  }
+}
+
 /**
  * Load a folder, then follow it until Ctrl-C: each save prints `reloaded`
  * (and with --check a `check`, with --shot a fresh `shot`), the lines its
  * worker and frames print as `log` (errors at file:line:col), `status`
- * changes, and `approval` when a save asks for more. A first load that needs
- * approval fails with `approval_required` (exit 3). Ctrl-C removes the folder
- * again when this watch added it.
+ * changes, and `approval` when a save asks for more. A folder that waits for
+ * approval prints `waiting` and waits for the person to approve it in
+ * Studio's window, then goes on. Ctrl-C removes the folder again when this
+ * watch added it, approved or not.
  */
 export async function devWatch(
   output: Output,
   dir: string,
-  options: { check?: boolean; shotDir?: string; shotSurface?: string; approve?: string; dataDir?: string },
+  options: { check?: boolean; shotDir?: string; shotSurface?: string; dataDir?: string },
 ) {
-  const path = resolve(dir)
-  validateExtensionFolder(path)
+  validateExtensionFolder(canonical(dir))
   const studio = await connectStudio(options.dataDir ? { dataDir: options.dataDir } : {})
-  const loaded = (await studio.call('extension.dev.load', {
-    path,
-    ...(options.approve ? { approve: options.approve } : {}),
-  })) as unknown as LoadAnswer
+  const loaded = (await studio.call('extension.dev.load', { path: canonical(dir) })) as unknown as LoadAnswer
+  // Studio's name for it, used for everything after: its real path.
+  const path = loaded.path
   const key = loaded.moduleId
   let stopping = false
   const stop = async (code: number) => {
     if (stopping) process.exit(code)
     stopping = true
     if (loaded.added) {
-      await studio.call('extension.dev.unload', { path: loaded.path }).catch(() => undefined)
-      output.line({ type: 'unloaded', key, path: loaded.path }, `Removed ${loaded.path} from Studio.`)
+      await studio.call('extension.dev.unload', { path }).catch(() => undefined)
+      output.line({ type: 'unloaded', key, path }, `Removed ${path} from Studio.`)
     }
     studio.close()
     process.exit(code)
   }
-  if (loaded.approval.state === 'pending') {
-    const refusal = approvalRequired(loaded, dir, `sprintengine-extension inspect ${dir}`)
-    // The folder stays registered, waiting, as the person needs it there to approve it.
-    loaded.added = false
-    studio.close()
-    output.fail(refusal)
-  }
   process.on('SIGINT', () => void stop(0))
   process.on('SIGTERM', () => void stop(0))
-  output.line(
-    { type: 'loaded', key, path: loaded.path, added: loaded.added },
-    `Loaded ${key} from ${loaded.path}; watching. Ctrl-C stops.`,
-  )
+  output.line({ type: 'loaded', key, path, added: loaded.added }, `Loaded ${key} from ${path}; watching. Ctrl-C stops.`)
+  if (loaded.approval.state === 'pending') {
+    output.line(
+      { type: 'waiting', key, path, ...(loaded.approval.growth?.length ? { growth: loaded.approval.growth } : {}) },
+      `${key} is ${WAITING_WORDS}: Studio's window asks the person to approve it.`,
+    )
+    try {
+      await untilApproved(studio, path)
+    } catch (error) {
+      studio.close()
+      output.fail(error)
+    }
+    output.line({ type: 'approved', key, path }, `${key} was approved.`)
+  }
 
   const afterLoad = async () => {
     if (options.check) {
+      // Live first: what Studio runs now, then the folder as this machine reads it.
+      const live = await liveStatus(studio, path).catch((error: unknown) => ({
+        ok: false,
+        status: 'unknown',
+        message: error instanceof Error ? error.message : String(error),
+      }))
+      const liveWords = live.ok ? '' : `live: ${live.status}${live.message ? ` (${live.message})` : ''}`
       try {
         const validated = validateExtensionFolder(path)
         const worker = await checkWorker(validated)
         const surfaces = checkSurfaces(path, validated.manifest)
-        const ok = (worker?.ok ?? true) && surfaces.every((surface) => surface.ok)
+        const offline = (worker?.ok ?? true) && surfaces.every((surface) => surface.ok)
+        const ok = offline && live.ok
         output.line(
-          { type: 'check', key, ok, worker, surfaces },
+          { type: 'check', key, ok, offline: { ok: offline, worker, surfaces }, live },
           ok
             ? '✓ check passed'
-            : `✗ check: ${[worker && !worker.ok ? `worker: ${worker.error}` : '', ...surfaces.filter((s) => !s.ok).map((s) => `${s.id}: ${s.problem}`)].filter(Boolean).join('; ')}`,
+            : `✗ check: ${[liveWords, worker && !worker.ok ? `worker: ${worker.error}` : '', ...surfaces.filter((s) => !s.ok).map((s) => `${s.id}: ${s.problem}`)].filter(Boolean).join('; ')}`,
         )
       } catch (error) {
         const issues = error instanceof CliError ? error.data?.issues : undefined
         output.line(
-          { type: 'check', key, ok: false, error: error instanceof Error ? error.message : String(error), issues },
-          `✗ check: ${error instanceof Error ? error.message : String(error)}`,
+          {
+            type: 'check',
+            key,
+            ok: false,
+            offline: { ok: false, error: error instanceof Error ? error.message : String(error), issues },
+            live,
+          },
+          `✗ check: ${[liveWords, error instanceof Error ? error.message : String(error)].filter(Boolean).join('; ')}`,
         )
       }
     }

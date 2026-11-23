@@ -16,10 +16,12 @@ import {
   devList,
   devLoad,
   devLogs,
+  devReload,
   devRequest,
   devUnload,
   devWatch,
   extensionDirOf,
+  listExtensions,
   shot,
 } from './cli-dev.js'
 import { CliError, createOutput, type Output } from './cli-output.js'
@@ -139,19 +141,36 @@ async function run(output: Output, command: string, args: string[]): Promise<voi
     return
   }
 
+  // Every extension Studio has, and one's log: installed ones too.
+  if (command === 'list' || command === 'logs') {
+    const { values, positionals } = parseArgs({
+      args,
+      options: { ...COMMON, after: { type: 'string' } },
+      allowPositionals: true,
+    })
+    const dataDir = values['data-dir'] ? { dataDir: values['data-dir'] } : {}
+    if (command === 'list') return listExtensions(output, dataDir)
+    const target = positionals[0]
+    if (!target) throw new CliError('invalid_argument', 'logs <key|dir> [--after <seq>]')
+    return devLogs(output, /^[a-z0-9-]+\.[a-z0-9-]+$/u.test(target) ? target : extensionDirOf(target), {
+      ...dataDir,
+      ...(values.after ? { after: Number(values.after) } : {}),
+    })
+  }
+
   // dev <subcommand>
   const [sub, ...more] = args
   const { values, positionals } = parseArgs({
     args: more,
     options: {
       ...COMMON,
-      approve: { type: 'string' },
       check: { type: 'boolean' },
       shot: { type: 'string' },
       'shot-panel': { type: 'string' },
       data: { type: 'string' },
       read: { type: 'boolean' },
       after: { type: 'string' },
+      'timeout-ms': { type: 'string' },
     },
     allowPositionals: true,
   })
@@ -160,17 +179,15 @@ async function run(output: Output, command: string, args: string[]): Promise<voi
   const keyOrDir = (value: string) => (/^[a-z0-9-]+\.[a-z0-9-]+$/u.test(value) ? value : extensionDirOf(value))
   switch (sub) {
     case 'load':
-      return devLoad(output, extensionDirOf(target ?? '.'), {
-        ...dataDir,
-        ...(values.approve ? { approve: values.approve } : {}),
-      })
+      return devLoad(output, extensionDirOf(target ?? '.'), dataDir)
+    case 'reload':
+      return devReload(output, target === undefined ? undefined : keyOrDir(target), dataDir)
     case 'watch':
       return devWatch(output, extensionDirOf(target ?? '.'), {
         ...dataDir,
         ...(values.check ? { check: true } : {}),
         ...(values.shot ? { shotDir: values.shot } : {}),
         ...(values['shot-panel'] ? { shotSurface: values['shot-panel'] } : {}),
-        ...(values.approve ? { approve: values.approve } : {}),
       })
     case 'unload':
       return devUnload(output, keyOrDir(target ?? '.'), dataDir)
@@ -183,11 +200,14 @@ async function run(output: Output, command: string, args: string[]): Promise<voi
       })
     case 'request': {
       const method = positionals[1]
-      if (!target || !method) throw new CliError('invalid_argument', 'dev request <dir|key> <method> [--data <json>]')
+      if (!target || !method)
+        throw new CliError('invalid_argument', 'dev request <dir|key> <method> [--data <json>] [--timeout-ms <ms>]')
+      const timeoutMs = positiveInt(values['timeout-ms'], 'timeout-ms')
       return devRequest(output, keyOrDir(target), method, {
         ...dataDir,
         data: parseData(values.data, false),
         access: values.read ? 'read' : 'operate',
+        ...(timeoutMs ? { timeoutMs } : {}),
       })
     }
     case 'hook': {
@@ -203,7 +223,7 @@ async function run(output: Output, command: string, args: string[]): Promise<voi
     default:
       throw new CliError(
         'invalid_argument',
-        'dev takes load, watch, unload, list, logs, request, hook or emit. Run sprintengine-extension --help.',
+        'dev takes load, reload, watch, unload, list, logs, request, hook or emit. Run sprintengine-extension --help.',
       )
   }
 }

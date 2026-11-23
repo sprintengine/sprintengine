@@ -9,9 +9,9 @@
 //   pack             validate an extension folder and assemble an installable copy
 //   sign             write extension.sig, a detached ed25519 signature, beside extension.json
 //   verify           check an extension folder the way the studio will
-//   validate         check an extension folder as Studio will load it (--json)
+//   validate         check an extension folder (or its extension.json) as Studio will load it (--json)
 //   inspect          what it contributes and the access it asks for (--json)
-//   test             run its tests with node --test, TypeScript as written (--json)
+//   test             run its tests with its own Vitest or node --test, TS and JSX as written (--json)
 //   check            validate, activate its worker, build each surface (--json)
 //   dev              load a development folder into the running Studio, watch it,
 //                    and drive its worker (--json)
@@ -49,18 +49,21 @@ const USAGE = `sprintengine-extension — pack, sign, and verify SprintEngine St
 
 Usage:
   sprintengine-extension init <dir> --template <id> [--with <part,...>] [--id <module-id>] [--name <name>] [--sdk-tarball <file>] [--force]
-  sprintengine-extension validate <dir> [--json]
+  sprintengine-extension validate <dir|extension.json> [--json]
   sprintengine-extension inspect <dir> [--json]
   sprintengine-extension test [dir] [--json]
   sprintengine-extension check [dir] [--json]
-  sprintengine-extension dev load <dir> [--approve <fingerprint>] [--json]
-  sprintengine-extension dev watch <dir> [--check] [--shot <out-dir> [--shot-panel <id>]] [--approve <fingerprint>] [--json]
+  sprintengine-extension dev load <dir> [--json]
+  sprintengine-extension dev reload [<dir|key>] [--json]
+  sprintengine-extension dev watch <dir> [--check] [--shot <out-dir> [--shot-panel <id>]] [--json]
   sprintengine-extension dev unload <dir|key> [--json]
   sprintengine-extension dev list [--json]
   sprintengine-extension dev logs <dir|key> [--json]
-  sprintengine-extension dev request <dir|key> <method> [--data <json>] [--read] [--json]
+  sprintengine-extension dev request <dir|key> <method> [--data <json>] [--read] [--timeout-ms <ms>] [--json]
   sprintengine-extension dev hook <dir|key> <point> --data <json> [--json]
   sprintengine-extension dev emit <dir|key> <topic> [--data <json>] [--json]
+  sprintengine-extension list [--json]
+  sprintengine-extension logs <key|dir> [--after <seq>] [--json]
   sprintengine-extension shot <dir|key> [--panel <id> | --door <id> | --settings <id>] [--theme light|dark] [--width <px>] [--height <px>] [--out <file.png>] [--json]
   sprintengine-extension add <part>... [--project <dir>] [--force]
   sprintengine-extension keygen [--out <file>] [--force]
@@ -88,19 +91,31 @@ holding extension.json; a project's extension/ is found from the project)
 without Studio. With --json each prints one object, {ok, result} or {ok:false,
 error:{code, message, data?, nextSteps?}}: branch on error.code. Exit codes: 0
 ok, 1 an error, 2 the extension is invalid (extension_invalid), 3 it needs
-approval (approval_required, approval_stale); test exits with the runner's
-code. test and check run the extension's code on this machine, outside
+approval (approval_required); test exits with the runner's
+code. validate takes the folder or its extension.json, and checks its skill
+folders and the host calls its code writes out (an unknown studio.host.call
+method, one its permissions or tier cannot use) at their file and line. test
+runs every *.test.ts, .tsx, .mts, .js, .jsx and .mjs with the project's own
+Vitest when it has one installed, else node --test; TypeScript and JSX load
+as Studio loads them. test and check run the extension's code on this machine, outside
 Studio: only on code you trust.
 
 dev and shot drive the SprintEngine Studio running on this machine (found in
 its data folder; --data-dir names another). dev load registers the folder as
 a development folder: Studio loads it from where it is, with no build, and
-again on every save. Anything that runs code waits for the person's approval
-in Settings > Extensions (or --approve with the fingerprint, from the person;
-an agent Studio launched cannot approve). dev watch loads it and prints what
-happens: reloaded, log lines (errors at file:line:col), status, approval, and
-with --check a check, with --shot a fresh PNG, after each save. Ctrl-C removes
-the folder again if the watch added it.
+again on every save. Nothing in it runs until the person approves it in
+Studio's window, which asks them as soon as it is registered (also Settings >
+Extensions); nothing on the command line approves, so an agent can register a
+folder but never approve one. One whose key an installed extension has
+replaces it only once approved; the installed one runs until then. dev load
+exits 3 (approval_required) while it waits. dev watch loads it, prints
+"waiting for approval in Studio" and waits, then prints what happens:
+reloaded, log lines (errors at file:line:col), status, approval, and with
+--check a check (the folder offline, and how Studio runs it now), with --shot
+a fresh PNG, after each save. Ctrl-C removes the folder again if the watch
+added it. dev reload reads one development folder, or every one, again now.
+dev request, hook, emit and shot reach development folders only. list and
+logs cover installed extensions too.
 
 keygen writes an ed25519 private key (PKCS#8 PEM) to --out
 (default module-signing.key); a leading ~ is your home folder, on Windows too.
@@ -435,7 +450,7 @@ async function add(args: string[]): Promise<void> {
 }
 
 const [command, ...rest] = process.argv.slice(2)
-const authoring = new Set(['validate', 'inspect', 'test', 'check', 'dev', 'shot'])
+const authoring = new Set(['validate', 'inspect', 'test', 'check', 'dev', 'shot', 'list', 'logs'])
 if (command && authoring.has(command)) {
   import('./cli-commands.js')
     .then(({ runAuthoringCommand }) => runAuthoringCommand(command, rest))

@@ -9,10 +9,8 @@ export const CLI_ERROR_CODES = [
   'invalid_argument',
   /** The extension is not one Studio can load: `data.issues` says where. */
   'extension_invalid',
-  /** It waits for the person's approval: `data.fingerprint` and what it would be granted. */
+  /** It is waiting for approval in Studio, which only the person gives there: `data.growth` when it asks for more. */
   'approval_required',
-  /** The fingerprint given is not what it asks for now. */
-  'approval_stale',
   /** No running Studio could be reached on this machine. */
   'studio_unavailable',
   /** That folder or extension is not loaded here. */
@@ -36,7 +34,7 @@ export type CliErrorCode = (typeof CLI_ERROR_CODES)[number]
 /** Exit codes: 0 ok, 1 an error, 2 the extension is invalid, 3 it needs approval. */
 export function exitCodeOf(code: string): number {
   if (code === 'extension_invalid') return 2
-  if (code === 'approval_required' || code === 'approval_stale') return 3
+  if (code === 'approval_required') return 3
   return 1
 }
 

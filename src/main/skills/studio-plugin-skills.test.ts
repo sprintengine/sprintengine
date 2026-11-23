@@ -69,7 +69,6 @@ test('studio-plugin-skills', async () => {
     // The extension CLI's error codes (sprintengine-extension --json), which
     // studio-extensions tells an agent to branch on.
     'approval_required',
-    'approval_stale',
     'extension_check_failed',
     'extension_invalid',
     'extension_tests_failed',
