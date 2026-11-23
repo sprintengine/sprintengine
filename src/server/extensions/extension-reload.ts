@@ -72,7 +72,9 @@ export function createExtensionReloader(deps: ExtensionReloaderDeps): ExtensionR
     const changed = Object.keys(next.identities).filter((key) => current.identities[key] !== next.identities[key])
     const removed = Object.keys(current.identities).filter((key) => next.identities[key] === undefined)
 
-    // What a development folder's save did, for `dev watch`.
+    // What a development folder's save did, for `dev watch`. `reloaded` is
+    // said once its new code is in place, so what follows it sees the new one.
+    const reloadedKeys: string[] = []
     for (const module of input.modules) {
       if (!module.development) continue
       keyOfFolder.set(module.moduleRoot, module.key)
@@ -98,7 +100,7 @@ export function createExtensionReloader(deps: ExtensionReloaderDeps): ExtensionR
           message: (module.standing.issues ?? []).map((issue) => `${issue.path}: ${issue.message}`).join('; '),
         })
       } else if (isExtensionRunnable(module.standing)) {
-        say(module.key, 'reloaded', { key: module.key, kind: 'reloaded', message: 'Reloaded.' })
+        reloadedKeys.push(module.key)
       }
     }
     for (const rejection of input.rejected) {
@@ -132,6 +134,10 @@ export function createExtensionReloader(deps: ExtensionReloaderDeps): ExtensionR
       events.add({ key: error.id, kind: 'status', state: 'errored', message: error.message })
     }
     deps.reloaded({ changed, removed })
+    for (const key of reloadedKeys) {
+      if (report.errors.some((error) => error.id === key)) continue
+      say(key, 'reloaded', { key, kind: 'reloaded', message: 'Reloaded.' })
+    }
   }
 
   return {

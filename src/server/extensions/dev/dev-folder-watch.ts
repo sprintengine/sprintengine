@@ -1,5 +1,5 @@
-import { watch, type FSWatcher } from 'node:fs'
-import { relative, sep } from 'node:path'
+import { readdirSync, watch, type Dirent, type FSWatcher } from 'node:fs'
+import { join, relative, sep } from 'node:path'
 
 import { isDevelopmentSkippedPath } from '../../../../packages/extension-sdk/src/module-files'
 
@@ -7,7 +7,9 @@ import { isDevelopmentSkippedPath } from '../../../../packages/extension-sdk/src
 // reads the folder again within a moment (extension-reload.ts). Each folder is
 // watched whole; a change under node_modules, .git or a dotted folder (a
 // tool's, an editor's) is not an edit, since none of it is ever served or run.
-// A burst of saves is one change after a short quiet. A folder that cannot be
+// On Linux a recursive watch puts a watch on every folder under it, so there
+// each folder that is not left out is watched on its own, and a new one is
+// followed as it appears. A burst of saves is one change after a short quiet. A folder that cannot be
 // watched (gone, or a network share) is read again by
 // `sprintengine-extension dev load`, which reads a registered folder again.
 
@@ -17,8 +19,68 @@ export type DevFolderWatch = {
   close(): void
 }
 
-export function watchDevFolders(onChange: (folder: string) => void, quietMs = 150): DevFolderWatch {
+/** A watch on one folder and what is under it; `onEvent` hears each change's path, relative to `folder`. */
+type TreeWatch = { close(): void }
+
+/**
+ * Linux: one watch per folder under `folder` that is not left out
+ * (node_modules, .git, dotted folders), never through a link, and new folders
+ * followed as they appear.
+ */
+function watchTreeByFolder(folder: string, onEvent: (name: string | null) => void, onError: () => void): TreeWatch {
   const watchers = new Map<string, FSWatcher>()
+  const add = (dir: string) => {
+    if (watchers.has(dir)) return
+    const rel = relative(folder, dir).split(sep).join('/')
+    if (rel && isDevelopmentSkippedPath(rel)) return
+    let watcher: FSWatcher
+    try {
+      watcher = watch(dir, { persistent: false }, (event, name) => {
+        const path = typeof name === 'string' ? (rel ? `${rel}/${name}` : name) : null
+        onEvent(path)
+        if (event === 'rename' && typeof name === 'string') add(join(dir, name))
+      })
+    } catch {
+      return
+    }
+    watcher.on('error', () => {
+      watcher.close()
+      watchers.delete(dir)
+      if (dir === folder) onError()
+    })
+    watchers.set(dir, watcher)
+    let entries: Dirent[] = []
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) if (entry.isDirectory()) add(join(dir, entry.name))
+  }
+  add(folder)
+  if (!watchers.has(folder)) throw new Error(`${folder} cannot be watched.`)
+  return {
+    close() {
+      for (const watcher of watchers.values()) watcher.close()
+      watchers.clear()
+    },
+  }
+}
+
+function watchTree(folder: string, onEvent: (name: string | null) => void, onError: () => void): TreeWatch {
+  if (process.platform === 'linux') return watchTreeByFolder(folder, onEvent, onError)
+  const watcher = watch(folder, { recursive: true, persistent: false }, (_event, name) =>
+    onEvent(typeof name === 'string' ? name : null),
+  )
+  watcher.on('error', () => {
+    watcher.close()
+    onError()
+  })
+  return watcher
+}
+
+export function watchDevFolders(onChange: (folder: string) => void, quietMs = 150): DevFolderWatch {
+  const watchers = new Map<string, TreeWatch>()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   let closed = false
 
@@ -51,13 +113,11 @@ export function watchDevFolders(onChange: (folder: string) => void, quietMs = 15
       for (const folder of wanted) {
         if (watchers.has(folder)) continue
         try {
-          const watcher = watch(folder, { recursive: true, persistent: false }, (_event, name) =>
-            changed(folder, typeof name === 'string' ? name : null),
+          const watcher = watchTree(
+            folder,
+            (name) => changed(folder, name),
+            () => watchers.delete(folder),
           )
-          watcher.on('error', () => {
-            watcher.close()
-            watchers.delete(folder)
-          })
           watchers.set(folder, watcher)
         } catch {
           // Not watchable here: `dev load` reads it again.

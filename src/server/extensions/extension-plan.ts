@@ -2,12 +2,7 @@ import type { ExtensionMcpToolContribution } from '../../../packages/extension-s
 import type { ModuleFileDigests, ModuleResolutionErrorCode } from '../../shared/modules/manifest'
 import type { CapabilityModule, MainModuleLoadError } from '../../main/module-host/load-modules'
 import { isExtensionRunnable } from '../../main/modules/module-signature'
-import { readExtensionStandingContextSync } from '../../main/modules/extension-standing-context'
-import {
-  discoverUserModulesSync,
-  type InstalledModule,
-  type ModuleRejection,
-} from '../../main/modules/user-module-registry'
+import type { InstalledModule, ModuleRejection, UserModuleListResult } from '../../main/modules/user-module-registry'
 import type { ExtensionWorkers, InstalledStanding } from './workers/worker-manager'
 
 // The installed extensions as one Studio server's module kernel loads them.
@@ -122,15 +117,13 @@ export function planInstalledExtensions(
 }
 
 /**
- * The installed extensions as discovery finds them now, for the workers to
- * hold what runs against: whether each may run as it is, and the approval it
- * is approved under. Reads and digests every folder, so it is read when
- * something changed, not per call.
+ * The extensions as discovery found them (extension-discovery.ts), for the
+ * workers to hold what runs against: whether each may run as it is, and the
+ * approval it is approved under.
  */
-export function readInstalledStanding(moduleRoot: string, dataDir: string): Map<string, InstalledStanding> {
-  const { modules } = discoverUserModulesSync(moduleRoot, readExtensionStandingContextSync(dataDir))
+export function installedStandingOf(discovered: UserModuleListResult): Map<string, InstalledStanding> {
   return new Map(
-    modules.map((module) => [
+    discovered.modules.map((module) => [
       module.key,
       {
         runnable: isExtensionRunnable(module.standing),

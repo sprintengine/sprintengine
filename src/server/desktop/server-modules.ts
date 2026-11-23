@@ -8,7 +8,8 @@ import { createModuleLifecycle, liveModuleIds } from '../../main/modules/module-
 import { bundledRegistryIds } from '../../main/plugin-registry-instance'
 import type { ExtensionRunView } from '../../main/modules/third-party-module-view'
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
-import { planInstalledExtensions, readInstalledStanding } from '../extensions/extension-plan'
+import { installedStandingOf, planInstalledExtensions } from '../extensions/extension-plan'
+import { createExtensionDiscovery } from '../extensions/extension-discovery'
 import { createExtensionReloader, type ExtensionReloader } from '../extensions/extension-reload'
 import { watchDevFolders } from '../extensions/dev/dev-folder-watch'
 import type { ExtensionDevBackend } from '../../main/automation/extension-dev-tools'
@@ -17,10 +18,9 @@ import { readDevFoldersSync } from '../../main/modules/extension-dev-folders'
 import { createExtensionWorkers } from '../extensions/workers/worker-manager'
 import { resolveExtensionSdkRoot, resolveWorkerEntryPath } from '../extensions/workers/worker-process'
 import { join } from 'node:path'
-import { readExtensionStandingContextSync } from '../../main/modules/extension-standing-context'
 import { createExtensionApprovalReader } from '../../main/modules/extension-approvals'
 import { createExtensionFrameGrant } from '../../main/modules/extension-frame-grant'
-import { defaultUserModuleRoot, discoverUserModulesSync } from '../../main/modules/user-module-registry'
+import { defaultUserModuleRoot } from '../../main/modules/user-module-registry'
 import { watchUserModuleRoot } from '../../main/modules/user-module-watch'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import { createStudioModuleHub, type StudioModules } from '../rpc/studio-modules'
@@ -97,13 +97,15 @@ export function createServerModules(deps: {
   let load: LoadMainModulesResult | null = null
   let gateway: StudioGateway | null = null
   const approvals = createExtensionApprovalReader(dataDir)
+  // The extensions on disk, discovered once per change (extension-discovery.ts).
+  const discovery = createExtensionDiscovery({ moduleRoot: defaultUserModuleRoot, dataDir })
   // Every worker extension's code runs in a process of its own.
   const { workers, bind: bindWorkers } = createExtensionWorkers({
     entryPath: resolveWorkerEntryPath(),
     sdkRoot: resolveExtensionSdkRoot(platform.paths.resourcesDir(), platform.paths.appRoot() ?? process.cwd()),
     logDir: join(platform.paths.logsDir(), 'extensions'),
     approvals,
-    installed: () => readInstalledStanding(defaultUserModuleRoot(), dataDir),
+    installed: () => installedStandingOf(discovery.current()),
     toolsChanged: () => gateway?.notifyToolsListChanged(),
     stateChanged: () => hub.deliverChanged(),
   })
@@ -116,11 +118,12 @@ export function createServerModules(deps: {
   let moduleRootsById: Record<string, string> = {}
   // Keeps what the kernel loaded the extensions as in step with the disk while Studio runs.
   let reloader: ExtensionReloader | null = null
-  const discoverNow = () => discoverUserModulesSync(defaultUserModuleRoot(), readExtensionStandingContextSync(dataDir))
-  // Every save in a development folder: read it again, and load what changed.
-  const devWatch = watchDevFolders(() => {
+  const discoverNow = () => discovery.current()
+  // Every save in a development folder: read that folder again, and load what changed.
+  const devWatch = watchDevFolders((folder) => {
+    discovery.folderChanged(folder)
     workers.reconcile()
-    void lifecycle.reproject()
+    void lifecycle.reproject(discovery.current().modules)
     void reloader?.reload()
   })
 
@@ -150,6 +153,7 @@ export function createServerModules(deps: {
     // Every client following `extension.changed` lists and loads them again,
     // and a worker whose approval is gone or changed stops.
     changed: () => {
+      discovery.invalidate()
       workers.reconcile()
       hub.deliverChanged()
       devWatch.follow(readDevFoldersSync(dataDir))
@@ -270,7 +274,8 @@ export function createServerModules(deps: {
         workers: () => workers,
         load: () => load,
         overrides: readOverrides,
-        reloaded: () => {
+        reloaded: ({ removed }) => {
+          for (const key of removed) byId.delete(key)
           for (const module of plan.modules) byId.set(module.manifest.id, module.manifest)
           manifests = [agentRuntime.manifest, ...bundled.map((m) => m.manifest), ...plan.modules.map((m) => m.manifest)]
           recompute(readOverrides())
@@ -310,8 +315,9 @@ export function createServerModules(deps: {
       // What extensions hand agents follows the folder too: a server whose
       // files changed under its approval is retracted, not run until the next start.
       stopWatchingModules ??= watchUserModuleRoot(defaultUserModuleRoot(), () => {
+        discovery.invalidate()
         workers.reconcile()
-        void lifecycle.reproject()
+        void lifecycle.reproject(discovery.current().modules)
         hub.deliverChanged()
         void reloader?.reload()
       })

@@ -75,9 +75,13 @@ function setUp() {
   const workers = { willReload: () => undefined } as unknown as ExtensionWorkers
   const plan = planInstalledExtensions(discoverUserModulesSync(root, ctx()), () => workers)
   const replaced: Array<{ modules: string[]; removed: string[] }> = []
+  const saidBeforeReplaced: boolean[] = []
   const load = {
     replaceModules: async (update: { modules: readonly CapabilityModule[]; removed: readonly string[] }) => {
       replaced.push({ modules: update.modules.map((module) => module.manifest.id), removed: [...update.removed] })
+      // The old worker's shutdown takes a while: nothing may say `reloaded` before it is done.
+      await new Promise((settle) => setTimeout(settle, 20))
+      saidBeforeReplaced.push(events.since(0).some((event) => event.kind === 'reloaded'))
       return { loaded: [], disabled: [], errors: [] }
     },
   } as unknown as LoadMainModulesResult
@@ -89,14 +93,17 @@ function setUp() {
     workers: () => workers,
     load: () => load,
     overrides: () => ({}),
-    reloaded: ({ changed }) => told.push(changed),
+    reloaded: ({ changed }) => {
+      told.push(changed)
+      saidBeforeReplaced.push(events.since(0).some((event) => event.kind === 'reloaded'))
+    },
     events,
   })
-  return { folder, devFolders, plan, replaced, events, told, reloader }
+  return { folder, devFolders, plan, replaced, events, told, reloader, saidBeforeReplaced }
 }
 
-test('a save loads the extension again, and says reloaded', async () => {
-  const { folder, replaced, events, told, reloader, plan } = setUp()
+test('a save loads the extension again, and says reloaded once the new code is in place', async () => {
+  const { folder, replaced, events, told, reloader, plan, saidBeforeReplaced } = setUp()
   await reloader.reload()
   assert.deepEqual(replaced, [], 'nothing changed, nothing loads again')
   writeFileSync(
@@ -111,6 +118,7 @@ test('a save loads the extension again, and says reloaded', async () => {
     events.since(0).map((event) => event.kind),
     ['reloaded'],
   )
+  assert.deepEqual(saidBeforeReplaced, [false, false], 'not while the old one was being replaced')
 })
 
 test('a save that asks for more is held back, and says what it asks', async () => {

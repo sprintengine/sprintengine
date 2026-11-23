@@ -20,7 +20,8 @@ import type { ExtensionStandingContext } from './modules/module-signature'
 import { createExtensionApprovalReader } from './modules/extension-approvals'
 import { createExtensionFrameGrant } from './modules/extension-frame-grant'
 import { readExtensionStandingContextSync } from './modules/extension-standing-context'
-import { planInstalledExtensions, readInstalledStanding } from '../server/extensions/extension-plan'
+import { installedStandingOf, planInstalledExtensions } from '../server/extensions/extension-plan'
+import { createExtensionDiscovery } from '../server/extensions/extension-discovery'
 import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
 import { resolveWorkerEntryPath, resolveExtensionSdkRoot } from '../server/extensions/workers/worker-process'
 import { join } from 'node:path'
@@ -135,9 +136,16 @@ const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
 const moduleOverrides = readModuleEnablementOverrides()
 // Every save in a development folder: read it again, and load what changed.
 // Out of process the server watches them (server-modules.ts).
-const devFolderWatch = watchDevFolders(() => {
+// The extensions on disk, discovered once per change (extension-discovery.ts):
+// a save reads its folder alone again.
+const extensionDiscovery = createExtensionDiscovery({
+  moduleRoot: defaultUserModuleRoot,
+  dataDir: app.getPath('userData'),
+})
+const devFolderWatch = watchDevFolders((folder) => {
+  extensionDiscovery.folderChanged(folder)
   extensionWorkers.workers.reconcile()
-  void moduleLifecycle?.reproject()
+  void moduleLifecycle?.reproject(extensionDiscovery.current().modules)
   void extensionReloader?.reload()
 })
 
@@ -149,7 +157,7 @@ const extensionWorkers = createExtensionWorkers({
   sdkRoot: resolveExtensionSdkRoot(app.isPackaged ? process.resourcesPath : null, app.getAppPath()),
   logDir: join(app.getPath('logs'), 'extensions'),
   approvals: extensionApprovals,
-  installed: () => readInstalledStanding(defaultUserModuleRoot(), app.getPath('userData')),
+  installed: () => installedStandingOf(extensionDiscovery.current()),
   toolsChanged: () => services.automationService?.notifyToolsListChanged(),
   stateChanged: () => services.moduleHub.deliverChanged(),
 })
@@ -269,6 +277,7 @@ const moduleLifecycle = serverHost
       moduleRoot: defaultUserModuleRoot,
       // A worker whose approval is gone or changed stops, and the windows hear.
       changed: () => {
+        extensionDiscovery.invalidate()
         extensionWorkers.workers.reconcile()
         services.moduleHub.deliverChanged()
         devFolderWatch.follow(readDevFoldersSync(app.getPath('userData')))
@@ -328,11 +337,12 @@ if (moduleLifecycle) services.moduleHub.serveLifecycleFrom(moduleLifecycle)
 const extensionReloader = moduleLifecycle
   ? createExtensionReloader({
       plan: thirdPartyMainLoad,
-      discover: () => discoverUserModulesSync(defaultUserModuleRoot(), readExtensionStanding()),
+      discover: () => extensionDiscovery.current(),
       workers: () => extensionWorkers.workers,
       load: () => moduleLoad,
       overrides: readModuleEnablementOverrides,
-      reloaded: () => {
+      reloaded: ({ removed }) => {
+        for (const key of removed) moduleManifestsById.delete(key)
         for (const module of thirdPartyMainLoad.modules) moduleManifestsById.set(module.manifest.id, module.manifest)
         mainModuleManifests.splice(
           2,
@@ -353,8 +363,9 @@ if (moduleLifecycle) {
   // What extensions hand agents follows the folder too: a server whose files
   // changed under its approval is retracted, not run until the next start.
   const stopWatchingModules = watchUserModuleRoot(defaultUserModuleRoot(), () => {
+    extensionDiscovery.invalidate()
     extensionWorkers.workers.reconcile()
-    void moduleLifecycle.reproject()
+    void moduleLifecycle.reproject(extensionDiscovery.current().modules)
     services.moduleHub.deliverChanged()
     void extensionReloader?.reload()
   })
