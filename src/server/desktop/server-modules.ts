@@ -192,7 +192,7 @@ export function createServerModules(deps: {
   })
   hub.serveLifecycleFrom(lifecycle)
   // The kill list and automatic updates, for as long as this server runs.
-  lifecycle.catalogue.start()
+  const stopCatalogue = lifecycle.catalogue.start()
 
   const extensionRunView = (): ExtensionRunView => {
     const current = load
@@ -339,6 +339,8 @@ export function createServerModules(deps: {
       stopWatchingModules?.()
       stopWatchingModules = null
       devWatch.close()
+      stopCatalogue()
+      await lifecycle.catalogue.dispose()
       await (load?.kernel.runShutdown() ?? Promise.resolve())
       await workers.close()
     },

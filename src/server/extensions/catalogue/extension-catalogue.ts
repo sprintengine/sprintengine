@@ -17,10 +17,16 @@ import {
   type Catalogue,
   type CatalogueEntry,
   type CatalogueRelease,
+  type CatalogueSource,
+  type KillList,
   type OwnerRecords,
   type ReleaseLock,
 } from '../../../../packages/extension-sdk/src/catalogue'
-import { isFetchableGitUrl, type GitOptions } from '../../../../packages/extension-sdk/src/git-source'
+import {
+  isFetchableGitUrl,
+  type FetchedCommit,
+  type GitOptions,
+} from '../../../../packages/extension-sdk/src/git-source'
 import type {
   StudioCatalogueEntryView,
   StudioCatalogueListing,
@@ -44,16 +50,23 @@ import {
   OFFICIAL_CATALOGUE,
   addedCatalogueId,
   addedCatalogueUrl,
+  forgetLockedReleases,
   lockReleases,
   readAddedCataloguesSync,
   readCatalogueCacheSync,
+  readCommunityRemovedSync,
   readHeldUpdatesSync,
   readInstallRecordsSync,
+  readOwnerRecordsCacheSync,
   readReleaseLockSync,
+  readRemoteReleaseLockCacheSync,
   writeAddedCatalogues,
   writeCatalogueCache,
+  writeCommunityRemoved,
   writeHeldUpdates,
   writeInstallRecord,
+  writeOwnerRecordsCache,
+  writeRemoteReleaseLockCache,
   type CatalogueId,
   type ExtensionInstallRecord,
   type HeldUpdate,
@@ -65,7 +78,7 @@ import {
   fetchCatalogueBytes,
   fetchCatalogueJson,
   fetchGitCatalogue,
-  readGitCatalogueFile,
+  readFetchedFile,
   type CatalogueUrls,
 } from './catalogue-fetch'
 import { createKillListService, type KillListService } from './kill-list'
@@ -97,11 +110,21 @@ export const AUTO_UPDATE_HOLD_BACK_MS = 12 * 60 * 60 * 1000
 /** Half the hold-back: a release first seen one pass ago is old enough by the next. */
 export const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024
+/** The images Studio keeps in memory, by sha256, so a view drawn again fetches nothing. */
+const IMAGE_CACHE_MAX_BYTES = 32 * 1024 * 1024
+/** A refresh asked for within this long of the last one is answered from that one. */
+const REFRESH_MIN_INTERVAL_MS = 30_000
 const OFFICIAL_OWNER = 'sprintengine'
 
 type InstallAnswer =
   | { ok: true; moduleId: string; approval: StudioExtensionApproval; strippedLinks: string[] }
-  | { ok: false; message: string; issues?: Array<{ path: string; message: string }> }
+  | {
+      ok: false
+      message: string
+      issues?: Array<{ path: string; message: string }>
+      /** The folders of a Claude Code plugin marketplace, one of which to name. */
+      folders?: string[]
+    }
 
 export type CatalogueNotice = {
   key: string
@@ -118,6 +141,8 @@ export type InstalledForCatalogue = {
   approval: 'approved' | 'not-needed' | 'pending' | 'unavailable'
   development: boolean
   killed: boolean
+  /** Switched on here: one switched off is not updated on its own. */
+  enabled: boolean
 }
 
 export type ExtensionCatalogueDeps = {
@@ -152,7 +177,8 @@ export type ExtensionCatalogue = {
   add(url: string): Promise<{ ok: true; catalogue: StudioCatalogueView } | { ok: false; message: string }>
   remove(url: string): Promise<{ ok: true } | { ok: false; message: string }>
   installFrom(from: StudioExtensionInstallSource): Promise<InstallAnswer & { leftOut?: string[] }>
-  update(key: string): Promise<InstallAnswer>
+  /** Install the newer release of an installed extension; `version` is the one the person was shown. */
+  update(key: string, version?: string): Promise<InstallAnswer>
   /** An installed extension's origin, its update and its kill, for `extension.installed`. */
   annotate(views: ThirdPartyModuleView[]): ThirdPartyModuleView[]
   /** An uninstall forgets where it came from and any update it held. */
@@ -162,6 +188,8 @@ export type ExtensionCatalogue = {
   readonly killList: KillListService
   /** Refresh the kill list and check for updates periodically; returns the stopper. */
   start(): () => void
+  /** Let go of what is kept in temporary folders (an added catalogue's repository). */
+  dispose(): Promise<void>
 }
 
 const mimeOf = (path: string) =>
@@ -187,8 +215,14 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
   const now = deps.now ?? Date.now
   const studioVersion = deps.studioVersion ?? STUDIO_EXTENSION_VERSION
   const errors = new Map<CatalogueId, string>()
-  let owners: OwnerRecords | null = null
-  let remoteLock: ReleaseLock | null = null
+  // The last copies, read from disk at start, so a restart without network
+  // still knows who owns what (an owner check that cannot read fails closed).
+  let owners: OwnerRecords | null = readOwnerRecordsCacheSync(deps.dataDir)
+  let remoteLock: ReleaseLock | null = readRemoteReleaseLockCacheSync(deps.dataDir)
+  /** Each added catalogue's repository as last fetched: its images are read from it. */
+  const addedRepositories = new Map<CatalogueId, FetchedCommit>()
+  const images = new Map<string, { mime: string; bytes: Buffer }>()
+  let imageBytes = 0
 
   const killList = createKillListService({
     dataDir: deps.dataDir,
@@ -214,9 +248,10 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
 
   // ── Catalogues ────────────────────────────────────────────────────────────
 
+  // The community catalogue is there from the start, until the person removes it.
   const catalogueIds = (): CatalogueId[] => [
     OFFICIAL_CATALOGUE,
-    COMMUNITY_CATALOGUE,
+    ...(readCommunityRemovedSync(deps.dataDir) ? [] : [COMMUNITY_CATALOGUE]),
     ...readAddedCataloguesSync(deps.dataDir).map(addedCatalogueId),
   ]
   const isKnownCatalogue = (id: CatalogueId) => catalogueIds().includes(id)
@@ -239,51 +274,94 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     return null
   }
 
-  async function fetchCatalogue(id: CatalogueId): Promise<Catalogue> {
+  /** A catalogue as read now; an added one's repository is kept, for its images. */
+  async function fetchCatalogue(id: CatalogueId): Promise<{ catalogue: Catalogue; fetched?: FetchedCommit }> {
     const added = addedCatalogueUrl(id)
-    const raw = added
-      ? await fetchGitCatalogue(added, git)
-      : await fetchJson(id === OFFICIAL_CATALOGUE ? urls.official : urls.community)
+    let raw: unknown
+    let fetched: FetchedCommit | undefined
+    if (added) ({ raw, fetched } = await fetchGitCatalogue(added, git))
+    else raw = await fetchJson(id === OFFICIAL_CATALOGUE ? urls.official : urls.community)
     const read = readCatalogue(raw, { fetchable: (url) => isFetchableGitUrl(url, git) })
-    if (!read.ok) throw new Error(read.message)
-    const problem = provenanceProblem(id, read.catalogue)
-    if (problem) throw new Error(problem)
-    return read.catalogue
+    const problem = !read.ok ? read.message : provenanceProblem(id, read.catalogue)
+    if (problem || !read.ok) {
+      await fetched?.dispose()
+      throw new Error(problem ?? 'The catalogue could not be read.')
+    }
+    return { catalogue: read.catalogue, ...(fetched ? { fetched } : {}) }
   }
 
-  async function refreshOne(id: CatalogueId): Promise<void> {
-    try {
-      const catalogue = await fetchCatalogue(id)
-      await writeCatalogueCache(deps.dataDir, (cache) => ({ ...cache, [id]: { fetchedAt: now(), catalogue } }))
-      errors.delete(id)
-    } catch (error) {
-      errors.set(id, (error as Error).message)
-    }
+  async function keepRepository(id: CatalogueId, fetched: FetchedCommit | undefined): Promise<void> {
+    const before = addedRepositories.get(id)
+    if (fetched) addedRepositories.set(id, fetched)
+    else addedRepositories.delete(id)
+    if (before && before !== fetched) await before.dispose()
+  }
+
+  // One read of a catalogue at a time: the images and a refresh share it.
+  const refreshing = new Map<CatalogueId, Promise<void>>()
+  function refreshOne(id: CatalogueId): Promise<void> {
+    const running = refreshing.get(id)
+    if (running) return running
+    const run = (async () => {
+      try {
+        const { catalogue, fetched } = await fetchCatalogue(id)
+        await writeCatalogueCache(deps.dataDir, (cache) => ({ ...cache, [id]: { fetchedAt: now(), catalogue } }))
+        await keepRepository(id, fetched)
+        errors.delete(id)
+      } catch (error) {
+        errors.set(id, (error as Error).message)
+      }
+    })().finally(() => refreshing.delete(id))
+    refreshing.set(id, run)
+    return run
   }
 
   async function refreshLists(): Promise<void> {
     const [ownersRaw, lockRaw] = await Promise.allSettled([fetchJson(urls.owners), fetchJson(urls.releaseLock)])
-    if (ownersRaw.status === 'fulfilled') owners = readOwnerRecords(ownersRaw.value) ?? owners
-    if (lockRaw.status === 'fulfilled') remoteLock = readReleaseLock(lockRaw.value) ?? remoteLock
+    const readOwners = ownersRaw.status === 'fulfilled' ? readOwnerRecords(ownersRaw.value) : null
+    if (readOwners) {
+      owners = readOwners
+      await writeOwnerRecordsCache(deps.dataDir, readOwners)
+    }
+    const readLock = lockRaw.status === 'fulfilled' ? readReleaseLock(lockRaw.value) : null
+    if (readLock) {
+      remoteLock = readLock
+      await writeRemoteReleaseLockCache(deps.dataDir, readLock)
+    }
   }
 
-  async function refreshAll(): Promise<void> {
-    await Promise.all([...catalogueIds().map(refreshOne), refreshLists()])
-    // The first time a release of something installed here is seen, it is locked.
-    const installedKeys = new Set((await deps.installed()).map((module) => module.key))
-    const cache = readCatalogueCacheSync(deps.dataDir)
-    const seen: Array<{ key: string; version: string; commit: string; contentHash: string }> = []
-    for (const id of catalogueIds())
-      for (const entry of cache[id]?.catalogue.extensions ?? [])
-        if (installedKeys.has(entry.id))
-          for (const release of entry.releases)
-            seen.push({
-              key: entry.id,
-              version: release.version,
-              commit: release.commit,
-              contentHash: release.contentHash,
-            })
-    await lockReleases(deps.dataDir, seen, now())
+  let lastRefreshAll = Number.NEGATIVE_INFINITY
+  let refreshAllRunning: Promise<void> | null = null
+  /** Read every catalogue and list again; a refresh asked for while one runs is that one. */
+  function refreshAll(): Promise<void> {
+    if (refreshAllRunning) return refreshAllRunning
+    lastRefreshAll = now()
+    refreshAllRunning = (async () => {
+      await Promise.all([...catalogueIds().map(refreshOne), refreshLists()])
+      // The first time a release of something installed here is seen in the
+      // catalogue it came from, it is locked. Other catalogues' listings of
+      // the same id are not kept: they never decide what installs here.
+      const records = readInstallRecordsSync(deps.dataDir)
+      const cache = readCatalogueCacheSync(deps.dataDir)
+      const seen: Array<{ key: string; version: string; commit: string; contentHash: string }> = []
+      for (const module of await deps.installed()) {
+        const record = records[module.key]
+        if (module.development || record?.origin.kind !== 'catalogue') continue
+        const entry = cache[record.origin.catalogue]?.catalogue.extensions.find((item) => item.id === module.key)
+        if (!entry || !isSameCatalogueSource(record.origin.source, entry.source)) continue
+        for (const release of entry.releases)
+          seen.push({
+            key: entry.id,
+            version: release.version,
+            commit: release.commit,
+            contentHash: release.contentHash,
+          })
+      }
+      await lockReleases(deps.dataDir, seen, now())
+    })().finally(() => {
+      refreshAllRunning = null
+    })
+    return refreshAllRunning
   }
 
   const cached = (id: CatalogueId) => readCatalogueCacheSync(deps.dataDir)[id]
@@ -349,15 +427,22 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
   // ── Checks before an install ──────────────────────────────────────────────
 
   /** Why this version may not be installed with these bytes: a version keeps what it was first seen with. */
-  function lockProblem(key: string, version: string, pinned: { commit?: string; contentHash: string }): string | null {
-    const local = readReleaseLockSync(deps.dataDir)[key]?.[version]
+  function lockProblem(
+    key: string,
+    version: string,
+    pinned: { commit?: string; contentHash: string },
+    origin: 'catalogue' | 'git',
+  ): string | null {
     const moved = (first: { commit: string; contentHash: string }) =>
       first.contentHash !== pinned.contentHash || (pinned.commit !== undefined && first.commit !== pinned.commit)
+    // A git URL install is the person's own choice of commit, so only a
+    // catalogue install is held to what this Studio saw before.
+    const local = origin === 'catalogue' ? readReleaseLockSync(deps.dataDir)[key]?.[version] : undefined
     if (local && moved(local))
-      return `${key} ${version} was first seen at commit ${local.commit.slice(0, 12)}; a listed version never moves, so these bytes were refused. Its author must publish a new version.`
+      return `${key} ${version} was first seen here at commit ${local.commit.slice(0, 12)}, and a listed version never moves, so these bytes were refused. Its author must publish a new version; or remove ${key} and install it again to start afresh.`
     const remote = remoteLock?.releases.find((entry) => entry.id === key && entry.version === version)
     if (remote && moved(remote))
-      return `${key} ${version} is locked to commit ${remote.commit.slice(0, 12)} in the catalogue’s release lock; these bytes were refused.`
+      return `${key} ${version} is locked to commit ${remote.commit.slice(0, 12)} in Studio’s release lock, so these bytes were refused. Its author must publish a new version.`
     return null
   }
 
@@ -368,11 +453,13 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     return owners?.owners.find((owner) => owner.login.toLowerCase() === publisher)?.id
   }
 
-  /** Why updates of an install are paused: its owner was renamed or the name changed hands. */
+  /** Why updates of an install are paused: its owner was renamed, the name changed hands, or it cannot be told. */
   function ownerPause(record: ExtensionInstallRecord, entry: CatalogueEntry): string | null {
     if (record.ownerId === undefined) return null
     const current = currentOwnerId(entry)
-    if (current !== undefined && current !== record.ownerId)
+    if (current === undefined)
+      return `Studio cannot read who owns ${entry.id} now, so it does not update it until it can.`
+    if (current !== record.ownerId)
       return `The account that owns ${entry.id} is not the one it was installed from (it changed hands, or the name was taken again). Updates are paused; install it again to trust the new owner.`
     const renamed = owners?.owners.find((owner) => owner.id === record.ownerId)
     const publisher = parseExtensionInstallKey(entry.id)?.publisher
@@ -381,17 +468,79 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     return null
   }
 
+  /**
+   * The kill list as it stands now, read again before every install. Without
+   * a fresh one: the kept copy, with a warning, unless `fresh` is asked for
+   * (an install nobody is watching waits for the next pass). With none at
+   * all, nothing installs: a takedown could not stop it.
+   */
+  async function killListForInstall(
+    fresh: boolean,
+  ): Promise<{ ok: true; list: KillList | null } | { ok: false; message: string }> {
+    try {
+      return { ok: true, list: await killList.refresh() }
+    } catch (error) {
+      const kept = killList.current()
+      const why = (error as Error).message
+      if (!kept || fresh)
+        return { ok: false, message: `Studio could not read its kill list, so nothing installs until it can: ${why}` }
+      deps.warn?.(`The kill list could not be read; the install was checked against the kept copy: ${why}`)
+      return { ok: true, list: kept }
+    }
+  }
+
+  /** The release an install was checked against: what may be installed, and nothing else. */
+  type CheckedRelease = {
+    version: string
+    commit?: string
+    contentHash?: string
+    source?: CatalogueSource
+    /** The owner id checked; null when the check found none. */
+    ownerId?: number | null
+  }
+
+  /** Why the release a catalogue lists now is not the one that was checked, or null. */
+  function changedSince(
+    key: string,
+    id: CatalogueId,
+    entry: CatalogueEntry,
+    release: CatalogueRelease,
+    checked: CheckedRelease,
+  ): string | null {
+    const again = `${catalogueName(id)} changed ${key} since it was checked`
+    if (release.version !== checked.version)
+      return `${catalogueName(id)} now lists ${key} ${release.version}, not ${checked.version}. Look at it again before you install it.`
+    if (
+      (checked.commit !== undefined && checked.commit !== release.commit) ||
+      (checked.contentHash !== undefined && checked.contentHash !== release.contentHash)
+    )
+      return `${again}: version ${release.version} now points at other bytes. Look at it again before you install it.`
+    if (checked.source && !isSameCatalogueSource(checked.source, entry.source))
+      return `${again}: it moved to another repository or folder. Look at it again before you install it.`
+    if (checked.ownerId !== undefined && (currentOwnerId(entry) ?? null) !== checked.ownerId)
+      return `${again}: its owner changed. Look at it again before you install it.`
+    return null
+  }
+
   type Prepared = { checkedOut: CheckedOut; release: CatalogueRelease; entry: CatalogueEntry }
 
+  /**
+   * Check out the release a catalogue lists now, read again, and check it.
+   * With `checked`, only that exact release (its version, commit, hash,
+   * source and owner) is prepared: a catalogue that changed since is refused
+   * with `changed`, never installed in its place.
+   */
   async function prepareCatalogueRelease(
     id: CatalogueId,
     key: string,
-  ): Promise<{ ok: true; prepared: Prepared } | { ok: false; message: string }> {
+    options: { checked?: CheckedRelease; automatic?: boolean } = {},
+  ): Promise<{ ok: true; prepared: Prepared } | { ok: false; message: string; changed?: true }> {
     if (!isKnownCatalogue(id)) return { ok: false, message: 'That catalogue has not been added here.' }
     if (isReservedInstallKey(key) && id !== OFFICIAL_CATALOGUE)
       return { ok: false, message: `${key} uses a name only Studio’s official catalogue installs.` }
     // What the catalogue lists now; its last copy when it cannot be read.
     await refreshOne(id)
+    await refreshLists()
     const entry = findEntry(id, key)
     if (!entry) return { ok: false, message: `${catalogueName(id)} does not list ${key}.` }
     const chosen = selectCatalogueRelease(entry.releases, studioVersion)
@@ -402,10 +551,15 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         message: `${key} ${chosen.release.version} needs Studio ${chosen.release.minimumStudio} or newer.`,
       }
     const { release } = chosen
-    const killed = findKilled(killList.current(), key, release.version)
+    if (options.checked) {
+      const changed = changedSince(key, id, entry, release, options.checked)
+      if (changed) return { ok: false, message: changed, changed: true }
+    }
+    const list = await killListForInstall(options.automatic === true)
+    if (!list.ok) return list
+    const killed = findKilled(list.list, key, release.version)
     if (killed) return { ok: false, message: `Studio’s kill list removed ${key} ${release.version}: ${killed.reason}` }
-    await refreshLists()
-    const locked = lockProblem(key, release.version, release)
+    const locked = lockProblem(key, release.version, release, 'catalogue')
     if (locked) return { ok: false, message: locked }
     const checked = await checkOutExtension({
       url: entry.source.url,
@@ -457,11 +611,21 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         await writeInstallRecord(deps.dataDir, key, previous)
         return answer
       }
-      await lockReleases(
-        deps.dataDir,
-        [{ key, version: checkedOut.manifest.version, commit: checkedOut.commit, contentHash: checkedOut.contentHash }],
-        now(),
-      )
+      // A catalogue's version keeps the bytes it was installed with; a git
+      // URL install is the person's choice of commit each time.
+      if (origin.kind === 'catalogue')
+        await lockReleases(
+          deps.dataDir,
+          [
+            {
+              key,
+              version: checkedOut.manifest.version,
+              commit: checkedOut.commit,
+              contentHash: checkedOut.contentHash,
+            },
+          ],
+          now(),
+        )
       await writeHeldUpdates(deps.dataDir, (held) => {
         if (!(key in held)) return null
         const next = { ...held }
@@ -477,21 +641,47 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     }
   }
 
-  /** An install that would move a catalogue install to another source is refused: it would stop its updates. */
-  function takeoverProblem(key: string, catalogue: CatalogueId | null): string | null {
+  const originWords = (origin: ExtensionInstallRecord['origin']) =>
+    origin.kind === 'catalogue'
+      ? catalogueName(origin.catalogue)
+      : `the git URL ${origin.source.url}${origin.source.path ? ` (folder ${origin.source.path})` : ''}`
+
+  /**
+   * Why an install from `next` may not replace what is installed under the
+   * key: another kind of source, another catalogue, or another repository or
+   * folder behind a git URL. Its approval was given to the first source and
+   * never carries to another; the person removes it first. (A catalogue's own
+   * entry moving is an update, reviewed with its approval asked again.)
+   */
+  async function originChange(key: string, next: ExtensionInstallRecord['origin']): Promise<string | null> {
     const record = readInstallRecordsSync(deps.dataDir)[key]
-    if (record?.origin.kind !== 'catalogue' || record.origin.catalogue === catalogue) return null
-    return `${key} is installed from ${catalogueName(record.origin.catalogue)}; remove it first to install it from ${catalogue ? catalogueName(catalogue) : 'a git URL'}.`
+    const there = originWords(next)
+    if (!record) {
+      const here = (await deps.installed()).some((module) => module.key === key && !module.development)
+      return here ? `${key} is already installed; remove it first to install it from ${there}.` : null
+    }
+    const from = record.origin
+    const same =
+      from.kind === 'catalogue' && next.kind === 'catalogue'
+        ? from.catalogue === next.catalogue
+        : from.kind === 'git' && next.kind === 'git' && isSameCatalogueSource(from.source, next.source)
+    return same ? null : `${key} is installed from ${originWords(from)}; remove it first to install it from ${there}.`
   }
 
-  async function installFromCatalogue(id: CatalogueId, key: string): Promise<InstallAnswer> {
-    const takeover = takeoverProblem(key, id)
-    if (takeover) return { ok: false, message: takeover }
-    const prepared = await prepareCatalogueRelease(id, key)
+  async function installFromCatalogue(id: CatalogueId, key: string, checked?: CheckedRelease): Promise<InstallAnswer> {
+    const entryNow = findEntry(id, key)
+    const change = await originChange(key, {
+      kind: 'catalogue',
+      catalogue: id,
+      source: entryNow?.source ?? { url: '', ref: '' },
+    })
+    if (change) return { ok: false, message: change }
+    const prepared = await prepareCatalogueRelease(id, key, checked ? { checked } : {})
     if (!prepared.ok) return prepared
     const { checkedOut, entry } = prepared.prepared
     const record = readInstallRecordsSync(deps.dataDir)[key]
-    // The owner is pinned at the first install from this catalogue; installing again trusts the owner now.
+    // The person looked at this release, its source and its owner: installing
+    // it trusts the owner as it is now.
     const ownerId = currentOwnerId(entry) ?? record?.ownerId
     // Moving to another repository or folder is reviewed again, whatever it asks for.
     if (
@@ -505,15 +695,13 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
 
   async function installFromGit(source: { git: string; ref?: string; path?: string }) {
     const url = source.git.trim()
+    const ref = source.ref?.trim() || 'HEAD'
+    const path = source.path?.trim().replace(/^\/+|\/+$/g, '') || undefined
     const publisher = sourcePublisher(url)
     if (!publisher) return { ok: false as const, message: 'Studio cannot tell who owns that repository from its URL.' }
-    const checked = await checkOutExtension({
-      url,
-      ref: source.ref?.trim() || 'HEAD',
-      ...(source.path ? { path: source.path } : {}),
-      claudePlugins: true,
-      git,
-    })
+    const list = await killListForInstall(false)
+    if (!list.ok) return list
+    const checked = await checkOutExtension({ url, ref, ...(path ? { path } : {}), claudePlugins: true, git })
     if (!checked.ok) return checked
     const { checkedOut } = checked
     const key = `${publisher}.${checkedOut.manifest.id}`
@@ -522,23 +710,16 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       return { ok: false as const, message }
     }
     if (isReservedInstallKey(key)) return refuse(`${key} uses a name only Studio’s official catalogue installs.`)
-    const killed = findKilled(killList.current(), key, checkedOut.manifest.version)
+    const killed = findKilled(list.list, key, checkedOut.manifest.version)
     if (killed) return refuse(`Studio’s kill list removed ${key} ${checkedOut.manifest.version}: ${killed.reason}`)
-    const takeover = takeoverProblem(key, null)
-    if (takeover) return refuse(takeover)
+    const origin = { kind: 'git' as const, source: { url, ref, ...(path ? { path } : {}) } }
+    const change = await originChange(key, origin)
+    if (change) return refuse(change)
     await refreshLists()
-    const locked = lockProblem(key, checkedOut.manifest.version, { contentHash: checkedOut.contentHash })
+    const locked = lockProblem(key, checkedOut.manifest.version, { contentHash: checkedOut.contentHash }, 'git')
     if (locked) return refuse(locked)
     const leftOut = checkedOut.leftOut
-    const answer = await installPrepared(
-      checkedOut,
-      key,
-      {
-        kind: 'git',
-        source: { url, ref: source.ref?.trim() || 'HEAD', ...(source.path ? { path: source.path } : {}) },
-      },
-      undefined,
-    )
+    const answer = await installPrepared(checkedOut, key, origin, undefined)
     return answer.ok && leftOut.length > 0 ? { ...answer, leftOut } : answer
   }
 
@@ -566,7 +747,13 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     return { record, entry, release: chosen.release, catalogue }
   }
 
-  async function update(key: string): Promise<InstallAnswer> {
+  /**
+   * "Review version X": install exactly the release the person was shown
+   * (and, when it was held, the commit and bytes it was held with). A
+   * catalogue that lists another now is refused, and the row then shows the
+   * new one.
+   */
+  async function update(key: string, version?: string): Promise<InstallAnswer> {
     const module = (await deps.installed()).find((candidate) => candidate.key === key && !candidate.development)
     if (!module) return { ok: false, message: `${key} is not installed.` }
     const record = readInstallRecordsSync(deps.dataDir)[key]
@@ -577,15 +764,37 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     const found = newerRelease(key, module.manifest.version)
     if (!found)
       return { ok: false, message: `${catalogueName(record.origin.catalogue)} lists no newer release of ${key}.` }
+    if (version !== undefined && found.release.version !== version)
+      return {
+        ok: false,
+        message: `${catalogueName(found.catalogue)} now lists ${key} ${found.release.version}, not ${version}. Look at it again before you install it.`,
+      }
+    const held = readHeldUpdatesSync(deps.dataDir)[key]
+    const heldThis = held?.version === found.release.version ? held : undefined
+    if (
+      heldThis &&
+      ((heldThis.commit !== undefined && heldThis.commit !== found.release.commit) ||
+        (heldThis.contentHash !== undefined && heldThis.contentHash !== found.release.contentHash))
+    )
+      return {
+        ok: false,
+        message: `${catalogueName(found.catalogue)} changed ${key} ${found.release.version} since it was held. Look at it again before you install it.`,
+      }
     const paused = ownerPause(record, found.entry)
     if (paused) return { ok: false, message: paused }
-    return installFromCatalogue(found.catalogue, key)
+    return installFromCatalogue(found.catalogue, key, {
+      version: found.release.version,
+      commit: found.release.commit,
+      contentHash: found.release.contentHash,
+      source: found.entry.source,
+      ownerId: currentOwnerId(found.entry) ?? null,
+    })
   }
 
   async function hold(key: string, name: string, update: HeldUpdate): Promise<void> {
     const before = readHeldUpdatesSync(deps.dataDir)[key]
     await writeHeldUpdates(deps.dataDir, (held) => ({ ...held, [key]: update }))
-    if (before?.version === update.version && before.reason === update.reason) return
+    if (before?.version === update.version && before.reason === update.reason && before.commit === update.commit) return
     const why =
       update.reason === 'access'
         ? `It asks for more: ${(update.growth ?? []).join(', ')}.`
@@ -602,63 +811,53 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
   }
 
   async function updateOne(module: InstalledForCatalogue, startedAt: number): Promise<void> {
-    if (module.development || module.killed) return
+    if (module.development || module.killed || !module.enabled) return
     // An extension waiting for approval, or never approved, is the person's to update.
     if (module.approval !== 'approved' && module.approval !== 'not-needed') return
     const found = newerRelease(module.key, module.manifest.version)
     if (!found) return
     const { record, entry, release, catalogue } = found
+    const exact = { version: release.version, commit: release.commit, contentHash: release.contentHash }
+    if (record.ownerId !== undefined && currentOwnerId(entry) === undefined) {
+      deps.warn?.(`Update of ${module.key} skipped: Studio cannot read who owns it now.`)
+      return
+    }
     const paused = ownerPause(record, entry)
-    if (paused) return hold(module.key, module.manifest.name, { version: release.version, reason: 'owner' })
-    if (!isSameCatalogueSource(record.origin.kind === 'catalogue' ? record.origin.source : entry.source, entry.source))
-      return hold(module.key, module.manifest.name, { version: release.version, reason: 'repository' })
+    if (paused) return hold(module.key, module.manifest.name, { ...exact, reason: 'owner' })
+    if (record.origin.kind !== 'catalogue' || !isSameCatalogueSource(record.origin.source, entry.source))
+      return hold(module.key, module.manifest.name, { ...exact, reason: 'repository' })
     if (catalogue !== OFFICIAL_CATALOGUE) {
-      await lockReleases(
-        deps.dataDir,
-        [{ key: module.key, version: release.version, commit: release.commit, contentHash: release.contentHash }],
-        startedAt,
-      )
+      await lockReleases(deps.dataDir, [{ key: module.key, ...exact }], startedAt)
       const firstSeen = readReleaseLockSync(deps.dataDir)[module.key]?.[release.version]?.firstSeenAt ?? startedAt
       if (startedAt - firstSeen < AUTO_UPDATE_HOLD_BACK_MS) return
     }
-    const prepared = await prepareCatalogueRelease(catalogue, module.key)
+    // Exactly the release checked here: one the catalogue lists in its place
+    // since is the next pass's, held back and checked in turn.
+    const prepared = await prepareCatalogueRelease(catalogue, module.key, {
+      automatic: true,
+      checked: { ...exact, source: record.origin.source, ownerId: currentOwnerId(entry) ?? null },
+    })
     if (!prepared.ok) {
       deps.warn?.(`Update of ${module.key} skipped: ${prepared.message}`)
       return
     }
     const { checkedOut } = prepared.prepared
     const next = checkedOut.manifest
-    const record2 = readExtensionApprovalsSync(deps.dataDir).get(module.key)
+    const approval = readExtensionApprovalsSync(deps.dataDir).get(module.key)
     const growth =
       module.approval === 'not-needed'
         ? extensionNeedsApproval(next)
           ? ['your approval, which it did not need before']
           : []
-        : record2
-          ? accessGrowth(record2.access, extensionAccess(next, checkedOut.files))
+        : approval
+          ? accessGrowth(approval.access, extensionAccess(next, checkedOut.files))
           : ['your approval']
     if (growth.length > 0) {
       await checkedOut.dispose()
-      return hold(module.key, module.manifest.name, { version: release.version, reason: 'access', growth })
+      return hold(module.key, module.manifest.name, { ...exact, reason: 'access', growth })
     }
-    // Without a kill list from now, a takedown could not stop this install.
-    try {
-      await killList.refresh()
-    } catch (error) {
-      await checkedOut.dispose()
-      deps.warn?.(`Update of ${module.key} waits for the kill list: ${(error as Error).message}`)
-      return
-    }
-    if (findKilled(killList.current(), module.key, release.version)) {
-      await checkedOut.dispose()
-      return
-    }
-    const answer = await installPrepared(
-      checkedOut,
-      module.key,
-      { kind: 'catalogue', catalogue, source: entry.source },
-      record.ownerId,
-    )
+    // Nobody reviewed this one: it keeps the source and the owner the person installed.
+    const answer = await installPrepared(checkedOut, module.key, record.origin, record.ownerId ?? currentOwnerId(entry))
     if (!answer.ok) {
       deps.warn?.(`Update of ${module.key} failed: ${answer.message}`)
       return
@@ -672,11 +871,23 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     })
   }
 
+  /** An install whose owner id was not known at install takes it at the first pass that can read one. */
+  async function recordMissingOwners(): Promise<void> {
+    for (const [key, record] of Object.entries(readInstallRecordsSync(deps.dataDir))) {
+      if (record.origin.kind !== 'catalogue' || record.ownerId !== undefined) continue
+      const entry = findEntry(record.origin.catalogue, key)
+      if (!entry || !isSameCatalogueSource(record.origin.source, entry.source)) continue
+      const ownerId = currentOwnerId(entry)
+      if (ownerId !== undefined) await writeInstallRecord(deps.dataDir, key, { ...record, ownerId })
+    }
+  }
+
   let running: Promise<void> | null = null
   const runUpdates = (): Promise<void> => {
     running ??= (async () => {
       const startedAt = now()
       await refreshAll()
+      await recordMissingOwners()
       for (const module of await deps.installed()) {
         try {
           await updateOne(module, startedAt)
@@ -716,7 +927,9 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
   }
 
   async function catalogues(refresh?: boolean): Promise<StudioCatalogueView[]> {
-    if (refresh) await refreshAll()
+    // Any client that reads the extensions may ask; one asking often is answered from the last read.
+    if (refresh && now() - lastRefreshAll >= REFRESH_MIN_INTERVAL_MS) await refreshAll()
+    else if (refresh && refreshAllRunning) await refreshAllRunning
     const installed = await installedMap()
     const records = readInstallRecordsSync(deps.dataDir)
     const cache = readCatalogueCacheSync(deps.dataDir)
@@ -793,7 +1006,12 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     async image(id, path, sha256) {
       if (!isKnownCatalogue(id)) return { ok: false, message: 'That catalogue has not been added here.' }
       const mime = mimeOf(path)
-      if (!mime || path.split('/').some((segment) => segment === '..' || segment === '.' || segment === ''))
+      // No `%`: an escaped `..` would pass the segment check and climb once the URL is read.
+      if (
+        !mime ||
+        path.includes('%') ||
+        path.split('/').some((segment) => segment === '..' || segment === '.' || segment === '')
+      )
         return { ok: false, message: 'That is not an image a catalogue may name.' }
       // Only images a catalogue's own entries name.
       const named = (cached(id)?.catalogue.extensions ?? []).some((entry) =>
@@ -805,14 +1023,28 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         }),
       )
       if (!named) return { ok: false, message: 'The catalogue names no such image.' }
+      const kept = images.get(sha256)
+      if (kept) return { ok: true, mime: kept.mime, base64: kept.bytes.toString('base64') }
       try {
-        const added = addedCatalogueUrl(id)
-        const bytes = added
-          ? (await readGitCatalogueFile(added, path, IMAGE_MAX_BYTES, git)).bytes
-          : await fetchBytes(`${urls.base}/${path}`, IMAGE_MAX_BYTES)
+        let bytes: Buffer
+        if (addedCatalogueUrl(id)) {
+          // From the repository the catalogue was last read from: one fetch per refresh, not per image.
+          if (!addedRepositories.has(id)) await refreshOne(id)
+          const repository = addedRepositories.get(id)
+          if (!repository) return { ok: false, message: errors.get(id) ?? 'The catalogue could not be read.' }
+          bytes = await readFetchedFile(repository, path, IMAGE_MAX_BYTES, git)
+        } else bytes = await fetchBytes(`${urls.base}/${path}`, IMAGE_MAX_BYTES)
         const { createHash } = await import('node:crypto')
         if (createHash('sha256').update(bytes).digest('hex') !== sha256)
           return { ok: false, message: 'The image’s bytes are not the ones the catalogue lists.' }
+        images.set(sha256, { mime, bytes })
+        imageBytes += bytes.byteLength
+        // The oldest go first once the kept images pass their budget.
+        for (const [digest, image] of images) {
+          if (imageBytes <= IMAGE_CACHE_MAX_BYTES) break
+          images.delete(digest)
+          imageBytes -= image.bytes.byteLength
+        }
         return { ok: true, mime, base64: bytes.toString('base64') }
       } catch (error) {
         return { ok: false, message: (error as Error).message }
@@ -821,20 +1053,30 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
 
     async add(url) {
       const trimmed = url.trim()
-      const id = addedCatalogueId(trimmed)
+      // The community catalogue, removed before, comes back by its name.
+      const id = trimmed === COMMUNITY_CATALOGUE ? COMMUNITY_CATALOGUE : addedCatalogueId(trimmed)
       if (isKnownCatalogue(id)) {
         await refreshOne(id)
         const view = (await catalogues()).find((catalogue) => catalogue.id === id)!
         return { ok: true, catalogue: view }
       }
-      let catalogue: Catalogue
+      let read: { catalogue: Catalogue; fetched?: FetchedCommit }
       try {
-        catalogue = await fetchCatalogue(id)
+        read = await fetchCatalogue(id)
       } catch (error) {
         return { ok: false, message: `Studio could not read a catalogue at ${trimmed}: ${(error as Error).message}` }
       }
-      await writeAddedCatalogues(deps.dataDir, (urlsNow) => [...urlsNow.filter((other) => other !== trimmed), trimmed])
-      await writeCatalogueCache(deps.dataDir, (cache) => ({ ...cache, [id]: { fetchedAt: now(), catalogue } }))
+      if (id === COMMUNITY_CATALOGUE) await writeCommunityRemoved(deps.dataDir, false)
+      else
+        await writeAddedCatalogues(deps.dataDir, (urlsNow) => [
+          ...urlsNow.filter((other) => other !== trimmed),
+          trimmed,
+        ])
+      await writeCatalogueCache(deps.dataDir, (cache) => ({
+        ...cache,
+        [id]: { fetchedAt: now(), catalogue: read.catalogue },
+      }))
+      await keepRepository(id, read.fetched)
       errors.delete(id)
       const view = (await catalogues()).find((candidate) => candidate.id === id)!
       return { ok: true, catalogue: view }
@@ -842,20 +1084,34 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
 
     async remove(url) {
       const trimmed = url.trim()
-      if (!readAddedCataloguesSync(deps.dataDir).includes(trimmed))
-        return { ok: false, message: 'That catalogue was not added here.' }
-      await writeAddedCatalogues(deps.dataDir, (urlsNow) => urlsNow.filter((other) => other !== trimmed))
-      const id = addedCatalogueId(trimmed)
+      const id = trimmed === COMMUNITY_CATALOGUE ? COMMUNITY_CATALOGUE : addedCatalogueId(trimmed)
+      if (id === COMMUNITY_CATALOGUE) {
+        if (!isKnownCatalogue(id)) return { ok: false, message: 'The community catalogue was removed already.' }
+        await writeCommunityRemoved(deps.dataDir, true)
+      } else {
+        if (!readAddedCataloguesSync(deps.dataDir).includes(trimmed))
+          return { ok: false, message: 'That catalogue was not added here.' }
+        await writeAddedCatalogues(deps.dataDir, (urlsNow) => urlsNow.filter((other) => other !== trimmed))
+      }
       await writeCatalogueCache(deps.dataDir, (cache) => {
         const next = { ...cache }
         delete next[id]
         return next
       })
+      await keepRepository(id, undefined)
       errors.delete(id)
       return { ok: true }
     },
 
-    installFrom: (from) => ('git' in from ? installFromGit(from) : installFromCatalogue(from.catalogue, from.id)),
+    // A catalogue install names the release the person was shown, when it can.
+    installFrom: (from) =>
+      'git' in from
+        ? installFromGit(from)
+        : installFromCatalogue(
+            from.catalogue,
+            from.id,
+            from.version ? { version: from.version, ...(from.commit ? { commit: from.commit } : {}) } : undefined,
+          ),
 
     update,
 
@@ -877,7 +1133,8 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
               ...(heldUpdate.growth ? { growth: heldUpdate.growth } : {}),
             }
           else if (found) {
-            const paused = ownerPause(found.record, found.entry)
+            // An owner Studio cannot read now is not shown as a changed one.
+            const paused = currentOwnerId(found.entry) !== undefined && ownerPause(found.record, found.entry)
             update = paused ? { version: found.release.version, held: 'owner' } : { version: found.release.version }
           }
         }
@@ -887,6 +1144,8 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
 
     async forget(key) {
       await writeInstallRecord(deps.dataDir, key, null)
+      // Its next install starts afresh: a version re-pointed since is not held against it.
+      await forgetLockedReleases(deps.dataDir, key)
       await writeHeldUpdates(deps.dataDir, (held) => {
         if (!(key in held)) return null
         const next = { ...held }
@@ -910,6 +1169,12 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         clearTimeout(first)
         clearInterval(timer)
       }
+    },
+
+    async dispose() {
+      const kept = [...addedRepositories.values()]
+      addedRepositories.clear()
+      await Promise.all(kept.map((repository) => repository.dispose()))
     },
   }
 }

@@ -4,9 +4,13 @@ import { join } from 'node:path'
 
 import {
   readKillList,
+  readOwnerRecords,
+  readReleaseLock,
   type Catalogue,
   type CatalogueSource,
   type KillList,
+  type OwnerRecords,
+  type ReleaseLock,
 } from '../../../../packages/extension-sdk/src/catalogue'
 
 // What the catalogue keeps in a Studio's data folder, beside the approvals:
@@ -41,8 +45,18 @@ export type ExtensionInstallRecord = {
 /** One version as Studio first saw it: a listed version never moves. */
 export type LockedRelease = { commit: string; contentHash: string; firstSeenAt: number }
 
-/** An update left uninstalled for the person: it asks for more, moved, or its owner changed. */
-export type HeldUpdate = { version: string; reason: 'access' | 'repository' | 'owner'; growth?: string[] }
+/**
+ * An update left uninstalled for the person: it asks for more, moved, or its
+ * owner changed. It names the exact release that was checked, so reviewing it
+ * installs that release and no other.
+ */
+export type HeldUpdate = {
+  version: string
+  reason: 'access' | 'repository' | 'owner'
+  growth?: string[]
+  commit?: string
+  contentHash?: string
+}
 
 export type CachedCatalogue = { fetchedAt: number; catalogue: Catalogue }
 
@@ -53,6 +67,8 @@ const FILES = {
   lock: 'extension-release-lock.json',
   killList: 'extension-kill-list.json',
   held: 'extension-updates.json',
+  owners: 'extension-owners.json',
+  remoteLock: 'extension-catalogue-release-lock.json',
 } as const
 
 function readJsonSync(dataDir: string, name: string): unknown {
@@ -89,18 +105,47 @@ async function update<T>(dataDir: string, name: string, read: () => T, change: (
 
 // ── Catalogues the person added ─────────────────────────────────────────────
 
-export function readAddedCataloguesSync(dataDir: string): string[] {
+type AddedCatalogues = { added: string[]; communityRemoved?: true }
+
+function readAddedSync(dataDir: string): AddedCatalogues {
   const raw = readJsonSync(dataDir, FILES.added)
-  if (!isRecord(raw) || !Array.isArray(raw.added)) return []
-  return raw.added.filter((url): url is string => typeof url === 'string').slice(0, 64)
+  if (!isRecord(raw)) return { added: [] }
+  const added = Array.isArray(raw.added)
+    ? raw.added.filter((url): url is string => typeof url === 'string').slice(0, 64)
+    : []
+  return { added, ...(raw.communityRemoved === true ? { communityRemoved: true as const } : {}) }
+}
+
+export function readAddedCataloguesSync(dataDir: string): string[] {
+  return readAddedSync(dataDir).added
 }
 
 export function writeAddedCatalogues(dataDir: string, change: (urls: string[]) => string[]): Promise<void> {
-  return update<{ added: string[] }>(
+  return update<AddedCatalogues>(
     dataDir,
     FILES.added,
-    () => ({ added: readAddedCataloguesSync(dataDir) }),
-    (current) => ({ added: change(current.added) }),
+    () => readAddedSync(dataDir),
+    (current) => ({
+      ...current,
+      added: change(current.added),
+    }),
+  )
+}
+
+/** The community catalogue is there from the start, until the person removes it. */
+export function readCommunityRemovedSync(dataDir: string): boolean {
+  return readAddedSync(dataDir).communityRemoved === true
+}
+
+export function writeCommunityRemoved(dataDir: string, removed: boolean): Promise<void> {
+  return update<AddedCatalogues>(
+    dataDir,
+    FILES.added,
+    () => readAddedSync(dataDir),
+    (current) => {
+      const { communityRemoved: _was, ...rest } = current
+      return removed ? { ...rest, communityRemoved: true } : rest
+    },
   )
 }
 
@@ -153,6 +198,21 @@ export function readReleaseLockSync(dataDir: string): Record<string, Record<stri
   return isRecord(raw) ? (raw as Record<string, Record<string, LockedRelease>>) : {}
 }
 
+/** Forget every version of one key: an uninstall starts its next install afresh. */
+export function forgetLockedReleases(dataDir: string, key: string): Promise<void> {
+  return update(
+    dataDir,
+    FILES.lock,
+    () => readReleaseLockSync(dataDir),
+    (lock) => {
+      if (!(key in lock)) return null
+      const next = { ...lock }
+      delete next[key]
+      return next
+    },
+  )
+}
+
 /**
  * Record each version the first time it is seen; a version seen before keeps
  * its first record, whatever is seen now.
@@ -196,6 +256,38 @@ export function writeKillListCache(dataDir: string, list: KillList): Promise<voi
     FILES.killList,
     () => null,
     () => list,
+  )
+}
+
+// ── The owner records and the catalogue's release lock ──────────────────────
+// Their last copies, so a restart with no network still knows who owns what
+// and which versions are pinned.
+
+export function readOwnerRecordsCacheSync(dataDir: string): OwnerRecords | null {
+  const raw = readJsonSync(dataDir, FILES.owners)
+  return raw === null ? null : readOwnerRecords(raw)
+}
+
+export function writeOwnerRecordsCache(dataDir: string, records: OwnerRecords): Promise<void> {
+  return update(
+    dataDir,
+    FILES.owners,
+    () => null,
+    () => records,
+  )
+}
+
+export function readRemoteReleaseLockCacheSync(dataDir: string): ReleaseLock | null {
+  const raw = readJsonSync(dataDir, FILES.remoteLock)
+  return raw === null ? null : readReleaseLock(raw)
+}
+
+export function writeRemoteReleaseLockCache(dataDir: string, lock: ReleaseLock): Promise<void> {
+  return update(
+    dataDir,
+    FILES.remoteLock,
+    () => null,
+    () => lock,
   )
 }
 

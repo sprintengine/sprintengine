@@ -2391,8 +2391,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       lifecycleCommand('extension.installFrom', context, commandId, (lifecycle) =>
         lifecycle.catalogue.installFrom(from),
       ),
-    'extension.update': ({ moduleId, commandId }, context) =>
-      lifecycleCommand('extension.update', context, commandId, (lifecycle) => lifecycle.catalogue.update(moduleId)),
+    'extension.update': ({ moduleId, version, commandId }, context) =>
+      lifecycleCommand('extension.update', context, commandId, (lifecycle) =>
+        lifecycle.catalogue.update(moduleId, version),
+      ),
     // Development folders: the owner's, by their place on this disk.
     'extension.devFolders': async () => {
       const lifecycle = options.modules?.lifecycle()

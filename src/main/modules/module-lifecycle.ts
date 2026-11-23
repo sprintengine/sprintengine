@@ -361,12 +361,15 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     installChecked: (dir, options) => oneAtATime(() => installFolder(dir, options)),
     installed: async () => {
       const { modules, waiting = [] } = await discoverUserModules(deps.moduleRoot(), standingContext())
+      const overrides = readModuleOverridesSync(deps.dataDir)
       return [...modules, ...waiting].map((module) => ({
         key: module.key,
         manifest: module.extension,
         approval: module.standing.approval.state,
         development: module.development !== undefined,
         killed: module.standing.killed !== undefined,
+        // An installed extension is on unless the person switched it off.
+        enabled: overrides[module.key] !== false,
       }))
     },
     // A killed version stops, and what it handed agents is taken back.

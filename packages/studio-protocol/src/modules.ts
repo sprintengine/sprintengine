@@ -316,11 +316,21 @@ export type StudioModulesMethodMap = {
           strippedLinks: string[]
           leftOut?: string[]
         }
-      | { ok: false; message: string; issues?: Array<{ path: string; message: string }> }
+      | {
+          ok: false
+          message: string
+          issues?: Array<{ path: string; message: string }>
+          /** A Claude Code plugin marketplace's plugin folders, when the repository's root is one: name one as `path`. */
+          folders?: string[]
+        }
   }
-  /** Install the newer release the catalogue an extension came from lists, now. */
+  /**
+   * Install the newer release the catalogue an extension came from lists:
+   * `version` is the one the person was shown, refused when the catalogue
+   * lists another now.
+   */
   'extension.update': {
-    params: { moduleId: string; commandId: string }
+    params: { moduleId: string; version?: string; commandId: string }
     result:
       | { ok: true; moduleId: string; approval: StudioExtensionApproval; strippedLinks: string[] }
       | { ok: false; message: string }
@@ -410,9 +420,13 @@ export type StudioModulesTopicMap = {
   'extension.settingsChanged': { params: Record<string, never>; payload: { moduleId: string }; stream: 'push' }
 }
 
-/** Where `extension.installFrom` installs from: a catalogue's entry, or a git URL. */
+/**
+ * Where `extension.installFrom` installs from: a catalogue's entry, or a git
+ * URL. A catalogue install names the `version` (and `commit`) the person was
+ * shown, so a catalogue that lists another since is refused, not installed.
+ */
 export type StudioExtensionInstallSource =
-  { catalogue: string; id: string } | { git: string; ref?: string; path?: string }
+  { catalogue: string; id: string; version?: string; commit?: string } | { git: string; ref?: string; path?: string }
 
 /** A manifest id, as the module kernel accepts one. */
 const MAX_MODULE_ID_CHARS = 200
@@ -612,10 +626,34 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
       }
       if (!shortText(source.catalogue, MAX_URL_CHARS + 4) || !shortText(source.id, MAX_MODULE_ID_CHARS))
         return studioParamsRefused('"from" is `{ catalogue, id }` or `{ git, ref?, path? }`.')
-      return studioParams({ from: { catalogue: source.catalogue, id: source.id }, commandId: command.params })
+      if (source.version !== undefined && !shortText(source.version, 64))
+        return studioParamsRefused('"from.version" is the version the person was shown.')
+      if (source.commit !== undefined && (typeof source.commit !== 'string' || !/^[0-9a-f]{40}$/.test(source.commit)))
+        return studioParamsRefused('"from.commit" is the release\'s commit.')
+      return studioParams({
+        from: {
+          catalogue: source.catalogue,
+          id: source.id,
+          ...(source.version !== undefined ? { version: source.version as string } : {}),
+          ...(source.commit !== undefined ? { commit: source.commit as string } : {}),
+        },
+        commandId: command.params,
+      })
     },
   },
-  'extension.update': { ...lifecycle, params: namedModule },
+  'extension.update': {
+    ...lifecycle,
+    params: (value) => {
+      const named = namedModule(value)
+      if (!named.ok) return named
+      if (value.version !== undefined && !shortText(value.version, 64))
+        return studioParamsRefused('"version" is the version the person was shown.')
+      return studioParams({
+        ...named.params,
+        ...(value.version !== undefined ? { version: value.version as string } : {}),
+      })
+    },
+  },
   // A development folder is a path on this machine, and what runs from it is
   // the owner's to choose: listing them names paths, so it is the owner's too.
   'extension.devFolders': {
