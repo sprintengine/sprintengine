@@ -325,8 +325,9 @@ const moduleLifecycle = serverHost
         if (scheduledAgentsError) return { ok: false, message: scheduledAgentsError.message }
         return { ok: true }
       },
-      // Kill-list and update notices ring the bell of every client.
-      catalogue: { notify: (notice) => services.moduleHub.deliverNotification(catalogueNotification(notice)) },
+      // Kill-list and update notices ring the bell of every client, and are
+      // kept for one that follows the bell later.
+      catalogue: { notify: (notice) => services.moduleHub.deliverKeptNotification(catalogueNotification(notice)) },
       view: () => {
         const overrides = readModuleEnablementOverrides()
         return {

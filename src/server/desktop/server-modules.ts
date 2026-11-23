@@ -174,8 +174,9 @@ export function createServerModules(deps: {
     // An extension's provider may not take a built-in's id.
     protectedProviderIds: bundledRegistryIds,
     warn: (message) => deps.log(`[extensions] ${message}`),
-    // Kill-list and update notices ring the bell of every client.
-    catalogue: { notify: (notice) => hub.deliverNotification(catalogueNotification(notice)) },
+    // Kill-list and update notices ring the bell of every client, and are
+    // kept for one that follows the bell later.
+    catalogue: { notify: (notice) => hub.deliverKeptNotification(catalogueNotification(notice)) },
     view: () => {
       const current = load
       if (!current) return null

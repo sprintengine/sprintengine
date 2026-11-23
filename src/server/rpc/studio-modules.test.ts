@@ -143,6 +143,25 @@ test('the bell sends the kept rows first, then each new one, and again on a new 
   )
 })
 
+test('a row the Studio raised while no client followed the bell is sent to the next one', async () => {
+  const { hub, listening } = hubWithListening()
+  hub.readRecentFrom(() => [{ ...row('k1-0', 'Failed to load'), emittedAt: 1 }])
+  // A kill found while every window was closed.
+  hub.deliverKeptNotification({ ...row('catalogue-1', 'Notes was switched off'), emittedAt: 2 })
+  const { client } = await clientOver(hub)
+  const subscribed = listening()
+  client.send({ t: 'sub', id: 'bell', topic: 'extension.notifications', params: {} })
+  await subscribed
+  const sent = [
+    await client.next((frame) => frame.t === 'push' && frame.sub === 'bell'),
+    await client.next((frame) => frame.t === 'push' && frame.sub === 'bell'),
+  ]
+  assert.deepEqual(
+    sent.map((frame) => frame.t === 'push' && (frame.payload as StudioModuleNotification).id),
+    ['k1-0', 'catalogue-1'],
+  )
+})
+
 test('a paired client needs extensions:read, and holds it only when granted', async () => {
   const hub = createStudioModuleHub()
   const without = await clientOver(hub, (started) => pairFakeClient(started.auth, 'app', ['conversation:read']))
