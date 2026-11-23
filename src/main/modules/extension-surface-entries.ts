@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { existsSync, lstatSync, readFileSync } from 'fs'
+import { join } from 'path'
 
 import {
   buildSurfaceModules,
@@ -7,7 +8,6 @@ import {
   type SourceProblem,
   type SurfaceModule,
 } from '../../../packages/extension-sdk/src/source-modules'
-import { isDevelopmentSkippedPath } from '../../../packages/extension-sdk/src/module-files'
 
 import type {
   ExtensionContributionsResult,
@@ -129,6 +129,17 @@ export type SurfaceModulesAnswer =
  * folder's as it is on disk (its approval is not bound to its code). Each
  * TypeScript or JSX file is transpiled as it is read (source-modules.ts).
  */
+/** Whether any folder on `path`'s way down from `root` is a symbolic link. */
+function throughLink(root: string, path: string): boolean {
+  const segments = path.split('/')
+  let at = root
+  for (const segment of segments.slice(0, -1)) {
+    at = join(at, segment)
+    if (lstatSync(at).isSymbolicLink()) return true
+  }
+  return false
+}
+
 export async function readSurfaceModules(
   installed: InstalledModule,
   point: StudioExtensionSurfacePoint,
@@ -149,12 +160,14 @@ export async function readSurfaceModules(
     try {
       // Only a file among those it was read with: a development folder's
       // digests are taken over what it serves (no node_modules, no dotted
-      // folders), an installed one's are what was approved.
+      // folders, nothing through a link), an installed one's are what was
+      // approved. A development folder's file is read again now, and never
+      // through a folder that became a link since.
       const expected = verified[path]
-      if (expected !== undefined || development) {
+      if (expected !== undefined) {
         const absolute = resolveContainedEntry(installed.moduleRoot, path, 'entry')
         const info = lstatSync(absolute)
-        if (info.isFile() && (expected !== undefined || !isDevelopmentSkippedPath(path))) {
+        if (info.isFile() && !(development && throughLink(installed.moduleRoot, path))) {
           const bytes = readFileSync(absolute)
           if (!development && createHash('sha256').update(bytes).digest('hex') !== expected) changed = true
           else text = bytes.toString('utf8')
