@@ -133,7 +133,6 @@ const agentAccess = (contributes: Partial<typeof NO_CONTRIBUTIONS>, files: Recor
     {
       permissions: [],
       tier: 'declarative',
-      icon: 'assets/icon.png',
       contributes: { ...NO_CONTRIBUTIONS, skills: [{ id: 'review', path: 'skills/review' }], ...contributes },
     },
     files,
@@ -172,13 +171,29 @@ test('a local MCP server is bound to its command, arguments, environment and the
     [changed],
     'a file it may run was added',
   )
-  // Not what it runs: the manifest's other fields, a skill's words, the icon.
+  // Every file it ships counts, a skill's folder and an image included: a
+  // command may run a script kept beside a SKILL.md, or a file named like an
+  // image. Only the signature does not.
   for (const files of [
     { ...FILES, 'extension.json': 'm2' },
     { ...FILES, 'skills/review/SKILL.md': 'k2' },
     { ...FILES, 'assets/icon.png': 'i2' },
   ])
-    assert.deepEqual(accessGrowth(approved, agentAccess({ mcpServers: [STDIO] }, files)), [])
+    assert.deepEqual(accessGrowth(approved, agentAccess({ mcpServers: [STDIO] }, files)), [changed])
+  assert.deepEqual(
+    accessGrowth(approved, agentAccess({ mcpServers: [STDIO] }, { ...FILES, 'extension.sig': 'sig2' })),
+    [],
+  )
+  // A command pointing into a skill's folder: the code it runs changing asks again.
+  const inSkill = { ...STDIO, args: ['${extensionPath}/skills/review/server.js'] }
+  const skillFiles = { ...FILES, 'skills/review/server.js': 'c1' }
+  assert.deepEqual(
+    accessGrowth(
+      agentAccess({ mcpServers: [inSkill] }, skillFiles),
+      agentAccess({ mcpServers: [inSkill] }, { ...skillFiles, 'skills/review/server.js': 'c2' }),
+    ),
+    [changed],
+  )
   assert.deepEqual(accessGrowth(approved, agentAccess({ mcpServers: [{ ...STDIO, id: 'other' }] })), [
     'the local MCP server "other"',
   ])

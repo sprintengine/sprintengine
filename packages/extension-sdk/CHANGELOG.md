@@ -23,7 +23,7 @@ extension built against 3.x must be rewritten to this one.
     (`url`: https, or plain http to localhost). Agents see it as
     `<publisher>_<id>_<server id>`. A hosted one asks for no approval. A local
     one is approved at install, bound to its command, arguments, environment
-    and the extension's files it may run, so an update that changes any of them
+    and every file the extension ships, so an update that changes any of them
     asks again.
   - A provider (`{ id, name, baseUrl, chatCompletionsPath?, modelsPath?,
     models, apiKey? }`) is an OpenAI-compatible endpoint, known as

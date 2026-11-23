@@ -5,10 +5,7 @@ import { join } from 'node:path'
 
 import { tierRank, type ExtensionTier } from '../../../packages/extension-sdk/src/manifest-schema'
 import { extensionHookApprovalLines, isExtensionHookPoint } from '../../../packages/extension-sdk/src/hooks'
-import {
-  EXTENSION_MANIFEST_FILENAME,
-  EXTENSION_SIGNATURE_FILENAME,
-} from '../../../packages/extension-sdk/src/extension-manifest'
+import { EXTENSION_SIGNATURE_FILENAME } from '../../../packages/extension-sdk/src/extension-manifest'
 import { providerOrigin } from '../../../packages/extension-sdk/src/agent-contributions'
 import type { ModuleFileDigests } from '../../shared/modules/manifest'
 import type { ExtensionManifest } from '../../shared/modules/third-party-manifest'
@@ -27,8 +24,8 @@ import type { ExtensionManifest } from '../../shared/modules/third-party-manifes
 // agent reads) and a hosted MCP server (a URL an agent reaches) are listed at
 // install and ask nothing. A local MCP server is a command the agents start on
 // this machine: approved once, at install, with its command, arguments and
-// environment shown, and bound into its entry here with the extension's files
-// it may run, so an update that changes any of them asks again. A model
+// environment shown, and bound into its entry here with every file the
+// extension ships, so an update that changes any of them asks again. A model
 // provider receives the key the person enters: it asks once, naming the origin
 // the key goes to, and again if an update moves it to another.
 //
@@ -68,8 +65,8 @@ export type ExtensionAccess = {
   hooks: string[]
   /**
    * Its local (stdio) MCP servers, as `<server>=<digest>`, sorted: the digest
-   * covers the command, its arguments, its environment and the extension's
-   * files it may run (`localServerRunDigest`).
+   * covers the command, its arguments, its environment and every file the
+   * extension ships (`localServerRunDigest`).
    */
   localServers: string[]
   /** Its model providers, as `<provider>=<origin its key is sent to>`, sorted. */
@@ -78,23 +75,19 @@ export type ExtensionAccess = {
 
 export type ExtensionApprovalRecord = { fingerprint: string; access: ExtensionAccess }
 
-type AccessManifest = Pick<
-  ExtensionManifest,
-  'permissions' | 'tier' | 'main' | 'background' | 'contributes' | 'icon' | 'cover' | 'screenshots'
->
+type AccessManifest = Pick<ExtensionManifest, 'permissions' | 'tier' | 'main' | 'background' | 'contributes'>
 
 /**
  * The digest a local MCP server's approval is bound to: its command, its
  * arguments, its environment, and the extension's files it may run. Studio
- * cannot tell which of them a command reads, so every file counts but the
- * manifest (whose relevant part is the command itself), the signature, the
- * listing's images and the skills' folders, which hold words for agents.
- * Without digests (files that cannot be read) it binds to that, so it never
- * matches an approval.
+ * cannot tell which of them a command reads, and a command may run any of
+ * them (a script beside a skill's SKILL.md, a file named like an image), so
+ * every file counts but the signature, extension.json included. Without
+ * digests (files that cannot be read) it binds to that, so it never matches an
+ * approval.
  */
 export function localServerRunDigest(
   server: ExtensionManifest['contributes']['mcpServers'][number],
-  manifest: AccessManifest,
   files: ModuleFileDigests | undefined,
 ): string {
   const hash = createHash('sha256')
@@ -103,16 +96,8 @@ export function localServerRunDigest(
   for (const variable of [...(server.env ?? [])].sort((a, b) => a.name.localeCompare(b.name)))
     hash.update(`env:${variable.name}=${variable.value}\0`)
   if (!files) return `sha256-${hash.update('files:unavailable').digest('hex')}`
-  const skipped = new Set<string>([
-    EXTENSION_MANIFEST_FILENAME,
-    EXTENSION_SIGNATURE_FILENAME,
-    ...(manifest.icon ? [manifest.icon] : []),
-    ...(manifest.cover ? [manifest.cover] : []),
-    ...(manifest.screenshots ?? []),
-  ])
-  const skillFolders = manifest.contributes.skills.map((skill) => `${skill.path.replace(/\/+$/, '')}/`)
   for (const path of Object.keys(files).sort()) {
-    if (skipped.has(path) || skillFolders.some((folder) => path.startsWith(folder))) continue
+    if (path === EXTENSION_SIGNATURE_FILENAME) continue
     hash.update(`file:${path}=${files[path]}\0`)
   }
   return `sha256-${hash.digest('hex')}`
@@ -135,7 +120,7 @@ export function extensionAccess(manifest: AccessManifest, files?: ModuleFileDige
     hooks: [...new Set(manifest.contributes.hooks.map((hook) => hook.point))].sort(),
     localServers: manifest.contributes.mcpServers
       .filter((server) => server.transport === 'stdio')
-      .map((server) => `${server.id}=${localServerRunDigest(server, manifest, files)}`)
+      .map((server) => `${server.id}=${localServerRunDigest(server, files)}`)
       .sort(),
     providers: manifest.contributes.providers
       .map((provider) => `${provider.id}=${providerOrigin(provider.baseUrl)}`)

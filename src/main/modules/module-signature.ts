@@ -107,10 +107,7 @@ export function extensionContentSync(root: string): ExtensionContentResult {
 export function classifyExtension(
   root: string,
   key: string,
-  manifest: Pick<
-    ExtensionManifest,
-    'permissions' | 'tier' | 'main' | 'background' | 'contributes' | 'icon' | 'cover' | 'screenshots'
-  >,
+  manifest: Pick<ExtensionManifest, 'permissions' | 'tier' | 'main' | 'background' | 'contributes'>,
   ctx: ExtensionStandingContext,
 ): ExtensionStanding {
   const scan = computeModuleFileDigestsSync(root)

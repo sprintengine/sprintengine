@@ -183,10 +183,10 @@ answers the least tier a manifest needs.
     `"command": "node", "args": ["${extensionPath}/dist/server.mjs"]`. Agents
     see the server as `<publisher>_<id>_<server id>`. A hosted server asks
     for no approval. A local one is approved at install with its command,
-    arguments and environment shown, and is bound to them and to the
-    extension's files it may run (all of them but extension.json, its images
-    and its skills' folders), so an update that changes any of them asks again;
-    until then agents do not get it.
+    arguments and environment shown, and is bound to them and to every file
+    the extension ships (all of them but extension.sig: Studio cannot tell
+    which files a command reads), so an update that changes any of them asks
+    again; until then agents do not get it.
   - A provider is an OpenAI-compatible endpoint: `baseUrl` (https, or plain
     http to localhost), the paths on it (`chatCompletionsPath`, by default
     `/v1/chat/completions`, and `modelsPath` for a live model list), the

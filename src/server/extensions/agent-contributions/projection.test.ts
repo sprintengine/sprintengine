@@ -238,11 +238,15 @@ test('a local MCP server is approved once at install; a changed command asks aga
     expect.objectContaining({ id: 'local_tools_search', command: 'node' }),
   ])
 
-  // An update that changes only a skill's words keeps the approval and the server.
-  const quiet = await lifecycle.install(
+  // An update that changes only a skill's words asks again too: the server is
+  // bound to every file the extension ships, its skills' folders included.
+  const reworded = await lifecycle.install(
     source({ mcpServers: [stdio()], skills }, { 'skills/review/SKILL.md': `${SKILL}More.\n` }),
   )
-  expect(quiet).toMatchObject({ approval: { state: 'approved' } })
+  expect(reworded).toMatchObject({ approval: { state: 'pending' } })
+  expect(launchExtensionContributions(dataDir).servers).toEqual([])
+  if (!reworded.ok || reworded.approval.state !== 'pending') throw new Error('expected a pending approval')
+  await lifecycle.approve(KEY, reworded.approval.fingerprint)
   expect(launchExtensionContributions(dataDir).servers).toHaveLength(1)
 
   // Changed arguments ask again, and the server is retracted until then.
