@@ -284,14 +284,17 @@ a commit's folder written out in `packages/extension-sdk/src/git-source.ts`, the
 `src/main/modules/module-lifecycle.ts`), `catalogue-checkout.ts`, `catalogue-fetch.ts` (the addresses Studio
 reads, `EXTENSION_CATALOGUE_BASE`), `catalogue-files.ts` (what it keeps in the data folder), `kill-list.ts`
 and `claude-plugin-extension.ts`; a killed version is held back in `src/main/modules/module-signature.ts`. The
-page: `src/renderer/src/components/settings/ExtensionCatalogueBrowse.tsx`, from
-`src/renderer/src/components/settings/ModulesSettingsTab.tsx`; install links in
+page: `src/renderer/src/components/settings/ExtensionCatalogueBrowse.tsx` and the git URL dialog
+`src/renderer/src/components/settings/GitInstallDialog.tsx`, from
+`src/renderer/src/components/settings/ModulesSettingsTab.tsx`, over `windowCatalogueLifecycle` in
+`src/renderer/src/studio/moduleLifecycle.ts` (a browser tab too); notices kept for a client that was away in
+`src/server/rpc/studio-modules.ts`; install links in
 `src/shared/extension-install-link.ts` and `src/main/extension-link-router.ts`. Wire: `extension.catalogues`,
 `extension.catalogueEntry`, `extension.catalogueImage`, `extension.catalogueAdd`, `extension.catalogueRemove`,
 `extension.installFrom`, `extension.update` (`packages/studio-protocol/src/modules.ts`). Tests:
 `packages/extension-sdk/test/catalogue.test.ts`, `src/server/extensions/catalogue/extension-catalogue.test.ts`,
 `src/shared/extension-install-link.test.ts`, `src/main/extension-link-router.test.ts`,
-`src/renderer/src/components/settings/ModulesSettingsTab.test.tsx`.
+`src/renderer/src/components/settings/ModulesSettingsTab.test.tsx`, `src/renderer/src/studio/moduleLifecycle.test.ts`.
 
 **Agent hooks** (an extension's worker checks, changes or refuses what agents and Studio are about to do): the
 points in `packages/extension-sdk/src/hooks.ts`, the chain in `src/server/extensions/hooks/extension-hooks.ts`

@@ -658,7 +658,7 @@ export const KILL_LIST_FIELDS: ObjectNode = {
     ),
     extensions: field(
       { kind: 'array', max: KILL_LIST_ENTRY_LIMIT, items: KILL_ENTRY_NODE },
-      'The killed extensions and versions.',
+      'The killed extensions and versions. An id listed twice kills what every entry for it kills.',
       { required: true },
     ),
   },

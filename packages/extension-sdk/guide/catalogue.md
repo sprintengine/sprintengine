@@ -7,7 +7,8 @@ for. Settings → Extensions → Browse shows them.
 - **Official**: Studio's own catalogue. Its extensions carry the Official
   label, and only it may list the reserved publishers and ids.
 - **Community**: the community catalogue. Each extension carries the label
-  Community · its owner.
+  Community · its owner. It is there from the start; the person can remove
+  it, and add it back.
 - **Catalogues you add**: any git repository holding a `catalogue.json` at its
   root, read at its `main` branch. Studio asks before it adds one. Their
   extensions carry the catalogue's name and the owner in its git URL.
@@ -50,16 +51,24 @@ and the kill list are read over HTTPS from Studio's catalogue repository.
   starting `studio` are reserved, as are ids starting `studio-` or
   `sprintengine-`: they install only from the official catalogue, and any other
   catalogue that lists one is refused whole.
-- **A listed version never moves.** The first time Studio sees a version, it
-  records its commit and content hash, and the catalogue's release lock does
-  the same. A tag moved later, or a catalogue re-pointing a version, is
-  refused: publish a new version instead.
-- **An install stays with its catalogue.** Studio records the catalogue each
-  extension came from and updates it only from there. Installing it from
-  another source means removing it first.
+- **A listed version never moves.** The first time Studio sees a version in
+  the catalogue an extension was installed from, it records its commit and
+  content hash, and the catalogue's release lock does the same. A catalogue
+  re-pointing a version is refused: publish a new version instead. Removing
+  the extension forgets what this Studio recorded for it. A git URL install
+  is the person's own choice of commit, so it is held only to the
+  catalogue's release lock.
+- **An install stays with its source.** Studio records where each extension
+  came from (a catalogue, or a git URL's repository and folder) and updates
+  it only from there. Installing it from another catalogue, another kind of
+  source or another repository or folder means removing it first.
+- **What installs is what was checked.** An install names the release the
+  person was shown, and an update the release that was checked and held
+  back. A catalogue that lists another by the time it installs is refused.
 - **Owners are pinned.** Studio records the owner's numeric id at the first
-  install. When the owner is renamed or the repository changes hands, updates
-  pause until the extension is installed again.
+  install. When the owner is renamed or the repository changes hands, or
+  Studio cannot tell who owns it now, updates pause until the extension is
+  installed again (or, for the last, until Studio can tell).
 
 ## Updates
 
@@ -73,14 +82,39 @@ Studio checks for updates periodically. It installs the newest release whose
   notice.
 
 A release a community or added catalogue lists is installed on its own only
-once it has been listed for 12 hours, so a takedown has time to land.
+once it has been listed for 12 hours, so a takedown has time to land. An
+extension the person switched off is not updated on its own.
 
 ## The kill list
 
 An extension, or some of its versions, that turns out harmful is put on the
 kill list. Studio reads the list periodically; a killed version is switched
 off, everything it added (surfaces, tools, skills, MCP servers, providers) is
-retracted, and Settings says why. A killed version cannot be installed.
+retracted, and Settings says why. Studio reads the list again before every
+install and update, and a killed version cannot be installed. Without a list
+read now, an install uses the copy Studio kept; with none kept, nothing
+installs.
+
+## Listing policy
+
+A catalogue lists an extension for everyone who reads it, so Studio's
+catalogues hold every listing to these rules:
+
+- **Free to use.** A listed extension installs and runs without payment. It
+  may connect to a paid service the person already uses.
+- **The publisher is the owner.** An extension is listed under the account
+  that owns its repository, and nobody else's.
+- **No impersonation.** A name, icon or description must not pass the
+  extension off as Studio's own, or as another publisher's.
+- **No tracking.** An extension sends nothing about the person or their work
+  anywhere they did not ask it to, and says what it sends.
+- **No concealed code.** What runs is in the listed commit, readable:
+  nothing minified past reading, obfuscated, or fetched and run later.
+- **No explicit content.** Listings and what extensions show are fit for a
+  workplace.
+- **Reports and removal.** Report a listing that breaks a rule by opening an
+  issue on the catalogue repository. A listing that breaks one is removed,
+  and one that harms people who installed it is put on the kill list.
 
 ## Install links
 
@@ -151,7 +185,7 @@ added asks first.
 |---|---|---|---|---|
 | `killListVersion` | `1` | yes | 0.13.0 | The kill list format. |
 | `generatedAt` | string | yes | 0.13.0 | When the list was written. Studio never replaces a list with an older one. |
-| `extensions` | object[] (at most 4096) | yes | 0.13.0 | The killed extensions and versions. |
+| `extensions` | object[] (at most 4096) | yes | 0.13.0 | The killed extensions and versions. An id listed twice kills what every entry for it kills. |
 | `extensions[].id` | string | yes | 0.13.0 | The killed extension’s install key. |
 | `extensions[].versions` | string[] (at most 256) |  | 0.13.0 | The versions killed. Absent, every version is. |
 | `extensions[].reason` | string | yes | 0.13.0 | Why, as Studio tells the person. |
