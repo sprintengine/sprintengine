@@ -77,11 +77,12 @@ a **development folder**: Studio loads it from where it is, under
 running and prints what happens; add `--json` (`npm run dev -- --json`) for one
 JSON object per line. The `dev-loop` topic is the full reference.
 
-1. **Approve it once.** The first run of an extension that runs code stops
-   with `approval_required` (exit code 3), naming the fingerprint. Only the
-   person approves: ask them to open **Settings → Extensions**, where the
-   extension is marked "Development folder", read what it asks for, and
-   approve it. Never approve it yourself. Then run `npm run dev` again.
+1. **Approve it once.** The first run prints `waiting` ("waiting for approval
+   in Studio") and waits: Studio's window asks the person at once, showing
+   the folder and what it may do (also in **Settings → Extensions**, marked
+   "Development folder"). Only the person approves, with a click there;
+   nothing on the command line can. Tell them it is waiting. Once they
+   approve it, `npm run dev` goes on by itself.
 2. **Edit and save.** Each save prints `reloaded`: the worker restarted on the
    new code and every open surface redrew, on every client. There is nothing
    to build, copy or reinstall.

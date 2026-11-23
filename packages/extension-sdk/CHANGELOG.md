@@ -333,8 +333,16 @@ main })` take the parsed extension.json; the install key defaults to
   its code: a save keeps the approval, a save that asks for more asks again,
   asking for less keeps it, and removing the folder forgets it. Its approval
   and an installed extension's with the same key never cover each other. Its
-  `extension.sig` is not read. An agent Studio launched cannot approve.
-  Installed extensions are unchanged: their approval binds their files.
+  `extension.sig` is not read. Every folder asks once, even one that asks for
+  nothing. Only the person approves, with a click in Studio's window, which
+  asks them as soon as a folder is registered (or in Settings > Extensions):
+  nothing on the command line or over Studio's tools approves, so an agent may
+  register a folder but never approve it. A folder with an installed
+  extension's key replaces it only once approved; the installed one runs
+  until then. A folder is loaded only while it is the folder it was
+  registered as, never inside Studio's extensions or data folder, and its
+  surfaces import only the files it holds, never through a link. Installed
+  extensions are unchanged: their approval binds their files.
 - An install, an approval or an update loads live, without restarting Studio.
 - Errors at their file and line: a frame's `console.error` and `console.warn`,
   uncaught errors and unhandled rejections reach the extension's log as
@@ -346,16 +354,26 @@ main })` take the parsed extension.json; the install key defaults to
 - New CLI commands, each with `--json` printing `{ ok: true, result }` or
   `{ ok: false, error: { code, message, data?, nextSteps? } }`, and exit
   codes 0 (ok), 1 (an error), 2 (`extension_invalid`) and 3
-  (`approval_required`, `approval_stale`); the codes are `CLI_ERROR_CODES`.
-  `validate`, `inspect`, `test` (the project's tests with `node --test`,
-  TypeScript as written) and `check` (validate, activate the worker against
-  the fake host, build each surface) run on this machine without Studio.
-  `dev load`, `watch`, `unload`, `list`, `logs`, `request`, `hook` and `emit`
-  drive the running Studio through its gateway's local socket (`--data-dir`
-  for another profile); `dev watch` prints one JSON object per line
-  (`loaded`, `check`, `shot`, `shot_failed`, `reloaded`, `log`, `status`,
-  `approval`, `unloaded`, `disconnected`). `shot` writes a PNG of a surface
-  as the desktop app draws it. The `dev-loop` guide topic is the reference.
+  (`approval_required`); the codes are `CLI_ERROR_CODES`.
+  `validate` (a folder, or its extension.json; its skill folders checked as
+  Studio checks them, and the host calls its code writes out checked against
+  the host methods and its permissions), `inspect`, `test` (the project's
+  `*.test.ts`, `.tsx`, `.jsx` … tests with its own Vitest when it has one
+  installed, else `node --test`, TypeScript and JSX as Studio loads them) and
+  `check` (validate, activate the worker against the fake host, build each
+  surface) run on this machine without Studio.
+  `dev load`, `reload`, `watch`, `unload`, `list`, `logs`, `request`
+  (`--timeout-ms`), `hook` and `emit` drive the running Studio through its
+  gateway's local socket (`--data-dir` for another profile); `dev watch`
+  prints one JSON object per line (`loaded`, `waiting`, `approved`, `check`
+  with the folder offline and how Studio runs it now, `shot`, `shot_failed`,
+  `reloaded`, `log`, `status`, `approval`, `unloaded`, `disconnected`) and
+  waits while the folder waits for approval. `request`, `hook`, `emit` and
+  `shot` reach development folders only, as their caller. `list` and `logs`
+  cover installed extensions too. `shot` writes a PNG of a surface as the
+  desktop app draws it. A worker lent Studio's copy of the SDK cannot import
+  `@sprintengine/extension-sdk/source`, which needs the SDK's own
+  dependencies, and is told so. The `dev-loop` guide topic is the reference.
 - Templates have no build: the source is in `extension/src/`, and the scripts
   are `typecheck`, `test`, `validate`, `check`, `dev`
   (`sprintengine-extension dev watch extension --check --shot

@@ -75,7 +75,7 @@ Installing is for using an extension. While you work on one, load it as a
 development folder instead (`npm run dev`, or Settings → Extensions →
 Install → As a development folder): it loads from where it is and again on
 every save. A development folder whose id an installed extension has stands
-in for it while it is registered, under its own approval; remove the folder
+in for it once the person approves that, under its own approval; remove the folder
 and the installed one asks for its own approval again.
 
 ## The SDK itself

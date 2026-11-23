@@ -39,6 +39,9 @@ npx sprintengine-extension dev watch extension --check --shot extension/.sprinte
 JSON object per line. Act on its `type`:
 
 - `loaded`: registered. Studio reads the folder again on every save.
+- `waiting`: waiting for approval in Studio. Its window is asking the person
+  now; tell them, and keep the watch running: it goes on by itself once they
+  approve (`approved`).
 - `reloaded`: your save is live: the worker restarted, every open surface
   redrew.
 - `check`: `ok: false` names the worker's error or each surface's `problem`
@@ -61,19 +64,18 @@ one PNG. Agents with Studio's tools can call `extension_dev_load`,
 Drive the worker without clicking: `dev request extension <method> --data
 '<json>'`, `dev hook extension <point> --data '<json>'`, `dev emit extension
 <topic>` (or `extension_dev_request`, `extension_dev_hook`,
-`extension_dev_emit`).
+`extension_dev_emit`). These, and shots, reach development folders only, and
+run as you: under your own permission preset.
 
 ## 3. Branch on `error.code`
 
 With `--json` a failure is `{ "ok": false, "error": { "code", "message",
 "data", "nextSteps" } }`. Branch on the code, never the words:
 
-- `approval_required` (exit 3): it waits for the person. Show them what it
-  asks for (`npx sprintengine-extension inspect extension --json`) and ask
-  them to approve it in **Settings → Extensions**, where it is marked
-  "Development folder". Then run the command again.
-- `approval_stale` (exit 3): the fingerprint is old. Load again without
-  `--approve` and ask the person again.
+- `approval_required` (exit 3): waiting for approval in Studio. Studio's
+  window is asking the person; tell them what it asks for (`npx
+  sprintengine-extension inspect extension --json`), and run the command
+  again once they approved it (or use `dev watch`, which waits).
 - `extension_invalid` (exit 2): `data.issues` lists each path and message.
   Fix them.
 - `extension_check_failed`: the worker did not activate or a surface did not
@@ -88,9 +90,12 @@ With `--json` a failure is `{ "ok": false, "error": { "code", "message",
 
 ## 4. Approval: never on the person's behalf
 
-- Never approve an extension yourself, never pass `--approve`, and never
-  edit Studio's approval or extension files to get around it. Studio refuses
-  an approval from an agent it launched; the person approves in Settings.
+- Never approve an extension yourself, and never edit Studio's approval or
+  extension files to get around it. Nothing on the command line or over
+  Studio's tools approves: the person does, with a click in Studio's window
+  (or Settings → Extensions). Every development folder asks once.
+- A folder with the same id as an installed extension replaces it only once
+  the person approves that; the installed one keeps running until then.
 - A development folder is approved once, for what it may do. Saves keep the
   approval; a save that asks for more (a permission, a hook, an MCP tool, a
   higher tier, a local server's command) waits for the person again. Asking

@@ -23,8 +23,8 @@ kept of them.
 
 | Studio shows | Cause | Fix |
 | --- | --- | --- |
-| Needs approval, `approval_required` | Not approved yet, or a save asks for more than was approved (`dev watch` printed `approval` with what grew) | The person approves it in Settings → Extensions. Never approve it for them |
-| `approval_stale` | The fingerprint given to `--approve` is not what the folder asks for now | Load it again without `--approve` and show the person the new fingerprint |
+| Needs approval, `approval_required` | Not approved yet, or a save asks for more than was approved (`dev watch` printed `approval` with what grew) | The person approves it in Studio's window, which asks them, or in Settings → Extensions. Nothing on the command line approves |
+| The installed extension still runs, not the development folder with its id | The folder waits for the person to approve it in the installed one's place | The person approves it in Studio's window or Settings → Extensions |
 | An installed extension needs approval again after its development folder was removed | A development folder's approval never covers the installed extension with its key, and the other way round | Approve the installed one |
 | Invalid / tampered (an installed extension) | Files in its installed folder do not match `extension.sig`, or changed since it was approved | Install it again from a packed copy. Never edit an installed copy; work in a development folder |
 | Needs a newer Studio | `engines.studio` asks for a Studio newer than this one | Update Studio, or use only fields this Studio reads (their "Since", in the `manifest` topic) |

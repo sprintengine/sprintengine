@@ -249,17 +249,20 @@ into the frame document of `src/server/extensions/frames/frame-bootstrap.ts`) an
 `src/server/extensions/workers/worker-entry.ts`). Development folders in `src/main/modules/extension-dev-folders.ts`,
 loaded after the installed extensions by `src/main/modules/user-module-registry.ts` and registered through
 `src/main/modules/module-lifecycle.ts` (`devLoad`, `devUnload`, `devFolders`); a save heard by
-`src/server/extensions/dev/dev-folder-watch.ts` and loaded live, as an install or an approval is, by
-`src/server/extensions/extension-reload.ts`; what happened kept in `src/server/extensions/dev/dev-events.ts`. Their
+`src/server/extensions/dev/dev-folder-watch.ts`, read once per change by
+`src/server/extensions/extension-discovery.ts` (that folder alone on a save), and loaded live, as an install or an
+approval is, by `src/server/extensions/extension-reload.ts`; what happened kept in `src/server/extensions/dev/dev-events.ts`. Their
 approval: `devFolderApprovalFingerprint` in `src/main/modules/extension-approvals.ts` and
-`classifyDevelopmentExtension` in `src/main/modules/module-signature.ts`; shown by
+`classifyDevelopmentExtension` in `src/main/modules/module-signature.ts`; asked of the person by the window's
+`src/renderer/src/components/settings/DevFolderApprovalHost.tsx` and shown by
 `src/renderer/src/components/settings/ThirdPartyModuleList.tsx` and
 `src/renderer/src/components/settings/ApprovalReviewDialog.tsx`, added from
 `src/renderer/src/components/settings/addThirdPartyModuleFromFolder.ts`; surfaces redrawn on a `revision` by
 `src/renderer/src/modules/extension-contributions.tsx`. The CLI: `packages/extension-sdk/src/cli.ts` (usage),
 `cli-commands.ts`, `cli-authoring.ts` (`validate`, `inspect`, `test`, `check`, with `check-worker.ts`), `cli-dev.ts`
 (`dev …`, `shot`), `cli-output.ts` (`--json`, error and exit codes) and `cli-studio.ts` (the gateway's local socket).
-Agents' tools: `src/main/automation/extension-dev-tools.ts` (`extension.dev.*`) and
+Agents' tools: `src/main/automation/extension-dev-tools.ts` (`extension.dev.*`, held to their caller by
+`bindDevToolsToCaller`, bound in `src/server/core/studio-gateway.ts`) and
 `src/main/automation/extension-shot-tool.ts` (`visual.extension_shot`), drawn by
 `src/main/extension-frames/extension-shot.ts`. Wire: `extension.devFolders`, `extension.devLoad`,
 `extension.devUnload` (an owner's), a contribution's `revision`, an installed view's `development`
@@ -267,6 +270,7 @@ Agents' tools: `src/main/automation/extension-dev-tools.ts` (`extension.dev.*`) 
 `packages/extension-sdk/guide/dev-loop.md` and `packages/extension-sdk/guide/start.md`; the agents' skill
 `resources/studio-plugin/sprintengine-studio/skills/studio-extensions/SKILL.md`. Tests:
 `packages/extension-sdk/test/source-modules.test.ts`, `packages/extension-sdk/test/cli-authoring.test.ts`,
+`packages/extension-sdk/test/cli-dev.test.ts`, `src/server/extensions/extension-discovery.test.ts`,
 `src/main/modules/extension-dev-folders.test.ts`, `src/server/extensions/extension-reload.test.ts`,
 `src/main/automation/extension-dev-tools.test.ts`, `src/main/modules/extension-surface-entries.test.ts`,
 `src/server/extensions/workers/worker-entry.test.ts`.

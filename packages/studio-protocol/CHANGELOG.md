@@ -8,21 +8,26 @@
   registered on the Studio, in the order they load (after every installed
   extension), each as a `StudioExtensionDevFolder`: its real `path`, the
   extension in it (`moduleId`, `name`, `approval`), `overrides` when it
-  stands in for an installed extension with its key, or the `error` that
-  says why it holds none.
+  stands in for an installed extension with its key, `waiting` while that
+  waits for the person's approval (the installed one runs until then), or
+  the `error` that says why it holds none.
 - **`extension.devLoad`** `{ path, commandId }` (an owner's): registers a
   folder on the Studio's machine as a development folder, loaded from where
   it is under `local.<id>` and read again on every save; registering one
   already registered reads it again. Answers `moduleId`, `path`, `added` and
   its `approval`, or `invalid_argument`, `extension_invalid` (with
-  `issues`), `approval_stale` or `unavailable`. It runs once the person
-  approves it with `extension.approve`.
+  `issues`) or `unavailable`. It runs once the person approves it with
+  `extension.approve`; every folder asks once. A folder waiting to replace an
+  installed extension is approved under that key with its own fingerprint,
+  which tells the two apart.
 - **`extension.devUnload`** `{ path, commandId }` (an owner's): takes one
   out, with its approval; answers its `path` and `moduleId`, or `not_found`
   (with the folders `loaded`) or `unavailable`.
-- `ThirdPartyModuleView.development` (`{ folder, overrides }`) marks an
-  extension loaded from a development folder; `folder` is its path for a
-  connection that may name any path, its name otherwise.
+- `ThirdPartyModuleView.development` (`{ folder, overrides, waiting? }`)
+  marks an extension loaded from a development folder; `folder` is its path
+  for a connection that may name any path, its name otherwise. `extension.installed`
+  lists a folder `waiting` to replace an installed extension beside it, under
+  the same id.
 - `ExtensionContributions.revision`: the content identity of an extension's
   files as served now. It moves with every save of a development folder and
   every update, and `extension.changed` follows, so a client draws the

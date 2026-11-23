@@ -102,8 +102,12 @@ may do (the `permissions` reference).
   hooks run in), and again within a moment of every save: its worker restarts
   on the new code and its surfaces redraw on every client. `node_modules`,
   `.git`, dotted files and folders and symbolic links in it are left out; it
-  holds at most 2000 files and 50 MiB. One whose key an installed extension
-  has stands in for it while it is registered. The CLI's `dev watch` prints
+  holds at most 2000 files and 50 MiB. Anyone on this machine, an agent
+  included, may register one, but nothing runs from it until the person
+  approves it in Studio's window, which asks them at once (or Settings →
+  Extensions); every folder asks once. One whose key an installed extension
+  has stands in for it only once the person approves that, and the installed
+  one runs until then. The CLI's `dev watch` prints
   each reload, a check, a PNG of a surface (`shot`) and the worker's and
   frames' log lines at their file and line; the SDK guide's `dev-loop` topic
   is the reference.

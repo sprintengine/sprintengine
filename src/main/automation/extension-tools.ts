@@ -224,7 +224,7 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
           nextSteps: [
             `Work in ${made.folder}: read IDEA.md, then follow the guide below.`,
             'npm install, then node scripts/check-toolchain.mjs, then npm run check (a fresh project passes).',
-            'npm run dev in a background terminal: it loads extension/ into Studio as a development folder and reloads it on every save. If it exits with approval_required, tell the person to approve it in Studio: Settings → Extensions.',
+            'npm run dev in a background terminal: it loads extension/ into Studio as a development folder and reloads it on every save. If it prints waiting, Studio’s window is asking the person to approve it: tell them, and let it run; it goes on once they approve.',
             'Change the project toward the brief. Each save prints reloaded, a check and a PNG of the panel to read; fix every log line at file:line. Run npm run check before you finish.',
           ],
           topics: topicIndex(),

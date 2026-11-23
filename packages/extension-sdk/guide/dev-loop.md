@@ -27,16 +27,15 @@ stdout:
 ```
 
 Branch on `error.code`, never on the words. `data` carries the details
-(`issues` as `[{ path, message }]` for an invalid extension; `fingerprint`
-and `growth` for an approval), and `nextSteps` the commands or clicks that
+(`issues` as `[{ path, message }]` for an invalid extension; `growth` for an
+approval), and `nextSteps` the commands or clicks that
 fix it. Without `--json` the same is printed as words, the failure on stderr.
 
 | `error.code` | What it means | Exit |
 | --- | --- | --- |
 | `invalid_argument` | A flag or argument is missing or wrong | 1 |
 | `extension_invalid` | Studio cannot load it: `data.issues` says where | 2 |
-| `approval_required` | It waits for the person's approval: `data.fingerprint`, and `data.growth` when it asks for more than before | 3 |
-| `approval_stale` | The fingerprint given is not what it asks for now | 3 |
+| `approval_required` | It is waiting for approval in Studio, which only the person gives, in Studio's window: `data.growth` when it asks for more than before | 3 |
 | `studio_unavailable` | No running Studio could be reached on this machine | 1 |
 | `not_found` | That folder or extension is not loaded here, or there are no tests | 1 |
 | `extension_tests_failed` | Its tests failed | the runner's |
@@ -46,17 +45,25 @@ fix it. Without `--json` the same is printed as words, the failure on stderr.
 | `shot_failed` | The picture could not be taken | 1 |
 | `unavailable` | Studio could not do it now (starting, or something broke): try again | 1 |
 
-Exit codes: 0 ok, 1 an error, 2 `extension_invalid`, 3 `approval_required`
-or `approval_stale`. `test` exits with the test runner's code.
+Exit codes: 0 ok, 1 an error, 2 `extension_invalid`, 3 `approval_required`.
+`test` exits with the test runner's code.
 
 ## Without Studio
 
 `test` and `check` run the extension's code on this machine, outside Studio:
 run them only on code you trust.
 
-- **`validate <dir>`**: extension.json as Studio reads it, strictly (every
-  field, the tier, `engines.studio` covering the fields used), every file it
-  names, the worker's file type, and each surface's imports. Answers `key`,
+- **`validate <dir>`** (or `validate <dir>/extension.json`): extension.json
+  as Studio reads it, strictly (every field, the tier, `engines.studio`
+  covering the fields used), every file it names, its skill folders (each a
+  folder with a `SKILL.md`, as Studio checks them), the worker's file type,
+  each surface's imports, and the host calls its code writes out: a
+  `studio.host.call('<method>')` that names no host method (unless guarded by
+  `studio.host.has('<method>')`), or needs a permission extension.json does
+  not ask for, `worker.*` and `studio.methods()` with no worker,
+  `studio.document` outside a custom editor, and a worker's `studio.<method>()`
+  that needs a permission it does not ask for, each at `file:line:col`. Only
+  literal calls are checked. Answers `key`,
   `id`, `tier`, `files`, `warnings`. An `extension.sig` in the folder is a
   warning: a development folder's signature is not read.
 - **`inspect <dir>`**: what it contributes and the access it asks for, which
@@ -64,10 +71,13 @@ run them only on code you trust.
   (`permissions`, `worker`, `background`, `mcpTools`, `hooks`,
   `commandsRunningActions`, `localMcpServers`, `providers`), `contributes`,
   `files`, `contentHash`. Show it to the person before asking them to approve.
-- **`test [dir]`**: every `*.test.ts` (`.mts`, `.js`, `.mjs`) under the
-  folder, leaving out `node_modules`, `dist` and dotted folders, with
-  `node --test`, TypeScript loaded as Studio loads it. Answers `runner`,
-  `code`, `files`. A project's `npm test`.
+- **`test [dir]`**: every `*.test.ts` (`.tsx`, `.mts`, `.js`, `.jsx`,
+  `.mjs`) under the folder, leaving out `node_modules`, `dist` and dotted
+  folders. With the project's own Vitest when it has one installed (with a
+  config `test` writes to `.sprintengine/test/`), else with `node --test`;
+  either way TypeScript and JSX (classic `h()` and `Fragment`) load as Studio
+  loads them. Answers `runner` (`vitest` or `node:test`), `code`, `files`.
+  A project's `npm test`.
 - **`check [dir]`**: `validate`, then the worker activated against the SDK's
   fake host in a child process (at most 15 seconds), then each surface's
   module graph built as Studio builds it and its entry checked for `mount`.
@@ -85,12 +95,13 @@ discovery file in Studio's data folder. `--data-dir <folder>` names another
 profile's data folder; `SPRINTENGINE_USER_DATA_DIR` does the same. With no
 Studio running they fail `studio_unavailable`.
 
-An agent Studio launched can do everything here but approve: `--approve` from
-it is refused, as Studio knows the call is that agent's. The person approves in
-Settings → Extensions, or with `--approve <fingerprint>` from their own
-terminal.
+Nothing here approves an extension, for an agent or for the person: approval
+is a click in Studio's window. As soon as a development folder is registered,
+the window asks the person, showing the folder and what it may do; the same
+review is in Settings → Extensions. Every development folder asks once, even
+one that asks for nothing, and again only when a save asks for more.
 
-## `dev load <dir> [--approve <fingerprint>]`
+## `dev load <dir>`
 
 Registers the folder as a development folder: Studio loads it from where it
 is, under `local.<id>`, and reads it again within a moment of every save. Run
@@ -98,36 +109,42 @@ on a folder already registered, it reads it again now. Answers `moduleId`,
 `path` (its real path), `added` (false when it was already registered),
 `approval` (`{ state, fingerprint? }`) and `latestEvent`.
 
-An extension that runs code (anything beyond the `content` tier, and a
-`declarative` one with commands, menus, top bar items, a local MCP server or
-a provider) fails `approval_required` until the person approves it; the folder
-stays registered, waiting, listed in Settings → Extensions as a development
-folder. `--approve` with the fingerprint from that answer approves it, for the
-person only.
+Until the person approves it, it fails `approval_required` (exit 3): the
+folder stays registered, waiting for approval in Studio, where the window asks
+them. Run it again, or `dev list`, to see it approved; `dev watch` waits by
+itself.
 
 A development folder:
 
 - loads after every installed extension, in the order the folders were
   registered, and its hooks run in that order too;
-- stands in for an installed extension with the same key while it is
-  registered, under its own approval;
+- stands in for an installed extension with the same key only once the
+  person approves it for that, under its own approval; until then the
+  installed one keeps running and the folder is listed beside it, waiting;
 - leaves out `node_modules`, `.git`, dotted files and folders (such as
   `.sprintengine/`) and symbolic links, none of which a save there reloads;
 - holds at most 2000 files and 50 MiB, so a folder named by mistake (a home
-  folder) is refused rather than read.
+  folder) is refused rather than read;
+- may not be inside Studio's extensions folder or its data folder;
+- is loaded only while it is still the folder it was registered as: one
+  swapped for a link since (or with a parent swapped) is not loaded, until it
+  is registered again, which asks again.
 
-## `dev watch <dir> [--check] [--shot <out-dir> [--shot-panel <id>]] [--approve <fingerprint>]`
+## `dev watch <dir> [--check] [--shot <out-dir> [--shot-panel <id>]]`
 
 `dev load`, then follows the extension until Ctrl-C, which removes the folder
-again if this watch added it. A first load that needs approval fails
-`approval_required` (exit 3) as `dev load` does. With `--json` it prints one
+again if this watch added it (approved or not). A folder waiting for approval
+prints `waiting` ("waiting for approval in Studio") and waits until the person
+approves it in Studio's window, then goes on. With `--json` it prints one
 JSON object per line, each with a `type`:
 
 | `type` | When | Fields |
 | --- | --- | --- |
-| `loaded` | Once, at the start | `key`, `path`, `added` |
+| `loaded` | Once, at the start | `key`, `path` (its real path, used from then on), `added` |
+| `waiting` | It waits for the person's approval in Studio | `key`, `path`, `growth?` |
+| `approved` | The person approved it; the watch goes on | `key`, `path` |
 | `reloaded` | Studio read it again after a save: the worker restarted, its surfaces redraw on every client | `key`, `message` |
-| `check` | With `--check`, at the start and after each reload | `key`, `ok`, `worker`, `surfaces` as `check` answers, or `error` and `issues` |
+| `check` | With `--check`, at the start and after each reload | `key`, `ok`, `offline` (`{ ok, worker, surfaces }` as `check` answers, or `error` and `issues`), `live` (`{ ok, status, message? }`: how Studio runs it now) |
 | `shot` | With `--shot`, at the start and after each reload | `key`, `path`, `width`, `height`, `theme`, `settled`, `pendingRequests`, `errors` |
 | `shot_failed` | The picture could not be taken | `key`, `message` |
 | `log` | A line its worker or a frame printed | `key`, `source` (`worker`, `frame`, `studio`), `level`, `message` |
@@ -138,7 +155,9 @@ JSON object per line, each with a `type`:
 
 Every event from Studio also carries `seq` (rising) and `at`.
 
-- `--check` runs `check` on this machine after each reload.
+- `--check` runs `check` on this machine after each reload, and reads how
+  Studio runs it now: `ok` only when both pass, the live state being
+  `runs_worker` or `runs_without_worker`.
 - `--shot <out-dir>` writes a PNG of the first panel, door or settings section
   (`--shot-panel <id>` names a panel) to `<out-dir>/<key>-<id>.png` after each
   reload. Read the PNG: it is the surface as Studio draws it, with its host
@@ -155,23 +174,41 @@ A project's `npm run dev` is
 
 ## The other `dev` commands
 
+`request`, `hook`, `emit` and `shot` reach a development folder's extension
+only; an installed one is refused (`not_found`). They run as whoever calls
+them: a request or hook from an agent runs under that agent's own permission
+preset, and an agent below `bypass` is refused a shot, whose surface calls
+are answered as the person.
+
+- **`dev reload [<dir|key>]`**: reads one development folder, or every one,
+  again now, for a folder whose saves Studio does not hear (a network share).
+  Answers `reloaded`, a `dev load` answer for each.
 - **`dev unload <dir|key>`**: takes the folder out of Studio. Its files stay;
-  its approval is forgotten. Answers `path`, `moduleId`.
+  every approval it was given is forgotten. Answers `path`, `moduleId`.
 - **`dev list`**: the development folders, in load order: `folders` as
-  `[{ path, moduleId?, name?, approval?, overrides?, error?, launch? }]`
+  `[{ path, moduleId?, name?, approval?, overrides?, waiting?, error?, launch? }]`
+  (`waiting`: it waits to replace the installed extension with its key)
   (`error` says why a folder holds no extension Studio loads).
 - **`dev logs <dir|key> [--after <seq>]`**: what was kept of its events (the
   newest few hundred), the same events `dev watch` prints: `events`, `latest`.
   Pass the last `seq` you saw as `--after` to read only what is new.
-- **`dev request <dir|key> <method> [--data <json>] [--read]`**: calls a
+- **`dev request <dir|key> <method> [--data <json>] [--read] [--timeout-ms <ms>]`**: calls a
   worker method (`registerMethods`) the way a surface's
   `studio.methods().operate` does (`.read` with `--read`), starting the worker
-  if it is not running. Answers `moduleId`, `method`, `result`.
+  if it is not running. `--timeout-ms` is how long to wait for the answer.
+  Answers `moduleId`, `method`, `result`.
 - **`dev hook <dir|key> <point> --data <json>`**: runs one of the worker's
   hooks with the event you give, as Studio runs it before an action, and
   answers what it decided (`answer`). Nothing else in Studio happens.
 - **`dev emit <dir|key> <topic> [--data <json>]`**: sends its open frames a
   push (`studio.on('push')`), as the worker's `studio.emit` would.
+
+## Installed extensions
+
+- **`list`**: every third-party extension Studio has, installed or a
+  development folder, as `extension.list` reports it: `modules`.
+- **`logs <key|dir> [--after <seq>]`**: what was kept of an extension's
+  events, installed ones included, as `dev logs` answers.
 
 ## `shot <dir|key> [--panel <id> | --door <id> | --settings <id>]`
 
