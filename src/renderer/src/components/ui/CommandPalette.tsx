@@ -484,18 +484,25 @@ export default function CommandPalette({
       dispatchPanelCommandEvent(id, activeWorkspaceId ?? undefined)
       onClose()
     }
+    // Refresh and fetch are actions an extension may take over: through the
+    // shell's runner, as the shortcut is, which routes them to the same Git
+    // panel of the active workspace when nothing does.
+    const runShellCommand = (id: string) => () => {
+      onRunCommand(id)
+      onClose()
+    }
     const gitCommands: UngroupedCommand[] = [
       {
         id: 'git.refresh',
         label: appCopy.ui.commandPalette.gitRefreshStatus,
         shortcut: shortcutFor('git.refresh'),
-        run: runGitPanel('git.refresh'),
+        run: runShellCommand('git.refresh'),
       },
       {
         id: 'git.fetch',
         label: appCopy.ui.commandPalette.gitFetchRemotes,
         shortcut: shortcutFor('git.fetch'),
-        run: runGitPanel('git.fetch'),
+        run: runShellCommand('git.fetch'),
       },
       {
         id: 'git.commit',

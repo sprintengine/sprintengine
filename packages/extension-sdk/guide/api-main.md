@@ -122,8 +122,11 @@ sees each replacement before approving the extension, and it counts as access:
 adding one asks again. They can switch replacements off on the extension's
 page. When two extensions replace one action, the one installed first does,
 and the other's log says so. An extension that is switched off, killed or not
-approved replaces nothing. The buttons Studio draws for an action (the sidebar's
-own toggle) run Studio's own.
+approved replaces nothing. Every palette row for an action, its menu item and
+its shortcut go to the replacement; the buttons Studio draws for an action run
+Studio's own (the sidebar's toggle and its back and forward arrows, the pane's
+and panels' toggle buttons, a new chat or terminal button, the open palette's
+own Go to file tab), as does a chat's send-and-new.
 
 To wrap Studio's action rather than replace it, call `studio.runCommand(action)`
 (needs `workspace:operate`): it runs Studio's own in the window whose call set
