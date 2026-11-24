@@ -11,7 +11,7 @@ import {
   type ExtensionEditorPort,
   type UnsavedChoice,
 } from './extension-editor-controller'
-import { bytesToBase64, type EditorDocumentModel } from './extension-editor-session'
+import { bytesToBase64, createLocalDocumentModel, type EditorDocumentModel } from './extension-editor-session'
 import {
   deleteEditorBuffer,
   getEditorBytes,
@@ -190,4 +190,59 @@ test('leaving unsaved bytes for an editor of text, or text for one of bytes, ask
   assert.deepEqual(asked, [])
   assert.equal(await controller.prepareToLeave('other-editor', 'text'), false, 'Cancel stays')
   assert.deepEqual(asked, ['asked'])
+})
+
+test('a custom text editor’s save is the person’s: it meets the save hooks, and takes the text they wrote', async () => {
+  let disk = '- [ ] one\n'
+  const writes: unknown[] = []
+  const documents: unknown[] = []
+  // The Studio's answers: a save hook upper-cases what is saved, and refuses one holding "secret".
+  const port: ExtensionEditorPort = {
+    call: async (method, params) => {
+      if (method === 'files.read') return { ok: true, result: { content: disk, sha256: sha(disk) } }
+      writes.push(params)
+      const { content } = params as { content: string }
+      if (content.includes('secret'))
+        return { ok: false, code: 'refused_by_extension', message: 'The extension "Guard" (acme.guard) refused this.' }
+      disk = content.toUpperCase()
+      return { ok: true, result: { size: disk.length, created: false, sha256: sha(disk), text: disk } }
+    },
+    sendDocument: (document) => documents.push(document),
+    requestFlush: () => undefined,
+  }
+  const model = createLocalDocumentModel()
+  const { controller } = controllerOf(model, { contentKind: 'text', relativePath: 'list.todo' })
+  controller.openFrame(port)
+  controller.frameReady()
+  await settle()
+  const flushed = (id: number) => controller.document.flushed(id, true)
+  port.requestFlush = (id) => queueMicrotask(() => flushed(id))
+
+  // Refused: nothing changes, the edits stay unsaved, and the reason is said.
+  controller.session.applyEdit({ baseVersion: 1, content: { kind: 'text', text: '- [ ] secret\n' } })
+  assert.equal(await controller.session.save(), false)
+  assert.deepEqual(writes.at(-1), {
+    workspaceId: WS,
+    path: 'list.todo',
+    content: '- [ ] secret\n',
+    save: {},
+    expectedSha256: sha('- [ ] one\n'),
+  })
+  assert.equal(controller.session.state().saveError, 'The extension "Guard" (acme.guard) refused this.')
+  assert.equal(controller.session.state().dirty, true)
+  assert.equal(disk, '- [ ] one\n')
+
+  // Changed by a hook: the document becomes what was written, clean, and the frame is handed it.
+  controller.session.applyEdit({ baseVersion: 1, content: { kind: 'text', text: '- [ ] two\n' } })
+  assert.equal(await controller.session.save(), true)
+  assert.equal(disk, '- [ ] TWO\n')
+  assert.equal(model.get(), '- [ ] TWO\n')
+  assert.equal(controller.session.state().dirty, false)
+  assert.deepEqual(documents.at(-1), { version: 2, readOnly: false, content: { kind: 'text', text: '- [ ] TWO\n' } })
+
+  // The next save is against what the hook wrote.
+  controller.session.applyEdit({ baseVersion: 2, content: { kind: 'text', text: '- [x] two\n' } })
+  assert.equal(await controller.session.save(), true)
+  assert.equal((writes.at(-1) as { expectedSha256: string }).expectedSha256, sha('- [ ] TWO\n'))
+  controller.dispose()
 })

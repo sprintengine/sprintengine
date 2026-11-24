@@ -66,6 +66,20 @@ export type ExtensionFrameCallDeps = {
   fileExclusions(): readonly string[]
   /** A line in the extension's log file (`log.write`), beside its worker's. */
   frameLog?: (moduleId: string, line: string) => void
+  /**
+   * The extensions' `editor.save.before` hooks on a person's save of text,
+   * run as the connection that saved: null at once when none hooks the
+   * point, else the text to write or a refusal naming the extension. The
+   * same decision Studio's own text editor's save meets (studio-rpc.ts).
+   */
+  editorSaveHooks?: (input: {
+    path: string
+    relativePath: string
+    workspaceId: string
+    languageId: string | null
+    text: string
+    invoker: ExtensionInvoker
+  }) => Promise<{ ok: true; text: string } | { ok: false; message: string }> | null
 }
 
 // At most FRAME_LOG_LIMIT lines per extension in each window, whatever its frames send.
@@ -110,6 +124,17 @@ function text(params: Record<string, unknown>, name: string, max = 4096): string
   const value = params[name]
   if (typeof value !== 'string' || value.length === 0 || value.length > max) throw invalid(`"${name}" is a string.`)
   return value
+}
+
+/** A `files.write`'s `save`, `{ languageId? }`, or undefined for a write that is no person's save. */
+function saveOf(value: unknown): { languageId: string | null } | undefined {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    throw invalid('"save" is { languageId? }, for a person’s save of text.')
+  const languageId = (value as { languageId?: unknown }).languageId
+  if (languageId !== undefined && (typeof languageId !== 'string' || languageId.length > 100))
+    throw invalid('"save.languageId" is a language’s id.')
+  return { languageId: languageId ?? null }
 }
 
 type Registry = Record<string, (...args: unknown[]) => Promise<unknown>>
@@ -214,12 +239,37 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
     'files.stat': async (_request, params) => statExtensionFile(await filesScope(params), params.path),
     'files.search': async (_request, params) =>
       searchExtensionFiles(await filesScope(params), params.query, params.limit),
-    'files.write': async (_request, params) =>
-      writeExtensionFile(await filesScope(params), params.path, params.content, {
+    // `save`: the person saved a custom text editor (its window's controller
+    // says so), so the write meets the extensions' save hooks as a save in
+    // Studio's text editor does, and answers the text written when a hook
+    // changed it, for the editor to take. A write of bytes is no text save.
+    'files.write': async (request, params) => {
+      const save = saveOf(params.save)
+      let saved: string | undefined
+      const written = await writeExtensionFile(await filesScope(params), params.path, params.content, {
         create: params.create === true,
         encoding: params.encoding,
         expectedSha256: params.expectedSha256,
-      }),
+        ...(save
+          ? {
+              saveText: async (target: { path: string; relativePath: string }, text: string) => {
+                const hooked = deps.editorSaveHooks?.({
+                  ...target,
+                  workspaceId: params.workspaceId as string,
+                  languageId: save.languageId,
+                  text,
+                  invoker: request.invoker,
+                })
+                const decided = hooked ? await hooked : null
+                if (decided && !decided.ok) throw new CallRefusal('refused_by_extension', decided.message)
+                saved = decided ? decided.text : text
+                return saved
+              },
+            }
+          : {}),
+      })
+      return saved !== undefined && saved !== params.content ? { ...written, text: saved } : written
+    },
     notify: (request, params) => {
       try {
         deps.emitNotification(request.moduleId, params as ModuleNotifyInput)

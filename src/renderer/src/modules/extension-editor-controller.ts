@@ -128,16 +128,25 @@ export function createExtensionEditorController(options: ExtensionEditorControll
     read,
     write: async (content, expected, create) => {
       if (!port) return { ok: false, code: 'unavailable', message: 'The editor is not drawn, so nothing was saved.' }
+      // A save of text is the person's, as in Studio's text editor: it meets
+      // the extensions' `editor.save.before` hooks, which may refuse it or
+      // change what is written (`text` in the answer, which the session takes).
       const answer = await port.call('files.write', {
         workspaceId,
         path: relativePath,
         ...(typeof content === 'string'
-          ? { content }
+          ? { content, save: {} }
           : { content: bytesToBase64(content), encoding: 'base64' as const }),
         ...(expected ? { expectedSha256: expected } : {}),
         ...(create ? { create: true } : {}),
       })
-      return answer.ok ? { ok: true, sha256: (answer.result as { sha256: string }).sha256 } : answer
+      if (!answer.ok) return answer
+      const result = answer.result as { sha256: string; text?: unknown }
+      return {
+        ok: true,
+        sha256: result.sha256,
+        ...(typeof content === 'string' && typeof result.text === 'string' ? { written: result.text } : {}),
+      }
     },
     post: (document) => port?.sendDocument(document),
     flushFrame,

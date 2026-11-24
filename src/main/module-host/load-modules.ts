@@ -13,6 +13,7 @@ import {
   createMainKernel,
   type MainHost,
   type MainKernel,
+  type MainKernelOptions,
   type ModuleSkillHostRegistry,
   type SidecarSpec,
 } from './main-host'
@@ -166,6 +167,8 @@ export function loadMainModules(options: {
   currentApprovals?: () => ReadonlyMap<string, { access: { permissions: readonly string[] } }>
   /** Folders a frame's `files.*` never reaches: see `MainKernelOptions.frameFileExclusions`. */
   frameFileExclusions?: () => readonly string[]
+  /** A custom text editor's save meets the save hooks: see `MainKernelOptions.frameEditorSaveHooks`. */
+  frameEditorSaveHooks?: MainKernelOptions['frameEditorSaveHooks']
   /** What frame calls are held to: see `MainKernelOptions.resolveFrameGrant`. */
   resolveFrameGrant?: (moduleId: string, frame: string) => { grant: readonly string[]; outdated: boolean } | null
   /** Handed the kernel as soon as it exists, before any module registers (the workers bind to it). */
@@ -197,6 +200,7 @@ export function loadMainModules(options: {
     resolveModuleVerifiedFiles: (moduleId) => options.moduleVerifiedFiles?.[moduleId],
     resolveDeclaredMcpTools: (moduleId) => options.moduleMcpTools?.[moduleId],
     ...(options.frameFileExclusions ? { frameFileExclusions: options.frameFileExclusions } : {}),
+    ...(options.frameEditorSaveHooks ? { frameEditorSaveHooks: options.frameEditorSaveHooks } : {}),
     ...(options.resolveFrameGrant ? { resolveFrameGrant: options.resolveFrameGrant } : {}),
     resolveExtensionGrant: (moduleId) => {
       // Without the loader's record (tests), an extension holds what its manifest asks.

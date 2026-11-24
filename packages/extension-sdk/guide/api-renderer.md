@@ -67,7 +67,7 @@ seconds, each at most 64 KiB.
 | `settings.set` | `{ key, value }` (`null` removes it); a declared setting is held to its declaration | `settings:own` | `settings:write` |
 | `files.read` | `{ workspaceId, path, encoding? }` → `{ content, size, sha256 }` | `workspace-files:read` | `filesystem:read` |
 | `files.stat`, `.search` | `{ workspaceId, path }`, `{ workspaceId, query, limit? }` | `workspace-files:read` | `filesystem:read` |
-| `files.write` | `{ workspaceId, path, content, create?, encoding?, expectedSha256? }` → `{ size, created, sha256 }` | `workspace-files:write` | `filesystem:write` |
+| `files.write` | `{ workspaceId, path, content, create?, encoding?, expectedSha256?, save? }` → `{ size, created, sha256, text? }` | `workspace-files:write` | `filesystem:write` |
 | `notify` | a bell row, as `MainHost.notify` | `notifications:show` | `extension:operate` |
 | `worker.read`, `worker.operate` | what `methods()` sends | — | `extension:read`, `extension:operate` |
 | `toast` | `{ tone, message, detail? }`, in the window that opened it | — | `extension:read` |
@@ -84,7 +84,11 @@ text, or with `encoding: 'base64'` the raw bytes in base64. `sha256` is of the
 file's bytes; a `files.write` given `expectedSha256` writes only over a file
 whose bytes still hash to it, and is refused `conflict` otherwise (one that is
 gone too), so nothing changed meanwhile is written over unseen. A `files.write` with `create: true` over a
-file that exists is refused `conflict` too.
+file that exists is refused `conflict` too. `save: { languageId? }` marks
+UTF-8 text as the person's save, as a custom text editor's Save is (Studio
+sends it for the editor): it meets the extensions' `editor.save.before` hooks
+first, which may refuse it (`refused_by_extension`) or change it, and `text`
+answers what was written when one did.
 A project's files can run code (its scripts, its tools' settings), so the
 approval of an extension holding `workspace-files:write` says it has full
 access to the person's account.

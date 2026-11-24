@@ -37,7 +37,11 @@ import {
 } from '../builtin-skills'
 import { resolveContainedPath } from '../modules/entry-containment'
 import type { StudioExtensionCallAnswer } from '../../../packages/studio-protocol/src/public'
-import { createExtensionFrameCalls, type ExtensionFrameCallRequest } from './extension-frame-calls'
+import {
+  createExtensionFrameCalls,
+  type ExtensionFrameCallRequest,
+  type ExtensionFrameCallDeps,
+} from './extension-frame-calls'
 import type { ModuleAppStateMirror } from './module-app-state-mirror'
 import {
   EXTENSION_MAIN_HOST_METHODS,
@@ -543,6 +547,8 @@ export type MainKernelOptions = {
   resolveExtensionGrant?: (moduleId: string) => readonly string[] | null
   /** Folders a frame's `files.*` may never reach, even inside a workspace (Studio's data, the installed extensions). */
   frameFileExclusions?: () => readonly string[]
+  /** A person's save in a custom text editor meets the extensions' save hooks here (`ExtensionFrameCallDeps.editorSaveHooks`). */
+  frameEditorSaveHooks?: ExtensionFrameCallDeps['editorSaveHooks']
   /**
    * What an extension's frame calls are held to (extension-frame-grant.ts):
    * its approval's permissions as they stand now, pinned to those its
@@ -704,6 +710,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     emitNotification,
     appState: () => services.get(MODULE_APP_STATE_SERVICE_KEY)?.value as ModuleAppStateMirror | undefined,
     fileExclusions: () => options.frameFileExclusions?.() ?? [],
+    ...(options.frameEditorSaveHooks ? { editorSaveHooks: options.frameEditorSaveHooks } : {}),
   })
 
   async function callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome> {
