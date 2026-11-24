@@ -144,6 +144,21 @@ test('a handler that runs past its time is stopped with its worker, so the next 
   assert.doesNotMatch(log, /was not delivered/)
 })
 
+test('an event fired at one extension (the dev loop) reaches its worker and its surfaces alone', async () => {
+  const events = start([listener(), listener({ id: 'other' }), listener({ id: 'unlisted', events: [] })])
+  const surfaces: string[] = []
+  events.listen('workspace.created', () => surfaces.push('listener'), 'local.listener')
+  events.listen('workspace.created', () => surfaces.push('other'), 'local.other')
+  assert.deepEqual(events.emitTo('local.listener', 'workspace.created', { ...WORKSPACE, name: 'made up' }), {
+    worker: null,
+    surfaces: 1,
+  })
+  assert.deepEqual(surfaces, ['listener'])
+  assert.match(events.emitTo('local.unlisted', 'workspace.created', WORKSPACE).worker ?? '', /does not list the event/)
+  await until(() => logOf('local.listener').includes('again made up'), 10_000, 'the made-up event')
+  assert.equal(logOf('local.other').includes('made up'), false)
+})
+
 test('an event handler runs as the extension’s own work: its calls into Studio are the person’s', async () => {
   const events = start([listener()])
   events.emit('workspace.removed', { ...WORKSPACE, name: 'gone' })

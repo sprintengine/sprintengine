@@ -918,6 +918,16 @@ export class ExtensionWorkers implements KernelWorkerPort {
     for (const entry of this.entries.values()) this.queueEvent(entry, event, payload)
   }
 
+  /** Hand `payload` to one extension's worker alone (the dev loop): why it was not, or null when it was queued. */
+  deliverEventTo(moduleId: string, event: ExtensionEventName, payload: unknown): string | null {
+    const entry = this.entries.get(moduleId)
+    if (!entry || this.closed) return 'its worker is not loaded here'
+    const why = this.eventSkipReason(entry, event)
+    if (why) return why
+    this.queueEvent(entry, event, payload)
+    return null
+  }
+
   /** Where the standing state of each event is read, for a worker that starts. */
   currentFrom(current: (event: ExtensionEventName) => unknown[]): void {
     this.currentOf = current

@@ -174,7 +174,7 @@ A project's `npm run dev` is
 
 ## The other `dev` commands
 
-`request`, `hook`, `emit` and `shot` reach a development folder's extension
+`request`, `hook`, `emit` (with or without `--studio`) and `shot` reach a development folder's extension
 only; an installed one is refused (`not_found`). They run as whoever calls
 them: a request or hook from an agent runs under that agent's own permission
 preset, and an agent below `bypass` is refused a shot, whose surface calls
@@ -202,6 +202,14 @@ are answered as the person.
   answers what it decided (`answer`). Nothing else in Studio happens.
 - **`dev emit <dir|key> <topic> [--data <json>]`**: sends its open frames a
   push (`studio.on('push')`), as the worker's `studio.emit` would.
+- **`dev emit <dir|key> <event> --studio --data <json>`**: fires one of
+  Studio's events (`workspace.created`, `workspace.changed`, …) at this
+  extension alone, its worker's `studio.events.on` handlers and its open
+  surfaces' `studio.on`, as Studio would send it: test a handler without
+  making the change. The payload is checked against the event's shape (the
+  `events` topic's table); the worker hears it only if extension.json lists
+  the event and its approval holds the event's permission, and the answer
+  says whether it did.
 
 ## Installed extensions
 
@@ -229,7 +237,7 @@ fails `shot_failed`.
 An agent with Studio's MCP tools can skip the CLI: `extension.dev.load`
 (`path`, the folder's absolute path), `extension.dev.unload`,
 `extension.dev.list`, `extension.dev.events` (`after`, `moduleId`, `limit`),
-`extension.dev.request`, `extension.dev.hook`, `extension.dev.emit` and
+`extension.dev.request`, `extension.dev.hook`, `extension.dev.emit`, `extension.dev.studioEvent` and
 `visual.extension_shot` (`moduleId`, `point`, `id`, `out`). They answer the
 same results; a failure is the tool's error with the same codes. A paired
 device cannot use them: a development folder is a path on this machine.

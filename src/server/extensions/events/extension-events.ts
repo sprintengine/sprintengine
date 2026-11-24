@@ -36,6 +36,8 @@ export type ExtensionEventSink = {
   grantOf(moduleId: string): readonly string[] | null
   /** Where a worker that starts reads the current state of what it hears (`current`), to hear it first. */
   currentFrom?(current: (event: ExtensionEventName) => unknown[]): void
+  /** Hand `payload` to one extension's worker alone (the dev loop); why it was not, or null when it was queued. */
+  deliverEventTo?(moduleId: string, event: ExtensionEventName, payload: unknown): string | null
 }
 
 export type ExtensionEvents = {
@@ -43,8 +45,22 @@ export type ExtensionEvents = {
   wants(event: ExtensionEventName): boolean
   /** Tell every listener. The payload is copied for each. */
   emit<E extends ExtensionEventName>(event: E, payload: ExtensionEventPayloads[E]): void
-  /** Hear `event` (a connection, for its frames); returns the unsubscriber. */
-  listen<E extends ExtensionEventName>(event: E, listener: (payload: ExtensionEventPayloads[E]) => void): () => void
+  /** Hear `event` (a connection, for one extension's frames); returns the unsubscriber. */
+  listen<E extends ExtensionEventName>(
+    event: E,
+    listener: (payload: ExtensionEventPayloads[E]) => void,
+    moduleId?: string,
+  ): () => void
+  /**
+   * Tell one extension alone, its worker and its surfaces (the dev loop's
+   * made-up event): why its worker did not hear it (null when it was queued),
+   * and how many of its surfaces' subscriptions did.
+   */
+  emitTo<E extends ExtensionEventName>(
+    moduleId: string,
+    event: E,
+    payload: ExtensionEventPayloads[E],
+  ): { worker: string | null; surfaces: number }
   /**
    * What a listener hears first when it starts listening, so it never starts
    * out stale: for `workspace.changed`, one payload per workspace as it is
@@ -61,9 +77,19 @@ export type ExtensionEvents = {
 
 export function createExtensionEvents(options: { log?: (line: string) => void } = {}): ExtensionEvents {
   let sink: ExtensionEventSink | null = null
-  const listeners = new Map<ExtensionEventName, Set<(payload: unknown) => void>>(
-    EXTENSION_EVENTS.map((event) => [event, new Set()]),
-  )
+  type Listener = { hear: (payload: unknown) => void; moduleId: string | undefined }
+  const listeners = new Map<ExtensionEventName, Set<Listener>>(EXTENSION_EVENTS.map((event) => [event, new Set()]))
+  const tell = (event: ExtensionEventName, listener: Listener, payload: unknown): boolean => {
+    try {
+      listener.hear(structuredClone(payload))
+      return true
+    } catch (error) {
+      options.log?.(
+        `event ${event} could not reach a client: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      return false
+    }
+  }
   const standing = new Map<ExtensionEventName, () => unknown[]>()
   const current = (event: ExtensionEventName): unknown[] => {
     const read = standing.get(event)
@@ -91,19 +117,20 @@ export function createExtensionEvents(options: { log?: (line: string) => void } 
           )
         }
       }
-      for (const listener of [...listeners.get(event)!]) {
-        try {
-          listener(structuredClone(payload))
-        } catch (error) {
-          options.log?.(
-            `event ${event} could not reach a client: ${error instanceof Error ? error.message : String(error)}`,
-          )
-        }
-      }
+      for (const listener of [...listeners.get(event)!]) tell(event, listener, payload)
     },
-    listen(event, listener) {
+    emitTo(moduleId, event, payload) {
+      const worker = sink?.deliverEventTo
+        ? sink.deliverEventTo(moduleId, event, payload)
+        : 'this Studio has no workers to tell'
+      let surfaces = 0
+      for (const listener of [...listeners.get(event)!])
+        if (listener.moduleId === moduleId && tell(event, listener, payload)) surfaces += 1
+      return { worker, surfaces }
+    },
+    listen(event, listener, moduleId) {
       const set = listeners.get(event)!
-      const heard = listener as (payload: unknown) => void
+      const heard: Listener = { hear: listener as (payload: unknown) => void, moduleId }
       set.add(heard)
       return () => {
         set.delete(heard)

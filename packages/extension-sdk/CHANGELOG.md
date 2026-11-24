@@ -259,6 +259,10 @@ main })` take the parsed extension.json; the install key defaults to
   one it opened or one in a workspace a window shows now), and `list` (the live
   terminals, at most 50, with `terminals:read`). Whoever set a call off must
   be the person at this machine, and not from a browser tab.
+- `sprintengine-extension dev emit <dir|key> <event> --studio --data <json>`
+  (and the tool `extension.dev.studioEvent`) fires one of Studio's events at a
+  development folder's worker and surfaces alone, its payload checked against
+  the event's shape.
 - A worker that lists `workspace.changed` hears each workspace as it is when
   it starts, and a surface when it subscribes (again after a reconnect),
   before any change.

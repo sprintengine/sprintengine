@@ -1192,10 +1192,14 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     // so a new surface, or one back after a reconnect, never starts out stale;
     // then each change, in order behind it.
     for (const payload of events.current(event)) push('extension.studioEvents', id, { event, payload }, stillAdmitted)
-    const stop = events.listen(event, (payload) => {
-      if (!stillAdmitted()) return
-      push('extension.studioEvents', id, { event, payload }, stillAdmitted)
-    })
+    const stop = events.listen(
+      event,
+      (payload) => {
+        if (!stillAdmitted()) return
+        push('extension.studioEvents', id, { event, payload }, stillAdmitted)
+      },
+      moduleId,
+    )
     subscription.handle = { dispose: stop }
   }
 

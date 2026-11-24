@@ -441,6 +441,10 @@
       "sha256": "038d4d63b1a18f3cb7c4a5753c4ef5f8a5cd0855fe288ec6af0a23ca39e6c9d5"
     },
     {
+      "name": "extension.dev.studioEvent",
+      "sha256": "9595cb496d33cd8967788d40adfef31f65a0cfbfb284c01840968695e093915a"
+    },
+    {
       "name": "plugin.search",
       "sha256": "a48a180cfa75804aa7d89bd552fe8d6170736c33c768a0134bc7246b81362ead"
     },
@@ -921,6 +925,10 @@
     {
       "name": "extension.dev.emit",
       "sha256": "038d4d63b1a18f3cb7c4a5753c4ef5f8a5cd0855fe288ec6af0a23ca39e6c9d5"
+    },
+    {
+      "name": "extension.dev.studioEvent",
+      "sha256": "9595cb496d33cd8967788d40adfef31f65a0cfbfb284c01840968695e093915a"
     },
     {
       "name": "plugin.search",

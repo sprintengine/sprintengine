@@ -64,6 +64,7 @@ Usage:
   sprintengine-extension dev request <dir|key> <method> [--data <json>] [--read] [--timeout-ms <ms>] [--json]
   sprintengine-extension dev hook <dir|key> <point> --data <json> [--json]
   sprintengine-extension dev emit <dir|key> <topic> [--data <json>] [--json]
+  sprintengine-extension dev emit <dir|key> <event> --studio --data <json> [--json]
   sprintengine-extension list [--json]
   sprintengine-extension logs <key|dir> [--after <seq>] [--json]
   sprintengine-extension shot <dir|key> [--panel <id> | --door <id> | --settings <id>] [--theme light|dark] [--width <px>] [--height <px>] [--out <file.png>] [--json]
