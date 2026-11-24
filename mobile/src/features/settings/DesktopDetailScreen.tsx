@@ -13,6 +13,7 @@ import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { space, typography, type Theme, fontWeight } from "../../theme/tokens";
 import { sessionDisplayStatus, sessionStatusLabel } from "../fleet/fleetLogic";
+import { DesktopBrowserTabs } from "./DesktopBrowserTabs";
 import { copy } from "../../../../src/shared/copy";
 
 
@@ -118,6 +119,8 @@ export function DesktopDetailScreen({
           <Field label={copy.phone.settings.desktopDetailScreen.transport} value={describeTransport(session)} />
           <Field label={copy.phone.settings.desktopDetailScreen.storage} value="Encrypted on this device" />
         </Card>
+
+        {!isRevoked ? <DesktopBrowserTabs session={session} /> : null}
 
         <View style={styles.actions}>
           {!isActive && !isRevoked ? (

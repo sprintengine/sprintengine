@@ -3159,6 +3159,16 @@ export const en = {
         backToSettings: 'Back to settings',
         groupChats: 'Group chats',
       },
+      // mobile/src/features/settings/DesktopBrowserTabs.tsx
+      desktopBrowserTabs: {
+        browserTabs: 'Browser tabs on this desktop',
+        none: 'No browser tabs are open.',
+        playingSound: 'Playing sound',
+        onScreen: 'On screen',
+        openFor: (duration: unknown) => `open ${duration}`,
+        close: (name: unknown) => `Close ${name}`,
+        couldNotClose: 'The desktop did not close that tab.',
+      },
       // mobile/src/features/settings/DesktopDetailScreen.tsx
       desktopDetailScreen: {
         backToDesktops: 'Back to desktops',
