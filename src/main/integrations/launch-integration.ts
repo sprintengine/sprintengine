@@ -531,7 +531,6 @@ export async function prepareLaunchIntegration(
   return { ok: true, integration }
 }
 
-/** Each extension skill with the plugin directory carrying it: an extension's projection folder carries all of its skills. */
 /** Whether a value of an extension's server holds a reference a CLI would expand. */
 function extensionServerNamesVariable(server: McpServerConfig): boolean {
   return [
@@ -543,6 +542,7 @@ function extensionServerNamesVariable(server: McpServerConfig): boolean {
   ].some(holdsVariableReference)
 }
 
+/** Each extension skill with the plugin directory carrying it: an extension's projection folder carries all of its skills. */
 function extensionPluginDirs(extensions: LaunchExtensionContributions): Array<{ id: string; dir: string }> {
   return extensions.skills.map((skill) => ({ id: skill.name, dir: skill.pluginDir }))
 }
