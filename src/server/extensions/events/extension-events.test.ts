@@ -159,6 +159,33 @@ test('an event fired at one extension (the dev loop) reaches its worker and its 
   assert.equal(logOf('local.other').includes('made up'), false)
 })
 
+test('the same function registered twice is called twice, and each dispose takes back its own', async () => {
+  const events = start([
+    {
+      id: 'twice',
+      main: `exports.activate = (studio) => {
+  const say = (workspace) => console.log('heard ' + workspace.name)
+  const first = studio.events.on('workspace.created', say)
+  studio.events.on('workspace.created', say)
+  studio.events.on('workspace.created', (workspace) => {
+    if (workspace.name === 'one') first.dispose()
+  })
+}`,
+      permissions: ['workspace:read'],
+      events: ['workspace.created'],
+    },
+  ])
+  events.emit('workspace.created', { ...WORKSPACE, name: 'one' })
+  events.emit('workspace.created', { ...WORKSPACE, name: 'two' })
+  await until(() => logOf('local.twice').includes('heard two'), 10_000, 'the second event')
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  const lines = logOf('local.twice')
+    .split('\n')
+    .filter((line) => /heard /.test(line))
+    .map((line) => line.replace(/^.*\] /, ''))
+  assert.deepEqual(lines, ['heard one', 'heard one', 'heard two'])
+})
+
 test('an event handler runs as the extension’s own work: its calls into Studio are the person’s', async () => {
   const events = start([listener()])
   events.emit('workspace.removed', { ...WORKSPACE, name: 'gone' })

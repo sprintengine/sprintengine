@@ -576,7 +576,8 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
   const tools = new Map<string, McpToolRegistration>()
   // Each point's handlers, in the order registered.
   const hookHandlers = new Map<ExtensionHookPoint, Array<(event: unknown) => unknown>>()
-  const eventHandlers = new Map<ExtensionEventName, Set<(payload: unknown) => unknown>>()
+  // One registration each, as Studio keeps them: the same function twice is called twice.
+  const eventHandlers = new Map<ExtensionEventName, Array<{ handler: (payload: unknown) => unknown }>>()
   const startupHooks: Array<() => unknown> = []
   const shutdownBeginHooks: Array<() => unknown> = []
   const shutdownHooks: Array<() => unknown> = []
@@ -632,9 +633,9 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
           )
         )
           return
-        for (const handler of [...(eventHandlers.get(event) ?? [])]) await handler(structuredClone(payload))
+        for (const { handler } of [...(eventHandlers.get(event) ?? [])]) await handler(structuredClone(payload))
       },
-      heard: () => [...eventHandlers].filter(([, handlers]) => handlers.size > 0).map(([event]) => event),
+      heard: () => [...eventHandlers].filter(([, handlers]) => handlers.length > 0).map(([event]) => event),
     },
     tools: {
       async call(name, args = {}, metadata) {
@@ -887,11 +888,17 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
             `Event "${String(event)}" is not listed in extension "${moduleId}"'s extension.json (contributes.events).`,
           )
         if (typeof handler !== 'function') throw new Error(`The handler for event "${event}" is not a function.`)
-        const own = handler as (payload: unknown) => unknown
-        let set = eventHandlers.get(event)
-        if (!set) eventHandlers.set(event, (set = new Set()))
-        set.add(own)
-        return { dispose: () => void eventHandlers.get(event)?.delete(own) }
+        const registration = { handler: handler as (payload: unknown) => unknown }
+        let list = eventHandlers.get(event)
+        if (!list) eventHandlers.set(event, (list = []))
+        list.push(registration)
+        return {
+          dispose: () => {
+            const now = eventHandlers.get(event)
+            const at = now?.indexOf(registration) ?? -1
+            if (at >= 0) now!.splice(at, 1)
+          },
+        }
       },
     }) as MainHost['events'],
     async ensureSkillInstalled(workspaceRoot, skillId) {

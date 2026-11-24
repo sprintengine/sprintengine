@@ -50,8 +50,10 @@ const methods = new Map<string, MethodRegistration>()
 const tools = new Map<string, Fn>()
 // Each point's handlers, in the order they were registered.
 const hooks = new Map<string, Fn[]>()
-// Each event's handlers (`studio.events.on`), in the order they were registered.
-const eventHandlers = new Map<string, Set<Fn>>()
+// Each event's handlers (`studio.events.on`), in the order they were registered:
+// one registration each, so the same function registered twice is called
+// twice, and each `dispose()` takes back its own.
+const eventHandlers = new Map<string, Array<{ handler: Fn }>>()
 const startupHooks: Hook[] = []
 const shutdownBeginHooks: Hook[] = []
 const shutdownHooks: Hook[] = []
@@ -350,13 +352,15 @@ function createStudio(start: WorkerInitMessage): Record<string, unknown> {
             `Event "${String(event)}" is not listed in extension "${start.extensionId}"'s extension.json (contributes.events).`,
           )
         if (typeof handler !== 'function') throw new Error(`The handler for event "${event}" is not a function.`)
-        const own = handler as Fn
-        let set = eventHandlers.get(event)
-        if (!set) eventHandlers.set(event, (set = new Set()))
-        set.add(own)
+        const registration = { handler: handler as Fn }
+        let list = eventHandlers.get(event)
+        if (!list) eventHandlers.set(event, (list = []))
+        list.push(registration)
         return Object.freeze({
           dispose: () => {
-            eventHandlers.get(event)?.delete(own)
+            const now = eventHandlers.get(event)
+            const at = now?.indexOf(registration) ?? -1
+            if (at >= 0) now!.splice(at, 1)
           },
         })
       },
@@ -471,7 +475,7 @@ async function serve(call: WorkerCallMessage): Promise<unknown> {
     case 'event': {
       // Every handler hears it, one after another; one that throws is the
       // extension's to read in its log, and the others still hear it.
-      for (const handler of [...(eventHandlers.get(call.event) ?? [])]) {
+      for (const { handler } of [...(eventHandlers.get(call.event) ?? [])]) {
         try {
           await handler(call.payload)
         } catch (error) {
