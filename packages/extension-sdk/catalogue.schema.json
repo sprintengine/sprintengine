@@ -50,7 +50,7 @@
             "minLength": 3,
             "maxLength": 104,
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
-            "description": "`<publisher>.<id>`: the publisher is the repository owner, lowercased (on a host other than github.com, the host first: `gitlab-com-alice`), and the id is the manifest’s `id`. Studio installs under this key.",
+            "description": "`<publisher>.<id>`: the publisher is the repository owner, lowercased (on a host other than github.com, marked and with the host: `from-gitlab-com-alice`, a form no GitHub owner may take), and the id is the manifest’s `id`. Studio installs under this key.",
             "x-since": "0.13.0",
             "examples": [
               "acme.notes"

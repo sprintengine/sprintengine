@@ -231,7 +231,7 @@ const ENTRY_NODE: ObjectNode = {
   fields: {
     id: field(
       installKey(),
-      '`<publisher>.<id>`: the publisher is the repository owner, lowercased (on a host other than github.com, the host first: `gitlab-com-alice`), and the id is the manifest’s `id`. Studio installs under this key.',
+      '`<publisher>.<id>`: the publisher is the repository owner, lowercased (on a host other than github.com, marked and with the host: `from-gitlab-com-alice`, a form no GitHub owner may take), and the id is the manifest’s `id`. Studio installs under this key.',
       { required: true, example: 'acme.notes' },
     ),
     source: field(
@@ -599,20 +599,30 @@ export function publisherFromOwner(owner: string): string | null {
 const NAME_ONLY_GIT_HOSTS = new Set(['github.com', 'www.github.com'])
 
 /**
+ * What a publisher from a host other than github.com begins with, and no
+ * GitHub owner's may: the form is kept for those hosts. A publisher allows
+ * nothing a GitHub login cannot also be (letters, digits, single hyphens, at
+ * most 39 characters), so the mark is reserved rather than unspellable.
+ */
+const OTHER_HOST_PUBLISHER_MARK = 'from-'
+
+/**
  * The publisher a git URL install takes: the repository's owner
  * (`github.com/Acme/notes` is `acme`). On any other host an owner of the same
- * name is somebody else, so the publisher carries the host first
- * (`gitlab.com/alice/notes` is `gitlab-com-alice`), and cannot pass for the
- * GitHub owner, nor block or share a kill with one. Null when that does not
- * make a publisher (one over 39 characters).
+ * name is somebody else, so the publisher is marked and carries the host
+ * (`gitlab.com/alice/notes` is `from-gitlab-com-alice`), and cannot pass for
+ * a GitHub owner, nor block or share a kill with one: a GitHub owner whose
+ * name begins `from-` makes no publisher. Null when the URL makes none (that
+ * owner, or one over 39 characters).
  */
 export function gitUrlPublisher(url: string): string | null {
   const identity = parseGitRepository(url)
   if (!identity) return null
   const owner = publisherFromOwner(identity.owner)
-  if (!owner || NAME_ONLY_GIT_HOSTS.has(identity.host)) return owner
+  if (!owner) return null
+  if (NAME_ONLY_GIT_HOSTS.has(identity.host)) return owner.startsWith(OTHER_HOST_PUBLISHER_MARK) ? null : owner
   const host = publisherFromOwner(identity.host.replace(/^www\./, ''))
-  return host ? publisherFromOwner(`${host}-${owner}`) : null
+  return host ? publisherFromOwner(`${OTHER_HOST_PUBLISHER_MARK}${host}-${owner}`) : null
 }
 
 /** One repository however its URL is spelled (https or scp, `.git`, case where the host ignores it). */

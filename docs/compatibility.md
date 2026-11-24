@@ -382,6 +382,15 @@ as Studio reads them over HTTPS from the catalogue repository: they are not
 signed, so whoever can change that repository's `main` decides what is
 official, and what an official update may do.
 
+An extension's publisher is its repository's owner, lowercased, on
+github.com (`github.com/acme/notes` is `acme`). On any other host the
+publisher is marked and carries the host (`gitlab.com/alice/notes` is
+`from-gitlab-com-alice`), and every catalogue, an added one included, must
+list an extension under its repository's owner. A publisher allows nothing a
+GitHub login could not also be, so the mark is reserved: a GitHub owner whose
+name begins `from-` makes no publisher, and cannot install or be listed under
+another host's.
+
 ### Agent hooks (no compatibility)
 
 A worker extension's `contributes.hooks` lets it check, change or refuse what
@@ -434,8 +443,7 @@ Extensions run only on the desktop app's own Studio, in its process or its
 server process. A Studio in a WSL distribution or on an SSH machine, and one
 started on its own (`studio-server serve`, the web listener), holds no
 extension host: no workers, hooks, frames, extension MCP tools or projection
-run there (the reference app is a single-machine app, and running the host
-there is not built). So a hook does not guard a chat such a Studio runs,
+run there (running the host there is not built). So a hook does not guard a chat such a Studio runs,
 whatever its `onError` says; the install review and the extension's row say
 a hook applies to chats on this computer only. A desktop window paired with
 the desktop draws that desktop's extensions. A browser tab is not granted
