@@ -53,7 +53,6 @@ function fakeBridge(stored: { plugin?: Record<string, unknown>; workspace?: Reco
   return { bridge, posted, calls, send, renders }
 }
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 const sync = (flush: () => void) => flush()
 
 afterEach(() => forgetKeyedAtoms())

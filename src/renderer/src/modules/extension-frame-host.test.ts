@@ -243,6 +243,7 @@ test('a custom editor’s edits are answered by the window’s document, never s
       openDoor: () => false,
       focusTab: () => false,
       followStudioEvent: () => () => undefined,
+      openExternal: async () => false,
     },
     theme: () => ({ colorScheme: 'dark', tokens: {} }),
     onReady: () => undefined,

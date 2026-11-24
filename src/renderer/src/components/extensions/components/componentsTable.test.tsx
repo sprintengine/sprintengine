@@ -85,7 +85,8 @@ test('only the rows in view are drawn, and the end asks for more once per length
 })
 
 test('a narrow table drops the columns that hide below its width, keeping at least one', () => {
-  expect(visibleColumns(columns as never, 400).map((each: { key: string }) => each.key)).toEqual(['name', 'done'])
+  const shown = visibleColumns(columns as Array<{ key: string; hideBelow?: 'sm' | 'md' }>, 400)
+  expect(shown.map((each) => each.key)).toEqual(['name', 'done'])
   expect(visibleColumns([{ key: 'only', hideBelow: 'md' }], 100).map((each) => each.key)).toEqual(['only'])
 })
 
