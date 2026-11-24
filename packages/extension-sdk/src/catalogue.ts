@@ -231,7 +231,7 @@ const ENTRY_NODE: ObjectNode = {
   fields: {
     id: field(
       installKey(),
-      '`<publisher>.<id>`: the publisher is the repository owner, lowercased, and the id is the manifest’s `id`. Studio installs under this key.',
+      '`<publisher>.<id>`: the publisher is the repository owner, lowercased (on a host other than github.com, the host first: `gitlab-com-alice`), and the id is the manifest’s `id`. Studio installs under this key.',
       { required: true, example: 'acme.notes' },
     ),
     source: field(
@@ -595,10 +595,24 @@ export function publisherFromOwner(owner: string): string | null {
   return parseExtensionInstallKey(`${slug}.x`) ? slug : null
 }
 
-/** The publisher a git URL install takes: the repository's owner (`github.com/Acme/notes` is `acme`). */
+/** The host whose owners are publishers by their name alone. */
+const NAME_ONLY_GIT_HOSTS = new Set(['github.com', 'www.github.com'])
+
+/**
+ * The publisher a git URL install takes: the repository's owner
+ * (`github.com/Acme/notes` is `acme`). On any other host an owner of the same
+ * name is somebody else, so the publisher carries the host first
+ * (`gitlab.com/alice/notes` is `gitlab-com-alice`), and cannot pass for the
+ * GitHub owner, nor block or share a kill with one. Null when that does not
+ * make a publisher (one over 39 characters).
+ */
 export function gitUrlPublisher(url: string): string | null {
   const identity = parseGitRepository(url)
-  return identity ? publisherFromOwner(identity.owner) : null
+  if (!identity) return null
+  const owner = publisherFromOwner(identity.owner)
+  if (!owner || NAME_ONLY_GIT_HOSTS.has(identity.host)) return owner
+  const host = publisherFromOwner(identity.host.replace(/^www\./, ''))
+  return host ? publisherFromOwner(`${host}-${owner}`) : null
 }
 
 /** One repository however its URL is spelled (https or scp, `.git`, case where the host ignores it). */

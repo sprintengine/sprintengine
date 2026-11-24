@@ -30,6 +30,7 @@ import {
 } from '../src/catalogue.js'
 import {
   EXTENSION_MANIFEST_SINCE,
+  isReservedExtensionPublisher,
   validateExtensionManifest,
   type ExtensionManifest,
 } from '../src/extension-manifest.js'
@@ -264,6 +265,17 @@ describe('publishers and git URLs', () => {
     expect(gitUrlPublisher('https://github.com/Acme/notes.git')).toBe('acme')
     expect(gitUrlPublisher('git@github.com:My_Org/notes.git')).toBe('my-org')
     expect(gitUrlPublisher('https://example.com/notes.git')).toBeNull()
+  })
+
+  test('on another host the publisher carries the host, so it cannot pass for the GitHub owner', () => {
+    expect(gitUrlPublisher('https://evil.example/alice/notes')).toBe('evil-example-alice')
+    expect(gitUrlPublisher('git@gitlab.com:alice/notes.git')).toBe('gitlab-com-alice')
+    expect(gitUrlPublisher('https://www.github.com/alice/notes')).toBe('alice')
+    expect(gitUrlPublisher('ssh://git@github.com/alice/notes.git')).toBe('alice')
+    // One that would be too long is no publisher at all.
+    expect(gitUrlPublisher(`https://${'h'.repeat(30)}.example/alice/notes`)).toBeNull()
+    // A host that spells a reserved publisher is still reserved.
+    expect(isReservedExtensionPublisher(gitUrlPublisher('https://studio.example/alice/notes')!)).toBe(true)
   })
 
   test('only HTTPS without credentials and SSH are fetched', () => {

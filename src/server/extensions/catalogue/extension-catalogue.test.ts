@@ -856,7 +856,7 @@ describe('an install keeps its source', () => {
 })
 
 describe('the release lock and the owner records', () => {
-  test('another catalogue listing the same id locks nothing for the install', async () => {
+  test('an added catalogue listing another owner’s id is refused whole, and locks nothing for the install', async () => {
     const env = setup()
     const repo = env.repository('acme', 'notes', notesFiles())
     const v1 = await env.release(repo.folder)
@@ -874,8 +874,9 @@ describe('the release lock and the owner records', () => {
         extensions: [{ id: 'acme.notes', source: { url: fork.url, ref: 'main' }, releases: [forked, v1] }],
       }),
     })
-    expect(await env.lifecycle.catalogue.add(index.url)).toMatchObject({ ok: true })
-    await env.lifecycle.catalogue.catalogues(true)
+    const added = await env.lifecycle.catalogue.add(index.url)
+    expect(!added.ok && added.message).toMatch(/lists acme\.notes from a repository owned by mallory/)
+    expect((await env.lifecycle.catalogue.catalogues(true)).map((catalogue) => catalogue.name)).not.toContain('Mirror')
     expect(readReleaseLockSync(env.dataDir)['acme.notes']?.['1.1.0']).toBeUndefined()
 
     // The real 1.1.0 installs from the catalogue it came from.

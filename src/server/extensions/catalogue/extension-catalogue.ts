@@ -91,9 +91,10 @@ import { createKillListService, type KillListService } from './kill-list'
 // that install:
 //
 // - the publisher is the repository's owner (the catalogue's `id` says it,
-//   and for the official and community catalogues it must be the source
-//   URL's owner); reserved publishers and ids install only from the official
-//   catalogue, and a catalogue listing one otherwise is refused whole;
+//   and for every catalogue it must be the source URL's owner, the host
+//   first on a host other than github.com); reserved publishers and ids
+//   install only from the official catalogue, and a catalogue listing one
+//   otherwise is refused whole;
 // - the checked-out bytes must be the release's (`contentHash`) and its
 //   manifest what the release declares;
 // - a version keeps the commit and hash it was first seen with, here
@@ -271,12 +272,14 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     for (const entry of catalogue.extensions) {
       if (isReservedInstallKey(entry.id) && !official)
         return `It lists ${entry.id}, a name only Studio’s official catalogue may list, so it was refused.`
-      // Studio's own catalogues list each extension under its repository's owner.
-      if (official || id === COMMUNITY_CATALOGUE) {
-        const owner = sourcePublisher(entry.source.url)
-        if (owner !== null && owner !== parseExtensionInstallKey(entry.id)!.publisher)
-          return `It lists ${entry.id} from a repository owned by ${owner}, so it was refused.`
-      }
+      // Every catalogue, an added one too, lists each extension under its
+      // repository's owner: one listing another owner's name would install
+      // as them, block their own and share their kills.
+      const owner = sourcePublisher(entry.source.url)
+      if (owner !== parseExtensionInstallKey(entry.id)!.publisher)
+        return owner === null
+          ? `It lists ${entry.id} from a repository Studio cannot tell the owner of, so it was refused.`
+          : `It lists ${entry.id} from a repository owned by ${owner}, so it was refused.`
     }
     return null
   }

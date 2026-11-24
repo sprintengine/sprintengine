@@ -46,8 +46,11 @@ and the kill list are read over HTTPS from Studio's catalogue repository.
   an `extension.json` whose version, tier, `engines.studio`, permissions or
   contributions are not what the release lists.
 - **The publisher is the repository owner.** An entry's `id` is
-  `<owner>.<id>`, the owner lowercased. A git URL install takes the URL's owner;
-  a folder is `local`. `sprintengine`, `official`, `local` and any publisher
+  `<owner>.<id>`, the owner lowercased. On a host other than github.com the
+  host comes first (`gitlab.com/alice/notes` is `gitlab-com-alice.notes`), so
+  an owner of the same name elsewhere cannot pass for a GitHub one. A git URL
+  install takes the URL's owner, and every catalogue, an added one included,
+  must list an extension under its repository's owner; a folder is `local`. `sprintengine`, `official`, `local` and any publisher
   starting `studio` are reserved, as are ids starting `studio-` or
   `sprintengine-`: they install only from the official catalogue, and any other
   catalogue that lists one is refused whole.
@@ -142,7 +145,7 @@ added asks first.
 | `name` | string | yes | 0.13.0 | The catalogue’s display name. |
 | `owner` | string | yes | 0.13.0 | The account that publishes the catalogue. |
 | `extensions` | object[] (at most 2048) | yes | 0.13.0 | Listed extensions, at most 2048. Each `id` appears once; Studio keeps the first. An entry this Studio cannot read is skipped, never fatal. |
-| `extensions[].id` | string | yes | 0.13.0 | `<publisher>.<id>`: the publisher is the repository owner, lowercased, and the id is the manifest’s `id`. Studio installs under this key. |
+| `extensions[].id` | string | yes | 0.13.0 | `<publisher>.<id>`: the publisher is the repository owner, lowercased (on a host other than github.com, the host first: `gitlab-com-alice`), and the id is the manifest’s `id`. Studio installs under this key. |
 | `extensions[].source` | object | yes | 0.13.0 | Where the extension’s source lives. |
 | `extensions[].source.url` | string | yes | 0.13.0 | HTTPS or SSH URL of the extension’s git repository. |
 | `extensions[].source.ref` | string | yes | 0.13.0 | The branch or tag the author publishes from. Each release pins an exact commit. |
