@@ -126,3 +126,20 @@ test('hooks are approved as applying to chats on this computer only', () => {
   expect(text).toContain('Hooks into what your agents and Studio do')
   expect(text).toContain('Applies to chats on this computer only, not to chats in WSL or on SSH machines')
 })
+
+test('a command that takes over one of Studio’s actions is named beside the action it replaces', () => {
+  const module = view('worker', [])
+  ;(module.extension.contributes as { commands: unknown[] }).commands = [
+    { id: 'notes.back', title: 'Back through notes', replaces: 'workspace.history.back' },
+    { id: 'notes.clear', title: 'Clear notes' },
+  ]
+  const text = shown(module)
+  expect(text).toContain('Takes over')
+  expect(text).toContain('Back through notes runs in place of Go back (recent workspace)')
+  expect(text).toContain('If it fails or is slow, Studio runs its own')
+  expect(text).not.toContain('Clear notes runs in place of')
+})
+
+test('an extension that replaces nothing shows no Takes over section', () => {
+  expect(shown(view('worker', []))).not.toContain('Takes over')
+})

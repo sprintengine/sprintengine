@@ -3618,6 +3618,10 @@ export const en = {
     // src/renderer/src/components/settings/ExtensionRow.tsx
     extensionRow: {
       adds: 'Adds',
+      takesOver: 'Takes over',
+      runsInPlaceOf: (command: unknown, builtIn: unknown) => `${command} runs in place of ${builtIn}`,
+      letItTakeOver: 'Let it take over Studio’s actions',
+      letItTakeOverHint: 'Off: Studio runs its own. If it fails or is slow, Studio runs its own anyway.',
       hooks: 'Hooks',
       hooksThisComputerOnly: 'Applies to chats on this computer only, not to chats in WSL or on SSH machines',
       forAgents: 'For your agents and chats',
@@ -4191,6 +4195,9 @@ export const en = {
       hooks: 'Hooks into what your agents and Studio do',
       hooksFailClosed: 'If it fails or is slow, it refuses rather than lets the action through',
       hooksThisComputerOnly: 'Applies to chats on this computer only, not to chats in WSL or on SSH machines',
+      takesOver: 'Takes over',
+      runsInPlaceOf: (command: unknown, builtIn: unknown) => `${command} runs in place of ${builtIn}`,
+      takesOverFallsBack: 'If it fails or is slow, Studio runs its own',
       forAgents: 'For your agents and chats',
       needsCare: 'Needs care',
       also: 'Also',

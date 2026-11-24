@@ -50,6 +50,7 @@ import {
   subscribeLiveTerminalSessionSnapshots,
 } from '../../hooks/useTerminalSessions'
 import { useAgentEditorReveal } from '../../hooks/useAgentEditorReveal'
+import { useExtensionOpenRequests } from '../../hooks/useExtensionOpenRequests'
 import { useAppTheme } from '../../hooks/useAppTheme'
 import { useAgentWorktreeCleanup } from '../../hooks/useAgentWorktreeCleanup'
 import {
@@ -153,6 +154,7 @@ import { environmentIdsOf, environmentRouteOfMeshConnection } from '../../../../
 import { currentEnvironments } from '../../hooks/useEnvironments'
 import { registerRemoteChatOpener } from './remoteBand/remoteChatSearch'
 import { setAppCommandRunner } from '../../commands/appCommandRunner'
+import { runBuiltInAction, runReplaceable } from '../../modules/extension-replacements'
 import {
   markLaunchedAgentProjected,
   retiredLaunchedAgents,
@@ -731,6 +733,8 @@ export default function WorkspaceManager() {
   // An agent's editor.open / open_diff: this window opens it when the
   // workspace is the one it shows, and claims what waited for it otherwise.
   useAgentEditorReveal(windowActiveWorkspaceId)
+  // `extension.open`: an extension's panel or custom editor, shown in this window's workspace.
+  useExtensionOpenRequests(windowActiveWorkspaceId)
   // Whether the workspace pane column stands at the window's right edge. On
   // win/linux the floating caption buttons sit over whichever top strip owns
   // that corner, and that strip leaves them room (WindowCaptionReserve): the
@@ -4595,6 +4599,15 @@ export default function WorkspaceManager() {
     ],
   )
 
+  // A command the person fired: from a shortcut, the palette or a menu. An
+  // extension may take over one of Studio's own actions here, and only here
+  // (extension-replacements.ts); `runCommand`, which surfaces and declarative
+  // commands reach through `runAppCommand`, always runs Studio's own.
+  const runPersonCommand = useCallback(
+    (commandId: string): boolean => runReplaceable(commandId, () => runCommand(commandId)),
+    [runCommand],
+  )
+
   useEffect(() => {
     const dispatcherContext = (event: KeyboardEvent) => ({
       // The `terminal` scope is per-KEYSTROKE, not per-workspace: it is active
@@ -4629,7 +4642,7 @@ export default function WorkspaceManager() {
       }
       // A chord an editor or a terminal owns goes on to it (keyTargetGate.ts).
       if (!shellTakesChordFrom(result.commandId, event.target, context.platform)) return
-      if (runCommand(result.commandId)) {
+      if (runPersonCommand(result.commandId)) {
         event.preventDefault()
         event.stopPropagation()
       }
@@ -4641,7 +4654,7 @@ export default function WorkspaceManager() {
     const onKeyUp = (event: KeyboardEvent) => {
       const result = commandDispatcherRef.current.resolveKeyUp(event, dispatcherContext(event))
       if (result.kind !== 'matched') return
-      if (runCommand(result.commandId)) {
+      if (runPersonCommand(result.commandId)) {
         event.preventDefault()
         event.stopPropagation()
       }
@@ -4666,7 +4679,7 @@ export default function WorkspaceManager() {
     keybindingSettings?.overrides,
     commandAvailability,
     moduleCommandContext,
-    runCommand,
+    runPersonCommand,
   ])
 
   // The window's current navigation location: a door surface takes precedence
@@ -4713,21 +4726,25 @@ export default function WorkspaceManager() {
       // navigation — in this shell they mean workspace navigation, full stop.
       event.preventDefault()
       event.stopPropagation()
-      runCommand(commandId)
+      runPersonCommand(commandId)
     }
     window.addEventListener('mouseup', onMouseUp, true)
     return () => window.removeEventListener('mouseup', onMouseUp, true)
-  }, [runCommand, disabledCommandIds])
+  }, [runPersonCommand, disabledCommandIds])
 
   // A surface that finishes its own work and then hands on to a shell command
   // (a chat's send-and-new) runs it through this window's runner.
   useEffect(() => setAppCommandRunner(runCommand), [runCommand])
 
+  // A worker's `studio.runCommand`, for a call this window made (a command it
+  // ran in place of Studio's action): Studio's own action, never a replacement.
+  useEffect(() => extensionsApi.onCommandRuns((run) => void runBuiltInAction(run.action)), [])
+
   useEffect(() => {
     return window.api.onAppMenuCommand((command) => {
       const definition = getCommandDefinition(command)
       if (definition) {
-        runCommand(definition.id)
+        runPersonCommand(definition.id)
         return
       }
       // Everything the app menu sends is a command id, resolved above. The
@@ -4735,7 +4752,7 @@ export default function WorkspaceManager() {
       // a command, so it has no id to send.
       if (command === 'show-about') openSettings(false)
     })
-  }, [openSettings, runCommand])
+  }, [openSettings, runPersonCommand])
 
   useEffect(() => {
     const updates = MENU_ACCELERATOR_COMMAND_IDS.map((commandId) => ({
@@ -5859,7 +5876,7 @@ export default function WorkspaceManager() {
               setShowPalette(false)
               setPaletteTarget(null)
             }}
-            onRunCommand={runCommand}
+            onRunCommand={runPersonCommand}
             onOpenRemoteConnections={() => openSettings(false, 'remote')}
             workspaceWindowId={workspaceWindowId}
             workspaces={visibleWorkspaces}

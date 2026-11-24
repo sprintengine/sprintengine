@@ -17,6 +17,7 @@ import { ExtensionSurfaceMount } from '../components/extensions/ExtensionSurface
 import { GhostButton, IconButton, Tooltip } from '../components/ui'
 import { extensionGlyph } from './extension-glyphs'
 import { registerExtensionSurface, retireExtensionSurfaces, type LoadedExtensionSurface } from './extension-surfaces'
+import { forgetExtensionReplacements, registerExtensionReplacement } from './extension-replacements'
 import type { InternalRendererHost, RendererKernel } from './renderer-host'
 
 // Puts what each approved extension's extension.json declares where the
@@ -30,7 +31,9 @@ import type { InternalRendererHost, RendererKernel } from './renderer-host'
 //   editor (EditorPanel, ExtensionEditorView), only where the Studio also
 //   offers `extension-editors`;
 // - commands join the palette; one with an `action` runs that Studio
-//   command, one without calls the worker method of its id;
+//   command, one without calls the worker method of its id, and one that
+//   `replaces` a Studio action also runs in its place when the person fires
+//   that action (extension-replacements.ts);
 // - menus add items to the backlog-item, file and notification menus, each
 //   running one of the extension's commands with what it was picked on;
 // - top bar items run a command or open a door;
@@ -129,6 +132,7 @@ export function forgetChangedExtensions(
     if (previous === servedSignature(entry)) continue
     retired.delete(entry.id)
     retireExtensionSurfaces(entry.id)
+    forgetExtensionReplacements(entry.id)
     forget(entry.id)
     loadStates.delete(entry.id)
     loadedSignatures.delete(entry.id)
@@ -241,6 +245,7 @@ function registerContributions(
   isEnabled: (moduleId: string) => boolean,
   drawsFrames: boolean,
   drawsEditors: boolean,
+  installedAt: number | undefined,
 ): void {
   const { contributes } = extension
   const live = () => !retired.has(key) && isEnabled(key)
@@ -298,6 +303,18 @@ function registerContributions(
       run: (context) =>
         runExtensionCommand(host, live, command, { where: 'palette', workspaceId: context?.activeWorkspaceId ?? null }),
     })
+    // Only a worker command takes over an action (the SDK refuses one with
+    // an `action`); whether it runs is decided when the action fires.
+    if (command.replaces && !command.action)
+      registerExtensionReplacement({
+        key,
+        commandId: command.id,
+        title: command.title,
+        action: command.replaces,
+        ...(installedAt === undefined ? {} : { installedAt }),
+        host,
+        live,
+      })
   }
   for (const menu of contributes.menus) {
     const command = commands.get(menu.command)!
@@ -493,11 +510,13 @@ export function loadExtensionContributions(
         (id) => kernel.isModuleEnabled(id),
         drawsFrames,
         drawsEditors,
+        entry.installedAt,
       )
       loadStates.set(entry.id, { status: 'loaded' })
       loadedSignatures.set(entry.id, servedSignature(entry))
       loaded.push(entry.manifest)
     } catch (error) {
+      forgetExtensionReplacements(entry.id)
       recordError(entry.id, error instanceof Error ? error.message : String(error))
     }
   }

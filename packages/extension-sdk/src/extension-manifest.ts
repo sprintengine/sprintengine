@@ -110,6 +110,26 @@ export const EXTENSION_COMMAND_ACTIONS = [
 ] as const
 export type ExtensionCommandAction = (typeof EXTENSION_COMMAND_ACTIONS)[number]
 
+/**
+ * Studio's own actions a worker command may take over (`replaces`): the ones
+ * a person fires from a shortcut, the palette or a menu, and whose effect is
+ * the window's alone, so an extension that answers late or not at all costs a
+ * moment rather than the person's work. Closed, and each id is a command in
+ * the app's command registry (a test holds them to it).
+ */
+export const EXTENSION_REPLACEABLE_ACTIONS = [
+  'workspace.history.back',
+  'workspace.history.forward',
+  'workspace.sidebar.toggle',
+  'pane.toggle',
+  'panel.files.toggle',
+  'panel.editor.toggle',
+  'panel.git.toggle',
+  'panel.backlog.toggle',
+  'panel.canvas.toggle',
+] as const
+export type ExtensionReplaceableAction = (typeof EXTENSION_REPLACEABLE_ACTIONS)[number]
+
 /** Where a menu item may appear. */
 export const EXTENSION_MENU_PLACES = ['backlog.item', 'file', 'notification'] as const
 export type ExtensionMenuPlace = (typeof EXTENSION_MENU_PLACES)[number]
@@ -443,6 +463,12 @@ const CONTRIBUTES: ObjectNode = {
               doc: 'A Studio command this command runs. A command with an `action` is declarative and runs no extension code; one without needs the worker tier.',
               since: V1,
               example: 'panel.backlog.toggle',
+            },
+            replaces: {
+              node: { kind: 'string', max: 64, enum: EXTENSION_REPLACEABLE_ACTIONS },
+              doc: 'A Studio action this worker command runs in place of, when the person fires that action from its shortcut, the palette or a menu. If the worker fails, or has not answered within 2 s, Studio runs its own. A command that calls `studio.runCommand(<action>)` (needs `workspace:operate`) always runs Studio’s own, never a replacement. The person sees the replacement before approving the extension and can switch it off on the extension’s page; when two extensions replace one action, the one installed first does.',
+              since: V1,
+              example: 'workspace.history.back',
             },
           },
         },
@@ -1267,6 +1293,7 @@ export type ExtensionCommandContribution = {
   title: string
   when?: 'global' | 'workspace'
   action?: ExtensionCommandAction
+  replaces?: ExtensionReplaceableAction
 }
 export type ExtensionMenuContribution = { where: ExtensionMenuPlace; command: string }
 export type ExtensionTopBarItemContribution = {
@@ -1499,6 +1526,21 @@ function crossFieldIssues(manifest: ExtensionManifest, options: ExtensionManifes
     } else if (item.door !== undefined && !doorIds.has(item.door)) {
       issues.push({ path: `${path}.door`, message: `names no contributed door: ${item.door}.` })
     }
+  })
+  // A replacement runs the worker in place of Studio's own action, so it is a
+  // worker command's: a declarative one runs no code of its own to replace
+  // anything with. One action is taken over by one command of an extension.
+  const replaced = new Set<string>()
+  contributes.commands.forEach((command, index) => {
+    if (command.replaces === undefined) return
+    const path = `contributes.commands[${index}].replaces`
+    if (command.action !== undefined)
+      issues.push({ path, message: 'cannot go with action: a command that runs a Studio action runs no code.' })
+    else if (manifest.main === undefined)
+      issues.push({ path, message: 'needs a worker (main) to run in place of the Studio action.' })
+    if (replaced.has(command.replaces))
+      issues.push({ path, message: `is already replaced by another command of this extension: ${command.replaces}.` })
+    replaced.add(command.replaces)
   })
   // A keybinding or a status bar item runs a command of the extension's own,
   // or one of Studio's: a content extension binds Studio's without code.
