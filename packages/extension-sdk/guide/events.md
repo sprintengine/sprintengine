@@ -36,6 +36,10 @@ export function activate(studio: MainHost): void {
   held to whoever else your worker serves at that moment.
 - A handler that throws is a line in your log; the other handlers still hear
   the event.
+- An event's handlers have 60 seconds. Past that your worker is stopped, so
+  the still-running handler never overlaps the next event, and the next event
+  starts it again; your log says the event timed out. Start long work and
+  return, rather than await it in the handler.
 - An extension switched off, stopped, removed by the kill list, or not
   approved as it is now hears nothing. Nor does one whose approval does not
   hold the event's permission: extension.json refuses an event without it, so

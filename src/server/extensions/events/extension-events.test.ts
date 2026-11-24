@@ -50,8 +50,8 @@ afterEach(async () => {
   harness = null
 })
 
-function start(extensions: TestExtension[]): ExtensionEvents {
-  harness = startWorkerHarness(extensions)
+function start(extensions: TestExtension[], options: Parameters<typeof startWorkerHarness>[1] = {}): ExtensionEvents {
+  harness = startWorkerHarness(extensions, options)
   const events = createExtensionEvents()
   events.bind(harness.workers)
   return events
@@ -111,6 +111,37 @@ test('a worker that lists workspace.changed hears every workspace as it is when 
     .filter((line) => / changed /.test(line) || /changed /.test(line))
     .map((line) => line.replace(/^.*\] /, ''))
   assert.deepEqual(lines, ['changed Notes', 'changed Site', 'changed Later'])
+})
+
+test('a handler that runs past its time is stopped with its worker, so the next event never runs beside it', async () => {
+  const events = start(
+    [
+      {
+        id: 'slow',
+        main: `exports.activate = (studio) => {
+  studio.events.on('workspace.created', async (workspace) => {
+    console.log('begin ' + workspace.name)
+    if (workspace.name === 'stuck') await new Promise((resolve) => setTimeout(resolve, 5000))
+    console.log('end ' + workspace.name)
+  })
+}`,
+        permissions: ['workspace:read'],
+        events: ['workspace.created'],
+      },
+    ],
+    { eventTimeoutMs: 500 },
+  )
+  events.emit('workspace.created', { ...WORKSPACE, name: 'stuck' })
+  events.emit('workspace.created', { ...WORKSPACE, name: 'next' })
+  await until(() => logOf('local.slow').includes('end next'), 10_000, 'the next event')
+  const log = logOf('local.slow')
+  const lines = log
+    .split('\n')
+    .filter((line) => /(begin|end) /.test(line))
+    .map((line) => line.replace(/^.*\] /, ''))
+  assert.deepEqual(lines, ['begin stuck', 'begin next', 'end next'], 'the stuck handler never finished beside the next')
+  assert.match(log, /event workspace\.created timed out: its handler ran past 1s, so the worker was stopped/)
+  assert.doesNotMatch(log, /was not delivered/)
 })
 
 test('an event handler runs as the extension’s own work: its calls into Studio are the person’s', async () => {

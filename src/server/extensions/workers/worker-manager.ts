@@ -140,6 +140,8 @@ export type ExtensionWorkersOptions = {
   reapIntervalMs?: number
   readyTimeoutMs?: number
   callTimeoutMs?: number
+  /** How long one event's handlers may run before the worker is stopped (`WORKER_EVENT_TIMEOUT_MS`). */
+  eventTimeoutMs?: number
   backoffMs?: readonly number[]
   maxRestarts?: number
   /** For tests: what runs the entry. */
@@ -179,6 +181,13 @@ type Entry = {
 
 /** The most events one worker may have waiting; one that waits for a place cannot pile up a backlog without end. */
 const EVENTS_QUEUED_MAX = 256
+
+/**
+ * How long one event's handlers may run. Past it the worker is stopped, not
+ * left running the handler while the next event starts beside it: an
+ * extension hears its events one at a time. The next event starts it again.
+ */
+export const WORKER_EVENT_TIMEOUT_MS = 60_000
 
 /**
  * Whether its worker stays running while it is on: a `background` one, and
@@ -929,9 +938,36 @@ export class ExtensionWorkers implements KernelWorkerPort {
       if (this.eventSkipReason(entry, event)) continue
       for (const payload of this.currentOf(event)) {
         if (this.eventSkipReason(entry, event) || entry.session !== session) return
-        await session.run({ kind: 'event', event, payload }, ownerInvoker(null, 'its own work, hearing an event'))
+        await session.run(
+          { kind: 'event', event, payload },
+          ownerInvoker(null, 'its own work, hearing an event'),
+          this.eventTimeoutMs(),
+        )
       }
     }
+  }
+
+  private eventTimeoutMs(): number {
+    return this.options.eventTimeoutMs ?? WORKER_EVENT_TIMEOUT_MS
+  }
+
+  /**
+   * An event's handler ran past its time: still running in the worker, so the
+   * worker is stopped before the next event is handed over, which starts it
+   * again (a background one at once). Nothing it was doing overlaps the next.
+   */
+  private async stopStalled(entry: Entry, session: WorkerSession, event: string): Promise<void> {
+    const seconds = Math.round(this.eventTimeoutMs() / 1000)
+    entry.log(
+      `[studio] event ${event} timed out: its handler ran past ${seconds}s, so the worker was stopped before the next event`,
+    )
+    if (entry.session !== session) return
+    await this.stop(
+      entry,
+      'idle',
+      `Its handler of the event ${event} ran past ${seconds}s, so its worker was stopped; the next event starts it again.`,
+    )
+    if (resident(entry.spec) && !this.closed) void this.ensure(entry.spec.extensionId).catch(() => undefined)
   }
 
   /** Queue `event` for one extension's worker, or (no event) only the standing state it hears when it starts. */
@@ -953,9 +989,19 @@ export class ExtensionWorkers implements KernelWorkerPort {
         const running = await this.ensure(entry.spec.extensionId)
         const session = running.session
         if (!session) throw new Error(running.message ?? stoppedMeanwhile(entry.spec.extensionId))
-        await this.giveStanding(running, session)
-        if (event === null || this.eventSkipReason(running, event)) return
-        await session.run({ kind: 'event', event, payload: copy }, ownerInvoker(null, 'its own work, hearing an event'))
+        try {
+          await this.giveStanding(running, session)
+          if (event === null || this.eventSkipReason(running, event)) return
+          await session.run(
+            { kind: 'event', event, payload: copy },
+            ownerInvoker(null, 'its own work, hearing an event'),
+            this.eventTimeoutMs(),
+          )
+        } catch (error) {
+          // Timed out: its handler is still running, and must not run beside the next.
+          if ((error as { code?: unknown }).code === 'timeout') await this.stopStalled(entry, session, event ?? 'state')
+          else throw error
+        }
       } catch (error) {
         entry.log(`[studio] event ${event ?? 'state'} was not delivered: ${messageOf(error)}`)
       } finally {
