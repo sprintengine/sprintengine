@@ -347,6 +347,24 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
         })
         if (carried.ok) approval = { state: 'approved', fingerprint: result.standing.approval.fingerprint }
       }
+      // A release of Studio's official catalogue installs without asking, and
+      // so does its update that asks for more (owner ruling): the catalogue
+      // checked it was the release it lists, its bytes, its owner and the
+      // kill list before it came here. The approval is written for exactly
+      // the fingerprint installed, so any other bytes under the key ask as
+      // ever. Added and community catalogues, git URLs and folders never get
+      // this (`official` is set by the catalogue for its official one only).
+      else if (
+        options.official === true &&
+        result.standing.approval.state === 'pending' &&
+        result.standing.killed === undefined
+      ) {
+        const granted = await writeExtensionApproval(deps.dataDir, result.id, {
+          fingerprint: result.standing.approval.fingerprint,
+          access: extensionAccess(result.extension, result.standing.verifiedFiles),
+        })
+        if (granted.ok) approval = { state: 'approved', fingerprint: result.standing.approval.fingerprint }
+      }
       await project()
       deps.changed()
       return { ok: true as const, moduleId: result.id, approval, strippedLinks: result.strippedLinks }

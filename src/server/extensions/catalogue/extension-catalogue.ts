@@ -866,7 +866,9 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         : approval
           ? accessGrowth(approval.access, extensionAccess(next, checkedOut.files))
           : ['your approval']
-    if (growth.length > 0) {
+    // An official release that asks for more goes through too, approved as
+    // it installs (module-lifecycle.ts), and its notice says what it now has.
+    if (growth.length > 0 && catalogue !== OFFICIAL_CATALOGUE) {
       await checkedOut.dispose()
       return hold(module.key, module.manifest.name, { ...exact, reason: 'access', growth })
     }
@@ -876,12 +878,14 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       deps.warn?.(`Update of ${module.key} failed: ${answer.message}`)
       return
     }
+    const grew = growth.length > 0 ? `It now also has: ${growth.join(', ')}.` : ''
+    const body = [grew, release.changelog ?? ''].filter(Boolean).join('\n\n')
     deps.notify?.({
       key: module.key,
       name: next.name,
       severity: 'info',
       title: `${next.name} updated to ${next.version}`,
-      ...(release.changelog ? { body: release.changelog } : {}),
+      ...(body ? { body } : {}),
     })
   }
 

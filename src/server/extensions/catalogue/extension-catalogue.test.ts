@@ -410,6 +410,91 @@ describe('installing from a git URL', () => {
   })
 })
 
+describe('the official catalogue', () => {
+  const growingManifest = (version: string) =>
+    notesManifest({
+      version,
+      contributes: {
+        skills: [{ id: 'notes', path: 'skills/notes' }],
+        commands: [{ id: 'notes.settings', title: 'Notes settings', action: 'app.settings.open' }],
+        mcpServers: [{ id: 'notes', name: 'Notes', transport: 'stdio', command: 'npx', args: ['some-server'] }],
+      },
+    })
+
+  test('an official release installs approved, for exactly its bytes; no other source of it does', async () => {
+    const env = setup()
+    const repo = env.repository('sprintengine', 'notes', notesFiles())
+    const entry = {
+      id: 'sprintengine.notes',
+      source: { url: repo.url, ref: 'main' },
+      releases: [await env.release(repo.folder)],
+    }
+    env.serveCatalogue('official', [entry])
+    const answer = await env.lifecycle.catalogue.installFrom({ catalogue: 'official', id: 'sprintengine.notes' })
+    expect(answer).toMatchObject({ ok: true, approval: { state: 'approved' } })
+    const [view] = await env.installed()
+    expect(view?.approval.state).toBe('approved')
+
+    // Bound to the fingerprint installed: its files changed on disk ask as ever.
+    writeFileSync(join(env.moduleRoot, 'sprintengine.notes', 'skills/notes/SKILL.md'), `${SKILL}\nChanged.\n`)
+    expect((await env.installed())[0]?.approval.state).toBe('pending')
+  })
+
+  test('the same release from the community catalogue, an added catalogue or a git URL asks', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'notes', notesFiles())
+    const entry = {
+      id: 'acme.notes',
+      source: { url: repo.url, ref: 'main' },
+      releases: [await env.release(repo.folder)],
+    }
+    env.serveCatalogue('community', [entry])
+    const community = await env.lifecycle.catalogue.installFrom({ catalogue: 'community', id: 'acme.notes' })
+    expect(community).toMatchObject({ ok: true, approval: { state: 'pending' } })
+    await env.lifecycle.uninstall('acme.notes')
+    const git = await env.lifecycle.catalogue.installFrom({ git: repo.url })
+    expect(git).toMatchObject({ ok: true, approval: { state: 'pending' } })
+  })
+
+  test('an official update that asks for more installs quietly, approved, and its notice says what it now has', async () => {
+    const env = setup()
+    const repo = env.repository('sprintengine', 'notes', notesFiles())
+    const v1 = await env.release(repo.folder)
+    const entry = (releases: CatalogueRelease[]) => ({
+      id: 'sprintengine.notes',
+      source: { url: repo.url, ref: 'main' },
+      releases,
+    })
+    env.serveCatalogue('official', [entry([v1])])
+    await env.lifecycle.catalogue.installFrom({ catalogue: 'official', id: 'sprintengine.notes' })
+    env.commit(repo.folder, repo.dir, { 'extension.json': JSON.stringify(growingManifest('1.1.0'), null, 2) })
+    const v2 = await env.release(repo.folder)
+    env.serveCatalogue('official', [entry([v2, v1])])
+    await env.lifecycle.catalogue.runUpdates()
+
+    const [view] = await env.installed()
+    expect(env.warnings).toEqual([])
+    expect(view?.extension.version).toBe('1.1.0')
+    expect(view?.approval.state).toBe('approved')
+    expect(view?.update).toBeUndefined()
+    const notice = env.notices.find((candidate) => candidate.title === 'Notes updated to 1.1.0')
+    expect(notice?.body).toMatch(/It now also has: .*local MCP server "notes"/)
+  })
+
+  test('a killed official release is refused, never approved', async () => {
+    const env = setup()
+    const repo = env.repository('sprintengine', 'notes', notesFiles())
+    const release = await env.release(repo.folder)
+    env.serveCatalogue('official', [
+      { id: 'sprintengine.notes', source: { url: repo.url, ref: 'main' }, releases: [release] },
+    ])
+    env.serveKillList([{ id: 'sprintengine.notes', reason: 'It was withdrawn.' }])
+    const answer = await env.lifecycle.catalogue.installFrom({ catalogue: 'official', id: 'sprintengine.notes' })
+    expect(answer).toMatchObject({ ok: false })
+    expect(await env.installed()).toEqual([])
+  })
+})
+
 describe('the kill list', () => {
   test('a killed version is switched off, what it added is retracted, and it cannot be installed again', async () => {
     const env = setup()

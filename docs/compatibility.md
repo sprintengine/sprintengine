@@ -370,6 +370,18 @@ trust label from where it came from), `killed` and `update`, and its launch
 status `killed`. All of it rides on `extension-host`: a window and its Studio
 are one build, so there is no older peer to serve.
 
+A release of the official catalogue installs without asking for approval,
+and so does an official update that asks for more (owner ruling: content and
+official extensions install without a prompt); the update's notice says what
+it now has. Studio approves it only after every check an install makes (the
+release, its content hash, its owner and the kill list), for exactly the
+fingerprint it installed, so other bytes under its key ask as ever. Community
+and added catalogues, git URLs and folders always ask. The official
+catalogue, its kill list, its owner records and its release lock are trusted
+as Studio reads them over HTTPS from the catalogue repository: they are not
+signed, so whoever can change that repository's `main` decides what is
+official, and what an official update may do.
+
 ### Agent hooks (no compatibility)
 
 A worker extension's `contributes.hooks` lets it check, change or refuse what
