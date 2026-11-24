@@ -58,6 +58,8 @@ export const CLI_ERROR_CODES = [
   'install_failed',
   /** `update --all`: some were held or refused (none held for approval): `data.updates` has every row. */
   'update_failed',
+  /** That extension does not update from here: a development folder, a git URL install, or one not installed. */
+  'not_updatable',
   /** No Studio window is open on this machine to show it in. */
   'no_window',
   /** No Studio window here shows a workspace to show it in. */

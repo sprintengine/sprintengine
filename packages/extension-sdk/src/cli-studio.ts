@@ -158,8 +158,9 @@ export async function connectStudio(options: { dataDir?: string } = {}): Promise
       const structured = result?.structuredContent
       if (result?.isError) {
         const error = (structured?.error ?? {}) as { code?: string; message?: string; data?: Record<string, unknown> }
+        // Studio's tools spell it `invalid_arguments`; the command line has one code for it.
         throw new CliError(
-          error.code ?? 'unavailable',
+          error.code === 'invalid_arguments' ? 'invalid_argument' : (error.code ?? 'unavailable'),
           error.message ?? result.content?.[0]?.text ?? `${name} failed.`,
           error.data,
         )

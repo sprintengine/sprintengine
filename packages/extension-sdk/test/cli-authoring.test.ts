@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -94,6 +94,14 @@ const GOOD = {
 test('every code is one of the kept codes, and each has its exit code', () => {
   assert.ok(CLI_ERROR_CODES.includes('extension_invalid'))
   assert.ok(CLI_ERROR_CODES.includes('approval_required'))
+})
+
+test('the guide’s code table lists every kept code, and only those', () => {
+  const guide = readFileSync(join(process.cwd(), 'packages/extension-sdk/guide/dev-loop.md'), 'utf8')
+  const start = guide.indexOf('| `error.code` |')
+  const table = guide.slice(start, guide.indexOf('\n\n', start))
+  const listed = [...table.matchAll(/^\| `([a-z_]+)` \|/gmu)].map((match) => match[1])
+  assert.deepEqual([...listed].sort(), [...CLI_ERROR_CODES].sort())
 })
 
 test('validate and inspect answer what Studio would load and what it asks for', () => {

@@ -33,7 +33,7 @@ fix it. Without `--json` the same is printed as words, the failure on stderr.
 
 | `error.code` | What it means | Exit |
 | --- | --- | --- |
-| `invalid_argument` | A flag or argument is missing or wrong | 1 |
+| `invalid_argument` | A flag or argument is missing or wrong (Studio's tools answer the same as `invalid_arguments`) | 1 |
 | `extension_invalid` | Studio cannot load it: `data.issues` says where | 2 |
 | `approval_required` | It is waiting for approval in Studio, which only the person gives, in Studio's window: `data.growth` when it asks for more than before | 3 |
 | `studio_unavailable` | No running Studio could be reached on this machine | 1 |
@@ -58,6 +58,7 @@ fix it. Without `--json` the same is printed as words, the failure on stderr.
 | `changed` | The catalogue changed what it lists since it was read: look again | 1 |
 | `held_back` | A community or added catalogue listed that release less than 12 hours ago, so a takedown can land first: the row's `heldBackMs` says how long it still waits | 1 |
 | `install_failed` | The install failed for another reason: the message says why | 1 |
+| `not_updatable` | That extension does not update from here: a development folder, a git URL install, or one not installed | 1 |
 | `update_failed` | `update --all`: some were held or refused, none held for approval: `data.updates` has every row | 1 |
 | `no_window` | No Studio window is open on this machine to show it in | 1 |
 | `no_workspace` | No Studio window here shows a workspace | 1 |

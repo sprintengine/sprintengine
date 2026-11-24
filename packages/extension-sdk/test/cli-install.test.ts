@@ -48,6 +48,7 @@ const INSTALLS: Record<string, Answer> = {
   'acme.killed': { ok: false, code: 'killed', message: 'Studio’s kill list removed acme.killed 1.0.0.' },
   'acme.locked': { ok: false, code: 'release_lock_mismatch', message: 'acme.locked 1.0.0 is locked to commit abc.' },
   'acme.moved': { ok: false, code: 'owner_mismatch', message: 'It lists acme.moved from a repository owned by bob.' },
+  'acme/bad@main': { ok: false, code: 'invalid_arguments', message: 'Studio refused the ref.' },
   'acme/private': { ok: false, code: 'git_auth_failed', message: 'This machine’s git credentials cannot read it.' },
   'acme.twice': {
     ok: false,
@@ -216,6 +217,9 @@ test('--ref and --catalogue reach Studio beside the source; a key named twice as
     'sprintengine-extension install acme.twice --catalogue official',
     'sprintengine-extension install acme.twice --catalogue community',
   ])
+  // Studio's tools spell it invalid_arguments; the command line answers its one spelling.
+  const bad = await run(['install', 'acme/bad@main'])
+  assert.equal(codeOf(bad.last), 'invalid_argument')
   const privateRepo = await run(['install', 'acme/private'])
   assert.equal(codeOf(privateRepo.last), 'git_auth_failed')
   calls.splice(0)
