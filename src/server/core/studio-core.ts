@@ -64,7 +64,7 @@ import { ConversationOutbox } from '../../main/conversation-outbox'
 import { createExtensionHooks } from '../extensions/hooks/extension-hooks'
 import { createExtensionEvents } from '../extensions/events/extension-events'
 import { followStudioEvents } from '../extensions/events/studio-events'
-import { createExtensionTerminals } from '../../main/module-host/extension-terminals'
+import { createExtensionTerminals, workspacesShownIn } from '../../main/module-host/extension-terminals'
 import { headlessTerminalViewer } from '../terminals/terminal-viewer'
 import { LOCAL_HOST_ID, workspaceHostIdOf } from '../../shared/execution-host'
 import { createHookInvokers } from '../extensions/hooks/hook-invokers'
@@ -197,6 +197,14 @@ export type StudioCoreOptions = {
    * terminals still run here, launched without the shell's preparation.
    */
   terminalHost?: StudioTerminalHost
+  /**
+   * The ids of the workspace windows open on this machine now (the
+   * registry's `workspaceWindows[].id`), read at each call: the desktop that
+   * holds them, in process. Absent (a server on its own, or one apart from the
+   * desktop), no window is known to show anything, and an extension's `send`
+   * reaches only the terminals it opened.
+   */
+  liveWorkspaceWindowIds?: () => ReadonlySet<string>
   /**
    * The services the agents are set up with, when the process around the core
    * uses them too (the desktop's shell, in process): one of each. Absent, the
@@ -703,14 +711,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         kill: (sessionId) => terminals.runtime.sessions.killTerminal(sessionId),
       }
     },
-    // What a window on this machine shows now: where `send` may type, besides the extension's own terminals.
-    shownWorkspaces: () => {
-      const state = workspaceRegistry.getState()
-      const shown = new Set<string>()
-      for (const id of [state.activeWorkspaceId, ...state.workspaceWindows.map((window) => window.activeWorkspaceId)])
-        if (id) shown.add(id)
-      return shown
-    },
+    // What a live window on this machine shows now: where `send` may type,
+    // besides the extension's own terminals. Only the desktop that holds the
+    // windows knows which are open; anywhere else, none is.
+    shownWorkspaces: () => workspacesShownIn(workspaceRegistry.getState(), options.liveWorkspaceWindowIds?.() ?? null),
     agentTitle: (workspaceId, agentId) =>
       (workspaceId ? workspaceRegistry.getRecord(workspaceId)?.agents[agentId]?.name : undefined) ?? null,
     workspace: (workspaceId) => {

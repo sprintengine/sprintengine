@@ -129,7 +129,10 @@ export function activate(studio: MainHost): void {
 - `send` types into a terminal your extension opened, or one in a workspace
   a window on this machine shows now, checked at each call and again right
   before the text goes out; any other is refused with `not_yours`. So nothing
-  types into a terminal in a workspace nobody is looking at.
+  types into a terminal in a workspace nobody is looking at. A window counts
+  only while it is open: with every window closed (Studio still running), and
+  on a Studio server with no desktop window, `send` reaches only the
+  terminals your extension opened.
 - What you type passes the extensions' `terminal.write.before` hooks first,
   as an extension's write.
 - A terminal is named by its id: what `create` or `list` answers, or one an

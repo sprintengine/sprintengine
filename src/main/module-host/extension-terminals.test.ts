@@ -5,7 +5,7 @@ import { test } from 'vitest'
 import type { TerminalSessionSnapshot } from '../../../packages/studio-protocol/src/terminals'
 import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
 import { EXTENSION_TERMINAL_OPENED_LIMIT } from '../../../packages/extension-sdk/src/terminals'
-import { createExtensionTerminals, type ExtensionTerminalHost } from './extension-terminals'
+import { createExtensionTerminals, workspacesShownIn, type ExtensionTerminalHost } from './extension-terminals'
 
 // The person's terminals as an extension's worker reaches them, past the
 // host's gate: typing through the write hooks, a shell opened in the
@@ -20,7 +20,13 @@ function hold() {
   return { released, release }
 }
 
-function machine(options: { refuse?: string; ceiling?: CliPermissionPreset | null } = {}) {
+function machine(
+  options: {
+    refuse?: string
+    ceiling?: CliPermissionPreset | null
+    shownWorkspaces?: () => ReadonlySet<string>
+  } = {},
+) {
   const sessions = new Map<string, Session>()
   // Set by a test: the next spawn, or every write, waits for it (a workspace lease, the control plane's queue).
   let spawnHeld: Promise<void> | null = null
@@ -92,7 +98,7 @@ function machine(options: { refuse?: string; ceiling?: CliPermissionPreset | nul
   // The workspaces a window shows now: where `send` reaches besides the extension's own terminals.
   const shown = new Set(['ws-1'])
   const terminals = createExtensionTerminals({
-    shownWorkspaces: () => shown,
+    shownWorkspaces: options.shownWorkspaces ?? (() => shown),
     terminals: () => (available ? host : null),
     workspace: (workspaceId) =>
       workspaceId === 'ws-1'
@@ -361,4 +367,46 @@ test('send types only into its own terminals and those in a workspace a window s
   queue.release()
   await assert.rejects(sending, code('not_yours'))
   assert.deepEqual(m.sessions.get('t-shown')!.typed, [])
+})
+
+test('a closed window shows nothing: with every window closed, send reaches only its own terminals', async () => {
+  // The saved window state, which outlives the windows: the primary showed ws-1, a second window ws-2.
+  const saved = {
+    activeWorkspaceId: 'ws-1',
+    primaryWorkspaceWindowId: 'primary',
+    workspaceWindows: [
+      { id: 'primary', activeWorkspaceId: 'ws-1' },
+      { id: 'window-2', activeWorkspaceId: 'ws-2' },
+    ],
+  }
+  const live = new Set(['primary', 'window-2'])
+  let known = true
+  const m = machine({ shownWorkspaces: () => workspacesShownIn(saved, known ? live : null) })
+  m.add('t-person', { workspaceId: 'ws-1' })
+  m.add('t-other', { workspaceId: 'ws-2' })
+  assert.deepEqual(await m.terminals.send('local.a', { terminalId: 't-person', text: 'ls' }), { accepted: true })
+  assert.deepEqual(await m.terminals.send('local.a', { terminalId: 't-other', text: 'ls' }), { accepted: true })
+
+  // The second window closed: its saved record stays, and reaches nothing.
+  live.delete('window-2')
+  await assert.rejects(m.terminals.send('local.a', { terminalId: 't-other', text: 'ls' }), code('not_yours'))
+  assert.deepEqual(await m.terminals.send('local.a', { terminalId: 't-person', text: 'pwd' }), { accepted: true })
+
+  // Every window closed, Studio still running (macOS): the last active workspace is shown by none.
+  live.clear()
+  const { terminalId: own } = await m.terminals.create('local.a', { workspaceId: 'ws-1' })
+  await assert.rejects(
+    m.terminals.send('local.a', { terminalId: 't-person', text: 'y', enter: true }),
+    code('not_yours'),
+  )
+  assert.deepEqual(m.sessions.get('t-person')!.typed, ['ls', 'pwd'])
+  assert.deepEqual(await m.terminals.send('local.a', { terminalId: own, text: 'ls' }), { accepted: true }, 'its own')
+
+  // Windows that cannot be known (a server on its own): its own terminals alone.
+  live.add('primary')
+  known = false
+  await assert.rejects(m.terminals.send('local.a', { terminalId: 't-person', text: 'ls' }), code('not_yours'))
+  assert.deepEqual(await m.terminals.send('local.a', { terminalId: own, text: 'ls' }), { accepted: true })
+  known = true
+  assert.deepEqual(await m.terminals.send('local.a', { terminalId: 't-person', text: 'ls' }), { accepted: true })
 })

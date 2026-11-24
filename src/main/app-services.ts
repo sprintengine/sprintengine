@@ -152,7 +152,12 @@ import { createCanvasSubscriberRegistry } from './canvas/canvas-subscribers'
 import { createCanvasRemoteSubscribers, isRemoteCanvasSubscriber } from './canvas/canvas-remote-subscribers'
 import { createCanvasWorkerHost } from './canvas/canvas-worker-host'
 import { createCanvasWorkerTransport, isCanvasWorkerWindow } from './canvas/canvas-worker-window'
-import { broadcastToWorkspaceWindows, isBrowserHostWebContents, listWorkspaceWindows } from './window-factory'
+import {
+  broadcastToWorkspaceWindows,
+  isBrowserHostWebContents,
+  listWorkspaceWindows,
+  workspaceWindowIdOf,
+} from './window-factory'
 import { SprintEngineUpdateService } from './update-service'
 import { channelForVersion, createUpdateChannelStore } from './update-channel-store'
 import { createUpdateInstallNoteStore } from './update-install-note'
@@ -826,6 +831,9 @@ export function createAppServices(
         // each launch (its plugin copy, MCP sync, skills, hook) and hears its
         // sessions for its changelists, the editor's written files, the
         // pull request marks and the git view.
+        // The workspace windows open now: what an extension's `send` may type
+        // into besides its own terminals is what one of them shows.
+        liveWorkspaceWindowIds: () => new Set(listWorkspaceWindows().map(workspaceWindowIdOf)),
         terminalHost: {
           launchPreparation: terminalLaunchPreparation,
           observers: {

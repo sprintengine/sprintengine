@@ -11,9 +11,12 @@
 //   terminal or run a command for it: typing into a shell runs whatever is
 //   typed, unasked.
 // - `send` types only into a terminal the extension opened, or one in a
-//   workspace a window on this machine shows now (read at each call, and again
-//   right before the write): never into a terminal in a workspace nobody is
-//   looking at, where it could answer an agent's prompt with no one watching.
+//   workspace a live window on this machine shows now (read at each call, and
+//   again right before the write): never into a terminal in a workspace nobody
+//   is looking at, where it could answer an agent's prompt with no one
+//   watching. A window that was closed shows nothing, whatever its saved state
+//   says; where the windows cannot be known (a server on its own or apart from
+//   the desktop), `send` reaches the extension's own terminals alone.
 // - What an extension types goes through the control plane's write, so the
 //   extensions' `terminal.write.before` hooks see it as an extension's write.
 // - `close` reaches only a terminal the extension opened. It keeps those until
@@ -85,11 +88,37 @@ export type ExtensionTerminalHost = {
   kill(sessionId: string): void
 }
 
+/**
+ * The workspaces the live windows on this machine show now: each live
+ * window's active workspace, read off the saved window state (the registry's
+ * `workspaceWindows`, and `activeWorkspaceId` for the primary window). A
+ * window's saved record outlives the window itself, so a window that is closed
+ * (every one, on macOS, with Studio still running) shows nothing; with no
+ * live windows known (`null`: a server on its own, or one apart from the
+ * desktop), nothing is shown.
+ */
+export function workspacesShownIn(
+  state: {
+    activeWorkspaceId: string | null
+    primaryWorkspaceWindowId?: string | null
+    workspaceWindows: ReadonlyArray<{ id: string; activeWorkspaceId: string | null }>
+  },
+  liveWindowIds: ReadonlySet<string> | null,
+): Set<string> {
+  const shown = new Set<string>()
+  if (!liveWindowIds || liveWindowIds.size === 0) return shown
+  if (state.activeWorkspaceId && liveWindowIds.has(state.primaryWorkspaceWindowId || 'primary'))
+    shown.add(state.activeWorkspaceId)
+  for (const window of state.workspaceWindows)
+    if (window.activeWorkspaceId && liveWindowIds.has(window.id)) shown.add(window.activeWorkspaceId)
+  return shown
+}
+
 export type ExtensionTerminalDeps = {
   terminals(): ExtensionTerminalHost | null
   /** A workspace this Studio holds, as a terminal opens in it; null for one it does not. */
   workspace(workspaceId: string): { folderPath: string | null; remote: boolean } | null
-  /** The workspaces a window on this machine shows now; absent (tests), none. */
+  /** The workspaces a live window on this machine shows now (`workspacesShownIn`); absent, none. */
   shownWorkspaces?: () => ReadonlySet<string>
   /** An agent's name, as the sidebar shows it, for a terminal it runs in; null when Studio has none. */
   agentTitle?: (workspaceId: string | undefined, agentId: string) => string | null
