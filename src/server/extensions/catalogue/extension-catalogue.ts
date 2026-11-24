@@ -314,6 +314,8 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
   const now = deps.now ?? Date.now
   const studioVersion = deps.studioVersion ?? STUDIO_EXTENSION_VERSION
   const errors = new Map<CatalogueId, string>()
+  /** Why each catalogue refused whole was refused, kept with its kind for an install by key. */
+  const refusals = new Map<CatalogueId, CatalogueRefusal>()
   // The last copies, read from disk at start, so a restart without network
   // still knows who owns what (an owner check that cannot read fails closed).
   let owners: OwnerRecords | null = readOwnerRecordsCacheSync(deps.dataDir)
@@ -355,22 +357,34 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
   ]
   const isKnownCatalogue = (id: CatalogueId) => catalogueIds().includes(id)
 
+  /** Why a catalogue was refused whole: the words, and the key and kind when one entry was the cause. */
+  type CatalogueRefusal = { message: string; key?: string; code?: InstallRefusal }
+
   /** Why a catalogue Studio read is refused whole, or null. */
-  function provenanceProblem(id: CatalogueId, catalogue: Catalogue): string | null {
+  function provenanceProblem(id: CatalogueId, catalogue: Catalogue): CatalogueRefusal | null {
     const official = id === OFFICIAL_CATALOGUE
     if (official && catalogue.owner.toLowerCase() !== OFFICIAL_OWNER)
-      return 'The official catalogue names an unexpected owner, so it was refused.'
+      return { message: 'The official catalogue names an unexpected owner, so it was refused.' }
     for (const entry of catalogue.extensions) {
       if (isReservedInstallKey(entry.id) && !official)
-        return `It lists ${entry.id}, a name only Studio’s official catalogue may list, so it was refused.`
+        return {
+          message: `It lists ${entry.id}, a name only Studio’s official catalogue may list, so it was refused.`,
+          key: entry.id,
+          code: 'reserved_name',
+        }
       // Every catalogue, an added one too, lists each extension under its
       // repository's owner: one listing another owner's name would install
       // as them, block their own and share their kills.
       const owner = sourcePublisher(entry.source.url)
       if (owner !== parseExtensionInstallKey(entry.id)!.publisher)
-        return owner === null
-          ? `It lists ${entry.id} from a repository Studio cannot tell the owner of, so it was refused.`
-          : `It lists ${entry.id} from a repository owned by ${owner}, so it was refused.`
+        return {
+          message:
+            owner === null
+              ? `It lists ${entry.id} from a repository Studio cannot tell the owner of, so it was refused.`
+              : `It lists ${entry.id} from a repository owned by ${owner}, so it was refused.`,
+          key: entry.id,
+          code: owner === null ? 'owner_unknown' : 'owner_mismatch',
+        }
     }
     return null
   }
@@ -383,10 +397,14 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     if (added) ({ raw, fetched } = await fetchGitCatalogue(added, git))
     else raw = await fetchJson(id === OFFICIAL_CATALOGUE ? urls.official : urls.community)
     const read = readCatalogue(raw, { fetchable: (url) => isFetchableGitUrl(url, git) })
-    const problem = !read.ok ? read.message : provenanceProblem(id, read.catalogue)
+    const problem: CatalogueRefusal | null = !read.ok
+      ? { message: read.message }
+      : provenanceProblem(id, read.catalogue)
     if (problem || !read.ok) {
       await fetched?.dispose()
-      throw new Error(problem ?? 'The catalogue could not be read.')
+      throw Object.assign(new Error(problem?.message ?? 'The catalogue could not be read.'), {
+        refusal: problem ?? undefined,
+      })
     }
     return { catalogue: read.catalogue, ...(fetched ? { fetched } : {}) }
   }
@@ -416,8 +434,12 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         await writeCatalogueCache(deps.dataDir, (cache) => ({ ...cache, [id]: { fetchedAt: now(), catalogue } }))
         await keepRepository(id, fetched)
         errors.delete(id)
+        refusals.delete(id)
       } catch (error) {
         errors.set(id, (error as Error).message)
+        const refusal = (error as { refusal?: CatalogueRefusal }).refusal
+        if (refusal) refusals.set(id, refusal)
+        else refusals.delete(id)
       }
     })().finally(() => refreshing.delete(id))
     refreshing.set(id, run)
@@ -1299,11 +1321,15 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         }
       if (listing[0]) return install(listing[0])
     }
-    // A catalogue listing it under another owner's name is refused whole (provenanceProblem).
+    // A catalogue refused whole for this key's entry (provenanceProblem) says why, by its kind.
     for (const id of catalogueIds()) {
-      const error = errors.get(id)
-      if (error?.includes(key))
-        return { ok: false, code: 'owner_mismatch', message: `${catalogueName(id)} was refused: ${error}` }
+      const refusal = refusals.get(id)
+      if (refusal?.key === key)
+        return {
+          ok: false,
+          ...(refusal.code ? { code: refusal.code } : {}),
+          message: `${catalogueName(id)} was refused: ${refusal.message}`,
+        }
     }
     return { ok: false, code: 'not_found', message: `No catalogue here lists ${key}.` }
   }

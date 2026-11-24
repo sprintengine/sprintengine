@@ -1199,6 +1199,21 @@ describe('installing and updating from outside the window', () => {
     const owner = await env.lifecycle.catalogue.installKey('acme.tools')
     expect(owner).toMatchObject({ ok: false, code: 'owner_mismatch' })
     expect(!owner.ok && owner.message).toMatch(/owned by bob/)
+    // The kind is the refusal's own, never guessed from its words: another key whose name holds this one is not it.
+    expect(await env.lifecycle.catalogue.installKey('acme.tool')).toMatchObject({ ok: false, code: 'not_found' })
+    const reserved = env.repository('sprintengine', 'notes', notesFiles())
+    env.serveCatalogue('community', [
+      {
+        id: 'sprintengine.notes',
+        source: { url: reserved.url, ref: 'main' },
+        releases: [await env.release(reserved.folder)],
+      },
+    ])
+    env.advance(60_000)
+    expect(await env.lifecycle.catalogue.installKey('sprintengine.notes')).toMatchObject({
+      ok: false,
+      code: 'reserved_name',
+    })
   })
 
   async function installedV1(env: ReturnType<typeof setup>) {
