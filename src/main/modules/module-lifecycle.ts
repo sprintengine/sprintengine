@@ -30,6 +30,8 @@ import type { ModuleRegistryMirror } from './registry-mirror'
 import { approvalView } from './extension-approval-view'
 import { toThirdPartyModuleView, type ExtensionRunView } from './third-party-module-view'
 import { collectExtensionContributions, readSurfaceModules } from './extension-surface-entries'
+import { noteReplacementLosers, withInstallOrder } from './extension-replacement-log'
+import { readInstallRecordsSync } from '../../server/extensions/catalogue/catalogue-files'
 import { formatSourceProblem } from '../../../packages/extension-sdk/src/source-modules'
 import { isExtensionRunnable } from './module-signature'
 import { pinExtensionFrame } from './extension-frame-grant'
@@ -190,6 +192,11 @@ export type ModuleLifecycle = {
    * for this change already, so one change is discovered once.
    */
   reproject(modules?: readonly InstalledModule[]): Promise<void>
+  /**
+   * An install from outside the window waits for the person: their window
+   * asks them now (`reviewAsked`), while it waits. Nothing here approves it.
+   */
+  askReview(moduleId: string): void
 }
 
 /** `extension.devLoad`'s answer: the key it loads under, and how its approval stands. */
@@ -408,8 +415,17 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     },
   })
 
+  // Installs from outside the window that wait for the person, for this run:
+  // a restart leaves them waiting in Settings, as a dismissed question does.
+  const reviewAsked = new Set<string>()
+
   return {
     catalogue,
+
+    askReview(moduleId) {
+      reviewAsked.add(moduleId)
+      deps.changed()
+    },
 
     list() {
       const view = deps.view()
@@ -423,16 +439,28 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
       return {
         // A folder waiting to stand in for an installed one is listed beside
         // it, for the person to review; the installed one is what runs.
-        modules: catalogue.annotate(
-          [...modules, ...waiting].map((module) => toThirdPartyModuleView(module, run, overrides)),
-        ),
+        modules: catalogue
+          .annotate([...modules, ...waiting].map((module) => toThirdPartyModuleView(module, run, overrides)))
+          .map((view) =>
+            view.approval.state === 'pending' && reviewAsked.has(view.manifest.id)
+              ? { ...view, reviewAsked: true as const }
+              : view,
+          ),
         rejected,
       }
     },
 
     async contributions() {
       const { modules } = await discoverUserModules(deps.moduleRoot(), standingContext())
-      return collectExtensionContributions(modules)
+      // When each was installed, so a window lets the first of two that
+      // replace one Studio action take it over; the other hears so in its log.
+      const result = withInstallOrder(
+        collectExtensionContributions(modules),
+        modules,
+        readInstallRecordsSync(deps.dataDir),
+      )
+      noteReplacementLosers(result.extensions)
+      return result
     },
 
     async content(request) {

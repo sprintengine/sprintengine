@@ -1067,3 +1067,146 @@ function readdirDeep(dir: string): string[] {
   walk(dir, '')
   return out
 }
+
+describe('installing and updating from outside the window', () => {
+  test('a catalogue key installs from the first catalogue that lists it, and one no catalogue lists is not found', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'notes', notesFiles())
+    env.serveCatalogue('official', [])
+    env.serveCatalogue('community', [
+      { id: 'acme.notes', source: { url: repo.url, ref: 'main' }, releases: [await env.release(repo.folder)] },
+    ])
+    const answer = await env.lifecycle.catalogue.installKey('acme.notes')
+    expect(answer).toMatchObject({ ok: true, moduleId: 'acme.notes', catalogue: 'community' })
+    expect(answer.ok && answer.approval.state).toBe('pending')
+    expect(await env.lifecycle.catalogue.installKey('acme.other')).toMatchObject({ ok: false, code: 'not_found' })
+
+    // Installed from outside the window, it is asked of the person there while it waits.
+    expect((await env.installed())[0]?.reviewAsked).toBeUndefined()
+    env.lifecycle.askReview('acme.notes')
+    expect((await env.installed())[0]?.reviewAsked).toBe(true)
+    await approveAll(env)
+    expect((await env.installed())[0]?.reviewAsked).toBeUndefined()
+  })
+
+  test('each refusal says which: killed, the release lock, another owner', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'notes', notesFiles())
+    const first = await env.release(repo.folder)
+    env.serveCatalogue('community', [{ id: 'acme.notes', source: { url: repo.url, ref: 'main' }, releases: [first] }])
+    env.serveKillList([{ id: 'acme.notes', versions: ['1.0.0'], reason: 'It sends your files away.' }])
+    expect(await env.lifecycle.catalogue.installKey('acme.notes')).toMatchObject({ ok: false, code: 'killed' })
+
+    env.serveKillList([])
+    expect(await env.lifecycle.catalogue.installKey('acme.notes')).toMatchObject({ ok: true })
+    env.commit(repo.folder, repo.dir, { 'skills/notes/SKILL.md': `${SKILL}\nSwapped.\n` })
+    env.serveCatalogue('community', [
+      { id: 'acme.notes', source: { url: repo.url, ref: 'main' }, releases: [await env.release(repo.folder)] },
+    ])
+    env.advance(60_000)
+    expect(await env.lifecycle.catalogue.installKey('acme.notes')).toMatchObject({
+      ok: false,
+      code: 'release_lock_mismatch',
+    })
+
+    // A catalogue listing a key from a repository another owner holds is refused whole.
+    const other = env.repository('bob', 'tools', notesFiles({ id: 'tools' }))
+    env.serveCatalogue('community', [
+      { id: 'acme.tools', source: { url: other.url, ref: 'main' }, releases: [await env.release(other.folder)] },
+    ])
+    env.advance(60_000)
+    const owner = await env.lifecycle.catalogue.installKey('acme.tools')
+    expect(owner).toMatchObject({ ok: false, code: 'owner_mismatch' })
+    expect(!owner.ok && owner.message).toMatch(/owned by bob/)
+  })
+
+  async function installedV1(env: ReturnType<typeof setup>) {
+    const repo = env.repository('acme', 'notes', notesFiles())
+    const v1 = await env.release(repo.folder)
+    const entry = (releases: CatalogueRelease[], extra: Record<string, unknown> = {}) => ({
+      id: 'acme.notes',
+      source: { url: repo.url, ref: 'main' },
+      releases,
+      ...extra,
+    })
+    env.serveCatalogue('community', [entry([v1])])
+    await env.lifecycle.catalogue.installKey('acme.notes')
+    await approveAll(env)
+    return { repo, v1, entry }
+  }
+
+  test('an update asked for now installs at once, with what changed, and says when there is nothing newer', async () => {
+    const env = setup()
+    const { repo, v1, entry } = await installedV1(env)
+    const installedAt = readInstallRecordsSync(env.dataDir)['acme.notes']?.installedAt
+    expect(await env.lifecycle.catalogue.updateNow()).toEqual([
+      { key: 'acme.notes', from: '1.0.0', status: 'up_to_date' },
+    ])
+    env.commit(repo.folder, repo.dir, {
+      'extension.json': JSON.stringify(notesManifest({ version: '1.1.0' }), null, 2),
+    })
+    env.serveCatalogue('community', [entry([await env.release(repo.folder), v1])])
+    env.advance(60_000)
+    // No hold-back: the person (or their agent) asked for it.
+    expect(await env.lifecycle.catalogue.updateNow()).toEqual([
+      { key: 'acme.notes', from: '1.0.0', to: '1.1.0', status: 'updated' },
+    ])
+    const [view] = await env.installed()
+    expect(view?.extension.version).toBe('1.1.0')
+    expect(view?.approval.state).toBe('approved')
+    // It keeps when it was first installed: which extension came first decides whose replacement wins.
+    expect(readInstallRecordsSync(env.dataDir)['acme.notes']?.installedAt).toBe(installedAt)
+    expect(await env.lifecycle.catalogue.updateNow('acme.gone')).toMatchObject([
+      { key: 'acme.gone', status: 'refused', code: 'not_updatable' },
+    ])
+  })
+
+  test('an update that asks for more is held for the person, and the running version keeps running', async () => {
+    const env = setup()
+    const { repo, v1, entry } = await installedV1(env)
+    env.commit(repo.folder, repo.dir, {
+      'extension.json': JSON.stringify(
+        notesManifest({
+          version: '1.1.0',
+          contributes: {
+            skills: [{ id: 'notes', path: 'skills/notes' }],
+            commands: [
+              { id: 'notes.settings', title: 'Notes settings', action: 'app.settings.open' },
+              { id: 'notes.find', title: 'Find notes', action: 'search.everywhere' },
+            ],
+          },
+        }),
+        null,
+        2,
+      ),
+    })
+    env.serveCatalogue('community', [entry([await env.release(repo.folder), v1])])
+    env.advance(60_000)
+    const [row] = await env.lifecycle.catalogue.updateNow('acme.notes')
+    expect(row).toMatchObject({
+      key: 'acme.notes',
+      from: '1.0.0',
+      to: '1.1.0',
+      status: 'held',
+      code: 'approval_required',
+    })
+    expect(row?.growth?.join(' ')).toMatch(/notes\.find/)
+    const [view] = await env.installed()
+    expect(view?.extension.version).toBe('1.0.0')
+    expect(view?.approval.state).toBe('approved')
+    expect(view?.update).toMatchObject({ version: '1.1.0', held: 'access' })
+    expect(env.notices.some((notice) => notice.title === 'Notes 1.1.0 waits for your review')).toBe(true)
+  })
+
+  test('an update of one waiting for approval is the person’s, in Studio’s window', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'notes', notesFiles())
+    env.serveCatalogue('community', [
+      { id: 'acme.notes', source: { url: repo.url, ref: 'main' }, releases: [await env.release(repo.folder)] },
+    ])
+    await env.lifecycle.catalogue.installKey('acme.notes')
+    expect(await env.lifecycle.catalogue.updateNow('acme.notes')).toMatchObject([
+      { key: 'acme.notes', status: 'refused', code: 'approval_required' },
+    ])
+  })
+})

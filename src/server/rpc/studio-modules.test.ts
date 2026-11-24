@@ -734,6 +734,7 @@ test('the installed list names a folder Studio could not read by its place only 
     setSetting: async () => ({ ok: false, message: 'none' }),
     reportRegistry: () => ({ ok: true }),
     reproject: async () => undefined,
+    askReview: () => undefined,
     catalogue: NO_CATALOGUE,
   })
   const owner = await caller(hub)
@@ -774,6 +775,7 @@ test('a change to what runs is an owner’s: a paired client holding extensions:
     setSetting: async () => ({ ok: false, message: 'none' }),
     reportRegistry: () => ({ ok: true }),
     reproject: async () => undefined,
+    askReview: () => undefined,
     catalogue: NO_CATALOGUE,
   })
   const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['extensions:operate']))
@@ -809,6 +811,7 @@ test('the window’s module report is an owner’s: a paired client holding exte
     setSetting: async () => ({ ok: false, message: 'none' }),
     reportRegistry: (snapshot) => (reported.push(snapshot), { ok: true }),
     reproject: async () => undefined,
+    askReview: () => undefined,
     catalogue: NO_CATALOGUE,
   })
   const snapshot = { modules: [] }

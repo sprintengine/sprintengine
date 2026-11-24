@@ -27,6 +27,7 @@ import { createWorktreePoolTools } from '../worktree-pool/worktree-pool-tools'
 import { createArtifactsTools } from '../artifacts/artifacts-tools'
 import { createExtensionTools } from './extension-tools'
 import { createExtensionDevTools } from './extension-dev-tools'
+import { createExtensionInstallTools } from './extension-install-tools'
 import { createExtensionShotTool } from './extension-shot-tool'
 import { createPluginTools } from './plugin-tools'
 
@@ -57,7 +58,11 @@ export function desktopToolParts(): Parameters<typeof desktopGatewayTools>[0] & 
     visual: [...createVisualTools(stub), createExtensionShotTool(stub)],
     automation: createAutomationTools(stub),
     artifacts: createArtifactsTools(stub),
-    extension: [...createExtensionTools(stub), ...createExtensionDevTools({ backend: () => null })],
+    extension: [
+      ...createExtensionTools(stub),
+      ...createExtensionDevTools({ backend: () => null }),
+      ...createExtensionInstallTools({ backend: () => null }),
+    ],
     plugin: createPluginTools(stub),
     tailnet: createTailnetTools({ resolveTailnet: () => null }),
     core: [

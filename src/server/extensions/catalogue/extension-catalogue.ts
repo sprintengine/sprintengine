@@ -122,10 +122,45 @@ type InstallAnswer =
   | {
       ok: false
       message: string
+      /** Why, for a caller that acts on it (`sprintengine-extension install`): absent, it failed. */
+      code?: InstallRefusal
       issues?: Array<{ path: string; message: string }>
       /** The folders of a Claude Code plugin marketplace, one of which to name. */
       folders?: string[]
     }
+
+/**
+ * The refusals an install or an update answers with a code, so a command line
+ * and an agent can tell them apart: a killed version, a release that is not
+ * the one the release lock or the catalogue holds, an owner that changed, a
+ * kill list that cannot be read, a source other than the one installed from,
+ * and a key no catalogue lists.
+ */
+export type InstallRefusal =
+  | 'killed'
+  | 'release_lock_mismatch'
+  | 'release_mismatch'
+  | 'owner_mismatch'
+  | 'owner_unknown'
+  | 'kill_list_unavailable'
+  | 'origin_conflict'
+  | 'reserved_name'
+  | 'not_found'
+  | 'changed'
+
+/** One installed extension's `sprintengine-extension update`: what changed, or why nothing did. */
+export type UpdateRow = {
+  key: string
+  from: string
+  /** The release it moved to, or the one waiting. */
+  to?: string
+  status: 'updated' | 'up_to_date' | 'held' | 'refused'
+  /** Why it was held or refused. */
+  reason?: string
+  code?: InstallRefusal | 'approval_required' | 'not_updatable'
+  /** What a held release asks for beyond what was approved. */
+  growth?: string[]
+}
 
 export type CatalogueNotice = {
   key: string
@@ -187,6 +222,19 @@ export type ExtensionCatalogue = {
   ): Promise<InstallAnswer & { leftOut?: string[] }>
   /** Install the newer release of an installed extension; `version` is the one the person was shown. */
   update(key: string, version?: string): Promise<InstallAnswer>
+  /**
+   * Install what a catalogue lists under `key`: the first catalogue that
+   * lists it, official, community, then those added, in that order.
+   */
+  installKey(key: string): Promise<InstallAnswer & { catalogue?: CatalogueId }>
+  /**
+   * Update installed extensions now, from outside the window
+   * (`sprintengine-extension update`): `key`'s, or every one installed from a
+   * catalogue. As an automatic update, but at once: a release that asks for
+   * more than was approved is held for the person's review in Studio's
+   * window, the running version keeps running, and nothing is approved here.
+   */
+  updateNow(key?: string): Promise<UpdateRow[]>
   /** An installed extension's origin, its update and its kill, for `extension.installed`. */
   annotate(views: ThirdPartyModuleView[]): ThirdPartyModuleView[]
   /** An uninstall forgets where it came from and any update it held. */
@@ -493,14 +541,18 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
    */
   async function killListForInstall(
     fresh: boolean,
-  ): Promise<{ ok: true; list: KillList | null } | { ok: false; message: string }> {
+  ): Promise<{ ok: true; list: KillList | null } | { ok: false; code: InstallRefusal; message: string }> {
     try {
       return { ok: true, list: await killList.refresh() }
     } catch (error) {
       const kept = killList.current()
       const why = (error as Error).message
       if (!kept || fresh)
-        return { ok: false, message: `Studio could not read its kill list, so nothing installs until it can: ${why}` }
+        return {
+          ok: false,
+          code: 'kill_list_unavailable',
+          message: `Studio could not read its kill list, so nothing installs until it can: ${why}`,
+        }
       deps.warn?.(`The kill list could not be read; the install was checked against the kept copy: ${why}`)
       return { ok: true, list: kept }
     }
@@ -551,15 +603,20 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     id: CatalogueId,
     key: string,
     options: { checked?: CheckedRelease; automatic?: boolean } = {},
-  ): Promise<{ ok: true; prepared: Prepared } | { ok: false; message: string; changed?: true }> {
-    if (!isKnownCatalogue(id)) return { ok: false, message: 'That catalogue has not been added here.' }
+  ): Promise<{ ok: true; prepared: Prepared } | { ok: false; message: string; code?: InstallRefusal; changed?: true }> {
+    if (!isKnownCatalogue(id))
+      return { ok: false, code: 'not_found', message: 'That catalogue has not been added here.' }
     if (isReservedInstallKey(key) && id !== OFFICIAL_CATALOGUE)
-      return { ok: false, message: `${key} uses a name only Studio’s official catalogue installs.` }
+      return {
+        ok: false,
+        code: 'reserved_name',
+        message: `${key} uses a name only Studio’s official catalogue installs.`,
+      }
     // What the catalogue lists now; its last copy when it cannot be read.
     await refreshOne(id)
     await refreshLists()
     const entry = findEntry(id, key)
-    if (!entry) return { ok: false, message: `${catalogueName(id)} does not list ${key}.` }
+    if (!entry) return { ok: false, code: 'not_found', message: `${catalogueName(id)} does not list ${key}.` }
     const chosen = selectCatalogueRelease(entry.releases, studioVersion)
     if (!chosen) return { ok: false, message: `${catalogueName(id)} lists no release of ${key} Studio can read.` }
     if (!chosen.installable)
@@ -570,14 +627,19 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     const { release } = chosen
     if (options.checked) {
       const changed = changedSince(key, id, entry, release, options.checked)
-      if (changed) return { ok: false, message: changed, changed: true }
+      if (changed) return { ok: false, code: 'changed', message: changed, changed: true }
     }
     const list = await killListForInstall(options.automatic === true)
     if (!list.ok) return list
     const killed = findKilled(list.list, key, release.version)
-    if (killed) return { ok: false, message: `Studio’s kill list removed ${key} ${release.version}: ${killed.reason}` }
+    if (killed)
+      return {
+        ok: false,
+        code: 'killed',
+        message: `Studio’s kill list removed ${key} ${release.version}: ${killed.reason}`,
+      }
     const locked = lockProblem(key, release.version, release, 'catalogue')
-    if (locked) return { ok: false, message: locked }
+    if (locked) return { ok: false, code: 'release_lock_mismatch', message: locked }
     const checked = await checkOutExtension({
       url: entry.source.url,
       ref: release.commit,
@@ -597,7 +659,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
           })
     if (mismatch) {
       await checkedOut.dispose()
-      return { ok: false, message: `${key} was refused: ${mismatch}` }
+      return { ok: false, code: 'release_mismatch', message: `${key} was refused: ${mismatch}` }
     }
     return { ok: true, prepared: { checkedOut, release, entry } }
   }
@@ -621,7 +683,9 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         commit: checkedOut.commit,
         contentHash: checkedOut.contentHash,
         ...(ownerId !== undefined ? { ownerId } : {}),
-        installedAt: now(),
+        // An update keeps when it was first installed: which extension came
+        // first decides whose replacement of a Studio action wins.
+        installedAt: previous?.installedAt ?? now(),
       })
       const answer = await deps.installChecked(checkedOut.dir, { publisher, official })
       if (!answer.ok) {
@@ -692,7 +756,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       catalogue: id,
       source: entryNow?.source ?? { url: '', ref: '' },
     })
-    if (change) return { ok: false, message: change }
+    if (change) return { ok: false, code: 'origin_conflict', message: change }
     const prepared = await prepareCatalogueRelease(id, key, checked ? { checked } : {})
     if (!prepared.ok) return prepared
     const { checkedOut, entry } = prepared.prepared
@@ -715,26 +779,33 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     const ref = source.ref?.trim() || 'HEAD'
     const path = source.path?.trim().replace(/^\/+|\/+$/g, '') || undefined
     const publisher = sourcePublisher(url)
-    if (!publisher) return { ok: false as const, message: 'Studio cannot tell who owns that repository from its URL.' }
+    if (!publisher)
+      return {
+        ok: false as const,
+        code: 'owner_unknown' as const,
+        message: 'Studio cannot tell who owns that repository from its URL.',
+      }
     const list = await killListForInstall(false)
     if (!list.ok) return list
     const checked = await checkOutExtension({ url, ref, ...(path ? { path } : {}), claudePlugins: true, git })
     if (!checked.ok) return checked
     const { checkedOut } = checked
     const key = `${publisher}.${checkedOut.manifest.id}`
-    const refuse = async (message: string) => {
+    const refuse = async (message: string, code: InstallRefusal) => {
       await checkedOut.dispose()
-      return { ok: false as const, message }
+      return { ok: false as const, message, code }
     }
-    if (isReservedInstallKey(key)) return refuse(`${key} uses a name only Studio’s official catalogue installs.`)
+    if (isReservedInstallKey(key))
+      return refuse(`${key} uses a name only Studio’s official catalogue installs.`, 'reserved_name')
     const killed = findKilled(list.list, key, checkedOut.manifest.version)
-    if (killed) return refuse(`Studio’s kill list removed ${key} ${checkedOut.manifest.version}: ${killed.reason}`)
+    if (killed)
+      return refuse(`Studio’s kill list removed ${key} ${checkedOut.manifest.version}: ${killed.reason}`, 'killed')
     const origin = { kind: 'git' as const, source: { url, ref, ...(path ? { path } : {}) } }
     const change = await originChange(key, origin)
-    if (change) return refuse(change)
+    if (change) return refuse(change, 'origin_conflict')
     await refreshLists()
     const locked = lockProblem(key, checkedOut.manifest.version, { contentHash: checkedOut.contentHash }, 'git')
-    if (locked) return refuse(locked)
+    if (locked) return refuse(locked, 'release_lock_mismatch')
     const leftOut = checkedOut.leftOut
     const answer = await installPrepared(checkedOut, key, origin, undefined)
     return answer.ok && leftOut.length > 0 ? { ...answer, leftOut } : answer
@@ -798,7 +869,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         message: `${catalogueName(found.catalogue)} changed ${key} ${found.release.version} since it was held. Look at it again before you install it.`,
       }
     const paused = ownerPause(record, found.entry)
-    if (paused) return { ok: false, message: paused }
+    if (paused) return { ok: false, code: 'owner_mismatch', message: paused }
     return installFromCatalogue(found.catalogue, key, {
       version: found.release.version,
       commit: found.release.commit,
@@ -827,36 +898,83 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     })
   }
 
-  async function updateOne(module: InstalledForCatalogue, startedAt: number): Promise<void> {
-    if (module.development || module.killed || !module.enabled) return
-    // An extension waiting for approval, or never approved, is the person's to update.
-    if (module.approval !== 'approved' && module.approval !== 'not-needed') return
-    const found = newerRelease(module.key, module.manifest.version)
-    if (!found) return
-    const { record, entry, release, catalogue } = found
+  /**
+   * Update one installed extension to the newer release its catalogue lists,
+   * as nobody reviews it: a release whose owner changed, that moved to
+   * another repository, or that asks for more than was approved is held for
+   * the person's review (with a notice), and the running version keeps
+   * running. `automatic` is the periodic pass: it also skips an extension
+   * switched off or not approved, and waits out the hold-back. Without it the
+   * update was asked for now (`sprintengine-extension update`).
+   */
+  async function updateCore(
+    module: InstalledForCatalogue,
+    options: { automatic: boolean; startedAt: number },
+  ): Promise<UpdateRow> {
+    const from = module.manifest.version
+    const row = (rest: Omit<UpdateRow, 'key' | 'from'>): UpdateRow => ({ key: module.key, from, ...rest })
+    if (module.development)
+      return row({ status: 'refused', code: 'not_updatable', reason: 'It is a development folder.' })
+    if (module.killed)
+      return row({ status: 'refused', code: 'killed', reason: 'Studio’s kill list switched this version off.' })
+    const record = readInstallRecordsSync(deps.dataDir)[module.key]
+    if (record?.origin.kind !== 'catalogue')
+      return row({
+        status: 'refused',
+        code: 'not_updatable',
+        reason: 'It was not installed from a catalogue; install it again to update it.',
+      })
+    if (options.automatic) {
+      if (!module.enabled) return row({ status: 'refused', reason: 'It is switched off.' })
+      // An extension waiting for approval, or never approved, is the person's to update.
+      if (module.approval !== 'approved' && module.approval !== 'not-needed')
+        return row({ status: 'refused', code: 'approval_required', reason: 'It waits for approval.' })
+    } else if (module.approval === 'pending' || module.approval === 'unavailable')
+      return row({
+        status: 'refused',
+        code: 'approval_required',
+        reason: 'It waits for the person’s approval in Studio’s window; update it there.',
+      })
+    const found = newerRelease(module.key, from)
+    if (!found) return row({ status: 'up_to_date' })
+    const { entry, release, catalogue } = found
+    const to = release.version
     const exact = { version: release.version, commit: release.commit, contentHash: release.contentHash }
     if (record.ownerId !== undefined && currentOwnerId(entry) === undefined) {
-      deps.warn?.(`Update of ${module.key} skipped: Studio cannot read who owns it now.`)
-      return
+      const reason = 'Studio cannot read who owns it now.'
+      deps.warn?.(`Update of ${module.key} skipped: ${reason}`)
+      return row({ to, status: 'refused', code: 'owner_unknown', reason })
     }
     const paused = ownerPause(record, entry)
-    if (paused) return hold(module.key, module.manifest.name, { ...exact, reason: 'owner' })
-    if (record.origin.kind !== 'catalogue' || !isSameCatalogueSource(record.origin.source, entry.source))
-      return hold(module.key, module.manifest.name, { ...exact, reason: 'repository' })
-    if (catalogue !== OFFICIAL_CATALOGUE) {
-      await lockReleases(deps.dataDir, [{ key: module.key, ...exact }], startedAt)
-      const firstSeen = readReleaseLockSync(deps.dataDir)[module.key]?.[release.version]?.firstSeenAt ?? startedAt
-      if (startedAt - firstSeen < AUTO_UPDATE_HOLD_BACK_MS) return
+    if (paused) {
+      await hold(module.key, module.manifest.name, { ...exact, reason: 'owner' })
+      return row({ to, status: 'held', code: 'owner_mismatch', reason: paused })
+    }
+    if (!isSameCatalogueSource(record.origin.source, entry.source)) {
+      await hold(module.key, module.manifest.name, { ...exact, reason: 'repository' })
+      return row({
+        to,
+        status: 'held',
+        code: 'origin_conflict',
+        reason: 'It moved to another repository or folder: review it in Studio’s window.',
+      })
+    }
+    if (options.automatic && catalogue !== OFFICIAL_CATALOGUE) {
+      await lockReleases(deps.dataDir, [{ key: module.key, ...exact }], options.startedAt)
+      const firstSeen =
+        readReleaseLockSync(deps.dataDir)[module.key]?.[release.version]?.firstSeenAt ?? options.startedAt
+      if (options.startedAt - firstSeen < AUTO_UPDATE_HOLD_BACK_MS)
+        return row({ to, status: 'refused', reason: 'It is held back until it has been listed long enough.' })
     }
     // Exactly the release checked here: one the catalogue lists in its place
     // since is the next pass's, held back and checked in turn.
     const prepared = await prepareCatalogueRelease(catalogue, module.key, {
-      automatic: true,
+      automatic: options.automatic,
       checked: { ...exact, source: record.origin.source, ownerId: currentOwnerId(entry) ?? null },
     })
     if (!prepared.ok) {
       deps.warn?.(`Update of ${module.key} skipped: ${prepared.message}`)
-      return
+      return row({ to, status: 'refused', reason: prepared.message, ...(prepared.code ? { code: prepared.code } : {}) })
     }
     const { checkedOut } = prepared.prepared
     const next = checkedOut.manifest
@@ -873,13 +991,20 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     // it installs (module-lifecycle.ts), and its notice says what it now has.
     if (growth.length > 0 && catalogue !== OFFICIAL_CATALOGUE) {
       await checkedOut.dispose()
-      return hold(module.key, module.manifest.name, { ...exact, reason: 'access', growth })
+      await hold(module.key, module.manifest.name, { ...exact, reason: 'access', growth })
+      return row({
+        to,
+        status: 'held',
+        code: 'approval_required',
+        reason: 'It asks for more than was approved: the person reviews it in Studio’s window.',
+        growth,
+      })
     }
     // Nobody reviewed this one: it keeps the source and the owner the person installed.
     const answer = await installPrepared(checkedOut, module.key, record.origin, record.ownerId ?? currentOwnerId(entry))
     if (!answer.ok) {
       deps.warn?.(`Update of ${module.key} failed: ${answer.message}`)
-      return
+      return row({ to, status: 'refused', reason: answer.message, ...(answer.code ? { code: answer.code } : {}) })
     }
     const grew = growth.length > 0 ? `It now also has: ${growth.join(', ')}.` : ''
     const body = [grew, release.changelog ?? ''].filter(Boolean).join('\n\n')
@@ -890,6 +1015,63 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       title: `${next.name} updated to ${next.version}`,
       ...(body ? { body } : {}),
     })
+    return row({ to: next.version, status: 'updated', ...(growth.length > 0 ? { growth } : {}) })
+  }
+
+  async function updateOne(module: InstalledForCatalogue, startedAt: number): Promise<void> {
+    // The automatic pass leaves out what it would only say it skipped.
+    if (module.development || module.killed || !module.enabled) return
+    if (module.approval !== 'approved' && module.approval !== 'not-needed') return
+    const record = readInstallRecordsSync(deps.dataDir)[module.key]
+    if (record?.origin.kind !== 'catalogue') return
+    await updateCore(module, { automatic: true, startedAt })
+  }
+
+  async function updateNow(key?: string): Promise<UpdateRow[]> {
+    const modules = (await deps.installed()).filter((module) => !module.development)
+    const records = readInstallRecordsSync(deps.dataDir)
+    const chosen = key
+      ? modules.filter((module) => module.key === key)
+      : modules.filter((module) => records[module.key]?.origin.kind === 'catalogue')
+    if (key && chosen.length === 0)
+      return [{ key, from: '', status: 'refused', code: 'not_updatable', reason: `${key} is not installed.` }]
+    // What each one's catalogue lists now, read once.
+    const catalogues = new Set<CatalogueId>()
+    for (const module of chosen) {
+      const origin = records[module.key]?.origin
+      if (origin?.kind === 'catalogue') catalogues.add(origin.catalogue)
+    }
+    for (const id of catalogues) await refreshOne(id)
+    await refreshLists()
+    const rows: UpdateRow[] = []
+    const startedAt = now()
+    for (const module of chosen) {
+      try {
+        rows.push(await updateCore(module, { automatic: false, startedAt }))
+      } catch (error) {
+        rows.push({
+          key: module.key,
+          from: module.manifest.version,
+          status: 'refused',
+          reason: (error as Error).message,
+        })
+      }
+    }
+    return rows
+  }
+
+  /** The first catalogue that lists `key`, and why none does when a catalogue listing it was refused. */
+  async function installKey(key: string): Promise<InstallAnswer & { catalogue?: CatalogueId }> {
+    await refreshAll()
+    const listed = catalogueIds().find((id) => findEntry(id, key) !== null)
+    if (listed) return { ...(await installFromCatalogue(listed, key)), catalogue: listed }
+    // A catalogue listing it under another owner's name is refused whole (provenanceProblem).
+    for (const id of catalogueIds()) {
+      const error = errors.get(id)
+      if (error?.includes(key))
+        return { ok: false, code: 'owner_mismatch', message: `${catalogueName(id)} was refused: ${error}` }
+    }
+    return { ok: false, code: 'not_found', message: `No catalogue here lists ${key}.` }
   }
 
   /** An install whose owner id was not known at install takes it at the first pass that can read one. */
@@ -1154,6 +1336,8 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
           ),
 
     update,
+    installKey,
+    updateNow,
 
     annotate(views) {
       const records = readInstallRecordsSync(deps.dataDir)
