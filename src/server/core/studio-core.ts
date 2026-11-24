@@ -699,6 +699,14 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         kill: (sessionId) => terminals.runtime.sessions.killTerminal(sessionId),
       }
     },
+    // What a window on this machine shows now: where `send` may type, besides the extension's own terminals.
+    shownWorkspaces: () => {
+      const state = workspaceRegistry.getState()
+      const shown = new Set<string>()
+      for (const id of [state.activeWorkspaceId, ...state.workspaceWindows.map((window) => window.activeWorkspaceId)])
+        if (id) shown.add(id)
+      return shown
+    },
     agentTitle: (workspaceId, agentId) =>
       (workspaceId ? workspaceRegistry.getRecord(workspaceId)?.agents[agentId]?.name : undefined) ?? null,
     workspace: (workspaceId) => {

@@ -10,6 +10,10 @@
 //   short of the loosest preset) cannot have an extension type into a
 //   terminal or run a command for it: typing into a shell runs whatever is
 //   typed, unasked.
+// - `send` types only into a terminal the extension opened, or one in a
+//   workspace a window on this machine shows now (read at each call, and again
+//   right before the write): never into a terminal in a workspace nobody is
+//   looking at, where it could answer an agent's prompt with no one watching.
 // - What an extension types goes through the control plane's write, so the
 //   extensions' `terminal.write.before` hooks see it as an extension's write.
 // - `close` reaches only a terminal the extension opened. It keeps those until
@@ -78,6 +82,8 @@ export type ExtensionTerminalDeps = {
   terminals(): ExtensionTerminalHost | null
   /** A workspace this Studio holds, as a terminal opens in it; null for one it does not. */
   workspace(workspaceId: string): { folderPath: string | null; remote: boolean } | null
+  /** The workspaces a window on this machine shows now; absent (tests), none. */
+  shownWorkspaces?: () => ReadonlySet<string>
   /** An agent's name, as the sidebar shows it, for a terminal it runs in; null when Studio has none. */
   agentTitle?: (workspaceId: string | undefined, agentId: string) => string | null
   /** The ceiling of whoever set off the call running now (tests pass their own). */
@@ -220,6 +226,13 @@ export function createExtensionTerminals(deps: ExtensionTerminalDeps): Extension
       )
   }
 
+  /** Why `send` may not type into `session` now, or null: its own, or in a workspace a window shows. */
+  function outOfReach(moduleId: string, session: TerminalSessionSnapshot): string | null {
+    if (openedBy.get(moduleId)?.has(session.sessionId)) return null
+    if (session.workspaceId !== undefined && deps.shownWorkspaces?.().has(session.workspaceId)) return null
+    return `An extension types only into a terminal it opened, or one in a workspace a window shows now; terminal "${session.sessionId}" is neither.`
+  }
+
   function remember(moduleId: string, terminalId: string, title: string | null): void {
     const opened = openedBy.get(moduleId) ?? new Map<string, string | null>()
     opened.set(terminalId, title)
@@ -275,12 +288,28 @@ export function createExtensionTerminals(deps: ExtensionTerminalDeps): Extension
       mayType('Typing into a terminal')
       const terminals = host()
       const session = live(terminals, terminalId)
+      const away = outOfReach(moduleId, session)
+      if (away) refuse('not_yours', away)
       if (!session.processAlive) return { accepted: false }
       const invoker = currentInvoker()
       const pending = begin(moduleId)
       try {
-        const stillMay = () => withdrawn(moduleId, 'send', pending, invoker)
-        return { accepted: await write(terminals, terminalId, enter === true ? `${text}\r` : text, stillMay) }
+        // Asked again right before the bytes go out: the window may have moved on meanwhile.
+        let movedAway = false
+        const stillMay = () => {
+          const why = withdrawn(moduleId, 'send', pending, invoker)
+          if (why) return why
+          const now = terminals.list().find((candidate) => candidate.sessionId === terminalId)
+          const away = now ? outOfReach(moduleId, now) : null
+          movedAway = away !== null
+          return away
+        }
+        try {
+          return { accepted: await write(terminals, terminalId, enter === true ? `${text}\r` : text, stillMay) }
+        } catch (error) {
+          if (movedAway && error instanceof TerminalRefusal) refuse('not_yours', error.message)
+          throw error
+        }
       } finally {
         finish(moduleId, pending)
       }

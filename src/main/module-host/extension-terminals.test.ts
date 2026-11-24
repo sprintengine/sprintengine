@@ -72,7 +72,10 @@ function machine(options: { refuse?: string; ceiling?: CliPermissionPreset | nul
     },
   }
   let available = true
+  // The workspaces a window shows now: where `send` reaches besides the extension's own terminals.
+  const shown = new Set(['ws-1'])
   const terminals = createExtensionTerminals({
+    shownWorkspaces: () => shown,
     terminals: () => (available ? host : null),
     workspace: (workspaceId) =>
       workspaceId === 'ws-1'
@@ -92,6 +95,7 @@ function machine(options: { refuse?: string; ceiling?: CliPermissionPreset | nul
     add,
     setCeiling: (next: CliPermissionPreset | null) => (ceiling = next),
     setAvailable: (next: boolean) => (available = next),
+    shown,
     holdSpawn: (held: Promise<void> | null) => (spawnHeld = held),
     holdWrites: (held: Promise<void> | null) => (writeHeld = held),
   }
@@ -295,4 +299,26 @@ test('at its limit an extension is refused another terminal, never one forgotten
   m.terminals.closeAll('local.a')
   const running = opened.slice(1).concat(next)
   assert.deepEqual([...m.killed].sort(), [...running].sort(), 'every terminal it opened that runs is closed')
+})
+
+test('send types only into its own terminals and those in a workspace a window shows now, checked again before the write', async () => {
+  const m = machine()
+  m.add('t-shown')
+  m.add('t-away', { workspaceId: 'ws-2' })
+  await assert.rejects(m.terminals.send('local.a', { terminalId: 't-away', text: 'y', enter: true }), code('not_yours'))
+  assert.deepEqual(m.sessions.get('t-away')!.typed, [])
+  // Its own terminal in a workspace nobody shows: still its own.
+  m.shown.delete('ws-1')
+  const own = (await m.terminals.create('local.a', { workspaceId: 'ws-1' })).terminalId
+  assert.deepEqual(await m.terminals.send('local.a', { terminalId: own, text: 'ls' }), { accepted: true })
+  await assert.rejects(m.terminals.send('local.a', { terminalId: 't-shown', text: 'ls' }), code('not_yours'))
+  // The window moves away while the write waits: it does not go out.
+  m.shown.add('ws-1')
+  const queue = hold()
+  m.holdWrites(queue.released)
+  const sending = m.terminals.send('local.a', { terminalId: 't-shown', text: 'y', enter: true })
+  m.shown.delete('ws-1')
+  queue.release()
+  await assert.rejects(sending, code('not_yours'))
+  assert.deepEqual(m.sessions.get('t-shown')!.typed, [])
 })

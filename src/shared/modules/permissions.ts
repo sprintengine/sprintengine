@@ -49,7 +49,7 @@ const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'github:api': 'Use your GitHub sign-in to call the GitHub API (the token is never shown to the extension)',
   'tools:contribute': 'Add tools that agents in your workspaces can call',
   'terminals:send':
-    'Type into your terminals and run commands: open terminals in your workspaces, type into any of them, and close the ones it opened',
+    'Type into your terminals and run commands: open terminals in your workspaces, type into the ones it opened and the ones in a workspace you have open, and close the ones it opened',
   'terminals:read': 'Read what your terminals show, which can include what commands print',
 }
 

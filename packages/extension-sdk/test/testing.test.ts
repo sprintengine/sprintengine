@@ -110,6 +110,21 @@ describe('createFakeMainHost', () => {
       terminals.close({ terminalId: person.id }),
       (error: { code?: string }) => error.code === 'not_yours',
     )
+    assert.deepEqual(
+      (await terminals.list()).terminals.map((t) => [t.terminalId, t.opened]),
+      [
+        [person.id, false],
+        [terminalId, true],
+      ],
+    )
+    // No window shows the person's terminal's workspace: send reaches only its own.
+    fake.services.terminals.setShownWorkspaces([])
+    await assert.rejects(
+      terminals.send({ terminalId: person.id, text: 'ls' }),
+      (error: { code?: string }) => error.code === 'not_yours',
+    )
+    assert.deepEqual(await terminals.send({ terminalId, text: 'ls' }), { accepted: true })
+    fake.services.terminals.setShownWorkspaces(null)
     assert.deepEqual(await terminals.close({ terminalId }), { closed: true })
     fake.services.terminals.setInvokerCeiling('auto')
     await assert.rejects(

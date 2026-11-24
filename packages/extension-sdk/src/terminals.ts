@@ -52,7 +52,8 @@ export type ExtensionTerminalSummary = {
  * Why a terminal call was refused, as the rejected error's `code`:
  * `not_permitted` and `approval_required` are the host's gate's;
  * `unknown_terminal` (no terminal by that id), `unknown_workspace`,
- * `not_yours` (`close` of a terminal it did not open), `unavailable` (this
+ * `not_yours` (`close` of a terminal it did not open, or `send` to one it did
+ * not open in a workspace no window shows), `unavailable` (this
  * Studio runs no terminals), `invalid_params`, `refused_by_extension` (an
  * extension's `terminal.write.before` hook refused the write),
  * `limit_reached` (it has as many terminals open as it may) and
@@ -73,8 +74,9 @@ export type ExtensionTerminalErrorCode =
 export type ExtensionTerminalService = {
   /**
    * Type `text` into the terminal `terminalId`, pressing Enter after it when
-   * `enter` is true. `accepted` is false when the terminal is gone or its
-   * process has exited.
+   * `enter` is true: one the extension opened, or one in a workspace a window
+   * on this machine shows now (any other is refused with `not_yours`).
+   * `accepted` is false when the terminal is gone or its process has exited.
    */
   send(input: { terminalId: string; text: string; enter?: boolean }): Promise<{ accepted: boolean }>
   /**

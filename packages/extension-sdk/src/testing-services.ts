@@ -2429,6 +2429,11 @@ export type FakeTerminals = {
   all(): FakeTerminal[]
   get(id: string): FakeTerminal | undefined
   /**
+   * The workspaces a window shows now: `send` types only into a terminal the
+   * extension opened or one in these. Default (null): every workspace.
+   */
+  setShownWorkspaces(workspaceIds: readonly string[] | null): void
+  /**
    * What a `send` or `create` with a command answers when the call runs for an
    * agent that asks before it runs commands: set the ceiling to see it refused.
    */
@@ -2438,6 +2443,7 @@ export type FakeTerminals = {
 function terminalsRegistry(context: FakeServiceContext): { registry: object; handle: FakeTerminals } {
   const terminals = new Map<string, FakeTerminal>()
   let ceiling: string | null = null
+  let shown: Set<string> | null = null
   let next = 1
   const refuse = (code: string, message: string): never => {
     const error = new Error(message) as Error & { code: string }
@@ -2455,10 +2461,15 @@ function terminalsRegistry(context: FakeServiceContext): { registry: object; han
       refuse('not_permitted', `${what} runs commands without asking, and the agent that set this off asks first.`)
   }
   const registry = {
-    async send(_moduleId: string, input: { terminalId: string; text: string; enter?: boolean }) {
+    async send(moduleId: string, input: { terminalId: string; text: string; enter?: boolean }) {
       if (typeof input?.text !== 'string') refuse('invalid_params', '"text" is text.')
       mayType('Typing into a terminal')
       const found = terminal(input.terminalId)
+      if (found.openedBy !== moduleId && shown !== null && !shown.has(found.workspaceId))
+        refuse(
+          'not_yours',
+          `An extension types only into a terminal it opened, or one in a workspace a window shows now; terminal "${found.id}" is neither.`,
+        )
       if (!found.alive) return { accepted: false }
       found.typed.push(input.enter === true ? `${input.text}\r` : input.text)
       return { accepted: true }
@@ -2531,6 +2542,9 @@ function terminalsRegistry(context: FakeServiceContext): { registry: object; han
     get: (id) => terminals.get(id),
     setInvokerCeiling(next) {
       ceiling = next
+    },
+    setShownWorkspaces(workspaceIds) {
+      shown = workspaceIds === null ? null : new Set(workspaceIds)
     },
   }
   return { registry, handle }

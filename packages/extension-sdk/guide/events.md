@@ -93,7 +93,7 @@ A worker reaches the person's terminals through `getTerminalService(studio)`:
 
 | Method                                      | Needs            | What it does                                                                                                                             |
 | ------------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `send({ terminalId, text, enter? })`        | `terminals:send` | Types `text` into a terminal, pressing Enter when `enter` is true. `accepted` is false when its process has exited.                      |
+| `send({ terminalId, text, enter? })`        | `terminals:send` | Types `text` into a terminal your extension opened, or one in a workspace a window shows now, pressing Enter when `enter` is true. `accepted` is false when its process has exited. |
 | `create({ workspaceId, title?, command? })` | `terminals:send` | Opens a shell in a workspace's folder, in the background (no window switches to it), and runs `command` in it. Answers its `terminalId`. |
 | `read({ terminalId, maxLines? })`           | `terminals:read` | Its newest output as plain text, one line a string: 200 lines unless you ask, at most 2000.                                              |
 | `close({ terminalId })`                     | `terminals:send` | Closes a terminal your extension opened. Any other is refused with `not_yours`.                                                          |
@@ -126,6 +126,10 @@ export function activate(studio: MainHost): void {
   included) are refused (`not_permitted`), as they are for Studio's own
   terminals. An agent that asks before it runs commands
   cannot have you type or run a command for it either.
+- `send` types into a terminal your extension opened, or one in a workspace
+  a window on this machine shows now, checked at each call and again right
+  before the text goes out; any other is refused with `not_yours`. So nothing
+  types into a terminal in a workspace nobody is looking at.
 - What you type passes the extensions' `terminal.write.before` hooks first,
   as an extension's write.
 - A terminal is named by its id: what `create` or `list` answers, or one an
