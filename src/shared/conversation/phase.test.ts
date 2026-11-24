@@ -6,6 +6,7 @@ import {
   conversationPhaseOf,
   conversationSummaryPhase,
   conversationTurnInProgress,
+  conversationTurnOpen,
 } from './phase'
 
 test('conversation phase follows action priority', () => {
@@ -77,4 +78,10 @@ test('a turn is in progress while a chat starts, runs or waits on the person', (
   assert.equal(conversationTurnInProgress(summary('ready')), false)
   assert.equal(conversationTurnInProgress(summary('stopped')), false)
   assert.equal(conversationTurnInProgress(summary('failed')), false)
+  // A turn open, not the background work a finished one left running.
+  assert.equal(conversationTurnOpen(summary('active')), true)
+  assert.equal(conversationTurnOpen(summary('ready', { phase: 'waiting_for_input' })), true)
+  assert.equal(conversationTurnOpen(summary('ready', { backgroundAgents: 1 })), false)
+  assert.equal(conversationTurnOpen(summary('ready', { backgroundTasks: [{ taskId: 'm-1', kind: 'monitor' }] })), false)
+  assert.equal(conversationTurnOpen(summary('ready')), false)
 })

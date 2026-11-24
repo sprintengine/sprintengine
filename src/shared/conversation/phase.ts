@@ -75,6 +75,21 @@ export function conversationTurnInProgress(summary: ConversationSessionSummary):
 }
 
 /**
+ * Whether the chat has a turn of its own open: starting, running, or stopped
+ * on a question or an approval. Unlike `conversationTurnInProgress` it does
+ * not count the background agents and monitors a finished turn left running:
+ * the runtime takes a new message while only those work, so a message waiting
+ * for the turn to end (a queued or scheduled one) goes then, rather than
+ * waiting out a monitor that may watch CI for an hour.
+ */
+export function conversationTurnOpen(summary: ConversationSessionSummary): boolean {
+  const phase = summary.phase ?? statusPhase(summary)
+  return (
+    phase === 'starting' || phase === 'running' || phase === 'waiting_for_approval' || phase === 'waiting_for_input'
+  )
+}
+
+/**
  * Whether ending a chat session's processes now would lose work: a turn
  * starting, running or stopped on a person's answer, or an agent or monitor
  * it launched still working in the background, whatever its parent's phase
