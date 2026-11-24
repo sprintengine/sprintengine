@@ -142,6 +142,12 @@ export const SHELL_METHODS = {
    * `SERVER_EVENTS.artifactsSetupConsentClosed`.
    */
   artifactsSetupConsent: 'shell.artifacts-setup-consent',
+  /**
+   * `ExtensionOpenRequest` → `ExtensionOpenOutcome`: an extension's panel or
+   * custom editor shown in a window of this machine (`extension.open`); the
+   * windows are the shell's.
+   */
+  extensionOpen: 'shell.extension-open',
 } as const
 
 /** One-way, either direction. */

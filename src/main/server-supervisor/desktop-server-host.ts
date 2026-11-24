@@ -22,6 +22,8 @@ import {
 } from '../../server/desktop/server-methods'
 import { serveShellBridge } from '../../server/shell-bridge/serve-shell-bridge'
 import { serveArtifactsShell } from '../../server/artifacts/artifacts-shell-bridge'
+import { serveExtensionOpen } from '../../server/extensions/extension-open-bridge'
+import type { ExtensionOpener } from '../../shared/extension-open'
 import type { ArtifactThumbnailer } from '../artifacts/artifacts-service'
 import type { ArtifactsSetupConsent } from '../artifacts/artifacts-setup-consent'
 import type { ShellBridge } from '../../server/shell-bridge/shell-bridge'
@@ -58,8 +60,8 @@ export type DesktopServerHost = {
   start(): void
   /**
    * Answer the server's requests of the shell: the bridge, its Trash, Studio's
-   * plugin it installs, and for artifacts a page's picture and the set-up
-   * question asked natively.
+   * plugin it installs, for artifacts a page's picture and the set-up
+   * question asked natively, and `extension.open`'s windows.
    */
   serveShell(
     bridge: ShellBridge,
@@ -67,6 +69,7 @@ export type DesktopServerHost = {
       trash(path: string): Promise<void>
       studioPluginStatus(workspaceRoot: string | null): Promise<unknown>
       artifacts: { thumbnailer: ArtifactThumbnailer; askNatively: ArtifactsSetupConsent }
+      extensionOpener: ExtensionOpener
     },
   ): void
   /** Tickets for the windows' connections to the server's window listener, once it is serving. */
@@ -228,6 +231,7 @@ export function createDesktopServerHost(options: {
         await caches.trash(path)
       })
       serveArtifactsShell(supervisor.rpc, caches.artifacts)
+      serveExtensionOpen(supervisor.rpc, caches.extensionOpener)
     },
     windowTickets: {
       async windowTicket(request) {

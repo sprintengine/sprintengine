@@ -23,6 +23,7 @@ import { windowApi } from './api/window'
 import { browserApi } from './api/browser'
 import { canvasApi } from './api/canvas'
 import { editorRevealApi } from './api/editor-reveal'
+import { extensionOpenApi } from './api/extension-open'
 import { toursApi } from './api/tours'
 import { previewsApi } from './api/previews'
 
@@ -46,6 +47,7 @@ export const apiModules = {
   ...browserApi,
   ...canvasApi,
   ...editorRevealApi,
+  ...extensionOpenApi,
   ...toursApi,
   ...splashApi,
   ...startupApi,
