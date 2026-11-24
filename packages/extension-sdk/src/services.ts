@@ -41,7 +41,12 @@
 import type { ExtensionFrameMethod } from './frame.js'
 import type { ExtensionPermission } from './permissions.js'
 
-/** What whoever set a call off must hold: a Studio protocol permission, or `owner`. */
+/**
+ * What whoever set a call off must hold: a Studio protocol permission, `owner`
+ * (the person), or `terminals` (the person, from somewhere that reaches this
+ * machine's terminals: never a browser tab, which Studio refuses its terminals
+ * whoever holds it).
+ */
 export type ExtensionInvokerRequirement =
   | 'workspace:read'
   | 'workspace:operate'
@@ -57,6 +62,7 @@ export type ExtensionInvokerRequirement =
   | 'extension:operate'
   | 'settings:write'
   | 'owner'
+  | 'terminals'
 
 export type ExtensionHostRequirement = {
   readonly extension: ExtensionPermission | null
@@ -233,14 +239,15 @@ export const EXTENSION_HOST_SERVICES: readonly ExtensionHostService[] = [
   },
   {
     // The person's terminals: theirs alone, as Studio's own terminal methods
-    // are, so no paired device, phone or other app reaches one through an
-    // extension (extension-terminals.ts adds an agent's ceiling).
+    // are, so no paired device, phone, other app or browser tab (an owner's
+    // included) reaches one through an extension (extension-terminals.ts adds
+    // an agent's ceiling).
     key: 'terminals.module-service',
     via: 'getTerminalService',
     providedBy: 'agent-runtime',
     methods: {
-      ...each(['send', 'create', 'close'], need('terminals:send', 'owner', 'reject')),
-      read: need('terminals:read', 'owner', 'reject'),
+      ...each(['send', 'create', 'close'], need('terminals:send', 'terminals', 'reject')),
+      read: need('terminals:read', 'terminals', 'reject'),
     },
   },
 ]

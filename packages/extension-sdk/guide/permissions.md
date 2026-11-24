@@ -79,8 +79,8 @@ Rules:
 | `agents:companion` | Run its own background agents inside a workspace | `getCompanionAgentsService` | `conversation:create` |
 | `github:api` | Use your GitHub sign-in to call the GitHub API (the token is never shown to the extension) | `getGitHubService` (`request`, `graphql`, `download`, `status`) | the person alone |
 | `tools:contribute` | Add tools that agents in your workspaces can call | `registerMcpTools`, and declaring `contributes.mcpTools` | — |
-| `terminals:send` | Type into your terminals and run commands: open terminals in your workspaces, type into any of them, and close the ones it opened | `getTerminalService` `send`, `create`, `close` (worker tier only) | the person alone; an agent that asks before running commands cannot set it off |
-| `terminals:read` | Read what your terminals show, which can include what commands print | `getTerminalService` `read` (worker tier only) | the person alone |
+| `terminals:send` | Type into your terminals and run commands: open terminals in your workspaces, type into any of them, and close the ones it opened | `getTerminalService` `send`, `create`, `close` (worker tier only) | the person alone, and not from a browser tab; an agent that asks before running commands cannot set it off |
+| `terminals:read` | Read what your terminals show, which can include what commands print | `getTerminalService` `read` (worker tier only) | the person alone, and not from a browser tab |
 
 Your own methods (`registerMethods`, which your surfaces call with
 `studio.methods()` and your commands without an `action` run), your own events

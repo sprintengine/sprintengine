@@ -10,6 +10,8 @@
 // - a paired device or another app over its Studio connection, or a device
 //   calling the extension's MCP tool through the tailnet gateway: what that
 //   connection was granted, and its ceiling;
+// - an owner's browser tab: the person's grant, but never the terminals
+//   (`noTerminals`), which a browser does not reach directly either;
 // - nothing (Studio's own parts' startup hooks): the person. An extension's
 //   worker is held to invocations it is handed (server/extensions/workers/
 //   worker-session.ts): its activation, and a background extension's own
@@ -42,6 +44,14 @@ export type ExtensionInvoker = {
   permissionCeiling: CliPermissionPreset | null
   /** Who it is, for a refusal's words: "this device", "this app", "the agent". */
   label: string
+  /**
+   * It may not reach this machine's terminals, whatever it holds: an owner's
+   * browser tab, which holds the owner's grant but is refused the terminals
+   * when it asks Studio for them directly (studio-browser-reach.ts), so it is
+   * refused them through an extension as well. Absent, the terminals are
+   * held to `principal.owner` alone.
+   */
+  noTerminals?: true
   /**
    * Who that is, for what it starts: an agent or chat started during the
    * invocation keeps it, so its later hooks run as the same someone.

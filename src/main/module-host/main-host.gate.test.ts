@@ -268,12 +268,20 @@ test('the terminals are the person’s: an extension needs its permission, and a
   await assert.rejects(
     runAsInvoker(phone, () => terminals('local.reader').send('local.reader', {})),
     (error: Error & { code?: string }) =>
-      error.code === 'not_permitted' && /only they can set it off/.test(error.message),
+      error.code === 'not_permitted' && /only the person at this machine can set it off/.test(error.message),
   )
   await assert.rejects(
     runAsInvoker(DEVICE, () => terminals('local.reader').close('local.reader', {})),
-    /only they/,
+    /only the person/,
   )
+  // An owner's browser tab holds the owner's grant, and still never reaches a terminal.
+  const browser: ExtensionInvoker = { ...ownerInvoker(), label: 'your browser', noTerminals: true }
+  for (const method of ['send', 'create', 'close'] as const)
+    await assert.rejects(
+      runAsInvoker(browser, () => terminals('local.reader')[method]('local.reader', {})),
+      (error: Error & { code?: string }) =>
+        error.code === 'not_permitted' && /which no browser reaches/.test(error.message),
+    )
   assert.deepEqual(calls, ['send:local.reader'])
 })
 

@@ -868,14 +868,23 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   /**
    * The connection, as an extension's host calls see whoever set them off:
    * what its grant carries, and its ceiling for the chats the extension
-   * starts for it (extension-invocation.ts).
+   * starts for it (extension-invocation.ts). A browser's, an owner's tab
+   * included, never reaches the terminals through the extension, as it never
+   * reaches them directly (studio-browser-reach.ts).
    */
-  function extensionInvokerOf(grant: StudioGrant): ExtensionInvoker {
+  function extensionInvokerOf(grant: StudioGrant, context: StudioRequestContext): ExtensionInvoker {
     return {
       principal: studioGrantPrincipal(grant),
       permissionCeiling: grant.ceiling,
-      label: grant.owner ? 'you' : `"${grant.name}"`,
+      label: context.browser
+        ? grant.owner
+          ? 'your browser'
+          : `the browser "${grant.name}"`
+        : grant.owner
+          ? 'you'
+          : `"${grant.name}"`,
       starter: starterOfGrant(grant),
+      ...(context.browser ? { noTerminals: true as const } : {}),
     }
   }
   /**
@@ -887,6 +896,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     method: 'extension.read' | 'extension.operate',
     params: { moduleId: string; method: string; params?: unknown },
     grant: StudioGrant,
+    context: StudioRequestContext,
     commandId: string | undefined,
   ): Promise<StudioRpcAnswer<'extension.read'> | Refused<'unavailable'>> {
     const modules = options.modules
@@ -898,7 +908,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       params: params.params,
       clientId: grant.clientId,
       ...(commandId === undefined ? {} : { commandId }),
-      invoker: extensionInvokerOf(grant),
+      invoker: extensionInvokerOf(grant, context),
     })
     return outcome.ok ? { ok: true, result: outcome.answer } : refuse(outcome.code, outcome.message)
   }
@@ -2323,11 +2333,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // namespace, so a handler that sends to a chat is answered from the
     // chat's receipt on a retry rather than sending twice.
 
-    'extension.read': (params, { grant }) => moduleCall('extension.read', params, grant, undefined),
-    'extension.operate': ({ commandId, ...params }, { grant, voice }) =>
+    'extension.read': (params, { grant, context }) => moduleCall('extension.read', params, grant, context, undefined),
+    'extension.operate': ({ commandId, ...params }, { grant, context, voice }) =>
       once(
         keptId('extension.operate', grant, commandId),
-        () => moduleCall('extension.operate', params, grant, runtimeId(grant, commandId)),
+        () => moduleCall('extension.operate', params, grant, context, runtimeId(grant, commandId)),
         voice,
         'extension.operate',
         operateRefusedBefore,
@@ -2456,7 +2466,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       lifecycleCommand('extension.setSetting', context, commandId, (lifecycle) =>
         lifecycle.setSetting(moduleId, key, value),
       ),
-    'extension.call': ({ commandId, ...params }, { grant, voice }) => {
+    'extension.call': ({ commandId, ...params }, { grant, context, voice }) => {
       const modules = options.modules
       if (!modules) return unserved('extension.call')
       return once(
@@ -2470,7 +2480,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
             params: params.params,
             clientId: grant.clientId,
             commandId: runtimeId(grant, commandId),
-            invoker: extensionInvokerOf(grant),
+            invoker: extensionInvokerOf(grant, context),
           }),
         }),
         voice,

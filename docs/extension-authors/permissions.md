@@ -112,8 +112,8 @@ whoever set the call off must hold, in the Studio protocol's permission names.
 | `agents:companion` | Run its own background agents | `getCompanionAgentsService` | `conversation:create` |
 | `github:api` | Call the GitHub API with your sign-in | `getGitHubService` | the person alone |
 | `tools:contribute` | Add tools that agents can call | `registerMcpTools`, `contributes.mcpTools` | — |
-| `terminals:send` | Type into your terminals and run commands: open terminals in your workspaces, type into any of them, and close the ones it opened | `getTerminalService` `send`, `create`, `close` (worker tier only) | the person alone; an agent that asks before running commands cannot set it off |
-| `terminals:read` | Read what your terminals show, which can include what commands print | `getTerminalService` `read` (worker tier only) | the person alone |
+| `terminals:send` | Type into your terminals and run commands: open terminals in your workspaces, type into any of them, and close the ones it opened | `getTerminalService` `send`, `create`, `close` (worker tier only) | the person alone, and not from a browser tab; an agent that asks before running commands cannot set it off |
+| `terminals:read` | Read what your terminals show, which can include what commands print | `getTerminalService` `read` (worker tier only) | the person alone, and not from a browser tab |
 
 Its own methods (`registerMethods`), events (`emit`) and files
 (`getAssetPath`) need no permission.

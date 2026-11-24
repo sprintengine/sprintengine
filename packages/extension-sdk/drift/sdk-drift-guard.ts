@@ -677,7 +677,7 @@ for (const [name, requirement] of allRequirements) {
       (SDK_EXTENSION_PERMISSIONS as readonly string[]).includes(requirement.extension),
       `${name} needs "${requirement.extension}" of an extension, which extension.json cannot ask for`,
     )
-  if (requirement.invoker !== null && requirement.invoker !== 'owner')
+  if (requirement.invoker !== null && requirement.invoker !== 'owner' && requirement.invoker !== 'terminals')
     assert.ok(
       isStudioPermission(requirement.invoker),
       `${name} needs "${requirement.invoker}" of an invoker, which no principal holds`,
