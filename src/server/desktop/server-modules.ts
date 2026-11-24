@@ -267,6 +267,8 @@ export function createServerModules(deps: {
           approvals,
           dataDir,
           standing: (moduleId) => frameStandingOf(discovery.current(), moduleId),
+          // A folder changed where no watcher heard it: discovery reads it again.
+          refresh: () => discovery.invalidate(),
         }),
         onKernel: bindWorkers,
         frameFileExclusions: () => [dataDir, defaultUserModuleRoot()],

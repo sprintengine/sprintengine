@@ -174,6 +174,8 @@ function studioFor(): Studio {
           approvals,
           dataDir,
           standing: (moduleId) => frameStandingOf(discovery.current(), moduleId),
+          // A folder changed where no watcher heard it: discovery reads it again.
+          refresh: () => discovery.invalidate(),
         }),
         ineligible: plan.ineligible,
         launchErrors: plan.launchErrors,

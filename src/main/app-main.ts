@@ -235,6 +235,8 @@ const moduleLoad = loadMainModules({
     approvals: extensionApprovals,
     dataDir: app.getPath('userData'),
     standing: (moduleId) => frameStandingOf(extensionDiscovery.current(), moduleId),
+    // A folder changed where no watcher heard it: discovery reads it again.
+    refresh: () => extensionDiscovery.invalidate(),
   }),
   onKernel: extensionWorkers.bind,
   frameFileExclusions: () => [app.getPath('userData'), defaultUserModuleRoot()],

@@ -24,12 +24,20 @@
 //   it is on disk now (read at every call, so a kill applies before the
 //   discovery hears of it). A frame of an extension that stops being runnable
 //   loses its pins: should it run again, its surfaces are drawn again first.
+// - Its files now: discovery's standing is read once per change it hears of,
+//   and a change deep in an installed folder can go unheard. So each call
+//   also takes the folder's content digest (a match is trusted for two
+//   seconds) and compares it with the one discovery judged. When they differ,
+//   discovery reads the folder again (`refresh`) and the call is judged by
+//   that reading, so an extension whose files stopped matching its approval
+//   is refused at once.
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { findKilled } from '../../../packages/extension-sdk/src/catalogue'
 import { readKillListCacheSync } from '../../server/extensions/catalogue/catalogue-files'
+import { extensionContentSync } from './module-signature'
 import { EXTENSION_MANIFEST_FILENAME } from '../../shared/modules/third-party-manifest'
 import { readModuleOverridesSync } from '../module-host/enablement-store'
 import type { ExtensionApprovalRecord } from './extension-approvals'
@@ -60,19 +68,49 @@ export type ExtensionFrameStanding = {
   version: string
   /** The folder it runs from. */
   moduleRoot: string
+  /** The content digest of its folder when discovery judged it; undefined when it could not be read. */
+  contentDigest: string | undefined
+  /** A development folder: its files are walked as a development folder's are. */
+  development: boolean
+}
+
+/** How long a folder's matching content digest is trusted before it is taken again. */
+const FOLDER_DIGEST_TTL_MS = 2_000
+const matchedAt = new Map<string, { digest: string; at: number }>()
+
+/** The content digest of `standing`'s folder now, or null when it cannot be read; a match is trusted briefly. */
+function digestNow(standing: ExtensionFrameStanding, now = Date.now()): string | null {
+  const cached = matchedAt.get(standing.moduleRoot)
+  if (cached && cached.digest === standing.contentDigest && now - cached.at < FOLDER_DIGEST_TTL_MS) return cached.digest
+  const content = extensionContentSync(standing.moduleRoot, { development: standing.development })
+  const digest = content.ok ? content.fingerprint : null
+  if (digest === null) matchedAt.delete(standing.moduleRoot)
+  else matchedAt.set(standing.moduleRoot, { digest, at: now })
+  return digest
 }
 
 export function createExtensionFrameGrant(options: {
   /** The approvals as they stand now (`createExtensionApprovalReader`). */
   approvals: () => ReadonlyMap<string, ExtensionApprovalRecord>
   dataDir: string
-  /** How the extension stands now; undefined when no folder holds it. */
+  /** How the extension stands now, as discovery read it; undefined when no folder holds it. */
   standing: (moduleId: string) => ExtensionFrameStanding | undefined
+  /** Discovery's reading of the extension is behind its folder: read it again. */
+  refresh: (moduleId: string) => void
 }): (moduleId: string, frame: string) => ExtensionFrameGrant {
   const runnableNow = (moduleId: string): boolean => {
-    const standing = options.standing(moduleId)
+    let standing = options.standing(moduleId)
     if (!standing?.runnable) return false
     if (!existsSync(join(standing.moduleRoot, EXTENSION_MANIFEST_FILENAME))) return false
+    let digest = digestNow(standing)
+    if (digest !== standing.contentDigest) {
+      // Its files changed since discovery judged them: judged again from the folder as it is.
+      options.refresh(moduleId)
+      standing = options.standing(moduleId)
+      if (!standing?.runnable) return false
+      digest = digestNow(standing)
+      if (digest === null || digest !== standing.contentDigest) return false
+    }
     return findKilled(readKillListCacheSync(options.dataDir), moduleId, standing.version) === null
   }
   return (moduleId, frame) => {

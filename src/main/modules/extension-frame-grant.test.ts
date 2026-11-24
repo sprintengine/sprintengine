@@ -12,6 +12,7 @@ import * as serviceTokens from '../module-host/service-tokens'
 import { createExtensionApprovalReader, writeExtensionApproval, type ExtensionAccess } from './extension-approvals'
 import { writeKillListCache } from '../../server/extensions/catalogue/catalogue-files'
 import { createExtensionFrameGrant, pinExtensionFrame, type ExtensionFrameStanding } from './extension-frame-grant'
+import { extensionContentSync } from './module-signature'
 
 // A frame's calls are judged by the approvals and switches as they stand now,
 // pinned to what was approved when its document was built: an extension
@@ -51,12 +52,20 @@ function standings(dataDir: string) {
   mkdirSync(moduleRoot, { recursive: true })
   writeFileSync(join(moduleRoot, 'extension.json'), '{}')
   const overrides = new Map<string, ExtensionFrameStanding | undefined>()
+  const content = extensionContentSync(moduleRoot)
+  const runnable: ExtensionFrameStanding = {
+    runnable: true,
+    version: '1.0.0',
+    moduleRoot,
+    contentDigest: content.ok ? content.fingerprint : undefined,
+    development: false,
+  }
   return {
     moduleRoot,
     set: (moduleId: string, standing: Partial<ExtensionFrameStanding> | undefined) =>
-      overrides.set(moduleId, standing && { runnable: true, version: '1.0.0', moduleRoot, ...standing }),
+      overrides.set(moduleId, standing && { ...runnable, ...standing }),
     standing: (moduleId: string): ExtensionFrameStanding | undefined =>
-      overrides.has(moduleId) ? overrides.get(moduleId) : { runnable: true, version: '1.0.0', moduleRoot },
+      overrides.has(moduleId) ? overrides.get(moduleId) : runnable,
   }
 }
 
@@ -71,6 +80,7 @@ function setup() {
       approvals: createExtensionApprovalReader(dataDir),
       dataDir,
       standing: discovered.standing,
+      refresh: () => undefined,
     }),
   })
   const created: unknown[] = []
@@ -148,6 +158,7 @@ test('an approval that shrank holds an older frame to what is left', async () =>
     approvals: createExtensionApprovalReader(dataDir),
     dataDir,
     standing: standings(dataDir).standing,
+    refresh: () => undefined,
   })
   pinExtensionFrame(V1, 'local.ui', ['backlog:read', 'storage:own'])
   await writeExtensionApproval(dataDir, 'local.ui', { fingerprint: 'sha256-a', access: access() })

@@ -142,5 +142,7 @@ export function frameStandingOf(discovered: UserModuleListResult, key: string): 
     runnable: isExtensionRunnable(module.standing),
     version: module.extension.version,
     moduleRoot: module.moduleRoot,
+    contentDigest: module.standing.contentDigest,
+    development: module.development !== undefined,
   }
 }
