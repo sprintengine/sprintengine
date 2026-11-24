@@ -6,6 +6,7 @@ import { registerTelemetryIpc } from './ipc/telemetry-ipc'
 import { registerQuitConfirmationIpc } from './ipc/quit-confirmation-ipc'
 import { registerAgentNotificationsIpc } from './ipc/agent-notifications-ipc'
 import { registerAgentBrowserToolsIpc } from './ipc/agent-browser-tools-ipc'
+import { registerBrowserTabAutoCloseIpc } from './ipc/browser-tab-auto-close-ipc'
 import { registerKeepAwakeIpc } from './ipc/keep-awake-ipc'
 import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerStudioWindowTicketIpc, type StudioWindowTicketIssuer } from './ipc/studio-window-ticket-ipc'
@@ -198,6 +199,7 @@ export function registerCoreIpc(
     void services.desktopShell?.refreshToolsets()
   })
   registerKeepAwakeIpc(ipcMain, services.keepAwakeStore, () => services.agentKeepAwake.refresh())
+  registerBrowserTabAutoCloseIpc(ipcMain, services.browserTabAutoClose)
   // The chat surface the Studio server serves: set up here while it runs in
   // process, and by the server itself when it runs in a process of its own
   // (src/server/desktop/server-ipc.ts).

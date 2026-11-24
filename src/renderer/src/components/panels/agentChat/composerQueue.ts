@@ -78,6 +78,19 @@ export function queueComposerDraft(
   }
 }
 
+// How many busy refusals running a queued message waits out before it comes
+// back to the composer. A refusal after the turn's end is the chat there
+// still letting go of it, which takes a moment; a run of them means a turn
+// this view cannot see, and the message is the person's to send again.
+export const QUEUED_BUSY_RETRIES = 10
+
+// How long a queued message refused busy waits before it goes again: what
+// the chat asked for, within a quarter second and five seconds.
+export function queuedBusyRetryDelay(retryAfterMs: number | undefined): number {
+  const asked = retryAfterMs !== undefined && Number.isFinite(retryAfterMs) ? retryAfterMs : 1_000
+  return Math.min(5_000, Math.max(250, asked))
+}
+
 // The composer's note when the per-turn image cap trimmed a queued message.
 export function queuedDropNotice(dropped: number): string | null {
   return dropped > 0

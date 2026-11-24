@@ -1,10 +1,12 @@
 import { useWorkspaceStore } from '../../store/workspaceStore'
+import { BrowserTabAutoCloseSetting } from './BrowserTabAutoCloseSetting'
 import { MainOwnedSettingToggle } from './MainOwnedSettingToggle'
 import { SettingCard, SettingToggle, SettingsSectionTitle } from './SettingsAtoms'
 import { copy } from '../../../../shared/copy'
 
 // Settings → Agents → Built-in browser: whether the agents get the browser at
-// all, and how it shows itself to the person sitting beside them.
+// all, how it shows itself to the person sitting beside them, and when the
+// tabs nobody uses any more are closed.
 
 export function AgentBrowserSettings() {
   const autoFloat = useWorkspaceStore((s) => s.appSettings.browserAutoFloatAgentPreview)
@@ -29,6 +31,7 @@ export function AgentBrowserSettings() {
           enabled={autoFloat}
           onChange={setAutoFloat}
         />
+        <BrowserTabAutoCloseSetting />
       </SettingCard>
     </section>
   )

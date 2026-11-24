@@ -422,6 +422,31 @@ test('a message a paired machine queued is held until the turn ends, then goes f
   assert.deepEqual(h.scheduled.state().messages, [])
 })
 
+test('a message queued during a compaction goes once it ends, though a monitor the chat left running still watches', async () => {
+  const h = harness()
+  await started(h)
+  // The compaction the chat's agent asked for runs while its monitor waits on CI.
+  h.working()
+  h.scheduled.hold(CHAT, 'Then look at the review comments.', 'device-1:cmd-1')
+  await h.advance(MINUTE)
+  assert.equal(h.sent.length, 0, 'never into the running compaction')
+  // The compaction's turn is over; the monitor is not, and may watch for an hour.
+  h.sessions.splice(0, h.sessions.length, {
+    ...h.sessions[0]!,
+    status: 'ready',
+    phase: 'completed',
+    backgroundTasks: [{ taskId: 'monitor-1', kind: 'monitor', description: 'CI checks' }],
+  })
+  h.emit({ type: 'turn_completed' })
+  await h.advance(1_500)
+  assert.deepEqual(
+    h.sent.map((entry) => entry.text),
+    ['Then look at the review comments.'],
+    'a background monitor is not a turn: the message goes when the turn ends',
+  )
+  assert.deepEqual(h.scheduled.state().messages, [])
+})
+
 test('several queued in one turn go as one message, and the same command twice is held once', async () => {
   const h = harness()
   await started(h)

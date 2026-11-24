@@ -20,6 +20,7 @@ export * from './tools.js'
 export * from './files.js'
 export * from './pull-requests.js'
 export * from './local-servers.js'
+export * from './processes.js'
 // The machines a desktop's computer offers: itself and its WSL distributions.
 export * from './hosts.js'
 export * from './workspaces.js'

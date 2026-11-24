@@ -20,7 +20,11 @@ test('a window saying it shows no browser tab does not clear a tab another windo
     ['out', popOut],
   ])
   let noted: string | null = null
+  const shown = new Map<unknown, string | null>()
   const manager = {
+    noteShown: (host: unknown, _workspaceId: string, tabId: string | null) => {
+      shown.set(host, tabId)
+    },
     hostOf: (tabId: string) => hosts.get(tabId) ?? null,
     noteActive: (_workspaceId: string, tabId: string | null) => {
       noted = tabId
@@ -42,4 +46,7 @@ test('a window saying it shows no browser tab does not clear a tab another windo
   await note(main, 'docked')
   await note(main, null)
   assert.equal(noted, null)
+  // Each window's own note of what it shows is kept apart from the agents' tab:
+  // the pop-out still shows its page while the pane shows a terminal.
+  assert.deepEqual([shown.get(popOut), shown.get(main)], ['out', null])
 })

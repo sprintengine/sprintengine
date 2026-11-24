@@ -10,7 +10,7 @@ import {
 } from '../../../packages/conversation-protocol/src/public'
 import type { ConversationEvent, ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { ATTACHABLE_IMAGE_TYPES, MAX_ATTACHMENTS_PER_TURN } from '../../shared/conversation-attachments'
-import { conversationTurnInProgress } from '../../shared/conversation/phase'
+import { conversationTurnOpen } from '../../shared/conversation/phase'
 import { isRecord } from '../../shared/records'
 import { USAGE_LIMIT_PROVIDERS, type UsageLimitProvider } from '../../shared/usage-limits'
 import {
@@ -48,7 +48,8 @@ import { writeFileAtomically } from '../config-file-write'
 //   as busy (a chat takes one turn at a time), so it waits — the tray says so
 //   — and goes out the moment the turn ends, as a message queued in the
 //   composer does. Waiting has no limit: the person said "send this", and a
-//   turn stopped on a question is theirs to answer first;
+//   turn stopped on a question is theirs to answer first. A background agent
+//   or monitor a finished turn left running is not a turn, and holds nothing;
 // - several due together go one after another, a few seconds apart.
 //
 // A send the chat refuses stays as a failure, in the chat's words, with Retry:
@@ -397,15 +398,16 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
       log('A scheduled message was not sent: its chat was deleted.')
       return changed()
     }
-    const busy = deps
-      .listSessions()
-      .some(
-        (session) =>
-          sameChat(session, entry) &&
-          session.status !== 'stopped' &&
-          session.status !== 'failed' &&
-          conversationTurnInProgress(session),
-      )
+    const busy = deps.listSessions().some(
+      (session) =>
+        sameChat(session, entry) &&
+        session.status !== 'stopped' &&
+        session.status !== 'failed' &&
+        // Only a turn holds it back, not the background work one left
+        // running: the runtime takes a send then, and a monitor watching CI
+        // would otherwise keep a queued message waiting until it ended.
+        conversationTurnOpen(session),
+    )
     if (busy) return wait(entry, at, BUSY_RETRY_MS)
     // To go once the limit lifts: still held back by a window that resets
     // later, it moves to that reset, as a resume after a limit does.

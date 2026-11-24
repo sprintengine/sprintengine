@@ -2,6 +2,7 @@ import type { StudioClient } from "../../../packages/client-runtime/src/public";
 import {
   studioGrantAllows,
   type StudioBacklogItem,
+  type StudioBrowserTab,
   type StudioBacklogUpdate,
   type StudioBacklogWorkspace,
   type StudioPullRequestDetail,
@@ -148,4 +149,35 @@ export function readPullRequestDiff(
   options: DesktopStudioOptions = {},
 ): Promise<ApiResult<StudioPullRequestDiffPage>> {
   return ask(target, (client) => client.rpc["pullRequests.diff"](input), { ...options, timeoutMs: PULL_REQUEST_TIMEOUT_MS });
+}
+
+/**
+ * The pages open in the desktop's built-in browser, where it serves them and
+ * this pairing may read the desktop; null where it does not, so the phone
+ * draws nothing rather than an empty list. `canClose` says whether this
+ * pairing may close one.
+ */
+export function readDesktopBrowserTabs(
+  target: DesktopTarget,
+  options: DesktopStudioOptions = {},
+): Promise<ApiResult<{ tabs: StudioBrowserTab[]; canClose: boolean } | null>> {
+  return ask(
+    target,
+    async (client) => {
+      if (!may(client, "browser-tabs", "browserTabs.list")) return null;
+      const { tabs } = await client.rpc["browserTabs.list"]({});
+      return { tabs, canClose: may(client, "browser-tabs", "browserTabs.close") };
+    },
+    options,
+  );
+}
+
+/** Close one of the desktop's browser tabs, as its pane's close button would. */
+export function closeDesktopBrowserTab(
+  target: DesktopTarget,
+  tabId: string,
+  options: DesktopStudioOptions = {},
+): Promise<ApiResult<{ closed: boolean }>> {
+  const commandId = `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return ask(target, (client) => client.rpc["browserTabs.close"]({ tabId, commandId }), options);
 }

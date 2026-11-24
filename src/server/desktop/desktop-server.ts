@@ -31,7 +31,7 @@ import { powerActivity } from '../../main/power-activity'
 import { readStudioEnvironmentId } from '../environment/environment-id'
 import { createTailnetNotifier } from '../../main/tailnet-notifications'
 import { agentBrowserToolGate, agentBrowserToolsEnabledOnDisk } from '../../main/agent-browser-tools-store'
-import { conversationTurnInProgress } from '../../shared/conversation/phase'
+import { conversationSummaryPhase, conversationTurnInProgress } from '../../shared/conversation/phase'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../../shared/product-identity'
 import { meshListChanged, type MeshConnection, type MeshMachineReachability } from '../../shared/tailnet-mesh'
 import { SERVER_EXIT } from '../bootstrap/envelope'
@@ -52,6 +52,7 @@ import { createPluginTools } from '../../main/automation/plugin-tools'
 import { resolveScaffoldRoots } from '../../main/extension-scaffold'
 import { createStudioRpc } from '../core/studio-rpc'
 import { mirroredStudioUpdates, type StudioUpdateStart } from '../update/studio-updates'
+import type { StudioBrowserTab } from '../../../packages/studio-protocol/src/public'
 import { createIpcTunnel, type TunnelPort } from '../ipc/ipc-tunnel'
 import { createStaticAppIdentity } from '../platform/app-identity'
 import { installStudioPlatform, type StudioPlatform } from '../platform/platform'
@@ -485,6 +486,11 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   rpc.on(SERVER_EVENTS.updateState, (payload) => desktopUpdates.mirror(payload))
   const studioRpc = createStudioRpc(core, gateway, {
     updates: desktopUpdates.updates,
+    // The built-in browser is the shell's: its tabs are listed and closed there.
+    browserTabs: {
+      list: () => rpc.call<StudioBrowserTab[]>(SHELL_METHODS.browserTabsList, {}),
+      close: async (tabId) => (await rpc.call<boolean>(SHELL_METHODS.browserTabsClose, { tabId })) === true,
+    },
     modules: modules.hub,
     // The files on this disk move to the Trash through the shell, which has
     // one (`shell.trash`); a logo is served at its own bytes, as this process
@@ -876,6 +882,17 @@ function serveShellRequests(deps: {
       .catch(() => [])
   })
   rpc.handle(SERVER_METHODS.conversationRoots, () => core.conversations.listLiveConversationRoots())
+  rpc.handle(SERVER_METHODS.conversationsWorking, () => {
+    const listed = core.conversations.listSessions()
+    if (!listed.ok) return []
+    return [
+      ...new Set(
+        listed.sessions
+          .filter((session) => conversationSummaryPhase(session) === 'running')
+          .map((session) => session.workspaceId),
+      ),
+    ]
+  })
   // The shell's `agent.launch` cuts its worktree here, from this process's pool.
   serveAgentWorktrees(rpc, core.worktrees.installer)
   // The hourly refresh of the hosted feeds, which the shell times.

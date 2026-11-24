@@ -409,6 +409,22 @@ export const STUDIO_EXECUTION_HOSTS_CAPABILITY = 'execution-hosts' as const
 export const STUDIO_FILE_VIEWS_CAPABILITY = 'file-views' as const
 
 /**
+ * The programs this machine's agents started that are still running, and
+ * stopping one (`processes.list`, `processes.stop`): an owner's. Offered by a
+ * Studio that can read its machine's processes and their environment (macOS
+ * and Linux); a Studio on Windows offers it and answers the list as
+ * unavailable there, in words a client shows.
+ */
+export const STUDIO_PROCESSES_CAPABILITY = 'processes' as const
+
+/**
+ * The pages open in a desktop's built-in browser, across its chats, and
+ * closing one (`browserTabs.list`, `browserTabs.close`), by scope. Offered by
+ * a desktop whose shell has the browser pane.
+ */
+export const STUDIO_BROWSER_TABS_CAPABILITY = 'browser-tabs' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -477,6 +493,8 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_EXTENSION_FRAMES_CAPABILITY,
   STUDIO_FILE_VIEWS_CAPABILITY,
   STUDIO_EXTENSION_EDITORS_CAPABILITY,
+  STUDIO_PROCESSES_CAPABILITY,
+  STUDIO_BROWSER_TABS_CAPABILITY,
 ] as const
 
 /**
