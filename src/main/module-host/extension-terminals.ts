@@ -222,11 +222,32 @@ export function createExtensionTerminals(deps: ExtensionTerminalDeps): Extension
 
   function remember(moduleId: string, terminalId: string, title: string | null): void {
     const opened = openedBy.get(moduleId) ?? new Map<string, string | null>()
-    opened.delete(terminalId)
     opened.set(terminalId, title)
-    // Past the limit the oldest is forgotten, not closed: it is the person's now.
-    while (opened.size > EXTENSION_TERMINAL_OPENED_LIMIT) opened.delete(opened.keys().next().value as string)
     openedBy.set(moduleId, opened)
+  }
+
+  /**
+   * Room for one more terminal of the extension's, counting those still
+   * starting. A terminal it opened is never forgotten while it runs, so its
+   * removal closes every one: the ones that exited are let go first, and at
+   * the limit `create` is refused.
+   */
+  function makeRoom(moduleId: string, terminals: ExtensionTerminalHost): void {
+    const opened = openedBy.get(moduleId)
+    if (opened && opened.size + (pendingBy.get(moduleId)?.size ?? 0) >= EXTENSION_TERMINAL_OPENED_LIMIT) {
+      const running = new Set(
+        terminals
+          .list()
+          .filter((session) => session.processAlive)
+          .map((session) => session.sessionId),
+      )
+      for (const terminalId of [...opened.keys()]) if (!running.has(terminalId)) opened.delete(terminalId)
+    }
+    if ((opened?.size ?? 0) + (pendingBy.get(moduleId)?.size ?? 0) >= EXTENSION_TERMINAL_OPENED_LIMIT)
+      refuse(
+        'limit_reached',
+        `Extension "${moduleId}" already has ${EXTENSION_TERMINAL_OPENED_LIMIT} terminals open, the most it may: close one first.`,
+      )
   }
 
   async function write(
@@ -279,6 +300,7 @@ export function createExtensionTerminals(deps: ExtensionTerminalDeps): Extension
         refuse('unavailable', `Workspace "${workspaceId}" runs on another machine, which keeps its own terminals.`)
       if (!workspace.folderPath)
         refuse('unavailable', `Workspace "${workspaceId}" has no folder to open a terminal in.`)
+      makeRoom(moduleId, terminals)
       const terminalId = `ext-${randomUUID()}`
       const sessionId = `terminal-${terminalId}`
       const invoker = currentInvoker()

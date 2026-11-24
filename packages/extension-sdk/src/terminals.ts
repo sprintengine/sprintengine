@@ -25,7 +25,10 @@ export const EXTENSION_TERMINAL_READ_DEFAULT_LINES = 200
 /** The most characters one `send` may type, and one `create`'s `command` and `title` may hold. */
 export const EXTENSION_TERMINAL_TEXT_MAX_CHARS = 64 * 1024
 export const EXTENSION_TERMINAL_TITLE_MAX_CHARS = 200
-/** The most terminals Studio remembers an extension opened; the oldest is forgotten (not closed) past it. */
+/**
+ * The most live terminals one extension may have opened at once: past it,
+ * `create` is refused with `limit_reached` until it closes one (or one exits).
+ */
 export const EXTENSION_TERMINAL_OPENED_LIMIT = 128
 /** The most terminals one `list` answers. */
 export const EXTENSION_TERMINAL_LIST_MAX = 50
@@ -51,7 +54,8 @@ export type ExtensionTerminalSummary = {
  * `unknown_terminal` (no terminal by that id), `unknown_workspace`,
  * `not_yours` (`close` of a terminal it did not open), `unavailable` (this
  * Studio runs no terminals), `invalid_params`, `refused_by_extension` (an
- * extension's `terminal.write.before` hook refused the write) and
+ * extension's `terminal.write.before` hook refused the write),
+ * `limit_reached` (it has as many terminals open as it may) and
  * `action_failed`.
  */
 export type ExtensionTerminalErrorCode =
@@ -63,6 +67,7 @@ export type ExtensionTerminalErrorCode =
   | 'unavailable'
   | 'invalid_params'
   | 'refused_by_extension'
+  | 'limit_reached'
   | 'action_failed'
 
 export type ExtensionTerminalService = {

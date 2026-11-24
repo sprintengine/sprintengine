@@ -136,4 +136,6 @@ export function activate(studio: MainHost): void {
 A refused call rejects with an error whose `code` says why:
 `not_permitted`, `approval_required`, `unknown_terminal`, `unknown_workspace`,
 `not_yours`, `unavailable`, `invalid_params`, `refused_by_extension` (a
-`terminal.write.before` hook refused the write) or `action_failed`.
+`terminal.write.before` hook refused the write), `limit_reached` (your
+extension already has 128 terminals open; close one first) or
+`action_failed`.

@@ -4,6 +4,7 @@ import { test } from 'vitest'
 
 import type { TerminalSessionSnapshot } from '../../../packages/studio-protocol/src/terminals'
 import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
+import { EXTENSION_TERMINAL_OPENED_LIMIT } from '../../../packages/extension-sdk/src/terminals'
 import { createExtensionTerminals, type ExtensionTerminalHost } from './extension-terminals'
 
 // The person's terminals as an extension's worker reaches them, past the
@@ -279,4 +280,19 @@ test('list answers the live terminals, in one workspace when asked, saying which
   assert.equal(many.terminals.length, 50)
   assert.equal(many.truncated, true)
   await assert.rejects(m.terminals.list('local.a', { workspaceId: 7 } as never), code('invalid_params'))
+})
+
+test('at its limit an extension is refused another terminal, never one forgotten while it runs, so removal closes them all', async () => {
+  const m = machine()
+  const opened: string[] = []
+  for (let index = 0; index < EXTENSION_TERMINAL_OPENED_LIMIT; index++)
+    opened.push((await m.terminals.create('local.a', { workspaceId: 'ws-1' })).terminalId)
+  await assert.rejects(m.terminals.create('local.a', { workspaceId: 'ws-1' }), code('limit_reached'))
+  assert.equal(m.spawned.length, EXTENSION_TERMINAL_OPENED_LIMIT, 'no shell started for the refused one')
+  // One that exited is let go to make room.
+  m.sessions.get(opened[0]!)!.snapshot.processAlive = false
+  const next = (await m.terminals.create('local.a', { workspaceId: 'ws-1' })).terminalId
+  m.terminals.closeAll('local.a')
+  const running = opened.slice(1).concat(next)
+  assert.deepEqual([...m.killed].sort(), [...running].sort(), 'every terminal it opened that runs is closed')
 })
