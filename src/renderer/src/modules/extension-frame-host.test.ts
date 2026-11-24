@@ -18,6 +18,8 @@ function harness(answers: Record<string, StudioExtensionCallAnswer> = {}) {
   const toasts: unknown[] = []
   const ready: number[] = []
   const left: boolean[] = []
+  // Studio's events the window follows for the frame, and the deliver of each.
+  const followed: Array<{ event: string; deliver: (payload: unknown) => void; stopped: boolean }> = []
   let clock = 0
   const host = createExtensionFrameHost({
     source: () => frame,
@@ -32,6 +34,11 @@ function harness(answers: Record<string, StudioExtensionCallAnswer> = {}) {
       chatDraft: async () => ({ ok: true }),
       openDoor: (id) => id === 'deck',
       focusTab: () => true,
+      followStudioEvent: (event, deliver) => {
+        const entry = { event, deliver, stopped: false }
+        followed.push(entry)
+        return () => void (entry.stopped = true)
+      },
     },
     theme: () => ({ colorScheme: 'dark', tokens: { '--bg-app': '#000' } }),
     onReady: (at) => ready.push(at),
@@ -43,7 +50,7 @@ function harness(answers: Record<string, StudioExtensionCallAnswer> = {}) {
   const send = (data: unknown, source: MessageEventSource = frame) =>
     host.receive({ source, data } as unknown as MessageEvent)
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
-  return { host, posted, called, toasts, ready, left, send, settle, tick: (ms: number) => (clock += ms) }
+  return { host, posted, called, toasts, ready, left, followed, send, settle, tick: (ms: number) => (clock += ms) }
 }
 
 test('the frame is answered hello with the theme and its workspace; a stranger is not heard', () => {
@@ -87,6 +94,38 @@ test('a client method is carried out in the window only once the Studio admitted
   const byId = (id: number) => posted.find((message) => message.id === id)
   assert.deepEqual(byId(1), { se: 1, kind: 'res', id: 1, result: { ok: true } })
   assert.equal((byId(2)!.error as { code: string }).code, 'approval_required')
+})
+
+test('one of Studio’s events is followed once the Studio admitted it, once per event, and stopped with the frame', async () => {
+  const { host, posted, followed, send, settle } = harness({
+    'events.subscribe': { ok: true, result: null },
+  })
+  send({ se: 1, kind: 'req', id: 1, method: 'events.subscribe', params: { event: 'workspace.created' } })
+  send({ se: 1, kind: 'req', id: 2, method: 'events.subscribe', params: { event: 'workspace.created' } })
+  await settle()
+  assert.deepEqual(
+    followed.map((entry) => entry.event),
+    ['workspace.created'],
+  )
+  followed[0]!.deliver({ workspaceId: 'ws-2' })
+  assert.deepEqual(posted.at(-1), {
+    se: 1,
+    kind: 'evt',
+    event: 'studio',
+    payload: { event: 'workspace.created', payload: { workspaceId: 'ws-2' } },
+  })
+  host.dispose()
+  assert.equal(followed[0]!.stopped, true)
+})
+
+test('an event the Studio refused is not followed', async () => {
+  const { posted, followed, send, settle } = harness({
+    'events.subscribe': { ok: false, code: 'not_permitted', message: 'Not approved for "conversation:read".' },
+  })
+  send({ se: 1, kind: 'req', id: 1, method: 'events.subscribe', params: { event: 'agent.status.changed' } })
+  await settle()
+  assert.deepEqual(followed, [])
+  assert.equal((posted.at(-1)!.error as { code: string }).code, 'not_permitted')
 })
 
 test('a frame is held to its budget: a message too large, and too many in ten seconds', async () => {
@@ -171,7 +210,13 @@ test('a custom editor’s edits are answered by the window’s document, never s
       called.push(method)
       return { ok: true, result: null }
     },
-    client: { toast: () => undefined, chatDraft: async () => ({}), openDoor: () => false, focusTab: () => false },
+    client: {
+      toast: () => undefined,
+      chatDraft: async () => ({}),
+      openDoor: () => false,
+      focusTab: () => false,
+      followStudioEvent: () => () => undefined,
+    },
     theme: () => ({ colorScheme: 'dark', tokens: {} }),
     onReady: () => undefined,
     onPaint: () => undefined,

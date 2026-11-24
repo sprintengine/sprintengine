@@ -2403,6 +2403,153 @@ function usageRegistry(context: FakeServiceContext): { registry: object; handle:
   return { registry, handle }
 }
 
+// ── Terminals ────────────────────────────────────────────────────────────────
+
+/** A terminal the fake host holds: its workspace, what it shows, and what was typed into it. */
+export type FakeTerminal = {
+  id: string
+  workspaceId: string
+  /** Its output, as plain lines, oldest first. */
+  lines: string[]
+  /** Everything typed into it, in order, Enter as `\r`. */
+  typed: string[]
+  alive: boolean
+  /** The extension that opened it, if one did. */
+  openedBy: string | null
+  title: string | null
+}
+
+/** The person's terminals as the fake host keeps them, and the levers that change them. */
+export type FakeTerminals = {
+  /** A terminal the person opened (no extension did), so `send` and `read` reach it and `close` does not. */
+  add(input: { id: string; workspaceId: string; lines?: string[] }): FakeTerminal
+  /** Print lines in one, as a command would. */
+  print(id: string, ...lines: string[]): void
+  /** Every terminal, by id. */
+  all(): FakeTerminal[]
+  get(id: string): FakeTerminal | undefined
+  /**
+   * The workspaces a window shows now: `send` types only into a terminal the
+   * extension opened or one in these. Default (null): every workspace.
+   */
+  setShownWorkspaces(workspaceIds: readonly string[] | null): void
+  /**
+   * What a `send` or `create` with a command answers when the call runs for an
+   * agent that asks before it runs commands: set the ceiling to see it refused.
+   */
+  setInvokerCeiling(ceiling: string | null): void
+}
+
+function terminalsRegistry(context: FakeServiceContext): { registry: object; handle: FakeTerminals } {
+  const terminals = new Map<string, FakeTerminal>()
+  let ceiling: string | null = null
+  let shown: Set<string> | null = null
+  let next = 1
+  const refuse = (code: string, message: string): never => {
+    const error = new Error(message) as Error & { code: string }
+    error.code = code
+    throw error
+  }
+  const terminal = (id: unknown): FakeTerminal => {
+    if (typeof id !== 'string' || id.length === 0) refuse('invalid_params', '"terminalId" is an id.')
+    return (
+      terminals.get(id as string) ?? refuse('unknown_terminal', `There is no terminal "${String(id)}" on this Studio.`)
+    )
+  }
+  const mayType = (what: string) => {
+    if (ceiling !== null && ceiling !== 'bypass')
+      refuse('not_permitted', `${what} runs commands without asking, and the agent that set this off asks first.`)
+  }
+  const registry = {
+    async send(moduleId: string, input: { terminalId: string; text: string; enter?: boolean }) {
+      if (typeof input?.text !== 'string') refuse('invalid_params', '"text" is text.')
+      mayType('Typing into a terminal')
+      const found = terminal(input.terminalId)
+      if (found.openedBy !== moduleId && shown !== null && !shown.has(found.workspaceId))
+        refuse(
+          'not_yours',
+          `An extension types only into a terminal it opened, or one in a workspace a window shows now; terminal "${found.id}" is neither.`,
+        )
+      if (!found.alive) return { accepted: false }
+      found.typed.push(input.enter === true ? `${input.text}\r` : input.text)
+      return { accepted: true }
+    },
+    async create(moduleId: string, input: { workspaceId: string; title?: string; command?: string }) {
+      if (input?.command !== undefined) mayType('Running a command in a terminal')
+      const workspace = context.workspaces.all().find((candidate) => candidate.id === input?.workspaceId)
+      if (!workspace)
+        refuse('unknown_workspace', `There is no workspace "${String(input?.workspaceId)}" on this Studio.`)
+      if (!workspace!.folderPath)
+        refuse('unavailable', `Workspace "${workspace!.id}" has no folder to open a terminal in.`)
+      const id = `terminal-ext-${next++}`
+      terminals.set(id, {
+        id,
+        workspaceId: workspace!.id,
+        lines: [],
+        typed: input.command ? [`${input.command}\r`] : [],
+        alive: true,
+        openedBy: moduleId,
+        title: input.title ?? null,
+      })
+      return { terminalId: id }
+    },
+    async read(_moduleId: string, input: { terminalId: string; maxLines?: number }) {
+      const found = terminal(input?.terminalId)
+      const max = Math.min(input.maxLines ?? 200, 2000)
+      return { lines: found.lines.slice(-max), truncated: found.lines.length > max }
+    },
+    async close(moduleId: string, input: { terminalId: string }) {
+      const found = terminals.get(input?.terminalId)
+      if (!found || found.openedBy !== moduleId)
+        refuse('not_yours', 'An extension closes only the terminals it opened (`create`).')
+      terminals.delete(found!.id)
+      return { closed: true as const }
+    },
+    async list(moduleId: string, input?: { workspaceId?: string }) {
+      const live = [...terminals.values()].filter(
+        (candidate) =>
+          candidate.alive && (input?.workspaceId === undefined || candidate.workspaceId === input.workspaceId),
+      )
+      return {
+        terminals: live.slice(0, 50).map((candidate) => ({
+          terminalId: candidate.id,
+          workspaceId: candidate.workspaceId,
+          title: candidate.title,
+          opened: candidate.openedBy === moduleId,
+        })),
+        truncated: live.length > 50,
+      }
+    },
+  }
+  const handle: FakeTerminals = {
+    add({ id, workspaceId, lines = [] }) {
+      const made: FakeTerminal = {
+        id,
+        workspaceId,
+        lines: [...lines],
+        typed: [],
+        alive: true,
+        openedBy: null,
+        title: null,
+      }
+      terminals.set(id, made)
+      return made
+    },
+    print(id, ...lines) {
+      terminal(id).lines.push(...lines)
+    },
+    all: () => [...terminals.values()],
+    get: (id) => terminals.get(id),
+    setInvokerCeiling(next) {
+      ceiling = next
+    },
+    setShownWorkspaces(workspaceIds) {
+      shown = workspaceIds === null ? null : new Set(workspaceIds)
+    },
+  }
+  return { registry, handle }
+}
+
 // ── Activity ─────────────────────────────────────────────────────────────────
 
 /** The person's Studio chats and what they typed in them, as the activity service reads them. */
@@ -2684,6 +2831,7 @@ function textGenerationRegistry(context: FakeServiceContext): { registry: object
 
 /** The handle of every built-in service fake, by name. */
 export type FakeServices = {
+  terminals: FakeTerminals
   workspaces: FakeWorkspaces
   storage: FakeStorage
   conversations: FakeConversations
@@ -2727,4 +2875,5 @@ export const SERVICE_FAKES: Readonly<Record<string, FakeServiceDefinition>> = {
   'usage.module-service': { name: 'usage', create: usageRegistry },
   'activity.module-service': { name: 'activity', create: activityRegistry },
   'text-generation.module-service': { name: 'textGeneration', create: textGenerationRegistry },
+  'terminals.module-service': { name: 'terminals', create: terminalsRegistry },
 }

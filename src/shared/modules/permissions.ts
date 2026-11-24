@@ -48,6 +48,9 @@ const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'agents:companion': 'Run its own background agents inside a workspace',
   'github:api': 'Use your GitHub sign-in to call the GitHub API (the token is never shown to the extension)',
   'tools:contribute': 'Add tools that agents in your workspaces can call',
+  'terminals:send':
+    'Type into your terminals and run commands: open terminals in your workspaces, type into the ones it opened and the ones in a workspace you have open, and close the ones it opened',
+  'terminals:read': 'Read what your terminals show, which can include what commands print',
 }
 
 /** Whether a scope is one this version knows. */
@@ -169,6 +172,8 @@ const CAPABILITY_ACCESS: Record<string, CapabilityAccess> = {
   'secrets:own': { title: 'Holds your API keys', care: true, why: 'Sends them to sites it names' },
   'usage:read': { title: 'Sees your usage and cost', care: true, why: 'Every agent session on this machine' },
   'backlog:operate': { title: 'Changes Backlog items', care: true, why: 'Creates and edits your items' },
+  'terminals:send': { title: 'Types into your terminals', care: true, why: 'Runs commands as you' },
+  'terminals:read': { title: 'Reads your terminals', care: true, why: 'Sees what your commands print' },
   'workspace-files:write': {
     title: 'Changes your project files',
     care: true,

@@ -76,6 +76,8 @@ export const EXTENSION_FRAME_EVENTS = {
   theme: 'theme',
   /** host → frame: a worker event (`MainHost.emit`). */
   push: 'push',
+  /** host → frame: one of Studio's events the frame subscribed to (`{ event, payload }`). */
+  studio: 'studio',
   /** frame → host: the surface called `studio.ready()` (`at`: epoch ms). */
   surfaceReady: 'surface.ready',
   /** frame → host: the first contentful paint (`at`: epoch ms). */

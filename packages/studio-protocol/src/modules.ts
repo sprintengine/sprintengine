@@ -412,8 +412,25 @@ export type StudioModulesMethodMap = {
 /** `extension.events` params: every module's events, or one module's. */
 export type StudioModuleEventsParams = { moduleId?: string }
 
+/**
+ * `extension.studioEvents` params: one of Studio's events (`workspace.created`,
+ * `agent.status.changed`, …), for one extension's surfaces. The Studio admits it
+ * as that extension, by its approval, and as this connection, by its grant, at
+ * the subscription and again at each event.
+ */
+export type StudioExtensionStudioEventsParams = { moduleId: string; event: string }
+
+/** One of Studio's events, as an extension's surface hears it. */
+export type StudioExtensionStudioEvent = { event: string; payload: unknown }
+
 export type StudioModulesTopicMap = {
   'extension.events': { params: StudioModuleEventsParams; payload: StudioModuleEvent; stream: 'push' }
+  /** One of Studio's events, for one extension's surfaces (`studio.on` in a frame). */
+  'extension.studioEvents': {
+    params: StudioExtensionStudioEventsParams
+    payload: StudioExtensionStudioEvent
+    stream: 'push'
+  }
   'extension.notifications': { params: Record<string, never>; payload: StudioModuleNotification; stream: 'push' }
   /** What is installed or approved here changed: list and load the extensions again. */
   'extension.changed': { params: Record<string, never>; payload: Record<string, never>; stream: 'push' }
@@ -832,6 +849,22 @@ export const STUDIO_MODULES_TOPICS: StudioTopicTable<StudioModulesTopicMap> = {
       )
         return studioParamsRefused('"moduleId" is a module id, when given.')
       return studioParams({ moduleId: value.moduleId })
+    },
+  },
+  'extension.studioEvents': {
+    scope: 'extensions:read',
+    capability: STUDIO_EXTENSION_FRAMES_CAPABILITY,
+    push: true,
+    params: (value) => {
+      if (
+        typeof value.moduleId !== 'string' ||
+        value.moduleId.length === 0 ||
+        value.moduleId.length > MAX_MODULE_ID_CHARS
+      )
+        return studioParamsRefused('"moduleId" is a module id.')
+      if (typeof value.event !== 'string' || !/^[a-z]+(?:\.[a-z]+){1,3}$/.test(value.event))
+        return studioParamsRefused('"event" names one of Studio\'s events.')
+      return studioParams({ moduleId: value.moduleId, event: value.event })
     },
   },
   'extension.notifications': {

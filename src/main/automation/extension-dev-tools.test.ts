@@ -21,7 +21,12 @@ import { createExtensionShotTool } from './extension-shot-tool'
 
 function tools(
   loads: Array<{ path: string }>,
-  seen: { request?: ModuleMethodCallRequest; hook?: ExtensionInvoker } = {},
+  seen: {
+    request?: ModuleMethodCallRequest
+    hook?: ExtensionInvoker
+    studioEvent?: { moduleId: string; event: string; payload: unknown }
+    studioEventBy?: ExtensionInvoker
+  } = {},
 ) {
   const lifecycle = {
     devLoad: async (path: string) => {
@@ -47,6 +52,11 @@ function tools(
       return { verdict: 'pass' }
     },
     emit: () => undefined,
+    studioEvent: (moduleId, event, payload, invoker) => {
+      seen.studioEvent = { moduleId, event, payload }
+      seen.studioEventBy = invoker
+      return { worker: null, surfaces: 1 }
+    },
   }
   const registrations = createExtensionDevTools({ backend: () => backend, events: createExtensionDevEvents() })
   return (name: string) => registrations.find((tool) => tool.name === name)!
@@ -79,9 +89,21 @@ test('nothing over the socket approves: not an agent, not an anonymous local con
 
 test('request, hook and emit reach development folders only, never an installed extension', async () => {
   const tool = tools([])
-  for (const name of ['extension.dev.request', 'extension.dev.hook', 'extension.dev.emit']) {
+  for (const name of [
+    'extension.dev.request',
+    'extension.dev.hook',
+    'extension.dev.emit',
+    'extension.dev.studioEvent',
+  ]) {
     const answer = await tool(name).handler(
-      { moduleId: 'acme.installed', method: 'm', topic: 't', point: 'agent.prompt.before', event: {} },
+      {
+        moduleId: 'acme.installed',
+        method: 'm',
+        topic: 't',
+        point: 'agent.prompt.before',
+        event: name === 'extension.dev.studioEvent' ? 'workspace.created' : {},
+        payload: {},
+      },
       local,
     )
     assert.equal(answer.isError, true, name)
@@ -102,6 +124,19 @@ test('a request and a hook run as their caller: a manual agent’s cannot start 
   const hook = await bound[1]!.handler({ moduleId: 'local.notes', point: 'agent.prompt.before', event: {} }, agent)
   assert.notEqual(hook.isError, true)
   assert.equal(seen.hook?.permissionCeiling, 'manual')
+})
+
+test('a Studio event is fired as its caller: a manual agent’s reaches the extension held to manual', async () => {
+  const seen: { studioEventBy?: ExtensionInvoker } = {}
+  const [tool] = bindDevToolsToCaller([tools([], seen)('extension.dev.studioEvent')], (context) =>
+    ownerInvoker(context?.metadata.kind === 'studio-agent' ? 'manual' : null, 'the agent'),
+  )
+  const workspace = { workspaceId: 'ws-1', name: 'Notes', kind: 'folder', folderPath: null, branch: null }
+  const answer = await tool!.handler({ moduleId: 'local.notes', event: 'workspace.created', payload: workspace }, agent)
+  assert.notEqual(answer.isError, true)
+  assert.equal(seen.studioEventBy?.permissionCeiling, 'manual', 'the agent’s ceiling rides the event')
+  await tool!.handler({ moduleId: 'local.notes', event: 'workspace.created', payload: workspace }, local)
+  assert.equal(seen.studioEventBy?.permissionCeiling, null, 'the person’s own call is not capped')
 })
 
 test('a capped agent is refused a shot, whose surface calls are answered as the person', async () => {
@@ -146,4 +181,32 @@ test('a paired device cannot use development folders', async () => {
 test('a folder must be named absolutely, on the machine Studio runs on', async () => {
   const answer = await tools([])('extension.dev.load').handler({ path: 'notes' }, local)
   assert.equal((answer.structuredContent as { error: { code: string } }).error.code, 'invalid_arguments')
+})
+
+test('a made-up Studio event reaches a development folder’s extension alone, its payload checked against the event’s shape', async () => {
+  const seen: { studioEvent?: { moduleId: string; event: string; payload: unknown } } = {}
+  const tool = tools([], seen)('extension.dev.studioEvent')
+  const workspace = { workspaceId: 'ws-1', name: 'Notes', kind: 'folder', folderPath: null, branch: null }
+  const answer = await tool.handler({ path: '/Users/dev/notes', event: 'workspace.created', payload: workspace }, local)
+  assert.notEqual(answer.isError, true)
+  assert.deepEqual(answer.structuredContent, {
+    moduleId: 'local.notes',
+    event: 'workspace.created',
+    worker: 'queued',
+    surfaces: 1,
+  })
+  assert.deepEqual(seen.studioEvent, { moduleId: 'local.notes', event: 'workspace.created', payload: workspace })
+  seen.studioEvent = undefined
+  for (const [event, payload] of [
+    ['workspace.created', { ...workspace, kind: 'drive' }],
+    ['workspace.changed', workspace],
+    ['agent.status.changed', { agentId: 'a', where: 'chat', state: 'asleep', failed: false }],
+    ['workspace.exploded', workspace],
+  ] as const) {
+    const refused = await tool.handler({ moduleId: 'local.notes', event, payload }, local)
+    assert.equal((refused.structuredContent as { error: { code: string } }).error.code, 'invalid_arguments', event)
+  }
+  assert.equal(seen.studioEvent, undefined, 'nothing was fired')
+  const remote = await tool.handler({ moduleId: 'local.notes', event: 'workspace.created', payload: workspace }, device)
+  assert.equal(remote.isError, true)
 })

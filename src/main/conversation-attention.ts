@@ -114,7 +114,7 @@ export function createConversationAttentionListener(attention: Pick<AgentAttenti
 // How each runtime says a turn was stopped: Codex completes it marked
 // `interrupted`; the others fail it with that reason or, an ACP agent
 // cancelled mid-prompt, the bare word as its message.
-function isInterruptedTurnEnd(event: ConversationEvent): boolean {
+export function isInterruptedTurnEnd(event: ConversationEvent): boolean {
   if (event.type === 'turn_completed') return event.payload?.interrupted === true
   return event.payload?.reason === 'interrupted' || event.payload?.message === 'interrupted'
 }

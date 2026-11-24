@@ -12,6 +12,7 @@
 
 import { EDITOR_DOCUMENT_SCRIPT } from '../../../../packages/extension-sdk/src/editor-document-script'
 import { EXTENSION_FRAME_METHODS } from '../../../../packages/extension-sdk/src/services'
+import { EXTENSION_FRAME_EVENTS as STUDIO_FRAME_EVENTS } from '../../../../packages/extension-sdk/src/events'
 import {
   EXTENSION_FRAME_CALL_DEADLINE_MS,
   EXTENSION_FRAME_EVENTS,
@@ -98,6 +99,7 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     events: EXTENSION_FRAME_EVENTS,
     codes: FRAME_ERROR_CODES,
     methods: Object.keys(EXTENSION_FRAME_METHODS),
+    studioEvents: STUDIO_FRAME_EVENTS,
     maxPending: EXTENSION_FRAME_MAX_PENDING,
     deadlineMs: EXTENSION_FRAME_CALL_DEADLINE_MS,
     rootId: FRAME_ROOT_ID,
@@ -119,6 +121,8 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
   var nextId = 1
   var pending = new Map()
   var listeners = { theme: new Set(), push: new Set() }
+  // The Studio events: the first listener for one subscribes, through the host gate.
+  C.studioEvents.forEach(function (name) { listeners[name] = new Set() })
   var theme = { colorScheme: C.colorScheme }
   var surface = Object.freeze(C.surface)
   var started = false
@@ -305,8 +309,12 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     methods: methods,
     get theme() { return { colorScheme: theme.colorScheme } },
     on: function (name, listener) {
-      if (!listeners[name] || typeof listener !== 'function') throw new TypeError('studio.on takes "theme" or "push", and a function.')
+      if (!Object.prototype.hasOwnProperty.call(listeners, name) || typeof listener !== 'function')
+        throw new TypeError('studio.on takes "theme", "push" or one of the Studio events (' + C.studioEvents.join(', ') + '), and a function.')
       var entry = function (payload) { listener(payload) }
+      if (C.studioEvents.indexOf(name) >= 0 && listeners[name].size === 0) {
+        call('events.subscribe', { event: name }).catch(function (error) { console.error(error) })
+      }
       listeners[name].add(entry)
       return Object.freeze({ dispose: function () { listeners[name].delete(entry) } })
     },
@@ -356,6 +364,9 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
       Array.from(documentListeners[message.event]).forEach(function (listener) {
         try { listener(message.payload) } catch (error) { console.error(error) }
       })
+    } else if (message.kind === 'evt' && message.event === E.studio) {
+      var heard = message.payload
+      if (heard && C.studioEvents.indexOf(heard.event) >= 0) emit(heard.event, heard.payload)
     } else if (message.kind === 'evt' && message.event === E.push) {
       var push = message.payload
       if (push && typeof push.topic === 'string') emit('push', push.payload === undefined ? { topic: push.topic } : { topic: push.topic, payload: push.payload })

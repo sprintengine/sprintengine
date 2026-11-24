@@ -36,6 +36,7 @@ import {
   type ExtensionHookOnError,
   type ExtensionHookPoint,
 } from './hooks.js'
+import { EXTENSION_EVENTS, EXTENSION_EVENTS_MAX, EXTENSION_EVENT_SPECS, type ExtensionEventName } from './events.js'
 import {
   EXTENSION_PATH_TOKEN,
   agentEndpointUrlProblem,
@@ -129,7 +130,6 @@ export const EXTENSION_RESERVED_POINTS: Readonly<Record<string, string>> = {
   fonts: 'font families',
   snippets: 'editor snippets',
   newFiles: 'new file templates',
-  events: 'events delivered to the worker',
   sidecars: 'background processes',
   agentProviders: 'agent providers run by an extension’s own code',
 }
@@ -912,6 +912,29 @@ const CONTRIBUTES: ObjectNode = {
       since: V1,
       tier: 'worker',
     },
+    events: {
+      node: {
+        kind: 'array',
+        max: EXTENSION_EVENTS_MAX,
+        unique: { key: (item) => String((item as { on: string }).on), label: 'event' },
+        items: {
+          kind: 'object',
+          title: 'EventContribution',
+          fields: {
+            on: {
+              node: { kind: 'string', max: 64, enum: EXTENSION_EVENTS },
+              required: true,
+              doc: 'The event the worker hears, with `studio.events.on(event, handler)`. Each needs the permission the guide’s events topic names for it: `workspace:read` for the workspace events, `conversation:read` for `agent.status.changed`.',
+              since: V1,
+              example: 'workspace.created',
+            },
+          },
+        },
+      },
+      doc: `Events Studio delivers to the worker, at most ${EXTENSION_EVENTS_MAX}. A worker that is not running is started to hear one. Each event needs its permission, and an extension switched off, stopped or not approved as it is hears none.`,
+      since: V1,
+      tier: 'worker',
+    },
     skills: {
       node: {
         kind: 'array',
@@ -1255,6 +1278,8 @@ export type ExtensionTopBarItemContribution = {
 }
 /** A panel, door or settings section: drawn by its own `entry`. */
 export type ExtensionSurfaceContribution = { id: string; title: string; icon?: ExtensionIcon; entry: string }
+/** An event the worker hears. */
+export type ExtensionEventContribution = { on: ExtensionEventName }
 /** A point the worker hooks, and what its failure does. */
 export type ExtensionHookContribution = { point: ExtensionHookPoint; onError?: ExtensionHookOnError }
 export type ExtensionMcpToolContribution = {
@@ -1339,6 +1364,7 @@ export type ExtensionContributions = {
   settingsSections: ExtensionSurfaceContribution[]
   mcpTools: ExtensionMcpToolContribution[]
   hooks: ExtensionHookContribution[]
+  events: ExtensionEventContribution[]
   syntaxes: ExtensionSyntaxContribution[]
   customEditors: ExtensionCustomEditorContribution[]
   keybindings: ExtensionKeybindingContribution[]
@@ -1393,6 +1419,7 @@ const EMPTY_CONTRIBUTIONS = (): ExtensionContributions => ({
   settingsSections: [],
   mcpTools: [],
   hooks: [],
+  events: [],
   syntaxes: [],
   customEditors: [],
   keybindings: [],
@@ -1414,6 +1441,13 @@ export function compareStudioVersions(a: string, b: string): number {
   return 0
 }
 
+/**
+ * Permissions only a worker can use: no surface's frame has a way to a
+ * terminal, so a lower tier asking for one would ask the person for something
+ * it could never use.
+ */
+export const WORKER_ONLY_PERMISSIONS: readonly ExtensionPermission[] = ['terminals:send', 'terminals:read']
+
 /** The least tier a manifest's contents need. */
 export function requiredExtensionTier(
   manifest: Pick<ExtensionManifest, 'main' | 'background' | 'permissions' | 'contributes'>,
@@ -1424,6 +1458,7 @@ export function requiredExtensionTier(
   }
   if (manifest.main !== undefined || manifest.background !== undefined) raise('worker')
   if (manifest.permissions.length > 0) raise('ui')
+  if (manifest.permissions.some((permission) => WORKER_ONLY_PERMISSIONS.includes(permission))) raise('worker')
   for (const [point, field] of Object.entries(CONTRIBUTES.fields)) {
     const list = (manifest.contributes as Record<string, unknown[] | undefined>)[point]
     if (field.tier && list && list.length > 0) raise(field.tier)
@@ -1541,6 +1576,11 @@ function crossFieldIssues(manifest: ExtensionManifest, options: ExtensionManifes
         })
       }
     }
+  })
+  contributes.events.forEach((subscription, index) => {
+    const needed = EXTENSION_EVENT_SPECS[subscription.on].permission
+    if (needed !== null && !manifest.permissions.includes(needed))
+      issues.push({ path: `contributes.events[${index}].on`, message: `needs the "${needed}" permission.` })
   })
   if (contributes.mcpTools.length > 0 && !manifest.permissions.includes('tools:contribute')) {
     issues.push({ path: 'contributes.mcpTools', message: 'needs the "tools:contribute" permission.' })

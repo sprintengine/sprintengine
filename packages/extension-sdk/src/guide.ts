@@ -57,6 +57,11 @@ export const EXTENSION_GUIDE_TOPICS: readonly ExtensionGuideTopic[] = [
     summary:
       'Agent hooks: checking, changing or refusing what agents and Studio are about to do (tool calls, prompts, launches, saves), and hearing what they did.',
   },
+  {
+    id: 'events',
+    summary:
+      "Studio's events (workspaces made, removed or changed, agents' status) in a worker and a surface, and the person's terminals from a worker: send, create, read, close, list.",
+  },
   { id: 'conversations', summary: "The extension's own chats, and one-shot text generation." },
   { id: 'brokers', summary: 'API keys and GitHub through the host, never a token in the extension.' },
   {

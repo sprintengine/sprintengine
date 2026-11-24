@@ -194,7 +194,7 @@
                 },
                 "permissions": {
                   "type": "array",
-                  "maxItems": 21,
+                  "maxItems": 23,
                   "items": {
                     "type": "string",
                     "maxLength": 64,
@@ -219,7 +219,9 @@
                       "agents:generate",
                       "agents:companion",
                       "github:api",
-                      "tools:contribute"
+                      "tools:contribute",
+                      "terminals:send",
+                      "terminals:read"
                     ]
                   },
                   "description": "Every permission the release asks for. Studio refuses an install whose manifest asks for different ones.",
@@ -250,6 +252,7 @@
                           "settingsSections",
                           "mcpTools",
                           "hooks",
+                          "events",
                           "syntaxes",
                           "customEditors",
                           "keybindings",

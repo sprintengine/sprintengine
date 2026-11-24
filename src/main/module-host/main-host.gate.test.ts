@@ -28,6 +28,8 @@ const reader: CapabilityManifest = {
     'github:api',
     'tools:contribute',
     'agents:companion',
+    'terminals:send',
+    'workspace:read',
   ],
 }
 const bare: CapabilityManifest = {
@@ -98,6 +100,17 @@ function setup(approved: () => readonly string[] | null = () => reader.permissio
     () =>
       ({
         request: async (moduleId: string) => (calls.push(`github:${moduleId}`), { ok: true }),
+      }) as never,
+  )
+  host.provideService(
+    serviceTokens.TerminalsModuleServiceToken,
+    () =>
+      ({
+        send: async (moduleId: string) => (calls.push(`send:${moduleId}`), { accepted: true }),
+        create: async (moduleId: string) => (calls.push(`create-terminal:${moduleId}`), { terminalId: 't' }),
+        read: async (moduleId: string) => (calls.push(`read:${moduleId}`), { lines: [], truncated: false }),
+        close: async (moduleId: string) => (calls.push(`close:${moduleId}`), { closed: true }),
+        list: async (moduleId: string) => (calls.push(`list:${moduleId}`), { terminals: [], truncated: false }),
       }) as never,
   )
   host.provideService(
@@ -231,6 +244,81 @@ test('a frame’s host calls are held to the extension’s approval and to the c
   const unknown = await call('local.reader', 'shell.run', ownerInvoker())
   assert.equal(!unknown.ok && unknown.code, 'unknown_method')
   assert.deepEqual(calls, ['backlog:local.reader'])
+})
+
+test('the terminals are the person’s: an extension needs its permission, and a device, the phone or another app is refused', async () => {
+  const { kernel, calls } = setup()
+  type Terminals = {
+    [M in 'send' | 'create' | 'read' | 'close' | 'list']: (moduleId: string, input: unknown) => Promise<unknown>
+  }
+  const terminals = (id: string) =>
+    kernel.hostFor(id).requireService(serviceTokens.TerminalsModuleServiceToken) as unknown as Terminals
+  // Approved to type, not to read.
+  assert.deepEqual(await terminals('local.reader').send('local.reader', {}), { accepted: true })
+  await assert.rejects(terminals('local.reader').read('local.reader', {}), /not approved for "terminals:read"/)
+  await assert.rejects(terminals('local.reader').list('local.reader', {}), /not approved for "terminals:read"/)
+  await assert.rejects(terminals('local.bare').create('local.bare', {}), /not approved for "terminals:send"/)
+  // A paired device holding every permission it can be granted is still not the person.
+  const phone: ExtensionInvoker = {
+    principal: studioPrincipal({
+      owner: false,
+      permissions: studioGrantPrincipal({ owner: true, scopes: [] }).permissions,
+    }),
+    permissionCeiling: null,
+    label: 'the device "android-phone"',
+  }
+  await assert.rejects(
+    runAsInvoker(phone, () => terminals('local.reader').send('local.reader', {})),
+    (error: Error & { code?: string }) =>
+      error.code === 'not_permitted' && /only the person at this machine can set it off/.test(error.message),
+  )
+  await assert.rejects(
+    runAsInvoker(DEVICE, () => terminals('local.reader').close('local.reader', {})),
+    /only the person/,
+  )
+  // An owner's browser tab holds the owner's grant, and still never reaches a terminal.
+  const browser: ExtensionInvoker = { ...ownerInvoker(), label: 'your browser', noTerminals: true }
+  for (const method of ['send', 'create', 'close'] as const)
+    await assert.rejects(
+      runAsInvoker(browser, () => terminals('local.reader')[method]('local.reader', {})),
+      (error: Error & { code?: string }) =>
+        error.code === 'not_permitted' && /which no browser reaches/.test(error.message),
+    )
+  assert.deepEqual(calls, ['send:local.reader'])
+})
+
+test('a frame hears one of Studio’s events only with its permission, held to the extension and the connection', async () => {
+  const { kernel } = setup()
+  const subscribe = (moduleId: string, event: string, invoker: ExtensionInvoker) =>
+    kernel.callFrameMethod({
+      moduleId,
+      frame: FRAME,
+      method: 'events.subscribe',
+      params: { event },
+      clientId: 'c',
+      commandId: 'k',
+      invoker,
+    })
+  // Admitted at the host, carried out by the window.
+  assert.deepEqual(await subscribe('local.reader', 'workspace.created', ownerInvoker()), { ok: true, result: null })
+  // The window's own typography needs nothing.
+  assert.deepEqual(await subscribe('local.bare', 'editor.typography.changed', ownerInvoker()), {
+    ok: true,
+    result: null,
+  })
+  const unapproved = await subscribe('local.bare', 'workspace.created', ownerInvoker())
+  assert.equal(!unapproved.ok && unapproved.code, 'not_permitted')
+  // An agent's status is part of reading a chat, which neither was approved for.
+  const status = await subscribe('local.reader', 'agent.status.changed', ownerInvoker())
+  assert.equal(!status.ok && status.code, 'not_permitted')
+  const device: ExtensionInvoker = {
+    ...DEVICE,
+    principal: studioGrantPrincipal({ owner: false, scopes: ['extensions:read'] }),
+  }
+  const paired = await subscribe('local.reader', 'workspace.created', device)
+  assert.equal(!paired.ok && paired.code, 'not_permitted')
+  const unknown = await subscribe('local.reader', 'workspace.exploded', ownerInvoker())
+  assert.equal(!unknown.ok && unknown.code, 'invalid_params')
 })
 
 test('a frame’s client method is admitted at the host and carried out by the window', async () => {

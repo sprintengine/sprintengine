@@ -69,6 +69,7 @@ import type { StudioUpdates } from '../../server/update/studio-updates'
 import type { SignIns } from '../../server/machine/machine-sign-in'
 import type { EnvironmentAdoption } from '../../server/environment/environment-adoption'
 import type { StudioModules } from '../../server/rpc/studio-modules'
+import type { ExtensionEvents } from '../../server/extensions/events/extension-events'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
@@ -269,6 +270,8 @@ export type StudioRpcServiceOptions = {
   updates?: StudioUpdates
   /** What the modules beside this Studio say to clients: `extension.events` and `extension.notifications`. */
   modules?: StudioModules
+  /** Studio's events, as extensions' surfaces hear them (`extension.studioEvents`). */
+  extensionEvents?: ExtensionEvents
   /** Forget the saved approvals that allow a revoked app's tools. */
   forgetToolApprovals?: (toolsets: string[]) => Promise<unknown>
   log?: (message: string) => void
@@ -546,6 +549,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.canvas ? { canvas: options.canvas } : {}),
       ...(options.updates ? { updates: options.updates } : {}),
       ...(options.modules ? { modules: options.modules } : {}),
+      ...(options.extensionEvents ? { extensionEvents: options.extensionEvents } : {}),
       ...(options.gatewayAccess ? { access: accessDomain(options.gatewayAccess) } : {}),
       ...(options.tailnet ? { tailnet: options.tailnet } : {}),
       resyncRetryAfterMs: createResyncBackoff(),

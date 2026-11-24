@@ -160,6 +160,8 @@ const extensionWorkers = createExtensionWorkers({
   logDir: join(app.getPath('logs'), 'extensions'),
   approvals: extensionApprovals,
   installed: () => installedStandingOf(extensionDiscovery.current()),
+  // Switched off or no longer approved: its terminals stay open, the person's now.
+  released: (moduleId) => services.studioCore.extensionTerminals?.forget(moduleId),
   toolsChanged: () => services.automationService?.notifyToolsListChanged(),
   stateChanged: () => services.moduleHub.deliverChanged(),
   // Read again, it is no longer loaded: registering it again asks again.
@@ -174,6 +176,10 @@ if (!serverHost) app.once('will-quit', () => void extensionWorkers.workers.close
 // In process, the core's actions ask these workers' hooks; out of process the
 // server binds its own.
 if (!serverHost) services.studioCore.extensionHooks.bind(extensionWorkers.workers)
+if (!serverHost) services.studioCore.extensionEvents.bind(extensionWorkers.workers)
+// Terminal work an extension has on its way is held to its approval as it stands when carried out.
+if (!serverHost)
+  services.studioCore.extensionTerminals?.bindGrants((moduleId) => extensionWorkers.workers.grantOf(moduleId))
 const thirdPartyMainLoad = planInstalledExtensions(
   discoverUserModulesSync(defaultUserModuleRoot(), readExtensionStanding()),
   () => extensionWorkers.workers,
@@ -290,6 +296,8 @@ const moduleLifecycle = serverHost
   : createModuleLifecycle({
       dataDir: app.getPath('userData'),
       moduleRoot: defaultUserModuleRoot,
+      // Uninstalled or killed: the terminals it opened close (extension-terminals.ts).
+      removing: (moduleId) => services.studioCore.extensionTerminals?.closeAll(moduleId),
       // A worker whose approval is gone or changed stops, and the windows hear.
       changed: () => {
         extensionDiscovery.invalidate()
@@ -430,6 +438,8 @@ if (moduleLifecycle)
     },
     emit: (moduleId, topic, payload) =>
       services.moduleHub.deliverEvent({ sourceModuleId: moduleId, topic, payload, emittedAt: Date.now() }),
+    studioEvent: (moduleId, event, payload, invoker) =>
+      services.studioCore.extensionEvents.emitTo(moduleId, event, payload as never, invoker),
   }))
 void app.whenReady().then(() => {
   // The hosted relay's leftover pairings and push tokens (retired-relay-state.ts).

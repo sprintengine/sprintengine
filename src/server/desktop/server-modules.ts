@@ -108,6 +108,8 @@ export function createServerModules(deps: {
     logDir: join(platform.paths.logsDir(), 'extensions'),
     approvals,
     installed: () => installedStandingOf(discovery.current()),
+    // Switched off or no longer approved: its terminals stay open, the person's now.
+    released: (moduleId) => core.extensionTerminals.forget(moduleId),
     toolsChanged: () => gateway?.notifyToolsListChanged(),
     stateChanged: () => hub.deliverChanged(),
     // Read again, it is no longer loaded: registering it again asks again.
@@ -120,6 +122,10 @@ export function createServerModules(deps: {
   })
   // The core's actions ask these workers' hooks (extension-hooks.ts).
   core.extensionHooks.bind(workers)
+  // Studio's events reach these workers, and the frames these extensions draw (extension-events.ts).
+  core.extensionEvents.bind(workers)
+  // Terminal work an extension has on its way is held to its approval as it stands when carried out.
+  core.extensionTerminals.bindGrants((moduleId) => workers.grantOf(moduleId))
   let stopWatchingModules: (() => void) | null = null
   let manifests: CapabilityManifest[] = []
   let ineligible: Record<string, ModuleResolutionErrorCode> = {}
@@ -157,6 +163,8 @@ export function createServerModules(deps: {
   // What runs here, listed and changed over the Studio RPC (`module.*`).
   const lifecycle = createModuleLifecycle({
     dataDir,
+    // Uninstalled or killed: the terminals it opened close (extension-terminals.ts).
+    removing: (moduleId) => core.extensionTerminals.closeAll(moduleId),
     moduleRoot: defaultUserModuleRoot,
     applyEnablement,
     // Every client following `extension.changed` lists and loads them again,
@@ -247,6 +255,7 @@ export function createServerModules(deps: {
           conversationModelCatalog: core.conversationModelCatalog,
           createConversationHost: core.createConversationHost,
           extensionHooks: core.extensionHooks,
+          extensionTerminals: core.extensionTerminals,
         },
         {
           getModulePermissions: (moduleId) => byId.get(moduleId)?.permissions,
@@ -326,6 +335,8 @@ export function createServerModules(deps: {
         },
         emit: (moduleId, topic, payload) =>
           hub.deliverEvent({ sourceModuleId: moduleId, topic, payload, emittedAt: Date.now() }),
+        studioEvent: (moduleId, event, payload, invoker) =>
+          core.extensionEvents.emitTo(moduleId, event, payload as never, invoker),
       }
     },
     startup() {

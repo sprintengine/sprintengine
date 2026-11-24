@@ -12,7 +12,8 @@
 //    caller cannot tell them apart.
 // 3. Its approved grant holds the permission the method needs of it.
 // 4. Whoever invoked it (extension-invocation.ts) holds what the method needs
-//    of an invoker, or is the person themselves for an `owner` method.
+//    of an invoker, or is the person themselves for an `owner` method, and
+//    the person away from a browser tab for a `terminals` one.
 //
 // 3 and 4 are both `not_permitted`, with words that say which side lacked what.
 
@@ -64,7 +65,20 @@ export function gateExtensionHostCall(call: ExtensionHostCall): ExtensionHostDec
       code: EXTENSION_HOST_REFUSALS.notPermitted,
       message: `"${method}" acts with the sign-in of the person at this machine, so only they can set it off; ${invoker.label} cannot.`,
     }
-  if (needed !== null && needed !== 'owner' && !invoker.principal.permissions.has(needed as StudioPermission))
+  if (needed === 'terminals' && (!invoker.principal.owner || invoker.noTerminals))
+    return {
+      ok: false,
+      code: EXTENSION_HOST_REFUSALS.notPermitted,
+      message: invoker.principal.owner
+        ? `"${method}" reaches this machine's terminals, which no browser reaches, so ${invoker.label} cannot set it off.`
+        : `"${method}" reaches this machine's terminals, so only the person at this machine can set it off; ${invoker.label} cannot.`,
+    }
+  if (
+    needed !== null &&
+    needed !== 'owner' &&
+    needed !== 'terminals' &&
+    !invoker.principal.permissions.has(needed as StudioPermission)
+  )
     return {
       ok: false,
       code: EXTENSION_HOST_REFUSALS.notPermitted,

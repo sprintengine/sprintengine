@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { expect, test } from 'vitest'
 
 import { extensionHookReference } from '../src/hooks.js'
+import { extensionEventReference } from '../src/events.js'
 import { catalogueJsonSchema, catalogueReference } from '../src/catalogue.js'
 import {
   EXTENSION_MANIFEST_SINCE,
@@ -82,6 +83,19 @@ test('guide/hooks.md carries the table of points the hook table produces', () =>
   const expected = `${guide.slice(0, start + open.length)}\n\n${extensionHookReference()}\n\n${guide.slice(end)}`
   if (UPDATE) writeFileSync(path, expected)
   assert.ok(readFileSync(path, 'utf8') === expected, `The generated table in guide/hooks.md is out of date. ${HOW}`)
+})
+
+test('guide/events.md carries the table of events the event table produces', () => {
+  const path = join(SDK, 'guide/events.md')
+  const open = '<!-- generated:extension-event-reference:start -->'
+  const close = '<!-- generated:extension-event-reference:end -->'
+  const guide = readFileSync(path, 'utf8')
+  const start = guide.indexOf(open)
+  const end = guide.indexOf(close)
+  assert.ok(start !== -1 && end > start, `guide/events.md must hold ${open} … ${close}.`)
+  const expected = `${guide.slice(0, start + open.length)}\n\n${extensionEventReference()}\n\n${guide.slice(end)}`
+  if (UPDATE) writeFileSync(path, expected)
+  assert.ok(readFileSync(path, 'utf8') === expected, `The generated table in guide/events.md is out of date. ${HOW}`)
 })
 
 test('the schema says what a pattern can of paths, and that the worker tier needs main', () => {

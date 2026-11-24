@@ -43,6 +43,8 @@ export type TestExtension = {
     inputSchema?: Record<string, unknown>
   }>
   hooks?: Array<{ point: string; onError?: 'pass' | 'deny' }>
+  /** The events it lists (`contributes.events`). */
+  events?: string[]
   /** Its display name; the id when absent. */
   name?: string
   /** Registered as an approved development folder (`<scratch>/work/<id>`), not installed. */
@@ -84,7 +86,7 @@ function appModule(services: Record<string, unknown>): CapabilityModule {
 
 export function startWorkerHarness(
   extensions: TestExtension[],
-  options: Partial<Omit<ExtensionWorkersOptions, 'gate' | 'toolNameProblem' | 'notify' | 'approvals'>> = {},
+  options: Partial<Omit<ExtensionWorkersOptions, 'gate' | 'grant' | 'toolNameProblem' | 'notify' | 'approvals'>> = {},
   services: Record<string, unknown> = {},
 ): WorkerHarness {
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'extension-workers-')))
@@ -102,11 +104,12 @@ export function startWorkerHarness(
         permissions: extension.permissions ?? [],
         ...(extension.mainPath ? { main: extension.mainPath } : {}),
         ...(extension.background ? { background: true } : {}),
-        ...(extension.mcpTools || extension.hooks
+        ...(extension.mcpTools || extension.hooks || extension.events
           ? {
               contributes: {
                 ...(extension.mcpTools ? { mcpTools: extension.mcpTools } : {}),
                 ...(extension.hooks ? { hooks: extension.hooks } : {}),
+                ...(extension.events ? { events: extension.events.map((on) => ({ on })) } : {}),
               },
             }
           : {}),
@@ -141,6 +144,7 @@ export function startWorkerHarness(
     approvals: () => approvals,
     installed: () => installed,
     gate: (moduleId, method) => kernelRef!.gateHostMethod(moduleId, method),
+    grant: (moduleId) => kernelRef!.extensionGrant(moduleId),
     toolNameProblem: (moduleId, names) => kernelRef!.mcpToolNameProblem(moduleId, names),
     notify: (moduleId, input) => {
       bell.push({ moduleId, input })

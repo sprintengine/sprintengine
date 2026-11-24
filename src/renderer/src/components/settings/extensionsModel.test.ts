@@ -52,6 +52,7 @@ function view(
         settingsSections: [],
         mcpTools: [],
         hooks: [],
+        events: [],
         syntaxes: [],
         customEditors: [],
         keybindings: [],

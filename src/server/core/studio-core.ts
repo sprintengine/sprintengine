@@ -62,6 +62,11 @@ import { createConversationModelCatalog } from '../../main/conversation-model-ca
 import { ConversationPlanStore } from '../../main/conversation-plan-store'
 import { ConversationOutbox } from '../../main/conversation-outbox'
 import { createExtensionHooks } from '../extensions/hooks/extension-hooks'
+import { createExtensionEvents } from '../extensions/events/extension-events'
+import { followStudioEvents } from '../extensions/events/studio-events'
+import { createExtensionTerminals, workspacesShownIn } from '../../main/module-host/extension-terminals'
+import { headlessTerminalViewer } from '../terminals/terminal-viewer'
+import { LOCAL_HOST_ID, workspaceHostIdOf } from '../../shared/execution-host'
 import { createHookInvokers } from '../extensions/hooks/hook-invokers'
 import { activeInvoker } from '../../main/module-host/extension-invocation'
 import { ConversationRuntime, type ConversationRuntimeOptions } from '../../main/conversation-runtime'
@@ -192,6 +197,14 @@ export type StudioCoreOptions = {
    * terminals still run here, launched without the shell's preparation.
    */
   terminalHost?: StudioTerminalHost
+  /**
+   * The ids of the workspace windows open on this machine now (the
+   * registry's `workspaceWindows[].id`), read at each call: the desktop that
+   * holds them, in process. Absent (a server on its own, or one apart from the
+   * desktop), no window is known to show anything, and an extension's `send`
+   * reaches only the terminals it opened.
+   */
+  liveWorkspaceWindowIds?: () => ReadonlySet<string>
   /**
    * The services the agents are set up with, when the process around the core
    * uses them too (the desktop's shell, in process): one of each. Absent, the
@@ -664,6 +677,74 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     setChatIdleThresholdMs: (value) => conversationRuntime.setIdleThresholdMs(value),
     ...(options.terminalHost ? { host: options.terminalHost } : {}),
   })
+  // What extensions' workers reach of the terminals here, and which they opened
+  // (extension-terminals.ts); a workspace on another machine keeps its own.
+  const extensionTerminals = createExtensionTerminals({
+    terminals: () => {
+      const terminals = agentTerminals
+      if (!terminals) return null
+      return {
+        list: () => terminals.runtime.sessions.listTerminals(),
+        spawnShell: ({ sessionId, terminalId, workspaceId, cwd, mayStart }) =>
+          terminals.runtime.sessions.spawnTerminal(
+            headlessTerminalViewer(),
+            {
+              sessionId,
+              terminalId,
+              workspaceId,
+              cwd,
+              cols: 120,
+              rows: 30,
+              kind: 'terminal',
+              shellOnly: true,
+              visible: false,
+            },
+            { mayStart },
+          ),
+        write: async (sessionId, data, stillMay) => {
+          const written = await terminals.controlPlane.write({ sessionId }, data, stillMay ? { stillMay } : {})
+          return written.ok
+            ? { ok: true as const }
+            : { ok: false as const, reason: written.reason, message: written.message }
+        },
+        readTail: (sessionId, maxBytes) => terminals.runtime.readTerminalOutputTail(sessionId, { maxBytes }),
+        kill: (sessionId) => terminals.runtime.sessions.killTerminal(sessionId),
+      }
+    },
+    // What a live window on this machine shows now: where `send` may type,
+    // besides the extension's own terminals. Only the desktop that holds the
+    // windows knows which are open; anywhere else, none is.
+    shownWorkspaces: () => workspacesShownIn(workspaceRegistry.getState(), options.liveWorkspaceWindowIds?.() ?? null),
+    agentTitle: (workspaceId, agentId) =>
+      (workspaceId ? workspaceRegistry.getRecord(workspaceId)?.agents[agentId]?.name : undefined) ?? null,
+    workspace: (workspaceId) => {
+      const record = workspaceRegistry.getRecord(workspaceId)
+      if (!record) return null
+      return {
+        folderPath: record.folderPath ?? null,
+        remote: Boolean(record.environment) || workspaceHostIdOf(record) !== LOCAL_HOST_ID,
+      }
+    },
+  })
+  // Studio's events, as extensions hear them: bound to the workers once the
+  // module kernel holds them (server-modules.ts, app-main.ts).
+  const extensionEvents = createExtensionEvents()
+  const stopStudioEvents = followStudioEvents(extensionEvents, {
+    workspaces: {
+      records: () => workspaceRegistry.getRecords(),
+      subscribe: (listener) => workspaceRegistry.subscribe(() => listener()),
+    },
+    terminals: agentTerminals
+      ? {
+          list: () => agentTerminals!.runtime.sessions.listTerminals(),
+          onChanged: (listener) => agentTerminals!.onChanged(listener),
+          onAgentPhase: (listener) => agentTerminals!.runtime.registerAgentPhaseListener(listener),
+        }
+      : null,
+    onChatEvent: (listener) => conversations.onEvent(listener),
+    terminalTitle: (terminalId) => extensionTerminals.titleOf(terminalId),
+  })
+
   // What this desktop's WSL terminals' agents report from inside their
   // distribution, relayed by its server on each connection to it.
   if (wslServers && agentTerminals) {
@@ -1662,6 +1743,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
    */
   async function shutdown(): Promise<void> {
     const legs: Array<() => unknown> = [
+      () => stopStudioEvents(),
       () => workspaceSyncService.flush(),
       () => pullRequests.flush(),
       () => localServers.flush(),
@@ -1713,6 +1795,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   return {
     /** Extensions' agent hooks, bound to the workers by whoever holds them. */
     extensionHooks,
+    /** Studio's events, as extensions hear them; bound to the workers by whoever holds them. */
+    extensionEvents,
+    /** The terminals extensions' workers reach (`getTerminalService`). */
+    extensionTerminals,
     hookInvokers,
     chatInvoker,
     /** Who started an agent here, as its record keeps it. */

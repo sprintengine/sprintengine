@@ -10,6 +10,8 @@
 // - a paired device or another app over its Studio connection, or a device
 //   calling the extension's MCP tool through the tailnet gateway: what that
 //   connection was granted, and its ceiling;
+// - an owner's browser tab: the person's grant, but never the terminals
+//   (`noTerminals`), which a browser does not reach directly either;
 // - nothing (Studio's own parts' startup hooks): the person. An extension's
 //   worker is held to invocations it is handed (server/extensions/workers/
 //   worker-session.ts): its activation, and a background extension's own
@@ -32,7 +34,7 @@ import {
   type StudioPrincipal,
 } from '../../../packages/studio-protocol/src/permissions'
 import type { AgentStarter } from '../../shared/agent-state'
-import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
+import { isMostPermissiveCliPermissionPreset, type CliPermissionPreset } from '../../shared/cli-permission-preset'
 import { clampPresetToCeiling } from '../../shared/permission-ceiling'
 
 export type ExtensionInvoker = {
@@ -42,6 +44,14 @@ export type ExtensionInvoker = {
   permissionCeiling: CliPermissionPreset | null
   /** Who it is, for a refusal's words: "this device", "this app", "the agent". */
   label: string
+  /**
+   * It may not reach this machine's terminals, whatever it holds: an owner's
+   * browser tab, which holds the owner's grant but is refused the terminals
+   * when it asks Studio for them directly (studio-browser-reach.ts), so it is
+   * refused them through an extension as well. Absent, the terminals are
+   * held to `principal.owner` alone.
+   */
+  noTerminals?: true
   /**
    * Who that is, for what it starts: an agent or chat started during the
    * invocation keeps it, so its later hooks run as the same someone.
@@ -95,6 +105,21 @@ export function boundToRegistrant<A extends unknown[], R>(listener: (...args: A)
   const registrant = storage.getStore()
   return (...args: A) =>
     registrant ? storage.run(registrant, () => listener(...args)) : storage.exit(() => listener(...args))
+}
+
+/**
+ * Why `invoker`'s authority would be lost on a path that answers as the person
+ * (a surface's calls go over the window's own connection, which carries no
+ * ceiling), or null when nothing would be: the person, held to no ceiling
+ * short of the loosest preset, and not a browser tab.
+ */
+export function narrowerThanThePerson(invoker: ExtensionInvoker): string | null {
+  if (!invoker.principal.owner) return `${invoker.label} is not the person at this machine`
+  if (invoker.noTerminals) return `${invoker.label} is a browser tab, which does not reach the terminals`
+  const ceiling = invoker.permissionCeiling
+  if (ceiling !== null && !isMostPermissiveCliPermissionPreset(ceiling))
+    return `${invoker.label} runs on ${ceiling}, and asks before it runs a command`
+  return null
 }
 
 /** Who invoked the extension code running now, or null outside any extension's call. */

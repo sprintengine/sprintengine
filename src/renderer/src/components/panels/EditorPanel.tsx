@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { EDITOR_FONT_SIZE, EDITOR_MINIMAP, EDITOR_WORD_WRAP } from '../../modules/extension-editor-typography'
 import MonacoEditor, { OnMount } from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { useWorkspaceStore } from '../../store/workspaceStore'
@@ -961,14 +962,14 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
               value={activeContent}
               theme={monacoTheme}
               options={{
-                fontSize: 13,
+                fontSize: EDITOR_FONT_SIZE,
                 fontFamily: codeFontFamily,
-                minimap: { enabled: false },
+                minimap: { enabled: EDITOR_MINIMAP },
                 scrollBeyondLastLine: false,
                 renderLineHighlight: 'gutter',
                 glyphMargin: true,
                 lineNumbers: 'on',
-                wordWrap: 'off',
+                wordWrap: EDITOR_WORD_WRAP,
                 tabSize: 2,
                 automaticLayout: true,
                 contextmenu: false,

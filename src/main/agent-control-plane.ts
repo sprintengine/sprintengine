@@ -110,6 +110,8 @@ type ControlPlaneFailureReason =
   | 'timeout'
   /** An extension's hook refused it; the message names the extension and why. */
   | 'refused'
+  /** Whoever asked for a write may no longer make it, as asked right before it went out (`stillMay`). */
+  | 'withdrawn'
 
 export type ControlPlaneResolution =
   | { ok: true; session: ControlPlaneSession }
@@ -497,9 +499,14 @@ export class AgentControlPlane {
    * forwarding, control characters). It takes the same per-session queue as
    * `send`, so a raw write and a prompt delivery cannot interleave — but it
    * carries none of the determinism: no bracketed paste, no separate submit.
-   * Prefer `send` for anything that is a prompt.
+   * Prefer `send` for anything that is a prompt. `stillMay`, given, is asked
+   * right before the bytes go out, after the queue and the write hooks.
    */
-  async write(target: ControlPlaneTarget, data: string): Promise<ControlPlaneSendResult> {
+  async write(
+    target: ControlPlaneTarget,
+    data: string,
+    options: { stillMay?: () => string | null } = {},
+  ): Promise<ControlPlaneSendResult> {
     const resolution = this.resolve(target)
     if (!resolution.ok) return resolution
     const session = resolution.session
@@ -527,6 +534,9 @@ export class AgentControlPlane {
       if (answer && !answer.ok)
         return { ok: false, sessionId: session.sessionId, reason: 'refused', message: answer.message }
       const bytes = answer ? `${answer.text}${answer.enter ? '\r' : ''}` : data
+      // Asked last, after the queue and the hooks: the writer may have lost the right meanwhile.
+      const withdrawn = options.stillMay?.() ?? null
+      if (withdrawn) return { ok: false, sessionId: session.sessionId, reason: 'withdrawn', message: withdrawn }
       const written = this.writeTerminal(session.sessionId, bytes)
       if (!written.ok) return written
       return { ok: true, sessionId: session.sessionId, transport: 'terminal', submitted: false }

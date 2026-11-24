@@ -152,7 +152,12 @@ import { createCanvasSubscriberRegistry } from './canvas/canvas-subscribers'
 import { createCanvasRemoteSubscribers, isRemoteCanvasSubscriber } from './canvas/canvas-remote-subscribers'
 import { createCanvasWorkerHost } from './canvas/canvas-worker-host'
 import { createCanvasWorkerTransport, isCanvasWorkerWindow } from './canvas/canvas-worker-window'
-import { broadcastToWorkspaceWindows, isBrowserHostWebContents, listWorkspaceWindows } from './window-factory'
+import {
+  broadcastToWorkspaceWindows,
+  isBrowserHostWebContents,
+  listWorkspaceWindows,
+  workspaceWindowIdOf,
+} from './window-factory'
 import { SprintEngineUpdateService } from './update-service'
 import { channelForVersion, createUpdateChannelStore } from './update-channel-store'
 import { createUpdateInstallNoteStore } from './update-install-note'
@@ -826,6 +831,9 @@ export function createAppServices(
         // each launch (its plugin copy, MCP sync, skills, hook) and hears its
         // sessions for its changelists, the editor's written files, the
         // pull request marks and the git view.
+        // The workspace windows open now: what an extension's `send` may type
+        // into besides its own terminals is what one of them shows.
+        liveWorkspaceWindowIds: () => new Set(listWorkspaceWindows().map(workspaceWindowIdOf)),
         terminalHost: {
           launchPreparation: terminalLaunchPreparation,
           observers: {
@@ -2168,6 +2176,8 @@ export function createAppServices(
     agentControlPlane: coreTerminals?.controlPlane ?? null,
     /** The core's extensions' hooks, in process; null out of process (the server runs its own). */
     extensionHooks: localCore?.extensionHooks ?? null,
+    /** The core's terminals for extensions' workers, in process; null out of process. */
+    extensionTerminals: localCore?.extensionTerminals ?? null,
     agentLaunchService,
     conversationTerminalHandoff,
     /** What the shell reads of the terminals and asks of them, in either mode (shell-terminals.ts). */

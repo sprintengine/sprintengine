@@ -159,6 +159,12 @@ test('a call is held to every invoker the worker serves then: their common permi
   const twoCalls = heldToAll(ownerInvoker(null, 'the agent', agent), [ownerInvoker('auto', 'the agent', agent)])
   assert.deepEqual(twoCalls.starter, agent)
   assert.deepEqual(held.starter, { kind: 'nobody' }, 'the person and a device share no starter')
+  // A browser tab served at the same time takes the terminals from every call the worker makes meanwhile.
+  const tab = { ...ownerInvoker(null, 'your browser'), noTerminals: true as const }
+  const withTab = heldToAll(owner, [owner, tab])
+  assert.equal(withTab.principal.owner, true)
+  assert.equal(withTab.noTerminals, true)
+  assert.equal(heldToAll(owner, [owner, capped]).noTerminals, undefined)
 })
 
 const POLLER = `

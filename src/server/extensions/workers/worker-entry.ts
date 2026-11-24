@@ -50,6 +50,10 @@ const methods = new Map<string, MethodRegistration>()
 const tools = new Map<string, Fn>()
 // Each point's handlers, in the order they were registered.
 const hooks = new Map<string, Fn[]>()
+// Each event's handlers (`studio.events.on`), in the order they were registered:
+// one registration each, so the same function registered twice is called
+// twice, and each `dispose()` takes back its own.
+const eventHandlers = new Map<string, Array<{ handler: Fn }>>()
 const startupHooks: Hook[] = []
 const shutdownBeginHooks: Hook[] = []
 const shutdownHooks: Hook[] = []
@@ -338,6 +342,29 @@ function createStudio(start: WorkerInitMessage): Record<string, unknown> {
         }
       }
     },
+    // Studio delivers only the events extension.json lists, and only while the
+    // person's approval holds what each needs; a handler for any other is
+    // refused here, where the author sees it at once.
+    events: Object.freeze({
+      on: (event: unknown, handler: unknown) => {
+        if (typeof event !== 'string' || !start.events.includes(event))
+          throw new Error(
+            `Event "${String(event)}" is not listed in extension "${start.extensionId}"'s extension.json (contributes.events).`,
+          )
+        if (typeof handler !== 'function') throw new Error(`The handler for event "${event}" is not a function.`)
+        const registration = { handler: handler as Fn }
+        let list = eventHandlers.get(event)
+        if (!list) eventHandlers.set(event, (list = []))
+        list.push(registration)
+        return Object.freeze({
+          dispose: () => {
+            const now = eventHandlers.get(event)
+            const at = now?.indexOf(registration) ?? -1
+            if (at >= 0) now!.splice(at, 1)
+          },
+        })
+      },
+    }),
     ensureSkillInstalled: (root: unknown, skillId: unknown) =>
       hostCall({ host: 'ensureSkillInstalled' }, [root, skillId]),
     getSkillStatus: (root: unknown, skillId: unknown) => hostCall({ host: 'getSkillStatus' }, [root, skillId]),
@@ -444,6 +471,18 @@ async function serve(call: WorkerCallMessage): Promise<unknown> {
       if (!handlers) throw new Error(`The worker registered no hook for "${call.point}".`)
       // One answer for them all; Studio reads it (readExtensionHookAnswer).
       return await chainHookHandlers(handlers, call.event)
+    }
+    case 'event': {
+      // Every handler hears it, one after another; one that throws is the
+      // extension's to read in its log, and the others still hear it.
+      for (const { handler } of [...(eventHandlers.get(call.event) ?? [])]) {
+        try {
+          await handler(call.payload)
+        } catch (error) {
+          report(`a handler of event ${call.event} failed`, error)
+        }
+      }
+      return undefined
     }
     case 'callback': {
       const callback = callbacks.get(call.callback)
