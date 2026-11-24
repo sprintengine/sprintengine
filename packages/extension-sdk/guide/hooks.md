@@ -91,9 +91,13 @@ not. A hook can never widen what anyone may do.
 ## Where hooks run
 
 Hooks run on the Studio that holds the action: the one whose chat, terminal,
-workspace or file it is. A chat on a paired machine is decided by the
-extensions installed on that machine's Studio, and a save of a file on another
-machine by that machine's.
+workspace or file it is. Extensions run only on the desktop app's own Studio,
+so a hook guards the chats, terminals, workspaces and files on this computer
+only. A chat in a WSL distribution or on an SSH machine, and anything a Studio
+started on its own (`studio-server serve`) runs, is run by a Studio that holds
+no extensions: no hook guards it, whatever its `onError` says. The install
+review says so beside the hooks it lists. A chat on a paired desktop is decided
+by the extensions installed on the desktop that runs it.
 
 ## What each point reaches today
 

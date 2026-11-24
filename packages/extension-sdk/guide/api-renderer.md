@@ -3,9 +3,12 @@
 Each panel, door, settings section and custom editor in extension.json names an `entry`: a
 module exporting `mount` (`.ts`, `.tsx`, `.js`, … loaded as written, with the
 files it imports by relative paths; the `rules` topic). Studio draws the surface in a sandboxed frame of
-its own, on every client (the desktop app, a desktop window paired with
-another machine, a browser), loads the entry there and calls `mount` with the
-frame's root element and a `studio` object:
+its own, on the desktop app and a desktop window paired with it, loads the
+entry there and calls `mount` with the
+frame's root element and a `studio` object. (Extensions run only on the
+desktop app's own Studio: a browser tab is not yet allowed to operate them,
+and a Studio in a WSL distribution, on an SSH machine or started on its own
+holds none.)
 
 ```ts
 import type { ExtensionMount } from '@sprintengine/extension-sdk'

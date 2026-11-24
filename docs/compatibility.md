@@ -417,6 +417,44 @@ are one build. An approval grows when an update adds a local MCP server or
 changes its command, arguments, environment or the files it runs, and when it
 adds a provider or moves one to another origin.
 
+No MCP value an extension supplies (command, arguments, environment values,
+URL) may name a variable or a file of the person's machine (`${NAME}`,
+`${env:NAME}`, `{env:NAME}`, `{file:path}`), which Claude Code, Cursor or
+OpenCode would fill in from the person's environment; only the
+`${extensionPath}` token, which Studio fills in, is allowed. A live chat
+follows the projection: a server withdrawn since its child started (killed,
+switched off, uninstalled, no longer approved, or changed) is dropped before
+the chat's next turn, over Claude Code's control channel or by replacing the
+Codex app-server, never mid-turn. A CLI launched in a terminal reads the
+servers once, at launch, and keeps a withdrawn one until it is started again.
+
+### Where extensions run, and what is not built yet (declared)
+
+Extensions run only on the desktop app's own Studio, in its process or its
+server process. A Studio in a WSL distribution or on an SSH machine, and one
+started on its own (`studio-server serve`, the web listener), holds no
+extension host: no workers, hooks, frames, extension MCP tools or projection
+run there (the reference app is a single-machine app, and running the host
+there is not built). So a hook does not guard a chat such a Studio runs,
+whatever its `onError` says; the install review and the extension's row say
+a hook applies to chats on this computer only. A desktop window paired with
+the desktop draws that desktop's extensions. A browser tab is not granted
+`extensions:operate`, and no Studio with a web listener holds extensions, so
+a web tab draws no extension surfaces.
+
+Not built in this platform, and not offered by the SDK:
+
+- worker events (an `events:subscribe` permission and Studio events a worker
+  hears), and the components runtime (host-drawn controls an extension
+  declares);
+- `install`, `update` and `open` of a published extension from the CLI or an
+  agent: they are the person's, in Settings;
+- a command that `replaces` a built-in action: commands bind to the fixed
+  list of Studio actions;
+- signed official lists: the official catalogue, its kill list, owner records
+  and release lock are trusted as read over HTTPS from the catalogue
+  repository (see the catalogue above).
+
 ### Permissions checked at the host; approvals replace trust (no compatibility)
 
 The permission vocabulary changed at once (owner ruling: there are no users
