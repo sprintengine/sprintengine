@@ -56,6 +56,9 @@ export function registerBrowserIpc(
     (event: IpcMainInvokeEvent, input: { workspaceId: string; tabId: string | null }) => {
       if (typeof input?.workspaceId !== 'string') return
       const tabId = typeof input.tabId === 'string' ? input.tabId : null
+      // What this window shows, said before whether it may name the agents'
+      // tab. Kept by window, so it only ever counts for a tab this window hosts.
+      manager.noteShown(event.sender, input.workspaceId, tabId)
       // The note usually lands before the tab's guest has registered (the strip
       // selects the tab the moment it is created); an unknown tab is accepted
       // and only takes effect once a guest registers under it. A KNOWN tab must

@@ -1228,23 +1228,50 @@ export function createAppServices(
     log: (message) =>
       void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Browser tabs', message }),
   })
-  const browserTabAgentLastWorkedAt = (workspaceId: string): number | null => {
-    const record = workspaceSyncService.getSnapshot().state.workspaces.find((workspace) => workspace.id === workspaceId)
-    if (!record || record.settledAt) return null
-    const listed = server ? null : conversations.listSessions({ workspaceId })
-    const working = listed?.ok && listed.sessions.some((session) => conversationSummaryPhase(session) === 'running')
-    return working ? Date.now() : workspaceLastActiveAt(record)
+  // Which chats' agents are working right now: a terminal agent by its pty
+  // and hook state, a chat by its session, asked of the server when the chats
+  // run in its process. Null when that could not be asked: then every chat
+  // counts as working, and nothing is closed on a guess.
+  const workingWorkspaceIds = async (): Promise<ReadonlySet<string> | null> => {
+    const ids = new Set<string>()
+    for (const session of shellTerminals.list()) {
+      if (session.kind === 'agent' && session.workspaceId && terminalAgentWorking(session)) ids.add(session.workspaceId)
+    }
+    if (server) {
+      const working = await server.rpc.call<string[]>(SERVER_METHODS.conversationsWorking, {}).catch(() => null)
+      if (!Array.isArray(working)) return null
+      for (const id of working) ids.add(id)
+    } else {
+      const listed = conversations.listSessions()
+      if (listed.ok)
+        for (const session of listed.sessions)
+          if (conversationSummaryPhase(session) === 'running') ids.add(session.workspaceId)
+    }
+    return ids
+  }
+  // When each chat's agent last worked: now while it works, its registry
+  // clocks otherwise, null once the chat is settled or gone.
+  const browserTabAgentClock = async (): Promise<(workspaceId: string) => number | null> => {
+    const working = await workingWorkspaceIds()
+    const at = Date.now()
+    const records = new Map(workspaceSyncService.getSnapshot().state.workspaces.map((record) => [record.id, record]))
+    return (workspaceId) => {
+      if (!working || working.has(workspaceId)) return at
+      const record = records.get(workspaceId)
+      if (!record || record.settledAt) return null
+      return workspaceLastActiveAt(record)
+    }
   }
   const browserTabs: StudioBrowserTabs = {
     list: async () =>
-      listedBrowserTabs(browserManager.listAllTabs(), browserTabAutoClose.hours(), browserTabAgentLastWorkedAt),
+      listedBrowserTabs(browserManager.listAllTabs(), browserTabAutoClose.hours(), await browserTabAgentClock()),
     close: (tabId) => browserManager.requestClose(tabId),
   }
   const browserTabSweep = createBrowserTabSweep({
     listTabs: () => browserManager.listAllTabs(),
     close: (tabId) => browserManager.requestClose(tabId),
     setting: browserTabAutoClose,
-    agentLastWorkedAt: browserTabAgentLastWorkedAt,
+    agentClock: browserTabAgentClock,
     log: (message) => void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Browser tabs', message }),
   })
   browserTabSweep.start()

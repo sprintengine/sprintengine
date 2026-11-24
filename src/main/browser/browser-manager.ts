@@ -538,6 +538,10 @@ export function createBrowserManager(deps: BrowserManagerDeps) {
       return Boolean(window && !window.isDestroyed() && window.isVisible() && !window.isMinimized())
     })
   const activeTabByWorkspace = new Map<string, string>()
+  // What each window shows of each workspace's pane, by the window: a tab
+  // popped out into a window of its own is in view there whatever the pane it
+  // came from shows next (the Processes list, and closing tabs left unused).
+  const shownByHost = new Map<number, Map<string, string | null>>()
   const agentAssignments = createAgentTabAssignments()
   const unregisterListeners = new Set<(tabId: string) => void>()
   const humanInputListeners = new Set<(tabId: string) => void>()
@@ -981,6 +985,21 @@ export function createBrowserManager(deps: BrowserManagerDeps) {
       else activeTabByWorkspace.delete(workspaceId)
     },
 
+    /**
+     * The browser tab a window shows of a workspace's pane, as that window
+     * says, whether or not it may name the agents' tab: what makes a tab "in
+     * view" wherever it is.
+     */
+    noteShown(host: WebContents, workspaceId: string, tabId: string | null): void {
+      let shown = shownByHost.get(host.id)
+      if (!shown) {
+        shown = new Map()
+        shownByHost.set(host.id, shown)
+        host.once?.('destroyed', () => shownByHost.delete(host.id))
+      }
+      shown.set(workspaceId, tabId)
+    },
+
     /** The tab last noted as the one the person is looking at, as noted. */
     notedActive(workspaceId: string): string | null {
       return activeTabByWorkspace.get(workspaceId) ?? null
@@ -1108,9 +1127,10 @@ export function createBrowserManager(deps: BrowserManagerDeps) {
             .holding(tab.workspaceId)
             .filter((held) => held.tabId === tab.tabId)
             .map((held) => held.agentId),
+          // In view in any window that shows it, the pane's or a pop-out's.
           inView:
-            activeTabByWorkspace.get(tab.workspaceId) === tab.tabId &&
             !tab.host.isDestroyed() &&
+            shownByHost.get(tab.host.id)?.get(tab.workspaceId) === tab.tabId &&
             isHostShowing(tab.host),
         })
       }

@@ -37,6 +37,7 @@ vi.mock('electron', () => ({
 }))
 
 const { createBrowserManager } = await import('./browser-manager')
+const { webContents: webContentsModule } = await import('electron')
 
 test('every tab is listed with its clocks, its sound and whether it is in view; a close waits for the tab to go', async () => {
   let clock = 1_000
@@ -53,7 +54,7 @@ test('every tab is listed with its clocks, its sound and whether it is in view; 
   expect(manager.register({ tabId: 't1', workspaceId: 'w1', webContentsId: guest.id }, host as never).ok).toBe(true)
   clock = 5_000
   guest.emit('did-navigate')
-  manager.noteActive('w1', 't1')
+  manager.noteShown(host as never, 'w1', 't1')
 
   expect(manager.listAllTabs()).toEqual([
     {
@@ -80,4 +81,38 @@ test('every tab is listed with its clocks, its sound and whether it is in view; 
   expect(await closing).toBe(true)
   expect(manager.listAllTabs()).toEqual([])
   expect(await manager.requestClose('t1')).toBe(false)
+})
+
+test('a tab popped out into a window of its own stays in view there when the pane it came from shows another', () => {
+  const popout = { id: 2, isDestroyed: () => false, send: () => {}, once: () => {} }
+  const pane = { id: 1, isDestroyed: () => false, send: () => {}, once: () => {} }
+  const popped = Object.assign(new EventEmitter(), { ...guest, id: 11, hostWebContents: popout })
+  const docked = Object.assign(new EventEmitter(), { ...guest, id: 12, hostWebContents: pane })
+  const byId = new Map<number, unknown>([
+    [11, popped],
+    [12, docked],
+  ])
+  const electron = vi.mocked(webContentsModule)
+  electron.fromId = ((id: number) => byId.get(id)) as never
+  const manager = createBrowserManager({
+    listTerminalRoots: () => [],
+    isHostWindow: () => true,
+    broadcast: () => {},
+    resolveWorkspaceRoot: () => null,
+    isHostShowing: () => true,
+  })
+  expect(manager.register({ tabId: 'out', workspaceId: 'w1', webContentsId: 11 }, popout as never).ok).toBe(true)
+  expect(manager.register({ tabId: 'in', workspaceId: 'w1', webContentsId: 12 }, pane as never).ok).toBe(true)
+  manager.noteShown(popout as never, 'w1', 'out')
+  manager.noteShown(pane as never, 'w1', 'in')
+  const inView = Object.fromEntries(manager.listAllTabs().map((tab) => [tab.tabId, tab.inView]))
+  expect(inView).toEqual({ out: true, in: true })
+  // The pane moves on to a terminal: its tab leaves view, the popped-out one does not.
+  manager.noteShown(pane as never, 'w1', null)
+  expect(Object.fromEntries(manager.listAllTabs().map((tab) => [tab.tabId, tab.inView]))).toEqual({
+    out: true,
+    in: false,
+  })
+  manager.unregister('out')
+  manager.unregister('in')
 })

@@ -222,7 +222,9 @@ Processes list for it.
 `browserTabs.close` (`workspaces:operate`): the pages open in a desktop's
 built-in browser across its chats, each with its clocks and whether it is
 making sound, and one closed as its pane's close button closes it. Reached by
-scope, so a paired device sees and closes them; offered only by a desktop
+scope, so a paired device sees and closes them (a connection other than an
+owner's reads each address without its query, fragment or userinfo, and each
+title as its other reads are redacted); offered only by a desktop
 whose shell has the browser pane. A Studio before it does not list it, and a
 client shows no tabs for it.
 

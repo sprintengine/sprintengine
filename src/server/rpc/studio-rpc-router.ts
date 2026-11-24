@@ -59,7 +59,7 @@ import {
 } from '../../main/automation/conversation-pull-request-tools'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioProcesses } from '../processes/agent-process-domain'
-import type { StudioBrowserTabs } from '../processes/browser-tabs'
+import { tabsForReader, type StudioBrowserTabs } from '../processes/browser-tabs'
 import type { StudioTerminalCaller, StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
@@ -2080,9 +2080,19 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       options.processes ? { ok: true, result: await options.processes.list() } : unserved('processes.list'),
     'processes.stop': async ({ ids }) =>
       options.processes ? { ok: true, result: await options.processes.stop(ids) } : unserved('processes.stop'),
-    'browserTabs.list': async () =>
+    // Titles as every read redacts them; addresses without their query,
+    // fragment or userinfo for a connection that is not an owner's.
+    'browserTabs.list': async (_params, { grant, voice }) =>
       options.browserTabs
-        ? { ok: true, result: { tabs: await options.browserTabs.list() } }
+        ? {
+            ok: true,
+            result: {
+              tabs: tabsForReader(await options.browserTabs.list(), {
+                owner: grant.owner,
+                redact: (value) => voice.redact(value),
+              }),
+            },
+          }
         : unserved('browserTabs.list'),
     'browserTabs.close': async ({ tabId }) =>
       options.browserTabs

@@ -11,8 +11,10 @@ import type { BrowserTabListing } from './browser-manager'
 // stays open in a pane nobody looks at, and can keep playing sound for days.
 // A tab is closed once it has gone unused for the setting's time (a day by
 // default) AND its chat's agent has not worked for as long, or is gone: the
-// chat was settled or removed. The tab the person has in front of them is
-// never closed, whatever its clocks say. "Never" turns this off.
+// chat was settled or removed. The tab the person has in front of them, in
+// any window, and a tab an agent is driving are never closed, whatever their
+// clocks say. A tab playing sound is not spared: sound nobody is listening to
+// is the case this exists for (owner ruling 2026-11-24). "Never" turns this off.
 //
 // Only tabs: programs agents started are listed in Processes and stopped by
 // hand, never here (owner ruling 2026-11-24), because some, a report server
@@ -79,11 +81,13 @@ export type TabAutoCloseInput = {
   /** When the chat's agent last worked; null when it is gone (settled, removed). */
   agentLastWorkedAt: number | null
   inView: boolean
+  /** An agent is driving it: never closed under it, however quiet. */
+  held: boolean
 }
 
 /** When this tab will be closed for going unused; null when it will not be. */
 export function tabClosesAt(input: Omit<TabAutoCloseInput, 'now'>): number | null {
-  if (input.hours === null || input.inView) return null
+  if (input.hours === null || input.inView || input.held) return null
   const after = input.hours * HOUR_MS
   return Math.max(input.lastUsedAt, input.agentLastWorkedAt ?? 0) + after
 }
@@ -98,7 +102,12 @@ export type BrowserTabSweepDeps = {
   listTabs: () => BrowserTabListing[]
   close: (tabId: string) => Promise<boolean>
   setting: Pick<BrowserTabAutoCloseSetting, 'hours'>
-  agentLastWorkedAt: (workspaceId: string) => number | null
+  /**
+   * When each chat's agent last worked (now, while it is working; null when
+   * the chat is gone), read once per sweep: a chat working right now is asked
+   * of wherever its turns run, which may be the server's process.
+   */
+  agentClock: () => Promise<(workspaceId: string) => number | null>
   now?: () => number
   log?: (message: string) => void
 }
@@ -114,14 +123,16 @@ export function createBrowserTabSweep(deps: BrowserTabSweepDeps) {
     try {
       const hours = deps.setting.hours()
       if (hours === null) return []
+      const agentLastWorkedAt = await deps.agentClock()
       const at = now()
       const stale = deps.listTabs().filter((tab) =>
         shouldAutoCloseTab({
           now: at,
           hours,
           lastUsedAt: tab.lastUsedAt,
-          agentLastWorkedAt: deps.agentLastWorkedAt(tab.workspaceId),
+          agentLastWorkedAt: agentLastWorkedAt(tab.workspaceId),
           inView: tab.inView,
+          held: tab.agentIds.length > 0,
         }),
       )
       const closed: string[] = []
@@ -158,6 +169,7 @@ export function listedBrowserTabs(
       lastUsedAt: tab.lastUsedAt,
       agentLastWorkedAt: agentLastWorkedAt(tab.workspaceId),
       inView: tab.inView,
+      held: tab.agentIds.length > 0,
     })
     return {
       tabId: tab.tabId,

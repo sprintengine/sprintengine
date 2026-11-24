@@ -22,7 +22,7 @@ const HOUR = 60 * 60_000
 const NOW = Date.UTC(2026, 10, 24, 12)
 
 test('a tab closes once both it and its agent have been idle for the setting’s time', () => {
-  const base = { now: NOW, hours: 24, inView: false }
+  const base = { now: NOW, hours: 24, inView: false, held: false }
   // Unused a day and more, agent quiet as long: closed.
   assert.equal(shouldAutoCloseTab({ ...base, lastUsedAt: NOW - 25 * HOUR, agentLastWorkedAt: NOW - 30 * HOUR }), true)
   // Exactly a day is a day.
@@ -37,11 +37,14 @@ test('a tab closes once both it and its agent have been idle for the setting’s
 })
 
 test('the tab in front of the person, and every tab with the setting at Never, stays open', () => {
-  const stale = { now: NOW, lastUsedAt: NOW - 100 * HOUR, agentLastWorkedAt: null }
+  const stale = { now: NOW, lastUsedAt: NOW - 100 * HOUR, agentLastWorkedAt: null, held: false }
   assert.equal(shouldAutoCloseTab({ ...stale, hours: 24, inView: true }), false)
   assert.equal(shouldAutoCloseTab({ ...stale, hours: null, inView: false }), false)
-  assert.equal(tabClosesAt({ hours: null, lastUsedAt: 0, agentLastWorkedAt: null, inView: false }), null)
-  assert.equal(tabClosesAt({ hours: 4, lastUsedAt: NOW, agentLastWorkedAt: NOW - HOUR, inView: false }), NOW + 4 * HOUR)
+  // An agent driving it keeps it, however quiet it has been.
+  assert.equal(shouldAutoCloseTab({ ...stale, hours: 24, inView: false, held: true }), false)
+  const clock = { lastUsedAt: NOW, agentLastWorkedAt: NOW - HOUR, inView: false, held: false }
+  assert.equal(tabClosesAt({ ...clock, hours: null }), null)
+  assert.equal(tabClosesAt({ ...clock, hours: 4 }), NOW + 4 * HOUR)
 })
 
 test('the setting reads a day by default, keeps only the offered choices, and survives a restart', () => {
@@ -80,6 +83,7 @@ test('a sweep closes only what has gone unused, and nothing while the setting is
     tab('fresh', 'ws-gone', NOW - HOUR),
     tab('busy', 'ws-busy', NOW - 48 * HOUR),
     tab('watched', 'ws-gone', NOW - 48 * HOUR, { inView: true }),
+    tab('driven', 'ws-gone', NOW - 48 * HOUR, { agentIds: ['agent-1'] }),
   ]
   const closed: string[] = []
   let hours: number | null = 24
@@ -90,9 +94,10 @@ test('a sweep closes only what has gone unused, and nothing while the setting is
       return true
     },
     setting: { hours: () => hours },
-    agentLastWorkedAt: (workspaceId) => (workspaceId === 'ws-busy' ? NOW - 10 * 60_000 : null),
+    agentClock: async () => (workspaceId) => (workspaceId === 'ws-busy' ? NOW - 10 * 60_000 : null),
     now: () => NOW,
   })
+  // A tab playing sound is closed on the same rule as any other.
   assert.deepEqual(await sweep.sweep(), ['old'])
   assert.deepEqual(closed, ['old'])
   hours = null

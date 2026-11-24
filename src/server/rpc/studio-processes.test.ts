@@ -5,7 +5,7 @@ import { afterEach, test } from 'vitest'
 import type { StudioAgentProcess, StudioProcessesMethodMap } from '../../../packages/studio-protocol/src/public'
 import { STUDIO_SCOPES } from '../../../packages/studio-protocol/src/scopes'
 import type { StudioProcesses } from '../processes/agent-process-domain'
-import type { StudioBrowserTabs } from '../processes/browser-tabs'
+import { addressWithoutSecrets, tabsForReader, type StudioBrowserTabs } from '../processes/browser-tabs'
 import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
 
 // `processes.*` over the owner socket: the capability and the two methods, as
@@ -127,7 +127,7 @@ const TAB = {
   tabId: 'tab-1',
   workspaceId: 'ws-1',
   title: 'Game',
-  url: 'http://localhost:5173/',
+  url: 'http://dev:hunter2@localhost:5173/game?token=abc123#state',
   openedAt: 1,
   lastUsedAt: 2,
   audible: true,
@@ -180,7 +180,12 @@ test('a paired app that may operate a workspace sees the tabs and closes one; on
   await app.next((frame) => frame.t === 'welcome')
   app.send({ t: 'req', id: 'l', method: 'browserTabs.list', params: {} })
   const listed = await app.next((frame) => frame.t === 'res' && frame.id === 'l')
-  assert.equal(listed.t === 'res' && listed.ok, true)
+  // Another connection reads each address without its userinfo, query or fragment.
+  const seen = listed.t === 'res' && listed.ok ? (listed.result as { tabs: Array<{ url: string }> }).tabs : []
+  assert.deepEqual(
+    seen.map((entry) => entry.url),
+    ['http://localhost:5173/game'],
+  )
   app.send({ t: 'req', id: 'c', method: 'browserTabs.close', params: { tabId: 'tab-1', commandId: 'a1' } })
   const answer = await app.next((frame) => frame.t === 'res' && frame.id === 'c')
   assert.deepEqual(answer.t === 'res' && answer.ok && answer.result, { closed: true })
@@ -192,4 +197,15 @@ test('a paired app that may operate a workspace sees the tabs and closes one; on
   reader.send({ t: 'req', id: 'c', method: 'browserTabs.close', params: { tabId: 'tab-1', commandId: 'r1' } })
   assert.equal(codeOf(await reader.next((frame) => frame.t === 'res' && frame.id === 'c')), 'scope_required')
   assert.deepEqual(closed, ['tab-1'])
+})
+
+test('a tab as another connection reads it: its title redacted, its address without what rides after the path', () => {
+  assert.equal(addressWithoutSecrets('https://me:pw@example.com/a/b?q=1#x'), 'https://example.com/a/b')
+  assert.equal(addressWithoutSecrets('about:blank'), 'about:')
+  assert.equal(addressWithoutSecrets('not a url'), '')
+  const redact = <T>(value: T): T => (typeof value === 'string' ? (value.replace('secret', '[redacted]') as T) : value)
+  const [mine] = tabsForReader([{ ...TAB, title: 'secret page' }], { owner: true, redact })
+  assert.deepEqual([mine!.title, mine!.url], ['[redacted] page', TAB.url])
+  const [theirs] = tabsForReader([{ ...TAB, title: 'secret page' }], { owner: false, redact })
+  assert.deepEqual([theirs!.title, theirs!.url], ['[redacted] page', 'http://localhost:5173/game'])
 })
