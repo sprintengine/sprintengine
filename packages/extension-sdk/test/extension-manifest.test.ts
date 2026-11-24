@@ -278,7 +278,18 @@ test('a worker command may replace one of Studio’s actions, once, and only a w
   const back = { id: 'notes.back', title: 'Back through notes', replaces: 'workspace.history.back' }
   const manifest = accepted(worker([back]))
   assert.equal(manifest.contributes.commands[0].replaces, 'workspace.history.back')
-  refusedAt(worker([{ ...back, replaces: 'git.fetch' }]), 'contributes.commands[0].replaces', /must be one of/)
+  // Every command action but the two that lead back to the switch that turns a replacement off.
+  accepted(worker([{ ...back, replaces: 'git.fetch' }]))
+  accepted(worker([{ ...back, replaces: 'chat.new' }]))
+  for (const action of ['app.settings.open', 'commandPalette.open', 'app.quit'])
+    refusedAt(worker([{ ...back, replaces: action }]), 'contributes.commands[0].replaces', /must be one of/)
+  // And a declarative command may now run the pane's and the canvas's toggles too.
+  accepted(
+    base({
+      tier: 'declarative',
+      contributes: { commands: [{ id: 'notes.pane', title: 'Pane', action: 'pane.toggle' }] },
+    }),
+  )
   // A declarative command runs no code to take the action over with.
   refusedAt(worker([{ ...back, action: 'chat.new' }]), 'contributes.commands[0].replaces', /cannot go with action/)
   // A ui extension has no worker to run in place of the action.

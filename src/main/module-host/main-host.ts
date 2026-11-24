@@ -39,10 +39,7 @@ import {
 import { resolveContainedPath } from '../modules/entry-containment'
 import { watchReplacementCall } from '../modules/extension-replacement-log'
 import { extensionCommandRuns } from '../../server/extensions/events/command-runs'
-import {
-  EXTENSION_COMMAND_ACTIONS,
-  EXTENSION_REPLACEABLE_ACTIONS,
-} from '../../../packages/extension-sdk/src/extension-manifest'
+import { EXTENSION_COMMAND_ACTIONS } from '../../../packages/extension-sdk/src/extension-manifest'
 import type { StudioExtensionCallAnswer } from '../../../packages/studio-protocol/src/public'
 import {
   createExtensionFrameCalls,
@@ -63,13 +60,9 @@ import {
   type ExtensionHostDecision,
 } from './extension-host-gate'
 
-/** One of Studio's actions an extension may name: a command's `action`, or one it `replaces`. */
+/** One of Studio's actions an extension may name: a command's `action`, or one it `replaces` (a subset). */
 function isStudioAction(action: unknown): action is string {
-  return (
-    typeof action === 'string' &&
-    ((EXTENSION_COMMAND_ACTIONS as readonly string[]).includes(action) ||
-      (EXTENSION_REPLACEABLE_ACTIONS as readonly string[]).includes(action))
-  )
+  return typeof action === 'string' && (EXTENSION_COMMAND_ACTIONS as readonly string[]).includes(action)
 }
 
 // Main-process host kernel. Replaces the static, central wiring in

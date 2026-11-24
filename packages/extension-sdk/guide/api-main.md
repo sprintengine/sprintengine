@@ -111,9 +111,10 @@ nothing useful without one.
 
 ### Taking over one of Studio's actions
 
-A worker command may declare `"replaces": "<action>"` (the list is in the
-manifest topic: history back and forward, the sidebar, the pane and its
-panels). When the person fires that action from its shortcut, the palette or a
+A worker command may declare `"replaces": "<action>"`: any of the command
+actions a declarative command may run (the manifest topic lists them), but
+Settings and the command palette, which lead the person back to the switch
+that turns a replacement off. When the person fires that action from its shortcut, the palette or a
 menu, Studio runs the command instead, with `where: 'replaces'` and
 `replaces` naming the action. If the worker fails, or has not answered within
 2 seconds, Studio runs its own, and the extension's log says why. The person

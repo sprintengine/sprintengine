@@ -29,7 +29,7 @@
 // Node only; never import it from extension code.
 
 import { existsSync, rmSync } from 'node:fs'
-import { EXTENSION_COMMAND_ACTIONS, EXTENSION_REPLACEABLE_ACTIONS } from './extension-manifest.js'
+import { EXTENSION_COMMAND_ACTIONS } from './extension-manifest.js'
 import { dirname, resolve as resolvePath } from 'node:path'
 
 import { jsonValueProblem } from './json-value.js'
@@ -987,10 +987,7 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     },
     async runCommand(action) {
       use('runCommand')
-      if (
-        !(EXTENSION_COMMAND_ACTIONS as readonly string[]).includes(action) &&
-        !(EXTENSION_REPLACEABLE_ACTIONS as readonly string[]).includes(action)
-      )
+      if (!(EXTENSION_COMMAND_ACTIONS as readonly string[]).includes(action))
         throw new Error(`"${String(action)}" is not one of Studio's actions an extension may run.`)
       fake.commandRuns.push(action)
     },

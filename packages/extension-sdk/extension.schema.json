@@ -263,10 +263,12 @@
                   "workspace.history.back",
                   "workspace.history.forward",
                   "workspace.sidebar.toggle",
+                  "pane.toggle",
                   "panel.files.toggle",
                   "panel.editor.toggle",
                   "panel.git.toggle",
                   "panel.backlog.toggle",
+                  "panel.canvas.toggle",
                   "git.refresh",
                   "git.fetch",
                   "terminal.new",
@@ -282,6 +284,9 @@
                 "type": "string",
                 "maxLength": 64,
                 "enum": [
+                  "search.everywhere",
+                  "search.goToFile",
+                  "chat.new",
                   "workspace.history.back",
                   "workspace.history.forward",
                   "workspace.sidebar.toggle",
@@ -290,9 +295,13 @@
                   "panel.editor.toggle",
                   "panel.git.toggle",
                   "panel.backlog.toggle",
-                  "panel.canvas.toggle"
+                  "panel.canvas.toggle",
+                  "git.refresh",
+                  "git.fetch",
+                  "terminal.new",
+                  "usage.show"
                 ],
-                "description": "A Studio action this worker command runs in place of, when the person fires that action from its shortcut, the palette or a menu. If the worker fails, or has not answered within 2 s, Studio runs its own. A command that calls `studio.runCommand(<action>)` (needs `workspace:operate`) always runs Studio’s own, never a replacement. The person sees the replacement before approving the extension and can switch it off on the extension’s page; when two extensions replace one action, the one installed first does.",
+                "description": "A Studio action this worker command runs in place of, when the person fires that action from its shortcut, the palette or a menu. If the worker fails, or has not answered within 2 s, Studio runs its own. A command that calls `studio.runCommand(<action>)` (needs `workspace:operate`) always runs Studio’s own, never a replacement. The person sees the replacement before approving the extension and can switch it off on the extension’s page; when two extensions replace one action, the one installed first does. Every command action may be replaced but `app.settings.open` and `commandPalette.open`, which lead the person back to that switch.",
                 "x-since": "0.13.0",
                 "examples": [
                   "workspace.history.back"

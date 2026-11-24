@@ -239,7 +239,7 @@ async function runReplacement(replacement: ExtensionReplacement, runBuiltIn: () 
  * Only the actions an extension may name; whether anything ran it.
  */
 export function runBuiltInAction(action: string): boolean {
-  if (!isReplaceableAction(action) && !(EXTENSION_COMMAND_ACTIONS as readonly string[]).includes(action)) return false
+  if (!(EXTENSION_COMMAND_ACTIONS as readonly string[]).includes(action)) return false
   return runAppCommand(action)
 }
 

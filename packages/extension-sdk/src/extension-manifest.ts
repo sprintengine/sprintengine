@@ -86,9 +86,11 @@ export const EXTENSION_ICONS = [
 export type ExtensionIcon = (typeof EXTENSION_ICONS)[number]
 
 /**
- * Studio's own commands a declarative command may run. Closed, so an
+ * Studio's own commands a declarative command may run, and (all but two) a
+ * worker command may run in place of (`replaces`): one list. Closed, so an
  * extension can only alias what Studio offers people anyway; each id is a
- * command in the app's command registry (a test holds them to it).
+ * command in the app's command registry (a test holds them to it), fired by
+ * the person from its shortcut, the palette or a menu.
  */
 export const EXTENSION_COMMAND_ACTIONS = [
   'app.settings.open',
@@ -99,10 +101,12 @@ export const EXTENSION_COMMAND_ACTIONS = [
   'workspace.history.back',
   'workspace.history.forward',
   'workspace.sidebar.toggle',
+  'pane.toggle',
   'panel.files.toggle',
   'panel.editor.toggle',
   'panel.git.toggle',
   'panel.backlog.toggle',
+  'panel.canvas.toggle',
   'git.refresh',
   'git.fetch',
   'terminal.new',
@@ -111,24 +115,28 @@ export const EXTENSION_COMMAND_ACTIONS = [
 export type ExtensionCommandAction = (typeof EXTENSION_COMMAND_ACTIONS)[number]
 
 /**
- * Studio's own actions a worker command may take over (`replaces`): the ones
- * a person fires from a shortcut, the palette or a menu, and whose effect is
- * the window's alone, so an extension that answers late or not at all costs a
- * moment rather than the person's work. Closed, and each id is a command in
- * the app's command registry (a test holds them to it).
+ * The command actions no extension may run in place of: Settings, where the
+ * person switches a replacement off, and the palette, where they find
+ * Settings and every other action. A replacement of either could leave the
+ * person with no way back to the switch.
  */
-export const EXTENSION_REPLACEABLE_ACTIONS = [
-  'workspace.history.back',
-  'workspace.history.forward',
-  'workspace.sidebar.toggle',
-  'pane.toggle',
-  'panel.files.toggle',
-  'panel.editor.toggle',
-  'panel.git.toggle',
-  'panel.backlog.toggle',
-  'panel.canvas.toggle',
-] as const
-export type ExtensionReplaceableAction = (typeof EXTENSION_REPLACEABLE_ACTIONS)[number]
+export const EXTENSION_UNREPLACEABLE_ACTIONS = ['app.settings.open', 'commandPalette.open'] as const
+
+export type ExtensionReplaceableAction = Exclude<
+  ExtensionCommandAction,
+  (typeof EXTENSION_UNREPLACEABLE_ACTIONS)[number]
+>
+
+/**
+ * Studio's own actions a worker command may take over (`replaces`): every
+ * command action but the two that lead back to the switch
+ * (`EXTENSION_UNREPLACEABLE_ACTIONS`). Studio's own runs when the extension
+ * fails or is slow, so an extension costs a moment, not the person's work.
+ */
+export const EXTENSION_REPLACEABLE_ACTIONS: readonly ExtensionReplaceableAction[] = EXTENSION_COMMAND_ACTIONS.filter(
+  (action): action is ExtensionReplaceableAction =>
+    !(EXTENSION_UNREPLACEABLE_ACTIONS as readonly string[]).includes(action),
+)
 
 /** Where a menu item may appear. */
 export const EXTENSION_MENU_PLACES = ['backlog.item', 'file', 'notification'] as const
@@ -466,7 +474,7 @@ const CONTRIBUTES: ObjectNode = {
             },
             replaces: {
               node: { kind: 'string', max: 64, enum: EXTENSION_REPLACEABLE_ACTIONS },
-              doc: 'A Studio action this worker command runs in place of, when the person fires that action from its shortcut, the palette or a menu. If the worker fails, or has not answered within 2 s, Studio runs its own. A command that calls `studio.runCommand(<action>)` (needs `workspace:operate`) always runs Studio’s own, never a replacement. The person sees the replacement before approving the extension and can switch it off on the extension’s page; when two extensions replace one action, the one installed first does.',
+              doc: 'A Studio action this worker command runs in place of, when the person fires that action from its shortcut, the palette or a menu. If the worker fails, or has not answered within 2 s, Studio runs its own. A command that calls `studio.runCommand(<action>)` (needs `workspace:operate`) always runs Studio’s own, never a replacement. The person sees the replacement before approving the extension and can switch it off on the extension’s page; when two extensions replace one action, the one installed first does. Every command action may be replaced but `app.settings.open` and `commandPalette.open`, which lead the person back to that switch.',
               since: V1,
               example: 'workspace.history.back',
             },
@@ -1889,6 +1897,8 @@ export function extensionManifestReference(): string {
     `Icons: ${EXTENSION_ICONS.map((icon) => `\`${icon}\``).join(', ')}.`,
     '',
     `Command actions: ${EXTENSION_COMMAND_ACTIONS.map((action) => `\`${action}\``).join(', ')}.`,
+    '',
+    `A worker command may replace (\`replaces\`) each of them but ${EXTENSION_UNREPLACEABLE_ACTIONS.map((action) => `\`${action}\``).join(' and ')}: Settings, where the person switches a replacement off, and the palette, where they find it, stay Studio's own.`,
   ]
   return lines.join('\n')
 }
