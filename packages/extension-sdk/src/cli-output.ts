@@ -27,6 +27,33 @@ export const CLI_ERROR_CODES = [
   'shot_failed',
   /** Studio could not do it now (it is starting, or something broke): try again. */
   'unavailable',
+  // install, update and open:
+  /** Studio's kill list removed that version: it never installs. */
+  'killed',
+  /** The version's bytes are not the ones Studio's release lock holds for it. */
+  'release_lock_mismatch',
+  /** What was fetched is not the release the catalogue lists (its hash, commit or manifest). */
+  'release_mismatch',
+  /** The repository's owner is not the one the key or the install names, or changed since. */
+  'owner_mismatch',
+  /** Studio cannot tell who owns the repository. */
+  'owner_unknown',
+  /** Studio could not read its kill list, so nothing installs until it can. */
+  'kill_list_unavailable',
+  /** It is installed from another source: remove it first. */
+  'origin_conflict',
+  /** A name only Studio's official catalogue installs. */
+  'reserved_name',
+  /** The catalogue changed what it lists since it was read: look again. */
+  'changed',
+  /** The install failed for another reason: the message says why. */
+  'install_failed',
+  /** No Studio window is open on this machine to show it in. */
+  'no_window',
+  /** No Studio window here shows a workspace to show it in. */
+  'no_workspace',
+  /** It is switched off, or killed. */
+  'extension_unavailable',
 ] as const
 
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number]

@@ -65,6 +65,9 @@ Usage:
   sprintengine-extension dev hook <dir|key> <point> --data <json> [--json]
   sprintengine-extension dev emit <dir|key> <topic> [--data <json>] [--json]
   sprintengine-extension dev emit <dir|key> <event> --studio --data <json> [--json]
+  sprintengine-extension install <owner/repo[@ref] | git-url[#ref] | folder-link | key> [--json]
+  sprintengine-extension update <key> | --all [--json]
+  sprintengine-extension open <key> [--panel <id> | --editor <file>] [--json]
   sprintengine-extension list [--json]
   sprintengine-extension logs <key|dir> [--after <seq>] [--json]
   sprintengine-extension shot <dir|key> [--panel <id> | --door <id> | --settings <id>] [--theme light|dark] [--width <px>] [--height <px>] [--out <file.png>] [--json]
@@ -123,6 +126,23 @@ a fresh PNG, after each save. Ctrl-C removes the folder again if the watch
 added it. dev reload reads one development folder, or every one, again now.
 dev request, hook, emit and shot reach development folders only. list and
 logs cover installed extensions too.
+
+install, update and open act on published extensions through the Studio
+running on this machine, by the path Settings > Extensions takes: the owner,
+the kill list and the release lock are checked first, and a private repository
+is fetched with this machine's own git credentials. install takes a catalogue
+key (acme.notes, from the first catalogue listing it), a GitHub repository
+(acme/notes, acme/notes@v1.2.0), a git URL (#<ref> for a ref) or a link to a
+folder in a repository (.../tree/<ref>/<folder>). A content extension, or one
+from Studio's official catalogue, is ready at once; anything else installs
+waiting for approval, Studio's window asks the person, and install exits 3
+(approval_required). update moves one extension, or every one installed from
+a catalogue (--all), to the newer release its catalogue lists; one that asks
+for more is held for the person's review in Studio and keeps running as it
+is. With --json it prints one row per extension: from, to, or why not. open
+shows one of an extension's panels (--panel, else its first), or opens a file
+in its custom editor (--editor), in a Studio window here without bringing it
+forward; with no window it fails with no_window.
 
 keygen writes an ed25519 private key (PKCS#8 PEM) to --out
 (default module-signing.key); a leading ~ is your home folder, on Windows too.
@@ -457,7 +477,20 @@ async function add(args: string[]): Promise<void> {
 }
 
 const [command, ...rest] = process.argv.slice(2)
-const authoring = new Set(['validate', 'inspect', 'test', 'check', 'dev', 'shot', 'list', 'logs', 'release-entry'])
+const authoring = new Set([
+  'validate',
+  'inspect',
+  'test',
+  'check',
+  'dev',
+  'shot',
+  'list',
+  'logs',
+  'release-entry',
+  'install',
+  'update',
+  'open',
+])
 if (command && authoring.has(command)) {
   import('./cli-commands.js')
     .then(({ runAuthoringCommand }) => runAuthoringCommand(command, rest))
