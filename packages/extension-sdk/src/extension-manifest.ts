@@ -1073,7 +1073,7 @@ const CONTRIBUTES: ObjectNode = {
           },
         },
       },
-      doc: 'MCP servers the person’s agents get, in every workspace on this machine. A `stdio` server’s command, arguments, environment and the extension’s files are part of what the person approves at install, so an update that changes any of them asks again; an `http` server is listed when the extension is installed and asks nothing.',
+      doc: 'MCP servers the person’s agents get, in every workspace on this machine. A `stdio` server’s command, arguments, environment and the extension’s files are part of what the person approves at install, so an update that changes any of them asks again; an `http` server is listed when the extension is installed in Settings and asks nothing there (installed from outside Studio’s window, by an agent or the command line, it waits for the person’s approval like code, unless it comes from the official catalogue).',
       since: V1,
       tier: 'declarative',
     },

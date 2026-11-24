@@ -40,6 +40,14 @@ export type ExtensionInstallRecord = {
   /** The repository owner's numeric id at the first install, when the catalogue knew it. */
   ownerId?: number
   installedAt: number
+  /**
+   * Installed from outside the window (an agent, the command line), from
+   * anywhere but the official catalogue: nobody saw what it hands agents, so
+   * it waits for the person's approval even when its tier alone would ask
+   * nothing (skills, hosted MCP servers). Content never waits. Its updates
+   * keep it; an install from the official catalogue drops it.
+   */
+  askPerson?: true
 }
 
 /** One version as Studio first saw it: a listed version never moves. */

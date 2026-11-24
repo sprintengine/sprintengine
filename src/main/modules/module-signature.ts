@@ -53,6 +53,11 @@ export type ExtensionStandingContext = {
    * may install a reserved key. A folder install's key is `local` and needs none.
    */
   installedFrom?: ReadonlyMap<string, 'official' | 'other'>
+  /**
+   * The keys installed from outside the window that wait for the person even
+   * when their tier alone would not (`ExtensionInstallRecord.askPerson`).
+   */
+  askPerson?: ReadonlySet<string>
 }
 
 export type ModuleTrustIssue = { path: string; message: string }
@@ -180,7 +185,9 @@ function classifyInstalled(
   if (!scan.ok) return { signature, ...signed, issues: scan.issues, approval: { state: 'unavailable' } }
   const access = extensionAccess(manifest, scan.files)
   const content = { contentDigest: contentDigest!, verifiedFiles: scan.files }
-  if (!extensionNeedsApproval(manifest)) return { signature, ...signed, approval: { state: 'not-needed' }, ...content }
+  // An install nobody watched asks the person for anything but content.
+  const asks = extensionNeedsApproval(manifest) || (manifest.tier !== 'content' && ctx.askPerson?.has(key) === true)
+  if (!asks) return { signature, ...signed, approval: { state: 'not-needed' }, ...content }
   const fingerprint = extensionApprovalFingerprint(access, contentDigest!)
   // A development folder's approval never covers the installed extension under its key.
   const found = ctx.approvals.get(key)

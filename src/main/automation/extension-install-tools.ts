@@ -84,7 +84,8 @@ export function createExtensionInstallTools(deps: ExtensionInstallToolsDeps): Mc
         'refused (`already_installed`): update it, or the person removes it in Settings first. A pull request’s ' +
         'ref, or another no publisher released, is refused. A content extension, and one from ' +
         "Studio's official catalogue, is ready at once. Anything else installs waiting for approval " +
-        "(`approval.state: pending`): Studio's window asks the person now, and nothing in it runs until they approve " +
+        '(`approval.state: pending`), even skills and hosted MCP servers that Settings installs without asking: ' +
+        "Studio's window asks the person now, and nothing in it runs or reaches an agent until they approve " +
         'it there. Nothing here approves it. Poll `extension.list` to see it approved.',
       inputSchema: {
         type: 'object',

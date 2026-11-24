@@ -170,8 +170,11 @@ export type UpdateRow = {
  * An install from outside the window (`sprintengine-extension install`, the
  * `extension.install` tool), which an agent may make: nobody is looking at
  * what installs. It never replaces an installed extension (`already_installed`:
- * that is an update, or the person's own reinstall in Settings), and it reads
- * the kill list fresh.
+ * that is an update, or the person's own reinstall in Settings), it reads
+ * the kill list fresh, and anything but content waits for the person's
+ * approval in Studio's window unless it comes from the official catalogue
+ * (`ExtensionInstallRecord.askPerson`), even what Settings would install
+ * asking nothing: skills and hosted MCP servers go to every agent here.
  */
 export type UnattendedInstall = { unattended?: boolean }
 
@@ -684,11 +687,17 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     key: string,
     origin: ExtensionInstallRecord['origin'],
     ownerId: number | undefined,
+    options: UnattendedInstall = {},
   ): Promise<InstallAnswer> {
     const previous = readInstallRecordsSync(deps.dataDir)[key] ?? null
     try {
       const publisher = parseExtensionInstallKey(key)!.publisher
       const official = origin.kind === 'catalogue' && origin.catalogue === OFFICIAL_CATALOGUE
+      // Nobody saw it install: anything but content, and anything but the
+      // official catalogue's, waits for the person (classifyExtension). It
+      // stays so across its updates, each carrying the approval the person
+      // gave while it asks for no more.
+      const askPerson = !official && (options.unattended === true || previous?.askPerson === true)
       // Recorded first: discovery admits a key under a repository owner only
       // once Studio recorded where it came from, and the install discovers it.
       await writeInstallRecord(deps.dataDir, key, {
@@ -700,6 +709,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         // An update keeps when it was first installed: which extension came
         // first decides whose replacement of a Studio action wins.
         installedAt: previous?.installedAt ?? now(),
+        ...(askPerson ? { askPerson: true as const } : {}),
       })
       const answer = await deps.installChecked(checkedOut.dir, { publisher, official })
       if (!answer.ok) {
@@ -816,7 +826,13 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       readExtensionApprovalsSync(deps.dataDir).has(key)
     )
       await writeExtensionApproval(deps.dataDir, key, null)
-    return installPrepared(checkedOut, key, { kind: 'catalogue', catalogue: id, source: entry.source }, ownerId)
+    return installPrepared(
+      checkedOut,
+      key,
+      { kind: 'catalogue', catalogue: id, source: entry.source },
+      ownerId,
+      options,
+    )
   }
 
   async function installFromGit(source: { git: string; ref?: string; path?: string }, options: UnattendedInstall = {}) {
@@ -859,7 +875,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     const locked = lockProblem(key, checkedOut.manifest.version, { contentHash: checkedOut.contentHash }, 'git')
     if (locked) return refuse(locked, 'release_lock_mismatch')
     const leftOut = checkedOut.leftOut
-    const answer = await installPrepared(checkedOut, key, origin, undefined)
+    const answer = await installPrepared(checkedOut, key, origin, undefined, options)
     return answer.ok && leftOut.length > 0 ? { ...answer, leftOut } : answer
   }
 

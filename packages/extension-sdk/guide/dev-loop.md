@@ -253,8 +253,11 @@ credentials, the ones `git` already uses here.
   extension installed already is refused with `already_installed`: `update`
   it, or the person removes it in Settings first, since installing over it
   would swap the code they approved. A content extension, and one from
-  Studio's official catalogue, is ready at once. Anything else installs waiting for approval: Studio's window
-  asks the person straight away, and `install` exits 3 with
+  Studio's official catalogue, is ready at once. Anything else installs
+  waiting for approval, even a declarative one that Settings installs without
+  asking (only skills and hosted MCP servers, which reach every agent here):
+  nobody saw it install. Studio's window asks the person straight away, and
+  nothing it adds reaches an agent until they approve it; `install` exits 3 with
   `approval_required`. Nothing on the command line approves it.
 - **`update <key>`** or **`update --all`**: the newer release the extension's
   catalogue lists, now (no hold-back: you asked). One that asks for more than

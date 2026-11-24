@@ -19,6 +19,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import { EXTENSION_MANIFEST_SINCE } from '../../../../packages/extension-sdk/src/extension-manifest'
 import { releaseEntryForHead } from '../../../../packages/extension-sdk/src/release-entry'
 import type { CatalogueRelease } from '../../../../packages/extension-sdk/src/catalogue'
+import { createExtensionInstallTools } from '../../../main/automation/extension-install-tools'
 import { createModuleLifecycle } from '../../../main/modules/module-lifecycle'
 import { createModuleRegistryMirror } from '../../../main/modules/registry-mirror'
 import { NO_EXTENSION_RUN } from '../../../main/modules/third-party-module-view'
@@ -1241,6 +1242,42 @@ describe('installing and updating from outside the window', () => {
     ).toMatchObject({ ok: false, code: 'already_installed' })
     const [view] = (await env.installed()).filter((module) => module.manifest.id === 'acme.notes')
     expect(view?.approval.state).toBe('approved')
+  })
+
+  test('skills and hosted MCP servers installed from outside the window wait for the person, who is asked in the window', async () => {
+    const env = setup()
+    // Declarative, asking nothing in Settings: a skill and a hosted MCP server for every agent here.
+    const quiet = notesFiles({
+      contributes: {
+        skills: [{ id: 'notes', path: 'skills/notes' }],
+        mcpServers: [{ id: 'notes', name: 'Notes', transport: 'http', url: 'https://mcp.example.com/notes' }],
+      },
+    })
+    const agentRepo = env.repository('acme', 'notes', quiet)
+    const personRepo = env.repository('bob', 'notes', quiet)
+    const [install] = createExtensionInstallTools({ backend: () => ({ lifecycle: () => env.lifecycle }) })
+    const answer = await install!.handler({ source: `${agentRepo.url}#main` }, { metadata: { kind: 'external-local' } })
+    expect(answer.structuredContent).toMatchObject({ moduleId: 'acme.notes', approval: { state: 'pending' } })
+    expect(readInstallRecordsSync(env.dataDir)['acme.notes']?.askPerson).toBe(true)
+    // The person's own install of the same in Settings asks nothing, as ever.
+    expect(await env.lifecycle.catalogue.installFrom({ git: personRepo.url })).toMatchObject({
+      ok: true,
+      approval: { state: 'not-needed' },
+    })
+
+    const byKey = new Map((await env.installed()).map((module) => [module.manifest.id, module]))
+    expect(byKey.get('acme.notes')?.approval.state).toBe('pending')
+    expect(byKey.get('acme.notes')?.reviewAsked).toBe(true)
+    const projected = () => JSON.stringify(readdirDeep(join(env.dataDir)))
+    expect(projected()).toMatch(/bob\.notes.*SKILL\.md/)
+    expect(projected()).not.toMatch(/acme\.notes.*SKILL\.md/)
+
+    // Approved in the window, it is handed to agents.
+    await approveAll(env)
+    expect((await env.installed()).find((module) => module.manifest.id === 'acme.notes')?.approval.state).toBe(
+      'approved',
+    )
+    expect(projected()).toMatch(/acme\.notes.*SKILL\.md/)
   })
 
   test('an update of one waiting for approval is the person’s, in Studio’s window', async () => {
