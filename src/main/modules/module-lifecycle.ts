@@ -324,9 +324,19 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
   // or one the catalogue checked out (its publisher, the repository's owner).
   const installFolder = async (
     path: string,
-    options: { publisher?: string; official?: boolean } = {},
+    {
+      before: checkFirst,
+      ...options
+    }: {
+      publisher?: string
+      official?: boolean
+      /** Run first, in the queue with the copy (the catalogue's check and record); an answer refuses. */
+      before?: () => Promise<Answer<'extension.install'> | null>
+    } = {},
   ): Promise<Answer<'extension.install'>> => {
     try {
+      const stop = await checkFirst?.()
+      if (stop) return stop
       const context = standingContext()
       // Read before the copy replaces it: the version an update replaces,
       // and whether the person approved it as it is.

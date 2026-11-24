@@ -154,6 +154,7 @@ export type InstallRefusal =
   | 'not_found'
   | 'changed'
   | 'already_installed'
+  | 'install_in_progress'
   | 'git_auth_failed'
   | 'catalogue_ambiguous'
   /** What was named is not something Studio installs from (a pull request's ref). */
@@ -220,7 +221,18 @@ export type InstalledForCatalogue = {
 export type ExtensionCatalogueDeps = {
   dataDir: string
   /** Install the extension in this checked-out folder, under this publisher (the lifecycle's folder install). */
-  installChecked: (dir: string, options: { publisher: string; official: boolean }) => Promise<InstallAnswer>
+  installChecked: (
+    dir: string,
+    options: {
+      publisher: string
+      official: boolean
+      /**
+       * Run first, in the lifecycle's queue with the install itself, so
+       * nothing installs between it and the copy: an answer refuses the install.
+       */
+      before?: () => Promise<InstallAnswer | null>
+    },
+  ) => Promise<InstallAnswer>
   /** The extensions installed here now, development folders standing in for one included. */
   installed: () => Promise<InstalledForCatalogue[]>
   /** The kill list changed: judge every extension again and retract what a killed one added. */
@@ -739,6 +751,8 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     options: UnattendedInstall = {},
   ): Promise<InstallAnswer> {
     const previous = readInstallRecordsSync(deps.dataDir)[key] ?? null
+    // Whether this install wrote the key's record, so a failure puts back what was there.
+    let recorded = false
     try {
       const publisher = parseExtensionInstallKey(key)!.publisher
       const official = origin.kind === 'catalogue' && origin.catalogue === OFFICIAL_CATALOGUE
@@ -747,22 +761,36 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       // stays so across its updates, each carrying the approval the person
       // gave while it asks for no more.
       const askPerson = !official && (options.unattended === true || previous?.askPerson === true)
-      // Recorded first: discovery admits a key under a repository owner only
-      // once Studio recorded where it came from, and the install discovers it.
-      await writeInstallRecord(deps.dataDir, key, {
-        origin,
-        version: checkedOut.manifest.version,
-        commit: checkedOut.commit,
-        contentHash: checkedOut.contentHash,
-        ...(ownerId !== undefined ? { ownerId } : {}),
-        // An update keeps when it was first installed: which extension came
-        // first decides whose replacement of a Studio action wins.
-        installedAt: previous?.installedAt ?? now(),
-        ...(askPerson ? { askPerson: true as const } : {}),
+      const answer = await deps.installChecked(checkedOut.dir, {
+        publisher,
+        official,
+        // In the lifecycle's queue, with the copy: nothing installs between this and it.
+        before: async () => {
+          // Nobody is watching: what was installed under the key since the
+          // install began (the person's own, approved meanwhile) is never replaced.
+          if (options.unattended) {
+            const already = await installedAlready(key)
+            if (already) return already
+          }
+          // Recorded first: discovery admits a key under a repository owner only
+          // once Studio recorded where it came from, and the install discovers it.
+          await writeInstallRecord(deps.dataDir, key, {
+            origin,
+            version: checkedOut.manifest.version,
+            commit: checkedOut.commit,
+            contentHash: checkedOut.contentHash,
+            ...(ownerId !== undefined ? { ownerId } : {}),
+            // An update keeps when it was first installed: which extension came
+            // first decides whose replacement of a Studio action wins.
+            installedAt: previous?.installedAt ?? now(),
+            ...(askPerson ? { askPerson: true as const } : {}),
+          })
+          recorded = true
+          return null
+        },
       })
-      const answer = await deps.installChecked(checkedOut.dir, { publisher, official })
       if (!answer.ok) {
-        await writeInstallRecord(deps.dataDir, key, previous)
+        if (recorded) await writeInstallRecord(deps.dataDir, key, previous)
         return answer
       }
       // A catalogue's version keeps the bytes it was installed with; a git
@@ -788,7 +816,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       })
       return { ...answer, strippedLinks: [...new Set([...answer.strippedLinks, ...checkedOut.strippedLinks])].sort() }
     } catch (error) {
-      await writeInstallRecord(deps.dataDir, key, previous)
+      if (recorded) await writeInstallRecord(deps.dataDir, key, previous)
       throw error
     } finally {
       await checkedOut.dispose()
@@ -841,16 +869,44 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       : null
   }
 
+  // The keys an install from outside the window is installing now. Two
+  // agents installing one key at once would each pass the check that it is
+  // not installed; the second is refused while the first runs, and the
+  // check is made again in the lifecycle's queue as the copy lands.
+  const installingUnattended = new Set<string>()
+  const inProgress = (key: string) =>
+    `${key} is being installed from outside Studio’s window now. Wait for that install, then update it if need be.`
+  /** Take `key` for an unattended install; null when another holds it. Returns the release. */
+  function reserveUnattended(key: string): (() => void) | null {
+    if (installingUnattended.has(key)) return null
+    installingUnattended.add(key)
+    return () => installingUnattended.delete(key)
+  }
+
   async function installFromCatalogue(
     id: CatalogueId,
     key: string,
     checked?: CheckedRelease,
     options: UnattendedInstall = {},
   ): Promise<InstallAnswer> {
-    if (options.unattended) {
+    if (!options.unattended) return installFromCatalogueNow(id, key, checked, options)
+    const release = reserveUnattended(key)
+    if (!release) return { ok: false, code: 'install_in_progress', message: inProgress(key) }
+    try {
       const already = await installedAlready(key)
       if (already) return already
+      return await installFromCatalogueNow(id, key, checked, options)
+    } finally {
+      release()
     }
+  }
+
+  async function installFromCatalogueNow(
+    id: CatalogueId,
+    key: string,
+    checked: CheckedRelease | undefined,
+    options: UnattendedInstall,
+  ): Promise<InstallAnswer> {
     const entryNow = findEntry(id, key)
     const change = await originChange(key, {
       kind: 'catalogue',
@@ -979,23 +1035,32 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     }
     if (isReservedInstallKey(key))
       return refuse(`${key} uses a name only Studio’s official catalogue installs.`, 'reserved_name')
-    if (options.unattended) {
-      const already = await installedAlready(key)
-      if (already && !already.ok) return refuse(already.message, 'already_installed')
+    const install = async () => {
+      const killed = findKilled(list.list, key, checkedOut.manifest.version)
+      if (killed)
+        return refuse(`Studio’s kill list removed ${key} ${checkedOut.manifest.version}: ${killed.reason}`, 'killed')
+      const origin = { kind: 'git' as const, source: { url, ref, ...(path ? { path } : {}) } }
+      const change = await originChange(key, origin)
+      if (change) return refuse(change, 'origin_conflict')
+      await refreshLists()
+      const locked = lockProblem(key, checkedOut.manifest.version, { contentHash: checkedOut.contentHash }, 'git')
+      if (locked) return refuse(locked, 'release_lock_mismatch')
+      const leftOut = checkedOut.leftOut
+      const answer = await installPrepared(checkedOut, key, origin, undefined, options)
+      // Which ref it installed: named, the newest release tag, or the default branch.
+      return answer.ok ? { ...answer, ref, ...(leftOut.length > 0 ? { leftOut } : {}) } : answer
     }
-    const killed = findKilled(list.list, key, checkedOut.manifest.version)
-    if (killed)
-      return refuse(`Studio’s kill list removed ${key} ${checkedOut.manifest.version}: ${killed.reason}`, 'killed')
-    const origin = { kind: 'git' as const, source: { url, ref, ...(path ? { path } : {}) } }
-    const change = await originChange(key, origin)
-    if (change) return refuse(change, 'origin_conflict')
-    await refreshLists()
-    const locked = lockProblem(key, checkedOut.manifest.version, { contentHash: checkedOut.contentHash }, 'git')
-    if (locked) return refuse(locked, 'release_lock_mismatch')
-    const leftOut = checkedOut.leftOut
-    const answer = await installPrepared(checkedOut, key, origin, undefined, options)
-    // Which ref it installed: named, the newest release tag, or the default branch.
-    return answer.ok ? { ...answer, ref, ...(leftOut.length > 0 ? { leftOut } : {}) } : answer
+    if (!options.unattended) return install()
+    // The key is this install's until it ends: another from outside the window is refused.
+    const release = reserveUnattended(key)
+    if (!release) return refuse(inProgress(key), 'install_in_progress')
+    try {
+      const already = await installedAlready(key)
+      if (already && !already.ok) return await refuse(already.message, 'already_installed')
+      return await install()
+    } finally {
+      release()
+    }
   }
 
   // ── Updates ───────────────────────────────────────────────────────────────

@@ -52,6 +52,7 @@ fix it. Without `--json` the same is printed as words, the failure on stderr.
 | `kill_list_unavailable` | Studio could not read its kill list, so nothing installs until it can | 1 |
 | `origin_conflict` | It is installed from another source: remove it first | 1 |
 | `already_installed` | It is installed already: `update` it, or the person removes it in Studio first | 1 |
+| `install_in_progress` | Another install of that key from outside Studio's window is running now: wait for it | 1 |
 | `catalogue_ambiguous` | More than one catalogue lists that key: `data.catalogues` names them, for `--catalogue` | 1 |
 | `git_auth_failed` | This machine's git credentials cannot read the repository | 1 |
 | `reserved_name` | A name only Studio's official catalogue installs | 1 |
@@ -267,7 +268,10 @@ credentials, the ones `git` already uses here.
   (`refs/pull/…`, `pull/…`) or another no publisher released is refused. An
   extension installed already is refused with `already_installed`: `update`
   it, or the person removes it in Settings first, since installing over it
-  would swap the code they approved. A content extension, and one from
+  would swap the code they approved. While one install of a key runs, another
+  from outside the window is refused with `install_in_progress`; and one that
+  would land after the person installed the key meanwhile is refused
+  `already_installed`. A content extension, and one from
   Studio's official catalogue, is ready at once. Anything else installs
   waiting for approval, even a declarative one that Settings installs without
   asking (only skills and hosted MCP servers, which reach every agent here):

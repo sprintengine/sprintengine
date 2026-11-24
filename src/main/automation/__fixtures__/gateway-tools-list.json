@@ -446,7 +446,7 @@
     },
     {
       "name": "extension.install",
-      "sha256": "3bf6dc9aab390de304b386307efaf89f89db221069d51e7d4e3dc446647ff423"
+      "sha256": "49ffa170dfbda48cc6ea791f1dcee3af1f9a2462954b94e0cd21c27086a39c08"
     },
     {
       "name": "extension.update",
@@ -944,7 +944,7 @@
     },
     {
       "name": "extension.install",
-      "sha256": "3bf6dc9aab390de304b386307efaf89f89db221069d51e7d4e3dc446647ff423"
+      "sha256": "49ffa170dfbda48cc6ea791f1dcee3af1f9a2462954b94e0cd21c27086a39c08"
     },
     {
       "name": "extension.update",

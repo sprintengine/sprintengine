@@ -84,7 +84,8 @@ export function createExtensionInstallTools(deps: ExtensionInstallToolsDeps): Mc
         'the newest vX.Y.Z tag is installed, else the default branch, and the answer says which (`ref`). A ' +
         'repository this machine’s git credentials cannot read is refused with `git_auth_failed`. Studio checks the owner, the kill list and the release lock first; ' +
         'a private repository is fetched with this machine’s own git credentials. An extension installed already is ' +
-        'refused (`already_installed`): update it, or the person removes it in Settings first. A pull request’s ' +
+        'refused (`already_installed`): update it, or the person removes it in Settings first; while another ' +
+        'install of the key runs, `install_in_progress`. A pull request’s ' +
         'ref, or another no publisher released, is refused. A content extension, and one from ' +
         "Studio's official catalogue, is ready at once. Anything else installs waiting for approval " +
         '(`approval.state: pending`), even skills and hosted MCP servers that Settings installs without asking: ' +

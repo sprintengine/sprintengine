@@ -72,6 +72,8 @@ function setup() {
   const notices: CatalogueNotice[] = []
   const warnings: string[] = []
   const imageFetches: string[] = []
+  // A read held until a test lets it go: one install waits there while another runs.
+  const gates = new Map<string, { reached: () => void; wait: Promise<void> }>()
   let clock = Date.parse('2026-11-20T00:00:00Z')
   // Every install reads the kill list first: an empty one unless a test says otherwise.
   served.set(urls.killList, { killListVersion: 1, generatedAt: '2026-11-19T00:00:00Z', extensions: [] })
@@ -90,6 +92,12 @@ function setup() {
       now: () => clock,
       notify: (notice) => notices.push(notice),
       fetchJson: async (url) => {
+        const held = gates.get(url)
+        if (held) {
+          gates.delete(url)
+          held.reached()
+          await held.wait
+        }
         if (!served.has(url)) throw new Error(`${url} answered HTTP 404.`)
         return JSON.parse(JSON.stringify(served.get(url)))
       },
@@ -144,6 +152,15 @@ function setup() {
 
   const installed = async () => (await lifecycle.installed()).modules
 
+  /** Hold the next read of `url`: `reached` once something waits there, `release` to let it go on. */
+  function gate(url: string): { reached: Promise<void>; release: () => void } {
+    let reached: () => void = () => undefined
+    let release: () => void = () => undefined
+    const arrived = new Promise<void>((resolve) => (reached = resolve))
+    gates.set(url, { reached, wait: new Promise<void>((resolve) => (release = resolve)) })
+    return { reached: arrived, release }
+  }
+
   return {
     root,
     dataDir,
@@ -158,6 +175,7 @@ function setup() {
     serveCatalogue,
     serveKillList,
     installed,
+    gate,
     warnings,
     imageFetches,
     advance: (ms: number) => {
@@ -1376,6 +1394,57 @@ describe('installing and updating from outside the window', () => {
     ).toMatchObject({ ok: false, code: 'already_installed' })
     const [view] = (await env.installed()).filter((module) => module.manifest.id === 'acme.notes')
     expect(view?.approval.state).toBe('approved')
+  })
+
+  test('an install from outside the window holds its key: a second one at once is refused', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'notes', notesFiles())
+    // The first waits after its checks, before it lands.
+    const held = env.gate(env.urls.releaseLock)
+    const first = env.lifecycle.catalogue.installFrom({ git: repo.url }, { unattended: true })
+    await held.reached
+    const second = await env.lifecycle.catalogue.installFrom({ git: repo.url, ref: 'main' }, { unattended: true })
+    expect(second).toMatchObject({ ok: false, code: 'install_in_progress' })
+    held.release()
+    expect(await first).toMatchObject({ ok: true, moduleId: 'acme.notes' })
+
+    // By catalogue key, two at once: one installs, the other is refused.
+    const other = env.repository('bob', 'notes', notesFiles())
+    env.serveCatalogue('community', [
+      { id: 'bob.notes', source: { url: other.url, ref: 'main' }, releases: [await env.release(other.folder)] },
+    ])
+    const both = await Promise.all([
+      env.lifecycle.catalogue.installKey('bob.notes', { unattended: true }),
+      env.lifecycle.catalogue.installKey('bob.notes', { unattended: true }),
+    ])
+    expect(both.filter((answer) => answer.ok)).toHaveLength(1)
+    expect(both.find((answer) => !answer.ok)).toMatchObject({
+      code: expect.stringMatching(/install_in_progress|already_installed/),
+    })
+  })
+
+  test('an install from outside the window that lands after the person installed and approved the key is refused, and theirs is untouched', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'notes', notesFiles())
+    git(repo.dir, 'tag', 'v1.0.0')
+    env.commit(repo.folder, repo.dir, {
+      'extension.json': JSON.stringify(notesManifest({ version: '1.1.0' }), null, 2),
+    })
+    // The agent's install passes its checks, then waits before it lands.
+    const held = env.gate(env.urls.releaseLock)
+    const agent = env.lifecycle.catalogue.installFrom({ git: repo.url, ref: 'main' }, { unattended: true })
+    await held.reached
+    // Meanwhile the person installs the release from Settings and approves it.
+    expect(await env.lifecycle.catalogue.installFrom({ git: repo.url, ref: 'v1.0.0' })).toMatchObject({ ok: true })
+    await approveAll(env)
+    held.release()
+    expect(await agent).toMatchObject({ ok: false, code: 'already_installed' })
+    const [view] = await env.installed()
+    expect(view?.extension.version).toBe('1.0.0')
+    expect(view?.approval.state).toBe('approved')
+    const record = readInstallRecordsSync(env.dataDir)['acme.notes']
+    expect(record?.origin).toMatchObject({ source: { ref: 'v1.0.0' } })
+    expect(record?.askPerson).toBeUndefined()
   })
 
   test('skills and hosted MCP servers installed from outside the window wait for the person, who is asked in the window', async () => {

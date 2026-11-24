@@ -44,6 +44,8 @@ export const CLI_ERROR_CODES = [
   'origin_conflict',
   /** It is installed already: `update` it, or the person removes it in Studio first. */
   'already_installed',
+  /** Another install of that key from outside Studio's window is running now: wait for it. */
+  'install_in_progress',
   /** More than one catalogue lists that key: `data.catalogues` names them, for `--catalogue`. */
   'catalogue_ambiguous',
   /** This machine's git credentials cannot read the repository. */
