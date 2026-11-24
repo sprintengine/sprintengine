@@ -16,7 +16,21 @@
 //   open), the frame is `outdated`: its calls are refused, and the client
 //   draws the surface again from the extension as it is now. A document this
 //   server did not build, or no longer remembers, is outdated too.
+// - Runnable: approval and its switch are not enough. A kill, a folder whose
+//   files no longer match (its signature, its approval's fingerprint), or one
+//   gone or no longer valid, keeps the approval on record, so each call also
+//   asks how the extension stands now (`standing`, the server's discovery):
+//   runnable, its folder still there, and its version not on the kill list as
+//   it is on disk now (read at every call, so a kill applies before the
+//   discovery hears of it). A frame of an extension that stops being runnable
+//   loses its pins: should it run again, its surfaces are drawn again first.
 
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { findKilled } from '../../../packages/extension-sdk/src/catalogue'
+import { readKillListCacheSync } from '../../server/extensions/catalogue/catalogue-files'
+import { EXTENSION_MANIFEST_FILENAME } from '../../shared/modules/third-party-manifest'
 import { readModuleOverridesSync } from '../module-host/enablement-store'
 import type { ExtensionApprovalRecord } from './extension-approvals'
 
@@ -34,14 +48,40 @@ export function pinExtensionFrame(hash: string, moduleId: string, permissions: r
   while (pins.size > MAX_PINS) pins.delete(pins.keys().next().value!)
 }
 
+/** Forget every document built for `moduleId`: its open frames are drawn again before they are served. */
+export function dropExtensionFramePins(moduleId: string): void {
+  for (const [hash, pin] of pins) if (pin.moduleId === moduleId) pins.delete(hash)
+}
+
+/** How an installed extension stands now, as the server's discovery reads it. */
+export type ExtensionFrameStanding = {
+  /** Not killed, its signature and files good, approved as it is now (`isExtensionRunnable`). */
+  runnable: boolean
+  version: string
+  /** The folder it runs from. */
+  moduleRoot: string
+}
+
 export function createExtensionFrameGrant(options: {
   /** The approvals as they stand now (`createExtensionApprovalReader`). */
   approvals: () => ReadonlyMap<string, ExtensionApprovalRecord>
   dataDir: string
+  /** How the extension stands now; undefined when no folder holds it. */
+  standing: (moduleId: string) => ExtensionFrameStanding | undefined
 }): (moduleId: string, frame: string) => ExtensionFrameGrant {
+  const runnableNow = (moduleId: string): boolean => {
+    const standing = options.standing(moduleId)
+    if (!standing?.runnable) return false
+    if (!existsSync(join(standing.moduleRoot, EXTENSION_MANIFEST_FILENAME))) return false
+    return findKilled(readKillListCacheSync(options.dataDir), moduleId, standing.version) === null
+  }
   return (moduleId, frame) => {
     const record = options.approvals().get(moduleId)
     if (!record || (record.access.tier !== 'ui' && record.access.tier !== 'worker')) return null
+    if (!runnableNow(moduleId)) {
+      dropExtensionFramePins(moduleId)
+      return null
+    }
     let switchedOff = false
     try {
       switchedOff = readModuleOverridesSync(options.dataDir)[moduleId] === false

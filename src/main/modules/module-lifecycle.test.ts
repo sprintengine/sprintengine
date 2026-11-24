@@ -19,6 +19,8 @@ import {
   writeExtensionApproval,
 } from './extension-approvals'
 import { createExtensionFrameGrant } from './extension-frame-grant'
+import { createExtensionDiscovery } from '../../server/extensions/extension-discovery'
+import { frameStandingOf } from '../../server/extensions/extension-plan'
 import { approvalOf } from './extension-approvals.test-helper'
 import { NO_EXTENSION_RUN } from './third-party-module-view'
 
@@ -195,7 +197,12 @@ test('an approved extension’s surface is drawn from its verified entry, in the
   assert.equal(frame.hash, extensionFrameHash(frame.html))
   assert.equal(extensionFrameDocuments.get(frame.hash), frame.html)
   // Its calls are held to what the approval held when it was built.
-  const grant = createExtensionFrameGrant({ approvals: createExtensionApprovalReader(dataDir), dataDir })
+  const discovery = createExtensionDiscovery({ moduleRoot: () => root, dataDir })
+  const grant = createExtensionFrameGrant({
+    approvals: createExtensionApprovalReader(dataDir),
+    dataDir,
+    standing: (moduleId) => frameStandingOf(discovery.current(), moduleId),
+  })
   assert.deepEqual(grant('local.deck', frame.hash), { grant: ['storage:own'], outdated: false })
   assert.ok(frame.html.includes(JSON.stringify(HELLO_MOUNT_SOURCE).slice(1, 20)), 'the entry is in the document')
   assert.ok(frame.html.includes(`--bg-app:${EXTENSION_FRAME_THEMES.nord!.tokens['--bg-app']}`), 'drawn in nord')

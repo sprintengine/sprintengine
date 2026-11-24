@@ -9,7 +9,7 @@ import { createModuleLifecycle, liveModuleIds } from '../../main/modules/module-
 import { bundledRegistryIds } from '../../main/plugin-registry-instance'
 import type { ExtensionRunView } from '../../main/modules/third-party-module-view'
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
-import { installedStandingOf, planInstalledExtensions } from '../extensions/extension-plan'
+import { frameStandingOf, installedStandingOf, planInstalledExtensions } from '../extensions/extension-plan'
 import { createExtensionDiscovery } from '../extensions/extension-discovery'
 import { createExtensionReloader, type ExtensionReloader } from '../extensions/extension-reload'
 import { watchDevFolders } from '../extensions/dev/dev-folder-watch'
@@ -262,7 +262,11 @@ export function createServerModules(deps: {
         // What each extension runs under; its calls are refused once that approval is gone.
         extensionApprovals: plan.approvals,
         currentApprovals: approvals,
-        resolveFrameGrant: createExtensionFrameGrant({ approvals, dataDir }),
+        resolveFrameGrant: createExtensionFrameGrant({
+          approvals,
+          dataDir,
+          standing: (moduleId) => frameStandingOf(discovery.current(), moduleId),
+        }),
         onKernel: bindWorkers,
         frameFileExclusions: () => [dataDir, defaultUserModuleRoot()],
         ineligible: plan.ineligible,

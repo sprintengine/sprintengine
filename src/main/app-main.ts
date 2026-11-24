@@ -21,7 +21,7 @@ import { createExtensionApprovalReader } from './modules/extension-approvals'
 import { createExtensionFrameGrant } from './modules/extension-frame-grant'
 import { readExtensionStandingContextSync } from './modules/extension-standing-context'
 import { catalogueNotification } from '../server/extensions/catalogue/extension-catalogue'
-import { installedStandingOf, planInstalledExtensions } from '../server/extensions/extension-plan'
+import { frameStandingOf, installedStandingOf, planInstalledExtensions } from '../server/extensions/extension-plan'
 import { createExtensionDiscovery } from '../server/extensions/extension-discovery'
 import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
 import { resolveWorkerEntryPath, resolveExtensionSdkRoot } from '../server/extensions/workers/worker-process'
@@ -233,6 +233,7 @@ const moduleLoad = loadMainModules({
   resolveFrameGrant: createExtensionFrameGrant({
     approvals: extensionApprovals,
     dataDir: app.getPath('userData'),
+    standing: (moduleId) => frameStandingOf(extensionDiscovery.current(), moduleId),
   }),
   onKernel: extensionWorkers.bind,
   frameFileExclusions: () => [app.getPath('userData'), defaultUserModuleRoot()],
