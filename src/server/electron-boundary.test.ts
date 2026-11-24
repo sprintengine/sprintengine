@@ -101,7 +101,6 @@ const SERVER_BOUND: readonly string[] = [
   'src/main/module-host/enablement-store.ts',
   'src/main/modules/agent-runtime-module.ts',
   'src/main/modules/scheduled-agents-switch.ts',
-  'src/main/modules/third-party-main-loader.ts',
   // Settings and credentials.
   'src/main/launch-settings-store.ts',
   'src/main/workspace-registry-store.ts',
@@ -155,11 +154,12 @@ const ELECTRON = (specifier: string): boolean =>
 // `createRequire` loader) is invisible to the walk, so each one in server-bound
 // code is either refused or listed here with why it cannot reach Electron.
 const COMPUTED_LOADS_ALLOWED: Readonly<Record<string, string>> = {
-  // Loads a third-party module's `entry.main` from its install folder, after
-  // the containment and signature checks. What that module imports is decided
-  // at load time by a host capability (owner default 2026-10-01: a server skips
-  // the main half of a module that needs Electron), not by this walk.
-  'src/main/modules/third-party-main-loader.ts': 'a third-party entry.main, loaded by path',
+  // An extension's worker process loads its `main` from its install folder,
+  // in that process, never in the server's: a worker runs as plain Node.
+  'src/server/extensions/workers/worker-entry.ts': 'an extension’s main, loaded by path in its own process',
+  // The `import()` is in the text of the script the server puts in an
+  // extension's frame document; it runs in the frame, never in the server.
+  'src/server/extensions/frames/frame-bootstrap.ts': 'the frame bootstrap’s source text, run in the frame',
 }
 
 function sourceFilesUnder(directory: string): string[] {

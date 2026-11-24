@@ -210,6 +210,30 @@ export type MockAdapterSessionInput = {
   // respondToRequest → resolveApproval path. Absent for stateless adapters.
   onSessionEvent?: ConversationSessionEventSink
   onBeforeTool?: (name: string) => Promise<void>
+  // Extensions' agent hooks on this chat's tool calls (`agent.tool.before`
+  // and `.after`), for a provider whose CLI asks before each tool runs. Absent
+  // in a Studio that runs no extensions.
+  toolHooks?: ConversationToolHooks
+}
+
+/** A tool call as a provider hands it to extensions' hooks. */
+export type ConversationToolHookCall = {
+  tool: string
+  input: Record<string, unknown>
+  callId: string | null
+}
+
+export type ConversationToolHooks = {
+  /**
+   * What extensions decide about a call: null at once when none hooks the
+   * point (the call goes on, nothing awaited); else go on with `input` as
+   * the hooks left it, or a refusal whose words name the extension.
+   */
+  before(
+    call: ConversationToolHookCall,
+  ): Promise<{ kind: 'continue'; input: Record<string, unknown> } | { kind: 'deny'; reason: string }> | null
+  /** Tell extensions a call finished; nothing waits for them. */
+  after(call: ConversationToolHookCall & { output: unknown; failed: boolean }): void
 }
 
 // Callback the runtime hands a stateful adapter to deliver continuation-turn

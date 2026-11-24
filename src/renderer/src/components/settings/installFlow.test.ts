@@ -16,10 +16,9 @@ import { test } from 'vitest'
 test('installFlow', async () => {
   // The trust gate must disclose REAL verified permissions before trust and must
   // never fake an install: verified installs directly; community AND unsigned
-  // mcp/skills-only earn the trust prompt populated from the verify IPC, carrying
-  // the token main issued for it; unsigned code-bearing (module) and invalid
-  // hard-block with no install affordance; and the seven flow states each render
-  // an explicit view.
+  // earn the trust prompt populated from the verify IPC, carrying the token main
+  // issued for it; invalid hard-blocks with no install affordance; and the seven
+  // flow states each render an explicit view.
 
   function verify(overrides: Partial<MarketplacePluginVerifyResult> = {}): MarketplacePluginVerifyResult {
     return {
@@ -36,7 +35,7 @@ test('installFlow', async () => {
   {
     // Verified → install directly (no trust prompt), still passing the token so
     // main installs exactly what verify read.
-    const outcome = classifyVerification(verify({ classification: 'verified' }), ['mcp'])
+    const outcome = classifyVerification(verify({ classification: 'verified' }))
     assert.deepEqual(outcome, { kind: 'install', trustToken: 'token-from-verify' })
   }
 
@@ -47,13 +46,8 @@ test('installFlow', async () => {
         classification: 'community',
         permissions: ['network', 'filesystem:read-workspace'],
         keyFingerprint: 'f'.repeat(64),
-        codeBearing: true,
-        pin: { commitSha: 'a'.repeat(40), manifestSha256: 'b'.repeat(64), componentDigests: {} },
-        mcpServers: [
-          { id: 's', name: 'S', transport: 'stdio', command: 'node', args: ['s.js'], envKeys: ['K'], headerKeys: [] },
-        ],
+        pin: { manifestSha256: 'b'.repeat(64), componentDigests: {} },
       }),
-      ['module'],
     )
     assert.equal(outcome.kind, 'needs-trust')
     if (outcome.kind !== 'needs-trust') throw new Error('unreachable')
@@ -61,26 +55,21 @@ test('installFlow', async () => {
     assert.deepEqual(outcome.review, {
       classification: 'community',
       permissions: ['network', 'filesystem:read-workspace'],
-      mcpServers: [
-        { id: 's', name: 'S', transport: 'stdio', command: 'node', args: ['s.js'], envKeys: ['K'], headerKeys: [] },
-      ],
       sourceUrl: 'https://github.com/sprintengine/studio-releases/tree/main/plugins/x',
-      commitSha: 'a'.repeat(40),
       keyFingerprint: 'f'.repeat(64),
-      codeBearing: true,
     })
   }
 
   {
     // No token, no prompt: main declined to issue an approval, so there is
     // nothing the person could agree to.
-    const outcome = classifyVerification(verify({ classification: 'community', trustToken: undefined }), ['mcp'])
+    const outcome = classifyVerification(verify({ classification: 'community', trustToken: undefined }))
     assert.equal(outcome.kind, 'blocked')
   }
 
   {
     // Community with no declared permissions: a real empty list, never fabricated.
-    const outcome = classifyVerification(verify({ classification: 'community', permissions: [] }), ['mcp'])
+    const outcome = classifyVerification(verify({ classification: 'community', permissions: [] }))
     assert.equal(outcome.kind, 'needs-trust')
     if (outcome.kind !== 'needs-trust') throw new Error('unreachable')
     assert.deepEqual(outcome.review.permissions, [])
@@ -94,7 +83,6 @@ test('installFlow', async () => {
         message: 'Downloaded plugin bundle signature is invalid.',
         issues: [{ path: 'signature', message: 'Invalid signature.' }],
       }),
-      ['mcp'],
     )
     assert.equal(outcome.kind, 'blocked')
     if (outcome.kind !== 'blocked') throw new Error('unreachable')
@@ -104,33 +92,14 @@ test('installFlow', async () => {
   }
 
   {
-    // Unsigned mcp/skills-only → trust prompt per the T4b/T5 split: declarative
-    // components may install unsigned behind an explicit trust grant, with real permissions.
+    // Unsigned → trust prompt per the T4b/T5 split: a bundle's components are
+    // declarative and may install unsigned behind an explicit trust grant, with real permissions.
     const outcome = classifyVerification(
       verify({ classification: 'unsigned', permissions: ['filesystem:read-workspace'] }),
-      ['mcp', 'skills'],
     )
     assert.equal(outcome.kind, 'needs-trust')
     if (outcome.kind !== 'needs-trust') throw new Error('unreachable')
     assert.deepEqual(outcome.review.permissions, ['filesystem:read-workspace'])
-  }
-
-  {
-    // Unsigned code-bearing (module) → hard block; a code-bearing unsigned bundle is
-    // never trust-grantable. Fallback message when the verifier omits one.
-    const outcome = classifyVerification(verify({ classification: 'unsigned' }), ['mcp', 'module'])
-    assert.equal(outcome.kind, 'blocked')
-    if (outcome.kind !== 'blocked') throw new Error('unreachable')
-    assert.equal(outcome.classification, 'unsigned')
-    assert.ok(outcome.message.length > 0, 'falls back to a default unsigned message')
-  }
-
-  {
-    // The verifier's own code-bearing flag blocks too, whatever the entry says.
-    const outcome = classifyVerification(verify({ classification: 'unsigned', codeBearing: true }), ['mcp'])
-    assert.equal(outcome.kind, 'blocked')
-    if (outcome.kind !== 'blocked') throw new Error('unreachable')
-    assert.equal(outcome.classification, 'unsigned')
   }
 
   // --- summarizeInstallResult ------------------------------------------------
@@ -163,46 +132,23 @@ test('installFlow', async () => {
       updated: false,
       notices: ['1 skill (capped) ships without bundled content and was not installed.'],
     })
-
-    // G7. A bundle that landed a module the app only loads at launch is on disk
-    // and not yet in the app; main says so and the flow carries it.
-    const needsRestart: MarketplacePluginRegistryInstallResult = { ...ok, restartRequired: true }
-    assert.deepEqual(summarizeInstallResult(needsRestart), {
-      status: 'installed',
-      updated: false,
-      restartRequired: true,
-    })
-    // An explicit false is the ordinary case and is not carried as a flag.
-    assert.deepEqual(summarizeInstallResult({ ...ok, restartRequired: false }), { status: 'installed', updated: false })
   }
 
-  // G7: the sentence a restart-required install shows says what happened AND what
-  // is left to do, on both the fresh and the update path, and it survives the
-  // warn tone a partial skill install puts on the same notice.
+  // The installed notice says what happened, and keeps the warn tone a partial
+  // skill install puts on it.
   {
-    const fresh = deriveInstallView({ status: 'installed', updated: false, restartRequired: true })
-    assert.deepEqual(fresh.notice, { tone: 'good', message: 'Installed. Restart SprintEngine Studio to use it.' })
+    const fresh = deriveInstallView({ status: 'installed', updated: false })
+    assert.deepEqual(fresh.notice, { tone: 'good', message: 'Installed.' })
     assert.equal(fresh.action, null)
     assert.equal(fresh.busy, false)
 
-    const updated = deriveInstallView({ status: 'installed', updated: true, restartRequired: true })
-    assert.deepEqual(updated.notice, {
-      tone: 'good',
-      message: 'Updated to the latest version. Restart SprintEngine Studio to use it.',
-    })
+    const updated = deriveInstallView({ status: 'installed', updated: true })
+    assert.deepEqual(updated.notice, { tone: 'good', message: 'Updated to the latest version.' })
 
-    const partial = deriveInstallView({
-      status: 'installed',
-      updated: false,
-      restartRequired: true,
-      notices: ['skill X was not installed.'],
-    })
+    const partial = deriveInstallView({ status: 'installed', updated: false, notices: ['skill X was not installed.'] })
     assert.equal(partial.notice?.tone, 'warn')
-    assert.equal(partial.notice?.message, 'Installed. Restart SprintEngine Studio to use it.')
+    assert.equal(partial.notice?.message, 'Installed.')
     assert.deepEqual(partial.notice?.issues, ['skill X was not installed.'])
-
-    // An mcp/skills-only install still reads as done, with nothing to relaunch.
-    assert.equal(deriveInstallView({ status: 'installed', updated: false }).notice?.message, 'Installed.')
   }
 
   {
@@ -351,7 +297,6 @@ test('installFlow', async () => {
     // skill file listing into the trust prompt, and the view exposes it.
     const outcome = classifyVerification(
       verify({ classification: 'unsigned', permissions: [], files: ['skills/hf-cli', 'skills/hf-datasets'] }),
-      ['skills'],
     )
     assert.equal(outcome.kind, 'needs-trust')
     if (outcome.kind === 'needs-trust') {
@@ -373,17 +318,10 @@ test('installFlow', async () => {
   }
 
   // --- installNeedsWorkspace -------------------------------------------------
-  // Only the workspace-scoped kinds gate on an open project. A module-only bundle
-  // installs with nothing open, which is what makes a first-party module
-  // installable from a fresh app that has never opened a folder (D10).
+  // A Claude Code plugin's skills write into a project; the inline-CLI lane does not.
   {
-    assert.equal(installNeedsWorkspace(['module']), false)
-    // The inline-CLI lane installs an agent CLI the app ships, into no project.
     assert.equal(installNeedsWorkspace(['cli']), false)
-    assert.equal(installNeedsWorkspace(['mcp']), true)
     assert.equal(installNeedsWorkspace(['skills']), true)
-    // A mixed bundle takes the strictest rule its components ask for.
-    assert.equal(installNeedsWorkspace(['module', 'skills']), true)
     assert.equal(installNeedsWorkspace([]), false)
   }
 

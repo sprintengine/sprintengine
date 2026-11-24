@@ -17,6 +17,7 @@ import {
   type TabItem,
 } from '../../ui'
 import { composePaneKinds, type PaneLaunchKind } from './paneKinds'
+import { extensionPanelRows } from '../../extensions/extensionPanelRows'
 import { WORKSPACE_PANE_DATA_ATTRIBUTE } from './paneFocus'
 import { paneTabItem } from './paneTabItem'
 import { useAgentPresentTabIds } from './agentPresence'
@@ -187,8 +188,10 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
   // not greyed — for a contributed row exactly as for a built-in one.
   const kinds = useMemo(
     () =>
-      composePaneKinds(getRendererHost().getModalSurfaceLaunchers(), (moduleId) =>
-        selectModuleEnabled(moduleOverrides, moduleId),
+      composePaneKinds(
+        getRendererHost().getModalSurfaceLaunchers(),
+        (moduleId) => selectModuleEnabled(moduleOverrides, moduleId),
+        extensionPanelRows(),
       ),
     // moduleRegistryGeneration: a late third-party load re-derives the list.
     [moduleOverrides, moduleRegistryGeneration],
@@ -234,6 +237,10 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
       // from the list the person clicked — `paneKindDefinition` only knows the
       // static tab kinds.
       const definition = kinds.find((candidate) => candidate.kind === kind)
+      if (definition?.extensionPanel) {
+        openPaneTab(workspaceId, { kind: 'extension', extension: definition.extensionPanel, title: definition.label })
+        return
+      }
       if (definition?.modalSurfaceId) {
         // The modal floats over the window, not inside this workspace's card,
         // so it is handed the workspace it was opened FROM — a review runs its

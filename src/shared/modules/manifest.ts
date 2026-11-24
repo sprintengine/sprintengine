@@ -5,12 +5,16 @@
 // surfaces it needs. This file holds the process-agnostic types so
 // the main, preload, and renderer hosts all speak the same vocabulary.
 //
-// See docs/module-authors/drop-in-extensions.md for the author-facing contract.
+// See docs/extension-authors/drop-in-extensions.md for the author-facing contract.
 // Phase 0 ships the contracts, the main-process kernel, and a
 // pure enablement resolver; later phases migrate features onto it and add the
 // renderer/preload hosts plus the user-facing module chooser.
 
-import type { ModuleResolutionErrorCode, StudioModuleTrustStatus } from '../../../packages/studio-protocol/src/public'
+import type {
+  ModuleResolutionErrorCode,
+  StudioExtensionApproval,
+  StudioModuleTrustStatus,
+} from '../../../packages/studio-protocol/src/public'
 
 // The manifest and what a Studio says about its installed extensions, as the
 // Studio protocol defines them (`extensions-types.ts`), under the names the
@@ -19,7 +23,7 @@ import type { ModuleResolutionErrorCode, StudioModuleTrustStatus } from '../../.
 export type {
   CapabilityCategory,
   CapabilityManifest,
-  ModuleEntry,
+  ExtensionManifestView,
   ModuleFileDigests,
   ModuleManifestIssue,
   ModuleResolutionErrorCode,
@@ -27,10 +31,9 @@ export type {
   ModuleSource,
   ThirdPartyModuleLaunchView,
   ThirdPartyModuleListResult,
-  ThirdPartyModuleOrigin,
   ThirdPartyModuleView,
-  ThirdPartyRendererEntriesResult,
-  ThirdPartyRendererEntry,
+  ExtensionContributions,
+  ExtensionContributionsResult,
   ThirdPartyRendererEntryView,
 } from '../../../packages/studio-protocol/src/public'
 
@@ -88,23 +91,21 @@ export const CANVAS_MODULE_DEFAULT_ENABLED = true
 
 /**
  * The bundled modules whose enablement takes effect WITHOUT an app restart —
- * the `liveModuleIds` the main process hands `applyEnablement` (src/main/index.ts).
- *
- * Everything else loads its `entry.main` once, at launch, so installing or
- * enabling it changes nothing until the app is started again. That is a fact
- * the person installing a module has to be told (D13): the marketplace install
- * result carries `restartRequired` derived from this list, and the storefront
- * says so rather than reporting a flat "Installed." for a module that will not
- * appear until they relaunch. Live enable/disable for the rest is a recorded
- * follow-up, and this constant is the one place to widen when it lands.
+ * the `liveModuleIds` the main process hands `applyEnablement` (src/main/index.ts),
+ * beside every installed extension. Everything else loads once, at launch, so
+ * switching it changes nothing until the app is started again.
  */
 export const LIVE_ENABLED_MODULE_IDS: readonly string[] = ['scheduled-agents']
 
-// Trust classification of a third-party module (see module-signature.ts):
-// 'trusted' (loadable), 'signed' (valid sig, awaiting user approval), 'unsigned'
-// (awaiting approval), 'invalid' (tampered signature; blocked).
-/** Whether a module's code is one Studio may run; the Studio protocol's, as a provider list reports it. */
+// How a provider's signed manifest is classified (see
+// plugin-registry.ts): 'trusted' (signed by a publisher key Studio trusts),
+// 'signed' (another key), 'unsigned', 'invalid'. Installed extensions are
+// judged by the person's approval instead (`ExtensionApprovalState`).
+/** Whether a bundle's or a provider's code is one Studio may run; the Studio protocol's, as a provider list reports it. */
 export type ModuleTrustStatus = StudioModuleTrustStatus
+
+/** An installed extension's approval as a list shows it, or `invalid` for one whose signature does not match its files. */
+export type ExtensionApprovalState = StudioExtensionApproval['state'] | 'invalid'
 
 /** Showing an extension's folder on this computer: done, or why not. */
 export type ThirdPartyModuleRevealResult = { ok: boolean; message?: string }

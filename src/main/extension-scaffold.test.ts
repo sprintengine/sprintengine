@@ -18,7 +18,7 @@ import {
   SCAFFOLD_SDK_VERSION,
 } from './extension-scaffold'
 
-const SDK = join(process.cwd(), 'packages', 'module-sdk')
+const SDK = join(process.cwd(), 'packages', 'extension-sdk')
 
 let parent = ''
 let sdkTarball = ''
@@ -56,8 +56,8 @@ describe('extensionScaffold.target', () => {
     writeFileSync(join(parent, 'notes', 'README.md'), 'mine')
     assert.equal(h.target({ parentDir: parent, id: 'notes' })?.state, 'taken')
 
-    mkdirSync(join(parent, 'focus-timer', 'module'), { recursive: true })
-    writeFileSync(join(parent, 'focus-timer', 'module', 'manifest.json'), '{}')
+    mkdirSync(join(parent, 'focus-timer', 'extension'), { recursive: true })
+    writeFileSync(join(parent, 'focus-timer', 'extension', 'extension.json'), '{}')
     assert.equal(h.target({ parentDir: parent, id: 'focus-timer' })?.state, 'extension')
 
     assert.equal(h.target({ parentDir: join(parent, 'gone'), id: 'pr-radar' })?.state, 'no_parent')
@@ -69,17 +69,17 @@ describe('extensionScaffold.target', () => {
 
   test('a free name an installed extension already holds is said, and not made', async () => {
     const h = handlers()
-    mkdirSync(join(parent, 'installed-modules', 'weather-deck'), { recursive: true })
+    mkdirSync(join(parent, 'installed-modules', 'local.weather-deck'), { recursive: true })
     assert.equal(h.target({ parentDir: parent, id: 'weather-deck' })?.state, 'installed')
     mkdirSync(join(parent, 'weather-deck'))
     assert.equal(h.target({ parentDir: parent, id: 'weather-deck' })?.state, 'installed', 'nor its empty folder')
     const made = await h.create({ parentDir: parent, id: 'weather-deck' })
     assert.equal(made.ok === false && made.code, 'installed')
-    assert.equal(existsSync(join(parent, 'weather-deck', 'module')), false, 'nothing is written')
+    assert.equal(existsSync(join(parent, 'weather-deck', 'extension')), false, 'nothing is written')
 
     // The project that made it is carried on as before.
-    mkdirSync(join(parent, 'weather-deck', 'module'), { recursive: true })
-    writeFileSync(join(parent, 'weather-deck', 'module', 'manifest.json'), '{}')
+    mkdirSync(join(parent, 'weather-deck', 'extension'), { recursive: true })
+    writeFileSync(join(parent, 'weather-deck', 'extension', 'extension.json'), '{}')
     assert.equal(h.target({ parentDir: parent, id: 'weather-deck' })?.state, 'extension')
   })
 
@@ -101,7 +101,7 @@ describe('where the extension goes', () => {
     const made = await h.create({ id: 'pr-radar' })
     assert.equal(made.ok, true, JSON.stringify(made))
     if (made.ok) assert.equal(made.folder, join(home, 'pr-radar'))
-    assert.equal(existsSync(join(home, 'pr-radar', 'module', 'manifest.json')), true)
+    assert.equal(existsSync(join(home, 'pr-radar', 'extension', 'extension.json')), true)
     assert.equal(h.target({ id: 'pr-radar' })?.state, 'extension', 'and is carried on after')
   })
 
@@ -113,7 +113,7 @@ describe('where the extension goes', () => {
     const made = await h.create({ id: 'weekly-summary', folder: picked })
     assert.equal(made.ok, true, JSON.stringify(made))
     if (made.ok) assert.equal(made.folder, picked, 'in the folder itself, not a new one inside it')
-    assert.equal(existsSync(join(picked, 'module', 'manifest.json')), true)
+    assert.equal(existsSync(join(picked, 'extension', 'extension.json')), true)
 
     const notes = join(parent, 'notes')
     mkdirSync(notes)
@@ -137,12 +137,12 @@ describe('extensionScaffold.create', () => {
     if (!result.ok) return
     assert.equal(result.folder, join(parent, 'pr-radar'))
     assert.equal(result.existing, false)
-    const manifest = JSON.parse(readFileSync(join(result.folder, 'module', 'manifest.json'), 'utf8'))
+    const manifest = JSON.parse(readFileSync(join(result.folder, 'extension', 'extension.json'), 'utf8'))
     assert.equal(manifest.id, 'pr-radar')
-    assert.equal(manifest.displayName, 'Pr radar', 'the display name comes from the id')
+    assert.equal(manifest.name, 'Pr radar', 'the display name comes from the id')
     const pkg = JSON.parse(readFileSync(join(result.folder, 'package.json'), 'utf8'))
     assert.equal(
-      pkg.devDependencies['@sprintengine/module-sdk'],
+      pkg.devDependencies['@sprintengine/extension-sdk'],
       `^${SCAFFOLD_SDK_VERSION}`,
       'with no tarball shipped, the npm release',
     )
@@ -161,7 +161,7 @@ describe('extensionScaffold.create', () => {
     assert.equal(result.ok, true, JSON.stringify(result))
     if (!result.ok) return
     const pkg = JSON.parse(readFileSync(join(result.folder, 'package.json'), 'utf8'))
-    assert.equal(pkg.devDependencies['@sprintengine/module-sdk'], `file:vendor/${SCAFFOLD_SDK_TARBALL}`)
+    assert.equal(pkg.devDependencies['@sprintengine/extension-sdk'], `file:vendor/${SCAFFOLD_SDK_TARBALL}`)
     assert.equal(readFileSync(join(result.folder, 'vendor', SCAFFOLD_SDK_TARBALL), 'utf8'), 'the packed SDK')
   })
 
@@ -186,7 +186,7 @@ describe('extensionScaffold.create', () => {
 
   test('checks the name and the project before anything is written', async () => {
     const h = handlers()
-    for (const id of ['../escape', 'pr/radar', 'backlog', '']) {
+    for (const id of ['../escape', 'pr/radar', 'studio-radar', '']) {
       const refused = await h.create({ parentDir: parent, id })
       assert.equal(refused.ok, false, id)
       if (!refused.ok) assert.equal(refused.code, 'invalid_id', id)
@@ -199,15 +199,15 @@ describe('extensionScaffold.create', () => {
 })
 
 test('reads the shipped copies when packaged and the SDK package in a checkout', () => {
-  assert.equal(SCAFFOLD_SDK_TARBALL, `sprintengine-module-sdk-${SCAFFOLD_SDK_VERSION}.tgz`)
+  assert.equal(SCAFFOLD_SDK_TARBALL, `sprintengine-extension-sdk-${SCAFFOLD_SDK_VERSION}.tgz`)
   assert.deepEqual(resolveScaffoldRoots({ isPackaged: true, resourcesPath: '/App/Resources', appPath: '/x' }), {
     templatesRoot: join('/App/Resources', 'sdk-templates'),
     guideRoot: join('/App/Resources', 'sdk-guide'),
-    sdkTarball: join('/App/Resources', 'module-sdk', SCAFFOLD_SDK_TARBALL),
+    sdkTarball: join('/App/Resources', 'extension-sdk', SCAFFOLD_SDK_TARBALL),
   })
   assert.deepEqual(resolveScaffoldRoots({ isPackaged: false, resourcesPath: '/x', appPath: '/repo' }), {
-    templatesRoot: join('/repo', 'packages', 'module-sdk', 'templates'),
-    guideRoot: join('/repo', 'packages', 'module-sdk', 'guide'),
-    sdkTarball: join('/repo', 'resources', 'module-sdk', SCAFFOLD_SDK_TARBALL),
+    templatesRoot: join('/repo', 'packages', 'extension-sdk', 'templates'),
+    guideRoot: join('/repo', 'packages', 'extension-sdk', 'guide'),
+    sdkTarball: join('/repo', 'resources', 'extension-sdk', SCAFFOLD_SDK_TARBALL),
   })
 })

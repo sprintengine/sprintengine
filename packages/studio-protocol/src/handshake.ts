@@ -153,10 +153,31 @@ export const STUDIO_PROVIDER_SETTINGS_CAPABILITY = 'provider-settings' as const
 export const STUDIO_UPDATE_SESSION_CAPABILITY = 'update-session' as const
 
 /**
- * This Studio's modules speak to clients: the `module.events` and
- * `module.notifications` streams. Offered where the Studio runs a module kernel.
+ * This Studio's extensions speak to clients: the `extension.*` methods and the
+ * `extension.events`, `extension.notifications` and `extension.changed`
+ * streams. Offered where the Studio runs an extension kernel.
  */
-export const STUDIO_MODULES_CAPABILITY = 'modules' as const
+export const STUDIO_EXTENSION_HOST_CAPABILITY = 'extension-host' as const
+
+/**
+ * This Studio draws its extensions' surfaces in frames: `extension.frame`
+ * builds the document a panel, door or settings section is drawn from, and
+ * `extension.call` carries a frame's host calls, each checked as the
+ * extension and as the connection that drew the frame. A client draws an
+ * extension's surfaces only where its Studio offers this. Offered with
+ * `extension-host`.
+ */
+export const STUDIO_EXTENSION_FRAMES_CAPABILITY = 'extension-frames' as const
+
+/**
+ * This Studio opens files in its extensions' custom editors: `extension.frame`
+ * builds a custom editor's frame (`point: customEditors`), and a frame's
+ * `files.read` / `files.write` carry bytes, the file's sha256 and a write
+ * conditional on it. A client opens a file in an extension's editor only
+ * where its Studio offers this, and in its text editor elsewhere. Offered
+ * with `extension-host`.
+ */
+export const STUDIO_EXTENSION_EDITORS_CAPABILITY = 'extension-editors' as const
 
 /**
  * The agent CLIs on the Studio's machine: `cliRuntimes.*` (detect, install,
@@ -420,7 +441,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_APPROVAL_RULES_CAPABILITY,
   STUDIO_PROVIDER_SETTINGS_CAPABILITY,
   STUDIO_UPDATE_SESSION_CAPABILITY,
-  STUDIO_MODULES_CAPABILITY,
+  STUDIO_EXTENSION_HOST_CAPABILITY,
   STUDIO_TERMINALS_CAPABILITY,
   STUDIO_AGENT_RUNTIMES_CAPABILITY,
   STUDIO_AGENT_SETTINGS_CAPABILITY,
@@ -453,7 +474,9 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_WEB_DEVICES_CAPABILITY,
   STUDIO_TAILNET_CAPABILITY,
   STUDIO_EXECUTION_HOSTS_CAPABILITY,
+  STUDIO_EXTENSION_FRAMES_CAPABILITY,
   STUDIO_FILE_VIEWS_CAPABILITY,
+  STUDIO_EXTENSION_EDITORS_CAPABILITY,
 ] as const
 
 /**

@@ -8,6 +8,7 @@ import { basename, dirname, join } from 'path'
 import { existsSync } from 'fs'
 import { buildAgentStateReporterCommand, buildLauncherHookCommand } from './agent-state'
 import { LAUNCH_FILES_DIR, prepareLaunchIntegration, pruneLaunchFiles } from './integrations/launch-integration'
+import { launchExtensionContributions } from '../server/extensions/agent-contributions/projection'
 import { gitTracksPath } from './skills/studio-plugin'
 import {
   ensureAgentIntegrationHome,
@@ -62,7 +63,6 @@ import {
   pruneRetiredBuiltinSkillCopies,
   BUILTIN_SKILLS_RESOURCE_DIR,
   findBuiltinSkill,
-  findModuleSkill,
   resolveSkillById,
 } from './builtin-skills'
 import { SprintEngineAuthBridge } from './auth-service'
@@ -134,7 +134,12 @@ import { EDITOR_REVEAL_PENDING_CHANNEL } from '../shared/editor-reveal'
 import { createTourTools } from './automation/tour-tools'
 import { createVisualTools } from './automation/visual-tools'
 import { createElectronVisualPreview } from './visual/visual-preview-window'
+import { shootExtensionSurface } from './extension-frames/extension-shot'
+import { createExtensionShotTool } from './automation/extension-shot-tool'
+import type { McpToolRegistration } from '../shared/modules/mcp-tools'
+import type { StudioClient } from '../../packages/client-runtime/src/public'
 import { createExtensionTools } from './automation/extension-tools'
+import { createExtensionDevTools, type ExtensionDevBackend } from './automation/extension-dev-tools'
 import { createPluginTools } from './automation/plugin-tools'
 import { resolveScaffoldRoots } from './extension-scaffold'
 import { createAppTourService } from './tours/tour-app'
@@ -182,6 +187,8 @@ import { createStudioModuleHub } from '../server/rpc/studio-modules'
 import type { StudioRpcService } from './studio-rpc/studio-rpc-service'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from '../server/desktop/gateway-backends'
 import { SERVER_EVENTS, SERVER_METHODS, SHELL_METHODS } from '../server/desktop/server-methods'
+import { createWorkspaceWithHooks } from '../server/extensions/hooks/workspace-hooks'
+import { activeInvoker, ownerInvoker } from './module-host/extension-invocation'
 import { createRemoteCore, createRemoteGitHubTokenStore, type ShellServerLink } from './server-supervisor/remote-core'
 import { anyWindowFocused, broadcastToAllWindows } from './window-broadcast'
 
@@ -705,14 +712,14 @@ export function createAppServices(
         bundledSkillPluginDir: (skillId) =>
           Object.hasOwn(agentIntegrationSkillPluginDirs, skillId) ? agentIntegrationSkillPluginDirs[skillId]! : null,
         skillSourceDir: (skillId) => {
-          const moduleSkill = findModuleSkill(skillId)
-          if (moduleSkill) return moduleSkill.sourceDir
           const root = getBundledResourceDir(BUILTIN_SKILLS_RESOURCE_DIR)
           return findBuiltinSkill(skillId) && root ? join(root, skillId) : null
         },
         skill: (skillId) => resolveSkillById(skillId),
         homeDir: () => homedir(),
         gitTracks: (path) => gitTracksPath(dirname(path), basename(path)),
+        extensionContributions: () => launchExtensionContributions(app.getPath('userData')),
+        skillCopyOwner: () => app.getPath('userData'),
         warn: (message) => {
           void writeDiagnosticLog({ level: 'warning', title: 'Launch integration', message, source: 'terminal' })
         },
@@ -859,7 +866,7 @@ export function createAppServices(
         agentServices,
         // What the shell adds to the agents' skills and cards: the token its
         // store keeps, git once the window is up, its window focus and its
-        // Trash. A card's `install.module` goes through the core's marketplace.
+        // Trash.
         agentSkills: {
           resolveGitHubToken: () => githubTokenStore.resolveToken(),
           whenGitMayRun: Promise.all([app.whenReady(), bootJobsGate]),
@@ -938,6 +945,8 @@ export function createAppServices(
   // in process this one's, null where no pty can start; out of process the
   // server's, which the shell reads through `shellTerminals`.
   const coreTerminals = !server && 'agentTerminals' in core ? core.agentTerminals : null
+  // The core when it runs in this process: its extensions' hooks are this process's to run.
+  const localCore = !server && 'extensionHooks' in core ? core : null
   const shellTerminals: ShellTerminals = server ? remoteShellTerminals(server.rpc) : localShellTerminals(coreTerminals)
   // Every launch the shell starts itself (a tour's author) goes to the core's launch service.
   const agentLaunchService = coreTerminals?.launchService ?? null
@@ -1095,11 +1104,12 @@ export function createAppServices(
   // constructed before modules load, so until the seam is wired the registry
   // reads empty — and because the tool set is evaluated per request, module
   // tools appear on the very next call once modules are up.
+  let resolveExtensionDevBackend: () => ExtensionDevBackend | null = () => null
   let resolveModuleMcpTools: () => ReadonlyArray<McpToolContribution> = () => []
   // The renderer's module registry, mirrored here. Empty until a
   // window pushes one; consumers report "not yet known" rather than "no
   // modules", the same rule the enablement mirror follows.
-  // In process, the Studio's own (`module.reportRegistry`); out of process the
+  // In process, the Studio's own (`extension.reportRegistry`); out of process the
   // server keeps its own and this one stays empty.
   const moduleRegistryMirror = createModuleRegistryMirror()
   // The marketplace, the scaffold and the feeds, where this process's core holds them.
@@ -1326,6 +1336,11 @@ export function createAppServices(
     // The author's terminal is the server's: read, typed into and launched there.
     listTerminals: () => shellTerminals.list(),
     writeTerminal: (sessionId, data) => shellTerminals.write(sessionId, data),
+    // A tour's prompt is Studio's, typed to its author: the extensions' prompt
+    // hooks check it first, where the author's terminal runs (this process, or
+    // the Studio server's), as whoever started that agent.
+    hookPrompt: (session, text) =>
+      shellTerminals.hookPrompt(session.sessionId, text, { inputKind: 'tour', from: 'studio' }),
     launchAgent: async (request) => {
       const launched = await shellTerminals.launch(request)
       return launched.ok ? { ok: true, agentId: launched.agentId } : { ok: false, message: launched.message }
@@ -1414,7 +1429,16 @@ export function createAppServices(
     }),
   )
   // `visual.preview` draws in a hidden window of this app, so the shell serves it.
-  const visualTools = createVisualTools(createElectronVisualPreview(listWorkspaceWindows))
+  // The shell's connection to its Studio, once `desktopShell` below exists.
+  let shellClient: () => StudioClient | null = () => null
+  const visualTools: McpToolRegistration[] = [
+    ...createVisualTools(createElectronVisualPreview(listWorkspaceWindows)),
+    // A picture of an extension's surface, for its author (extension-shot.ts):
+    // drawn here, its calls answered by the Studio over the shell's own connection.
+    createExtensionShotTool((input) =>
+      shootExtensionSurface({ client: (): StudioClient | null => shellClient() }, input),
+    ),
+  ]
   const tourTools = createTourTools({
     service: tourService,
     hasWorkspace: (workspaceId) =>
@@ -1426,7 +1450,14 @@ export function createAppServices(
   // Extensions door lists. In process the gateway's own; out of process the
   // server's (desktop-server.ts).
   const extensionTools = coreExtensions
-    ? createExtensionTools({ scaffold: coreExtensions.scaffold, guideRoot: () => resolveScaffoldRoots().guideRoot })
+    ? [
+        ...createExtensionTools({
+          scaffold: coreExtensions.scaffold,
+          guideRoot: () => resolveScaffoldRoots().guideRoot,
+        }),
+        // The dev loop: in process over app-main's kernel, handed over once it loads.
+        ...createExtensionDevTools({ backend: () => resolveExtensionDevBackend() }),
+      ]
     : []
   const pluginTools = skillsService
     ? createPluginTools({
@@ -1508,16 +1539,28 @@ export function createAppServices(
                 : {}),
               launchAgent: (request) => shellTerminals.launch(request),
               resolveAgentPermissionPreset,
-              createWorkspace: (input, actor) => workspaceSyncService.createWorkspace(input, actor),
+              // Who started a calling agent, as its record keeps it.
+              agentStarterOf: ({ workspaceId, agentId }) =>
+                workspaceId ? workspaceRegistry.getRecord(workspaceId)?.agents[agentId]?.startedBy : undefined,
+              createWorkspace: (input, actor, context) =>
+                createWorkspaceWithHooks(
+                  localCore?.extensionHooks,
+                  () =>
+                    activeInvoker() ??
+                    localCore?.hookInvokers.ofGatewayCaller(context) ??
+                    ownerInvoker(null, 'the agent'),
+                  input,
+                  (request) => workspaceSyncService.createWorkspace(request, actor),
+                ),
               studioDataDirs: () => [app.getPath('userData')],
               getScheduledAgents: () => resolveScheduledAgents(),
               ...withDefinedMachineSchedules(machineSchedulesOf(core)),
               ...launchSettingsGatewayDeps(agentLaunchSettings),
               // module.*/marketplace.*. The registry snapshot is the one a
-              // window reported (`module.reportRegistry`): the kernel's own list
+              // window reported (`extension.reportRegistry`): the kernel's own list
               // omits every window-only module, so reporting from it would be
               // wrong by construction. The installed extensions and the
-              // marketplace are read as a window's `module.installed` and
+              // marketplace are read as a window's `extension.installed` and
               // `marketplace.read` are, cache included.
               getModuleRegistrySnapshot: () => moduleRegistryMirror.read(),
               listInstalledThirdPartyModules: async () =>
@@ -1682,8 +1725,8 @@ export function createAppServices(
     commands: updateCommandFile(join(app.getPath('userData'), UPDATE_COMMAND_FILENAME)),
     log: (message) => void writeDiagnosticLog({ level: 'warning', source: 'update', title: 'Client update', message }),
   })
-  // What this process's modules say to clients (`module.events`,
-  // `module.notifications`): app-main's kernel delivers into it.
+  // What this process's modules say to clients (`extension.events`,
+  // `extension.notifications`): app-main's kernel delivers into it.
   const moduleHub = createStudioModuleHub()
   // Which window may take over a running terminal's output: set once the pane
   // pop-out relay is registered (register-core-ipc.ts).
@@ -1731,6 +1774,7 @@ export function createAppServices(
   const logDesktopTools = (message: string) => {
     void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Desktop tools', message })
   }
+  shellClient = () => desktopShell?.client() ?? null
   // The shell, a client of its own server: in process over a port main holds
   // both ends of, out of process over one it brokers to the server. It offers
   // what only a screen or a terminal can serve.
@@ -2116,9 +2160,14 @@ export function createAppServices(
     setModuleMcpToolsResolver(resolver: () => ReadonlyArray<McpToolContribution>): void {
       resolveModuleMcpTools = resolver
     },
+    setExtensionDevBackend(resolver: () => ExtensionDevBackend | null): void {
+      resolveExtensionDevBackend = resolver
+    },
     moduleRegistryMirror,
     /** The core's, in process (for the module host's tokens); null out of process. */
     agentControlPlane: coreTerminals?.controlPlane ?? null,
+    /** The core's extensions' hooks, in process; null out of process (the server runs its own). */
+    extensionHooks: localCore?.extensionHooks ?? null,
     agentLaunchService,
     conversationTerminalHandoff,
     /** What the shell reads of the terminals and asks of them, in either mode (shell-terminals.ts). */

@@ -1,0 +1,44 @@
+{
+  "$schema": "../node_modules/@sprintengine/extension-sdk/extension.schema.json",
+  "manifestVersion": 1,
+  "id": "weather-deck",
+  "version": "1.0.0",
+  "engines": {
+    "studio": ">=0.13.0"
+  },
+  "tier": "worker",
+  "name": "Weather Deck",
+  "description": "A forecast panel, a door, and a forecast tool for agents.",
+  "license": "MIT",
+  "permissions": [
+    "workspace:read",
+    "tools:contribute",
+    "schedules:own",
+    "backlog:read",
+    "agents:companion",
+    "conversation:own",
+    "secrets:own",
+    "github:api",
+    "storage:own",
+    "notifications:show"
+  ],
+  "main": "src/main.ts",
+  "contributes": {
+    "commands": [
+      { "id": "forecast.refresh", "title": "Refresh the forecast", "when": "workspace" },
+      { "id": "weather.backlog", "title": "Open the Backlog", "action": "panel.backlog.toggle" }
+    ],
+    "menus": [{ "where": "file", "command": "forecast.refresh" }],
+    "topBarItems": [{ "id": "deck", "title": "Weather Deck", "icon": "spark", "door": "deck" }],
+    "panels": [{ "id": "probe", "title": "Probe", "icon": "notes", "entry": "src/probe.ts" }],
+    "doors": [{ "id": "deck", "title": "Weather Deck", "icon": "spark", "entry": "src/door.ts" }],
+    "mcpTools": [
+      {
+        "name": "weather_deck_forecast",
+        "description": "Read the current forecast for a city.",
+        "access": "read",
+        "inputSchema": { "type": "object", "properties": { "city": { "type": "string" } }, "required": ["city"] }
+      }
+    ]
+  }
+}

@@ -1,12 +1,4 @@
-import type {
-  AgentCli,
-  CliPermissionPreset,
-  CliRuntimeSettings,
-  McpClientTarget,
-  McpServerConfig,
-  McpSettings,
-  McpTransport,
-} from './agents.js'
+import type { AgentCli, CliPermissionPreset, CliRuntimeSettings } from './agents.js'
 import type { SkillHarness } from './agent-setup.js'
 import type { CardAction } from './agent-skills.js'
 import type { StudioModuleTrustStatus } from './providers.js'
@@ -37,28 +29,20 @@ export type ModuleSignature = {
 }
 
 /**
- * A third-party module's code entry points, relative to its folder. `preload`
- * is reserved and never loaded.
- */
-export type ModuleEntry = {
-  main?: string
-  preload?: string
-  renderer?: string
-}
-
-/**
- * sha256 digests of a third-party module's own files: POSIX path relative to
- * the module folder → lowercase hex, every regular file but manifest.json.
+ * sha256 digests of an extension's own files: POSIX path relative to its
+ * folder → lowercase hex, every regular file but extension.sig.
  */
 export type ModuleFileDigests = Record<string, string>
 
-/** What a module's main half needs of its host to run at all; the module SDK's `HostCapability`. */
-export type ModuleHostCapability = string
-
+/**
+ * A module as a Studio lists it: one of its own, or an installed extension
+ * (its install key as the id, its extension.json's name and version).
+ */
 export type CapabilityManifest = {
   id: string
   displayName: string
-  version: number
+  /** A built-in module's integer, or an extension's semver. */
+  version: number | string
   publisher?: string
   category?: CapabilityCategory
   summary?: string
@@ -72,22 +56,134 @@ export type CapabilityManifest = {
   conflictsWith?: string[]
   /** Provenance. Absent ⇒ bundled first-party. */
   source?: ModuleSource
-  /** Capability scopes a third-party module requests (shown at install and trust). */
+  /** The permissions an extension asks for (shown when the person approves it). */
   permissions?: string[]
-  /** The host API the module was built against. Required for third-party modules; absent on bundled ones. */
-  engines?: { hostApi: number }
-  /**
-   * What the host must provide for `entry.main` to run at all: a module naming
-   * `electron-main` is loaded manifest-only wherever its main half would run
-   * without Electron (the Studio server out of process).
-   */
-  requires?: { hostCapabilities?: ModuleHostCapability[] }
-  /** Code entry points (third-party). */
-  entry?: ModuleEntry
-  /** Digests of every file a third-party module ships, inside the signed payload. */
-  files?: ModuleFileDigests
-  /** Detached signature over the manifest, if the module is signed. */
+  /** A detached signature over the manifest, when one was published. */
   signature?: ModuleSignature
+}
+
+// ── extension.json, as a Studio serves it ───────────────────────────────────
+// The SDK's `ExtensionManifest` (packages/extension-sdk/src/extension-manifest.ts),
+// already validated by the Studio that sends it. Mirrored here so this package
+// stays self-contained; the SDK drift guard holds the two identical.
+
+export type ExtensionTierView = 'content' | 'declarative' | 'ui' | 'worker'
+export type ExtensionCommandContributionView = {
+  id: string
+  title: string
+  when?: 'global' | 'workspace'
+  action?: string
+}
+export type ExtensionMenuContributionView = { where: 'backlog.item' | 'file' | 'notification'; command: string }
+export type ExtensionTopBarItemContributionView = {
+  id: string
+  title: string
+  icon?: string
+  command?: string
+  door?: string
+}
+export type ExtensionSurfaceContributionView = { id: string; title: string; icon?: string; entry: string }
+export type ExtensionMcpToolContributionView = { name: string; description: string; access: 'read' | 'operate' }
+export type ExtensionSyntaxContributionView = {
+  id: string
+  title: string
+  scopeName: string
+  path: string
+  configuration?: string
+  extensions?: string[]
+  filenames?: string[]
+}
+/** A custom editor: a surface that opens the files it names (`extension-editors`). */
+export type ExtensionCustomEditorContributionView = ExtensionSurfaceContributionView & {
+  extensions?: string[]
+  filenames?: string[]
+  priority?: 'default' | 'option'
+  contentKind?: 'text' | 'bytes'
+}
+export type ExtensionKeybindingContributionView = { command: string; key: string; when?: 'global' | 'workspace' }
+export type ExtensionStatusBarItemContributionView = {
+  id: string
+  text?: string
+  icon?: string
+  tooltip?: string
+  command?: string
+}
+export type ExtensionSettingValueView = string | number | boolean
+export type ExtensionSettingContributionView = {
+  key: string
+  title: string
+  description?: string
+  type: 'string' | 'number' | 'integer' | 'boolean'
+  default?: ExtensionSettingValueView
+  enum?: ExtensionSettingValueView[]
+  enumLabels?: string[]
+  minimum?: number
+  maximum?: number
+  maxLength?: number
+  multiline?: boolean
+  placeholder?: string
+}
+/** A point the extension's worker hooks, and whether its failure refuses the action. */
+export type ExtensionHookContributionView = { point: string; onError?: 'pass' | 'deny' }
+/** A skill an extension hands agents: a folder holding a SKILL.md. */
+export type ExtensionSkillContributionView = { id: string; path: string }
+/** An MCP server an extension hands agents: a local command (`stdio`) or a hosted server (`http`). */
+export type ExtensionMcpServerContributionView = {
+  id: string
+  name: string
+  description?: string
+  transport: 'stdio' | 'http'
+  command?: string
+  args?: string[]
+  env?: Array<{ name: string; value: string }>
+  url?: string
+}
+/** An OpenAI-compatible model provider an extension adds to chats. */
+export type ExtensionProviderContributionView = {
+  id: string
+  name: string
+  baseUrl: string
+  chatCompletionsPath?: string
+  modelsPath?: string
+  models: Array<{ id: string; name?: string }>
+  apiKey?: { label: string }
+}
+export type ExtensionContributionsView = {
+  commands: ExtensionCommandContributionView[]
+  menus: ExtensionMenuContributionView[]
+  topBarItems: ExtensionTopBarItemContributionView[]
+  panels: ExtensionSurfaceContributionView[]
+  doors: ExtensionSurfaceContributionView[]
+  settingsSections: ExtensionSurfaceContributionView[]
+  mcpTools: ExtensionMcpToolContributionView[]
+  hooks: ExtensionHookContributionView[]
+  syntaxes: ExtensionSyntaxContributionView[]
+  customEditors: ExtensionCustomEditorContributionView[]
+  keybindings: ExtensionKeybindingContributionView[]
+  statusBarItems: ExtensionStatusBarItemContributionView[]
+  settings: ExtensionSettingContributionView[]
+  skills: ExtensionSkillContributionView[]
+  mcpServers: ExtensionMcpServerContributionView[]
+  providers: ExtensionProviderContributionView[]
+}
+export type ExtensionManifestView = {
+  manifestVersion: 1
+  id: string
+  version: string
+  engines: { studio: string }
+  tier: ExtensionTierView
+  name: string
+  description?: string
+  icon?: string
+  cover?: string
+  screenshots?: string[]
+  license?: string
+  repository?: string
+  homepage?: string
+  permissions: string[]
+  main?: string
+  background?: boolean
+  contributes: ExtensionContributionsView
 }
 
 /** Why a module that wanted to load cannot, as the enablement resolver says. */
@@ -97,28 +193,29 @@ export type ModuleResolutionErrorCode =
   | 'disabled_dependency'
   | 'conflict'
   | 'dependency_cycle'
-  /** A third-party module the person switched on but has not trusted. */
-  | 'untrusted'
+  /** An extension the person switched on but has not approved as it is now. */
+  | 'unapproved'
   /** A third-party module whose signature or files failed verification. */
   | 'invalid_signature'
-  /** A third-party module built for a host API this Studio does not provide. */
-  | 'incompatible_host_api'
 
 export type ThirdPartyModuleLaunchStatus =
-  | 'trusted_executable'
-  | 'trusted_manifest_only'
-  | 'blocked_unsigned'
-  | 'blocked_signed'
+  /** Approved (or content only), with a worker. */
+  | 'runs_worker'
+  /** Approved (or content only), with nothing that runs in the background. */
+  | 'runs_without_worker'
+  /** Waiting for the person's approval. */
+  | 'awaiting_approval'
+  /** Its signature or its files are broken; it never runs. */
   | 'blocked_invalid'
-  /** Built for a host API this Studio does not provide (`engines.hostApi`). */
-  | 'blocked_host_api'
+  /** The kill list holds this version: it is switched off and what it added is retracted. */
+  | 'killed'
   | 'launch_error'
 
 /**
- * Whether a module's `entry.renderer` can be served to a window: `none`, it
- * declares none; `blocked`, its trust or host API keeps it out; `error`,
- * declared and trusted but refused (outside the folder, missing, changed);
- * `available`, servable.
+ * Whether an extension's surfaces (the `entry` of its panels, doors and
+ * settings sections) can be drawn in frames: `none`, it declares none;
+ * `blocked`, it is not approved (or broken); `error`, declared and approved but refused
+ * (outside the folder, missing, changed); `available`, servable.
  */
 export type ThirdPartyRendererEntryAvailability = 'none' | 'blocked' | 'error' | 'available'
 
@@ -133,41 +230,187 @@ export type ThirdPartyModuleLaunchView = {
   hasMainEntry: boolean
   expectedToLoad: boolean
   message?: string
-  /** Whether `entry.main` loaded in this server run; absent reads as not loaded. */
+  /** Whether this server run holds its worker (`main`), running or ready to start; absent reads as not. */
   mainLoaded?: boolean
-  /** Whether its window half can be served. */
+  /** Why its worker waits to start (too many run at once), while it does. */
+  waiting?: string
+  /** Whether its surfaces' entries can be drawn. */
   rendererEntry?: ThirdPartyRendererEntryView
 }
 
 /**
- * Where an installed extension came from, read off the install receipts: a
- * folder the person picked (no receipt), the marketplace registry, or a GitHub
- * repository. `pluginId` is the receipt's id, the bundle the module arrived
- * in, which an update or an uninstall acts on.
+ * Whether the person approved an extension as it is now. Content only needs
+ * no approval; anything else is `pending` until the person approves its
+ * `fingerprint` (what it may do, and its files). `growth` is there when an
+ * earlier version was approved: what this one asks for beyond it, in words,
+ * empty when it asks for nothing new. `unavailable`: its files cannot all be
+ * read, so there is nothing to approve.
  */
-export type ThirdPartyModuleOrigin =
-  { kind: 'folder' } | { kind: 'marketplace'; pluginId: string } | { kind: 'github'; pluginId: string; repo: string }
+export type StudioExtensionApproval =
+  | { state: 'not-needed' }
+  | { state: 'unavailable' }
+  | { state: 'approved'; fingerprint: string }
+  | { state: 'pending'; fingerprint: string; growth?: string[] }
 
 /** One installed extension, as its Studio holds it. */
 export type ThirdPartyModuleView = {
+  /** Its install key as the id, with its extension.json's name and version. */
   manifest: CapabilityManifest
-  trust: StudioModuleTrustStatus
-  fingerprint?: string
+  /** Its extension.json. */
+  extension: ExtensionManifestView
+  /** Whether the person approved it as it is now (modules.ts). */
+  approval: StudioExtensionApproval
+  /**
+   * Its signature: `verified` by a publisher key Studio trusts, `signed` by
+   * another, `unsigned`, or `invalid` (it never runs). A badge: only the
+   * person's approval lets it run.
+   */
+  signature: 'verified' | 'signed' | 'unsigned' | 'invalid'
+  /** sha256 of the signer's public key, when signed. */
+  signer?: string
   launch: ThirdPartyModuleLaunchView
-  /** Absent when the receipts could not be read: unknown, not a folder. */
-  origin?: ThirdPartyModuleOrigin
-  /** What made a trusted module trusted: its publisher's key, or the person's own grant. */
-  trustedVia?: 'publisher' | 'grant'
   /** Names of the MCP tools its main half registered this server run. */
   mcpTools?: string[]
+  /**
+   * By skill id, the frontmatter keys its SKILL.md holds that agents are not
+   * handed (anything but `name` and `description`), for the install review to
+   * list as ignored. Absent when there are none.
+   */
+  ignoredSkillKeys?: Record<string, string[]>
+  /**
+   * A development folder the owner registered: loaded from where it is and
+   * read again on every save (`extension.devLoad`). `folder` is its place on
+   * that disk for a connection that may name any path, its name otherwise;
+   * `overrides` when it stands in for an installed extension with its key,
+   * and `waiting` while that waits for the person's approval (the installed
+   * one runs until then).
+   */
+  development?: { folder: string; overrides: boolean; waiting?: boolean }
+  /** Where it came from, and the trust label that says so. */
+  origin?: StudioExtensionOrigin
+  /** The kill list holds this version: it never runs here. */
+  killed?: { reason: string; advisoryUrl?: string }
+  /** A newer release the catalogue it came from lists: to install, or held for review and why. */
+  update?: StudioExtensionUpdate
+}
+
+/**
+ * Where an installed extension came from. The label is decided by that,
+ * never by the extension's own words: `Official` for Studio's catalogue,
+ * `Community · <owner>` for the community catalogue, the catalogue's name and
+ * the owner in its git URL for one the person added, `Unverified` for a git
+ * URL, `Local` for a folder and `Dev` for a development folder.
+ */
+export type StudioExtensionOrigin = {
+  kind: 'official' | 'community' | 'catalogue' | 'git' | 'folder' | 'development'
+  label: string
+  /** The catalogue it updates from (`official`, `community`, `git:<url>`). */
+  catalogue?: string
+  catalogueName?: string
+  /** The git source it was checked out from, and the commit. */
+  source?: StudioCatalogueSource
+  commit?: string
+}
+
+/**
+ * A newer release than the installed one. `held`: it was left uninstalled
+ * for the person to review, because it asks for more access (`growth`), moved
+ * to another repository or folder, or its owner was renamed or changed hands
+ * (updates pause until it is installed again).
+ */
+export type StudioExtensionUpdate = {
+  version: string
+  held?: 'access' | 'repository' | 'owner'
+  growth?: string[]
+}
+
+export type StudioCatalogueSource = { url: string; ref: string; path?: string }
+
+export type StudioCatalogueImage = { path: string; sha256: string; alt: string }
+
+/** One extension a catalogue lists, as Browse shows it. */
+export type StudioCatalogueListing = {
+  /** Its install key, `<publisher>.<id>`. */
+  id: string
+  name: string
+  publisher: string
+  description?: string
+  categories: string[]
+  /** The release this Studio would install, or the one needing the least newer Studio. */
+  version: string
+  installable: boolean
+  /** The Studio the offered release needs, when this one is older. */
+  needsStudio?: string
+  tier: 'content' | 'declarative' | 'ui' | 'worker'
+  permissions: string[]
+  contributes: Array<{ kind: string; name: string }>
+  /** The trust label from the catalogue's address. */
+  label: string
+  icon?: StudioCatalogueImage
+  /** Installed here: its version, and whether from this catalogue. */
+  installed?: { version: string; fromHere: boolean }
+  killed?: { reason: string; advisoryUrl?: string }
+}
+
+/** One catalogue, as Browse lists it: its last copy, and why it could not be read now. */
+export type StudioCatalogueView = {
+  /** `official`, `community`, or `git:<url>` for one the person added. */
+  id: string
+  kind: 'official' | 'community' | 'added'
+  name: string
+  url?: string
+  fetchedAt?: number
+  error?: string
+  entries: StudioCatalogueListing[]
+}
+
+/** One extension's page: the listing, and what the page shows beyond it. */
+export type StudioCatalogueEntryView = StudioCatalogueListing & {
+  catalogue: string
+  catalogueName: string
+  source: StudioCatalogueSource
+  commit: string
+  /** The release's content hash: Install names it, with the commit, source and owner id shown here. */
+  contentHash: string
+  /** The owner's numeric id the catalogue (or its owner records) names now. */
+  ownerId?: number
+  license?: string
+  repository?: string
+  homepage?: string
+  updatedAt?: string
+  changelog?: string
+  images?: { cover?: StudioCatalogueImage; screenshots?: StudioCatalogueImage[] }
+  releases: Array<{ version: string; minimumStudio: string; updatedAt?: string }>
+  /** Other catalogues listing the same id. An install stays with the catalogue it came from. */
+  alsoListedBy: Array<{ id: string; name: string }>
+  /** Installed here from another source: what it was installed from. */
+  installedFrom?: StudioExtensionOrigin
+}
+
+/** One development folder, as `extension.devFolders` lists it: the extension in it, or why there is none. */
+export type StudioExtensionDevFolder = {
+  /** Its real path on the Studio's disk. */
+  path: string
+  moduleId?: string
+  name?: string
+  approval?: StudioExtensionApproval
+  /** It stands in for an installed extension with its key. */
+  overrides?: boolean
+  /**
+   * It waits for the person to approve it in place of the installed extension
+   * with its key, which runs until then.
+   */
+  waiting?: boolean
+  /** Why it holds no extension Studio loads. */
+  error?: string
 }
 
 export type ModuleManifestIssue = { path: string; message: string }
 
 /**
- * `module.installed`: every installed extension, and the folders that hold
+ * `extension.installed`: every installed extension, and the folders that hold
  * none Studio could read. A folder's `path` is its place on that disk (the
- * folder or its `manifest.json`) for a connection that may name any path (an
+ * folder or its `extension.json`) for a connection that may name any path (an
  * owner's own); anyone else is told the folder's name, and an issue's words
  * name the folder rather than its place.
  */
@@ -176,26 +419,68 @@ export type ThirdPartyModuleListResult = {
   rejected: Array<{ path: string; issues: ModuleManifestIssue[] }>
 }
 
-/**
- * One extension's window half a window may run: trusted, inside its folder,
- * and the bytes it was verified with. `code` is the ESM bundle's source.
- */
-export type ThirdPartyRendererEntry = {
+/** One approved extension, as a client registers what it adds. */
+export type ExtensionContributions = {
+  /** Its install key. */
   id: string
   manifest: CapabilityManifest
-  code: string
-  /** The private origin its assets are served at in this Studio's desktop windows. */
-  assetOrigin?: string
-  /** Signed by a first-party marketplace publisher key, as the Studio verified. */
-  firstPartySigned?: boolean
+  extension: ExtensionManifestView
+  /**
+   * The content identity of its files as served now: it moves with every
+   * change to them (a development folder's save, an update), so a client
+   * draws its open surfaces again.
+   */
+  revision?: string
 }
 
-/** `module.rendererEntries`: the servable window halves, and why each other declared one was not served. */
-export type ThirdPartyRendererEntriesResult = {
-  entries: ThirdPartyRendererEntry[]
-  /** By module id, a sentence (never a path); trust-blocked modules are not listed. */
+/**
+ * `extension.contributions`: what each approved extension adds to a client,
+ * as its extension.json declares it (no code: its surfaces are drawn in
+ * frames, `extension.frame`), and why each other one with surfaces is not offered.
+ */
+export type ExtensionContributionsResult = {
+  extensions: ExtensionContributions[]
+  /** By module id, a sentence (never a path); extensions waiting for approval are not listed. */
   failures: Record<string, string>
 }
+
+/** `extension.frame`: the document one surface is drawn from. */
+export type ExtensionFrameDocument = {
+  /** `sha256-<hex>` of `html`: where a browser loads it (`/ext-frame/<hash>`), and what a desktop window stages. */
+  hash: string
+  /** The whole document: Studio's bootstrap, its theme and kit, and the extension's entry. */
+  html: string
+}
+
+// ── What a content extension adds ───────────────────────────────────────────
+
+/** What `extension.content` serves. */
+export type StudioExtensionContentKind = 'syntax'
+
+/** `extension.content`'s params: an extension, a kind, and the contribution's id in its extension.json. */
+export type StudioExtensionContentRequest = { moduleId: string; kind: StudioExtensionContentKind; id: string }
+
+/** A language configuration, as the editor reads it. */
+export type LanguageConfigurationView = {
+  comments?: { lineComment?: string; blockComment?: [string, string] }
+  brackets?: Array<[string, string]>
+  autoClosingPairs?: Array<{ open: string; close: string }>
+  surroundingPairs?: Array<{ open: string; close: string }>
+}
+
+/**
+ * One piece of a content extension, checked on the server that serves it: a
+ * syntax's TextMate grammar (only the keys a TextMate engine reads) and its
+ * language configuration.
+ */
+export type ExtensionContent = {
+  kind: 'syntax'
+  grammar: Record<string, unknown> & { scopeName: string }
+  configuration?: LanguageConfigurationView
+}
+
+/** `extension.settings`: an extension's declared settings' values here, each its default until set. */
+export type ExtensionSettingValues = { values: Record<string, ExtensionSettingValueView> }
 
 /** Which build a window's module registry was taken in. */
 export type ModuleBuildChannel = 'development' | 'production'
@@ -229,8 +514,8 @@ export type ModuleRegistryEntry = {
 }
 
 /**
- * The module registry a window resolved, window halves included, which the
- * Studio's `module.*` agent tools report from. Valid for the window's session.
+ * The module registry a window resolved, extensions' contributions included,
+ * which the Studio's `extension.*` agent tools report from. Valid for the window's session.
  */
 export type ModuleRegistrySnapshot = {
   /** Epoch ms the window captured it at. */
@@ -239,15 +524,15 @@ export type ModuleRegistrySnapshot = {
   modules: ModuleRegistryEntry[]
 }
 
-/** The answer to `module.reportRegistry`: refused with why when the snapshot is not one. */
+/** The answer to `extension.reportRegistry`: refused with why when the snapshot is not one. */
 export type ModuleRegistrySnapshotWriteResult = { ok: boolean; message?: string }
 
 // ── The marketplace ─────────────────────────────────────────────────────────
 
-/** What a marketplace bundle carries; the module SDK's `MarketplaceComponentKind`. */
-export type MarketplaceComponentKind = 'mcp' | 'skills' | 'module'
+/** What a marketplace install puts in place: a Claude Code plugin's skills. */
+export type MarketplaceComponentKind = 'skills'
 
-/** What a registry entry may say it provides: a bundle's kinds, or `cli` for an agent CLI the app ships. */
+/** What a registry entry may say it provides: a Claude Code plugin's skills, or `cli` for an agent CLI the app ships. */
 export type MarketplaceProvidesKind = MarketplaceComponentKind | 'cli'
 
 export type MarketplaceManifestIssue = { path: string; message: string }
@@ -276,8 +561,8 @@ export type MarketplacePluginSkill = {
 }
 
 /**
- * A registry entry: a bundle (has `source`), an inline MCP server list (has
- * `mcp`), or an agent CLI the app ships (has `cli`).
+ * A registry entry: a Claude Code plugin (has `source`, tagged
+ * `claude-plugin`) or an agent CLI the app ships (has `cli`).
  */
 export type MarketplacePluginEntry = {
   id: string
@@ -292,7 +577,6 @@ export type MarketplacePluginEntry = {
   provides: MarketplaceProvidesKind[]
   source?: string
   signature?: ModuleSignature
-  mcp?: { servers: McpServerConfig[] }
   cli?: { pluginId: string }
   skills?: MarketplacePluginSkill[]
 }
@@ -379,14 +663,11 @@ export type MarketplaceUpdateStatesResult =
   | { ok: false; message: string }
 
 /**
- * Where an install writes beside the module root: the workspace an MCP or
- * skill component goes into (one the Studio has open), the MCP settings and
- * CLIs it syncs, and the skill harnesses.
+ * Where an install writes: the workspace its skill copies go into (one the
+ * Studio has open), and the skill harnesses.
  */
 export type MarketplaceInstallEnvelope = {
   workspaceRoot?: string
-  mcpSettings?: McpSettings
-  mcpClients?: McpClientTarget[]
   skillHarnesses?: SkillHarness[]
 }
 
@@ -404,32 +685,9 @@ export type MarketplacePluginVerifyInput = { id: string }
 
 /** The content a trust review disclosed, pinned so the install refuses anything else. */
 export type MarketplaceTrustPin = {
-  commitSha?: string
   manifestSha256: string
   componentDigests: Record<string, string>
 }
-
-/** An MCP server as an install would write it: never the values of its environment or headers. */
-export type MarketplaceMcpServerDisclosure = {
-  id: string
-  name: string
-  transport: McpTransport
-  command?: string
-  args: string[]
-  url?: string
-  envKeys: string[]
-  headerKeys: string[]
-}
-
-/** A GitHub repository an extension is installed from, as the person named it. */
-export type GithubExtensionOrigin = {
-  url: string
-  owner: string
-  repo: string
-  ref?: string
-}
-
-export type MarketplaceInstallSource = { kind: 'registry' } | ({ kind: 'github'; sha: string } & GithubExtensionOrigin)
 
 export type MarketplacePluginTrustClassification = 'verified' | 'community' | 'unsigned' | 'invalid'
 
@@ -441,48 +699,11 @@ export type MarketplacePluginVerifyResult = {
   message?: string
   /** The files a skill payload installs, disclosed at the review. */
   files?: string[]
-  /** Every MCP server the install would add. */
-  mcpServers?: MarketplaceMcpServerDisclosure[]
-  /** The bundle carries a module: code that runs in Studio. */
-  codeBearing?: boolean
   /** The signer's key fingerprint (sha256 of the public key), when signed. */
   keyFingerprint?: string
   /** What was disclosed, and the one-time token that installs exactly that; absent when nothing may be approved. */
   pin?: MarketplaceTrustPin
   trustToken?: string
-}
-
-export type GithubExtensionResolveInput = { url: string }
-
-export type GithubExtensionReviewChange = 'permissions' | 'mcp' | 'classification' | 'source'
-
-export type GithubExtensionInstalledState = {
-  version: number
-  sha?: string
-  /** What differs from what was approved last time; empty means nothing new to approve. */
-  changes: GithubExtensionReviewChange[]
-}
-
-export type GithubExtensionPreview = {
-  id: string
-  displayName: string
-  version: number
-  publisher: { name: string; verified: boolean }
-  summary: string
-  provides: MarketplaceComponentKind[]
-  origin: GithubExtensionOrigin
-  verify: MarketplacePluginVerifyResult & { classification: 'verified' | 'community' | 'unsigned' }
-  installed?: GithubExtensionInstalledState
-}
-
-export type GithubExtensionResolveResult =
-  | { ok: true; preview: GithubExtensionPreview; trustToken: string }
-  | { ok: false; message: string; issues?: MarketplaceManifestIssue[]; skillSource?: boolean }
-
-export type GithubExtensionInstallInput = MarketplaceInstallEnvelope & {
-  trustToken: string
-  /** The person's "I trust this code", required when the review showed unsigned module code. */
-  trustCode?: boolean
 }
 
 export type MarketplacePluginUninstallInput = MarketplaceInstallEnvelope & { pluginId: string }
@@ -491,13 +712,8 @@ export type MarketplacePluginInstalledComponent = {
   kind: MarketplaceComponentKind
   id: string
   message?: string
-  serverIds?: string[]
-  servers?: McpServerConfig[]
   harnesses?: SkillHarness[]
   installedDirName?: string
-  /** Module components: the trust at install and the installed manifest's fingerprint. */
-  trustStatus?: StudioModuleTrustStatus
-  manifestFp?: string
 }
 
 export type MarketplacePluginInstallResult =
@@ -509,11 +725,8 @@ export type MarketplacePluginInstallResult =
       trust: StudioModuleTrustStatus
       loadEligible: boolean
       installed: MarketplacePluginInstalledComponent[]
-      mcpSettings?: McpSettings
       /** What a successful install left undone, said to the person. */
       notices?: string[]
-      /** The install landed a module whose code loads only at the next start. */
-      restartRequired?: boolean
     }
   | {
       ok: false
@@ -542,13 +755,11 @@ export type MarketplacePluginUninstallResult =
       ok: true
       id: string
       removed: MarketplacePluginInstalledComponent[]
-      mcpSettings?: McpSettings
     }
   | {
       ok: false
       message: string
       removed?: MarketplacePluginInstalledComponent[]
-      mcpSettings?: McpSettings
     }
 
 // ── The hosted feeds ────────────────────────────────────────────────────────
@@ -640,7 +851,8 @@ export type HostedCardFeedReadResult =
 
 // ── The agent CLIs' plugin catalogue ────────────────────────────────────────
 
-export type PluginSource = 'bundled' | 'user'
+/** Where a CLI or a provider comes from: the app itself, or an installed extension (providers only). */
+export type PluginSource = 'bundled' | 'extension'
 export type PluginSkillSupport = 'native' | 'prompt-shim' | 'unsupported'
 export type PluginSkillInstallScope = 'workspace' | 'user'
 export type PluginSkillFormat = 'agent-skills-v1' | 'claude-code' | 'codex' | 'opencode' | 'generic'

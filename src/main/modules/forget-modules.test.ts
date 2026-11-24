@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
 import { readModuleOverridesSync, writeModuleOverrides } from '../module-host/enablement-store'
+import { MODULE_APP_STATE_FILE, moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
 import { forgetModules } from './forget-modules'
 
 test('an uninstalled module leaves no secrets, storage or enablement choice under its id', async () => {
@@ -20,6 +21,9 @@ test('an uninstalled module leaves no secrets, storage or enablement choice unde
     mkdirSync(join(userData, 'module-data', 'weather-deck', 'cache'), { recursive: true })
     writeFileSync(join(userData, 'module-data', 'weather-deck', 'cache', 'tiles.bin'), 'bytes')
     mkdirSync(join(userData, 'module-data', 'other-deck'), { recursive: true })
+    const settings = moduleAppStateMirrorFor(userData)
+    settings.setValue('weather-deck', 'city', 'Lisbon')
+    settings.setValue('other-deck', 'city', 'Porto')
 
     await forgetModules(userData, ['weather-deck', '..', ''])
 
@@ -31,6 +35,11 @@ test('an uninstalled module leaves no secrets, storage or enablement choice unde
     assert.equal(existsSync(join(userData, 'module-secrets', 'other-deck.bin')), true, 'another module keeps its own')
     assert.equal(existsSync(join(userData, 'module-storage', 'other-deck')), true)
     assert.equal(existsSync(join(userData, 'module-storage')), true, 'an unsafe id reaches nothing above')
+    assert.deepEqual(settings.get('weather-deck'), {}, 'its Settings values go too')
+    assert.deepEqual(settings.get('other-deck'), { city: 'Porto' })
+    assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(userData, MODULE_APP_STATE_FILE), 'utf8'))), [
+      'module:other-deck',
+    ])
   } finally {
     rmSync(userData, { recursive: true, force: true })
   }

@@ -1,3 +1,5 @@
+import { isExtensionInstallKey } from '../../../../packages/extension-sdk/src/extension-manifest'
+import { extensionSurfaceId } from '../../../shared/modules/extension-ids'
 import type { ModuleNotificationDelivery } from '../../../shared/modules/notifications'
 import type { DiagnosticLevel, DiagnosticLogEntry } from '../../../shared/workspace'
 
@@ -6,7 +8,7 @@ import type { DiagnosticLevel, DiagnosticLogEntry } from '../../../shared/worksp
 // the ports it is handed, so the mapping and the once-only filing are testable
 // without a store or a preload.
 //
-// A row reaches a window on its Studio's `module.notifications` stream, which
+// A row reaches a window on its Studio's `extension.notifications` stream, which
 // sends the rows the server still keeps (a module's launch failure or an
 // `onStartup` notify is raised before any window listens) and then each new
 // one. A reconnect sends the kept rows again; the delivery id makes that a
@@ -24,7 +26,13 @@ const LEVEL: Readonly<Record<ModuleNotificationDelivery['severity'], DiagnosticL
  * row, so the door's count carries it and opening the door reads it.
  */
 export function moduleNotificationEntry(notification: ModuleNotificationDelivery): DiagnosticLogEntry {
-  const target = notification.target
+  const raw = notification.target
+  // An extension names its door by its extension.json id; the shell files it
+  // under the extension's key.
+  const target =
+    raw && isExtensionInstallKey(notification.sourceModuleId)
+      ? { ...raw, surfaceId: extensionSurfaceId(notification.sourceModuleId, raw.surfaceId) }
+      : raw
   return {
     id: `module:${notification.id}`,
     timestamp: new Date(notification.emittedAt).toISOString(),

@@ -11,15 +11,15 @@ import { afterEach, beforeEach, describe, test, vi } from 'vitest'
 
 vi.mock('electron', () => import('../../../tests/stubs/electron'))
 
-import { EXTENSION_GUIDE_TOPICS } from '../../../packages/module-sdk/src/guide'
-import { listModuleParts, listModuleTemplates } from '../../../packages/module-sdk/src/scaffold'
+import { EXTENSION_GUIDE_TOPICS } from '../../../packages/extension-sdk/src/guide'
+import { listModuleParts, listModuleTemplates } from '../../../packages/extension-sdk/src/scaffold'
 import type { McpToolRegistration, McpToolResult } from '../../shared/modules/mcp-tools'
 import { createExtensionScaffoldHandlers } from '../extension-scaffold'
 import { createExtensionTools, EXTENSION_PART_IDS, EXTENSION_TEMPLATE_IDS } from './extension-tools'
 import { isStudioGatewayMutation } from './studio-gateway-tools'
 import { localOnlyGatewayToolReason } from './tailnet/tailnet-scopes'
 
-const SDK = join(process.cwd(), 'packages', 'module-sdk')
+const SDK = join(process.cwd(), 'packages', 'extension-sdk')
 
 let work = ''
 let home = ''
@@ -78,12 +78,17 @@ describe('extension.create', () => {
     assert.equal(markdown?.type, 'text')
     assert.match(markdown?.type === 'text' ? markdown.text : '', /^# Building a SprintEngine Studio extension/)
 
-    const manifest = JSON.parse(readFileSync(join(folder, 'module', 'manifest.json'), 'utf8'))
+    const manifest = JSON.parse(readFileSync(join(folder, 'extension', 'extension.json'), 'utf8'))
     assert.equal(manifest.id, 'pr-radar')
-    assert.equal(manifest.displayName, 'Pr radar')
+    assert.equal(manifest.name, 'Pr radar')
     assert.match(readFileSync(join(folder, 'IDEA.md'), 'utf8'), /> A badge counting the pull requests waiting on me\./)
     assert.match(readFileSync(join(folder, 'AGENTS.md'), 'utf8'), /`extension\.guide`/)
-    for (const file of ['plugin.json', 'package.json', 'scripts/check-toolchain.mjs', 'test/smoke.test.mjs']) {
+    for (const file of [
+      'extension/extension.json',
+      'package.json',
+      'scripts/check-toolchain.mjs',
+      'test/manifest.ts',
+    ]) {
       assert.ok(existsSync(join(folder, file)), `${file} is written`)
     }
     assert.equal(existsSync(join(folder, '.claude')), false, 'no skill is vendored')
@@ -91,14 +96,15 @@ describe('extension.create', () => {
   })
 
   test('starts from a template, adds parts, and defaults to the extensions home', async () => {
-    const result = await call(tools().create, { name: 'focus-board', template: 'global-surface', parts: ['main'] })
+    const result = await call(tools().create, { name: 'focus-board', template: 'door', parts: ['main'] })
     assert.equal(result.isError, undefined)
     const folder = join(home, 'focus-board')
     assert.equal(structured(result).folder, folder)
     assert.deepEqual(structured(result).parts, ['main'])
-    const manifest = JSON.parse(readFileSync(join(folder, 'module', 'manifest.json'), 'utf8'))
-    assert.equal(manifest.entry.main, 'dist/main.cjs', 'the main part is wired in')
-    assert.ok(existsSync(join(folder, 'src', 'main.ts')))
+    const manifest = JSON.parse(readFileSync(join(folder, 'extension', 'extension.json'), 'utf8'))
+    assert.equal(manifest.main, 'src/main.ts', 'the main part is wired in')
+    assert.equal(manifest.tier, 'worker')
+    assert.ok(existsSync(join(folder, 'extension', 'src', 'main.ts')))
 
     const parent = join(work, 'projects')
     mkdirSync(parent)
@@ -122,7 +128,7 @@ describe('extension.create', () => {
     assert.equal(structured(again).existing, true)
     assert.equal(readFileSync(join(folder, 'IDEA.md'), 'utf8'), 'my edits', 'carried on, not rewritten')
 
-    mkdirSync(join(work, 'installed-modules', 'deck'), { recursive: true })
+    mkdirSync(join(work, 'installed-modules', 'local.deck'), { recursive: true })
     assert.equal(errorCode(await call(t.create, { name: 'deck' })), 'installed', 'an installed id is not reused')
   })
 
@@ -131,7 +137,7 @@ describe('extension.create', () => {
     const refused: Array<[Record<string, unknown>, string]> = [
       [{}, 'invalid_arguments'],
       [{ name: 'PR Radar' }, 'invalid_name'],
-      [{ name: 'backlog' }, 'invalid_name'],
+      [{ name: 'studio-radar' }, 'invalid_name'],
       [{ name: 'radar', folder: 'relative/radar' }, 'invalid_arguments'],
       [{ name: 'radar', parentDir: '~/code' }, 'invalid_arguments'],
       [{ name: 'radar', folder: join(work, 'a'), parentDir: work }, 'invalid_arguments'],

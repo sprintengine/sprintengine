@@ -1,0 +1,1003 @@
+# @sprintengine/extension-sdk
+
+The contract, templates and authoring CLI for building **SprintEngine Studio
+extensions**: the `extension.json` manifest, its validator and JSON Schema,
+the `mount` / `activate` entry contract, chat conversations with the app's
+agents, brokered secrets and GitHub access, scheduled agents, storage,
+notifications, and signing.
+
+Studio is a home for agent runtimes — Claude Code, Codex and the ACP agents —
+and an extension reaches those agents one way: **as chats**. An extension
+starts, drives and reads chat conversations it owns, opens a chat for the
+person with a drafted prompt, or runs a background companion agent. It never
+launches, types into, or watches an agent terminal; that surface is not part
+of the SDK.
+
+The package is types-first. Beyond the declarations it ships the manifest
+validator (`validateExtensionManifest`), the JSON Schema
+(`@sprintengine/extension-sdk/extension.schema.json`), a few small pure values
+(`EXTENSION_PERMISSIONS`, `EXTENSION_HOST_SERVICES`, `EXTENSION_MANIFEST_SINCE`,
+`createServiceToken`, the `get*Service` helpers), signing
+(`@sprintengine/extension-sdk/signing`), the `sprintengine-extension` CLI, the
+starter templates, the extension guide for agents (`guide/`,
+`@sprintengine/extension-sdk/guide`), and fake hosts for testing
+(`@sprintengine/extension-sdk/testing`). It has no runtime dependency on
+Electron or on the app's code, so a project compiles against the tarball
+alone. Node 22.15 or newer.
+
+## Quick start
+
+```sh
+npx -p @sprintengine/extension-sdk sprintengine-extension init my-extension --template panel
+cd my-extension
+npm install
+npm run dev          # load extension/ into Studio; it reloads on every save
+npm run check        # typecheck, tests, then validate and check the extension
+```
+
+`init <dir> --template <id> [--with <part,...>] [--id <id>] [--name <display name>]`
+scaffolds a project that already loads in Studio and passes its own tests. There is no build step.
+`--sdk-tarball <file>` depends on a local SDK build instead of the npm release
+(for working on the SDK itself). Templates:
+
+| Template | What it starts you with | Tier |
+| --- | --- | --- |
+| `blank` | One small panel: the smallest extension that draws something | `ui` |
+| `panel` | A notes panel, saved in the extension's app state | `ui` |
+| `door` | A full-window door listing the open workspaces | `ui` |
+| `editor` | A custom editor for `.kv` files: a form of keys and values Studio opens, saves and keeps in step with disk | `ui` |
+| `chat-companion` | A worker that starts and follows chats of its own, and a panel to drive it | `worker` |
+| `top-bar-item` | A top bar button opening a focus-timer door | `ui` |
+| `settings-section` | A section in Settings, and a command that opens Settings | `ui` |
+| `backlog-action` | A Backlog item menu command whose worker starts a planning chat per item | `worker` |
+| `file-action` | A Files-tree menu command whose worker files a Backlog item naming the files | `worker` |
+| `mcp-tools` | A worker serving declared tools to any agent through Studio's MCP server | `worker` |
+| `hook-guard` | A worker hooking agents' tool calls: refuses one that matches a rule, and logs each that finishes | `worker` |
+
+Templates combine. `--with` adds parts on top of the one you start from, and
+`sprintengine-extension add <part>...` adds them to a project you already have:
+
+| Part | What it adds |
+| --- | --- |
+| `main` | The worker: `src/main.ts` exporting `activate`, its methods' contract in `src/methods.ts`, `main` in extension.json and its `build:main` script |
+| `mcp` | MCP tools declared in `contributes.mcpTools` and served from `activate` (`tools:contribute`); brings `main` when missing |
+| `settings` | A settings section (`settings:own`) |
+| `door` | A door with a row in the Extensions drawer |
+
+A part copies its files and its test, merges its contributions and permissions
+into `extension/extension.json`, raises `tier` when it needs to, adds its
+scripts and devDependencies to `package.json`, and wires an MCP part into
+`activate` in `src/main.ts`. When `activate` is not one of the shapes the
+templates write, `add` says what to call instead.
+
+Studio can do the same from the Extensions door: **Build your own extension**
+opens New chat in extension mode. You name the extension, pick the project it
+goes in and describe it (or start from one of the ideas, one per template);
+Studio scaffolds `<project>/<name>` from the `blank` template and opens a chat
+on it with the agent you pick, which adds what your description needs. The app
+ships this SDK beside itself, so such a project depends on its own copy,
+`vendor/sprintengine-extension-sdk-<version>.tgz`, by `file:`: `npm install`
+needs no registry, and the project builds against the SDK of the Studio that
+made it. Commit `vendor/` with the project.
+
+### The extension guide
+
+The working method for an agent building an extension — the project layout,
+which contribution or API to reach for, choosing a tier and permissions, the
+check / side-load loop, signing, and what "waits for approval", "tampered" and "needs
+a newer Studio" mean — is a set of topics in the package's `guide/` folder
+(`start`, `surfaces`, `manifest`, `permissions`, `rules`, `api-renderer`,
+`api-main`, `conversations`, `brokers`, `styling`, `troubleshooting`,
+`publishing`), listed by `EXTENSION_GUIDE_TOPICS` in
+`@sprintengine/extension-sdk/guide`.
+
+An agent Studio serves reads them with Studio's `extension.guide` tool, and
+`extension.create` makes a new project the way `init` does, answering with the
+`start` topic. A scaffolded project's `AGENTS.md` sends its agent to the
+guide, and to `node_modules/@sprintengine/extension-sdk/guide/` when Studio's
+tools are not to hand. Projects carry no copy of it, so they never hold a
+stale one.
+
+### Project layout
+
+```
+extension/extension.json  the manifest; extension/ is the folder Studio loads
+extension/src/<name>.ts   a surface, exporting mount(root, studio), loaded as written
+extension/src/main.ts     the worker, exporting activate(studio) (templates that have one)
+test/manifest.ts          extension.json, validated, for your tests
+test/*.test.ts            your tests, in TypeScript (see Testing)
+scripts/                  check-toolchain.mjs
+IDEA.md                   the brief
+```
+
+The scripts: `typecheck`, `test` (`sprintengine-extension test`), `validate`,
+`check` (typecheck, test, then `sprintengine-extension check extension`), `dev`
+(`sprintengine-extension dev watch extension --check --shot …`: Studio loads
+the folder where it is and again on every save), `pack` and `keygen`. Studio
+transpiles TypeScript and JSX as it reads them; a surface imports only its own
+files by relative paths (guide topic `dev-loop`).
+
+## What an extension is
+
+A folder with `extension.json` at its root and the files it names. Every path
+in it is relative to that folder.
+
+```json
+{
+  "$schema": "../node_modules/@sprintengine/extension-sdk/extension.schema.json",
+  "manifestVersion": 1,
+  "id": "notes",
+  "version": "1.0.0",
+  "engines": { "studio": ">=0.13.0" },
+  "tier": "worker",
+  "name": "Notes",
+  "permissions": ["storage:own"],
+  "main": "dist/main.cjs",
+  "contributes": {
+    "commands": [{ "id": "notes.clear", "title": "Clear notes" }],
+    "menus": [{ "where": "backlog.item", "command": "notes.clear" }],
+    "panels": [{ "id": "notes", "title": "Notes", "icon": "notes", "entry": "dist/notes.js" }]
+  }
+}
+```
+
+- **`tier`** is the most authority the extension needs: `content` (a name and
+  images), `declarative` (commands that run Studio's own commands, menu items
+  and top bar items for them, and the skills, MCP servers and model providers
+  it hands agents and chats), `ui` (panels, doors and settings sections drawn
+  by its own code, and permissions), `worker` (`main`, background code). Each
+  carries what the ones below it do; anything above the tier fails validation.
+- **`contributes`** is everything it adds: `commands`, `menus`
+  (`backlog.item`, `file`, `notification`), `topBarItems`, `panels`, `doors`,
+  `settingsSections`, `customEditors`, `mcpTools`, `hooks`, the content points
+  (`syntaxes`, `keybindings`, `statusBarItems`, `settings`) and what it hands
+  agents and chats (`skills`, `mcpServers`, `providers`). Other point names are
+  reserved and must be empty.
+- **A ui entry** (`panels[].entry`, `doors[].entry`,
+  `settingsSections[].entry`) is a self-contained ESM bundle exporting
+  `mount(root, studio)`. Studio draws the surface in a sandboxed frame of its
+  own and loads the bundle there, so it bundles everything it imports, React
+  included; Studio shares no React or UI kit with it. `mount` draws into
+  `root`, calls `studio.ready()` once drawn, and may return a cleanup.
+- **The worker** (`main`) is a CommonJS bundle loaded with Node's `require`,
+  exporting `activate(studio)` as a named export or its default. It registers
+  its methods and serves the MCP tools extension.json declares.
+- **A command without `action`** runs the worker method of its name
+  (`registerMethods`, access `operate`), with an `ExtensionCommandContext`
+  saying where it ran and what it was picked on. One with an `action` runs a
+  Studio command and no extension code.
+
+`validateExtensionManifest(raw, { authoring })` is the one validator — Studio,
+the CLI and the templates all call it. Unknown keys are refused at every
+level. With `authoring: true`, `engines.studio` must cover the newest field
+the manifest uses; extension.json is read from Studio 0.13.0
+(`EXTENSION_MANIFEST_SINCE`). The JSON Schema and the guide's `manifest` topic
+are generated from the validator's field table.
+
+**Install keys.** Studio installs an extension under `<publisher>.<id>`; a
+folder install is `local.<id>`, in `~/.sprintengine/extensions/local.<id>/`
+(`SPRINTENGINE_USER_EXTENSION_ROOT` moves the root). The key is
+`studio.moduleId`, and what approval and storage are keyed by. Ids starting
+`studio-` or `sprintengine-` install only from Studio's own catalogue.
+
+**Approval.** Anything beyond content runs only once the person approves it in
+Settings → Extensions. The approval names a fingerprint over its permissions,
+tier, worker, background and the digests of every file, so different bytes
+under the same key never inherit it; a new version keeps it when it asks for no
+more access, and asks again when it does. A signature (`extension.sig`) is a
+badge: by a publisher key Studio trusts it shows as verified, and the person
+still approves. Changed after signing, it is refused.
+
+## Testing
+
+`@sprintengine/extension-sdk/testing` runs an extension in Node without the app:
+
+```ts
+import { createElement } from 'react'
+import { createFakeFrameStudio, createFakeMainHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
+import { manifest } from './manifest' // extension.json, validated
+import { activate } from '../src/main'
+import { Notes } from '../src/notes'
+
+const main = createFakeMainHost({ manifest })              // moduleId: local.<id>
+await activate(main.host)
+await main.methods.operate('start', { workspaceId: 'ws-app' })          // as a surface would
+main.services.conversations.emitEvent(ref, { type: 'turn_completed' })  // make the agent answer
+await main.tools.call('notes_search', { query: 'x' })                   // as an agent would
+
+const frame = createFakeFrameStudio({ manifest, main }) // a surface in its frame; its worker is `main`
+const studio = frame.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
+const html = await renderToHtml(createElement(Notes, { studio }))
+```
+
+- **`createFakeMainHost({ manifest } | { moduleId, permissions }, …)`** is a
+  `MainHost` with stateful fakes of every published service, held to the
+  host's rules. `registerMcpTools` refuses a tool the manifest does not
+  declare and takes the declaration's description and access. Each service's
+  handle is on `services`, to arrange the world and read what the extension
+  did to it:
+  - `storage:own`: the real key pattern, absolute-root rule and 1 MB cap;
+    `list({ prefix })`, `getMany` and `watch`, which hears the extension's own
+    writes and `changeExternally(key, value, root)` (a `git pull`, a hand edit).
+  - `conversations`: `emitEvent` (turn events get a `turnId`; give
+    `turn_completed` its `text` and `usage` and `reply(ref)` reads it),
+    ownership and the preset ceiling, `create({ worktree })` in a workspace
+    of its own (for a project `setGitInfo` made a repository, else
+    `worktree_unavailable`), and `restore(chat)` to make a saved chat known.
+  - `scheduledAgents`: `fire(id)` starts a chat the extension owns (with
+    `scheduledAgentId` and `scheduledAgentTag`), sets `lastRun.agentId` and
+    tells `onRun`; `failNextRun`.
+  - `companions`: `respond` (may be async), and `requestApproval` for an
+    agent asking to use a tool mid-run.
+  - `textGeneration`: `respond`, `setPreferred`, `calls`; `agents:generate`
+    checked, and the host's two-running, eight-waiting lane (`busy`).
+  - `secrets:own` (origins, https, redaction).
+  - `github:api`: `respond('GET', '/route', …)`, `respondGraphql` (a mutation is
+    refused before it is sent), `respondDownload`, `setSignedIn`.
+  - `backlog` (`seed`, `setKey`, `setLocation`, `failScan`), `usage`
+    (`record`) and `activity` (`addChat`, `addPrompt`), behind their
+    permissions.
+  - `workspaces`: `setHydrated(false)` for the after-launch null, `close(id)`
+    for `list({ includeClosed: true })`, `setGitInfo(id, …)`.
+
+  A call your permissions do not cover is refused as the host's gate refuses it
+  (`not_permitted`, or a throw), from the same table, and listed in
+  `undeclared`. `methods.read` / `methods.operate` call your
+  declared methods as a surface or a command would; `tools.call` hands the
+  handler agent metadata. `setAppState(key, value)` pushes a settings change
+  `watchModuleAppState` hears. `getModuleDataDir()` hands out a temporary
+  folder (`dispose()` removes it), `getAssetPath` resolves under `moduleRoot`,
+  `skills.setStatus(root, id, status)` scripts `getSkillStatus`, and
+  `setChatRuntimes` what `listChatRuntimes` answers. `emitted`,
+  `notifications`, `startup()` and `shutdown()` cover the rest.
+- **`createFakeFrameStudio({ manifest, main? })`** is the `studio` a surface
+  is handed in its frame, with a fake Studio behind `host.call`: every call is
+  checked as Studio checks it, against the manifest's permissions and against
+  what whoever opened the surface holds (`invoker`, every permission unless
+  given), and carried out against the same fakes. `studio(surface)` is what
+  one `mount` is handed; `mount(entry, surface, root)` runs a ui entry into a
+  root you give it and resolves to its cleanup. It records `readied`,
+  `toasts`, `drafts`, `openedDoors`, `focusedTabs`, `notifications` and
+  `undeclared`; `settings()` and `file(workspaceId, path)` read back what was
+  written, `emit` delivers a worker event and `setColorScheme` a theme change.
+  Given `main`, the worker's methods, events, Settings values, storage,
+  Backlog and usage are main's; alone, it keeps its own.
+- **`renderToHtml(node)`** renders a React tree in Node, waiting for `lazy`
+  components. It is a server render: no effects run.
+
+A scaffolded project's tests are TypeScript: `npm test` runs every
+`*.test.ts` with `node --test`, TypeScript loaded as written, as Studio loads
+it. `sprintengine-extension check` validates extension.json, builds each
+surface's modules and checks its `mount` export, and activates the worker
+against the fake main host, saying where anything fails at its file and line.
+
+## What the host provides
+
+Which Studio an extension needs is `engines.studio`. What the running Studio
+provides *today* is a separate question, and both `studio` objects answer it:
+
+```ts
+if (studio.supports('conversations')) startChatFeatures(studio)
+```
+
+`supports(name)` is true for a capability the host provides now — a service
+can be missing because the module that provides it is turned off. Names:
+`conversations`, `chat.open`, `companion-agents`, `scheduled-agents`,
+`secrets:own`, `github:api`, `storage:own`, `mcp-tools`, `module-assets`,
+`notifications`, `backlog-write`, `usage`, `activity`, and the finer ones
+described where their API is below. An unknown name answers `false`, so an
+extension may probe for capabilities newer than its SDK.
+
+## Permissions
+
+Ask for what the extension touches in `permissions`; only the `ui` and
+`worker` tiers hold any. Studio checks every call your code makes into it at
+the host, against two things, and a call goes through only when both hold:
+the permissions the person approved, and what whoever set the call off may do
+themselves (the person, a paired device, another app, an agent). A refused
+call answers `not_permitted` or `approval_required`, in the method's failure
+shape where it has one, or throws. A `ui` extension's code runs in sandboxed
+frames, so what it is allowed is all it can do; a `worker` extension's code
+runs on this machine with full access, and the approval says so.
+
+| Permission | Checked on |
+| --- | --- |
+| `workspace:read` | `WorkspaceContextToken`, `getWorkspaceGitInfo`, `getSkillStatus`, a surface's workspace reads |
+| `workspace:operate` | `WorkspaceServiceToken`, `ensureSkillInstalled` |
+| `conversation:own` | The conversation service, and allowing a companion's tool call |
+| `conversation:bypass` | Running the extension's chats on `bypass` (without it they go no looser than `auto`), `allowedTools`, and a companion task with `tools: 'auto'` |
+| `chat:draft` | A surface's `chat.draft` (a draft the person reads and sends) |
+| `storage:own` | `getModuleStorage`, `getModuleDataDir`, a surface's `storage.*` |
+| `settings:own` | `getModuleAppState`, `watchModuleAppState`, a surface's `settings.*` |
+| `notifications:show` | `notify` |
+| `secrets:own` | `getSecretsService` |
+| `github:api` | `getGitHubService` (only the person may set it off) |
+| `tools:contribute` | `registerMcpTools`, and declaring `contributes.mcpTools` |
+| `agents:companion` | `getCompanionAgentsService` |
+| `agents:generate` | `getTextGenerationService(studio).generate` |
+| `schedules:own` | `getScheduledAgentsService` |
+| `backlog:read` | `getBacklogService` reads; a surface's `backlog.list`, `backlog.location` |
+| `backlog:operate` | `getBacklogService` writes; a surface's other `backlog.*` |
+| `workspace-files:read`, `workspace-files:write` | A surface's `files.read` / `.stat` / `.search`, and `files.write`, inside a workspace's folder |
+| `providers:read` | `listChatRuntimes` |
+| `usage:read` | `getUsageService`, a surface's `usage.query` |
+| `conversation:read` | `getActivityService`: every chat on this machine, read only (flagged broad in the approval) |
+
+Your own methods (`registerMethods`), events and files need no permission.
+The list is closed: `EXTENSION_PERMISSIONS` exports it, and a name not in it
+fails validation. What each host method needs, of your extension and of
+whoever set the call off, is `EXTENSION_HOST_SERVICES`,
+`EXTENSION_MAIN_HOST_METHODS` and, for a surface, `EXTENSION_FRAME_METHODS`;
+the wording the person reads is in
+[`docs/extension-authors/permissions.md`](../../docs/extension-authors/permissions.md)
+in the app repository.
+
+## Chats with the app's agents
+
+### From the worker: the conversation service
+
+```ts
+import { getConversationService, type MainHost } from '@sprintengine/extension-sdk'
+
+export function activate(studio: MainHost): void {
+  if (!studio.supports('conversations')) return
+  const chats = getConversationService(studio)
+
+  studio.registerMethods({
+    ask: {
+      access: 'operate',
+      params: readWorkspaceId, // (value) => { ok: true, params } | { ok: false, message }
+      handler: async ({ workspaceId }, { commandId }) => {
+        const created = await chats.create({
+          commandId, // a retried call finds the chat the first one made
+          workspaceId,
+          prompt: 'Summarise what changed on this branch.',
+          skills: ['my-review-guide'], // installed before the first turn and invoked in it
+        })
+        if (!created.ok) return created // { ok: false, code, message }
+        const { conversation } = created
+        const off = chats.subscribe(conversation, async (event) => {
+          if (event.type !== 'turn_completed') return
+          off()
+          const reply = await chats.reply(conversation) // the agent's last message of the turn
+          if (reply.ok) studio.emit('summary', reply.text)
+        })
+        return { ok: true, result: { agentId: conversation.agentId } }
+      },
+    },
+  })
+}
+```
+
+Declare `conversation:own` ( for a extension that only
+reads its chats).
+
+- **`create(input)`** starts a chat in a workspace: `cli` and `model` default
+  to the person's last choice, `prompt` is the opening turn, `skills` are
+  installed and invoked, `attachments` are images, `name` is optional.
+  `permissionPreset` is `'manual'`, `'none'`, `'auto'` or `'bypass'`; absent
+  takes the person's default. `worktree: { name? }` starts the chat in a fresh
+  git worktree of the project (branch `<prefix>/<name>-<suffix>`, the person's
+  worktree branch prefix being `agent` unless they changed it), in a workspace
+  of its own whose id the answer names; a project that is not a git
+  repository answers `worktree_unavailable`. Check
+  `studio.supports('conversation-worktrees')`.
+- **`send(ref, { message, skills?, attachments?, steer? })`** adds a turn;
+  `steer: true` lands it inside the turn already running. `interrupt` and
+  `stop` do what they say.
+- **`respondToApproval(ref, { requestId, decision, answers? })`** answers an
+  `approval_requested` event: `decision` is `'once'`, `'conversation'` (allow
+  requests of that kind for the rest of the chat) or `'deny'`. The older
+  `approved: boolean` still works, as `'once'` or `'deny'`. A rule that
+  outlives the chat is the person's to make, so no answer makes one.
+- **`setPermissionPreset(ref, preset)`** and **`setModel(ref, modelId)`**
+  switch a running chat's preset (from its next tool call) or its model (from
+  its next turn; an id `listChatRuntimes()` lists for the chat's runtime, or
+  `'default'`). Each answers with what is now in force, plus the runtime's
+  `notice` when the change applies later than at once. A runtime that binds a
+  chat to its model refuses `setModel`.
+- **The preset ceiling.** A extension's chats run no looser than `'auto'` unless
+  its manifest declares `conversation:bypass`. A looser preset is lowered to
+  the ceiling, not refused, and `create` and `setPermissionPreset` name the
+  preset in force. Check `studio.supports('conversation-controls')` before
+  `setPermissionPreset`, `setModel`, a `decision`, or a preset other than
+  `'none'` and `'bypass'`.
+- **`answerQuestion(ref, { requestId, answers })`** answers a question the
+  agent asked, and **`resolvePlan(ref, { requestId, decision })`** carries a
+  plan out (`'approve'`) or sends the agent back to planning (`'reject'`).
+  Each is refused for a request of another kind. Check
+  `studio.supports('conversation-requests')`; a host without it takes a question's
+  answers on `respondToApproval`, which `answerQuestion` falls back to.
+- **CLI modes and allowed tools.** `create` and `setPermissionPreset` take the
+  agent CLI's own `permissionMode` beside the preset (Claude Code's
+  `'acceptEdits'`), which goes with a preset lowered to the ceiling; `create`
+  also takes `allowedTools`, tools the chat uses without asking, which needs
+  `conversation:bypass`. Check `studio.supports('conversation-permissions')`.
+- **`commandId`.** Every mutating call but `stop` takes your own id for it. A
+  retry with the same id, even after the app restarted, is answered with the
+  first call's result and never carried out twice; a retried `create` answers
+  with the chat the first one made. Check `studio.supports('conversation-streams')`.
+- **`subscribe(ref, cb)`** streams `ModuleConversationEvent`s from now on;
+  **`follow(ref, cursor, onFrame)`** streams with no gap: a `snapshot` (or,
+  given the `afterSeq` and `generation` of events you already hold, only the
+  ones after them), one `synchronized` fence, then live events. Render what
+  you cached, then follow from its cursor; keep each fence's `seq` and
+  `generation` as the next cursor. A snapshot with `reset: true` replaces what
+  you held. Check `studio.supports('conversation-streams')`. Both attach to a
+  chat the host has not loaded yet (a saved chat at startup) and deliver once
+  it is; they throw only without `conversation:own` or for a malformed ref.
+  **`transcript(ref)`** replays everything recorded. **`list(filter?)`** and
+  **`watch(filter, cb)`** give `ModuleConversationSummary` rows; a scheduled
+  run's chat carries `scheduledAgentId` and `scheduledAgentTag`.
+- **Replies and usage.** A `turn_completed` event's payload carries `text`
+  (the agent's last message of the turn), `usage` (`{ inputTokens,
+  outputTokens, cacheReadTokens, cacheWriteTokens }`, summed over the turn's
+  model requests, fresh input apart from the prompt cache's share; a count
+  the runtime cannot report is absent) and `costUsd`, where the runtime can
+  say them (`ModuleConversationTurnCompletedPayload`).
+  **`reply(ref, turnId?)`** reads a finished turn's text for you; never
+  rebuild it from `content_delta`s. Check `studio.supports('conversation-replies')`.
+- A extension reaches **only the chats it created** — never the person's own and
+  never another extension's (`not_owned`). Its chats are otherwise ordinary: they
+  appear in the sidebar and on paired devices like any other. Reading the
+  person's chats is a separate, read-only service behind its own broad
+  permission: see "The person's chats" below.
+- Failures come back as `{ ok: false, code, message }` with a
+  `ModuleConversationErrorCode`, never a throw.
+
+### From a surface: a chat draft for the person
+
+```ts
+const opened = await studio.host.call('chat.draft', {
+  workspaceId,
+  prompt: 'Review the open pull request against our style guide.',
+  name: 'Style review',
+})
+```
+
+`chat.draft` opens a chat in the window that drew the surface, with the prompt
+in its composer as a **draft** the person reads and sends. Declare
+`chat:draft`. A chat the extension drives itself is the worker's (above).
+`tabs.focus` (`{ workspaceId, kind: 'chat' | 'file', id }`) brings a chat or a
+file to the front.
+
+A runtime's `id` (`claude-code`, `codex`, `cursor`, `opencode`, `grok`) is the
+one id every API takes for it: a conversation's and a scheduled agent's
+`cli`, a companion's `engine.cli` (which also takes the older provider ids,
+`claude-agent` and the like) and text generation's `cli`. The worker's
+`await studio.listChatRuntimes()` lists them.
+
+### Companion agents
+
+`getCompanionAgentsService(studio)` attaches a workspace-bound background agent
+your extension drives with structured runs (`runStructured`) and messages, without
+a chat tab. `attach` never starts anything; the first run does. Declare
+`agents:companion`.
+
+The agent asks before every tool it uses, and a run's `tools` decides the
+answer: `'none'` (the default) denies them all and tells the agent up front
+it has no tools — use it for any prompt carrying text you did not write;
+`'ask'` leaves them for the person, whose answer you relay with
+`handle.respondToApproval({ requestId, decision })` (allowing needs
+`conversation:own`); `'auto'` approves them all and needs
+`conversation:bypass`. `engine.cli` takes a runtime id. Check
+`studio.supports('companion-tools')`: a host without it approves every tool call.
+
+### One prompt, no chat: text generation
+
+```ts
+import { getTextGenerationService } from '@sprintengine/extension-sdk'
+
+const answer = await getTextGenerationService(studio).generate({
+  prompt: digest,
+  system: 'Write a three-line standup from this work log.',
+  json: true, // optional: the answer must be one JSON value
+})
+if (answer.ok) console.log(answer.text, answer.usage, answer.model)
+```
+
+`generate` answers one prompt through the person's own agent CLI, headless and
+under its own sign-in: no workspace, no chat tab, nothing in their history.
+`cli` is `claude-code` or `codex`; absent, the runtime the person chose for
+Studio's text generation in Settings, else `claude-code`. `model` absent takes
+the person's chosen model on their chosen runtime, else the runtime's small
+default (`claude-haiku-5-5`, `gpt-5.6-luna`); `maxOutputTokens` caps the
+answer on Claude Code (Codex has no output cap and ignores it). Declare `agents:generate` and check
+`studio.supports('text-generation')`. Each extension gets two calls at once and
+eight waiting, and more than thirty a minute answer `busy`. Failures are typed
+(`ModuleTextGenerationErrorCode`), never thrown.
+
+## Brokered credentials
+
+### Secrets
+
+```ts
+import { getSecretsService } from '@sprintengine/extension-sdk'
+
+const secrets = getSecretsService(studio)
+await secrets.set('weather-api', apiKey, { allowedOrigins: ['https://api.weather.example'] })
+const res = await secrets.fetchWithSecret('weather-api', 'https://api.weather.example/v1/today', {
+  placement: { header: 'Authorization', scheme: 'Bearer' },
+})
+if (res.ok) render(JSON.parse(res.body))
+```
+
+A stored value never comes back to extension code — not from `has`, not in a
+response, not in an error. It leaves the host only inside a `fetchWithSecret`
+request to one of the https origins it was stored with (exact origin, bound at
+`set`; change the list by setting the value again). Requests refuse redirects
+and cap the response at 1 MiB. Values are encrypted with the operating
+system's keychain; where it has none, `set` answers `storage_unavailable`.
+Declare `secrets:own`; check `studio.supports('secrets')`.
+
+### GitHub
+
+```ts
+import { getGitHubService } from '@sprintengine/extension-sdk'
+
+const github = getGitHubService(studio)
+const { signedIn } = await github.status()
+const pulls = await github.request({
+  route: '/repos/{owner}/{repo}/pulls',
+  params: { owner: 'acme', repo: 'app', state: 'open' },
+})
+```
+
+The request goes to the GitHub API with the person's own sign-in; the extension
+never sees the token. `route` is a `/`-prefixed template: `{name}` placeholders
+are filled from `params` (encoded, so a value cannot add a segment, a query or
+a host) and the rest of `params` becomes the query string. Anything that could
+move the request elsewhere is `invalid_route`. Declare `github:api`; check
+`studio.supports('github')`.
+
+Beyond plain requests:
+
+- **Headers and cheap polling** (`supports('github-headers')`): every answer
+  carries `headers` narrowed to `x-ratelimit-*`, `link`, `etag` and
+  `retry-after`. Send an `etag` back as `ifNoneMatch` and an unchanged resource
+  answers `{ ok: true, status: 304, data: null }`, free of the rate limit.
+  `accept` takes one of GitHub's media types (`ModuleGitHubMediaType`), such as
+  `application/vnd.github.diff`.
+- **Read-only GraphQL** (`supports('github-graphql')`):
+  `github.graphql(query, variables)`. A document holding a top-level `mutation`
+  or `subscription` is refused (`invalid_query`) before it is sent, so a poll is
+  a read, not a write acting as the person. `data` is `{ data, errors? }`.
+- **Downloads** (`supports('github-download')`): `github.download({ route,
+  params, encoding? })` for a job's logs or an archive. GitHub answers those
+  with a redirect to its own storage; the host follows that one redirect only
+  to a GitHub storage host and strips the token before it does
+  (`redirect_not_allowed` otherwise).
+
+## The worker's `studio`
+
+`MainHost`, handed to `activate`. The worker runs in a Node process of its
+own, one per extension, started when something needs it and stopped after
+five idle minutes, unless extension.json says `background: true`, which
+starts it when the extension is switched on and keeps it running. A listener
+(`watch`, `subscribe`, `onStatus`, `watchModuleAppState`) lasts only while the
+worker runs: to keep listening across idle periods, set `background: true`.
+Work a call into your worker sets going (a timer) may call Studio only while
+that call lasts; a background worker's own work, from `activate` and its
+startup hooks on, may at any time. Every call into Studio crosses to Studio's
+process: one that answers data answers a promise, and one that answers an
+unsubscriber answers it at once.
+
+- `moduleId` (your install key) and `supports(capability)`.
+- `listChatRuntimes()` — the agent runtimes a chat can run on, with the ones
+  this machine lacks marked unavailable (`supports('chat-runtimes')`).
+- `registerMethods(methods)` — the methods your surfaces (or a client the
+  person granted them) call through `methods`, and the ones commands without
+  an `action` run: each with its access (`read` or `operate`), a params
+  validator and a handler. Your own methods need no permission.
+- `registerMcpTools(tools)` — serve the tools extension.json declares in
+  `contributes.mcpTools` on Studio's MCP server. A tool not declared is
+  refused, and the declaration's `description` and `access` are what agents
+  see. Declare `tools:contribute`. An off extension's tools stay listed and answer an
+  enable error instead of running.
+- `getService` / `requireService(token)` — the service bridge. An extension
+  resolves only the services the SDK publishes (its exported tokens and the
+  ones behind the `get*Service` helpers). A worker provides none of its own.
+- `onStartup`, `onShutdownBegin` and `onShutdown` hooks.
+- `registerSidecar(spec)` — a declaration the host lists; it does not spawn
+  it. Spawn your own process if you need one (declare `process:spawn`).
+- `notify({ severity, title, body?, target? })` — a row in the bell of every
+  open window, under your extension's name (stamped by the host). Only
+  `warning` and `error` reach it. `target: { surfaceId }` names one of your
+  doors: the row's Open lands there. Flood-bounded (an identical repeat within
+  10 s, or more than 20 in 10 s, is dropped). A row sent before any window is
+  open is kept and filed when one opens. Check `supports('notifications')`.
+- `emit(topic, payload?)` — an event to your surfaces (below).
+- `ensureSkillInstalled(workspaceRoot, skillId)` / `getSkillStatus(…)` — put
+  one of Studio's own skills in a workspace, or ask without writing. An
+  extension's own skills are `contributes.skills` in its extension.json.
+- `getModuleAppState(key)` (a promise) / `watchModuleAppState(cb)` — the
+  extension's app state (what its surfaces and settings section write),
+  read-only, persisted, so the worker sees the person's settings with no
+  window open (`supports('main-app-state')`).
+- `getWorkspaceGitInfo(workspaceId)` — the branch and remotes of a workspace,
+  each remote with `owner/repo` when it is on GitHub. Declare
+  `workspace:read`; it is checked.
+- `getModuleDataDir()` — a directory of your own under the app's user data,
+  for data past storage's 1 MB value limit; removed at uninstall.
+- `getAssetPath(relativePath)` — the absolute path of a file the extension
+  ships, for a worker thread or a data file; only verified files whose bytes
+  still match resolve.
+
+MCP tool names are lower-case letters, digits and underscores. A name that
+matches a core gateway tool, falls in one of the shell's families (`browser`,
+`canvas`, `editor`, `tour`, `terminal`) or matches another extension's tool is
+a registration error naming the conflict. The core families (`agent`,
+`backlog`, `cli`, `conversation`, `extension`, `local_server`, `marketplace`,
+`module`, `pull_request`, `schedule`, `tailnet`, `workspace`, `worktree`, and
+`studio`, `sprintengine`, `app`) are reserved for core tools; name yours in a
+family of your own (`decisions_record`). The gateway does not rename or prefix
+extension tools. A tool's handler receives `context.metadata.verified`: true
+when a launch token or the tailnet proved who is calling
+(`supports('mcp-verified-identity')`).
+
+## A surface's `studio`
+
+A panel, door or settings section runs in a sandboxed frame of its own, on
+every client: no Node, no network, and nothing of Studio's window. Its
+`mount(root, studio)` is handed the frame's root and an `ExtensionMountStudio`:
+
+- **`surface`**: `{ point, id, workspaceId? }`, which contribution this is, and
+  a panel's workspace.
+- **`host.call(method, params, { signal }?)`**: ask Studio to do one thing.
+  Studio checks each call against the extension's approved permissions and
+  against what the person, device or browser that opened the surface may do;
+  a refusal rejects with an `Error` whose `code` says why. The methods
+  (`ExtensionFrameMethods`, and their requirements in `EXTENSION_FRAME_METHODS`):
+  `workspace.list` / `.get`; `backlog.list`, `.location`, `.create`,
+  `.updateStatus`, `.updateTriage`, `.addLink`, `.updateModuleMetadata`;
+  `usage.query`; `storage.get` / `.set` / `.delete` / `.list`; `settings.get` /
+  `.set`; `files.read` / `.stat` / `.search` / `.write` (inside a workspace's
+  folder only, never through a link out of it); `notify`; `toast`;
+  `chat.draft`; `tabs.focus`; `doors.open`.
+- **`host.has(method)`**: whether this Studio offers it.
+- **`methods<Contract>()`**: the worker's declared methods (below).
+- **`on('push' | 'theme', fn)`** and **`theme`**: the worker's events, and the
+  person's theme.
+- **`ready()`**: say the surface has drawn its content.
+
+A frame sends at most 120 messages in 10 seconds, each at most 64 KiB. The
+guide's `api-renderer` topic has the full table.
+
+## Calling the worker from a surface
+
+Declare what your surfaces call as methods, in one contract both sides
+import:
+
+```ts
+// src/methods.ts
+export type EventsMethods = {
+  'events.count': { access: 'read'; params: { day: string }; result: number }
+  'events.save': { access: 'operate'; params: { events: string[] }; result: { saved: number }; errors: 'full' }
+}
+
+// the worker
+export function activate(studio: MainHost): void {
+  studio.registerMethods<EventsMethods>({
+    'events.count': { access: 'read', params: readDay, handler: ({ day }) => ({ ok: true, result: count(day) }) },
+    'events.save': {
+      access: 'operate',
+      params: readEvents,
+      handler: async ({ events }) =>
+        (await save(events))
+          ? { ok: true, result: { saved: events.length } }
+          : { ok: false, code: 'full', message: 'No room left.' },
+    },
+  })
+}
+
+// a surface
+const methods = studio.methods<EventsMethods>()
+const answer = await methods.operate('events.save', { events })
+if (!answer.ok) await studio.host.call('toast', { tone: 'error', message: answer.message })
+```
+
+- **Access.** A `read` method changes nothing and is reached by a client
+  granted `extensions:read`; an `operate` one changes something, needs
+  `extensions:operate`, and is carried out once per command id (a retry is
+  answered with the first answer; the handler is told the id as
+  `context.commandId`). `methods().read` offers only `read` methods and
+  `operate` only `operate` ones.
+- **Params.** Every method reads its params with its own validator,
+  `(value) => { ok: true, params } | { ok: false, message }`; a refusal is
+  answered `invalid_params` in your words and the handler never runs.
+- **Answers.** A handler answers `{ ok: true, result }` (JSON) or its own
+  `{ ok: false, code, message }`. A call never throws: the host's refusals are
+  answers too: `extension_unavailable` (the worker is not running here),
+  `extension_method_unknown`, `invalid_params`, `scope_required`,
+  `unavailable` (a handler that threw, or no connection).
+- **Names** are a lower-case letter, then letters, digits, dots and dashes;
+  your install key is their namespace. Declaring them needs no permission.
+- **Commands.** A command without an `action` calls the method of its id with
+  access `operate` and an `ExtensionCommandContext` as params (`where`,
+  `workspaceId`, and `backlogItemIds`, `filePaths` or `notification` for a
+  menu).
+
+They travel from the frame through the window that drew it to the server the
+extension runs on (`extension.call` on the Studio protocol), as the
+connection of that window.
+
+## Events (worker → surfaces)
+
+The worker's `studio.emit(topic, payload?)` pushes to your open surfaces,
+which hear it with `studio.on('push', ({ topic, payload }) => …)`. Only your extension's subscribers receive
+it; one emit reaches every open window, in order per extension. **Nothing is
+replayed**: keep the durable answer readable through a `read` method and let
+the event say "read it again". Payloads must be JSON (they ride the Studio
+protocol's `extension.events` stream); delivery pauses while your extension is off.
+
+## Storage
+
+`getModuleStorage(studio)` → `get` / `set` / `delete` / `list`, keyed per extension
+and optionally per workspace. Workspace keys live in the project's store in
+the person's home (`~/.sprintengine/workspaces/<project>/modules/<install key>/`),
+never in the project's folder; global keys under the app's data; JSON
+values up to 1 MB, atomic writes. Declare `storage:own`.
+
+`list({ prefix })` and `getMany({ keys })` read a record family in one call
+(`supports('storage-query')`). `watch({ workspaceRoot? }, cb)` says which keys
+changed: your own writes at once, and a change made by other means — a
+hand edit — within a couple of seconds (`supports('storage-watch')`).
+Workspace keys do not travel with a clone; data that belongs to the project
+is a file your extension writes where the person asks. Data past the value limit
+belongs in `studio.getModuleDataDir()` (`supports('module-data-dir')`).
+
+## Workspaces from the worker
+
+```ts
+import { WorkspaceContextToken, WorkspaceServiceToken } from '@sprintengine/extension-sdk'
+
+const created = await studio.requireService(WorkspaceServiceToken).create({ name: 'Scratch', folderPath: '/abs/path' })
+const view = await studio.requireService(WorkspaceContextToken).get(workspaceId) // { id, name, folderPath, mode } | null
+```
+
+`create` resolves once the workspace is confirmed, so a returned id is real.
+The context service (declare `workspace:read`) also has `list()`: the open
+workspaces, each with `open: true`. `list({ includeClosed: true })` adds the
+workspaces closed on this machine, newest first, with `open: false` and
+`closedAt` (`supports('workspace-history')`), so a extension can tie what it kept
+back to a project that is no longer open. `studio.getWorkspaceGitInfo(id)` reads
+a workspace's branch and remotes without parsing `.git` yourself.
+
+<!-- Backlog, usage and activity services -->
+
+## The Backlog
+
+A extension reads and changes a workspace's Backlog through the host, never by
+reading or writing item files itself. `getBacklogService(studio)` in
+the worker, and the same calls on a surface's `studio`:
+
+```ts
+import { getBacklogService } from '@sprintengine/extension-sdk'
+
+const backlog = getBacklogService(studio)
+const created = await backlog.create(workspaceId, { title: 'Faster refunds', status: 'ready', epic: 'payments' })
+if (created.ok) console.log(created.displayId, created.relativePath) // "MC-241", "backlog/payments/2026-10-09-faster-refunds.md"
+await backlog.updateStatus(workspaceId, itemId, 'in_progress')
+await backlog.addLink(workspaceId, itemId, { id: 'board-chat', type: 'agent', label: 'Board chat', target: { kind: 'chat', id: agentId } })
+
+// a surface
+const moved = await studio.updateBacklogStatus(workspaceId, item.id, 'completed')
+```
+
+- `itemId` is a `BacklogItemView.id` (the item's logical path, `backlog/…`).
+- Every write is a call into the app's own Backlog service, in the project's
+  mutation lane, so it never interleaves with another writer. `create` takes
+  the app's create path: it allocates the next number, files the item under
+  its epic's folder with a unique name, and answers `{ id, relativePath,
+  path, numericId, displayId }`.
+- `addLink` records the link as your extension's (a `moduleId` naming another
+  extension is refused); `updateModuleMetadata` writes your extension's entry only.
+- `getLocation` / `getBacklogLocation` answer `{ root, isDefault, exists }`:
+  where the item files are, including a Backlog the person moved elsewhere.
+- `list(workspaceId)` (main) reads the items from disk now.
+- Answers are `{ ok: true, … }` or `{ ok: false, code, message }` with a
+  `ModuleBacklogErrorCode`; values outside the app's vocabulary are refused
+  as `invalid_input`, never guessed.
+- `BacklogItemView` carries `numericId`, `displayId` (`MC-240`, with the
+  workspace's key), `epic` and `modifiedAt`.
+- `watchBacklogItems(workspaceId, cb, { onError })`: `onError` hears a
+  workspace with no folder, one that cannot be resolved, or a Backlog that
+  could not be read. The watch stays open and calls `cb` again after the next
+  readable scan.
+
+Declare `backlog:read` for reads and `backlog:operate` for writes; the host
+checks both. `studio.supports('backlog-write')` says whether the host has the
+write API.
+
+## Token usage
+
+`getUsageService(studio).query({ from, to, groupBy })` answers token usage of
+every agent session on this machine: Studio's chats, and the Claude Code and
+Codex sessions a person ran in a terminal (read from the CLIs' own session
+logs). The twin in a surface is `studio.queryUsage(query)`.
+
+```ts
+import { getUsageService } from '@sprintengine/extension-sdk'
+
+const usage = getUsageService(studio)
+const week = await usage.query({ from: Date.now() - 7 * 864e5, to: Date.now(), groupBy: ['day', 'model'] })
+// week.rows: [{ day: '2026-10-08', model: 'claude-opus-4-1', tokens: { input, output, cacheRead, cacheWrite }, requests, reportedCostUsd }]
+const off = usage.onChanged(() => refreshMyView())
+```
+
+- `groupBy` is any of `day` (local calendar day), `model`, `provider`,
+  `workspace` and `session`; without it the query answers one total row.
+- A session a Studio chat ran is counted once: from the CLI's own log when this
+  machine has it, under the chat's workspace, agent id and title. A terminal
+  session is attributed to the open workspace whose folder holds it (a
+  worktree is followed to its repository); `workspaceId` is null otherwise.
+- The service returns tokens; pricing them is your extension's job.
+  `reportedCostUsd` is set only for turns whose tokens come from a Studio
+  transcript, where the runtime reported a cost.
+- Usage is kept to the hour, so a window is too.
+- Nothing is read at startup. The first query waits for the first read of the
+  logs (seconds on a large history; incremental after that, cached across
+  runs); later queries answer at once and read again in the background.
+  `onChanged` fires after a read that changed the numbers.
+
+Declare `usage:read` (the consent prompt says "See token usage and cost of
+every agent session on this machine"); check `studio.supports('usage')`.
+
+## The person's chats (activity)
+
+`getActivityService(studio)` reads the person's Studio chats in every open
+workspace, read-only:
+
+- `listChats({ from?, to?, workspaceId? })` → `{ workspaceId, agentId, title,
+  cli, providerId, model, createdAt, updatedAt, turnCount, status }` per chat,
+  newest first.
+- `prompts({ from, to, workspaceId?, limit? })` → `{ at, workspaceId,
+  agentId, text, replyTail? }`: each message the person sent, with the last
+  few hundred characters of the agent's reply. `limit` defaults to 200 (at
+  most 1000); `truncated` says older ones were left out.
+
+It never returns tool calls, tool output, reasoning or attachments, and every
+event is redacted the way the conversation service redacts what it hands
+extensions. Messages the app sent on the person's behalf are not theirs and are
+left out. Chats in closed workspaces, and agent sessions outside Studio, are
+not covered.
+
+Declare `conversation:read`. Its consent prompt says "Read every chat on
+this machine, including what you and the agents wrote" and is flagged as a
+broad scope, so ask for it only when reading the person's chats is the point
+of the extension. Check `studio.supports('activity')`.
+
+## Scheduled agents
+
+A scheduled agent is a prompt and a cron schedule: each time the schedule
+comes round, a new chat starts in the project with that prompt as its first
+message, on the CLI, model, permissions, skills, MCP servers and worktree
+setting it was made with. Nothing carries from one run to the next. A extension
+creates its own with `getScheduledAgentsService(studio)` (declare
+`schedules:own`). Every method
+is scoped to your extension: `list` returns only yours, and `update`, `remove`
+and `runNow` refuse an id you did not create. They appear in the person's
+sidebar like the ones they make themselves, and they can close them.
+
+```ts
+import { getScheduledAgentsService, type MainHost } from '@sprintengine/extension-sdk'
+
+export function activate(studio: MainHost): void {
+  studio.registerMethods({
+    'forecast.schedule': {
+      access: 'operate',
+      params: readFolderPath,
+      handler: async (folderPath) => {
+        const created = await getScheduledAgentsService(studio).create({
+          prompt: 'Refresh the forecast notes for the watched city.',
+          schedule: { cron: '0 9 * * 1-5', timezone: 'Europe/Dublin' },
+          folderPath,
+          hostId: null,
+          cli: 'claude-code',
+          cliModel: null,
+          permissionPreset: null,
+          skills: [],
+          mcpServers: [],
+          worktree: null,
+          name: 'Morning forecast', // the sidebar's title; absent, the prompt's first line
+          tag: 'city:dublin', // your own label; each run's chat carries it
+        })
+        return created.ok ? { ok: true, result: created.agent.id } : created
+      },
+    },
+  })
+}
+```
+
+To follow a run, listen with `onRun((agent, run) => …)`: it names each run's
+chat (`run.workspaceId`, `run.agentId`) as it starts, a one-time schedule's
+included (it closes itself straight after, so `onChanged` never shows that
+run). The chat is your extension's, so the conversation service follows it, and
+its summary carries `scheduledAgentId` and `scheduledAgentTag`; `lastRun` also
+names its `agentId`. A repeating schedule's times missed while the app was
+closed are not replayed (the next run counts from start-up); a one-time
+schedule missed that way runs once the app is open; times missed while the
+computer slept run once on waking; and a time that comes while the previous
+run is still working is skipped, not queued. Check
+`studio.supports('scheduled-agent-runs')` before relying on `name`, `tag` or
+`onRun`.
+
+## Accepting drags from the Backlog and Files panels
+
+`readFileDropPayload(dataTransfer)` reads the published payload under
+`SPRINTENGINE_FILE_DROP_MIME` and returns `null` — never throws — for anything
+it does not recognise. `hasFileDropData` is the `dragover`-safe presence check;
+`setFileDropData` originates a drag the app's own drop targets accept.
+
+## Styling a surface
+
+A surface draws with what it bundles: React, another library, or plain DOM.
+Studio puts the person's theme in its frame as CSS custom properties
+(`THEME_TOKENS`: `--bg-surface`, `--text-default`, `--text-muted`,
+`--border-subtle`, `--accent-primary` and the rest) and updates them in place,
+plus a small kit stylesheet (`se-heading`, `se-muted`, `se-button`,
+`se-input`, `se-list`, `se-list-row`). Only the names are contract; never copy
+a value as hex. The frame is the surface's own document, so its CSS touches
+nothing of Studio's. The guide's `styling` topic has the details.
+
+## Signing and packaging
+
+```sh
+npx sprintengine-extension keygen --out ~/.sprintengine/keys/my-extension.key   # once; keep it out of the project
+npx sprintengine-extension sign extension --key ~/.sprintengine/keys/my-extension.key
+npx sprintengine-extension verify extension
+npx sprintengine-extension pack extension --out packed/my-extension
+```
+
+`sign` validates extension.json, records the sha256 of every file the
+extension ships (everything `pack` copies, extension.json included) in
+`extension.sig` beside it, and signs those digests. `verify` checks the
+signature and every file, byte for byte, and fails when the extension is
+unsigned or changed after signing. `pack` checks that every file extension.json
+names is there and copies an installable folder, leaving out `node_modules`,
+`.git`, key files and symbolic links. Sign again after every build.
+
+The pieces are exported for tooling: `signExtensionFiles`,
+`verifyExtensionSignature`, `parseExtensionSignature`,
+`extensionContentFingerprint`, `computeModuleFileDigestsSync` and
+`moduleFileDigestIssuesSync` (`@sprintengine/extension-sdk/signing`, Node).
+
+## Installing
+
+`npm run dev` registers `extension/` with the Studio on this machine as a
+development folder: Studio loads it from where it is, with no copy, and again
+on every save. Studio waits for you to approve it once in Settings →
+Extensions; a save keeps the approval unless it asks for more. To install a
+copy instead, `npm run pack` and install the packed folder from Settings →
+Extensions; an update installed that way keeps its approval when it asks for
+no more access.
+
+## Files a surface shows
+
+A surface's frame reaches no network and no file of the extension's: bundle
+what it shows, with images and fonts as `data:` URLs. A worker reads its own
+files with `studio.getAssetPath(path)`.
+
+## Intentional narrowings
+
+The drift guard keeps these narrowings sound — an SDK-typed extension is
+always valid for the app:
+
+- `BacklogItemView` widens enumerated app internals to `string`.
+- `CompanionAgentEvent.type` is widened to `string`.
+
+## Versioning
+
+Semver; `4.0.0-beta.1` is the first release of the extension.json format (see
+`CHANGELOG.md`). Which Studio an extension needs is its `engines.studio`,
+not the package version; each field of extension.json says the first Studio
+that reads it. In the app repository a drift guard
+(`drift/sdk-drift-guard.ts`, `npm run test:sdk:drift`) fails the build
+whenever these declarations diverge from the app's own contracts, and
+`npm run test:sdk:pack` imports every published name from the packed tarball.
+
+## License
+
+MIT — see [`LICENSE`](./LICENSE). You may build extensions against this SDK and
+distribute or sell them, including closed-source. Marketplace distribution is
+covered by separate marketplace terms.

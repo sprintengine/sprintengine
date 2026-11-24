@@ -1,0 +1,29 @@
+{
+  "$schema": "../node_modules/@sprintengine/extension-sdk/extension.schema.json",
+  "manifestVersion": 1,
+  "id": "{{id}}",
+  "version": "0.1.0",
+  "engines": {
+    "studio": ">={{studioVersion}}"
+  },
+  "tier": "worker",
+  "name": "{{displayName}}",
+  "description": "{{displayName}}, an extension for SprintEngine Studio.",
+  "permissions": ["backlog:operate"],
+  "main": "src/main.ts",
+  "contributes": {
+    "commands": [
+      {
+        "id": "add-to-backlog",
+        "title": "Add to Backlog",
+        "when": "workspace"
+      }
+    ],
+    "menus": [
+      {
+        "where": "file",
+        "command": "add-to-backlog"
+      }
+    ]
+  }
+}

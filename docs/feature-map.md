@@ -175,12 +175,154 @@ Wire: `schedules.*`. Tests: `src/main/scheduled-agents/scheduled-agents.test.ts`
 
 ## Extending Studio
 
-**Extensions and modules**: `src/main/modules/`, `src/main/module-host/`, `src/server/extensions/extensions-domain.ts`,
-the door `src/renderer/src/components/workspace/globalSurface/extensions/ExtensionsGlobalSurface.tsx`;
-the SDK in `packages/module-sdk/`. Doc: `docs/module-authors/`, `docs/compatibility.md` ("The module
-host API").
+**Extensions** (installing, switching on, the door): `src/main/modules/`, `src/main/module-host/`,
+`src/server/extensions/extensions-domain.ts`, the door
+`src/renderer/src/components/workspace/globalSurface/extensions/ExtensionsGlobalSurface.tsx`; the SDK in
+`packages/extension-sdk/` (CLI, templates, guide). Wire: `extension.*` (`packages/studio-protocol/src/modules.ts`,
+capability `extension-host`). Doc: `docs/extension-authors/`, `docs/compatibility.md` ("The extension host API").
 
-**Skills and plugins**: `src/main/skills/`, `src/server/agent-setup/`. Doc: `docs/plugin-authors/README.md`.
+**The manifest** (`extension.json`: id, tier, permissions, `main`, `contributes`): the one validator
+`packages/extension-sdk/src/extension-manifest.ts` (the field table, tiers in `manifest-schema.ts`), the
+shipped `packages/extension-sdk/extension.schema.json`, the guide's `packages/extension-sdk/guide/manifest.md`;
+Studio reads it through `src/shared/modules/third-party-manifest.ts`. Tests:
+`packages/extension-sdk/test/extension-manifest.test.ts`.
+
+**Approvals and the host gate** (what an extension may call, and who for): every call an extension makes
+into Studio passes `src/main/module-host/extension-host-gate.ts`, against the table in
+`packages/extension-sdk/src/services.ts` (permissions in `permissions.ts`) and the invoker in
+`src/main/module-host/extension-invocation.ts`. Approvals: `src/main/modules/extension-approvals.ts` (an installed extension's bound to its files, a development folder's to
+its folder and access), the review `src/renderer/src/components/settings/ApprovalReviewDialog.tsx`. Wire: `extension.approve`. Doc:
+`docs/extension-authors/permissions.md`. Tests: `src/main/module-host/main-host.gate.test.ts`,
+`src/main/modules/extension-approvals.test.ts`.
+
+**Extension frames** (a panel, door, settings section or custom editor drawn in a sandboxed frame, on every client): the
+document in `src/server/extensions/frames/` (`frame-document.ts`, `frame-bootstrap.ts`, the web listener's
+`frame-route.ts`), the desktop shell's `src/main/extension-frames/extension-frame-shell.ts`, the window's bridge
+`src/renderer/src/modules/extension-frame-host.ts` and mount
+`src/renderer/src/components/extensions/ExtensionSurfaceMount.tsx`; a frame's host calls in
+`src/main/module-host/extension-frame-calls.ts`; the entry contract in `packages/extension-sdk/src/frame.ts`.
+Wire: `extension.frame`, `extension.call`, `extension.contributions` (capability `extension-frames`). Tests:
+`src/server/extensions/frames/frame-document.test.ts`, `src/renderer/src/modules/extension-frame-host.test.ts`,
+`src/main/module-host/extension-frame-calls.test.ts`.
+
+**Custom editors** (an extension's editor for files of a type, in the file's tab, with a document session): the
+contribution in `packages/extension-sdk/src/extension-manifest.ts` and which editor takes a file in
+`packages/extension-sdk/src/custom-editors.ts`; the frame's `studio.document` in
+`packages/extension-sdk/src/editor-document-script.ts` (inlined by `src/server/extensions/frames/frame-bootstrap.ts`);
+the window's choice of editor `src/renderer/src/modules/extension-editors.ts`, its document session
+`src/renderer/src/modules/extension-editor-session.ts`, drawn by
+`src/renderer/src/components/extensions/ExtensionEditorView.tsx` and
+`src/renderer/src/components/extensions/EditorViewPicker.tsx` from
+`src/renderer/src/components/panels/EditorPanel.tsx`; reads and saves through `files.*` in
+`src/main/module-host/extension-files.ts`. Wire: `extension.frame` (`point: customEditors`), `extension.call`
+(capability `extension-editors`). Sample: `packages/extension-sdk/examples/todo-editor/`; template
+`packages/extension-sdk/templates/editor/`. Tests: `packages/extension-sdk/test/custom-editors.test.ts`,
+`src/renderer/src/modules/extension-editor-session.test.ts`, `src/renderer/src/modules/extension-editors.test.ts`.
+
+**What extensions hand agents** (an extension's skills, MCP servers and model providers, `contributes.skills`,
+`.mcpServers`, `.providers`): the points and their shared rules in `packages/extension-sdk/src/extension-manifest.ts`
+and `packages/extension-sdk/src/agent-contributions.ts`; checked at install in
+`src/server/extensions/agent-contributions/install-checks.ts`; projected (skill copies, servers, providers, restart-safe)
+by `src/server/extensions/agent-contributions/projection.ts`, reconciled from `src/main/modules/module-lifecycle.ts`
+after every install, approval, switch and uninstall and at every start; what a local server or a provider asks for in
+`src/main/modules/extension-approvals.ts`. Reach: terminal launches in `src/main/integrations/launch-integration.ts`,
+Claude Code and Codex chats in `src/main/providers/claude-agent-provider.ts` and
+`src/main/providers/codex-conversation-provider.ts` (through `src/main/conversation-runtime.ts`), providers in
+`src/main/plugin-registry.ts` and `src/main/plugin-registry-instance.ts`, their keys in `src/main/secret-store.ts`, their
+requests held to the base URL's origin in `src/main/providers/openai-compatible-provider.ts`. Review:
+`src/renderer/src/components/settings/ApprovalReviewDialog.tsx` and `ExtensionRow.tsx`, through
+`src/renderer/src/components/settings/extensionContributions.ts`. Template `packages/extension-sdk/templates/agent-kit/`.
+Tests: `src/server/extensions/agent-contributions/projection.test.ts`, `packages/extension-sdk/test/agent-contributions.test.ts`,
+`src/main/integrations/launch-integration.test.ts`, `src/main/providers/extension-provider-key.test.ts`,
+`src/main/modules/extension-approvals.test.ts`.
+
+**Extension workers** (an extension's `main`, in a process of its own): `src/server/extensions/workers/`
+(`worker-manager.ts`, `worker-process.ts`, the fork's own `worker-entry.ts`, its environment in
+`worker-env.ts`; its TypeScript loaded as written by `packages/extension-sdk/src/source-hooks.ts`). Tests: `src/server/extensions/workers/worker-lifecycle.test.ts`,
+`src/server/extensions/workers/worker-invocations.test.ts`.
+
+**The extension dev loop** (no build step; a development folder loaded where it is and again on every save; the
+`sprintengine-extension` CLI): source as written in `packages/extension-sdk/src/source-modules.ts` (a surface's
+types, JSX and relative imports, gathered by `src/main/modules/extension-surface-entries.ts` `readSurfaceModules`
+into the frame document of `src/server/extensions/frames/frame-bootstrap.ts`) and
+`packages/extension-sdk/src/source-hooks.ts` (a worker's types, installed by
+`src/server/extensions/workers/worker-entry.ts`). Development folders in `src/main/modules/extension-dev-folders.ts`,
+loaded after the installed extensions by `src/main/modules/user-module-registry.ts` and registered through
+`src/main/modules/module-lifecycle.ts` (`devLoad`, `devUnload`, `devFolders`); a save heard by
+`src/server/extensions/dev/dev-folder-watch.ts`, read once per change by
+`src/server/extensions/extension-discovery.ts` (that folder alone on a save), and loaded live, as an install or an
+approval is, by `src/server/extensions/extension-reload.ts`; what happened kept in `src/server/extensions/dev/dev-events.ts`. Their
+approval: `devFolderApprovalFingerprint` in `src/main/modules/extension-approvals.ts` and
+`classifyDevelopmentExtension` in `src/main/modules/module-signature.ts`; asked of the person by the window's
+`src/renderer/src/components/settings/DevFolderApprovalHost.tsx` and shown by
+`src/renderer/src/components/settings/ThirdPartyModuleList.tsx` and
+`src/renderer/src/components/settings/ApprovalReviewDialog.tsx`, added from
+`src/renderer/src/components/settings/addThirdPartyModuleFromFolder.ts`; surfaces redrawn on a `revision` by
+`src/renderer/src/modules/extension-contributions.tsx`. The CLI: `packages/extension-sdk/src/cli.ts` (usage),
+`cli-commands.ts`, `cli-authoring.ts` (`validate`, `inspect`, `test`, `check`, with `check-worker.ts`), `cli-dev.ts`
+(`dev …`, `shot`), `cli-output.ts` (`--json`, error and exit codes) and `cli-studio.ts` (the gateway's local socket).
+Agents' tools: `src/main/automation/extension-dev-tools.ts` (`extension.dev.*`, held to their caller by
+`bindDevToolsToCaller`, bound in `src/server/core/studio-gateway.ts`) and
+`src/main/automation/extension-shot-tool.ts` (`visual.extension_shot`), drawn by
+`src/main/extension-frames/extension-shot.ts`. Wire: `extension.devFolders`, `extension.devLoad`,
+`extension.devUnload` (an owner's), a contribution's `revision`, an installed view's `development`
+(`packages/studio-protocol/src/modules.ts`). Templates `packages/extension-sdk/templates/`; guide
+`packages/extension-sdk/guide/dev-loop.md` and `packages/extension-sdk/guide/start.md`; the agents' skill
+`resources/studio-plugin/sprintengine-studio/skills/studio-extensions/SKILL.md`. Tests:
+`packages/extension-sdk/test/source-modules.test.ts`, `packages/extension-sdk/test/cli-authoring.test.ts`,
+`packages/extension-sdk/test/cli-dev.test.ts`, `src/server/extensions/extension-discovery.test.ts`,
+`src/main/modules/extension-dev-folders.test.ts`, `src/server/extensions/extension-reload.test.ts`,
+`src/main/automation/extension-dev-tools.test.ts`, `src/main/modules/extension-surface-entries.test.ts`,
+`src/server/extensions/workers/worker-entry.test.ts`.
+
+**The extension catalogue** (browsing, installing from a catalogue entry or a git URL, updates, the kill
+list, install links): the format, its schema and the release entry in
+`packages/extension-sdk/src/catalogue.ts` (`catalogue.schema.json`, guide `packages/extension-sdk/guide/catalogue.md`),
+a commit's folder written out in `packages/extension-sdk/src/git-source.ts`, the CLI's
+`packages/extension-sdk/src/release-entry.ts`. Studio's side in `src/server/extensions/catalogue/`:
+`extension-catalogue.ts` (the checks, installs, updates and views, hung off the lifecycle in
+`src/main/modules/module-lifecycle.ts`), `catalogue-checkout.ts`, `catalogue-fetch.ts` (the addresses Studio
+reads, `EXTENSION_CATALOGUE_BASE`), `catalogue-files.ts` (what it keeps in the data folder), `kill-list.ts`
+and `claude-plugin-extension.ts`; a killed version is held back in `src/main/modules/module-signature.ts`. The
+page: `src/renderer/src/components/settings/ExtensionCatalogueBrowse.tsx` and the git URL dialog
+`src/renderer/src/components/settings/GitInstallDialog.tsx`, from
+`src/renderer/src/components/settings/ModulesSettingsTab.tsx`, over `windowCatalogueLifecycle` in
+`src/renderer/src/studio/moduleLifecycle.ts` (a browser tab too); notices kept for a client that was away in
+`src/server/rpc/studio-modules.ts`; install links in
+`src/shared/extension-install-link.ts` and `src/main/extension-link-router.ts`. Wire: `extension.catalogues`,
+`extension.catalogueEntry`, `extension.catalogueImage`, `extension.catalogueAdd`, `extension.catalogueRemove`,
+`extension.installFrom`, `extension.update` (`packages/studio-protocol/src/modules.ts`). Tests:
+`packages/extension-sdk/test/catalogue.test.ts`, `src/server/extensions/catalogue/extension-catalogue.test.ts`,
+`src/shared/extension-install-link.test.ts`, `src/main/extension-link-router.test.ts`,
+`src/renderer/src/components/settings/ModulesSettingsTab.test.tsx`, `src/renderer/src/studio/moduleLifecycle.test.ts`.
+
+**Agent hooks** (an extension's worker checks, changes or refuses what agents and Studio are about to do): the
+points in `packages/extension-sdk/src/hooks.ts`, the chain in `src/server/extensions/hooks/extension-hooks.ts`
+(who each runs as in `hook-invokers.ts`), served by `src/server/extensions/workers/worker-manager.ts` (`runHook`);
+wired at a Claude Code chat's tool calls (`src/main/providers/claude-agent-provider.ts`, through
+`src/main/conversation-runtime.ts`), launches at one door per runtime (a chat's first session in
+`src/main/conversation-runtime.ts`, a terminal's spawn in `src/server/extensions/hooks/launch-hooks.ts`), every
+message nobody typed at the runtime's `sendTurn` (`hookAs`, set by each of Studio's own senders), terminal agents'
+prompts and raw writes (`src/server/extensions/hooks/control-plane-hooks.ts`) and a tour's prompt
+(`src/main/tours/tour-service.ts`), new workspaces (`src/main/conversation-launch-service.ts`, before a new chat's
+worktree is cut, and `src/server/extensions/hooks/workspace-hooks.ts`) and editor saves
+(`src/server/rpc/studio-file-system.ts`). Wire: `files.writeText` `save`. Sample:
+`packages/extension-sdk/examples/tool-guard/`; template `packages/extension-sdk/templates/hook-guard/`; guide
+`packages/extension-sdk/guide/hooks.md`. Tests: `src/server/extensions/hooks/extension-hooks.test.ts`,
+`src/server/extensions/hooks/launch-hooks.test.ts`, `src/main/conversation-runtime-hooks.test.ts`,
+`src/main/providers/claude-agent-provider-extension-hooks.test.ts` (and its opt-in `.live.test.ts` against the real
+CLI).
+
+**Content contributions** (syntaxes, keybindings, status bar items, settings; no approval needed): checked by
+`packages/extension-sdk/src/content-syntaxes.ts`, served by `src/main/modules/extension-content.ts` and
+`src/main/modules/extension-declared-settings.ts`; drawn by `src/renderer/src/lib/highlight/contributedSyntaxes.ts`,
+`src/renderer/src/modules/extension-contributions.tsx` (keybindings, status bar items) and
+`src/renderer/src/components/extensions/ExtensionSettingsForm.tsx`. Wire: `extension.content`,
+`extension.settings`, `extension.setSetting`. Sample: `packages/extension-sdk/examples/content-sample/`. Tests:
+`packages/extension-sdk/test/content-contributions.test.ts`, `src/main/modules/extension-content.test.ts`.
+
+**Skills and plugins**: `src/main/skills/`, `src/server/agent-setup/`, `src/main/marketplace/` (Claude Code
+plugins from the marketplace). Doc: `resources/marketplace/README.md`.
 
 **Artifacts** (published pages): `src/main/artifacts/`. Doc: `docs/design/artifacts.md`.
 

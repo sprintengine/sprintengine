@@ -18,7 +18,9 @@ import {
   type AccessItem,
   type OverflowMenuItem,
 } from '../ui'
-import type { ExtensionContribution } from './extensionContributions'
+import { extensionHookApprovalLines } from '../../../../../packages/extension-sdk/src/hooks'
+import { agentContributionLines, type ExtensionContribution } from './extensionContributions'
+import { AgentContributionList } from './AgentContributionList'
 import { RUN_STATE_LABEL, publisherName, type ExtensionRunState } from './extensionsModel'
 import { copy } from '../../../../shared/copy'
 
@@ -26,7 +28,7 @@ import { copy } from '../../../../shared/copy'
 // name with publisher · source · signature, one warning glyph per scope that
 // needs care, its whole summary (it wraps; a one-line summary was the row's
 // most-read text cut in half), and at the trailing edge either Review (not
-// trusted yet) or its state word and the one switch. The name opens the
+// approved yet) or its state word and the one switch. The name opens the
 // details; so does a click anywhere on the row that is not one of its
 // controls. Everything rarer lives in the ⋯ menu and the details.
 
@@ -41,9 +43,9 @@ export function ExtensionStateLabel({ state }: { state: ExtensionRunState }): JS
   const glyph =
     state === 'running' || state === 'on' ? (
       <LifecycleGlyph state="done" live={false} />
-    ) : state === 'pending' || state === 'stopping' ? (
+    ) : state === 'pending' ? (
       <RefreshIcon className="icon-sm shrink-0 text-[color:var(--text-muted)]" />
-    ) : state === 'failed' ? (
+    ) : state === 'failed' || state === 'killed' ? (
       <LifecycleGlyph state="failed" live={false} />
     ) : (
       <LifecycleGlyph state="blocked" live={false} />
@@ -52,7 +54,7 @@ export function ExtensionStateLabel({ state }: { state: ExtensionRunState }): JS
     <span
       className={[
         'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-meta',
-        state === 'failed'
+        state === 'failed' || state === 'killed'
           ? 'text-[color:var(--tone-error)]'
           : state === 'off'
             ? 'text-[color:var(--text-subtle)]'
@@ -71,13 +73,13 @@ export type ExtensionDetailsProps = {
   module: ThirdPartyModuleView
   titleId: string
   icon: React.ReactNode
-  /** The state word, or the untrusted mark. */
+  /** The state word, or the mark of one waiting for approval. */
   status: React.ReactNode
   adds: ExtensionContribution[] | null
   care: AccessItem[]
   standard: AccessItem[]
   facts: Array<{ term: string; description: React.ReactNode }>
-  /** The footer: trust, files, uninstall. */
+  /** The footer: approve, files, uninstall. */
   actions: React.ReactNode
 }
 
@@ -97,6 +99,8 @@ export function ExtensionDetails({
   actions,
 }: ExtensionDetailsProps): JSX.Element {
   const { manifest } = module
+  const agentLines = agentContributionLines(module.extension, module.ignoredSkillKeys)
+  const hookLines = extensionHookApprovalLines((module.extension.contributes.hooks ?? []).map((hook) => hook.point))
   return (
     <div className="flex flex-col">
       <div className="flex items-start gap-3 px-4 pb-3 pt-4">
@@ -130,6 +134,25 @@ export function ExtensionDetails({
                 </li>
               ))}
             </ul>
+          </section>
+        ) : null}
+        {hookLines.length > 0 ? (
+          <section aria-label={copy.settings.extensionRow.hooks}>
+            <DetailsHeading>{copy.settings.extensionRow.hooks}</DetailsHeading>
+            <ul className="list-disc space-y-0.5 pl-5 text-meta text-[color:var(--text-default)]">
+              {hookLines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+              {/* Extensions run on this computer's Studio alone: a chat a WSL
+                  distribution or an SSH machine runs meets none of its hooks. */}
+              <li>{copy.settings.extensionRow.hooksThisComputerOnly}</li>
+            </ul>
+          </section>
+        ) : null}
+        {agentLines.length > 0 ? (
+          <section aria-label={copy.settings.extensionRow.forAgents}>
+            <DetailsHeading>{copy.settings.extensionRow.forAgents}</DetailsHeading>
+            <AgentContributionList lines={agentLines} label={copy.settings.extensionRow.forAgents} />
           </section>
         ) : null}
         {care.length > 0 || standard.length > 0 ? (
@@ -166,7 +189,7 @@ export type ExtensionRowProps = {
   trailing: React.ReactNode
   menuItems: OverflowMenuItem[]
   /** A failure or an incompatibility, said under the row. */
-  notice?: { text: string; action?: React.ReactNode } | null
+  notice?: { text: string; action?: React.ReactNode; tone?: 'error' | 'warn' } | null
   /** The details surface's body, rendered only while open. */
   renderDetails: (args: { titleId: string }) => React.ReactNode
   /** Controlled, so the ⋯ menu's Details opens the same popover the name does. */
@@ -286,7 +309,7 @@ export function ExtensionRow({
         />
       </div>
       {notice ? (
-        <InlineNotice tone="error" action={notice.action} className="col-span-2 col-start-2 mt-2.5">
+        <InlineNotice tone={notice.tone ?? 'error'} action={notice.action} className="col-span-2 col-start-2 mt-2.5">
           {notice.text}
         </InlineNotice>
       ) : null}
@@ -320,29 +343,23 @@ export function InstalledTrailing({
   return (
     <>
       <ExtensionStateLabel state={state} />
-      <Switch
-        checked={enabled}
-        disabled={pending}
-        ariaLabel={copy.settings.extensionRow.enable(name)}
-        onChange={onToggle}
-      />
+      {/* A killed version cannot be switched back on: there is nothing for the switch to do. */}
+      {state === 'killed' ? null : (
+        <Switch
+          checked={enabled}
+          disabled={pending}
+          ariaLabel={copy.settings.extensionRow.enable(name)}
+          onChange={onToggle}
+        />
+      )}
     </>
   )
 }
 
-export function CannotTrustTrailing(): JSX.Element {
+export function CannotApproveTrailing(): JSX.Element {
   return (
     <span className="whitespace-nowrap text-meta text-[color:var(--tone-error)]">
-      {copy.settings.extensionRow.canTBeTrusted}
-    </span>
-  )
-}
-
-/** Built for another host API: trusting it would not let it run, so it is not offered. */
-export function NeedsUpdatingTrailing({ direction }: { direction: 'older' | 'newer' | 'unknown' }): JSX.Element {
-  return (
-    <span className="whitespace-nowrap text-meta text-[color:var(--tone-warn)]">
-      {direction === 'newer' ? 'Needs a newer Studio' : 'Needs updating'}
+      {copy.settings.extensionRow.canTBeApproved}
     </span>
   )
 }

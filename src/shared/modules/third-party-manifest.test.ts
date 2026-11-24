@@ -1,132 +1,77 @@
 import assert from 'node:assert/strict'
-
-import {
-  canonicalManifestPayload,
-  parseThirdPartyModuleManifest,
-  validateThirdPartyModuleManifest,
-} from './third-party-manifest'
-import type { ModuleSignature } from './manifest'
 import { test } from 'vitest'
 
-test('third-party-manifest', async () => {
-  const VALID = {
-    id: 'my-module',
-    displayName: 'My module',
-    version: 1,
-    summary: 'Does a thing.',
-    permissions: ['network'],
-  }
+import { STUDIO_EXTENSION_VERSION } from '../../../packages/extension-sdk/src/extension-manifest'
+import { extensionManifest } from '../../../tests/extension-folder'
+import {
+  LOCAL_EXTENSION_PUBLISHER,
+  capabilityManifestOf,
+  extensionInstallKey,
+  isExtensionInstallKey,
+  isReservedExtensionId,
+  parseExtensionInstallKey,
+  parseExtensionManifest,
+  studioReadsManifest,
+  type ExtensionManifest,
+} from './third-party-manifest'
 
-  function testValidForcesThirdPartyAndStripsCore(): void {
-    const result = validateThirdPartyModuleManifest({ ...VALID, core: true, source: 'bundled', defaultEnabled: true })
-    assert.equal(result.ok, true)
-    if (result.ok) {
-      assert.equal(result.manifest.source, 'third-party', 'source is forced to third-party')
-      assert.equal((result.manifest as { core?: boolean }).core, undefined, 'core is stripped')
-      assert.equal(result.manifest.defaultEnabled, true)
-      assert.deepEqual(result.manifest.permissions, ['network'])
-    }
-  }
+function parsed(overrides: Record<string, unknown> = {}): ExtensionManifest {
+  const result = parseExtensionManifest(JSON.stringify(extensionManifest(overrides)))
+  assert.ok(result.ok, JSON.stringify(!result.ok && result.issues))
+  return result.manifest
+}
 
-  function testDefaultEnabledDefaultsFalse(): void {
-    const result = validateThirdPartyModuleManifest(VALID)
-    assert.equal(result.ok, true)
-    if (result.ok) assert.equal(result.manifest.defaultEnabled, false, 'third-party defaults off')
-  }
+test('the module kernel lists an extension by its install key, on by default and third-party', () => {
+  const extension = parsed({ permissions: ['storage:own', 'workspace:read'] })
+  const manifest = capabilityManifestOf('acme.demo', 'acme', extension)
+  assert.deepEqual(manifest, {
+    id: 'acme.demo',
+    displayName: 'Demo',
+    version: '1.0.0',
+    publisher: 'acme',
+    summary: 'A demo.',
+    defaultEnabled: true,
+    source: 'third-party',
+    permissions: ['storage:own', 'workspace:read'],
+  })
+  // A copy: the kernel's list cannot reach back into the manifest.
+  assert.notEqual(manifest.permissions, extension.permissions)
+})
 
-  function testRejectsBadId(): void {
-    for (const id of ['Bad Id', 'UPPER', '../escape', 'a/b']) {
-      const result = validateThirdPartyModuleManifest({ ...VALID, id })
-      assert.equal(result.ok, false, `id "${id}" should be rejected`)
-    }
-  }
+test('an extension without a description has no summary', () => {
+  const extension = parsed({ description: undefined })
+  assert.equal('summary' in capabilityManifestOf('local.demo', LOCAL_EXTENSION_PUBLISHER, extension), false)
+  const empty = parsed({ description: '' })
+  assert.equal('summary' in capabilityManifestOf('local.demo', LOCAL_EXTENSION_PUBLISHER, empty), false)
+})
 
-  function testRejectsBadVersion(): void {
-    assert.equal(validateThirdPartyModuleManifest({ ...VALID, version: 0 }).ok, false)
-    assert.equal(validateThirdPartyModuleManifest({ ...VALID, version: 1.5 }).ok, false)
-    assert.equal(validateThirdPartyModuleManifest({ ...VALID, version: '1' }).ok, false)
-  }
+test('a manifest the validator refuses comes back with its issues, not half-read', () => {
+  const notJson = parseExtensionManifest('{nope')
+  assert.equal(notJson.ok, false)
+  const unknownKey = parseExtensionManifest(JSON.stringify(extensionManifest({ entry: { main: 'dist/main.cjs' } })))
+  assert.equal(unknownKey.ok, false)
+  assert.match(JSON.stringify(!unknownKey.ok && unknownKey.issues), /entry/)
+})
 
-  function testRejectsEntryTraversal(): void {
-    for (const main of ['../evil.js', '/abs/evil.js', 'a/../../escape.js', 'win\\path.js']) {
-      const result = validateThirdPartyModuleManifest({ ...VALID, entry: { main } })
-      assert.equal(result.ok, false, `entry.main "${main}" should be rejected`)
-    }
-    const ok = validateThirdPartyModuleManifest({ ...VALID, entry: { main: 'dist/main.js' } })
-    assert.equal(ok.ok, true)
-    if (ok.ok) assert.equal(ok.manifest.entry?.main, 'dist/main.js')
-  }
+test('Studio reads a manifest written for it or older, and refuses one written for a newer Studio by name', () => {
+  assert.deepEqual(studioReadsManifest(parsed()), { ok: true })
+  const [major, minor] = STUDIO_EXTENSION_VERSION.split('.').map(Number)
+  const newer = `${major}.${minor + 1}.0`
+  const refused = studioReadsManifest(parsed({ engines: { studio: `>=${newer}` } }))
+  assert.equal(refused.ok, false)
+  assert.match(!refused.ok ? refused.message : '', new RegExp(`needs Studio ${newer.replaceAll('.', '\\.')}`))
+})
 
-  function testSignatureShape(): void {
-    const bad = validateThirdPartyModuleManifest({
-      ...VALID,
-      signature: { algorithm: 'rsa', publicKey: 'x', signature: 'y' },
-    })
-    assert.equal(bad.ok, false, 'only ed25519 accepted')
-    const good = validateThirdPartyModuleManifest({
-      ...VALID,
-      signature: { algorithm: 'ed25519', publicKey: 'YWJj', signature: 'ZGVm' },
-    })
-    assert.equal(good.ok, true)
+test('an install key is <publisher>.<id>, and nothing else parses as one', () => {
+  assert.equal(extensionInstallKey(LOCAL_EXTENSION_PUBLISHER, 'demo'), 'local.demo')
+  assert.deepEqual(parseExtensionInstallKey('acme.deck-tools'), { publisher: 'acme', id: 'deck-tools' })
+  for (const key of ['demo', '.demo', 'acme.', 'Acme.demo', 'acme.Demo', 'acme.de_mo', 'acme.constructor']) {
+    assert.equal(isExtensionInstallKey(key), false, key)
   }
+})
 
-  function testCanonicalPayloadExcludesSignatureAndIsStable(): void {
-    const signedManifest: Record<string, unknown> & { signature?: ModuleSignature } = {
-      id: 'm',
-      displayName: 'M',
-      version: 1,
-      defaultEnabled: false,
-      source: 'third-party',
-      permissions: ['network'],
-      signature: { algorithm: 'ed25519', publicKey: 'k', signature: 's' },
-    }
-    const a = canonicalManifestPayload(signedManifest)
-    // Same fields, different insertion order, no signature → identical canonical bytes.
-    const unsignedManifest: Record<string, unknown> & { signature?: ModuleSignature } = {
-      source: 'third-party',
-      permissions: ['network'],
-      version: 1,
-      defaultEnabled: false,
-      displayName: 'M',
-      id: 'm',
-    }
-    const b = canonicalManifestPayload(unsignedManifest)
-    assert.equal(a, b, 'canonical payload is order-independent and excludes signature')
-    assert.equal(a.includes('signature'), false)
-  }
-
-  function testParseInvalidJson(): void {
-    assert.equal(parseThirdPartyModuleManifest('{nope').ok, false)
-  }
-
-  // Publisher-locked reserved ids: reserved-id policy is NOT the
-  // parser's — a manifest claiming a bundled id must parse cleanly WITH its
-  // signature intact, because the registry decides both directions (locked id +
-  // wrong signer rejected, locked id + verified first-party signer accepted)
-  // from the parsed signature. A parser that rejected reserved ids, or dropped
-  // the signature, would silently break the accept direction.
-  function testReservedIdParsesWithSignaturePreserved(): void {
-    const signature: ModuleSignature = { algorithm: 'ed25519', publicKey: 'YWJj', signature: 'ZGVm' }
-    const parsed = parseThirdPartyModuleManifest(JSON.stringify({ ...VALID, id: 'switchboard', signature }))
-    assert.equal(parsed.ok, true, 'reserved ids are policy for the registry, not a parse error')
-    if (parsed.ok) {
-      assert.equal(parsed.manifest.id, 'switchboard')
-      assert.deepEqual(
-        (parsed.manifest as { signature?: ModuleSignature }).signature,
-        signature,
-        'the signature survives validation for the publisher-lock check',
-      )
-    }
-  }
-
-  testValidForcesThirdPartyAndStripsCore()
-  testDefaultEnabledDefaultsFalse()
-  testRejectsBadId()
-  testRejectsBadVersion()
-  testRejectsEntryTraversal()
-  testSignatureShape()
-  testCanonicalPayloadExcludesSignatureAndIsStable()
-  testParseInvalidJson()
-  testReservedIdParsesWithSignaturePreserved()
-  console.log('third-party-manifest tests passed')
+test('studio- and sprintengine- ids are reserved for Studio’s own catalogue', () => {
+  assert.equal(isReservedExtensionId('studio-notes'), true)
+  assert.equal(isReservedExtensionId('sprintengine-notes'), true)
+  assert.equal(isReservedExtensionId('notes'), false)
 })

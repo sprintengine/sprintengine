@@ -1,63 +1,97 @@
-import { readdirSync, readFileSync } from 'fs'
-import { cp, mkdir, readdir, readFile, rename, rm } from 'fs/promises'
+import { lstatSync, readdirSync, readFileSync } from 'fs'
+import { cp, lstat, mkdir, readdir, readFile, realpath, rename, rm } from 'fs/promises'
 import { homedir } from 'os'
-import { basename, join } from 'path'
+import { join, relative, sep } from 'path'
 
-import { BUNDLED_MODULE_IDS, type CapabilityManifest } from '../../shared/modules/manifest'
-import { parseThirdPartyModuleManifest } from '../../shared/modules/third-party-manifest'
+import type { CapabilityManifest } from '../../shared/modules/manifest'
 import {
-  classifyModuleTrust,
-  isTrustedByPublisher,
-  moduleContentFingerprintSync,
-  type ModuleTrust,
-  type ModuleTrustContext,
+  EXTENSION_MANIFEST_FILENAME,
+  LOCAL_EXTENSION_PUBLISHER,
+  capabilityManifestOf,
+  extensionInstallKey,
+  isReservedExtensionId,
+  parseExtensionInstallKey,
+  parseExtensionManifest,
+  studioReadsManifest,
+  type ExtensionManifest,
+} from '../../shared/modules/third-party-manifest'
+import {
+  classifyDevelopmentExtension,
+  classifyExtension,
+  type ExtensionStanding,
+  type ExtensionStandingContext,
 } from './module-signature'
+import { resolveContainedPath } from './entry-containment'
+import { devFolderStillResolves, insideRefusedRoot } from './extension-dev-folders'
+import { contentFileIssues } from './extension-content'
 import { readStudioEnv } from '../../shared/studio-env'
+import { agentContributionIssues } from '../../server/extensions/agent-contributions/install-checks'
+import { isReservedInstallKey } from '../../../packages/extension-sdk/src/catalogue'
 
-// Discovery + install for third-party capability modules under
-// ~/.sprintengine/modules/<id>/manifest.json. Mirrors the BYO-CLI plugin-registry
-// pattern. This layer validates, classifies trust, and installs — it does NOT
-// execute module code; trusted `entry.main` loading is wired separately through
-// third-party-main-loader. Trust is classified over the folder's files as well
-// as its manifest (module-signature.ts), so it is decided again from the bytes
-// on disk at every discovery, not carried over from the install.
+// Discovery and install of extensions under
+// ~/.sprintengine/extensions/<publisher>.<id>/extension.json, and of the
+// development folders the owner registered (extension-dev-folders.ts), which
+// load where they are, after the installed ones. The folder's
+// name is the install key: the publisher Studio derived from where the
+// extension came from (`local` for a folder), then the manifest's id. This
+// layer validates, classifies and installs; it never runs extension code. An
+// extension's standing (its signature, and whether the person approved it as
+// it is) is decided over the folder's files every time, from the bytes on
+// disk, not carried over from the install.
 
-// SPRINTENGINE_USER_MODULE_ROOT redirects discovery for hermetic end-to-end
+// SPRINTENGINE_USER_EXTENSION_ROOT redirects discovery for hermetic end-to-end
 // testing (paired with SPRINTENGINE_USER_DATA_DIR temp profiles). It moves the
-// install root only — trust classification, signing, and isLoadEligible gating
-// apply to that root exactly as they do to the default one.
+// install root only; approval applies to that root exactly as to the default one.
 export function defaultUserModuleRoot(): string {
-  const override = readStudioEnv('SPRINTENGINE_USER_MODULE_ROOT')?.trim()
+  const override = readStudioEnv('SPRINTENGINE_USER_EXTENSION_ROOT')?.trim()
   if (override) return override
-  return join(homedir(), '.sprintengine', 'modules')
+  return join(homedir(), '.sprintengine', 'extensions')
 }
 
 type ModuleRejectionIssue = { path: string; message: string }
 export type ModuleRejection = { path: string; issues: ModuleRejectionIssue[] }
 
 export type InstalledModule = {
+  /** The install key, `<publisher>.<id>`: the module id everything else knows it by. */
+  key: string
+  publisher: string
+  /** What the module kernel lists it as. */
   manifest: CapabilityManifest
+  extension: ExtensionManifest
   moduleRoot: string
-  trust: ModuleTrust
+  standing: ExtensionStanding
+  /**
+   * A development folder the owner registered (extension-dev-folders.ts):
+   * loaded from `moduleRoot` where it is, at `order` among the development
+   * folders, and `overrides` when an installed extension has its key, which
+   * it stands in for while it is registered, once the person approved that;
+   * `waiting` until then (`UserModuleListResult.waiting`).
+   */
+  development?: { order: number; overrides: boolean; waiting?: boolean }
 }
 
 export type UserModuleListResult = {
   modules: InstalledModule[]
   rejected: ModuleRejection[]
+  /**
+   * Development folders whose key an installed extension has, waiting for the
+   * person to approve them in its place: until then the installed one runs,
+   * and these load nowhere. Listed so they can be reviewed.
+   */
+  waiting?: InstalledModule[]
 }
 
 export type InstallModuleResult =
-  // `manifestFp` is the fingerprint of what was just installed: the manifest
-  // together with the digest of every file it was installed with. For a
-  // manifest that lists its `files` this is its manifest fingerprint, the
-  // identity a trust grant binds to; for a first-party manifest from before
-  // `files`, it is what a verified marketplace install records as vouched for.
-  // Either way a later install of different bytes under the same id, code
-  // included, cannot inherit it (see moduleContentFingerprint).
-  | { ok: true; id: string; trust: ModuleTrust; manifestFp: string }
+  | {
+      ok: true
+      /** The install key. */
+      id: string
+      extension: ExtensionManifest
+      standing: ExtensionStanding
+      /** Symbolic links in the folder, left out of the copy, relative to it. */
+      strippedLinks: string[]
+    }
   | { ok: false; rejected: ModuleRejection; message: string }
-
-const RESERVED_IDS = new Set(BUNDLED_MODULE_IDS)
 
 async function readDirSafe(dir: string): Promise<import('fs').Dirent[]> {
   try {
@@ -75,237 +109,455 @@ function readDirSafeSync(dir: string): import('fs').Dirent[] {
   }
 }
 
-// A module id never starts with a dot, so a dotted directory under the module
-// root is never a module: it is this file's own install staging folder, or an
-// editor's. Skipping it keeps a half-written install out of the rejected list
-// (where it would read as a broken module the user cannot find).
+// An install key never starts with a dot, so a dotted directory under the root
+// is never an extension: it is this file's own install staging folder, or an
+// editor's. Skipping it keeps a half-written install out of the rejected list.
 function isHiddenModuleDir(name: string): boolean {
   return name.startsWith('.')
 }
 
-// Reserved (bundled) ids are publisher-locked, not absolutely blocked: a module
-// trusted through a first-party marketplace publisher key may claim one —
-// that's how the extracted first-party modules keep their ids (and existing
-// workspace modes) while third parties still can't shadow them. Trusted through
-// the key means the key vouches for the code too (a signed manifest copied
-// next to other code does not), so a reserved id is refused on the same
-// classification that decides whether the module loads.
-function reservedIdIssues(manifest: CapabilityManifest, trust: ModuleTrust): ModuleRejectionIssue[] {
-  if (!RESERVED_IDS.has(manifest.id) || isTrustedByPublisher(trust)) return []
-  return [
-    {
-      path: 'id',
-      message: `"${manifest.id}" is a reserved id, publisher-locked to the first-party signing key.`,
-    },
-    ...(trust.issues ?? []),
-  ]
-}
+export type LoadedManifest = { ok: true; extension: ExtensionManifest } | { ok: false; rejection: ModuleRejection }
 
-// Validate the manifest.json in a module folder and confirm its declared id
-// matches the folder name.
+// Validate extension.json's text for a folder, and that the folder's name is
+// the install key of the manifest it holds.
 function validateInstalledManifestSource(
   source: string,
   manifestPath: string,
-  expectedId: string,
-): { ok: true; manifest: CapabilityManifest } | { ok: false; rejection: ModuleRejection } {
-  const result = parseThirdPartyModuleManifest(source)
-  if (!result.ok) return { ok: false, rejection: { path: manifestPath, issues: result.issues } }
-
-  if (result.manifest.id !== expectedId) {
+  folderName: string,
+  installedFrom: ExtensionStandingContext['installedFrom'],
+): LoadedManifest {
+  const key = parseExtensionInstallKey(folderName)
+  if (!key) {
+    return {
+      ok: false,
+      rejection: {
+        path: manifestPath,
+        issues: [{ path: '', message: `"${folderName}" is not an install key (<publisher>.<id>).` }],
+      },
+    }
+  }
+  // A folder install puts an extension here under `local`; a catalogue or git
+  // install under the repository owner, and records it (catalogue-files.ts).
+  // A folder named for another publisher was not put here by Studio, and a
+  // reserved key only by Studio's official catalogue.
+  const from = installedFrom?.get(folderName)
+  const placed =
+    key.publisher === LOCAL_EXTENSION_PUBLISHER
+      ? !isReservedExtensionId(key.id)
+      : from !== undefined && (from === 'official' || !isReservedInstallKey(folderName))
+  if (!placed) {
     return {
       ok: false,
       rejection: {
         path: manifestPath,
         issues: [
-          { path: 'id', message: `manifest id "${result.manifest.id}" must match its folder name "${expectedId}".` },
+          { path: '', message: `"${folderName}" is not a key Studio installs an extension from a folder under.` },
         ],
       },
     }
   }
-  return { ok: true, manifest: result.manifest }
+  const result = parseExtensionManifest(source)
+  if (!result.ok) return { ok: false, rejection: { path: manifestPath, issues: result.issues } }
+  if (result.manifest.id !== key.id) {
+    return {
+      ok: false,
+      rejection: {
+        path: manifestPath,
+        issues: [{ path: 'id', message: `"${result.manifest.id}" must match its folder "${folderName}".` }],
+      },
+    }
+  }
+  const readable = studioReadsManifest(result.manifest)
+  if (!readable.ok) {
+    return {
+      ok: false,
+      rejection: { path: manifestPath, issues: [{ path: 'engines.studio', message: readable.message }] },
+    }
+  }
+  return { ok: true, extension: result.manifest }
+}
+
+function missingManifest(manifestPath: string, error: unknown): LoadedManifest {
+  return {
+    ok: false,
+    rejection: {
+      path: manifestPath,
+      issues: [
+        { path: '', message: error instanceof Error ? error.message : `${EXTENSION_MANIFEST_FILENAME} not found` },
+      ],
+    },
+  }
 }
 
 async function loadManifestFromDir(
   moduleRoot: string,
-  expectedId: string,
-): Promise<{ ok: true; manifest: CapabilityManifest } | { ok: false; rejection: ModuleRejection }> {
-  const manifestPath = join(moduleRoot, 'manifest.json')
-  let source: string
+  folderName: string,
+  ctx: ExtensionStandingContext,
+): Promise<LoadedManifest> {
+  const manifestPath = join(moduleRoot, EXTENSION_MANIFEST_FILENAME)
   try {
-    source = await readFile(manifestPath, 'utf8')
+    return validateInstalledManifestSource(
+      await readFile(manifestPath, 'utf8'),
+      manifestPath,
+      folderName,
+      ctx.installedFrom,
+    )
   } catch (error) {
-    return {
-      ok: false,
-      rejection: {
-        path: manifestPath,
-        issues: [{ path: '', message: error instanceof Error ? error.message : 'manifest.json not found' }],
-      },
-    }
+    return missingManifest(manifestPath, error)
   }
-  return validateInstalledManifestSource(source, manifestPath, expectedId)
 }
 
 function loadManifestFromDirSync(
   moduleRoot: string,
-  expectedId: string,
-): { ok: true; manifest: CapabilityManifest } | { ok: false; rejection: ModuleRejection } {
-  const manifestPath = join(moduleRoot, 'manifest.json')
+  folderName: string,
+  ctx: ExtensionStandingContext,
+): LoadedManifest {
+  const manifestPath = join(moduleRoot, EXTENSION_MANIFEST_FILENAME)
+  try {
+    return validateInstalledManifestSource(
+      readFileSync(manifestPath, 'utf8'),
+      manifestPath,
+      folderName,
+      ctx.installedFrom,
+    )
+  } catch (error) {
+    return missingManifest(manifestPath, error)
+  }
+}
+
+function installedModule(
+  extension: ExtensionManifest,
+  folderName: string,
+  moduleRoot: string,
+  ctx: ExtensionStandingContext,
+): InstalledModule {
+  const publisher = parseExtensionInstallKey(folderName)!.publisher
+  return {
+    key: folderName,
+    publisher,
+    manifest: capabilityManifestOf(folderName, publisher, extension),
+    extension,
+    moduleRoot,
+    standing: classifyExtension(moduleRoot, folderName, extension, ctx),
+  }
+}
+
+/** One development folder as read now: its extension and how it stands, or why it holds none. */
+export type DevelopmentFolderEntry =
+  | { ok: true; key: string; extension: ExtensionManifest; standing: ExtensionStanding }
+  | { ok: false; rejection: ModuleRejection }
+
+/**
+ * Read one registered development folder now. It must still be the one place
+ * it was registered as (the same real path: a folder or a parent swapped for
+ * a link since is not loaded under the first one's approval), and not inside
+ * the extensions folder or Studio's data folder.
+ */
+export function readDevelopmentFolder(
+  folder: string,
+  root: string,
+  ctx: ExtensionStandingContext,
+): DevelopmentFolderEntry {
+  const manifestPath = join(folder, EXTENSION_MANIFEST_FILENAME)
+  const refuse = (message: string): DevelopmentFolderEntry => ({
+    ok: false,
+    rejection: { path: manifestPath, issues: [{ path: '', message }] },
+  })
+  const inside = insideRefusedRoot(folder, [root, ...(ctx.dataDir ? [ctx.dataDir] : [])])
+  if (inside) return refuse(`${folder} is inside ${inside}, which Studio keeps for itself; remove it.`)
+  const still = devFolderStillResolves(folder)
+  if (!still.ok)
+    return refuse(
+      still.now
+        ? `${folder} now leads to ${still.now}. Register the folder again (dev load) to load it from there.`
+        : `${folder} is gone. Remove it, or register it again once it is back.`,
+    )
+  const loaded = loadDevelopmentManifest(folder)
+  if (!loaded.ok) return loaded
+  const key = extensionInstallKey(LOCAL_EXTENSION_PUBLISHER, loaded.extension.id)
+  return {
+    ok: true,
+    key,
+    extension: loaded.extension,
+    standing: classifyDevelopmentExtension(folder, key, loaded.extension, ctx),
+  }
+}
+
+// The order every extension loads in, the order its hooks run in among
+// others': the installed ones by install key, then the development folders in
+// the order they were registered. A development folder whose key an installed
+// extension has takes its place only once the person approved it for that key
+// (an agent may register a folder; only the person approves); until then it
+// waits, and the installed one keeps running. A second folder claiming a key
+// one already holds is refused, naming the first. `read` reads one folder
+// (readDevelopmentFolder, or a cache of it).
+export function withDevelopmentFolders(
+  installed: UserModuleListResult,
+  ctx: ExtensionStandingContext,
+  read: (folder: string) => DevelopmentFolderEntry,
+): UserModuleListResult {
+  const modules = [...installed.modules].sort((a, b) => a.key.localeCompare(b.key))
+  const folders = ctx.devFolders ?? []
+  if (folders.length === 0) return { modules, rejected: installed.rejected }
+  const rejected = [...installed.rejected]
+  const waiting: InstalledModule[] = []
+  const claimed = new Map<string, string>()
+  folders.forEach((folder, order) => {
+    const entry = read(folder)
+    if (!entry.ok) {
+      rejected.push(entry.rejection)
+      return
+    }
+    const { key, extension, standing } = entry
+    const first = claimed.get(key)
+    if (first) {
+      rejected.push({
+        path: join(folder, EXTENSION_MANIFEST_FILENAME),
+        issues: [{ path: 'id', message: `"${key}" is already the development folder ${first}; remove one of them.` }],
+      })
+      return
+    }
+    claimed.set(key, folder)
+    const at = modules.findIndex((module) => module.key === key)
+    const module: InstalledModule = {
+      key,
+      publisher: LOCAL_EXTENSION_PUBLISHER,
+      manifest: capabilityManifestOf(key, LOCAL_EXTENSION_PUBLISHER, extension),
+      extension,
+      moduleRoot: folder,
+      standing,
+      development: { order, overrides: at >= 0 },
+    }
+    if (at >= 0) {
+      if (ctx.approvals.get(key)?.devFolder !== folder) {
+        waiting.push({ ...module, development: { order, overrides: true, waiting: true } })
+        return
+      }
+      modules.splice(at, 1)
+    }
+    modules.push(module)
+  })
+  return { modules, rejected, ...(waiting.length > 0 ? { waiting } : {}) }
+}
+
+/** A development folder's extension.json, read as Studio reads an installed one. */
+export function loadDevelopmentManifest(folder: string): LoadedManifest {
+  const manifestPath = join(folder, EXTENSION_MANIFEST_FILENAME)
   let source: string
   try {
+    if (lstatSync(manifestPath).isSymbolicLink())
+      return {
+        ok: false,
+        rejection: {
+          path: manifestPath,
+          issues: [{ path: '', message: 'extension.json is a symbolic link; Studio reads regular files only.' }],
+        },
+      }
     source = readFileSync(manifestPath, 'utf8')
   } catch (error) {
+    return missingManifest(manifestPath, error)
+  }
+  const result = parseExtensionManifest(source)
+  if (!result.ok) return { ok: false, rejection: { path: manifestPath, issues: result.issues } }
+  if (isReservedExtensionId(result.manifest.id))
     return {
       ok: false,
       rejection: {
         path: manifestPath,
-        issues: [{ path: '', message: error instanceof Error ? error.message : 'manifest.json not found' }],
+        issues: [{ path: 'id', message: `"${result.manifest.id}" is an id only Studio’s own catalogue installs.` }],
       },
     }
-  }
-  return validateInstalledManifestSource(source, manifestPath, expectedId)
+  const readable = studioReadsManifest(result.manifest)
+  if (!readable.ok)
+    return {
+      ok: false,
+      rejection: { path: manifestPath, issues: [{ path: 'engines.studio', message: readable.message }] },
+    }
+  return { ok: true, extension: result.manifest }
 }
 
-// Classify a module whose manifest validated, or reject it for claiming a
-// reserved id it has not earned.
-function classifyInstalled(
-  manifest: CapabilityManifest,
-  moduleRoot: string,
-  ctx: ModuleTrustContext,
-): { ok: true; module: InstalledModule } | { ok: false; rejection: ModuleRejection } {
-  const trust = classifyModuleTrust(manifest, moduleRoot, ctx)
-  const reserved = reservedIdIssues(manifest, trust)
-  if (reserved.length > 0) {
-    return { ok: false, rejection: { path: join(moduleRoot, 'manifest.json'), issues: reserved } }
-  }
-  return { ok: true, module: { manifest, moduleRoot, trust } }
-}
-
-// Enumerate installed third-party modules, validating + trust-classifying each.
-export async function discoverUserModules(root: string, ctx: ModuleTrustContext): Promise<UserModuleListResult> {
-  const modules: InstalledModule[] = []
-  const rejected: ModuleRejection[] = []
-
+/**
+ * Every extension this server runs, validated and classified: the installed
+ * ones, then the development folders `ctx` names. The folders that hold none
+ * are `rejected`.
+ */
+export async function discoverUserModules(root: string, ctx: ExtensionStandingContext): Promise<UserModuleListResult> {
+  const result: UserModuleListResult = { modules: [], rejected: [] }
   for (const entry of await readDirSafe(root)) {
     if (!entry.isDirectory() || isHiddenModuleDir(entry.name)) continue
     const moduleRoot = join(root, entry.name)
-    const loaded = await loadManifestFromDir(moduleRoot, entry.name)
-    const classified = loaded.ok ? classifyInstalled(loaded.manifest, moduleRoot, ctx) : loaded
-    if (classified.ok) modules.push(classified.module)
-    else rejected.push(classified.rejection)
+    const loaded = await loadManifestFromDir(moduleRoot, entry.name, ctx)
+    if (loaded.ok) result.modules.push(installedModule(loaded.extension, entry.name, moduleRoot, ctx))
+    else result.rejected.push(loaded.rejection)
   }
-
-  modules.sort((a, b) => a.manifest.id.localeCompare(b.manifest.id))
-  return { modules, rejected }
+  return withDevelopmentFolders(result, ctx, (folder) => readDevelopmentFolder(folder, root, ctx))
 }
 
-export function discoverUserModulesSync(root: string, ctx: ModuleTrustContext): UserModuleListResult {
-  const modules: InstalledModule[] = []
-  const rejected: ModuleRejection[] = []
-
+/** The installed extensions alone, validated and classified, by install key: no development folder. */
+export function discoverInstalledModulesSync(root: string, ctx: ExtensionStandingContext): UserModuleListResult {
+  const result: UserModuleListResult = { modules: [], rejected: [] }
   for (const entry of readDirSafeSync(root)) {
     if (!entry.isDirectory() || isHiddenModuleDir(entry.name)) continue
     const moduleRoot = join(root, entry.name)
-    const loaded = loadManifestFromDirSync(moduleRoot, entry.name)
-    const classified = loaded.ok ? classifyInstalled(loaded.manifest, moduleRoot, ctx) : loaded
-    if (classified.ok) modules.push(classified.module)
-    else rejected.push(classified.rejection)
+    const loaded = loadManifestFromDirSync(moduleRoot, entry.name, ctx)
+    if (loaded.ok) result.modules.push(installedModule(loaded.extension, entry.name, moduleRoot, ctx))
+    else result.rejected.push(loaded.rejection)
   }
-
-  modules.sort((a, b) => a.manifest.id.localeCompare(b.manifest.id))
-  return { modules, rejected }
+  result.modules.sort((a, b) => a.key.localeCompare(b.key))
+  return result
 }
 
-// Validate the manifest in a selected folder, then copy the whole folder into
-// the user module root under its declared id, REPLACING any existing install of
-// that id (see the copy below for why replacing and not merging).
-// Returns the trust classification so the UI can prompt.
+export function discoverUserModulesSync(root: string, ctx: ExtensionStandingContext): UserModuleListResult {
+  return withDevelopmentFolders(discoverInstalledModulesSync(root, ctx), ctx, (folder) =>
+    readDevelopmentFolder(folder, root, ctx),
+  )
+}
+
+/**
+ * Install the extension in a folder: validate its extension.json, then copy
+ * the folder into `<root>/<publisher>.<id>/` (`local` for a folder the person
+ * picked; the repository owner for a catalogue or git install, which checked
+ * the folder out), REPLACING any earlier install of that key. A version on the
+ * kill list is refused. Symbolic links are left out of the copy and named in the result, for
+ * the install review to show: their bytes live somewhere no digest follows.
+ * The standing of the bytes that were installed comes back: what the person is asked to approve.
+ */
 export async function installModuleFolder(
-  srcDir: string,
+  selectedDir: string,
   root: string,
-  ctx: ModuleTrustContext,
+  ctx: ExtensionStandingContext,
+  options: {
+    protectedProviderIds?: ReadonlySet<string>
+    /** The publisher Studio derived from where it came from: `local` for a folder (the default). */
+    publisher?: string
+    /** It came from Studio's official catalogue, which alone may install a reserved id. */
+    official?: boolean
+  } = {},
 ): Promise<InstallModuleResult> {
-  // The folder name a manifest must match is its own id, so validate against the
-  // manifest's declared id rather than the (arbitrary) source folder name.
-  const manifestPath = join(srcDir, 'manifest.json')
+  // The folder itself, wherever a link to it points: a linked root would be
+  // copied as the link, and the extension would never appear. A missing one
+  // is said by the read below.
+  const srcDir = await realpath(selectedDir).catch(() => selectedDir)
+  const manifestPath = join(srcDir, EXTENSION_MANIFEST_FILENAME)
   let source: string
   try {
+    // A linked manifest is read through the link and then left out of the
+    // copy, so it is refused rather than half installed.
+    if ((await lstat(manifestPath)).isSymbolicLink()) {
+      const message = 'extension.json is a symbolic link; an extension ships regular files only.'
+      return { ok: false, rejected: { path: manifestPath, issues: [{ path: '', message }] }, message }
+    }
     source = await readFile(manifestPath, 'utf8')
   } catch (error) {
     const rejection = {
       path: manifestPath,
-      issues: [{ path: '', message: error instanceof Error ? error.message : 'manifest.json not found' }],
+      issues: [{ path: '', message: error instanceof Error ? error.message : 'extension.json not found' }],
     }
-    return { ok: false, rejected: rejection, message: 'No manifest.json found in the selected folder.' }
+    return { ok: false, rejected: rejection, message: 'No extension.json found in the selected folder.' }
   }
-  const result = parseThirdPartyModuleManifest(source)
+  const result = parseExtensionManifest(source)
   if (!result.ok) {
     return {
       ok: false,
       rejected: { path: manifestPath, issues: result.issues },
-      message: 'Module manifest is invalid.',
+      message: 'The extension’s extension.json is invalid.',
     }
   }
-  // Trust is classified over the folder as selected, before anything is
-  // copied: code that does not match the digests its manifest signs is refused
-  // outright, and so is a folder whose files cannot be digested at all (a
-  // symlink, a .git) — nothing could ever trust it, so installing it would only
-  // leave a module behind that the user is asked about and cannot approve.
-  const sourceTrust = classifyModuleTrust(result.manifest, srcDir, ctx)
-  if (sourceTrust.tampered) {
+  const extension = result.manifest
+  const readable = studioReadsManifest(extension)
+  if (!readable.ok) {
     return {
       ok: false,
-      rejected: { path: manifestPath, issues: sourceTrust.issues ?? [] },
-      message: `Module "${result.manifest.id}" has been tampered with: its files do not match the digests its manifest signs.`,
+      rejected: { path: manifestPath, issues: [{ path: 'engines.studio', message: readable.message }] },
+      message: readable.message,
     }
   }
-  const reserved = reservedIdIssues(result.manifest, sourceTrust)
-  if (reserved.length > 0) {
+  if (isReservedExtensionId(extension.id) && !options.official) {
+    const message = `"${extension.id}" is an id only Studio’s own catalogue installs; choose another id.`
+    return { ok: false, rejected: { path: manifestPath, issues: [{ path: 'id', message }] }, message }
+  }
+
+  // Content is checked as Studio will check it when it serves it: a grammar
+  // that would never highlight is refused here, where the author can fix it.
+  const contentIssues = await contentFileIssues(extension, async (path, maxBytes) => {
+    try {
+      const file = resolveContainedPath(srcDir, path, path)
+      const info = await lstat(file)
+      if (!info.isFile() || info.size > maxBytes) return null
+      return await readFile(file, 'utf8')
+    } catch {
+      return null
+    }
+  })
+  if (contentIssues.length > 0) {
     return {
       ok: false,
-      rejected: { path: manifestPath, issues: reserved },
-      message: reserved[0]!.message,
+      rejected: { path: manifestPath, issues: contentIssues },
+      message: 'A file the extension’s extension.json names is not one Studio can use.',
     }
   }
-  const sourceContent = moduleContentFingerprintSync(result.manifest, srcDir)
-  if (!sourceContent.ok) {
+  // What it hands agents, checked as the projection will use it.
+  const agentIssues = await agentContributionIssues(extension, srcDir, options.protectedProviderIds)
+  if (agentIssues.length > 0) {
     return {
       ok: false,
-      rejected: { path: manifestPath, issues: sourceContent.issues },
-      message:
-        `Module "${result.manifest.id}" has files a module cannot ship. Install the folder ` +
-        '`sprintengine-module pack` writes, which leaves out node_modules, .git and key files.',
+      rejected: { path: manifestPath, issues: agentIssues },
+      message: `${agentIssues[0]!.path} ${agentIssues[0]!.message}`,
     }
   }
 
-  const destination = join(root, result.manifest.id)
+  const key = extensionInstallKey(options.publisher ?? LOCAL_EXTENSION_PUBLISHER, extension.id)
+  const destination = join(root, key)
   await mkdir(root, { recursive: true })
-  // A re-install REPLACES the folder; it does not merge into it. `cp --force`
-  // overwrites every file it is given and leaves every file it is not, so a
-  // version that dropped `dist/renderer.mjs` used to install on top of the
-  // version that had one — and the stale bundle, still matching the manifest's
-  // old entry path, kept loading. The trust grant is bound to the manifest
-  // fingerprint, so those leftovers rode in under a fingerprint that never
-  // covered them.
-  //
-  // The copy lands in a temp sibling and is renamed into place, so a copy that
-  // fails halfway leaves the previous install standing rather than a folder
-  // with half of each version in it. Rename is not atomic across the two steps
-  // (the old folder has to go first), so the window is real but small, and the
-  // caller's rollback path restores from its own snapshot.
-  //
-  // The staged copy is classified again before it replaces anything: the
-  // result reports the trust of the bytes that were installed, and a copy that
-  // differs from the folder just checked never lands.
-  const staging = join(root, `.${basename(result.manifest.id)}.installing.${process.pid}.${Date.now()}`)
+  // A re-install REPLACES the folder; it does not merge into it, so a file the
+  // new version dropped cannot stay behind and keep loading. The copy lands in
+  // a temp sibling and is renamed into place, so a copy that fails halfway
+  // leaves the previous install standing rather than half of each version.
+  const staging = join(root, `.${key}.installing.${process.pid}.${Date.now()}`)
   await rm(staging, { recursive: true, force: true })
-  let trust: ModuleTrust
+  const strippedLinks: string[] = []
+  let standing: ExtensionStanding
   try {
-    await cp(srcDir, staging, { recursive: true, force: true })
-    const staged = moduleContentFingerprintSync(result.manifest, staging)
-    if (!staged.ok || staged.fingerprint !== sourceContent.fingerprint) {
-      throw new Error('the module folder changed while it was being installed.')
+    await cp(srcDir, staging, {
+      recursive: true,
+      force: true,
+      verbatimSymlinks: true,
+      filter: (path) => {
+        if (path !== srcDir && lstatSync(path).isSymbolicLink()) {
+          strippedLinks.push(relative(srcDir, path).split(sep).join('/'))
+          return false
+        }
+        return true
+      },
+    })
+    standing = classifyExtension(staging, key, extension, ctx)
+    if (standing.signature === 'invalid') {
+      const issues = standing.issues ?? []
+      await rm(staging, { recursive: true, force: true })
+      return {
+        ok: false,
+        rejected: { path: manifestPath, issues },
+        message: standing.tampered
+          ? `Extension "${extension.id}" has been changed since it was signed: its files do not match extension.sig.`
+          : `Extension "${extension.id}" has an invalid signature.`,
+      }
     }
-    trust = classifyModuleTrust(result.manifest, staging, ctx)
+    if (standing.killed) {
+      await rm(staging, { recursive: true, force: true })
+      const message = `Studio’s kill list removed ${key} ${extension.version}: ${standing.killed.reason}`
+      return { ok: false, rejected: { path: manifestPath, issues: [{ path: '', message }] }, message }
+    }
+    if (standing.contentDigest === undefined) {
+      const issues = standing.issues ?? []
+      await rm(staging, { recursive: true, force: true })
+      return {
+        ok: false,
+        rejected: { path: manifestPath, issues },
+        message:
+          `Extension "${extension.id}" has files an extension cannot ship. Install the folder ` +
+          '`sprintengine-extension pack` writes, which leaves out node_modules, .git and key files.',
+      }
+    }
     await rm(destination, { recursive: true, force: true })
     await rename(staging, destination)
   } catch (error) {
@@ -314,19 +566,8 @@ export async function installModuleFolder(
     return {
       ok: false,
       rejected: { path: destination, issues: [{ path: '', message }] },
-      message: `Could not install module "${result.manifest.id}": ${message}`,
+      message: `Could not install extension "${extension.id}": ${message}`,
     }
   }
-
-  return {
-    ok: true,
-    id: result.manifest.id,
-    trust,
-    manifestFp: sourceContent.fingerprint,
-  }
-}
-
-// Exported for tests / callers that need the install destination of an id.
-export function moduleInstallPath(root: string, id: string): string {
-  return join(root, basename(id))
+  return { ok: true, id: key, extension, standing, strippedLinks: strippedLinks.sort() }
 }

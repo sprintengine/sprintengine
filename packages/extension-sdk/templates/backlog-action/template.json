@@ -1,0 +1,16 @@
+{
+  "id": "backlog-action",
+  "title": "Backlog action",
+  "summary": "A Backlog item menu entry whose command the worker runs: it starts a planning chat for each item.",
+  "permissions": [
+    "backlog:read",
+    "conversation:own"
+  ],
+  "capabilities": [
+    "backlog",
+    "menu",
+    "command",
+    "worker",
+    "conversations"
+  ]
+}

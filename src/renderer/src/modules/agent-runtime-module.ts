@@ -30,7 +30,7 @@ const ExtensionsGlobalSurface = React.lazy(
 
 // Agent runtime — the irreducible core (terminals, the BYO-CLI launch path, the
 // agent session runtime). It is `core: true`, so the resolver always keeps it
-// enabled and Settings → Modules renders it as a locked-on toggle the user can't
+// enabled and Settings → Extensions renders it as a locked-on toggle the user can't
 // turn off. Its renderer surfaces (AgentPanel, TerminalView, PlainTerminalPanel,
 // the agents/runState store slices) are always present, so it registers no
 // gated panels with the host; it does contribute the always-reachable

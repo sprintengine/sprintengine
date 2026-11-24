@@ -77,7 +77,7 @@ const transcript: ConversationEvent[] = [
   event('turn_completed', T + 3200, { turnId: 't3', text: 'Shipped as v2.' }),
 ]
 
-function setup(permissions: readonly string[] = ['conversation:read-all']) {
+function setup() {
   const workspaces: ModuleActivityWorkspace[] = [
     {
       id: 'ws-1',
@@ -133,20 +133,10 @@ function setup(permissions: readonly string[] = ['conversation:read-all']) {
     registry: createModuleActivityRegistry({
       getWorkspaces: () => workspaces,
       runtime,
-      getModulePermissions: () => permissions,
     }),
     reads,
   }
 }
-
-test('conversation:read-all is required', async () => {
-  const { registry, reads } = setup(['conversation:read'])
-  const chats = await registry.listChats('insights')
-  assert.equal(chats.ok ? null : chats.code, 'permission_missing')
-  const prompts = await registry.prompts('insights', { from: T, to: T + 10_000 })
-  assert.equal(prompts.ok ? null : prompts.code, 'permission_missing')
-  assert.deepEqual(reads, [])
-})
 
 test('listChats summarises every chat with a transcript, newest first, filtered by window and workspace', async () => {
   const { registry } = setup()

@@ -13,10 +13,11 @@
 // an explicit notice — a failed dependency must never read as an empty list.
 
 import type {
+  ExtensionApprovalState,
   ModuleEnablementOverrides,
-  ModuleTrustStatus,
   ThirdPartyModuleListResult,
 } from '../../../../shared/modules/manifest'
+import { isApproved } from './extensionsModel'
 import type { WorkspaceSkill } from '../../../../shared/electron-api'
 import type { McpServerConfig } from '../../../../shared/workspace'
 import { copy as appCopy } from '../../../../shared/copy'
@@ -63,7 +64,8 @@ export type InstalledExtension = {
   sourceId?: string
   /** That source has stopped declaring it; the row says so, and it keeps working. */
   missingFromSource?: boolean
-  trust?: ModuleTrustStatus
+  /** An extension's approval, or `invalid` for one whose signature does not match its files. */
+  approval?: ExtensionApprovalState
   enabled?: boolean
   /** Human one-line summary (catalog description, module summary, skill description). */
   summary?: string
@@ -170,20 +172,19 @@ export function modulesToInstalled(
     name: module.manifest.displayName,
     kind: 'module' as const,
     source: sourceLabel(module.manifest.source),
-    trust: module.trust,
-    // Trust-blocked modules do not load regardless of the enablement intent, so
-    // showing an "enabled" state for them would overstate reality. The enabled
-    // intent mirrors the main launch gate and ThirdPartyModuleList's
-    // `resolveModuleEnabled`: an explicit override wins, else the manifest default.
-    enabled: module.trust === 'trusted' ? (overrides[module.manifest.id] ?? module.manifest.defaultEnabled) : false,
+    approval: module.signature === 'invalid' ? 'invalid' : module.approval.state,
+    // An extension waiting for approval does not load regardless of the
+    // enablement intent, so showing an "enabled" state for it would overstate
+    // reality. The enabled intent mirrors the main launch gate and
+    // ThirdPartyModuleList's `resolveModuleEnabled`: an explicit override wins,
+    // else the manifest default.
+    enabled: isApproved(module) ? (overrides[module.manifest.id] ?? module.manifest.defaultEnabled) : false,
     summary: module.manifest.summary,
-    // Only the non-default state earns a second chip: enabled-and-trusted is
-    // the norm, and a trust-blocked module's real state is its trust label.
+    // Only the non-default state earns a second chip: enabled-and-approved is
+    // the norm, and an unapproved extension's real state is its approval label.
     chips: [
       EXTENSION_KIND_LABEL.module,
-      ...(module.trust === 'trusted' && !(overrides[module.manifest.id] ?? module.manifest.defaultEnabled)
-        ? ['Disabled']
-        : []),
+      ...(isApproved(module) && !(overrides[module.manifest.id] ?? module.manifest.defaultEnabled) ? ['Disabled'] : []),
     ],
   }))
 }

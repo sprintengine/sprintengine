@@ -5,12 +5,11 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import type { ConversationProviderManifest } from '../shared/plugin-manifest'
-import { canonicalManifestPayload } from '../shared/modules/third-party-manifest'
+import { canonicalManifestPayload } from '../../packages/extension-sdk/src/manifest-validate'
 import { agentCliSupportsConversationResume, agentCliUsesStableSessionIdForResume } from '../shared/agent-cli-resume'
 import { createPluginRegistry, validateManifestSource } from './plugin-registry'
 import { renderPluginLaunch } from './plugin-render'
-import { manifestFingerprint, verifyModuleSignature } from './modules/module-signature'
-import { createAppPluginRegistryOptions } from './plugin-registry-instance'
+import { extensionProviderOf } from './plugin-registry-instance'
 import { test } from 'vitest'
 
 test('plugin-registry', async () => {
@@ -28,8 +27,7 @@ test('plugin-registry', async () => {
     await testCursorBundledRenderMatchesExpected()
     await testBundledManifestsDeclareOnlyCurrentPresets()
     await testFixtureManifestsValidate()
-    await testUserPluginCannotAddOrReplaceAnAgentCli()
-    await testUserProviderCannotTakeABundledId()
+    await testExtensionProviderNeverStandsInForABuiltIn()
     await testInvalidManifestRejectedWithIssues()
     await testIdDirectoryMismatchRejected()
     await testMissingPermissionPresetsRejected()
@@ -43,11 +41,6 @@ test('plugin-registry', async () => {
     await testProviderCliFieldMixingRejected()
     await testCliProviderFieldMixingRejected()
     await testBundledExecutableProviderClassifiedAsExecutable()
-    await testUnsignedExecutableProviderBlockedInProduction()
-    await testUnsignedExecutableProviderBlockedEvenWhenContentTrusted()
-    await testSignedTrustedExecutableProviderClassifiedAsExecutable()
-    await testAppRegistryTrustStoreClassifiesSignedProviderExecutable()
-    await testTamperedExecutableProviderBlocked()
     await testTamperedExecutableProviderEntryBlocked()
     await testUnsafeExecutableProviderEntryRejected()
 
@@ -57,7 +50,6 @@ test('plugin-registry', async () => {
   async function testBundledManifestsLoad(): Promise<void> {
     const registry = createPluginRegistry({
       bundledRoot: BUNDLED_ROOT,
-      userRoot: join(await mkdtemp(join(tmpdir(), 'sprintengine-no-user-plugins-')), 'plugins'),
     })
     const report = await registry.load()
     assert.deepEqual(
@@ -167,7 +159,6 @@ test('plugin-registry', async () => {
   async function testResumeCapabilitiesProjectedAndConsistent(): Promise<void> {
     const registry = createPluginRegistry({
       bundledRoot: BUNDLED_ROOT,
-      userRoot: join(await mkdtemp(join(tmpdir(), 'sprintengine-no-user-plugins-')), 'plugins'),
     })
     await registry.load()
 
@@ -260,7 +251,6 @@ test('plugin-registry', async () => {
   async function testClaudeBundledRenderMatchesExpected(): Promise<void> {
     const registry = createPluginRegistry({
       bundledRoot: BUNDLED_ROOT,
-      userRoot: join(await mkdtemp(join(tmpdir(), 'sprintengine-no-user-plugins-')), 'plugins'),
     })
     await registry.load()
     const plugin = registry.get('claude-code')
@@ -300,7 +290,6 @@ test('plugin-registry', async () => {
   async function testCodexBundledRenderMatchesExpected(): Promise<void> {
     const registry = createPluginRegistry({
       bundledRoot: BUNDLED_ROOT,
-      userRoot: join(await mkdtemp(join(tmpdir(), 'sprintengine-no-user-plugins-')), 'plugins'),
     })
     await registry.load()
     const plugin = registry.get('codex')
@@ -318,7 +307,6 @@ test('plugin-registry', async () => {
   async function testGrokBundledRenderMatchesExpected(): Promise<void> {
     const registry = createPluginRegistry({
       bundledRoot: BUNDLED_ROOT,
-      userRoot: join(await mkdtemp(join(tmpdir(), 'sprintengine-no-user-plugins-')), 'plugins'),
     })
     await registry.load()
     const plugin = registry.get('grok')
@@ -365,7 +353,6 @@ test('plugin-registry', async () => {
   async function bundledRegistry(): Promise<ReturnType<typeof createPluginRegistry>> {
     const registry = createPluginRegistry({
       bundledRoot: BUNDLED_ROOT,
-      userRoot: join(await mkdtemp(join(tmpdir(), 'sprintengine-no-user-plugins-')), 'plugins'),
     })
     await registry.load()
     return registry
@@ -489,7 +476,6 @@ test('plugin-registry', async () => {
   async function testFixtureManifestsValidate(): Promise<void> {
     const registry = createPluginRegistry({
       bundledRoot: FIXTURE_ROOT,
-      userRoot: join(await mkdtemp(join(tmpdir(), 'sprintengine-no-user-plugins-')), 'plugins'),
     })
     const report = await registry.load()
     assert.deepEqual(
@@ -502,89 +488,6 @@ test('plugin-registry', async () => {
       .map((p) => p.id)
       .sort()
     assert.deepEqual(ids, ['aider', 'opencode', 'pi'])
-  }
-
-  // M-F5: a user plugin named `claude-code` used to replace the built-in
-  // launcher — binary, argv and the installer's shell — for every agent that
-  // chose Claude Code. Agent CLIs now come from the app bundle only: a CLI
-  // manifest in the user root is refused, the bundled one stays, and a new CLI
-  // id does not appear either.
-  async function testUserPluginCannotAddOrReplaceAnAgentCli(): Promise<void> {
-    const userRootParent = await mkdtemp(join(tmpdir(), 'sprintengine-user-plugins-'))
-    const userRoot = join(userRootParent, 'plugins')
-    const overrideRoot = join(userRoot, 'claude-code')
-    await mkdir(overrideRoot, { recursive: true })
-
-    const overrideManifest = {
-      id: 'claude-code',
-      displayName: 'Claude Code (Custom Fork)',
-      version: 2,
-      binary: '/usr/local/bin/claude',
-      permissionPresets: {
-        default: { label: 'Default', args: [] },
-      },
-      launch: { argv: ['{{binary}}', '--custom'] },
-      promptInjection: { mode: 'positional-arg' },
-      completion: { mode: 'process-exit' },
-      capabilities: {
-        resumeSession: false,
-        sessionIdFromCaller: true,
-        toolUse: true,
-        mcpServers: false,
-      },
-    }
-    await writeFile(join(overrideRoot, 'plugin.json'), JSON.stringify(overrideManifest, null, 2), 'utf-8')
-
-    const newCliRoot = join(userRoot, 'aider')
-    await mkdir(newCliRoot, { recursive: true })
-    await writeFile(
-      join(newCliRoot, 'plugin.json'),
-      JSON.stringify({ ...overrideManifest, id: 'aider', displayName: 'Aider' }, null, 2),
-      'utf-8',
-    )
-
-    const report = await createPluginRegistry({ bundledRoot: BUNDLED_ROOT, userRoot }).load()
-    const refused = report.rejected.filter((rejected) => rejected.source === 'user')
-    assert.equal(refused.length, 2)
-    for (const rejected of refused) assert.match(rejected.issues[0]?.message ?? '', /Agent CLIs ship with the app/)
-    // The synchronous load the launch path uses answers the same.
-    const registry = createPluginRegistry({ bundledRoot: BUNDLED_ROOT, userRoot })
-    registry.loadSync()
-    const loaded = registry.get('claude-code')
-    assert.ok(loaded)
-    assert.equal(loaded!.source, 'bundled')
-    assert.notEqual(loaded!.manifest.binary, '/usr/local/bin/claude')
-    assert.equal(registry.get('aider'), undefined)
-    assert.equal(registry.list().filter((p) => p.id === 'claude-code').length, 1)
-  }
-
-  // A provider is what the user root is for, but not under a name the app
-  // already uses — a CLI's or a bundled provider's.
-  async function testUserProviderCannotTakeABundledId(): Promise<void> {
-    const userRootParent = await mkdtemp(join(tmpdir(), 'sprintengine-user-providers-'))
-    const userRoot = join(userRootParent, 'plugins')
-    for (const id of ['claude-agent', 'codex']) {
-      await mkdir(join(userRoot, id), { recursive: true })
-      await writeFile(
-        join(userRoot, id, 'plugin.json'),
-        JSON.stringify({
-          kind: 'provider',
-          id,
-          displayName: `Not ${id}`,
-          version: 1,
-          providerType: 'model-provider',
-          models: [{ id: 'm' }],
-        }),
-        'utf-8',
-      )
-    }
-    const registry = createPluginRegistry({ bundledRoot: BUNDLED_ROOT, userRoot })
-    const report = await registry.load()
-    const refused = report.rejected.filter((rejected) => rejected.source === 'user')
-    assert.equal(refused.length, 2)
-    for (const rejected of refused) assert.match(rejected.issues[0]?.message ?? '', /built-in id/)
-    assert.notEqual(registry.getConversationProvider('claude-agent')?.source, 'user')
-    assert.equal(registry.getConversationProvider('codex'), undefined)
   }
 
   async function testInvalidManifestRejectedWithIssues(): Promise<void> {
@@ -698,7 +601,7 @@ test('plugin-registry', async () => {
       }),
       'utf-8',
     )
-    const registry = createPluginRegistry({ bundledRoot: BUNDLED_ROOT, userRoot })
+    const registry = createPluginRegistry({ bundledRoot: userRoot })
     const report = await registry.load()
     const mismatch = report.rejected.find((r) => r.manifestPath.includes('wrong-dir-name'))
     assert.ok(mismatch, 'mismatched directory should be rejected')
@@ -810,58 +713,75 @@ test('plugin-registry', async () => {
     )
   }
 
+  // An extension's provider is listed with the providers, never in the
+  // terminal CLI catalogue, under the namespaced id its install key gives it.
   async function testProviderManifestLoadsThroughProviderListOnly(): Promise<void> {
-    const userRootParent = await mkdtemp(join(tmpdir(), 'sprintengine-provider-plugins-'))
-    const userRoot = join(userRootParent, 'plugins')
-    const providerRoot = join(userRoot, 'openai-compatible')
-    await mkdir(providerRoot, { recursive: true })
-    await writeFile(
-      join(providerRoot, 'plugin.json'),
-      JSON.stringify({
-        kind: 'provider',
-        id: 'openai-compatible',
-        displayName: 'OpenAI Compatible',
-        version: 1,
-        providerType: 'model-provider',
-        models: [{ id: 'gpt-5', displayName: 'GPT-5' }, { id: 'gpt-5-mini' }],
-        auth: { type: 'api-key', label: 'API key', env: 'OPENAI_API_KEY' },
-      }),
-      'utf-8',
-    )
-
-    const registry = createPluginRegistry({ bundledRoot: BUNDLED_ROOT, userRoot })
+    const registry = createPluginRegistry({
+      bundledRoot: BUNDLED_ROOT,
+      extensionProviders: () => [
+        extensionProviderOf({
+          id: 'acme.models/openai-compatible',
+          localId: 'openai-compatible',
+          name: 'OpenAI Compatible',
+          baseUrl: 'https://api.example.com',
+          models: [{ id: 'gpt-5', name: 'GPT-5' }, { id: 'gpt-5-mini' }],
+          apiKey: { label: 'API key' },
+          extension: 'Acme models',
+        }),
+      ],
+    })
     const report = await registry.load()
     assert.deepEqual(report.rejected, [])
-    assert.equal(registry.get('openai-compatible'), undefined)
+    assert.equal(registry.get('acme.models/openai-compatible'), undefined)
     assert.equal(
       registry.listConversationProviders().find((provider) => provider.id === 'claude-agent')?.credentialSource,
       'native',
     )
-    assert.ok(registry.getConversationProvider('openai-compatible'))
+    assert.ok(registry.getConversationProvider('acme.models/openai-compatible'))
     assert.ok(
-      !registry.list().some((entry) => entry.id === 'openai-compatible'),
+      !registry.list().some((entry) => entry.id === 'acme.models/openai-compatible'),
       'provider manifests must not appear in the terminal CLI catalog',
     )
     assert.deepEqual(
-      registry.listConversationProviders().filter((entry) => entry.id === 'openai-compatible'),
+      registry.listConversationProviders().filter((entry) => entry.id === 'acme.models/openai-compatible'),
       [
         {
-          id: 'openai-compatible',
+          id: 'acme.models/openai-compatible',
           displayName: 'OpenAI Compatible',
-          source: 'user',
+          source: 'extension',
           version: 1,
           providerType: 'model-provider',
           models: [{ id: 'gpt-5', displayName: 'GPT-5' }, { id: 'gpt-5-mini' }],
           supportsDynamicModels: false,
           credentialSource: 'api-key',
-          adapter: {
-            kind: 'declarative',
-            execution: 'declarative',
-            trust: 'not_required',
-          },
+          adapter: { kind: 'declarative', execution: 'declarative', trust: 'not_required' },
         },
       ],
     )
+  }
+
+  // An extension's provider id carries its install key, so it can never be a
+  // built-in's; one that somehow were is left out, and the built-in stays.
+  async function testExtensionProviderNeverStandsInForABuiltIn(): Promise<void> {
+    const impostor = extensionProviderOf({
+      id: 'acme.models/x',
+      localId: 'x',
+      name: 'Not Claude',
+      baseUrl: 'https://api.example.com',
+      models: [{ id: 'm' }],
+      extension: 'Acme',
+    })
+    const registry = createPluginRegistry({
+      bundledRoot: BUNDLED_ROOT,
+      extensionProviders: () => [
+        { ...impostor, manifest: { ...impostor.manifest, id: 'claude-agent' } },
+        { ...impostor, manifest: { ...impostor.manifest, id: 'codex' } },
+      ],
+    })
+    registry.loadSync()
+    assert.equal(registry.getConversationProvider('claude-agent')?.source, 'bundled')
+    assert.equal(registry.getConversationProvider('codex'), undefined)
+    assert.equal(registry.listConversationProviders().filter((entry) => entry.source === 'extension').length, 0)
   }
 
   async function testProviderCliFieldMixingRejected(): Promise<void> {
@@ -991,7 +911,6 @@ test('plugin-registry', async () => {
 
     const registry = createPluginRegistry({
       bundledRoot,
-      userRoot: join(await mkdtemp(join(tmpdir(), 'sprintengine-no-user-plugins-')), 'plugins'),
     })
     const report = await registry.load()
     assert.deepEqual(report.rejected, [])
@@ -1003,129 +922,6 @@ test('plugin-registry', async () => {
       trust: 'trusted',
       entry: 'dist/provider.js',
     })
-  }
-
-  async function testUnsignedExecutableProviderBlockedInProduction(): Promise<void> {
-    const userRoot = await createUserProvider('unsigned-adapter', {
-      kind: 'provider',
-      id: 'unsigned-adapter',
-      displayName: 'Unsigned Adapter',
-      version: 1,
-      providerType: 'model-provider',
-      models: [{ id: 'demo' }],
-      adapter: executableAdapterSpec(),
-    })
-
-    const registry = createPluginRegistry({ bundledRoot: BUNDLED_ROOT, userRoot, productionMode: true })
-    const report = await registry.load()
-    assert.deepEqual(report.rejected, [])
-    const provider = registry.getConversationProvider('unsigned-adapter')
-    assert.ok(provider)
-    assert.equal(provider!.adapter.execution, 'blocked')
-    assert.equal(provider!.adapter.trust, 'unsigned')
-    assert.match(provider!.adapter.trustError ?? '', /cannot run in production/)
-  }
-
-  async function testUnsignedExecutableProviderBlockedEvenWhenContentTrusted(): Promise<void> {
-    const manifest: ConversationProviderManifest = {
-      kind: 'provider',
-      id: 'trusted-unsigned-adapter',
-      displayName: 'Trusted Unsigned Adapter',
-      version: 1,
-      providerType: 'model-provider',
-      models: [{ id: 'demo' }],
-      adapter: executableAdapterSpec(),
-    }
-    const userRoot = await createUserProvider('trusted-unsigned-adapter', manifest)
-
-    const registry = createPluginRegistry({
-      bundledRoot: BUNDLED_ROOT,
-      userRoot,
-      productionMode: true,
-      providerTrustContext: {
-        trustedModules: new Map([[manifest.id, manifestFingerprint(manifest)]]),
-      },
-    })
-    const report = await registry.load()
-    assert.deepEqual(report.rejected, [])
-    const provider = registry.getConversationProvider('trusted-unsigned-adapter')
-    assert.ok(provider)
-    assert.equal(provider!.adapter.execution, 'blocked')
-    assert.equal(provider!.adapter.trust, 'unsigned')
-  }
-
-  async function testSignedTrustedExecutableProviderClassifiedAsExecutable(): Promise<void> {
-    const signed = signProviderManifest({
-      kind: 'provider',
-      id: 'signed-adapter',
-      displayName: 'Signed Adapter',
-      version: 1,
-      providerType: 'model-provider',
-      models: [{ id: 'demo' }],
-      adapter: executableAdapterSpec(),
-    })
-    const fingerprint = verifyModuleSignature(signed).fingerprint
-    assert.equal(typeof fingerprint, 'string')
-    const userRoot = await createUserProvider('signed-adapter', signed)
-
-    const registry = createPluginRegistry({
-      bundledRoot: BUNDLED_ROOT,
-      userRoot,
-      providerTrustContext: { trustedModules: new Map(), trustedKeyFingerprints: new Set([fingerprint!]) },
-    })
-    const report = await registry.load()
-    assert.deepEqual(report.rejected, [])
-    const provider = registry.getConversationProvider('signed-adapter')
-    assert.ok(provider)
-    assert.equal(provider!.adapter.execution, 'executable')
-    assert.equal(provider!.adapter.trust, 'trusted')
-    assert.equal(provider!.adapter.fingerprint, fingerprint)
-  }
-
-  async function testAppRegistryTrustStoreClassifiesSignedProviderExecutable(): Promise<void> {
-    const signed = signProviderManifest({
-      kind: 'provider',
-      id: 'app-trusted-adapter',
-      displayName: 'App Trusted Adapter',
-      version: 1,
-      providerType: 'model-provider',
-      models: [{ id: 'demo' }],
-      adapter: executableAdapterSpec(),
-    })
-    const userRoot = await createUserProvider('app-trusted-adapter', signed)
-    const userDataDir = await mkdtemp(join(tmpdir(), 'sprintengine-provider-trust-store-'))
-    await writeTrustedModules(userDataDir, { [signed.id]: manifestFingerprint(signed) })
-
-    const registry = createPluginRegistry(createAppPluginRegistryOptions(userDataDir, BUNDLED_ROOT, userRoot))
-    const report = await registry.load()
-    assert.deepEqual(report.rejected, [])
-    const provider = registry.getConversationProvider('app-trusted-adapter')
-    assert.ok(provider)
-    assert.equal(provider!.adapter.execution, 'executable')
-    assert.equal(provider!.adapter.trust, 'trusted')
-  }
-
-  async function testTamperedExecutableProviderBlocked(): Promise<void> {
-    const signed = signProviderManifest({
-      kind: 'provider',
-      id: 'tampered-adapter',
-      displayName: 'Tampered Adapter',
-      version: 1,
-      providerType: 'model-provider',
-      models: [{ id: 'demo' }],
-      adapter: executableAdapterSpec(),
-    })
-    const tampered: ConversationProviderManifest = { ...signed, displayName: 'Tampered Adapter Changed' }
-    const userRoot = await createUserProvider('tampered-adapter', tampered)
-
-    const registry = createPluginRegistry({ bundledRoot: BUNDLED_ROOT, userRoot })
-    const report = await registry.load()
-    assert.deepEqual(report.rejected, [])
-    const provider = registry.getConversationProvider('tampered-adapter')
-    assert.ok(provider)
-    assert.equal(provider!.adapter.execution, 'blocked')
-    assert.equal(provider!.adapter.trust, 'invalid')
-    assert.match(provider!.adapter.trustError ?? '', /tampered/)
   }
 
   async function testTamperedExecutableProviderEntryBlocked(): Promise<void> {
@@ -1141,13 +937,7 @@ test('plugin-registry', async () => {
     const userRoot = await createUserProvider('entry-tampered-adapter', signed)
     await writeFile(join(userRoot, 'entry-tampered-adapter', 'dist', 'provider.js'), 'tampered-entry', 'utf-8')
 
-    const registry = createPluginRegistry({
-      bundledRoot: BUNDLED_ROOT,
-      userRoot,
-      providerTrustContext: {
-        trustedModules: new Map([[signed.id, manifestFingerprint(signed)]]),
-      },
-    })
+    const registry = createPluginRegistry({ bundledRoot: userRoot })
     const report = await registry.load()
     assert.deepEqual(report.rejected, [])
     const provider = registry.getConversationProvider('entry-tampered-adapter')
@@ -1199,11 +989,6 @@ test('plugin-registry', async () => {
       ...manifest,
       signature: { algorithm: 'ed25519', publicKey: publicKeyB64, signature },
     }
-  }
-
-  async function writeTrustedModules(userDataDir: string, trusted: Record<string, string>): Promise<void> {
-    await mkdir(userDataDir, { recursive: true })
-    await writeFile(join(userDataDir, 'trusted-modules.json'), JSON.stringify(trusted), 'utf-8')
   }
 
   const ADAPTER_CONTENT = 'export default function providerAdapter() { return null }\n'

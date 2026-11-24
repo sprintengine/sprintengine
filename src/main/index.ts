@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, Notification, protocol, safeStorage } from 'electron'
-import { MODULE_ASSET_SCHEME } from '../shared/modules/assets'
+import { EXTENSION_FRAME_SCHEME_PRIVILEGES } from './extension-frames/extension-frame-shell'
 import { installStudioPlatform } from '../server/platform/platform'
 import { claimAppInstance, configureDevUserData } from './app-instance'
 import { createElectronPlatform } from './platform/electron-platform'
@@ -89,12 +89,8 @@ if (!claimAppInstance(app)) {
   // Before the app is imported, so every terminal and agent it spawns inherits it.
   ensureGuiLocale()
   // Must be registered before the app is ready.
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: MODULE_ASSET_SCHEME,
-      privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true },
-    },
-  ])
+  // The scheme extension frames are served from (extension-frames/).
+  protocol.registerSchemesAsPrivileged([EXTENSION_FRAME_SCHEME_PRIVILEGES])
   // Before the app is imported, so its chunks are compiled from the cache this
   // build left on disk (compile-cache.ts). The cache is written out a minute
   // in, when boot has compiled what it needs, and again on the way out, which

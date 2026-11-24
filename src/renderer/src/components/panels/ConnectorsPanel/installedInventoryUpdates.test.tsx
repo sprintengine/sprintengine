@@ -91,7 +91,13 @@ test('installedInventoryUpdates', async () => {
   const api: Record<string, unknown> = {
     platform: 'darwin',
     listThirdPartyModules: async () => ({
-      modules: [{ manifest: { ...acmeKitManifest, version: installedVersion }, trust: 'trusted' }],
+      modules: [
+        {
+          manifest: { ...acmeKitManifest, version: installedVersion },
+          approval: { state: 'approved', fingerprint: 'sha256-test' },
+          signature: 'unsigned',
+        },
+      ],
       rejected: [],
     }),
     pluginsList: async () => ({
@@ -225,7 +231,6 @@ test('installedInventoryUpdates', async () => {
             moduleOverrides: {},
             workspaceRoot: '/repo',
             registryPlugins: [acmeKitEntry, cursorEntry] as never,
-            mcpSettings: { syncEnabled: false, servers: {} } as never,
           }),
         )
       })
@@ -402,7 +407,6 @@ test('installedInventoryUpdates', async () => {
           workspaceRoot: '/repo',
           kinds: ['mcp'],
           sourceGrouping: { sources, records: [] } as never,
-          mcpSettings: { syncEnabled: true, servers: {} } as never,
         }),
       )
     })

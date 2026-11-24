@@ -38,7 +38,7 @@ import type { LaunchedAgentLink } from '../agent-launch-notices'
 import type { WorktreeDependencyInstallView } from '../../shared/ipc/worktree-pool'
 import type { LoadedPlugin, PluginManifest } from '../../shared/plugin-manifest'
 import type { MarketplaceRegistryReadInput } from '../../shared/electron-api'
-import type { MarketplaceComponentKind } from '../../shared/marketplace/manifest'
+import type { MarketplaceProvidesKind } from '../../shared/marketplace/manifest'
 import type { CapabilityManifest, ThirdPartyModuleView } from '../../shared/modules/manifest'
 import {
   EMPTY_MODULE_SURFACES,
@@ -52,6 +52,7 @@ import type {
   ScheduledAgentWriteResult,
 } from '../../shared/scheduled-agents'
 import type { ScheduledAgentsService } from '../scheduled-agents/service'
+import { ownerInvoker } from '../module-host/extension-invocation'
 import { test } from 'vitest'
 
 test('automation', async () => {
@@ -306,9 +307,9 @@ test('automation', async () => {
       'backlog.update',
       'backlog.work',
       'cli.runtime.list',
+      'extension.list',
+      'extension.status',
       'marketplace.list',
-      'module.list',
-      'module.status',
       'schedule.create',
       'schedule.delete',
       'schedule.list',
@@ -2848,6 +2849,7 @@ test('automation', async () => {
       handler: async () => ({ content: [{ type: 'text', text: 'ok' }] }),
     }
     const tools = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: [appTool],
       resolveModuleTools: () => [],
       isModuleEnabled: () => true,
@@ -2860,6 +2862,7 @@ test('automation', async () => {
     assert.throws(
       () =>
         createStudioGatewayTools({
+          callerInvoker: () => ownerInvoker(),
           appTools: [appTool, appTool],
           resolveModuleTools: () => [],
           isModuleEnabled: () => true,
@@ -2902,6 +2905,7 @@ test('automation', async () => {
       handler: async () => ({ content: [{ type: 'text' as const, text: 'ok' }] }),
     }
     const resolveWidgetTools = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: [],
       resolveModuleTools: () => [
         { moduleId: 'widgets', moduleDisplayName: 'Widgets', registration: moduleWrites },
@@ -2948,7 +2952,7 @@ test('automation', async () => {
         summary: 'test module',
         defaultEnabled: true,
         source: 'third-party',
-        permissions: ['mcp:tools'],
+        permissions: ['tools:contribute'],
       },
       registerMain: (host) => host.registerMcpTools(tools),
     })
@@ -2960,6 +2964,31 @@ test('automation', async () => {
           registrationOf('weather_deck_forecast', 'second'),
         ]),
       ],
+      // What each extension.json declares: a third-party module serves only these.
+      moduleMcpTools: {
+        'first-owner': [
+          {
+            name: 'weather_deck_forecast',
+            description: 'test tool first',
+            access: 'read',
+            inputSchema: { type: 'object' },
+          },
+        ],
+        'second-owner': [
+          {
+            name: 'second_owner_extra',
+            description: 'test tool extra',
+            access: 'read',
+            inputSchema: { type: 'object' },
+          },
+          {
+            name: 'weather_deck_forecast',
+            description: 'test tool second',
+            access: 'read',
+            inputSchema: { type: 'object' },
+          },
+        ],
+      },
     })
     assert.deepEqual(report.loaded, ['first-owner'], 'first registration wins')
     assert.equal(report.errors.length, 1)
@@ -2968,6 +2997,7 @@ test('automation', async () => {
 
     const warnings: string[] = []
     const resolveGatewayTools = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: [],
       resolveModuleTools: () => kernel.mcpToolRegistrations(),
       isModuleEnabled: () => true,
@@ -2989,6 +3019,7 @@ test('automation', async () => {
     const shadowWarnings: string[] = []
     const coreTool = registrationOf('workspace.list', 'core')
     const resolveShadowed = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: [coreTool],
       resolveModuleTools: () => [
         {
@@ -3033,15 +3064,28 @@ test('automation', async () => {
         summary: 'fixture module',
         defaultEnabled: true,
         source: 'third-party',
-        permissions: ['mcp:tools'],
+        permissions: ['tools:contribute'],
       },
       registerMain: (host) => host.registerMcpTools([forecastTool]),
     }
-    const { kernel, report } = loadMainModules({ modules: [fixtureModule] })
+    const { kernel, report } = loadMainModules({
+      modules: [fixtureModule],
+      moduleMcpTools: {
+        'weather-deck': [
+          {
+            name: 'weather_deck_forecast',
+            description: 'Forecast from the fixture module.',
+            access: 'read',
+            inputSchema: { type: 'object' },
+          },
+        ],
+      },
+    })
     assert.deepEqual(report.loaded, ['weather-deck'])
 
     let moduleEnabled = true
     const resolveGatewayTools = createStudioGatewayTools({
+      callerInvoker: () => ownerInvoker(),
       appTools: createAutomationTools(backendsOf()),
       resolveModuleTools: () => kernel.mcpToolRegistrations(),
       isModuleEnabled: () => moduleEnabled,
@@ -3134,7 +3178,7 @@ test('automation', async () => {
       }
       assert.equal(refusal.isError, true)
       assert.equal(refusal.structuredContent.error.code, 'weather-deck_module_disabled')
-      assert.match(refusal.structuredContent.error.message, /Weather Deck module is disabled/)
+      assert.match(refusal.structuredContent.error.message, /Weather Deck extension is disabled/)
 
       socket.destroy()
     } finally {
@@ -3211,13 +3255,45 @@ test('automation', async () => {
 
   function installedModuleView(
     id: string,
-    trust: ThirdPartyModuleView['trust'],
+    approval: ThirdPartyModuleView['approval']['state'],
     launch: Partial<ThirdPartyModuleView['launch']> = {},
   ): ThirdPartyModuleView {
     return {
       manifest: { id, displayName: `Module ${id}`, version: 3, defaultEnabled: true, source: 'third-party' },
-      trust,
-      launch: { status: 'blocked_unsigned', hasMainEntry: true, expectedToLoad: false, ...launch },
+      extension: {
+        manifestVersion: 1,
+        id: id,
+        version: '1.0.0',
+        engines: { studio: '>=0.13.0' },
+        tier: 'worker',
+        name: `Module ${id}`,
+        permissions: [],
+        main: 'dist/main.cjs',
+        contributes: {
+          commands: [],
+          menus: [],
+          topBarItems: [],
+          panels: [],
+          doors: [],
+          settingsSections: [],
+          mcpTools: [],
+          hooks: [],
+          syntaxes: [],
+          customEditors: [],
+          keybindings: [],
+          statusBarItems: [],
+          settings: [],
+          skills: [],
+          mcpServers: [],
+          providers: [],
+        },
+      },
+      approval:
+        approval === 'approved' || approval === 'pending'
+          ? { state: approval, fingerprint: 'sha256-test' }
+          : { state: approval },
+      signature: 'unsigned',
+      launch: { status: 'awaiting_approval', hasMainEntry: true, expectedToLoad: false, ...launch },
     }
   }
 
@@ -3243,7 +3319,7 @@ test('automation', async () => {
         { id: 'git', displayName: 'Git panel', version: 1, defaultEnabled: true },
         {
           enabled: false,
-          absence: { reason: 'disabled', message: 'Module "git" is not enabled (Settings → Modules).' },
+          absence: { reason: 'disabled', message: 'Extension "git" is not enabled (Settings → Extensions).' },
         },
       ),
       registryEntry({
@@ -3258,12 +3334,12 @@ test('automation', async () => {
     const tools = createAutomationTools(
       backendsOf({
         getModuleRegistrySnapshot: () => snapshot,
-        // `weather` loaded; `sketchy` is installed on disk but never trusted, so
+        // `weather` loaded; `sketchy` is installed on disk but never approved, so
         // the renderer registry has never heard of it.
         listInstalledThirdPartyModules: async () => ({
           modules: [
-            installedModuleView('weather', 'trusted', { status: 'trusted_executable', expectedToLoad: true }),
-            installedModuleView('sketchy', 'unsigned'),
+            installedModuleView('weather', 'approved', { status: 'runs_worker', expectedToLoad: true }),
+            installedModuleView('sketchy', 'pending'),
           ],
           rejected: [],
         }),
@@ -3271,7 +3347,7 @@ test('automation', async () => {
       }),
     )
 
-    const listed = await tool(tools, 'module.list').handler({})
+    const listed = await tool(tools, 'extension.list').handler({})
     const modules = (
       listed.structuredContent as {
         modules: Array<{
@@ -3280,46 +3356,46 @@ test('automation', async () => {
           enabled: boolean
           installed: boolean
           absence: { reason: string } | null
-          trust?: string
+          approval?: string
         }>
       }
     ).modules
     assert.deepEqual(
       modules.map((module) => module.id).sort(),
       ['backlog', 'git', 'sketchy', 'weather'],
-      'every module the user could see is listed, including an installed-but-untrusted one',
+      'every module the user could see is listed, including an installed-but-unapproved one',
     )
     const git = modules.find((module) => module.id === 'git')
     assert.equal(git?.enabled, false)
     assert.equal(git?.absence?.reason, 'disabled', 'a switched-off module says so instead of vanishing')
     const sketchy = modules.find((module) => module.id === 'sketchy')
-    assert.equal(sketchy?.installed, true, 'an untrusted module is still installed')
+    assert.equal(sketchy?.installed, true, 'an unapproved module is still installed')
     assert.equal(sketchy?.enabled, false)
-    assert.equal(sketchy?.absence?.reason, 'untrusted')
-    assert.equal(sketchy?.trust, 'unsigned')
+    assert.equal(sketchy?.absence?.reason, 'unapproved')
+    assert.equal(sketchy?.approval, 'pending')
     assert.equal(
-      modules.find((module) => module.id === 'weather')?.trust,
-      'trusted',
-      'main-owned trust rides along for a loaded third-party module',
+      modules.find((module) => module.id === 'weather')?.approval,
+      'approved',
+      'main-owned approval rides along for a loaded third-party module',
     )
 
-    const thirdParty = await tool(tools, 'module.list').handler({ source: 'third-party' })
+    const thirdParty = await tool(tools, 'extension.list').handler({ source: 'third-party' })
     assert.deepEqual(
       (thirdParty.structuredContent as { modules: Array<{ id: string }> }).modules.map((module) => module.id).sort(),
       ['sketchy', 'weather'],
     )
-    const enabledOnly = await tool(tools, 'module.list').handler({ enabled: true })
+    const enabledOnly = await tool(tools, 'extension.list').handler({ enabled: true })
     assert.deepEqual(
       (enabledOnly.structuredContent as { modules: Array<{ id: string }> }).modules.map((module) => module.id),
       ['backlog', 'weather'],
     )
     assert.equal(
-      (await tool(tools, 'module.list').handler({ source: 'nope' })).isError,
+      (await tool(tools, 'extension.list').handler({ source: 'nope' })).isError,
       true,
       'an unknown source is rejected rather than filtered to nothing',
     )
 
-    const status = await tool(tools, 'module.status').handler({ id: 'backlog' })
+    const status = await tool(tools, 'extension.status').handler({ id: 'backlog' })
     const detail = (
       status.structuredContent as {
         module: {
@@ -3334,7 +3410,7 @@ test('automation', async () => {
     assert.deepEqual(detail.dependsOn, ['agent-runtime'])
     assert.deepEqual(detail.surfaces.globalSurfaces, ['backlog'], 'contributed surfaces are reported, not guessed')
     assert.deepEqual(detail.contributedTools, [], 'backlog contributes no gateway tool in this fixture')
-    const weatherStatus = await tool(tools, 'module.status').handler({ id: 'weather' })
+    const weatherStatus = await tool(tools, 'extension.status').handler({ id: 'weather' })
     assert.deepEqual(
       (weatherStatus.structuredContent as { module: { contributedTools: string[]; permissions: string[] } }).module,
       {
@@ -3344,21 +3420,21 @@ test('automation', async () => {
       },
     )
 
-    // An installed-but-untrusted module still reports its own manifest — the
-    // declared permissions are what a caller reads BEFORE deciding to trust it —
+    // An installed-but-unapproved module still reports its own manifest — the
+    // declared permissions are what a caller reads BEFORE deciding to approve it —
     // and null surfaces, because it registered nothing.
-    const untrusted = await tool(tools, 'module.status').handler({ id: 'sketchy' })
-    const untrustedDetail = (
-      untrusted.structuredContent as {
-        module: { manifest: { id: string } | null; surfaces: unknown; absence: { reason: string }; trust: string }
+    const unapproved = await tool(tools, 'extension.status').handler({ id: 'sketchy' })
+    const unapprovedDetail = (
+      unapproved.structuredContent as {
+        module: { manifest: { id: string } | null; surfaces: unknown; absence: { reason: string }; approval: string }
       }
     ).module
-    assert.equal(untrustedDetail.manifest?.id, 'sketchy')
-    assert.equal(untrustedDetail.surfaces, null, 'a module that never loaded contributes nothing')
-    assert.equal(untrustedDetail.absence.reason, 'untrusted')
-    assert.equal(untrustedDetail.trust, 'unsigned')
+    assert.equal(unapprovedDetail.manifest?.id, 'sketchy')
+    assert.equal(unapprovedDetail.surfaces, null, 'a module that never loaded contributes nothing')
+    assert.equal(unapprovedDetail.absence.reason, 'unapproved')
+    assert.equal(unapprovedDetail.approval, 'pending')
 
-    const unknown = await tool(tools, 'module.status').handler({ id: 'nothing-like-this' })
+    const unknown = await tool(tools, 'extension.status').handler({ id: 'nothing-like-this' })
     assert.equal((unknown.structuredContent as { error: { code: string } }).error.code, 'unknown_module')
   }
 
@@ -3368,7 +3444,7 @@ test('automation', async () => {
   // both). `testModuleContributedToolIsLiveOnAConnectedSession` above proves the
   // tool is listed, callable and enablement-gated; this proves the description
   // agrees with it — over one live session, cross-checked against the wire rather
-  // than against a literal, so a `module.status` reading some other registry fails
+  // than against a literal, so a `extension.status` reading some other registry fails
   // here instead of misreporting the app to an agent.
   async function testModuleStatusAgreesWithTheToolsTheGatewayServes(): Promise<void> {
     const socketPath = join(mkdtempSync(join(tmpdir(), 'se-module-agree-')), 'automation.sock')
@@ -3386,13 +3462,25 @@ test('automation', async () => {
       summary: 'fixture module',
       defaultEnabled: true,
       source: 'third-party' as const,
-      permissions: ['mcp:tools' as const],
+      permissions: ['tools:contribute' as const],
     }
     const fixtureModule: CapabilityModule = { manifest, registerMain: (host) => host.registerMcpTools([forecastTool]) }
-    const { kernel } = loadMainModules({ modules: [fixtureModule] })
+    const { kernel } = loadMainModules({
+      modules: [fixtureModule],
+      moduleMcpTools: {
+        'weather-deck': [
+          {
+            name: 'weather_deck_forecast',
+            description: 'Forecast from the fixture module.',
+            access: 'read',
+            inputSchema: { type: 'object' },
+          },
+        ],
+      },
+    })
 
     // The one resolver, behind both surfaces — the production wiring. Feeding the
-    // gateway and `module.status` separate literals would agree by construction.
+    // gateway and `extension.status` separate literals would agree by construction.
     let moduleEnabled = true
     const appTools = createAutomationTools(
       backendsOf({
@@ -3406,7 +3494,7 @@ test('automation', async () => {
                     enabled: false,
                     absence: {
                       reason: 'disabled',
-                      message: 'Module "weather-deck" is not enabled (Settings -> Modules).',
+                      message: 'Extension "weather-deck" is not enabled (Settings -> Extensions).',
                     },
                   },
             ),
@@ -3422,6 +3510,7 @@ test('automation', async () => {
       serverName: 'sprintengine-studio',
       serverVersion: '0.0.0-test',
       resolveTools: createStudioGatewayTools({
+        callerInvoker: () => ownerInvoker(),
         appTools,
         resolveModuleTools: () => kernel.mcpToolRegistrations(),
         isModuleEnabled: () => moduleEnabled,
@@ -3473,42 +3562,42 @@ test('automation', async () => {
       socket.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`)
 
       // What the session is actually served, minus everything core owns: whatever
-      // is left is this module's, and is what module.status must name.
+      // is left is this module's, and is what extension.status must name.
       const coreNames = new Set(createAutomationTools(backendsOf()).map((entry) => entry.name))
       const servedByModule = ((await rpc('tools/list')) as { result: { tools: Array<{ name: string }> } }).result.tools
         .map((entry) => entry.name)
         .filter((name) => !coreNames.has(name))
       assert.deepEqual(servedByModule, ['weather_deck_forecast'], 'the session is served exactly one module tool')
 
-      const status = (await callTool('module.status', { id: 'weather-deck' })) as {
+      const status = (await callTool('extension.status', { id: 'weather-deck' })) as {
         module: { contributedTools: string[]; absence: { reason: string } | null }
       }
       assert.deepEqual(
         status.module.contributedTools,
         servedByModule,
-        'module.status names the tools the gateway is really serving, read off this session',
+        'extension.status names the tools the gateway is really serving, read off this session',
       )
       assert.equal(status.module.absence, null, 'and reports the module as present while it is serving them')
 
       // Switching it off in Settings is ONE change with one meaning. The gateway
       // keeps advertising the tool (a caller learns why), and the description
-      // surface must flip with it — the failure this guards is module.status
+      // surface must flip with it — the failure this guards is extension.status
       // reporting an enabled module whose tools every call refuses.
       moduleEnabled = false
       const refused = (await callTool('weather_deck_forecast')) as { error?: { code: string } }
       assert.equal(refused.error?.code, 'weather-deck_module_disabled')
-      const disabled = (await callTool('module.status', { id: 'weather-deck' })) as {
+      const disabled = (await callTool('extension.status', { id: 'weather-deck' })) as {
         module: { absence: { reason: string } | null }
       }
       assert.equal(
         disabled.module.absence?.reason,
         'disabled',
-        'module.status and the gateway agree about enablement at the same instant',
+        'extension.status and the gateway agree about enablement at the same instant',
       )
       const listedRow = (
-        (await callTool('module.list')) as { modules: Array<{ id: string; enabled: boolean }> }
+        (await callTool('extension.list')) as { modules: Array<{ id: string; enabled: boolean }> }
       ).modules.find((entry) => entry.id === 'weather-deck')
-      assert.equal(listedRow?.enabled, false, 'module.list shows the same switched-off module Settings does')
+      assert.equal(listedRow?.enabled, false, 'extension.list shows the same switched-off module Settings does')
     } finally {
       socket.destroy()
       await server.stop()
@@ -3528,14 +3617,14 @@ test('automation', async () => {
           ),
       }),
     )
-    const listed = await tool(tools, 'module.list').handler({})
+    const listed = await tool(tools, 'extension.list').handler({})
     const listedIds = (listed.structuredContent as { modules: Array<{ id: string }> }).modules.map((m) => m.id)
     assert.deepEqual(listedIds, ['backlog'], 'no dev-only module appears in a packaged build')
     assert.equal((listed.structuredContent as { channel: string }).channel, 'production')
 
     // No module is dev-only today, so this asks after a retired id instead: it
     // is reserved, so it reads as known-but-absent rather than unknown.
-    const retired = await tool(tools, 'module.status').handler({ id: 'voice-dictation' })
+    const retired = await tool(tools, 'extension.status').handler({ id: 'voice-dictation' })
     const error = (retired.structuredContent as { error: { code: string; message: string } }).error
     assert.equal(error.code, 'module_not_in_build', 'a reserved id is absent, not disabled')
     assert.match(error.message, /not part of this production build/)
@@ -3544,8 +3633,8 @@ test('automation', async () => {
   async function testModuleToolsRefuseBeforeTheRegistryArrives(): Promise<void> {
     const tools = createAutomationTools(backendsOf())
     for (const [name, args] of [
-      ['module.list', {}],
-      ['module.status', { id: 'git' }],
+      ['extension.list', {}],
+      ['extension.status', { id: 'git' }],
     ] as Array<[string, Record<string, unknown>]>) {
       const answered = await tool(tools, name).handler(args)
       assert.equal(answered.isError, true, `${name} fails explicitly`)
@@ -3562,26 +3651,27 @@ test('automation', async () => {
       schemaVersion: 1 as const,
       plugins: [
         {
-          id: 'weather-module',
+          id: 'weather-skills',
           name: 'Weather',
           publisher: { name: 'Acme', verified: true },
-          summary: 'Local forecasts in a panel.',
+          summary: 'Local forecasts for an agent.',
           category: 'Insight',
           icon: 'cloud',
           latest: 3,
-          provides: ['module'] as MarketplaceComponentKind[],
+          provides: ['skills'] as MarketplaceProvidesKind[],
           source: 'https://example.test/weather.zip',
           tags: ['forecast'],
         },
         {
-          id: 'railway-mcp',
+          id: 'railway-cli',
           name: 'Railway',
           publisher: { name: 'Railway', verified: false },
           summary: 'Deploy from an agent.',
           category: 'Connectivity',
           icon: 'train',
           latest: 1,
-          provides: ['mcp'] as MarketplaceComponentKind[],
+          provides: ['cli'] as MarketplaceProvidesKind[],
+          cli: { pluginId: 'railway' },
         },
       ],
     }
@@ -3612,18 +3702,23 @@ test('automation', async () => {
     }
     assert.equal(listed.total, 2)
     assert.equal(listed.source, 'bundled', 'the read discloses where the index came from')
-    assert.equal(listed.plugins.find((plugin) => plugin.id === 'weather-module')?.signed, false)
+    assert.equal(listed.plugins.find((plugin) => plugin.id === 'weather-skills')?.signed, false)
 
-    const modulesOnly = await tool(tools, 'marketplace.list').handler({ provides: 'module' })
+    const skillsOnly = await tool(tools, 'marketplace.list').handler({ provides: 'skills' })
     assert.deepEqual(
-      (modulesOnly.structuredContent as { plugins: Array<{ id: string }> }).plugins.map((plugin) => plugin.id),
-      ['weather-module'],
-      'the module-first facet is a provides filter over the same index',
+      (skillsOnly.structuredContent as { plugins: Array<{ id: string }> }).plugins.map((plugin) => plugin.id),
+      ['weather-skills'],
+      'a provides filter over the same index',
+    )
+    assert.equal(
+      (await tool(tools, 'marketplace.list').handler({ provides: 'mcp' })).isError,
+      true,
+      'MCP servers are an extension’s contributions, not a registry kind',
     )
     const searched = await tool(tools, 'marketplace.list').handler({ query: 'RAILWAY' })
     assert.deepEqual(
       (searched.structuredContent as { plugins: Array<{ id: string }> }).plugins.map((plugin) => plugin.id),
-      ['railway-mcp'],
+      ['railway-cli'],
     )
     await tool(tools, 'marketplace.list').handler({ forceRefresh: true })
     assert.deepEqual(reads, [undefined, undefined, undefined, { forceRefresh: true }])
@@ -3655,11 +3750,11 @@ test('automation', async () => {
     // The lifecycle work defers install/uninstall/enable to the trust model, and the
     // gateway's mutation classifier must agree: none of these tools may be
     // audited or gated as a mutation.
-    for (const name of ['module.list', 'module.status', 'marketplace.list']) {
+    for (const name of ['extension.list', 'extension.status', 'marketplace.list']) {
       assert.equal(isStudioGatewayMutation(name), false, `${name} is a read`)
     }
     const tools = createAutomationTools(backendsOf())
-    for (const name of ['module.list', 'module.status', 'marketplace.list']) {
+    for (const name of ['extension.list', 'extension.status', 'marketplace.list']) {
       const schema = tool(tools, name).inputSchema as { additionalProperties?: boolean }
       assert.equal(schema.additionalProperties, false, `${name} refuses unknown arguments`)
     }

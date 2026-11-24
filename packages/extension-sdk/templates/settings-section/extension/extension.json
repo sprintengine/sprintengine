@@ -1,0 +1,30 @@
+{
+  "$schema": "../node_modules/@sprintengine/extension-sdk/extension.schema.json",
+  "manifestVersion": 1,
+  "id": "{{id}}",
+  "version": "0.1.0",
+  "engines": {
+    "studio": ">={{studioVersion}}"
+  },
+  "tier": "ui",
+  "name": "{{displayName}}",
+  "description": "{{displayName}}, an extension for SprintEngine Studio.",
+  "permissions": ["settings:own"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "open-settings",
+        "title": "{{displayName}}: Open settings",
+        "action": "app.settings.open"
+      }
+    ],
+    "settingsSections": [
+      {
+        "id": "greeting",
+        "title": "{{displayName}}",
+        "icon": "settings",
+        "entry": "src/greeting.ts"
+      }
+    ]
+  }
+}

@@ -439,7 +439,7 @@ test("a WSL agent lists the editor, tours, terminals and agent launches, which i
 
   // The offers land one toolset after another; a new connection lists what is offered by then.
   const wanted = ['browser', 'canvas', 'editor', 'tour', 'terminal', 'agent']
-  wanted.push('backlog', 'workspace', 'schedule', 'cli', 'module', 'marketplace')
+  wanted.push('backlog', 'workspace', 'schedule', 'cli', 'extension', 'marketplace')
   let names: string[] = []
   await waitFor(
     () => wanted.every((toolset) => names.some((name) => name.startsWith(`${toolset}.`))),
@@ -454,7 +454,7 @@ test("a WSL agent lists the editor, tours, terminals and agent launches, which i
   )
   for (const name of ['editor.open', 'tour.create', 'terminal.create', 'agent.launch', 'agent.status'])
     assert.ok(names.includes(name), `${name} is listed; listed: ${names.join(', ')}`)
-  for (const name of ['backlog.work', 'workspace.list', 'schedule.list', 'cli.runtime_list', 'module.list'])
+  for (const name of ['backlog.work', 'workspace.list', 'schedule.list', 'cli.runtime_list', 'extension.list'])
     assert.ok(names.includes(name), `${name} is listed`)
   assert.ok(names.includes('marketplace.list'))
   assert.ok(names.includes('conversation.create'), 'the WSL server’s own')

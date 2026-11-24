@@ -59,9 +59,9 @@ import { scheduledAgentScheduleWords, type ScheduledAgentView } from '../../shar
 import type { LoadedPlugin } from '../../shared/plugin-manifest'
 import type { MarketplaceRegistryReadInput, MarketplaceRegistryReadResult } from '../../shared/electron-api'
 import {
-  MARKETPLACE_COMPONENT_KINDS,
-  type MarketplaceComponentKind,
+  MARKETPLACE_PROVIDES_KINDS,
   type MarketplacePluginEntry,
+  type MarketplaceProvidesKind,
 } from '../../shared/marketplace/manifest'
 import {
   BUNDLED_MODULE_IDS,
@@ -86,11 +86,14 @@ import type { WorkspaceMutationActor } from '../workspace-sync-service'
 import { getWorkspaceChangeSummary } from '../workspace-change-summary'
 import {
   capLaunchPermissionPreset,
+  gatewayCallerStarter,
   launchPermissionCeiling,
   refuseScheduledAgentRun,
   resolveNamedPermissionMode,
   type AgentPermissionResolver,
+  type AgentStarterResolver,
 } from './launch-permission-cap'
+import type { AgentStarter } from '../../shared/agent-state'
 import { normalizeExecutionHostId, type ExecutionHostId } from '../../shared/execution-host'
 import { newAgentIdSuffix } from '../../shared/agent-ids'
 import type { StartedDependencyInstall } from '../worktree-pool/dependency-install'
@@ -175,6 +178,8 @@ export type AutomationBackends = {
    * launch-permission-cap.ts.
    */
   resolveAgentPermissionPreset: AgentPermissionResolver
+  /** Who started an agent here, as its record keeps it (`gatewayCallerStarter`). */
+  agentStarterOf?: AgentStarterResolver
   /**
    * Mint a workspace in main's registry. Synchronous and
    * window-independent: `workspace.create` no longer asks a renderer to build
@@ -183,7 +188,12 @@ export type AutomationBackends = {
   createWorkspace(
     input: WorkspaceCreateRequest,
     actor: WorkspaceMutationActor,
-  ): { ok: true; result: WorkspaceCreateResult } | { ok: false; reason: string; message: string }
+    /** The calling connection, for extensions' hooks to run as. */
+    context?: McpConnectionContext,
+  ):
+    | { ok: true; result: WorkspaceCreateResult }
+    | { ok: false; reason: string; message: string }
+    | Promise<{ ok: true; result: WorkspaceCreateResult } | { ok: false; reason: string; message: string }>
   /** Read-only backlog listing for a workspace root (files + frontmatter, no writes). */
   listBacklogItems(workspaceRoot: string): Promise<BacklogListItemsResult>
   /** Read one backlog item (validated backlog/ relative path). */
@@ -319,7 +329,7 @@ export type AutomationBackends = {
    * Installed third-party modules with the trust + launch readiness only main
    * can compute (signature verification and the trust store live here). An
    * untrusted module never reaches the renderer registry, so this is also how
-   * `module.list` sees that it is installed at all.
+   * `extension.list` sees that it is installed at all.
    */
   listInstalledThirdPartyModules(): Promise<ThirdPartyModuleListResult>
   /** Gateway tools contributed by capability modules, by owner. */
@@ -373,6 +383,8 @@ type LaunchPlan = {
   spawnSkillId?: string
   /** The agent whose tool call this is (`launchCallerOf`), recorded on the session it starts. */
   launchedBy?: AgentLaunchCaller
+  /** Who asked, as the gateway caller stands (`gatewayCallerStarter`): what the launch's hooks run as. */
+  startedBy?: AgentStarter
 }
 
 type LaunchWorktree = { path: string; branch: string }
@@ -835,6 +847,9 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       ...(plan.host ? { host: plan.host } : {}),
       ...(plan.spawnSkillId ? { spawnSkillId: plan.spawnSkillId } : {}),
       ...(plan.launchedBy ? { launchedBy: plan.launchedBy } : {}),
+      ...(plan.startedBy ? { startedBy: plan.startedBy } : {}),
+      // A gateway caller's prompt is no one typing: the prompt hooks check it.
+      ...(plan.prompt?.trim() ? { promptHookAs: { inputKind: 'launch' as const, from: 'agent' as const } } : {}),
     })
     if (!launched.ok) return failure(launched.code, launched.message)
     const { agentId, sessionId } = launched
@@ -1061,13 +1076,14 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       // Synchronous authority: the id comes back from the same call that
       // committed it, which is what retired the delegate-to-renderer round trip
       // and its 7s bus-confirmation poll.
-      const outcome = backends.createWorkspace(
+      const outcome = await backends.createWorkspace(
         {
           name: optionalString(args.name),
           folderPath: optionalString(args.folderPath),
           templateId: optionalString(args.templateId),
         },
         'gateway',
+        context,
       )
       if (!outcome.ok) return failure(outcome.reason, outcome.message)
       return success({ workspace: workspaceProjection(outcome.result.workspace) })
@@ -1233,6 +1249,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
           worktreeName: options.worktreeName,
           worktreeBaseRef: options.worktreeBaseRef,
           launchedBy: launchCallerOf(context),
+          startedBy: gatewayCallerStarter(context, backends.resolveAgentPermissionPreset, backends.agentStarterOf),
         },
         { afterStart: link },
       )
@@ -1766,6 +1783,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
         ...(requestedPreset ? { permissionPreset: requestedPreset } : {}),
         worktreeRequested: false,
         launchedBy: launchCallerOf(context),
+        startedBy: gatewayCallerStarter(context, backends.resolveAgentPermissionPreset, backends.agentStarterOf),
       })
       if (!('agentId' in launched)) return launched
       return success({
@@ -1868,7 +1886,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     } catch (error) {
       // The bundled half of the answer is still exact; say what is missing
       // rather than pretending no third-party module is installed.
-      thirdPartyUnavailable = error instanceof Error ? error.message : 'The installed module folder could not be read.'
+      thirdPartyUnavailable =
+        error instanceof Error ? error.message : 'The installed extension folder could not be read.'
     }
     const installedById = new Map((installed?.modules ?? []).map((module) => [module.manifest.id, module] as const))
     const records: ModuleRecord[] = snapshot.modules.map((entry) => {
@@ -1897,18 +1916,18 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   }
 
   const moduleList: McpToolRegistration = {
-    name: 'module.list',
+    name: 'extension.list',
     description:
-      'List the capability modules this app has, as the user sees them: bundled and third-party, each with its ' +
-      'source, version, whether it is enabled, and why it is not when it is off. Modules that ship only in ' +
+      'List the extensions this app has, as the user sees them: built-in and third-party, each with its ' +
+      'source, version, whether it is enabled, and why it is not when it is off. Extensions that ship only in ' +
       'development builds are absent from a packaged build entirely — never reported as present-but-disabled. ' +
-      'A third-party module that is installed but untrusted appears here (installed) even though it loads nowhere. ' +
+      'A third-party extension that is installed but untrusted appears here (installed) even though it loads nowhere. ' +
       'Read-only: enabling, installing, and trusting are not on this surface.',
     inputSchema: {
       type: 'object',
       properties: {
-        source: { type: 'string', enum: ['bundled', 'third-party'], description: 'Only modules from this source.' },
-        enabled: { type: 'boolean', description: 'Only modules in this enablement state.' },
+        source: { type: 'string', enum: ['bundled', 'third-party'], description: 'Only extensions from this source.' },
+        enabled: { type: 'boolean', description: 'Only extensions in this enablement state.' },
       },
       additionalProperties: false,
     },
@@ -1935,15 +1954,15 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   }
 
   const moduleStatus: McpToolRegistration = {
-    name: 'module.status',
+    name: 'extension.status',
     description:
-      'Read one capability module: its manifest, the permissions it declares, the surfaces it contributes ' +
+      'Read one extension: its manifest, the permissions it declares, the surfaces it contributes ' +
       '(workspace types, doors, settings sections, commands, …), the gateway tools it adds, and — when it is ' +
-      'not active — why. A module that ships only in development builds reports module_not_in_build on a ' +
+      'not active — why. An extension that ships only in development builds reports module_not_in_build on a ' +
       'packaged build rather than appearing disabled.',
     inputSchema: {
       type: 'object',
-      properties: { id: { type: 'string', description: 'Module id from module.list, e.g. "automations".' } },
+      properties: { id: { type: 'string', description: 'Extension id from extension.list, e.g. "automations".' } },
       required: ['id'],
       additionalProperties: false,
     },
@@ -1958,11 +1977,11 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
           return failure(
             'module_not_in_build',
             isDevOnlyModule(id) && collected.snapshot.channel === 'production'
-              ? `Module "${id}" ships only in development builds; this build does not contain it, so it is absent rather than disabled.`
-              : `Module "${id}" is a known module id but is not part of this ${collected.snapshot.channel} build.`,
+              ? `Extension "${id}" ships only in development builds; this build does not contain it, so it is absent rather than disabled.`
+              : `Extension "${id}" is a known module id but is not part of this ${collected.snapshot.channel} build.`,
           )
         }
-        return failure('unknown_module', `Module "${id}" is not installed in the running app.`)
+        return failure('unknown_module', `Extension "${id}" is not installed in the running app.`)
       }
       const contributedTools = backends
         .listModuleContributedTools()
@@ -1988,8 +2007,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     name: 'marketplace.list',
     description:
       'Browse the extension marketplace index the app itself reads (same registry client, cache, and ' +
-      'bundled-first policy as the Plugins marketplace) — modules, MCP servers, skill packs, agent CLIs and ' +
-      'automations. Filter by what an entry provides to get the module-first facet. Read-only: installing is ' +
+      'bundled-first policy as the Plugins marketplace) — Claude Code plugins (skills) and agent CLIs. Filter by ' +
+      'what an entry provides. Read-only: installing is ' +
       'a trust decision and is not on this surface. The result discloses where the index came from and ' +
       'whether it is a stale offline cache.',
     inputSchema: {
@@ -1997,8 +2016,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       properties: {
         provides: {
           type: 'string',
-          enum: [...MARKETPLACE_COMPONENT_KINDS],
-          description: 'Only entries that bundle this component kind; "module" is the module-first facet.',
+          enum: [...MARKETPLACE_PROVIDES_KINDS],
+          description: 'Only entries that provide this kind: skills (a Claude Code plugin) or cli (an agent CLI).',
         },
         query: {
           type: 'string',
@@ -2013,9 +2032,9 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (invalid) return invalid
       if (
         args.provides !== undefined &&
-        !MARKETPLACE_COMPONENT_KINDS.includes(args.provides as MarketplaceComponentKind)
+        !MARKETPLACE_PROVIDES_KINDS.includes(args.provides as MarketplaceProvidesKind)
       ) {
-        return failure('invalid_arguments', `"provides" must be one of: ${MARKETPLACE_COMPONENT_KINDS.join(', ')}.`)
+        return failure('invalid_arguments', `"provides" must be one of: ${MARKETPLACE_PROVIDES_KINDS.join(', ')}.`)
       }
       if (args.forceRefresh !== undefined && typeof args.forceRefresh !== 'boolean') {
         return failure('invalid_arguments', '"forceRefresh" must be a boolean when provided.')
@@ -2026,7 +2045,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (!read.ok) {
         return failure('marketplace_unavailable', `${read.message} (registry ${read.registryUrl}, state ${read.state})`)
       }
-      const provides = optionalString(args.provides) as MarketplaceComponentKind | undefined
+      const provides = optionalString(args.provides) as MarketplaceProvidesKind | undefined
       const query = optionalString(args.query)?.trim().toLowerCase()
       const all = read.marketplace.plugins
       const matched = all
@@ -2385,6 +2404,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
           // ensure above wrote nothing for a launch that does.
           spawnSkillId: BACKLOG_SKILL_ID,
           launchedBy: launchCallerOf(context),
+          startedBy: gatewayCallerStarter(context, backends.resolveAgentPermissionPreset, backends.agentStarterOf),
         },
         {
           // Assigned once the agent exists, after its worktree's install.
@@ -2435,7 +2455,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     if (!service) {
       return failure(
         'scheduled_agents_unavailable',
-        'Scheduled agents are switched off or not loaded in this app session; turn them on in Settings → Modules.',
+        'Scheduled agents are switched off or not loaded in this app session; turn them on in Settings → Extensions.',
       )
     }
     return service
@@ -3131,26 +3151,30 @@ function registeredModuleReport(
     installed: true,
     enabled: entry.enabled,
     absence: entry.absence,
-    ...(view ? { trust: view.trust, launch: thirdPartyLaunchReport(view) } : {}),
+    ...(view ? { approval: view.approval.state, signature: view.signature, launch: thirdPartyLaunchReport(view) } : {}),
   }
 }
 
 // Installed on disk, absent from the renderer registry: the module never
-// loaded, so everything reported about it comes from main's own trust and
+// loaded, so everything reported about it comes from main's own approval and
 // launch classification.
 function installedOnlyModuleReport(view: ThirdPartyModuleView): Record<string, unknown> {
   const id = view.manifest.id
+  const runs = view.approval.state === 'approved' || view.approval.state === 'not-needed'
   const absence =
-    view.trust === 'invalid'
-      ? { reason: 'invalid_signature', message: `Module "${id}" has an invalid signature and will not load.` }
-      : view.trust === 'trusted'
+    view.signature === 'invalid'
+      ? { reason: 'invalid_signature', message: `Extension "${id}" has an invalid signature and will not load.` }
+      : runs
         ? {
             reason: 'not_loaded',
             message:
               view.launch.message ??
-              `Module "${id}" is installed and trusted but registered nothing in the running app.`,
+              `Extension "${id}" is installed and approved but registered nothing in the running app.`,
           }
-        : { reason: 'untrusted', message: `Module "${id}" is installed but not trusted yet (Settings → Modules).` }
+        : {
+            reason: 'unapproved',
+            message: `Extension "${id}" is installed but waits for your approval (Settings → Extensions).`,
+          }
   return {
     id,
     displayName: view.manifest.displayName,
@@ -3163,7 +3187,8 @@ function installedOnlyModuleReport(view: ThirdPartyModuleView): Record<string, u
     installed: true,
     enabled: false,
     absence,
-    trust: view.trust,
+    approval: view.approval.state,
+    signature: view.signature,
     launch: thirdPartyLaunchReport(view),
   }
 }

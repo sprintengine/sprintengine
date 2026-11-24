@@ -22,13 +22,16 @@
 // in the test suite, this says it before a bundle that cannot start is written.
 
 import { execFileSync } from 'node:child_process'
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const ENTRY = 'src/server/main.ts'
+// The entry an extension's worker process is forked from, built beside the
+// server as `extension-worker.cjs` (src/server/extensions/workers/worker-process.ts).
+const WORKER_ENTRY = 'src/server/extensions/workers/worker-entry.ts'
 export const DEFAULT_SERVER_OUTFILE = join(ROOT, 'out', 'server', 'server.cjs')
 export const DEFAULT_WSL_SERVER_DIR = join(ROOT, 'out', 'wsl-server')
 
@@ -86,6 +89,7 @@ export async function buildStudioServer({ outfile = DEFAULT_SERVER_OUTFILE, sour
     sourcemap,
     define: { __STUDIO_SERVER_BUILD__: JSON.stringify(buildIdentity()), __STUDIO_SERVER_SELF_CONTAINED__: 'false' },
   })
+  await buildWorkerEntry(join(dirname(outfile), 'extension-worker.cjs'), sourcemap)
   return outfile
 }
 
@@ -119,6 +123,7 @@ export async function buildWslServerTree({ outDir = DEFAULT_WSL_SERVER_DIR } = {
     },
     banner: { js: "const __studioImportMetaUrl = require('node:url').pathToFileURL(__filename).href;" },
   })
+  await buildWorkerEntry(join(outDir, 'extension-worker.cjs'), false)
   writeFileSync(join(outDir, 'build.json'), `${JSON.stringify(identity, null, 2)}\n`)
   // The relay: WSL's stdio bridge, and an SSH machine's multiplexing relay
   // (`bridge.mjs --mux`, phase 8), which imports its codec from beside it.
@@ -127,7 +132,36 @@ export async function buildWslServerTree({ outDir = DEFAULT_WSL_SERVER_DIR } = {
   for (const name of WSL_RESOURCES) {
     cpSync(join(ROOT, 'resources', name), join(outDir, 'resources', name), { recursive: true })
   }
+  // The extension SDK a worker imports when it does not carry it
+  // (worker-process.ts `resolveExtensionSdkRoot`). A tree without it would
+  // start and fail every such worker, so it is never left out: built here
+  // when this checkout has not built it, and the build stops if it cannot be.
+  const sdk = join(ROOT, 'packages', 'extension-sdk')
+  if (!existsSync(join(sdk, 'dist', 'index.js')))
+    execFileSync(
+      process.execPath,
+      [join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(sdk, 'tsconfig.json')],
+      {
+        cwd: ROOT,
+        stdio: 'inherit',
+      },
+    )
+  if (!existsSync(join(sdk, 'dist', 'index.js')))
+    throw new Error('packages/extension-sdk/dist could not be built, so the server tree would ship no SDK for workers.')
+  const runtime = join(outDir, 'resources', 'extension-sdk-runtime')
+  cpSync(join(sdk, 'dist'), join(runtime, 'dist'), { recursive: true })
+  cpSync(join(sdk, 'package.json'), join(runtime, 'package.json'))
   return outDir
+}
+
+/** The worker entry: one file, Node's own modules only. */
+async function buildWorkerEntry(outfile, sourcemap) {
+  await build({
+    ...common(),
+    entryPoints: [WORKER_ENTRY],
+    outfile,
+    sourcemap,
+  })
 }
 
 function common() {

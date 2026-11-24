@@ -261,13 +261,11 @@ function event(
 
 const OPERATE = ['conversation:operate']
 
-test('create needs conversation:operate, and the chat it starts is the module’s own', async () => {
-  const { registry, workspaces } = harness({ reviews: OPERATE, reader: ['conversation:read'], none: [] })
-
-  for (const moduleId of ['reader', 'none']) {
-    const refused = await registry.forModule(moduleId).create({ workspaceId: 'ws-1', cli: 'claude-code' })
-    assert.equal(!refused.ok && refused.code, 'permission_missing', `${moduleId} cannot start a chat`)
-  }
+// Whether an extension may call the service at all is the host's gate
+// (extension-host-gate.ts, main-host.gate.test.ts); the service holds a chat
+// to its owner and its ceiling.
+test('the chat a module starts is the module’s own', async () => {
+  const { registry, workspaces } = harness({ reviews: OPERATE })
 
   const created = await registry.forModule('reviews').create({ workspaceId: 'ws-1', cli: 'claude-code', name: 'Rev' })
   assert.equal(created.ok, true)
@@ -367,6 +365,8 @@ test('the owner drives its chat through the runtime, never with a remembered rul
     sessionId: 'conv_1',
     commandId: 'cmd',
     message: 'go',
+    // The extensions' prompt hooks check it in the runtime, as the extension's.
+    hookAs: { inputKind: 'send', from: 'extension' },
     skills: [{ id: 'review' }],
     steer: true,
   })
@@ -385,32 +385,6 @@ test('the owner drives its chat through the runtime, never with a remembered rul
   assert.equal(calls.starts.length, 2)
   assert.equal(calls.starts[1]!.agentId, ref.agentId)
   assert.equal(calls.sends.at(-1)!.sessionId, sessions.at(-1)!.sessionId)
-})
-
-test('read-only modules read their chats but cannot drive them; no permission reads nothing', async () => {
-  const permissions: Record<string, string[]> = { reviews: OPERATE }
-  const { registry } = harness(permissions)
-  const created = await registry.forModule('reviews').create({ workspaceId: 'ws-1', cli: 'claude-code' })
-  assert.ok(created.ok)
-  const ref = { workspaceId: 'ws-1', agentId: created.conversation.agentId }
-
-  // Narrowed to read: read calls still answer, operate calls refuse.
-  permissions.reviews = ['conversation:read']
-  const service = registry.forModule('reviews')
-  assert.equal(service.list().length, 1)
-  const transcript = await service.transcript(ref)
-  assert.equal(transcript.ok && transcript.events.length, 1)
-  assert.equal(((await service.send(ref, { message: 'x' })) as { code?: string }).code, 'permission_missing')
-  assert.equal(((await service.stop(ref)) as { code?: string }).code, 'permission_missing')
-  assert.equal(((await service.setPermissionPreset(ref, 'manual')) as { code?: string }).code, 'permission_missing')
-  assert.equal(((await service.setModel(ref, 'default')) as { code?: string }).code, 'permission_missing')
-
-  // Nothing declared: the read calls refuse as well.
-  permissions.reviews = []
-  assert.throws(() => service.list(), /conversation:read/)
-  assert.throws(() => service.subscribe(ref, () => undefined), /conversation:read/)
-  assert.throws(() => service.watch(undefined, () => undefined), /conversation:read/)
-  assert.equal(((await service.transcript(ref)) as { code?: string }).code, 'permission_missing')
 })
 
 test('events reach only the module whose chat they belong to, redacted', async () => {
@@ -795,9 +769,6 @@ test('answerQuestion and resolvePlan each answer only their own kind of request'
     await service.answerQuestion(ref, { requestId: 'q2', answers: ['a'] as never }),
   ]
   for (const refused of refusals) assert.equal(!refused.ok && refused.code, 'invalid_input')
-  const reader = registry.forModule('reader')
-  const readOnly = await reader.resolvePlan(ref, { requestId: 'p1', decision: 'approve' })
-  assert.equal(!readOnly.ok && readOnly.code, 'permission_missing')
   const stranger = await registry.forModule('reviews').answerQuestion(
     { workspaceId: 'ws-1', agentId: 'nothing' },
     {
@@ -862,7 +833,7 @@ test('allowed tools need conversation:bypass, and never ride a tool call capped 
   const refused = await registry
     .forModule('reviews')
     .create({ workspaceId: 'ws-1', cli: 'claude-code', allowedTools: ['Write'] })
-  assert.equal(!refused.ok && refused.code, 'permission_missing')
+  assert.equal(!refused.ok && refused.code, 'not_permitted')
   assert.match(!refused.ok ? refused.message : '', /conversation:bypass/)
   // An empty list asks for nothing.
   assert.ok(
@@ -875,7 +846,7 @@ test('allowed tools need conversation:bypass, and never ride a tool call capped 
   assert.deepEqual(calls.starts.at(-1)!.allowedTools, ['Write', 'Edit'])
   callerCeiling = 'auto'
   const throughAgent = await trusted.create({ workspaceId: 'ws-1', cli: 'claude-code', allowedTools: ['Write'] })
-  assert.equal(!throughAgent.ok && throughAgent.code, 'permission_missing')
+  assert.equal(!throughAgent.ok && throughAgent.code, 'not_permitted')
   callerCeiling = null
   for (const allowedTools of ['Write', ['Write\nBash'], Array.from({ length: 65 }, (_, i) => `T${i}`)]) {
     const bad = await trusted.create({ workspaceId: 'ws-1', allowedTools: allowedTools as never })
@@ -883,9 +854,8 @@ test('allowed tools need conversation:bypass, and never ride a tool call capped 
   }
 })
 
-test('follow hands the session API the module’s cursor, redacts what comes back, and ends when reading is no longer allowed', async () => {
-  const permissions: Record<string, string[]> = { reviews: OPERATE, reader: ['conversation:read'] }
-  const { registry, follows } = harness(permissions)
+test('follow hands the session API the module’s cursor and redacts what comes back', async () => {
+  const { registry, follows } = harness({ reviews: OPERATE })
   const created = await registry.forModule('reviews').create({ workspaceId: 'ws-1', cli: 'claude-code' })
   assert.ok(created.ok)
   const ref = { workspaceId: 'ws-1', agentId: created.conversation.agentId }
@@ -917,18 +887,9 @@ test('follow hands the session API the module’s cursor, redacts what comes bac
   assert.equal(snapshot.page.events[0]!.payload?.apiKey, '[redacted]')
   assert.equal((frames[2] as { event: ModuleConversationEvent }).event.payload?.token, '[redacted]')
 
-  // A module whose read is withdrawn is told once, and the follow is let go.
-  delete permissions.reviews
-  follows[0]!.listener({ type: 'event', event: event('content_delta', ref, { text: 'more' }) })
-  assert.deepEqual(frames.at(-1), { type: 'error', message: 'This conversation is no longer readable by this module.' })
-  assert.equal(follows[0]!.disposed, true)
-  follows[0]!.listener({ type: 'event', event: event('content_delta', ref, { text: 'after' }) })
-  assert.equal(frames.length, 4)
   stop()
 
-  // A follow refuses a cursor that is not one, a chat that is not the
-  // module's, and a module that may not read.
-  permissions.reviews = OPERATE
+  // A follow refuses a cursor that is not one, and a ref that is not one.
   const service = registry.forModule('reviews')
   for (const options of [{ afterSeq: -1 }, { generation: '' }, { turnLimit: 0 }, { turnLimit: 101 }])
     assert.throws(() => service.follow(ref, options, () => undefined), /afterSeq|generation|turnLimit/)
@@ -937,7 +898,6 @@ test('follow hands the session API the module’s cursor, redacts what comes bac
   // followed: nothing reaches the session API for it.
   service.follow({ workspaceId: 'ws-1', agentId: 'nothing' }, undefined, () => undefined)()
   assert.equal(follows.length, 1)
-  assert.throws(() => registry.forModule('none').follow(ref, undefined, () => undefined), /conversation:read/)
   const second = service.follow(ref, undefined, () => undefined)
   assert.deepEqual(follows[1]!.input, { key: { workspaceRoot: '/repo/a', workspaceId: 'ws-1', agentId: ref.agentId } })
   second()
@@ -984,9 +944,8 @@ test('subscribe and follow attach to a chat whose workspace is not loaded yet, f
   assert.equal(follows[0]!.disposed, true)
 })
 
-test('reply reads a finished turn’s text off the transcript, for the owner with read access', async () => {
-  const permissions: Record<string, string[]> = { reviews: OPERATE }
-  const { registry } = harness(permissions)
+test('reply reads a finished turn’s text off the transcript, for its owner', async () => {
+  const { registry } = harness({ reviews: OPERATE })
   const service = registry.forModule('reviews')
   const created = await service.create({ workspaceId: 'ws-1', cli: 'claude-code' })
   assert.ok(created.ok)
@@ -996,9 +955,6 @@ test('reply reads a finished turn’s text off the transcript, for the owner wit
   assert.equal(!none.ok && none.code, 'no_reply')
   const bad = await service.reply(ref, '')
   assert.equal(!bad.ok && bad.code, 'invalid_input')
-  const other = await registry.forModule('calendar').reply(ref)
-  assert.equal(!other.ok && other.code, 'permission_missing')
-  permissions.calendar = ['conversation:read']
   const notMine = await registry.forModule('calendar').reply(ref)
   assert.equal(!notMine.ok && notMine.code, 'not_owned')
 })

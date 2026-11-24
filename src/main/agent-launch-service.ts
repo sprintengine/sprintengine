@@ -73,6 +73,7 @@ import { normalizeExecutionHostId } from '../shared/execution-host'
 import { isMachinePath } from '../shared/machine-paths'
 import type { CliPermissionPreset } from '../shared/cli-permission-preset'
 import type { TerminalSpawnPayload } from './terminal-spawn-payload'
+import { activeInvoker } from './module-host/extension-invocation'
 
 /**
  * Terminal geometry for a session no view has bound to yet. The first
@@ -304,6 +305,13 @@ export function createAgentLaunchService(deps: AgentLaunchServiceDeps): AgentLau
       return { ok: false, code: 'prompt_reads_as_option', message: LAUNCH_PROMPT_READS_AS_OPTION_MESSAGE }
     }
 
+    // Who asked: kept on the record, and carried on the spawn for its launch
+    // hooks before the record is registered. A prompt an extension's call
+    // hands over is the extension's, not typed.
+    const caller = activeInvoker()
+    const startedBy = request.startedBy ?? caller?.starter
+    const promptHookAs =
+      request.promptHookAs ?? (caller ? { inputKind: 'launch' as const, from: 'extension' as const } : undefined)
     const record: AgentLaunchRecord = {
       agentId,
       name,
@@ -322,6 +330,7 @@ export function createAgentLaunchService(deps: AgentLaunchServiceDeps): AgentLau
             },
           }
         : {}),
+      ...(startedBy ? { startedBy } : {}),
     }
     // The caller's machine, else the workspace's. Absent from both, the spawn
     // reads the folder (a folder inside a distribution runs there) and
@@ -332,6 +341,8 @@ export function createAgentLaunchService(deps: AgentLaunchServiceDeps): AgentLau
     const sessionId = newSessionId()
     const spawned = await deps.terminal.spawn({
       sessionId,
+      ...(startedBy ? { startedBy } : {}),
+      ...(initialPrompt && promptHookAs ? { initialPromptHookAs: promptHookAs } : {}),
       cols: UNBOUND_TERMINAL_COLS,
       rows: UNBOUND_TERMINAL_ROWS,
       cwd,

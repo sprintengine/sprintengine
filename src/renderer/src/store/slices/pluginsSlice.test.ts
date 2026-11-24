@@ -42,7 +42,7 @@ test('pluginsSlice', async () => {
         {
           id: 'opencode',
           displayName: 'OpenCode',
-          source: 'user' as const,
+          source: 'extension' as const,
           version: 1,
           binary: 'opencode',
           resumeSession: false,

@@ -148,6 +148,13 @@ test('app-lifecycle', async () => {
           order.push('workspaceSync.flush')
         },
       },
+      // Its update timers stop with the others, and the added catalogues'
+      // checkouts in temporary folders are removed, not left for each launch to add to.
+      extensionCatalogue: {
+        dispose: async () => {
+          order.push('extensionCatalogue.dispose')
+        },
+      },
       updateService: {
         checkForUpdates: async () => undefined,
         setPrepareForInstall: (prepare: (report?: (leg: LegReport) => void) => Promise<void>) => {
@@ -179,6 +186,7 @@ test('app-lifecycle', async () => {
     )
     assert.ok(reports.some((leg) => leg.name === 'terminals'))
     assert.deepEqual(order, [
+      'extensionCatalogue.dispose',
       'dependencyInstaller.shutdown',
       'workspaceSync.flush',
       'conversation.flushTranscripts',

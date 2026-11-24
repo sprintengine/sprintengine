@@ -4,7 +4,7 @@ import { windowModuleLifecycle } from './moduleLifecycle'
 import { watchWindowStudio, windowStudioState } from './windowStudioClient'
 
 // The person's module switches, as the window's Studio holds them. The Studio
-// keeps each switch and starts or stops what runs there (`module.setEnabled`);
+// keeps each switch and starts or stops what runs there (`extension.setEnabled`);
 // the window keeps a copy (`appSettings.modules`) that decides which of its
 // own window halves load. The Studio's word is the one that counts:
 //
@@ -12,8 +12,8 @@ import { watchWindowStudio, windowStudioState } from './windowStudioClient'
 //   changes only once the Studio has it, so a switch that failed is said,
 //   and the window never shows a module on that its Studio left off;
 // - whenever the window's connection opens and whenever what is installed
-//   changes (`module.changed`), the window reads what its Studio holds
-//   (`module.list`) and takes the Studio's choice for every module it lists.
+//   changes (`extension.changed`), the window reads what its Studio holds
+//   (`extension.list`) and takes the Studio's choice for every module it lists.
 //
 // A module only the window has (a window-only bundled module) is the window's
 // own: its switch is still sent, so the Studio keeps the choice, but no list
@@ -107,7 +107,7 @@ let shared: StudioModuleSwitches | null = null
 
 /**
  * The window's switches, over its own Studio connection, following it from
- * the first call: read at every open and every `module.changed`. Null in a
+ * the first call: read at every open and every `extension.changed`. Null in a
  * window whose Studio is another machine, whose switches are not this
  * window's to change.
  */

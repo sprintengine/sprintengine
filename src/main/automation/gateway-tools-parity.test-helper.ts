@@ -26,6 +26,8 @@ import { createVisualTools } from './visual-tools'
 import { createWorktreePoolTools } from '../worktree-pool/worktree-pool-tools'
 import { createArtifactsTools } from '../artifacts/artifacts-tools'
 import { createExtensionTools } from './extension-tools'
+import { createExtensionDevTools } from './extension-dev-tools'
+import { createExtensionShotTool } from './extension-shot-tool'
 import { createPluginTools } from './plugin-tools'
 
 // The tools/list agents see from the desktop, byte for byte: names,
@@ -52,10 +54,10 @@ export function desktopToolParts(): Parameters<typeof desktopGatewayTools>[0] & 
     canvas: createCanvasTools(stub),
     editor: createEditorTools(stub),
     tour: createTourTools(stub),
-    visual: createVisualTools(stub),
+    visual: [...createVisualTools(stub), createExtensionShotTool(stub)],
     automation: createAutomationTools(stub),
     artifacts: createArtifactsTools(stub),
-    extension: createExtensionTools(stub),
+    extension: [...createExtensionTools(stub), ...createExtensionDevTools({ backend: () => null })],
     plugin: createPluginTools(stub),
     tailnet: createTailnetTools({ resolveTailnet: () => null }),
     core: [

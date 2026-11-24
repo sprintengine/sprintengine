@@ -1,0 +1,23 @@
+{
+  "id": "mcp",
+  "title": "MCP tools",
+  "summary": "Tools any agent in a workspace can call through Studio's MCP server, declared in extension.json and served by the worker.",
+  "requires": ["main"],
+  "permissions": ["tools:contribute"],
+  "contributes": {
+    "mcpTools": [
+      {
+        "name": "{{toolPrefix}}_about",
+        "description": "Say which extension this is.",
+        "access": "read",
+        "inputSchema": { "type": "object", "properties": {} }
+      }
+    ]
+  },
+  "scripts": {},
+  "devDependencies": {},
+  "register": {
+    "import": "import { registerTools } from './mcp-tools'",
+    "call": "registerTools(studio)"
+  }
+}

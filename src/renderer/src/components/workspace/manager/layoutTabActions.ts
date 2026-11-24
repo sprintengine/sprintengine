@@ -2,6 +2,7 @@
 // and where a tab dropped outside the window opens.
 
 import { convertNewAgentTabToAgent, addAgentTabAfter, addAgentTabTiled, getModel } from '../../../utils/modelRegistry'
+import { guardsExtensionEditorClose } from '../../../modules/extension-editors'
 import type { Workspace } from '../../../../../shared/workspace'
 import { TabNode, Actions, type Model, TabSetNode } from 'flexlayout-react'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
@@ -163,7 +164,20 @@ export function closeActiveLayoutTab(workspaceId: string, terminalSessions: Term
   const selectedIndex = tabset.getSelected()
   const selectedNode = tabset.getChildren()[selectedIndex]
   if (!(selectedNode instanceof TabNode) || !selectedNode.isEnableClose()) return false
+  // A file open in an extension's editor hands over its edits first.
+  if (
+    guardsExtensionEditorClose(workspaceId, selectedNode, () =>
+      closeLayoutTab(workspaceId, selectedNode, terminalSessions),
+    )
+  )
+    return true
+  closeLayoutTab(workspaceId, selectedNode, terminalSessions)
+  return true
+}
 
+function closeLayoutTab(workspaceId: string, selectedNode: TabNode, terminalSessions: TerminalSessionSnapshot[]): void {
+  const model = getModel(workspaceId)
+  if (!model) return
   killTerminalForLayoutTab(workspaceId, selectedNode, terminalSessions)
   rememberClosedLayoutTab(workspaceId, {
     component: selectedNode.getComponent(),
@@ -171,7 +185,6 @@ export function closeActiveLayoutTab(workspaceId: string, terminalSessions: Term
     name: selectedNode.getName(),
   })
   model.doAction(Actions.deleteTab(selectedNode.getId()))
-  return true
 }
 
 export function cycleActiveLayoutTab(workspaceId: string, step: 1 | -1): boolean {

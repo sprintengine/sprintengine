@@ -149,12 +149,12 @@ test('a policy that is not one of the three is refused', async () => {
   )
 })
 
-test('a module needs conversation:bypass for tools: auto, and conversation:operate to allow a tool call', async () => {
+test('a module needs conversation:bypass for tools: auto, and conversation:own to allow a tool call', async () => {
   const { service, workspaceRoot } = await setup()
   const permissions: Record<string, string[]> = {
     plain: ['agents:companion'],
     bypass: ['agents:companion', 'conversation:bypass'],
-    operate: ['agents:companion', 'conversation:operate'],
+    operate: ['agents:companion', 'conversation:own'],
   }
   let callerCeiling: CliPermissionPreset | null = null
   const registry = createCompanionAgentsModuleRegistry({
@@ -167,12 +167,12 @@ test('a module needs conversation:bypass for tools: auto, and conversation:opera
   const plain = registry.attach('plain', spec)
   await assert.rejects(
     plain.runStructured({ prompt: 'Go.', tools: 'auto', validate: notJson }),
-    /must declare the "conversation:bypass" permission/,
+    /must be approved for "conversation:bypass"/,
   )
   assert.equal(plain.status(), 'absent', 'a refused run starts nothing')
   const refusedAllow = await plain.respondToApproval({ requestId: 'r', decision: 'once' })
   assert.equal(refusedAllow.ok, false)
-  assert.match(!refusedAllow.ok ? refusedAllow.message : '', /conversation:operate/)
+  assert.match(!refusedAllow.ok ? refusedAllow.message : '', /conversation:own/)
   // Denying needs nothing more; there is just nothing open to deny.
   const deny = await plain.respondToApproval({ requestId: 'r', decision: 'deny' })
   assert.match(!deny.ok ? deny.message : '', /No approval request/)

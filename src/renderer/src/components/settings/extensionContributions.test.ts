@@ -1,58 +1,90 @@
 import { expect, test } from 'vitest'
 
-import { deriveContributions, moduleDoorIcon, type ContributionRegistry } from './extensionContributions'
+import type { ExtensionManifestView } from '../../../../shared/modules/manifest'
+import { ChatGlyph, ExtensionsGlyph, ReleaseNotesIcon } from '../AppIcons'
+import { deriveContributions, moduleDoorIcon } from './extensionContributions'
 
-const Glyph = () => null
+type Contributes = ExtensionManifestView['contributes']
 
-const registry: ContributionRegistry = {
-  getGlobalSurfaces: () => [
-    { moduleId: 'radar', id: 'pr-radar', label: 'PR Radar', Icon: Glyph },
-    { moduleId: 'other', id: 'other-door', label: 'Other' },
-  ],
-  getWorkspaceTypes: () => [{ moduleId: 'radar', label: 'Review' }],
-  getModalSurfaces: () => [],
-  getModuleCommands: () => [{ moduleId: 'radar' }, { moduleId: 'radar' }, { moduleId: 'other' }],
-  getSettingsSections: () => [{ moduleId: 'radar', label: 'PR Radar' }],
-  getTopBarItems: () => [{ moduleId: 'radar' }],
-  getBacklogItemActions: () => [{ moduleId: 'radar' }],
-  getFileActions: () => [],
+function contributes(over: Partial<Contributes> = {}): Pick<ExtensionManifestView, 'contributes'> {
+  return {
+    contributes: {
+      commands: [],
+      menus: [],
+      topBarItems: [],
+      panels: [],
+      doors: [],
+      settingsSections: [],
+      mcpTools: [],
+      hooks: [],
+      syntaxes: [],
+      customEditors: [],
+      keybindings: [],
+      statusBarItems: [],
+      settings: [],
+      skills: [],
+      mcpServers: [],
+      providers: [],
+      ...over,
+    },
+  }
 }
 
-test('what a loaded module adds is read off what it registered, and only its own', () => {
-  expect(deriveContributions('radar', registry, { rendererLoaded: true, mcpTools: ['a', 'b', 'c'] })).toEqual([
+test('what an extension adds is read off its extension.json, before any of its code runs', () => {
+  expect(
+    deriveContributions(
+      contributes({
+        doors: [{ id: 'radar', title: 'PR Radar', icon: 'chat', entry: 'dist/radar.js' }],
+        panels: [{ id: 'queue', title: 'Review queue', entry: 'dist/queue.js' }],
+        settingsSections: [{ id: 'prefs', title: 'PR Radar', entry: 'dist/prefs.js' }],
+        topBarItems: [{ id: 'open', title: 'Open radar', door: 'radar' }],
+        commands: [
+          { id: 'radar.refresh', title: 'Refresh' },
+          { id: 'radar.backlog', title: 'Open Backlog', action: 'panel.backlog.toggle' },
+        ],
+        menus: [
+          { where: 'backlog.item', command: 'radar.refresh' },
+          { where: 'file', command: 'radar.refresh' },
+          { where: 'file', command: 'radar.backlog' },
+          { where: 'notification', command: 'radar.refresh' },
+        ],
+        mcpTools: [
+          { name: 'radar_list', description: 'List.', access: 'read' },
+          { name: 'radar_mark', description: 'Mark.', access: 'operate' },
+        ],
+      }),
+    ),
+  ).toEqual([
     { kind: 'door', label: 'PR Radar door' },
-    { kind: 'workspace', label: 'Review workspace' },
+    { kind: 'panel', label: 'Review queue panel' },
     { kind: 'settings', label: 'PR Radar settings' },
     { kind: 'top-bar', label: '1 top-bar control' },
     { kind: 'command', label: '2 commands' },
     { kind: 'action', label: '1 Backlog action' },
-    { kind: 'tools', label: '3 agent tools' },
+    { kind: 'action', label: '2 file actions' },
+    { kind: 'tools', label: '2 agent tools' },
   ])
 })
 
-test('a module whose code has not run here adds nothing known, not nothing', () => {
-  expect(deriveContributions('radar', registry, { rendererLoaded: false })).toBeNull()
-  expect(deriveContributions('quiet', registry, { rendererLoaded: true, mcpTools: [] })).toBeNull()
+test('an extension that declares nothing adds nothing, said as null', () => {
+  expect(deriveContributions(contributes())).toBeNull()
+  expect(
+    deriveContributions(contributes({ mcpTools: [{ name: 'worker_run', description: 'Run.', access: 'read' }] })),
+  ).toEqual([{ kind: 'tools', label: '1 agent tool' }])
 })
 
-test('main-side tools alone are enough to say what a background-only module adds', () => {
-  expect(deriveContributions('worker', registry, { rendererLoaded: false, mcpTools: ['worker.run'] })).toEqual([
-    { kind: 'tools', label: '1 agent tool' },
-  ])
-})
-
-test('a door view is a door each', () => {
-  const withViews: ContributionRegistry = {
-    ...registry,
-    getGlobalSurfaces: () => [{ moduleId: 'kit', id: 'kit', views: [{ label: 'Plugins' }, { label: 'Skills' }] }],
-  }
-  expect(deriveContributions('kit', withViews, { rendererLoaded: true })).toEqual([
-    { kind: 'door', label: 'Plugins door' },
-    { kind: 'door', label: 'Skills door' },
-  ])
-})
-
-test('the row wears its door’s own glyph when it registered one', () => {
-  expect(moduleDoorIcon('radar', registry)).toBe(Glyph)
-  expect(moduleDoorIcon('other', registry)).toBeNull()
+test('the row wears its first door’s glyph, else its first panel’s, else none', () => {
+  expect(
+    moduleDoorIcon(
+      contributes({
+        doors: [{ id: 'radar', title: 'PR Radar', icon: 'chat', entry: 'dist/radar.js' }],
+        panels: [{ id: 'notes', title: 'Notes', icon: 'notes', entry: 'dist/notes.js' }],
+      }),
+    ),
+  ).toBe(ChatGlyph)
+  expect(moduleDoorIcon(contributes({ panels: [{ id: 'notes', title: 'Notes', icon: 'notes', entry: 'n.js' }] }))).toBe(
+    ReleaseNotesIcon,
+  )
+  expect(moduleDoorIcon(contributes({ doors: [{ id: 'plain', title: 'Plain', entry: 'p.js' }] }))).toBe(ExtensionsGlyph)
+  expect(moduleDoorIcon(contributes({ commands: [{ id: 'x', title: 'X', action: 'chat.new' }] }))).toBeNull()
 })

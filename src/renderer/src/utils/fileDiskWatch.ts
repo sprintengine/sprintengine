@@ -1,6 +1,7 @@
 import type { FileWatchEvent } from '../../../shared/ipc/filesystem'
 import { watchEventPaths } from '../../../shared/file-watch-event'
 import { basename, parentPath } from './paths'
+import { filesApi } from '../studio/files'
 
 /**
  * Hears when one open file changes on disk, for the editors that show it.
@@ -130,9 +131,10 @@ export function createFileDiskWatcher(
   }
 }
 
-const sharedWatcher = createFileDiskWatcher(() =>
-  typeof window === 'undefined' ? undefined : (window.api as FileDiskWatchApi | undefined),
-)
+// Through the window's Studio (`files.watchPath`), as every client reads the
+// files: the preload bridge carries no watch of its own any more, and a watch
+// asked of it was silent.
+const sharedWatcher = createFileDiskWatcher(() => filesApi)
 
 /** The window's one watcher: every editor tab in it shares the folder watches. */
 export function watchFileOnDisk(filePath: string, onChange: () => void): () => void {

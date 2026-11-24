@@ -971,7 +971,7 @@ also lets more chords reach the page (4.2).
 ### 7.8 Feature detection so modules degrade
 
 - **Module renderer code** asks `host.supports(<client capability>)` (3.4,
-  3.7). The SDK docs (`docs/module-authors/`) gain a "running in a browser"
+  3.7). The SDK docs (`docs/extension-authors/`) gain a "running in a browser"
   section listing which `RendererHost` members are refused on the web, and
   what the refusal looks like (a rejected promise with
   `UnsupportedOnThisClient`).

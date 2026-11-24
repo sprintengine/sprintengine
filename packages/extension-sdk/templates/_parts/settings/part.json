@@ -1,0 +1,19 @@
+{
+  "id": "settings",
+  "title": "Settings section",
+  "summary": "A section in Settings whose values Studio keeps, and the worker reads with getModuleAppState.",
+  "requires": [],
+  "permissions": ["settings:own"],
+  "contributes": {
+    "settingsSections": [
+      {
+        "id": "settings",
+        "title": "{{displayName}}",
+        "icon": "settings",
+        "entry": "src/settings.ts"
+      }
+    ]
+  },
+  "scripts": {},
+  "devDependencies": {}
+}

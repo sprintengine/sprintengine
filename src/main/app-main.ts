@@ -1,4 +1,4 @@
-import { app, ipcMain, protocol, session, shell } from 'electron'
+import { app, ipcMain, protocol, shell } from 'electron'
 import { shellTrash } from './cards/shell-trash'
 import { createElectronThumbnailer } from './artifacts/artifact-thumbnail-electron'
 import { askToSetUpArtifacts } from './artifacts/artifacts-setup-consent-electron'
@@ -16,23 +16,27 @@ import { ScheduledAgentsServiceToken } from './module-host/service-tokens'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from './modules/agent-runtime-module'
 import type { CapabilityManifest } from '../shared/modules/manifest'
 import { SCHEDULED_AGENTS_MANIFEST, scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
-import { isLoadEligible, type ModuleTrustContext } from './modules/module-signature'
-import { readModuleTrustContextSync } from './modules/trust-context'
-import {
-  planThirdPartyMainModules,
-  readThirdPartyMainLaunchSnapshot,
-  thirdPartyLaunchSession,
-  recordThirdPartyMainLaunchReport,
-} from './modules/third-party-main-loader'
-import { registerAppRestartIpc } from './ipc/app-restart-ipc'
-import { pathToFileURL } from 'node:url'
+import type { ExtensionStandingContext } from './modules/module-signature'
+import { createExtensionApprovalReader } from './modules/extension-approvals'
+import { createExtensionFrameGrant } from './modules/extension-frame-grant'
+import { editorSaveDecision } from '../server/extensions/hooks/extension-hooks'
+import { readExtensionStandingContextSync } from './modules/extension-standing-context'
+import { catalogueNotification } from '../server/extensions/catalogue/extension-catalogue'
+import { frameStandingOf, installedStandingOf, planInstalledExtensions } from '../server/extensions/extension-plan'
+import { createExtensionDiscovery } from '../server/extensions/extension-discovery'
+import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
+import { resolveWorkerEntryPath, resolveExtensionSdkRoot } from '../server/extensions/workers/worker-process'
 import { join } from 'node:path'
-import { MODULE_ASSET_SCHEME } from '../shared/modules/assets'
-import { createModuleAssetOriginResolver } from './modules/module-asset-origins'
-import { createModuleAssetHandler, isAllowedModuleAssetRequest } from './modules/module-assets'
-import { defaultUserModuleRoot, discoverUserModules, discoverUserModulesSync } from './modules/user-module-registry'
+import { registerAppRestartIpc } from './ipc/app-restart-ipc'
+import { handleExtensionFrameScheme, stagedExtensionFrames } from './extension-frames/extension-frame-shell'
+import { defaultUserModuleRoot, discoverUserModulesSync } from './modules/user-module-registry'
 import { watchUserModuleRoot } from './modules/user-module-watch'
+import { readDevFoldersSync } from './modules/extension-dev-folders'
+import { createExtensionReloader } from '../server/extensions/extension-reload'
+import { watchDevFolders } from '../server/extensions/dev/dev-folder-watch'
+import type { ExtensionHookPoint } from '../../packages/extension-sdk/src/hooks'
 import { createModuleLifecycle, liveModuleIds } from './modules/module-lifecycle'
+import { bundledRegistryIds } from './plugin-registry-instance'
 import { attachBuildSkewWatch, createBuildSkewWatch } from './build-skew'
 import { registerCoreIpc } from './register-core-ipc'
 import { markStartup } from './startup-timeline'
@@ -41,7 +45,6 @@ import { allowsMultipleInstances } from './app-instance'
 import { writeDiagnosticLog } from './diagnostics-service'
 import { removeRetiredEntitlementCache } from './retired-entitlement-cache'
 import { removeRetiredRelayState } from './retired-relay-state'
-import { applyHostApiGate } from './modules/host-api-gate'
 import { studioPlatform } from '../server/platform/platform'
 import { SERVER_EVENTS, SERVER_METHODS } from '../server/desktop/server-methods'
 import type { AgentPhaseEvent } from '../shared/agent-runtime'
@@ -65,7 +68,7 @@ const BOOT_SERVER_WAIT_MS = 15_000
 // The app proper, loaded by the entry (index.ts) only in the process that holds
 // the single-instance lock. By the time this runs the startup timeline is
 // attached, the userData override is applied, the Electron platform is
-// installed and the module-asset scheme is registered.
+// installed and the extension frame scheme is registered.
 
 // Build-identity check. Registered next to the startup marks and for
 // the same reason: a window reports the moment it starts, and the listener has
@@ -131,16 +134,50 @@ const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
 // agent-runtime core module seeds the shared services (terminal runtime, auth,
 // token stores) that the optional modules consume via the service bridge; the
 // resolver orders it first because every dependent declares
-// `dependsOn: ['agent-runtime']`. See docs/module-authors/drop-in-extensions.md.
+// `dependsOn: ['agent-runtime']`. See docs/extension-authors/drop-in-extensions.md.
 const moduleOverrides = readModuleEnablementOverrides()
+// Every save in a development folder: read it again, and load what changed.
+// Out of process the server watches them (server-modules.ts).
+// The extensions on disk, discovered once per change (extension-discovery.ts):
+// a save reads its folder alone again.
+const extensionDiscovery = createExtensionDiscovery({
+  moduleRoot: defaultUserModuleRoot,
+  dataDir: app.getPath('userData'),
+})
+const devFolderWatch = watchDevFolders((folder) => {
+  extensionDiscovery.folderChanged(folder)
+  extensionWorkers.workers.reconcile()
+  void moduleLifecycle?.reproject(extensionDiscovery.current().modules)
+  void extensionReloader?.reload()
+})
 
-const thirdPartyMainLoad = planThirdPartyMainModules(
-  discoverUserModulesSync(defaultUserModuleRoot(), readModuleTrustContext()),
+const extensionApprovals = createExtensionApprovalReader(app.getPath('userData'))
+// Every worker extension's code runs in a process of its own
+// (src/server/extensions/workers). Out of process the server holds them.
+const extensionWorkers = createExtensionWorkers({
+  entryPath: resolveWorkerEntryPath(),
+  sdkRoot: resolveExtensionSdkRoot(app.isPackaged ? process.resourcesPath : null, app.getAppPath()),
+  logDir: join(app.getPath('logs'), 'extensions'),
+  approvals: extensionApprovals,
+  installed: () => installedStandingOf(extensionDiscovery.current()),
+  toolsChanged: () => services.automationService?.notifyToolsListChanged(),
+  stateChanged: () => services.moduleHub.deliverChanged(),
+  // Read again, it is no longer loaded: registering it again asks again.
+  developmentFolderMoved: () => {
+    extensionDiscovery.invalidate()
+    void moduleLifecycle?.reproject(extensionDiscovery.current().modules)
+    void extensionReloader?.reload()
+    services.moduleHub.deliverChanged()
+  },
+})
+if (!serverHost) app.once('will-quit', () => void extensionWorkers.workers.close())
+// In process, the core's actions ask these workers' hooks; out of process the
+// server binds its own.
+if (!serverHost) services.studioCore.extensionHooks.bind(extensionWorkers.workers)
+const thirdPartyMainLoad = planInstalledExtensions(
+  discoverUserModulesSync(defaultUserModuleRoot(), readExtensionStanding()),
+  () => extensionWorkers.workers,
 )
-// ── extension-platform additions ──
-// A module built for another host API stays unloaded whatever its trust says,
-// and the load report says why (modules/host-api-gate.ts).
-applyHostApiGate(thirdPartyMainLoad.ineligible, thirdPartyMainLoad.modules)
 // Live-resolved main enablement, kept in step with the renderer's overrides (see
 // recomputeMainEnablement below). A module with no main runtime of its own — one
 // whose work rides another module's engine tick — is honored through this set
@@ -190,13 +227,29 @@ const moduleLoad = loadMainModules({
   moduleRoots: thirdPartyMainLoad.moduleRoots,
   // What `getAssetPath` resolves: the files each module was verified with.
   moduleVerifiedFiles: thirdPartyMainLoad.verifiedFiles,
+  moduleMcpTools: thirdPartyMainLoad.mcpTools,
+  // What each extension runs under; its calls are refused once that approval is gone.
+  extensionApprovals: thirdPartyMainLoad.approvals,
+  currentApprovals: extensionApprovals,
+  resolveFrameGrant: createExtensionFrameGrant({
+    approvals: extensionApprovals,
+    dataDir: app.getPath('userData'),
+    standing: (moduleId) => frameStandingOf(extensionDiscovery.current(), moduleId),
+    // A folder changed where no watcher heard it: discovery reads it again.
+    refresh: () => extensionDiscovery.invalidate(),
+  }),
+  onKernel: extensionWorkers.bind,
+  frameFileExclusions: () => [app.getPath('userData'), defaultUserModuleRoot()],
+  // A save in a custom text editor meets the save hooks as one in Studio's text editor does.
+  frameEditorSaveHooks: ({ invoker, ...event }) =>
+    editorSaveDecision(services.studioCore.extensionHooks, event, invoker),
   ineligible: thirdPartyMainLoad.ineligible,
   launchErrors: thirdPartyMainLoad.launchErrors,
-  // Module events reach every client following the Studio's `module.events`
+  // Module events reach every client following the Studio's `extension.events`
   // stream; each window routes them to its own module's subscribers. Nothing
   // is buffered for a client that connects later (shared/modules/events.ts).
   deliverModuleEvent: (event) => services.moduleHub.deliverEvent(event),
-  // A module's notify is a bell row on `module.notifications`; the kernel
+  // A module's notify is a bell row on `extension.notifications`; the kernel
   // keeps the recent ones, which the stream sends a client first.
   deliverModuleNotification: (notification) => services.moduleHub.deliverNotification(notification),
   // A module tool that would shadow one of the gateway's own is refused at
@@ -204,10 +257,10 @@ const moduleLoad = loadMainModules({
   coreMcpToolNames: () => services.automationService?.coreToolNames() ?? [],
 })
 services.moduleHub.readRecentFrom(() => moduleLoad.kernel.recentNotifications())
-// A module's declared methods, called over the Studio RPC's `module.read` and `module.operate`.
+// A module's declared methods, called over the Studio RPC's `extension.read` and `extension.operate`.
 services.moduleHub.serveCallsFrom((request) => moduleLoad.kernel.callModuleMethod(request))
-// The host's services a module's window half calls: `moduleBacklog.*` and `moduleUsage.query`.
-services.moduleHub.serveHostServicesFrom((moduleId) => moduleLoad.kernel.hostServicesFor(moduleId))
+// The host calls an extension's frames make: `extension.call`.
+services.moduleHub.serveFrameCallsFrom((request) => moduleLoad.kernel.callFrameMethod(request))
 // The manifest universe the enablement gate resolves against — every main module
 // present on this channel, so a module and its dependencies (scheduled agents,
 // agent-runtime) all resolve. Recompute mirrors the renderer's
@@ -232,17 +285,36 @@ if (!serverHost)
 // What runs here, listed and changed over the Studio RPC (`module.*`). Out of
 // process the server's kernel holds the modules and serves it
 // (server-modules.ts); this process's kernel is empty.
-if (!serverHost)
-  services.moduleHub.serveLifecycleFrom(
-    createModuleLifecycle({
+const moduleLifecycle = serverHost
+  ? null
+  : createModuleLifecycle({
       dataDir: app.getPath('userData'),
       moduleRoot: defaultUserModuleRoot,
-      changed: () => services.moduleHub.deliverChanged(),
-      // What this session's kernel loaded, read only when an extension list is
+      // A worker whose approval is gone or changed stops, and the windows hear.
+      changed: () => {
+        extensionDiscovery.invalidate()
+        extensionWorkers.workers.reconcile()
+        services.moduleHub.deliverChanged()
+        devFolderWatch.follow(readDevFoldersSync(app.getPath('userData')))
+        void extensionReloader?.reload()
+      },
+      settingsChanged: (moduleId) => services.moduleHub.deliverSettingsChanged(moduleId),
+      // What this session's kernel holds, read only when an extension list is
       // asked for, long after `moduleLoad` exists.
-      launchSession: () =>
-        thirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), moduleLoad.kernel.mcpToolRegistrations()),
+      run: () => {
+        const { workers } = extensionWorkers
+        const tools = moduleLoad.kernel.mcpToolRegistrations()
+        return {
+          attached: (id) => workers.serves(id) && workers.status(id)?.state !== 'stopped',
+          worker: (id) => workers.status(id),
+          loadError: (id) => moduleLoad.report.errors.find((error) => error.id === id)?.message,
+          mcpTools: (id) => tools.filter((tool) => tool.moduleId === id).map((tool) => tool.registration.name),
+        }
+      },
       registry: services.moduleRegistryMirror,
+      // An extension's provider may not take a built-in's id.
+      protectedProviderIds: bundledRegistryIds,
+      warn: (message) => console.warn(`[extensions] ${message}`),
       applyEnablement: async (overrides) => {
         const report = await moduleLoad.applyEnablement(overrides, {
           liveModuleIds: liveModuleIds(Object.keys(thirdPartyMainLoad.moduleRoots), moduleLoad.report.errors),
@@ -260,6 +332,9 @@ if (!serverHost)
         if (scheduledAgentsError) return { ok: false, message: scheduledAgentsError.message }
         return { ok: true }
       },
+      // Kill-list and update notices ring the bell of every client, and are
+      // kept for one that follows the bell later.
+      catalogue: { notify: (notice) => services.moduleHub.deliverKeptNotification(catalogueNotification(notice)) },
       view: () => {
         const overrides = readModuleEnablementOverrides()
         return {
@@ -272,13 +347,62 @@ if (!serverHost)
           declaredMethods: (id) => moduleLoad.kernel.declaredMethods(id),
         }
       },
-    }),
-  )
+    })
+// The kill list and automatic updates, for as long as the app runs. The
+// quit stops them and lets go of the added catalogues' checkouts kept in
+// temporary folders (the `extension catalogue` shutdown leg).
+let extensionCatalogue: { dispose(): Promise<void> } | undefined
+if (moduleLifecycle) {
+  services.moduleHub.serveLifecycleFrom(moduleLifecycle)
+  const stopCatalogue = moduleLifecycle.catalogue.start()
+  extensionCatalogue = {
+    dispose: async () => {
+      stopCatalogue()
+      await moduleLifecycle.catalogue.dispose()
+    },
+  }
+}
+// Changes while the app runs load live: a development folder's save, an
+// install, an approval (src/server/extensions/extension-reload.ts). Out of
+// process the server does this.
+const extensionReloader = moduleLifecycle
+  ? createExtensionReloader({
+      plan: thirdPartyMainLoad,
+      discover: () => extensionDiscovery.current(),
+      workers: () => extensionWorkers.workers,
+      load: () => moduleLoad,
+      overrides: readModuleEnablementOverrides,
+      reloaded: ({ removed }) => {
+        for (const key of removed) moduleManifestsById.delete(key)
+        for (const module of thirdPartyMainLoad.modules) moduleManifestsById.set(module.manifest.id, module.manifest)
+        mainModuleManifests.splice(
+          2,
+          mainModuleManifests.length - 2,
+          ...thirdPartyMainLoad.modules.map((module) => module.manifest),
+        )
+        recomputeMainEnablement(readModuleEnablementOverrides())
+        services.automationService?.notifyToolsListChanged()
+        services.moduleHub.deliverChanged()
+      },
+      log: (message) => console.warn(`[extensions] ${message}`),
+    })
+  : null
 // A module copied into the drop-in folder while Studio runs is listed at once,
 // not after a reload. Out of process the server watches (server-modules.ts).
-if (!serverHost) {
-  const stopWatchingModules = watchUserModuleRoot(defaultUserModuleRoot(), () => services.moduleHub.deliverChanged())
+if (moduleLifecycle) {
+  // A worker whose extension was removed from the folder (and its approval with it) stops.
+  // What extensions hand agents follows the folder too: a server whose files
+  // changed under its approval is retracted, not run until the next start.
+  const stopWatchingModules = watchUserModuleRoot(defaultUserModuleRoot(), () => {
+    extensionDiscovery.invalidate()
+    extensionWorkers.workers.reconcile()
+    void moduleLifecycle.reproject(extensionDiscovery.current().modules)
+    services.moduleHub.deliverChanged()
+    void extensionReloader?.reload()
+  })
   app.once('will-quit', stopWatchingModules)
+  devFolderWatch.follow(readDevFoldersSync(app.getPath('userData')))
+  app.once('will-quit', () => devFolderWatch.close())
 }
 // Automation server ← Scheduled agents module: resolved per tool call so a live
 // module disable/enable cycle is reflected immediately (service absent ⇒ the
@@ -295,11 +419,18 @@ services.setModuleEnabledResolver((moduleId) => enabledMainModuleIds.has(moduleI
 // constructed above, before loadMainModules ran; this seam hands it the live
 // registry, and the per-request evaluation makes the tools visible immediately.
 services.setModuleMcpToolsResolver(() => moduleLoad.kernel.mcpToolRegistrations())
-recordThirdPartyMainLaunchReport(
-  thirdPartyMainLoad.modules.map((module) => module.manifest.id),
-  moduleLoad.report,
-)
-const moduleAssetOrigin = createModuleAssetOriginResolver(app.getPath('userData'))
+// The extension dev loop's tools (extension-dev-tools.ts), over this kernel.
+if (moduleLifecycle)
+  services.setExtensionDevBackend(() => ({
+    lifecycle: () => moduleLifecycle,
+    callModuleMethod: (request) => moduleLoad.kernel.callModuleMethod(request),
+    runHook: async (moduleId, point, event, invoker) => {
+      await extensionWorkers.workers.startForHook(moduleId)
+      return extensionWorkers.workers.runHook(moduleId, point as ExtensionHookPoint, event, invoker, 10_000)
+    },
+    emit: (moduleId, topic, payload) =>
+      services.moduleHub.deliverEvent({ sourceModuleId: moduleId, topic, payload, emittedAt: Date.now() }),
+  }))
 void app.whenReady().then(() => {
   // The hosted relay's leftover pairings and push tokens (retired-relay-state.ts).
   // Best effort and off the startup path; tailnet pairings are never touched.
@@ -328,28 +459,11 @@ void app.whenReady().then(() => {
       console.warn('[auth] retired-entitlement-cache-remove-failed', { message: result.message })
     }
   })
-  const shellUrl = process.env['ELECTRON_RENDERER_URL'] ?? pathToFileURL(join(__dirname, '../renderer/index.html')).href
-  session.defaultSession.webRequest.onBeforeRequest({ urls: [`${MODULE_ASSET_SCHEME}://*/*`] }, (details, callback) => {
-    callback({ cancel: !isAllowedModuleAssetRequest(details, shellUrl) })
-  })
-  protocol.handle(
-    MODULE_ASSET_SCHEME,
-    createModuleAssetHandler({
-      assetOrigin: moduleAssetOrigin,
-      discoverModules: () => discoverUserModules(defaultUserModuleRoot(), readModuleTrustContext()),
-      isEnabled: (installed, modules) => {
-        const trusted = modules.filter((module) => isLoadEligible(module.trust.status))
-        const manifests = [
-          ...mainModuleManifests.filter((manifest) => !modules.some((module) => module.manifest.id === manifest.id)),
-          ...trusted.map((module) => module.manifest),
-        ]
-        return resolveModuleEnablement(manifests, readModuleEnablementOverrides()).order.includes(installed.manifest.id)
-      },
-    }),
-  )
+  // Extension frames: the documents this app's windows stage (extension-frames/).
+  handleExtensionFrameScheme(protocol, stagedExtensionFrames)
 })
 if (DIAGNOSTICS_ENABLED) {
-  console.info('[modules] extension roots:', extensionFolders.moduleRoot, extensionFolders.pluginRoot)
+  console.info('[modules] extension root:', extensionFolders.moduleRoot)
   if (extensionFolders.errors.length > 0) {
     console.warn('[modules] extension folder setup errors:', extensionFolders.errors)
   }
@@ -366,8 +480,8 @@ if (DIAGNOSTICS_ENABLED) {
   if (moduleLoad.report.errors.length > 0) {
     console.warn('[modules] load errors:', moduleLoad.report.errors)
   }
-  if (thirdPartyMainLoad.diagnostics.rejected.length > 0) {
-    console.warn('[modules] rejected third-party modules:', thirdPartyMainLoad.diagnostics.rejected)
+  if (thirdPartyMainLoad.launchErrors.length > 0) {
+    console.warn('[modules] rejected third-party modules:', thirdPartyMainLoad.launchErrors)
   }
 }
 
@@ -379,8 +493,8 @@ function readModuleEnablementOverrides(): Record<string, boolean> {
   }
 }
 
-function readModuleTrustContext(): ModuleTrustContext {
-  return readModuleTrustContextSync(app.getPath('userData'))
+function readExtensionStanding(): ExtensionStandingContext {
+  return readExtensionStandingContextSync(app.getPath('userData'))
 }
 
 // Everything above ran synchronously during entry evaluation: module
@@ -476,6 +590,7 @@ registerAppLifecycle({
   analytics: services.analytics,
   // Out of process the server runs every module's startup and shutdown hooks.
   ...(serverHost ? {} : { moduleKernel: moduleLoad.kernel }),
+  ...(extensionCatalogue ? { extensionCatalogue } : {}),
   updateService: services.updateService,
   // The skill sources are the server's out of process: their hourly check runs there.
   checkPluginSourceUpdates: serverHost

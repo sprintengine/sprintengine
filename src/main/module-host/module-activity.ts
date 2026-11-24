@@ -1,5 +1,5 @@
 // The person's Studio chats for capability modules (SDK `getActivityService`,
-// permission `conversation:read-all`): a summary of every chat in the open
+// permission `conversation:read`): a summary of every chat in the open
 // workspaces, and the messages the person sent with the end of each reply.
 //
 // Read-only, and narrow on purpose. It reads the transcripts the chat view
@@ -51,7 +51,6 @@ export type ModuleActivityDeps = {
   /** Open workspaces with their agent records, read fresh on each call. */
   getWorkspaces: () => readonly ModuleActivityWorkspace[]
   runtime: ModuleActivityRuntime
-  getModulePermissions: (moduleId: string) => readonly string[] | undefined
 }
 
 type Failure = { ok: false; code: ModuleActivityErrorCode; message: string }
@@ -71,14 +70,6 @@ type Chat = {
 const failure = (code: ModuleActivityErrorCode, message: string): Failure => ({ ok: false, code, message })
 
 export function createModuleActivityRegistry(deps: ModuleActivityDeps): ModuleActivityRegistry {
-  function denied(moduleId: string): Failure | null {
-    if (deps.getModulePermissions(moduleId)?.includes('conversation:read-all')) return null
-    return failure(
-      'permission_missing',
-      `Module "${moduleId}" does not declare the "conversation:read-all" permission, so it cannot read your chats.`,
-    )
-  }
-
   function liveStatus(workspaceId: string, agentId: string): { status: ActivityChatSummary['status']; model?: string } {
     const listed = deps.runtime.listSessions({ workspaceId, agentId })
     if (!listed.ok) return { status: 'absent' }
@@ -135,9 +126,7 @@ export function createModuleActivityRegistry(deps: ModuleActivityDeps): ModuleAc
   }
 
   return {
-    async listChats(moduleId, input) {
-      const refused = denied(moduleId)
-      if (refused) return refused
+    async listChats(_moduleId, input) {
       const invalid = invalidWindow(input?.from, input?.to, false) ?? invalidWorkspace(input?.workspaceId)
       if (invalid) return failure('invalid_input', invalid)
       try {
@@ -155,9 +144,7 @@ export function createModuleActivityRegistry(deps: ModuleActivityDeps): ModuleAc
       }
     },
 
-    async prompts(moduleId, input) {
-      const refused = denied(moduleId)
-      if (refused) return refused
+    async prompts(_moduleId, input) {
       const invalid =
         invalidWindow(input?.from, input?.to, true) ??
         invalidWorkspace(input?.workspaceId) ??

@@ -9,6 +9,7 @@ import {
   type StudioFileViewWritten,
 } from '../../../packages/studio-protocol/src/public'
 import { writeFileAtomically } from '../../main/config-file-write'
+import { withFileWriteTurn } from '../../main/file-write-queue'
 import { expandHomePath } from '../../main/home-path'
 import { writeFileAtomic } from '../platform/atomic-file'
 
@@ -113,8 +114,6 @@ export function createFileViews(deps: FileViewsDeps) {
   const ledgerPath = join(deps.dataDir, LEDGER_FILE)
   let ledger: Ledger | null = null
   let writing: Promise<void> = Promise.resolve()
-  /** Saves to one real path, one at a time. */
-  const saving = new Map<string, Promise<unknown>>()
 
   async function load(): Promise<Ledger> {
     if (ledger) return ledger
@@ -284,32 +283,25 @@ export function createFileViews(deps: FileViewsDeps) {
     const bytes = Buffer.from(text, 'utf8')
     if (bytes.length > STUDIO_FILE_VIEW_MAX_BYTES)
       return { ok: false, code: 'too_large', message: 'A view saves files up to 2 MB.' }
-    const before = saving.get(own.path) ?? Promise.resolve()
-    const run = before
-      .catch(() => undefined)
-      .then(
-        async (): Promise<{ ok: true; written: StudioFileViewWritten | StudioFileViewConflict } | FileViewRefusal> => {
-          const current = await readFile(own.path).catch((error: unknown) => {
-            if (errorCode(error) === 'ENOENT') return null
-            throw error
-          })
-          const currentHash = current === null ? null : sha256(current)
-          if (currentHash !== ifMatch) return { ok: true, written: { ok: false, code: 'conflict', currentHash } }
-          try {
-            await writeFileAtomically(own.path, text)
-          } catch (error) {
-            return { ok: false, code: 'unavailable', message: `The file could not be saved: ${String(error)}` }
-          }
-          const info = await stat(own.path)
-          return { ok: true, written: { ok: true, hash: sha256(bytes), size: bytes.length, mtimeMs: info.mtimeMs } }
-        },
-      )
-    saving.set(own.path, run)
-    try {
-      return await run
-    } finally {
-      if (saving.get(own.path) === run) saving.delete(own.path)
-    }
+    // In the file's turn with every other Studio writer of it (file-write-queue.ts).
+    return withFileWriteTurn(
+      own.path,
+      async (): Promise<{ ok: true; written: StudioFileViewWritten | StudioFileViewConflict } | FileViewRefusal> => {
+        const current = await readFile(own.path).catch((error: unknown) => {
+          if (errorCode(error) === 'ENOENT') return null
+          throw error
+        })
+        const currentHash = current === null ? null : sha256(current)
+        if (currentHash !== ifMatch) return { ok: true, written: { ok: false, code: 'conflict', currentHash } }
+        try {
+          await writeFileAtomically(own.path, text)
+        } catch (error) {
+          return { ok: false, code: 'unavailable', message: `The file could not be saved: ${String(error)}` }
+        }
+        const info = await stat(own.path)
+        return { ok: true, written: { ok: true, hash: sha256(bytes), size: bytes.length, mtimeMs: info.mtimeMs } }
+      },
+    )
   }
 
   return { show, read, write, readHighlights }

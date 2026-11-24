@@ -1,0 +1,22 @@
+{
+  "$schema": "../node_modules/@sprintengine/extension-sdk/extension.schema.json",
+  "manifestVersion": 1,
+  "id": "{{id}}",
+  "version": "0.1.0",
+  "engines": {
+    "studio": ">={{studioVersion}}"
+  },
+  "tier": "ui",
+  "name": "{{displayName}}",
+  "description": "{{displayName}}, an extension for SprintEngine Studio.",
+  "contributes": {
+    "panels": [
+      {
+        "id": "hello",
+        "title": "{{displayName}}",
+        "icon": "extension",
+        "entry": "src/hello.ts"
+      }
+    ]
+  }
+}

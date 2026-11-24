@@ -1,0 +1,19 @@
+{
+  "id": "door",
+  "title": "Door",
+  "summary": "A full-window surface with its own row in the Extensions drawer.",
+  "requires": [],
+  "permissions": [],
+  "contributes": {
+    "doors": [
+      {
+        "id": "door",
+        "title": "{{displayName}}",
+        "icon": "extension",
+        "entry": "src/door.ts"
+      }
+    ]
+  },
+  "scripts": {},
+  "devDependencies": {}
+}

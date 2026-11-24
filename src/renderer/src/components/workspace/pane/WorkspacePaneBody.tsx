@@ -19,6 +19,7 @@ import { useRecordingTabIds } from './browser/recordingTabs'
 import { useAgentPresentTabIds } from './agentPresence'
 import { createPairedDiffSource } from '../../auxWindows/diffViewerSource'
 import { copy as appCopy } from '../../../../../shared/copy'
+import { ExtensionSurfaceMount } from '../../extensions/ExtensionSurfaceMount'
 
 // The pane's content region: one layer per tab that needs to stay mounted
 // (terminal, browser, canvas) plus the active tab. Inactive retained layers are
@@ -405,6 +406,17 @@ function PaneTabPanel({ workspaceId, tab, active, onDiffCountChange }: PaneTabPa
       return <DocumentTab tab={tab} active={active} />
     case 'library':
       return <LibraryTab workspaceId={workspaceId} active={active} />
+    case 'extension':
+      return tab.extension && selectModuleEnabled(moduleOverrides, tab.extension.key) ? (
+        <ExtensionSurfaceMount
+          extensionKey={tab.extension.key}
+          point="panels"
+          id={tab.extension.panel}
+          workspaceId={workspaceId}
+        />
+      ) : (
+        <PaneUnavailable />
+      )
     case 'diff': {
       // The opener's repository wins: the Git panel can be showing a worktree
       // scope that is not the workspace's own checkout, and re-deriving one

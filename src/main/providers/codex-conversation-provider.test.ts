@@ -55,6 +55,8 @@ function fixture(
     configRead?: () => unknown
     // The answer to `thread/goal/set`, `get` and `clear`.
     goal?: (method: string, params: unknown) => unknown
+    // What the installed extensions hand chats now.
+    extensionServers?: () => ConversationMcpServer[]
   } = {},
 ) {
   let connection!: CodexRpcOptions
@@ -73,6 +75,9 @@ function fixture(
     ...(setup.readCodexLogBytes ? { readCodexLogBytes: setup.readCodexLogBytes } : {}),
     ...(setup.platform ? { platform: setup.platform } : {}),
     ...(setup.homeDir ? { homeDir: setup.homeDir } : {}),
+    ...(setup.extensionServers
+      ? { extensionContributions: () => ({ mcpServers: setup.extensionServers!(), pluginDirs: [] }) }
+      : {}),
     createTransport(options) {
       connection = options
       transports.created++
@@ -1934,6 +1939,26 @@ test("a chat's own MCP servers reach Codex as config overrides for its app-serve
   expect(codexMcpServerArgs([], {})).toEqual({ args: [], env: {} })
 })
 
+test('an installed extension’s server keeps its env in its own table, out of the app-server’s environment', () => {
+  const extension = {
+    id: 'local_tools_search',
+    name: 'Search',
+    transport: 'stdio' as const,
+    command: 'node',
+    env: { PYTHONPATH: '/Users/dev/ext/py' },
+  }
+  const own = { id: 'mine', name: 'Mine', transport: 'stdio' as const, command: 'x', env: { MY_TOKEN: 't' } }
+  expect(codexMcpServerArgs([extension, own], {}, new Set([extension.id]))).toEqual({
+    args: [
+      '-c',
+      'mcp_servers.local_tools_search={ "command" = "node", "env" = { "PYTHONPATH" = "/Users/dev/ext/py" } }',
+      '-c',
+      'mcp_servers.mine={ "command" = "x", "env_vars" = ["MY_TOKEN"] }',
+    ],
+    env: { MY_TOKEN: 't' },
+  })
+})
+
 test("no MCP server's env value or header value is on the Codex app-server's command line", () => {
   const secret = 'sk-test-0123456789abcdef'
   const rendered = codexMcpServerArgs(
@@ -2595,4 +2620,51 @@ test('a message sent before the chat took up a turn Codex started by itself join
     ['content_delta', 'turn'],
     ['turn_completed', 'turn'],
   ])
+})
+
+test('an app-server started with a revoked extension’s server is replaced before the next turn, never during one', async () => {
+  const search: ConversationMcpServer = {
+    id: 'acme_notes_search',
+    name: 'Search',
+    transport: 'stdio',
+    command: '/Users/dev/.sprintengine/extensions/acme.notes/bin/search',
+  }
+  const tasks: ConversationMcpServer = {
+    id: 'acme_tasks_hosted',
+    name: 'Tasks',
+    transport: 'http',
+    url: 'https://mcp.example.com/tasks',
+  }
+  let handed = [search]
+  const f = fixture({ extensionServers: () => handed })
+  await f.adapter.startSession(f.input)
+  const turn = async () => {
+    f.nextTurn()
+    const done = f.send()
+    await f.started
+    return async () => {
+      await f.message({ method: 'turn/completed', params: { turn: { status: 'completed' } } })
+      await done
+    }
+  }
+  const finish = await turn()
+  expect((f.connection.args ?? []).join(' ')).toContain('mcp_servers.acme_notes_search=')
+  // Killed while the turn runs: the turn keeps its servers.
+  handed = []
+  await finish()
+  expect(f.transports).toEqual({ created: 1, closed: 0 })
+
+  // The next turn resumes the thread on an app-server without it.
+  await (
+    await turn()
+  )()
+  expect(f.transports).toEqual({ created: 2, closed: 1 })
+  expect((f.connection.args ?? []).join(' ')).not.toContain('acme_notes_search')
+
+  // One only added since waits for the app-server's next start.
+  handed = [tasks]
+  await (
+    await turn()
+  )()
+  expect(f.transports).toEqual({ created: 2, closed: 1 })
 })

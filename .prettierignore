@@ -18,3 +18,5 @@ src/main/providers/codex-protocol/
 # The phone app: its own package, checked by its own `npm run ci` and not
 # formatted to this config.
 mobile/
+# Built, not edited: rebuilt by scripts/build-extension-frame-themes.mjs.
+src/shared/extension-frame-themes.generated.ts

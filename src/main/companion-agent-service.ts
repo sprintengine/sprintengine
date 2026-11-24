@@ -34,10 +34,11 @@
 import type { CliPermissionPreset } from '../shared/cli-permission-preset'
 import { CONVERSATION_DEFAULT_MODEL_ID, conversationProviderForCli } from '../shared/conversation-harness'
 import { ceilingAllowsUnaskedTools } from '../shared/permission-ceiling'
-import { moduleToolCallerCeiling } from './module-host/module-tool-caller'
+import { invokerCeiling } from './module-host/extension-invocation'
 import type {
   ConversationEvent,
   ConversationInterruptInput,
+  ConversationPromptHookAs,
   ConversationListSessionsInput,
   ConversationListSessionsResult,
   ConversationRespondToRequestInput,
@@ -48,6 +49,10 @@ import type {
   ConversationStartSessionResult,
   ConversationStopSessionInput,
 } from '../shared/conversation-runtime'
+
+// What an extension's companion sends its agent: the extensions' prompt hooks
+// check it in the runtime, as an extension's input, never a person's.
+const COMPANION_PROMPT: ConversationPromptHookAs = { inputKind: 'companion', from: 'extension' }
 
 // The slice of ConversationRuntime the companion service drives. The live app
 // passes its shared ConversationRuntime; contract tests pass a ConversationRuntime
@@ -108,7 +113,8 @@ const COMPANION_TOOL_POLICIES: ReadonlySet<string> = new Set<CompanionToolPolicy
 
 type CompanionRunStructuredOptions<T> = {
   prompt: string
-  validate: (raw: unknown) => CompanionValidateResult<T>
+  /** May answer a promise: a worker's validator runs in its own process. */
+  validate: (raw: unknown) => CompanionValidateResult<T> | Promise<CompanionValidateResult<T>>
   /** Validator errors are fed back to the agent and the turn retried. Default 1. */
   retries?: number
   onPhase?: (phase: string) => void
@@ -191,6 +197,12 @@ type CompanionEntry = {
   statusListeners: Set<(status: CompanionAgentStatus) => void>
   eventListeners: Set<(event: ConversationEvent) => void>
   activeCollector: StructuredRunCollector | null
+  // Bumped by an interrupt, a dispose, and every run or chat turn that takes
+  // the session over. A structured run is the one that counts only while it
+  // matches: between turns (its validator may take a while, answering from a
+  // worker's process) there is no collector to settle, and this is what tells
+  // it that it was interrupted or replaced.
+  runGeneration: number
   // Approval requests the session raised that nothing has answered yet: what
   // `respondToApproval` may answer.
   openApprovals: Set<string>
@@ -445,6 +457,7 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
   }
 
   function interruptEntry(entry: CompanionEntry): Promise<void> {
+    entry.runGeneration += 1
     if (!entry.sessionId) return Promise.resolve()
     const collector = entry.activeCollector
     if (collector) settleCollector(collector, { ok: false, message: 'interrupted' })
@@ -490,7 +503,7 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
       // rejects this run promptly even while a slow turn is still streaming. A
       // sendTurn that fails to start settles the collector itself.
       const sendPromise = runtime
-        .sendTurn({ sessionId, message })
+        .sendTurn({ sessionId, message, hookAs: COMPANION_PROMPT })
         .then((sent) => {
           if (!sent.ok) settleCollector(collector, { ok: false, message: sent.message })
           return sent
@@ -512,8 +525,13 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
     const tools = opts.tools ?? 'none'
     if (!COMPANION_TOOL_POLICIES.has(tools)) throw new Error('"tools" must be "none", "ask" or "auto".')
     await ensureSpawned(entry)
-    // One writer: a second concurrent structured run interrupts the first.
+    // One writer: a second concurrent structured run interrupts the first, or,
+    // between its turns, leaves it to find itself replaced.
     if (entry.activeCollector) await interruptEntry(entry)
+    const generation = (entry.runGeneration += 1)
+    const stillMine = (): void => {
+      if (entry.runGeneration !== generation || entry.disposed) throw new CompanionTurnError('interrupted')
+    }
 
     const maxRetries = Math.max(0, opts.retries ?? 1)
     let message = consumePreamble(entry, tools === 'none' ? `${NO_TOOLS_NOTE}\n\n${opts.prompt}` : opts.prompt)
@@ -524,7 +542,9 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
       opts.onPhase?.('validating')
       const raw = extractJson(text)
       if (raw !== undefined) {
-        const result = opts.validate(raw)
+        const result = await opts.validate(raw)
+        // Interrupted or replaced while it validated: neither its answer nor a retry is wanted.
+        stillMine()
         if (result.ok) return result.value
         lastErrors = result.errors.length > 0 ? result.errors : ['Validation failed.']
       } else {
@@ -540,13 +560,19 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
     const message = rawMessage.trim()
     if (!message) throw new Error('Companion chat message is required.')
     await ensureSpawned(entry)
-    // Chat is single-flight per session: cancel any in-flight structured run.
+    // Chat is single-flight per session: cancel any in-flight structured run,
+    // and one between its turns.
     if (entry.activeCollector) await interruptEntry(entry)
+    else entry.runGeneration += 1
     if (entry.pendingSend) await entry.pendingSend.catch(() => undefined)
     if (entry.pendingInterrupt) await entry.pendingInterrupt
     const sessionId = entry.sessionId
     if (!sessionId) throw new Error('Companion session is not spawned.')
-    const sendPromise = runtime.sendTurn({ sessionId, message: consumePreamble(entry, message) })
+    const sendPromise = runtime.sendTurn({
+      sessionId,
+      message: consumePreamble(entry, message),
+      hookAs: COMPANION_PROMPT,
+    })
     entry.pendingSend = sendPromise
     const sent = await sendPromise
     if (!sent.ok) throw new Error(`Companion chat turn failed: ${sent.message}`)
@@ -555,6 +581,7 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
   function disposeEntry(entry: CompanionEntry): void {
     if (entry.disposed) return
     entry.disposed = true
+    entry.runGeneration += 1
     const collector = entry.activeCollector
     if (collector) settleCollector(collector, { ok: false, message: 'disposed' })
     entry.activeCollector = null
@@ -613,6 +640,7 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
         statusListeners: new Set(),
         eventListeners: new Set(),
         activeCollector: null,
+        runGeneration: 0,
         openApprovals: new Set(),
         pendingSend: null,
         pendingInterrupt: null,
@@ -630,7 +658,8 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
 }
 
 // The moduleId-first registry behind the SDK's getCompanionAgentsService helper.
-// It enforces the `agents:companion` permission at attach time, then delegates
+// The host's gate holds `attach` to `agents:companion` (extension-host-gate.ts);
+// this delegates
 // to the app's companion service under an agent id namespaced by the module
 // (`companionAgentIdFor`): a module picks its companion's id, and without the
 // namespace two modules picking the same one — or one picking the id of a chat
@@ -641,21 +670,20 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
 // one, which is as loose as `bypass`, so it needs `conversation:bypass` (and is
 // refused while the module serves a capped agent's tool call, as `allowedTools`
 // is); and allowing one with `respondToApproval` is relaying the person's
-// answer, as a module does for its chats, so it needs `conversation:operate`.
-// Without either, a module's companion acts only by what it says. Read per
-// call, never cached, like every other permission check.
+// answer, as a module does for its chats, so it needs `conversation:own`.
+// Without either, a module's companion acts only by what it says.
 export type CompanionAgentsModuleRegistry = {
   attach(moduleId: string, spec: CompanionAgentSpec): CompanionAgentHandle
 }
 
 export function createCompanionAgentsModuleRegistry(input: {
   service: CompanionAgentService
-  /** The permissions the module declared in its manifest (disclosure list). */
+  /** The permissions the extension's approval holds (`agents:companion` itself is the host's gate). */
   getModulePermissions: (moduleId: string) => readonly string[] | undefined
   /** The ceiling of the agent whose tool call into the module is running, if any. */
   getCallerPermissionCeiling?: () => CliPermissionPreset | null
 }): CompanionAgentsModuleRegistry {
-  const callerCeiling = input.getCallerPermissionCeiling ?? moduleToolCallerCeiling
+  const callerCeiling = input.getCallerPermissionCeiling ?? invokerCeiling
   // One module handle per app handle, so a second attach of the same companion
   // is the same handle here too.
   const handles = new WeakMap<CompanionAgentHandle, CompanionAgentHandle>()
@@ -675,8 +703,8 @@ export function createCompanionAgentsModuleRegistry(input: {
             return Promise.reject(
               new Error(
                 permissions.includes('conversation:bypass')
-                  ? `Module "${moduleId}" cannot run a companion task with tools: 'auto' while it serves an agent's tool call that asks before acting.`
-                  : `Module "${moduleId}" must declare the "conversation:bypass" permission to run a companion task with tools: 'auto', which approves every tool call without asking.`,
+                  ? `Extension "${moduleId}" cannot run a companion task with tools: 'auto' while it serves an agent's tool call that asks before acting.`
+                  : `Extension "${moduleId}" must be approved for "conversation:bypass" to run a companion task with tools: 'auto', which approves every tool call without asking.`,
               ),
             )
           }
@@ -685,10 +713,10 @@ export function createCompanionAgentsModuleRegistry(input: {
       },
       send: (message) => handle.send(message),
       respondToApproval: async (answer) => {
-        if (answer?.decision === 'once' && !declared(moduleId).includes('conversation:operate')) {
+        if (answer?.decision === 'once' && !declared(moduleId).includes('conversation:own')) {
           return {
             ok: false,
-            message: `Module "${moduleId}" must declare the "conversation:operate" permission to allow a tool call; without it a companion's approvals can only be denied.`,
+            message: `Extension "${moduleId}" must be approved for "conversation:own" to allow a tool call; without it a companion's approvals can only be denied.`,
           }
         }
         return handle.respondToApproval(answer)
@@ -701,11 +729,6 @@ export function createCompanionAgentsModuleRegistry(input: {
 
   return {
     attach(moduleId, spec) {
-      if (!declared(moduleId).includes('agents:companion')) {
-        throw new Error(
-          `Module "${moduleId}" must declare the "agents:companion" permission to attach a companion agent.`,
-        )
-      }
       const handle = input.service.attach({ ...spec, agentId: companionAgentIdFor(moduleId, spec.agentId) })
       let wrapped = handles.get(handle)
       if (!wrapped) {

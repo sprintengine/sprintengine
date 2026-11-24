@@ -1,0 +1,148 @@
+import type { StudioCatalogueListing } from '../../../../../packages/studio-protocol/src/public'
+
+// What Browse shows of a catalogue, without the DOM: searching and filtering
+// its listings, and the words for what an extension adds and how it runs.
+
+// Catalogues spell one kind of extension several ways (`syntax`, `syntaxes`,
+// `languages`); Browse folds them into one category, for its chips and its
+// filter. A slug it does not know stands as its own category.
+const CATEGORY_BY_SLUG: Readonly<Record<string, string>> = {
+  themes: 'themes',
+  'app-themes': 'themes',
+  'terminal-themes': 'themes',
+  icons: 'icons',
+  'icon-themes': 'icons',
+  languages: 'languages',
+  syntax: 'languages',
+  syntaxes: 'languages',
+  'language-packs': 'translations',
+  localization: 'translations',
+  i18n: 'translations',
+  translations: 'translations',
+  editors: 'editors',
+  'file-viewers': 'editors',
+  commands: 'commands',
+  keybindings: 'commands',
+  panels: 'commands',
+  agents: 'agents',
+  skills: 'agents',
+  mcp: 'agents',
+  'mcp-servers': 'agents',
+  providers: 'models',
+  models: 'models',
+}
+
+const CATEGORY_WORDS: Readonly<Record<string, string>> = {
+  themes: 'Themes',
+  icons: 'Icons',
+  languages: 'Code languages',
+  translations: 'Translations',
+  editors: 'Editors',
+  commands: 'Commands & panels',
+  agents: 'Skills & MCP',
+  models: 'Model providers',
+}
+
+/** The category a catalogue's slug folds into. */
+export function categoryOf(slug: string): string {
+  const lower = slug.toLowerCase()
+  return CATEGORY_BY_SLUG[lower] ?? lower
+}
+
+/** A category in words: a known one's name, else its slug as words (`music-tools` is "Music tools"). */
+export function categoryWords(category: string): string {
+  const known = CATEGORY_WORDS[category]
+  if (known) return known
+  const words = category.replace(/[-_]+/g, ' ').trim()
+  return words ? `${words[0]!.toUpperCase()}${words.slice(1)}` : category
+}
+
+/** A listing's categories, folded, each once. */
+const listingCategorySet = (listing: Pick<StudioCatalogueListing, 'categories'>) =>
+  new Set(listing.categories.map(categoryOf))
+
+/** A listing matches when every word of the query is in its name, id, publisher or description. */
+export function listingMatches(listing: StudioCatalogueListing, query: string, category: string | null): boolean {
+  if (category && !listingCategorySet(listing).has(categoryOf(category))) return false
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return true
+  const haystack = [
+    listing.name,
+    listing.id,
+    listing.publisher,
+    listing.description ?? '',
+    ...listing.categories,
+    ...[...listingCategorySet(listing)].map(categoryWords),
+  ]
+    .join(' ')
+    .toLowerCase()
+  return words.every((word) => haystack.includes(word))
+}
+
+/** Every category the listings name, folded, most used first, then by name. */
+export function listingCategories(listings: readonly StudioCatalogueListing[]): string[] {
+  const counts = new Map<string, number>()
+  for (const listing of listings)
+    for (const category of listingCategorySet(listing)) counts.set(category, (counts.get(category) ?? 0) + 1)
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([category]) => category)
+}
+
+const CONTRIBUTION_WORDS: Record<string, string> = {
+  commands: 'Command',
+  menus: 'Menu item',
+  topBarItems: 'Top bar item',
+  panels: 'Panel',
+  doors: 'Door',
+  settingsSections: 'Settings section',
+  mcpTools: 'Tool for agents',
+  hooks: 'Agent hook',
+  syntaxes: 'Syntax highlighting',
+  customEditors: 'Editor',
+  keybindings: 'Keyboard shortcut',
+  statusBarItems: 'Status bar item',
+  settings: 'Setting',
+  skills: 'Skill',
+  mcpServers: 'MCP server',
+  providers: 'Model provider',
+}
+
+// A slug or kind is the catalogue's word, so a lookup must not reach an
+// object's inherited members: `constructor` is a category like any other.
+for (const map of [CATEGORY_BY_SLUG, CATEGORY_WORDS, CONTRIBUTION_WORDS]) Object.setPrototypeOf(map, null)
+
+/** What one listed contribution is, in words. */
+export function contributionWords(kind: string): string {
+  return CONTRIBUTION_WORDS[kind] ?? kind
+}
+
+/** How an extension of this tier runs, said plainly; a worker's code has full access. */
+export function tierWords(tier: StudioCatalogueListing['tier']): string {
+  switch (tier) {
+    case 'content':
+      return 'Content only: nothing runs.'
+    case 'declarative':
+      return 'Declarative: it adds what its extension.json says, and runs no code of its own in Studio.'
+    case 'ui':
+      return 'Draws its own surfaces in sandboxed frames.'
+    case 'worker':
+      return 'Runs code on this machine, in a process of its own, with full access to your account here.'
+  }
+}
+
+/** What a listing's install button says, or why there is none. */
+export function installState(
+  listing: Pick<StudioCatalogueListing, 'installed' | 'installable' | 'needsStudio' | 'killed' | 'version'>,
+):
+  | { kind: 'install' }
+  | { kind: 'installed' }
+  | { kind: 'update'; version: string }
+  | { kind: 'elsewhere' }
+  | { kind: 'blocked'; words: string } {
+  if (listing.killed) return { kind: 'blocked', words: 'Removed by Studio’s kill list' }
+  if (listing.installed && !listing.installed.fromHere) return { kind: 'elsewhere' }
+  if (!listing.installable) return { kind: 'blocked', words: `Needs Studio ${listing.needsStudio ?? 'newer'}` }
+  if (!listing.installed) return { kind: 'install' }
+  return listing.installed.version === listing.version
+    ? { kind: 'installed' }
+    : { kind: 'update', version: listing.version }
+}

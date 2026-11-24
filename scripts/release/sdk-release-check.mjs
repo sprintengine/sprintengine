@@ -1,4 +1,4 @@
-// Whether @sprintengine/module-sdk is ready to publish, and under which npm
+// Whether @sprintengine/extension-sdk is ready to publish, and under which npm
 // dist-tag. Run by sdk-publish.yml before `npm publish`, and covered offline by
 // sdk-release-check.test.mjs, which also runs it against this tree so a
 // release-blocking mismatch fails `npm run test:release` on the pull request
@@ -7,14 +7,14 @@
 // It checks what a reader of the package takes on trust:
 //
 //   - the CHANGELOG's newest entry is the version being published;
-//   - the host API version and floor quoted in the docs, the README and every
-//     template manifest are the ones packages/module-sdk/src/host-api.ts
+//   - docs/compatibility.md names the first Studio that reads extension.json,
+//     the EXTENSION_MANIFEST_SINCE packages/extension-sdk/src/extension-manifest.ts
 //     declares;
 //   - a pushed `sdk-v*` tag names the package's version exactly.
 //
 // The parsing is pure; only checkSdkReleaseTree and the command line read files.
 
-import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -48,74 +48,37 @@ export function changelogHeadVersion(changelog) {
   return isSemver(version) ? version : null
 }
 
-// `export const HOST_API_VERSION = 1` and `export const HOST_API_MIN_SUPPORTED = 1`.
-export function hostApiFromSource(source) {
-  const read = (name) => {
-    const match = new RegExp(`export const ${name}\\s*=\\s*(\\d+)`).exec(source)
-    return match ? Number(match[1]) : null
-  }
-  return { version: read('HOST_API_VERSION'), minSupported: read('HOST_API_MIN_SUPPORTED') }
+// `export const EXTENSION_MANIFEST_SINCE = '0.13.0'`: the first Studio that
+// reads extension.json. Null when the source does not declare it as a literal.
+export function manifestSinceFromSource(source) {
+  const match = /export const EXTENSION_MANIFEST_SINCE\s*=\s*['"]([^'"]+)['"]/.exec(source)
+  return match && isSemver(match[1]) ? match[1] : null
 }
 
-// Every `HOST_API_VERSION = n` / `HOST_API_MIN_SUPPORTED = n` a document quotes,
-// with the line it is on, so a doc that states either twice is held to both.
-export function hostApiClaims(text) {
-  const claims = []
-  const lines = text.split(/\r?\n/)
-  lines.forEach((line, index) => {
-    for (const match of line.matchAll(/\b(HOST_API_VERSION|HOST_API_MIN_SUPPORTED)\s*=\s*(\d+)/g)) {
-      claims.push({ name: match[1], value: Number(match[2]), line: index + 1 })
-    }
-  })
-  return claims
-}
-
-export function checkSdkRelease({ packageVersion, changelog, hostApiSource, docs = [], templateManifests = [], tag }) {
+export function checkSdkRelease({ packageVersion, changelog, manifestSource, compatibility, tag }) {
   const problems = []
   if (!isSemver(packageVersion)) {
-    problems.push(`packages/module-sdk/package.json: "${packageVersion}" is not a semver version.`)
+    problems.push(`packages/extension-sdk/package.json: "${packageVersion}" is not a semver version.`)
   }
 
   const head = changelogHeadVersion(changelog)
   if (head === null) {
-    problems.push('packages/module-sdk/CHANGELOG.md: the first "## " heading does not name a version.')
+    problems.push('packages/extension-sdk/CHANGELOG.md: the first "## " heading does not name a version.')
   } else if (head !== packageVersion) {
     problems.push(
-      `packages/module-sdk/CHANGELOG.md: the newest entry is ${head}, and package.json is ${packageVersion}. Write the ${packageVersion} entry first.`,
+      `packages/extension-sdk/CHANGELOG.md: the newest entry is ${head}, and package.json is ${packageVersion}. Write the ${packageVersion} entry first.`,
     )
   }
 
-  const hostApi = hostApiFromSource(hostApiSource)
-  if (hostApi.version === null || hostApi.minSupported === null) {
-    problems.push('packages/module-sdk/src/host-api.ts: HOST_API_VERSION or HOST_API_MIN_SUPPORTED is not an integer literal.')
-  } else {
-    if (hostApi.minSupported > hostApi.version) {
-      problems.push(
-        `packages/module-sdk/src/host-api.ts: HOST_API_MIN_SUPPORTED (${hostApi.minSupported}) is above HOST_API_VERSION (${hostApi.version}).`,
-      )
-    }
-    const expected = { HOST_API_VERSION: hostApi.version, HOST_API_MIN_SUPPORTED: hostApi.minSupported }
-    for (const doc of docs) {
-      const claims = hostApiClaims(doc.text)
-      if (doc.required && !claims.some((claim) => claim.name === 'HOST_API_VERSION')) {
-        problems.push(`${doc.path}: does not quote HOST_API_VERSION = ${hostApi.version}.`)
-      }
-      for (const claim of claims) {
-        if (claim.value !== expected[claim.name]) {
-          problems.push(
-            `${doc.path}:${claim.line}: says ${claim.name} = ${claim.value}, and host-api.ts declares ${expected[claim.name]}.`,
-          )
-        }
-      }
-    }
-    for (const manifest of templateManifests) {
-      const declared = manifest.json?.engines?.hostApi
-      if (declared !== hostApi.version) {
-        problems.push(
-          `${manifest.path}: engines.hostApi is ${JSON.stringify(declared)}, and the SDK's HOST_API_VERSION is ${hostApi.version}.`,
-        )
-      }
-    }
+  const since = manifestSinceFromSource(manifestSource)
+  if (since === null) {
+    problems.push(
+      'packages/extension-sdk/src/extension-manifest.ts: EXTENSION_MANIFEST_SINCE is not a semver string literal.',
+    )
+  } else if (!compatibility.includes('EXTENSION_MANIFEST_SINCE') || !compatibility.includes(since)) {
+    problems.push(
+      `docs/compatibility.md: does not say that extension.json is read from Studio ${since} (\`EXTENSION_MANIFEST_SINCE\`).`,
+    )
   }
 
   if (tag !== undefined && tag !== `${SDK_TAG_PREFIX}${packageVersion}`) {
@@ -130,23 +93,13 @@ export function checkSdkRelease({ packageVersion, changelog, hostApiSource, docs
 
 // The files the check reads, from a checkout at `root`.
 export function readSdkReleaseInputs(root) {
-  const sdk = join(root, 'packages', 'module-sdk')
+  const sdk = join(root, 'packages', 'extension-sdk')
   const read = (...parts) => readFileSync(join(...parts), 'utf8')
-  const templatesRoot = join(sdk, 'templates')
-  const templateManifests = readdirSync(templatesRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
-    .map((entry) => join(templatesRoot, entry.name, 'module', 'manifest.json'))
-    .filter((path) => existsSync(path))
-    .map((path) => ({ path: path.slice(root.length + 1), json: JSON.parse(readFileSync(path, 'utf8')) }))
   return {
     packageVersion: JSON.parse(read(sdk, 'package.json')).version,
     changelog: read(sdk, 'CHANGELOG.md'),
-    hostApiSource: read(sdk, 'src', 'host-api.ts'),
-    docs: [
-      { path: 'docs/compatibility.md', text: read(root, 'docs', 'compatibility.md'), required: true },
-      { path: 'packages/module-sdk/README.md', text: read(sdk, 'README.md'), required: false },
-    ],
-    templateManifests,
+    manifestSource: read(sdk, 'src', 'extension-manifest.ts'),
+    compatibility: read(root, 'docs', 'compatibility.md'),
   }
 }
 
@@ -167,7 +120,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     for (const problem of result.problems) console.error(`- ${problem}`)
     process.exit(1)
   }
-  console.log(`@sprintengine/module-sdk ${result.version} is ready to publish under the "${result.distTag}" tag.`)
+  console.log(`@sprintengine/extension-sdk ${result.version} is ready to publish under the "${result.distTag}" tag.`)
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, `version=${result.version}\ndist_tag=${result.distTag}\n`)
   }

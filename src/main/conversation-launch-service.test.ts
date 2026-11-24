@@ -85,6 +85,29 @@ function harness(
   return { service, record }
 }
 
+// A prompt nobody typed (an agent's, an extension's or a schedule's launch) is
+// handed to the runtime's prompt hooks as its kind, run as whoever started the
+// chat; a person's own launch carries nothing, and is never hooked.
+test('a first message nobody typed is marked for the prompt hooks, as its starter; a person’s is not', async () => {
+  const { service, record } = harness()
+  await service.launch({
+    workspaceId: 'ws-1',
+    cli: 'claude-code',
+    prompt: 'from an agent',
+    startedBy: { kind: 'agent', ceiling: 'auto' },
+    promptHookAs: { inputKind: 'launch', from: 'agent' },
+  })
+  await service.launch({ workspaceId: 'ws-1', cli: 'claude-code', prompt: 'mine', startedBy: { kind: 'person' } })
+  await Promise.resolve()
+  assert.deepEqual(record.sends[0]?.hookAs, {
+    inputKind: 'launch',
+    from: 'agent',
+    starter: { kind: 'agent', ceiling: 'auto' },
+  })
+  assert.equal(record.sends[1]?.message, 'mine')
+  assert.equal(record.sends[1]?.hookAs, undefined)
+})
+
 test('a chat launch writes a conversation agent, starts its session and sends the prompt', async () => {
   const { service, record } = harness()
   const result = await service.launch({
@@ -110,6 +133,8 @@ test('a chat launch writes a conversation agent, starts its session and sends th
   assert.notEqual(agent.name, 'Ada', 'the name is not one the workspace already uses')
 
   assert.deepEqual(record.starts[0], {
+    // What the launch hooks see as its first message.
+    openingPrompt: 'fix the build',
     workspaceRoot: '/repo/a',
     workspaceId: 'ws-1',
     agentId: 'agent-claude-code-abc123',

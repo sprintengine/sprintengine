@@ -236,7 +236,13 @@ export type ModuleWorkspaceGitRemote = {
 }
 
 export type ModuleWorkspaceGitInfoErrorCode =
-  'permission_missing' | 'unknown_workspace' | 'no_folder' | 'not_a_repository' | 'unavailable' | 'git_failed'
+  | 'not_permitted'
+  | 'approval_required'
+  | 'unknown_workspace'
+  | 'no_folder'
+  | 'not_a_repository'
+  | 'unavailable'
+  | 'git_failed'
 
 /**
  * A workspace's checked-out branch (null on a detached HEAD) and its remotes,

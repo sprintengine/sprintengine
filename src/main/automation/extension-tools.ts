@@ -4,7 +4,7 @@ import {
   EXTENSION_GUIDE_TOPICS,
   isExtensionGuideTopic,
   readExtensionGuideTopic,
-} from '../../../packages/module-sdk/src/guide'
+} from '../../../packages/extension-sdk/src/guide'
 import {
   EXTENSION_START_TEMPLATE_ID,
   extensionBriefMarkdown,
@@ -23,7 +23,7 @@ import type { createExtensionScaffoldHandlers } from '../extension-scaffold'
 // makes is the same one the New chat door makes (the scaffold IPC's own
 // handler, so a name the door refuses is refused here too).
 //
-// The guide is the SDK's (packages/module-sdk/guide), read from the copy that
+// The guide is the SDK's (packages/extension-sdk/guide), read from the copy that
 // ships beside the app, so it describes the host API this build provides.
 
 export const EXTENSION_CREATE_TOOL = 'extension.create'
@@ -41,14 +41,16 @@ export const EXTENSION_MUTATION_TOOL_NAMES: readonly string[] = [EXTENSION_CREAT
 export const EXTENSION_TEMPLATE_IDS: readonly string[] = [
   'blank',
   'panel',
-  'global-surface',
+  'door',
+  'editor',
   'chat-companion',
-  'workspace-type',
   'top-bar-item',
   'settings-section',
   'backlog-action',
   'file-action',
   'mcp-tools',
+  'hook-guard',
+  'agent-kit',
 ]
 export const EXTENSION_PART_IDS: readonly string[] = ['main', 'mcp', 'settings', 'door']
 
@@ -108,9 +110,9 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
   const create: McpToolRegistration = {
     name: EXTENSION_CREATE_TOOL,
     description:
-      'Create a new SprintEngine Studio extension (a capability module that adds panels, pages, commands, ' +
-      'Settings sections, MCP tools, chats and more to Studio) as a project ready to build: module/manifest.json, ' +
-      'plugin.json, TypeScript source, tests against the SDK fake hosts, the build, validate and dev-install ' +
+      'Create a new SprintEngine Studio extension (one that adds panels, pages, commands, menu items, Settings ' +
+      'sections, MCP tools, chats and more to Studio) as a project ready to build: extension/extension.json, ' +
+      'TypeScript source that loads with no build step, tests against the SDK fake hosts, and the check and dev-loop ' +
       'scripts, and IDEA.md holding the brief. Use it whenever you are asked to build an extension, plugin or ' +
       'module for SprintEngine Studio, rather than writing those files yourself. It never writes over anything: ' +
       'the folder must be new or empty, and one that already holds an extension is handed back untouched. The ' +
@@ -122,8 +124,8 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
         name: {
           type: 'string',
           description:
-            'The extension’s id: lowercase letters, digits and single hyphens, e.g. "pr-radar". It is the module ' +
-            'id, the new folder’s name, and the prefix of the extension’s commands and IPC channels.',
+            'The extension’s id: lowercase letters, digits and single hyphens, e.g. "pr-radar". It is the ' +
+            'manifest id, the new folder’s name, and (as local.<id>) the key Studio installs it under.',
         },
         folder: {
           type: 'string',
@@ -148,17 +150,17 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
           description:
             'What the project starts as. "blank" (the default) is the smallest project that runs: start there ' +
             'unless one of the others is plainly the surface asked for. The others: panel (a panel in a ' +
-            'workspace), global-surface (a page of its own in the Extensions drawer), chat-companion (an agent ' +
-            'working in chats it starts), workspace-type, top-bar-item, settings-section, backlog-action, ' +
+            'workspace’s pane), door (a page of its own in the Extensions drawer), chat-companion (an agent ' +
+            'working in chats it starts), top-bar-item, settings-section, backlog-action, ' +
             'file-action, mcp-tools (tools agents call).',
         },
         parts: {
           type: 'array',
           items: { type: 'string', enum: [...EXTENSION_PART_IDS] },
           description:
-            'Parts to add on top of the template: main (a Node entry in Studio’s main process), mcp (MCP tools ' +
+            'Parts to add on top of the template: main (the worker, Node code Studio runs for it), mcp (MCP tools ' +
             'from it), settings (a Settings section), door (a page of its own). The same as running ' +
-            '`npx sprintengine-module add <part>` in the project later.',
+            '`npx sprintengine-extension add <part>` in the project later.',
         },
       },
       required: ['name'],
@@ -222,8 +224,8 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
           nextSteps: [
             `Work in ${made.folder}: read IDEA.md, then follow the guide below.`,
             'npm install, then node scripts/check-toolchain.mjs, then npm run check (a fresh project passes).',
-            'Change the project toward the brief, running npm run check after every change.',
-            'npm run dev:install, then tell the person to trust it in Studio: Settings → Modules.',
+            'npm run dev in a background terminal: it loads extension/ into Studio as a development folder and reloads it on every save. If it prints waiting, Studio’s window is asking the person to approve it: tell them, and let it run; it goes on once they approve.',
+            'Change the project toward the brief. Each save prints reloaded, a check and a PNG of the panel to read; fix every log line at file:line. Run npm run check before you finish.',
           ],
           topics: topicIndex(),
         },
@@ -235,8 +237,8 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
   const guide: McpToolRegistration = {
     name: EXTENSION_GUIDE_TOOL,
     description:
-      'Read the guide to building SprintEngine Studio extensions with @sprintengine/module-sdk, one topic at a ' +
-      'time: how to start and the build-install-trust loop (start), which API adds which surface (surfaces), the ' +
+      'Read the guide to building SprintEngine Studio extensions with @sprintengine/extension-sdk, one topic at a ' +
+      'time: how to start and the dev loop with no build step (start, dev-loop), which API adds which surface (surfaces), the ' +
       'manifest, permissions, the rules that bite, the renderer and main host APIs, chats, brokers, the UI kit, ' +
       'troubleshooting a module Studio will not list, trust or run, and publishing. Read `start` before working ' +
       'on an extension project; without a topic the answer lists them all.',
@@ -261,7 +263,7 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
               text: JSON.stringify(
                 {
                   topics: topicIndex(),
-                  note: 'Read `start` first. extension.create makes a new project. The same topics ship in an extension project as node_modules/@sprintengine/module-sdk/guide/<topic>.md.',
+                  note: 'Read `start` first. extension.create makes a new project. The same topics ship in an extension project as node_modules/@sprintengine/extension-sdk/guide/<topic>.md.',
                 },
                 null,
                 2,

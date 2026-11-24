@@ -604,14 +604,44 @@ export const en = {
       buildYourOwnExtension: 'Build your own extension',
       anAgentBuildsItWith: 'An agent builds it with you in a chat',
     },
+    // src/renderer/src/components/extensions/ExtensionEditorView.tsx
+    extensionEditorView: {
+      // The file view's words in a chat, for the same two moments.
+      changedOnDisk: 'This file changed on disk since you opened it. Your edits are not saved.',
+      goneOnDisk: 'This file is gone from disk. Your edits are not saved.',
+      reload: 'Load the file from disk',
+      keepMine: 'Save mine over it',
+      couldNotSave: 'Could not save',
+      couldNotOpen: (editor: unknown) => `${editor} could not open this file`,
+      openInTextEditor: 'Open in the text editor',
+      loading: 'Opening…',
+      saving: 'Saving…',
+      saved: 'Saved',
+      unsaved: 'Not saved yet',
+      readOnly: 'Read only',
+      save: 'Save',
+      by: (editor: unknown, extension: unknown) => `${editor}, from ${extension}`,
+      frameTitle: (editor: unknown, file: unknown) => `${editor}: ${file}`,
+      unsavedTitle: (file: unknown) => `Save the changes to ${file}?`,
+      unsavedBody:
+        'These changes are not saved yet, and leaving this editor would lose them. Save them first, or discard them.',
+      discard: 'Discard',
+      stay: 'Cancel',
+      unsentTitle: 'The editor did not hand over its latest changes',
+      unsentBody:
+        'It did not answer in time. Changes it already handed over stay; the ones it still holds are lost if you go on.',
+      dropUnsent: 'Discard unsent changes and continue',
+    },
+    // src/renderer/src/components/extensions/EditorViewPicker.tsx
+    editorViewPicker: {
+      openWith: 'Open with…',
+      openWithFor: (file: unknown) => `Open ${file} with`,
+      textEditor: 'Text editor',
+      fromExtension: (editor: unknown, extension: unknown) => `${editor} (${extension})`,
+      current: 'Open now',
+    },
     // src/renderer/src/components/extensions/ExtensionTrustReview.tsx
     extensionTrustReview: {
-      unsignedCodeReviewBeforeTrusting: 'Unsigned code — review before trusting',
-      unsignedCodeThatRunsWith:
-        'Unsigned code that runs with the app’s full access, not in a sandbox. Trust it only if you trust its source.',
-      inlineMCPServerReviewIt: 'Inline MCP server — review it before trusting',
-      runsALocalCommandOr:
-        'Runs a local command or connects to a remote endpoint. Trusting it adds and starts the server below.',
       unsignedPluginSkillsReviewBefore: 'Unsigned plugin skills — review before trusting',
       skillsAreInstructionsYourAgents:
         'Skills are instructions your agents follow. This plugin is unsigned; trusting it adds the skills below to this workspace.',
@@ -623,15 +653,8 @@ export const en = {
       communityExtensionReviewItsAccess: 'Community extension — review its access',
       unverifiedPublisherItsCodeRuns: 'Unverified publisher. Its code runs with the app’s access, not in a sandbox.',
       signingKey: 'Signing key',
-      pinnedToCommit: 'Pinned to commit',
       accessItRequests: 'Access it requests',
-      unsignedCodeCanReadAnd:
-        'Unsigned code can read and change anything Studio can, including your projects and agent credentials.',
-      iTrustThisCodeAnd: 'I trust this code and where it came from',
       adds: 'Adds ',
-      mCPServer: ' MCP server',
-      sets: 'Sets ',
-      sendsHeaders: 'Sends headers ',
       toTheWorkspace: ' to the workspace',
     },
     // src/renderer/src/components/extensions/ExtensionsHomeSurface.tsx
@@ -645,18 +668,6 @@ export const en = {
       thingsTheStudioIsMade: ' things the studio is made of.',
       buildYourOwnExtension: 'Build your own extension',
       describeItAndAnAgent: 'Describe it and an agent builds it with you, using the SDK.',
-    },
-    // src/renderer/src/components/extensions/InstallFromGitHubDialog.tsx
-    installFromGitHubDialog: {
-      updateAndRestartTheApp: 'Update and restart the app to install from GitHub.',
-      installExtensionFromGitHub: 'Install extension from GitHub',
-      repositoryURL: 'Repository URL',
-      readingTheRepositoryAtIts: 'Reading the repository at its latest commit…',
-      thisCanTBeInstalled: 'This can’t be installed.',
-      addItAsASkill: 'Add it as a skill source instead',
-      itAddsMCPServersOr: 'It adds MCP servers or skills to a project. Open that project, then install.',
-      done: 'Done',
-      cancel: 'Cancel',
     },
   },
   find: {
@@ -742,24 +753,22 @@ export const en = {
     },
     // src/renderer/src/modules/registry-snapshot.ts
     registrySnapshot: {
-      moduleIsNotEnabledSettings: (id: unknown) => `Module "${id}" is not enabled (Settings → Modules).`,
+      moduleIsNotEnabledSettings: (id: unknown) => `Extension "${id}" is not turned on (Settings → Extensions).`,
     },
     // src/renderer/src/modules/renderer-host.ts
     rendererHost: {
-      theBacklogModuleIsDisabled: 'The Backlog module is disabled.',
-      moduleMustDeclareTheIpc: (moduleId: unknown) =>
-        `Module "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
+      theBacklogModuleIsDisabled: 'Backlog is turned off.',
       workspaceGitInformationIsNot: 'Workspace git information is not available yet.',
       theWorkspaceSGitInformation: "The workspace's git information could not be read.",
       moduleDoesNotDeclareThe: (moduleId: unknown) =>
-        `Module "${moduleId}" does not declare the "conversation:operate" permission, so it cannot open a chat and send its prompt.`,
+        `Extension "${moduleId}" was not approved for "conversation:own", so it cannot open a chat and send its prompt.`,
       moduleDeclaresNeitherChatDraft: (moduleId: unknown) =>
-        `Module "${moduleId}" declares neither "chat:draft" nor "conversation:operate", so it cannot open a chat.`,
+        `Extension "${moduleId}" was approved for neither "chat:draft" nor "conversation:own", so it cannot open a chat.`,
       thisWindowCannotOpenA: 'This window cannot open a chat yet.',
       onlyAnAbsoluteHttpS: 'Only an absolute http(s) URL can be opened.',
       thisWindowCannotOpenLinks: 'This window cannot open links yet.',
       couldNotOpenTheLink: 'Could not open the link.',
-      thisWindowHasNoStudio: 'This window has no Studio connection for module calls.',
+      thisWindowHasNoStudio: 'This window has no Studio connection for extension calls.',
     },
   },
   onboarding: {
@@ -1741,7 +1750,7 @@ export const en = {
       },
       // src/renderer/src/components/panels/ConnectorsPanel/InstalledExtensionsInventory.tsx
       installedExtensionsInventory: {
-        couldNotListInstalledModules: 'Could not list installed modules.',
+        couldNotListInstalledModules: 'Could not list installed extensions.',
         updateTheAppAndRestart: 'Update the app and restart to update extensions.',
         thisUpdateIsnTIn: "This update isn't in the marketplace right now.",
         checking: (name: unknown) => `Checking ${name}…`,
@@ -1777,6 +1786,8 @@ export const en = {
         overwrite: (fileName: unknown) => `Overwrite ${fileName}?`,
         itChangedOnDiskSince: 'It changed on disk since it was opened. Saving replaces that version with yours.',
         overwrite2: 'Overwrite',
+        notSaved: 'Not saved',
+        dismiss: 'Dismiss',
       },
     },
     // src/renderer/src/components/panels/EditorPanel.tsx
@@ -3432,7 +3443,6 @@ export const en = {
       viewSource: 'View source',
       cancel: 'Cancel',
       skills: 'Skills · ',
-      inlineMCP: 'Inline MCP',
       unsigned: 'Unsigned',
       verified: 'Verified',
       community: 'Community',
@@ -3589,6 +3599,17 @@ export const en = {
     },
     // src/renderer/src/components/settings/extensionContributions.ts
     extensionContributions: {
+      skill: (id: unknown) => `Skill “${id}”`,
+      ignoredKeys: (keys: unknown) => `Ignored in its SKILL.md, so agents are not handed it: ${keys}`,
+      hostedMcpServer: (name: unknown) => `MCP server ${name}, hosted`,
+      localMcpServer: (name: unknown) => `MCP server ${name}, run on this computer`,
+      provider: (name: unknown) => `Model provider ${name}`,
+      runs: (commandLine: unknown) => `Runs ${commandLine}`,
+      withEnvironment: (variables: unknown) => `With ${variables}`,
+      reaches: (url: unknown) => `Reaches ${url}`,
+      keySentTo: (origin: unknown) => `Your key for it is sent to ${origin} only`,
+      noKey: (origin: unknown) => `Calls ${origin}, with no key`,
+      extensionPathMeans: (token: unknown) => `${token} is the extension’s own folder`,
       door: (label: unknown) => `${label} door`,
       door2: (value: unknown) => `${value} door`,
       workspace: (label: unknown) => `${label} workspace`,
@@ -3597,6 +3618,9 @@ export const en = {
     // src/renderer/src/components/settings/ExtensionRow.tsx
     extensionRow: {
       adds: 'Adds',
+      hooks: 'Hooks',
+      hooksThisComputerOnly: 'Applies to chats on this computer only, not to chats in WSL or on SSH machines',
+      forAgents: 'For your agents and chats',
       access: 'Access',
       needsCare: 'Needs care',
       also: 'Also',
@@ -3607,12 +3631,12 @@ export const en = {
       review: (name: unknown) => `Review ${name}`,
       review2: 'Review',
       enable: (name: unknown) => `Enable ${name}`,
-      canTBeTrusted: 'Can’t be trusted',
+      canTBeApproved: 'Can’t be approved',
     },
     // src/renderer/src/components/settings/extensionsInstalled.ts
     extensionsInstalled: {
       listingNeedsANewerApp: (value: unknown) => `${value} listing needs a newer app. Update and restart.`,
-      couldnTLoadModuleFolder: (count: unknown, value: unknown) => `Couldn't load ${count} module folder${value}.`,
+      couldnTLoadModuleFolder: (count: unknown, value: unknown) => `Couldn't load ${count} extension folder${value}.`,
     },
     // src/renderer/src/components/settings/extensionsModel.ts
     extensionsModel: {
@@ -3806,7 +3830,6 @@ export const en = {
     modulesSettingsTab: {
       install: 'Install',
       fromAFolder: 'From a folder',
-      fromGitHub: 'From GitHub',
       browseMarketplace: 'Browse marketplace',
       comingSoon: 'Coming soon',
       alwaysOn: 'Always on',
@@ -3943,7 +3966,7 @@ export const en = {
       availabilityUnknownTheCheckDid: 'Availability unknown — the check did not complete',
       reCheckNow: 'Re-check now',
       versionControlCouldNotBe: 'Version control could not be checked.',
-      fromTheModule: (moduleId: unknown) => `From the ${moduleId} module`,
+      fromTheModule: (moduleId: unknown) => `From the ${moduleId} extension`,
       settingsCategories: 'Settings categories',
       interface: 'Interface',
       chatList: 'Chat list',
@@ -4130,22 +4153,22 @@ export const en = {
     },
     // src/renderer/src/components/settings/ThirdPartyModuleList.tsx
     thirdPartyModuleList: {
-      trusted: 'Trusted',
-      signed: 'Signed',
-      unsigned: 'Unsigned',
+      approved: 'Approved',
+      contentOnly: 'Content only',
+      needsApproval: 'Needs approval',
+      cannotBeApproved: 'Can’t be approved',
       invalidSignature: 'Invalid signature',
       noSpecialAccess: 'No special access.',
       updateToV: 'Update to v',
       details: 'Details',
       turnOff: 'Turn off',
       turnOn: 'Turn on',
-      reviewAndTrust: 'Review and trust',
+      reviewAndApprove: 'Review and approve',
       updateToV2: (latestVersion: unknown) => `Update to v${latestVersion}`,
       showFiles: 'Show files',
       copyId: 'Copy id',
-      revokeTrust: 'Revoke trust',
       uninstall: 'Uninstall',
-      notTrusted: 'Not trusted',
+      notApproved: 'Not approved',
       noExtensionsInstalled: 'No extensions installed',
     },
     // src/renderer/src/components/settings/TicketTrackerSection.tsx
@@ -4158,16 +4181,22 @@ export const en = {
     ticketTrackersTab: {
       ticketTrackers: 'Ticket trackers',
     },
-    // src/renderer/src/components/settings/TrustReviewDialog.tsx
-    trustReviewDialog: {
-      trust: (displayName: unknown) => `Trust ${displayName}?`,
+    // src/renderer/src/components/settings/ApprovalReviewDialog.tsx
+    approvalReviewDialog: {
+      approve: (displayName: unknown) => `Approve ${displayName}?`,
+      approveAgain: (displayName: unknown) => `Approve ${displayName} again?`,
+      newInThisVersion: 'New in this version',
+      opensFiles: 'Opens your files in its own editor',
+      editorOpens: (editor: unknown, files: unknown) => `${editor}: ${files}`,
+      hooks: 'Hooks into what your agents and Studio do',
+      hooksFailClosed: 'If it fails or is slow, it refuses rather than lets the action through',
+      hooksThisComputerOnly: 'Applies to chats on this computer only, not to chats in WSL or on SSH machines',
+      forAgents: 'For your agents and chats',
       needsCare: 'Needs care',
       also: 'Also',
       access: 'Access',
-      iTrustThisUnsignedCode: 'I trust this unsigned code',
-      startsAfterARestart: 'Starts after a restart',
       cancel: 'Cancel',
-      trustAndTurnOn: 'Trust and turn on',
+      approveAndTurnOn: 'Approve and turn on',
     },
     // src/renderer/src/components/settings/UpdateChannelSettings.tsx
     updateChannelSettings: {
@@ -4188,15 +4217,11 @@ export const en = {
     },
     // src/renderer/src/components/settings/useThirdPartyExtensions.ts
     useThirdPartyExtensions: {
-      revokeTrustIn: (displayName: unknown) => `Revoke trust in ${displayName}?`,
-      theseWorkspacesStopWorkingUntil: (join: unknown) =>
-        `These workspaces stop working until you trust it again. Files stay on disk: ${join}.`,
-      revokeTrust: 'Revoke trust',
       uninstallingPluginsNeedsANewer: 'Uninstalling plugins needs a newer build.',
       uninstall: (name: unknown) => `Uninstall ${name}?`,
       uninstall2: 'Uninstall',
       uninstalled: (name: unknown) => `Uninstalled ${name}`,
-      itStopsAtTheNext: 'It stops at the next restart.',
+      itsWorkerStopped: 'Its worker stopped.',
     },
     // src/renderer/src/components/settings/versionControlProviders.ts
     versionControlProviders: {
@@ -4430,7 +4455,7 @@ export const en = {
     },
     // src/renderer/src/studio/moduleMethods.ts
     moduleMethods: {
-      thisStudioDoesNotServe: 'This Studio does not serve module methods.',
+      thisStudioDoesNotServe: 'This Studio does not serve extension methods.',
       thisWindowHasNoStudio: 'This window has no Studio connection.',
     },
     // src/renderer/src/studio/pairedCanvas.ts
@@ -5160,6 +5185,10 @@ export const en = {
         pRReviewBadge: 'PR review badge',
         aCountOfThePRs: 'A count of the PRs waiting on you, in the top bar.',
         toolsForMyIssueTracker: 'Tools for my issue tracker',
+        guardForAgentCommands: 'A guard for agents’ commands',
+        refuseRiskyCommandsBefore: 'Refuse risky commands before an agent runs them.',
+        releaseNotesKit: 'Release notes kit',
+        aSkillAndAServerForReleaseNotes: 'A skill and an MCP server every agent can use for release notes.',
         letAnyAgentSearchAnd: 'Let any agent search and update your tracker.',
         releaseDashboard: 'Release dashboard',
         openPRsAndCIStatus: 'Open PRs and CI status across projects.',
@@ -5169,12 +5198,12 @@ export const en = {
         perProjectNotesThatPersist: 'Per-project notes that persist.',
         explainThisFile: 'Explain this file',
         aChatThatWalksThrough: 'A chat that walks through any file.',
+        envFileForm: 'Env file editor',
+        editEnvFilesAsAForm: 'Open .env files as names and values.',
         secondOpinionReviewer: 'Second-opinion reviewer',
         reviewsWhatAnotherChatChanged: 'Reviews what another chat changed.',
         commitConventions: 'Commit conventions',
         aSettingsSectionForYour: 'A Settings section for your commit-message rules.',
-        standupWorkspace: 'Standup workspace',
-        opensOnYesterdaySCommits: "Opens on yesterday's commits and today's Backlog.",
         copyBranchLink: 'Copy branch link',
         aPaletteCommandThatCopies: 'A palette command that copies the branch URL.',
       },
@@ -5510,8 +5539,6 @@ export const en = {
       addingExtension: 'Adding extension…',
       addExtension: 'Add extension',
       addingExtensionFromAFolder: 'Adding extension from a folder',
-      fromAFolder: 'From a folder…',
-      fromGitHub: 'From GitHub…',
       extensions: 'Extensions',
     },
     globalSurface: {
@@ -5608,7 +5635,6 @@ export const en = {
             updateAvailable: (label: unknown) => `${label} — update available`,
             addSource: 'Add source',
             addSkillSourceFromGitHub: 'Add skill source from GitHub…',
-            installExtensionFromGitHub: 'Install extension from GitHub…',
           },
           // src/renderer/src/components/workspace/globalSurface/extensions/catalogue/catalogueTabs.ts
           catalogueTabs: {
@@ -5901,21 +5927,17 @@ export const en = {
     },
     // src/renderer/src/components/workspace/ModuleAbsenceSurfaces.tsx
     moduleAbsenceSurfaces: {
-      moduleNotInstalled: 'Module not installed',
+      moduleNotInstalled: 'Extension not installed',
       isTurnedOff: (label: unknown) => `${label} is turned off`,
       isnTInstalled: (label: unknown) => `${label} isn’t installed`,
       thisWorkspaceNeedsTheModule: (label: unknown) =>
-        `This workspace needs the ${label} module. Your work is safe on disk; turn the module back on to continue.`,
+        `This workspace needs the ${label} extension. Your work is safe on disk; turn the extension back on to continue.`,
       thisWorkspaceNeedsTheModule2: (label: unknown) =>
-        `This workspace needs the ${label} module. Your work is safe on disk; install the module to continue.`,
-      doorModuleNotInstalled: 'Door module not installed',
-      theModuleIsTurnedOff: (label: unknown) => `The ${label} module is turned off.`,
-      theModuleIsnTInstalled: (label: unknown) => `The ${label} module isn’t installed.`,
+        `This workspace needs the ${label} extension. Your work is safe on disk; install the extension to continue.`,
+      doorModuleNotInstalled: 'Door extension not installed',
+      theModuleIsTurnedOff: (label: unknown) => `The ${label} extension is turned off.`,
+      theModuleIsnTInstalled: (label: unknown) => `The ${label} extension isn’t installed.`,
       findItInPlugins: 'Find it in Plugins',
-      updateStudioToInstallExtensions: 'Update Studio to install extensions.',
-      couldNotVerifyThisExtension: 'Could not verify this extension.',
-      needsYourTrustFirstReview: (name: unknown) => `${name} needs your trust first. Review it in Plugins.`,
-      theInstallCouldNotBe: 'The install could not be completed.',
     },
     newWorkspace: {
       // src/renderer/src/components/workspace/newWorkspace/DesignSystemAttachStep.tsx
@@ -6706,7 +6728,7 @@ export const en = {
       idle: 'Idle',
       chatAgent: 'Chat agent',
       newAgent: 'New agent',
-      openModuleSettings: 'Open module settings',
+      openModuleSettings: 'Open extension settings',
       tabActions: (getName: unknown) => `Tab actions: ${getName}`,
       rename: 'Rename',
       hideTab: 'Hide tab',

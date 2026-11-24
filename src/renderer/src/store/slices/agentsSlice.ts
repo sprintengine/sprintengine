@@ -146,6 +146,8 @@ interface AgentsSliceActions {
   setActiveFile: (workspaceId: WorkspaceId, path: string) => void
   updateFileContent: (workspaceId: WorkspaceId, path: string, content: string) => void
   markFileClean: (workspaceId: WorkspaceId, path: string) => void
+  /** The tab holds edits not on disk that live outside the text buffer: a binary file's, in an extension's editor. */
+  markFileDirty: (workspaceId: WorkspaceId, path: string) => void
   remapOpenFiles: (workspaceId: WorkspaceId, fromPath: string, toPath: string) => void
   removeOpenFilesForPath: (workspaceId: WorkspaceId, path: string) => void
 }
@@ -419,6 +421,13 @@ export function createAgentsSlice(set: AgentsSliceSet): AgentsSlice {
         const ws = state.workspaces.find((w) => w.id === workspaceId)
         const file = ws?.editorState?.openFiles.find((f) => f.path === path)
         if (file) file.isDirty = false
+      }),
+
+    markFileDirty: (workspaceId, path) =>
+      set((state) => {
+        const ws = state.workspaces.find((w) => w.id === workspaceId)
+        const file = ws?.editorState?.openFiles.find((f) => f.path === path)
+        if (file && !file.isDirty) file.isDirty = true
       }),
 
     remapOpenFiles: (workspaceId, fromPath, toPath) => {

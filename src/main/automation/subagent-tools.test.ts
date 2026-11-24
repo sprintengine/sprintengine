@@ -55,7 +55,7 @@ function harness(
   const stops: string[] = []
   const dismissed: string[] = []
   const dismissedChats: string[] = []
-  const tasks: { agentId: string; message: string }[] = []
+  const tasks: { agentId: string; message: string; starter?: unknown }[] = []
   const reads = new Map<string, number>()
   let clock = 1_000
   const deps: SubagentToolsDeps = {
@@ -114,8 +114,8 @@ function harness(
         return round
       },
     },
-    sendTask: async ({ agentId }, message) => {
-      tasks.push({ agentId, message })
+    sendTask: async ({ agentId }, message, starter) => {
+      tasks.push({ agentId, message, starter })
       return options.sent ? options.sent(agentId, message) : { ok: true }
     },
     providerResumes: (providerId) => options.resumes?.(providerId) ?? true,
@@ -171,6 +171,8 @@ test('a start writes who the sub-agent belongs to and hands it only its task', a
   assert.equal(request.newChat, undefined)
   assert.deepEqual(request.subagentOf, { agentId: PARENT, startedAt: 1_000, task: 'Check the build' })
   assert.equal(request.prompt, 'Act as the review sub-agent for this task.\n\nCheck the build')
+  // The task is the parent agent's words, which the extensions' prompt hooks check.
+  assert.deepEqual(request.promptHookAs, { inputKind: 'subagent', from: 'agent' })
   assert.equal(request.name, 'Cursor · Model muse')
   assert.equal(body(started).subagentId, 'agent-child-1')
   assert.equal(body(started).status, 'working')
@@ -436,7 +438,12 @@ test('a resumed Codex reviewer gets its task in the same chat, on the model and 
   const resumed = await h.call('subagent.resume', { subagentId, task: 'Round 2: check the two fixes.' })
   assert.equal(resumed.isError, undefined, JSON.stringify(resumed.structuredContent))
   assert.equal(h.requests.length, 1, 'no new sub-agent is started')
-  assert.deepEqual(h.tasks, [{ agentId: subagentId, message: 'Round 2: check the two fixes.' }], 'sent as written')
+  assert.deepEqual(
+    h.tasks,
+    // Sent as written, as the parent agent's, for the prompt hooks it meets.
+    [{ agentId: subagentId, message: 'Round 2: check the two fixes.', starter: { kind: 'agent', ceiling: 'bypass' } }],
+    'sent as written',
+  )
   const answer = body(resumed)
   assert.equal(answer.subagentId, subagentId)
   assert.equal(answer.cli, 'codex')

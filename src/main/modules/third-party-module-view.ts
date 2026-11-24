@@ -1,140 +1,175 @@
-import { checkHostApiCompatibility } from '../../shared/modules/host-api'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import type {
   ModuleEnablementOverrides,
   ThirdPartyModuleLaunchView,
-  ThirdPartyModuleOrigin,
   ThirdPartyModuleView,
 } from '../../shared/modules/manifest'
-import type { MarketplacePluginInstallReceipt } from '../marketplace/plugin-lifecycle'
-import { computeHostApiIneligible } from './host-api-gate'
-import { readThirdPartyMainLaunchSnapshot, type ThirdPartyMainLaunchSnapshot } from './third-party-main-loader'
-import { rendererEntryView } from './third-party-renderer-entries'
+import type { WorkerStatus } from '../../server/extensions/workers/worker-manager'
+import { sanitizeEntryMessage } from './entry-containment'
+import { approvalView } from './extension-approval-view'
+import { isExtensionRunnable } from './module-signature'
+import { surfaceEntriesView } from './extension-surface-entries'
 import type { InstalledModule } from './user-module-registry'
+import { ignoredSkillKeys } from '../../server/extensions/agent-contributions/skill-frontmatter'
 
-// One installed extension as `module.installed` answers it: what is on disk,
-// its trust, where it came from, and whether it runs (module-lifecycle.ts).
+// One installed extension as `extension.installed` answers it: what is on disk,
+// whether the person approved it as it is, its signature, and whether it runs
+// (module-lifecycle.ts).
 
-// Each module a receipt put in place, by module id, with where the receipt's
-// bundle came from. A receipt without a source predates the field and was
-// always the registry.
-export function moduleOriginsFromReceipts(
-  receipts: readonly MarketplacePluginInstallReceipt[],
-): Map<string, ThirdPartyModuleOrigin> {
-  const origins = new Map<string, ThirdPartyModuleOrigin>()
-  for (const receipt of receipts) {
-    const origin: ThirdPartyModuleOrigin =
-      receipt.source?.kind === 'github'
-        ? { kind: 'github', pluginId: receipt.id, repo: `${receipt.source.owner}/${receipt.source.repo}` }
-        : { kind: 'marketplace', pluginId: receipt.id }
-    for (const component of receipt.components) {
-      if (component.kind === 'module') origins.set(component.id, origin)
-    }
-  }
-  return origins
+/** What this server run did with its extensions: which it loaded, how each worker stands, and their tools. */
+export type ExtensionRunView = {
+  /** Whether this run's kernel holds its worker (it was approved and switched on at load, or since). */
+  attached(moduleId: string): boolean
+  /** Its worker now, while the kernel holds it. */
+  worker(moduleId: string): WorkerStatus | null
+  /** Why it failed to load in this run. */
+  loadError(moduleId: string): string | undefined
+  /** The MCP tools it serves on the gateway. */
+  mcpTools(moduleId: string): string[]
+}
+
+export const NO_EXTENSION_RUN: ExtensionRunView = {
+  attached: () => false,
+  worker: () => null,
+  loadError: () => undefined,
+  mcpTools: () => [],
 }
 
 export function toThirdPartyModuleView(
   module: InstalledModule,
-  launchSnapshot: ThirdPartyMainLaunchSnapshot = readThirdPartyMainLaunchSnapshot(),
+  run: ExtensionRunView = NO_EXTENSION_RUN,
   enablementOverrides: ModuleEnablementOverrides = {},
-  extras: Pick<ThirdPartyModuleView, 'origin' | 'mcpTools'> = {},
 ): ThirdPartyModuleView {
   return {
     manifest: module.manifest,
-    trust: module.trust.status,
-    fingerprint: module.trust.fingerprint,
-    launch: launchViewFor(module, launchSnapshot, enablementOverrides),
-    ...(module.trust.status === 'trusted' && module.trust.via ? { trustedVia: module.trust.via } : {}),
-    ...extras,
+    extension: module.extension,
+    approval: approvalView(module.standing.approval),
+    signature: module.standing.signature,
+    ...(module.standing.signer ? { signer: module.standing.signer } : {}),
+    launch: launchViewFor(module, run, enablementOverrides),
+    mcpTools: run.mcpTools(module.key),
+    ...(module.standing.killed ? { killed: module.standing.killed } : {}),
+    ...ignoredSkillKeysView(module),
+    ...(module.development
+      ? {
+          development: {
+            folder: module.moduleRoot,
+            overrides: module.development.overrides,
+            ...(module.development.waiting ? { waiting: true } : {}),
+          },
+        }
+      : {}),
   }
+}
+
+/** Each skill's frontmatter keys its projected copy drops, for the install review to list as ignored. */
+function ignoredSkillKeysView(module: InstalledModule): { ignoredSkillKeys?: Record<string, string[]> } {
+  const ignored: Record<string, string[]> = {}
+  for (const skill of module.extension.contributes.skills) {
+    let text: string
+    try {
+      text = readFileSync(join(module.moduleRoot, ...skill.path.split('/'), 'SKILL.md'), 'utf8')
+    } catch {
+      continue
+    }
+    const keys = ignoredSkillKeys(text)
+    if (keys.length > 0) ignored[skill.id] = keys
+  }
+  return Object.keys(ignored).length > 0 ? { ignoredSkillKeys: ignored } : {}
 }
 
 function launchViewFor(
   module: InstalledModule,
-  launchSnapshot: ThirdPartyMainLaunchSnapshot,
+  run: ExtensionRunView,
   enablementOverrides: ModuleEnablementOverrides,
 ): ThirdPartyModuleLaunchView {
   return {
-    ...mainEntryLaunchView(module, launchSnapshot, enablementOverrides),
-    mainLoaded: launchSnapshot.loaded.has(module.manifest.id),
-    rendererEntry: rendererEntryView(module),
+    ...mainEntryLaunchView(module, run, enablementOverrides),
+    mainLoaded: run.attached(module.key),
+    rendererEntry: surfaceEntriesView(module),
   }
 }
 
 function mainEntryLaunchView(
   module: InstalledModule,
-  launchSnapshot: ThirdPartyMainLaunchSnapshot,
+  run: ExtensionRunView,
   enablementOverrides: ModuleEnablementOverrides,
 ): ThirdPartyModuleLaunchView {
-  const id = module.manifest.id
-  const hasMainEntry = Boolean(module.manifest.entry?.main)
-  // Built for a host API this app does not provide: neither entry loads, and
-  // trusting it would not change that, so it says so ahead of any trust
-  // state. A tampered module keeps its own, louder, reason (host-api-gate.ts).
-  if (module.trust.status !== 'invalid' && computeHostApiIneligible([module])[id]) {
-    const compatibility = checkHostApiCompatibility(module.manifest)
+  const id = module.key
+  const { standing } = module
+  const hasMainEntry = module.extension.tier === 'worker' && Boolean(module.extension.main)
+  if (standing.killed) {
     return {
-      status: 'blocked_host_api',
+      status: 'killed',
       hasMainEntry,
       expectedToLoad: false,
-      message: compatibility.ok ? 'Built for another host API.' : compatibility.message,
+      message: `Studio switched it off: its kill list removed this version. ${standing.killed.reason}`,
     }
   }
-  if (module.trust.status === 'invalid') {
+  if (standing.signature === 'invalid') {
     return {
       status: 'blocked_invalid',
       hasMainEntry,
       expectedToLoad: false,
-      message: module.trust.tampered
-        ? 'Its files do not match the digests its manifest signs (tampered), so it will not run.'
-        : 'Invalid signature blocks startup execution.',
+      message: standing.tampered
+        ? 'Its files do not match the digests extension.sig signs (tampered), so it will not run.'
+        : 'Its signature is invalid, so it will not run.',
     }
   }
-  if (module.trust.status === 'signed') {
+  if (!isExtensionRunnable(standing)) {
     return {
-      status: 'blocked_signed',
+      status: 'awaiting_approval',
       hasMainEntry,
       expectedToLoad: false,
-      message: 'Signed module is waiting for trust before startup execution.',
-    }
-  }
-  if (module.trust.status === 'unsigned') {
-    return {
-      status: 'blocked_unsigned',
-      hasMainEntry,
-      expectedToLoad: false,
-      message: 'Unsigned module is waiting for trust before startup execution.',
+      message:
+        standing.approval.state === 'unavailable'
+          ? module.development
+            ? 'Its folder cannot be read as a development folder (too many files, or unreadable), so there is nothing to approve.'
+            : 'It holds files an extension cannot ship, so there is nothing to approve. Install it again.'
+          : 'It waits for your approval before it runs.',
     }
   }
 
   if (!hasMainEntry) {
     return {
-      status: 'trusted_manifest_only',
+      status: 'runs_without_worker',
       hasMainEntry,
       expectedToLoad: false,
-      message: 'Trusted manifest-only module; no main entry will run.',
+      message: 'It has no worker; nothing runs in the background.',
     }
   }
 
-  const launchError = launchSnapshot.errors.get(id)
-  if (launchError) {
+  const loadError = run.loadError(id)
+  if (loadError) {
     return {
       status: 'launch_error',
       hasMainEntry,
       expectedToLoad: false,
-      message: launchError,
+      message: sanitizeEntryMessage(loadError, 'The extension’s worker failed during startup.'),
+    }
+  }
+  const worker = run.worker(id)
+  if (worker?.state === 'errored' || (worker?.state === 'stopped' && worker.message)) {
+    return {
+      status: 'launch_error',
+      hasMainEntry,
+      expectedToLoad: false,
+      message: sanitizeEntryMessage(worker.message ?? '', 'Its worker stopped.'),
     }
   }
 
   const expectedToLoad = enablementOverrides[id] ?? module.manifest.defaultEnabled
   return {
-    status: 'trusted_executable',
+    status: 'runs_worker',
     hasMainEntry,
     expectedToLoad,
+    ...(worker?.state === 'waiting' && worker.message ? { waiting: worker.message } : {}),
     message: expectedToLoad
-      ? 'Trusted main entry is eligible for startup execution.'
-      : module.manifest.defaultEnabled
-        ? 'Trusted main entry is disabled by user setting until enabled.'
-        : 'Trusted main entry is disabled by default until enabled.',
+      ? worker?.state === 'running'
+        ? 'Its worker runs.'
+        : 'Its worker starts when something uses it.'
+      : 'Its worker is switched off until you switch it on.',
   }
 }

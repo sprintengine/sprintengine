@@ -6,7 +6,7 @@ on:
       - .github/workflows/marketplace-registry.yml
       - icons/**
       - marketplace.json
-      - plugins/**
+      - skills/**
       - trusted-publishers.json
   push:
     branches:
@@ -15,7 +15,7 @@ on:
       - .github/workflows/marketplace-registry.yml
       - icons/**
       - marketplace.json
-      - plugins/**
+      - skills/**
       - trusted-publishers.json
 
 permissions:
@@ -50,7 +50,7 @@ jobs:
         working-directory: sprintengine
         run: npm ci
 
-      - name: Validate registry root and plugin signatures
+      - name: Validate registry root
         working-directory: sprintengine
         run: npm run verify:marketplace-registry -- --root "$GITHUB_WORKSPACE/registry"
 

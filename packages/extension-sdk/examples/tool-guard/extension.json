@@ -1,0 +1,15 @@
+{
+  "$schema": "../../extension.schema.json",
+  "manifestVersion": 1,
+  "id": "tool-guard",
+  "version": "1.0.0",
+  "engines": { "studio": ">=0.13.0" },
+  "tier": "worker",
+  "name": "Tool guard",
+  "description": "In Claude Code chats, refuses an agent's shell command that deletes files recursively and by force, and logs each tool call an agent finishes.",
+  "license": "MIT",
+  "main": "main.cjs",
+  "contributes": {
+    "hooks": [{ "point": "agent.tool.before", "onError": "deny" }, { "point": "agent.tool.after" }]
+  }
+}

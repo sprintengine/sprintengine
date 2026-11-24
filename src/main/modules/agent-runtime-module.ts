@@ -1,3 +1,4 @@
+import type { ExtensionHooks } from '../../server/extensions/hooks/extension-hooks'
 import type { AppServices } from '../app-services'
 import type { StudioPlatform } from '../../server/platform/platform'
 import type { ConversationCliRuntimeOverrides } from '../../shared/conversation-runtime'
@@ -36,7 +37,9 @@ import { createModuleGitHubRegistry } from '../module-host/module-github'
 import { createModuleSecretsRegistry } from '../module-host/module-secrets'
 import { createModuleStorageRegistry } from '../module-host/module-storage'
 import { moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
-import { moduleToolCallerCeiling } from '../module-host/module-tool-caller'
+import { declaredSettingsReader, withDeclaredSettings } from './extension-declared-settings'
+import { defaultUserModuleRoot } from './user-module-registry'
+import { invokerCeiling } from '../module-host/extension-invocation'
 import { createCompanionAgentService, createCompanionAgentsModuleRegistry } from '../companion-agent-service'
 import { createModuleTextGenerationRegistry } from '../text-generation/module-text-generation'
 import { createChatRuntimeLister } from '../module-host/module-chat-runtimes'
@@ -99,7 +102,10 @@ export type AgentRuntimeServices = Pick<
   | 'conversationModelCatalog'
   | 'createConversationHost'
 > &
-  Partial<Pick<AppServices, 'terminalRuntime' | 'agentControlPlane' | 'agentLaunchService' | 'sprintengineAuth'>>
+  Partial<Pick<AppServices, 'terminalRuntime' | 'agentControlPlane' | 'agentLaunchService' | 'sprintengineAuth'>> & {
+    /** Extensions' agent hooks, where the core runs in this process. */
+    extensionHooks?: ExtensionHooks | null
+  }
 
 export function createAgentRuntimeModule(
   services: AgentRuntimeServices,
@@ -131,7 +137,10 @@ export function createAgentRuntimeModule(
       // A module can create a workspace with no window open; the id it gets
       // back is the one main just committed.
       host.provideService(WorkspaceServiceToken, () =>
-        createModuleWorkspaceService({ workspaceSync: services.workspaceSyncService }),
+        createModuleWorkspaceService({
+          workspaceSync: services.workspaceSyncService,
+          extensionHooks: services.extensionHooks ?? null,
+        }),
       )
       // Read-only workspace context (id → root/name/mode), read from the same
       // registry the create flow writes. Closing a workspace deletes its
@@ -173,10 +182,15 @@ export function createAgentRuntimeModule(
       // Per-module, per-workspace JSON storage (SDK getModuleStorage): the
       // host owns file placement so modules stop inventing locations.
       host.provideService(ModuleStorageToken, () => createModuleStorageRegistry({ userDataDir: () => paths.dataDir() }))
-      // Every module's app-level state (its Settings section's values), as the
-      // windows last pushed it: what `MainHost.getModuleAppState` reads, so
-      // `entry.main` sees the person's settings with no window open.
-      host.provideService(ModuleAppStateToken, () => moduleAppStateMirrorFor(paths.dataDir()))
+      // Every extension's Settings values, which its frames write
+      // (`settings.set`) and `MainHost.getModuleAppState` reads, so a worker
+      // sees the person's settings with no window open.
+      // A setting an extension declares reads as Settings reads it (the
+      // stored value while it fits, else its default), and a write to one is
+      // held to its declaration.
+      host.provideService(ModuleAppStateToken, () =>
+        withDeclaredSettings(moduleAppStateMirrorFor(paths.dataDir()), declaredSettingsReader(defaultUserModuleRoot)),
+      )
       // Companion agents: workspace-bound background agents driven through the
       // shared conversation runtime. The core service is app-internal
       // (first-party consumers require it directly); the moduleId-scoped
@@ -219,7 +233,7 @@ export function createAgentRuntimeModule(
             ConversationCliRuntimeOverrides | undefined,
         getModulePermissions: options.getModulePermissions,
         // A chat a module's MCP tool starts is held to the calling agent's preset.
-        getCallerPermissionCeiling: moduleToolCallerCeiling,
+        getCallerPermissionCeiling: invokerCeiling,
       })
       host.provideService(ConversationModuleServiceToken, () => conversations.registry)
       host.onShutdown(() => conversations.dispose())
@@ -240,11 +254,10 @@ export function createAgentRuntimeModule(
       )
       // Headless text generation behind the SDK's getTextGenerationService:
       // one prompt answered by the person's own agent CLI (the one they chose
-      // for Studio's text generation, by default), checked per call against
-      // `agents:generate`, in a lane per module.
+      // for Studio's text generation, by default), in a lane per module.
+      // The host's gate holds an extension's calls to `agents:generate`.
       host.provideService(TextGenerationModuleServiceToken, () =>
         createModuleTextGenerationRegistry({
-          getModulePermissions: options.getModulePermissions,
           generate: (request) => generateHeadlessText(request),
           getCliRuntimes: () => effectiveAgentLaunchSettings(services.agentLaunchSettings.get()).cliRuntimes,
           ...(options.getTextGenerationSettings
@@ -255,21 +268,19 @@ export function createAgentRuntimeModule(
       // The brokers behind the SDK's getSecretsService and getGitHubService: a
       // module stores a secret and spends it on the origins it named, or calls
       // the signed-in person's GitHub, without ever holding the value itself.
-      // Each checks its permission (`secrets`, `github`) on every call.
+      // The host's gate holds an extension's calls to `secrets:own` and
+      // `github:api`.
       const secrets = createModuleSecretsRegistry({
         userDataDir: paths.dataDir(),
         cipher,
-        getModulePermissions: options.getModulePermissions,
       })
       host.provideService(ModuleSecretsServiceToken, () => secrets.registry)
       const github = createModuleGitHubRegistry({
         tokenStore: services.githubTokenStore,
-        getModulePermissions: options.getModulePermissions,
       })
       host.provideService(GitHubModuleServiceToken, () => github.registry)
       // The Backlog, usage and activity services (host-data-services.ts).
       provideHostDataServices(host, services, {
-        getModulePermissions: options.getModulePermissions,
         dataDir: () => paths.dataDir(),
       })
     },

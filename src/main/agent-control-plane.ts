@@ -1,5 +1,9 @@
 import type { AgentPhase, AgentStateSource, TerminalSessionSnapshot } from '../shared/electron-api'
-import type { ConversationMessageOrigin, ConversationSessionSummary } from '../shared/conversation-runtime'
+import type {
+  ConversationMessageOrigin,
+  ConversationPromptHookAs,
+  ConversationSessionSummary,
+} from '../shared/conversation-runtime'
 import { bracketedTerminalPaste } from '../shared/terminal-paste'
 
 /**
@@ -104,6 +108,8 @@ type ControlPlaneFailureReason =
   | 'unsupported'
   | 'write_failed'
   | 'timeout'
+  /** An extension's hook refused it; the message names the extension and why. */
+  | 'refused'
 
 export type ControlPlaneResolution =
   | { ok: true; session: ControlPlaneSession }
@@ -226,9 +232,34 @@ export type ControlPlaneConversationPort = {
     sessionId: string
     message: string
     origin?: ConversationMessageOrigin
+    hookAs?: ConversationPromptHookAs
   }): Promise<{ ok: boolean; message?: string; code?: string }>
   interrupt(input: { sessionId: string }): Promise<{ ok: boolean; message?: string }>
 }
+
+/** What extensions' hooks make of something about to be sent: null when none hooks it. */
+export type ControlPlaneHookAnswer = Promise<{ ok: true; text: string } | { ok: false; message: string }> | null
+
+/**
+ * Extensions' hooks on what the plane hands an agent or types into a terminal
+ * (`agent.prompt.before`, `terminal.write.before`), asked inside the
+ * session's queue so writes to one session stay in order while a hook decides.
+ * A chat's message is checked by the runtime's own door instead, which every
+ * send to a chat comes through: the plane says what it is (`chatPrompt`).
+ */
+export type ControlPlaneHooks = {
+  /** A terminal agent's prompt. */
+  prompt(session: ControlPlaneSession, text: string): ControlPlaneHookAnswer
+  /** A raw write: its text, and whether it ends with Enter (a trailing `\r`), each of which a hook may change. */
+  write(session: ControlPlaneSession, text: string, enter: boolean): ControlPlaneWriteHookAnswer
+  /** What a message to a chat is, for the runtime's prompt hooks. */
+  chatPrompt(): ConversationPromptHookAs
+}
+
+/** What extensions' hooks make of a raw write: null when none hooks it. */
+export type ControlPlaneWriteHookAnswer = Promise<
+  { ok: true; text: string; enter: boolean } | { ok: false; message: string }
+> | null
 
 export type AgentControlPlaneDeps = {
   terminal: ControlPlaneTerminalPort
@@ -240,6 +271,7 @@ export type AgentControlPlaneDeps = {
   conversation?: ControlPlaneConversationPort
   now?: () => number
   delay?: (ms: number) => Promise<void>
+  hooks?: ControlPlaneHooks
 }
 
 const DEFAULT_SUBMIT_DELAY_MS = 50
@@ -383,10 +415,15 @@ export class AgentControlPlane {
           message: 'A conversation session cannot pre-fill text without sending it as a turn.',
         }
       }
-      return this.enqueue(session.sessionId, () => this.sendConversationTurn(session, text, options.origin))
+      return this.enqueue(session.sessionId, () =>
+        this.sendConversationTurn(session, text, options.origin, this.deps.hooks?.chatPrompt()),
+      )
     }
 
-    return this.enqueue(session.sessionId, () => this.sendTerminalPrompt(session.sessionId, text, submit, options))
+    return this.enqueue(session.sessionId, async () => {
+      const hooked = await this.hooked(session, text)
+      return hooked.ok ? this.sendTerminalPrompt(session.sessionId, hooked.text, submit, options) : hooked
+    })
   }
 
   /** Send the carriage return that submits whatever is sitting at the prompt. */
@@ -483,10 +520,28 @@ export class AgentControlPlane {
       }
     }
     return this.enqueue<ControlPlaneSendResult>(session.sessionId, async () => {
-      const written = this.writeTerminal(session.sessionId, data)
+      // Enter is its own field for the hooks, as the bytes end with it or not.
+      const enter = data.endsWith('\r')
+      const pending = this.deps.hooks?.write(session, enter ? data.slice(0, -1) : data, enter)
+      const answer = pending ? await pending : null
+      if (answer && !answer.ok)
+        return { ok: false, sessionId: session.sessionId, reason: 'refused', message: answer.message }
+      const bytes = answer ? `${answer.text}${answer.enter ? '\r' : ''}` : data
+      const written = this.writeTerminal(session.sessionId, bytes)
       if (!written.ok) return written
       return { ok: true, sessionId: session.sessionId, transport: 'terminal', submitted: false }
     })
+  }
+
+  /** The prompt extensions' hooks leave to send to a terminal agent, or their refusal. Nothing awaited when none hooks it. */
+  private async hooked(
+    session: ControlPlaneSession,
+    text: string,
+  ): Promise<{ ok: true; text: string } | Extract<ControlPlaneSendResult, { ok: false }>> {
+    const pending = this.deps.hooks?.prompt(session, text)
+    if (!pending) return { ok: true, text }
+    const answer = await pending
+    return answer.ok ? answer : { ok: false, sessionId: session.sessionId, reason: 'refused', message: answer.message }
   }
 
   /** Read a session's retained output. */
@@ -684,6 +739,7 @@ export class AgentControlPlane {
     session: ControlPlaneSession,
     text: string,
     origin: ConversationMessageOrigin | undefined,
+    hookAs: ConversationPromptHookAs | undefined,
   ): Promise<ControlPlaneSendResult> {
     const conversation = this.deps.conversation
     if (!conversation) return this.conversationUnavailable(session.sessionId)
@@ -691,14 +747,16 @@ export class AgentControlPlane {
       sessionId: session.sessionId,
       message: text,
       ...(origin ? { origin } : {}),
+      ...(hookAs ? { hookAs } : {}),
     })
     if (!result.ok) {
       return {
         ok: false,
         sessionId: session.sessionId,
         // A chat refuses a second turn rather than queueing it: that is "not
-        // now", which a caller retries, not a failed write.
-        reason: result.code === 'busy' ? 'busy' : 'write_failed',
+        // now", which a caller retries, not a failed write. An extension's
+        // refusal is the send's, in its words.
+        reason: result.code === 'busy' ? 'busy' : result.code === 'refused_by_extension' ? 'refused' : 'write_failed',
         message: result.message ?? 'Conversation turn was rejected.',
       }
     }

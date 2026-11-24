@@ -1,7 +1,6 @@
 import { readFile, readdir, stat } from 'fs/promises'
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { createHash } from 'crypto'
-import { homedir } from 'os'
 import { isAbsolute, join, resolve } from 'path'
 
 import type {
@@ -13,19 +12,22 @@ import type {
   PluginManifestValidationIssue,
   PluginManifestValidationResult,
   PluginRegistryListEntry,
-  PluginSource,
 } from '../shared/plugin-manifest'
 
-import { classifySignedManifestTrust, type ModuleTrustContext } from './modules/module-signature'
 import { validateManifestStructure } from './plugin-manifest-validate'
 import { declaredPermissionModes, declaredPermissionPresets, pluginHostedVia } from './plugin-render'
 
+// The agent CLIs and the conversation providers Studio knows. The CLIs and
+// Studio's own providers ship with the app (`resources/plugins/<id>/plugin.json`);
+// a provider an extension adds (`contributes.providers` in its extension.json)
+// is read live from what the installed extensions project
+// (server/extensions/agent-contributions), under an id its install key
+// namespaces, so it can never take a built-in's.
+
 export type PluginRegistryOptions = {
   bundledRoot: string
-  userRoot?: string
-  providerTrustContext?: ModuleTrustContext
-  productionMode?: boolean
-  allowUnsignedExecutableAdapters?: boolean
+  /** The providers installed extensions add now: read on every lookup, so an install or an uninstall holds at once. */
+  extensionProviders?: () => LoadedConversationProvider[]
 }
 
 export type PluginRegistry = {
@@ -44,243 +46,64 @@ export type PluginRegistryLoadReport = {
   loaded: LoadedPlugin[]
   loadedConversationProviders: LoadedConversationProvider[]
   rejected: Array<{
-    source: 'bundled' | 'user'
     manifestPath: string
     issues: PluginManifestValidationIssue[]
   }>
-}
-
-export function defaultUserPluginRoot(): string {
-  return join(homedir(), '.sprintengine', 'plugins')
 }
 
 export function createPluginRegistry(options: PluginRegistryOptions): PluginRegistry {
   const plugins = new Map<string, LoadedPlugin>()
   const providers = new Map<string, LoadedConversationProvider>()
 
-  async function loadFromRoot(root: string, source: 'bundled' | 'user'): Promise<PluginRegistryLoadReport> {
-    const loaded: LoadedPlugin[] = []
-    const loadedConversationProviders: LoadedConversationProvider[] = []
-    const rejected: PluginRegistryLoadReport['rejected'] = []
-
-    if (!existsSync(root)) return { loaded, loadedConversationProviders, rejected }
-
-    let entries: string[] = []
-    try {
-      entries = await readdir(root)
-    } catch {
-      return { loaded, loadedConversationProviders, rejected }
-    }
-
-    for (const entry of entries) {
-      const pluginRoot = join(root, entry)
-      try {
-        const entryStat = await stat(pluginRoot)
-        if (!entryStat.isDirectory()) continue
-      } catch {
-        continue
-      }
-
-      const manifestPath = join(pluginRoot, 'plugin.json')
-      if (!existsSync(manifestPath)) continue
-
-      let raw: string
-      try {
-        raw = await readFile(manifestPath, 'utf-8')
-      } catch (err) {
-        rejected.push({
-          source,
-          manifestPath,
-          issues: [{ path: '', message: `Could not read plugin.json: ${formatError(err)}` }],
-        })
-        continue
-      }
-
-      const result = validateManifestSource(raw)
-      if (!result.ok) {
-        rejected.push({ source, manifestPath, issues: result.issues })
-        continue
-      }
-
-      if (result.manifest.id !== entry) {
-        rejected.push({
-          source,
-          manifestPath,
-          issues: [
-            {
-              path: 'id',
-              message: `Plugin id "${result.manifest.id}" does not match its containing directory "${entry}".`,
-            },
-          ],
-        })
-        continue
-      }
-
-      if (source === 'user' && result.manifest.kind !== 'provider') {
-        rejected.push(userAgentCliRejection(manifestPath))
-        continue
-      }
-
-      if (result.manifest.kind === 'provider') {
-        loadedConversationProviders.push({
-          manifest: result.manifest,
-          source,
-          manifestPath,
-          pluginRoot,
-          adapter: await classifyProviderAdapter(result.manifest, source, pluginRoot, options),
-        })
-      } else {
-        loaded.push({
-          manifest: result.manifest,
-          source,
-          manifestPath,
-          pluginRoot,
-        })
-      }
-    }
-
-    return { loaded, loadedConversationProviders, rejected }
+  // An extension's provider id holds its install key (`<publisher>.<id>/…`),
+  // which no built-in id does; one that somehow matched a built-in is left out
+  // rather than allowed to stand in for it.
+  function extensionProviders(): LoadedConversationProvider[] {
+    return (options.extensionProviders?.() ?? []).filter(
+      (provider) => !plugins.has(provider.manifest.id) && !providers.has(provider.manifest.id),
+    )
   }
 
-  function loadFromRootSync(root: string, source: 'bundled' | 'user'): PluginRegistryLoadReport {
-    const loaded: LoadedPlugin[] = []
-    const loadedConversationProviders: LoadedConversationProvider[] = []
-    const rejected: PluginRegistryLoadReport['rejected'] = []
-
-    if (!existsSync(root)) return { loaded, loadedConversationProviders, rejected }
-
-    let entries: string[] = []
-    try {
-      entries = readdirSync(root)
-    } catch {
-      return { loaded, loadedConversationProviders, rejected }
-    }
-
-    for (const entry of entries) {
-      const pluginRoot = join(root, entry)
-      try {
-        if (!statSync(pluginRoot).isDirectory()) continue
-      } catch {
-        continue
-      }
-
-      const manifestPath = join(pluginRoot, 'plugin.json')
-      if (!existsSync(manifestPath)) continue
-
-      let raw: string
-      try {
-        raw = readFileSync(manifestPath, 'utf-8')
-      } catch (err) {
-        rejected.push({
-          source,
-          manifestPath,
-          issues: [{ path: '', message: `Could not read plugin.json: ${formatError(err)}` }],
-        })
-        continue
-      }
-
-      const result = validateManifestSource(raw)
-      if (!result.ok) {
-        rejected.push({ source, manifestPath, issues: result.issues })
-        continue
-      }
-
-      if (result.manifest.id !== entry) {
-        rejected.push({
-          source,
-          manifestPath,
-          issues: [
-            {
-              path: 'id',
-              message: `Plugin id "${result.manifest.id}" does not match its containing directory "${entry}".`,
-            },
-          ],
-        })
-        continue
-      }
-
-      if (source === 'user' && result.manifest.kind !== 'provider') {
-        rejected.push(userAgentCliRejection(manifestPath))
-        continue
-      }
-
-      if (result.manifest.kind === 'provider') {
-        loadedConversationProviders.push({
-          manifest: result.manifest,
-          source,
-          manifestPath,
-          pluginRoot,
-          adapter: classifyProviderAdapterSync(result.manifest, source, pluginRoot, options),
-        })
-      } else {
-        loaded.push({
-          manifest: result.manifest,
-          source,
-          manifestPath,
-          pluginRoot,
-        })
-      }
-    }
-
-    return { loaded, loadedConversationProviders, rejected }
+  function allProviders(): LoadedConversationProvider[] {
+    return [...providers.values(), ...extensionProviders()]
   }
 
-  // The user root adds conversation providers and nothing else, and none of
-  // them may take a bundled id: a user plugin named `claude-code` used to
-  // replace the built-in launcher — its binary, its argv and the shell its
-  // installer runs — for every agent that picked it. Agent CLIs now come only
-  // from the app bundle; a user provider that reuses any bundled id is
-  // refused with the reason, and the bundled one stays.
-  function mergeBundledAndUser(
-    bundled: PluginRegistryLoadReport,
-    user: PluginRegistryLoadReport,
-  ): PluginRegistryLoadReport {
+  function bundledReport(entries: Array<BundledEntry>): PluginRegistryLoadReport {
     plugins.clear()
     providers.clear()
-    const report: PluginRegistryLoadReport = {
-      loaded: [],
-      loadedConversationProviders: [],
-      rejected: [...bundled.rejected, ...user.rejected],
-    }
-    for (const plugin of bundled.loaded) {
-      plugins.set(plugin.manifest.id, plugin)
-      report.loaded.push(plugin)
-    }
-    for (const provider of bundled.loadedConversationProviders) {
-      providers.set(provider.manifest.id, provider)
-      report.loadedConversationProviders.push(provider)
-    }
-    for (const provider of user.loadedConversationProviders) {
-      const id = provider.manifest.id
-      if (plugins.has(id) || providers.has(id)) {
-        report.rejected.push({
-          source: 'user',
-          manifestPath: provider.manifestPath,
-          issues: [{ path: 'id', message: `"${id}" is a built-in id; a user plugin cannot replace it.` }],
-        })
+    const report: PluginRegistryLoadReport = { loaded: [], loadedConversationProviders: [], rejected: [] }
+    for (const entry of entries) {
+      if ('issues' in entry) {
+        report.rejected.push(entry)
         continue
       }
-      providers.set(id, provider)
-      report.loadedConversationProviders.push(provider)
+      const { manifest, manifestPath, pluginRoot } = entry
+      if (manifest.kind === 'provider') {
+        const provider: LoadedConversationProvider = {
+          manifest,
+          source: 'bundled',
+          manifestPath,
+          pluginRoot,
+          adapter: classifyBundledProviderAdapter(manifest, pluginRoot),
+        }
+        providers.set(manifest.id, provider)
+        report.loadedConversationProviders.push(provider)
+      } else {
+        const plugin: LoadedPlugin = { manifest, source: 'bundled', manifestPath, pluginRoot }
+        plugins.set(manifest.id, plugin)
+        report.loaded.push(plugin)
+      }
     }
     return report
   }
 
   return {
     async load(): Promise<PluginRegistryLoadReport> {
-      const bundledRoot = resolveRoot(options.bundledRoot)
-      const userRoot = resolveRoot(options.userRoot ?? defaultUserPluginRoot())
-      const bundled = await loadFromRoot(bundledRoot, 'bundled')
-      const user = await loadFromRoot(userRoot, 'user')
-      return mergeBundledAndUser(bundled, user)
+      return bundledReport(await readBundledRoot(resolveRoot(options.bundledRoot)))
     },
 
     loadSync(): PluginRegistryLoadReport {
-      const bundledRoot = resolveRoot(options.bundledRoot)
-      const userRoot = resolveRoot(options.userRoot ?? defaultUserPluginRoot())
-      const bundled = loadFromRootSync(bundledRoot, 'bundled')
-      const user = loadFromRootSync(userRoot, 'user')
-      return mergeBundledAndUser(bundled, user)
+      return bundledReport(readBundledRootSync(resolveRoot(options.bundledRoot)))
     },
 
     list(): PluginRegistryListEntry[] {
@@ -288,7 +111,7 @@ export function createPluginRegistry(options: PluginRegistryOptions): PluginRegi
     },
 
     listConversationProviders(): ConversationProviderListEntry[] {
-      return Array.from(providers.values()).map((p) => ({
+      return allProviders().map((p) => ({
         id: p.manifest.id,
         displayName: p.manifest.displayName,
         source: p.source,
@@ -306,7 +129,7 @@ export function createPluginRegistry(options: PluginRegistryOptions): PluginRegi
     },
 
     loadedConversationProviders(): LoadedConversationProvider[] {
-      return Array.from(providers.values())
+      return allProviders()
     },
 
     get(id: string): LoadedPlugin | undefined {
@@ -314,24 +137,88 @@ export function createPluginRegistry(options: PluginRegistryOptions): PluginRegi
     },
 
     getConversationProvider(id: string): LoadedConversationProvider | undefined {
-      return providers.get(id)
+      return providers.get(id) ?? extensionProviders().find((provider) => provider.manifest.id === id)
     },
 
     validateManifestSource,
   }
 }
 
-function userAgentCliRejection(manifestPath: string): PluginRegistryLoadReport['rejected'][number] {
-  return {
-    source: 'user',
-    manifestPath,
-    issues: [
-      {
-        path: 'kind',
-        message: 'Agent CLIs ship with the app; the user plugin folder holds conversation providers only.',
-      },
-    ],
+type BundledEntry =
+  | {
+      manifest: LoadedPlugin['manifest'] | ConversationProviderManifest
+      manifestPath: string
+      pluginRoot: string
+    }
+  | PluginRegistryLoadReport['rejected'][number]
+
+// One bundled folder's plugin.json, validated, its id held to its folder's name.
+function bundledEntry(entry: string, pluginRoot: string, read: () => string): BundledEntry | null {
+  const manifestPath = join(pluginRoot, 'plugin.json')
+  if (!existsSync(manifestPath)) return null
+  let raw: string
+  try {
+    raw = read()
+  } catch (err) {
+    return { manifestPath, issues: [{ path: '', message: `Could not read plugin.json: ${formatError(err)}` }] }
   }
+  const result = validateManifestSource(raw)
+  if (!result.ok) return { manifestPath, issues: result.issues }
+  if (result.manifest.id !== entry) {
+    return {
+      manifestPath,
+      issues: [
+        {
+          path: 'id',
+          message: `Plugin id "${result.manifest.id}" does not match its containing directory "${entry}".`,
+        },
+      ],
+    }
+  }
+  return { manifest: result.manifest, manifestPath, pluginRoot }
+}
+
+async function readBundledRoot(root: string): Promise<BundledEntry[]> {
+  if (!existsSync(root)) return []
+  const entries = await readdir(root).catch(() => [] as string[])
+  const out: BundledEntry[] = []
+  for (const entry of entries.sort()) {
+    const pluginRoot = join(root, entry)
+    const isDir = await stat(pluginRoot).then(
+      (info) => info.isDirectory(),
+      () => false,
+    )
+    if (!isDir) continue
+    const raw = await readFile(join(pluginRoot, 'plugin.json'), 'utf-8').catch((error: unknown) => error)
+    const found = bundledEntry(entry, pluginRoot, () => {
+      if (typeof raw !== 'string') throw raw
+      return raw
+    })
+    if (found) out.push(found)
+  }
+  return out
+}
+
+function readBundledRootSync(root: string): BundledEntry[] {
+  if (!existsSync(root)) return []
+  let entries: string[] = []
+  try {
+    entries = readdirSync(root)
+  } catch {
+    return []
+  }
+  const out: BundledEntry[] = []
+  for (const entry of entries.sort()) {
+    const pluginRoot = join(root, entry)
+    try {
+      if (!statSync(pluginRoot).isDirectory()) continue
+    } catch {
+      continue
+    }
+    const found = bundledEntry(entry, pluginRoot, () => readFileSync(join(pluginRoot, 'plugin.json'), 'utf-8'))
+    if (found) out.push(found)
+  }
+  return out
 }
 
 export function validateManifestSource(source: string): PluginManifestValidationResult {
@@ -347,164 +234,38 @@ export function validateManifestSource(source: string): PluginManifestValidation
   return validateManifestStructure(parsed)
 }
 
-async function classifyProviderAdapter(
+// Studio's own providers are declarative (an OpenAI-compatible endpoint). A
+// bundled executable adapter runs only when its entry's bytes match the hash
+// its manifest names.
+function classifyBundledProviderAdapter(
   manifest: ConversationProviderManifest,
-  source: PluginSource,
   pluginRoot: string,
-  options: PluginRegistryOptions,
-): Promise<ConversationProviderAdapterClassification> {
-  return classifyProviderAdapterWithEntryHash(
-    manifest,
-    source,
-    options,
-    await readExecutableAdapterEntryHash(manifest, pluginRoot),
-  )
-}
-
-function classifyProviderAdapterSync(
-  manifest: ConversationProviderManifest,
-  source: PluginSource,
-  pluginRoot: string,
-  options: PluginRegistryOptions,
-): ConversationProviderAdapterClassification {
-  return classifyProviderAdapterWithEntryHash(
-    manifest,
-    source,
-    options,
-    readExecutableAdapterEntryHashSync(manifest, pluginRoot),
-  )
-}
-
-function classifyProviderAdapterWithEntryHash(
-  manifest: ConversationProviderManifest,
-  source: PluginSource,
-  options: PluginRegistryOptions,
-  entryHash: { ok: true; sha256: string } | { ok: false; message: string } | null,
 ): ConversationProviderAdapterClassification {
   const adapter = manifest.adapter ?? { kind: 'declarative' as const }
   if (adapter.kind === 'declarative') {
     return { kind: 'declarative', execution: 'declarative', trust: 'not_required' }
   }
-
-  if (!entryHash?.ok) {
+  let digest: string | null = null
+  try {
+    digest = createHash('sha256')
+      .update(readFileSync(resolve(pluginRoot, adapter.entry)))
+      .digest('hex')
+  } catch {
+    digest = null
+  }
+  if (digest === null || digest !== adapter.sha256.toLowerCase()) {
     return {
       kind: 'trusted-executable',
       execution: 'blocked',
       trust: 'invalid',
       entry: adapter.entry,
-      trustError: entryHash?.message ?? 'Executable provider adapter entry is unavailable.',
+      trustError:
+        digest === null
+          ? 'Executable provider adapter entry is unavailable.'
+          : 'Executable provider adapter entry hash does not match its manifest.',
     }
   }
-  if (entryHash.sha256.toLowerCase() !== adapter.sha256.toLowerCase()) {
-    return {
-      kind: 'trusted-executable',
-      execution: 'blocked',
-      trust: 'invalid',
-      entry: adapter.entry,
-      trustError: 'Executable provider adapter entry hash does not match the signed manifest.',
-    }
-  }
-
-  if (source === 'bundled') {
-    return {
-      kind: 'trusted-executable',
-      execution: 'executable',
-      trust: 'trusted',
-      entry: adapter.entry,
-    }
-  }
-
-  const productionMode = options.productionMode ?? true
-  if (!manifest.signature) {
-    if (!productionMode && options.allowUnsignedExecutableAdapters) {
-      return {
-        kind: 'trusted-executable',
-        execution: 'executable',
-        trust: 'unsigned',
-        entry: adapter.entry,
-        trustError: 'Executable provider adapter is allowed only by the development trust override.',
-      }
-    }
-    return {
-      kind: 'trusted-executable',
-      execution: 'blocked',
-      trust: 'unsigned',
-      entry: adapter.entry,
-      trustError: providerTrustError('unsigned', productionMode),
-    }
-  }
-
-  const trust = classifySignedManifestTrust(manifest, options.providerTrustContext ?? { trustedModules: new Map() })
-  if (trust.status === 'trusted') {
-    return {
-      kind: 'trusted-executable',
-      execution: 'executable',
-      trust: trust.status,
-      entry: adapter.entry,
-      fingerprint: trust.fingerprint,
-    }
-  }
-
-  if (!productionMode && options.allowUnsignedExecutableAdapters && trust.status !== 'invalid') {
-    return {
-      kind: 'trusted-executable',
-      execution: 'executable',
-      trust: trust.status,
-      entry: adapter.entry,
-      fingerprint: trust.fingerprint,
-      trustError: 'Executable provider adapter is allowed only by the development trust override.',
-    }
-  }
-
-  return {
-    kind: 'trusted-executable',
-    execution: 'blocked',
-    trust: trust.status,
-    entry: adapter.entry,
-    fingerprint: trust.fingerprint,
-    trustError: providerTrustError(trust.status, productionMode),
-  }
-}
-
-async function readExecutableAdapterEntryHash(
-  manifest: ConversationProviderManifest,
-  pluginRoot: string,
-): Promise<{ ok: true; sha256: string } | { ok: false; message: string } | null> {
-  if (manifest.adapter?.kind !== 'trusted-executable') return null
-  try {
-    return { ok: true, sha256: sha256(await readFile(resolve(pluginRoot, manifest.adapter.entry))) }
-  } catch {
-    return { ok: false, message: 'Executable provider adapter entry could not be read for trust validation.' }
-  }
-}
-
-function readExecutableAdapterEntryHashSync(
-  manifest: ConversationProviderManifest,
-  pluginRoot: string,
-): { ok: true; sha256: string } | { ok: false; message: string } | null {
-  if (manifest.adapter?.kind !== 'trusted-executable') return null
-  try {
-    return { ok: true, sha256: sha256(readFileSync(resolve(pluginRoot, manifest.adapter.entry))) }
-  } catch {
-    return { ok: false, message: 'Executable provider adapter entry could not be read for trust validation.' }
-  }
-}
-
-function sha256(value: Buffer): string {
-  return createHash('sha256').update(value).digest('hex')
-}
-
-function providerTrustError(
-  status: ConversationProviderAdapterClassification['trust'],
-  productionMode: boolean,
-): string {
-  if (status === 'invalid') return 'Executable provider adapter signature is invalid or the package was tampered with.'
-  if (status === 'signed') return 'Executable provider adapter is signed but has not been trusted for execution.'
-  if (status === 'unsigned')
-    return productionMode
-      ? 'Unsigned executable provider adapters cannot run in production mode.'
-      : 'Unsigned executable provider adapter is blocked without a development trust override.'
-  return 'Executable provider adapter is not trusted for execution.'
+  return { kind: 'trusted-executable', execution: 'executable', trust: 'trusted', entry: adapter.entry }
 }
 
 function resolveRoot(root: string): string {

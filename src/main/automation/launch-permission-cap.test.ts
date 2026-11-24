@@ -16,6 +16,7 @@ import { createAutomationTools, type AutomationBackends } from './automation-too
 import { createConversationTools } from './conversation-tools'
 import {
   createAgentPermissionResolver,
+  gatewayCallerStarter,
   resolveNamedPermissionMode,
   type AgentPermissionResolver,
 } from './launch-permission-cap'
@@ -528,4 +529,41 @@ test('a named mode launches at its level, with its own id only where it has one'
   assert.match(!unknown.ok ? unknown.message : '', /Pass one of: none, ask, auto/)
   const mismatched = resolveNamedPermissionMode(modes, 'cursor', 'ask', 'bypass')
   assert.equal(!mismatched.ok && mismatched.code, 'invalid_arguments')
+})
+
+// What an agent's call starts keeps who started that agent, as its record says:
+// a paired device's chat stays the device's, and one with no known starter
+// stays no one's; otherwise it is the agent under its own ceiling (and its
+// starter's, when that was an agent too). A device is itself.
+test('a gateway caller’s starter is the calling agent’s own stored provenance, held to its ceiling', () => {
+  const resolve: AgentPermissionResolver = () => 'auto'
+  assert.deepEqual(gatewayCallerStarter(PAIRED_DEVICE, resolve), { kind: 'client', clientId: 'tailnet:dev-1' })
+  assert.deepEqual(gatewayCallerStarter(AGENT_CALLER, resolve), { kind: 'agent', ceiling: 'auto' })
+  const device = { kind: 'client', clientId: 'tailnet:dev-1' } as const
+  assert.deepEqual(
+    gatewayCallerStarter(AGENT_CALLER, resolve, () => device),
+    device,
+  )
+  assert.deepEqual(
+    gatewayCallerStarter(AGENT_CALLER, resolve, () => ({ kind: 'nobody' })),
+    { kind: 'nobody' },
+  )
+  assert.deepEqual(
+    gatewayCallerStarter(AGENT_CALLER, resolve, () => ({ kind: 'person' })),
+    {
+      kind: 'agent',
+      ceiling: 'auto',
+    },
+  )
+  assert.deepEqual(
+    gatewayCallerStarter(AGENT_CALLER, resolve, () => ({ kind: 'agent', ceiling: 'manual' })),
+    {
+      kind: 'agent',
+      ceiling: 'manual',
+    },
+  )
+  assert.deepEqual(
+    gatewayCallerStarter(EXTERNAL_CALLER, resolve, () => device),
+    { kind: 'agent', ceiling: null },
+  )
 })

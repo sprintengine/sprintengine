@@ -102,7 +102,6 @@ import { initTelemetryConsentSync } from '../../utils/telemetryConsentSync'
 import { initTextGenerationSettingsSync } from '../../utils/textGenerationSettingsSync'
 import { initSettledChatsSettingsSync } from '../../utils/settledChatsSettingsSync'
 import { initModuleRunStateSync } from '../../utils/moduleRunStateSync'
-import { initModuleAppStateSync } from '../../utils/moduleAppStateSync'
 import {
   addNewAgentTab,
   addTerminalTab,
@@ -197,6 +196,8 @@ import {
 } from './agentComposer/newChatDraft'
 import { bootComposerLive, dropBootComposerSnapshot, releaseBootComposer } from './agentComposer/bootComposer'
 import { showToast, useToastStore } from '../../store/toastStore'
+import { requestExtensionPage } from '../settings/extensionPageRequest'
+import { MODULES_SETTINGS_TAB } from '../settings/extensionsRoute'
 import { chatsWaitingOnYou, nextWaitingChatId } from './nextWaitingChat'
 import { createNewChatStay, NEW_CHAT_STAY_WATCH_MS, type NewChatStay } from './newChatStay'
 import { WorkspaceBand, WorkspaceBandGround } from './WorkspaceBand'
@@ -560,10 +561,6 @@ export default function WorkspaceManager() {
   useEffect(() => initSettledChatsSettingsSync(), [])
   // A module chat's run state, which main's rest sweep cannot ask the module for.
   useEffect(() => initModuleRunStateSync(), [])
-  // A module's entry.main reads its Settings section's values with no window
-  // open (a scheduler's time, a poller's interval), so module app state is
-  // mirrored the same way.
-  useEffect(() => initModuleAppStateSync(), [])
   const workspaces = useWorkspaceStore(useShallow((s) => selectWorkspaceManagerWorkspaces(s.workspaces)))
   const workspaceWindows = useWorkspaceStore((s) => s.workspaceWindows)
   const primaryWorkspaceWindowId = useWorkspaceStore((s) => s.primaryWorkspaceWindowId)
@@ -3408,11 +3405,10 @@ export default function WorkspaceManager() {
       }
 
       if (!result.chat) {
-        // A run that opens no surface and no chat — an `install.module` card is
-        // the first — would otherwise end with the button still reading
-        // "Install" and nothing on screen to say it worked. Main composes the one
-        // sentence worth showing for each action ("Reviews installed. Restart
-        // SprintEngine Studio to use it."); say them.
+        // A run that opens no surface and no chat would otherwise end with the
+        // button still reading "Install" and nothing on screen to say it
+        // worked. Main composes the one sentence worth showing for each action
+        // ("Reviews installed."); say them.
         if (!result.surface) {
           const said = result.outcomes
             .filter((outcome) => outcome.status === 'done' || outcome.status === 'already')
@@ -5092,6 +5088,20 @@ export default function WorkspaceManager() {
     setSidebarSection('home')
     setNarrowSidebarShown(false)
   })
+  // An install link (`sprintengine://extensions/…`) main handed this window:
+  // it opens the extension's page in Settings → Extensions, and never installs.
+  // Only where the operating system hands links over: a browser tab has none.
+  useEffect(() => {
+    if (!clientSupports('deep-links') || typeof window.api.onExtensionLinkOpen !== 'function') return
+    return window.api.onExtensionLinkOpen((link) => {
+      if (!link.ok) {
+        showToast({ tone: 'error', title: 'Couldn’t open that extension link', description: link.message })
+        return
+      }
+      requestExtensionPage({ catalogue: link.catalogue, id: link.id })
+      openSettingsOverlay({ initialTab: MODULES_SETTINGS_TAB })
+    })
+  }, [openSettingsOverlay])
   // A `sprintengine://chat/…` link main handed this window (chatLinkOpener.ts).
   // Listening only once the registry has loaded: main holds a link that
   // launched the app until then, and a store that has not loaded yet would

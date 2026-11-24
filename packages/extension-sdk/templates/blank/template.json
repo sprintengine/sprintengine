@@ -1,0 +1,9 @@
+{
+  "id": "blank",
+  "title": "Blank",
+  "summary": "A panel that says hello: the smallest extension that draws something.",
+  "permissions": [],
+  "capabilities": [
+    "panel"
+  ]
+}

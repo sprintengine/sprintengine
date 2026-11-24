@@ -12,9 +12,8 @@
 // An inline-CLI entry ships no bundle: the referenced plugin already lives in
 // the app bundle, and its install action is the plugin's `install` spec
 // executed by the CLI runtime installer (src/main/cli-runtime-install.ts) —
-// never PluginDetailPanel's download-a-bundle flow. Third-party CLI plugins
-// keep using signed bundle entries (`source` + components.cli), installed by
-// src/main/modules/plugin-bundle-installer.ts into the user plugin root.
+// never PluginDetailPanel's install-with-approval flow, which is for Claude
+// Code plugins.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'

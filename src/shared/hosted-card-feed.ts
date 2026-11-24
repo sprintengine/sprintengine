@@ -238,12 +238,6 @@ export function parseCardAction(raw: unknown): { ok: true; action: CardAction } 
       const id = text(raw.id)
       return id ? { ok: true, action: { verb, id } } : { ok: false, message: 'install.mcp needs a server id.' }
     }
-    case 'install.module': {
-      const id = text(raw.id)
-      return id
-        ? { ok: true, action: { verb, id } }
-        : { ok: false, message: 'install.module needs a marketplace entry id.' }
-    }
     case 'install.skill':
     case 'install.plugin': {
       const source = text(raw.source)
@@ -316,7 +310,7 @@ export function parseCardAction(raw: unknown): { ok: true; action: CardAction } 
   }
 }
 
-const INSTALL_VERBS: readonly CardActionVerb[] = ['install.mcp', 'install.skill', 'install.plugin', 'install.module']
+const INSTALL_VERBS: readonly CardActionVerb[] = ['install.mcp', 'install.skill', 'install.plugin']
 
 /**
  * The rules a whole card has to obey that no single action can state, and the

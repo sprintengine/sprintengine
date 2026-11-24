@@ -226,6 +226,16 @@ test('agent.launch over MCP registers the agent too', async () => {
   assert.ok(scout, 'the MCP-launched agent is in the registry under the name it was given')
 })
 
+// Who asked for a terminal agent is kept on its registered record, so its
+// later prompts and writes run their extensions' hooks as them, not as no one.
+test('a terminal agent launched with a starter keeps it on its registered record', async () => {
+  const h = host()
+  const starter = { kind: 'client', clientId: 'tailnet:dev-1' } as const
+  const launched = await h.launchService.launch({ workspaceId: h.workspaceId, startedBy: starter })
+  assert.ok(launched.ok, JSON.stringify(launched))
+  assert.deepEqual(h.registry.getRecord(h.workspaceId)!.agents[launched.agentId]!.startedBy, starter)
+})
+
 test('the registration persists with the registry like any other agent', async () => {
   const store = createInMemoryWorkspaceRegistryStore()
   const registry = createWorkspaceRegistryService({ store, newWorkspaceId: () => 'ws-host' })

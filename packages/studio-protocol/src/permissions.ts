@@ -37,9 +37,9 @@ export const STUDIO_PERMISSIONS = [
   // Give Studio's agents tools of the client's own.
   'tools:offer',
   // Hear this machine's modules: their events and the bell rows they raise.
-  'module:read',
+  'extension:read',
   // Call what this machine's modules declare as changing something.
-  'module:operate',
+  'extension:operate',
   // Change this machine's settings.
   'settings:write',
   // Open a preview of a server an agent runs here.
@@ -120,7 +120,7 @@ export function studioPrincipal(input: { owner: boolean; permissions: Iterable<S
 /**
  * What each Studio scope a grant holds carries. `conversation:operate` carries
  * `conversation:read`, as it always has: a client that drives a chat can see
- * what it is driving; `modules:operate` carries `module:read` and
+ * what it is driving; `extensions:operate` carries `extension:read` and
  * `workspaces:operate` carries `workspace:read` the same way.
  * Every other scope carries the one permission it names.
  */
@@ -137,8 +137,8 @@ export const STUDIO_SCOPE_PERMISSIONS: { readonly [S in StudioScope]: readonly S
   'files:write': ['filesystem:write'],
   'environment:maintain': ['environment:maintain'],
   'settings:write': ['settings:write'],
-  'modules:read': ['module:read'],
-  'modules:operate': ['module:read', 'module:operate'],
+  'extensions:read': ['extension:read'],
+  'extensions:operate': ['extension:read', 'extension:operate'],
   'workspaces:operate': ['workspace:read', 'workspace:operate'],
 }
 
@@ -156,8 +156,8 @@ const STUDIO_SCOPE_NAMES: { readonly [S in StudioScope]: StudioPermission } = {
   'files:write': 'filesystem:write',
   'environment:maintain': 'environment:maintain',
   'settings:write': 'settings:write',
-  'modules:read': 'module:read',
-  'modules:operate': 'module:operate',
+  'extensions:read': 'extension:read',
+  'extensions:operate': 'extension:operate',
   'workspaces:operate': 'workspace:operate',
 }
 

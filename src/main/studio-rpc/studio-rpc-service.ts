@@ -1,4 +1,5 @@
 import type { FileViews } from '../../server/file-views/file-views'
+import type { StudioEditorSaveHooks } from '../../server/rpc/studio-file-system'
 import type { Duplex } from 'node:stream'
 import type { DistributionTerminalHost } from '../../server/wsl/distribution-terminal-host'
 import type { DistributionMachine } from '../../server/wsl/distribution-machine'
@@ -166,6 +167,8 @@ export type StudioRpcService = {
   provideWebDevices(domain: StudioWebDevicesDomain): void
   /** Which agents a paired app's tools reach. */
   toolReachOf(clientId: string): StudioLocalAppToolReach
+  /** A paired app's grant as it stands now; null for one revoked or never paired. */
+  appGrantFor(clientId: string): StudioGrant | null
   /**
    * Connections for the desktop's own shell, in this process: each is served
    * as the shell (it may offer the built-in toolsets) and says hello with a
@@ -204,6 +207,8 @@ export type StudioRpcServiceOptions = {
   files?: StudioFiles
   /** The files on this machine by path (`file-system`, `files-mention`). */
   fileSystem?: StudioFileSystem
+  /** Extensions' `editor.save.before` hooks on a save the person made. */
+  editorSaveHooks?: StudioEditorSaveHooks
   /** Git on this machine (`git`). */
   git?: StudioGit
   /** The worktrees its agents run in, and deleting settled chats (`worktrees`). */
@@ -262,7 +267,7 @@ export type StudioRpcServiceOptions = {
   canvas?: StudioCanvasDomain
   /** How this Studio is updated (`update.*`); by hand when not given. */
   updates?: StudioUpdates
-  /** What the modules beside this Studio say to clients: `module.events` and `module.notifications`. */
+  /** What the modules beside this Studio say to clients: `extension.events` and `extension.notifications`. */
   modules?: StudioModules
   /** Forget the saved approvals that allow a revoked app's tools. */
   forgetToolApprovals?: (toolsets: string[]) => Promise<unknown>
@@ -498,6 +503,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.tools ? { tools: options.tools } : {}),
       ...(options.files ? { files: options.files } : {}),
       ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
+      ...(options.editorSaveHooks ? { editorSaveHooks: options.editorSaveHooks } : {}),
       ...(options.git ? { git: options.git } : {}),
       ...(options.worktrees ? { worktrees: options.worktrees } : {}),
       ...(options.workspaceSync ? { workspaceSync: options.workspaceSync } : {}),
@@ -687,6 +693,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       webDevices = next
     },
     toolReachOf: (clientId) => appStore().toolReachOf(clientId),
+    appGrantFor: (clientId) => appStore().grantFor(clientId),
     shellTransport() {
       return async () => {
         const ticket = mintStudioTicket()

@@ -1,5 +1,5 @@
 // The ideas the New chat door offers in extension mode, one for each surface
-// an extension can add (the SDK's templates, packages/module-sdk/templates), so
+// an extension can add (the SDK's templates, packages/extension-sdk/templates), so
 // the cards together show what the SDK reaches.
 //
 // A card starts nothing. Choosing one puts its `prompt` in the box as it is,
@@ -37,12 +37,12 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
     prompt: "MCP tools any agent can call to search my team's issue tracker and add a comment to an issue.",
   },
   {
-    id: 'global-surface',
-    surface: 'Page + sidebar row',
+    id: 'door',
+    surface: 'Page in Extensions',
     title: copy.workspace.agentComposer.extensionIdeas.releaseDashboard,
     description: copy.workspace.agentComposer.extensionIdeas.openPRsAndCIStatus,
     prompt:
-      'A full page with its own sidebar row that shows open pull requests and CI status for every project I have open.',
+      'A full page, opened from the Extensions drawer, that shows open pull requests and CI status for every project I have open.',
   },
   {
     id: 'backlog-action',
@@ -59,6 +59,22 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
     description: copy.workspace.agentComposer.extensionIdeas.perProjectNotesThatPersist,
     prompt:
       'A scratchpad panel for each project that keeps my notes between sessions and lets me paste a note into a chat.',
+  },
+  {
+    id: 'hook-guard',
+    surface: 'Agent hooks',
+    title: copy.workspace.agentComposer.extensionIdeas.guardForAgentCommands,
+    description: copy.workspace.agentComposer.extensionIdeas.refuseRiskyCommandsBefore,
+    prompt:
+      'A guard that refuses any agent’s shell command that force-pushes or deletes outside the project, and tells the agent why.',
+  },
+  {
+    id: 'editor',
+    surface: 'Editor',
+    title: copy.workspace.agentComposer.extensionIdeas.envFileForm,
+    description: copy.workspace.agentComposer.extensionIdeas.editEnvFilesAsAForm,
+    prompt:
+      'An editor that opens .env files as a form of names and values, marks the ones left empty, and keeps the comments as they are.',
   },
   {
     id: 'file-action',
@@ -84,19 +100,19 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
       'A Settings section where I set our commit-message rules, and a command that checks the staged message against them.',
   },
   {
-    id: 'workspace-type',
-    surface: 'Workspace type',
-    title: copy.workspace.agentComposer.extensionIdeas.standupWorkspace,
-    description: copy.workspace.agentComposer.extensionIdeas.opensOnYesterdaySCommits,
-    prompt:
-      "A standup workspace type that opens with yesterday's commits across my projects and today's Backlog items.",
-  },
-  {
     id: 'blank',
     surface: 'Command',
     title: copy.workspace.agentComposer.extensionIdeas.copyBranchLink,
     description: copy.workspace.agentComposer.extensionIdeas.aPaletteCommandThatCopies,
     prompt: 'A command in the palette that copies a link to the current branch on GitHub.',
+  },
+  {
+    id: 'agent-kit',
+    surface: 'Skills and MCP',
+    title: copy.workspace.agentComposer.extensionIdeas.releaseNotesKit,
+    description: copy.workspace.agentComposer.extensionIdeas.aSkillAndAServerForReleaseNotes,
+    prompt:
+      'A skill that writes release notes from merged pull requests, with a local MCP server that lists the changes since the last tag.',
   },
 ]
 

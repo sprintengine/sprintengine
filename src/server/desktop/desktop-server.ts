@@ -1,5 +1,7 @@
 import { homedir } from 'node:os'
 import { machineSchedulesOf, withDefinedMachineSchedules } from '../../shared/machine-schedules'
+import type { ConversationPromptHookAs } from '../../shared/conversation-runtime'
+import { EXTENSION_PROMPT_INPUT_KINDS } from '../../../packages/extension-sdk/src/hooks'
 import { backgroundWorkOf, quitStopsOf } from '../core/background-work'
 
 import { SHELL_TOOLSETS, serverAutomationTools } from './shell-toolsets'
@@ -45,6 +47,7 @@ import {
 import { createStudioGateway, type StudioGateway } from '../core/studio-gateway'
 import { WORKTREE_QUIT_WAIT_MS } from '../core/studio-worktree-pool'
 import { createExtensionTools } from '../../main/automation/extension-tools'
+import { createExtensionDevTools } from '../../main/automation/extension-dev-tools'
 import { createPluginTools } from '../../main/automation/plugin-tools'
 import { resolveScaffoldRoots } from '../../main/extension-scaffold'
 import { createStudioRpc } from '../core/studio-rpc'
@@ -80,6 +83,8 @@ import type {
 } from '../../../packages/studio-protocol/src/environment-access'
 import { createShellEnvironmentClients } from './shell-environment-clients'
 import { readStudioEnv } from '../../shared/studio-env'
+import { createWorkspaceWithHooks } from '../extensions/hooks/workspace-hooks'
+import { activeInvoker } from '../../main/module-host/extension-invocation'
 
 // The desktop's own Studio server, out of process (phase 6 spec): the core,
 // its gateway and owner socket, the tunnelled window.api domains, and the
@@ -213,9 +218,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   let core: ReturnType<typeof createStudioCore>
   try {
     core = createStudioCore(platform, {
-      // What the shell adds to the agents' skills and cards: its Trash, and
-      // the marketplace and module trust store a card's `install.module`
-      // goes through. The GitHub token is this process's own store's.
+      // What the shell adds to the agents' skills and cards: its Trash. The
+      // GitHub token is this process's own store's.
       agentSkills: {
         resolveGitHubToken: () => githubTokenStore.resolveToken(),
         trash: async (path) => {
@@ -225,7 +229,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       // This desktop's Studio holds the marketplace, the CLI catalogue, the
       // extension scaffold and the hosted feeds; Studio's own plugin in a
       // workspace is the shell's, which installs it, and what is installed
-      // changing is told to the clients following `module.changed`.
+      // changing is told to the clients following `extension.changed`.
       extensions: {
         studioPluginStatus: (workspaceRoot) => rpc.call(SHELL_METHODS.studioPluginStatus, { workspaceRoot }),
         changed: () => modules.hub.deliverChanged(),
@@ -384,13 +388,20 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
             : {}),
           launchAgent: (request) => launchAgent(request),
           resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
-          createWorkspace: (input, actor) => workspaceSyncService.createWorkspace(input, actor),
+          agentStarterOf: core.agentStarterOf,
+          createWorkspace: (input, actor, context) =>
+            createWorkspaceWithHooks(
+              core.extensionHooks,
+              () => activeInvoker() ?? core.hookInvokers.ofGatewayCaller(context),
+              input,
+              (request) => workspaceSyncService.createWorkspace(request, actor),
+            ),
           studioDataDirs: () => [envelope.dataDir],
           getScheduledAgents: () => modules.scheduledAgents(),
           ...withDefinedMachineSchedules(machineSchedulesOf(core)),
           ...launchSettingsGatewayDeps(agentLaunchSettings),
-          // The registry the windows report (`module.reportRegistry`), and
-          // the extensions installed here, as `module.installed` lists them.
+          // The registry the windows report (`extension.reportRegistry`), and
+          // the extensions installed here, as `extension.installed` lists them.
           getModuleRegistrySnapshot: () => modules.registry.read(),
           listInstalledThirdPartyModules: async () =>
             (await modules.hub.lifecycle()?.installed()) ?? { modules: [], rejected: [] },
@@ -409,6 +420,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         scaffold: extensions.scaffold,
         guideRoot: () => resolveScaffoldRoots().guideRoot,
       }),
+      // The extension dev loop, over this server's kernel.
+      ...createExtensionDevTools({ backend: () => modules.devBackend() }),
       ...createPluginTools({
         listSources: () => core.agents.skills.skills.listSources(),
         getScan: (input) => core.agents.skills.skills.getScan(input),
@@ -756,6 +769,19 @@ function serveShellTerminalRequests(
     const input = params as { sessionId?: unknown; data?: unknown } | null
     if (typeof input?.sessionId === 'string' && typeof input.data === 'string')
       terminals?.runtime.sessions.writeTerminal(input.sessionId, input.data)
+  })
+  rpc.handle(SERVER_METHODS.terminalHookPrompt, (params) => {
+    const input = params as { sessionId?: unknown; text?: unknown; hookAs?: unknown } | null
+    const hookAs = input?.hookAs as { inputKind?: unknown; from?: unknown } | undefined
+    if (
+      typeof input?.sessionId !== 'string' ||
+      typeof input.text !== 'string' ||
+      !(EXTENSION_PROMPT_INPUT_KINDS as readonly unknown[]).includes(hookAs?.inputKind) ||
+      !['studio', 'extension', 'agent'].includes(String(hookAs?.from))
+    )
+      throw new Error('A prompt to hook names its session, its text and what it is.')
+    if (!terminals) return { ok: true, text: input.text }
+    return terminals.hookPrompt(input.sessionId, input.text, hookAs as Omit<ConversationPromptHookAs, 'starter'>)
   })
   rpc.handle(SERVER_METHODS.agentCompact, (params) => {
     if (!terminals) return { ok: false, message: TERMINALS_UNAVAILABLE }

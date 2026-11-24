@@ -628,7 +628,7 @@ test('globalDoorsIntegration', async () => {
         'and it says what it holds rather than rendering as an empty page',
       )
 
-      // ── The plus menu: two sources, and an extension from its repository ────
+      // ── The plus menu: two ways to add a source ────
       await act(async () => {
         ;(plus as HTMLElement).click()
       })
@@ -637,8 +637,8 @@ test('globalDoorsIntegration', async () => {
       )
       assert.deepEqual(
         menuItems,
-        ['Add from folder…', 'Add skill source from GitHub…', 'Install extension from GitHub…'],
-        'the plus offers a folder, a repository of skills, and an extension installed from its own repository',
+        ['Add from folder…', 'Add skill source from GitHub…'],
+        'the plus offers a folder and a repository of skills',
       )
       await act(async () => {
         document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -720,8 +720,8 @@ test('globalDoorsIntegration', async () => {
       assert.match(absentHost.textContent ?? '', /Atlas/, 'the door is named')
       assert.match(
         absentHost.textContent ?? '',
-        /The Atlas module isn’t installed\./,
-        'and says its module is not installed',
+        /The Atlas extension isn’t installed\./,
+        'and says its extension is not installed',
       )
       const cta = [...absentHost.querySelectorAll('button')].find(
         (button) => button.textContent === 'Find it in Plugins',
@@ -787,7 +787,7 @@ test('globalDoorsIntegration', async () => {
       await act(async () => {
         disabledRoot.render(React.createElement(disabled.Component))
       })
-      assert.match(disabledHost.textContent ?? '', /The Tide-tables module is turned off\./)
+      assert.match(disabledHost.textContent ?? '', /The Tide-tables extension is turned off\./)
       const disabledCta = [...disabledHost.querySelectorAll('button')].find(
         (button) => button.textContent === 'Find it in Plugins',
       )

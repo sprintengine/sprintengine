@@ -38,8 +38,6 @@ function blank(): Api {
     installMarketplacePluginFromRegistry: async () => ({ ok: false, message: NONE }),
     updateMarketplacePluginFromRegistry: async () => ({ ok: false, message: NONE }),
     uninstallMarketplacePlugin: async () => ({ ok: false, message: NONE }),
-    resolveGithubExtension: async () => ({ ok: false, message: NONE }),
-    installGithubExtension: async () => ({ ok: false, message: NONE }),
     pluginsList: async () => ({ ok: true, plugins: [] }),
     pluginsDetectAvailability: async () => ({ ok: true, availability: {} }),
     agentLaunchPreview: async () => ({ ok: false, message: NONE }),
@@ -58,9 +56,21 @@ function blank(): Api {
     hostedSourcesFeedGet: async () => ({ ok: false, state: 'offline', feedUrl: '', message: NONE }),
     listThirdPartyModules: async () => ({ modules: [], rejected: [] }),
     listStudioModules: async () => [],
-    listThirdPartyRendererEntries: async () => ({ entries: [], failures: {} }),
+    listExtensionContributions: async () => ({ extensions: [], failures: {} }),
+    drawsExtensionFrames: async () => true,
+    opensExtensionEditors: async () => true,
+    canWriteFiles: async () => true,
+    extensionFrame: async () => ({ hash: '', html: '' }),
+    extensionCall: async () => ({ ok: false, code: 'unavailable', message: NONE }),
+    extensionContent: async () => {
+      throw new Error(NONE)
+    },
+    extensionSettings: async () => ({}),
+    canChangeExtensionSettings: async () => false,
+    onExtensionSettingsChanged: () => () => undefined,
+    setExtensionSetting: async () => ({ ok: false, message: NONE }),
+    onExtensionEvents: () => () => undefined,
     onThirdPartyModulesChanged: () => () => undefined,
-    setModuleAppState: async () => undefined,
     setModuleRegistrySnapshot: async () => ({ ok: true }),
   }
 }

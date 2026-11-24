@@ -33,7 +33,6 @@ afterEach(async () => {
 
 async function harness(
   options: {
-    permissions?: Record<string, string[]>
     respond?: (call: Call) => Response | Promise<Response>
     cipher?: SecretCipher | null
   } = {},
@@ -48,7 +47,6 @@ async function harness(
   const secrets = createModuleSecretsRegistry({
     userDataDir,
     cipher: options.cipher === undefined ? fakeCipher() : options.cipher,
-    getModulePermissions: (id) => (options.permissions ?? { weather: ['secrets'], other: ['secrets'] })[id],
     fetch: fetchImpl,
   })
   return { userDataDir, calls, secrets }
@@ -92,18 +90,6 @@ test('the registry token shape takes the module id first', async () => {
   await secrets.registry.set('weather', 'api-key', SECRET, { allowedOrigins: ['https://api.example.com'] })
   assert.equal(await secrets.registry.has('weather', 'api-key'), true)
   assert.equal(await secrets.registry.has('other', 'api-key'), false)
-})
-
-test('every call needs the secrets permission', async () => {
-  const { secrets } = await harness({ permissions: { weather: ['storage'] } })
-  const weather = secrets.forModule('weather')
-  const set = await weather.set('api-key', SECRET, { allowedOrigins: ['https://api.example.com'] })
-  assert.equal(set.ok === false && set.code, 'permission_missing')
-  await assert.rejects(weather.has('api-key'), /"secrets" permission/)
-  const removed = await weather.delete('api-key')
-  assert.equal(removed.ok === false && removed.code, 'permission_missing')
-  const fetched = await weather.fetchWithSecret('api-key', 'https://api.example.com', { placement: { query: 'key' } })
-  assert.equal(fetched.ok === false && fetched.code, 'permission_missing')
 })
 
 test('names and origins are validated when the secret is set', async () => {

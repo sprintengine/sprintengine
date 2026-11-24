@@ -1,17 +1,27 @@
 import assert from 'node:assert/strict'
 
-import { HOST_API_VERSION } from '../../shared/modules/host-api'
-import type { CapabilityManifest } from '../../shared/modules/manifest'
-import type { MarketplacePluginInstallReceipt } from '../marketplace/plugin-lifecycle'
-import {
-  readThirdPartyMainLaunchSnapshot,
-  recordThirdPartyMainLaunchReport,
-  thirdPartyLaunchSession,
-  type ThirdPartyMainLaunchSnapshot,
-} from './third-party-main-loader'
+import { validateExtensionManifest } from '../../../packages/extension-sdk/src/extension-manifest'
+import { extensionManifest } from '../../../tests/extension-folder'
+import { capabilityManifestOf } from '../../shared/modules/third-party-manifest'
+import type { WorkerStatus } from '../../server/extensions/workers/worker-manager'
 import type { InstalledModule } from './user-module-registry'
-import { moduleOriginsFromReceipts, toThirdPartyModuleView } from './third-party-module-view'
+import { toThirdPartyModuleView, type ExtensionRunView } from './third-party-module-view'
 import { test } from 'vitest'
+
+/** What a server run did with its extensions, as the view reads it. */
+function runView(options: {
+  attached?: string[]
+  errors?: Record<string, string>
+  workers?: Record<string, WorkerStatus>
+  tools?: Record<string, string[]>
+}): ExtensionRunView {
+  return {
+    attached: (id) => options.attached?.includes(id) ?? false,
+    worker: (id) => options.workers?.[id] ?? (options.attached?.includes(id) ? { state: 'idle' } : null),
+    loadError: (id) => options.errors?.[id],
+    mcpTools: (id) => options.tools?.[id] ?? [],
+  }
+}
 
 test('third-party-module-view', async () => {
   function main(): void {
@@ -19,76 +29,84 @@ test('third-party-module-view', async () => {
     testExpectedToLoadUsesEnablementOverrides()
     testCurrentBlockedStateWinsOverStaleLaunchError()
     testLaunchErrorsAreSanitized()
-    testHostApiMismatchIsSaidBeforeTrust()
 
     console.log('third-party-module-view tests passed')
   }
 
   function testLaunchReadinessClasses(): void {
-    const snapshot: ThirdPartyMainLaunchSnapshot = {
-      loaded: new Set(['trusted-main']),
-      manifestOnly: new Set(['manifest-only']),
-      errors: new Map([['broken-main', 'entry.main must export a callable registerMain(host).']]),
-    }
+    const snapshot = runView({
+      attached: ['approved-main'],
+      workers: { 'approved-main': { state: 'running' } },
+      errors: { 'broken-main': 'main must export activate(studio), as a named export or its default.' },
+    })
 
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'trusted-main', trust: 'trusted', main: 'main.cjs' }), snapshot)
+      toThirdPartyModuleView(installedModule({ id: 'approved-main', standing: 'approved', main: 'main.cjs' }), snapshot)
         .launch,
       {
-        status: 'trusted_executable',
+        status: 'runs_worker',
         hasMainEntry: true,
         expectedToLoad: true,
         mainLoaded: true,
         rendererEntry: { availability: 'none' },
-        message: 'Trusted main entry is eligible for startup execution.',
+        message: 'Its worker runs.',
       },
     )
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'manifest-only', trust: 'trusted' }), snapshot).launch,
+      toThirdPartyModuleView(installedModule({ id: 'manifest-only', standing: 'approved' }), snapshot).launch,
       {
-        status: 'trusted_manifest_only',
+        status: 'runs_without_worker',
         hasMainEntry: false,
         expectedToLoad: false,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Trusted manifest-only module; no main entry will run.',
+        message: 'It has no worker; nothing runs in the background.',
       },
     )
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'unsigned', trust: 'unsigned', main: 'main.cjs' }), snapshot).launch,
+      toThirdPartyModuleView(installedModule({ id: 'unsigned', standing: 'pending', main: 'main.cjs' }), snapshot)
+        .launch,
       {
-        status: 'blocked_unsigned',
+        status: 'awaiting_approval',
         hasMainEntry: true,
         expectedToLoad: false,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Unsigned module is waiting for trust before startup execution.',
+        message: 'It waits for your approval before it runs.',
       },
     )
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'signed', trust: 'signed', main: 'main.cjs' }), snapshot).launch,
+      toThirdPartyModuleView(installedModule({ id: 'signed', standing: 'pending', main: 'main.cjs' }), snapshot).launch,
       {
-        status: 'blocked_signed',
+        status: 'awaiting_approval',
         hasMainEntry: true,
         expectedToLoad: false,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Signed module is waiting for trust before startup execution.',
+        message: 'It waits for your approval before it runs.',
       },
     )
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'invalid', trust: 'invalid', main: 'main.cjs' }), snapshot).launch,
+      toThirdPartyModuleView(installedModule({ id: 'invalid', standing: 'invalid', main: 'main.cjs' }), snapshot)
+        .launch,
       {
         status: 'blocked_invalid',
         hasMainEntry: true,
         expectedToLoad: false,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Invalid signature blocks startup execution.',
+        message: 'Its signature is invalid, so it will not run.',
       },
     )
+    assert.equal(
+      toThirdPartyModuleView(
+        installedModule({ id: 'tampered', standing: 'invalid', main: 'main.cjs', tampered: true }),
+        snapshot,
+      ).launch.message,
+      'Its files do not match the digests extension.sig signs (tampered), so it will not run.',
+    )
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'broken-main', trust: 'trusted', main: 'main.cjs' }), snapshot)
+      toThirdPartyModuleView(installedModule({ id: 'broken-main', standing: 'approved', main: 'main.cjs' }), snapshot)
         .launch,
       {
         status: 'launch_error',
@@ -96,67 +114,57 @@ test('third-party-module-view', async () => {
         expectedToLoad: false,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'entry.main must export a callable registerMain(host).',
+        message: 'main must export activate(studio), as a named export or its default.',
       },
     )
   }
 
   function testExpectedToLoadUsesEnablementOverrides(): void {
-    const snapshot: ThirdPartyMainLaunchSnapshot = {
-      loaded: new Set(['default-on-disabled']),
-      manifestOnly: new Set(),
-      errors: new Map(),
-    }
+    const snapshot = runView({ attached: ['default-on-disabled'] })
 
     assert.deepEqual(
       toThirdPartyModuleView(
-        installedModule({ id: 'default-on-disabled', trust: 'trusted', main: 'main.cjs', defaultEnabled: true }),
+        installedModule({ id: 'default-on-disabled', standing: 'approved', main: 'main.cjs' }),
         snapshot,
         { 'default-on-disabled': false },
       ).launch,
       {
-        status: 'trusted_executable',
+        status: 'runs_worker',
         hasMainEntry: true,
         expectedToLoad: false,
         mainLoaded: true,
         rendererEntry: { availability: 'none' },
-        message: 'Trusted main entry is disabled by user setting until enabled.',
+        message: 'Its worker is switched off until you switch it on.',
       },
     )
     assert.deepEqual(
-      toThirdPartyModuleView(
-        installedModule({ id: 'default-off-enabled', trust: 'trusted', main: 'main.cjs', defaultEnabled: false }),
-        snapshot,
-        { 'default-off-enabled': true },
-      ).launch,
+      toThirdPartyModuleView(installedModule({ id: 'switched-on', standing: 'approved', main: 'main.cjs' }), snapshot, {
+        'switched-on': true,
+      }).launch,
       {
-        status: 'trusted_executable',
+        status: 'runs_worker',
         hasMainEntry: true,
         expectedToLoad: true,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Trusted main entry is eligible for startup execution.',
+        message: 'Its worker starts when something uses it.',
       },
     )
   }
 
   function testCurrentBlockedStateWinsOverStaleLaunchError(): void {
-    const snapshot: ThirdPartyMainLaunchSnapshot = {
-      loaded: new Set(),
-      manifestOnly: new Set(),
-      errors: new Map([['changed-module', 'Previous startup failed.']]),
-    }
+    const snapshot = runView({ errors: { 'changed-module': 'Previous startup failed.' } })
 
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'changed-module', trust: 'unsigned', main: 'main.cjs' }), snapshot)
+      toThirdPartyModuleView(installedModule({ id: 'changed-module', standing: 'pending', main: 'main.cjs' }), snapshot)
         .launch,
       {
-        status: 'blocked_unsigned',
+        status: 'awaiting_approval',
         hasMainEntry: true,
         expectedToLoad: false,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Unsigned module is waiting for trust before startup execution.',
+        message: 'It waits for your approval before it runs.',
       },
     )
   }
@@ -175,17 +183,10 @@ test('third-party-module-view', async () => {
       'Cannot read \\\\build-box\\share\\main.cjs',
     ]
     for (const message of leaking) {
-      recordThirdPartyMainLaunchReport(['broken-main'], {
-        loaded: [],
-        manifestOnly: [],
-        disabled: [],
-        sidecars: [],
-        errors: [{ id: 'broken-main', message }],
-      })
       assert.deepEqual(
         toThirdPartyModuleView(
-          installedModule({ id: 'broken-main', trust: 'trusted', main: 'main.cjs' }),
-          readThirdPartyMainLaunchSnapshot(),
+          installedModule({ id: 'broken-main', standing: 'approved', main: 'main.cjs' }),
+          runView({ errors: { 'broken-main': message } }),
         ).launch,
         {
           status: 'launch_error',
@@ -193,164 +194,108 @@ test('third-party-module-view', async () => {
           expectedToLoad: false,
           mainLoaded: false,
           rendererEntry: { availability: 'none' },
-          message: 'Module main entry failed during startup.',
+          message: 'The extension’s worker failed during startup.',
         },
         message,
       )
     }
     for (const message of [
-      'entry.main must export a callable registerMain(host).',
+      'main must export activate(studio), as a named export or its default.',
       'and/or 1/2 failed: see https://example.com/help',
     ]) {
-      recordThirdPartyMainLaunchReport(['broken-main'], {
-        loaded: [],
-        manifestOnly: [],
-        disabled: [],
-        sidecars: [],
-        errors: [{ id: 'broken-main', message }],
-      })
-      assert.equal(readThirdPartyMainLaunchSnapshot().errors.get('broken-main'), message)
-    }
-  }
-
-  // A module built for a host API this app does not provide loads neither
-  // entry, and trusting it would not help: the row says why, even for a
-  // trusted renderer-only module, whose renderer line alone used to say nothing.
-  function testHostApiMismatchIsSaidBeforeTrust(): void {
-    const snapshot: ThirdPartyMainLaunchSnapshot = { loaded: new Set(), manifestOnly: new Set(), errors: new Map() }
-    const tooNew = toThirdPartyModuleView(
-      installedModule({ id: 'future', trust: 'trusted', main: 'main.cjs', hostApi: HOST_API_VERSION + 1 }),
-      snapshot,
-    ).launch
-    assert.equal(tooNew.status, 'blocked_host_api')
-    assert.equal(tooNew.expectedToLoad, false)
-    assert.match(tooNew.message ?? '', /host API/i)
-
-    const rendererOnly = installedModule({ id: 'renderer-only', trust: 'trusted', hostApi: HOST_API_VERSION + 1 })
-    rendererOnly.manifest.entry = { renderer: 'dist/renderer.mjs' }
-    assert.equal(toThirdPartyModuleView(rendererOnly, snapshot).launch.status, 'blocked_host_api')
-
-    // An unsigned one still says it is built for another host API: trusting
-    // it is not the step that would make it load.
-    assert.equal(
-      toThirdPartyModuleView(installedModule({ id: 'u', trust: 'unsigned', hostApi: 0 }), snapshot).launch.status,
-      'blocked_host_api',
-    )
-    // A tampered module keeps its own, louder, reason.
-    assert.equal(
-      toThirdPartyModuleView(installedModule({ id: 'bad', trust: 'invalid', hostApi: 99 }), snapshot).launch.status,
-      'blocked_invalid',
-    )
-  }
-
-  function installedModule(options: {
-    id: string
-    trust: InstalledModule['trust']['status']
-    main?: string
-    defaultEnabled?: boolean
-    hostApi?: number
-  }): InstalledModule {
-    const manifest: CapabilityManifest = {
-      id: options.id,
-      displayName: options.id,
-      version: 1,
-      defaultEnabled: options.defaultEnabled ?? true,
-      source: 'third-party',
-      engines: { hostApi: options.hostApi ?? HOST_API_VERSION },
-    }
-    if (options.main) manifest.entry = { main: options.main }
-    return {
-      manifest,
-      moduleRoot: 'test-root',
-      trust: { status: options.trust },
+      assert.equal(
+        toThirdPartyModuleView(
+          installedModule({ id: 'broken-main', standing: 'approved', main: 'main.cjs' }),
+          runView({ errors: { 'broken-main': message } }),
+        ).launch.message,
+        message,
+      )
     }
   }
 
   main()
 })
 
-function moduleFixture(id: string, trust: InstalledModule['trust']['status']): InstalledModule {
+// An installed extension as discovery lists it: the worker tier when it has a
+// `main`, the content tier otherwise.
+function installedModule(options: {
+  id: string
+  standing: 'approved' | 'pending' | 'invalid'
+  main?: string
+  tampered?: boolean
+}): InstalledModule {
+  const validated = validateExtensionManifest(
+    options.main
+      ? extensionManifest({ id: options.id, main: options.main })
+      : extensionManifest({ id: options.id, tier: 'content', permissions: undefined, main: undefined }),
+  )
+  assert.ok(validated.ok)
   return {
-    manifest: {
-      id,
-      displayName: id,
-      version: 1,
-      defaultEnabled: true,
-      source: 'third-party',
-      engines: { hostApi: HOST_API_VERSION },
-      entry: { main: 'main.cjs' },
-    },
+    key: options.id,
+    publisher: 'local',
+    manifest: capabilityManifestOf(options.id, 'local', validated.manifest),
+    extension: validated.manifest,
     moduleRoot: 'test-root',
-    trust: { status: trust },
+    standing:
+      options.standing === 'approved'
+        ? {
+            signature: 'unsigned',
+            approval: options.main ? { state: 'approved', fingerprint: 'sha256-test' } : { state: 'not-needed' },
+            verifiedFiles: {},
+          }
+        : {
+            signature: options.standing === 'invalid' ? 'invalid' : 'unsigned',
+            approval:
+              options.standing === 'invalid'
+                ? { state: 'unavailable' }
+                : { state: 'pending', fingerprint: 'sha256-test', growth: [], reapproval: false },
+            ...(options.tampered ? { tampered: true } : {}),
+          },
   }
 }
 
-test('a module a receipt put in place says where it came from; one with no receipt came from a folder', () => {
-  const receipt = (overrides: Partial<MarketplacePluginInstallReceipt>): MarketplacePluginInstallReceipt => ({
-    id: 'bundle',
-    displayName: 'Bundle',
-    version: 1,
-    sourceUrl: 'https://example.com/bundle.tgz',
-    classification: 'verified',
-    installedAt: '2026-10-01T00:00:00.000Z',
-    components: [],
-    ...overrides,
-  })
-  const origins = moduleOriginsFromReceipts([
-    receipt({ id: 'weather', components: [{ kind: 'module', id: 'weather-deck' }] }),
-    receipt({
-      id: 'radar',
-      source: {
-        kind: 'github',
-        sha: 'abc123',
-        url: 'https://github.com/acme/pr-radar',
-        owner: 'acme',
-        repo: 'pr-radar',
-      },
-      components: [
-        { kind: 'module', id: 'pr-radar' },
-        { kind: 'skills', id: 'radar-skill' },
-      ],
-    }),
-    receipt({ id: 'legacy', source: { kind: 'registry' }, components: [{ kind: 'module', id: 'legacy-mod' }] }),
-  ])
-  assert.deepEqual(origins.get('weather-deck'), { kind: 'marketplace', pluginId: 'weather' })
-  assert.deepEqual(origins.get('pr-radar'), { kind: 'github', pluginId: 'radar', repo: 'acme/pr-radar' })
-  assert.deepEqual(origins.get('legacy-mod'), { kind: 'marketplace', pluginId: 'legacy' })
-  assert.equal(origins.has('radar-skill'), false, 'only module components are modules')
-})
-
-test('the view carries how a trusted module was trusted, and what it registered this session', () => {
-  const snapshot: ThirdPartyMainLaunchSnapshot = { loaded: new Set(['m']), manifestOnly: new Set(), errors: new Map() }
-  const module = moduleFixture('m', 'trusted')
+test('the view carries the approval, the signature, and the tools it serves', () => {
+  const snapshot = runView({ attached: ['m'], tools: { m: ['m_search'] } })
+  const module = installedModule({ id: 'm', standing: 'approved', main: 'dist/main.cjs' })
   const view = toThirdPartyModuleView(
-    { ...module, trust: { ...module.trust, via: 'grant' } },
+    { ...module, standing: { ...module.standing, signature: 'verified', signer: 'abc' } },
     snapshot,
     {},
-    {
-      origin: { kind: 'folder' },
-      mcpTools: ['m.search'],
-    },
   )
-  assert.equal(view.trustedVia, 'grant')
-  assert.deepEqual(view.origin, { kind: 'folder' })
-  assert.deepEqual(view.mcpTools, ['m.search'])
+  assert.deepEqual(view.approval, { state: 'approved', fingerprint: 'sha256-test' })
+  assert.equal(view.signature, 'verified')
+  assert.equal(view.signer, 'abc')
+  assert.deepEqual(view.mcpTools, ['m_search'])
+  assert.equal(view.extension.id, 'm')
   assert.equal(view.launch.mainLoaded, true)
-  // An untrusted module has no trust route to report, whatever the classifier said.
-  const untrusted = moduleFixture('u', 'unsigned')
-  assert.equal(toThirdPartyModuleView(untrusted, snapshot).trustedVia, undefined)
+  // One waiting for approval names the fingerprint to approve; a first one lists no growth.
+  const waiting = installedModule({ id: 'u', standing: 'pending', main: 'dist/main.cjs' })
+  assert.deepEqual(toThirdPartyModuleView(waiting, snapshot).approval, { state: 'pending', fingerprint: 'sha256-test' })
 })
 
-test('the launch session groups each module’s MCP tools under it', () => {
-  const session = thirdPartyLaunchSession(
-    { loaded: new Set(['a']), manifestOnly: new Set(), errors: new Map([['b', 'boom']]) },
-    [
-      { moduleId: 'a', registration: { name: 'a.one' } },
-      { moduleId: 'a', registration: { name: 'a.two' } },
-    ],
+test('a worker that crashed past its restarts reads as failed, with why', () => {
+  const module = installedModule({ id: 'm', standing: 'approved', main: 'dist/main.cjs' })
+  const message = 'Extension "m"\'s worker stopped after it crashed 4 times; it exited unexpectedly (SIGKILL).'
+  assert.deepEqual(
+    toThirdPartyModuleView(module, runView({ attached: ['m'], workers: { m: { state: 'errored', message } } })).launch,
+    {
+      status: 'launch_error',
+      hasMainEntry: true,
+      expectedToLoad: false,
+      mainLoaded: true,
+      rendererEntry: { availability: 'none' },
+      message,
+    },
   )
-  assert.deepEqual([...session.snapshot.loaded], ['a'])
-  assert.equal(session.snapshot.errors.get('b'), 'boom')
-  assert.deepEqual(session.mcpTools.get('a'), ['a.one', 'a.two'])
-  assert.equal(thirdPartyLaunchSession(session.snapshot, []).mcpTools.size, 0)
+})
+
+test('a worker waiting for a place says why', () => {
+  const module = installedModule({ id: 'm', standing: 'approved', main: 'dist/main.cjs' })
+  const waiting = 'Waiting to start: 16 extensions already run in the background.'
+  const launch = toThirdPartyModuleView(
+    module,
+    runView({ attached: ['m'], workers: { m: { state: 'waiting', message: waiting } } }),
+  ).launch
+  assert.equal(launch.status, 'runs_worker')
+  assert.equal(launch.waiting, waiting)
 })

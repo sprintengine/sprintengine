@@ -1,0 +1,13 @@
+{
+  "id": "settings-section",
+  "title": "Settings section",
+  "summary": "A section in Settings, and a command that opens Settings.",
+  "permissions": [
+    "settings:own"
+  ],
+  "capabilities": [
+    "settings",
+    "command",
+    "storage"
+  ]
+}

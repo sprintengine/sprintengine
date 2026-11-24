@@ -7,9 +7,7 @@ import type { MarketplaceProvidesKind } from '../../../../shared/marketplace/man
 // installed-inventory kind labels so the same primitive reads the same way on
 // both surfaces. `cli` is the inline-CLI lane: an agent CLI the app ships.
 const COMPONENT_KIND_LABEL: Record<MarketplaceProvidesKind, string> = {
-  mcp: 'MCP server',
   skills: 'Skill pack',
-  module: 'Module',
   cli: 'Agent CLI',
 }
 

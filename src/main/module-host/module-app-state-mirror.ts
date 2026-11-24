@@ -1,22 +1,17 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-// Main's copy of every module's app-level state — the `module:<id>`
-// namespaces in the renderer's app settings, which a module's Settings
-// section writes through `setValue` and `RendererHost.setModuleAppState`
-// writes directly. `MainHost.getModuleAppState` / `watchModuleAppState` read
-// it, so a module's `entry.main` sees the values the person chose with no
-// window open (a scheduler's run time, a poller's interval).
+// Every extension's Settings values: the `module:<id>` namespaces its
+// Settings section writes from its frame (`settings.set`, through the host's
+// gate) and reads back (`settings.get`). Studio keeps them in its data folder,
+// outside the extension's own reach, so `MainHost.getModuleAppState` /
+// `watchModuleAppState` read the values the person chose with no window open
+// (a scheduler's run time, a poller's interval).
 //
-// Same one-way contract as the other settings mirrors (text generation,
-// background mode): the renderer owns the values and pushes the whole bag on
-// change and when a window mounts; main persists the last push in user data
-// and reads it synchronously. Nothing in main writes a value back.
-//
-// One mirror per file, shared by everyone in the process: the IPC handler that
-// takes the push and the module host that reads it see the same object, so a
-// change is heard in process at once. A Studio server out of process reads
-// the same file and hears a push the shell wrote by watching it.
+// One store per file, shared by everyone in the process: the frame's host
+// call that writes and the worker that reads see the same object, so a change
+// is heard in process at once. Another process holding the same data folder
+// hears a write by watching the file.
 
 export const MODULE_APP_STATE_FILE = 'module-app-state.json'
 const NAMESPACE_PREFIX = 'module:'
@@ -27,10 +22,26 @@ type Namespaces = Record<string, Record<string, unknown>>
 export type ModuleAppStateMirror = {
   /** The module's namespace: an empty object when nothing was ever pushed. */
   get(moduleId: string): Readonly<Record<string, unknown>>
-  /** Adopt a renderer push of the whole bag; notifies the namespaces that changed. */
-  set(bag: unknown): void
+  /**
+   * Set one value of the module's namespace (`undefined` removes it), as its
+   * Settings section's frame does (`settings.set`); notifies its listeners.
+   */
+  setValue(moduleId: string, key: string, value: unknown): void
   /** Hear the module's namespace whenever it changes (not on subscribe). */
   subscribe(moduleId: string, listener: (values: Readonly<Record<string, unknown>>) => void): () => void
+}
+
+/** The store's own handle: every module's changes, and an end to its watching. */
+export type ModuleAppStateStore = ModuleAppStateMirror & {
+  /** Hear which module's namespace changed, whichever it is, here or in another process. */
+  subscribeAll(listener: (moduleId: string) => void): () => void
+  /**
+   * Drop the module's whole namespace (an uninstall), on disk first and then
+   * here; its listeners hear it emptied. Throws when the file cannot be
+   * written, and then nothing changes here either: the values would come back
+   * at the next start.
+   */
+  forget(moduleId: string): void
 }
 
 const EMPTY: Readonly<Record<string, unknown>> = Object.freeze({})
@@ -53,9 +64,10 @@ export function createModuleAppStateMirror(options: {
   /** Watch the file for a push another process wrote. Defaults to true. */
   watchFile?: boolean
   watchIntervalMs?: number
-}): ModuleAppStateMirror & { dispose(): void } {
+}): ModuleAppStateStore & { dispose(): void } {
   let namespaces: Namespaces | null = null
   const listeners = new Map<string, Set<(values: Readonly<Record<string, unknown>>) => void>>()
+  const anyListeners = new Set<(moduleId: string) => void>()
   let watching: ReturnType<typeof setInterval> | null = null
   // What the file looked like when last read or written, so a read with no
   // watch running still notices a push another process wrote since.
@@ -95,6 +107,13 @@ export function createModuleAppStateMirror(options: {
           console.warn(`[modules] an app-state watcher for "${namespace}" threw:`, error)
         }
       }
+      for (const listener of anyListeners) {
+        try {
+          listener(namespace.slice(NAMESPACE_PREFIX.length))
+        } catch (error) {
+          console.warn('[modules] an app-state watcher threw:', error)
+        }
+      }
     }
     return changed
   }
@@ -117,26 +136,64 @@ export function createModuleAppStateMirror(options: {
     watching = null
   }
 
+  // A push another process wrote since this one last looked, taken first.
+  const catchUp = (): void => {
+    if (namespaces !== null && !watching && options.watchFile !== false && fileSignature() !== seen) adopt(read())
+  }
+  // Write `next`, whole, over the file (a temporary file renamed into place);
+  // throws when it cannot be written.
+  const persist = (next: Namespaces): void => {
+    const tmp = `${options.filePath}.${process.pid}.tmp`
+    try {
+      mkdirSync(dirname(options.filePath), { recursive: true })
+      writeFileSync(tmp, `${JSON.stringify(next)}\n`, { encoding: 'utf8', mode: 0o600 })
+      renameSync(tmp, options.filePath)
+      seen = fileSignature()
+    } catch (error) {
+      try {
+        rmSync(tmp, { force: true })
+      } catch {
+        // Nothing of ours to take away.
+      }
+      throw error
+    }
+  }
+  // Hand `next` to the listeners and write it over the file. An unchanged
+  // one never rewrites it.
+  const commit = (next: Namespaces): void => {
+    if (!adopt(next)) return
+    try {
+      persist(next)
+    } catch {
+      // The in-memory copy is current; the file catches up on the next change.
+    }
+  }
+
   return {
     get(moduleId) {
-      if (namespaces !== null && !watching && options.watchFile !== false && fileSignature() !== seen) adopt(read())
+      catchUp()
       const namespace = current()[`${NAMESPACE_PREFIX}${moduleId.trim()}`]
       return namespace ? Object.freeze({ ...namespace }) : EMPTY
     },
-    set(bag) {
-      const next = normalizeModuleAppStateBag(bag)
-      // An unchanged push (every window mount sends one) never rewrites the file.
-      if (!adopt(next)) return
-      const tmp = `${options.filePath}.${process.pid}.tmp`
-      try {
-        mkdirSync(dirname(options.filePath), { recursive: true })
-        writeFileSync(tmp, `${JSON.stringify(next)}\n`, { encoding: 'utf8', mode: 0o600 })
-        renameSync(tmp, options.filePath)
-        seen = fileSignature()
-      } catch {
-        // The in-memory copy is current; the file catches up on the next change.
-        rmSync(tmp, { force: true })
-      }
+    setValue(moduleId, key, value) {
+      catchUp()
+      const namespace = `${NAMESPACE_PREFIX}${moduleId.trim()}`
+      const values = { ...current()[namespace] }
+      if (value === undefined) delete values[key]
+      else values[key] = structuredClone(value)
+      const next = { ...current(), [namespace]: values }
+      if (Object.keys(values).length === 0) delete next[namespace]
+      commit(next)
+    },
+    forget(moduleId) {
+      catchUp()
+      const namespace = `${NAMESPACE_PREFIX}${moduleId.trim()}`
+      if (!(namespace in current())) return
+      const next = { ...current() }
+      delete next[namespace]
+      // On disk first: a deletion is only told once it will outlive a restart.
+      persist(next)
+      adopt(next)
     },
     subscribe(moduleId, listener) {
       const namespace = `${NAMESPACE_PREFIX}${moduleId.trim()}`
@@ -148,20 +205,30 @@ export function createModuleAppStateMirror(options: {
       return () => {
         set.delete(listener)
         if (set.size === 0) listeners.delete(namespace)
-        if (listeners.size === 0) stopWatching()
+        if (listeners.size === 0 && anyListeners.size === 0) stopWatching()
+      }
+    },
+    subscribeAll(listener) {
+      anyListeners.add(listener)
+      current()
+      startWatching()
+      return () => {
+        anyListeners.delete(listener)
+        if (listeners.size === 0 && anyListeners.size === 0) stopWatching()
       }
     },
     dispose() {
       listeners.clear()
+      anyListeners.clear()
       stopWatching()
     },
   }
 }
 
-const mirrors = new Map<string, ModuleAppStateMirror>()
+const mirrors = new Map<string, ModuleAppStateStore>()
 
 /** The process's one mirror over `<userData>/module-app-state.json`. */
-export function moduleAppStateMirrorFor(userDataDir: string): ModuleAppStateMirror {
+export function moduleAppStateMirrorFor(userDataDir: string): ModuleAppStateStore {
   const filePath = join(userDataDir, MODULE_APP_STATE_FILE)
   let mirror = mirrors.get(filePath)
   if (!mirror) {

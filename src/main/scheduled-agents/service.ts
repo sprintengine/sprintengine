@@ -17,7 +17,7 @@ import {
 } from '../../shared/scheduled-agents'
 import { refuseScheduledAgentRun } from '../automation/launch-permission-cap'
 import { moduleConversationCeiling } from '../module-host/module-conversation-service'
-import { clampToModuleToolCaller, moduleToolCallerCeiling } from '../module-host/module-tool-caller'
+import { clampToInvoker, invokerCeiling } from '../module-host/extension-invocation'
 import type { ScheduledAgentsScheduler } from './scheduler'
 import type { ScheduledPromptImages } from './prompt-images'
 import { readStoredScheduledAgent, type ScheduledAgentsStore } from './store'
@@ -348,10 +348,8 @@ export function createScheduledAgentsModuleRegistry(
   const capFor =
     (moduleId: string): CapPreset =>
     (preset) =>
-      clampToModuleToolCaller(
-        lowerToModuleCeiling(preset, getModulePermissions(moduleId)) ?? undefined,
-        moduleToolCallerCeiling(),
-      ) ?? null
+      clampToInvoker(lowerToModuleCeiling(preset, getModulePermissions(moduleId)) ?? undefined, invokerCeiling()) ??
+      null
   return {
     create: (moduleId, draft) => service.create(draft, { ownerModuleId: moduleId, capPreset: capFor(moduleId) }),
     update: (moduleId, id, draft) =>
@@ -362,7 +360,7 @@ export function createScheduledAgentsModuleRegistry(
       const stored = service.list({ ownerModuleId: moduleId }).find((agent) => agent.id === id)
       // Asked during a capped agent's tool call, a run that could start looser
       // than that agent is refused, as the agent's own `schedule.run` is.
-      const refused = stored ? refuseScheduledAgentRun(stored.permissionPreset, moduleToolCallerCeiling()) : null
+      const refused = stored ? refuseScheduledAgentRun(stored.permissionPreset, invokerCeiling()) : null
       if (refused) return { ok: false, message: refused.message }
       return service.runNow(id, { ownerModuleId: moduleId })
     },

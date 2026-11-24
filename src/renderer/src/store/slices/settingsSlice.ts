@@ -1004,7 +1004,7 @@ export interface SettingsSliceActions {
   openSettingsOverlay: (opts?: SettingsOverlayOptions) => void
   closeSettingsOverlay: () => void
   // Opens the Plugins modal on the requested view: every legacy caller — the
-  // command palette, Settings → Modules, the agent "Manage skills" footers —
+  // command palette, Settings → Extensions, the agent "Manage skills" footers —
   // lands on the modal with its deep-link latched. (Was the Extensions door
   // until doors→modals, 2026-09-01; the Extensions door before that.)
   openExtensionsSurface: (opts?: { view?: ExtensionsDrawerView; installed?: boolean }) => void
@@ -1381,7 +1381,7 @@ export function createSettingsSlice(set: SettingsSliceSet): SettingsSlice {
       // how the same surface came to open one way from a command and another
       // from an id.
       openGlobalSurface(EXTENSIONS_CATALOGUE_SURFACE_ID)
-      // Callers sit inside the Settings modal (Settings → Modules "Browse
+      // Callers sit inside the Settings modal (Settings → Extensions "Browse
       // marketplace"), and the settings request it was carrying goes with it
       // rather than surviving to re-open a category later.
       set(clearSettingsRequest)

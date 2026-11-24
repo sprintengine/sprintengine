@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 
 import type {
   CapabilityManifest,
-  ModuleTrustStatus,
   ThirdPartyModuleListResult,
   ThirdPartyModuleView,
 } from '../../../../shared/modules/manifest'
@@ -22,7 +21,7 @@ import { test } from 'vitest'
 
 test('extensionsInstalled', async () => {
   // The Installed inventory is the single canonical surface across four
-  // primitives, so the mapping must read real state (trust, enablement,
+  // primitives, so the mapping must read real state (approval, enablement,
   // provenance) faithfully, and a missing/unavailable/failing source must surface
   // as an explicit notice — never as an empty list.
 
@@ -40,7 +39,7 @@ test('extensionsInstalled', async () => {
     } as McpServerConfig
   }
 
-  function moduleView(trust: ModuleTrustStatus, manifest: Partial<CapabilityManifest> = {}): ThirdPartyModuleView {
+  function moduleView(approved: boolean, manifest: Partial<CapabilityManifest> = {}): ThirdPartyModuleView {
     return {
       manifest: {
         id: 'demo-module',
@@ -50,8 +49,39 @@ test('extensionsInstalled', async () => {
         source: 'third-party',
         ...manifest,
       } as CapabilityManifest,
-      trust,
-      launch: { status: 'trusted_executable', hasMainEntry: true, expectedToLoad: true },
+      extension: {
+        manifestVersion: 1,
+        id: 'demo-module',
+        version: '1.0.0',
+        engines: { studio: '>=0.13.0' },
+        tier: 'worker',
+        name: 'Demo Module',
+        permissions: [],
+        main: 'dist/main.cjs',
+        contributes: {
+          commands: [],
+          menus: [],
+          topBarItems: [],
+          panels: [],
+          doors: [],
+          settingsSections: [],
+          mcpTools: [],
+          hooks: [],
+          syntaxes: [],
+          customEditors: [],
+          keybindings: [],
+          statusBarItems: [],
+          settings: [],
+          skills: [],
+          mcpServers: [],
+          providers: [],
+        },
+      },
+      approval: approved
+        ? { state: 'approved', fingerprint: 'sha256-test' }
+        : { state: 'pending', fingerprint: 'sha256-test' },
+      signature: 'unsigned',
+      launch: { status: approved ? 'runs_worker' : 'awaiting_approval', hasMainEntry: true, expectedToLoad: approved },
     }
   }
 
@@ -150,22 +180,22 @@ test('extensionsInstalled', async () => {
   }
 
   {
-    // Trusted+enabled, trusted+disabled (override), and trust-blocked all map honestly.
+    // Approved+enabled, approved+disabled (override), and waiting for approval all map honestly.
     const rows = modulesToInstalled(
       modulesResult([
-        moduleView('trusted', { id: 'a', displayName: 'A', defaultEnabled: true }),
-        moduleView('trusted', { id: 'b', displayName: 'B', defaultEnabled: true }),
-        moduleView('unsigned', { id: 'c', displayName: 'C', defaultEnabled: true }),
+        moduleView(true, { id: 'a', displayName: 'A', defaultEnabled: true }),
+        moduleView(true, { id: 'b', displayName: 'B', defaultEnabled: true }),
+        moduleView(false, { id: 'c', displayName: 'C', defaultEnabled: true }),
       ]),
       { b: false },
     )
     assert.deepEqual(
-      rows.map((r) => [r.id, r.trust, r.enabled]),
+      rows.map((r) => [r.id, r.approval, r.enabled]),
       [
-        ['a', 'trusted', true],
-        ['b', 'trusted', false],
-        // Trust-blocked module never loads regardless of defaultEnabled.
-        ['c', 'unsigned', false],
+        ['a', 'approved', true],
+        ['b', 'approved', false],
+        // One waiting for approval never loads regardless of defaultEnabled.
+        ['c', 'pending', false],
       ],
     )
     assert.equal(rows[0].source, 'Custom')
@@ -196,7 +226,7 @@ test('extensionsInstalled', async () => {
       input({
         mcpServers: [mcp()],
         skills: { status: 'ok', value: [skill()] },
-        modules: { status: 'ok', value: modulesResult([moduleView('trusted')]) },
+        modules: { status: 'ok', value: modulesResult([moduleView(true)]) },
       }),
     )
     assert.equal(view.status, 'ready')
@@ -290,7 +320,7 @@ test('extensionsInstalled', async () => {
         modules: {
           status: 'ok',
           value: modulesResult(
-            [moduleView('trusted')],
+            [moduleView(true)],
             [{ path: 'mods/bad', issues: [{ path: '.', message: 'bad manifest' }] }],
           ),
         },
@@ -298,7 +328,7 @@ test('extensionsInstalled', async () => {
     )
     assert.equal(view.status, 'ready')
     if (view.status !== 'ready') throw new Error('unreachable')
-    assert.ok(view.notices.some((n) => n.kind === 'module' && /Couldn't load 1 module folder/.test(n.message)))
+    assert.ok(view.notices.some((n) => n.kind === 'module' && /Couldn't load 1 extension folder/.test(n.message)))
   }
 
   // --- loading + unsupported gating ------------------------------------------

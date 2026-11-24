@@ -57,6 +57,10 @@ const LEGACY_CHAT_LIFECYCLE_TOOLS = new Set([
   'conversation.highlight',
   'conversation.auto_settle',
 ])
+const RENAMED_TOOLS: Readonly<Record<string, string>> = {
+  'extension.list': 'module.list',
+  'extension.status': 'module.status',
+}
 function legacyLocalOnly(toolName: string): boolean {
   return (
     toolName.startsWith('tailnet.') ||
@@ -194,11 +198,13 @@ test('every tool, local-only or served, is judged for every set of scopes as bef
     const principal = tailnetDevicePrincipal(scopes)
     for (const tool of corpus)
       for (const isMutation of [false, true]) {
-        const before = !legacyLocalOnly(tool) && legacy(scopes, legacyRequiredScopeForTool(tool, isMutation))
+        // The two extension reads were `module.list` and `module.status` when these rules were frozen.
+        const was = RENAMED_TOOLS[tool] ?? tool
+        const before = !legacyLocalOnly(was) && legacy(scopes, legacyRequiredScopeForTool(was, isMutation))
         const decision = authorizeStudioAccess(principal, tailnetToolAccess(tool, isMutation))
         assert.equal(decision.ok, before, `${tool} (${isMutation ? 'mutation' : 'read'}) [${scopes.join(', ')}]`)
         // A local-only tool is refused as one, whatever the grant.
-        if (legacyLocalOnly(tool)) assert.equal(!decision.ok && decision.reason, 'local_only')
+        if (legacyLocalOnly(was)) assert.equal(!decision.ok && decision.reason, 'local_only')
         compared++
       }
   }

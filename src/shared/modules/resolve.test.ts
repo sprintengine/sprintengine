@@ -23,7 +23,6 @@ test('resolve', async () => {
     testIneligibleUntrusted()
     testIneligibleCascadesToDependents()
     testIneligibleInvalidSignature()
-    testIneligibleIncompatibleHostApi()
 
     console.log('module-resolve tests passed')
   }
@@ -32,11 +31,11 @@ test('resolve', async () => {
     const result = resolveModuleEnablement(
       [manifest('thirdparty', { source: 'third-party', defaultEnabled: true })],
       {},
-      { ineligible: { thirdparty: 'untrusted' } },
+      { ineligible: { thirdparty: 'unapproved' } },
     )
-    assert.deepEqual(result.order, [], 'an untrusted module does not load')
+    assert.deepEqual(result.order, [], 'an unapproved module does not load')
     assert.equal(
-      result.errors.some((e) => e.id === 'thirdparty' && e.code === 'untrusted'),
+      result.errors.some((e) => e.id === 'thirdparty' && e.code === 'unapproved'),
       true,
     )
   }
@@ -46,11 +45,11 @@ test('resolve', async () => {
     const result = resolveModuleEnablement(
       [manifest('base', { source: 'third-party' }), manifest('dependent', { dependsOn: ['base'] })],
       {},
-      { ineligible: { base: 'untrusted' } },
+      { ineligible: { base: 'unapproved' } },
     )
     assert.deepEqual(result.order, [])
     assert.equal(
-      result.errors.some((e) => e.id === 'base' && e.code === 'untrusted'),
+      result.errors.some((e) => e.id === 'base' && e.code === 'unapproved'),
       true,
     )
     assert.equal(
@@ -71,29 +70,6 @@ test('resolve', async () => {
       result.errors.some((e) => e.id === 'tampered' && e.code === 'invalid_signature'),
       true,
     )
-  }
-
-  function testIneligibleIncompatibleHostApi(): void {
-    const result = resolveModuleEnablement(
-      [manifest('old-build', { source: 'third-party' })],
-      {},
-      { ineligible: { 'old-build': 'incompatible_host_api' } },
-    )
-    assert.deepEqual(result.order, [])
-    const error = result.errors.find((e) => e.id === 'old-build')
-    assert.equal(error?.code, 'incompatible_host_api')
-    assert.match(error?.message ?? '', /does not say which host API it was built for/)
-    assert.doesNotMatch(error?.message ?? '', /not trusted/, 'trusting would not fix it, so it does not say so')
-
-    // One built for host API 1 is told what replaced its IPC and what to rebuild against.
-    const old = resolveModuleEnablement(
-      [manifest('ipc-build', { source: 'third-party', engines: { hostApi: 1 } })],
-      {},
-      { ineligible: { 'ipc-build': 'incompatible_host_api' } },
-    )
-    const refused = old.errors.find((e) => e.id === 'ipc-build')
-    assert.match(refused?.message ?? '', /^Module "ipc-build" will not load\. The module was built for host API 1/)
-    assert.match(refused?.message ?? '', /@sprintengine\/module-sdk 2/)
   }
 
   function testDefaultsAndExplicitDisable(): void {

@@ -7,6 +7,7 @@ import './assets/index.css'
 import { ConfirmDialogProvider } from './components/ui'
 import { SshPromptDialogHost } from './components/environments/SshPromptDialog'
 import { ArtifactsSetupQuestionHost } from './components/settings/ArtifactsSetupQuestion'
+import { DevFolderApprovalHost } from './components/settings/DevFolderApprovalHost'
 import AuxWindowApp from './components/auxWindows/AuxWindowApp'
 import WorkspaceManager from './components/workspace/WorkspaceManager'
 import { RootErrorBoundary } from './components/workspace/RootErrorBoundary'
@@ -116,7 +117,7 @@ try {
 // settings rail) sees a complete registry — the same eager-at-boot lifecycle
 // bundled modules get. Bounded so a wedged IPC round-trip can never hold the
 // window hostage: on timeout we render without third-party contributions and
-// the gap shows up in Settings → Modules rather than as a blank window.
+// the gap shows up in Settings → Extensions rather than as a blank window.
 const THIRD_PARTY_MODULE_BOOT_TIMEOUT_MS = 3000
 
 // Main owns the agent-launch settings, and the store's copy of them arrives
@@ -198,6 +199,7 @@ if (isDiagnosticsWindow) {
           <WorkspaceManager />
           <SshPromptDialogHost />
           <ArtifactsSetupQuestionHost />
+          <DevFolderApprovalHost />
         </ConfirmDialogProvider>
       </RootErrorBoundary>,
     )

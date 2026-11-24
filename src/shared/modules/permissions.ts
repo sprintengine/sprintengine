@@ -1,294 +1,206 @@
-// Tier 2 third-party capability modules: the permission vocabulary.
+// The permissions an extension's extension.json asks for, as the person reads
+// them when they approve it.
 //
-// A third-party module declares, in its manifest, the capabilities it needs. In
-// the v1 security model (signing + trusted publisher, in-process execution),
-// this list is install-time DISCLOSURE shown before you trust a
-// module, not a runtime-enforced cage. Runtime enforcement (a permission broker)
-// is only needed in a future open-ecosystem phase that runs non-trusted authors'
-// code. No consent string, doc, or UI copy may imply enforcement. This is
-// deliberately separate from the BYO-CLI `permissionPresets` (opaque launch-arg
-// bundles for a CLI, not capability scopes for code).
+// The vocabulary is the SDK's (packages/extension-sdk/src/permissions.ts), so
+// the app and the `sprintengine-extension` CLI validate a manifest the same
+// way. Studio checks every call an extension makes into it against what the
+// person approved and against what whoever set the call off may do
+// (main/module-host/extension-host-gate.ts). A `ui` extension's code runs
+// isolated in sandboxed frames, so what it is allowed is all it can do. A
+// `worker` extension's code runs on this machine with full access, and the
+// approval says so in those words (`extensionApprovalCopy`).
 //
-// See docs/module-authors/permissions.md for the author-facing reference.
-//
-// ## The `ipc:*` tiers
-//
-// `ipc:invoke` originally disclosed the entire `window.api` surface in one
-// opaque scope. The tiers below let an author disclose the user-meaningful area
-// they actually touch. The tier → `window.api` area mapping (disclosure only,
-// nothing is brokered at runtime):
-//
-// - `ipc:workspace-read` — observing workspace and project state: workspace-sync
-//   snapshots/events (`workspaceSyncGetSnapshot`, `onWorkspaceSyncEvent`),
-//   window state, git read models (`getGitStatus`, branches/history/graph/
-//   worktree lists), backlog reads, knowledge/memory reads, terminal session
-//   lists (`terminal.list`, `terminal.status`), workspace backup reads.
-// - `ipc:workspace-write` — changing workspace and project state through the
-//   studio: `workspaceSyncDispatch`, filesystem mutation routes (`writefile`,
-//   create/rename/copy/delete), git mutations (stage/commit/push/branch/
-//   worktrees), backlog mutations, workspace backup writes.
-// - `ipc:settings` — reading and changing studio settings and integrations:
-//   module enablement, third-party module install/trust, MCP catalog/sync,
-//   skill packs, the plugin registry, GitHub token, app
-//   updates, mobile bridge settings, voice transcription settings.
-//
-// Agents have no `ipc:*` tier: a module reaches them through its own chats
-// (`conversation:read` / `conversation:operate`) and companions
-// (`agents:companion`), never through the app's terminal APIs.
-//
-// Surfaces outside every tier (window controls, dialogs, clipboard, auth/
-// session, external-URL opening) are disclosed today only by the legacy broad
-// scope. `ipc:invoke` remains valid for existing manifests and means "any
-// internal API, including everything above"; the consent UI flags it as broad.
-//
-// ## A module's own methods
-//
-// `module:bridge` is the narrow gate for a module's declared methods
-// (`MainHost.registerMethods`, called by its window code through
-// `RendererHost.methods` over the Studio protocol; see
-// shared/modules/methods.ts): a module's window code talking to its own
-// background code, and nothing of the app's. The kernel checks it when a
-// third-party module declares methods. `ipc:invoke` still opens them, so a
-// manifest written before the split keeps working, but a module that only
-// talks to itself declares `module:bridge` and its consent prompt stops saying
-// "any of the app's internal APIs".
-// Unknown scopes stay forward-compatible: they validate structurally and are
-// surfaced verbatim as unrecognized.
+// See docs/extension-authors/permissions.md for the author-facing reference.
 
-export type CapabilityPermission =
-  | 'filesystem:read-workspace'
-  | 'filesystem:write-workspace'
-  | 'filesystem:read-home'
-  | 'process:spawn'
-  | 'network'
-  | 'ipc:workspace-read'
-  | 'ipc:workspace-write'
-  | 'ipc:settings'
-  | 'ipc:invoke'
-  // A module's own declared methods alone (`MainHost.registerMethods`, called
-  // through `RendererHost.methods`), split out of `ipc:invoke`. Checked when a
-  // third-party module declares methods, which `ipc:invoke` also allows.
-  | 'module:bridge'
-  // Backlog-focused disclosure scopes. Finer-grained than the broad
-  // `ipc:workspace-read`/`ipc:workspace-write` areas Backlog reads and writes
-  // already fall under; additive disclosure for modules built around Backlog.
-  | 'backlog.read'
-  | 'backlog.write'
-  | 'backlog.link.open'
-  // Create and manage the module's own scheduled agents through the SDK's
-  // scoped service. Disclosure-level like every other scope: the service does
-  // not runtime-check it.
-  | 'scheduled-agents.manage'
-  // Attach workspace-bound background (companion) agents through the SDK's
-  // Companion Agents service. Unlike the disclosure-only scopes above, the
-  // companion service DOES check this one explicitly at attach time (there is no
-  // shared runtime gate to inherit), so a module must declare it to attach.
-  | 'agents:companion'
-  // Send prompts to the person's own agent CLI in the background and read the
-  // answers, with no chat, workspace or tools (the SDK's text generation
-  // service). Checked on every call.
-  | 'agents:generate'
-  // Persist the module's own data through the SDK's scoped storage service
-  // (host-placed: workspace sidecar `modules/<id>/` or per-user app data).
-  | 'storage'
-  // Read the conversations the module started through the SDK's scoped
-  // conversation service: their live events, transcripts and list.
-  | 'conversation:read'
-  // Start, prompt, interrupt and stop the module's own conversations, and open
-  // a chat in the renderer (`RendererHost.openChat`). Implies read.
-  | 'conversation:operate'
-  // Run those conversations on `bypass`, where the agent asks before nothing,
-  // and start them with tools the agent uses without asking (`allowedTools`).
-  // Without it a module's chats go no looser than `auto`, whatever it asks
-  // for; checked on every create and every preset switch.
-  | 'conversation:bypass'
-  // Open a chat with a prompt drafted in its composer, for the person to read
-  // and send (`RendererHost.openChat` without `send`). Checked on every call;
-  // sending the prompt still needs `conversation:operate`.
-  | 'chat:draft'
-  // Store secrets the host sends only to origins the module named with them,
-  // never handing the value back to module code.
-  | 'secrets'
-  // Call the GitHub API with the user's sign-in; the host attaches the token
-  // and never hands it over.
-  | 'github'
-  // Contribute tools to the Studio MCP gateway (`MainHost.registerMcpTools`),
-  // which agents in any workspace can then call.
-  | 'mcp:tools'
-  // ── Backlog, usage and activity services ──
-  // Read token usage of every agent session on this machine — Studio's chats
-  // and the agent CLIs' own session logs — through the SDK's usage service.
-  // Checked on every call.
-  | 'usage:read'
-  // Read every Studio chat on this machine, read-only: chat summaries and the
-  // person's prompts with the end of each reply (never tool output), through
-  // the SDK's activity service. Checked on every call, and flagged as broad in
-  // the consent prompt.
-  | 'conversation:read-all'
-  // Extensible: unknown scopes validate structurally but are flagged as unknown
-  // so the consent UI can warn rather than silently grant something opaque.
-  | (string & {})
+import { isExtensionPermission } from '../../../packages/extension-sdk/src/permissions'
+import type { ExtensionTier } from '../../../packages/extension-sdk/src/manifest-schema'
 
-export const KNOWN_CAPABILITY_PERMISSIONS: readonly string[] = [
-  'filesystem:read-workspace',
-  'filesystem:write-workspace',
-  'filesystem:read-home',
-  'process:spawn',
-  'network',
-  'ipc:workspace-read',
-  'ipc:workspace-write',
-  'ipc:settings',
-  'ipc:invoke',
-  // The renderer→own-main bridge, split out of `ipc:invoke`.
-  'module:bridge',
-  'backlog.read',
-  'backlog.write',
-  'backlog.link.open',
-  'scheduled-agents.manage',
-  'agents:companion',
-  'agents:generate',
-  'storage',
-  'conversation:read',
-  'conversation:operate',
-  'conversation:bypass',
-  'chat:draft',
-  'secrets',
-  'github',
-  'mcp:tools',
-  // Backlog, usage and activity services.
-  'usage:read',
-  'conversation:read-all',
-]
+export {
+  EXTENSION_PERMISSIONS,
+  isExtensionPermission,
+  type ExtensionPermission,
+} from '../../../packages/extension-sdk/src/permissions'
 
-// Plain, sentence-case descriptions for the install/trust consent prompt.
-// Disclosure phrasing only — these describe what the module says it does,
-// never what the app prevents.
+/** A scope a signed package's plugin.json lists: shown as it is, never checked. */
+export type CapabilityPermission = string
+
+// Plain, sentence-case descriptions for the approval: what the person allows.
 const PERMISSION_DESCRIPTIONS: Record<string, string> = {
-  'filesystem:read-workspace': 'Read files in the open workspace',
-  'filesystem:write-workspace': 'Create and modify files in the open workspace',
-  'filesystem:read-home': 'Read your app configuration and home folder',
-  'process:spawn': 'Run external programs on your machine',
-  network: 'Make network requests',
-  'ipc:workspace-read': "See workspace, window, git, and task state through the app's APIs",
-  'ipc:workspace-write': "Create and change workspaces, files, and tasks through the app's APIs",
-  'ipc:settings': 'Read and change app settings and integrations',
-  'ipc:invoke': "Call any of the app's internal APIs, including its own background code (broad scope)",
-  'module:bridge': 'Let its window code talk to its own background code',
-  'backlog.read': 'Read Backlog item details and source content',
-  'backlog.write': 'Change Backlog item status, triage, links, and metadata, and create new items',
-  'backlog.link.open': 'Open links and targets attached to Backlog items',
-  'scheduled-agents.manage': 'Schedule agents of its own that start a chat on a timer',
-  'agents:companion': 'Run its own background agents inside the workspace',
-  'agents:generate': 'Send prompts to your AI models in the background, without opening a chat',
-  storage: 'Save its own data in the workspace folder and app data',
-  'conversation:read': 'Read the chats it started, including everything the agent says in them',
-  'conversation:operate': 'Start chats with agents, send them messages, and stop them',
+  'workspace:read': 'See your workspaces, their folders, branches and remotes',
+  'workspace:operate': 'Make workspaces and put Studio’s skills in them',
+  'conversation:read': 'Read every chat on this machine, including what you and the agents wrote (broad)',
+  'backlog:read': 'Read Backlog items',
+  'backlog:operate': 'Create Backlog items and change their status, triage, links and metadata',
+  'providers:read': 'See which agents a chat can run on',
+  'usage:read': 'See token usage and cost of every agent session on this machine',
+  'workspace-files:read': 'Read the files in your workspaces’ folders',
+  'workspace-files:write':
+    'Change and create files in your workspaces’ folders, which can run code as you (full access)',
+  'storage:own': 'Save its own data',
+  'settings:own': 'Read the values of its own Settings section',
+  'secrets:own': 'Store API keys and send them to the sites it names (the key is never shown back to the extension)',
+  'notifications:show': 'Show notifications in the bell',
+  'conversation:own': 'Start chats of its own with your agents, send them messages, read them and stop them',
   'conversation:bypass': 'Let the agents in its chats edit files and run commands without asking you first',
   'chat:draft': 'Open a chat with a message drafted for you to read and send',
-  secrets: 'Store API keys and send them to the sites it names (the key is never shown back to the extension)',
-  github: 'Use your GitHub sign-in to call the GitHub API (the token is never shown to the extension)',
-  'mcp:tools': 'Add tools that agents in your workspaces can call',
-  'usage:read': 'See token usage and cost of every agent session on this machine',
-  'conversation:read-all': 'Read every chat on this machine, including what you and the agents wrote (broad scope)',
+  'schedules:own': 'Schedule agents of its own that start a chat on a timer',
+  'agents:generate': 'Send prompts to your AI models in the background, without opening a chat',
+  'agents:companion': 'Run its own background agents inside a workspace',
+  'github:api': 'Use your GitHub sign-in to call the GitHub API (the token is never shown to the extension)',
+  'tools:contribute': 'Add tools that agents in your workspaces can call',
 }
 
+/** Whether a scope is one this version knows. */
 export function isKnownCapabilityPermission(value: string): boolean {
-  return KNOWN_CAPABILITY_PERMISSIONS.includes(value)
+  return isExtensionPermission(value)
 }
 
-// The legacy everything-scope. Kept valid so existing manifests do not break
-// (it still opens the renderer→module-main bridge), and the consent UI flags
-// it as broad; authors declare `module:bridge` for the bridge and the `ipc:*`
-// tiers that match what they actually touch instead.
-//
-// `conversation:read-all` is broad for the other reason: it reads what the
-// person wrote in every chat, so the prompt marks it the same way.
-const BROAD_CAPABILITY_PERMISSIONS: ReadonlySet<string> = new Set(['ipc:invoke', 'conversation:read-all'])
+// Broad: it reads what the person wrote in every chat, so the approval marks it.
+const BROAD_CAPABILITY_PERMISSIONS: ReadonlySet<string> = new Set(['conversation:read'])
 
 export function isBroadCapabilityPermission(value: string): boolean {
   return BROAD_CAPABILITY_PERMISSIONS.has(value)
 }
 
-// A human-readable line for the consent prompt; unknown scopes are surfaced
-// verbatim with a marker so the user can see exactly what was requested.
+// A human-readable line for the approval; unknown scopes are surfaced verbatim
+// with a marker so the person can see exactly what was asked for.
 export function describeCapabilityPermission(permission: string): string {
-  return PERMISSION_DESCRIPTIONS[permission] ?? `Unrecognized capability: ${permission}`
+  return PERMISSION_DESCRIPTIONS[permission] ?? `Unrecognized permission: ${permission}`
+}
+
+/**
+ * Permissions that amount to full access to the person's account however
+ * isolated the code that holds them: a workspace's files include ones that run
+ * code (a project's scripts, its tools' configuration), so changing them is
+ * running code as the person.
+ */
+const FULL_ACCESS_PERMISSIONS: ReadonlySet<string> = new Set(['workspace-files:write'])
+
+/** Whether an extension asking for these permissions has full access to the person's account. */
+export function grantsFullAccess(permissions: readonly string[]): boolean {
+  return permissions.some((permission) => FULL_ACCESS_PERMISSIONS.has(permission))
+}
+
+/**
+ * What approving an extension of this tier, asking for these permissions,
+ * means, in the words the approval says before anything else, and only what
+ * this build enforces. A `ui` extension's code runs in sandboxed frames with
+ * no network and no reach into the app, so it can do only what the person
+ * allows, unless what it asks for is itself full access (`grantsFullAccess`).
+ * A `worker` extension's code runs on this machine with full access; Studio
+ * checks only the calls it makes into Studio.
+ */
+/** What an extension hands agents and chats that its approval has to speak to. */
+export type ExtensionAgentReach = {
+  /** It has a local (stdio) MCP server: a command the person's agents run on this machine. */
+  localServers?: boolean
+  /** It adds a model provider: an endpoint the key the person enters is sent to. */
+  providers?: boolean
+}
+
+export function extensionApprovalCopy(
+  tier: ExtensionTier,
+  permissions: readonly string[] = [],
+  agents: ExtensionAgentReach = {},
+): string {
+  // Whatever its tier, what it hands agents is said too: a local MCP server
+  // runs with the agent's own access, which is the person's.
+  const reach = [
+    ...(agents.localServers
+      ? [
+          'Your agents will run its local MCP servers on this machine, with full access to your account: read each command, its arguments and its environment below. An update that changes them, or the files they run, asks again.',
+        ]
+      : []),
+    ...(agents.providers
+      ? ['Chats can use its model providers; a key you enter for one is sent only to the address shown below.']
+      : []),
+  ]
+  if (tier === 'declarative' && reach.length > 0) return reach.join(' ')
+  const base = tierApprovalCopy(tier, permissions)
+  return reach.length > 0 ? `${base} ${reach.join(' ')}` : base
+}
+
+function tierApprovalCopy(tier: ExtensionTier, permissions: readonly string[]): string {
+  if (tier === 'ui' && grantsFullAccess(permissions))
+    return 'Its code runs isolated, but it asks to change the files in your workspaces, and a project’s files can run code: approving it gives it full access to your account on this machine.'
+  switch (tier) {
+    case 'content':
+      return 'It only carries content, and runs nothing.'
+    case 'declarative':
+      return 'It adds commands, menu items and buttons to Studio that run Studio’s own actions. It runs no code of its own.'
+    case 'ui':
+      return 'Its code runs isolated and can do only what you allow below: it has no network of its own, and everything else goes through Studio, which checks every call.'
+    case 'worker':
+      return 'Its code runs on this machine with full access: your files, your programs, your network and your accounts. Studio checks the calls it makes into Studio against what you allow below; its own code is not limited.'
+  }
 }
 
 // ── At-a-glance access ───────────────────────────────────────────────────────
 //
-// The sentences above are what the full disclosure reads. A list of extensions
-// cannot afford a sentence per scope, so every known scope also has a short
-// title, and the ones that warrant a second look before trusting — reach past
-// the module's own data, act as the person, or run unattended — are marked
+// The sentences above are what the full approval reads. A list of extensions
+// cannot afford a sentence per permission, so every known one also has a short
+// title, and the ones that warrant a second look before approving — reach past
+// the extension's own data, act as the person, or run unattended — are marked
 // `care` with a "why" of six words or fewer. Settings → Extensions draws one
-// warning glyph per `care` scope on a row and lists the titles on hover; its
-// details and trust review show the why. An unrecognized scope always needs
+// warning glyph per `care` permission on a row and lists the titles on hover;
+// its details and approval show the why. An unrecognized one always needs
 // care: nothing here can say what it grants.
-//
-// Disclosure phrasing only, like the sentences: what the module says it does,
-// never what the app prevents.
 
 export type CapabilityAccess = {
-  /** Short sentence-case title: "Reads your home folder". */
+  /** Short sentence-case title: "Reads all your chats". */
   title: string
-  /** Warrants a second look before trusting. */
+  /** Warrants a second look before approving. */
   care: boolean
-  /** Six words or fewer, for `care` scopes only. */
+  /** Six words or fewer, for `care` permissions only. */
   why?: string
 }
 
 const CAPABILITY_ACCESS: Record<string, CapabilityAccess> = {
   // Needs care.
-  'filesystem:read-home': { title: 'Reads your home folder', care: true, why: 'Including other apps’ data' },
-  'filesystem:write-workspace': {
-    title: 'Edits files in your projects',
-    care: true,
-    why: 'Creates and changes project files',
-  },
-  'process:spawn': { title: 'Runs programs on this machine', care: true, why: 'Any command, with your access' },
-  network: { title: 'Uses the network', care: true, why: 'Can send data to any site' },
-  'ipc:settings': { title: 'Changes your settings', care: true, why: 'Including integrations and extensions' },
-  'ipc:invoke': { title: 'Broad access to Studio', care: true, why: 'Calls any internal API' },
-  'conversation:operate': { title: 'Runs chats with your agents', care: true, why: 'Starts, messages and stops chats' },
+  'workspace:operate': { title: 'Makes workspaces', care: true, why: 'Writes skills into your projects' },
+  'conversation:read': { title: 'Reads all your chats', care: true, why: 'Every chat on this machine' },
+  'conversation:own': { title: 'Runs chats with your agents', care: true, why: 'Starts, messages and stops chats' },
   'conversation:bypass': {
     title: 'Lets agents act without asking',
     care: true,
     why: 'Edits and commands without approval',
   },
-  'conversation:read-all': { title: 'Reads all your chats', care: true, why: 'Every chat on this machine' },
-  github: { title: 'Uses your GitHub sign-in', care: true, why: 'Calls GitHub as you' },
-  secrets: { title: 'Holds your API keys', care: true, why: 'Sends them to sites it names' },
+  'github:api': { title: 'Uses your GitHub sign-in', care: true, why: 'Calls GitHub as you' },
+  'secrets:own': { title: 'Holds your API keys', care: true, why: 'Sends them to sites it names' },
   'usage:read': { title: 'Sees your usage and cost', care: true, why: 'Every agent session on this machine' },
+  'backlog:operate': { title: 'Changes Backlog items', care: true, why: 'Creates and edits your items' },
+  'workspace-files:write': {
+    title: 'Changes your project files',
+    care: true,
+    why: 'Full access: project files run code',
+  },
   // Standard.
-  'filesystem:read-workspace': { title: 'Reads your projects', care: false },
-  'ipc:workspace-read': { title: 'Sees workspace and git state', care: false },
-  'ipc:workspace-write': { title: 'Changes workspaces and tasks', care: false },
-  'module:bridge': { title: 'Talks to its own background code', care: false },
-  'backlog.read': { title: 'Reads the Backlog', care: false },
-  'backlog.write': { title: 'Changes Backlog items', care: false },
-  'backlog.link.open': { title: 'Opens Backlog links', care: false },
-  'scheduled-agents.manage': { title: 'Schedules agents', care: false },
-  'agents:companion': { title: 'Runs background agents', care: false },
-  'agents:generate': { title: 'Sends prompts to your models', care: false },
-  storage: { title: 'Saves its own data', care: false },
-  'conversation:read': { title: 'Reads its own chats', care: false },
+  'workspace:read': { title: 'Sees workspaces and git state', care: false },
+  'workspace-files:read': { title: 'Reads your project files', care: false },
+  'backlog:read': { title: 'Reads the Backlog', care: false },
+  'providers:read': { title: 'Sees your agents', care: false },
+  'storage:own': { title: 'Saves its own data', care: false },
+  'settings:own': { title: 'Reads its own settings', care: false },
+  'notifications:show': { title: 'Shows notifications', care: false },
   'chat:draft': { title: 'Drafts messages for you to send', care: false },
-  'mcp:tools': { title: 'Adds tools for agents', care: false },
+  'schedules:own': { title: 'Schedules agents', care: false },
+  'agents:generate': { title: 'Sends prompts to your models', care: false },
+  'agents:companion': { title: 'Runs background agents', care: false },
+  'tools:contribute': { title: 'Adds tools for agents', care: false },
 }
 
-/** The short title, care flag and why for one scope; unknown scopes always need care. */
+/** The short title, care flag and why for one permission; unknown ones always need care. */
 export function capabilityAccess(permission: string): CapabilityAccess {
   return (
     CAPABILITY_ACCESS[permission] ?? {
       title: `Unrecognized: ${permission}`,
       care: true,
-      why: 'Not a scope this version knows',
+      why: 'Not a permission this version knows',
     }
   )
 }
 
-/** A manifest's scopes split into those that need care and the rest, each in declared order. */
+/** A manifest's permissions split into those that need care and the rest, each in declared order. */
 export function partitionCapabilityAccess(permissions: readonly string[]): {
   care: string[]
   standard: string[]
@@ -301,7 +213,7 @@ export function partitionCapabilityAccess(permissions: readonly string[]): {
   return { care, standard }
 }
 
-// The permissions validator lives in the published SDK so the app and the
-// `sprintengine-module` CLI validate manifests identically; re-exported here for
-// app code.
-export { validateCapabilityPermissions } from '../../../packages/module-sdk/src/manifest-validate'
+// The bundle permissions validator lives in the published SDK so the app and
+// the `sprintengine-extension` CLI validate manifests identically; re-exported
+// here for app code.
+export { validateCapabilityPermissions } from '../../../packages/extension-sdk/src/manifest-validate'

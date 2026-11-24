@@ -32,10 +32,8 @@ import {
   BUILTIN_SKILLS,
   createBuiltinSkillManager,
   ensureSkillInstalled,
-  registerModuleSkills,
   setDefaultSkillManager,
   setLaunchDeliversBundledSkillResolver,
-  unregisterModuleSkills,
 } from './builtin-skills'
 import { removeManagedStudioGatewayFromClaudeWorkspace } from './mcp-config-service'
 import { syncStudioMcpConfig } from './studio-mcp-sync'
@@ -215,7 +213,7 @@ test('the bundled skill is the one a prompt invokes, and ships where the launch 
 })
 
 test('a bundled skill is not copied for a CLI whose launch carries it, and still is for one that does not', async () => {
-  const { root, workspace } = await scratch('skills')
+  const { workspace } = await scratch('skills')
   setDefaultSkillManager(createBuiltinSkillManager({ sourceRoot: STUDIO_SKILLS_SOURCE, listPlugins: () => [] }))
   setLaunchDeliversBundledSkillResolver((cli) => cli === 'claude-code')
   try {
@@ -227,19 +225,7 @@ test('a bundled skill is not copied for a CLI whose launch carries it, and still
 
     assert.equal((await ensureSkillInstalled(workspace, 'backlog', { cli: 'codex' })).ok, true)
     assert.equal(existsSync(join(workspace, '.agents', 'skills', 'backlog', 'SKILL.md')), true)
-
-    // A module's skill lives in the module, not in the plugin directory, so it
-    // has no launch-scoped route and is copied whatever the CLI.
-    const moduleSkill = join(root, 'module', 'skills', 'isolation-probe')
-    await mkdir(moduleSkill, { recursive: true })
-    await writeFile(join(moduleSkill, 'SKILL.md'), '# probe\n', 'utf8')
-    registerModuleSkills('isolation', [
-      { id: 'isolation-probe', sourceDir: moduleSkill, targetPolicy: 'agents', description: 'probe' },
-    ])
-    assert.equal((await ensureSkillInstalled(workspace, 'isolation-probe', { cli: 'claude-code' })).status, 'installed')
-    assert.equal(existsSync(join(workspace, '.agents', 'skills', 'isolation-probe', 'SKILL.md')), true)
   } finally {
-    unregisterModuleSkills('isolation')
     setLaunchDeliversBundledSkillResolver(null)
     setDefaultSkillManager(null)
   }

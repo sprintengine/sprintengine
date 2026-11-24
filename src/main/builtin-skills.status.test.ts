@@ -11,18 +11,18 @@ import {
   createBuiltinSkillManager,
   ensureSkillInstalled,
   getSkillStatus,
-  registerModuleSkills,
   setDefaultSkillManager,
-  unregisterModuleSkills,
 } from './builtin-skills'
 
 // `getSkillStatus` is the read half of `ensureSkillInstalled`: the same
 // targets and vocabulary, and nothing written. A module's door asks it to show
-// "installed in this project" before the person clicks Install.
+// "installed in this project" before the person clicks Install. The bundled
+// backlog skill stands in for any skill here.
 
 let temp = ''
 let workspaceRoot = ''
-let moduleRoot = ''
+let bundledRoot = ''
+const SKILL = 'backlog'
 
 async function writeSkillSource(root: string, skillId: string, body: string): Promise<void> {
   await mkdir(join(root, skillId), { recursive: true })
@@ -32,24 +32,13 @@ async function writeSkillSource(root: string, skillId: string, body: string): Pr
 beforeEach(async () => {
   temp = await mkdtemp(join(tmpdir(), 'sprintengine-skill-status-'))
   workspaceRoot = join(temp, 'workspace')
-  moduleRoot = join(temp, 'modules', 'decision-log')
   await mkdir(workspaceRoot, { recursive: true })
-  const bundledRoot = join(temp, 'bundled')
-  for (const skill of BUILTIN_SKILLS) await writeSkillSource(bundledRoot, skill.id, 'bundled\n')
-  await writeSkillSource(join(moduleRoot, 'skills'), 'decision-log', 'version one\n')
+  bundledRoot = join(temp, 'bundled')
+  for (const skill of BUILTIN_SKILLS) await writeSkillSource(bundledRoot, skill.id, 'version one\n')
   setDefaultSkillManager(createBuiltinSkillManager({ sourceRoot: bundledRoot, listPlugins: () => [] }))
-  registerModuleSkills('decision-log', [
-    {
-      id: 'decision-log',
-      sourceDir: join(moduleRoot, 'skills', 'decision-log'),
-      targetPolicy: 'agents',
-      description: 'Record a decision.',
-    },
-  ])
 })
 
 afterEach(() => {
-  unregisterModuleSkills('decision-log')
   setDefaultSkillManager(null)
 })
 
@@ -62,26 +51,26 @@ test('an unknown skill answers unknown-skill', async () => {
 })
 
 test('a skill not yet in the workspace is missing, and asking writes nothing', async () => {
-  assert.deepEqual(await getSkillStatus(workspaceRoot, 'decision-log'), { ok: false, status: 'missing' })
-  assert.equal(existsSync(join(workspaceRoot, '.agents', 'skills', 'decision-log')), false)
+  assert.deepEqual(await getSkillStatus(workspaceRoot, SKILL), { ok: false, status: 'missing' })
+  assert.equal(existsSync(join(workspaceRoot, '.agents', 'skills', SKILL)), false)
 })
 
 test('after ensureSkillInstalled the status reads installed', async () => {
-  assert.deepEqual(await ensureSkillInstalled(workspaceRoot, 'decision-log'), { ok: true, status: 'installed' })
-  assert.deepEqual(await getSkillStatus(workspaceRoot, 'decision-log'), { ok: true, status: 'installed' })
+  assert.deepEqual(await ensureSkillInstalled(workspaceRoot, SKILL), { ok: true, status: 'installed' })
+  assert.deepEqual(await getSkillStatus(workspaceRoot, SKILL), { ok: true, status: 'installed' })
 })
 
 test('a changed source reads update-available until ensure runs again', async () => {
-  await ensureSkillInstalled(workspaceRoot, 'decision-log')
-  await writeSkillSource(join(moduleRoot, 'skills'), 'decision-log', 'version two\n')
-  assert.deepEqual(await getSkillStatus(workspaceRoot, 'decision-log'), { ok: true, status: 'update-available' })
-  assert.deepEqual(await ensureSkillInstalled(workspaceRoot, 'decision-log'), { ok: true, status: 'updated' })
-  assert.deepEqual(await getSkillStatus(workspaceRoot, 'decision-log'), { ok: true, status: 'installed' })
+  await ensureSkillInstalled(workspaceRoot, SKILL)
+  await writeSkillSource(bundledRoot, SKILL, 'version two\n')
+  assert.deepEqual(await getSkillStatus(workspaceRoot, SKILL), { ok: true, status: 'update-available' })
+  assert.deepEqual(await ensureSkillInstalled(workspaceRoot, SKILL), { ok: true, status: 'updated' })
+  assert.deepEqual(await getSkillStatus(workspaceRoot, SKILL), { ok: true, status: 'installed' })
 })
 
 test('a hand-made copy in the way reads local', async () => {
-  await writeSkillSource(join(workspaceRoot, '.agents', 'skills'), 'decision-log', 'mine\n')
-  const status = await getSkillStatus(workspaceRoot, 'decision-log')
+  await writeSkillSource(join(workspaceRoot, '.agents', 'skills'), SKILL, 'mine\n')
+  const status = await getSkillStatus(workspaceRoot, SKILL)
   assert.equal(status.ok, true)
   assert.equal(status.status, 'local')
 })

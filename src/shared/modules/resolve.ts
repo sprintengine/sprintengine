@@ -5,12 +5,11 @@ import type {
   ModuleResolutionError,
   ModuleResolutionErrorCode,
 } from './manifest'
-import { HOST_API_VERSION, checkHostApiCompatibility } from './host-api'
 
 export type ModuleResolutionOptions = {
   /**
    * Modules that cannot load regardless of enablement, keyed by id to the reason
-   * (e.g. an untrusted or invalid-signature third-party module). Computed outside
+   * (e.g. an unapproved or invalid-signature extension). Computed outside
    * this pure function (signature verification + trust store live in main); the
    * resolver just excludes them and cascades the effect to their dependents.
    */
@@ -60,14 +59,14 @@ export function resolveModuleEnablement(
       errors.push({
         id,
         code: 'conflict',
-        message: `Module "${id}" conflicts with enabled module "${conflict}".`,
+        message: `Extension "${id}" conflicts with enabled extension "${conflict}".`,
       })
       continue
     }
     accepted.add(id)
   }
 
-  // 3b. Drop modules the caller marked ineligible (untrusted, invalid-signature
+  // 3b. Drop modules the caller marked ineligible (unapproved, invalid-signature
   //     or host-API-incompatible third-party). Done before dependency
   //     validation so a dependent of an ineligible module cascades to
   //     disabled_dependency below.
@@ -90,7 +89,7 @@ export function resolveModuleEnablement(
           errors.push({
             id,
             code: 'missing_dependency',
-            message: `Module "${id}" requires "${dep}", which is not installed.`,
+            message: `Extension "${id}" requires "${dep}", which is not installed.`,
           })
           accepted.delete(id)
           changed = true
@@ -100,7 +99,7 @@ export function resolveModuleEnablement(
           errors.push({
             id,
             code: 'disabled_dependency',
-            message: `Module "${id}" requires "${dep}", which is not enabled.`,
+            message: `Extension "${id}" requires "${dep}", which is not enabled.`,
           })
           accepted.delete(id)
           changed = true
@@ -150,23 +149,14 @@ export function resolveModuleEnablement(
   }
 }
 
-// Each reason says what the user can do about it: trusting fixes an untrusted
-// module, nothing the user does fixes a tampered one, and an incompatible one
-// needs a different build of the module or of the app.
+// Each reason says what the user can do about it: approving fixes an
+// unapproved extension, and nothing the user does fixes a tampered one.
 function ineligibleMessage(manifest: CapabilityManifest, reason: ModuleResolutionErrorCode): string {
   const id = manifest.id
   switch (reason) {
     case 'invalid_signature':
-      return `Module "${id}" has an invalid signature and will not load.`
-    case 'incompatible_host_api': {
-      // The check's own words say which side to update, and for a retired
-      // host API what replaced it and what to rebuild against.
-      const compatibility = checkHostApiCompatibility(manifest)
-      return compatibility.ok
-        ? `Module "${id}" was built for a different host API than this app provides (${HOST_API_VERSION}); update the module or the app to enable it.`
-        : `Module "${id}" will not load. ${compatibility.message}`
-    }
+      return `Extension "${id}" has an invalid signature and will not load.`
     default:
-      return `Module "${id}" is not trusted yet; trust it in Settings → Modules to enable.`
+      return `Extension "${id}" waits for your approval; approve it in Settings → Extensions to enable.`
   }
 }

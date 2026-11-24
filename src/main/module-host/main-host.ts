@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import type { ExtensionHookHandlers } from '../../../packages/extension-sdk/src/hooks'
 import { readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative } from 'node:path'
 
@@ -27,21 +28,33 @@ import {
   type ModuleNotificationDelivery,
   type ModuleNotifyInput,
 } from '../../shared/modules/notifications'
-import type {
-  EnsureSkillInstalledResult,
-  ModuleSkillRegistration,
-  ModuleSkillStatusResult,
-} from '../../shared/modules/skills'
-import { HOST_API_VERSION, hostSupports, type HostCapability } from '../../shared/modules/host-api'
+import type { EnsureSkillInstalledResult, ModuleSkillStatusResult } from '../../shared/modules/skills'
+import { hostSupports, type HostCapability } from '../../shared/modules/host-api'
+import type { ExtensionMcpToolContribution } from '../../../packages/extension-sdk/src/extension-manifest'
 import {
   ensureSkillInstalled as ensureSkillInstalledOnDisk,
   getSkillStatus as getSkillStatusOnDisk,
-  registerModuleSkills,
-  unregisterModuleSkills,
 } from '../builtin-skills'
-import { resolveContainedPath, resolveModuleSkillDirectory } from '../modules/entry-containment'
-import type { ModuleUsageRegistry } from '../../shared/modules/activity-service'
-import type { ModuleBacklogRegistry } from '../../shared/modules/backlog-service'
+import { resolveContainedPath } from '../modules/entry-containment'
+import type { StudioExtensionCallAnswer } from '../../../packages/studio-protocol/src/public'
+import {
+  createExtensionFrameCalls,
+  type ExtensionFrameCallRequest,
+  type ExtensionFrameCallDeps,
+} from './extension-frame-calls'
+import type { ModuleAppStateMirror } from './module-app-state-mirror'
+import {
+  EXTENSION_MAIN_HOST_METHODS,
+  extensionHostService,
+  type ExtensionHostRequirement,
+} from '../../../packages/extension-sdk/src/services'
+import { boundToRegistrant, currentInvoker, runAsInvoker, type ExtensionInvoker } from './extension-invocation'
+import {
+  ExtensionHostRefusal,
+  gateExtensionHostCall,
+  refuseExtensionHostCall,
+  type ExtensionHostDecision,
+} from './extension-host-gate'
 
 // Main-process host kernel. Replaces the static, central wiring in
 // app-services.ts / register-*-ipc.ts with registries that capability modules
@@ -131,16 +144,11 @@ export type McpToolContribution = {
 }
 
 /**
- * The process-wide skill registry the kernel writes module skills into. The
- * real one lives in src/main/builtin-skills.ts beside the skills the app
- * bundles, so a module skill and a built-in skill resolve through one lookup
- * at the launch boundary. Injectable so the kernel's own tests can watch the
- * host surface without touching the filesystem.
+ * The app's skill installer, as a module reaches it (src/main/builtin-skills.ts).
+ * Injectable so the kernel's own tests can watch the host surface without
+ * touching the filesystem.
  */
 export type ModuleSkillHostRegistry = {
-  /** `sourceDir` on each registration is already absolute and root-checked. */
-  register(moduleId: string, registrations: readonly ModuleSkillRegistration[]): void
-  unregister(moduleId: string): void
   ensureInstalled(workspaceRoot: string, skillId: string): Promise<EnsureSkillInstalledResult>
   /** The same check, read only: nothing is written to the workspace. */
   getStatus(workspaceRoot: string, skillId: string): Promise<ModuleSkillStatusResult>
@@ -201,18 +209,12 @@ function isCapability(value: unknown): value is object {
   )
 }
 
-// The declarations that let a third-party module serve methods to clients:
-// its own scope, and the broad legacy one it was split out of.
-const METHOD_PERMISSIONS: ReadonlySet<string> = new Set(['module:bridge', 'ipc:invoke'])
-
 // The app-internal service behind `MainHost.listChatRuntimes` (the agent
 // runtime module provides it, as ChatRuntimesToken). A host method rather than
 // a published token: every module may read it, with no permission to declare.
 export const CHAT_RUNTIMES_SERVICE_KEY = 'core.chat-runtimes'
 
 const defaultSkillRegistry: ModuleSkillHostRegistry = {
-  register: registerModuleSkills,
-  unregister: unregisterModuleSkills,
   ensureInstalled: ensureSkillInstalledOnDisk,
   getStatus: getSkillStatusOnDisk,
 }
@@ -220,8 +222,6 @@ const defaultSkillRegistry: ModuleSkillHostRegistry = {
 export type MainHost = {
   /** The module currently registering. Useful for diagnostics and ownership. */
   readonly moduleId: string
-  /** The host API this app provides; see shared/modules/host-api.ts. */
-  readonly hostApiVersion: number
   /** Whether this host provides `capability` now; false for names it does not know. */
   supports(capability: HostCapability): boolean
   /**
@@ -232,15 +232,15 @@ export type MainHost = {
   listChatRuntimes(): Promise<ModuleChatRuntimeOption[]>
   /**
    * Declare the methods this module serves its renderer half, and any client
-   * the person granted `modules:read` / `modules:operate`, over the Studio
-   * protocol's `module.read` and `module.operate`. Each names its access
+   * the person granted `extensions:read` / `extensions:operate`, over the Studio
+   * protocol's `extension.read` and `extension.operate`. Each names its access
    * (`read` or `operate`, the only entry it is called through), a validator
    * for its params and a handler; a handler's result must be JSON. Names are
    * a lower-case letter, then letters, digits, dots and dashes: the module id
    * is their namespace. The whole batch is validated before any of it lands,
    * a name this module already declares is an error, and unloading the module
-   * takes its methods with it. A third-party module must declare
-   * `module:bridge` (or the broad `ipc:invoke`).
+   * takes its methods with it. An extension's own methods need no
+   * permission.
    */
   registerMethods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(
     methods: ModuleMethodRegistrations<Cs>,
@@ -255,28 +255,23 @@ export type MainHost = {
    * of a disabled-but-registered module stay listed and answer an actionable
    * enable error instead of running.
    *
-   * A third-party module must declare `mcp:tools`, and its tools are treated
+   * An extension must hold `tools:contribute`, and its tools are treated
    * as mutating unless they say `mutates: false`: an undeclared write is the
    * mistake that costs, so the default errs toward the audited, gated scope.
    */
   registerMcpTools(tools: McpToolRegistration[]): void
   /**
-   * Contribute agent skills this module ships. Each `sourceDir` is relative to
-   * the module root and must stay inside it; a module with no root on disk
-   * passes an absolute path. Registrations are owned exactly as MCP tools
-   * are: an id a built-in skill or another module already holds
-   * is a registration error, the whole batch is validated before any of it
-   * lands, and unloading the module takes its skills with it.
-   *
-   * A registered skill is a skill: the launch boundary's `spawnSkillId`
-   * resolves it, and `targetPolicy: 'all-native'` fans it out into every
-   * installed CLI's native skill directory the way a built-in does.
+   * Serve the hooks an extension's extension.json lists. Only an extension's
+   * worker serves hooks: its process registers them with its server
+   * (server/extensions/workers/worker-session.ts), which runs them; a part of
+   * Studio's own in this process has none, and is refused. Answers what takes
+   * the handlers back out.
    */
-  registerSkills(skills: ModuleSkillRegistration[]): void
+  registerHooks(handlers: ExtensionHookHandlers): () => void
   /**
-   * Make a skill present in a workspace now, rather than at the next spawn —
-   * how a module pre-installs the skill an agent will be told to invoke. Works
-   * for this module's own skills and for the app's. Never throws; an unknown
+   * Make one of the app's skills present in a workspace now, rather than at
+   * the next spawn — how a module pre-installs the skill an agent will be told
+   * to invoke. Never throws; an unknown
    * id answers `{ ok: false, status: 'unknown-skill' }`.
    */
   ensureSkillInstalled(workspaceRoot: string, skillId: string): Promise<EnsureSkillInstalledResult>
@@ -295,14 +290,13 @@ export type MainHost = {
   getModuleDataDir(): string
   /**
    * The absolute path of a file the module was verified with, while its bytes
-   * still match — the main-side twin of `RendererHost.getAssetUrl`. Throws for
-   * anything else.
+   * still match. Throws for anything else.
    */
   getAssetPath(relativePath: string): string
   /**
    * A workspace's checked-out branch and remotes (with `owner/repo` for a
-   * GitHub one), read by git from the workspace's folder. A third-party
-   * module must declare `ipc:workspace-read`. Never throws.
+   * GitHub one), read by git from the workspace's folder. An extension must
+   * hold `workspace:read`. Never throws.
    */
   getWorkspaceGitInfo(workspaceId: string): Promise<ModuleWorkspaceGitInfoResult>
   /**
@@ -358,7 +352,7 @@ export type MainHost = {
    * request/response bridge does not have. The source module id is stamped
    * from this host's scope, so only this module's `RendererHost.subscribe`
    * receives it; an empty or over-long topic throws. It rides the Studio's
-   * `module.events` stream: fan-out reaches every client following it,
+   * `extension.events` stream: fan-out reaches every client following it,
    * ordering is FIFO per module, and nothing is replayed to a client that
    * connects later (shared/modules/events.ts). The payload must be JSON.
    */
@@ -371,21 +365,18 @@ export type MainKernel = {
   /** The methods a module declares, in registration order. Empty for one that declares none or is not loaded. */
   declaredMethods(moduleId: string): ReadonlyArray<{ name: string; access: ModuleMethodAccess }>
   /**
-   * Call a module's declared method, as `module.read` / `module.operate` do:
+   * Call a module's declared method, as `extension.read` / `extension.operate` do:
    * the module's answer (its result or its own refusal), or the host's
    * refusal. Rejects when the handler throws or answers something not JSON.
    */
   callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome>
   /**
-   * The host's services a module's window half calls on this server (the
-   * protocol's `moduleBacklog.*` and `moduleUsage.query`), for a module that
-   * runs here: its main half loaded, or its manifest alone. Each service
-   * checks the module's own permission on every call; one this Studio does
-   * not provide is null.
+   * One host call an extension's frame made (`extension.call`): checked
+   * against the method's row, the extension's approval and `invoker`, the
+   * connection whose client drew the frame, then carried out here (a client
+   * method is only admitted). Refusals are answers.
    */
-  hostServicesFor(moduleId: string): ModuleHostServicesOutcome
-  /** skill id -> owning module id, for diagnostics and collision reports. */
-  ownedSkills(): ReadonlyMap<string, string>
+  callFrameMethod(request: ExtensionFrameCallRequest): Promise<StudioExtensionCallAnswer>
   /** Module-contributed Studio gateway tools, in registration order. */
   mcpToolRegistrations(): ReadonlyArray<McpToolContribution>
   startupHooks(): ReadonlyArray<StartupHook>
@@ -424,44 +415,79 @@ export type MainKernel = {
    * module events are signals, not diagnostics (see shared/modules/events.ts).
    */
   emitModuleEvent(sourceModuleId: string, topic: string, payload?: unknown): void
+  /**
+   * Hand the kernel the extensions whose code runs in a worker process of its
+   * own (src/server/extensions/workers): their methods and MCP tools are the
+   * worker's, and a call to one starts it when it is not running.
+   */
+  attachWorkers(port: KernelWorkerPort): void
+  /** The host's gate for one of an extension's `studio` methods, as whoever the code running now serves. */
+  gateHostMethod(moduleId: string, method: string): ExtensionHostDecision
+  /** Why `names` would collide with a gateway tool or another module's, or null when they do not. */
+  mcpToolNameProblem(moduleId: string, names: readonly string[]): string | null
+}
+
+/**
+ * The extensions whose code runs in a worker process. The kernel asks it for
+ * what such an extension serves, rather than holding its registrations itself.
+ */
+export type KernelWorkerPort = {
+  /** Whether `moduleId`'s code runs in a worker. */
+  serves(moduleId: string): boolean
+  /** One call of its method, starting the worker first when it is not running. */
+  callMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome>
+  /** The methods its worker declared when it last ran. */
+  declaredMethods(moduleId: string): ReadonlyArray<{ name: string; access: ModuleMethodAccess }>
+  /** The MCP tools of every worker extension, advertised whether or not it runs now. */
+  mcpTools(): ReadonlyArray<{ moduleId: string; registration: McpToolRegistration }>
+}
+
+/**
+ * A method's answer, checked: its result must be JSON, and a refusal of its
+ * own must carry a code and words. Throws for anything else.
+ */
+export function settleMethodAnswer(
+  moduleId: string,
+  method: string,
+  answer: unknown,
+): Extract<ModuleMethodCallOutcome, { ok: true }> {
+  const given = answer as { ok?: unknown; result?: unknown; code?: unknown; message?: unknown } | null | undefined
+  if (given?.ok === true) {
+    const problem = given.result === undefined ? null : moduleEventPayloadProblem(given.result, 'result')
+    if (problem)
+      throw new Error(`Extension "${moduleId}" method "${method}" answered a result that is not JSON: ${problem}`)
+    return { ok: true, answer: { ok: true, result: (given.result ?? null) as never } }
+  }
+  if (given?.ok === false && typeof given.code === 'string' && typeof given.message === 'string') {
+    return { ok: true, answer: { ok: false, code: given.code, message: given.message } }
+  }
+  throw new Error(
+    `Extension "${moduleId}" method "${method}" answered neither { ok: true, result } nor { ok: false, code, message }.`,
+  )
 }
 
 /** One call of a module's method, as the Studio protocol carries it. */
 export type ModuleMethodCallRequest = {
   moduleId: string
   method: string
-  /** The entry it came through: `module.read` or `module.operate`. */
+  /** The entry it came through: `extension.read` or `extension.operate`. */
   access: ModuleMethodAccess
   /** What the client sent, for the method's validator. */
   params: unknown
   clientId: string
   /** An operate's command id, already namespaced by the client. */
   commandId?: string
+  /** Who sent it: the handler runs on their behalf. Never assumed: a caller names it. */
+  invoker: ExtensionInvoker
 }
-
-/** The host's services a module's window half reaches, each null where this Studio does not provide it. */
-export type ModuleHostServices = {
-  backlog: Omit<ModuleBacklogRegistry, 'list'> | null
-  usage: Pick<ModuleUsageRegistry, 'query'> | null
-}
-
-/** A module's host services, or why it has none here. */
-export type ModuleHostServicesOutcome =
-  { ok: true; services: ModuleHostServices } | { ok: false; code: 'module_unavailable'; message: string }
 
 /** What a call came to: the module's answer, or why the host refused it before the module heard it. */
 export type ModuleMethodCallOutcome =
   | { ok: true; answer: ModuleMethodAnswer<ModuleMethodContract> }
-  | { ok: false; code: 'module_unavailable' | 'module_method_unknown' | 'invalid_params'; message: string }
+  | { ok: false; code: 'extension_unavailable' | 'extension_method_unknown' | 'invalid_params'; message: string }
 
 export type MainKernelOptions = {
-  /**
-   * Whether a module's main half runs where `electron` can be required: true
-   * in the desktop's own main process (the default), false in the Studio
-   * server out of process. What `host.supports('electron-main')` answers.
-   */
-  electronMain?: boolean
-  /** Sends one module event to every client following `module.events`. Absent in tests. */
+  /** Sends one module event to every client following `extension.events`. Absent in tests. */
   deliverModuleEvent?: (event: ModuleEventEnvelope) => void
   /**
    * Sends one bell row to every attached client (shared/modules/notifications.ts).
@@ -484,8 +510,8 @@ export type MainKernelOptions = {
    */
   isModuleActive?: (moduleId: string) => boolean
   /**
-   * Whether a module runs here at all: its main half loaded, or (a module
-   * with only a window half) its manifest. What a host-service call checks.
+   * Whether a module runs here at all: its main half loaded, or (an
+   * extension with surfaces only) its manifest. What a frame's call checks.
    * Absent, a module runs when its manifest resolves.
    */
   isModulePresent?: (moduleId: string) => boolean
@@ -511,6 +537,25 @@ export type MainKernelOptions = {
    * still match. Bundled modules have none and resolve nothing.
    */
   resolveModuleVerifiedFiles?: (moduleId: string) => ModuleFileDigests | undefined
+  /** The MCP tools an installed extension's extension.json declares, which are all it may register. */
+  resolveDeclaredMcpTools?: (moduleId: string) => readonly ExtensionMcpToolContribution[] | undefined
+  /**
+   * The permissions an extension's approval holds now, read at every call: null
+   * when it is not approved as it is (an update waiting for approval, an
+   * uninstall). Absent (tests), its manifest's permissions.
+   */
+  resolveExtensionGrant?: (moduleId: string) => readonly string[] | null
+  /** Folders a frame's `files.*` may never reach, even inside a workspace (Studio's data, the installed extensions). */
+  frameFileExclusions?: () => readonly string[]
+  /** A person's save in a custom text editor meets the extensions' save hooks here (`ExtensionFrameCallDeps.editorSaveHooks`). */
+  frameEditorSaveHooks?: ExtensionFrameCallDeps['editorSaveHooks']
+  /**
+   * What an extension's frame calls are held to (extension-frame-grant.ts):
+   * its approval's permissions as they stand now, pinned to those its
+   * document was built under, or null when it is not an approved, switched-on
+   * extension. Absent (tests), the extensions the kernel was started with.
+   */
+  resolveFrameGrant?: (moduleId: string, frame: string) => { grant: readonly string[]; outdated: boolean } | null
 }
 
 // Flood bounds: a module may emit at most this many notifications per window;
@@ -553,7 +598,7 @@ type ServiceEntry = {
 type ModuleLoad = { generation: number; retired: () => boolean }
 
 const switchedOff = (moduleId: string, what: string): string =>
-  `Module "${moduleId}" was switched off; the host it was given ${what}.`
+  `Extension "${moduleId}" was switched off; the host it was given ${what}.`
 
 // The key the storage service is provided under (service-tokens.ts'
 // ModuleStorageToken, and the SDK's private token behind getModuleStorage).
@@ -588,9 +633,6 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       ? (reader as ModuleAppStateReader)
       : undefined
   }
-  // Skill ids per module, so unregisterModule can drop them without asking the
-  // registry to scan. The registry is the truth; this is the kernel's receipt.
-  const skillIdsByModule = new Map<string, Set<string>>()
   const skillRegistry = options.skillRegistry ?? defaultSkillRegistry
   const now = options.now ?? Date.now
   const recent: ModuleNotificationDelivery[] = []
@@ -601,35 +643,32 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   let notificationSeq = 0
   const floodStateByModule = new Map<string, ModuleNotificationFloodState>()
   let started = false
+  let workers: KernelWorkerPort | null = null
 
   function registerMethods(moduleId: string, batch: ModuleMethodRegistrations): void {
-    if (
-      isThirdParty(moduleId) &&
-      !options.resolveModuleManifest?.(moduleId)?.permissions?.some((permission) => METHOD_PERMISSIONS.has(permission))
-    ) {
-      throw new Error(`Module "${moduleId}" needs the "module:bridge" permission to declare methods.`)
-    }
     if (batch === null || typeof batch !== 'object' || Array.isArray(batch)) {
-      throw new Error(`Module "${moduleId}" declares its methods as an object of name to method.`)
+      throw new Error(`Extension "${moduleId}" declares its methods as an object of name to method.`)
     }
     const own = methods.get(moduleId)
     const entries = Object.entries(batch)
     for (const [name, registration] of entries) {
       if (!isModuleMethodName(name)) {
         throw new Error(
-          `Module "${moduleId}" method "${name}" is not a method name: a lower-case letter, then letters, digits, dots and dashes, at most 100.`,
+          `Extension "${moduleId}" method "${name}" is not a method name: a lower-case letter, then letters, digits, dots and dashes, at most 100.`,
         )
       }
-      if (own?.has(name)) throw new Error(`Module "${moduleId}" already declares "${name}".`)
+      if (own?.has(name)) throw new Error(`Extension "${moduleId}" already declares "${name}".`)
       const access = (registration as { access?: unknown } | null)?.access
       if (access !== 'read' && access !== 'operate') {
-        throw new Error(`Module "${moduleId}" method "${name}" must say its access: "read" or "operate".`)
+        throw new Error(`Extension "${moduleId}" method "${name}" must say its access: "read" or "operate".`)
       }
       if (typeof registration.params !== 'function') {
-        throw new Error(`Module "${moduleId}" method "${name}" has no params validator; every method reads its params.`)
+        throw new Error(
+          `Extension "${moduleId}" method "${name}" has no params validator; every method reads its params.`,
+        )
       }
       if (typeof registration.handler !== 'function') {
-        throw new Error(`Module "${moduleId}" method "${name}" has no handler.`)
+        throw new Error(`Extension "${moduleId}" method "${name}" has no handler.`)
       }
     }
     const next = own ?? new Map<string, ModuleMethodRegistration>()
@@ -637,26 +676,42 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     methods.set(moduleId, next)
   }
 
-  function hostServicesFor(moduleId: string): ModuleHostServicesOutcome {
-    const present = options.isModulePresent
-      ? options.isModulePresent(moduleId)
-      : options.resolveModuleManifest?.(moduleId) !== undefined
-    if (!present || moduleId.startsWith('@'))
-      return {
-        ok: false,
-        code: 'module_unavailable',
-        message: `Module "${moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
-      }
-    const backlog = services.get('backlog.module-service')?.value as ModuleBacklogRegistry | undefined
-    const usage = services.get('usage.module-service')?.value as ModuleUsageRegistry | undefined
-    return {
-      ok: true,
-      services: {
-        backlog: typeof backlog?.create === 'function' ? backlog : null,
-        usage: typeof usage?.query === 'function' ? usage : null,
-      },
-    }
+  /** The host's gate, for an extension; the app's own modules pass. */
+  function gate(
+    moduleId: string,
+    method: string,
+    requirement: ExtensionHostRequirement | undefined,
+    invoker: ExtensionInvoker = currentInvoker(),
+  ): ExtensionHostDecision {
+    if (!isThirdParty(moduleId)) return { ok: true }
+    const grant = options.resolveExtensionGrant
+      ? options.resolveExtensionGrant(moduleId)
+      : (options.resolveModuleManifest?.(moduleId)?.permissions ?? [])
+    return gateExtensionHostCall({ extensionId: moduleId, method, requirement, grant, invoker })
   }
+
+  // A frame's host calls, against the same services the worker reaches.
+  const frameCalls = createExtensionFrameCalls({
+    // The approvals as they stand now where the server says so; otherwise
+    // (tests) the extensions this kernel was started with.
+    grantOf: (moduleId, frame) => {
+      if (options.resolveFrameGrant) return options.resolveFrameGrant(moduleId, frame)
+      const present = options.isModulePresent
+        ? options.isModulePresent(moduleId)
+        : options.resolveModuleManifest?.(moduleId) !== undefined
+      if (!isThirdParty(moduleId) || !present) return null
+      const grant = options.resolveExtensionGrant
+        ? options.resolveExtensionGrant(moduleId)
+        : (options.resolveModuleManifest?.(moduleId)?.permissions ?? [])
+      return grant === null ? null : { grant, outdated: false }
+    },
+    service: (key) => services.get(key)?.value,
+    callModuleMethod: (request) => callModuleMethod(request),
+    emitNotification,
+    appState: () => services.get(MODULE_APP_STATE_SERVICE_KEY)?.value as ModuleAppStateMirror | undefined,
+    fileExclusions: () => options.frameFileExclusions?.() ?? [],
+    ...(options.frameEditorSaveHooks ? { editorSaveHooks: options.frameEditorSaveHooks } : {}),
+  })
 
   async function callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome> {
     const own = methods.get(request.moduleId)
@@ -664,61 +719,56 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     if (!active || request.moduleId.startsWith('@')) {
       return {
         ok: false,
-        code: 'module_unavailable',
-        message: `Module "${request.moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
+        code: 'extension_unavailable',
+        message: `Extension "${request.moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
       }
     }
+    if (workers?.serves(request.moduleId)) return workers.callMethod(request)
     const registration = own?.get(request.method)
     if (!registration) {
       return {
         ok: false,
-        code: 'module_method_unknown',
-        message: `Module "${request.moduleId}" declares no method "${request.method}".`,
+        code: 'extension_method_unknown',
+        message: `Extension "${request.moduleId}" declares no method "${request.method}".`,
       }
     }
     if (registration.access !== request.access) {
       return {
         ok: false,
-        code: 'module_method_unknown',
-        message: `Module "${request.moduleId}" declares "${request.method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with module.${registration.access}.`,
+        code: 'extension_method_unknown',
+        message: `Extension "${request.moduleId}" declares "${request.method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with extension.${registration.access}.`,
       }
     }
-    const parsed = registration.params(request.params)
-    if (!parsed.ok) {
+    // Everything the extension's code does for this call runs as whoever sent
+    // it: its params validator as well as its handler, since either may call
+    // into the host.
+    const ran = await runAsInvoker(request.invoker, async () => {
+      const parsed = registration.params(request.params)
+      if (!parsed.ok) return { parsed }
+      const context: ModuleMethodContext = {
+        clientId: request.clientId,
+        ...(request.commandId === undefined ? {} : { commandId: request.commandId }),
+      }
+      return { parsed, answer: await registration.handler(parsed.params, context) }
+    })
+    if (!ran.parsed.ok) {
+      const parsed = ran.parsed
       return {
         ok: false,
         code: 'invalid_params',
         message:
           typeof parsed.message === 'string' && parsed.message
             ? parsed.message
-            : `Module "${request.moduleId}" refused the params of "${request.method}".`,
+            : `Extension "${request.moduleId}" refused the params of "${request.method}".`,
       }
     }
-    const context: ModuleMethodContext = {
-      clientId: request.clientId,
-      ...(request.commandId === undefined ? {} : { commandId: request.commandId }),
-    }
-    const answer = await registration.handler(parsed.params, context)
-    if (answer?.ok === true) {
-      const problem = answer.result === undefined ? null : moduleEventPayloadProblem(answer.result, 'result')
-      if (problem)
-        throw new Error(
-          `Module "${request.moduleId}" method "${request.method}" answered a result that is not JSON: ${problem}`,
-        )
-      return { ok: true, answer: { ok: true, result: answer.result ?? null } }
-    }
-    if (answer?.ok === false && typeof answer.code === 'string' && typeof answer.message === 'string') {
-      return { ok: true, answer: { ok: false, code: answer.code, message: answer.message } }
-    }
-    throw new Error(
-      `Module "${request.moduleId}" method "${request.method}" answered neither { ok: true, result } nor { ok: false, code, message }.`,
-    )
+    return settleMethodAnswer(request.moduleId, request.method, ran.answer)
   }
 
   function emitNotification(sourceModuleId: string, input: ModuleNotifyInput): void {
     const validated = validateModuleNotifyInput(input)
     if (!validated.ok) {
-      throw new Error(`Module "${sourceModuleId}" ${validated.message}`)
+      throw new Error(`Extension "${sourceModuleId}" ${validated.message}`)
     }
     const emittedAt = now()
     if (!passesFloodBound(sourceModuleId, validated, emittedAt)) return
@@ -746,7 +796,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   function emitModuleEvent(sourceModuleId: string, topic: string, payload?: unknown): void {
     const validated = validateModuleEventTopic(topic)
     if (!validated.ok) {
-      throw new Error(`Module "${sourceModuleId}" ${validated.message}`)
+      throw new Error(`Extension "${sourceModuleId}" ${validated.message}`)
     }
     // A payload no client could receive is the module's mistake, and it hears
     // about it here, from its own `emit`. Checked once, whether or not any
@@ -756,7 +806,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       const problem = moduleEventPayloadProblem(payload)
       if (problem) {
         throw new Error(
-          `Module "${sourceModuleId}" emitted a "${validated.topic}" payload that cannot be sent to a client: ${problem}.`,
+          `Extension "${sourceModuleId}" emitted a "${validated.topic}" payload that cannot be sent to a client: ${problem}.`,
         )
       }
     }
@@ -940,73 +990,108 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   // A guarded stand-in for a service, or for what one hands back: every
   // callable reached through it checks the load and, where `pinned`, that
   // its first argument is the module itself.
+  //
+  // For a Studio service, every callable is also a host method with a row in
+  // the table and passes the host's gate at each call, as whoever invoked the
+  // code calling it then and while the extension is approved: the service's
+  // own methods (`methods`), and what they hand back (`returns`, by the path
+  // from the method: `attach.send`, and `()` for a function, as `watch.()`).
+  // A callable without a row is refused. A service another extension provides
+  // is that extension's, and is not Studio's to gate.
   function guardedServiceView(moduleId: string, key: string, root: object, load: ModuleLoad, pinned: boolean) {
     const readOnly = (): never => {
-      throw new Error(`Module "${moduleId}" cannot change service "${key}".`)
+      throw new Error(`Extension "${moduleId}" cannot change service "${key}".`)
     }
-    // One guarded stand-in per member and the object it is called on, so a
-    // member read twice is the same one (a class's method is shared by every
-    // instance, and each instance's is its own); kept apart by whether its
-    // first argument is held to the module.
-    const guarded = new WeakMap<object, Map<boolean, WeakMap<object, unknown>>>()
+    const service = extensionHostService(key)
+    // Where a callable sits: its path, and whether the gate holds it (a Studio service).
+    type Place = { path: string; gated: boolean }
+    const rowOf = (path: string): ExtensionHostRequirement | undefined => {
+      const [method, ...rest] = path.split('.')
+      if (!service || !method) return undefined
+      if (rest.length === 0) return Object.hasOwn(service.methods, method) ? service.methods[method] : undefined
+      const returned = service.returns?.[method]
+      const member = rest.join('.')
+      return returned && Object.hasOwn(returned, member) ? returned[member] : undefined
+    }
+    // One guarded stand-in per member, the object it is called on, its place
+    // and whether its first argument is held to the module, so a member read
+    // twice is the same one (a class's method is shared by every instance,
+    // and each instance's is its own).
+    const guarded = new WeakMap<object, Map<string, WeakMap<object, unknown>>>()
     const unbound = {}
-    const cacheFor = (self: unknown, pinFirst: boolean): WeakMap<object, unknown> => {
+    const cacheFor = (self: unknown, place: Place, pinFirst: boolean): WeakMap<object, unknown> => {
       const owner = typeof self === 'object' && self !== null ? self : unbound
-      let byPinning = guarded.get(owner)
-      if (!byPinning) guarded.set(owner, (byPinning = new Map()))
-      let cache = byPinning.get(pinFirst)
-      if (!cache) byPinning.set(pinFirst, (cache = new WeakMap()))
+      let byPlace = guarded.get(owner)
+      if (!byPlace) guarded.set(owner, (byPlace = new Map()))
+      const slot = `${place.gated ? 'g' : 'u'}\u0000${place.path}\u0000${pinFirst ? 1 : 0}`
+      let cache = byPlace.get(slot)
+      if (!cache) byPlace.set(slot, (cache = new WeakMap()))
       return cache
     }
     const live = () => {
       if (load.retired()) throw new Error(switchedOff(moduleId, `no longer reaches service "${key}"`))
     }
+    const child = (place: Place, member: string): Place => ({
+      path: place.path ? `${place.path}.${member}` : member,
+      gated: place.gated,
+    })
 
-    function guardFunction(fn: (...given: unknown[]) => unknown, self: unknown, pinFirst: boolean): unknown {
+    function guardFunction(fn: (...given: unknown[]) => unknown, self: unknown, place: Place, pinFirst: boolean) {
       return (...args: unknown[]) => {
         live()
+        if (place.gated) {
+          const requirement = rowOf(place.path)
+          const decision = gate(moduleId, `${key}.${place.path}`, requirement)
+          if (!decision.ok) return refuseExtensionHostCall(requirement, decision)
+        }
         if (pinFirst && args[0] !== moduleId) {
           throw new Error(
-            `Module "${moduleId}" called service "${key}" as module "${String(args[0])}": a module reaches it only as itself.`,
+            `Extension "${moduleId}" called service "${key}" as module "${String(args[0])}": a module reaches it only as itself.`,
           )
         }
-        return guardResult(fn.apply(self, args))
+        // What it hands the host to call back later is called back on behalf
+        // of whoever set this call off (the person, for its own work), never
+        // as whoever the host happens to be serving when it delivers.
+        const handed = args.map((arg) => (typeof arg === 'function' ? boundToRegistrant(arg as never) : arg))
+        return guardResult(fn.apply(self, handed), place)
       }
     }
 
-    // What a call hands back: a capability is guarded, data is passed through.
-    function guardResult(result: unknown): unknown {
-      if (result instanceof Promise) return result.then(guardResult)
-      if (typeof result === 'function') return guardMember(result, undefined, false)
-      if (isCapability(result)) return guardMember(result, undefined, false)
+    // What a call at `place` hands back: a capability is guarded, data is passed through.
+    function guardResult(result: unknown, place: Place): unknown {
+      if (result instanceof Promise) return result.then((settled) => guardResult(settled, place))
+      if (typeof result === 'function')
+        return guardMember(result, undefined, { ...place, path: `${place.path}.()` }, false)
+      if (isCapability(result)) return guardMember(result, undefined, place, false)
       return result
     }
 
-    function guardMember(member: unknown, self: unknown, pinFirst: boolean): unknown {
+    function guardMember(member: unknown, self: unknown, place: Place, pinFirst: boolean): unknown {
       if (member === null || (typeof member !== 'object' && typeof member !== 'function')) return member
-      const cache = cacheFor(self, pinFirst)
+      const cache = cacheFor(self, place, pinFirst)
       const known = cache.get(member)
       if (known !== undefined) return known
       const made =
         typeof member === 'function'
-          ? guardFunction(member as (...given: unknown[]) => unknown, self, pinFirst)
-          : facadeOf(member, false)
+          ? guardFunction(member as (...given: unknown[]) => unknown, self, place, pinFirst)
+          : facadeOf(member, place, false)
       cache.set(member, made)
       return made
     }
 
-    function facadeOf(target: object, pinFirst: boolean): object {
+    function facadeOf(target: object, place: Place, pinFirst: boolean): object {
       const facade = Object.create(null) as Record<PropertyKey, unknown>
       for (const property of memberNames(target)) {
+        const at = child(place, String(property))
         Object.defineProperty(facade, property, {
           enumerable: true,
           get: () => {
             const member: unknown = Reflect.get(target, property, target)
-            if (typeof member === 'function') return guardMember(member, target, pinFirst)
-            // An object the service holds is reached through a facade of its
-            // own, whatever it holds; a value or a list is read as it is now.
+            if (typeof member === 'function') return guardMember(member, target, at, pinFirst)
+            // An object it holds is reached through a facade of its own,
+            // whatever it holds; a value or a list is read as it is now.
             if (member !== null && typeof member === 'object' && !Array.isArray(member) && !ArrayBuffer.isView(member))
-              return guardMember(member, target, false)
+              return guardMember(member, target, at, false)
             return member
           },
           set: readOnly,
@@ -1016,10 +1101,11 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     }
 
     // A service that is itself a function is that function, guarded.
-    return typeof root === 'function' ? guardMember(root, undefined, pinned) : facadeOf(root, pinned)
+    const top: Place = { path: '', gated: service !== undefined }
+    return typeof root === 'function' ? guardMember(root, undefined, top, pinned) : facadeOf(root, top, pinned)
   }
 
-  // A module asset by path: the same refusals `moduleAssetUrl` makes, then
+  // A module asset by path: a module-relative path with no traversal, then
   // only a verified file, held to the bytes it was verified with.
   function resolveAssetPath(moduleId: string, relativePath: string): string {
     if (
@@ -1029,12 +1115,12 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       /[\\\0?#]/.test(relativePath) ||
       relativePath.split('/').some((part) => !part || part === '.' || part === '..')
     ) {
-      throw new Error(`Module "${moduleId}" asset path must be a module-relative file path, got "${relativePath}".`)
+      throw new Error(`Extension "${moduleId}" asset path must be a module-relative file path, got "${relativePath}".`)
     }
     const root = options.resolveModuleRoot?.(moduleId)
     const verified = options.resolveModuleVerifiedFiles?.(moduleId)
     if (!root || !verified) {
-      throw new Error(`Module "${moduleId}" has no verified files on disk, so "${relativePath}" has no path.`)
+      throw new Error(`Extension "${moduleId}" has no verified files on disk, so "${relativePath}" has no path.`)
     }
     const expected = verified[relativePath]
     if (expected === undefined) {
@@ -1045,10 +1131,10 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     const real = realpathSync(candidate)
     const within = relative(realRoot, real)
     if (!within || within.startsWith('..') || isAbsolute(within)) {
-      throw new Error(`Module "${moduleId}" asset "${relativePath}" resolves outside the module.`)
+      throw new Error(`Extension "${moduleId}" asset "${relativePath}" resolves outside the module.`)
     }
     if (createHash('sha256').update(readFileSync(real)).digest('hex') !== expected) {
-      throw new Error(`Module "${moduleId}" asset "${relativePath}" changed after it was verified.`)
+      throw new Error(`Extension "${moduleId}" asset "${relativePath}" changed after it was verified.`)
     }
     return real
   }
@@ -1072,21 +1158,38 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     const refuseUse = (): void => {
       if (retired()) throw new Error(switchedOff(moduleId, "no longer reaches the host's services"))
     }
+    // The host's gate for one of its own methods (EXTENSION_MAIN_HOST_METHODS).
+    const enforce = (name: keyof typeof EXTENSION_MAIN_HOST_METHODS): void => {
+      const decision = gate(moduleId, name, EXTENSION_MAIN_HOST_METHODS[name])
+      if (!decision.ok) throw new ExtensionHostRefusal(decision.code, decision.message)
+    }
     const host: MainHost = {
       ...live,
-      listChatRuntimes: async () => (refuseUse(), live.listChatRuntimes()),
-      ensureSkillInstalled: async (root, skillId) => (refuseUse(), live.ensureSkillInstalled(root, skillId)),
-      getSkillStatus: async (root, skillId) => (refuseUse(), live.getSkillStatus(root, skillId)),
-      getModuleDataDir: () => (refuseUse(), live.getModuleDataDir()),
+      listChatRuntimes: async () => (refuseUse(), enforce('listChatRuntimes'), live.listChatRuntimes()),
+      ensureSkillInstalled: async (root, skillId) => (
+        refuseUse(),
+        enforce('ensureSkillInstalled'),
+        live.ensureSkillInstalled(root, skillId)
+      ),
+      getSkillStatus: async (root, skillId) => (
+        refuseUse(),
+        enforce('getSkillStatus'),
+        live.getSkillStatus(root, skillId)
+      ),
+      getModuleDataDir: () => (refuseUse(), enforce('getModuleDataDir'), live.getModuleDataDir()),
       getAssetPath: (relativePath) => (refuseUse(), live.getAssetPath(relativePath)),
       getModuleAppState<T = unknown>(key: string): T | undefined {
         refuseUse()
+        enforce('getModuleAppState')
         return live.getModuleAppState<T>(key)
       },
-      getWorkspaceGitInfo: async (workspaceId) =>
-        retired()
-          ? { ok: false, code: 'unavailable', message: switchedOff(moduleId, "no longer reads a workspace's git") }
-          : live.getWorkspaceGitInfo(workspaceId),
+      async getWorkspaceGitInfo(workspaceId) {
+        if (retired())
+          return { ok: false, code: 'unavailable', message: switchedOff(moduleId, "no longer reads a workspace's git") }
+        const decision = gate(moduleId, 'getWorkspaceGitInfo', EXTENSION_MAIN_HOST_METHODS.getWorkspaceGitInfo)
+        if (!decision.ok) return { ok: false, code: decision.code, message: decision.message }
+        return live.getWorkspaceGitInfo(workspaceId)
+      },
       // The factory is handed this host, as it always was: the guarded one.
       provideService<T>(token: ServiceToken<T>, factory: (host: MainHost) => T): T {
         refuseRetired()
@@ -1100,19 +1203,31 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         refuseUse()
         return live.requireService(token)
       },
-      registerMethods: (batch) => (refuseRetired(), live.registerMethods(batch)),
-      registerMcpTools: (tools) => (refuseRetired(), live.registerMcpTools(tools)),
-      registerSkills: (skills) => (refuseRetired(), live.registerSkills(skills)),
-      watchModuleAppState: (cb) => (refuseRetired(), live.watchModuleAppState(cb)),
+      registerMethods: (batch) => (refuseRetired(), enforce('registerMethods'), live.registerMethods(batch)),
+      registerMcpTools: (tools) => (refuseRetired(), enforce('registerMcpTools'), live.registerMcpTools(tools)),
+      registerHooks: (handlers) => (refuseRetired(), enforce('registerHooks'), live.registerHooks(handlers)),
+      watchModuleAppState: (cb) => (
+        refuseRetired(),
+        enforce('watchModuleAppState'),
+        live.watchModuleAppState(boundToRegistrant(cb))
+      ),
       onStartup: (hook) => (refuseRetired(), live.onStartup(hook)),
       onShutdownBegin: (hook) => (refuseRetired(), live.onShutdownBegin(hook)),
       onShutdown: (hook) => (refuseRetired(), live.onShutdown(hook)),
-      registerSidecar: (spec, lifecycle) => (refuseRetired(), live.registerSidecar(spec, lifecycle)),
+      registerSidecar: (spec, lifecycle) => (
+        refuseRetired(),
+        enforce('registerSidecar'),
+        live.registerSidecar(spec, lifecycle)
+      ),
       notify: (input) => {
-        if (!retired()) live.notify(input)
+        if (retired()) return
+        enforce('notify')
+        live.notify(input)
       },
       emit: (topic, payload) => {
-        if (!retired()) live.emit(topic, payload)
+        if (retired()) return
+        enforce('emit')
+        live.emit(topic, payload)
       },
     }
     return host
@@ -1121,9 +1236,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   function scopedHostFor(moduleId: string, load: ModuleLoad): MainHost {
     return {
       moduleId,
-      hostApiVersion: HOST_API_VERSION,
       supports: (capability) => {
-        if (capability === 'electron-main') return options.electronMain ?? true
         // A bell row needs a client to reach: true only where delivery is wired.
         if (capability === 'notifications') return options.deliverModuleNotification !== undefined
         return hostSupports(capability)
@@ -1136,10 +1249,24 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       registerMethods(batch) {
         registerMethods(moduleId, batch as unknown as ModuleMethodRegistrations)
       },
+      registerHooks() {
+        throw new Error(
+          `Module "${moduleId}" registered hooks in Studio's own process: only an extension's worker serves hooks.`,
+        )
+      },
       registerMcpTools(tools) {
         const thirdParty = isThirdParty(moduleId)
-        if (thirdParty && !options.resolveModuleManifest?.(moduleId)?.permissions?.includes('mcp:tools')) {
-          throw new Error(`Module "${moduleId}" must declare the "mcp:tools" permission to register MCP tools.`)
+        // An extension serves only the tools its extension.json declares, and
+        // what agents are told of each is the manifest's, not the code's.
+        const declared = thirdParty ? (options.resolveDeclaredMcpTools?.(moduleId) ?? []) : null
+        if (declared) {
+          for (const tool of tools) {
+            if (!declared.some((entry) => entry.name === tool.name)) {
+              throw new Error(
+                `MCP tool "${tool.name}" from extension "${moduleId}" is not declared in its extension.json (contributes.mcpTools).`,
+              )
+            }
+          }
         }
         // Validate the whole batch before landing any of it: a module whose
         // registerMain fails on a collision must not leave half its tools
@@ -1160,10 +1287,10 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
                 'core tool names and families are reserved, so give the tool a name of your own.',
             )
           }
-          const existing = [...mcpTools.values()].find((entry) => mcpToolWireName(entry.registration.name) === wire)
+          const existing = allModuleTools().find((entry) => mcpToolWireName(entry.registration.name) === wire)
           if (existing) {
             throw new Error(
-              `MCP tool "${tool.name}" is already registered by module "${existing.owner}"` +
+              `MCP tool "${tool.name}" is already registered by module "${existing.moduleId}"` +
                 (existing.registration.name === tool.name ? '.' : ` (as "${existing.registration.name}").`),
             )
           }
@@ -1177,26 +1304,12 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
           batch.set(wire, tool.name)
         }
         for (const tool of tools) {
-          const registration = thirdParty ? { ...tool, mutates: tool.mutates !== false } : tool
+          const entry = declared?.find((candidate) => candidate.name === tool.name)
+          const registration = entry
+            ? { ...tool, description: entry.description, mutates: entry.access === 'operate' }
+            : tool
           mcpTools.set(tool.name, { owner: moduleId, registration })
         }
-      },
-      registerSkills(skills) {
-        // Resolve every path before any of it lands: a batch that escapes the
-        // module root on its third skill must not leave the first two behind,
-        // exactly as with MCP tool names.
-        const resolved = skills.map((skill) => ({
-          ...skill,
-          sourceDir: resolveModuleSkillDirectory(
-            options.resolveModuleRoot?.(moduleId) ?? null,
-            skill.sourceDir,
-            `Module "${moduleId}" skill "${skill.id}" sourceDir`,
-          ),
-        }))
-        skillRegistry.register(moduleId, resolved)
-        const owned = skillIdsByModule.get(moduleId) ?? new Set<string>()
-        for (const skill of resolved) owned.add(skill.id)
-        skillIdsByModule.set(moduleId, owned)
       },
       ensureSkillInstalled(workspaceRoot, skillId) {
         return skillRegistry.ensureInstalled(workspaceRoot, skillId)
@@ -1208,7 +1321,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         const storage = services.get(MODULE_STORAGE_SERVICE_KEY)?.value as
           { dataDir?: (moduleId: string) => string } | undefined
         if (typeof storage?.dataDir !== 'function') {
-          throw new Error(`Module "${moduleId}" asked for its data directory, and no storage service is provided.`)
+          throw new Error(`Extension "${moduleId}" asked for its data directory, and no storage service is provided.`)
         }
         return storage.dataDir(moduleId)
       },
@@ -1232,14 +1345,6 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         }
       },
       async getWorkspaceGitInfo(workspaceId) {
-        const permissions = options.resolveModuleManifest?.(moduleId)?.permissions
-        if (isThirdParty(moduleId) && !permissions?.includes('ipc:workspace-read')) {
-          return {
-            ok: false,
-            code: 'permission_missing',
-            message: `Module "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
-          }
-        }
         const reader = services.get(WORKSPACE_GIT_INFO_SERVICE_KEY)?.value as
           { read?: (workspaceId: string) => Promise<ModuleWorkspaceGitInfoResult> } | undefined
         if (typeof reader?.read !== 'function') {
@@ -1267,7 +1372,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       requireService<T>(token: ServiceToken<T>): T {
         assertServiceVisible(moduleId, token.key)
         if (!services.has(token.key)) {
-          throw new Error(`Module "${moduleId}" requires service "${token.key}", which no enabled module provides.`)
+          throw new Error(`Extension "${moduleId}" requires service "${token.key}", which no enabled module provides.`)
         }
         return asCaller(moduleId, token.key, services.get(token.key)!.value as T, load)
       },
@@ -1349,27 +1454,64 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     for (const [serviceKey, entry] of [...services]) {
       if (entry.moduleId === moduleId) services.delete(serviceKey)
     }
-    if (skillIdsByModule.delete(moduleId)) skillRegistry.unregister(moduleId)
     for (const stop of appStateWatches.get(moduleId) ?? []) stop()
     appStateWatches.delete(moduleId)
     // After its hooks, which may still say goodbye through it.
     loadGenerations.set(moduleId, (loadGenerations.get(moduleId) ?? 0) + 1)
   }
 
+  // Every tool the gateway serves from a module: the ones registered here,
+  // then those of the extensions whose code runs in a worker.
+  function allModuleTools(): Array<{ moduleId: string; registration: McpToolRegistration }> {
+    return [
+      ...[...mcpTools.values()].map(({ owner, registration }) => ({ moduleId: owner, registration })),
+      ...(workers?.mcpTools() ?? []),
+    ]
+  }
+
+  function mcpToolNameProblem(moduleId: string, names: readonly string[]): string | null {
+    const coreNames = [...(options.coreMcpToolNames?.() ?? [])]
+    const others = allModuleTools().filter((tool) => tool.moduleId !== moduleId)
+    const seen = new Map<string, string>()
+    for (const name of names) {
+      const wire = mcpToolWireName(name)
+      const core = coreMcpToolConflict(name, coreNames)
+      if (core)
+        return `MCP tool "${name}" from extension "${moduleId}" collides with the core gateway tool "${core}"; core tool names and families are reserved, so give the tool a name of your own.`
+      const existing = others.find((tool) => mcpToolWireName(tool.registration.name) === wire)
+      if (existing) return `MCP tool "${name}" is already registered by module "${existing.moduleId}".`
+      const twin = seen.get(wire)
+      if (twin !== undefined)
+        return `MCP tool "${name}" is declared twice by extension "${moduleId}" (also as "${twin}").`
+      seen.set(wire, name)
+    }
+    return null
+  }
+
   return {
     hostFor,
     declaredMethods: (moduleId) =>
-      [...(methods.get(moduleId) ?? [])].map(([name, registration]) => ({ name, access: registration.access })),
+      workers?.serves(moduleId)
+        ? workers.declaredMethods(moduleId)
+        : [...(methods.get(moduleId) ?? [])].map(([name, registration]) => ({ name, access: registration.access })),
     callModuleMethod,
-    hostServicesFor,
-    ownedSkills: () =>
-      new Map([...skillIdsByModule].flatMap(([owner, ids]) => [...ids].map((id) => [id, owner] as const))),
+    callFrameMethod: (request) => frameCalls(request),
     mcpToolRegistrations: () =>
-      [...mcpTools.values()].map(({ owner, registration }) => ({
-        moduleId: owner,
-        moduleDisplayName: options.resolveModuleManifest?.(owner)?.displayName ?? owner,
+      allModuleTools().map(({ moduleId, registration }) => ({
+        moduleId,
+        moduleDisplayName: options.resolveModuleManifest?.(moduleId)?.displayName ?? moduleId,
         registration,
       })),
+    attachWorkers(port) {
+      workers = port
+    },
+    gateHostMethod: (moduleId, method) =>
+      gate(
+        moduleId,
+        method,
+        Object.hasOwn(EXTENSION_MAIN_HOST_METHODS, method) ? EXTENSION_MAIN_HOST_METHODS[method] : undefined,
+      ),
+    mcpToolNameProblem,
     startupHooks: () => startupHooks.map((entry) => entry.hook),
     shutdownBeginHooks: () => shutdownBeginHooks.map((entry) => entry.hook),
     shutdownHooks: () => shutdownHooks.map((entry) => entry.hook),

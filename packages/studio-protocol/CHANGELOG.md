@@ -2,6 +2,186 @@
 
 ## Unreleased
 
+### Added (the extension catalogue)
+
+- **`extension.catalogues`** `{ refresh? }`: the official, community and
+  added catalogues as `StudioCatalogueView`s, each from its last copy, with
+  why it could not be read now.
+- **`extension.catalogueEntry`** `{ catalogue, id }`: one extension's page
+  (`StudioCatalogueEntryView`). **`extension.catalogueImage`** `{ catalogue,
+  path, sha256 }`: one listing image's bytes, held to its digest.
+- **`extension.catalogueAdd`** / **`extension.catalogueRemove`** `{ url,
+  commandId }` (an owner's): a catalogue by its git URL, or `community` for
+  the community catalogue.
+- **`extension.installFrom`** `{ from, commandId }` (an owner's): from a
+  catalogue entry (`{ catalogue, id, version, commit, contentHash, source,
+  ownerId }`, the whole release the person was shown, refused when the
+  catalogue lists anything else now) or a git URL (`{ git, ref?, path? }`); answers as
+  `extension.install`, with `leftOut` for a Claude Code plugin, and a refusal
+  names a plugin marketplace's `folders`.
+- **`extension.update`** `{ moduleId, version?, commandId }` (an owner's): the
+  newer release the catalogue an extension came from lists; `version` is the
+  one the person was shown, refused when the catalogue lists another now.
+- `ThirdPartyModuleView.origin`, `.killed` and `.update`; launch status `killed`.
+
+### Added (development folders and the extension dev loop)
+
+- **`extension.devFolders`** (an owner's): the development folders
+  registered on the Studio, in the order they load (after every installed
+  extension), each as a `StudioExtensionDevFolder`: its real `path`, the
+  extension in it (`moduleId`, `name`, `approval`), `overrides` when it
+  stands in for an installed extension with its key, `waiting` while that
+  waits for the person's approval (the installed one runs until then), or
+  the `error` that says why it holds none.
+- **`extension.devLoad`** `{ path, commandId }` (an owner's): registers a
+  folder on the Studio's machine as a development folder, loaded from where
+  it is under `local.<id>` and read again on every save; registering one
+  already registered reads it again. Answers `moduleId`, `path`, `added` and
+  its `approval`, or `invalid_argument`, `extension_invalid` (with
+  `issues`) or `unavailable`. It runs once the person approves it with
+  `extension.approve`; every folder asks once. A folder waiting to replace an
+  installed extension is approved under that key with its own fingerprint,
+  which tells the two apart.
+- **`extension.devUnload`** `{ path, commandId }` (an owner's): takes one
+  out, with its approval; answers its `path` and `moduleId`, or `not_found`
+  (with the folders `loaded`) or `unavailable`.
+- `ThirdPartyModuleView.development` (`{ folder, overrides, waiting? }`)
+  marks an extension loaded from a development folder; `folder` is its path
+  for a connection that may name any path, its name otherwise. `extension.installed`
+  lists a folder `waiting` to replace an installed extension beside it, under
+  the same id.
+- `ExtensionContributions.revision`: the content identity of an extension's
+  files as served now. It moves with every save of a development folder and
+  every update, and `extension.changed` follows, so a client draws the
+  extension's open surfaces again.
+- `extension.call` carries a frame's new `log.write` `{ level?, message }`:
+  a line in the extension's log, at most 20 every 10 seconds per extension.
+- All behind the existing `extension-host` capability: a window and its
+  Studio are one build.
+
+### Changed (skills, MCP servers and model providers from extensions)
+
+- `ExtensionContributionsView` carries `skills`, `mcpServers` and
+  `providers` (`ExtensionSkillContributionView`,
+  `ExtensionMcpServerContributionView`, `ExtensionProviderContributionView`),
+  so a client's install review lists each skill and server, a local server's
+  command line and environment, and the origin a provider's key is sent to.
+- `ThirdPartyModuleView.ignoredSkillKeys` names, by skill id, the
+  frontmatter keys of a skill's SKILL.md that agents are not handed (anything
+  but `name` and `description`), so the install review can list them as
+  ignored.
+- A provider's `source` (`StudioProviderListEntry`, and `PluginSource`) is
+  `bundled` or `extension`; `user` is gone with the provider folder. An
+  extension's provider's id is `<publisher>.<id>/<provider id>`, and
+  `providers.setSecret`, `.clearSecret` and `.secretStatus` take it as it is.
+
+### Removed (plugin bundles, inline MCP entries and the GitHub bundle install)
+
+- **`marketplace.resolveGithub` and `marketplace.installGithub`**, with their
+  shapes (`GithubExtensionOrigin`, `GithubExtensionPreview`,
+  `GithubExtensionResolveResult`, `GithubExtensionInstallInput`, …) and the
+  `github` arm of `MarketplaceInstallSource`, which is gone with it. Installing
+  an extension from a GitHub repository returns later, with the catalogue.
+- **The plugin bundle and the inline MCP entry**: a registry row no longer
+  carries `mcp`, `MarketplaceProvidesKind` and `MarketplaceComponentKind` no
+  longer name `mcp`, `MarketplacePluginVerifyResult` no longer carries
+  `mcpServers` (`MarketplaceMcpServerDisclosure` is gone),
+  `MarketplaceTrustPin` no longer carries `commitSha`, and an installed
+  component no longer carries `serverIds` or `servers`. The install envelope
+  and the install and uninstall results no longer carry `mcpSettings`, nor
+  the envelope `mcpClients`. The marketplace installs Claude Code plugins'
+  skills and lists the agent CLIs the app ships; skills, MCP servers and
+  model providers now arrive as contributions in an extension's
+  extension.json (`contributes.skills`, `.mcpServers`, `.providers`).
+
+### Added (agent hooks)
+
+- `AgentLaunchRecord` carries `startedBy` (`AgentLaunchStarter`): who asked
+  for the launch, kept on the agent's record so its extensions' hooks run as
+  them.
+- `ExtensionContributionsView` carries `hooks`: each point an extension's
+  worker hooks (`agent.tool.before`, `editor.save.before`, …) and its
+  `onError`, so a client's approval names them.
+- **`files.writeText`** takes `save` for a save the person made in an
+  editor (`{ workspaceId?, languageId? }`: the workspace it was opened in and
+  its language), which runs the Studio's `editor.save.before` hooks before it
+  writes, and answers `text` when a hook changed what was written. A hook's
+  refusal is `refused_by_extension`, whose message names the extension and
+  its reason. There is no capability for it: a client and its Studio are one
+  build.
+
+### Added (custom editors)
+
+- New capability **`extension-editors`**, offered with `extension-host`: a
+  client opens a file in an extension's custom editor only where its Studio
+  offers it, and in its text editor elsewhere. **`extension.frame`** takes
+  `point: 'customEditors'`.
+- A frame's **`files.read`** (through `extension.call`) takes
+  `encoding: 'base64'` and answers the file's `sha256`; **`files.write`** takes
+  `encoding` and `expectedSha256`, and answers `conflict` when the file's
+  bytes changed since. A client's custom editor reads and saves its file this
+  way, as the extension and as that connection.
+- `ExtensionContributionsView` carries `customEditors`.
+
+### Added (content extensions)
+
+- **`extension.content`** `{ moduleId, kind: 'syntax', id }` (`extensions:read`,
+  under `extension-host`) answers one piece of what an extension adds as
+  data the Studio read and checked: a syntax's TextMate grammar (only the keys
+  a TextMate engine reads) and its language configuration. Refused
+  `extension_unavailable` when the extension is not installed, switched off,
+  may not run, or its file fails the checks.
+- **`extension.settings`** `{ moduleId }` answers the values of the settings
+  an extension declares, each the stored value while it fits the declaration,
+  else its default; **`extension.setSetting`**
+  `{ moduleId, key, value | null, commandId }` sets one, held to what
+  extension.json declares of it. Both need **`settings:write`**, as Studio's
+  own settings do: values may hold a server address or a token. The
+  **`extension.settingsChanged`** topic (`extensions:read`) says whose values
+  changed, from any writer, with no values.
+- `ExtensionContributionsView` carries `syntaxes`, `keybindings`,
+  `statusBarItems` and `settings`.
+
+### Changed (extension surfaces run in frames)
+
+- New capability **`extension-frames`**: a client draws an extension's panels,
+  doors and settings sections only where its Studio offers it.
+  **`extension.frame`** `{ moduleId, point, id, theme? }` answers the document
+  one surface is drawn from (`{ hash, html }`: Studio's bootstrap, the theme's
+  tokens and the extension's verified entry), and keeps it for the web
+  listener's `/ext-frame/<hash>`. **`extension.call`**
+  `{ moduleId, method, params?, commandId }` carries one host call a frame
+  made, held to the extension's approval and to the connection's own grant,
+  and answers `{ ok: true, result }` or `{ ok: false, code, message }`.
+- **`extension.rendererEntries`** is **`extension.contributions`**: what the
+  approved extensions add to a client (`ExtensionContributionsResult`, no
+  code, no asset origin).
+- Removed with nothing in their place: `extension.setAppState` (an
+  extension's Settings values are kept by its Studio, written from its
+  frame), `extensionBacklog.*` and `extensionUsage.query` (a frame's
+  `backlog.*` and `usage.query` go through `extension.call`). The answer
+  shapes they used stay (`StudioModuleBacklogAnswer`, `StudioModuleUsageAnswer`, …).
+
+### Changed (approvals replace trust for extensions)
+
+- **`extension.setTrust`** is gone. **`extension.approve`**
+  `{ moduleId, fingerprint, commandId }` (an owner's, under
+  `extension-host`) approves an installed extension as the person was shown
+  it, and is refused when it changed since.
+- **`extension.install`** answers `approval` (`StudioExtensionApproval`:
+  `not-needed`, `unavailable`, `pending` with the `fingerprint` to approve and,
+  for an update, its `growth`, or `approved`) instead of `trust`.
+- **`ThirdPartyModuleView`** (`extension.installed`) carries `approval`,
+  `signature` (`verified`, `signed`, `unsigned`, `invalid`) and `signer`
+  instead of `trust`, `fingerprint` and `trustedVia`. Launch statuses are
+  `runs_worker`, `runs_without_worker`, `awaiting_approval`,
+  `blocked_invalid` and `launch_error`; the resolver's `untrusted` is
+  `unapproved`.
+- The module services' refusal code `permission_missing` is
+  `not_permitted` or `approval_required`. `extensionBacklog.*` and
+  `extensionUsage.query` are held to the connection's own grant as well as
+  the extension's approval.
+
 ### Removed (the knowledge graph)
 
 - **`memory.index`, `memory.readPreview` and `memoryActivity.*`** (with the

@@ -1,6 +1,9 @@
 import { createHighlighterCore, type HighlighterCore, type GrammarState, type ThemedToken } from 'shiki/core'
 import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
 
+import { CODE_THEME, CODE_THEME_REGISTRATION } from './codeTheme'
+import { contributedSyntaxForFence } from './contributedSyntaxes'
+
 const languages = {
   typescript: () => import('shiki/langs/typescript.mjs'),
   tsx: () => import('shiki/langs/tsx.mjs'),
@@ -58,45 +61,46 @@ const aliases: Record<string, string> = {
   docker: 'dockerfile',
   make: 'makefile',
 }
-export function normalizeCodeLanguage(language = ''): Language | null {
+/** Whether a fence name (or alias) is one of Studio's own languages. */
+export function isBundledCodeLanguage(language = ''): boolean {
   const name = language.toLowerCase().trim()
-  const normalized = aliases[name] ?? name
-  return Object.hasOwn(languages, normalized) ? (normalized as Language) : null
+  return Object.hasOwn(languages, aliases[name] ?? name)
 }
 
-const THEME = 'semantic-code'
+/**
+ * The language a fence names: one of Studio's, else a language an extension
+ * contributes (contributedSyntaxes.ts). An extension never takes a fence or
+ * alias Studio's bundled grammars already highlight.
+ */
+export function normalizeCodeLanguage(language = ''): string | null {
+  const name = language.toLowerCase().trim()
+  const normalized = aliases[name] ?? name
+  if (Object.hasOwn(languages, normalized)) return normalized
+  return contributedSyntaxForFence(name)?.language ?? null
+}
+
+export { CODE_THEME }
+const THEME = CODE_THEME
 export const HIGHLIGHT_LINE_LIMIT = 2000
 let highlighter: Promise<HighlighterCore> | undefined
 const loads = new Map<string, Promise<HighlighterCore>>()
-export function loadCodeLanguage(language: Language): Promise<HighlighterCore> {
+export function loadCodeLanguage(language: string): Promise<HighlighterCore> {
   let promise = loads.get(language)
   if (promise) return promise
+  // Only Studio's own grammars load here, on the window's thread; an
+  // extension's are tokenized in a worker of their own (grammarHost.ts).
+  if (!Object.hasOwn(languages, language)) return Promise.reject(new Error(`No bundled grammar for ${language}.`))
   highlighter ??= createHighlighterCore({
-    themes: [
-      {
-        name: THEME,
-        fg: 'var(--sem-syntax-foreground)',
-        bg: 'var(--sem-color-bg-surface-raised)',
-        settings: [
-          { scope: 'comment', settings: { foreground: 'var(--sem-syntax-comment)' } },
-          { scope: ['keyword', 'storage'], settings: { foreground: 'var(--sem-syntax-keyword)' } },
-          { scope: 'string', settings: { foreground: 'var(--sem-syntax-string)' } },
-          { scope: ['constant.numeric', 'constant.language'], settings: { foreground: 'var(--sem-syntax-number)' } },
-          {
-            scope: ['entity.name.function', 'support.function'],
-            settings: { foreground: 'var(--sem-syntax-function)' },
-          },
-          { scope: ['entity.name.type', 'support.type'], settings: { foreground: 'var(--sem-syntax-type)' } },
-        ],
-      },
-    ],
+    themes: [CODE_THEME_REGISTRATION],
     langs: [],
     engine: createOnigurumaEngine(import('shiki/wasm')),
   })
   promise = highlighter.then(async (engine) => {
-    await engine.loadLanguage(languages[language])
+    await engine.loadLanguage(languages[language as Language])
     return engine
   })
+  // A grammar that failed to load is tried again the next time.
+  promise.catch(() => loads.delete(language))
   loads.set(language, promise)
   return promise
 }
@@ -127,7 +131,7 @@ export class IncrementalCodeTokenizer {
   private state: GrammarState | undefined
   constructor(
     private engine: HighlighterCore,
-    private language: Language,
+    private language: string,
   ) {}
 
   update(code: string, complete: boolean): CodeLine[] {

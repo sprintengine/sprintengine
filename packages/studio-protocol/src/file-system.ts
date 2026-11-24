@@ -35,6 +35,9 @@ import { isStudioPath } from './key.js'
 /** One entry of a folder, as `files.listDirectory` answers it. Links are listed as what they are, unfollowed. */
 export type StudioDirectoryEntry = { name: string; isDir: boolean }
 
+/** A save the person made in an editor: the workspace the file was opened in, and its language as the editor names it. */
+export type StudioEditorSave = { workspaceId?: string; languageId?: string }
+
 /** Whether a folder can be a workspace's: there, and readable in time. */
 export type WorkspaceFolderCheckResult =
   | { ok: true; status: 'ready'; path: string; checkedPath: string; message: string }
@@ -135,10 +138,16 @@ export type StudioFileSystemMethodMap = {
    * Write a text file. `roots` are the folders of the project it was opened
    * in: a save there does not write through a link that leads out of them.
    */
+  /**
+   * Write a text file. `save` is a save the person made in an editor, with
+   * the workspace it was opened in and its language as the editor names it:
+   * the Studio runs its extensions' `editor.save.before` hooks first, and answers `text` when one changed what
+   * was written; a hook's refusal is `refused_by_extension`.
+   */
   'files.writeText': {
-    params: Commanded<{ path: string; text: string; roots?: string[] }>
-    result: Record<string, never>
-    errors: Unknown
+    params: Commanded<{ path: string; text: string; roots?: string[]; save?: StudioEditorSave }>
+    result: { text?: string }
+    errors: Unknown | 'refused_by_extension'
   }
   /** Keep a dropped or pasted picture in Studio's own picture folder; answers where. */
   'files.saveDroppedImage': {
@@ -183,6 +192,10 @@ export type StudioFileSystemTopicMap = {
 }
 
 // ── Validation ──────────────────────────────────────────────────────────────
+
+function shortText(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= max
+}
 
 function id(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 200
@@ -270,10 +283,29 @@ export const STUDIO_FILE_SYSTEM_METHODS: StudioMethodTable<StudioFileSystemMetho
         !(Array.isArray(value.roots) && value.roots.length <= 64 && value.roots.every(isStudioPath))
       )
         return refuse('"roots" lists the project’s folders.')
+      const save = value.save as Record<string, unknown> | undefined
+      if (
+        save !== undefined &&
+        (save === null ||
+          typeof save !== 'object' ||
+          Array.isArray(save) ||
+          Object.keys(save).some((key) => key !== 'workspaceId' && key !== 'languageId') ||
+          (save.workspaceId !== undefined && !shortText(save.workspaceId, 256)) ||
+          (save.languageId !== undefined && !shortText(save.languageId, 128)))
+      )
+        return refuse('"save" is a save the person made: its workspaceId and languageId, each optional.')
       return studioParams({
         path: at.params.path,
         text: value.text,
         ...(value.roots === undefined ? {} : { roots: [...(value.roots as string[])] }),
+        ...(save === undefined
+          ? {}
+          : {
+              save: {
+                ...(save.workspaceId === undefined ? {} : { workspaceId: save.workspaceId as string }),
+                ...(save.languageId === undefined ? {} : { languageId: save.languageId as string }),
+              },
+            }),
       })
     }),
   },

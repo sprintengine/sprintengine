@@ -1,0 +1,13 @@
+{
+  "id": "mcp-tools",
+  "title": "MCP tools",
+  "summary": "A worker serving tools any agent in a workspace can call through Studio's MCP server.",
+  "permissions": [
+    "tools:contribute",
+    "workspace:read"
+  ],
+  "capabilities": [
+    "mcp-tools",
+    "worker"
+  ]
+}

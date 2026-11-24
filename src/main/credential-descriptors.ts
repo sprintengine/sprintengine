@@ -3,8 +3,10 @@ import { getConversationProviderById, getPluginById } from './plugin-registry-in
 
 // A manifest that may declare a credential. Structurally shared by both
 // LoadedConversationProvider and LoadedPlugin (CLI), so the credential store can
-// resolve either without knowing which kind it is.
-export type CredentialOwner = { manifest: { auth?: ManifestAuth } }
+// resolve either without knowing which kind it is. `source` says whether it
+// ships with Studio: only then is its `auth.env` read from the environment.
+// An extension's provider never is.
+export type CredentialOwner = { manifest: { auth?: ManifestAuth }; source: 'bundled' | 'extension' }
 
 // Resolves a credential descriptor's owner by id across EVERY manifest kind that
 // can declare `auth`: conversation providers and CLI plugins. This is what makes

@@ -1,6 +1,7 @@
 import type { ClientCapability } from './client-capabilities'
 import type { AttachedFileBytes, AttachedFilePreview } from './attached-files'
 import type { ChatLink } from './deep-link'
+import type { ExtensionInstallLink } from './extension-install-link'
 import type { AgentNotificationMode } from './agent-notifications'
 import type { PreviewOpenAnswer, PreviewPort, PreviewSummary } from './web-client'
 import type {
@@ -253,6 +254,12 @@ export type ElectronApi = {
    * link that launched the app waits in main until then (chat-link-router.ts).
    */
   onChatLinkOpen: (cb: (link: ChatLink) => void) => () => void
+  /**
+   * An install link (`sprintengine://extensions/…`) for this window: it opens
+   * the extension's page in Settings → Extensions, never an install.
+   * Subscribing tells main the window is listening.
+   */
+  onExtensionLinkOpen?: (cb: (link: ExtensionInstallLink) => void) => () => void
   // The pane, or one tab, in a window of its own (ipc/pane-popout.ts). The
   // first six are the owner window's half, the last three the pop-out's.
   panePopOutOpen: (input: PanePopOutOpenInput) => Promise<PanePopOutOpenResult>
@@ -615,6 +622,13 @@ export type ElectronApi = {
   saveGitPatch: (repoRoot: string, patch: string, defaultFileName?: string) => Promise<GitPatchSaveResult>
   /** Open an installed third-party module's folder. Absent where there is no file manager to open it in. */
   revealThirdPartyModule?: (id: string) => Promise<ThirdPartyModuleRevealResult>
+  /**
+   * Hand the shell an extension frame's document (`extension.frame`), which
+   * it serves at `studio-ext://frame/<hash>` once its bytes hash to `hash`.
+   * Absent in a browser tab, which loads the document from its Studio's own
+   * path instead.
+   */
+  stageExtensionFrame?: (hash: string, html: string) => Promise<boolean>
   // The conversation peek: what has been said in a chat the person is hovering
   // rather than looking at — the first message and everything since, from the
   // prompts this app captured. `source` says whether there is an answer, a

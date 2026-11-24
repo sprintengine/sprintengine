@@ -1,0 +1,7 @@
+{
+  "id": "hook-guard",
+  "title": "Hook guard",
+  "summary": "A worker that hooks agents' tool calls: refuses one that matches a rule, and logs each one that finishes.",
+  "permissions": [],
+  "capabilities": ["hooks", "worker"]
+}

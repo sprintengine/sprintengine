@@ -15,7 +15,7 @@ a private data structure, and changing one is not a local edit.**
 | ------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------ | ----------------------------------------------- |
 | Tailnet transport — a paired phone or Studio reaching this one                        | `TAILNET_TRANSPORT_VERSION` (integer)   | current only (3)                                 | `src/main/automation/tailnet/tailnet-routes.ts` |
 | MCP                                                                                   | dated strings, newest first             | every entry in the list                          | `src/shared/mcp/protocol.ts`                    |
-| Module host API — an installed extension built against `@sprintengine/module-sdk`     | `HOST_API_VERSION` (integer)            | `HOST_API_MIN_SUPPORTED` .. current              | `src/shared/modules/host-api.ts`                |
+| Extension manifest — an installed extension's `extension.json`                       | `engines.studio` (`>=x.y.z`)            | every manifest up to `STUDIO_EXTENSION_VERSION`  | `packages/extension-sdk/src/extension-manifest.ts` |
 | Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)     | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current       | `packages/studio-protocol/src/handshake.ts`     |
 | Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`) | current only (one version of slack when 2 ships) | `src/renderer/src/web/embed/embedProtocol.ts`   |
 
@@ -211,65 +211,330 @@ meaning or type, a field that is removed, a response whose shape a peer is
 already parsing. Nothing a capability flag can describe should bump the version,
 and nothing a capability flag cannot describe should ship without one.
 
-## The module host API
+## The extension host API
 
-An extension is compiled against `@sprintengine/module-sdk` and runs inside
-whatever Studio later loads it, so the contract between them — the `MainHost`
-and `RendererHost` members, the services behind the SDK's `get*Service`
-helpers, the manifest fields — is a wire in the sense of this file, even though
-nothing crosses a network.
+An extension is a folder with an `extension.json` at its root, built against
+`@sprintengine/extension-sdk` and run by whatever Studio later loads it, so the
+contract between them — the manifest's fields, the `mount(root, studio)` a
+panel, door or settings section exports, the `activate(studio)` its worker
+exports, the `studio` objects (the frame's `ExtensionMountStudio` and the
+worker's `MainHost`) and the services behind the SDK's `get*Service` helpers —
+is a wire in the sense of this file. A surface's `studio` also crosses one: its
+calls travel as `postMessage` envelopes to the window that drew its frame, and
+on to the Studio as `extension.call`.
 
-- **The version.** `HOST_API_VERSION = 2`, `HOST_API_MIN_SUPPORTED = 2`. Host
-  API 2 (2026-11-12) replaced host API 1's IPC channels (`MainHost.registerIpc`,
-  `RendererHost.invoke`) with declared methods served over the Studio protocol
-  (`registerMethods`, `methods()`, `module.read` / `module.operate`), with no
-  shim, so a module built for host API 1 is refused: Settings and the bell say
-  to rebuild it against `@sprintengine/module-sdk` 2 and what changes. Both
-  are declared once, in `packages/module-sdk/src/host-api.ts`, and re-exported
-  for app code by `src/shared/modules/host-api.ts`, so the app, the SDK and the
-  `sprintengine-module` CLI cannot disagree about them. The drift guard
-  (`npm run test:sdk:drift`) pins the two sides anyway.
-- **The declaration.** A third-party manifest must carry
-  `"engines": { "hostApi": <n> }`. First-party modules ship with the host they
-  run on and may omit it.
-- **The window.** A module loads when `HOST_API_MIN_SUPPORTED <= n <=
-HOST_API_VERSION`. `checkHostApiCompatibility` is the one check; it is
-  applied when modules are planned at startup (`src/main/modules/host-api-gate.ts`),
-  when renderer entries are served (`third-party-renderer-entries.ts`), when a
-  module's state is shown (`src/shared/modules/resolve.ts`, as
-  `incompatible_host_api` rather than "not trusted"), and by the CLI's `sign`,
-  `verify` and `pack`. A refusal names both numbers and which side to update —
-  the same rule as the integer wires above.
-- **Unlike the integer wires, the window is not one version wide by rule.** An
-  extension is not a peer that updates alongside the app; raise
-  `HOST_API_MIN_SUPPORTED` only when the host genuinely stops providing
-  something older modules were promised, and say so in the SDK's
-  `CHANGELOG.md`.
-- **Capabilities.** `host.supports(name)` answers what the running host
+- **The manifest.** `extension.json` (`manifestVersion: 1`) is validated by
+  one strict validator in the SDK, which the app, the CLI and the templates all
+  run (`validateExtensionManifest`). Unknown keys are refused at every level, a
+  contribution point above the extension's `tier` fails, and the points held
+  for later formats must be empty. A field table drives the validator, the JSON
+  Schema the SDK ships (`extension.schema.json`) and the reference in
+  `packages/extension-sdk/guide/manifest.md`, so the three cannot disagree.
+- **The version.** Each field carries the Studio release that first reads it.
+  extension.json is read from Studio 0.13.0 (`EXTENSION_MANIFEST_SINCE`). An
+  extension declares the oldest Studio it runs on as `engines.studio`
+  (`>=x.y.z`); the author's check holds that to the newest field it uses, and
+  a Studio refuses one asking for more than it reads
+  (`STUDIO_EXTENSION_VERSION`), naming both versions. There is no host API
+  integer any more.
+- **Adding to the format.** A new field, contribution point, icon or command
+  action is additive: it gets its own `since`, and an extension that uses it
+  raises `engines.studio` to match. Changing what a field means, or removing
+  one, is a new `manifestVersion`.
+- **Capabilities.** `studio.supports(name)` answers what the running host
   provides now, from the table in `src/shared/modules/host-api.ts`
-  (`hostSupports`). The names are the SDK's `HostCapability` union:
-  `conversations`, `conversation-controls`, `conversation-streams`,
-  `conversation-requests`, `conversation-permissions`, `chat.open`, `companion-agents`,
-  `scheduled-agents`, `secrets`, `github`, `storage`, `mcp-tools`, `skills`,
-  `module-assets`, `notifications`, `companion-tools`, `conversation-replies`,
-  `text-generation`, `conversation-worktrees`, `chat-runtimes`,
-  `scheduled-agent-runs`, `chat.open-options` (a renderer's, answered live
-  like `chat.open`), and `electron-main`, which the main host
-  answers itself: true in the desktop's own main process, false where a
-  module's main half runs in the Studio server out of process.
-- **`requires.hostCapabilities`.** An optional manifest field (added with
-  `electron-main`, no version bump): a module whose `entry.main` cannot run
-  without a capability names it, and a host that lacks it loads the module
-  manifest-only (its renderer half still loads). The validator keeps names it
-  does not know, since a host that does not know a name does not support it.
-  A capability joins the table in the same change that makes it real, and an
-  unknown name answers `false`. As on the tailnet, an additive feature ships as
-  a capability with no version bump.
-- **When to bump.** Removing or changing a host member, a service method or a
-  manifest field that a module built for the current version may use. Adding
-  an optional member, a service, a capability or a permission is additive.
-  `scripts/release/sdk-release-check.mjs` (run by `npm run test:release`) checks
-  that the version quoted here matches the source.
+  (`hostSupports`). An unknown name answers `false`, so an extension may probe
+  for capabilities newer than its SDK. A capability joins the table in the
+  same change that makes it real.
+- **Install keys.** An extension is installed under `<publisher>.<id>`, the
+  publisher derived from where it came from (`local` for a folder). The key is
+  the extension's id on the Studio protocol (`extension.*`'s `moduleId`), its
+  folder under the extensions root, and the namespace of what the shell
+  registers for it.
+- **Signatures.** `extension.sig` beside the manifest holds the sha256 of every
+  file the extension ships (extension.json included) and an ed25519 signature
+  over them. It is a badge: a signature by a trusted publisher key shows as
+  verified. A signature its files do not match keeps the extension from
+  running; no signature lets one run.
+- **Permissions and approvals.** `permissions` is a closed vocabulary
+  (`EXTENSION_PERMISSIONS`), and every host method an extension can call has a
+  row in the SDK's table (`EXTENSION_HOST_SERVICES`,
+  `EXTENSION_MAIN_HOST_METHODS`, and a surface's `EXTENSION_FRAME_METHODS`):
+  the permission the extension's approval must
+  hold, and what whoever invoked it must hold, in the Studio protocol's
+  permission names. Studio's gate checks both on every call and answers
+  `not_permitted` or `approval_required`. Anything above the `content` tier
+  runs only once the person approved its fingerprint (permissions, tier,
+  worker, background, and the content of its files); an update keeps the
+  approval when it asks for no more. Adding a method adds its row; changing a
+  row's requirement is a change to what an approved extension may do, and is
+  said here.
+
+### Extension surfaces run in frames (no compatibility)
+
+A panel, door or settings section runs in a sandboxed frame of its own on
+every client that draws extensions (owner ruling: there are no users yet, so
+nothing keeps the in-window mount). The frame's document is built by the
+Studio (`extension.frame`, under the new capability `extension-frames`): its
+policy (no network, `sandbox allow-scripts`), the theme's tokens and Studio's
+kit, a bootstrap that builds `studio`, and the extension's verified entry
+with the modules it imports, transpiled as written. A
+browser loads it from the Studio's `/ext-frame/<hash>`, inside the Studio's
+wrapper document `/ext-frame-host/<hash>` on the same origin, whose policy
+(`frame-src` naming that one document, no script) keeps the frame from being
+navigated anywhere else; a desktop window,
+local or paired, stages it with its shell and loads it from
+`studio-ext://frame/<hash>`. The frame speaks an envelope
+(`{ se: 1, kind, … }`, `src/shared/extension-frames.ts`) to the window, which
+holds it to the frame's budget (64 KiB a message, 120 messages in 10 s) and
+passes each host call to the Studio as `extension.call`, checked there as the
+extension and as that window's connection. The call names its document
+(`frame`, the hash `extension.frame` answered with), and is held to what the
+approval held when the Studio built that document as well as to what it holds
+now; a document built before the approval grew, or one this Studio did not
+build, is refused `frame_outdated`, and the client draws the surface again.
+The frame posts `leaving` on `pagehide`, and the window drops its bridge. A
+client draws an extension's
+surfaces only where its Studio offers `extension-frames`; it says nothing
+about a Studio that does not.
+
+Gone at once, with nothing bridging them: the SDK's `RendererHost` and the
+in-window mount, `extension.rendererEntries` (now `extension.contributions`,
+which carries no code), `extension.setAppState` (an extension's Settings
+values are kept by its Studio and written from its frame with `settings.set`),
+the host services `extensionBacklog.*` and `extensionUsage.query` (a frame's
+`backlog.*` and `usage.query`), `getAssetUrl` and the `studio-module://`
+asset scheme, and the web listener's switch for extension scripts in a
+browser tab. New permissions `workspace-files:read` and
+`workspace-files:write` give a frame the files of a workspace's folder
+(`files.*`), and need `filesystem:read` / `filesystem:write` of whoever opened
+the surface. The approval of a `ui` extension says its code runs isolated and
+can do only what the person allows, unless it holds `workspace-files:write`,
+which is full access; a worker's says full access, as before.
+
+### Custom editors (`extension-editors`)
+
+An extension's `customEditors` open the person's files of a type in a frame
+like any other surface (`extension.frame` with `point: 'customEditors'`).
+The frame gets the file's content and a version, never its path; the window
+that drew it keeps the document, answers its edits (an edit against an older
+version is refused `conflict`) and reads and saves the file through the
+Studio as the frame's own calls (`files.read`, `files.write`), checked as the
+extension (`workspace-files:read`, `:write`) and as that window's connection
+(`filesystem:read`, `:write`). Those two methods carry bytes in base64 and the
+file's sha256, and a write may be conditional on it. A client opens files in
+custom editors only where its Studio offers the new capability
+`extension-editors`; elsewhere the file opens in the text editor. An approval
+grows when an update adds an editor, gives one more files to open, or has one
+open its files by default where it was only offered.
+
+### Development folders and the extension dev loop (no compatibility)
+
+An extension loads without a build step: a surface's entry and the files it
+imports, and a worker's `main`, are read as written, TypeScript and JSX
+included. The frame document carries the gathered modules instead of one
+bundle, so nothing on the wire names a build. A development folder is a folder
+on the Studio's machine the owner registers (`extension.devLoad`,
+`extension.devUnload`, listed by `extension.devFolders`, each an owner's): it
+loads from where it is, after the installed extensions, and again on every
+save. `ThirdPartyModuleView.development` marks one, naming its folder only to a
+connection that may name any path, and `ExtensionContributions.revision`
+moves with every change to an extension's files, so a client that hears
+`extension.changed` redraws the surfaces whose revision moved. An install, an
+approval or an update now loads live, without restarting Studio, and the
+clients hear `extension.changed` as before. All of it rides on
+`extension-host`, with no capability of its own: a window and its Studio are
+one build.
+
+A development folder's approval is bound to its real path and its access, not
+to its files, and is forgotten when the folder is removed; it never covers an
+installed extension with the same key, nor the other way round. An installed
+extension's approval still binds its files' content. An approval from one of
+Studio's own agents (proven by its launch token) is refused.
+
+### The extension catalogue (no compatibility)
+
+Studio browses, installs and updates extensions from catalogues: the
+official and community ones, read over HTTPS from Studio's catalogue
+repository, and any the owner adds by git URL (`catalogue.json` at its root,
+read at `main`). Format 1 of the catalogue, the kill list, the owner records
+and the release lock is the SDK's (`packages/extension-sdk/src/catalogue.ts`,
+`catalogue.schema.json`); Studio reads a catalogue tolerantly (an entry it
+cannot read is skipped) and a catalogue in a newer format is refused with
+"update Studio". On the wire: `extension.catalogues`, `extension.catalogueEntry`
+and `extension.catalogueImage` (read with `extensions:read`), and
+`extension.catalogueAdd`, `extension.catalogueRemove`, `extension.installFrom`
+and `extension.update` (an owner's, from any client whose grant is the
+owner's, a browser tab included). `ThirdPartyModuleView` gains `origin` (the
+trust label from where it came from), `killed` and `update`, and its launch
+status `killed`. All of it rides on `extension-host`: a window and its Studio
+are one build, so there is no older peer to serve.
+
+A release of the official catalogue installs without asking for approval,
+and so does an official update that asks for more (owner ruling: content and
+official extensions install without a prompt); the update's notice says what
+it now has. Studio approves it only after every check an install makes (the
+release, its content hash, its owner and the kill list), for exactly the
+fingerprint it installed, so other bytes under its key ask as ever. Community
+and added catalogues, git URLs and folders always ask. The official
+catalogue, its kill list, its owner records and its release lock are trusted
+as Studio reads them over HTTPS from the catalogue repository: they are not
+signed, so whoever can change that repository's `main` decides what is
+official, and what an official update may do.
+
+An extension's publisher is its repository's owner, lowercased, on
+github.com (`github.com/acme/notes` is `acme`). On any other host the
+publisher is marked and carries the host (`gitlab.com/alice/notes` is
+`from-gitlab-com-alice`), and every catalogue, an added one included, must
+list an extension under its repository's owner. A publisher allows nothing a
+GitHub login could not also be, so the mark is reserved: a GitHub owner whose
+name begins `from-` makes no publisher, and cannot install or be listed under
+another host's.
+
+### Agent hooks (no compatibility)
+
+A worker extension's `contributes.hooks` lets it check, change or refuse what
+the Studio's agents and the Studio itself are about to do, and hear what they
+did. Hooks run on the Studio that holds the action, so a client never runs
+another machine's extensions. What crosses the wire is small: the
+`ExtensionContributionsView` carries `hooks` (each point and its `onError`), so
+a client's approval names them; and a save the person makes in an editor is
+sent as `files.writeText` with `save` (the workspace it was opened in and its
+language), which meets the Studio's
+`editor.save.before` hooks and may answer the `text` a hook wrote, or refuse
+with the new code `refused_by_extension`. There is no capability for it: a
+client always sends `save` for a save the person made, as a window and its
+Studio are one build. A
+refusal of any other hooked action (a launch, a workspace, a prompt) comes back
+in the refusal that action already had, its words naming the extension. An
+approval grows when an update hooks a point the approved version did not.
+
+### Skills, MCP servers and model providers from extensions (no compatibility)
+
+An extension's `contributes.skills`, `.mcpServers` and `.providers` replace the
+plugin bundle and the provider folder (`~/.sprintengine/plugins`), which are
+gone with nothing reading what they left (owner ruling: there are no users
+yet). What they hand agents is projected on the Studio the extension is
+installed on and reaches the agents and chats that Studio runs, so a client
+never runs another machine's servers. What crosses the wire is small: the
+`ExtensionContributionsView` carries the three lists, so a client's install
+review shows a local server's command line and environment and a provider's
+key origin; a provider's `source` is `bundled` or `extension`, and an
+extension's provider id, `<publisher>.<id>/<provider id>`, goes through
+`providers.*` as it is. There is no capability for it: a window and its Studio
+are one build. An approval grows when an update adds a local MCP server or
+changes its command, arguments, environment or the files it runs, and when it
+adds a provider or moves one to another origin.
+
+No MCP value an extension supplies (command, arguments, environment values,
+URL) may name a variable or a file of the person's machine (`${NAME}`,
+`${env:NAME}`, `{env:NAME}`, `{file:path}`), which Claude Code, Cursor or
+OpenCode would fill in from the person's environment; only the
+`${extensionPath}` token, which Studio fills in, is allowed. A live chat
+follows the projection: a server withdrawn since its child started (killed,
+switched off, uninstalled, no longer approved, or changed) is dropped before
+the chat's next turn, over Claude Code's control channel or by replacing the
+Codex app-server, never mid-turn. A CLI launched in a terminal reads the
+servers once, at launch, and keeps a withdrawn one until it is started again.
+
+### Where extensions run, and what is not built yet (declared)
+
+Extensions run only on the desktop app's own Studio, in its process or its
+server process. A Studio in a WSL distribution or on an SSH machine, and one
+started on its own (`studio-server serve`, the web listener), holds no
+extension host: no workers, hooks, frames, extension MCP tools or projection
+run there (running the host there is not built). So a hook does not guard a chat such a Studio runs,
+whatever its `onError` says; the install review and the extension's row say
+a hook applies to chats on this computer only. A desktop window paired with
+the desktop draws that desktop's extensions. A browser tab is not granted
+`extensions:operate`, and no Studio with a web listener holds extensions, so
+a web tab draws no extension surfaces.
+
+Not built in this platform, and not offered by the SDK:
+
+- worker events (an `events:subscribe` permission and Studio events a worker
+  hears), and the components runtime (host-drawn controls an extension
+  declares);
+- `install`, `update` and `open` of a published extension from the CLI or an
+  agent: they are the person's, in Settings;
+- a command that `replaces` a built-in action: commands bind to the fixed
+  list of Studio actions;
+- signed official lists: the official catalogue, its kill list, owner records
+  and release lock are trusted as read over HTTPS from the catalogue
+  repository (see the catalogue above).
+
+### Permissions checked at the host; approvals replace trust (no compatibility)
+
+The permission vocabulary changed at once (owner ruling: there are no users
+yet), and nothing maps the old names: `filesystem:*`, `process:spawn`,
+`network`, `ipc:*`, `module:bridge`, `backlog.*`, `scheduled-agents.manage`,
+`storage`, `secrets`, `github`, `mcp:tools` and `conversation:operate` /
+`conversation:read-all` are refused by the validator. Their places are taken
+by `workspace:read`, `workspace:operate`, `backlog:read`, `backlog:operate`,
+`schedules:own`, `storage:own`, `settings:own`, `secrets:own`,
+`notifications:show`, `github:api`, `tools:contribute`, `conversation:own`
+and `conversation:read` (every chat, read only). An extension's own methods
+need no permission. The services' refusal code `permission_missing` is gone;
+a refused call answers `not_permitted` or `approval_required`.
+
+The trust store (`trusted-modules.json`) is gone, and nothing reads it:
+earlier grants approve nothing, and every extension above `content` waits for
+the person's approval once. Approvals live in `extension-approvals.json` in
+the data folder. A bundle's or a provider's signed manifest is trusted only by
+a trusted publisher key; the person's grant of a manifest is gone with the
+store.
+
+On the Studio protocol: `extension.setTrust` is gone, and
+`extension.approve {moduleId, fingerprint, commandId}` (an owner's) takes its
+place; it is refused when the extension changed since the fingerprint was
+shown. `extension.install` answers `approval` (`not-needed`, `pending` with
+the `fingerprint` to approve, or `approved` when an update kept it) instead of
+`trust`. `extension.installed` answers each extension's `approval` and
+`signature` (`verified`, `signed`, `unsigned` or `invalid`) and `signer`
+instead of `trust`, `fingerprint` and `trustedVia`; its launch statuses are
+`runs_worker`, `runs_without_worker`, `awaiting_approval`, `blocked_invalid`
+and `launch_error`, and the resolver's `untrusted` is `unapproved`. A client
+and a Studio on either side of the change see each other's extensions as
+broken or waiting, and nothing says more than that.
+
+### extension.json replaces manifest.json (no compatibility)
+
+The extension format changed at once, with nothing bridging the two (owner
+ruling: there are no users yet). A folder with a `manifest.json` is not an
+extension: Studio does not read it, installs nothing from it and says only
+that `extension.json` is missing. Gone with it: `engines.hostApi`,
+`HOST_API_VERSION` and its gate (`incompatible_host_api`, `blocked_host_api`),
+`requires.hostCapabilities`, `entry.main` / `entry.renderer` / `entry.preload`,
+`files` and `signature` inside the manifest, `publisher`, `displayName`,
+`defaultEnabled`, `dependsOn`, `conflictsWith`, `category`; the window's
+`registerRenderer` and every UI `register*` call (panels, workspace types,
+Backlog and file actions, link providers, notification actions, commands,
+Settings sections, nav entries, door badges, top bar items, global and modal
+surfaces), `openWorkspace`, `openModalSurface`, `setSurfaceView`; the worker's
+`registerMain` and `registerSkills`; and the window-shared React, UI kit and
+door shell (`@sprintengine/extension-sdk/ui` and `/surface`). A worker keeps
+`registerMethods` and `registerMcpTools`; the tools it registers must be
+declared in `contributes.mcpTools`. (A plugin bundle stopped carrying an
+extension here; the bundle itself has since gone, its MCP servers and skills
+now an extension's own contributions.)
+
+The Studio protocol changed with it, in place: `extension.rendererEntries`
+answers each extension's `extension` (its manifest) and `entries` (the source
+of each surface's bundle, by path) instead of one `code` bundle and a
+`firstPartySigned` stamp; `extension.installed` answers each extension's
+`extension` and drops `origin`; `extension.install` answers `strippedLinks`,
+the symbolic links left out of the copy; `extension.uninstall` no longer names
+a plugin that owns the extension; a module's `version` is an integer for the
+app's own modules and a semver string for an extension. With the bundle's
+`module` component go the marketplace's module-only fields: a review's
+`codeBearing`, a GitHub install's `trustCode`, an installed component's
+`trustStatus` and `manifestFp`, and an install's `restartRequired`. A GitHub
+repository holding an extension.json is refused with a sentence saying to
+install its folder. A provider in the user's provider folder may no longer
+name `auth.env`: its key is entered in Settings, and an environment variable
+is read only for the providers that ship with Studio. A client and a Studio
+on either side of the change see each other's extensions as broken or absent,
+and nothing says more than that.
 
 ## The phone's reads are Studio protocol methods
 
@@ -633,8 +898,10 @@ source list and an update check, asked or pushed, show such a client only
 those. A plugin's
 install and uninstall, a bundle's lint (it runs the bundle's own script) and a
 card's Go are an owner's. A Studio without the desktop's shell beside it (on a
-WSL or SSH machine) answers a card's `install.module` and an installed skill's
-removal to the Trash in words. A window that meets a Studio without
+WSL or SSH machine) answers an installed skill's removal to the Trash in
+words. The `install.module` card verb is gone with extension.json:
+extensions install from a folder, so a card naming it is refused as a verb
+this build does not implement. A window that meets a Studio without
 `agent-skills` says the Studio is older. The desktop's own windows reach all
 of them only this way: their window IPC is gone.
 `environment-readiness` (2026-11-12) adds `environment.readiness`, under
@@ -865,6 +1132,41 @@ from a window is the chat's `conversation.markUnread`. The window's 14
 `workspace-sync:*`, `workspace-registry:*`, `workspace-backup:*` and
 `chats:projectless-*` IPC channels are gone; a desktop's window and its own
 Studio are one build.
+`extension-editors` (2026-11-22) says the Studio opens files in its
+extensions' custom editors: `extension.frame` takes `point: 'customEditors'`,
+and a frame's `files.read` and `files.write` carry bytes (`encoding: 'base64'`),
+the file's `sha256` and a write conditional on it (`expectedSha256`, refused
+`conflict`). Offered with `extension-host`. A client opens a file in an
+extension's editor only where it is offered, and in its text editor elsewhere.
+`extension-frames` (2026-11-21) says the Studio draws its extensions'
+surfaces in frames: `extension.frame` (the document one surface is drawn from)
+and `extension.call` (a frame's host call, once per command id, naming the
+frame document it came from as `frame`), under
+`extensions:read`, each call held to the extension's approval, the approval
+its document was built under (`frame_outdated` when that is less), and the
+connection's own grant. A browser draws the frame inside
+`/ext-frame-host/<hash>`. Offered with `extension-host`. A client draws no
+extension surface without it.
+`extension-host` (2026-11-18) is the `modules` capability renamed, with
+everything it offered: modules are called extensions everywhere a person or a
+client reads it. Its methods are `extension.read`, `.operate`, `.list`,
+`.setEnabled`, `.install`, `.setTrust` (since replaced by `.approve`), `.uninstall`, `.installed`,
+`.rendererEntries`, `.setAppState` and `.reportRegistry`, its streams
+`extension.events`, `.notifications` and `.changed`, the host services
+`extensionBacklog.*` and `extensionUsage.query`, under the scopes
+`extensions:read` and `extensions:operate` (permissions `extension:read` and
+`extension:operate`), and its refusals `extension_unavailable` and
+`extension_method_unknown`; params and results are unchanged. The agents'
+`module.list` and `module.status` are `extension.list` and `extension.status`:
+a paired device reaches them under its workspace scope, as before, and a WSL
+agent through the relay, where of the `extension` family only these two
+cross (`EXTENSION_READ_TOOLS`). No `module.*` method or tool, `modules`
+capability or `modules:*` scope is served or read any more. There were no
+users yet (owner ruling 2026-11-19), so nothing bridges the two names: a grant
+holding a `modules:*` scope reaches no extension until it is given
+`extensions:*`, and a client and a Studio on either side of the rename see
+each other's extensions as absent. The paragraphs above and below keep the
+names each change used at the time.
 `extensions` (2026-11-13) is what a desktop's Studio is extended with beyond
 its modules: the marketplace's registry and each installed entry against it
 (`marketplace.read`, `.updateStates`), the agent CLIs' plugin catalogue
@@ -872,10 +1174,9 @@ its modules: the marketplace's registry and each installed entry against it
 (`cardFeed.get` with the `cardFeed.changed` stream, `sourcesFeed.get`), all
 under `providers:read`; Studio's own plugin in a workspace
 (`studioPlugin.status`) under `files:read`, in a folder the Studio knows for a
-client that is not an owner. Reviewing an entry or a GitHub repository,
-installing, updating and removing it (`marketplace.verify`, `.install`,
-`.update`, `.uninstall`, `.resolveGithub`, `.installGithub`) and making an
-extension project (`extensionScaffold.*`) are an owner's, with the reason in
+client that is not an owner. Reviewing an entry, installing, updating and
+removing it (`marketplace.verify`, `.install`, `.update`, `.uninstall`) and
+making an extension project (`extensionScaffold.*`) are an owner's, with the reason in
 the table: they fetch code to run on the machine, approve it, or write outside
 the folders the Studio knows. A review's one-time approval is spent by the
 install it approves, and checked by the Studio as strictly as before. The
@@ -886,6 +1187,14 @@ Additive: a Studio without a desktop around it (a WSL or SSH server) leaves
 `extensions` out. The desktop's windows reach all of these only this way:
 their window IPC is gone, but for showing an extension's folder in the file
 manager, which stays the shell's.
+`marketplace.resolveGithub` and `marketplace.installGithub` (2026-11-13), the
+review and install of a plugin bundle from a GitHub repository, were removed on
+2026-11-22 with the plugin bundle and the inline MCP registry entry: skills, MCP
+servers and model providers arrive as contributions in an extension's
+extension.json. A Studio answers both `unknown_method`; the install envelope no
+longer carries `mcpSettings` or `mcpClients`, and a client that still sends them
+is not refused, they are dropped. Installing an extension from a repository
+returns with the catalogue.
 `artifacts` (2026-11-13) is where a desktop's Studio publishes its agents'
 pages: Settings ▸ Artifacts (`artifacts.settings`), setting the host up
 (`artifacts.setUp`, a mutation under its `commandId`), and the question an

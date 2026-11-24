@@ -179,7 +179,7 @@ export type StudioRpcConnectionOptions = {
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started: the `localServers.changed` stream. */
   localServers?: StudioLocalServers
-  /** What this Studio's modules say: the `module.events` and `module.notifications` streams. */
+  /** What this Studio's modules say: the `extension.events` and `extension.notifications` streams. */
   modules?: StudioModules
   /** The terminals on this machine: the `terminal.*` streams. */
   terminals?: StudioTerminals
@@ -1110,24 +1110,24 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   }
 
   /** A module's events, or every module's, as the kernel delivers them: in each module's order, never replayed. */
-  function subscribeModuleEvents(id: string, params: StudioTopicParams<'module.events'>): void {
+  function subscribeModuleEvents(id: string, params: StudioTopicParams<'extension.events'>): void {
     const modules = options.modules
     if (!modules) {
-      subscriptionFailed(id, 'unavailable', 'This Studio does not serve module.events.')
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve extension.events.')
       return
     }
-    const subscription: Subscription = { id, topic: 'module.events', key: null, replay: null, handle: null }
+    const subscription: Subscription = { id, topic: 'extension.events', key: null, replay: null, handle: null }
     subscriptions.set(id, subscription)
     const stop = modules.onEvent((event) => {
       if (state === 'closed' || subscriptions.get(id) !== subscription) return
       if (params.moduleId !== undefined && event.sourceModuleId !== params.moduleId) return
       const grant = liveGrant()
       if (!grant) return
-      if (!authorizeStudioTopic(grant, 'module.events').ok) {
+      if (!authorizeStudioTopic(grant, 'extension.events').ok) {
         refreshGrant()
         return
       }
-      push('module.events', id, event)
+      push('extension.events', id, event)
     })
     subscription.handle = { dispose: stop }
   }
@@ -1389,20 +1389,20 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   function subscribeModuleNotifications(id: string): void {
     const modules = options.modules
     if (!modules) {
-      subscriptionFailed(id, 'unavailable', 'This Studio does not serve module.notifications.')
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve extension.notifications.')
       return
     }
-    const subscription: Subscription = { id, topic: 'module.notifications', key: null, replay: null, handle: null }
+    const subscription: Subscription = { id, topic: 'extension.notifications', key: null, replay: null, handle: null }
     subscriptions.set(id, subscription)
     const send = (notification: StudioModuleNotification): void => {
       if (state === 'closed' || subscriptions.get(id) !== subscription) return
       const grant = liveGrant()
       if (!grant) return
-      if (!authorizeStudioTopic(grant, 'module.notifications').ok) {
+      if (!authorizeStudioTopic(grant, 'extension.notifications').ok) {
         refreshGrant()
         return
       }
-      push('module.notifications', id, notification)
+      push('extension.notifications', id, notification)
     }
     // The backlog and the listener in one turn: nothing raised between them is lost or heard twice.
     for (const notification of modules.recentNotifications()) send(notification)
@@ -1498,11 +1498,20 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       const listen = options.router.onCliPathsChanged
       subscribeFeed(id, 'environment.cliPathsChanged', listen ? (deliver) => listen(() => deliver({})) : null)
     },
-    'module.events': subscribeModuleEvents,
-    'module.notifications': subscribeModuleNotifications,
-    'module.changed': (id) => {
+    'extension.events': subscribeModuleEvents,
+    'extension.notifications': subscribeModuleNotifications,
+    'extension.changed': (id) => {
       const modules = options.modules
-      subscribeFeed(id, 'module.changed', modules ? (deliver) => modules.onChanged(() => deliver({})) : null)
+      subscribeFeed(id, 'extension.changed', modules ? (deliver) => modules.onChanged(() => deliver({})) : null)
+    },
+    // Whose settings values changed; the client reads them again.
+    'extension.settingsChanged': (id) => {
+      const modules = options.modules
+      subscribeFeed(
+        id,
+        'extension.settingsChanged',
+        modules ? (deliver) => modules.onSettingsChanged((moduleId) => deliver({ moduleId })) : null,
+      )
     },
     'cardFeed.changed': (id) =>
       subscribeFeed(id, 'cardFeed.changed', options.extensions?.feeds.onCardFeedChanged ?? null),

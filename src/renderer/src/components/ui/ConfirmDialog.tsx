@@ -29,9 +29,17 @@ type ConfirmDialogProps = ConfirmDialogBase & {
   open: boolean
   onCancel: () => void
   onConfirm: () => void
+  alternateLabel?: string
+  onAlternate?: () => void
 }
 
 export type ConfirmDialogOptions = ConfirmDialogBase
+
+/** A question with a third answer between going ahead and staying (e.g. Save / Don’t save / Cancel). */
+export type ChoiceDialogOptions = ConfirmDialogBase & { alternateLabel: string }
+
+/** Which button closed a choice: the confirming one, the alternate, or none (cancel, Escape, closing it). */
+export type DialogChoice = 'confirm' | 'alternate' | 'cancel'
 
 export type PromptDialogOptions = ConfirmDialogBase & {
   inputLabel: string
@@ -94,10 +102,22 @@ type DialogRequest =
       options: PromptDialogOptions
       resolve: (value: string | null) => void
     }
+  | {
+      kind: 'choose'
+      options: ChoiceDialogOptions
+      resolve: (choice: DialogChoice) => void
+    }
 
 type ConfirmDialogApi = {
   confirm: (options: ConfirmDialogOptions) => Promise<boolean>
   prompt: (options: PromptDialogOptions) => Promise<string | null>
+  choose: (options: ChoiceDialogOptions) => Promise<DialogChoice>
+}
+
+function settle(request: DialogRequest): void {
+  if (request.kind === 'confirm') request.resolve(false)
+  else if (request.kind === 'prompt') request.resolve(null)
+  else request.resolve('cancel')
 }
 
 const ConfirmDialogContext = createContext<ConfirmDialogApi | null>(null)
@@ -114,6 +134,8 @@ function ConfirmDialog({
   tone = 'default',
   pending = false,
   contained = false,
+  alternateLabel,
+  onAlternate,
 }: ConfirmDialogProps) {
   const titleId = useId()
   const confirmText = pending && pendingLabel ? pendingLabel : confirmLabel
@@ -136,6 +158,11 @@ function ConfirmDialog({
         <ModalButton type="button" onClick={onCancel} disabled={pending}>
           {cancelLabel}
         </ModalButton>
+        {alternateLabel && onAlternate ? (
+          <ModalButton type="button" onClick={onAlternate} disabled={pending}>
+            {alternateLabel}
+          </ModalButton>
+        ) : null}
         <ModalButton
           type="button"
           variant={tone === 'danger' ? 'danger' : 'primary'}
@@ -155,8 +182,7 @@ export function ConfirmDialogProvider({ children }: { children: React.ReactNode 
 
   const replaceRequest = useCallback((nextRequest: DialogRequest) => {
     setRequest((current) => {
-      if (current?.kind === 'confirm') current.resolve(false)
-      if (current?.kind === 'prompt') current.resolve(null)
+      if (current) settle(current)
       return nextRequest
     })
   }, [])
@@ -179,13 +205,21 @@ export function ConfirmDialogProvider({ children }: { children: React.ReactNode 
     [replaceRequest],
   )
 
-  const api = useMemo(() => ({ confirm, prompt }), [confirm, prompt])
+  const choose = useCallback(
+    (options: ChoiceDialogOptions) => {
+      return new Promise<DialogChoice>((resolve) => {
+        replaceRequest({ kind: 'choose', options, resolve })
+      })
+    },
+    [replaceRequest],
+  )
+
+  const api = useMemo(() => ({ confirm, prompt, choose }), [confirm, prompt, choose])
 
   useEffect(() => {
     return () => {
       setRequest((current) => {
-        if (current?.kind === 'confirm') current.resolve(false)
-        if (current?.kind === 'prompt') current.resolve(null)
+        if (current) settle(current)
         return null
       })
     }
@@ -194,6 +228,12 @@ export function ConfirmDialogProvider({ children }: { children: React.ReactNode 
   const closeConfirm = (confirmed: boolean) => {
     if (request?.kind !== 'confirm') return
     request.resolve(confirmed)
+    setRequest(null)
+  }
+
+  const closeChoice = (choice: DialogChoice) => {
+    if (request?.kind !== 'choose') return
+    request.resolve(choice)
     setRequest(null)
   }
 
@@ -212,6 +252,15 @@ export function ConfirmDialogProvider({ children }: { children: React.ReactNode 
           {...request.options}
           onCancel={() => closeConfirm(false)}
           onConfirm={() => closeConfirm(true)}
+        />
+      ) : null}
+      {request?.kind === 'choose' ? (
+        <ConfirmDialog
+          open
+          {...request.options}
+          onCancel={() => closeChoice('cancel')}
+          onConfirm={() => closeChoice('confirm')}
+          onAlternate={() => closeChoice('alternate')}
         />
       ) : null}
       {request?.kind === 'prompt' ? (

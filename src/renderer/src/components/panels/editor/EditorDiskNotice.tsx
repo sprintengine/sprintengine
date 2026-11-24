@@ -8,7 +8,11 @@ import { copy } from '../../../../../shared/copy'
  * to), or it is gone. Shared by the docked editor and the pop-out editor
  * window, which say it the same way.
  */
-export type EditorDiskNoticeState = { kind: 'changed'; content: string } | { kind: 'deleted' }
+export type EditorDiskNoticeState =
+  | { kind: 'changed'; content: string }
+  | { kind: 'deleted' }
+  /** An extension's `editor.save.before` hook refused the save: the edits stay unsaved. */
+  | { kind: 'refused'; message: string }
 
 export function EditorDiskNotice({
   notice,
@@ -17,6 +21,7 @@ export function EditorDiskNotice({
 }: {
   notice: EditorDiskNoticeState
   onReload: () => void
+  /** Keeps the edits; for a refused save, closes the notice. */
   onKeepMine: () => void
 }) {
   return (
@@ -35,6 +40,17 @@ export function EditorDiskNotice({
                 {copy.panels.editor.editorDiskNotice.keepMine}
               </GhostButton>
             </>
+          }
+        />
+      ) : notice.kind === 'refused' ? (
+        <InlineNotice
+          tone="warn"
+          title={copy.panels.editor.editorDiskNotice.notSaved}
+          hint={notice.message}
+          action={
+            <GhostButton size="xs" onClick={onKeepMine}>
+              {copy.panels.editor.editorDiskNotice.dismiss}
+            </GhostButton>
           }
         />
       ) : (

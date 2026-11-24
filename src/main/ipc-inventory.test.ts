@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { afterAll, test, vi } from 'vitest'
@@ -147,6 +147,7 @@ import { createHostRecordingEncoder } from './browser/recording-encoder'
 import { attachBuildSkewWatch } from './build-skew'
 import { createCanvasWorkerTransport } from './canvas/canvas-worker-window'
 import { registerChatLinkIpc } from './chat-link-ipc'
+import { registerExtensionLinkIpc } from './extension-link-router'
 import { registerSshPreviewIpc } from './environments/ssh/ssh-preview'
 import { registerAppRestartIpc } from './ipc/app-restart-ipc'
 import { registerEnvironmentsIpc } from './ipc/environments-ipc'
@@ -161,11 +162,15 @@ import {
 } from './module-host/service-tokens'
 import { scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
 import { AGENT_RUNTIME_MANIFEST } from './modules/agent-runtime-module'
-import { computeModuleFileDigestsSync, manifestFingerprint } from './modules/module-signature'
-import { planThirdPartyMainModules } from './modules/third-party-main-loader'
+import { approvedContext } from './modules/extension-approvals.test-helper'
+import { planInstalledExtensions } from '../server/extensions/extension-plan'
+import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
+import { workerEntryForTests } from '../../tests/extension-worker'
+import { ownerInvoker } from './module-host/extension-invocation'
 import { discoverUserModulesSync } from './modules/user-module-registry'
 import { registerCoreIpc } from './register-core-ipc'
 import { attachStartupTimeline } from './startup-timeline'
+import { extensionManifest, writeExtensionFolder } from '../../tests/extension-folder'
 
 /**
  * Server rows per area. A new server channel raises its area's count and fails
@@ -251,33 +256,34 @@ function serverDomainStubs(dataDir: string): ServerDomainIpcDeps {
   }
 }
 
-/** An extension as Settings installs one: a folder in the user module root, trusted by its fingerprint. */
-function installExtension(id: string): ReturnType<typeof planThirdPartyMainModules> {
+/** An extension as Settings installs one: `local.<id>` in the user module root, approved as it is. */
+// Its worker runs in a process of its own, as the server forks it.
+const approvedFingerprints = new Map<string, { fingerprint: string }>()
+const extensionWorkers = createExtensionWorkers({
+  entryPath: workerEntryForTests(),
+  logDir: join(scratch, 'logs'),
+  approvals: () => approvedFingerprints,
+})
+afterAll(() => extensionWorkers.workers.close())
+
+function installExtension(id: string): ReturnType<typeof planInstalledExtensions> {
   const root = join(scratch, 'modules')
-  const moduleRoot = join(root, id)
-  mkdirSync(join(moduleRoot, 'dist'), { recursive: true })
-  writeFileSync(
-    join(moduleRoot, 'dist', 'main.cjs'),
-    `exports.registerMain = (host) => host.registerMethods({ forecast: { access: 'read', params: () => ({ ok: true, params: {} }), handler: () => ({ ok: true, result: 'sunny' }) } })\n`,
+  const key = `local.${id}`
+  const moduleRoot = writeExtensionFolder(join(root, key), {
+    manifest: extensionManifest({ id, permissions: [] }),
+    files: {
+      'dist/main.cjs': `exports.activate = (host) => host.registerMethods({ forecast: { access: 'read', params: () => ({ ok: true, params: {} }), handler: () => ({ ok: true, result: 'sunny' }) } })\n`,
+    },
+  })
+  const listed = discoverUserModulesSync(root, approvedContext({ [key]: moduleRoot }))
+  assert.ok(
+    listed.modules.some((entry) => entry.key === key && entry.standing.approval.state === 'approved'),
+    'the installed extension is discovered, approved',
   )
-  writeFileSync(
-    join(moduleRoot, 'manifest.json'),
-    JSON.stringify({
-      id,
-      displayName: id,
-      version: 1,
-      defaultEnabled: true,
-      permissions: ['module:bridge'],
-      entry: { main: 'dist/main.cjs' },
-      files: computeModuleFileDigestsSync(moduleRoot).files,
-    }),
-  )
-  const listed = discoverUserModulesSync(root, { trustedModules: new Map() }).modules.find(
-    (entry) => entry.manifest.id === id,
-  )
-  assert.ok(listed, 'the installed extension is discovered')
-  const trusted = new Map([[id, manifestFingerprint(listed.manifest)]])
-  return planThirdPartyMainModules(discoverUserModulesSync(root, { trustedModules: trusted }))
+  for (const entry of listed.modules)
+    if (entry.standing.approval.state === 'approved')
+      approvedFingerprints.set(entry.key, { fingerprint: entry.standing.approval.fingerprint })
+  return planInstalledExtensions(listed, () => extensionWorkers.workers)
 }
 
 /** Every non-test `.ts` file under a directory of the repository. */
@@ -327,6 +333,7 @@ test('what main and the server register, and what the preload uses, is the inven
   registerSshEnvironmentsIpc(shell, anything(), anything())
   registerEnvironmentsIpc(shell, anything())
   registerChatLinkIpc({ ipcMain: shell, router: anything(), windowOf: anything(), isWorkspaceWindow: anything() })
+  registerExtensionLinkIpc({ ipcMain: shell, router: anything(), windowOf: anything(), isWorkspaceWindow: anything() })
   createHostRecordingEncoder({ ipcMain: shell, tabs: anything() })
   createCanvasWorkerTransport({ ipcMain: shell })
 
@@ -356,9 +363,11 @@ test('what main and the server register, and what the preload uses, is the inven
       ...installed.modules,
     ],
     ineligible: installed.ineligible,
+    moduleRoots: installed.moduleRoots,
+    onKernel: extensionWorkers.bind,
   })
   assert.deepEqual(modules.report.errors, [])
-  assert.ok(modules.report.loaded.includes('weather-deck'), 'the installed extension loads')
+  assert.ok(modules.report.loaded.includes('local.weather-deck'), 'the installed extension loads')
 
   // ── The preload: every member, with stand-ins ──
   const usedBy = new Map<string, Set<string>>()
@@ -421,11 +430,20 @@ test('what main and the server register, and what the preload uses, is the inven
     assert.ok(row && 'server' in row && row.dir === 'invoke', `the web tunnel's "${channel}" is a server invoke row`)
   }
 
-  // An installed extension declares methods, served over the Studio protocol,
-  // and registers no IPC at all.
-  assert.deepEqual(modules.kernel.declaredMethods('weather-deck'), [{ name: 'forecast', access: 'read' }])
+  // An installed extension declares methods, served over the Studio protocol
+  // by its worker process, and registers no IPC at all.
+  const forecast = await modules.kernel.callModuleMethod({
+    moduleId: 'local.weather-deck',
+    method: 'forecast',
+    access: 'read',
+    params: {},
+    clientId: 'inventory',
+    invoker: ownerInvoker(),
+  })
+  assert.deepEqual(forecast, { ok: true, answer: { ok: true, result: 'sunny' } })
+  assert.deepEqual(modules.kernel.declaredMethods('local.weather-deck'), [{ name: 'forecast', access: 'read' }])
   assert.deepEqual(
-    [...registered].filter((channel) => channel.startsWith('weather-deck')),
+    [...registered].filter((channel) => channel.startsWith('local.weather-deck')),
     [],
     'an installed extension registers no IPC channel',
   )

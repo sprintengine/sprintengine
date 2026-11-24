@@ -1,12 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 
-import type { CapabilityManifest } from '../../shared/modules/manifest'
-import { computeModuleFileDigestsSync } from '../modules/module-signature'
-import { planThirdPartyMainModules } from '../modules/third-party-main-loader'
-import type { InstalledModule } from '../modules/user-module-registry'
 import { loadMainModules, type CapabilityModule } from './load-modules'
 import { createServiceToken } from './main-host'
 import { test } from 'vitest'
@@ -24,6 +17,7 @@ test('load-modules', async () => {
     testDisabledModuleNeverRegisters()
     testProvideServicesSeedsBeforeModules()
     testCrossModuleServiceWiring()
+    testAppModulesStartBeforeEveryExtension()
     testThrowingModuleIsIsolated()
     testDuplicateMethodIsReportedNotFatal()
     testLifecycleAndSidecarsCollected()
@@ -33,14 +27,42 @@ test('load-modules', async () => {
     await testApplyEnablementAwaitsAsyncRegisterMain()
     await testRunStartupAndShutdownInvokeHooks()
     await testRunShutdownBeginRunsBeginHooksInRegistrationOrderBeforeShutdown()
-    await testTrustedThirdPartyMainRegistersThroughHost()
-    await testUntrustedAndInvalidThirdPartyMainNeverImports()
-    await testThirdPartyPathSafetyAndBadEntriesAreLaunchErrors()
-    testRejectedThirdPartyManifestIsLaunchError()
-    await testTrustedThirdPartyRegistrationThrowIsIsolated()
-    await testThirdPartyIneligibleDependencyCascades()
 
     console.log('module-host tests passed')
+  }
+
+  // An extension declares no dependencies, and its install key sorts before
+  // a built-in id like `scheduled-agents`; its activate may still resolve a
+  // service any of the app's modules provides.
+  function testAppModulesStartBeforeEveryExtension(): void {
+    const token = createServiceToken<{ list(moduleId: string): string }>('scheduled-agents.module-service')
+    const order: string[] = []
+    const provider: CapabilityModule = {
+      manifest: { id: 'zz-scheduled', displayName: 'Provider', version: 1, defaultEnabled: true },
+      registerMain: (host) => {
+        order.push('zz-scheduled')
+        host.provideService(token, () => ({ list: (moduleId: string) => `pong ${moduleId}` }))
+      },
+    }
+    let answer = ''
+    const extension: CapabilityModule = {
+      manifest: {
+        id: 'local.aaa',
+        displayName: 'Aaa',
+        version: '1.0.0',
+        defaultEnabled: true,
+        source: 'third-party',
+        permissions: ['schedules:own'],
+      },
+      registerMain: (host) => {
+        order.push('local.aaa')
+        answer = host.requireService(token).list(host.moduleId)
+      },
+    }
+    const { report } = loadMainModules({ modules: [extension, provider] })
+    assert.deepEqual(report.errors, [])
+    assert.deepEqual(order, ['zz-scheduled', 'local.aaa'])
+    assert.equal(answer, 'pong local.aaa')
   }
 
   function testEnabledModulesRegisterInDependencyOrder(): void {
@@ -226,7 +248,7 @@ test('load-modules', async () => {
         version: 1,
         defaultEnabled: true,
         source: 'third-party',
-        permissions: ['module:bridge'],
+        permissions: [],
       },
       registerMain: async (host) => {
         host.registerMethods({ ping: answering('pong') })
@@ -268,7 +290,7 @@ test('load-modules', async () => {
     await ready
     assert.deepEqual(report.loaded, [])
     assert.equal(report.errors.length, 1)
-    assert.match(report.errors[0]!.message, /did not settle within/)
+    assert.match(report.errors[0]!.message, /^Extension "hung" did not finish starting within 0.005s\.$/)
     assert.equal(kernel.startupHooks().length, 0)
     await kernel.runStartup()
     assert.equal(registeredHook, false)
@@ -361,216 +383,6 @@ test('load-modules', async () => {
 
     await kernel.runShutdown()
     assert.deepEqual(order, ['begin-1', 'begin-3', 'stop'])
-  }
-
-  async function testTrustedThirdPartyMainRegistersThroughHost(): Promise<void> {
-    const moduleRoot = await createThirdPartyModuleRoot('trusted')
-    await writeFile(
-      join(moduleRoot, 'main.cjs'),
-      "exports.registerMain = (host) => host.registerMethods({ ping: { access: 'read', params: (v) => ({ ok: true, params: v }), handler: () => ({ ok: true, result: 'pong' }) } })\n",
-    )
-    const planned = planThirdPartyMainModules({
-      modules: [installedThirdPartyModule({ id: 'trusted', moduleRoot, trust: 'trusted', main: 'main.cjs' })],
-      rejected: [],
-    })
-    const { report } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
-
-    assert.deepEqual(report.loaded, ['trusted'])
-    assert.deepEqual(report.manifestOnly, [])
-    assert.deepEqual(report.errors, [])
-  }
-
-  async function testUntrustedAndInvalidThirdPartyMainNeverImports(): Promise<void> {
-    const unsignedRoot = await createThirdPartyModuleRoot('unsigned')
-    const signedRoot = await createThirdPartyModuleRoot('signed')
-    const invalidRoot = await createThirdPartyModuleRoot('invalid')
-    await Promise.all(
-      [unsignedRoot, signedRoot, invalidRoot].map((moduleRoot) =>
-        writeFile(join(moduleRoot, 'main.cjs'), "throw new Error('entry must not import')\n"),
-      ),
-    )
-    const planned = planThirdPartyMainModules({
-      modules: [
-        installedThirdPartyModule({ id: 'unsigned', moduleRoot: unsignedRoot, trust: 'unsigned', main: 'main.cjs' }),
-        installedThirdPartyModule({ id: 'signed', moduleRoot: signedRoot, trust: 'signed', main: 'main.cjs' }),
-        installedThirdPartyModule({ id: 'invalid', moduleRoot: invalidRoot, trust: 'invalid', main: 'main.cjs' }),
-      ],
-      rejected: [],
-    })
-
-    const { report } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
-
-    assert.deepEqual(report.loaded, [])
-    assert.deepEqual(report.manifestOnly, [])
-    assert.deepEqual(
-      report.errors.map((error) => ({ id: error.id, message: error.message })),
-      [
-        { id: 'invalid', message: 'Module "invalid" has an invalid signature and will not load.' },
-        { id: 'signed', message: 'Module "signed" is not trusted yet; trust it in Settings → Modules to enable.' },
-        { id: 'unsigned', message: 'Module "unsigned" is not trusted yet; trust it in Settings → Modules to enable.' },
-      ],
-    )
-  }
-
-  async function testThirdPartyPathSafetyAndBadEntriesAreLaunchErrors(): Promise<void> {
-    const missingEntryRoot = await createThirdPartyModuleRoot('manifest-only')
-    const escapedRoot = await createThirdPartyModuleRoot('escaped')
-    const badExportRoot = await createThirdPartyModuleRoot('bad-export')
-    const importFailureRoot = await createThirdPartyModuleRoot('import-failure')
-    await writeFile(join(badExportRoot, 'main.cjs'), 'exports.registerMain = 42\n')
-    await writeFile(join(importFailureRoot, 'main.cjs'), "require('./missing.cjs')\n")
-    const good: CapabilityModule = {
-      manifest: { id: 'good', displayName: 'Good', version: 1, defaultEnabled: true },
-      registerMain: (host) => host.registerMethods({ ping: answering('pong') }),
-    }
-    const planned = planThirdPartyMainModules({
-      modules: [
-        installedThirdPartyModule({ id: 'manifest-only', moduleRoot: missingEntryRoot, trust: 'trusted' }),
-        installedThirdPartyModule({ id: 'escaped', moduleRoot: escapedRoot, trust: 'trusted', main: '../outside.cjs' }),
-        installedThirdPartyModule({ id: 'bad-export', moduleRoot: badExportRoot, trust: 'trusted', main: 'main.cjs' }),
-        installedThirdPartyModule({
-          id: 'import-failure',
-          moduleRoot: importFailureRoot,
-          trust: 'trusted',
-          main: 'main.cjs',
-        }),
-      ],
-      rejected: [],
-    })
-    const { report } = loadMainModules({
-      modules: [...planned.modules, good],
-      ineligible: planned.ineligible,
-    })
-
-    assert.deepEqual(report.loaded, ['good'])
-    assert.deepEqual(report.manifestOnly, ['manifest-only'])
-    assert.equal(report.errors.length, 3)
-    assert.equal(
-      report.errors.find((error) => error.id === 'escaped')?.message,
-      'entry.main must resolve inside the module root.',
-    )
-    assert.equal(
-      report.errors.find((error) => error.id === 'bad-export')?.message,
-      'entry.main must export a callable registerMain(host).',
-    )
-    assert.match(report.errors.find((error) => error.id === 'import-failure')?.message ?? '', /Cannot find module/)
-  }
-
-  function testRejectedThirdPartyManifestIsLaunchError(): void {
-    const planned = planThirdPartyMainModules({
-      modules: [],
-      rejected: [
-        {
-          path: 'broken/manifest.json',
-          issues: [{ path: 'entry.main', message: 'must be a safe relative path inside the module.' }],
-        },
-      ],
-    })
-
-    const { report } = loadMainModules({
-      modules: planned.modules,
-      launchErrors: planned.launchErrors,
-    })
-
-    assert.deepEqual(report.loaded, [])
-    assert.deepEqual(report.manifestOnly, [])
-    assert.deepEqual(report.errors, [
-      {
-        id: 'broken/manifest.json',
-        message: 'entry.main: must be a safe relative path inside the module.',
-      },
-    ])
-  }
-
-  async function testTrustedThirdPartyRegistrationThrowIsIsolated(): Promise<void> {
-    const badRoot = await createThirdPartyModuleRoot('bad')
-    await writeFile(join(badRoot, 'main.cjs'), "exports.registerMain = () => { throw new Error('boom') }\n")
-    const good: CapabilityModule = {
-      manifest: { id: 'good', displayName: 'Good', version: 1, defaultEnabled: true },
-      registerMain: (host) => host.registerMethods({ ping: answering('pong') }),
-    }
-    const planned = planThirdPartyMainModules({
-      modules: [installedThirdPartyModule({ id: 'bad', moduleRoot: badRoot, trust: 'trusted', main: 'main.cjs' })],
-      rejected: [],
-    })
-    const { report } = loadMainModules({ modules: [...planned.modules, good] })
-
-    assert.deepEqual(report.loaded, ['good'])
-    assert.equal(report.errors.length, 1)
-    assert.equal(report.errors[0].id, 'bad')
-    assert.equal(report.errors[0].message, 'boom')
-  }
-
-  async function testThirdPartyIneligibleDependencyCascades(): Promise<void> {
-    const dependencyRoot = await createThirdPartyModuleRoot('dependency')
-    const dependentRoot = await createThirdPartyModuleRoot('dependent')
-    await writeFile(join(dependencyRoot, 'main.cjs'), "throw new Error('dependency must not import')\n")
-    await writeFile(join(dependentRoot, 'main.cjs'), 'exports.registerMain = () => undefined\n')
-    const planned = planThirdPartyMainModules({
-      modules: [
-        installedThirdPartyModule({
-          id: 'dependency',
-          moduleRoot: dependencyRoot,
-          trust: 'unsigned',
-          main: 'main.cjs',
-        }),
-        installedThirdPartyModule({
-          id: 'dependent',
-          moduleRoot: dependentRoot,
-          trust: 'trusted',
-          main: 'main.cjs',
-          dependsOn: ['dependency'],
-        }),
-      ],
-      rejected: [],
-    })
-
-    const { report } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
-
-    assert.deepEqual(report.loaded, [])
-    assert.deepEqual(
-      report.errors.map((error) => ({ id: error.id, message: error.message })),
-      [
-        {
-          id: 'dependency',
-          message: 'Module "dependency" is not trusted yet; trust it in Settings → Modules to enable.',
-        },
-        { id: 'dependent', message: 'Module "dependent" requires "dependency", which is not enabled.' },
-      ],
-    )
-  }
-
-  async function createThirdPartyModuleRoot(id: string): Promise<string> {
-    return mkdtemp(join(tmpdir(), `mc-third-party-${id}-`))
-  }
-
-  function installedThirdPartyModule(options: {
-    id: string
-    moduleRoot: string
-    trust: InstalledModule['trust']['status']
-    main?: string
-    dependsOn?: string[]
-  }): InstalledModule {
-    const manifest: CapabilityManifest = {
-      id: options.id,
-      displayName: options.id,
-      version: 1,
-      defaultEnabled: true,
-      source: 'third-party',
-      permissions: ['module:bridge'],
-    }
-    if (options.main) manifest.entry = { main: options.main }
-    if (options.dependsOn) manifest.dependsOn = options.dependsOn
-    // A trusted module is one whose files were verified; the loader holds the
-    // folder to those digests again before it requires the entry.
-    return {
-      manifest,
-      moduleRoot: options.moduleRoot,
-      trust:
-        options.trust === 'trusted'
-          ? { status: 'trusted', via: 'grant', verifiedFiles: computeModuleFileDigestsSync(options.moduleRoot).files }
-          : { status: options.trust },
-    }
   }
 
   const suiteRun = main()

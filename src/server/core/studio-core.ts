@@ -53,6 +53,7 @@ import {
   FIRST_MESSAGE_CLIENT_ID,
   FIRST_MESSAGES_FILENAME,
   recoverFirstMessages,
+  recoveryHookAs,
 } from '../../main/conversation-first-messages'
 import { createSubagentLifecycle, subagentChangesOf } from '../../main/subagent-lifecycle'
 import { createConversationCheckoutChanges } from '../../main/conversation-checkout-changes'
@@ -60,6 +61,9 @@ import { createConversationImportService } from '../../main/conversation-import/
 import { createConversationModelCatalog } from '../../main/conversation-model-catalog'
 import { ConversationPlanStore } from '../../main/conversation-plan-store'
 import { ConversationOutbox } from '../../main/conversation-outbox'
+import { createExtensionHooks } from '../extensions/hooks/extension-hooks'
+import { createHookInvokers } from '../extensions/hooks/hook-invokers'
+import { activeInvoker } from '../../main/module-host/extension-invocation'
 import { ConversationRuntime, type ConversationRuntimeOptions } from '../../main/conversation-runtime'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import { createGitWorktree, getGitRepoRoot } from '../../main/git'
@@ -92,6 +96,7 @@ import { forkedAgentPatch, forkName } from '../../shared/conversation/fork'
 import {
   runsTurnMode,
   type ConversationMessageOrigin,
+  type ConversationPromptHookAs,
   type ConversationSessionSummary,
 } from '../../shared/conversation-runtime'
 import { installedStudioPlatform, installStudioPlatform, type StudioPlatform } from '../platform/platform'
@@ -198,8 +203,7 @@ export type StudioCoreOptions = {
   /**
    * What a desktop's Studio is extended with (`extensions`): given, the core
    * holds the marketplace, the CLI catalogue, the extension scaffold and the
-   * hosted feeds, and a card's `install.module` goes through its marketplace.
-   * The shell adds Studio's own plugin in a workspace, which it installs, and
+   * hosted feeds. The shell adds Studio's own plugin in a workspace, which it installs, and
    * is told when what is installed changes. Absent (a server on a WSL or SSH
    * machine), none of it is served.
    */
@@ -352,12 +356,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   })
   // The agent CLIs on this machine and what they are set up with, served by
   // every Studio (`agent-runtimes`, `agent-setup`).
-  // What a desktop's Studio is extended with, built before the agents so a
-  // card's `install.module` goes through the same marketplace a window's does.
+  // What a desktop's Studio is extended with.
   const extensions = options.extensions
     ? createStudioExtensions({
         paths: platform.paths,
-        mcpConfig: () => agents.services.mcpConfig,
         openWorkspaceRoots: () => listKnownWorkspaceRoots(workspaceSyncService.getSnapshot()),
         ...options.extensions,
       })
@@ -365,14 +367,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   const agents = createStudioAgents(platform, {
     agentLaunchSettings,
     ...(options.agentServices ? { services: options.agentServices } : {}),
-    ...(options.agentSkills || extensions
-      ? {
-          skills: {
-            ...options.agentSkills,
-            ...(extensions ? { marketplace: extensions.marketplace.cardMarketplace } : {}),
-          },
-        }
-      : {}),
+    ...(options.agentSkills ? { skills: options.agentSkills } : {}),
   })
 
   // The authoritative workspace registry. Routing lives in the record, so no
@@ -487,7 +482,30 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // here so the owner's shutdown disposes its child processes.
   // The saved approvals, which a revoked app's tools leave with it.
   const approvalRules = new ConversationApprovalRuleStore(dataDir)
+  // Extensions' agent hooks: bound to the workers once the module kernel holds
+  // them (server-modules.ts, app-main.ts), and run as each action's invoker.
+  const extensionHooks = createExtensionHooks()
+  // Who started an agent here, as its record keeps it.
+  const agentStarterOf = ({ workspaceId, agentId }: { workspaceId?: string; agentId: string }) => {
+    if (workspaceId) return workspaceRegistry.getRecord(workspaceId)?.agents[agentId]?.startedBy
+    for (const record of workspaceRegistry.getRecords()) {
+      const agent = record.agents?.[agentId]
+      if (agent) return agent.startedBy
+    }
+    return undefined
+  }
+  const hookInvokers = createHookInvokers({
+    // Read when a hook runs, by which time the resolver below exists.
+    resolveAgentPermissionPreset: (input) => resolveAgentPermissionPreset(input),
+    agentStarterOf,
+  })
+  const chatInvoker = (chat: { workspaceId: string; agentId: string }) =>
+    hookInvokers.ofAgent(workspaceRegistry.getRecord(chat.workspaceId)?.agents[chat.agentId])
   const conversationRuntime = new ConversationRuntime({
+    extensionHooks,
+    chatInvoker,
+    // A send that names who it is from (a launch's first message) runs as them.
+    starterInvoker: (startedBy) => hookInvokers.ofAgent({ startedBy }),
     secretStore: getSharedCredentialStore(),
     approvalRules,
     attachmentStore: new ConversationAttachmentStore(dataDir),
@@ -637,6 +655,9 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     agentLaunchSettings,
     conversations,
     subagents,
+    extensionHooks,
+    chatInvoker,
+    agentInvoker: (agent) => hookInvokers.ofAgent(agent),
     onChatIdle: (listener) => {
       conversationRuntime.onSessionIdle(listener)
     },
@@ -677,6 +698,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   })
   const conversationLaunchService = createConversationLaunchService({
     firstMessages,
+    extensionHooks,
+    // Whoever asked for the launch: the extension's caller, or the starter
+    // the launch names (the connection, the gateway caller, the person).
+    hookInvoker: (startedBy) => activeInvoker() ?? hookInvokers.ofAgent({ startedBy }),
     getWorkspace: (workspaceId) => workspaceRegistry.getRecord(workspaceId) ?? null,
     getLaunchSettings: () => agentLaunchSettings.get(),
     writeAgent: (workspaceId, agentId, agent) =>
@@ -716,8 +741,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
           containerPath: input.containerPath,
           destinationPath: input.destinationPath,
           branchName: input.branchName,
-          baseRef: 'HEAD',
+          baseRef: input.baseRef ?? 'HEAD',
           fromPool: true,
+          // A base an extension's hook named is forked from as named.
+          ...(input.baseRef !== undefined ? { baseRefNamed: true } : {}),
           copyIncludedFiles: true,
           // The chat is created after its worktree, so the branch names the owner.
           agentLockOwner: input.branchName,
@@ -1104,7 +1131,15 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // `lifecycleList` is for a door that advertises `conversation-lifecycle`
   // (the tailnet lane and the Studio RPC): its list leaves settled chats out,
   // in the sidebar's order.
-  const createConversationHost = (hostOptions: { origin?: ConversationMessageOrigin; lifecycleList?: boolean } = {}) =>
+  // `hookAs` is for sends nobody typed that the extensions' prompt hooks
+  // check (a sub-agent's next task, a first message resent after a stop).
+  const createConversationHost = (
+    hostOptions: {
+      origin?: ConversationMessageOrigin
+      hookAs?: ConversationPromptHookAs
+      lifecycleList?: boolean
+    } = {},
+  ) =>
     createConversationGatewayHost(
       conversations,
       (workspaceId) => workspaceRegistry.getRecord(workspaceId)?.folderPath ?? null,
@@ -1140,6 +1175,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
           attachmentImagesRoot(),
         ],
         ...(hostOptions.lifecycleList ? { lifecycleList: true } : {}),
+        ...(hostOptions.hookAs ? { sendHookAs: hostOptions.hookAs } : {}),
         ...(hostOptions.origin
           ? { sendOrigin: hostOptions.origin }
           : {
@@ -1346,7 +1382,13 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       return null
     },
     send: async (chat, commandId, message) => {
-      const host = createConversationHost(message.subagentTask ? { origin: SUBAGENT_TASK_ORIGIN } : {})
+      // One nobody typed meets the extensions' prompt hooks again, as sent
+      // again; a person's own words never do.
+      const hookAs = recoveryHookAs(message)
+      const host = createConversationHost({
+        ...(message.subagentTask ? { origin: SUBAGENT_TASK_ORIGIN } : {}),
+        ...(hookAs ? { hookAs } : {}),
+      })
       const key = host.resolveKey(chat.workspaceId, chat.agentId)
       if (!key) return { ok: false, message: 'The chat is no longer there.' }
       // Its pictures go from where they were kept, as a held message's do.
@@ -1442,7 +1484,14 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     // say of its own.
     after: firstPlan,
     conversations,
-    launch: (request) => conversationLaunchService.launch(request),
+    // A schedule's run is the person's own, on the schedule they keep.
+    // Its prompt is not typed now, so the extensions' prompt hooks check it.
+    launch: (request) =>
+      conversationLaunchService.launch({
+        ...request,
+        startedBy: { kind: 'person' },
+        promptHookAs: { inputKind: 'launch', from: 'studio' },
+      }),
     createConversationHost: () => createConversationHost(),
     workspaceRecords: () => workspaceRegistry.getRecords(),
     gitHost: (hostId) => (hostId ? hosts.get(hostId) : null),
@@ -1662,6 +1711,12 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   }
 
   return {
+    /** Extensions' agent hooks, bound to the workers by whoever holds them. */
+    extensionHooks,
+    hookInvokers,
+    chatInvoker,
+    /** Who started an agent here, as its record keeps it. */
+    agentStarterOf,
     /** Other environments' Studios, as this desktop's callers reach a chat one holds; null where it reaches none. */
     environmentClients,
     /** This desktop's copies of the chats other environments hold; null where it reaches none. */

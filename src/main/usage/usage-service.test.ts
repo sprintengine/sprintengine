@@ -36,7 +36,6 @@ function service(runScan: UsageScanRunner, overrides: Partial<UsageServiceDeps> 
   return createUsageService({
     dataDir: () => dir,
     getWorkspaces: () => [],
-    getModulePermissions: (moduleId) => (moduleId === 'insights' ? ['usage:read'] : []),
     homeDir: () => join(dir, 'home'),
     env: () => ({}),
     runScan,
@@ -44,15 +43,12 @@ function service(runScan: UsageScanRunner, overrides: Partial<UsageServiceDeps> 
   })
 }
 
-test('usage:read is required, and a malformed query is refused before any scan', async () => {
+test('a malformed query is refused before any scan', async () => {
   let scans = 0
   const usage = service(async () => {
     scans += 1
     return { sources: [], groups: 0, changed: 0, removed: [] }
   })
-  const denied = await usage.registry.query('board', { from: 0, to: 1 })
-  assert.equal(denied.ok ? null : denied.code, 'permission_missing')
-  assert.throws(() => usage.registry.onChanged('board', () => {}), /"usage:read"/)
   for (const query of [
     { from: 10, to: 5 },
     { from: Number.NaN, to: 5 },
@@ -156,7 +152,6 @@ test('without an injected runner the inline scan reads real logs', async () => {
   const usage = createUsageService({
     dataDir: () => dir,
     getWorkspaces: () => [],
-    getModulePermissions: () => ['usage:read'],
     homeDir: () => join(dir, 'home'),
     env: () => ({}),
     workerPath: join(dir, 'no-such-worker.js'),

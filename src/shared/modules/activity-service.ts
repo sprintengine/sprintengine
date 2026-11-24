@@ -1,7 +1,7 @@
 // The person's own agent activity as modules read it: token usage across every
 // agent session on this machine (permission `usage:read`, served by
 // main/usage/usage-service.ts) and their Studio chats and prompts (permission
-// `conversation:read-all`, served by main/module-host/module-activity.ts).
+// `conversation:read`, served by main/module-host/module-activity.ts).
 // The SDK mirrors these shapes by hand and the drift guard pins the two
 // together. Type-only.
 
@@ -18,7 +18,7 @@ import type { ModuleConversationStatus } from './conversation-service'
 
 // ── Usage ────────────────────────────────────────────────────────────────────
 
-// The wire shapes are the Studio protocol's (`module-services.ts`).
+// The wire shapes are the Studio protocol's (`module-service-types.ts`).
 export type UsageGroupBy = StudioModuleUsageGroupBy
 export type UsageQuery = StudioModuleUsageQuery
 export type UsageTokens = StudioModuleUsageTokens
@@ -91,7 +91,7 @@ export type ActivityPromptsInput = {
   limit?: number
 }
 
-export type ModuleActivityErrorCode = 'permission_missing' | 'invalid_input' | 'unavailable'
+export type ModuleActivityErrorCode = 'not_permitted' | 'approval_required' | 'invalid_input' | 'unavailable'
 
 export type ModuleActivityResult<T extends object = object> =
   ({ ok: true } & T) | { ok: false; code: ModuleActivityErrorCode; message: string }

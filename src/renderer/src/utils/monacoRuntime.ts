@@ -34,6 +34,8 @@ import HtmlWorker from 'monaco-editor/languages/features/html/html.worker?worker
 import JsonWorker from 'monaco-editor/languages/features/json/json.worker?worker'
 import TsWorker from 'monaco-editor/languages/features/typescript/ts.worker?worker'
 
+import { followContributedLanguages } from '../lib/highlight/monacoTextMate'
+
 type WorkerConstructor = new (options?: { name?: string }) => Worker
 
 // Keyed by the label Monaco passes: the language id a language service was
@@ -63,6 +65,10 @@ globalThis.MonacoEnvironment = {
 }
 
 loader.config({ monaco })
+
+// The languages extensions contribute, highlighted from their TextMate
+// grammars through the engine chat code blocks use (lib/highlight/monacoTextMate.ts).
+followContributedLanguages(monaco)
 
 // Settles with the configured instance on the next microtask. `main.tsx` holds
 // the first render on it, so "Monaco is ready" is a fact the app starts from

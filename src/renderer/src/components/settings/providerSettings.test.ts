@@ -76,8 +76,8 @@ test('providerSettings', async () => {
   // --- ordering: bundled first, then alphabetical ---------------------------
 
   const ordered = orderProviders([
-    provider({ id: 'z-user', displayName: 'Zeta', source: 'user' }),
-    provider({ id: 'b-user', displayName: 'Beta', source: 'user' }),
+    provider({ id: 'z-user', displayName: 'Zeta', source: 'extension' }),
+    provider({ id: 'b-user', displayName: 'Beta', source: 'extension' }),
     provider({ id: 'a-bundled', displayName: 'Alpha', source: 'bundled' }),
   ])
   assert.deepEqual(

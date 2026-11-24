@@ -25,6 +25,7 @@ import { registerMenuDialogIpc } from './ipc/menu-dialog-ipc'
 import { registerPullRequestIpc } from './ipc/pull-request-ipc'
 import { webContentsIdOfWindowKey } from './ipc/studio-window-ticket-ipc'
 import { registerThirdPartyModuleIpc } from './ipc/third-party-module-ipc'
+import { registerExtensionFrameIpc, stagedExtensionFrames } from './extension-frames/extension-frame-shell'
 import { registerUpdateIpc } from './ipc/update-ipc'
 import { registerWindowIpc } from './ipc/window-ipc'
 import { registerPanePopOutIpc } from './ipc/pane-popout-ipc'
@@ -104,7 +105,8 @@ export function registerCoreIpc(
               (found) => found.isDirectory(),
               () => false,
             ),
-          launch: services.conversationLaunchService.launch,
+          // The person's own window.
+          launch: (request) => services.conversationLaunchService.launch({ ...request, startedBy: { kind: 'person' } }),
           newProjectlessFolder: createProjectlessChatFolder,
         },
         input,
@@ -212,6 +214,8 @@ export function registerCoreIpc(
         { conversationCommands: { dispose: async () => undefined } }
   // Showing an installed extension's folder in this computer's file manager.
   registerThirdPartyModuleIpc(ipcMain)
+  // A window stages the frame documents its extensions' surfaces are drawn in.
+  registerExtensionFrameIpc(ipcMain, stagedExtensionFrames)
 
   // Terminals are served over the Studio protocol (src/server/terminals/),
   // and a pane terminal moves between windows by re-attaching: the last

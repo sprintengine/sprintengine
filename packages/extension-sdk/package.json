@@ -1,0 +1,90 @@
+{
+  "name": "@sprintengine/extension-sdk",
+  "version": "4.0.0-beta.1",
+  "description": "Contract types, templates and authoring CLI for building SprintEngine Studio extensions: the extension.json manifest and its JSON Schema, the mount/activate entry contract, chat conversations with the app's agents, brokered secrets and GitHub access, notifications, and signing.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sprintengine/sprintengine.git",
+    "directory": "packages/extension-sdk"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=22.15"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./signing": {
+      "types": "./dist/signing.d.ts",
+      "default": "./dist/signing.js"
+    },
+    "./source": {
+      "types": "./dist/source-modules.d.ts",
+      "default": "./dist/source-modules.js"
+    },
+    "./scaffold": {
+      "types": "./dist/scaffold.d.ts",
+      "default": "./dist/scaffold.js"
+    },
+    "./guide": {
+      "types": "./dist/guide.d.ts",
+      "default": "./dist/guide.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    },
+    "./catalogue": {
+      "types": "./dist/catalogue.d.ts",
+      "default": "./dist/catalogue.js"
+    },
+    "./release-entry": {
+      "types": "./dist/release-entry.d.ts",
+      "default": "./dist/release-entry.js"
+    },
+    "./extension.schema.json": "./extension.schema.json",
+    "./catalogue.schema.json": "./catalogue.schema.json"
+  },
+  "bin": {
+    "sprintengine-extension": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "guide",
+    "templates",
+    "extension.schema.json",
+    "catalogue.schema.json",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "es-module-lexer": "^3.0.5",
+    "sucrase": "^3.35.1"
+  },
+  "peerDependencies": {
+    "@types/react": ">=18",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "@types/react": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  }
+}

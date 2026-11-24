@@ -6,6 +6,12 @@
 // (Codex hands the named variables from its own environment to the server) and
 // `env_http_headers` for an HTTP one (header name to the variable holding its
 // value). Both keys are Codex's own (codex-cli 0.161.0 config schema).
+//
+// An installed extension's server is the exception: its env values are public
+// manifest data, not secrets, and the approval showed them as the server's
+// environment. In Codex's own environment they would reach Codex and every
+// command its agent runs (a `PYTHONPATH`, a `DEBUG`), so they stay inline in
+// its table (`inlineEnv`).
 
 import type { ConversationMcpServer } from '../shared/conversation-runtime'
 import { MCP_SECRET_ENV_PREFIX } from '../shared/studio-env'
@@ -84,7 +90,11 @@ function tomlList(values: readonly string[]): string {
  * move (a multi-line value, a name the CLI itself reads) is written inline as
  * before.
  */
-export function codexMcpServerFields(server: CodexMcpServerFields, carrier: CodexMcpEnv): Array<[string, string]> {
+export function codexMcpServerFields(
+  server: CodexMcpServerFields,
+  carrier: CodexMcpEnv,
+  options: { inlineEnv?: boolean } = {},
+): Array<[string, string]> {
   const fields: Array<[string, string]> = []
   if (server.transport === 'stdio') {
     fields.push(['command', tomlString(server.command ?? '')])
@@ -92,7 +102,7 @@ export function codexMcpServerFields(server: CodexMcpServerFields, carrier: Code
     const names = [...(server.envVarNames ?? [])]
     const inline: Array<[string, string]> = []
     for (const [key, value] of Object.entries(server.env ?? {})) {
-      if (carryServerEnv(carrier, key, value)) {
+      if (!options.inlineEnv && carryServerEnv(carrier, key, value)) {
         if (!names.includes(key)) names.push(key)
       } else inline.push([key, tomlString(value)])
     }

@@ -1,3 +1,5 @@
+import type { ExtensionLoadedApproval } from '../../server/extensions/extension-plan'
+import type { ExtensionMcpToolContribution } from '../../../packages/extension-sdk/src/extension-manifest'
 import type { ModuleEventEnvelope } from '../../shared/modules/events'
 import type {
   CapabilityManifest,
@@ -11,6 +13,7 @@ import {
   createMainKernel,
   type MainHost,
   type MainKernel,
+  type MainKernelOptions,
   type ModuleSkillHostRegistry,
   type SidecarSpec,
 } from './main-host'
@@ -65,6 +68,19 @@ export type LoadMainModulesResult = {
     overrides: ModuleEnablementOverrides,
     options: MainModuleLiveUpdateOptions,
   ): Promise<MainModuleLiveUpdateReport>
+  /**
+   * Load these modules again, or for the first time, and let go of `removed`:
+   * an extension whose files, approval or folder changed while Studio runs (a
+   * save in a development folder, an install, an approval). Each one's main
+   * half is unregistered (its worker stops, its tools and methods leave) and
+   * registered again from its new `CapabilityModule`, where it is enabled and
+   * eligible. The maps the kernel reads (roots, files, tools, approvals,
+   * ineligible) are the caller's, already updated in place.
+   */
+  replaceModules(
+    update: { modules: readonly CapabilityModule[]; removed: readonly string[] },
+    overrides: ModuleEnablementOverrides,
+  ): Promise<MainModuleLiveUpdateReport>
 }
 
 // How long an asynchronous registerMain may take before its module is dropped.
@@ -85,7 +101,7 @@ async function settleRegistration(id: string, pending: PromiseLike<unknown>, tim
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
-      () => reject(new Error(`Module "${id}" registerMain did not settle within ${timeoutMs / 1000}s.`)),
+      () => reject(new Error(`Extension "${id}" did not finish starting within ${timeoutMs / 1000}s.`)),
       timeoutMs,
     )
   })
@@ -109,10 +125,9 @@ export function loadMainModules(options: {
   provideServices?: (host: MainHost) => void
   /**
    * Modules that must not load regardless of enablement, keyed by id to the
-   * reason. The trust gate for third-party modules: when a future increment
-   * adds discovered third-party modules to `modules`, it MUST pass each
-   * non-`trusted` module here (e.g. `'untrusted'` / `'invalid_signature'`) so
-   * its `registerMain` never runs. Bundled modules never appear here.
+   * reason. The approval gate for extensions: every installed extension that
+   * may not run (`'unapproved'` / `'invalid_signature'`) is passed here so its
+   * `registerMain` never runs. Bundled modules never appear here.
    */
   ineligible?: Record<string, ModuleResolutionErrorCode>
   /** Pre-resolution launch errors from module discovery/validation. */
@@ -133,14 +148,35 @@ export function loadMainModules(options: {
   skillRegistry?: ModuleSkillHostRegistry
   /** Async registerMain bound override, for tests. */
   registerTimeoutMs?: number
-  /** False in the Studio server out of process: see `MainKernelOptions.electronMain`. */
-  electronMain?: boolean
   /** The gateway's own tool names: see `MainKernelOptions.coreMcpToolNames`. */
   coreMcpToolNames?: () => Iterable<string>
   /** Verified file digests per third-party module id, for `MainHost.getAssetPath`. */
   moduleVerifiedFiles?: Record<string, ModuleFileDigests>
+  /** The MCP tools each installed extension declares (`contributes.mcpTools`). */
+  moduleMcpTools?: Record<string, readonly ExtensionMcpToolContribution[]>
+  /** What each extension that runs was approved for, as loaded (server/extensions/extension-plan.ts). */
+  extensionApprovals?: Record<string, ExtensionLoadedApproval>
+  /**
+   * The person's approvals as they stand now, read at each host call: an
+   * extension whose approval is gone (uninstalled) is refused
+   * `approval_required`, and one holds only what both what it was loaded with
+   * and its approval now cover. An update that kept the approval (its files
+   * changed, its access did not grow) leaves the running version as it was.
+   * Absent (tests), what was loaded stands.
+   */
+  currentApprovals?: () => ReadonlyMap<string, { access: { permissions: readonly string[] } }>
+  /** Folders a frame's `files.*` never reaches: see `MainKernelOptions.frameFileExclusions`. */
+  frameFileExclusions?: () => readonly string[]
+  /** A custom text editor's save meets the save hooks: see `MainKernelOptions.frameEditorSaveHooks`. */
+  frameEditorSaveHooks?: MainKernelOptions['frameEditorSaveHooks']
+  /** What frame calls are held to: see `MainKernelOptions.resolveFrameGrant`. */
+  resolveFrameGrant?: (moduleId: string, frame: string) => { grant: readonly string[]; outdated: boolean } | null
+  /** Handed the kernel as soon as it exists, before any module registers (the workers bind to it). */
+  onKernel?: (kernel: MainKernel) => void
 }): LoadMainModulesResult {
-  const { modules, overrides = {}, provideServices, ineligible, launchErrors = [] } = options
+  const { overrides = {}, provideServices, ineligible, launchErrors = [] } = options
+  // Changed in place by `replaceModules`.
+  const modules = [...options.modules]
   const registerTimeoutMs = options.registerTimeoutMs ?? REGISTER_MAIN_TIMEOUT_MS
   const byId = new Map(modules.map((module) => [module.manifest.id, module]))
   const resolution = resolveModuleEnablement(
@@ -150,20 +186,34 @@ export function loadMainModules(options: {
   )
 
   const kernel = createMainKernel({
-    ...(options.electronMain === undefined ? {} : { electronMain: options.electronMain }),
     deliverModuleEvent: options.deliverModuleEvent,
     ...(options.deliverModuleNotification ? { deliverModuleNotification: options.deliverModuleNotification } : {}),
     now: options.now,
     resolveModuleManifest: (moduleId) => byId.get(moduleId)?.manifest,
     // A module that runs and declares no such method is told apart from one not running.
     isModuleActive: (moduleId) => activeMainModules.has(moduleId),
-    // A module with only a window half still calls the host's services.
+    // An extension with surfaces only still calls the host from its frames.
     isModulePresent: (moduleId) => activeMainModules.has(moduleId) || activeManifestOnlyModules.has(moduleId),
     resolveModuleRoot: (moduleId) => options.moduleRoots?.[moduleId],
     ...(options.skillRegistry ? { skillRegistry: options.skillRegistry } : {}),
     ...(options.coreMcpToolNames ? { coreMcpToolNames: options.coreMcpToolNames } : {}),
     resolveModuleVerifiedFiles: (moduleId) => options.moduleVerifiedFiles?.[moduleId],
+    resolveDeclaredMcpTools: (moduleId) => options.moduleMcpTools?.[moduleId],
+    ...(options.frameFileExclusions ? { frameFileExclusions: options.frameFileExclusions } : {}),
+    ...(options.frameEditorSaveHooks ? { frameEditorSaveHooks: options.frameEditorSaveHooks } : {}),
+    ...(options.resolveFrameGrant ? { resolveFrameGrant: options.resolveFrameGrant } : {}),
+    resolveExtensionGrant: (moduleId) => {
+      // Without the loader's record (tests), an extension holds what its manifest asks.
+      if (!options.extensionApprovals) return byId.get(moduleId)?.manifest.permissions ?? []
+      const loadedAs = options.extensionApprovals[moduleId]
+      if (!loadedAs) return null
+      if (!loadedAs.approved || !options.currentApprovals) return loadedAs.permissions
+      const now = options.currentApprovals().get(moduleId)
+      if (!now) return null
+      return loadedAs.permissions.filter((permission) => now.access.permissions.includes(permission))
+    },
   })
+  options.onKernel?.(kernel)
   const hostScope = kernel.hostFor('@host')
   provideServices?.(hostScope)
   const loaded: string[] = []
@@ -188,7 +238,7 @@ export function loadMainModules(options: {
     if (byId.get(loadError.id)?.manifest.source !== 'third-party') return
     kernel.emitNotification(loadError.id, {
       severity: 'error',
-      title: `Module "${loadError.id}" failed to load`,
+      title: `Extension "${loadError.id}" failed to load`,
       body: sanitizeNotificationText(loadError.message, 'Module startup failed.'),
     })
   }
@@ -205,7 +255,14 @@ export function loadMainModules(options: {
     notifyLoadError(loadError)
   }
 
-  for (const id of resolution.order) {
+  // The app's own modules first, in dependency order, then every installed
+  // extension: an extension's activate may resolve any service the app's
+  // modules provide, and declares no dependencies to order it after them.
+  const appFirst = [
+    ...resolution.order.filter((id) => byId.get(id)?.manifest.source !== 'third-party'),
+    ...resolution.order.filter((id) => byId.get(id)?.manifest.source === 'third-party'),
+  ]
+  for (const id of appFirst) {
     const module = byId.get(id)
     if (!module) continue
     if (!module.registerMain) {
@@ -296,6 +353,68 @@ export function loadMainModules(options: {
       return {
         loaded: [...activeMainModules].filter((id) => liveModuleIds.has(id)).sort(),
         disabled: [...liveModuleIds].filter((id) => !nextEnabled.has(id)).sort(),
+        errors: liveErrors,
+      }
+    },
+    async replaceModules(update, nextOverrides): Promise<MainModuleLiveUpdateReport> {
+      const touched = new Set([...update.removed, ...update.modules.map((module) => module.manifest.id)])
+      // Taken down first, the newest last loaded first.
+      for (const id of [...touched].reverse()) {
+        if (activeMainModules.has(id)) {
+          await kernel.unregisterModule(id)
+          activeMainModules.delete(id)
+        }
+        activeManifestOnlyModules.delete(id)
+        const at = loaded.indexOf(id)
+        if (at >= 0) loaded.splice(at, 1)
+      }
+      for (const id of update.removed) {
+        const at = modules.findIndex((module) => module.manifest.id === id)
+        if (at >= 0) modules.splice(at, 1)
+        byId.delete(id)
+      }
+      for (const module of update.modules) {
+        const at = modules.findIndex((candidate) => candidate.manifest.id === module.manifest.id)
+        if (at >= 0) modules[at] = module
+        else modules.push(module)
+        byId.set(module.manifest.id, module)
+      }
+      const nextResolution = resolveModuleEnablement(
+        modules.map((module) => module.manifest),
+        nextOverrides,
+        { ineligible },
+      )
+      const liveErrors: MainModuleLoadError[] = []
+      for (const id of nextResolution.order) {
+        if (!touched.has(id)) continue
+        const module = byId.get(id)
+        if (!module) continue
+        if (!module.registerMain) {
+          activeManifestOnlyModules.add(id)
+          continue
+        }
+        try {
+          const registered = module.registerMain(kernel.hostFor(id))
+          if (isThenable(registered)) await settleRegistration(id, registered, registerTimeoutMs)
+          activeMainModules.add(id)
+          loaded.push(id)
+          if (kernel.isStarted()) await kernel.runStartupForModule(id)
+        } catch (err) {
+          await kernel.unregisterModule(id)
+          activeMainModules.delete(id)
+          const loadError = { id, message: errorMessage(err) }
+          liveErrors.push(loadError)
+          notifyLoadError(loadError)
+        }
+      }
+      // What failed before and loads now is no longer an error.
+      for (const id of touched) {
+        for (let at = errors.length - 1; at >= 0; at -= 1) if (errors[at]!.id === id) errors.splice(at, 1)
+      }
+      errors.push(...liveErrors)
+      return {
+        loaded: [...touched].filter((id) => activeMainModules.has(id)).sort(),
+        disabled: [...touched].filter((id) => !nextResolution.order.includes(id)).sort(),
         errors: liveErrors,
       }
     },

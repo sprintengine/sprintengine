@@ -22,12 +22,14 @@ function fakeContents() {
   let openHandler: ((details: { url: string }) => { action: 'deny' }) | null = null
   let navigate: ((event: { preventDefault(): void }, url: string) => void) | null = null
   let frameNavigate: ((details: FrameNavigation) => void) | null = null
+  let redirect: ((details: FrameNavigation) => void) | null = null
   const contents = {
     setWindowOpenHandler: (handler: (details: { url: string }) => { action: 'deny' }) => {
       openHandler = handler
     },
     on: (event: string, listener: never) => {
       if (event === 'will-navigate') navigate = listener
+      else if (event === 'will-redirect') redirect = listener
       else frameNavigate = listener
     },
   } as GuardedContents
@@ -39,9 +41,9 @@ function fakeContents() {
       navigate!({ preventDefault: () => (prevented = true) }, url)
       return prevented ? 'blocked' : 'allowed'
     },
-    navigateFrame: (frameUrl: string, isSameDocument = false) => {
+    navigateFrame: (frameUrl: string, isSameDocument = false, via: 'navigate' | 'redirect' = 'navigate') => {
       let prevented = false
-      frameNavigate!({
+      ;(via === 'redirect' ? redirect : frameNavigate)!({
         preventDefault: () => (prevented = true),
         isMainFrame: false,
         isSameDocument,
@@ -111,4 +113,20 @@ test('the frame rule ignores the window itself and a frame that is already gone'
     },
   }
   assert.equal(refusesFrameNavigation({ isMainFrame: false, isSameDocument: false, frame: disposed }), false)
+})
+
+// An extension's surface leaving its document by any means: a link, assigning
+// `location.href`, `location.replace(…)` or a `<meta http-equiv="refresh">`.
+// Chromium asks the window about each as the frame's navigation, and about a
+// server redirect on the way as a redirect; every one is refused.
+test('an extension surface may not navigate itself anywhere, nor be redirected', () => {
+  const { contents, navigateFrame } = fakeContents()
+  guardPrivilegedWindow(contents, packaged, () => undefined)
+  const surface = `studio-ext://frame/${'a'.repeat(64)}`
+  for (const via of ['navigate', 'redirect'] as const) {
+    assert.equal(navigateFrame(surface, false, via), 'blocked', via)
+    assert.equal(navigateFrame(`${surface}?again`, false, via), 'blocked', via)
+  }
+  assert.equal(navigateFrame(surface, true), 'allowed', 'a #section in its own document loads nothing')
+  assert.equal(navigateFrame('about:blank'), 'allowed', 'the frame loading its document in the first place')
 })

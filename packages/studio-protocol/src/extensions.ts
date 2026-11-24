@@ -6,7 +6,6 @@ import {
   type StudioParsed,
   type StudioTopicTable,
 } from './contract.js'
-import type { McpClientTarget, McpSettings } from './agents.js'
 import type { SkillHarness } from './agent-setup.js'
 import { STUDIO_EXTENSIONS_CAPABILITY } from './handshake.js'
 import type {
@@ -16,8 +15,6 @@ import type {
   ExtensionScaffoldCreateResult,
   ExtensionScaffoldTarget,
   ExtensionScaffoldTargetInput,
-  GithubExtensionInstallInput,
-  GithubExtensionResolveResult,
   HostedCardFeedReadResult,
   HostedSourcesFeedReadResult,
   MarketplaceInstallEnvelope,
@@ -35,8 +32,8 @@ import type {
 } from './extensions-types.js'
 
 // What a Studio's agents and windows are extended with, beyond the modules it
-// runs (`modules.ts`): the marketplace's registry and installing from it or
-// from a GitHub repository (`marketplace.*`), the agent CLIs' plugin
+// runs (`modules.ts`): the marketplace's registry and installing from it
+// (`marketplace.*`), the agent CLIs' plugin
 // catalogue (`cliPlugins.*`), Studio's own plugin in a workspace
 // (`studioPlugin.status`), building a new extension (`extensionScaffold.*`),
 // and the hosted feeds the Extensions door draws (`cardFeed.*`,
@@ -50,7 +47,7 @@ import type {
 //   folders Studio knows.
 // - Everything that fetches code to run here, approves it, installs, updates
 //   or removes it is an owner's (`STUDIO_MARKETPLACE_OWNER`): reviewing an
-//   entry or a repository issues the one-time approval that installs exactly
+//   entry issues the one-time approval that installs exactly
 //   what it disclosed, and only the owner it was disclosed to may spend it.
 // - Making an extension project writes a new folder on this machine's disk,
 //   outside the folders Studio knows, from the templates beside the app: an
@@ -58,12 +55,12 @@ import type {
 //
 // The installs answer the Studio's own outcome as their result, refusals
 // included, under the client's `commandId`; a retry is answered from the
-// first attempt. `marketplace.verify` and `marketplace.resolveGithub` issue a
-// fresh approval each time and so carry none.
+// first attempt. `marketplace.verify` issues a fresh approval each time and so
+// carries none.
 
-/** Why installing, updating or removing marketplace or GitHub code is an owner's. */
+/** Why installing, updating or removing marketplace content is an owner's. */
 export const STUDIO_MARKETPLACE_OWNER =
-  'It fetches an extension’s code from a marketplace or a repository and installs it to run on this machine, approves that, or removes it.'
+  'It installs content from the marketplace to run on this machine, approves that, or removes it.'
 
 /** Why making an extension project is an owner's. */
 export const STUDIO_SCAFFOLD_OWNER =
@@ -74,7 +71,7 @@ type Commanded<P> = P & { commandId: string }
 export type StudioExtensionsMethodMap = {
   /** The marketplace's registry, from the network when it is due (or `forceRefresh`), else the cache or the seed. */
   'marketplace.read': { params: { forceRefresh?: boolean }; result: MarketplaceRegistryReadResult }
-  /** Each installed marketplace or GitHub entry against the registry's latest. */
+  /** Each installed marketplace entry against the registry's latest. */
   'marketplace.updateStates': { params: { forceRefresh?: boolean }; result: MarketplaceUpdateStatesResult }
   /** Review a registry entry: what installing it would do, and the one-time approval that installs exactly that. */
   'marketplace.verify': { params: { id: string }; result: MarketplacePluginVerifyResult }
@@ -88,21 +85,10 @@ export type StudioExtensionsMethodMap = {
     params: Commanded<MarketplacePluginRegistryInstallInput>
     result: MarketplacePluginRegistryInstallResult
   }
-  /**
-   * Remove an installed plugin and everything it put in place: its modules,
-   * skill copies and MCP servers. `pluginId` is the plugin's id or one of its
-   * modules'.
-   */
+  /** Remove an installed plugin and the skill copies it put in place. */
   'marketplace.uninstall': {
     params: Commanded<MarketplacePluginUninstallInput>
     result: MarketplacePluginUninstallResult
-  }
-  /** Review a GitHub repository as an extension, and the one-time approval that installs exactly that commit. */
-  'marketplace.resolveGithub': { params: { url: string }; result: GithubExtensionResolveResult }
-  /** Install a reviewed GitHub repository under its approval. */
-  'marketplace.installGithub': {
-    params: Commanded<GithubExtensionInstallInput>
-    result: MarketplacePluginRegistryInstallResult
   }
   /** Every registered agent CLI, as a client draws it. */
   'cliPlugins.list': { params: Record<string, never>; result: PluginRegistryListResult }
@@ -172,9 +158,9 @@ function refresh(value: Record<string, unknown>): StudioParsed<{ forceRefresh?: 
 }
 
 /**
- * Where an install writes beside the module root, as a client may say it. The
- * Studio holds the workspace to one it has open and the harnesses to its own,
- * and its MCP sync normalizes every server; here, only their shapes.
+ * Where an install writes, as a client may say it. The Studio holds the
+ * workspace to one it has open and the harnesses to its own; here, only their
+ * shapes.
  */
 function envelope(value: Record<string, unknown>): StudioParsed<MarketplaceInstallEnvelope> {
   const out: MarketplaceInstallEnvelope = {}
@@ -182,15 +168,6 @@ function envelope(value: Record<string, unknown>): StudioParsed<MarketplaceInsta
     if (typeof value.workspaceRoot !== 'string' || value.workspaceRoot.length > 4096)
       return refuse('"workspaceRoot" is the open workspace an install writes into, when given.')
     if (value.workspaceRoot.trim()) out.workspaceRoot = value.workspaceRoot
-  }
-  if (value.mcpSettings !== undefined) {
-    if (!record(value.mcpSettings) || !record(value.mcpSettings.servers))
-      return refuse('"mcpSettings" is { syncEnabled, servers }, when given.')
-    out.mcpSettings = value.mcpSettings as McpSettings
-  }
-  if (value.mcpClients !== undefined) {
-    if (!strings(value.mcpClients)) return refuse('"mcpClients" is a list of CLI ids, when given.')
-    out.mcpClients = [...value.mcpClients] as McpClientTarget[]
   }
   if (value.skillHarnesses !== undefined) {
     if (!strings(value.skillHarnesses)) return refuse('"skillHarnesses" is a list of harness ids, when given.')
@@ -213,23 +190,10 @@ function registryInstall(value: Record<string, unknown>): StudioParsed<Marketpla
 }
 
 function uninstall(value: Record<string, unknown>): StudioParsed<MarketplacePluginUninstallInput> {
-  if (!id(value.pluginId)) return refuse('"pluginId" is the plugin\'s id, or one of its modules\'.')
+  if (!id(value.pluginId)) return refuse('"pluginId" is the plugin\'s id.')
   const at = envelope(value)
   if (!at.ok) return at
   return studioParams({ ...at.params, pluginId: value.pluginId })
-}
-
-function githubInstall(value: Record<string, unknown>): StudioParsed<GithubExtensionInstallInput> {
-  if (!text(value.trustToken, 400)) return refuse('"trustToken" is the approval the repository\'s review issued.')
-  if (value.trustCode !== undefined && typeof value.trustCode !== 'boolean')
-    return refuse('"trustCode" is true or false, when given.')
-  const at = envelope(value)
-  if (!at.ok) return at
-  return studioParams({
-    ...at.params,
-    trustToken: value.trustToken,
-    ...(value.trustCode === true ? { trustCode: true } : {}),
-  })
 }
 
 function runtimeOverride(value: unknown): boolean {
@@ -315,14 +279,6 @@ export const STUDIO_EXTENSIONS_METHODS: StudioMethodTable<StudioExtensionsMethod
   'marketplace.install': { ...marketplaceOwner(true), params: commanded(registryInstall) },
   'marketplace.update': { ...marketplaceOwner(true), params: commanded(registryInstall) },
   'marketplace.uninstall': { ...marketplaceOwner(true), params: commanded(uninstall) },
-  'marketplace.resolveGithub': {
-    ...marketplaceOwner(false),
-    params: (value) =>
-      text(value.url, 2048) && value.url.trim()
-        ? studioParams({ url: value.url })
-        : refuse('"url" is the GitHub repository\'s address.'),
-  },
-  'marketplace.installGithub': { ...marketplaceOwner(true), params: commanded(githubInstall) },
   'cliPlugins.list': { ...reads('providers:read'), params: studioNoParams },
   'cliPlugins.availability': { ...reads('providers:read'), params: availability },
   'cliPlugins.launchPreview': { ...reads('providers:read'), params: launchPreview },

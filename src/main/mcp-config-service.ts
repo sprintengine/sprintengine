@@ -998,6 +998,8 @@ export function opencodeMcpEntries(servers: readonly McpServerConfig[]): {
 export function codexMcpOverrideArgs(
   servers: readonly McpServerConfig[],
   base: Readonly<Record<string, string | undefined>> = process.env,
+  /** Servers whose env stays in their table: an installed extension's (codex-mcp-overrides.ts). */
+  inlineEnvIds: ReadonlySet<string> = new Set(),
 ): {
   args: string[]
   env: Record<string, string>
@@ -1011,7 +1013,7 @@ export function codexMcpOverrideArgs(
       skipped.push(server)
       continue
     }
-    const fields = codexMcpServerFields(server, carrier)
+    const fields = codexMcpServerFields(server, carrier, { inlineEnv: inlineEnvIds.has(server.id) })
     fields.push(['enabled', server.enabled ? 'true' : 'false'])
     if (server.required) fields.push(['required', 'true'])
     args.push('-c', `mcp_servers.${server.id}=${tomlInlineTable(fields)}`)

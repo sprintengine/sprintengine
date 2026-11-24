@@ -32,8 +32,6 @@ const CALLS: Record<Method, Record<string, unknown>> = {
   'marketplace.install': { commandId: 'c-install', id: 'pr-radar', trustToken: 't' },
   'marketplace.update': { commandId: 'c-update', id: 'pr-radar' },
   'marketplace.uninstall': { commandId: 'c-uninstall', pluginId: 'pr-radar' },
-  'marketplace.resolveGithub': { url: 'https://github.com/acme/notes-ext' },
-  'marketplace.installGithub': { commandId: 'c-github', trustToken: 't', trustCode: true },
   'cliPlugins.list': {},
   'cliPlugins.availability': {},
   'cliPlugins.launchPreview': { cli: 'codex' },
@@ -63,9 +61,6 @@ function stub() {
       install: note('install', failed),
       update: note('update', failed),
       uninstall: note('uninstall', failed),
-      resolveGithub: note('resolveGithub', failed),
-      installGithub: note('installGithub', failed),
-      cardMarketplace: {} as never,
     },
     scaffold: {
       home: () => '/Users/dev/Documents/SprintEngine/Extensions',
@@ -172,8 +167,8 @@ test('a pairing given every scope reaches the reads, and is refused what install
     'files:write',
     'environment:maintain',
     'settings:write',
-    'modules:read',
-    'modules:operate',
+    'extensions:read',
+    'extensions:operate',
   ]
   const app = await client(started.path, pairFakeClient(started.auth, 'app', scopes))
   for (const [method, params] of Object.entries(CALLS)) {
@@ -182,9 +177,7 @@ test('a pairing given every scope reaches the reads, and is refused what install
     assert.deepEqual([method, codeOf(await app.request(method, params))], [method, expected])
   }
   assert.equal(
-    asked.some(([name]) =>
-      ['verify', 'install', 'update', 'uninstall', 'resolveGithub', 'installGithub', 'create'].includes(name),
-    ),
+    asked.some(([name]) => ['verify', 'install', 'update', 'uninstall', 'create'].includes(name)),
     false,
     'nothing an owner’s reached the domain',
   )

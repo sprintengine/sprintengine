@@ -18,7 +18,12 @@ test('addThirdPartyModuleFromFolder', async () => {
         {
           install: async () => {
             installs += 1
-            return { ok: true, moduleId: 'x', trust: 'unsigned' }
+            return {
+              ok: true,
+              moduleId: 'x',
+              approval: { state: 'pending', fingerprint: 'sha256-x' },
+              strippedLinks: [],
+            }
           },
         },
       ),
@@ -34,14 +39,61 @@ test('addThirdPartyModuleFromFolder', async () => {
         {
           install: async (folder) => {
             selected = folder
-            return { ok: true, moduleId: 'acme.compass', trust: 'unsigned' }
+            return {
+              ok: true,
+              moduleId: 'local.compass',
+              approval: { state: 'pending', fingerprint: 'sha256-x' },
+              strippedLinks: [],
+            }
           },
         },
       ),
-      { status: 'installed', id: 'acme.compass', trust: 'unsigned' },
-      'a selected folder is installed through the Studio and keeps its trust classification',
+      {
+        status: 'installed',
+        id: 'local.compass',
+        approval: { state: 'pending', fingerprint: 'sha256-x' },
+        strippedLinks: [],
+      },
+      'a selected folder is installed through the Studio and says what it waits to have approved',
     )
     assert.equal(selected, '/extensions/compass')
+
+    assert.deepEqual(
+      await addThirdPartyModuleFromFolder(
+        { openDir: async () => '/extensions/linked' },
+        {
+          install: async () => ({
+            ok: true,
+            moduleId: 'local.linked',
+            approval: { state: 'pending', fingerprint: 'sha256-x' },
+            strippedLinks: ['dist/shared.js', 'node_modules'],
+          }),
+        },
+      ),
+      {
+        status: 'installed',
+        id: 'local.linked',
+        approval: { state: 'pending', fingerprint: 'sha256-x' },
+        strippedLinks: ['dist/shared.js', 'node_modules'],
+      },
+      'the symbolic links left out of the copy come back for the install review to name',
+    )
+    assert.deepEqual(
+      await addThirdPartyModuleFromFolder(
+        { openDir: async () => '/extensions/older-studio' },
+        {
+          install: async () =>
+            ({ ok: true, moduleId: 'local.older', approval: { state: 'pending', fingerprint: 'sha256-x' } }) as never,
+        },
+      ),
+      {
+        status: 'installed',
+        id: 'local.older',
+        approval: { state: 'pending', fingerprint: 'sha256-x' },
+        strippedLinks: [],
+      },
+      'a Studio that reports no links reads as none stripped',
+    )
 
     assert.deepEqual(
       await addThirdPartyModuleFromFolder(
@@ -50,11 +102,11 @@ test('addThirdPartyModuleFromFolder', async () => {
           install: async () => ({
             ok: false,
             message: '',
-            issues: [{ path: 'manifest.json', message: 'No valid module manifest was found.' }],
+            issues: [{ path: 'id', message: '"notes" must match its folder "local.other".' }],
           }),
         },
       ),
-      { status: 'failed', message: 'No valid module manifest was found.' },
+      { status: 'failed', message: '"notes" must match its folder "local.other".' },
       'manifest validation failures return the Studio’s explanation',
     )
   }

@@ -265,10 +265,10 @@ export function PluginsCatalogue({
               }
       // Our own tab holds two populations, and the number on it has to be the
       // number of rows under it: the marketplace repository's plugins and
-      // servers (studio-marketplace ruling, 2026-09-06) plus the signed
-      // registry's entries, which a Claude marketplace cannot carry because
-      // `component-trust.ts` refuses code-bearing components from any GitHub
-      // source. Neither half is spoken while it is still unknown.
+      // servers (studio-marketplace ruling, 2026-09-06) plus the app's own
+      // registry's entries, the agent CLIs it ships, which a Claude
+      // marketplace cannot carry. Neither half is spoken while it is still
+      // unknown.
       map[source.id] = mine ? sumCounts(scanned, appCount) : scanned
     }
     return map
@@ -1058,11 +1058,9 @@ export function PluginsCatalogue({
             moduleOverrides={moduleOverrides}
             workspaceRoot={workspaceRoot}
             registryPlugins={registry}
-            mcpSettings={connectors.mcpSettings}
             kinds={['mcp']}
             sourceGrouping={{ sources: sources.sources, records: sources.installedPlugins }}
             paging={{ noun: 'MCP server', query }}
-            onUpsertMcpServer={connectors.upsertMcpServer}
             onLaunchConnector={onLaunchConnector}
             onRemoveMcpServer={removeMcpServer}
           />
@@ -1160,9 +1158,7 @@ export function PluginsCatalogue({
         plugin={openConnector.plugin}
         registryUrl={connectors.registryUrl}
         workspaceRoot={workspaceRoot}
-        mcpSettings={connectors.mcpSettings}
         onInstalled={() => void connectors.loadRegistry(true)}
-        onUpsertMcpServer={connectors.upsertMcpServer}
         onClose={() => setOpenRow(null)}
       />
     ) : null

@@ -40,6 +40,7 @@ export type GatewayBackendDeps = Pick<
   | 'launchAgent'
   | 'linkLaunchedAgent'
   | 'resolveAgentPermissionPreset'
+  | 'agentStarterOf'
   | 'createWorkspace'
   | 'getScheduledAgents'
   | 'machineSchedules'

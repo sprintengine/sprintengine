@@ -19,7 +19,7 @@ function delivery(over: Partial<ModuleNotificationDelivery> = {}): ModuleNotific
 
 test('a delivery becomes a bell row under the stamped module identity', () => {
   const entry = moduleNotificationEntry(
-    delivery({ body: 'Two comments.', target: { surfaceId: 'acme.radar', viewId: 'activity' } }),
+    delivery({ body: 'Two comments.', target: { surfaceId: 'radar', viewId: 'activity' } }),
   )
   assert.deepEqual(entry, {
     id: 'module:k1-1',
@@ -29,13 +29,28 @@ test('a delivery becomes a bell row under the stamped module identity', () => {
     title: 'Changes requested on acme/app#12',
     message: 'Two comments.',
     sourceModule: { id: 'acme.radar', name: 'PR Radar' },
-    surfaceTarget: { surfaceId: 'acme.radar', viewId: 'activity' },
-    extensionsRow: 'acme.radar',
+    surfaceTarget: { surfaceId: 'acme.radar:radar', viewId: 'activity' },
+    extensionsRow: 'acme.radar:radar',
   })
   const bare = moduleNotificationEntry(delivery())
   assert.equal(bare.message, '', 'no body is an empty message, never undefined')
   assert.equal(bare.surfaceTarget, undefined)
   assert.equal(bare.extensionsRow, undefined, 'an untargeted row names no drawer row itself')
+})
+
+test('an extension names its door by its extension.json id; a built-in module names its surface as it is', () => {
+  const extension = moduleNotificationEntry(delivery({ target: { surfaceId: 'board' } }))
+  assert.deepEqual(extension.surfaceTarget, { surfaceId: 'acme.radar:board' }, 'filed under the extension’s key')
+  assert.equal(extension.extensionsRow, 'acme.radar:board')
+  const builtIn = moduleNotificationEntry(
+    delivery({ sourceModuleId: 'backlog', sourceModuleName: 'Backlog', target: { surfaceId: 'backlog' } }),
+  )
+  assert.deepEqual(
+    builtIn.surfaceTarget,
+    { surfaceId: 'backlog' },
+    'a module id that is no install key is not rewritten',
+  )
+  assert.equal(builtIn.extensionsRow, 'backlog')
 })
 
 test('kept rows and live rows from the stream are filed once each, across a resend; junk is ignored', () => {

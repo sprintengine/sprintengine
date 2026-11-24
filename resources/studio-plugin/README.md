@@ -147,8 +147,8 @@ person's choice (`src/shared/studio-area-skills.ts`):
   remembered as an answer and stays off.
 - **Offered where it applies.** Backlog, Design, Canvas, scheduled agents and
   the Diff viewer each show one muted line offering their skill until the
-  person answers it (Install, or Not now). `studio-workspaces` has no surface of its
-  own and is a switch in Settings only. Switching one off in Settings counts as
+  person answers it (Install, or Not now). `studio-workspaces` and `studio-extensions`
+  have no surface of their own and are switches in Settings only. Switching one off in Settings counts as
   an answer, so the surface does not offer it back.
 - **Machine-wide.** The choice lives in `<userData>/studio-area-skills.json`
   (`src/main/studio-area-skill-store.ts`) and applies to every workspace, now
@@ -164,9 +164,10 @@ person's choice (`src/shared/studio-area-skills.ts`):
   that the app opens and the pass carries on in the background.
 
 One per area: `studio-backlog`, `studio-scheduled-agents`, `studio-canvas`,
-`studio-diff-tours`, `studio-workspaces`, `studio-ship` (push, open the pull
-request, set it to merge, and have Studio watch it) and `studio-design-system`
-— seven. (`studio-review` left
+`studio-diff-tours`, `studio-workspaces`, `studio-extensions` (build, debug
+and ship a Studio extension: the no-build dev loop, the person's approval and
+the guide's topics), `studio-ship` (push, open the pull request, set it to
+merge, and have Studio watch it) and `studio-design-system` — eight. (`studio-review` left
 with the Reviews module, which ships it itself and is no longer bundled. `sprintengine-extension-builder`,
 the module SDK's skill that the Extensions home used to offer, left on
 2026-10-30: the gateway's `extension.create` and `extension.guide` tools teach

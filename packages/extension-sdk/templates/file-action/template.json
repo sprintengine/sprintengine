@@ -1,0 +1,15 @@
+{
+  "id": "file-action",
+  "title": "Files action",
+  "summary": "A Files tree menu entry whose command the worker runs: it notes the picked files in the Backlog.",
+  "permissions": [
+    "backlog:operate"
+  ],
+  "capabilities": [
+    "files",
+    "menu",
+    "command",
+    "worker",
+    "backlog"
+  ]
+}

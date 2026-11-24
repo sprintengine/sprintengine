@@ -5,7 +5,14 @@ import { test, vi } from 'vitest'
 
 // Monaco itself needs a DOM, so the package is stood in for by a marker object:
 // what is under test is which instance the wrapper is handed, not the editor.
-const bundledMonaco = vi.hoisted(() => ({ editor: {}, languages: {}, bundled: true }))
+const bundledMonaco = vi.hoisted(() => ({
+  // What the runtime asks of Monaco for the languages extensions contribute.
+  editor: { onDidCreateEditor: () => ({ dispose() {} }) },
+  languages: {},
+  bundled: true,
+}))
+// The worker an extension's grammar runs in, never started here.
+vi.mock('../lib/highlight/grammarWorker?worker', () => ({ default: class {} }))
 vi.mock('monaco-editor', () => bundledMonaco)
 
 // One recognisable class per worker file, so a test can say which file a label

@@ -1,6 +1,7 @@
 import type { ConversationEvent } from '../../shared/conversation-runtime'
 import type { ConversationProviderModel, LoadedConversationProvider } from '../../shared/plugin-manifest'
 import { isRecord } from '../../shared/records'
+import { providerEndpoint } from '../../../packages/extension-sdk/src/agent-contributions'
 import type {
   ConversationProviderAdapter,
   MockAdapterSessionInput,
@@ -81,10 +82,16 @@ async function* streamTurn(
     return
   }
 
-  const secret = await options.resolveSecret(input.providerId)
-  if (!secret.ok) {
-    yield failure(input, 'auth', 'Provider API key is not configured.')
-    return
+  // A provider that takes no key (a model server on this machine) is called
+  // without one.
+  let apiKey: string | null = null
+  if (provider.manifest.auth) {
+    const secret = await options.resolveSecret(input.providerId)
+    if (!secret.ok) {
+      yield failure(input, 'auth', 'Provider API key is not configured.')
+      return
+    }
+    apiKey = secret.value
   }
 
   const endpoint = resolveEndpoint(provider)
@@ -96,7 +103,11 @@ async function* streamTurn(
   try {
     const response = await fetchImpl(endpoint.url, {
       method: 'POST',
-      headers: buildHeaders(secret.value),
+      headers: buildHeaders(apiKey),
+      // The key and the conversation go to the base URL's origin and nowhere
+      // else: a redirect (which would carry the body on to wherever it
+      // points) is refused, not followed.
+      redirect: 'error',
       signal: input.signal,
       body: JSON.stringify({
         // Send the full conversation history when the runtime provides it, so the
@@ -200,15 +211,24 @@ function resolveEndpoint(
 ): { ok: true; url: string } | { ok: false; message: string } {
   const config = provider.manifest.openaiCompatible
   if (!config) return { ok: false, message: 'OpenAI-compatible provider config is missing.' }
+  return originBoundUrl(config.baseUrl, config.chatCompletionsPath ?? '/v1/chat/completions')
+}
+
+/**
+ * `path` on `baseUrl`, refused unless it stays on the base URL's origin: a
+ * path like `//elsewhere.example` or `/\elsewhere.example` would otherwise
+ * resolve to another host, and the key with it.
+ */
+function originBoundUrl(baseUrl: string, path: string): { ok: true; url: string } | { ok: false; message: string } {
   try {
-    const base = new URL(config.baseUrl)
+    const base = new URL(baseUrl)
     if (base.protocol !== 'https:' && base.protocol !== 'http:') {
       return { ok: false, message: 'Provider endpoint must use http or https.' }
     }
-    const path = config.chatCompletionsPath ?? '/v1/chat/completions'
-    return { ok: true, url: new URL(path, base).toString() }
+    const url = providerEndpoint(baseUrl, path)
+    return { ok: true, url: url.toString() }
   } catch {
-    return { ok: false, message: 'Provider endpoint URL is invalid.' }
+    return { ok: false, message: `Provider endpoint ${path} is not on ${baseUrl}.` }
   }
 }
 
@@ -219,9 +239,9 @@ const ATTRIBUTION_HEADERS: Record<string, string> = {
   'X-Title': 'SprintEngine Studio',
 }
 
-function buildHeaders(apiKey: string): Record<string, string> {
+function buildHeaders(apiKey: string | null): Record<string, string> {
   return {
-    Authorization: `Bearer ${apiKey}`,
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
     'Content-Type': 'application/json',
     ...ATTRIBUTION_HEADERS,
   }
@@ -243,19 +263,18 @@ export async function listOpenAiCompatibleModels(input: {
   const config = provider.manifest.openaiCompatible
   if (!config?.modelsPath) return { ok: false, message: 'Provider does not expose a model catalog.' }
 
-  let url: string
-  try {
-    url = new URL(config.modelsPath, new URL(config.baseUrl)).toString()
-  } catch {
-    return { ok: false, message: 'Provider models endpoint URL is invalid.' }
+  const endpoint = originBoundUrl(config.baseUrl, config.modelsPath)
+  if (!endpoint.ok) return { ok: false, message: 'Provider models endpoint URL is invalid.' }
+  const url = endpoint.url
+
+  const headers: Record<string, string> = { Accept: 'application/json', ...ATTRIBUTION_HEADERS }
+  if (provider.manifest.auth) {
+    const secret = await input.resolveSecret(input.providerId)
+    if (secret.ok) headers.Authorization = `Bearer ${secret.value}`
   }
 
-  const secret = await input.resolveSecret(input.providerId)
-  const headers: Record<string, string> = { Accept: 'application/json', ...ATTRIBUTION_HEADERS }
-  if (secret.ok) headers.Authorization = `Bearer ${secret.value}`
-
   try {
-    const response = await (input.fetch ?? fetch)(url, { method: 'GET', headers })
+    const response = await (input.fetch ?? fetch)(url, { method: 'GET', headers, redirect: 'error' })
     if (!response.ok) return { ok: false, message: `Model catalog request failed (${response.status}).` }
     let payload: unknown
     try {

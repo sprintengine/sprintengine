@@ -6,9 +6,7 @@ import { showToast } from '../../store/toastStore'
 import { studioModuleSwitchStore, useWorkspaceStore } from '../../store/workspaceStore'
 import { windowModuleSwitches } from '../../studio/moduleSwitches'
 import type { StudioModuleSummary } from '../../../../../packages/studio-protocol/src/public'
-import { ChevronDownIcon, FolderPlusIcon, GithubSettingsIcon } from '../AppIcons'
-import { InstallFromGitHubDialog } from '../extensions/InstallFromGitHubDialog'
-import { ExtensionTrustReview } from '../extensions/ExtensionTrustReview'
+import { ChevronDownIcon, FolderPlusIcon } from '../AppIcons'
 import {
   ActionResultMessage,
   GhostButton,
@@ -25,8 +23,12 @@ import {
   roveMenuFocus,
 } from '../ui'
 import { ExtensionIcon } from '../ui/ExtensionIcon'
-import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/Modal'
-import { EXTENSIONS_BROWSE_DEEPLINK } from './extensionsRoute'
+import { ExtensionCatalogueBrowse, ExtensionCataloguePage } from './ExtensionCatalogueBrowse'
+import { onExtensionPageRequest, takeExtensionPageRequest, type ExtensionPageRequest } from './extensionPageRequest'
+import { useExtensionCatalogues } from './useExtensionCatalogues'
+import { GitInstallDialog, type GitInstallRequest } from './GitInstallDialog'
+import { extensionCatalogueApi } from '../../studio/extensionCatalogue'
+import { useConfirmDialog } from '../ui/ConfirmDialog'
 import {
   accessItems,
   builtInMatchesFilter,
@@ -53,7 +55,7 @@ import {
   RejectedFolders,
   type ExtensionActions,
 } from './ThirdPartyModuleList'
-import { TrustReviewDialog } from './TrustReviewDialog'
+import { ApprovalReviewDialog } from './ApprovalReviewDialog'
 import { useThirdPartyExtensions } from './useThirdPartyExtensions'
 import { copy as appCopy } from '../../../../shared/copy'
 
@@ -63,7 +65,7 @@ import { copy as appCopy } from '../../../../shared/copy'
 // The page title and two header actions; a restart line when an extension
 // waits on the next launch; the search and the filter; then the extensions a
 // person installed — the ones that need review before anything else, then the
-// trusted ones with their one switch — and the built-in modules folded away
+// approved ones with their one switch — and the built-in modules folded away
 // below. Short, factual labels and nothing explaining the page to itself.
 
 // "Later" holds for the rest of the session, for the extensions it was
@@ -77,12 +79,17 @@ const BUILT_IN_MANIFESTS: CapabilityManifest[] = MODULE_CATEGORY_GROUPS.flatMap(
 function InstallMenu({
   installing,
   onFromFolder,
-  onFromGitHub,
+  onDevelopmentFolder,
+  onFromGit,
   onBrowse,
 }: {
   installing: boolean
-  onFromFolder: () => void
-  onFromGitHub: () => void
+  /** Null where the folder picked would not be on the Studio's disk (a browser tab). */
+  onFromFolder: (() => void) | null
+  /** A folder that loads where it is and again on every save, for building an extension. */
+  onDevelopmentFolder: (() => void) | null
+  /** A git repository: an extension, or a Claude Code plugin's skills and MCP servers. */
+  onFromGit: (() => void) | null
   onBrowse: () => void
 }): JSX.Element {
   const [open, setOpen] = useState(false)
@@ -111,14 +118,23 @@ function InstallMenu({
         </OutlineButton>
       )}
     >
-      <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onFromFolder)} onKeyDown={rove}>
-        {appCopy.settings.modulesSettingsTab.fromAFolder}
-      </MenuItem>
-      <MenuItem icon={<GithubSettingsIcon className="icon-sm" />} onClick={pick(onFromGitHub)} onKeyDown={rove}>
-        {appCopy.settings.modulesSettingsTab.fromGitHub}
-      </MenuItem>
+      {onFromFolder ? (
+        <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onFromFolder)} onKeyDown={rove}>
+          {appCopy.settings.modulesSettingsTab.fromAFolder}
+        </MenuItem>
+      ) : null}
+      {onDevelopmentFolder ? (
+        <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onDevelopmentFolder)} onKeyDown={rove}>
+          As a development folder
+        </MenuItem>
+      ) : null}
+      {onFromGit ? (
+        <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onFromGit)} onKeyDown={rove}>
+          From a git URL
+        </MenuItem>
+      ) : null}
       <MenuItem icon={<PluginsGlyph className="icon-sm" />} onClick={pick(onBrowse)} onKeyDown={rove}>
-        {appCopy.settings.modulesSettingsTab.browseMarketplace}
+        From a catalogue
       </MenuItem>
     </Popover>
   )
@@ -126,7 +142,7 @@ function InstallMenu({
 
 /**
  * The window's Studio's word on its modules: what it holds, switched on or
- * off and whether each runs there now (`module.list`), and a switch that waits
+ * off and whether each runs there now (`extension.list`), and a switch that waits
  * for it. Without a Studio of this window's own (a browser tab) a switch is
  * this window's copy alone.
  */
@@ -217,20 +233,108 @@ export function ModulesSettingsTab(): JSX.Element {
   const overrides = useWorkspaceStore((state) => state.appSettings.modules)
   const studioModules = useStudioModules()
   const setModuleEnabled = studioModules.switchModule
-  const openSettingsOverlay = useWorkspaceStore((state) => state.openSettingsOverlay)
-  const mcpSettings = useWorkspaceStore((state) => state.appSettings.mcp)
-  const workspaceRoot = useWorkspaceStore(
-    (state) => state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId)?.folderPath ?? null,
-  )
   const extensions = useThirdPartyExtensions(setModuleEnabled)
 
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<ExtensionFilter>('all')
   const [builtInExpanded, setBuiltInExpanded] = useState(false)
-  const [installFromGitHub, setInstallFromGitHub] = useState(false)
   const [reviewing, setReviewing] = useState<ThirdPartyModuleView | null>(null)
+  // A folder just installed that waits for approval opens its review at once.
+  const { awaitingReview, clearAwaitingReview, modules: installedModules } = extensions
+  useEffect(() => {
+    if (!awaitingReview) return
+    const installed = installedModules.find((candidate) => candidate.manifest.id === awaitingReview)
+    if (!installed) return
+    clearAwaitingReview()
+    setReviewing(installed)
+  }, [awaitingReview, clearAwaitingReview, installedModules])
   const [detailsFor, setDetailsFor] = useState<string | null>(null)
+  // A folder just installed that asks nothing opens its details instead.
+  const { justInstalled, clearJustInstalled } = extensions
+  useEffect(() => {
+    if (!justInstalled) return
+    if (!installedModules.some((candidate) => candidate.manifest.id === justInstalled)) return
+    clearJustInstalled()
+    setDetailsFor(justInstalled)
+  }, [justInstalled, clearJustInstalled, installedModules])
   const [restartDismissed, setRestartDismissed] = useState<string | null>(restartDismissedFor)
+  // Browse: the catalogues, and one extension's page in one of them.
+  const [view, setView] = useState<'installed' | 'browse'>('installed')
+  const [catalogueTab, setCatalogueTab] = useState('official')
+  const [page, setPage] = useState<ExtensionPageRequest | null>(null)
+  const catalogueState = useExtensionCatalogues(view === 'browse')
+  const { confirm: confirmDialog, prompt: promptDialog } = useConfirmDialog()
+  const addCatalogue = catalogueState.add
+  // Adding a catalogue asks first: Studio reads it from then on, and labels
+  // what it lists with its name and owner.
+  const askToAddCatalogue = useCallback(
+    async (url: string): Promise<string | null> => {
+      if (!addCatalogue) return null
+      const confirmed = await confirmDialog({
+        title: url === 'community' ? 'Add the community catalogue?' : `Add catalogue ${url}?`,
+        body:
+          'Studio reads the extensions it lists from then on and labels them with its name and owner. ' +
+          'Nothing is installed until you press Install on an extension’s page.',
+        confirmLabel: 'Add catalogue',
+      })
+      if (!confirmed) return null
+      const answer = await addCatalogue(url)
+      if (!answer.ok) {
+        showToast({ tone: 'error', title: 'Couldn’t add the catalogue', description: answer.message })
+        return null
+      }
+      return answer.id
+    },
+    [addCatalogue, confirmDialog],
+  )
+  // An install link opens a page and never installs; a catalogue not added yet is asked about first.
+  const openRequestedPage = useCallback(
+    async (request: ExtensionPageRequest) => {
+      setView('browse')
+      let catalogue = request.catalogue
+      // The community catalogue too, once the person removed it. Asked of the
+      // Studio now: a link that opened Settings comes before its first list.
+      const known = async () => {
+        try {
+          return (await extensionCatalogueApi.catalogues()).some((candidate) => candidate.id === catalogue)
+        } catch {
+          return catalogueState.catalogues.some((candidate) => candidate.id === catalogue)
+        }
+      }
+      if ((catalogue.startsWith('git:') || catalogue === 'community') && !(await known())) {
+        const added = await askToAddCatalogue(catalogue.startsWith('git:') ? catalogue.slice(4) : catalogue)
+        if (!added) return
+        catalogue = added
+      }
+      setCatalogueTab(catalogue)
+      setPage({ catalogue, id: request.id })
+    },
+    [askToAddCatalogue, catalogueState.catalogues],
+  )
+  useEffect(() => {
+    const take = () => {
+      const request = takeExtensionPageRequest()
+      if (request) void openRequestedPage(request)
+    }
+    take()
+    return onExtensionPageRequest(take)
+  }, [openRequestedPage])
+  // From a git URL: the URL and an optional folder. A refusal comes back to
+  // the dialog, with a marketplace's plugin folders to pick from.
+  const [gitDialog, setGitDialog] = useState<{ url: string; folders: string[]; message?: string } | null>(null)
+  const installFromGit = extensions.installFrom ? () => setGitDialog({ url: '', folders: [] }) : null
+  const submitGitInstall = async (request: GitInstallRequest) => {
+    setGitDialog(null)
+    const outcome = await extensions.installFrom?.(request)
+    if (outcome && !outcome.ok) {
+      extensions.dismissMessage()
+      setGitDialog({
+        url: `${request.git}${request.ref ? `#${request.ref}` : ''}`,
+        folders: outcome.folders ?? [],
+        message: outcome.message,
+      })
+    }
+  }
   const ids = { review: useId(), installed: useId(), builtIn: useId(), builtInList: useId() }
 
   const { modules } = extensions
@@ -279,11 +383,8 @@ export function ModulesSettingsTab(): JSX.Element {
       setDetailsFor(null)
       setReviewing(module)
     },
-    onSetEnabled: setModuleEnabled,
-    onRevokeTrust: (module) => {
-      setDetailsFor(null)
-      void extensions.revokeTrust(module)
-    },
+    // An installed extension's switch reaches the Studio from a browser tab too.
+    onSetEnabled: extensions.setEnabled,
     onUninstall: extensions.uninstall
       ? (module) => {
           setDetailsFor(null)
@@ -291,10 +392,13 @@ export function ModulesSettingsTab(): JSX.Element {
         }
       : null,
     onReveal: extensions.reveal ? (module) => void extensions.reveal?.(module) : null,
-    onUpdate: (module, update) => {
-      setDetailsFor(null)
-      void extensions.update(module, update)
-    },
+    // The details close first: an update that asks again opens its review, which the popover would cover.
+    onUpdate: extensions.update
+      ? (module) => {
+          setDetailsFor(null)
+          void extensions.update?.(module)
+        }
+      : null,
     onCopyId: (module) => {
       void window.api
         .clipboardWriteText(module.manifest.id)
@@ -304,22 +408,24 @@ export function ModulesSettingsTab(): JSX.Element {
     },
   }
 
+  // A development folder waiting to replace an installed extension is listed
+  // beside it under the same id, so a row is told apart by its folder.
+  const rowId = (module: ThirdPartyModuleView) =>
+    module.development ? `dev:${module.development.folder}` : module.manifest.id
   const row = (module: ThirdPartyModuleView) => (
     <ExtensionListRow
-      key={module.manifest.id}
+      key={rowId(module)}
       module={module}
       overrides={overrides}
-      updateStates={extensions.updateStates}
       actions={actions}
-      detailsOpen={detailsFor === module.manifest.id}
+      detailsOpen={detailsFor === rowId(module)}
       onDetailsOpenChange={(open) =>
-        setDetailsFor((current) => (open ? module.manifest.id : current === module.manifest.id ? null : current))
+        setDetailsFor((current) => (open ? rowId(module) : current === rowId(module) ? null : current))
       }
     />
   )
 
   const reviewAccess = reviewing ? accessItems(reviewing.manifest.permissions) : { care: [], standard: [] }
-  const pause = extensions.updatePause
 
   return (
     <div role="tabpanel" id="settings-panel-modules" aria-labelledby="settings-tab-modules" className="space-y-5">
@@ -327,14 +433,25 @@ export function ModulesSettingsTab(): JSX.Element {
         title={appCopy.settings.modulesSettingsTab.extensions}
         actions={
           <>
-            <GhostButton onClick={() => openSettingsOverlay({ initialTab: EXTENSIONS_BROWSE_DEEPLINK })}>
-              {appCopy.settings.modulesSettingsTab.browseMarketplace}
+            <GhostButton
+              onClick={() => {
+                setPage(null)
+                setView(view === 'browse' ? 'installed' : 'browse')
+              }}
+            >
+              {view === 'browse' ? 'Installed' : 'Browse'}
             </GhostButton>
             <InstallMenu
               installing={extensions.installing}
-              onFromFolder={() => void extensions.installFromFolder()}
-              onFromGitHub={() => setInstallFromGitHub(true)}
-              onBrowse={() => openSettingsOverlay({ initialTab: EXTENSIONS_BROWSE_DEEPLINK })}
+              onFromFolder={extensions.installFromFolder ? () => void extensions.installFromFolder?.() : null}
+              onDevelopmentFolder={
+                extensions.installFromFolder ? () => void extensions.installFromFolder?.('development') : null
+              }
+              onFromGit={installFromGit ? () => void installFromGit() : null}
+              onBrowse={() => {
+                setPage(null)
+                setView('browse')
+              }}
             />
           </>
         }
@@ -355,119 +472,207 @@ export function ModulesSettingsTab(): JSX.Element {
         }
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <InboxSearchInput
-          value={query}
-          onChange={setQuery}
-          ariaLabel={appCopy.settings.modulesSettingsTab.searchExtensions}
-          placeholder={appCopy.settings.modulesSettingsTab.searchExtensions}
-        />
-        <SegmentedControl<ExtensionFilter>
-          ariaLabel={appCopy.settings.modulesSettingsTab.show}
-          value={filter}
-          onChange={setFilter}
-          items={[
-            { value: 'all', label: appCopy.settings.modulesSettingsTab.all },
-            {
-              value: 'review',
-              label: appCopy.settings.modulesSettingsTab.needsReview,
-              badge:
-                reviewCount > 0
-                  ? {
-                      count: reviewCount,
-                      label: appCopy.settings.modulesSettingsTab.toReview(reviewCount),
-                      tone: 'neutral',
+      {view === 'browse' ? (
+        <>
+          <ActionResultMessage message={extensions.message} />
+          {page ? (
+            <ExtensionCataloguePage
+              catalogue={page.catalogue}
+              id={page.id}
+              busy={extensions.installing || extensions.pendingId === page.id}
+              onBack={() => setPage(null)}
+              onInstall={
+                extensions.installFrom
+                  ? (from) =>
+                      void extensions.installFrom?.(from).then((outcome) => {
+                        // Installed, or refused because the catalogue lists another now: read it again.
+                        void catalogueState.reload()
+                        return outcome
+                      })
+                  : null
+              }
+              onUpdate={
+                extensions.update
+                  ? (id, version) => {
+                      const module = extensions.modules.find((candidate) => candidate.manifest.id === id)
+                      if (module) void extensions.update?.(module, version).then(() => catalogueState.reload())
                     }
-                  : null,
-            },
-            { value: 'on', label: appCopy.settings.modulesSettingsTab.on },
-            { value: 'off', label: appCopy.settings.modulesSettingsTab.off },
-          ]}
-        />
-      </div>
-
-      <ActionResultMessage message={extensions.message} />
-      <ActionResultMessage message={studioModules.failure ? { tone: 'error', text: studioModules.failure } : null} />
-
-      {nothingMatches ? (
-        <p className="text-body leading-5 text-[color:var(--text-muted)]">
-          {searching ? (
-            <>
-              {appCopy.settings.modulesSettingsTab.nothingMatches}
-              {query.trim()}&rdquo;.
-            </>
+                  : null
+              }
+            />
           ) : (
-            'Nothing here.'
+            <ExtensionCatalogueBrowse
+              catalogues={catalogueState.catalogues}
+              loading={catalogueState.loading}
+              error={catalogueState.error}
+              selected={catalogueTab}
+              onSelect={setCatalogueTab}
+              onOpen={(catalogue, id) => setPage({ catalogue, id })}
+              onRefresh={catalogueState.refresh}
+              onAddCatalogue={
+                catalogueState.add
+                  ? () =>
+                      void promptDialog({
+                        title: 'Add a catalogue',
+                        body: 'The HTTPS or SSH URL of a git repository holding catalogue.json at its root, read at its main branch.',
+                        inputLabel: 'Git URL',
+                        placeholder: 'https://github.com/acme/studio-catalogue.git',
+                        required: true,
+                        confirmLabel: 'Continue',
+                      }).then(async (url) => {
+                        if (!url) return
+                        const added = await askToAddCatalogue(url.trim())
+                        if (added) setCatalogueTab(added)
+                      })
+                  : null
+              }
+              onRemoveCatalogue={
+                catalogueState.remove
+                  ? (url) =>
+                      void confirmDialog({
+                        title: url === 'community' ? 'Remove the community catalogue?' : `Remove catalogue ${url}?`,
+                        body: 'What you installed from it stays, and no longer updates.',
+                        confirmLabel: 'Remove',
+                        tone: 'danger',
+                      }).then((confirmed) => {
+                        if (confirmed) {
+                          setCatalogueTab('official')
+                          void catalogueState.remove?.(url)
+                        }
+                      })
+                  : null
+              }
+            />
           )}
-        </p>
-      ) : null}
-
-      {visibleReview.length > 0 ? (
-        <ExtensionGroup
-          id={ids.review}
-          title={appCopy.settings.modulesSettingsTab.needsReview}
-          count={visibleReview.length}
-        >
-          <ExtensionRows label={appCopy.settings.modulesSettingsTab.needsReview}>
-            {visibleReview.map(row)}
-          </ExtensionRows>
-        </ExtensionGroup>
-      ) : null}
-
-      {showInstalledGroup ? (
-        <ExtensionGroup
-          id={ids.installed}
-          title={appCopy.settings.modulesSettingsTab.installed}
-          count={visibleInstalled.length}
-        >
-          {visibleInstalled.length > 0 ? (
-            <ExtensionRows label={appCopy.settings.modulesSettingsTab.installed}>
-              {visibleInstalled.map(row)}
-            </ExtensionRows>
-          ) : (
-            <NoExtensionsInstalled />
-          )}
-        </ExtensionGroup>
-      ) : null}
-
-      <RejectedFolders rejected={extensions.rejected} />
-
-      {showBuiltIn ? (
-        <section aria-labelledby={ids.builtIn} className="space-y-2">
-          <SettingsSectionTitle id={ids.builtIn} count={builtInVisible.length}>
-            <LinkButton
-              ink="name"
-              size="inherit"
-              underline="never"
-              aria-expanded={builtInOpen}
-              aria-controls={ids.builtInList}
-              onClick={() => setBuiltInExpanded(!builtInOpen)}
-            >
-              <ChevronDownIcon
-                className={`icon-sm mr-1 inline-block align-middle text-[color:var(--text-subtle)] ${builtInOpen ? '' : '-rotate-90'}`}
-              />
-              {appCopy.settings.modulesSettingsTab.builtIn}
-            </LinkButton>
-          </SettingsSectionTitle>
-          <div id={ids.builtInList} hidden={!builtInOpen}>
-            <SettingCard as="ul" ariaLabel={appCopy.settings.modulesSettingsTab.builtIn}>
-              {builtInVisible.map((manifest) => (
-                <BuiltInRow
-                  key={manifest.id}
-                  manifest={manifest}
-                  enabled={
-                    studioModules.modules.get(manifest.id)?.enabled ?? selectModuleEnabled(overrides, manifest.id)
-                  }
-                  studio={studioModules.modules.get(manifest.id)}
-                  onToggle={(next) => setModuleEnabled(manifest.id, next)}
-                />
-              ))}
-            </SettingCard>
+        </>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <InboxSearchInput
+              value={query}
+              onChange={setQuery}
+              ariaLabel={appCopy.settings.modulesSettingsTab.searchExtensions}
+              placeholder={appCopy.settings.modulesSettingsTab.searchExtensions}
+            />
+            <SegmentedControl<ExtensionFilter>
+              ariaLabel={appCopy.settings.modulesSettingsTab.show}
+              value={filter}
+              onChange={setFilter}
+              items={[
+                { value: 'all', label: appCopy.settings.modulesSettingsTab.all },
+                {
+                  value: 'review',
+                  label: appCopy.settings.modulesSettingsTab.needsReview,
+                  badge:
+                    reviewCount > 0
+                      ? {
+                          count: reviewCount,
+                          label: appCopy.settings.modulesSettingsTab.toReview(reviewCount),
+                          tone: 'neutral',
+                        }
+                      : null,
+                },
+                { value: 'on', label: appCopy.settings.modulesSettingsTab.on },
+                { value: 'off', label: appCopy.settings.modulesSettingsTab.off },
+              ]}
+            />
           </div>
-        </section>
-      ) : null}
 
-      <TrustReviewDialog
+          <ActionResultMessage message={extensions.message} />
+          <ActionResultMessage
+            message={studioModules.failure ? { tone: 'error', text: studioModules.failure } : null}
+          />
+
+          {nothingMatches ? (
+            <p className="text-body leading-5 text-[color:var(--text-muted)]">
+              {searching ? (
+                <>
+                  {appCopy.settings.modulesSettingsTab.nothingMatches}
+                  {query.trim()}&rdquo;.
+                </>
+              ) : (
+                'Nothing here.'
+              )}
+            </p>
+          ) : null}
+
+          {visibleReview.length > 0 ? (
+            <ExtensionGroup
+              id={ids.review}
+              title={appCopy.settings.modulesSettingsTab.needsReview}
+              count={visibleReview.length}
+            >
+              <ExtensionRows label={appCopy.settings.modulesSettingsTab.needsReview}>
+                {visibleReview.map(row)}
+              </ExtensionRows>
+            </ExtensionGroup>
+          ) : null}
+
+          {showInstalledGroup ? (
+            <ExtensionGroup
+              id={ids.installed}
+              title={appCopy.settings.modulesSettingsTab.installed}
+              count={visibleInstalled.length}
+            >
+              {visibleInstalled.length > 0 ? (
+                <ExtensionRows label={appCopy.settings.modulesSettingsTab.installed}>
+                  {visibleInstalled.map(row)}
+                </ExtensionRows>
+              ) : (
+                <NoExtensionsInstalled />
+              )}
+            </ExtensionGroup>
+          ) : null}
+
+          <RejectedFolders rejected={extensions.rejected} />
+
+          {showBuiltIn ? (
+            <section aria-labelledby={ids.builtIn} className="space-y-2">
+              <SettingsSectionTitle id={ids.builtIn} count={builtInVisible.length}>
+                <LinkButton
+                  ink="name"
+                  size="inherit"
+                  underline="never"
+                  aria-expanded={builtInOpen}
+                  aria-controls={ids.builtInList}
+                  onClick={() => setBuiltInExpanded(!builtInOpen)}
+                >
+                  <ChevronDownIcon
+                    className={`icon-sm mr-1 inline-block align-middle text-[color:var(--text-subtle)] ${builtInOpen ? '' : '-rotate-90'}`}
+                  />
+                  {appCopy.settings.modulesSettingsTab.builtIn}
+                </LinkButton>
+              </SettingsSectionTitle>
+              <div id={ids.builtInList} hidden={!builtInOpen}>
+                <SettingCard as="ul" ariaLabel={appCopy.settings.modulesSettingsTab.builtIn}>
+                  {builtInVisible.map((manifest) => (
+                    <BuiltInRow
+                      key={manifest.id}
+                      manifest={manifest}
+                      enabled={
+                        studioModules.modules.get(manifest.id)?.enabled ?? selectModuleEnabled(overrides, manifest.id)
+                      }
+                      studio={studioModules.modules.get(manifest.id)}
+                      onToggle={(next) => setModuleEnabled(manifest.id, next)}
+                    />
+                  ))}
+                </SettingCard>
+              </div>
+            </section>
+          ) : null}
+        </>
+      )}
+
+      {gitDialog ? (
+        <GitInstallDialog
+          initialUrl={gitDialog.url}
+          folders={gitDialog.folders}
+          {...(gitDialog.message ? { message: gitDialog.message } : {})}
+          onCancel={() => setGitDialog(null)}
+          onSubmit={(request) => void submitGitInstall(request)}
+        />
+      ) : null}
+      <ApprovalReviewDialog
         module={reviewing}
         icon={reviewing ? <ExtensionMark module={reviewing} doorIcon={null} size={40} /> : null}
         meta={
@@ -481,47 +686,12 @@ export function ModulesSettingsTab(): JSX.Element {
         standard={reviewAccess.standard}
         busy={reviewing !== null && extensions.pendingId === reviewing.manifest.id}
         onCancel={() => setReviewing(null)}
-        onTrust={() => {
+        onApprove={() => {
           if (!reviewing) return
-          void extensions.trustAndEnable(reviewing).then((ok) => {
+          void extensions.approveAndEnable(reviewing).then((ok) => {
             if (ok) setReviewing(null)
           })
         }}
-      />
-
-      {pause ? (
-        <Modal
-          open
-          onClose={extensions.cancelUpdateTrust}
-          label={appCopy.settings.modulesSettingsTab.update(pause.module.manifest.displayName)}
-        >
-          <ModalHeader
-            title={appCopy.settings.modulesSettingsTab.updateToV(
-              pause.module.manifest.displayName,
-              pause.update.latestVersion,
-            )}
-            leading={<ExtensionMark module={pause.module} doorIcon={null} size={40} />}
-          />
-          <ModalBody>
-            <ExtensionTrustReview {...pause.review} />
-          </ModalBody>
-          <ModalFooter>
-            <ModalButton variant="ghost" onClick={extensions.cancelUpdateTrust}>
-              {appCopy.settings.modulesSettingsTab.cancel}
-            </ModalButton>
-            <ModalButton variant="primary" onClick={() => void extensions.confirmUpdateTrust()}>
-              {appCopy.settings.modulesSettingsTab.trustAndUpdate}
-            </ModalButton>
-          </ModalFooter>
-        </Modal>
-      ) : null}
-
-      <InstallFromGitHubDialog
-        open={installFromGitHub}
-        onClose={() => setInstallFromGitHub(false)}
-        workspaceRoot={workspaceRoot}
-        mcpSettings={mcpSettings}
-        onInstalled={() => void extensions.reload()}
       />
     </div>
   )

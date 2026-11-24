@@ -1,0 +1,13 @@
+{
+  "id": "top-bar-item",
+  "title": "Top bar button",
+  "summary": "A button in the top bar that opens a focus timer door.",
+  "permissions": [
+    "settings:own"
+  ],
+  "capabilities": [
+    "top-bar",
+    "door",
+    "storage"
+  ]
+}

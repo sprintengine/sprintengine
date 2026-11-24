@@ -1,0 +1,9 @@
+node_modules/
+packed/
+# What `npm run dev` and `sprintengine-extension shot` write: screenshots to
+# look at, never shipped (Studio skips dotted folders in an extension).
+.sprintengine/
+*.key
+*.pem
+*.tgz.tmp
+.DS_Store

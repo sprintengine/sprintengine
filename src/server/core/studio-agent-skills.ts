@@ -62,21 +62,12 @@ import type { StudioPlatform } from '../platform/platform'
 // server on a WSL or SSH machine.
 //
 // What only a desktop can do is handed in, and a server without it answers in
-// words:
-// - moving a removed skill to the Trash (Electron's `shell`);
-// - a card's `install.module`, through the marketplace a desktop's Studio
-//   holds (its extensions, extensions-domain.ts).
+// words: moving a removed skill to the Trash (Electron's `shell`).
 // Everything else (git, the GitHub token, a bundle's own scripts, which run
 // in a child process of this one) is the server's own.
 
 /** A clone nobody has read in sixty days is not worth the disk; the reader rebuilds it on the next read. */
 const SKILL_REPO_CACHE_IDLE_MS = 60 * 24 * 60 * 60 * 1000
-
-/** The marketplace a card's `install.module` goes through: a desktop's Studio's own. */
-export type StudioCardMarketplace = Pick<
-  CardRunDeps,
-  'readMarketplaceRegistry' | 'listMarketplaceReceipts' | 'installMarketplaceEntry'
->
 
 export type StudioAgentSkillsDeps = {
   mcpConfig: McpConfigService
@@ -88,7 +79,6 @@ export type StudioAgentSkillsDeps = {
   onWorkspaceFocus?: (listener: () => void) => () => void
   /** Move a folder to the Trash, where the Studio's machine has a shell that can. */
   trash?: (path: string) => Promise<void>
-  marketplace?: StudioCardMarketplace
 }
 
 /** What the Studio protocol's `agent-skills` handlers answer from. */
@@ -118,8 +108,6 @@ export type StudioAgentSkills = {
   }
   runCard(input: CardRunInput): Promise<CardRunResult>
 }
-
-const MODULES_ON_THE_DESKTOP = 'Modules are installed by the desktop app, and this Studio has none beside it.'
 
 export function createStudioAgentSkills(platform: StudioPlatform, deps: StudioAgentSkillsDeps): StudioAgentSkills {
   const dataDir = platform.paths.dataDir()
@@ -226,20 +214,6 @@ export function createStudioAgentSkills(platform: StudioPlatform, deps: StudioAg
       }
     },
     joinPath: (...segments) => join(...segments),
-    readMarketplaceRegistry: () =>
-      deps.marketplace
-        ? deps.marketplace.readMarketplaceRegistry()
-        : Promise.resolve({ ok: false, message: MODULES_ON_THE_DESKTOP } as Awaited<
-            ReturnType<CardRunDeps['readMarketplaceRegistry']>
-          >),
-    listMarketplaceReceipts: () =>
-      deps.marketplace
-        ? deps.marketplace.listMarketplaceReceipts()
-        : Promise.resolve({ ok: false, message: MODULES_ON_THE_DESKTOP }),
-    installMarketplaceEntry: (input) => {
-      if (!deps.marketplace) throw new Error(MODULES_ON_THE_DESKTOP)
-      return deps.marketplace.installMarketplaceEntry(input)
-    },
   }
 
   return {

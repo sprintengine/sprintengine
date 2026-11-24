@@ -72,7 +72,6 @@ import {
   type StudioModulesMethodMap,
   type StudioModulesTopicMap,
 } from './modules.js'
-import { STUDIO_MODULE_SERVICES_METHODS, type StudioModuleServicesMethodMap } from './module-services.js'
 import { STUDIO_WORKSPACES_METHODS, type StudioWorkspacesMethodMap } from './workspaces.js'
 import {
   STUDIO_TERMINALS_METHODS,
@@ -309,7 +308,6 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioPullRequestsMethodMap &
   StudioLocalServersMethodMap &
   StudioModulesMethodMap &
-  StudioModuleServicesMethodMap &
   StudioTerminalsMethodMap &
   StudioUpdateMethodMap &
   StudioAgentSettingsMethodMap &
@@ -773,7 +771,6 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_PULL_REQUESTS_METHODS,
   ...STUDIO_LOCAL_SERVERS_METHODS,
   ...STUDIO_MODULES_METHODS,
-  ...STUDIO_MODULE_SERVICES_METHODS,
   ...STUDIO_TERMINALS_METHODS,
   ...STUDIO_UPDATE_METHODS,
   ...STUDIO_AGENT_SETTINGS_METHODS,

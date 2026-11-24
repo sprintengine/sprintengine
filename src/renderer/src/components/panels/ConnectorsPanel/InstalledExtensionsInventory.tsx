@@ -23,7 +23,7 @@ import type { MarketplacePluginEntry } from '../../../../../shared/marketplace/m
 import type { ExtensionTrustReviewData } from '../../extensions/ExtensionTrustReview'
 import type { AgentComposerConnector } from '../../workspace/agentComposer/useAgentComposer'
 import type { PluginRegistryListEntry } from '../../../../../shared/plugin-manifest'
-import type { McpServerConfig, McpSettings } from '../../../../../shared/workspace'
+import type { McpServerConfig } from '../../../../../shared/workspace'
 import {
   CloseIconButton,
   EmptyState,
@@ -46,7 +46,7 @@ import { showToast } from '../../../store/toastStore'
 import { ExtensionIcon } from '../../ui/ExtensionIcon'
 import { mcpIconSlug } from '../../ui/mcpIconSlug'
 import { PluginIcon } from '../../settings/BrowseStorefront'
-import { TRUST_PRESENTATION } from '../../settings/ThirdPartyModuleList'
+import { APPROVAL_PRESENTATION } from '../../settings/ThirdPartyModuleList'
 import { classifyVerification, summarizeInstallResult } from '../../settings/installFlow'
 import {
   deriveInstalledExtensions,
@@ -76,9 +76,6 @@ import { copy as appCopy } from '../../../../../shared/copy'
 type InventoryActions = {
   onLaunchConnector?: (connector: AgentComposerConnector) => void
   onRemoveMcpServer?: (serverId: string) => void
-  // A module-bundle update can carry MCP servers; reflecting them in the store
-  // keeps the MCP group live without a re-list (the storefront install rule).
-  onUpsertMcpServer?: (server: McpServerConfig) => void
   // Keyed by the skill's directory name (the inventory row id for skills).
   onRemoveSkill?: (dirName: string) => void
   // "Use in agent → New agent…": spawn a fresh agent with the skill attached
@@ -106,7 +103,6 @@ export function InstalledExtensionsInventory({
   moduleOverrides,
   workspaceRoot,
   registryPlugins,
-  mcpSettings,
   kinds,
   sourceGrouping,
   paging,
@@ -121,9 +117,6 @@ export function InstalledExtensionsInventory({
   // action needs the full entry (updateFromRegistry input), and cli-only
   // entries are excluded from the banner's delta claims.
   registryPlugins?: MarketplacePluginEntry[]
-  // Forwarded into the update input so a bundle's MCP servers merge the same
-  // way the storefront install merges them.
-  mcpSettings?: McpSettings
   /**
    * Which primitives this mount is the inventory OF. The Extensions door's
    * catalogues each show one — the Plugins view's Installed tab lists MCP
@@ -280,7 +273,7 @@ export function InstalledExtensionsInventory({
             if (updated) await settleAfterUpdate()
             return
           }
-          const outcome = classifyVerification(verify, entry.provides)
+          const outcome = classifyVerification(verify)
           if (outcome.kind === 'blocked') {
             setUpdateRun({ status: 'idle' })
             setUpdateNotice({
@@ -313,7 +306,6 @@ export function InstalledExtensionsInventory({
             id: entry.id,
             ...(trustToken ? { trustToken } : {}),
             workspaceRoot: workspaceRoot ?? undefined,
-            mcpSettings,
           })
           if (!result.ok) {
             const summary = summarizeInstallResult(result)
@@ -329,9 +321,6 @@ export function InstalledExtensionsInventory({
             return
           }
           updated = true
-          if (result.mcpSettings && actions.onUpsertMcpServer) {
-            for (const server of Object.values(result.mcpSettings.servers)) actions.onUpsertMcpServer(server)
-          }
           setUpdateNotice({
             tone: 'good',
             message: appCopy.panels.connectorsPanel.installedExtensionsInventory.updatedToV(entry.name, result.version),
@@ -346,7 +335,7 @@ export function InstalledExtensionsInventory({
       setUpdateRun({ status: 'idle' })
       if (updated) await settleAfterUpdate()
     },
-    [registryPlugins, workspaceRoot, mcpSettings, actions, settleAfterUpdate],
+    [registryPlugins, workspaceRoot, settleAfterUpdate],
   )
 
   const startBannerUpdate = useCallback(
@@ -666,7 +655,7 @@ function InstalledRow({
       name={item.name}
       summary={item.summary}
       chips={item.chips}
-      status={item.kind === 'mcp' || (item.kind === 'module' && item.trust) ? <RowStatus item={item} /> : undefined}
+      status={item.kind === 'mcp' || (item.kind === 'module' && item.approval) ? <RowStatus item={item} /> : undefined}
       actions={rowActions.length > 0 ? rowActions : undefined}
     />
   )
@@ -683,18 +672,18 @@ function RevealedAction({ children }: { children: ReactNode }) {
   )
 }
 
-// The row's decision-relevant status — trust for capability modules,
+// The row's decision-relevant status — approval for extensions,
 // active/inactive for MCP servers — as a StatusDot always paired with its text
 // label, so status is never colour-only. Skills have no such axis
 // (presence is the only state), so they carry no dot.
 function RowStatus({ item }: { item: InstalledExtension }) {
-  if (item.kind === 'module' && item.trust) {
-    const trust = TRUST_PRESENTATION[item.trust]
+  if (item.kind === 'module' && item.approval) {
+    const approval = APPROVAL_PRESENTATION[item.approval]
     return (
       <>
-        {/* Decorative: the adjacent label already names the trust state. */}
-        <StatusDot tone={trust.tone} />
-        {trust.label}
+        {/* Decorative: the adjacent label already names the approval state. */}
+        <StatusDot tone={approval.tone} />
+        {approval.label}
       </>
     )
   }

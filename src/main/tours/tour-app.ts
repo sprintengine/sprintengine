@@ -6,7 +6,7 @@ import { changelistOwnerId, pathsOfChangelist } from '../../shared/git/changelis
 import type { TerminalSessionSnapshot } from '../../shared/ipc/terminal'
 import { getGitChangelists } from '../git-changelists'
 import { listTourFiles, readTourFile, resolveCommit, resolveHead, resolveRepoRoot } from './tour-git'
-import { createTourService, type TourService } from './tour-service'
+import { createTourService, type TourService, type TourServiceDeps } from './tour-service'
 import { createTourStore } from './tour-store'
 
 // The tour service as the running app builds it: the real git, the app-data
@@ -18,6 +18,7 @@ export type AppTourServiceOptions = {
   resolveWorkspaceRoot(workspaceId: string): string | null
   listTerminals(): TerminalSessionSnapshot[]
   writeTerminal(sessionId: string, data: string): void
+  hookPrompt?: TourServiceDeps['hookPrompt']
   launchAgent(request: AgentLaunchRequest): Promise<{ ok: true; agentId: string } | { ok: false; message: string }>
   broadcastToWorkspaceWindows(channel: string, payload: unknown): void
   broadcastToViewers(channel: string, payload: unknown): void
@@ -73,6 +74,7 @@ export function createAppTourService(options: AppTourServiceOptions): {
     requestAttention: (key) => notify?.(key),
     listTerminals: options.listTerminals,
     writeTerminal: options.writeTerminal,
+    ...(options.hookPrompt ? { hookPrompt: options.hookPrompt } : {}),
     launchAgent: options.launchAgent,
     setTimeout: (callback, ms) => setTimeout(callback, ms),
     clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),

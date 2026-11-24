@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Tally",
+  "scopeName": "source.tally",
+  "fileTypes": ["tally"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#keyword" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#account" }
+  ],
+  "repository": {
+    "comment": { "name": "comment.line.number-sign.tally", "match": "#.*$" },
+    "keyword": { "name": "keyword.control.tally", "match": "\\b(?:account|move|from|to|on|total)\\b" },
+    "string": {
+      "name": "string.quoted.double.tally",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [{ "name": "constant.character.escape.tally", "match": "\\\\." }]
+    },
+    "number": { "name": "constant.numeric.tally", "match": "\\b\\d+(?:\\.\\d+)?\\b" },
+    "account": { "name": "entity.name.type.tally", "match": "\\b[A-Z][A-Za-z]*(?::[A-Z][A-Za-z]*)*\\b" }
+  }
+}

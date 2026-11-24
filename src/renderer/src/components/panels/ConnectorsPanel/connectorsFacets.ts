@@ -6,7 +6,7 @@
 //
 // One source feeds the grid: the marketplace registry
 // (`extensionsApi.readMarketplaceRegistry`) — installable plugins that `provides`
-// mcp/skills. A second source fed it until the third-party retirement
+// skills (Claude Code plugins). A second source fed it until the third-party retirement
 // (2026-09-08): the bundled MCP catalogue, sixteen servers nobody here
 // wrote, whose rows browsed beside the plugins and could launch before install
 // when the row paired a driving skill. It is gone, and with it the whole
@@ -129,29 +129,23 @@ export function connectorFacet(category: string): NamedFacet {
 }
 
 /**
- * The Plugins catalogue's entries: the registry's mcp, skills and module
- * plugins.
+ * The Plugins catalogue's entries: the registry's skills plugins (Claude Code
+ * plugins). Registry rows that added MCP servers are gone: an extension
+ * contributes those now.
  *
  * This took a second `catalog` population until the third-party retirement
  * (2026-09-08) and is kept as its own function rather than collapsed
  * into `registryEntriesForKinds`, because it names the catalogue's rule where
  * the door's other canvases name theirs.
  *
- * `module` joined the list on 2026-09-10 (D10). Until then a module-only entry
- * was in the registry, had a detail panel, had an install flow — and appeared
- * on no canvas a person could reach, because the Modules canvas the original
- * split assumed never shipped. So the one extension kind that adds a whole door
- * to the app was the one kind nobody could install from the Extensions door.
- * The install path is unchanged and needs no workspace for a module-only bundle
- * (`needsWorkspace`, BrowseStorefront.tsx): only mcp and skills components
- * write into a project.
+ * An extension is not here: it installs from a folder, not from the registry.
  */
 export function buildConnectorEntries(plugins: MarketplacePluginEntry[]): ConnectorEntry[] {
-  return registryEntriesForKinds(plugins, ['mcp', 'skills', 'module'])
+  return registryEntriesForKinds(plugins, ['skills'])
 }
 
 // Registry plugins presented as normalized entries for a set of component
-// kinds. The Plugins catalogue uses mcp/skills/module — one row shape, one
+// kinds. The Plugins catalogue uses skills — one row shape, one
 // detail/install flow, no parallel presentation model.
 export function registryEntriesForKinds(
   plugins: MarketplacePluginEntry[],

@@ -108,7 +108,7 @@ actions by module enablement before rendering them. Action ids must be unique.
   multi-selection surface. An action offered on a multi-selection must
   handle `selection` in both `isVisible` and `run`.
 - optional `startSourcePlan(source)` — renderer-internal only; it is **not** on
-  the `BacklogItemActionContext` published by `@sprintengine/module-sdk`, so a
+  the `BacklogItemActionContext` published by `@sprintengine/extension-sdk`, so a
   third-party module cannot type-reference it.
 
 `category` is a closed union: `execute`, `analyze`, `transform`, `publish`,
@@ -129,13 +129,13 @@ module reads and changes items through the host's Backlog service, served by
 
 | Call (main: `getBacklogService(host)`) | Renderer twin | Permission |
 | --- | --- | --- |
-| `list(workspaceId)` | `listBacklogItems`, `watchBacklogItems(id, cb, { onError })` | `backlog.read` |
-| `getLocation(workspaceId)` → `{ root, isDefault, exists }` | `getBacklogLocation` | `backlog.read` |
-| `create(workspaceId, { title, body?, status?, type?, epic?, difficulty?, criticality?, risk? })` | `createBacklogItem` | `backlog.write` |
-| `updateStatus(workspaceId, itemId, status)` | `updateBacklogStatus` | `backlog.write` |
-| `updateTriage(workspaceId, itemId, { difficulty?, criticality?, risk? })` | `updateBacklogTriage` | `backlog.write` |
-| `addLink(workspaceId, itemId, link)` | `addBacklogLink` | `backlog.write` |
-| `updateModuleMetadata(workspaceId, itemId, value)` | `updateBacklogModuleMetadata` | `backlog.write` |
+| `list(workspaceId)` | `listBacklogItems`, `watchBacklogItems(id, cb, { onError })` | `backlog:read` |
+| `getLocation(workspaceId)` → `{ root, isDefault, exists }` | `getBacklogLocation` | `backlog:read` |
+| `create(workspaceId, { title, body?, status?, type?, epic?, difficulty?, criticality?, risk? })` | `createBacklogItem` | `backlog:operate` |
+| `updateStatus(workspaceId, itemId, status)` | `updateBacklogStatus` | `backlog:operate` |
+| `updateTriage(workspaceId, itemId, { difficulty?, criticality?, risk? })` | `updateBacklogTriage` | `backlog:operate` |
+| `addLink(workspaceId, itemId, link)` | `addBacklogLink` | `backlog:operate` |
+| `updateModuleMetadata(workspaceId, itemId, value)` | `updateBacklogModuleMetadata` | `backlog:operate` |
 
 - `itemId` is the item view's `id`, its logical `backlog/…` path. An item that
   does not exist is `not_found`; nothing is written for it.
@@ -148,13 +148,12 @@ module reads and changes items through the host's Backlog service, served by
   writes the calling module's key only.
 - Answers are result-shaped (`{ ok: false, code, message }`); vocabulary the app
   does not know is `invalid_input`.
-- The renderer methods reach the same service on the module's server over the
-  window's Studio connection (`moduleBacklog.location`, `.create`,
-  `.updateStatus`, `.updateTriage`, `.addLink` and `.updateModuleMetadata`;
-  `moduleUsage.query` for `queryUsage`), naming the calling module; the
-  server answers `module_unavailable` for a module that does not run there.
-  A write is carried out once per command id. They are refused while the
-  Backlog module is disabled.
+- An extension's surface reaches the same service from its frame
+  (`backlog.list`, `.location`, `.create`, `.updateStatus`, `.updateTriage`,
+  `.addLink`, `.updateModuleMetadata` through `studio.host.call`), which the
+  window that drew the frame passes to the extension's server
+  (`extension.call`), held to the extension's approval and to that window's
+  own grant. A write is carried out once per command id.
 
 ## Link Providers
 
@@ -268,30 +267,15 @@ rather than part of this plugin contract.
 
 ## Permissions
 
-Bundled modules are first-party. Third-party capability modules declare
-permission strings in their manifest for install/trust disclosure. Permission
-validation accepts string scopes; these are install-time disclosure shown
-before you trust a module, not a runtime-enforced cage. Two of them are also
-checked at the call: the module Backlog API checks `backlog.read` and
-`backlog.write` on every call, and the renderer's `listBacklogItems` and
-`watchBacklogItems` check a third-party module's `backlog.read`. The app's own
-`backlog-service` IPC, which the panel uses, is not gated by them.
+Bundled modules are first-party. An extension asks for `backlog:read` to read
+the Backlog and `backlog:operate` to change it, and Studio checks every call at
+the host against what the person approved and against what whoever set the call
+off may do themselves (a paired device or app needs `backlog:read` or
+`backlog:operate` of its own). The renderer's `listBacklogItems` and
+`watchBacklogItems` check an extension's `backlog:read`. The app's own
+`backlog-service` IPC, which the panel uses, is not gated by them. See
+`docs/extension-authors/permissions.md`.
 
-Defined Backlog-related disclosure scopes (part of the capability-permission
-vocabulary, with consent descriptions, alongside the `ipc:*` tiers):
-
-- `backlog.read`: read Backlog item metadata and source paths.
-- `backlog.write`: mutate Backlog item status, metadata, links, or records.
-- `backlog.link.open`: open external or module-owned targets from Backlog links.
-
-Modules that only contribute read-only link status should not need
-`backlog.write`. Modules that persist link status, item status, or module-scoped
-metadata should declare `backlog.write`. A link provider whose `openLink` can
-focus workspaces, spawn external processes, or open network resources should
-also declare the corresponding workspace/process/network capability scopes when
-those actions apply.
-
-Beyond those checks, these scopes are disclosure vocabulary: they declare what
-a module says it does and surface readable consent text at install/trust time.
-Describe them to users as disclosure, never as a sandbox around a module's
-code.
+A permission does not limit an extension's own code, which runs with full
+access to this machine; describe it to users as what Studio checks, never as a
+sandbox around a module's code.

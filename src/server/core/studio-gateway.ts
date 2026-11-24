@@ -1,4 +1,5 @@
 import type { McpToolRegistration } from '../../shared/modules/mcp-tools'
+import type { AgentStarter } from '../../shared/agent-state'
 import type { ConversationEventType } from '../../shared/conversation-runtime'
 import { createAutomationService } from '../../main/automation/automation-service'
 import { createConversationTools, type ConversationToolsDeps } from '../../main/automation/conversation-tools'
@@ -21,7 +22,12 @@ import {
   latestTurnEnd,
   movesWorkspaceList,
 } from '../../main/automation/conversation-lifecycle'
-import { launchPermissionCeiling } from '../../main/automation/launch-permission-cap'
+import { gatewayCallerStarter, launchPermissionCeiling } from '../../main/automation/launch-permission-cap'
+import { tailnetDeviceGrant } from '../../main/automation/tailnet/tailnet-studio-endpoint'
+import { ownerInvoker, type ExtensionInvoker } from '../../main/module-host/extension-invocation'
+import { bindDevToolsToCaller } from '../../main/automation/extension-dev-tools'
+import { extensionHookRefusal } from '../extensions/hooks/extension-hooks'
+import { studioGrantPrincipal, studioPrincipal } from '../../../packages/studio-protocol/src/permissions'
 import { createStudioGatewayTools } from '../../main/automation/studio-gateway-tools'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import { toolSuccess, toolError } from '../../shared/modules/mcp-tools'
@@ -128,6 +134,7 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
         (request) => core.conversationLaunchService.launch(request),
       ),
       resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
+      agentStarterOf: core.agentStarterOf,
       permissionModesOf: (cli) => listPluginRegistryEntries().find((entry) => entry.id === cli)?.permissionModes ?? [],
       lifecycle: core.conversationLifecycle,
       moveChat: core.conversationMove.move,
@@ -142,11 +149,35 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     ...createConversationChatTools({
       resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
       chats,
+      promptHook: ({ workspaceId, agentId, message, context }) =>
+        core.extensionHooks.wants('agent.prompt.before')
+          ? core.extensionHooks
+              .run(
+                'agent.prompt.before',
+                {
+                  agent: null,
+                  where: 'chat',
+                  workspaceId,
+                  agentId,
+                  terminalId: null,
+                  from: 'agent',
+                  inputKind: 'send',
+                  prompt: message,
+                },
+                core.hookInvokers.ofGatewayCaller(context),
+              )
+              .then((outcome) =>
+                outcome.kind === 'deny'
+                  ? { ok: false as const, message: extensionHookRefusal(outcome) }
+                  : { ok: true as const, message: outcome.event.prompt },
+              )
+          : null,
     }),
     // A chat starting a sub-agent of its own, on the same chats and launch.
     ...createSubagentTools({
       launch: (request) => core.conversationLaunchService.launch(request),
       resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
+      agentStarterOf: core.agentStarterOf,
       isKnownCli: (cli) => listPluginRegistryEntries().some((entry) => entry.id === cli),
       displayNames: async (cli, modelId) => {
         const entry = listPluginRegistryEntries().find((candidate) => candidate.id === cli)
@@ -200,13 +231,32 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     ...core.worktrees.tools,
   ]
 
+  const callerInvoker = (context: McpConnectionContext | undefined): ExtensionInvoker => {
+    const starter = gatewayCallerStarter(context, core.resolveAgentPermissionPreset, core.agentStarterOf)
+    if (context?.metadata.kind !== 'remote-tailnet')
+      return ownerInvoker(launchPermissionCeiling(context, core.resolveAgentPermissionPreset), 'the agent', starter)
+    const deviceId = context.metadata.deviceId
+    const device = automation?.getTailnetStatus().devices.find((candidate) => candidate.id === deviceId)
+    const grant = device ? tailnetDeviceGrant(device) : null
+    return {
+      principal: grant ? studioGrantPrincipal(grant) : studioPrincipal({ owner: false, permissions: [] }),
+      permissionCeiling: grant?.ceiling ?? 'manual',
+      label: `the device "${context.metadata.deviceName ?? deviceId ?? 'unknown'}"`,
+      starter,
+    }
+  }
   // The gateway's own tools: what no client may offer under the same family.
   const resolveGatewayTools = createStudioGatewayTools({
     resolveModuleTools: () => options.resolveModuleTools?.() ?? [],
     isModuleEnabled: (moduleId) => options.isModuleEnabled?.(moduleId) ?? false,
-    // A module tool runs under its caller's launch cap, so a chat the module
-    // starts for a capped agent is no looser than that agent.
-    callerPermissionCeiling: (context) => launchPermissionCeiling(context, core.resolveAgentPermissionPreset),
+    // A module tool runs on its caller's behalf: an agent here is the person,
+    // under its own launch cap, so a chat the module starts for a capped agent
+    // is no looser than that agent; a paired device is what its Studio
+    // connection carries (the same route `/tailnet/v1/studio` grants), read as
+    // the device stands now, so a narrowed or revoked device holds less at once.
+    // What the extension starts for its caller keeps who that is: the device,
+    // or whoever started the calling agent, as its record keeps it.
+    callerInvoker,
     warn: (details) => {
       void writeDiagnosticLog({
         level: 'warning',
@@ -269,11 +319,17 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   // The order agents have always listed: the shell's toolsets in the slots
   // the browser and canvas tools held, Studio's own tools, then any app's.
   const hideTool = options.hideTool
-  const resolveTools = (context?: McpConnectionContext) => [
-    ...clientGateway.builtIns(context),
-    ...(hideTool ? resolveGatewayTools().filter((tool) => !hideTool(tool.name)) : resolveGatewayTools()),
-    ...clientGateway.apps(context),
-  ]
+  // The dev loop's tools that run extension code are held to who calls them
+  // (extension-dev-tools.ts), whether this process serves them or the shell does.
+  const resolveTools = (context?: McpConnectionContext) =>
+    bindDevToolsToCaller(
+      [
+        ...clientGateway.builtIns(context),
+        ...(hideTool ? resolveGatewayTools().filter((tool) => !hideTool(tool.name)) : resolveGatewayTools()),
+        ...clientGateway.apps(context),
+      ],
+      callerInvoker,
+    )
 
   const automationService = createAutomationService({
     resolveUserDataDir: () => platform.paths.dataDir(),
@@ -295,7 +351,11 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     resolveGatewayTools: resolveTools,
     clientTools: {
       ready: () => clientGateway.ready(),
-      fallback: (context, name) => clientGateway.fallback(context, name),
+      // A tool reached by name before its toolset is listed is held to its caller too.
+      fallback: (context, name) => {
+        const tool = clientGateway.fallback(context, name)
+        return tool ? bindDevToolsToCaller([tool], callerInvoker)[0]! : null
+      },
       track: (context, notify) => clientGateway.track(context, notify),
     },
     logDiagnostic: (diagnostic) => {
@@ -486,18 +546,23 @@ const SUBAGENT_TASK_CLIENT_ID = 'studio-subagent-tasks'
 /**
  * A sub-agent's next task (`subagent.resume`), sent through its chat's host as
  * any message to it is: a resting one is resumed on its record's model,
- * effort, preset and held mode, in its CLI's own session.
+ * effort, preset and held mode, in its CLI's own session. The task is the
+ * parent agent's words, so it meets the extensions' `agent.prompt.before` in
+ * the runtime, as whoever the parent is: a host per send, which holds that.
  */
 function subagentTaskSender(core: StudioCore) {
-  let host: ReturnType<StudioCore['createConversationHost']> | null = null
-  const hostOf = () => (host ??= core.createConversationHost({ origin: SUBAGENT_TASK_ORIGIN }))
   return async (
     chat: { workspaceId: string; agentId: string },
     message: string,
+    starter: AgentStarter,
   ): Promise<{ ok: true } | { ok: false; message: string }> => {
-    const key = hostOf().resolveKey(chat.workspaceId, chat.agentId)
+    const host = core.createConversationHost({
+      origin: SUBAGENT_TASK_ORIGIN,
+      hookAs: { inputKind: 'subagent', from: 'agent', starter },
+    })
+    const key = host.resolveKey(chat.workspaceId, chat.agentId)
     if (!key) return { ok: false, message: 'The sub-agent has no folder on this machine any more.' }
-    const sent = await hostOf().command(key, SUBAGENT_TASK_CLIENT_ID, randomUUID(), { kind: 'send', message })
+    const sent = await host.command(key, SUBAGENT_TASK_CLIENT_ID, randomUUID(), { kind: 'send', message })
     return sent.ok ? { ok: true } : { ok: false, message: sent.message ?? 'The sub-agent did not take the task.' }
   }
 }

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-import { STUDIO_MODULES_CAPABILITY } from '../../../../../packages/studio-protocol/src/public'
+import { STUDIO_EXTENSION_HOST_CAPABILITY } from '../../../../../packages/studio-protocol/src/public'
 import { getRendererHost } from '../../modules'
 import { startModuleNotificationIngest } from '../../modules/module-notifications'
 import { followWindowStudioPush } from '../../studio/windowStudioPush'
@@ -8,7 +8,7 @@ import { useNotificationStore } from '../../store/notificationStore'
 
 /**
  * A capability module's `MainHost.notify`, filed into this window's bell while
- * the window's shell is mounted: the `module.notifications` stream of the
+ * the window's shell is mounted: the `extension.notifications` stream of the
  * window's Studio, which sends the rows its server still keeps and then each
  * new one. Filed once per delivery id, so a row heard again after a reconnect,
  * or cleared since, is not filed twice. Mounted by the window that draws a
@@ -21,9 +21,9 @@ export function useModuleNotificationIngest(): void {
     const stop = startModuleNotificationIngest({
       subscribe: (cb) =>
         followWindowStudioPush({
-          topic: 'module.notifications',
+          topic: 'extension.notifications',
           params: {},
-          capability: STUDIO_MODULES_CAPABILITY,
+          capability: STUDIO_EXTENSION_HOST_CAPABILITY,
           onPayload: cb,
         }),
       file: (deliveryId, entry) => useNotificationStore.getState().fileModuleNotification(deliveryId, entry),

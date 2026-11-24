@@ -18,7 +18,7 @@ const TOKEN = 'ghp_s3cretT0kenValue'
 
 type Call = { url: string; init: RequestInit }
 
-function harness(respond: (call: Call) => Response | Promise<Response>, permissions: string[] = ['github']) {
+function harness(respond: (call: Call) => Response | Promise<Response>) {
   const calls: Call[] = []
   const fetchImpl: BrokerFetch = async (url, init) => {
     calls.push({ url, init })
@@ -26,7 +26,6 @@ function harness(respond: (call: Call) => Response | Promise<Response>, permissi
   }
   const github = createModuleGitHubRegistry({
     tokenStore: { resolveToken: async () => TOKEN },
-    getModulePermissions: () => permissions,
     fetch: fetchImpl,
   })
   return { calls, radar: github.forModule('pr-radar'), registry: github.registry }
@@ -159,14 +158,6 @@ test('graphql refuses a mutation or a subscription before anything is sent', asy
     const result = await radar.graphql(query)
     assert.equal(result.ok === false && result.code, 'invalid_query', query)
   }
-  assert.equal(calls.length, 0)
-})
-
-test('graphql and download need the github permission', async () => {
-  const { calls, radar } = harness(() => json({}), [])
-  assert.equal((await radar.graphql('{ viewer { login } }')).ok, false)
-  const download = await radar.download({ route: '/repos/acme/app/actions/jobs/1/logs' })
-  assert.equal(download.ok === false && download.code, 'permission_missing')
   assert.equal(calls.length, 0)
 })
 

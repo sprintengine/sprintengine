@@ -1,4 +1,5 @@
 import type { FileViews } from '../file-views/file-views'
+import type { StudioEditorSaveHooks } from './studio-file-system'
 import { randomUUID } from 'node:crypto'
 import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
 import type { DistributionMachine } from '../wsl/distribution-machine'
@@ -35,7 +36,8 @@ import {
   STUDIO_PULL_REQUEST_CREATE_CAPABILITY,
   STUDIO_LOCAL_SERVERS_CAPABILITY,
   STUDIO_WORKSPACES_CAPABILITY,
-  STUDIO_MODULES_CAPABILITY,
+  STUDIO_EXTENSION_EDITORS_CAPABILITY,
+  STUDIO_EXTENSION_HOST_CAPABILITY,
   STUDIO_TERMINALS_CAPABILITY,
   STUDIO_AGENT_RUNTIMES_CAPABILITY,
   STUDIO_AGENT_SETTINGS_CAPABILITY,
@@ -169,6 +171,8 @@ export type StudioRpcServerOptions = {
   files?: StudioFiles
   /** The files on this machine by path. Advertised as `file-system` and `files-mention` only when given; every Studio's core gives them. */
   fileSystem?: StudioFileSystem
+  /** Extensions' `editor.save.before` hooks on a save the person made. */
+  editorSaveHooks?: StudioEditorSaveHooks
   /** Git on this machine. Advertised as `git` only when given; every Studio's core gives it. */
   git?: StudioGit
   /** The worktrees its agents run in, and settled chats. Advertised as `worktrees` only when given; every Studio's core gives it. */
@@ -317,7 +321,8 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_PULL_REQUEST_CREATE_CAPABILITY || options.pullRequestCreation !== undefined) &&
         (capability !== STUDIO_LOCAL_SERVERS_CAPABILITY || options.localServers !== undefined) &&
         (capability !== STUDIO_WORKSPACES_CAPABILITY || options.discovery !== undefined) &&
-        (capability !== STUDIO_MODULES_CAPABILITY || options.modules !== undefined) &&
+        ((capability !== STUDIO_EXTENSION_HOST_CAPABILITY && capability !== STUDIO_EXTENSION_EDITORS_CAPABILITY) ||
+          options.modules !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_READINESS_CAPABILITY || options.readiness !== undefined) &&
         (capability !== STUDIO_WINDOW_TICKETS_CAPABILITY || options.environmentAccess !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_ADOPT_CAPABILITY || options.adoption !== undefined) &&
@@ -368,6 +373,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.tools ? { tools: options.tools } : {}),
     ...(options.files ? { files: options.files } : {}),
     ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
+    ...(options.editorSaveHooks ? { editorSaveHooks: options.editorSaveHooks } : {}),
     ...(options.git ? { git: options.git } : {}),
     ...(options.worktrees ? { worktrees: options.worktrees } : {}),
     ...(options.workspaceSync ? { workspaceSync: options.workspaceSync } : {}),

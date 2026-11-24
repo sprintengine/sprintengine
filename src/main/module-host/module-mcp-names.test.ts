@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { ownerInvoker } from './extension-invocation'
 import { test } from 'vitest'
 
 import type { CapabilityManifest } from '../../shared/modules/manifest'
@@ -19,8 +20,7 @@ function manifest(id: string): CapabilityManifest {
     version: 1,
     defaultEnabled: true,
     source: 'third-party',
-    permissions: ['mcp:tools'],
-    engines: { hostApi: 2 },
+    permissions: ['tools:contribute'],
   }
 }
 
@@ -37,9 +37,23 @@ function tool(name: string, answer = name): McpToolRegistration {
   }
 }
 
+// Every name these tests register, declared as extension.json would, so what
+// is exercised here is the naming rules rather than the declaration rule.
+const DECLARED = [
+  'backlog_list',
+  'workspace.create',
+  'terminal_run',
+  'decisions.record',
+  'decisions_record',
+  'notes.add',
+  'notes_add',
+  'handoff_latest',
+].map((name) => ({ name, description: name, access: 'read' as const, inputSchema: { type: 'object' } }))
+
 function kernel() {
   return createMainKernel({
     resolveModuleManifest: (id) => manifest(id),
+    resolveDeclaredMcpTools: () => DECLARED,
     coreMcpToolNames: () => CORE,
   })
 }
@@ -111,6 +125,7 @@ test('a module tool always hears whether the caller was verified', async () => {
   const host = kernel()
   host.hostFor('decision-log').registerMcpTools([tool('decisions.record')])
   const resolve = createStudioGatewayTools({
+    callerInvoker: () => ownerInvoker(),
     appTools: CORE.map((name) => tool(name)),
     resolveModuleTools: () => host.mcpToolRegistrations(),
     isModuleEnabled: () => true,

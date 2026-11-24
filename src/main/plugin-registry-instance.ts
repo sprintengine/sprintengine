@@ -10,20 +10,19 @@ import type {
 } from '../shared/plugin-manifest'
 import {
   createPluginRegistry,
-  defaultUserPluginRoot,
   type PluginRegistry,
   type PluginRegistryOptions,
   type PluginRegistryLoadReport,
 } from './plugin-registry'
-import { readTrustedModulesSync } from './modules/trust-store'
 import { studioPlatform } from '../server/platform/platform'
+import { projectedProviders, type ProjectedProvider } from '../server/extensions/agent-contributions/projection'
 
 // Lazy-initialized singleton plugin registry for the main process. The launch
-// path needs synchronous access to plugin manifests; this module loads them
-// once on first use from the appropriate bundled-resource location.
+// path needs synchronous access to plugin manifests; this module loads the
+// bundled ones once on first use from the appropriate bundled-resource
+// location, and reads the providers installed extensions add on each lookup.
 
 let registry: PluginRegistry | null = null
-let lastReport: PluginRegistryLoadReport | null = null
 
 // The platform is read when the registry is first wanted, never at import, so
 // a test that never reaches `ensureRegistry()` needs no platform.
@@ -50,44 +49,64 @@ function resolveBundledPluginRoot(): string {
 
 function ensureRegistry(): PluginRegistry {
   if (registry) return registry
-  registry = createPluginRegistry(
-    createAppPluginRegistryOptions(
-      studioPlatform().paths.dataDir(),
-      resolveBundledPluginRoot(),
-      defaultUserPluginRoot(),
-    ),
-  )
-  lastReport = registry.loadSync()
+  registry = createPluginRegistry(createAppPluginRegistryOptions(resolveBundledPluginRoot()))
+  registry.loadSync()
   return registry
 }
 
 export function createAppPluginRegistryOptions(
-  userDataDir: string,
   bundledRoot: string = resolveBundledPluginRoot(),
-  userRoot: string = defaultUserPluginRoot(),
+  dataDir: () => string = () => studioPlatform().paths.dataDir(),
 ): PluginRegistryOptions {
   return {
     bundledRoot,
-    userRoot,
-    providerTrustContext: {
-      trustedModules: readTrustedModulesSync(userDataDir),
-    },
+    extensionProviders: () => projectedProviders(dataDir()).map(extensionProviderOf),
   }
+}
+
+/**
+ * An extension's provider as the registry holds one: OpenAI-compatible and
+ * declarative, its key (when it takes one) entered in Settings and never read
+ * from the environment, the manifest carrying no variable name to read.
+ */
+export function extensionProviderOf(provider: ProjectedProvider & { extension: string }): LoadedConversationProvider {
+  return {
+    manifest: {
+      kind: 'provider',
+      id: provider.id,
+      displayName: provider.name,
+      version: 1,
+      providerType: 'model-provider',
+      models: provider.models.map((model) => ({ id: model.id, ...(model.name ? { displayName: model.name } : {}) })),
+      ...(provider.apiKey ? { auth: { type: 'api-key' as const, label: provider.apiKey.label } } : {}),
+      adapter: { kind: 'declarative' },
+      openaiCompatible: {
+        baseUrl: provider.baseUrl,
+        ...(provider.chatCompletionsPath ? { chatCompletionsPath: provider.chatCompletionsPath } : {}),
+        ...(provider.modelsPath ? { modelsPath: provider.modelsPath } : {}),
+      },
+    },
+    source: 'extension',
+    manifestPath: '',
+    pluginRoot: '',
+    adapter: { kind: 'declarative', execution: 'declarative', trust: 'not_required' },
+  }
+}
+
+/** The ids an extension's provider may not take: every built-in CLI's and provider's. */
+export function bundledRegistryIds(): ReadonlySet<string> {
+  const reg = ensureRegistry()
+  return new Set([
+    ...reg.loaded().map((plugin) => plugin.manifest.id),
+    ...reg
+      .loadedConversationProviders()
+      .filter((provider) => provider.source === 'bundled')
+      .map((provider) => provider.manifest.id),
+  ])
 }
 
 export function getPluginRegistry(): PluginRegistry {
   return ensureRegistry()
-}
-
-/**
- * Re-scan the bundled and user plugin roots so a provider dropped into (or
- * removed from) the user root while the app is running is reflected without a
- * restart.
- */
-export function reloadPluginRegistry(): PluginRegistryLoadReport {
-  const reg = ensureRegistry()
-  lastReport = reg.loadSync()
-  return lastReport
 }
 
 export function getPluginById(id: string): LoadedPlugin | undefined {
@@ -111,16 +130,10 @@ export function getConversationProviderById(id: string): LoadedConversationProvi
 }
 
 // Test-only: lets unit tests substitute a registry built from a fixture root.
-export function __setPluginRegistryForTest(
-  custom: PluginRegistry,
-  report: PluginRegistryLoadReport,
-  _userRoot?: string,
-): void {
+export function __setPluginRegistryForTest(custom: PluginRegistry, _report?: PluginRegistryLoadReport): void {
   registry = custom
-  lastReport = report
 }
 
 export function __resetPluginRegistryForTest(): void {
   registry = null
-  lastReport = null
 }

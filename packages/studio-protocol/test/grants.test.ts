@@ -93,22 +93,29 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'textGeneration.chatTitle',
   'mcp.sync',
   // What extensions run here: installed, trusted, switched on or off;
-  // reviewed, installed, updated or removed from a marketplace or GitHub;
+  // reviewed, installed, updated or removed from the marketplace;
   // and a new extension project written on this disk.
   'extensionScaffold.create',
   'extensionScaffold.home',
   'extensionScaffold.target',
   'marketplace.install',
-  'marketplace.installGithub',
-  'marketplace.resolveGithub',
   'marketplace.uninstall',
   'marketplace.update',
   'marketplace.verify',
-  'module.install',
-  'module.reportRegistry',
-  'module.setEnabled',
-  'module.setTrust',
-  'module.uninstall',
+  'extension.install',
+  'extension.reportRegistry',
+  'extension.setEnabled',
+  'extension.approve',
+  'extension.uninstall',
+  // Catalogues added here, and what is installed or updated from one or from a git URL.
+  'extension.catalogueAdd',
+  'extension.catalogueRemove',
+  'extension.installFrom',
+  'extension.update',
+  // A development folder is a path on this disk, and what runs from it is the owner's to choose.
+  'extension.devFolders',
+  'extension.devLoad',
+  'extension.devUnload',
   'conversationImport.import',
   'conversationImport.scan',
   'launchSettings.changed',

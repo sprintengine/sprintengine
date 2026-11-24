@@ -100,6 +100,15 @@ export type TourServiceDeps = {
   requestAttention(key: string): void
   listTerminals(): TerminalSessionSnapshot[]
   writeTerminal(sessionId: string, data: string): void
+  /**
+   * The extensions' `agent.prompt.before` on a tour's prompt, before it is
+   * typed: what to type instead, or a refusal in words naming the extension.
+   * Null when no extension hooks it, and the prompt is typed at once.
+   */
+  hookPrompt?(
+    session: TerminalSessionSnapshot,
+    text: string,
+  ): Promise<{ ok: true; text: string } | { ok: false; message: string }> | null
   launchAgent?(request: AgentLaunchRequest): Promise<{ ok: true; agentId: string } | { ok: false; message: string }>
   setTimeout(callback: () => void, ms: number): unknown
   clearTimeout(handle: unknown): void
@@ -612,13 +621,23 @@ export function createTourService(deps: TourServiceDeps) {
     return false
   }
 
-  function send(session: TerminalSessionSnapshot, text: string): void {
-    // The owner's text, typed into a terminal: no escape sequence survives it,
-    // so nothing in the question can end the bracketed paste early.
-    const clean = sanitizeTypedPrompt(text.replace(/\x1b/g, ''))
-    deps.writeTerminal(session.sessionId, bracketedTerminalPaste(clean))
-    // The Enter is its own write: inside the bracketed block it would be text.
-    deps.setTimeout(() => deps.writeTerminal(session.sessionId, '\r'), deferredPromptSubmitDelayMs(clean))
+  /** Type `text` to the author; an extension's refusal is answered instead, and nothing is typed. */
+  function send(session: TerminalSessionSnapshot, text: string): Promise<string | null> {
+    const type = (prompt: string): null => {
+      // The owner's text, typed into a terminal: no escape sequence survives it,
+      // so nothing in the question can end the bracketed paste early.
+      const clean = sanitizeTypedPrompt(prompt.replace(/\x1b/g, ''))
+      deps.writeTerminal(session.sessionId, bracketedTerminalPaste(clean))
+      // The Enter is its own write: inside the bracketed block it would be text.
+      deps.setTimeout(() => deps.writeTerminal(session.sessionId, '\r'), deferredPromptSubmitDelayMs(clean))
+      return null
+    }
+    const hooked = deps.hookPrompt?.(session, text)
+    if (!hooked) return Promise.resolve(type(text))
+    return hooked.then(
+      (answer) => (answer.ok ? type(answer.text) : answer.message),
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    )
   }
 
   async function ask(
@@ -638,8 +657,12 @@ export function createTourService(deps: TourServiceDeps) {
     const text = tourAskText({ tour, step: live.value.steps[index], index, of: live.value.steps.length, question })
     const entry: TourAsk = { id: deps.newId(), stepId, text, state: 'queued', at: deps.now() }
     if (isReady(session) && !hasSentAsk(tour.workspaceId, session.agentId ?? '')) {
-      send(session, text)
       entry.state = 'sent'
+      const refused = await send(session, text)
+      if (refused) {
+        entry.state = 'failed'
+        entry.error = refused
+      }
     }
     tour.asks = [...tour.asks, entry].slice(-MAX_ASKS)
     await persist(tour)
@@ -671,6 +694,10 @@ export function createTourService(deps: TourServiceDeps) {
       ...(live.value.author.cliId ? { cli: live.value.author.cliId } : {}),
       prompt: tourAskSeed({ tour: live.value, step, question }),
       cwd: live.value.repoRoot,
+      // The person asked; the prompt that carries their question is the
+      // tour's, which the extensions' prompt hooks check.
+      startedBy: { kind: 'person' },
+      promptHookAs: { inputKind: 'tour', from: 'studio' },
     })
     if (!launched.ok) return { ok: false, message: launched.message }
     const tour = tours.get(tourId)!
@@ -710,9 +737,14 @@ export function createTourService(deps: TourServiceDeps) {
         const next = tour.asks.find((entry) => entry.state === 'queued')
         const session = next && !hasSentAsk(tour.workspaceId, event.agentId) ? authorSession(tour) : null
         if (next && session) {
-          send(session, next.text)
           next.state = 'sent'
           dirty = true
+          void send(session, next.text).then((refused) => {
+            if (!refused) return
+            next.state = 'failed'
+            next.error = refused
+            void persist(tour).catch(() => undefined)
+          })
         }
       }
       // A phase event is not a request anyone is waiting on; a failed write is

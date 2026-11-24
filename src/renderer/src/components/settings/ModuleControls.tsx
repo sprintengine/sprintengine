@@ -2,7 +2,7 @@ import type { CapabilityCategory, CapabilityManifest } from '../../../../shared/
 import { ACTIVE_RENDERER_MODULE_MANIFESTS, COMING_SOON_MODULE_MANIFESTS } from '../../modules'
 
 // Capability-module controls: the category grouping/labels shared by the
-// Settings → Modules manager and the first-run chooser, plus the chooser's
+// Settings → Extensions manager and the first-run chooser, plus the chooser's
 // compact toggle list (with feature-flagged modules as greyed-out "Coming
 // soon" rows). The Settings manager renders the richer card surface in
 // ModulesSettingsTab but consumes the same groups so the two surfaces never
@@ -10,7 +10,7 @@ import { ACTIVE_RENDERER_MODULE_MANIFESTS, COMING_SOON_MODULE_MANIFESTS } from '
 
 const CATEGORY_ORDER: CapabilityCategory[] = ['core', 'dev-tools', 'vcs', 'orchestration', 'insight', 'connectivity']
 
-// Plain-language section headers shown in both Settings → Modules and the
+// Plain-language section headers shown in both Settings → Extensions and the
 // first-run chooser (kept here so the two surfaces stay identical). Prefer
 // everyday wording over internal category ids — e.g. "Planning & automation" rather
 // than the raw "orchestration".

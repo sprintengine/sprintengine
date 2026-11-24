@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'vitest'
@@ -39,10 +39,12 @@ test('only module namespaces holding objects are kept', () => {
   assert.deepEqual(normalizeModuleAppStateBag(null), {})
 })
 
-test('a push is readable per module and persisted for the next process', () => {
+test('a value set is readable per module and persisted for the next process', () => {
   const mirror = createModuleAppStateMirror({ filePath, watchFile: false })
   assert.deepEqual(mirror.get('insights'), {})
-  mirror.set({ 'module:insights': { time: '09:00', days: [1, 2, 3] }, 'module:pr-radar': { pollMinutes: 5 } })
+  mirror.setValue('insights', 'time', '09:00')
+  mirror.setValue('insights', 'days', [1, 2, 3])
+  mirror.setValue('pr-radar', 'pollMinutes', 5)
   assert.deepEqual(mirror.get('insights'), { time: '09:00', days: [1, 2, 3] })
   assert.deepEqual(mirror.get('pr-radar'), { pollMinutes: 5 })
   const restarted = createModuleAppStateMirror({ filePath, watchFile: false })
@@ -51,35 +53,36 @@ test('a push is readable per module and persisted for the next process', () => {
 
 test("a watcher hears only its own module's namespace, and only when it moved", () => {
   const mirror = createModuleAppStateMirror({ filePath, watchFile: false })
-  mirror.set({ 'module:insights': { time: '09:00' } })
+  mirror.setValue('insights', 'time', '09:00')
   const heard: unknown[] = []
   const stop = mirror.subscribe('insights', (values) => heard.push(values))
-  mirror.set({ 'module:insights': { time: '09:00' }, 'module:pr-radar': { pollMinutes: 5 } })
-  assert.deepEqual(heard, [], "another module's change, and an unchanged push, are not heard")
-  mirror.set({ 'module:insights': { time: '10:30' }, 'module:pr-radar': { pollMinutes: 5 } })
+  mirror.setValue('pr-radar', 'pollMinutes', 5)
+  mirror.setValue('insights', 'time', '09:00')
+  assert.deepEqual(heard, [], "another module's change, and an unchanged value, are not heard")
+  mirror.setValue('insights', 'time', '10:30')
   assert.deepEqual(heard, [{ time: '10:30' }])
-  mirror.set({ 'module:pr-radar': { pollMinutes: 5 } })
+  mirror.setValue('insights', 'time', undefined)
   assert.deepEqual(heard, [{ time: '10:30' }, {}], 'a cleared namespace is heard as empty')
   stop()
-  mirror.set({ 'module:insights': { time: '11:00' } })
+  mirror.setValue('insights', 'time', '11:00')
   assert.equal(heard.length, 2)
 })
 
-test('an unchanged push does not rewrite the file', () => {
+test('an unchanged value does not rewrite the file', () => {
   const mirror = createModuleAppStateMirror({ filePath, watchFile: false })
-  mirror.set({ 'module:insights': { time: '09:00' } })
+  mirror.setValue('insights', 'time', '09:00')
   writeFileSync(filePath, JSON.stringify({ 'module:insights': { time: '09:00' } }) + '\n// marker')
-  mirror.set({ 'module:insights': { time: '09:00' } })
+  mirror.setValue('insights', 'time', '09:00')
   assert.match(readFileSync(filePath, 'utf8'), /marker/)
 })
 
-test('a push written by another process is heard through the file', async () => {
+test('a value written by another process is heard through the file', async () => {
   const reader = createModuleAppStateMirror({ filePath, watchIntervalMs: 20 })
   const writer = createModuleAppStateMirror({ filePath, watchFile: false })
   const heard: unknown[] = []
   const stop = reader.subscribe('insights', (values) => heard.push(values))
   try {
-    writer.set({ 'module:insights': { time: '07:45' } })
+    writer.setValue('insights', 'time', '07:45')
     await waitFor(() => heard.length > 0)
     assert.deepEqual(heard[0], { time: '07:45' })
     assert.deepEqual(reader.get('insights'), { time: '07:45' })
@@ -89,11 +92,11 @@ test('a push written by another process is heard through the file', async () => 
   }
 })
 
-test('a read with no watch running still sees a push another process wrote', () => {
+test('a read with no watch running still sees a value another process wrote', () => {
   const reader = createModuleAppStateMirror({ filePath })
   const writer = createModuleAppStateMirror({ filePath, watchFile: false })
   assert.deepEqual(reader.get('pr-radar'), {})
-  writer.set({ 'module:pr-radar': { pollMinutes: 10 } })
+  writer.setValue('pr-radar', 'pollMinutes', 10)
   assert.deepEqual(reader.get('pr-radar'), { pollMinutes: 10 })
 })
 
@@ -102,7 +105,8 @@ test('MainHost reads and watches its own namespace through the mirror', () => {
   assert.equal(kernel.hostFor('insights').getModuleAppState('time'), undefined, 'no mirror yet reads as unset')
   const mirror = createModuleAppStateMirror({ filePath, watchFile: false })
   kernel.hostFor('agent-runtime').provideService({ key: 'core.module-app-state' }, () => mirror)
-  mirror.set({ 'module:insights': { time: '09:00' }, 'module:pr-radar': { secretish: 'other' } })
+  mirror.setValue('insights', 'time', '09:00')
+  mirror.setValue('pr-radar', 'secretish', 'other')
 
   const host = kernel.hostFor('insights')
   assert.equal(host.getModuleAppState<string>('time'), '09:00')
@@ -110,10 +114,10 @@ test('MainHost reads and watches its own namespace through the mirror', () => {
 
   const heard: unknown[] = []
   const stop = host.watchModuleAppState((values) => heard.push(values))
-  mirror.set({ 'module:insights': { time: '08:00' } })
+  mirror.setValue('insights', 'time', '08:00')
   assert.deepEqual(heard, [{ time: '08:00' }])
   stop()
-  mirror.set({ 'module:insights': { time: '07:00' } })
+  mirror.setValue('insights', 'time', '07:00')
   assert.equal(heard.length, 1)
 })
 
@@ -124,6 +128,52 @@ test('unloading a module drops its app-state watches', async () => {
   const heard: unknown[] = []
   kernel.hostFor('insights').watchModuleAppState((values) => heard.push(values))
   await kernel.unregisterModule('insights')
-  mirror.set({ 'module:insights': { time: '06:00' } })
+  mirror.setValue('insights', 'time', '06:00')
   assert.deepEqual(heard, [])
+})
+
+test('forgetting a module drops its namespace on disk and here, and its listeners hear it emptied', () => {
+  writeFileSync(filePath, JSON.stringify({ 'module:acme.notes': { folder: 'inbox' }, 'module:other': { keep: 1 } }))
+  const mirror = createModuleAppStateMirror({ filePath, watchFile: false })
+  const heard: unknown[] = []
+  const changed: string[] = []
+  mirror.subscribe('acme.notes', (values) => heard.push(values))
+  mirror.subscribeAll((moduleId) => changed.push(moduleId))
+  assert.deepEqual(mirror.get('acme.notes'), { folder: 'inbox' })
+
+  mirror.forget('acme.notes')
+  assert.deepEqual(mirror.get('acme.notes'), {})
+  assert.deepEqual(mirror.get('other'), { keep: 1 })
+  assert.deepEqual(heard, [{}])
+  assert.deepEqual(changed, ['acme.notes'])
+  assert.deepEqual(JSON.parse(readFileSync(filePath, 'utf8')), { 'module:other': { keep: 1 } })
+
+  // Forgetting one with nothing kept writes nothing and tells no one.
+  mirror.forget('acme.notes')
+  assert.deepEqual(changed, ['acme.notes'])
+  mirror.dispose()
+})
+
+test('a forgetting whose file cannot be written changes nothing here, and says so', () => {
+  const kept = { 'module:acme.notes': { folder: 'inbox' } }
+  writeFileSync(filePath, JSON.stringify(kept))
+  const mirror = createModuleAppStateMirror({ filePath, watchFile: false })
+  const heard: unknown[] = []
+  mirror.subscribe('acme.notes', (values) => heard.push(values))
+  // The write cannot land: where its temporary file goes is a folder.
+  const tmp = `${filePath}.${process.pid}.tmp`
+  mkdirSync(tmp)
+  try {
+    assert.throws(() => mirror.forget('acme.notes'))
+    assert.deepEqual(mirror.get('acme.notes'), { folder: 'inbox' }, 'not emptied here')
+    assert.deepEqual(heard, [], 'no listener told')
+    assert.deepEqual(JSON.parse(readFileSync(filePath, 'utf8')), kept)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+  // Once it can be written, it is forgotten.
+  mirror.forget('acme.notes')
+  assert.deepEqual(mirror.get('acme.notes'), {})
+  assert.deepEqual(heard, [{}])
+  mirror.dispose()
 })

@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
@@ -540,6 +540,32 @@ test('a skill a launch copied into a CLI’s user folder goes at quit, unless so
     assert.equal(existsSync(untouched!), false)
     assert.equal(await readFile(join(edited!, 'SKILL.md'), 'utf8'), 'my own notes\n')
     assert.equal(report.outcomes.length, 2)
+  } finally {
+    installIntegrationLedger(null)
+  }
+})
+
+test('a launch skill copy another Studio sharing the home has since made its own is left at this one’s quit', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'se-remove-shared-skill-'))
+  const ledger = createIntegrationLedger({ path: join(root, 'integration-ledger.json') })
+  installIntegrationLedger(ledger)
+  try {
+    const source = join(root, 'source', 'review')
+    await mkdir(source, { recursive: true })
+    await writeFile(join(source, 'SKILL.md'), 'review\n')
+    const skillsDir = join(root, 'home', '.codex', 'skills')
+    const skill = { id: 'x1a2b3c4d-review', version: 'gen1' }
+    const copy = await ensureUserLevelSkillCopy({ skillsDir, skill, sourceDir: source, cli: 'codex', owner: '/data/a' })
+    await ledger.flush()
+    // The other Studio found it gone (this one retracted it, say) and made its own.
+    await rm(copy!, { recursive: true })
+    installIntegrationLedger(null)
+    await ensureUserLevelSkillCopy({ skillsDir, skill, sourceDir: source, cli: 'codex', owner: '/data/b' })
+    installIntegrationLedger(ledger)
+
+    const report = await removeIntegrations({ ledger, scan: false }, { kinds: SESSION_INTEGRATION_KINDS })
+    assert.equal(existsSync(join(copy!, 'SKILL.md')), true)
+    assert.match(report.outcomes.find((outcome) => outcome.path === copy)?.reason ?? '', /another Studio/u)
   } finally {
     installIntegrationLedger(null)
   }

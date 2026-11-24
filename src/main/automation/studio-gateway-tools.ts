@@ -8,14 +8,13 @@ import { TAILNET_MUTATION_TOOL_NAMES } from './tailnet/tailnet-tools'
 import { TOUR_MUTATION_TOOL_NAMES } from './tour-tools'
 import { ARTIFACTS_MUTATION_TOOL_NAMES } from '../artifacts/artifacts-tools'
 import { EXTENSION_MUTATION_TOOL_NAMES } from './extension-tools'
-import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
 import {
   mcpToolWireName,
   toolError,
   type McpConnectionContext,
   type McpToolRegistration,
 } from '../../shared/modules/mcp-tools'
-import { runAsModuleToolCall } from '../module-host/module-tool-caller'
+import { runAsInvoker, type ExtensionInvoker } from '../module-host/extension-invocation'
 
 const APP_MUTATION_TOOLS = new Set([
   ...BROWSER_MUTATION_TOOL_NAMES,
@@ -95,11 +94,13 @@ export function createStudioGatewayTools(options: {
   /** Live enablement of a contributing module; resolved per call, never captured. */
   isModuleEnabled: (moduleId: string) => boolean
   /**
-   * The calling agent's launch ceiling (launch-permission-cap.ts), which a
-   * module tool's handler runs under: an agent the module starts during the
-   * call is held to it. Absent, module tools run uncapped.
+   * Who is calling a module tool, which its handler runs on behalf of
+   * (extension-invocation.ts): an agent here is the person, held to its own
+   * launch ceiling; a paired device is what it was granted. The extension's
+   * host calls are held to it, and an agent the module starts during the call
+   * is held to its ceiling. Never assumed: the composer names it.
    */
-  callerPermissionCeiling?: (context: McpConnectionContext | undefined) => CliPermissionPreset | null
+  callerInvoker: (context: McpConnectionContext | undefined) => ExtensionInvoker
   warn?: (message: string) => void
 }): StudioGatewayToolResolver {
   const coreNames = new Set<string>()
@@ -134,7 +135,7 @@ export function createStudioGatewayTools(options: {
         continue
       }
       names.add(registration.name)
-      merged.push(gateOnModuleEnablement(contribution, options.isModuleEnabled, options.callerPermissionCeiling))
+      merged.push(gateOnModuleEnablement(contribution, options.isModuleEnabled, options.callerInvoker))
     }
     return merged
   }
@@ -156,24 +157,24 @@ export type StudioGatewayToolResolver = (() => McpToolRegistration[]) & {
 // call while the owner is disabled answers one plain, actionable sentence as a
 // normal MCP tool result — never a protocol error, never the orphaned handler.
 //
-// An enabled module's handler runs as its caller (module-tool-caller.ts), so a
-// chat it starts for a capped agent is no looser than that agent.
+// An enabled module's handler runs on its caller's behalf
+// (extension-invocation.ts): what it asks of the host is held to what the
+// caller may do, and a chat it starts for a capped agent is no looser than
+// that agent.
 function gateOnModuleEnablement(
   contribution: McpToolContribution,
   isModuleEnabled: (moduleId: string) => boolean,
-  callerPermissionCeiling: ((context: McpConnectionContext | undefined) => CliPermissionPreset | null) | undefined,
+  callerInvoker: (context: McpConnectionContext | undefined) => ExtensionInvoker,
 ): McpToolRegistration {
   const { moduleId, moduleDisplayName, registration } = contribution
   return {
     ...registration,
     handler: async (args, context) =>
       isModuleEnabled(moduleId)
-        ? runAsModuleToolCall({ permissionCeiling: callerPermissionCeiling?.(context) ?? null }, () =>
-            registration.handler(args, withVerifiedIdentity(context)),
-          )
+        ? runAsInvoker(callerInvoker(context), () => registration.handler(args, withVerifiedIdentity(context)))
         : toolError(
             `${moduleId}_module_disabled`,
-            `The ${moduleDisplayName} module is disabled. Enable it in Settings → Modules to use ${moduleId} tools.`,
+            `The ${moduleDisplayName} extension is disabled. Enable it in Settings → Extensions to use ${moduleId} tools.`,
           ),
   }
 }

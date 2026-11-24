@@ -24,7 +24,7 @@
     "build:server": "node scripts/build-server.mjs",
     "build:server:wsl": "node scripts/build-server.mjs --wsl",
     "build:web": "vite build --config vite.web.config.ts",
-    "build:sdk": "tsc -p packages/module-sdk/tsconfig.json",
+    "build:sdk": "tsc -p packages/extension-sdk/tsconfig.json",
     "build:conversation-protocol": "node packages/conversation-protocol/build.mjs",
     "build:studio-protocol": "node packages/studio-protocol/build.mjs",
     "build:client-runtime": "node packages/client-runtime/build.mjs",
@@ -34,13 +34,13 @@
     "dist:mac": "npm run runtimes:fetch -- --platform darwin && npm run sdk:bundle && npm run build && npm run build:server:wsl && electron-builder --mac",
     "dist:linux": "npm run runtimes:fetch -- --platform linux && npm run sdk:bundle && npm run build && npm run build:server:wsl && electron-builder --linux",
     "runtimes:fetch": "node scripts/fetch-runtimes.mjs",
-    "sdk:bundle": "node scripts/pack-module-sdk.mjs",
+    "sdk:bundle": "node scripts/pack-extension-sdk.mjs",
     "icons": "node scripts/generate-icons.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:sdk:drift": "tsc -p packages/module-sdk/tsconfig.json && tsc -p packages/module-sdk/tsconfig.drift.json && esbuild packages/module-sdk/drift/sdk-drift-guard.ts --bundle --platform=node --format=cjs --packages=external --outfile=node_modules/.cache/sprintengine/sdk-drift-guard.cjs && node node_modules/.cache/sprintengine/sdk-drift-guard.cjs",
-    "test:sdk:pack": "node scripts/verify-module-sdk-pack.mjs",
+    "test:sdk:drift": "tsc -p packages/extension-sdk/tsconfig.json && tsc -p packages/extension-sdk/tsconfig.drift.json && esbuild packages/extension-sdk/drift/sdk-drift-guard.ts --bundle --platform=node --format=cjs --packages=external --outfile=node_modules/.cache/sprintengine/sdk-drift-guard.cjs && node node_modules/.cache/sprintengine/sdk-drift-guard.cjs",
+    "test:sdk:pack": "node scripts/verify-extension-sdk-pack.mjs",
     "test:conversation-protocol:pack": "node scripts/verify-conversation-protocol-pack.mjs",
     "test:studio-packages:pack": "node scripts/verify-studio-packages-pack.mjs",
     "test:card-feed": "node scripts/check-card-feed-seed.mjs",
@@ -114,7 +114,8 @@
       "!node_modules/docx/dist/index.{mjs,iife.js,umd.cjs,d.ts,d.cts}"
     ],
     "asarUnpack": [
-      "node_modules/@vscode/ripgrep-*/bin/**"
+      "node_modules/@vscode/ripgrep-*/bin/**",
+      "out/main/extension-worker.js"
     ],
     "extraResources": [
       {
@@ -155,24 +156,32 @@
         ]
       },
       {
-        "from": "packages/module-sdk/templates",
+        "from": "packages/extension-sdk/templates",
         "to": "sdk-templates",
         "filter": [
           "**/*"
         ]
       },
       {
-        "from": "packages/module-sdk/guide",
+        "from": "packages/extension-sdk/guide",
         "to": "sdk-guide",
         "filter": [
           "**/*"
         ]
       },
       {
-        "from": "resources/module-sdk",
-        "to": "module-sdk",
+        "from": "resources/extension-sdk",
+        "to": "extension-sdk",
         "filter": [
           "*.tgz"
+        ]
+      },
+      {
+        "from": "packages/extension-sdk",
+        "to": "extension-sdk-runtime",
+        "filter": [
+          "package.json",
+          "dist/**/*"
         ]
       },
       {
@@ -339,6 +348,7 @@
     "electron": "^45.2.1",
     "electron-builder": "^26.18.0",
     "electron-vite": "6.0.0",
+    "es-module-lexer": "^3.0.5",
     "esbuild": "^0.28.2",
     "flexlayout-react": "^0.11.1",
     "immer": "^11.2.9",
@@ -359,6 +369,7 @@
     "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",
     "shiki": "4.5.0",
+    "sucrase": "^3.35.1",
     "tailwindcss": "^4.0.6",
     "typescript": "^7.0.2",
     "unified": "^11.0.5",

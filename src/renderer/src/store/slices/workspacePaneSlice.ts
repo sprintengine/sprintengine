@@ -32,6 +32,7 @@ const WORKSPACE_PANE_TAB_KINDS: readonly WorkspacePaneTabKind[] = [
   'canvas',
   'document',
   'library',
+  'extension',
 ]
 
 // Kinds a workspace opens at most once: opening them again focuses the tab
@@ -65,6 +66,13 @@ function canvasTabKey(tab: Pick<WorkspacePaneTab, 'canvas'>): string {
   const path = canvasBoardKeyPath(tab.canvas?.path ?? '', rendererPlatform())
   return tab.canvas?.store ? `${tab.canvas.store}\u0000${path}` : path
 }
+
+/** What makes one extension tab the same tab as another: the extension and its panel. */
+function extensionTabKey(tab: Pick<WorkspacePaneTab, 'extension'>): string {
+  return `${tab.extension?.key ?? ''}\u0000${tab.extension?.panel ?? ''}`
+}
+
+const MAX_EXTENSION_ID_LENGTH = 200
 
 /**
  * What makes one Document tab the same tab as another: its file, folded where
@@ -219,6 +227,22 @@ function normalizeTab(input: unknown): WorkspacePaneTab | null {
     if (typeof path !== 'string' || !isAbsoluteFilePath(path) || path.length > MAX_DOCUMENT_PATH_LENGTH) return null
     tab.document = { path }
   }
+  if (tab.kind === 'extension') {
+    // A panel tab names what it draws; without that there is nothing to show.
+    const ext = raw.extension && typeof raw.extension === 'object' ? (raw.extension as Record<string, unknown>) : null
+    const key = ext?.key
+    const panel = ext?.panel
+    if (
+      typeof key !== 'string' ||
+      typeof panel !== 'string' ||
+      !key ||
+      !panel ||
+      key.length > MAX_EXTENSION_ID_LENGTH ||
+      panel.length > MAX_EXTENSION_ID_LENGTH
+    )
+      return null
+    tab.extension = { key, panel }
+  }
   if (tab.kind === 'diff' && raw.diff && typeof raw.diff === 'object') {
     const focusPath = typeof raw.diff.focusPath === 'string' && raw.diff.focusPath ? raw.diff.focusPath : null
     const focusKind = raw.diff.focusKind === 'staged' || raw.diff.focusKind === 'unstaged' ? raw.diff.focusKind : null
@@ -281,6 +305,7 @@ export function normalizeWorkspacePaneState(input: unknown): WorkspacePaneState 
   const seenSingletons = new Set<WorkspacePaneTabKind>()
   const canvasBoardTabs = new Map<string, string>()
   const documentTabs = new Map<string, string>()
+  const extensionTabs = new Map<string, string>()
   // Where a dropped duplicate's active-ness goes: the tab that survived for the
   // same board. Falling back to the first tab in the strip would drop the
   // person somewhere they did not ask to be, on a board they did not name.
@@ -303,6 +328,15 @@ export function normalizeWorkspacePaneState(input: unknown): WorkspacePaneState 
         continue
       }
       canvasBoardTabs.set(key, tab.id)
+    }
+    if (tab.kind === 'extension') {
+      const key = extensionTabKey(tab)
+      const survivor = extensionTabs.get(key)
+      if (survivor !== undefined) {
+        replacedBy.set(tab.id, survivor)
+        continue
+      }
+      extensionTabs.set(key, tab.id)
     }
     if (tab.kind === 'document') {
       const key = documentTabKey(tab)
@@ -521,6 +555,8 @@ export type WorkspacePaneOpenInput = {
   canvas?: WorkspacePaneTab['canvas']
   /** Document only: the file to read. A document tab is not opened without one. */
   document?: WorkspacePaneTab['document']
+  /** Extension only: the extension and panel to draw. An extension tab is not opened without one. */
+  extension?: WorkspacePaneTab['extension']
   // Whether the new (or found) tab becomes the active one and the pane opens.
   // Default true; an agent opening a background tab passes false.
   activate?: boolean
@@ -747,7 +783,9 @@ export function createWorkspacePaneSlice(set: PaneSliceSet): WorkspacePaneSliceA
             ? pane.tabs.find((tab) => tab.kind === 'canvas' && canvasTabKey(tab) === canvasTabKey(input))
             : input.kind === 'document'
               ? pane.tabs.find((tab) => tab.kind === 'document' && documentTabKey(tab) === documentTabKey(input))
-              : undefined
+              : input.kind === 'extension'
+                ? pane.tabs.find((tab) => tab.kind === 'extension' && extensionTabKey(tab) === extensionTabKey(input))
+                : undefined
         if (existing) {
           if (input.title !== undefined) existing.title = input.title
           if (input.diff !== undefined) {
@@ -765,6 +803,7 @@ export function createWorkspacePaneSlice(set: PaneSliceSet): WorkspacePaneSliceA
         } else {
           if (pane.tabs.length >= MAX_PANE_TABS) return
           if (input.kind === 'document' && !input.document) return
+          if (input.kind === 'extension' && !input.extension) return
           const tab: WorkspacePaneTab = { id: nanoid(8), kind: input.kind }
           if (input.title) tab.title = input.title
           if (input.kind === 'browser' && input.url) tab.url = input.url
@@ -778,6 +817,7 @@ export function createWorkspacePaneSlice(set: PaneSliceSet): WorkspacePaneSliceA
             tab.title ??= canvasBoardName(input.canvas.path)
           }
           if (input.kind === 'document' && input.document) tab.document = input.document
+          if (input.kind === 'extension' && input.extension) tab.extension = input.extension
           pane.tabs.push(tab)
           opened = tab.id
         }
