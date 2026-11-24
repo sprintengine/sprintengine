@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -23,6 +23,7 @@ import { createExtensionDiscovery } from '../../server/extensions/extension-disc
 import { frameStandingOf } from '../../server/extensions/extension-plan'
 import { approvalOf } from './extension-approvals.test-helper'
 import { NO_EXTENSION_RUN } from './third-party-module-view'
+import { MODULE_APP_STATE_FILE, moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
 
 // The lifecycle's own rules: which switches apply at once, how a module is
 // listed, and that switches arriving together are each kept. Its whole path
@@ -342,4 +343,33 @@ test('a development folder registered over an installed extension waits for the 
     [...readExtensionApprovalsSync(dataDir).values()].some((record) => record.devFolder === folder),
     false,
   )
+})
+
+test('an uninstall whose Settings values cannot be forgotten says so, and forgets the rest', async () => {
+  const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'module-lifecycle-')))
+  dirs.push(dataDir)
+  const root = join(dataDir, 'modules')
+  const source = writeExtensionFolder(join(dataDir, 'src'), {
+    manifest: extensionManifest({ id: 'notes', tier: 'declarative', permissions: [], main: undefined }),
+  })
+  const lifecycle = createModuleLifecycle({
+    dataDir,
+    moduleRoot: () => root,
+    view: () => null,
+    applyEnablement: async () => ({ ok: true }),
+    changed: () => undefined,
+    ...quiet(),
+    registry: createModuleRegistryMirror(),
+  })
+  assert.ok((await lifecycle.install(source)).ok)
+  const settings = moduleAppStateMirrorFor(dataDir)
+  settings.setValue('local.notes', 'folder', 'inbox')
+  // The settings file cannot be written: where its temporary file goes is a folder.
+  const tmp = join(dataDir, `${MODULE_APP_STATE_FILE}.${process.pid}.tmp`)
+  mkdirSync(tmp)
+  const answer = await lifecycle.uninstall('local.notes')
+  assert.equal(answer.ok, false)
+  assert.match(answer.ok ? '' : answer.message, /^Removed "local\.notes" but could not forget its Settings values/)
+  assert.equal(existsSync(join(root, 'local.notes')), false, 'its folder is gone all the same')
+  assert.deepEqual(settings.get('local.notes'), { folder: 'inbox' }, 'what is still on disk is what is shown')
 })

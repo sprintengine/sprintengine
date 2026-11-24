@@ -625,7 +625,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           // Not under a key an installed extension holds: a folder standing
           // in for it shared its data, which stays the installed one's.
           const installedKeys = new Set((await installedOnly()).map((module) => module.key))
-          await forgetModules(
+          const unforgotten = await forgetModules(
             deps.dataDir,
             [...held].filter((key) => !installedKeys.has(key)),
           )
@@ -642,6 +642,12 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
               ok: false,
               code: 'unavailable',
               message: `Removed ${folder}, but could not forget its approval (${revoked.join('; ')}).`,
+            }
+          if (unforgotten.length > 0)
+            return {
+              ok: false,
+              code: 'unavailable',
+              message: `Removed ${folder}, but could not forget ${unforgotten.join('; ')}.`,
             }
           return { ok: true, path: folder, moduleId }
         } catch (error) {
@@ -737,7 +743,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           await rm(contained.path, { recursive: true, force: true })
           // Nothing about it outlives it: its approval, enablement, stored secrets.
           const revoked = await writeExtensionApproval(deps.dataDir, moduleId, null)
-          await forgetModules(deps.dataDir, [moduleId])
+          const unforgotten = await forgetModules(deps.dataDir, [moduleId])
           await catalogue.forget(moduleId)
           await project()
           deps.changed()
@@ -746,6 +752,8 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
               ok: false,
               message: `Removed "${moduleId}" but could not forget its approval: ${revoked.message}`,
             }
+          if (unforgotten.length > 0)
+            return { ok: false, message: `Removed "${moduleId}" but could not forget ${unforgotten.join('; ')}.` }
           return { ok: true, removedModuleIds: [moduleId] }
         } catch (error) {
           return failed(error)

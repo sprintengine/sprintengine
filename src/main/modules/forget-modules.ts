@@ -18,9 +18,13 @@ import { getSharedCredentialStore } from '../secret-store'
 //
 // Storage a module kept for a project (`modules/<id>` in the project's store,
 // workspace-store.ts) is the project's, and stays with it.
-export async function forgetModules(userData: string, moduleIds: readonly string[]): Promise<void> {
+//
+// Answers what could not be forgotten, in words, for whoever removed it to
+// say (empty when everything went): the rest is forgotten all the same.
+export async function forgetModules(userData: string, moduleIds: readonly string[]): Promise<string[]> {
   const ids = moduleIds.filter(isModuleIdSegment)
-  if (ids.length === 0) return
+  if (ids.length === 0) return []
+  const problems: string[] = []
   const overrides = readModuleOverridesSync(userData)
   if (ids.some((id) => id in overrides)) {
     const next = { ...overrides }
@@ -30,7 +34,11 @@ export async function forgetModules(userData: string, moduleIds: readonly string
   for (const id of ids) {
     // Its Settings values (`module:<id>`), on disk and in the process's copy,
     // whose listeners (Settings, its worker's watch) hear them gone.
-    moduleAppStateMirrorFor(userData).forget(id)
+    try {
+      moduleAppStateMirrorFor(userData).forget(id)
+    } catch (error) {
+      problems.push(`its Settings values (${error instanceof Error ? error.message : String(error)})`)
+    }
     await deleteModuleSecrets(userData, id).catch(() => undefined)
     await rm(join(userData, 'module-storage', id), { recursive: true, force: true }).catch(() => undefined)
     // The module's private directory (`MainHost.getModuleDataDir`).
@@ -40,6 +48,7 @@ export async function forgetModules(userData: string, moduleIds: readonly string
       .forgetUnder(`${id}/`)
       .catch(() => undefined)
   }
+  return problems
 }
 
 export function isModuleIdSegment(id: string): boolean {

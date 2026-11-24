@@ -35,7 +35,12 @@ export type ModuleAppStateMirror = {
 export type ModuleAppStateStore = ModuleAppStateMirror & {
   /** Hear which module's namespace changed, whichever it is, here or in another process. */
   subscribeAll(listener: (moduleId: string) => void): () => void
-  /** Drop the module's whole namespace (an uninstall), on disk and here; its listeners hear it emptied. */
+  /**
+   * Drop the module's whole namespace (an uninstall), on disk first and then
+   * here; its listeners hear it emptied. Throws when the file cannot be
+   * written, and then nothing changes here either: the values would come back
+   * at the next start.
+   */
   forget(moduleId: string): void
 }
 
@@ -135,19 +140,32 @@ export function createModuleAppStateMirror(options: {
   const catchUp = (): void => {
     if (namespaces !== null && !watching && options.watchFile !== false && fileSignature() !== seen) adopt(read())
   }
-  // Hand `next` to the listeners and write it, whole, over the file (a
-  // temporary file renamed into place). An unchanged one never rewrites it.
-  const commit = (next: Namespaces): void => {
-    if (!adopt(next)) return
+  // Write `next`, whole, over the file (a temporary file renamed into place);
+  // throws when it cannot be written.
+  const persist = (next: Namespaces): void => {
     const tmp = `${options.filePath}.${process.pid}.tmp`
     try {
       mkdirSync(dirname(options.filePath), { recursive: true })
       writeFileSync(tmp, `${JSON.stringify(next)}\n`, { encoding: 'utf8', mode: 0o600 })
       renameSync(tmp, options.filePath)
       seen = fileSignature()
+    } catch (error) {
+      try {
+        rmSync(tmp, { force: true })
+      } catch {
+        // Nothing of ours to take away.
+      }
+      throw error
+    }
+  }
+  // Hand `next` to the listeners and write it over the file. An unchanged
+  // one never rewrites it.
+  const commit = (next: Namespaces): void => {
+    if (!adopt(next)) return
+    try {
+      persist(next)
     } catch {
       // The in-memory copy is current; the file catches up on the next change.
-      rmSync(tmp, { force: true })
     }
   }
 
@@ -173,7 +191,9 @@ export function createModuleAppStateMirror(options: {
       if (!(namespace in current())) return
       const next = { ...current() }
       delete next[namespace]
-      commit(next)
+      // On disk first: a deletion is only told once it will outlive a restart.
+      persist(next)
+      adopt(next)
     },
     subscribe(moduleId, listener) {
       const namespace = `${NAMESPACE_PREFIX}${moduleId.trim()}`
