@@ -3337,6 +3337,19 @@ export const en = {
       agentsCanOpenReadAnd: 'Agents can open, read and click pages. Running agents pick this up next session.',
       showThePageWhileAn: 'Show the page while an agent uses it',
       withThePaneClosedFloat: 'With the pane closed, float the agent’s page or board over the chat.',
+      closeUnusedTabs: 'Close tabs left unused',
+      closeUnusedTabsHelp:
+        'A tab nobody has used, in a chat whose agent has not worked for as long, is closed. The tab on screen never is.',
+      closeUnusedTabsAfter: 'Close browser tabs left unused after',
+      afterHours: (hours: number) =>
+        hours % 24 === 0
+          ? hours === 24
+            ? 'After 1 day'
+            : hours === 168
+              ? 'After 1 week'
+              : `After ${hours / 24} days`
+          : `After ${hours} hours`,
+      never: 'Never',
     },
     // src/renderer/src/components/settings/AgentClisSection.tsx
     agentClisSection: {
@@ -5136,6 +5149,9 @@ export const en = {
       sessionsRunning: (length: unknown) => `${length} sessions running`,
       sessions: 'Sessions',
       remote: 'Remote',
+      processes: 'Processes',
+      leftBehind: (count: number) => `${count} left behind`,
+      playingSound: (count: number) => (count === 1 ? '1 playing sound' : `${count} playing sound`),
     },
     agentComposer: {
       // src/renderer/src/components/workspace/agentComposer/agentSpawnShared.tsx
@@ -6578,6 +6594,7 @@ export const en = {
       tryAgain: 'Try again',
       remote: 'Remote',
       sessions: 'Sessions',
+      processes: 'Processes',
       signOut: 'Sign out',
       signIn: 'Sign in',
       account: 'Account',
@@ -6674,6 +6691,49 @@ export const en = {
         pause: (label: unknown) => `Pause ${label}`,
         dismiss: 'Dismiss',
         stop: 'Stop',
+      },
+      // src/renderer/src/components/workspace/topbar/ProcessesPopover.tsx
+      processesPopover: {
+        processes: 'Processes',
+        nothingRunning: 'Nothing agents started is running',
+        nothingRunningBody: 'Programs and browser tabs agents leave open show up here.',
+        notOnWindows: 'Not available on Windows yet',
+        notOnWindowsBody: 'Studio cannot read which programs its agents started on Windows yet.',
+        couldNotRead: 'Could not read this machine’s programs',
+        couldNotReadBody: 'Studio will try again in a moment.',
+        browserTabs: 'Browser tabs',
+        programs: 'Programs agents started',
+        chatNoLongerOpen: 'Chat no longer open',
+        leftBehind: 'Left behind',
+        leftBehindHint:
+          'Its agent has finished, and this kept running. That can be on purpose, a report server say; stop it when you no longer need it.',
+        onItsOwn: 'Running on its own',
+        onItsOwnHint:
+          'Its agent is still running, but this runs apart from it and will keep running after the chat ends.',
+        withItsAgent: 'With its agent',
+        withItsAgentHint: 'Its agent is running it now; stopping it may interrupt the agent’s work.',
+        playingSound: 'Playing sound',
+        inView: 'On screen',
+        running: (age: unknown) => `running ${age}`,
+        open: (age: unknown) => `open ${age}`,
+        usedAgo: (duration: unknown) => `used ${duration} ago`,
+        closes: (when: unknown) => `closes ${when}`,
+        moreProcesses: (count: number) => (count === 1 ? '+1 process' : `+${count} processes`),
+        minutes: (count: number) => (count === 1 ? '1 minute' : `${count} minutes`),
+        hours: (count: number) => (count === 1 ? '1 hour' : `${count} hours`),
+        days: (count: number) => (count === 1 ? '1 day' : `${count} days`),
+        stop: 'Stop',
+        stopNamed: (name: unknown) => `Stop ${name}`,
+        stopAllLeftBehind: 'Stop all left behind',
+        stopAllLeftBehindIn: (count: unknown, label: unknown) => `Stop all ${count} left behind in ${label}`,
+        stopAll: 'Stop all',
+        close: 'Close',
+        closeNamed: (name: unknown) => `Close ${name}`,
+        couldNotStop: (count: number) =>
+          count === 1 ? 'One program could not be stopped.' : `${count} programs could not be stopped.`,
+        notStoppedChanged: 'It had already ended, or another program now has its number.',
+        commandTooltip: (pid: unknown, command: unknown) => `Process ${pid}: ${command}`,
+        inFolder: (cwd: unknown) => `In ${cwd}`,
       },
     },
     // src/renderer/src/components/workspace/useConversationPullRequests.ts

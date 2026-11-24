@@ -7,10 +7,16 @@ import { remoteGlyphState, remoteGlyphToneClass, remoteGlyphTooltip, useOpenRemo
 import { SessionsPopover, type SessionGroup, type SessionItem } from './topbar/SessionsPopover'
 import { useTailnetPresence } from './topbar/useTailnetPresence'
 import { useEnvironments } from '../../hooks/useEnvironments'
+import { useWorkspaceStore } from '../../store/workspaceStore'
+import { ProcessesPopover } from './topbar/ProcessesPopover'
+import type { KnownChat } from './topbar/processesModel'
+import { processesRowCounts, useProcesses } from './topbar/useProcesses'
 import type { AccountMenuRow, AccountBadge } from './SidebarAccountBar'
 import { copy } from '../../../../shared/copy'
 
-// Remote and Sessions, behind the avatar (owner ruling 2026-11-07). The account
+// Remote, Sessions and Processes, behind the avatar (owner ruling 2026-11-07).
+// Processes is what agents started on this machine and left running, and the
+// built-in browser's tabs, beside Sessions, the agents themselves. The account
 // menu closes as a row is pressed, so what the row opens cannot hang off the
 // row: it opens at the avatar, from here, and stays up on its own. The avatar
 // wears what the two glyphs used to wear in the top row, or it would go quiet
@@ -45,6 +51,8 @@ export function useAccountSurfaces({
   const environments = useEnvironments()
   const remoteState = remoteGlyphState(presence, environments)
   const [remoteOpen, setRemoteOpen] = React.useState(false)
+  const [processesOpen, setProcessesOpen] = React.useState(false)
+  const processes = useProcesses(processesOpen)
   // An OS notification about a pair request or a machine's answer was clicked
   // (pair-from-the-scan-and-stay-paired, phase 3): main brought the window
   // forward; this opens the surface the banner pointed at.
@@ -53,19 +61,28 @@ export function useAccountSurfaces({
     return window.api.onRemoteOpenRequested(() => {
       setSessionsOpen(false)
       setNotificationsOpen(false)
+      setProcessesOpen(false)
       setRemoteOpen(true)
     })
   }, [setNotificationsOpen, setSessionsOpen])
 
   const openSessions = React.useCallback(() => {
     setRemoteOpen(false)
+    setProcessesOpen(false)
     setNotificationsOpen(false)
     setSessionsOpen(true)
   }, [setNotificationsOpen, setSessionsOpen])
   const openRemote = React.useCallback(() => {
     setSessionsOpen(false)
+    setProcessesOpen(false)
     setNotificationsOpen(false)
     setRemoteOpen(true)
+  }, [setNotificationsOpen, setSessionsOpen])
+  const openProcesses = React.useCallback(() => {
+    setSessionsOpen(false)
+    setRemoteOpen(false)
+    setNotificationsOpen(false)
+    setProcessesOpen(true)
   }, [setNotificationsOpen, setSessionsOpen])
 
   const sessionsRow: AccountMenuRow | null = sessionsOffered
@@ -86,6 +103,23 @@ export function useAccountSurfaces({
         tooltip: remoteGlyphTooltip(remoteState),
         toneClass: remoteGlyphToneClass(remoteState),
         onSelect: openRemote,
+      }
+    : null
+  // Offered where the window's Studio serves either list, whichever machine it
+  // is. The count leads with what was left behind, then with what is playing
+  // sound, the two things nobody can see from anywhere else.
+  const counts = processesRowCounts(processes.view)
+  const processesRow: AccountMenuRow | null = processes.view.offered
+    ? {
+        meta:
+          counts.leftBehind > 0
+            ? copy.workspace.accountSurfaces.leftBehind(counts.leftBehind)
+            : counts.playing > 0
+              ? copy.workspace.accountSurfaces.playingSound(counts.playing)
+              : counts.total > 0
+                ? String(counts.total)
+                : null,
+        onSelect: openProcesses,
       }
     : null
   const sessionsTone: Tone = sessionsAttentionTone(sessions as SessionItem[])
@@ -110,7 +144,18 @@ export function useAccountSurfaces({
           }
         : null
 
-  return { presence, remoteOpen, setRemoteOpen, sessionsRow, remoteRow, badge }
+  return {
+    presence,
+    remoteOpen,
+    setRemoteOpen,
+    processesOpen,
+    setProcessesOpen,
+    processes,
+    sessionsRow,
+    remoteRow,
+    processesRow,
+    badge,
+  }
 }
 
 export function AccountSurfaces({
@@ -125,6 +170,9 @@ export function AccountSurfaces({
   remoteOpen,
   onCloseRemote,
   presence,
+  processesOpen = false,
+  onCloseProcesses = () => {},
+  processes,
 }: {
   sessionsOpen: boolean
   onCloseSessions: () => void
@@ -137,10 +185,18 @@ export function AccountSurfaces({
   remoteOpen: boolean
   onCloseRemote: () => void
   presence: ReturnType<typeof useTailnetPresence>
+  processesOpen?: boolean
+  onCloseProcesses?: () => void
+  processes?: ReturnType<typeof useProcesses>
 }) {
   const openRemoteSettings = useOpenRemoteSettings()
   const environments = useEnvironments()
-  const anchor = sessionsOpen || remoteOpen ? avatarAnchor() : null
+  const workspaces = useWorkspaceStore((state) => state.workspaces)
+  const chats = React.useMemo(
+    () => new Map<string, KnownChat>(workspaces.map((workspace) => [workspace.id, workspace])),
+    [workspaces],
+  )
+  const anchor = sessionsOpen || remoteOpen || processesOpen ? avatarAnchor() : null
   return (
     <>
       {sessionsOpen && anchor ? (
@@ -157,6 +213,22 @@ export function AccountSurfaces({
             onPause={onPauseSession}
             onStop={onStopSession}
             onStopGroup={onStopSessionGroup}
+          />
+        </PointerPopover>
+      ) : null}
+      {processesOpen && processes && anchor ? (
+        // Rows carry their own Stop and Close buttons: a dialog, not a menu.
+        <PointerPopover
+          {...anchor}
+          ariaLabel={copy.workspace.accountSurfaces.processes}
+          popupRole="dialog"
+          onClose={onCloseProcesses}
+        >
+          <ProcessesPopover
+            view={processes.view}
+            chats={chats}
+            onStop={processes.stop}
+            onCloseTab={processes.closeTab}
           />
         </PointerPopover>
       ) : null}
