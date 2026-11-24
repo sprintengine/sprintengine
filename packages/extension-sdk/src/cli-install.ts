@@ -88,6 +88,9 @@ function rowWords(row: UpdateRow): string {
  * `update <key>`, or `update --all`. `--json` prints one row per extension:
  * from and to, or why it did not update. A single extension that was not
  * updated fails with its row's code (an update held for approval exits 3).
+ * With `--all`, every row is printed first; then it fails `approval_required`
+ * (exit 3) when any is held for approval, else `update_failed` (exit 1) when
+ * any was held or refused, `data.updates` holding every row.
  */
 export async function updateExtensions(output: Output, key: string | undefined, options: { dataDir?: string }) {
   const answer = await withStudio(options.dataDir, (studio) =>
@@ -97,6 +100,21 @@ export async function updateExtensions(output: Output, key: string | undefined, 
   const [only] = rows
   if (key && only && (only.status === 'held' || only.status === 'refused'))
     throw new CliError(only.code ?? 'install_failed', rowWords(only), { updates: rows })
+  const notUpdated = rows.filter((row) => row.status === 'held' || row.status === 'refused')
+  if (notUpdated.length > 0) {
+    const waiting = notUpdated.some((row) => row.status === 'held' && row.code === 'approval_required')
+    const lines = rows.map(rowWords)
+    throw new CliError(
+      waiting ? 'approval_required' : 'update_failed',
+      `${notUpdated.length} of ${rows.length} not updated:\n${notUpdated.map(rowWords).join('\n')}`,
+      { updates: rows },
+      waiting
+        ? [`Studio's window asks the person to review what is held (also Settings > Extensions).`]
+        : lines.length > notUpdated.length
+          ? ['The others were updated; each row says why one was not.']
+          : [],
+    )
+  }
   output.done({ updates: rows }, rows.length === 0 ? 'Nothing installed from a catalogue.' : rows.map(rowWords))
 }
 

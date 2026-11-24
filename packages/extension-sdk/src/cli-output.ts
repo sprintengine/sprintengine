@@ -52,6 +52,8 @@ export const CLI_ERROR_CODES = [
   'held_back',
   /** The install failed for another reason: the message says why. */
   'install_failed',
+  /** `update --all`: some were held or refused (none held for approval): `data.updates` has every row. */
+  'update_failed',
   /** No Studio window is open on this machine to show it in. */
   'no_window',
   /** No Studio window here shows a workspace to show it in. */

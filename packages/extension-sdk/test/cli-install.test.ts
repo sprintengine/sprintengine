@@ -22,6 +22,13 @@ const calls: Array<{ name: string; args: Record<string, unknown> }> = []
 type Answer = { ok: true; result: Record<string, unknown> } | { ok: false; code: string; message: string }
 
 /** What the fake Studio answers each install source with. */
+const ALL_UPDATED: unknown[] = [
+  { key: 'acme.notes', from: '1.0.0', to: '1.1.0', status: 'updated' },
+  { key: 'acme.tools', from: '2.0.0', status: 'up_to_date' },
+]
+/** What `update --all` answers; a test sets it and puts it back. */
+let allUpdates: unknown[] = ALL_UPDATED
+
 const INSTALLS: Record<string, Answer> = {
   'acme.notes': {
     ok: true,
@@ -65,15 +72,7 @@ beforeAll(async () => {
       return INSTALLS[String(args.source)] ?? { ok: false, code: 'install_failed', message: 'unknown' }
     if (name === 'extension.update')
       return args.all
-        ? {
-            ok: true,
-            result: {
-              updates: [
-                { key: 'acme.notes', from: '1.0.0', to: '1.1.0', status: 'updated' },
-                { key: 'acme.tools', from: '2.0.0', status: 'up_to_date' },
-              ],
-            },
-          }
+        ? { ok: true, result: { updates: allUpdates } }
         : {
             ok: true,
             result: {
@@ -200,14 +199,31 @@ test('a source that is none of the forms never reaches Studio', async () => {
 test('update --all prints a row per extension; one held for approval exits 3', async () => {
   const all = await run(['update', '--all'])
   assert.equal(all.status, 0)
-  assert.deepEqual((all.last.result as { updates: unknown[] }).updates, [
-    { key: 'acme.notes', from: '1.0.0', to: '1.1.0', status: 'updated' },
-    { key: 'acme.tools', from: '2.0.0', status: 'up_to_date' },
-  ])
+  assert.deepEqual((all.last.result as { updates: unknown[] }).updates, ALL_UPDATED)
   const held = await run(['update', 'acme.notes'])
   assert.equal(held.status, 3)
   assert.equal(codeOf(held.last), 'approval_required')
   assert.equal((await run(['update'])).status, 1)
+})
+
+test('update --all fails when any was not updated: 3 when one waits for approval, else 1, every row kept', async () => {
+  const refused = { key: 'acme.gone', from: '1.0.0', to: '1.2.0', status: 'refused', code: 'killed', reason: 'Killed.' }
+  const waiting = { key: 'acme.more', from: '1.0.0', to: '1.1.0', status: 'held', code: 'approval_required' }
+  try {
+    allUpdates = [...ALL_UPDATED, refused]
+    const failed = await run(['update', '--all'])
+    assert.equal(failed.status, 1)
+    assert.equal(codeOf(failed.last), 'update_failed')
+    assert.deepEqual((failed.last.error as { data: { updates: unknown[] } }).data.updates, allUpdates)
+
+    allUpdates = [...ALL_UPDATED, refused, waiting]
+    const held = await run(['update', '--all'])
+    assert.equal(held.status, 3)
+    assert.equal(codeOf(held.last), 'approval_required')
+    assert.deepEqual((held.last.error as { data: { updates: unknown[] } }).data.updates, allUpdates)
+  } finally {
+    allUpdates = ALL_UPDATED
+  }
 })
 
 test('open with no window says so', async () => {

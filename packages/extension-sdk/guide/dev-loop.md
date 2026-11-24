@@ -56,6 +56,7 @@ fix it. Without `--json` the same is printed as words, the failure on stderr.
 | `changed` | The catalogue changed what it lists since it was read: look again | 1 |
 | `held_back` | A community or added catalogue listed that release less than 12 hours ago, so a takedown can land first: the row's `heldBackMs` says how long it still waits | 1 |
 | `install_failed` | The install failed for another reason: the message says why | 1 |
+| `update_failed` | `update --all`: some were held or refused, none held for approval: `data.updates` has every row | 1 |
 | `no_window` | No Studio window is open on this machine to show it in | 1 |
 | `no_workspace` | No Studio window here shows a workspace | 1 |
 | `extension_unavailable` | It is switched off, or killed | 1 |
@@ -267,7 +268,9 @@ credentials, the ones `git` already uses here.
   time left. The kill list is read fresh, or nothing updates. One that asks
   for more than was approved is held for the person's review in Studio, with
   a notice, and the version installed keeps running; `update <key>` then exits
-  3. `--json` answers `updates`, one row per extension: `{ key, from, to?,
+  3. `update --all` exits 3 (`approval_required`) when any is held for
+  approval, else 1 (`update_failed`) when any was held or refused, with every
+  row in `data.updates`. `--json` answers `updates`, one row per extension: `{ key, from, to?,
   status, reason?, code?, growth?, heldBackMs? }`, `status` being `updated`,
   `up_to_date`, `held` or `refused`. Only catalogue installs update; install
   a git URL again.
