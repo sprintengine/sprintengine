@@ -44,6 +44,8 @@ export type ExtensionEditorControllerOptions = {
   /** The file, relative to the workspace's folder. */
   relativePath: string
   contentKind: 'text' | 'bytes'
+  /** The file's language as Studio's text editor knows it, which a save hands the save hooks. */
+  languageId?: string
   readOnly: boolean
   model: EditorDocumentModel
   /** Put the file back to what is on disk (a binary document's discard). */
@@ -135,7 +137,7 @@ export function createExtensionEditorController(options: ExtensionEditorControll
         workspaceId,
         path: relativePath,
         ...(typeof content === 'string'
-          ? { content, save: {} }
+          ? { content, save: options.languageId ? { languageId: options.languageId } : {} }
           : { content: bytesToBase64(content), encoding: 'base64' as const }),
         ...(expected ? { expectedSha256: expected } : {}),
         ...(create ? { create: true } : {}),

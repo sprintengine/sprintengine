@@ -211,7 +211,7 @@ test('a custom text editor’s save is the person’s: it meets the save hooks, 
     requestFlush: () => undefined,
   }
   const model = createLocalDocumentModel()
-  const { controller } = controllerOf(model, { contentKind: 'text', relativePath: 'list.todo' })
+  const { controller } = controllerOf(model, { contentKind: 'text', relativePath: 'list.todo', languageId: 'todo' })
   controller.openFrame(port)
   controller.frameReady()
   await settle()
@@ -225,7 +225,7 @@ test('a custom text editor’s save is the person’s: it meets the save hooks, 
     workspaceId: WS,
     path: 'list.todo',
     content: '- [ ] secret\n',
-    save: {},
+    save: { languageId: 'todo' },
     expectedSha256: sha('- [ ] one\n'),
   })
   assert.equal(controller.session.state().saveError, 'The extension "Guard" (acme.guard) refused this.')

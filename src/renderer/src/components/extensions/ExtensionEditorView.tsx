@@ -19,6 +19,7 @@ import {
   subscribeEditorBuffer,
 } from '../../utils/editorBuffers'
 import { watchFileOnDisk } from '../../utils/fileDiskWatch'
+import { detectLanguage } from '../../utils/files'
 import { GhostButton, InlineNotice, OutlineButton, Spinner, useConfirmDialog } from '../ui'
 import { ExtensionSurfaceMount, type ExtensionEditorLink } from './ExtensionSurfaceMount'
 
@@ -149,6 +150,8 @@ function ExtensionEditorBody({
         workspaceId,
         relativePath,
         contentKind,
+        // As Studio's text editor names it, so a hook keyed on a language meets either editor's save alike.
+        languageId: detectLanguage(fileName),
         readOnly,
         model:
           contentKind === 'text' ? sharedTextModel(workspaceId, filePath) : sharedBytesModel(workspaceId, filePath),
