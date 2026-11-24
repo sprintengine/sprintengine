@@ -77,3 +77,50 @@ test('it needs workspace:operate, and only Studio’s actions an extension may n
     stop()
   }
 })
+
+test('a replacement call’s token is taken off its context and named back on the run it asks for', async () => {
+  const heard: Array<{ moduleId: string; action: string; call?: string }> = []
+  const stop = extensionCommandRuns.listen('window-a', (run) => heard.push(run))
+  try {
+    const k = kernel()
+    const host = k.hostFor('local.operator')
+    const seen: unknown[] = []
+    host.registerMethods({
+      'notes.back': {
+        access: 'operate',
+        params: (value: unknown) => ({ ok: true, params: value }),
+        handler: async (params: unknown) => {
+          seen.push(params)
+          await host.runCommand('workspace.history.back')
+          return { ok: true, result: null }
+        },
+      },
+    })
+    const context = { where: 'replaces', replaces: 'workspace.history.back', workspaceId: 'ws-1' }
+    const outcome = await k.callModuleMethod({
+      moduleId: 'local.operator',
+      method: 'notes.back',
+      access: 'operate',
+      params: { ...context, replacementCall: 'call-1' },
+      clientId: 'window',
+      invoker: fromWindow('window-a'),
+    })
+    assert.equal(outcome.ok, true)
+    assert.deepEqual(seen, [context], 'the extension sees the documented context alone')
+    assert.deepEqual(heard, [{ moduleId: 'local.operator', action: 'workspace.history.back', call: 'call-1' }])
+    // A call that is not a replacement keeps its params, and its runs name no call.
+    heard.length = 0
+    await k.callModuleMethod({
+      moduleId: 'local.operator',
+      method: 'notes.back',
+      access: 'operate',
+      params: { where: 'palette', replacementCall: 'call-2' },
+      clientId: 'window',
+      invoker: fromWindow('window-a'),
+    })
+    assert.deepEqual(seen.at(-1), { where: 'palette', replacementCall: 'call-2' })
+    assert.deepEqual(heard, [{ moduleId: 'local.operator', action: 'workspace.history.back' }])
+  } finally {
+    stop()
+  }
+})

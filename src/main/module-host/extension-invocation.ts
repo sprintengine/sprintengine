@@ -63,6 +63,12 @@ export type ExtensionInvoker = {
    * off (an agent's tool call, an event, a worker's own background work).
    */
   connectionId?: string
+  /**
+   * The window's token for the replacement call this is, when it is one
+   * (`withReplacementCall`): a `runCommand` names it back, so the window
+   * marks that call, and no other, as having run the action.
+   */
+  replacementCall?: string
 }
 
 /** The person at this machine: every permission, no ceiling. */

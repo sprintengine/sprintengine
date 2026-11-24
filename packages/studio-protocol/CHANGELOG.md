@@ -19,9 +19,13 @@
   the action, when a command runs in place of Studio's own.
 - **`extension.commandRuns`** (push, `extensions:read`): one of Studio's
   actions an extension's worker asked to run (`studio.runCommand`) for a call
-  this connection made, `{ moduleId, action }`. The window runs the built-in
-  action, never a replacement of it. Only the connection whose call set the
-  worker off hears it.
+  this connection made, `{ moduleId, action, call? }`. The window runs the
+  built-in action, never a replacement of it. Only the connection whose call
+  set the worker off hears it. A replacing call's params may carry
+  `replacementCall`, a token of the window's: Studio takes it off before the
+  extension sees the context, and `call` names it back on each run that call
+  asks for, so the window runs the action once per call however calls
+  overlap.
 
 ### Added (the extension catalogue)
 

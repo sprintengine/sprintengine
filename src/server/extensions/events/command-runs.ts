@@ -6,7 +6,12 @@
 // action, never another extension's replacement of it. Work no window set
 // off (a background worker's, an event's) has no window to run it in.
 
-export type ExtensionCommandRun = { moduleId: string; action: string }
+export type ExtensionCommandRun = {
+  moduleId: string
+  action: string
+  /** The window's token for the replacement call that asked, when one did. */
+  call?: string
+}
 
 export type ExtensionCommandRuns = {
   /** Hear the runs asked of one connection; returns the stopper. */

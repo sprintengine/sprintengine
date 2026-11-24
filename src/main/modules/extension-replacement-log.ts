@@ -3,6 +3,7 @@ import { statSync } from 'node:fs'
 import type { ExtensionContributionsResult } from '../../shared/modules/manifest'
 import { extensionDevEvents, type ExtensionDevEvents } from '../../server/extensions/dev/dev-events'
 import type { InstalledModule } from './user-module-registry'
+import type { ExtensionInvoker } from '../module-host/extension-invocation'
 
 // What Studio says in an extension's own log (`sprintengine-extension dev
 // logs <key>`) about the Studio actions it declares it `replaces`. The window
@@ -105,6 +106,26 @@ function replacedAction(params: unknown): string | null {
   if (typeof params !== 'object' || params === null) return null
   const { where, replaces } = params as { where?: unknown; replaces?: unknown }
   return where === 'replaces' && typeof replaces === 'string' ? replaces : null
+}
+
+/** The most a window's replacement-call token may hold. */
+const REPLACEMENT_CALL_MAX = 100
+
+/**
+ * A replacing call as the extension sees it: the window's token for the call
+ * (`replacementCall` in its params) is taken off the params, which are the
+ * command context the extension's guide documents, and kept on the invoker,
+ * so a `runCommand` made for this call names it back to the window.
+ */
+export function withReplacementCall<T extends { params: unknown; invoker: ExtensionInvoker }>(request: T): T {
+  if (replacedAction(request.params) === null) return request
+  const { replacementCall, ...params } = request.params as { replacementCall?: unknown }
+  if (replacementCall === undefined) return request
+  const token =
+    typeof replacementCall === 'string' && replacementCall.length > 0 && replacementCall.length <= REPLACEMENT_CALL_MAX
+      ? replacementCall
+      : undefined
+  return { ...request, params, invoker: { ...request.invoker, ...(token ? { replacementCall: token } : {}) } }
 }
 
 /**

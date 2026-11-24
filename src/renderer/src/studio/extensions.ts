@@ -120,7 +120,7 @@ export type ExtensionsApi = {
   /** What is installed or trusted on the Studio changed. */
   onThirdPartyModulesChanged(cb: () => void): () => void
   /** A worker asked this window to run one of Studio's actions (`studio.runCommand`), for a call it made. */
-  onCommandRuns(cb: (run: { moduleId: string; action: string }) => void): () => void
+  onCommandRuns(cb: (run: { moduleId: string; action: string; call?: string }) => void): () => void
   /** The module registry this window resolved, which the Studio's agent tools report. */
   setModuleRegistrySnapshot(snapshot: ModuleRegistrySnapshot): Promise<ModuleRegistrySnapshotWriteResult>
 }

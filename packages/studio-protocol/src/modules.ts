@@ -443,7 +443,8 @@ export type StudioModulesTopicMap = {
    */
   'extension.commandRuns': {
     params: Record<string, never>
-    payload: { moduleId: string; action: string }
+    /** `call`: the token the window gave the replacement call that asked (its `replacementCall`), when one did. */
+    payload: { moduleId: string; action: string; call?: string }
     stream: 'push'
   }
 }

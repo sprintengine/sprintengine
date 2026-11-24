@@ -152,9 +152,12 @@ export function runReplaceable(actionId: string, runBuiltIn: () => boolean): boo
 // A replacement that wraps Studio's action (`await studio.runCommand(action)`)
 // races the 2 s floor: Studio may run its own and then hear the worker ask
 // for the same, or the worker may run it and then fail. Each call this window
-// has made and not heard the end of is kept here, so the action runs once:
-// after Studio ran its own, the worker's ask for that action is dropped; after
-// the worker ran it, Studio does not run it again on its failure or silence.
+// has made and not heard the end of is kept here under a token of its own,
+// which rides the call (`replacementCall`) and comes back on the worker's
+// `runCommand` (`extension.commandRuns`' `call`). So the action runs once per
+// call, however calls overlap: after Studio ran its own for a call, that
+// call's ask is dropped; after a call's worker ran it, Studio does not run it
+// again for that call. Another call, older or newer, is never claimed.
 
 type ReplacementCall = {
   key: string
@@ -167,37 +170,45 @@ type ReplacementCall = {
 
 /** Calls whose answer has not come; one the worker never answers is let go of after this long. */
 const REPLACEMENT_CALL_FORGET_MS = 60_000
-const inFlight = new Set<ReplacementCall>()
+const inFlight = new Map<string, ReplacementCall>()
 
 /**
  * A worker's `studio.runCommand(action)`, heard by this window
  * (`extension.commandRuns`): Studio's own action, never a replacement
- * (`runBuiltInAction`), unless it is the action one of this extension's
- * replacement calls stands in for and Studio already ran its own in that
- * call's place. Whether anything ran.
+ * (`runBuiltInAction`), unless it came from a replacement call of this
+ * window's (`call`) for that very action, and Studio already ran its own in
+ * that call's place. Whether anything ran.
  */
-export function runCommandForWorker(run: { moduleId: string; action: string }): boolean {
-  const calls = [...inFlight].filter((call) => call.key === run.moduleId && call.action === run.action)
-  if (calls.length > 0) {
-    const open = calls.find((call) => !call.fellBack)
-    if (!open) {
+export function runCommandForWorker(run: { moduleId: string; action: string; call?: string }): boolean {
+  const call = run.call === undefined ? undefined : inFlight.get(run.call)
+  if (call && call.key === run.moduleId && call.action === run.action) {
+    if (call.fellBack) {
       logLine(
         run.moduleId,
         `asked to run Studio's "${run.action}" after Studio had already run it in its place; it was not run again.`,
       )
       return false
     }
-    open.workerRan = true
+    call.workerRan = true
   }
   return runBuiltInAction(run.action)
+}
+
+let callSequence = 0
+/** A token for one replacement call: unique in this window, and nothing a worker could guess its way into. */
+function newCallToken(): string {
+  callSequence += 1
+  const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+  return `${callSequence}-${random}`
 }
 
 async function runReplacement(replacement: ExtensionReplacement, runBuiltIn: () => boolean): Promise<void> {
   let settled = false
   let timer: ReturnType<typeof setTimeout> | undefined
   const call: ReplacementCall = { key: replacement.key, action: replacement.action, fellBack: false, workerRan: false }
-  inFlight.add(call)
-  const forget = setTimeout(() => inFlight.delete(call), REPLACEMENT_CALL_FORGET_MS)
+  const token = newCallToken()
+  inFlight.set(token, call)
+  const forget = setTimeout(() => inFlight.delete(token), REPLACEMENT_CALL_FORGET_MS)
   const builtIn = (why: string) => {
     if (settled) return
     settled = true
@@ -219,10 +230,12 @@ async function runReplacement(replacement: ExtensionReplacement, runBuiltIn: () 
     () => builtIn(`had not answered within ${REPLACEMENT_TIME_LIMIT_MS / 1000} s`),
     REPLACEMENT_TIME_LIMIT_MS,
   )
-  const context: ExtensionCommandContext = {
+  // The token rides the call; Studio takes it off before the extension sees the context.
+  const context: ExtensionCommandContext & { replacementCall: string } = {
     where: 'replaces',
     replaces: replacement.action,
     workspaceId: replacement.host.getActiveWorkspaceId(),
+    replacementCall: token,
   }
   try {
     const answer = await replacement.host.methods().operate(replacement.commandId, context)
@@ -234,7 +247,7 @@ async function runReplacement(replacement: ExtensionReplacement, runBuiltIn: () 
     builtIn(`failed: ${error instanceof Error ? error.message : String(error)}`)
   } finally {
     clearTimeout(forget)
-    inFlight.delete(call)
+    inFlight.delete(token)
   }
 }
 

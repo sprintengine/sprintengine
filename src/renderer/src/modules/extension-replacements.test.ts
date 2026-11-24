@@ -92,8 +92,14 @@ test('the worker runs in place of the action, and Studio’s own does not, when 
   await vi.waitFor(() => assert.equal(calls.length, 1))
   assert.deepEqual(calls[0], {
     method: 'notes.back',
-    params: { where: 'replaces', replaces: 'workspace.history.back', workspaceId: 'ws-1' },
+    params: {
+      where: 'replaces',
+      replaces: 'workspace.history.back',
+      workspaceId: 'ws-1',
+      replacementCall: tokenOf(calls[0]),
+    },
   })
+  assert.match(tokenOf(calls[0]), /\S{8,}/, 'a token of its own rides the call')
   await Promise.resolve()
   assert.equal(own.runs, 0)
   assert.deepEqual(lines, [])
@@ -135,26 +141,43 @@ function appRunner(): { runs: string[] } {
   return seen
 }
 
+/** The token a replacement call carried: what the worker's `runCommand` names back. */
+const tokenOf = (call: { params: unknown } | undefined) => (call?.params as { replacementCall: string }).replacementCall
+
+/** A worker whose calls each wait to be answered: each press's call, its answer, and its token. */
+function heldWorker(key: string) {
+  const answers: Array<(value: Answer) => void> = []
+  const { calls } = replacement(key, () => new Promise<Answer>((resolve) => answers.push(resolve)))
+  return {
+    calls,
+    /** The worker of press `n` runs Studio's action itself (`studio.runCommand`). */
+    runs: (n: number, action = 'workspace.history.back') =>
+      runCommandForWorker({ moduleId: key, action, call: tokenOf(calls[n]) }),
+    answer: (n: number, value: Answer) => answers[n]!(value),
+  }
+}
+
 test('a wrapping worker that answers after the 2 s floor does not run Studio’s action a second time', async () => {
   vi.useFakeTimers()
   const app = appRunner()
-  let answer: (value: Answer) => void = () => undefined
-  replacement('acme.slow', () => new Promise<Answer>((resolve) => (answer = resolve)))
+  const worker = heldWorker('acme.slow')
   const own = builtIn()
   runReplaceable('workspace.history.back', own.run)
   await vi.advanceTimersByTimeAsync(REPLACEMENT_TIME_LIMIT_MS)
   assert.equal(own.runs, 1, 'Studio ran its own at the limit')
-  // The worker's `await studio.runCommand('workspace.history.back')` lands late.
-  assert.equal(runCommandForWorker({ moduleId: 'acme.slow', action: 'workspace.history.back' }), false)
+  // The worker's `await studio.runCommand('workspace.history.back')` lands late, naming its call.
+  assert.equal(worker.runs(0), false)
   assert.deepEqual(app.runs, [], 'not run again')
   assert.match(lines.at(-1)!, /after Studio had already run it in its place/)
-  // Another action, or another extension's ask, is not held.
-  assert.equal(runCommandForWorker({ moduleId: 'acme.slow', action: 'pane.toggle' }), true)
-  assert.equal(runCommandForWorker({ moduleId: 'acme.other', action: 'workspace.history.back' }), true)
-  answer({ ok: true, result: null })
-  await vi.advanceTimersByTimeAsync(0)
-  // Once the call has settled, the worker's asks run as ever.
+  // Another action of the same call, an ask naming no call, and another extension's are not held.
+  assert.equal(worker.runs(0, 'pane.toggle'), true)
   assert.equal(runCommandForWorker({ moduleId: 'acme.slow', action: 'workspace.history.back' }), true)
+  assert.equal(
+    runCommandForWorker({ moduleId: 'acme.other', action: 'workspace.history.back', call: tokenOf(worker.calls[0]) }),
+    true,
+  )
+  worker.answer(0, { ok: true, result: null })
+  await vi.advanceTimersByTimeAsync(0)
   assert.deepEqual(app.runs, ['pane.toggle', 'workspace.history.back', 'workspace.history.back'])
   assert.equal(own.runs, 1)
 })
@@ -162,13 +185,12 @@ test('a wrapping worker that answers after the 2 s floor does not run Studio’s
 test('a worker that runs Studio’s action and then fails, or goes quiet, does not have Studio run it again', async () => {
   vi.useFakeTimers()
   const app = appRunner()
-  let fail: (value: Answer) => void = () => undefined
-  replacement('acme.wraps', () => new Promise<Answer>((resolve) => (fail = resolve)))
+  const worker = heldWorker('acme.wraps')
   const failed = builtIn()
   runReplaceable('workspace.history.back', failed.run)
   await vi.advanceTimersByTimeAsync(10)
-  assert.equal(runCommandForWorker({ moduleId: 'acme.wraps', action: 'workspace.history.back' }), true)
-  fail({ ok: false, code: 'failed', message: 'after the back' })
+  assert.equal(worker.runs(0), true)
+  worker.answer(0, { ok: false, code: 'failed', message: 'after the back' })
   await vi.advanceTimersByTimeAsync(0)
   assert.equal(failed.runs, 0, 'no fallback on its failure')
   assert.deepEqual(app.runs, ['workspace.history.back'], 'once, by the worker')
@@ -178,11 +200,59 @@ test('a worker that runs Studio’s action and then fails, or goes quiet, does n
   const quiet = builtIn()
   runReplaceable('workspace.history.back', quiet.run)
   await vi.advanceTimersByTimeAsync(10)
-  runCommandForWorker({ moduleId: 'acme.wraps', action: 'workspace.history.back' })
+  worker.runs(1)
   await vi.advanceTimersByTimeAsync(REPLACEMENT_TIME_LIMIT_MS)
   assert.equal(quiet.runs, 0)
   assert.deepEqual(app.runs, ['workspace.history.back', 'workspace.history.back'])
-  fail({ ok: true, result: null })
+  worker.answer(1, { ok: true, result: null })
+})
+
+test('two overlapping presses run Studio’s action exactly twice, whichever worker asks first', async () => {
+  vi.useFakeTimers()
+  for (const order of [
+    [0, 1],
+    [1, 0],
+  ]) {
+    const app = appRunner()
+    const worker = heldWorker(`acme.twice${order[0]}`)
+    const own = builtIn()
+    runReplaceable('workspace.history.back', own.run)
+    runReplaceable('workspace.history.back', own.run)
+    await vi.advanceTimersByTimeAsync(10)
+    assert.equal(worker.calls.length, 2)
+    assert.notEqual(tokenOf(worker.calls[0]), tokenOf(worker.calls[1]), 'each call its own token')
+    // Each worker runs the action for its own press, in either order; then both go quiet past the limit.
+    for (const n of order) assert.equal(worker.runs(n!), true)
+    await vi.advanceTimersByTimeAsync(REPLACEMENT_TIME_LIMIT_MS)
+    assert.equal(own.runs, 0, 'no fallback for a call whose worker ran it')
+    assert.equal(app.runs.length, 2, `twice, order ${order.join(',')}`)
+    worker.answer(0, { ok: false, code: 'failed', message: 'late' })
+    worker.answer(1, { ok: true, result: null })
+    await vi.advanceTimersByTimeAsync(0)
+    assert.equal(own.runs + app.runs.length, 2)
+    stopRunner()
+    forgetExtensionReplacements(`acme.twice${order[0]}`)
+  }
+})
+
+test('two overlapping presses: one falls back, the other’s worker runs it; an older call’s late ask never claims the newer', async () => {
+  vi.useFakeTimers()
+  const app = appRunner()
+  const worker = heldWorker('acme.mixed')
+  const own = builtIn()
+  runReplaceable('workspace.history.back', own.run)
+  await vi.advanceTimersByTimeAsync(REPLACEMENT_TIME_LIMIT_MS - 500)
+  runReplaceable('workspace.history.back', own.run)
+  // The first press's call reaches the limit: Studio runs its own for it.
+  await vi.advanceTimersByTimeAsync(500)
+  assert.equal(own.runs, 1)
+  // Its worker's late ask is dropped, though the second call is open; the second's own ask runs.
+  assert.equal(worker.runs(0), false)
+  assert.equal(worker.runs(1), true)
+  worker.answer(1, { ok: false, code: 'failed', message: 'after the back' })
+  await vi.advanceTimersByTimeAsync(0)
+  assert.equal(own.runs + app.runs.length, 2, 'exactly twice for two presses')
+  worker.answer(0, { ok: true, result: null })
 })
 
 test('a worker that refuses or throws has Studio run its own at once', async () => {

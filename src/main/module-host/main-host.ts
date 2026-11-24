@@ -37,7 +37,7 @@ import {
   getSkillStatus as getSkillStatusOnDisk,
 } from '../builtin-skills'
 import { resolveContainedPath } from '../modules/entry-containment'
-import { watchReplacementCall } from '../modules/extension-replacement-log'
+import { watchReplacementCall, withReplacementCall } from '../modules/extension-replacement-log'
 import { extensionCommandRuns } from '../../server/extensions/events/command-runs'
 import { EXTENSION_COMMAND_ACTIONS } from '../../../packages/extension-sdk/src/extension-manifest'
 import type { StudioExtensionCallAnswer } from '../../../packages/studio-protocol/src/public'
@@ -736,7 +736,9 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
 
   // A call that runs in place of a Studio action is watched, so the
   // extension's log says when the window ran Studio's own instead.
-  function callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome> {
+  function callModuleMethod(asked: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome> {
+    // The window's token for a replacing call rides the invoker, not the params.
+    const request = withReplacementCall(asked)
     return watchReplacementCall(request, () => callModuleMethodNow(request))
   }
 
@@ -1453,9 +1455,17 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       async runCommand(action) {
         if (!isStudioAction(action))
           throw new Error(`"${String(action)}" is not one of Studio's actions an extension may run.`)
-        // The window whose call this is: the person's, or a paired window, where the action is.
-        const connectionId = currentInvoker().connectionId
-        if (!connectionId || !extensionCommandRuns.run(connectionId, { moduleId, action }))
+        // The window whose call this is: the person's, or a paired window, where
+        // the action is; and which of its replacement calls asked, when one did.
+        const { connectionId, replacementCall } = currentInvoker()
+        if (
+          !connectionId ||
+          !extensionCommandRuns.run(connectionId, {
+            moduleId,
+            action,
+            ...(replacementCall ? { call: replacementCall } : {}),
+          })
+        )
           throw Object.assign(
             new Error(
               `Extension "${moduleId}" asked to run "${action}" for work no Studio window set off, so there is no window to run it in.`,

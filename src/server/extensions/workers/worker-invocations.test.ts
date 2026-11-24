@@ -165,6 +165,11 @@ test('a call is held to every invoker the worker serves then: their common permi
   assert.equal(withTab.principal.owner, true)
   assert.equal(withTab.noTerminals, true)
   assert.equal(heldToAll(owner, [owner, capped]).noTerminals, undefined)
+  // Narrowed or not, a call keeps its window and its replacement call: a runCommand names them back.
+  const replacing = { ...ownerInvoker(), connectionId: 'window-a', replacementCall: 'call-1' }
+  const narrowed = heldToAll(replacing, [replacing, capped])
+  assert.equal(narrowed.connectionId, 'window-a')
+  assert.equal(narrowed.replacementCall, 'call-1')
 })
 
 const POLLER = `
