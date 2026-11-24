@@ -210,6 +210,30 @@ test('a ui entry is a module Studio loads as written: JavaScript, TypeScript or 
   refusedAt(base({ icon: 'assets/icon.gif' }), 'icon', /must end in/)
 })
 
+test('a panel draws as html by default or as components; only a panel takes ui, and it needs the ui tier', () => {
+  const ui = (extra: Raw, tier = 'ui') => base({ tier, contributes: { panels: [panel(extra)] } })
+  const plain = validateExtensionManifest(ui({}))
+  assert.ok(plain.ok)
+  assert.equal(plain.manifest.contributes.panels[0]!.ui, undefined)
+  for (const entry of ['src/panel.tsx', 'src/panel.ts', 'src/panel.jsx', 'src/panel.mts', 'dist/panel.js', 'dist/panel.mjs']) {
+    const result = validateExtensionManifest(ui({ ui: 'components', entry }))
+    assert.ok(result.ok, entry)
+    assert.equal(result.manifest.contributes.panels[0]!.ui, 'components')
+  }
+  accepted(ui({ ui: 'html' }))
+  accepted({ ...ui({ ui: 'components', entry: 'src/panel.tsx' }, 'worker'), main: 'src/main.ts' })
+  refusedAt(ui({ ui: 'react' }), 'contributes.panels[0].ui', /html, components|one of/)
+  refusedAt(ui({ ui: 'components', entry: 'src/panel.html' }), 'contributes.panels[0].entry', /must end in/)
+  refusedAt(ui({ ui: 'components', entry: 'src/panel.cjs' }), 'contributes.panels[0].entry', /must end in/)
+  refusedAt(ui({ ui: 'components' }, 'declarative'), 'tier', /needs "ui"/)
+  // Doors and settings sections draw their own frames: they take no ui.
+  refusedAt(
+    base({ tier: 'ui', contributes: { doors: [panel({ ui: 'components' })] } }),
+    'contributes.doors[0].ui',
+    /unknown|not/i,
+  )
+})
+
 test('a point above the tier fails, naming the tier it needs', () => {
   refusedAt(
     base({ tier: 'content', contributes: { commands: [{ id: 'open', title: 'Open', action: 'chat.new' }] } }),

@@ -486,10 +486,23 @@
                 "minLength": 1,
                 "maxLength": 1024,
                 "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss]|\\.[Tt][Ss]|\\.[Mm][Tt][Ss]|\\.[Tt][Ss][Xx]|\\.[Jj][Ss][Xx])$",
-                "description": "What the panel draws, as a tab in a workspace’s pane. A module (`.js`, `.mjs`, or `.ts`, `.mts`, `.tsx`, `.jsx` loaded as written) whose `mount(root, studio)` draws into `root` and may return a cleanup function; it imports only its own files, by relative paths.",
+                "description": "What the panel draws, as a tab in a workspace’s pane. A module (`.js`, `.mjs`, or `.ts`, `.mts`, `.tsx`, `.jsx` loaded as written) that imports only its own files, by relative paths. With `ui` `html` it exports `mount(root, studio)`, which draws into `root` and may return a cleanup function; with `ui` `components` its default export is the panel’s component, and it may import `@sprintengine/extension-sdk/components`, which Studio provides.",
                 "x-since": "0.13.0",
                 "examples": [
                   "dist/notes.js"
+                ]
+              },
+              "ui": {
+                "type": "string",
+                "maxLength": 16,
+                "enum": [
+                  "html",
+                  "components"
+                ],
+                "description": "How the panel is drawn. `html` (the default): its entry draws its own page in a sandboxed frame. `components`: its entry runs hidden and sandboxed and renders a tree of Studio’s components, which Studio draws with its own controls, in light and dark, with its keyboard and focus rules.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "components"
                 ]
               }
             },

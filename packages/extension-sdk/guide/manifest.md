@@ -303,7 +303,8 @@ markers.
 | `contributes.panels[].id` | string | yes | 0.13.0 |  | Id, unique within this point. |
 | `contributes.panels[].title` | string | yes | 0.13.0 |  | What Studio calls it. |
 | `contributes.panels[].icon` | `extension` \| `chat` \| `branch` \| `folder` \| `schedule` \| `spark` \| `lock` \| `settings` \| `check` \| `warning` \| `copy` \| `notes` |  | 0.13.0 |  | Glyph beside the title. Defaults to `extension`. |
-| `contributes.panels[].entry` | string | yes | 0.13.0 |  | What the panel draws, as a tab in a workspace’s pane. A module (`.js`, `.mjs`, or `.ts`, `.mts`, `.tsx`, `.jsx` loaded as written) whose `mount(root, studio)` draws into `root` and may return a cleanup function; it imports only its own files, by relative paths. |
+| `contributes.panels[].entry` | string | yes | 0.13.0 |  | What the panel draws, as a tab in a workspace’s pane. A module (`.js`, `.mjs`, or `.ts`, `.mts`, `.tsx`, `.jsx` loaded as written) that imports only its own files, by relative paths. With `ui` `html` it exports `mount(root, studio)`, which draws into `root` and may return a cleanup function; with `ui` `components` its default export is the panel’s component, and it may import `@sprintengine/extension-sdk/components`, which Studio provides. |
+| `contributes.panels[].ui` | `html` \| `components` |  | 0.13.0 |  | How the panel is drawn. `html` (the default): its entry draws its own page in a sandboxed frame. `components`: its entry runs hidden and sandboxed and renders a tree of Studio’s components, which Studio draws with its own controls, in light and dark, with its keyboard and focus rules. |
 | `contributes.doors` | object[] (at most 8) |  | 0.13.0 | ui | Full-window surfaces, opened from the Extensions drawer. |
 | `contributes.doors[].id` | string | yes | 0.13.0 |  | Id, unique within this point. |
 | `contributes.doors[].title` | string | yes | 0.13.0 |  | What Studio calls it. |
