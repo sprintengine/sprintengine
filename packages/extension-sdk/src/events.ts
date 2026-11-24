@@ -75,7 +75,11 @@ export type ExtensionAgentState =
   | 'working'
   /** It waits on the person: an approval, or a question in its terminal. */
   | 'blocked'
-  /** Its turn ended, or its process did (`failed` says whether it failed). */
+  /**
+   * Its turn ended, its chat was closed, or its process exited (`failed`
+   * says whether the turn failed; one the person stopped did not). Said once:
+   * a finished agent's close says nothing more.
+   */
   | 'done'
 
 export type ExtensionEventPayloads = {
@@ -92,7 +96,7 @@ export type ExtensionEventPayloads = {
     /** The agent's name, as the sidebar shows it. */
     title: string | null
     state: ExtensionAgentState
-    /** Whether its turn or its process failed. */
+    /** Whether its turn or its process failed; a turn the person stopped did not. */
     failed: boolean
     /** When Studio heard it (epoch ms). */
     receivedAt: number
@@ -153,7 +157,7 @@ export const EXTENSION_EVENT_SPECS: Readonly<Record<ExtensionFrameEventName, Ext
     invoker: 'conversation:read',
     heard: 'worker',
     summary:
-      'A chat or a terminal agent changed status: `working`, `blocked` (it waits on the person) or `done` (its turn or its process ended). Said once per change of state, not for every step it takes.',
+      'A chat or a terminal agent changed status: `working`, `blocked` (it waits on the person) or `done` (its turn ended, its chat closed or its process exited; `failed` when the turn failed). Said once per change of state, not for every step it takes, and `done` once.',
     payload:
       "{ workspaceId: string | null; agentId: string; where: 'chat' | 'terminal'; terminalId: string | null; title: string | null; state: 'working' | 'blocked' | 'done'; failed: boolean; receivedAt: number }",
   },

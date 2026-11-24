@@ -65,7 +65,6 @@ import { createExtensionHooks } from '../extensions/hooks/extension-hooks'
 import { createExtensionEvents } from '../extensions/events/extension-events'
 import { followStudioEvents } from '../extensions/events/studio-events'
 import { createExtensionTerminals } from '../../main/module-host/extension-terminals'
-import { createConversationAttentionListener } from '../../main/conversation-attention'
 import { headlessTerminalViewer } from '../terminals/terminal-viewer'
 import { LOCAL_HOST_ID, workspaceHostIdOf } from '../../shared/execution-host'
 import { createHookInvokers } from '../extensions/hooks/hook-invokers'
@@ -724,7 +723,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
           onAgentPhase: (listener) => agentTerminals!.runtime.registerAgentPhaseListener(listener),
         }
       : null,
-    onChatPhase: (listener) => conversations.onEvent(createConversationAttentionListener({ onAgentPhase: listener })),
+    onChatEvent: (listener) => conversations.onEvent(listener),
     terminalTitle: (terminalId) => extensionTerminals.titleOf(terminalId),
   })
 

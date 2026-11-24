@@ -7,6 +7,7 @@ import { afterEach, test } from 'vitest'
 import { studioPrincipal } from '../../../../packages/studio-protocol/src/permissions'
 import type { ExtensionEventPayloads } from '../../../../packages/extension-sdk/src/events'
 import type { TerminalSessionSnapshot } from '../../../../packages/studio-protocol/src/terminals'
+import type { ConversationEvent } from '../../../shared/conversation-runtime'
 import type { AgentPhaseEvent } from '../../../shared/agent-runtime'
 import { ownerInvoker, type ExtensionInvoker } from '../../../main/module-host/extension-invocation'
 import { startWorkerHarness, until, type TestExtension, type WorkerHarness } from '../../../../tests/extension-workers'
@@ -200,7 +201,7 @@ function studio() {
   const workspaceListeners = new Set<() => void>()
   const terminalListeners = new Set<() => void>()
   const terminalPhases = new Set<(event: AgentPhaseEvent) => void>()
-  const chatPhases = new Set<(event: AgentPhaseEvent) => void>()
+  const chatListeners = new Set<(event: ConversationEvent) => void>()
   const heard: Array<{ event: string; payload: unknown }> = []
   const events = createExtensionEvents()
   events.bind({
@@ -218,7 +219,7 @@ function studio() {
       onChanged: (listener) => (terminalListeners.add(listener), () => terminalListeners.delete(listener)),
       onAgentPhase: (listener) => (terminalPhases.add(listener), () => terminalPhases.delete(listener)),
     },
-    onChatPhase: (listener) => (chatPhases.add(listener), () => chatPhases.delete(listener)),
+    onChatEvent: (listener) => (chatListeners.add(listener), () => chatListeners.delete(listener)),
     now: () => 1_000,
   })
   return {
@@ -232,9 +233,19 @@ function studio() {
       sessions = next
       for (const listener of terminalListeners) listener()
     },
-    chatPhase: (event: Partial<AgentPhaseEvent>) => {
-      for (const listener of chatPhases)
-        listener({ workspaceId: 'ws-1', agentId: 'agent-1', ...event } as AgentPhaseEvent)
+    /** One of a chat's events, as its runtime records it. */
+    chat: (type: ConversationEvent['type'], payload: Record<string, unknown> = {}) => {
+      for (const listener of chatListeners)
+        listener({
+          id: `e-${type}`,
+          seq: 1,
+          sessionId: 'session-1',
+          workspaceId: 'ws-1',
+          agentId: 'agent-1',
+          type,
+          createdAt: 1,
+          payload,
+        } as ConversationEvent)
     },
     terminalPhase: (event: Partial<AgentPhaseEvent>) => {
       for (const listener of terminalPhases)
@@ -321,20 +332,60 @@ test('an agent’s status is said once per change of state, a chat’s and a ter
   const s = studio()
   s.setSessions([session({ sessionId: 'agent-session', agentId: 'agent-2', kind: 'agent', agentName: 'Builder' })])
   s.heard.length = 0
-  s.chatPhase({ phase: 'thinking' })
-  s.chatPhase({ phase: 'tool_use' })
-  s.chatPhase({ phase: 'awaiting_input' })
-  s.chatPhase({ phase: 'idle' })
-  s.terminalPhase({ phase: 'failed' })
+  s.chat('session_started')
+  s.chat('turn_started', { turnId: 't1' })
+  s.chat('tool_started', { turnId: 't1', toolUseId: 'u1' })
+  s.chat('approval_requested', { requestId: 'r1' })
+  s.chat('approval_resolved', { requestId: 'r1' })
+  s.chat('turn_completed', { turnId: 't1' })
+  s.terminalPhase({ phase: 'thinking', turnFailure: false })
+  s.terminalPhase({ phase: 'failed', turnFailure: true })
   const said = s.heard.map((heard) => heard.payload as ExtensionEventPayloads['agent.status.changed'])
   assert.deepEqual(
     said.map(({ where, state, failed }) => `${where}:${state}${failed ? ':failed' : ''}`),
-    ['chat:working', 'chat:blocked', 'chat:done', 'terminal:done:failed'],
+    ['chat:working', 'chat:blocked', 'chat:working', 'chat:done', 'terminal:working', 'terminal:done:failed'],
   )
   assert.equal(said[0]!.title, 'Planner')
   assert.equal(said[0]!.terminalId, null)
-  assert.equal(said[3]!.terminalId, 'agent-session')
-  assert.equal(said[3]!.title, 'Builder')
-  assert.equal(said[3]!.receivedAt, 1_000)
+  assert.equal(said[5]!.terminalId, 'agent-session')
+  assert.equal(said[5]!.title, 'Builder')
+  assert.equal(said[5]!.receivedAt, 1_000)
+  s.stop()
+})
+
+const states = (s: ReturnType<typeof studio>) =>
+  s.heard
+    .map((heard) => heard.payload as ExtensionEventPayloads['agent.status.changed'])
+    .map(({ where, state, failed }) => `${where}:${state}${failed ? ':failed' : ''}`)
+
+test('a chat’s failed turn is failed, one the person stopped is not, and a closed chat is never left working', () => {
+  const s = studio()
+  s.chat('turn_started', { turnId: 't1' })
+  s.chat('turn_failed', { turnId: 't1', message: 'The model refused.' })
+  s.chat('session_closed')
+  assert.deepEqual(states(s), ['chat:working', 'chat:done:failed'], 'a finished chat’s close says nothing more')
+  s.heard.length = 0
+  s.chat('turn_started', { turnId: 't2' })
+  s.chat('turn_failed', { turnId: 't2', reason: 'interrupted' })
+  assert.deepEqual(states(s), ['chat:working', 'chat:done'])
+  s.heard.length = 0
+  // Closed mid-turn: its last word is done.
+  s.chat('turn_started', { turnId: 't3' })
+  s.chat('session_closed')
+  assert.deepEqual(states(s), ['chat:working', 'chat:done'])
+  s.stop()
+})
+
+test('a terminal agent that finished says done once, not again when its terminal closes', () => {
+  const s = studio()
+  s.terminalPhase({ phase: 'thinking', turnFailure: false })
+  s.terminalPhase({ phase: 'idle', turnFailure: false, turnEnd: true })
+  s.terminalPhase({ phase: 'exited', turnFailure: false })
+  assert.deepEqual(states(s), ['terminal:working', 'terminal:done'])
+  // Its failure is read beside its phase: idle after a failed turn is a failure.
+  s.heard.length = 0
+  s.terminalPhase({ phase: 'thinking', turnFailure: false })
+  s.terminalPhase({ phase: 'idle', turnFailure: true, turnEnd: true })
+  assert.deepEqual(states(s), ['terminal:working', 'terminal:done:failed'])
   s.stop()
 })
