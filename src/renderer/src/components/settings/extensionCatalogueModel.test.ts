@@ -1,6 +1,13 @@
 import { expect, test } from 'vitest'
 
-import { categoryWords, installState, listingCategories, listingMatches } from './extensionCatalogueModel'
+import {
+  categoryOf,
+  categoryWords,
+  contributionWords,
+  installState,
+  listingCategories,
+  listingMatches,
+} from './extensionCatalogueModel'
 
 const listing = {
   id: 'acme.notes',
@@ -49,4 +56,16 @@ test('categories spelled several ways fold into one, for the chips and the filte
   expect(categoryWords('languages')).toBe('Code languages')
   expect(categoryWords('music-tools')).toBe('Music tools')
   expect(listingMatches(syntax, 'code languages', null)).toBe(true)
+})
+
+test('a slug that names an object member is a category like any other', () => {
+  for (const slug of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    expect(categoryOf(slug)).toBe(slug.toLowerCase())
+    expect(typeof categoryWords(categoryOf(slug))).toBe('string')
+    expect(contributionWords(slug)).toBe(slug)
+  }
+  expect(categoryWords('constructor')).toBe('Constructor')
+  const odd = { ...listing, categories: ['constructor'] }
+  expect(listingCategories([odd])).toEqual(['constructor'])
+  expect(listingMatches(odd, 'constructor', 'constructor')).toBe(true)
 })

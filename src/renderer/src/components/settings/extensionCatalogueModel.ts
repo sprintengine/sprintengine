@@ -106,6 +106,10 @@ const CONTRIBUTION_WORDS: Record<string, string> = {
   providers: 'Model provider',
 }
 
+// A slug or kind is the catalogue's word, so a lookup must not reach an
+// object's inherited members: `constructor` is a category like any other.
+for (const map of [CATEGORY_BY_SLUG, CATEGORY_WORDS, CONTRIBUTION_WORDS]) Object.setPrototypeOf(map, null)
+
 /** What one listed contribution is, in words. */
 export function contributionWords(kind: string): string {
   return CONTRIBUTION_WORDS[kind] ?? kind
