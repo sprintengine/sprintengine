@@ -172,15 +172,29 @@ async function run(output: Output, command: string, args: string[]): Promise<voi
   if (command === 'install' || command === 'update' || command === 'open') {
     const { values, positionals } = parseArgs({
       args,
-      options: { ...COMMON, all: { type: 'boolean' }, panel: { type: 'string' }, editor: { type: 'string' } },
+      options: {
+        ...COMMON,
+        all: { type: 'boolean' },
+        panel: { type: 'string' },
+        editor: { type: 'string' },
+        ref: { type: 'string' },
+        catalogue: { type: 'string' },
+      },
       allowPositionals: true,
     })
     const dataDir = values['data-dir'] ? { dataDir: values['data-dir'] } : {}
     const target = positionals[0]
     if (command === 'install') {
       if (!target)
-        throw new CliError('invalid_argument', 'install <owner/repo[@ref] | git URL[#ref] | folder link | key>')
-      return installExtension(output, target, dataDir)
+        throw new CliError(
+          'invalid_argument',
+          'install <owner/repo[@ref] | git URL[#ref] | folder link | release page | key> [--ref <ref>] [--catalogue <catalogue>]',
+        )
+      return installExtension(output, target, {
+        ...dataDir,
+        ...(values.ref !== undefined ? { ref: values.ref } : {}),
+        ...(values.catalogue !== undefined ? { catalogue: values.catalogue } : {}),
+      })
     }
     if (command === 'update') {
       if ((target === undefined) === (values.all !== true))

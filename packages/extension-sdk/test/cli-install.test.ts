@@ -19,7 +19,9 @@ let dataDir = ''
 let server: Server
 const calls: Array<{ name: string; args: Record<string, unknown> }> = []
 
-type Answer = { ok: true; result: Record<string, unknown> } | { ok: false; code: string; message: string }
+type Answer =
+  | { ok: true; result: Record<string, unknown> }
+  | { ok: false; code: string; message: string; data?: Record<string, unknown> }
 
 /** What the fake Studio answers each install source with. */
 const ALL_UPDATED: unknown[] = [
@@ -46,6 +48,17 @@ const INSTALLS: Record<string, Answer> = {
   'acme.killed': { ok: false, code: 'killed', message: 'Studio’s kill list removed acme.killed 1.0.0.' },
   'acme.locked': { ok: false, code: 'release_lock_mismatch', message: 'acme.locked 1.0.0 is locked to commit abc.' },
   'acme.moved': { ok: false, code: 'owner_mismatch', message: 'It lists acme.moved from a repository owned by bob.' },
+  'acme/private': { ok: false, code: 'git_auth_failed', message: 'This machine’s git credentials cannot read it.' },
+  'acme.twice': {
+    ok: false,
+    code: 'catalogue_ambiguous',
+    message: 'More than one catalogue lists acme.twice.',
+    data: { catalogues: ['official', 'community'] },
+  },
+  'acme/tagged': {
+    ok: true,
+    result: { moduleId: 'acme.tagged', approval: { state: 'not-needed' }, ref: 'refs/tags/v1.4.0' },
+  },
 }
 
 beforeAll(async () => {
@@ -114,7 +127,10 @@ beforeAll(async () => {
             ? { structuredContent: given.result }
             : {
                 isError: true,
-                structuredContent: { ok: false, error: { code: given.code, message: given.message } },
+                structuredContent: {
+                  ok: false,
+                  error: { code: given.code, message: given.message, ...(given.data ? { data: given.data } : {}) },
+                },
                 content: [{ type: 'text', text: given.message }],
               }
         }
@@ -186,6 +202,26 @@ test('each refusal leaves with its code: killed, the release lock, another owner
     assert.equal(status, 1, source)
     assert.equal(codeOf(last), code, source)
   }
+})
+
+test('--ref and --catalogue reach Studio beside the source; a key named twice asks which catalogue', async () => {
+  calls.splice(0)
+  const tagged = await run(['install', 'acme/tagged', '--ref', 'v1.4.0'])
+  assert.equal(tagged.status, 0)
+  assert.deepEqual(calls.at(-1)?.args, { source: 'acme/tagged', ref: 'v1.4.0' })
+  const twice = await run(['install', 'acme.twice'])
+  assert.equal(twice.status, 1)
+  assert.equal(codeOf(twice.last), 'catalogue_ambiguous')
+  assert.deepEqual((twice.last.error as { nextSteps: string[] }).nextSteps, [
+    'sprintengine-extension install acme.twice --catalogue official',
+    'sprintengine-extension install acme.twice --catalogue community',
+  ])
+  const privateRepo = await run(['install', 'acme/private'])
+  assert.equal(codeOf(privateRepo.last), 'git_auth_failed')
+  calls.splice(0)
+  const keyRef = await run(['install', 'acme.notes', '--ref', 'v1'])
+  assert.equal(codeOf(keyRef.last), 'invalid_argument')
+  assert.deepEqual(calls, [], 'refused before Studio')
 })
 
 test('a source that is none of the forms never reaches Studio', async () => {

@@ -446,15 +446,15 @@
     },
     {
       "name": "extension.install",
-      "sha256": "1a500f480e3a8a3b7403120245907873ab263b1c073a1e89d7ef4c5805e30ea7"
+      "sha256": "3bf6dc9aab390de304b386307efaf89f89db221069d51e7d4e3dc446647ff423"
     },
     {
       "name": "extension.update",
-      "sha256": "dbd44e9e86eec32503b4acd7905837a8066a7fb74b6cd9a7750190e75d8afa22"
+      "sha256": "f8928ff47dc86f6580c1991932f76b1e16745f166b351ed85f84c9f328dc58ca"
     },
     {
       "name": "extension.open",
-      "sha256": "73c9d2eec2e2c4295468a60068d6df5b9392f6fa41745e7dd57c111e49864772"
+      "sha256": "7dcb9ed41e6a9ef0ec0f358594867278f2a8bd57179127229fd5b8aead0ddd5c"
     },
     {
       "name": "plugin.search",
@@ -944,15 +944,15 @@
     },
     {
       "name": "extension.install",
-      "sha256": "1a500f480e3a8a3b7403120245907873ab263b1c073a1e89d7ef4c5805e30ea7"
+      "sha256": "3bf6dc9aab390de304b386307efaf89f89db221069d51e7d4e3dc446647ff423"
     },
     {
       "name": "extension.update",
-      "sha256": "dbd44e9e86eec32503b4acd7905837a8066a7fb74b6cd9a7750190e75d8afa22"
+      "sha256": "f8928ff47dc86f6580c1991932f76b1e16745f166b351ed85f84c9f328dc58ca"
     },
     {
       "name": "extension.open",
-      "sha256": "73c9d2eec2e2c4295468a60068d6df5b9392f6fa41745e7dd57c111e49864772"
+      "sha256": "7dcb9ed41e6a9ef0ec0f358594867278f2a8bd57179127229fd5b8aead0ddd5c"
     },
     {
       "name": "plugin.search",

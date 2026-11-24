@@ -35,13 +35,21 @@ async function withStudio<T>(dataDir: string | undefined, work: (studio: StudioT
 
 const WAITING_WORDS = 'waiting for approval in Studio'
 
-export async function installExtension(output: Output, source: string, options: { dataDir?: string }) {
+export async function installExtension(
+  output: Output,
+  source: string,
+  options: { dataDir?: string; ref?: string; catalogue?: string },
+) {
+  const named = {
+    ...(options.ref !== undefined ? { ref: options.ref } : {}),
+    ...(options.catalogue !== undefined ? { catalogue: options.catalogue } : {}),
+  }
   // Read here first, so a source that is none of the forms never reaches Studio.
-  const read = readExtensionInstallSource(source)
+  const read = readExtensionInstallSource(source, named)
   if (!read.ok) throw new CliError('invalid_argument', read.message)
   // A fetch and a check-out can take a while.
   const answer = await withStudio(options.dataDir, (studio) =>
-    studio.call('extension.install', { source }, 180_000),
+    studio.call('extension.install', { source, ...named }, 180_000),
   ).catch((error: unknown) => {
     // Installing over an installed extension is an update, or the person's to do.
     if (error instanceof CliError && error.code === 'already_installed') {
@@ -50,6 +58,15 @@ export async function installExtension(output: Output, source: string, options: 
         `sprintengine-extension update ${key} installs the newer release its catalogue lists.`,
         `To install it again from another source, the person removes it in Studio's Settings > Extensions first.`,
       ])
+    }
+    if (error instanceof CliError && error.code === 'catalogue_ambiguous') {
+      const choices = (error.data?.catalogues as string[] | undefined) ?? []
+      throw new CliError(
+        error.code,
+        error.message,
+        error.data,
+        choices.map((choice) => `sprintengine-extension install ${source} --catalogue ${choice}`),
+      )
     }
     throw error
   })
@@ -66,7 +83,7 @@ export async function installExtension(output: Output, source: string, options: 
       ],
     )
   output.done(answer, [
-    `Installed ${moduleId}${answer.catalogue ? ` from the ${String(answer.catalogue)} catalogue` : ''} (${approval.state}).`,
+    `Installed ${moduleId}${answer.catalogue ? ` from the ${String(answer.catalogue)} catalogue` : ''}${answer.ref ? ` at ${String(answer.ref)}` : ''} (${approval.state}).`,
     ...((answer.leftOut as string[] | undefined) ?? []).map((part) => `left out: ${part}`),
   ])
 }

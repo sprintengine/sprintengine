@@ -52,6 +52,8 @@ fix it. Without `--json` the same is printed as words, the failure on stderr.
 | `kill_list_unavailable` | Studio could not read its kill list, so nothing installs until it can | 1 |
 | `origin_conflict` | It is installed from another source: remove it first | 1 |
 | `already_installed` | It is installed already: `update` it, or the person removes it in Studio first | 1 |
+| `catalogue_ambiguous` | More than one catalogue lists that key: `data.catalogues` names them, for `--catalogue` | 1 |
+| `git_auth_failed` | This machine's git credentials cannot read the repository | 1 |
 | `reserved_name` | A name only Studio's official catalogue installs | 1 |
 | `changed` | The catalogue changed what it lists since it was read: look again | 1 |
 | `held_back` | A community or added catalogue listed that release less than 12 hours ago, so a takedown can land first: the row's `heldBackMs` says how long it still waits | 1 |
@@ -245,12 +247,22 @@ the repository's owner, the kill list and the release lock before anything is
 installed, and a private repository is fetched with this machine's own git
 credentials, the ones `git` already uses here.
 
-- **`install <source>`**: `source` is a catalogue key (`acme.notes`, from the
-  first catalogue that lists it: official, community, then those you added), a
-  GitHub repository (`acme/notes`, `acme/notes@v1.2.0`), any git URL (`#<ref>`
-  names a ref) or a link to a folder in a repository
-  (`https://github.com/acme/tools/tree/main/notes`: the ref, then the
-  folder). A ref is a branch, a tag or a commit: a pull request's ref
+- **`install <source> [--ref <ref>] [--catalogue <catalogue>]`**: `source` is
+  a catalogue key (`acme.notes`), a GitHub repository (`acme/notes`,
+  `acme/notes@v1.2.0`), any git URL (`#<ref>` names a ref), a link to a
+  folder in a repository (`https://github.com/acme/tools/tree/main/notes`: the
+  ref, then the folder; a branch holding `/` is read as the longest branch or
+  tag the link starts with), or a release's or tag's page
+  (`https://github.com/acme/notes/releases/tag/v1.2.0`: that tag). When more
+  than one catalogue lists a key, `--catalogue` chooses one (`official`,
+  `community`, or an added catalogue's URL); without it the install is refused
+  with `catalogue_ambiguous`, naming them. `--ref` names the ref of a
+  repository or git URL that names none; with none, the newest `vX.Y.Z` tag
+  the repository has is installed, else its default branch, and the answer's
+  `ref` says which. A repository this machine's git credentials cannot read
+  fails `git_auth_failed`. A file's link (`…/blob/…`), a commit's page and a
+  folder on this machine are not sources: a folder you are working on loads
+  with `dev load`, or installs from Settings. A ref is a branch, a tag or a commit: a pull request's ref
   (`refs/pull/…`, `pull/…`) or another no publisher released is refused. An
   extension installed already is refused with `already_installed`: `update`
   it, or the person removes it in Settings first, since installing over it

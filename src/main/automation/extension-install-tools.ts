@@ -77,9 +77,12 @@ export function createExtensionInstallTools(deps: ExtensionInstallToolsDeps): Mc
       name: 'extension.install',
       description:
         'Install a published extension the way Settings ▸ Extensions does: `source` is a catalogue key ' +
-        '(`acme.notes`, from the first catalogue that lists it: official, community, then those added), a GitHub ' +
-        'repository (`acme/notes`, `acme/notes@v1.2.0`), a git URL (`#<ref>` for a ref), or a link to a folder in ' +
-        'a repository (`…/tree/<ref>/<folder>`). Studio checks the owner, the kill list and the release lock first; ' +
+        '(`acme.notes`; when more than one catalogue lists it, choose with `catalogue`, else it is refused with ' +
+        '`catalogue_ambiguous` naming them), a GitHub repository (`acme/notes`, `acme/notes@v1.2.0`), a git URL ' +
+        '(`#<ref>` for a ref), a link to a folder in a repository (`…/tree/<ref>/<folder>`, a branch holding `/` ' +
+        'included), or a release’s or tag’s page (`…/releases/tag/<tag>`). `ref` names the ref apart; with none, ' +
+        'the newest vX.Y.Z tag is installed, else the default branch, and the answer says which (`ref`). A ' +
+        'repository this machine’s git credentials cannot read is refused with `git_auth_failed`. Studio checks the owner, the kill list and the release lock first; ' +
         'a private repository is fetched with this machine’s own git credentials. An extension installed already is ' +
         'refused (`already_installed`): update it, or the person removes it in Settings first. A pull request’s ' +
         'ref, or another no publisher released, is refused. A content extension, and one from ' +
@@ -92,7 +95,20 @@ export function createExtensionInstallTools(deps: ExtensionInstallToolsDeps): Mc
         properties: {
           source: {
             type: 'string',
-            description: 'A catalogue key, owner/repo[@ref], a git URL[#ref], or a folder link.',
+            description:
+              'A catalogue key, owner/repo[@ref], a git URL[#ref], a folder link, or a release’s or tag’s page.',
+          },
+          ref: {
+            type: 'string',
+            description:
+              'The branch, tag or full commit id of a repository or git URL that names none. Without one, the ' +
+              'newest vX.Y.Z tag it has, else its default branch.',
+          },
+          catalogue: {
+            type: 'string',
+            description:
+              'The catalogue a key installs from, when more than one lists it: official, community, or an added ' +
+              'one’s URL.',
           },
         },
         required: ['source'],
@@ -105,7 +121,15 @@ export function createExtensionInstallTools(deps: ExtensionInstallToolsDeps): Mc
         if (args.approve !== undefined) return toolError('invalid_arguments', NOTHING_APPROVES)
         const text = stringArg(args, 'source')
         if (!text) return toolError('invalid_arguments', '"source" names what to install.')
-        const read = readExtensionInstallSource(text)
+        for (const name of ['ref', 'catalogue'])
+          if (args[name] !== undefined && stringArg(args, name, 1024) === null)
+            return toolError('invalid_arguments', `"${name}" is a string.`)
+        const ref = stringArg(args, 'ref', 255)
+        const catalogue = stringArg(args, 'catalogue', 1024)
+        const read = readExtensionInstallSource(text, {
+          ...(ref !== null ? { ref } : {}),
+          ...(catalogue !== null ? { catalogue } : {}),
+        })
         if (!read.ok) return toolError('invalid_arguments', read.message)
         const lifecycle = lifecycleOf(deps)
         if (isResult(lifecycle)) return lifecycle
@@ -114,12 +138,16 @@ export function createExtensionInstallTools(deps: ExtensionInstallToolsDeps): Mc
         // installed extension (`already_installed`), and it reads the kill list fresh.
         const answer =
           source.kind === 'catalogue'
-            ? await lifecycle.catalogue.installKey(source.key, { unattended: true })
+            ? await lifecycle.catalogue.installKey(source.key, {
+                unattended: true,
+                ...(source.catalogue ? { catalogue: source.catalogue } : {}),
+              })
             : await lifecycle.catalogue.installFrom(
                 {
                   git: source.url,
                   ...(source.ref ? { ref: source.ref } : {}),
                   ...(source.path ? { path: source.path } : {}),
+                  ...(source.tree ? { tree: source.tree } : {}),
                 },
                 { unattended: true },
               )
@@ -127,6 +155,7 @@ export function createExtensionInstallTools(deps: ExtensionInstallToolsDeps): Mc
           return refused(answer.code ?? 'install_failed', answer.message, {
             ...(answer.issues ? { issues: answer.issues } : {}),
             ...(answer.folders ? { folders: answer.folders } : {}),
+            ...(answer.catalogues ? { catalogues: answer.catalogues } : {}),
           })
         // Only the person approves, in their window, which asks them now.
         if (answer.approval.state === 'pending') lifecycle.askReview(answer.moduleId)
@@ -135,6 +164,8 @@ export function createExtensionInstallTools(deps: ExtensionInstallToolsDeps): Mc
           approval: answer.approval,
           source,
           ...('catalogue' in answer && answer.catalogue ? { catalogue: answer.catalogue } : {}),
+          // The ref a repository was installed at: the one named, its newest release tag, or HEAD.
+          ...('ref' in answer && answer.ref ? { ref: answer.ref } : {}),
           ...('leftOut' in answer && answer.leftOut?.length ? { leftOut: answer.leftOut } : {}),
           ...(answer.strippedLinks.length > 0 ? { strippedLinks: answer.strippedLinks } : {}),
         })

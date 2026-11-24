@@ -128,7 +128,7 @@ test('each source form reaches the install path Settings takes', async () => {
   assert.deepEqual(seen.installFrom, [
     { git: 'https://github.com/acme/notes.git', ref: 'v1' },
     { git: 'https://git.example.com/acme/notes.git', ref: 'main' },
-    { git: 'https://github.com/acme/tools.git', ref: 'main', path: 'notes' },
+    { git: 'https://github.com/acme/tools.git', ref: 'main', path: 'notes', tree: 'main/notes' },
   ])
   // Nobody is looking at what installs from here: it never replaces an installed extension.
   assert.deepEqual(seen.options, Array(4).fill({ unattended: true }))
@@ -136,6 +136,42 @@ test('each source form reaches the install path Settings takes', async () => {
   // A pull request's ref never reaches the install path.
   assert.equal(codeOf(await install.handler({ source: 'acme/notes@refs/pull/42/head' }, local)), 'invalid_arguments')
   assert.equal(seen.installFrom.length, 3)
+})
+
+test('ref and catalogue reach the install path; a repository’s answer says which ref it took', async () => {
+  const { seen, tool } = tools({
+    answer: { ok: true, moduleId: 'acme.notes', approval: pending, strippedLinks: [], ref: 'refs/tags/v1.4.0' },
+  })
+  const install = tool('extension.install')
+  const answer = await install.handler({ source: 'https://github.com/acme/notes/releases/tag/v1.4.0' }, local)
+  assert.equal((answer.structuredContent as { ref?: string }).ref, 'refs/tags/v1.4.0')
+  await install.handler({ source: 'acme/notes', ref: 'v2.0.0' }, local)
+  await install.handler({ source: 'https://github.com/acme/tools/tree/feature/x/notes' }, local)
+  await install.handler({ source: 'acme.notes', catalogue: 'community' }, local)
+  assert.deepEqual(seen.installFrom, [
+    { git: 'https://github.com/acme/notes.git', ref: 'refs/tags/v1.4.0' },
+    { git: 'https://github.com/acme/notes.git', ref: 'v2.0.0' },
+    { git: 'https://github.com/acme/tools.git', ref: 'feature', path: 'x/notes', tree: 'feature/x/notes' },
+  ])
+  assert.deepEqual(seen.options.at(-1), { unattended: true, catalogue: 'community' })
+  assert.equal(codeOf(await install.handler({ source: 'acme.notes', ref: 'v1' }, local)), 'invalid_arguments')
+})
+
+test('a key more than one catalogue lists is refused with the choices', async () => {
+  const { tool } = tools({
+    answer: {
+      ok: false,
+      code: 'catalogue_ambiguous',
+      message: 'More than one.',
+      catalogues: ['official', 'community'],
+    },
+  })
+  const answer = await tool('extension.install').handler({ source: 'acme.notes' }, local)
+  assert.equal(codeOf(answer), 'catalogue_ambiguous')
+  assert.deepEqual((answer.structuredContent as { error: { data: { catalogues: string[] } } }).error.data.catalogues, [
+    'official',
+    'community',
+  ])
 })
 
 test('an install over an installed extension is refused, naming the update', async () => {

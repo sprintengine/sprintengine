@@ -24,8 +24,11 @@ import {
 } from '../../../../packages/extension-sdk/src/catalogue'
 import {
   isFetchableGitUrl,
+  isGitAuthFailure,
+  listGitRefs,
   type FetchedCommit,
   type GitOptions,
+  type GitRefs,
 } from '../../../../packages/extension-sdk/src/git-source'
 import { installRefProblem } from '../../../../packages/extension-sdk/src/install-source'
 import type {
@@ -128,6 +131,8 @@ type InstallAnswer =
       issues?: Array<{ path: string; message: string }>
       /** The folders of a Claude Code plugin marketplace, one of which to name. */
       folders?: string[]
+      /** The catalogues that list a key, one of which to name (`catalogue_ambiguous`). */
+      catalogues?: string[]
     }
 
 /**
@@ -149,6 +154,8 @@ export type InstallRefusal =
   | 'not_found'
   | 'changed'
   | 'already_installed'
+  | 'git_auth_failed'
+  | 'catalogue_ambiguous'
   /** What was named is not something Studio installs from (a pull request's ref). */
   | 'invalid_arguments'
 
@@ -179,6 +186,17 @@ export type UpdateRow = {
  * asking nothing: skills and hosted MCP servers go to every agent here.
  */
 export type UnattendedInstall = { unattended?: boolean }
+
+/**
+ * A git repository to install from. With no `ref`, the newest `vX.Y.Z` tag
+ * it has, else its default branch. `tree` is a folder link's ref and folder
+ * as one (a branch may hold `/`): split where a branch or tag of it ends.
+ */
+export type GitInstallSource = { git: string; ref?: string; path?: string; tree?: string }
+
+const COMMIT_ID = /^[0-9a-f]{40}$/iu
+/** A release tag: the newest of these is what installs when no ref is named. */
+const RELEASE_TAG = /^v(\d+\.\d+\.\d+)$/u
 
 export type CatalogueNotice = {
   key: string
@@ -236,16 +254,19 @@ export type ExtensionCatalogue = {
    * just the entry, to install what the catalogue lists now.
    */
   installFrom(
-    from: StudioExtensionInstallSource | { catalogue: string; id: string },
+    from: StudioExtensionInstallSource | { catalogue: string; id: string } | GitInstallSource,
     options?: UnattendedInstall,
-  ): Promise<InstallAnswer & { leftOut?: string[] }>
+  ): Promise<InstallAnswer & { leftOut?: string[]; ref?: string }>
   /** Install the newer release of an installed extension; `version` is the one the person was shown. */
   update(key: string, version?: string): Promise<InstallAnswer>
   /**
    * Install what a catalogue lists under `key`: the first catalogue that
    * lists it, official, community, then those added, in that order.
    */
-  installKey(key: string, options?: UnattendedInstall): Promise<InstallAnswer & { catalogue?: CatalogueId }>
+  installKey(
+    key: string,
+    options?: UnattendedInstall & { catalogue?: string },
+  ): Promise<InstallAnswer & { catalogue?: CatalogueId }>
   /**
    * Update installed extensions now, from outside the window
    * (`sprintengine-extension update`): `key`'s, or every one installed from a
@@ -841,12 +862,76 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     )
   }
 
-  async function installFromGit(source: { git: string; ref?: string; path?: string }, options: UnattendedInstall = {}) {
+  /**
+   * The ref and folder a git install takes, read against the branches and
+   * tags the repository has: a named ref must be one of them (or a full
+   * commit id), a folder link's ref is the longest branch or tag its path
+   * starts with, and with none named the newest `vX.Y.Z` tag, else the
+   * default branch.
+   */
+  async function resolveGitRef(
+    url: string,
+    asked: string | undefined,
+    tree: string | undefined,
+    path: string | undefined,
+  ): Promise<{ ok: true; ref: string; path?: string } | { ok: false; code?: InstallRefusal; message: string }> {
+    const at = (ref: string, folder = path) => ({ ok: true as const, ref, ...(folder ? { path: folder } : {}) })
+    if (tree === undefined && asked !== undefined && (asked === 'HEAD' || COMMIT_ID.test(asked))) return at(asked)
+    let refs: GitRefs
+    try {
+      refs = await listGitRefs(url, git)
+    } catch (error) {
+      const why = (error as Error).message
+      return isGitAuthFailure(why)
+        ? {
+            ok: false,
+            code: 'git_auth_failed',
+            message: `This machine's git credentials cannot read ${url}: ${why} Sign git in to that host (the credentials \`git\` uses here), or check that the repository exists.`,
+          }
+        : { ok: false, message: `Studio could not read the branches and tags of ${url}: ${why}` }
+    }
+    const known = (name: string) => refs.heads.includes(name) || refs.tags.includes(name)
+    if (tree !== undefined) {
+      const parts = tree.split('/')
+      for (let end = parts.length; end >= 1; end -= 1) {
+        const candidate = parts.slice(0, end).join('/')
+        if (known(candidate)) return at(candidate, parts.slice(end).join('/') || undefined)
+      }
+      if (COMMIT_ID.test(parts[0]!)) return at(parts[0]!, parts.slice(1).join('/') || undefined)
+      return {
+        ok: false,
+        code: 'invalid_arguments',
+        message: `No branch or tag of ${url} starts "${tree}". Name the ref after # on the git URL (or with --ref) and link to the folder at it (…/tree/<ref>/<folder>).`,
+      }
+    }
+    if (asked === undefined) {
+      const newest = refs.tags
+        .flatMap((tag) => {
+          const version = RELEASE_TAG.exec(tag)?.[1]
+          return version ? [{ tag, version }] : []
+        })
+        .sort((a, b) => compareStudioVersions(b.version, a.version))[0]
+      return at(newest ? `refs/tags/${newest.tag}` : 'HEAD')
+    }
+    const named = asked.startsWith('refs/heads/')
+      ? refs.heads.includes(asked.slice('refs/heads/'.length))
+      : asked.startsWith('refs/tags/')
+        ? refs.tags.includes(asked.slice('refs/tags/'.length))
+        : known(asked)
+    if (named) return at(asked)
+    return {
+      ok: false,
+      code: 'invalid_arguments',
+      message: `"${asked}" is not a branch or a tag of ${url}${/^[0-9a-f]{7,39}$/iu.test(asked) ? ' (a commit is named by its full 40-character id)' : ''}.`,
+    }
+  }
+
+  async function installFromGit(source: GitInstallSource, options: UnattendedInstall = {}) {
     const url = source.git.trim()
-    const ref = source.ref?.trim() || 'HEAD'
-    const path = source.path?.trim().replace(/^\/+|\/+$/g, '') || undefined
+    const asked = source.ref?.trim() || undefined
+    const folder = source.path?.trim().replace(/^\/+|\/+$/g, '') || undefined
     // A pull request's ref, or another no publisher released, never installs, whoever asks.
-    const refProblem = ref === 'HEAD' ? null : installRefProblem(ref)
+    const refProblem = asked === undefined || asked === 'HEAD' ? null : installRefProblem(asked)
     if (refProblem) return { ok: false as const, code: 'invalid_arguments' as const, message: refProblem }
     const publisher = sourcePublisher(url)
     if (!publisher)
@@ -855,6 +940,11 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         code: 'owner_unknown' as const,
         message: 'Studio cannot tell who owns that repository from its URL.',
       }
+    if (!isFetchableGitUrl(url, git))
+      return { ok: false as const, message: 'The git URL must use HTTPS or SSH, with no password or token in it.' }
+    const resolved = await resolveGitRef(url, asked, source.tree?.trim() || undefined, folder)
+    if (!resolved.ok) return resolved
+    const { ref, path } = resolved
     const list = await killListForInstall(options.unattended === true)
     if (!list.ok) return list
     const checked = await checkOutExtension({ url, ref, ...(path ? { path } : {}), claudePlugins: true, git })
@@ -882,7 +972,8 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     if (locked) return refuse(locked, 'release_lock_mismatch')
     const leftOut = checkedOut.leftOut
     const answer = await installPrepared(checkedOut, key, origin, undefined, options)
-    return answer.ok && leftOut.length > 0 ? { ...answer, leftOut } : answer
+    // Which ref it installed: named, the newest release tag, or the default branch.
+    return answer.ok ? { ...answer, ref, ...(leftOut.length > 0 ? { leftOut } : {}) } : answer
   }
 
   // ── Updates ───────────────────────────────────────────────────────────────
@@ -1172,7 +1263,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
   /** The first catalogue that lists `key`, and why none does when a catalogue listing it was refused. */
   async function installKey(
     key: string,
-    options: UnattendedInstall = {},
+    options: UnattendedInstall & { catalogue?: string } = {},
   ): Promise<InstallAnswer & { catalogue?: CatalogueId }> {
     if (options.unattended) {
       // Before any catalogue is read: nothing about an installed key changes from here.
@@ -1180,8 +1271,34 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       if (already) return already
     }
     await refreshAll()
-    const listed = catalogueIds().find((id) => findEntry(id, key) !== null)
-    if (listed) return { ...(await installFromCatalogue(listed, key, undefined, options)), catalogue: listed }
+    const install = async (id: CatalogueId) => ({
+      ...(await installFromCatalogue(id, key, undefined, { unattended: options.unattended === true })),
+      catalogue: id,
+    })
+    // How a person names a catalogue: official, community, or an added one's URL.
+    const nameOf = (id: CatalogueId) => addedCatalogueUrl(id) ?? id
+    if (options.catalogue !== undefined) {
+      const asked = options.catalogue.trim()
+      const id = catalogueIds().find((candidate) => candidate === asked || nameOf(candidate) === asked)
+      if (!id)
+        return {
+          ok: false,
+          code: 'not_found',
+          message: `No catalogue "${asked}" is here. The catalogues: ${catalogueIds().map(nameOf).join(', ')}.`,
+          catalogues: catalogueIds().map(nameOf),
+        }
+      if (findEntry(id, key)) return install(id)
+    } else {
+      const listing = catalogueIds().filter((id) => findEntry(id, key) !== null)
+      if (listing.length > 1)
+        return {
+          ok: false,
+          code: 'catalogue_ambiguous',
+          message: `More than one catalogue lists ${key}: ${listing.map(nameOf).join(', ')}. Choose one with --catalogue <catalogue>.`,
+          catalogues: listing.map(nameOf),
+        }
+      if (listing[0]) return install(listing[0])
+    }
     // A catalogue listing it under another owner's name is refused whole (provenanceProblem).
     for (const id of catalogueIds()) {
       const error = errors.get(id)
@@ -1437,7 +1554,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     // A page's Install names the whole release it showed: that installs, or nothing.
     installFrom: (from, options) =>
       'git' in from
-        ? installFromGit(from, options)
+        ? installFromGit(from as GitInstallSource, options)
         : installFromCatalogue(
             from.catalogue,
             from.id,

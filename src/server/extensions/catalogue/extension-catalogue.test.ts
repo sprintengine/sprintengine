@@ -399,6 +399,52 @@ describe('installing from a git URL', () => {
     })
   })
 
+  test('with no ref, the newest vX.Y.Z tag installs, and the answer and the record say which', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'notes', notesFiles())
+    git(repo.dir, 'tag', 'v1.2.0')
+    env.commit(repo.folder, repo.dir, { 'skills/notes/SKILL.md': `${SKILL}\nTen.\n` })
+    git(repo.dir, 'tag', 'v1.10.0')
+    env.commit(repo.folder, repo.dir, { 'skills/notes/SKILL.md': `${SKILL}\nUnreleased.\n` })
+    git(repo.dir, 'tag', 'nightly')
+    const answer = await env.lifecycle.catalogue.installFrom({ git: repo.url })
+    expect(answer).toMatchObject({ ok: true, moduleId: 'acme.notes', ref: 'refs/tags/v1.10.0' })
+    expect(readFileSync(join(env.moduleRoot, 'acme.notes', 'skills/notes/SKILL.md'), 'utf8')).toBe(`${SKILL}\nTen.\n`)
+    expect(readInstallRecordsSync(env.dataDir)['acme.notes']?.origin).toMatchObject({
+      kind: 'git',
+      source: { url: repo.url, ref: 'refs/tags/v1.10.0' },
+    })
+    // A repository with no release tag installs its default branch.
+    const plain = env.repository('bob', 'notes', notesFiles())
+    expect(await env.lifecycle.catalogue.installFrom({ git: plain.url })).toMatchObject({ ok: true, ref: 'HEAD' })
+  })
+
+  test('a folder link’s branch may hold /: the longest branch or tag it starts with is the ref', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'tools', {})
+    git(repo.dir, 'checkout', '--quiet', '-b', 'feature/x')
+    env.commit(join(repo.dir, 'notes'), repo.dir, notesFiles())
+    git(repo.dir, 'checkout', '--quiet', 'main')
+    const answer = await env.lifecycle.catalogue.installFrom({
+      git: repo.url,
+      ref: 'feature',
+      path: 'x/notes',
+      tree: 'feature/x/notes',
+    })
+    expect(answer).toMatchObject({ ok: true, moduleId: 'acme.notes', ref: 'feature/x' })
+    expect(readInstallRecordsSync(env.dataDir)['acme.notes']?.origin).toMatchObject({
+      source: { ref: 'feature/x', path: 'notes' },
+    })
+    // A link no branch or tag starts, and a named ref the repository lacks, say how to name it.
+    const lost = await env.lifecycle.catalogue.installFrom({ git: repo.url, ref: 'gone', tree: 'gone/notes' })
+    expect(lost).toMatchObject({ ok: false, code: 'invalid_arguments' })
+    expect(!lost.ok && lost.message).toMatch(/#/)
+    expect(await env.lifecycle.catalogue.installFrom({ git: repo.url, ref: 'release/2' })).toMatchObject({
+      ok: false,
+      code: 'invalid_arguments',
+    })
+  })
+
   test('an install from a catalogue is not taken over by a git URL', async () => {
     const env = setup()
     const repo = env.repository('acme', 'notes', notesFiles())
@@ -1088,6 +1134,29 @@ describe('installing and updating from outside the window', () => {
     expect((await env.installed())[0]?.reviewAsked).toBe(true)
     await approveAll(env)
     expect((await env.installed())[0]?.reviewAsked).toBeUndefined()
+  })
+
+  test('a key more than one catalogue lists is refused, naming them, until one is chosen', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'notes', notesFiles())
+    const listed = {
+      id: 'acme.notes',
+      source: { url: repo.url, ref: 'main' },
+      releases: [await env.release(repo.folder)],
+    }
+    env.serveCatalogue('official', [listed])
+    env.serveCatalogue('community', [listed])
+    expect(await env.lifecycle.catalogue.installKey('acme.notes', { unattended: true })).toMatchObject({
+      ok: false,
+      code: 'catalogue_ambiguous',
+      catalogues: ['official', 'community'],
+    })
+    expect(
+      await env.lifecycle.catalogue.installKey('acme.notes', { unattended: true, catalogue: 'elsewhere' }),
+    ).toMatchObject({ ok: false, code: 'not_found' })
+    const chosen = await env.lifecycle.catalogue.installKey('acme.notes', { unattended: true, catalogue: 'community' })
+    expect(chosen).toMatchObject({ ok: true, moduleId: 'acme.notes', catalogue: 'community' })
+    expect(readInstallRecordsSync(env.dataDir)['acme.notes']?.origin).toMatchObject({ catalogue: 'community' })
   })
 
   test('each refusal says which: killed, the release lock, another owner', async () => {

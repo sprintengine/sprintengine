@@ -65,7 +65,7 @@ Usage:
   sprintengine-extension dev hook <dir|key> <point> --data <json> [--json]
   sprintengine-extension dev emit <dir|key> <topic> [--data <json>] [--json]
   sprintengine-extension dev emit <dir|key> <event> --studio --data <json> [--json]
-  sprintengine-extension install <owner/repo[@ref] | git-url[#ref] | folder-link | key> [--json]
+  sprintengine-extension install <owner/repo[@ref] | git-url[#ref] | folder-link | release-page | key> [--ref <ref>] [--catalogue <catalogue>] [--json]
   sprintengine-extension update <key> | --all [--json]
   sprintengine-extension open <key> [--panel <id> | --editor <file>] [--json]
   sprintengine-extension list [--json]
@@ -131,9 +131,12 @@ install, update and open act on published extensions through the Studio
 running on this machine, by the path Settings > Extensions takes: the owner,
 the kill list and the release lock are checked first, and a private repository
 is fetched with this machine's own git credentials. install takes a catalogue
-key (acme.notes, from the first catalogue listing it), a GitHub repository
-(acme/notes, acme/notes@v1.2.0), a git URL (#<ref> for a ref) or a link to a
-folder in a repository (.../tree/<ref>/<folder>). A content extension, or one
+key (acme.notes; --catalogue official, community or an added one's URL when
+more than one lists it), a GitHub repository (acme/notes, acme/notes@v1.2.0),
+a git URL (#<ref> for a ref), a link to a folder in a repository
+(.../tree/<ref>/<folder>) or a release's or tag's page
+(.../releases/tag/<tag>). --ref names the ref apart; with none, the newest
+vX.Y.Z tag is installed, else the default branch. A content extension, or one
 from Studio's official catalogue, is ready at once; anything else installs
 waiting for approval, Studio's window asks the person, and install exits 3
 (approval_required). update moves one extension, or every one installed from
