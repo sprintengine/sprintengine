@@ -32,6 +32,9 @@ vi.mock('../../modules', async (importOriginal) => ({
   refreshThirdPartyRendererModules: async () => {},
 }))
 
+// Whether the window is a browser tab, read by the mocks below before the module body runs.
+const tab = vi.hoisted(() => ({ browser: false }))
+
 // What runs on the window's Studio is changed through it (`extension.approve`,
 // `extension.uninstall`); this stands in for the window's connection.
 vi.mock('../../studio/moduleLifecycle', () => {
@@ -64,7 +67,18 @@ vi.mock('../../studio/moduleLifecycle', () => {
       return { ok: true, removedModuleIds: [id] }
     },
   })
-  return { windowModuleLifecycle: lifecycle, windowCatalogueLifecycle: lifecycle }
+  // A browser tab: its Studio is another machine, so it has no folder lifecycle.
+  return { windowModuleLifecycle: () => (tab.browser ? null : lifecycle()), windowCatalogueLifecycle: lifecycle }
+})
+
+// A browser tab has no window switches of its own Studio either.
+vi.mock('../../studio/moduleSwitches', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../studio/moduleSwitches')>()
+  return {
+    ...actual,
+    windowModuleSwitches: (store: Parameters<typeof actual.windowModuleSwitches>[0]) =>
+      tab.browser ? null : actual.windowModuleSwitches(store),
+  }
 })
 
 // The catalogues the window's Studio reads: one community listing.
@@ -252,6 +266,7 @@ beforeEach(() => {
   installed = [INSIGHTS, SIGNED, DECISION_LOG, PR_RADAR, TAMPERED]
   installAnswer = { ok: false, message: 'not here' }
   openDirAnswer = null
+  tab.browser = false
   approveCalls.length = 0
   enableCalls.length = 0
   setEnabledAnswer = { ok: true, module: null }
@@ -566,6 +581,41 @@ test('a module added from a folder is uninstalled by the Studio, and forgotten h
   expect(settings.modules).toEqual({ 'acme.other-ext': false })
   expect(settings.moduleSettings?.['module:local.decision-log']).toBeUndefined()
   expect(rowOf('PR Radar')).toBeTruthy()
+  expect(panel().textContent).not.toContain('Decision Log')
+})
+
+test('a browser tab approves, switches and uninstalls on the Studio; only folder installs stay with the desktop', async () => {
+  tab.browser = true
+  await mount()
+  await click(button('Install', panel()))
+  expect(
+    [...document.querySelectorAll('[role="menu"][aria-label="Install"] [role="menuitem"]')].map((item) =>
+      item.textContent?.trim(),
+    ),
+  ).toEqual(['From a git URL', 'From a catalogue'])
+  await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+
+  // Approving turns it on on the Studio, not only in this tab's copy.
+  await click(button('Review Insights'))
+  await click(button('Approve and turn on', modal()!))
+  expect(approveCalls).toEqual([['acme.insights', 'sha256-insights']])
+  expect(enableCalls).toEqual([['acme.insights', true]])
+  expect(useWorkspaceStore.getState().appSettings.modules['acme.insights']).toBe(true)
+
+  // A row's switch reaches the Studio too; one it refused changes nothing here.
+  setEnabledAnswer = { ok: false, message: 'The choice could not be saved.' }
+  await click(rowOf('Decision Log').querySelector('[role="switch"]'))
+  expect(enableCalls.at(-1)).toEqual(['local.decision-log', false])
+  expect(panel().textContent).toContain('The choice could not be saved.')
+  expect(useWorkspaceStore.getState().appSettings.modules['local.decision-log']).toBe(true)
+  setEnabledAnswer = { ok: true, module: null }
+  await click(rowOf('Decision Log').querySelector('[role="switch"]'))
+  expect(useWorkspaceStore.getState().appSettings.modules['local.decision-log']).toBe(false)
+
+  await click(button('More for Decision Log'))
+  await click([...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === 'Uninstall'))
+  await click(buttons(modal()!).find((candidate) => candidate.textContent?.trim() === 'Uninstall'))
+  expect(uninstallCalls).toEqual(['local.decision-log'])
   expect(panel().textContent).not.toContain('Decision Log')
 })
 

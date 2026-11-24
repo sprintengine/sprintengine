@@ -106,11 +106,12 @@ export function windowModuleLifecycle(
 
 /**
  * The lifecycle over this window's Studio, for what names nothing on this
- * window's disk: installing from a catalogue or a git URL, approving what it
- * installed, reviewing an update, and adding or removing a catalogue. Any
- * window with a Studio, a browser tab included; null when its Studio says this
- * window's grant is not its owner's (the Studio refuses one anyway). Folder
- * installs and development folders stay `windowModuleLifecycle`'s.
+ * window's disk: installing from a catalogue or a git URL, approving,
+ * switching on or off and uninstalling an installed extension, reviewing an
+ * update, and adding or removing a catalogue. Any window with a Studio, a
+ * browser tab included; null when its Studio says this window's grant is not
+ * its owner's (the Studio refuses one anyway). Folder installs and
+ * development folders stay `windowModuleLifecycle`'s.
  */
 export function windowCatalogueLifecycle(
   api: Parameters<typeof windowStudioClient>[0] | undefined = typeof window === 'undefined' ? undefined : window.api,

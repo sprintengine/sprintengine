@@ -9,8 +9,9 @@ const pageApi = () => ({ studioWindowTicket: async () => ({}) }) as unknown as P
 
 // Which window may change what runs on its Studio. A folder names this
 // window's disk, so a browser tab (its Studio on another machine) has no
-// folder installs; installing from a catalogue or a git URL, reviewing an
-// update and managing catalogues name nothing on it, so a tab has those.
+// folder installs; installing from a catalogue or a git URL, approving,
+// switching and uninstalling, reviewing an update and managing catalogues
+// name nothing on it, so a tab has those.
 
 test('a browser tab installs from a catalogue or a git URL, and not from a folder', () => {
   const tab = pageApi()

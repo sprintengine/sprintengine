@@ -4,19 +4,23 @@ import { errorMessage } from '../../../../shared/errors'
 import type { ModuleManifestIssue, ThirdPartyModuleView } from '../../../../shared/modules/manifest'
 import { onThirdPartyRendererModulesLoaded, refreshThirdPartyRendererModules } from '../../modules'
 import { showToast } from '../../store/toastStore'
-import { useWorkspaceStore } from '../../store/workspaceStore'
+import { studioModuleSwitchStore, useWorkspaceStore } from '../../store/workspaceStore'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
 import type { ActionResult } from '../ui'
 import { windowCatalogueLifecycle, windowModuleLifecycle } from '../../studio/moduleLifecycle'
+import { windowModuleSwitches } from '../../studio/moduleSwitches'
 import type { StudioExtensionInstallSource } from '../../../../../packages/studio-protocol/src/public'
 import { addThirdPartyModuleFromFolder } from './addThirdPartyModuleFromFolder'
 import { extensionsApi, windowHasStudio } from '../../studio/extensions'
 import { copy } from '../../../../shared/copy'
 
 // Settings → Extensions, the third-party half. It lists what is installed,
-// and installs, approves and uninstalls through the window's Studio
-// (`extension.*`), which owns what runs there. The page and its rows only
-// render what this hands them.
+// and installs, approves, switches and uninstalls through the window's Studio
+// (`extension.*`), which owns what runs there: from any window whose Studio
+// lets its owner do it, a browser tab included. Only what picks a folder on
+// this window's disk (a folder install, a development folder) stays with a
+// window on the Studio's own machine. The page and its rows only render what
+// this hands them.
 
 /** How an install from a catalogue or a git URL ended; a marketplace's refusal names its plugin folders. */
 export type InstallOutcome = { ok: true } | { ok: false; message: string; folders?: string[] }
@@ -37,9 +41,13 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   const forgetModules = useWorkspaceStore((state) => state.forgetModules)
   const { confirm: confirmDialog } = useConfirmDialog()
   const [lifecycle] = useState(() => windowModuleLifecycle())
-  // Installing from a catalogue or a git URL names nothing on this window's
-  // disk, so any window whose Studio lets its owner do it may (a browser tab too).
+  // Installing from a catalogue or a git URL, approving, switching and
+  // uninstalling name nothing on this window's disk, so any window whose
+  // Studio lets its owner do it may (a browser tab too).
   const [catalogueLifecycle] = useState(() => windowCatalogueLifecycle())
+  // The window's switches, where they reach its Studio, keep the window's
+  // copy in step with it; a browser tab has none.
+  const [switches] = useState(() => windowModuleSwitches(studioModuleSwitchStore))
 
   const load = useCallback(async () => {
     if (!windowHasStudio()) {
@@ -171,6 +179,30 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
     [afterInstall, catalogueLifecycle, load],
   )
 
+  // Switch an installed extension on or off on the Studio, then in the
+  // window's copy (which decides the window halves that load): through the
+  // window's switches where it has them, else through the owner's lifecycle.
+  // A browser tab switching only its own copy would leave the Studio's as it was.
+  const setEnabled = useCallback(
+    async (moduleId: string, enabled: boolean): Promise<boolean> => {
+      if (switches || !catalogueLifecycle) {
+        onSetEnabled(moduleId, enabled)
+        return true
+      }
+      const result = await catalogueLifecycle.setEnabled(moduleId, enabled)
+      if (!result.ok) {
+        setMessage({ tone: 'error', text: result.message || 'Couldn’t switch it.' })
+        await load()
+        return false
+      }
+      onSetEnabled(moduleId, enabled)
+      await refreshThirdPartyRendererModules()
+      await load()
+      return true
+    },
+    [catalogueLifecycle, load, onSetEnabled, switches],
+  )
+
   // Approve and turn on, in one step: the review is the consent, and an
   // approved extension left off would make the person find a second switch
   // for the same decision. The approval is written first and on its own, so a
@@ -190,7 +222,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
           await load()
           return false
         }
-        onSetEnabled(id, true)
+        if (!(await setEnabled(id, true))) return false
         await refreshThirdPartyRendererModules()
         await load()
         return true
@@ -201,17 +233,23 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
         setPendingId(null)
       }
     },
-    [catalogueLifecycle, load, onSetEnabled],
+    [catalogueLifecycle, load, setEnabled],
   )
-
-  const canUninstall = lifecycle !== null
 
   const uninstall = useCallback(
     async (module: ThirdPartyModuleView) => {
-      if (!lifecycle) return
+      if (!catalogueLifecycle) return
       const name = module.manifest.displayName
-      // A development folder is only taken out: its files are the author's, and stay.
+      // A development folder is only taken out: its files are the author's, and
+      // stay. It names a folder on the Studio's disk, so a window there does it.
       if (module.development) {
+        if (!lifecycle) {
+          setMessage({
+            tone: 'error',
+            text: `${name} is a development folder. Remove it from a window on the Studio’s own machine.`,
+          })
+          return
+        }
         setPendingId(module.manifest.id)
         setMessage(null)
         try {
@@ -241,7 +279,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
       setPendingId(module.manifest.id)
       setMessage(null)
       try {
-        const result = await lifecycle.uninstall(module.manifest.id)
+        const result = await catalogueLifecycle.uninstall(module.manifest.id)
         if (result.ok) {
           // What it added leaves before its switch is forgotten, so the
           // default (on) never brings an uninstalled extension back.
@@ -265,7 +303,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
         setPendingId(null)
       }
     },
-    [confirmDialog, lifecycle, load, forgetModules],
+    [catalogueLifecycle, confirmDialog, lifecycle, load, forgetModules],
   )
 
   const reveal = useCallback(async (module: ThirdPartyModuleView) => {
@@ -282,13 +320,15 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
     pendingId,
     message,
     dismissMessage: () => setMessage(null),
-    installFromFolder,
+    // A folder picked here is on the Studio's disk only in a window on its machine.
+    installFromFolder: lifecycle ? installFromFolder : null,
     approveAndEnable,
     awaitingReview,
     clearAwaitingReview,
     justInstalled,
     clearJustInstalled,
-    uninstall: canUninstall ? uninstall : null,
+    setEnabled: (moduleId: string, enabled: boolean) => void setEnabled(moduleId, enabled),
+    uninstall: catalogueLifecycle ? uninstall : null,
     installFrom: catalogueLifecycle ? installFrom : null,
     update: catalogueLifecycle ? update : null,
     reveal: typeof window.api.revealThirdPartyModule === 'function' ? reveal : null,

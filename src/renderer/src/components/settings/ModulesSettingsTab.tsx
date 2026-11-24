@@ -84,9 +84,10 @@ function InstallMenu({
   onBrowse,
 }: {
   installing: boolean
-  onFromFolder: () => void
+  /** Null where the folder picked would not be on the Studio's disk (a browser tab). */
+  onFromFolder: (() => void) | null
   /** A folder that loads where it is and again on every save, for building an extension. */
-  onDevelopmentFolder: () => void
+  onDevelopmentFolder: (() => void) | null
   /** A git repository: an extension, or a Claude Code plugin's skills and MCP servers. */
   onFromGit: (() => void) | null
   onBrowse: () => void
@@ -117,12 +118,16 @@ function InstallMenu({
         </OutlineButton>
       )}
     >
-      <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onFromFolder)} onKeyDown={rove}>
-        {appCopy.settings.modulesSettingsTab.fromAFolder}
-      </MenuItem>
-      <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onDevelopmentFolder)} onKeyDown={rove}>
-        As a development folder
-      </MenuItem>
+      {onFromFolder ? (
+        <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onFromFolder)} onKeyDown={rove}>
+          {appCopy.settings.modulesSettingsTab.fromAFolder}
+        </MenuItem>
+      ) : null}
+      {onDevelopmentFolder ? (
+        <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onDevelopmentFolder)} onKeyDown={rove}>
+          As a development folder
+        </MenuItem>
+      ) : null}
       {onFromGit ? (
         <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onFromGit)} onKeyDown={rove}>
           From a git URL
@@ -378,7 +383,8 @@ export function ModulesSettingsTab(): JSX.Element {
       setDetailsFor(null)
       setReviewing(module)
     },
-    onSetEnabled: setModuleEnabled,
+    // An installed extension's switch reaches the Studio from a browser tab too.
+    onSetEnabled: extensions.setEnabled,
     onUninstall: extensions.uninstall
       ? (module) => {
           setDetailsFor(null)
@@ -437,8 +443,10 @@ export function ModulesSettingsTab(): JSX.Element {
             </GhostButton>
             <InstallMenu
               installing={extensions.installing}
-              onFromFolder={() => void extensions.installFromFolder()}
-              onDevelopmentFolder={() => void extensions.installFromFolder('development')}
+              onFromFolder={extensions.installFromFolder ? () => void extensions.installFromFolder?.() : null}
+              onDevelopmentFolder={
+                extensions.installFromFolder ? () => void extensions.installFromFolder?.('development') : null
+              }
               onFromGit={installFromGit ? () => void installFromGit() : null}
               onBrowse={() => {
                 setPage(null)
