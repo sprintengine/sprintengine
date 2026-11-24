@@ -76,6 +76,9 @@ test('studio-plugin-skills', async () => {
     'shot_failed',
     'studio_unavailable',
     'no_window',
+    'already_installed',
+    'held_back',
+    'not_permitted',
   ])
 
   /**
