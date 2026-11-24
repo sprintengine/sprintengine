@@ -103,10 +103,13 @@ export type ProjectedExtension = {
   mcpServers: McpServerConfig[]
   providers: ProjectedProvider[]
   /**
-   * With a local MCP server: the installed folder it runs from, and that
-   * folder's content digest as it was projected, which its approval covers.
+   * With a local MCP server: the folder it runs from, and that folder's
+   * content digest as it was projected, which its approval covers. A
+   * development folder's (`development`) is taken with the development walk,
+   * as its standing was, so its `.git` and `node_modules` neither refuse it nor
+   * count; an installed folder holding them is refused as at install.
    */
-  runsFrom?: { moduleRoot: string; contentDigest: string }
+  runsFrom?: { moduleRoot: string; contentDigest: string; development?: true }
 }
 
 export type AgentContributionState = { extensions: Record<string, ProjectedExtension> }
@@ -117,6 +120,8 @@ export type ProjectionCandidate = {
   extension: Pick<ExtensionManifest, 'name' | 'version' | 'contributes'>
   moduleRoot: string
   standing: Pick<ExtensionStanding, 'signature' | 'approval' | 'verifiedFiles' | 'contentDigest'>
+  /** Set for a development folder the owner registered, which runs from where it is. */
+  development?: object
 }
 
 export type ReconcileInput = {
@@ -301,7 +306,9 @@ async function projectExtension(
     })),
     mcpServers,
     providers,
-    ...(runsLocal && contentDigest ? { runsFrom: { moduleRoot, contentDigest } } : {}),
+    ...(runsLocal && contentDigest
+      ? { runsFrom: { moduleRoot, contentDigest, ...(candidate.development ? { development: true as const } : {}) } }
+      : {}),
   }
 }
 
@@ -442,11 +449,11 @@ const reportedMismatches = new Set<string>()
  * trusted for two seconds; anything else is taken again at the next read, so
  * a folder updated and approved since is handed out at once.
  */
-function folderMatches(moduleRoot: string, expected: string): boolean {
+function folderMatches(moduleRoot: string, expected: string, development: boolean): boolean {
   const now = Date.now()
   const cached = folderDigests.get(moduleRoot)
   if (cached?.digest === expected && now - cached.at < FOLDER_DIGEST_TTL_MS) return true
-  const content = extensionContentSync(moduleRoot)
+  const content = extensionContentSync(moduleRoot, { development })
   const digest = content.ok ? content.fingerprint : null
   folderDigests.set(moduleRoot, { at: now, digest })
   return digest === expected
@@ -462,7 +469,8 @@ function folderMatches(moduleRoot: string, expected: string): boolean {
 function serversToHand(extension: ProjectedExtension): McpServerConfig[] {
   if (!extension.mcpServers.some((server) => server.transport === 'stdio')) return extension.mcpServers
   const runsFrom = extension.runsFrom
-  if (runsFrom && folderMatches(runsFrom.moduleRoot, runsFrom.contentDigest)) return extension.mcpServers
+  if (runsFrom && folderMatches(runsFrom.moduleRoot, runsFrom.contentDigest, runsFrom.development === true))
+    return extension.mcpServers
   const now = runsFrom ? (folderDigests.get(runsFrom.moduleRoot)?.digest ?? '') : ''
   const report = `${extension.key}\0${runsFrom?.contentDigest ?? ''}\0${now}`
   if (!reportedMismatches.has(report)) {
