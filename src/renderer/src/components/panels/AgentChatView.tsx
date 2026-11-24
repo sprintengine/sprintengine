@@ -318,7 +318,9 @@ import {
   composerSendAction,
   draftAfterRetried,
   isConversationBusy,
+  QUEUED_BUSY_RETRIES,
   queueComposerDraft,
+  queuedBusyRetryDelay,
   queuedDropNotice,
   restoreRefusedText,
   stopDisabledForPending,
@@ -1539,6 +1541,11 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       // (PendingFirstMessage): its row takes that one's place where it stands,
       // without the entrance a new row plays, which read as the bubble jumping.
       inPlace = false,
+      // A send refused because a turn is running there: true when the caller
+      // keeps the message to send again (the queued turn), which then leaves
+      // the composer and the error line as they are. False or absent, the
+      // refusal is handled as any other.
+      onBusy?: (retryAfterMs: number | undefined) => boolean,
     ) => {
       const metadata = supportsSkills ? requestedMetadata : { ...requestedMetadata, skillIds: [] }
       const text = message.trim()
@@ -1660,6 +1667,20 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
           },
         })
         finishDraftSend(draftSend, result.ok)
+        // The turn this view saw end had not let go of the chat there yet (one
+        // this view did not send: Studio's own compaction, another device's
+        // message): the caller keeps the message and sends it again shortly.
+        if (
+          !result.ok &&
+          'code' in result &&
+          result.code === 'busy' &&
+          onBusy?.('retryAfterMs' in result ? result.retryAfterMs : undefined)
+        ) {
+          setUserTurns((current) => current.filter((turn) => turn.id !== localTurnId))
+          setTurnRequestedAt(null)
+          if (pendingUserScrollIdRef.current === `user:${localTurnId}`) pendingUserScrollIdRef.current = null
+          return
+        }
         // A failed send keeps the mode and effort the user chose. Rolling them
         // back would quietly turn a plan-mode resend into one that can write.
         if (!result.ok) {
@@ -1974,6 +1995,18 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     field.setSelectionRange(caret, caret)
   }, [draft])
 
+  // A queued message refused busy waits this out before it goes again
+  // (`keepQueued` below), and how many times running it has been refused.
+  const [queuedRetryWaiting, setQueuedRetryWaiting] = useState(false)
+  const queuedRetryTimerRef = useRef<number | null>(null)
+  const queuedBusyRefusalsRef = useRef(0)
+  useEffect(
+    () => () => {
+      if (queuedRetryTimerRef.current !== null) window.clearTimeout(queuedRetryTimerRef.current)
+    },
+    [],
+  )
+
   // Auto-send the queued message as a follow-up turn once the session idles.
   // Gated on the same busy signal the submit uses, so it never races the guard;
   // sendTurn's own `pending` guard prevents a re-entrant double send.
@@ -1988,11 +2021,41 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     // "Stop and send" can see the turn end before the send that started it
     // settles; sendTurn would refuse the message then, and it would be lost.
     if (sendInFlight || sendInFlightRef.current) return
-    const { text, attachments: queuedAttachments, metadata } = queuedTurn
+    // Refused busy a moment ago: it goes again once the wait is up.
+    if (queuedRetryWaiting) return
+    const turn = queuedTurn
+    const { text, attachments: queuedAttachments, metadata } = turn
     setQueuedTurn(null)
-    void sendTurn(text, queuedAttachments, metadata, false, true)
+    let refusedBusy = false
+    // The turn's end reaches this view before the chat there has let go of
+    // it, for a turn this view did not send (Studio's own compaction, another
+    // device's message), and the send is refused busy. The message stays
+    // queued, ahead of anything queued since, and goes again shortly; only
+    // after a run of refusals does it come back to the composer, said so.
+    const keepQueued = (retryAfterMs: number | undefined): boolean => {
+      if (queuedBusyRefusalsRef.current >= QUEUED_BUSY_RETRIES) {
+        queuedBusyRefusalsRef.current = 0
+        return false
+      }
+      queuedBusyRefusalsRef.current += 1
+      refusedBusy = true
+      setQueuedTurn((current) =>
+        current ? queueComposerDraft(turn, current.text, current.attachments, current.metadata).turn : turn,
+      )
+      setQueuedRetryWaiting(true)
+      if (queuedRetryTimerRef.current !== null) window.clearTimeout(queuedRetryTimerRef.current)
+      queuedRetryTimerRef.current = window.setTimeout(() => {
+        queuedRetryTimerRef.current = null
+        setQueuedRetryWaiting(false)
+      }, queuedBusyRetryDelay(retryAfterMs))
+      return true
+    }
+    void sendTurn(text, queuedAttachments, metadata, false, true, false, keepQueued).then(() => {
+      if (!refusedBusy) queuedBusyRefusalsRef.current = 0
+    })
   }, [
     queuedTurn,
+    queuedRetryWaiting,
     readiness.kind,
     startupPending,
     projection.activeTurn,

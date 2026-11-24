@@ -7,6 +7,7 @@ import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { detectComposerTrigger } from '../../../../shared/conversation/composerTrigger'
 import { bundledPermissionModes } from '../../../../../tests/permission-modes'
+import { queuedBusyRetryDelay } from './agentChat/composerQueue'
 
 import type {
   ConversationEvent,
@@ -2035,4 +2036,12 @@ test('a busy commit is named by what the follow-up choice makes it, and an idle 
   assert.equal(composerSendAction({ ...busySend, busyLabel: 'Steer message' }).label, 'Steer message')
   assert.equal(composerSendAction({ ...busySend, busy: false, busyLabel: 'Steer message' }).label, 'Send message')
   assert.equal(composerSendAction({ ...busySend, sending: true, busyLabel: 'Steer message' }).label, 'Sending')
+})
+
+test('a queued message refused busy goes again when the chat asked, within a quarter second and five seconds', () => {
+  assert.equal(queuedBusyRetryDelay(1_000), 1_000)
+  assert.equal(queuedBusyRetryDelay(undefined), 1_000, 'a chat that names no wait gets a second')
+  assert.equal(queuedBusyRetryDelay(0), 250)
+  assert.equal(queuedBusyRetryDelay(60_000), 5_000)
+  assert.equal(queuedBusyRetryDelay(Number.NaN), 1_000)
 })

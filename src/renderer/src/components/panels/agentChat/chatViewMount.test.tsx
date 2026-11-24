@@ -121,7 +121,7 @@ type SendTurn = (input: {
   mode?: string
   message?: string
   sessionId?: string
-}) => Promise<{ ok: boolean; message?: string }>
+}) => Promise<{ ok: boolean; message?: string; code?: string; retryAfterMs?: number }>
 
 // Mounts the whole chat view against a scripted conversation API, the way a
 // person meets it: a transcript arrives over the session subscription and the
@@ -1507,6 +1507,55 @@ test('⌘↵ mid-turn sends the draft now; a provider without steering stops the
     expect(chat.draft()).toBe('')
   } finally {
     turn.release()
+    await chat.unmount()
+  }
+})
+
+test('a message queued during Studio’s own compaction stays queued through a busy refusal and goes on the retry', async () => {
+  // The compaction's end reaches the view before the chat there has let go of
+  // its turn, and this view sent none of it, so nothing holds the queue back:
+  // its first send is refused busy. Put back in the composer then, the
+  // message never went.
+  const answers: Array<{ ok: boolean; message?: string; code?: string; retryAfterMs?: number }> = [
+    { ok: false, code: 'busy', retryAfterMs: 50, message: 'Conversation turn is already in progress.' },
+    { ok: true },
+  ]
+  const sendTurn = vi.fn<SendTurn>(async () => answers.shift() ?? { ok: true })
+  const chat = await mountChat({ sendTurn })
+  const queuedRow = () => chat.host.querySelector('[aria-label="Queued message"]')
+  try {
+    await chat.act(async () => {
+      chat.emit({
+        type: 'event',
+        event: event('user_message', {
+          turnId: 'c1',
+          text: '/compact',
+          origin: { kind: 'studio', reason: 'auto-compact' },
+        }),
+      })
+      chat.emit({ type: 'event', event: event('turn_started', { turnId: 'c1' }) })
+      chat.emit({ type: 'event', event: event('context_compacting', { turnId: 'c1' }) })
+    })
+    await chat.act(async () => chat.type('Then check the release notes'))
+    await chat.act(async () => chat.enter())
+    expect(sendTurn, 'never into the running compaction').not.toHaveBeenCalled()
+    expect(queuedRow()?.textContent).toContain('Then check the release notes')
+
+    await chat.act(async () => {
+      chat.emit({ type: 'event', event: event('context_compacted', { turnId: 'c1', trigger: 'manual' }) })
+      chat.emit({ type: 'event', event: event('turn_completed', { turnId: 'c1' }) })
+    })
+    await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+    expect(sendTurn).toHaveBeenCalledOnce()
+    expect(queuedRow()?.textContent, 'refused busy, it waits in the queue').toContain('Then check the release notes')
+    expect(chat.draft(), 'not dropped back into the composer').toBe('')
+    expect(chat.host.textContent).not.toContain('Conversation turn is already in progress.')
+
+    await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 300)))
+    expect(sendTurn).toHaveBeenCalledTimes(2)
+    expect(sendTurn.mock.calls[1]![0]).toMatchObject({ message: 'Then check the release notes' })
+    expect(queuedRow()).toBeNull()
+  } finally {
     await chat.unmount()
   }
 })
