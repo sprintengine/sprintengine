@@ -63,6 +63,65 @@ describe('createFakeMainHost', () => {
     assert.equal(after.kind === 'change' && (after.event as { prompt: string }).prompt, 'go one')
   })
 
+  test('events reach the handlers of the events extension.json lists, and one without its permission reaches nobody', async () => {
+    const workspace = { workspaceId: 'ws-1', name: 'Notes', kind: 'folder' as const, folderPath: null, branch: null }
+    const fake = createFakeMainHost({
+      manifest: {
+        id: 'watch',
+        permissions: ['workspace:read'],
+        contributes: { events: [{ on: 'workspace.created' }] },
+      },
+    })
+    const heard: string[] = []
+    const first = fake.host.events.on('workspace.created', (made) => void heard.push(`one ${made.name}`))
+    fake.host.events.on('workspace.created', (made) => void heard.push(`two ${made.name}`))
+    assert.throws(() => fake.host.events.on('workspace.removed', () => undefined), /not listed/)
+    await fake.events.fire('workspace.created', workspace)
+    first.dispose()
+    await fake.events.fire('workspace.created', { ...workspace, name: 'Site' })
+    assert.deepEqual(heard, ['one Notes', 'two Notes', 'two Site'])
+    await assert.rejects(fake.events.fire('workspace.removed', workspace), /lists no event/)
+    const bare = createFakeMainHost({
+      manifest: { id: 'bare', contributes: { events: [{ on: 'workspace.created' }] } },
+    })
+    bare.host.events.on('workspace.created', () => void heard.push('bare'))
+    await bare.events.fire('workspace.created', workspace)
+    assert.equal(heard.includes('bare'), false)
+    assert.deepEqual(bare.undeclared, [{ what: 'events.workspace.created', needs: ['workspace:read'] }])
+  })
+
+  test('a surface hears one of Studio’s events once its subscription is admitted', async () => {
+    const frame = createFakeFrameStudio({
+      moduleId: 'local.board',
+      permissions: ['workspace:read'],
+      invoker: ['workspace:read', 'extension:read'],
+    })
+    const studio = frame.studio({ point: 'panels', id: 'board' })
+    const heard: string[] = []
+    studio.on('workspace.created', (made) => void heard.push(made.name))
+    studio.on('agent.status.changed', () => void heard.push('status'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    frame.studioEvent('workspace.created', {
+      workspaceId: 'ws-1',
+      name: 'Notes',
+      kind: 'folder',
+      folderPath: null,
+      branch: null,
+    })
+    frame.studioEvent('agent.status.changed', {
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      where: 'chat',
+      terminalId: null,
+      title: null,
+      state: 'working',
+      failed: false,
+      receivedAt: 1,
+    })
+    assert.deepEqual(heard, ['Notes'])
+    assert.match(frame.logs[0]?.message ?? '', /conversation:read/)
+  })
+
   test('has a fake for every service the SDK publishes, and nothing else', () => {
     assert.deepEqual(Object.keys(SERVICE_FAKES).sort(), EXTENSION_HOST_SERVICES.map((service) => service.key).sort())
   })

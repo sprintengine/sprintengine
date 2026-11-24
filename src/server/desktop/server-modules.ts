@@ -120,6 +120,8 @@ export function createServerModules(deps: {
   })
   // The core's actions ask these workers' hooks (extension-hooks.ts).
   core.extensionHooks.bind(workers)
+  // Studio's events reach these workers, and the frames these extensions draw (extension-events.ts).
+  core.extensionEvents.bind(workers)
   let stopWatchingModules: (() => void) | null = null
   let manifests: CapabilityManifest[] = []
   let ineligible: Record<string, ModuleResolutionErrorCode> = {}

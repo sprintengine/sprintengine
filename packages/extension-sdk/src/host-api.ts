@@ -85,4 +85,6 @@ export type HostCapability =
   | 'workspace-history'
   // `MainHost.getModuleAppState` / `watchModuleAppState`: Settings values in the worker.
   | 'main-app-state'
+  // `studio.events.on(event, handler)`: the events extension.json lists.
+  | 'events'
   | (string & {})

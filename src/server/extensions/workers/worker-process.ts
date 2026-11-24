@@ -50,7 +50,7 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 
 /** A call the server makes into a worker, but for the invocation it runs as. */
 export type WorkerCall = DistributiveOmit<
-  Extract<WorkerCallMessage, { kind: 'method' | 'tool' | 'callback' | 'hook' }>,
+  Extract<WorkerCallMessage, { kind: 'method' | 'tool' | 'callback' | 'hook' | 'event' }>,
   't' | 'id' | 'invocation'
 >
 

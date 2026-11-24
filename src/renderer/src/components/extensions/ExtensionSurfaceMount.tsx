@@ -19,6 +19,7 @@ import {
   subscribeExtensionSurfaces,
 } from '../../modules/extension-surfaces'
 import { extensionsApi } from '../../studio/extensions'
+import { followEditorTypography } from '../../modules/extension-editor-typography'
 import { EmptyState } from '../ui/EmptyState'
 
 // One extension surface (a pane tab, a door, a settings section, a custom editor), drawn in a
@@ -168,6 +169,11 @@ export function ExtensionSurfaceMount({
           }),
         openDoor: (door) => host.openGlobalSurface(extensionSurfaceId(extensionKey, door)),
         focusTab: (input) => host.focusTab(input),
+        // The editor's typography is this window's own; the rest are its Studio's.
+        followStudioEvent: (event, deliver) =>
+          event === 'editor.typography.changed'
+            ? followEditorTypography(deliver)
+            : extensionsApi.onStudioEvents(extensionKey, event, deliver),
       },
       theme: () => readWindowFrameTheme(THEME_TOKENS),
       onReady: (at) => {

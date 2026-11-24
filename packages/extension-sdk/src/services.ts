@@ -250,6 +250,9 @@ export const EXTENSION_MAIN_HOST_METHODS: Readonly<Record<string, ExtensionHostR
   registerMethods: need(null, null, 'throw'),
   registerMcpTools: need('tools:contribute', null, 'throw'),
   registerHooks: need(null, null, 'throw'),
+  // Its handlers are its own; Studio holds each event to its permission
+  // before it delivers it (worker-manager.ts), so registering one needs nothing.
+  events: need(null, null, 'throw'),
   ensureSkillInstalled: need('workspace:operate', 'workspace:operate', 'reject'),
   getSkillStatus: need('workspace:read', 'workspace:read', 'reject'),
   getModuleDataDir: need('storage:own', null, 'throw'),
@@ -325,6 +328,10 @@ export const EXTENSION_FRAME_METHODS: Readonly<Record<ExtensionFrameMethod, Exte
   'chat.draft': inFrame('chat:draft', 'conversation:create', 'client'),
   'doors.open': inFrame(null, 'extension:read', 'client'),
   'tabs.focus': inFrame(null, 'workspace:read', 'client'),
+  // Studio's events: each event's own permission is checked beside this row
+  // (extension-frame-calls.ts), as the extension and as whoever opened the
+  // surface; the window that drew it follows them.
+  'events.subscribe': inFrame(null, 'extension:read', 'client'),
   // Its own log: nothing beyond the extension, read by whoever may open it.
   'log.write': inFrame(null, 'extension:read'),
 }

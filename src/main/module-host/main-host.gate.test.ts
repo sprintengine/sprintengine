@@ -28,6 +28,7 @@ const reader: CapabilityManifest = {
     'github:api',
     'tools:contribute',
     'agents:companion',
+    'workspace:read',
   ],
 }
 const bare: CapabilityManifest = {
@@ -231,6 +232,40 @@ test('a frame’s host calls are held to the extension’s approval and to the c
   const unknown = await call('local.reader', 'shell.run', ownerInvoker())
   assert.equal(!unknown.ok && unknown.code, 'unknown_method')
   assert.deepEqual(calls, ['backlog:local.reader'])
+})
+
+test('a frame hears one of Studio’s events only with its permission, held to the extension and the connection', async () => {
+  const { kernel } = setup()
+  const subscribe = (moduleId: string, event: string, invoker: ExtensionInvoker) =>
+    kernel.callFrameMethod({
+      moduleId,
+      frame: FRAME,
+      method: 'events.subscribe',
+      params: { event },
+      clientId: 'c',
+      commandId: 'k',
+      invoker,
+    })
+  // Admitted at the host, carried out by the window.
+  assert.deepEqual(await subscribe('local.reader', 'workspace.created', ownerInvoker()), { ok: true, result: null })
+  // The window's own typography needs nothing.
+  assert.deepEqual(await subscribe('local.bare', 'editor.typography.changed', ownerInvoker()), {
+    ok: true,
+    result: null,
+  })
+  const unapproved = await subscribe('local.bare', 'workspace.created', ownerInvoker())
+  assert.equal(!unapproved.ok && unapproved.code, 'not_permitted')
+  // An agent's status is part of reading a chat, which neither was approved for.
+  const status = await subscribe('local.reader', 'agent.status.changed', ownerInvoker())
+  assert.equal(!status.ok && status.code, 'not_permitted')
+  const device: ExtensionInvoker = {
+    ...DEVICE,
+    principal: studioGrantPrincipal({ owner: false, scopes: ['extensions:read'] }),
+  }
+  const paired = await subscribe('local.reader', 'workspace.created', device)
+  assert.equal(!paired.ok && paired.code, 'not_permitted')
+  const unknown = await subscribe('local.reader', 'workspace.exploded', ownerInvoker())
+  assert.equal(!unknown.ok && unknown.code, 'invalid_params')
 })
 
 test('a frame’s client method is admitted at the host and carried out by the window', async () => {

@@ -70,6 +70,7 @@ function blank(): Api {
     onExtensionSettingsChanged: () => () => undefined,
     setExtensionSetting: async () => ({ ok: false, message: NONE }),
     onExtensionEvents: () => () => undefined,
+    onStudioEvents: () => () => undefined,
     onThirdPartyModulesChanged: () => () => undefined,
     setModuleRegistrySnapshot: async () => ({ ok: true }),
   }

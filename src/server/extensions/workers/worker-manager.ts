@@ -4,6 +4,7 @@ import type {
   ExtensionMcpToolContribution,
 } from '../../../../packages/extension-sdk/src/extension-manifest'
 import { isExtensionHookPoint, type ExtensionHookPoint } from '../../../../packages/extension-sdk/src/hooks'
+import { EXTENSION_EVENT_SPECS, type ExtensionEventName } from '../../../../packages/extension-sdk/src/events'
 import { isModuleMethodName, type ModuleMethodAccess } from '../../../shared/modules/methods'
 import { HOST_CAPABILITIES } from '../../../shared/modules/host-api'
 import type { ModuleFileDigests } from '../../../shared/modules/manifest'
@@ -73,6 +74,8 @@ export type WorkerExtensionSpec = {
   declaredTools: readonly ExtensionMcpToolContribution[]
   /** The points extension.json lists (`contributes.hooks`); absent, none. */
   declaredHooks?: readonly ExtensionHookContribution[]
+  /** The events extension.json lists (`contributes.events`); absent, none. */
+  declaredEvents?: readonly ExtensionEventName[]
   /**
    * A development folder, at `order` among them: its files are the author's
    * working copy, read as they are when its worker starts (a save restarts it,
@@ -111,6 +114,8 @@ export type ExtensionWorkersOptions = {
    */
   installed?: () => ReadonlyMap<string, InstalledStanding>
   gate: (moduleId: string, method: string) => { ok: true } | { ok: false; code: string; message: string }
+  /** The permissions the extension's approval holds now; null when it is not approved as it is. */
+  grant: (moduleId: string) => readonly string[] | null
   toolNameProblem: (moduleId: string, names: readonly string[]) => string | null
   /** A bell row under the extension's name (the kernel's emitNotification). */
   notify: (moduleId: string, input: ModuleNotifyInput) => void
@@ -159,7 +164,14 @@ type Entry = {
   tools: Set<string>
   hooks: Set<string>
   handlers: Map<string, McpToolRegistration['handler']>
+  /** The events on their way to it, one after another, so it hears them in the order they happened. */
+  events: Promise<void>
+  /** How many are on their way: past `EVENTS_QUEUED_MAX` (a worker that cannot start), the newest are dropped. */
+  eventsQueued: number
 }
+
+/** The most events one worker may have waiting; one that waits for a place cannot pile up a backlog without end. */
+const EVENTS_QUEUED_MAX = 256
 
 /**
  * Whether its worker stays running while it is on: a `background` one, and
@@ -397,6 +409,8 @@ export class ExtensionWorkers implements KernelWorkerPort {
       tools: new Set(),
       hooks: new Set(),
       handlers: new Map(),
+      events: Promise.resolve(),
+      eventsQueued: 0,
     }
     this.entries.set(spec.extensionId, entry)
     // Switching it off unloads it, and stops its worker without a restart.
@@ -711,6 +725,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
       dataDir,
       services: SERVICE_SHAPES,
       provided,
+      events: [...(spec.declaredEvents ?? [])],
       ...(this.options.sdkRoot ? { sdkRoot: this.options.sdkRoot } : {}),
     }
   }
@@ -838,6 +853,76 @@ export class ExtensionWorkers implements KernelWorkerPort {
     return session.run({ kind: 'hook', point, event }, invoker, timeoutMs)
   }
 
+  // ── Events ─────────────────────────────────────────────────────────────────
+
+  /** The permissions an extension's approval holds now; null when it is not loaded or not approved as it is. */
+  grantOf(moduleId: string): readonly string[] | null {
+    return this.options.grant(moduleId)
+  }
+
+  /** Whether any loaded extension lists `event`: cheap, so a source with no listener builds no payload. */
+  eventsListed(event: ExtensionEventName): boolean {
+    for (const entry of this.entries.values())
+      if (entry.state !== 'stopped' && entry.spec.declaredEvents?.includes(event)) return true
+    return false
+  }
+
+  /**
+   * Why an extension does not hear `event` now, or null when it does: one
+   * switched off or removed is not loaded at all; one stopped for good (its
+   * approval gone or changed, its version killed, its files changed) or no
+   * longer approved as it is, and one whose approval does not hold what the
+   * event needs, hears nothing.
+   */
+  private eventSkipReason(entry: Entry, event: ExtensionEventName): string | null {
+    if (entry.state === 'stopped' || entry.state === 'errored') return 'its worker is stopped'
+    if (!entry.spec.declaredEvents?.includes(event)) return 'it does not list the event'
+    if (this.approvalProblem(entry)) return 'it is not approved as it is now'
+    const grant = this.options.grant(entry.spec.extensionId)
+    if (grant === null) return 'it is not approved as it is now'
+    const needed = EXTENSION_EVENT_SPECS[event].permission
+    if (needed !== null && !grant.includes(needed)) return `its approval does not hold "${needed}"`
+    return null
+  }
+
+  /**
+   * Hand `payload` to every extension that lists `event` and may hear it,
+   * starting a worker that is not running (its start is the event's to wait
+   * for). Each extension hears its events in order, as its own work: as the
+   * person who approved it, held to whoever else it serves at the time. What
+   * a handler does is the extension's; a failure is a line in its log.
+   */
+  deliverEvent(event: ExtensionEventName, payload: unknown): void {
+    if (this.closed) return
+    for (const entry of this.entries.values()) {
+      if (this.eventSkipReason(entry, event)) continue
+      if (entry.eventsQueued >= EVENTS_QUEUED_MAX) {
+        entry.log(`[studio] event ${event} was dropped: ${EVENTS_QUEUED_MAX} events already wait for its worker`)
+        continue
+      }
+      entry.eventsQueued += 1
+      const copy = structuredClone(payload)
+      entry.events = entry.events.then(async () => {
+        try {
+          // Checked again at its turn: it may have been switched off, changed or revoked meanwhile.
+          if (this.eventSkipReason(entry, event)) return
+          const running = await this.ensure(entry.spec.extensionId)
+          const session = running.session
+          if (!session) throw new Error(running.message ?? stoppedMeanwhile(entry.spec.extensionId))
+          if (this.eventSkipReason(running, event)) return
+          await session.run(
+            { kind: 'event', event, payload: copy },
+            ownerInvoker(null, 'its own work, hearing an event'),
+          )
+        } catch (error) {
+          entry.log(`[studio] event ${event} was not delivered: ${messageOf(error)}`)
+        } finally {
+          entry.eventsQueued -= 1
+        }
+      })
+    }
+  }
+
   private toolHandler(moduleId: string, name: string): McpToolRegistration['handler'] {
     return async (args, context) => {
       let entry: Entry
@@ -948,7 +1033,9 @@ export class ExtensionWorkers implements KernelWorkerPort {
  * kernel's gate judges their host calls, its bell rings for them, and it asks
  * them for their extensions' methods and tools.
  */
-export function createExtensionWorkers(options: Omit<ExtensionWorkersOptions, 'gate' | 'toolNameProblem' | 'notify'>): {
+export function createExtensionWorkers(
+  options: Omit<ExtensionWorkersOptions, 'gate' | 'grant' | 'toolNameProblem' | 'notify'>,
+): {
   workers: ExtensionWorkers
   bind(kernel: MainKernel): void
 } {
@@ -960,6 +1047,7 @@ export function createExtensionWorkers(options: Omit<ExtensionWorkersOptions, 'g
   const workers = new ExtensionWorkers({
     ...options,
     gate: (moduleId, method) => bound().gateHostMethod(moduleId, method),
+    grant: (moduleId) => bound().extensionGrant(moduleId),
     toolNameProblem: (moduleId, names) => bound().mcpToolNameProblem(moduleId, names),
     notify: (moduleId, input) => bound().emitNotification(moduleId, input),
   })

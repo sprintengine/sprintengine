@@ -62,6 +62,9 @@ import { createConversationModelCatalog } from '../../main/conversation-model-ca
 import { ConversationPlanStore } from '../../main/conversation-plan-store'
 import { ConversationOutbox } from '../../main/conversation-outbox'
 import { createExtensionHooks } from '../extensions/hooks/extension-hooks'
+import { createExtensionEvents } from '../extensions/events/extension-events'
+import { followStudioEvents } from '../extensions/events/studio-events'
+import { createConversationAttentionListener } from '../../main/conversation-attention'
 import { createHookInvokers } from '../extensions/hooks/hook-invokers'
 import { activeInvoker } from '../../main/module-host/extension-invocation'
 import { ConversationRuntime, type ConversationRuntimeOptions } from '../../main/conversation-runtime'
@@ -664,6 +667,24 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     setChatIdleThresholdMs: (value) => conversationRuntime.setIdleThresholdMs(value),
     ...(options.terminalHost ? { host: options.terminalHost } : {}),
   })
+  // Studio's events, as extensions hear them: bound to the workers once the
+  // module kernel holds them (server-modules.ts, app-main.ts).
+  const extensionEvents = createExtensionEvents()
+  const stopStudioEvents = followStudioEvents(extensionEvents, {
+    workspaces: {
+      records: () => workspaceRegistry.getRecords(),
+      subscribe: (listener) => workspaceRegistry.subscribe(() => listener()),
+    },
+    terminals: agentTerminals
+      ? {
+          list: () => agentTerminals!.runtime.sessions.listTerminals(),
+          onChanged: (listener) => agentTerminals!.onChanged(listener),
+          onAgentPhase: (listener) => agentTerminals!.runtime.registerAgentPhaseListener(listener),
+        }
+      : null,
+    onChatPhase: (listener) => conversations.onEvent(createConversationAttentionListener({ onAgentPhase: listener })),
+  })
+
   // What this desktop's WSL terminals' agents report from inside their
   // distribution, relayed by its server on each connection to it.
   if (wslServers && agentTerminals) {
@@ -1662,6 +1683,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
    */
   async function shutdown(): Promise<void> {
     const legs: Array<() => unknown> = [
+      () => stopStudioEvents(),
       () => workspaceSyncService.flush(),
       () => pullRequests.flush(),
       () => localServers.flush(),
@@ -1713,6 +1735,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   return {
     /** Extensions' agent hooks, bound to the workers by whoever holds them. */
     extensionHooks,
+    /** Studio's events, as extensions hear them; bound to the workers by whoever holds them. */
+    extensionEvents,
     hookInvokers,
     chatInvoker,
     /** Who started an agent here, as its record keeps it. */

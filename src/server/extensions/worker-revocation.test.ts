@@ -158,6 +158,7 @@ function studioFor(): Studio {
         approvals,
         installed: () => installedStandingOf(discovery.current()),
         gate: (moduleId, method) => kernel!.gateHostMethod(moduleId, method),
+        grant: (moduleId) => kernel!.extensionGrant(moduleId),
         toolNameProblem: (moduleId, names) => kernel!.mcpToolNameProblem(moduleId, names),
         notify: () => undefined,
         idleReapMs: 0,

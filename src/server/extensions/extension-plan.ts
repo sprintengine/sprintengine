@@ -108,6 +108,7 @@ export function planInstalledExtensions(
             fingerprint,
             declaredTools: extension.contributes.mcpTools,
             declaredHooks: extension.contributes.hooks,
+            declaredEvents: extension.contributes.events.map((subscription) => subscription.on),
             ...(installed.development ? { development: { order: installed.development.order } } : {}),
           },
           host,

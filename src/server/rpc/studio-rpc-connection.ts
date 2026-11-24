@@ -63,6 +63,9 @@ import type { StudioExtensions } from '../extensions/extensions-domain'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import type { StudioWebDevicesDomain } from './studio-web-devices'
 import type { StudioModules } from './studio-modules'
+import type { ExtensionEvents } from '../extensions/events/extension-events'
+import { invokerOfGrant } from '../extensions/hooks/hook-invokers'
+import { isExtensionEventName } from '../../../packages/extension-sdk/src/events'
 import type { StudioTerminalFollow, StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
@@ -181,6 +184,8 @@ export type StudioRpcConnectionOptions = {
   localServers?: StudioLocalServers
   /** What this Studio's modules say: the `extension.events` and `extension.notifications` streams. */
   modules?: StudioModules
+  /** Studio's events, as extensions' surfaces hear them: the `extension.studioEvents` stream. */
+  extensionEvents?: ExtensionEvents
   /** The terminals on this machine: the `terminal.*` streams. */
   terminals?: StudioTerminals
   /** The marketplace and the feeds: the `cardFeed.changed` stream. */
@@ -1133,6 +1138,48 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   }
 
   /**
+   * One of Studio's events for one extension's surfaces: admitted as that
+   * extension (its approval holds the event's permission) and as this
+   * connection (its grant holds what the event tells), when it subscribes and
+   * again at each event, so a narrowed approval or grant stops it at once.
+   */
+  function subscribeStudioEvents(id: string, params: StudioTopicParams<'extension.studioEvents'>): void {
+    const events = options.extensionEvents
+    if (!events) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve extension.studioEvents.')
+      return
+    }
+    const { moduleId, event } = params
+    if (!isExtensionEventName(event)) {
+      subscriptionFailed(id, 'invalid_params', `"${event}" is not one of Studio's events a Studio sends.`)
+      return
+    }
+    const admitted = (): { ok: true } | { ok: false; code: string; message: string } | null => {
+      const grant = liveGrant()
+      if (!grant) return null
+      if (!authorizeStudioTopic(grant, 'extension.studioEvents').ok) {
+        refreshGrant()
+        return null
+      }
+      return events.admit(moduleId, event, invokerOfGrant(grant))
+    }
+    const first = admitted()
+    if (first && !first.ok) {
+      subscriptionFailed(id, first.code, first.message)
+      return
+    }
+    const subscription: Subscription = { id, topic: 'extension.studioEvents', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const stop = events.listen(event, (payload) => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      const now = admitted()
+      if (!now?.ok) return
+      push('extension.studioEvents', id, { event, payload })
+    })
+    subscription.handle = { dispose: stop }
+  }
+
+  /**
    * A push topic fed by a domain's listener: each payload goes out while the
    * grant as it stands still reaches the topic, and a narrowed or revoked
    * grant ends it. Never replayed: a client asks for what it shows after it
@@ -1499,6 +1546,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       subscribeFeed(id, 'environment.cliPathsChanged', listen ? (deliver) => listen(() => deliver({})) : null)
     },
     'extension.events': subscribeModuleEvents,
+    'extension.studioEvents': subscribeStudioEvents,
     'extension.notifications': subscribeModuleNotifications,
     'extension.changed': (id) => {
       const modules = options.modules

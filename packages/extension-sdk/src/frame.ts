@@ -25,6 +25,7 @@ import type {
   ModuleWorkspaceView,
 } from './index.js'
 import type { ModuleMethodAnswer, ModuleMethodContract, ModuleMethodContracts, ModuleMethodsClient } from './methods.js'
+import type { ExtensionEventPayloads, ExtensionFrameEventName } from './events.js'
 
 /** A path inside a workspace's folder, relative to it, with `/` between its parts. */
 export type ExtensionFilePath = string
@@ -147,6 +148,13 @@ export type ExtensionFrameMethods = {
     params: { method: string; params?: unknown }
     result: ModuleMethodAnswer<ModuleMethodContract>
   }
+  // ── Studio's events ──
+  /**
+   * Hear one of Studio's events in this frame. `studio.on(event, …)` calls it
+   * for you; it refuses an event whose permission the extension's approval,
+   * or whoever opened the surface, does not hold (the guide's events topic).
+   */
+  'events.subscribe': { params: { event: ExtensionFrameEventName }; result: { ok: true } }
   // ── Its log ──
   /**
    * A line in the extension's log, as `[frame]`: what `sprintengine-extension
@@ -278,7 +286,7 @@ export type ExtensionFramePush = { topic: string; payload?: unknown }
 export type ExtensionFrameEvents = {
   theme: ExtensionFrameTheme
   push: ExtensionFramePush
-}
+} & { [E in ExtensionFrameEventName]: ExtensionEventPayloads[E] }
 
 /** The `studio` a `mount` is handed, inside the surface's frame. */
 export type ExtensionMountStudio = {
@@ -306,7 +314,12 @@ export type ExtensionMountStudio = {
   readonly document?: ExtensionEditorDocumentApi
   /** The theme now; `on('theme')` hears it change. */
   readonly theme: ExtensionFrameTheme
-  /** Hear the theme change, or the worker's events. Returns the way to stop hearing. */
+  /**
+   * Hear the theme change, the worker's events (`push`), or one of Studio's
+   * events (`workspace.created`, `agent.status.changed`, …): the first
+   * listener for one subscribes (`events.subscribe`), and a refusal is written
+   * to the frame's console, and so to its log. Returns the way to stop hearing.
+   */
   on<E extends keyof ExtensionFrameEvents>(
     event: E,
     listener: (payload: ExtensionFrameEvents[E]) => void,

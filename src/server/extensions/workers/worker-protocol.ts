@@ -99,6 +99,8 @@ export type WorkerInitMessage = {
   provided: string[]
   /** The invocation its activation runs as. */
   invocation: string
+  /** The events its extension.json lists (`contributes.events`), which `studio.events.on` takes. */
+  events: string[]
   /**
    * The SDK package of the Studio running it, for a worker whose source
    * imports `@sprintengine/extension-sdk` and does not carry it (source-hooks.ts).
@@ -112,6 +114,8 @@ export type WorkerCallMessage = { t: 'call'; id: number; invocation: string } & 
   | { kind: 'callback'; callback: number; args: unknown[] }
   /** A hook the extension lists: its handler is handed `event` and answers its decision. */
   | { kind: 'hook'; point: string; event: unknown }
+  /** An event the extension lists: each handler `studio.events.on` registered for it is handed `payload`. */
+  | { kind: 'event'; event: string; payload: unknown }
   | { kind: 'shutdown' }
 )
 

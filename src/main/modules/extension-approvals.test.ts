@@ -38,6 +38,7 @@ const NO_CONTRIBUTIONS: ExtensionManifest['contributes'] = {
   settingsSections: [],
   mcpTools: [],
   hooks: [],
+  events: [],
   syntaxes: [],
   customEditors: [],
   keybindings: [],
@@ -332,6 +333,28 @@ test('a hook the approved version did not have is growth, said in the approvalâ€
     'a hook: can check, change or refuse your agentsâ€™ tool calls in Claude Code chats',
     'a hook: can check, change or refuse the files you save in the editor',
   ])
+})
+
+test('an event whose permission is new is growth; an event the approval already covers is not', () => {
+  const manifest = (permissions: string[], events: string[]) =>
+    extensionAccess({
+      permissions: permissions as ExtensionManifest['permissions'],
+      tier: 'worker',
+      main: 'dist/main.cjs',
+      contributes: {
+        ...NO_CONTRIBUTIONS,
+        events: events.map((on) => ({ on })) as ExtensionManifest['contributes']['events'],
+      },
+    })
+  const before = manifest(['workspace:read'], ['workspace.created'])
+  assert.deepEqual(accessGrowth(before, manifest(['workspace:read'], ['workspace.created', 'workspace.removed'])), [])
+  assert.deepEqual(
+    accessGrowth(
+      before,
+      manifest(['workspace:read', 'conversation:read'], ['workspace.created', 'agent.status.changed']),
+    ),
+    ['the "conversation:read" permission'],
+  )
 })
 
 test('an approval stored without the hooks it covers approves nothing', async () => {

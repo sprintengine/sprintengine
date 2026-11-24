@@ -71,6 +71,7 @@ test('the smallest manifest validates, with no permissions and every point empty
     settingsSections: [],
     mcpTools: [],
     hooks: [],
+    events: [],
     syntaxes: [],
     customEditors: [],
     keybindings: [],
@@ -486,6 +487,38 @@ test('version is semver: a numeric prerelease identifier has no leading zero', (
   for (const version of ['1.0.0', '1.0.0-0', '1.0.0-alpha.1', '1.0.0-0a', '1.0.0+001']) accepted(base({ version }))
   for (const version of ['1.0.0-01', '1.0.0-alpha.01', '01.0.0', '1.0'])
     refusedAt(base({ version }), 'version', /semver/)
+})
+
+test('events are the worker tier’s, at most five, each once, each with the permission it needs', () => {
+  const worker = (events: unknown, permissions: string[] = ['workspace:read', 'conversation:read']) =>
+    base({ tier: 'worker', main: 'dist/main.cjs', permissions, contributes: { events } })
+  const manifest = accepted(worker([{ on: 'workspace.created' }, { on: 'agent.status.changed' }]))
+  assert.deepEqual(manifest.contributes.events, [{ on: 'workspace.created' }, { on: 'agent.status.changed' }])
+  refusedAt(
+    base({ tier: 'ui', permissions: ['workspace:read'], contributes: { events: [{ on: 'workspace.created' }] } }),
+    'tier',
+    /needs "worker"/,
+  )
+  // An event tells what its permission reads.
+  refusedAt(
+    worker([{ on: 'workspace.created' }], []),
+    'contributes.events[0].on',
+    /needs the "workspace:read" permission/,
+  )
+  refusedAt(
+    worker([{ on: 'agent.status.changed' }], ['workspace:read']),
+    'contributes.events[0].on',
+    /needs the "conversation:read" permission/,
+  )
+  refusedAt(worker([{ on: 'workspace.exploded' }]), 'contributes.events[0].on')
+  // The window's own typography is a surface's alone.
+  refusedAt(worker([{ on: 'editor.typography.changed' }]), 'contributes.events[0].on')
+  refusedAt(
+    worker([{ on: 'workspace.created' }, { on: 'workspace.created' }]),
+    'contributes.events[1]',
+    /duplicate event/,
+  )
+  refusedAt(worker(Array.from({ length: 6 }, () => ({ on: 'workspace.created' }))), 'contributes.events', /at most 5/)
 })
 
 test('hooks are the worker tier’s, a point at most once, from the points Studio has, failing by pass or deny', () => {

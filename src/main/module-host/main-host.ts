@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { ExtensionHookHandlers } from '../../../packages/extension-sdk/src/hooks'
+import type { ExtensionWorkerEvents } from '../../../packages/extension-sdk/src/events'
 import { readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative } from 'node:path'
 
@@ -268,6 +269,8 @@ export type MainHost = {
    * the handlers back out.
    */
   registerHooks(handlers: ExtensionHookHandlers): () => void
+  /** Studio's events: an extension's worker hears them (worker-entry.ts); a module in Studio's own process cannot. */
+  readonly events: ExtensionWorkerEvents
   /**
    * Make one of the app's skills present in a workspace now, rather than at
    * the next spawn — how a module pre-installs the skill an agent will be told
@@ -423,6 +426,8 @@ export type MainKernel = {
   attachWorkers(port: KernelWorkerPort): void
   /** The host's gate for one of an extension's `studio` methods, as whoever the code running now serves. */
   gateHostMethod(moduleId: string, method: string): ExtensionHostDecision
+  /** The permissions an extension's approval holds now; null when it is not loaded here or not approved as it is. */
+  extensionGrant(moduleId: string): readonly string[] | null
   /** Why `names` would collide with a gateway tool or another module's, or null when they do not. */
   mcpToolNameProblem(moduleId: string, names: readonly string[]): string | null
 }
@@ -1206,6 +1211,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       registerMethods: (batch) => (refuseRetired(), enforce('registerMethods'), live.registerMethods(batch)),
       registerMcpTools: (tools) => (refuseRetired(), enforce('registerMcpTools'), live.registerMcpTools(tools)),
       registerHooks: (handlers) => (refuseRetired(), enforce('registerHooks'), live.registerHooks(handlers)),
+      events: live.events,
       watchModuleAppState: (cb) => (
         refuseRetired(),
         enforce('watchModuleAppState'),
@@ -1253,6 +1259,13 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         throw new Error(
           `Module "${moduleId}" registered hooks in Studio's own process: only an extension's worker serves hooks.`,
         )
+      },
+      events: {
+        on() {
+          throw new Error(
+            `Module "${moduleId}" listened for Studio's events in Studio's own process: only an extension's worker hears them.`,
+          )
+        },
       },
       registerMcpTools(tools) {
         const thirdParty = isThirdParty(moduleId)
@@ -1511,6 +1524,13 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         method,
         Object.hasOwn(EXTENSION_MAIN_HOST_METHODS, method) ? EXTENSION_MAIN_HOST_METHODS[method] : undefined,
       ),
+    // Null for one not loaded here (switched off, removed, never approved), whatever it was approved for.
+    extensionGrant: (moduleId) => {
+      if (options.isModulePresent && !options.isModulePresent(moduleId)) return null
+      return options.resolveExtensionGrant
+        ? options.resolveExtensionGrant(moduleId)
+        : (options.resolveModuleManifest?.(moduleId)?.permissions ?? [])
+    },
     mcpToolNameProblem,
     startupHooks: () => startupHooks.map((entry) => entry.hook),
     shutdownBeginHooks: () => shutdownBeginHooks.map((entry) => entry.hook),

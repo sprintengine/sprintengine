@@ -9,6 +9,8 @@ import type { ModuleUsageRegistry } from '../../shared/modules/activity-service'
 import type { ModuleBacklogRegistry } from '../../shared/modules/backlog-service'
 import type { ModuleMethodParsed } from '../../shared/modules/methods'
 import { createStudioModuleHub, type StudioModules } from './studio-modules'
+import { createExtensionEvents } from '../extensions/events/extension-events'
+import type { FakeAuthenticator } from './studio-rpc.test-helper'
 import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
 
 // The catalogue is not what these tests are about.
@@ -106,6 +108,74 @@ test("every module's events, or one module's, in the order the kernel delivered 
     event('acme.radar', 'run-status', { phase: 'started' }),
     event('acme.radar', 'run-status', { phase: 'done' }),
   ])
+})
+
+test('a surface’s Studio event is held to its extension’s approval and to the connection’s grant, at each event', async () => {
+  const events = createExtensionEvents()
+  const grants: Record<string, readonly string[] | null> = { 'acme.board': ['workspace:read'] }
+  events.bind({ eventsListed: () => false, deliverEvent: () => undefined, grantOf: (id) => grants[id] ?? null })
+  const started = await startTestServer({ modules: createStudioModuleHub(), extensionEvents: events })
+  cleanups.push(() => started.dispose())
+  const auth: FakeAuthenticator = started.auth
+  const connect = async (token: string) => {
+    const client = await connectLineClient(started.path)
+    cleanups.push(() => client.close())
+    client.send(hello({ token }))
+    await client.next((frame) => frame.t === 'welcome')
+    return client
+  }
+  const owner = await connect(OWNER_TOKEN)
+  owner.send({
+    t: 'sub',
+    id: 'w',
+    topic: 'extension.studioEvents',
+    params: { moduleId: 'acme.board', event: 'workspace.created' },
+  })
+  owner.send({
+    t: 'sub',
+    id: 'x',
+    topic: 'extension.studioEvents',
+    params: { moduleId: 'acme.radar', event: 'workspace.created' },
+  })
+  const unapproved = await owner.next((frame) => frame.t === 'subFailed' && frame.sub === 'x')
+  assert.equal(unapproved.t === 'subFailed' && unapproved.code, 'approval_required')
+  // A paired device granted extensions but not workspaces is refused what the extension may hear.
+  const device = await connect(pairFakeClient(auth, 'build-box', ['extensions:read']))
+  device.send({
+    t: 'sub',
+    id: 'd',
+    topic: 'extension.studioEvents',
+    params: { moduleId: 'acme.board', event: 'workspace.created' },
+  })
+  const refused = await device.next((frame) => frame.t === 'subFailed' && frame.sub === 'd')
+  assert.equal(refused.t === 'subFailed' && refused.code, 'not_permitted')
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  events.emit('workspace.created', {
+    workspaceId: 'ws-1',
+    name: 'Notes',
+    kind: 'folder',
+    folderPath: null,
+    branch: null,
+  })
+  const heard = await owner.next((frame) => frame.t === 'push' && frame.sub === 'w')
+  assert.deepEqual(heard.t === 'push' && heard.payload, {
+    event: 'workspace.created',
+    payload: { workspaceId: 'ws-1', name: 'Notes', kind: 'folder', folderPath: null, branch: null },
+  })
+  // Its approval narrowed: the next event is not sent.
+  grants['acme.board'] = []
+  events.emit('workspace.created', {
+    workspaceId: 'ws-2',
+    name: 'Site',
+    kind: 'folder',
+    folderPath: null,
+    branch: null,
+  })
+  const late = await Promise.race([
+    owner.next((frame) => frame.t === 'push' && frame.sub === 'w').then(() => 'sent'),
+    new Promise((resolve) => setTimeout(() => resolve('held back'), 200)),
+  ])
+  assert.equal(late, 'held back')
 })
 
 test('a malformed module filter is refused', async () => {

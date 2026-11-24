@@ -115,6 +115,8 @@ export type ExtensionsApi = {
   }): Promise<{ ok: true; values: Record<string, ExtensionSettingValueView> } | { ok: false; message: string }>
   /** Hear one extension's worker events, across reconnects. */
   onExtensionEvents(moduleId: string, cb: (event: StudioModuleEvent) => void): () => void
+  /** One of Studio's events for one extension's surfaces, as the Studio admits it (`extension.studioEvents`). */
+  onStudioEvents(moduleId: string, event: string, cb: (payload: unknown) => void): () => void
   /** What is installed or trusted on the Studio changed. */
   onThirdPartyModulesChanged(cb: () => void): () => void
   /** The module registry this window resolved, which the Studio's agent tools report. */
@@ -239,6 +241,13 @@ export const extensionsApi: ExtensionsApi = {
       params: { moduleId },
       capability: STUDIO_EXTENSION_HOST_CAPABILITY,
       onPayload: cb,
+    }),
+  onStudioEvents: (moduleId, event, cb) =>
+    followWindowStudioPush({
+      topic: 'extension.studioEvents',
+      params: { moduleId, event },
+      capability: STUDIO_EXTENSION_FRAMES_CAPABILITY,
+      onPayload: (heard) => cb(heard.payload),
     }),
   onThirdPartyModulesChanged: (cb) =>
     followWindowStudioPush({
