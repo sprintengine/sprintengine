@@ -47,7 +47,13 @@ export type ExtensionAccess = {
   background: boolean
   /** The MCP tools it serves agents, by name, with their access. */
   tools: Record<string, 'read' | 'operate'>
-  /** Its commands that run one of Studio's own actions, as `<command>=<action>`, sorted. */
+  /**
+   * Its commands that run one of Studio's own actions, as `<command>=<action>`,
+   * and those that run in place of one (`replaces`), as
+   * `<command>=replaces:<action>`, sorted. A replacement takes a key, a menu
+   * item or a palette entry the person knows as Studio's, so a new one is
+   * asked for again; it lives in this list so the stored record keeps its shape.
+   */
   actions: string[]
   /**
    * Its custom editors, the files each takes and whether it opens them by
@@ -113,6 +119,9 @@ export function localServerRunDigest(
   return `sha256-${hash.digest('hex')}`
 }
 
+/** How `actions` marks a command that runs in place of a Studio action rather than running it. */
+const REPLACES = 'replaces:'
+
 /** What an extension's manifest asks for, its local MCP servers bound to the files it ships. */
 export function extensionAccess(manifest: AccessManifest, files?: ModuleFileDigests): ExtensionAccess {
   return {
@@ -122,7 +131,10 @@ export function extensionAccess(manifest: AccessManifest, files?: ModuleFileDige
     background: manifest.background === true,
     tools: Object.fromEntries(manifest.contributes.mcpTools.map((tool) => [tool.name, tool.access])),
     actions: manifest.contributes.commands
-      .flatMap((command) => (command.action === undefined ? [] : [`${command.id}=${command.action}`]))
+      .flatMap((command) => [
+        ...(command.action === undefined ? [] : [`${command.id}=${command.action}`]),
+        ...(command.replaces === undefined ? [] : [`${command.id}=${REPLACES}${command.replaces}`]),
+      ])
       .sort(),
     editors: manifest.contributes.customEditors
       .map((editor) => `${editor.id}=${editorFiles(editor).join(',')}|${editor.priority ?? 'default'}`)
@@ -159,6 +171,19 @@ export function extensionNeedsApproval(manifest: Pick<ExtensionManifest, 'tier' 
     commands.length + menus.length + topBarItems.length + providers.length > 0 ||
     mcpServers.some((server) => server.transport === 'stdio')
   )
+}
+
+/**
+ * Whether an installed extension waits for the person's approval, as Studio
+ * judges it: its tier and contributions (`extensionNeedsApproval`), or, for
+ * one installed from outside the window (`askPerson`), anything but content.
+ * One rule for its standing and for whether an update of it asks more.
+ */
+export function installedNeedsApproval(
+  manifest: Pick<ExtensionManifest, 'tier' | 'contributes'>,
+  options: { askPerson?: boolean } = {},
+): boolean {
+  return extensionNeedsApproval(manifest) || (options.askPerson === true && manifest.tier !== 'content')
 }
 
 /** The fingerprint an approval is bound to: what it may do, and the content of its files. */
@@ -208,7 +233,8 @@ export function devFolderApprovalFingerprint(access: ExtensionAccess, folder: st
  * permission it adds, a higher tier, a worker, a background worker, and each
  * contribution that carries authority, judged per entry: an MCP tool agents
  * did not have, a tool that may now change things, a command that runs a
- * Studio action it did not run. Empty when it may keep the approval.
+ * Studio action it did not run or runs in place of one it did not replace.
+ * Empty when it may keep the approval.
  */
 export function accessGrowth(approved: ExtensionAccess, next: ExtensionAccess): string[] {
   const growth: string[] = next.permissions
@@ -225,7 +251,12 @@ export function accessGrowth(approved: ExtensionAccess, next: ExtensionAccess): 
   for (const action of next.actions)
     if (!approved.actions.includes(action)) {
       const [command, ...rest] = action.split('=')
-      growth.push(`the command "${command}" running "${rest.join('=')}"`)
+      const target = rest.join('=')
+      growth.push(
+        target.startsWith(REPLACES)
+          ? `the command "${command}" running in place of Studio's "${target.slice(REPLACES.length)}"`
+          : `the command "${command}" running "${target}"`,
+      )
     }
   const editorOf = (entry: string) => {
     const [files = '', priority = 'default'] = entry.slice(entry.indexOf('=') + 1).split('|')

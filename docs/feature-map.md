@@ -297,6 +297,19 @@ approval: `devFolderApprovalFingerprint` in `src/main/modules/extension-approval
 `src/renderer/src/modules/extension-contributions.tsx`. The CLI: `packages/extension-sdk/src/cli.ts` (usage),
 `cli-commands.ts`, `cli-authoring.ts` (`validate`, `inspect`, `test`, `check`, with `check-worker.ts`), `cli-dev.ts`
 (`dev …`, `shot`), `cli-output.ts` (`--json`, error and exit codes) and `cli-studio.ts` (the gateway's local socket).
+Installing, updating and opening a published extension from outside the window: the CLI's
+`packages/extension-sdk/src/cli-install.ts` (`install`, `update`, `open`), sources read by
+`packages/extension-sdk/src/install-source.ts`, the tools in `src/main/automation/extension-install-tools.ts`
+(`extension.install`, `extension.update`, `extension.open`) over the catalogue's `installKey`, `installFrom` and
+`updateNow` (`src/server/extensions/catalogue/extension-catalogue.ts`); a waiting install asked of the person by
+`DevFolderApprovalHost.tsx` (`reviewAsked`); a panel or an editor shown in a window (`src/shared/extension-open.ts`)
+by `src/main/extension-open-broker.ts` (one window at a time, never raised), over the control channel out of
+process (`src/server/extensions/extension-open-bridge.ts`), and in the window by
+`src/renderer/src/hooks/useExtensionOpenRequests.ts` (`src/renderer/src/modules/extension-open-plan.ts`). Tests:
+`src/main/extension-open-broker.test.ts`, `src/server/extensions/extension-open-bridge.test.ts`,
+`src/renderer/src/modules/extension-open-plan.test.ts`, `packages/extension-sdk/test/cli-install.test.ts`,
+`packages/extension-sdk/test/install-source.test.ts`, `src/main/automation/extension-install-tools.test.ts`,
+`src/server/extensions/catalogue/extension-catalogue.test.ts`.
 Agents' tools: `src/main/automation/extension-dev-tools.ts` (`extension.dev.*`, held to their caller by
 `bindDevToolsToCaller`, bound in `src/server/core/studio-gateway.ts`) and
 `src/main/automation/extension-shot-tool.ts` (`visual.extension_shot`), drawn by
@@ -356,6 +369,15 @@ CLI).
 `src/renderer/src/components/extensions/ExtensionSettingsForm.tsx`. Wire: `extension.content`,
 `extension.settings`, `extension.setSetting`. Sample: `packages/extension-sdk/examples/content-sample/`. Tests:
 `packages/extension-sdk/test/content-contributions.test.ts`, `src/main/modules/extension-content.test.ts`.
+
+**A command that takes over a Studio action** (`replaces` in `contributes.commands`): the field and its action list
+in `packages/extension-sdk/src/extension-manifest.ts`; counted as access in `src/main/modules/extension-approvals.ts`;
+which extension wins, and the loser's log line, in `src/main/modules/extension-replacement-log.ts`; run in the window,
+with Studio's own after 2 s or a failure, by `src/renderer/src/modules/extension-replacements.ts`, from the command
+paths of `src/renderer/src/components/workspace/WorkspaceManager.tsx`; shown in
+`src/renderer/src/components/settings/ApprovalReviewDialog.tsx`. Tests:
+`src/renderer/src/modules/extension-replacements.test.ts`, `src/main/modules/extension-replacement-log.test.ts`,
+`src/main/modules/extension-approvals.test.ts`, `packages/extension-sdk/test/extension-manifest.test.ts`.
 
 **Skills and plugins**: `src/main/skills/`, `src/server/agent-setup/`, `src/main/marketplace/` (Claude Code
 plugins from the marketplace). Doc: `resources/marketplace/README.md`.

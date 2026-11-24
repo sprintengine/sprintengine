@@ -86,9 +86,11 @@ export const EXTENSION_ICONS = [
 export type ExtensionIcon = (typeof EXTENSION_ICONS)[number]
 
 /**
- * Studio's own commands a declarative command may run. Closed, so an
+ * Studio's own commands a declarative command may run, and (all but two) a
+ * worker command may run in place of (`replaces`): one list. Closed, so an
  * extension can only alias what Studio offers people anyway; each id is a
- * command in the app's command registry (a test holds them to it).
+ * command in the app's command registry (a test holds them to it), fired by
+ * the person from its shortcut, the palette or a menu.
  */
 export const EXTENSION_COMMAND_ACTIONS = [
   'app.settings.open',
@@ -99,16 +101,42 @@ export const EXTENSION_COMMAND_ACTIONS = [
   'workspace.history.back',
   'workspace.history.forward',
   'workspace.sidebar.toggle',
+  'pane.toggle',
   'panel.files.toggle',
   'panel.editor.toggle',
   'panel.git.toggle',
   'panel.backlog.toggle',
+  'panel.canvas.toggle',
   'git.refresh',
   'git.fetch',
   'terminal.new',
   'usage.show',
 ] as const
 export type ExtensionCommandAction = (typeof EXTENSION_COMMAND_ACTIONS)[number]
+
+/**
+ * The command actions no extension may run in place of: Settings, where the
+ * person switches a replacement off, and the palette, where they find
+ * Settings and every other action. A replacement of either could leave the
+ * person with no way back to the switch.
+ */
+export const EXTENSION_UNREPLACEABLE_ACTIONS = ['app.settings.open', 'commandPalette.open'] as const
+
+export type ExtensionReplaceableAction = Exclude<
+  ExtensionCommandAction,
+  (typeof EXTENSION_UNREPLACEABLE_ACTIONS)[number]
+>
+
+/**
+ * Studio's own actions a worker command may take over (`replaces`): every
+ * command action but the two that lead back to the switch
+ * (`EXTENSION_UNREPLACEABLE_ACTIONS`). Studio's own runs when the extension
+ * fails or is slow, so an extension costs a moment, not the person's work.
+ */
+export const EXTENSION_REPLACEABLE_ACTIONS: readonly ExtensionReplaceableAction[] = EXTENSION_COMMAND_ACTIONS.filter(
+  (action): action is ExtensionReplaceableAction =>
+    !(EXTENSION_UNREPLACEABLE_ACTIONS as readonly string[]).includes(action),
+)
 
 /** Where a menu item may appear. */
 export const EXTENSION_MENU_PLACES = ['backlog.item', 'file', 'notification'] as const
@@ -443,6 +471,12 @@ const CONTRIBUTES: ObjectNode = {
               doc: 'A Studio command this command runs. A command with an `action` is declarative and runs no extension code; one without needs the worker tier.',
               since: V1,
               example: 'panel.backlog.toggle',
+            },
+            replaces: {
+              node: { kind: 'string', max: 64, enum: EXTENSION_REPLACEABLE_ACTIONS },
+              doc: 'A Studio action this worker command runs in place of, when the person fires that action from its shortcut, the palette or a menu. If the worker fails, or has not answered within 2 s, Studio runs its own. A command that calls `studio.runCommand(<action>)` (needs `workspace:operate`) always runs Studio’s own, never a replacement. The person sees the replacement before approving the extension and can switch it off on the extension’s page; when two extensions replace one action, the one installed first does. Every command action may be replaced but `app.settings.open` and `commandPalette.open`, which lead the person back to that switch.',
+              since: V1,
+              example: 'workspace.history.back',
             },
           },
         },
@@ -1047,7 +1081,7 @@ const CONTRIBUTES: ObjectNode = {
           },
         },
       },
-      doc: 'MCP servers the person’s agents get, in every workspace on this machine. A `stdio` server’s command, arguments, environment and the extension’s files are part of what the person approves at install, so an update that changes any of them asks again; an `http` server is listed when the extension is installed and asks nothing.',
+      doc: 'MCP servers the person’s agents get, in every workspace on this machine. A `stdio` server’s command, arguments, environment and the extension’s files are part of what the person approves at install, so an update that changes any of them asks again; an `http` server is listed when the extension is installed in Settings and asks nothing there (installed from outside Studio’s window, by an agent or the command line, it waits for the person’s approval like code, unless it comes from the official catalogue).',
       since: V1,
       tier: 'declarative',
     },
@@ -1267,6 +1301,7 @@ export type ExtensionCommandContribution = {
   title: string
   when?: 'global' | 'workspace'
   action?: ExtensionCommandAction
+  replaces?: ExtensionReplaceableAction
 }
 export type ExtensionMenuContribution = { where: ExtensionMenuPlace; command: string }
 export type ExtensionTopBarItemContribution = {
@@ -1499,6 +1534,21 @@ function crossFieldIssues(manifest: ExtensionManifest, options: ExtensionManifes
     } else if (item.door !== undefined && !doorIds.has(item.door)) {
       issues.push({ path: `${path}.door`, message: `names no contributed door: ${item.door}.` })
     }
+  })
+  // A replacement runs the worker in place of Studio's own action, so it is a
+  // worker command's: a declarative one runs no code of its own to replace
+  // anything with. One action is taken over by one command of an extension.
+  const replaced = new Set<string>()
+  contributes.commands.forEach((command, index) => {
+    if (command.replaces === undefined) return
+    const path = `contributes.commands[${index}].replaces`
+    if (command.action !== undefined)
+      issues.push({ path, message: 'cannot go with action: a command that runs a Studio action runs no code.' })
+    else if (manifest.main === undefined)
+      issues.push({ path, message: 'needs a worker (main) to run in place of the Studio action.' })
+    if (replaced.has(command.replaces))
+      issues.push({ path, message: `is already replaced by another command of this extension: ${command.replaces}.` })
+    replaced.add(command.replaces)
   })
   // A keybinding or a status bar item runs a command of the extension's own,
   // or one of Studio's: a content extension binds Studio's without code.
@@ -1847,6 +1897,8 @@ export function extensionManifestReference(): string {
     `Icons: ${EXTENSION_ICONS.map((icon) => `\`${icon}\``).join(', ')}.`,
     '',
     `Command actions: ${EXTENSION_COMMAND_ACTIONS.map((action) => `\`${action}\``).join(', ')}.`,
+    '',
+    `A worker command may replace (\`replaces\`) each of them but ${EXTENSION_UNREPLACEABLE_ACTIONS.map((action) => `\`${action}\``).join(' and ')}: Settings, where the person switches a replacement off, and the palette, where they find it, stay Studio's own.`,
   ]
   return lines.join('\n')
 }

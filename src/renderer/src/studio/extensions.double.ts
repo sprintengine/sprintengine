@@ -72,6 +72,7 @@ function blank(): Api {
     onExtensionEvents: () => () => undefined,
     onStudioEvents: () => () => undefined,
     onThirdPartyModulesChanged: () => () => undefined,
+    onCommandRuns: () => () => undefined,
     setModuleRegistrySnapshot: async () => ({ ok: true }),
   }
 }

@@ -158,5 +158,6 @@ export const WORKER_HOST_METHODS = [
   'watchModuleAppState',
   'notify',
   'emit',
+  'runCommand',
 ] as const
 export type WorkerHostMethod = (typeof WORKER_HOST_METHODS)[number]

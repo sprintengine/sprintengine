@@ -436,6 +436,17 @@ export type StudioModulesTopicMap = {
   'extension.changed': { params: Record<string, never>; payload: Record<string, never>; stream: 'push' }
   /** An extension's settings values changed: read them again (`extension.settings`). */
   'extension.settingsChanged': { params: Record<string, never>; payload: { moduleId: string }; stream: 'push' }
+  /**
+   * One of Studio's own actions an extension's worker asked to run in this
+   * connection's window (`studio.runCommand`), for a call this connection
+   * made: the window runs the built-in action, never a replacement of it.
+   */
+  'extension.commandRuns': {
+    params: Record<string, never>
+    /** `call`: the token the window gave the replacement call that asked (its `replacementCall`), when one did. */
+    payload: { moduleId: string; action: string; call?: string }
+    stream: 'push'
+  }
 }
 
 /**
@@ -880,6 +891,12 @@ export const STUDIO_MODULES_TOPICS: StudioTopicTable<StudioModulesTopicMap> = {
     params: studioNoParams,
   },
   'extension.settingsChanged': {
+    scope: 'extensions:read',
+    capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+    push: true,
+    params: studioNoParams,
+  },
+  'extension.commandRuns': {
     scope: 'extensions:read',
     capability: STUDIO_EXTENSION_HOST_CAPABILITY,
     push: true,

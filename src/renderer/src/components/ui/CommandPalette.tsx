@@ -4,7 +4,6 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import { ScrollArea } from './ScrollArea'
 import type { Workspace, WorkspaceId, WorkspaceWindowId } from '../../../../shared/workspace'
 import type { BuiltinSkill, WorkspaceSkill } from '../../../../shared/electron-api'
-import { toggleEditorTab } from '../../utils/modelRegistry'
 import { openFileSurface } from '../../utils/openFileSurface'
 import { isHiddenFromRail } from '../../utils/workspaceVisibility'
 import { getEffectiveKeybindingLabel, platformKeybindingsFromApiPlatform } from '../../commands/effectiveKeybindings'
@@ -485,18 +484,25 @@ export default function CommandPalette({
       dispatchPanelCommandEvent(id, activeWorkspaceId ?? undefined)
       onClose()
     }
+    // Refresh and fetch are actions an extension may take over: through the
+    // shell's runner, as the shortcut is, which routes them to the same Git
+    // panel of the active workspace when nothing does.
+    const runShellCommand = (id: string) => () => {
+      onRunCommand(id)
+      onClose()
+    }
     const gitCommands: UngroupedCommand[] = [
       {
         id: 'git.refresh',
         label: appCopy.ui.commandPalette.gitRefreshStatus,
         shortcut: shortcutFor('git.refresh'),
-        run: runGitPanel('git.refresh'),
+        run: runShellCommand('git.refresh'),
       },
       {
         id: 'git.fetch',
         label: appCopy.ui.commandPalette.gitFetchRemotes,
         shortcut: shortcutFor('git.fetch'),
-        run: runGitPanel('git.fetch'),
+        run: runShellCommand('git.fetch'),
       },
       {
         id: 'git.commit',
@@ -530,9 +536,10 @@ export default function CommandPalette({
             label: appCopy.ui.commandPalette.toggleFileExplorer,
             searchLabel: appCopy.ui.commandPalette.fileExplorer,
             shortcut: shortcutFor('panel.files.toggle'),
+            // Through the shell's runner, as the shortcut is: an extension
+            // that takes over this action runs here too.
             run: () => {
-              // Files is a workspace-pane tab (browser-pane epic).
-              useWorkspaceStore.getState().togglePaneKind(activeWorkspace.id, 'files')
+              onRunCommand('panel.files.toggle')
               onClose()
             },
           },
@@ -542,7 +549,7 @@ export default function CommandPalette({
             searchLabel: appCopy.ui.commandPalette.codeEditor,
             shortcut: shortcutFor('panel.editor.toggle'),
             run: () => {
-              toggleEditorTab(activeWorkspace.id, 'Editor')
+              onRunCommand('panel.editor.toggle')
               onClose()
             },
           },
@@ -552,7 +559,7 @@ export default function CommandPalette({
             searchLabel: appCopy.ui.commandPalette.gitPanel,
             shortcut: shortcutFor('panel.git.toggle'),
             run: () => {
-              useWorkspaceStore.getState().togglePaneKind(activeWorkspace.id, 'git')
+              onRunCommand('panel.git.toggle')
               onClose()
             },
           },

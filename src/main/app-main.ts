@@ -562,12 +562,14 @@ if (serverHost) {
   })
   // What the server asks of the shell: the keychain, notices, terminal
   // launches, the integrations gate, a removed skill's Trash, Studio's own
-  // plugin in a workspace, which the shell installs, and for artifacts a
-  // page's picture and the set-up question with no window showing.
+  // plugin in a workspace, which the shell installs, for artifacts a page's
+  // picture and the set-up question with no window showing, and the windows
+  // `extension.open` shows an extension in.
   serverHost.serveShell(services.shellBridge, {
     trash: (path) => shellTrash(path),
     studioPluginStatus: (workspaceRoot) => services.studioPluginStatus(workspaceRoot),
     artifacts: { thumbnailer: createElectronThumbnailer(), askNatively: askToSetUpArtifacts },
+    extensionOpener: services.extensionOpener,
     browserTabs: services.browserTabs,
   })
 }

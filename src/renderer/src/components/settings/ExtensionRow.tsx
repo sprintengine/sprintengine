@@ -22,6 +22,7 @@ import { extensionHookApprovalLines } from '../../../../../packages/extension-sd
 import { agentContributionLines, type ExtensionContribution } from './extensionContributions'
 import { AgentContributionList } from './AgentContributionList'
 import { RUN_STATE_LABEL, publisherName, type ExtensionRunState } from './extensionsModel'
+import { extensionReplacementLines, useExtensionReplacementSwitches } from '../../modules/extension-replacements'
 import { copy } from '../../../../shared/copy'
 
 // One installed extension, as Settings → Extensions draws it: its mark, its
@@ -87,6 +88,48 @@ function DetailsHeading({ children }: { children: React.ReactNode }): JSX.Elemen
   return <h4 className="mb-1.5 text-meta font-semibold text-[color:var(--text-muted)]">{children}</h4>
 }
 
+/**
+ * The Studio actions it runs in place of, and the person's switch for that:
+ * on unless they turned it off, kept in this window (extension-replacements.ts),
+ * and shown only when it replaces something. Off, Studio runs its own.
+ */
+export function ExtensionTakeover({ module }: { module: ThirdPartyModuleView }): JSX.Element | null {
+  const key = module.manifest.id
+  const on = useExtensionReplacementSwitches((state) => state.off[key] !== true)
+  const setTakesOver = useExtensionReplacementSwitches((state) => state.setTakesOver)
+  const labelId = useId()
+  const hintId = useId()
+  const lines = extensionReplacementLines(module.extension)
+  if (lines.length === 0) return null
+  const t = copy.settings.extensionRow
+  return (
+    <section aria-label={t.takesOver}>
+      <DetailsHeading>{t.takesOver}</DetailsHeading>
+      <ul className="list-disc space-y-0.5 pl-5 text-meta text-[color:var(--text-default)]">
+        {lines.map((line) => (
+          <li key={line.commandId}>{t.runsInPlaceOf(line.title, line.builtInTitle)}</li>
+        ))}
+      </ul>
+      <div className="mt-2 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div id={labelId} className="text-meta text-[color:var(--text-strong)]">
+            {t.letItTakeOver}
+          </div>
+          <div id={hintId} className="text-meta text-[color:var(--text-subtle)]">
+            {t.letItTakeOverHint}
+          </div>
+        </div>
+        <Switch
+          checked={on}
+          ariaLabelledBy={labelId}
+          ariaDescribedBy={hintId}
+          onChange={(next) => setTakesOver(key, next)}
+        />
+      </div>
+    </section>
+  )
+}
+
 export function ExtensionDetails({
   module,
   titleId,
@@ -136,6 +179,7 @@ export function ExtensionDetails({
             </ul>
           </section>
         ) : null}
+        <ExtensionTakeover module={module} />
         {hookLines.length > 0 ? (
           <section aria-label={copy.settings.extensionRow.hooks}>
             <DetailsHeading>{copy.settings.extensionRow.hooks}</DetailsHeading>

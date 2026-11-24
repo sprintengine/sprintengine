@@ -11,6 +11,7 @@ import { windowCatalogueLifecycle, windowModuleLifecycle } from '../../studio/mo
 import { windowModuleSwitches } from '../../studio/moduleSwitches'
 import type { StudioExtensionInstallSource } from '../../../../../packages/studio-protocol/src/public'
 import { addThirdPartyModuleFromFolder } from './addThirdPartyModuleFromFolder'
+import { forgetExtensionReplacementSwitch } from '../../modules/extension-replacements'
 import { extensionsApi, windowHasStudio } from '../../studio/extensions'
 import { copy } from '../../../../shared/copy'
 
@@ -285,6 +286,8 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
           // default (on) never brings an uninstalled extension back.
           await refreshThirdPartyRendererModules()
           forgetModules(result.removedModuleIds)
+          // Its takeover switch, kept in this window's storage, goes with it.
+          for (const key of result.removedModuleIds) forgetExtensionReplacementSwitch(key)
           // Only an extension with a worker had one to stop.
           if (module.launch.hasMainEntry && module.launch.mainLoaded) {
             showToast({

@@ -67,6 +67,19 @@ Drive the worker without clicking: `dev request extension <method> --data
 `extension_dev_emit`). These, and shots, reach development folders only, and
 run as you: under your own permission preset.
 
+A published extension: `npx sprintengine-extension install <owner/repo[@ref] |
+git URL[#ref] | folder link | release page | key> [--ref <ref>] [--catalogue
+<catalogue>] --json`, `update <key> | --all --json` and `open <key> [--panel
+<id> | --editor <file>] --json` (or `extension_install`, `extension_update`,
+`extension_open`). Anything but a content extension or one from the official
+catalogue exits 3 (`approval_required`) until the person approves it in
+Studio's window. An installed extension is refused (`already_installed`):
+update it instead. An update that asks for more is held for the person, and a
+community release listed under 12 hours ago is `held_back`; `update --all`
+exits 3 or 1 when any row was not updated. `open` is the person's to ask for
+when you run on a capped preset (`not_permitted`), and with no Studio window
+here it fails `no_window`.
+
 ## 3. Branch on `error.code`
 
 With `--json` a failure is `{ "ok": false, "error": { "code", "message",

@@ -287,6 +287,10 @@ export const EXTENSION_MAIN_HOST_METHODS: Readonly<Record<string, ExtensionHostR
   registerSidecar: need(null, null, 'throw'),
   notify: need('notifications:show', 'extension:operate', 'throw'),
   emit: need(null, null, 'throw'),
+  // One of Studio's own actions, in the window that set the worker off: what
+  // the person's window could do anyway, so it asks what operating a
+  // workspace asks of both.
+  runCommand: need('workspace:operate', 'workspace:operate', 'reject'),
 }
 
 /** What a frame's host call needs, and where it is carried out once admitted. */

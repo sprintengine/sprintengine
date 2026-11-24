@@ -29,6 +29,7 @@
 // Node only; never import it from extension code.
 
 import { existsSync, rmSync } from 'node:fs'
+import { EXTENSION_COMMAND_ACTIONS } from './extension-manifest.js'
 import { dirname, resolve as resolvePath } from 'node:path'
 
 import { jsonValueProblem } from './json-value.js'
@@ -418,6 +419,8 @@ export type FakeMainHost = {
   emitted: Array<{ topic: string; payload?: unknown }>
   /** Every `notify`, validated as the host validates it. */
   notifications: ModuleNotifyInput[]
+  /** Every `runCommand`, by the Studio action it asked the window to run. */
+  commandRuns: string[]
   skills: {
     ensured: Array<{ workspaceRoot: string; skillId: string }>
     /**
@@ -662,6 +665,7 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     },
     emitted: [],
     notifications: [],
+    commandRuns: [],
     skills: {
       ensured: [],
       setStatus(workspaceRoot, skillId, status) {
@@ -980,6 +984,12 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     notify(input) {
       use('notify')
       fake.notifications.push(validateNotify(moduleId, input))
+    },
+    async runCommand(action) {
+      use('runCommand')
+      if (!(EXTENSION_COMMAND_ACTIONS as readonly string[]).includes(action))
+        throw new Error(`"${String(action)}" is not one of Studio's actions an extension may run.`)
+      fake.commandRuns.push(action)
     },
     emit(topic, payload) {
       const valid = validateTopic(moduleId, topic)

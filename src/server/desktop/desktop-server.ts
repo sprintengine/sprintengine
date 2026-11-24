@@ -6,6 +6,7 @@ import { backgroundWorkOf, quitStopsOf } from '../core/background-work'
 
 import { SHELL_TOOLSETS, serverAutomationTools } from './shell-toolsets'
 import { shellArtifactsOverControl } from '../artifacts/artifacts-shell-bridge'
+import { shellExtensionOpenOverControl } from '../extensions/extension-open-bridge'
 import type { AgentLaunchRequest, AgentLaunchResult } from '../../shared/agent-launch'
 import { isRecord } from '../../shared/records'
 import { applyGatewayLaunchTokenChanges, type LaunchTokenChange } from '../core/gateway-launch-tokens'
@@ -47,6 +48,7 @@ import {
 import { createStudioGateway, type StudioGateway } from '../core/studio-gateway'
 import { WORKTREE_QUIT_WAIT_MS } from '../core/studio-worktree-pool'
 import { createExtensionTools } from '../../main/automation/extension-tools'
+import { createExtensionInstallTools } from '../../main/automation/extension-install-tools'
 import { createExtensionDevTools } from '../../main/automation/extension-dev-tools'
 import { createPluginTools } from '../../main/automation/plugin-tools'
 import { resolveScaffoldRoots } from '../../main/extension-scaffold'
@@ -339,6 +341,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     core,
     log,
   })
+  // `extension.open`'s window half: the windows are the shell's, asked over
+  // the control channel (extension-open-bridge.ts).
+  const extensionOpener = shellExtensionOpenOverControl(rpc)
   gateway = createStudioGateway(core, {
     // An agent that starts a chat hears back from it, as one that launches a
     // terminal agent does.
@@ -423,6 +428,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       }),
       // The extension dev loop, over this server's kernel.
       ...createExtensionDevTools({ backend: () => modules.devBackend() }),
+      // Installing, updating and opening from outside the window; a panel or
+      // an editor is shown by the shell's window, asked over the control channel.
+      ...createExtensionInstallTools({ backend: () => modules.devBackend(), openInWindow: extensionOpener }),
       ...createPluginTools({
         listSources: () => core.agents.skills.skills.listSources(),
         getScan: (input) => core.agents.skills.skills.getScan(input),

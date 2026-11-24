@@ -17,6 +17,7 @@ import { createBrowserTools } from '../automation/browser-tools'
 import { createCanvasTools } from '../automation/canvas-tools'
 import { createEditorTools } from '../automation/editor-tools'
 import { createExtensionDevTools } from '../automation/extension-dev-tools'
+import { createExtensionInstallTools } from '../automation/extension-install-tools'
 import { createExtensionShotTool } from '../automation/extension-shot-tool'
 import { createExtensionTools } from '../automation/extension-tools'
 import { createTailnetTools } from '../automation/tailnet/tailnet-tools'
@@ -74,6 +75,10 @@ test('studio-plugin-skills', async () => {
     'extension_tests_failed',
     'shot_failed',
     'studio_unavailable',
+    'no_window',
+    'already_installed',
+    'held_back',
+    'not_permitted',
   ])
 
   /**
@@ -101,6 +106,7 @@ test('studio-plugin-skills', async () => {
       ...createConversationChatTools({} as never),
       ...createExtensionTools({} as never),
       ...createExtensionDevTools({} as never),
+      ...createExtensionInstallTools({} as never),
       createExtensionShotTool(() => Promise.reject(new Error('not drawn here'))),
     ]
     return new Set(registrations.map((registration) => registration.name.replace(/\./g, '_')))

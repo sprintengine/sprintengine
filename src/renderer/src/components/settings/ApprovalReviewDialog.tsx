@@ -8,14 +8,17 @@ import { copy } from '../../../../shared/copy'
 import { extensionHookApprovalLines } from '../../../../../packages/extension-sdk/src/hooks'
 import { agentContributionLines } from './extensionContributions'
 import { AgentContributionList } from './AgentContributionList'
+import { extensionReplacementLines } from '../../modules/extension-replacements'
 
 // Review → approve and turn on, in one step. The dialog is the consent: what
 // the extension is (its tier, said plainly: a worker's code runs with full
 // access to this machine, a ui extension's runs isolated unless it asks to
 // change project files, which is full access too), what needs care with a short why for each,
 // the rest as quiet pills, and for an update, what it asks beyond what was
-// approved before, and what it hands agents and chats: a local MCP server's
-// whole command line and environment, a provider's key origin. Approving
+// approved before, what it hands agents and chats: a local MCP server's
+// whole command line and environment, a provider's key origin, and which of
+// Studio's own actions it runs in place of (a key the person knows as
+// Studio's, now running the extension's code). Approving
 // names the fingerprint the person was shown, so a change since is refused
 // rather than approved unseen.
 
@@ -51,6 +54,7 @@ export function ApprovalReviewDialog({
   const hooks = module.extension.contributes.hooks ?? []
   const hookLines = extensionHookApprovalLines(hooks.map((hook) => hook.point))
   const failsClosed = hooks.some((hook) => hook.onError === 'deny' && !hook.point.endsWith('.after'))
+  const replacements = extensionReplacementLines(module.extension)
   // Every skill, MCP server and provider it hands agents, the local servers'
   // command lines and the providers' key origins included: what approving lets run.
   const agentLines = agentContributionLines(module.extension, module.ignoredSkillKeys)
@@ -102,6 +106,17 @@ export function ApprovalReviewDialog({
                   {t.editorOpens(editor.title, [...(editor.extensions ?? []), ...(editor.filenames ?? [])].join(', '))}
                 </li>
               ))}
+            </ul>
+          </section>
+        ) : null}
+        {replacements.length > 0 ? (
+          <section aria-label={t.takesOver}>
+            <h3 className="mb-1.5 text-meta font-semibold text-[color:var(--text-muted)]">{t.takesOver}</h3>
+            <ul className="list-disc space-y-0.5 pl-5 text-body text-[color:var(--text-strong)]">
+              {replacements.map((line) => (
+                <li key={line.commandId}>{t.runsInPlaceOf(line.title, line.builtInTitle)}</li>
+              ))}
+              <li>{t.takesOverFallsBack}</li>
             </ul>
           </section>
         ) : null}

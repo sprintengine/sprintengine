@@ -138,6 +138,7 @@ import { createAgentWrittenFiles } from './editor-reveal/agent-written-files'
 import { createEditorRevealBroker } from './editor-reveal/editor-reveal-broker'
 import { createEditorToolBackends } from './editor-reveal/editor-tool-backends'
 import { EDITOR_REVEAL_PENDING_CHANNEL } from '../shared/editor-reveal'
+import { createExtensionOpenBroker } from './extension-open-broker'
 import { createTourTools } from './automation/tour-tools'
 import { createVisualTools } from './automation/visual-tools'
 import { createElectronVisualPreview } from './visual/visual-preview-window'
@@ -147,6 +148,7 @@ import type { McpToolRegistration } from '../shared/modules/mcp-tools'
 import type { StudioClient } from '../../packages/client-runtime/src/public'
 import { createExtensionTools } from './automation/extension-tools'
 import { createExtensionDevTools, type ExtensionDevBackend } from './automation/extension-dev-tools'
+import { createExtensionInstallTools } from './automation/extension-install-tools'
 import { createPluginTools } from './automation/plugin-tools'
 import { resolveScaffoldRoots } from './extension-scaffold'
 import { createAppTourService } from './tours/tour-app'
@@ -1333,6 +1335,21 @@ export function createAppServices(
       })),
     broadcastPending: (workspaceIds) => broadcastToWorkspaceWindows(EDITOR_REVEAL_PENDING_CHANNEL, { workspaceIds }),
   })
+  // `extension.open`'s window half: asks the workspace windows one at a time
+  // to show an extension's panel or custom editor, never raising one. In
+  // process the gateway's tool calls it directly; out of process the server
+  // reaches it over the control channel (extension-open-bridge.ts).
+  const extensionOpenBroker = createExtensionOpenBroker({
+    targets: () =>
+      listWorkspaceWindows().map((window) => ({
+        id: window,
+        isDestroyed: () => window.isDestroyed() || window.webContents.isDestroyed(),
+        isFocused: () => window.isFocused(),
+        isVisible: () => window.isVisible() && !window.isMinimized(),
+        send: (channel: string, payload: unknown) => window.webContents.send(channel, payload),
+      })),
+  })
+  const extensionOpener = extensionOpenBroker.open
 
   // The worktree pool, its installs and `worktree.*` are the core's
   // (server/core/studio-worktree-pool.ts): in process this one's, out of
@@ -1529,6 +1546,12 @@ export function createAppServices(
         }),
         // The dev loop: in process over app-main's kernel, handed over once it loads.
         ...createExtensionDevTools({ backend: () => resolveExtensionDevBackend() }),
+        // Installing, updating and opening from outside the window; a panel or
+        // an editor is shown in one of this app's windows.
+        ...createExtensionInstallTools({
+          backend: () => resolveExtensionDevBackend(),
+          openInWindow: extensionOpener,
+        }),
       ]
     : []
   const pluginTools = skillsService
@@ -2292,6 +2315,9 @@ export function createAppServices(
     },
     agentChangelistFeed,
     editorRevealBroker,
+    extensionOpenBroker,
+    /** `extension.open`'s window half, for the shell to serve the server out of process. */
+    extensionOpener,
     // At quit: the shell's client closes, and in process the core's record
     // settles its writes (out of process the server does, in its own legs).
     // A hover on a terminal agent's line: ask the server again.

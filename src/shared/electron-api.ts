@@ -24,6 +24,7 @@ import type { ServerMode } from './server-mode'
 import type { ChatExportInput, ChatExportResult } from './chat-export'
 import type { StudioServerInfo, StudioServerStatus } from './studio-server-status'
 import type { EditorRevealAck, EditorRevealRequest, EditorStateQuery, EditorStateReply } from './editor-reveal'
+import type { ExtensionOpenAck, ExtensionOpenWindowRequest } from './extension-open-ipc'
 import type {
   LiveTour,
   TourAsk,
@@ -438,6 +439,11 @@ export type ElectronApi = {
   editorRevealListPending: () => Promise<string[]>
   onEditorStateQuery: (cb: (query: EditorStateQuery) => void) => () => void
   replyEditorState: (reply: EditorStateReply) => void
+  // `extension.open`: main asks the workspace windows one at a time to show an
+  // extension's panel or open a file in its custom editor; the window answers
+  // with what it did, in its active workspace.
+  onExtensionOpenRequest: (cb: (request: ExtensionOpenWindowRequest) => void) => () => void
+  ackExtensionOpen: (ack: ExtensionOpenAck) => void
   // Splash boot handshake. `notifyBootComplete` is sent once by the primary
   // workspace window when its first frame is on screen, and is what closes the
   // splash and reveals the main window (main also holds a hard timeout, so a

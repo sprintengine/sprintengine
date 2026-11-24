@@ -195,6 +195,40 @@ export function isFetchableGitUrl(url: string, options: GitOptions = {}): boolea
   return url.startsWith('file://') || url.startsWith('/')
 }
 
+/**
+ * Whether git failed because this machine's credentials cannot read the
+ * repository: no credentials and no prompt allowed, ones refused, or a host
+ * that answers "not found" for a private repository it will not show.
+ */
+export function isGitAuthFailure(message: string): boolean {
+  return /could not read (?:Username|Password)|terminal prompts disabled|Authentication failed|Permission denied \(publickey|Repository not found|HTTP Basic: Access denied|The requested URL returned error: 40[134]|Host key verification failed/iu.test(
+    message,
+  )
+}
+
+/** A repository's branches and tags, by name (`main`, `v1.2.0`), as `git ls-remote` reads them. */
+export type GitRefs = { heads: string[]; tags: string[] }
+
+/** The branches and tags a repository has, read without fetching anything. */
+export async function listGitRefs(url: string, options: GitOptions = {}): Promise<GitRefs> {
+  if (!isFetchableGitUrl(url, options)) throw new Error('The git URL must use HTTPS or SSH, with no password.')
+  const out = (
+    await runGit(['ls-remote', '--heads', '--tags', '--', url], {
+      ...(options.allowFileUrls ? { allowFileUrls: true } : {}),
+      cwd: tmpdir(),
+    })
+  ).toString('utf8')
+  const heads = new Set<string>()
+  const tags = new Set<string>()
+  for (const line of out.split('\n')) {
+    const name = line.split('\t')[1]?.trim()
+    if (!name) continue
+    if (name.startsWith('refs/heads/')) heads.add(name.slice('refs/heads/'.length))
+    else if (name.startsWith('refs/tags/')) tags.add(name.slice('refs/tags/'.length).replace(/\^\{\}$/u, ''))
+  }
+  return { heads: [...heads].sort(), tags: [...tags].sort() }
+}
+
 export type FetchedCommit = {
   /** A bare repository holding the commit; removed by `dispose`. */
   repository: string

@@ -144,6 +144,9 @@ export function heldToAll(own: ExtensionInvoker, others: readonly ExtensionInvok
     label: `${labels} (whom the extension's worker is also serving now)`,
     starter: sharedStarter([own, ...narrower]),
     ...(noTerminals ? { noTerminals: true as const } : {}),
+    // Narrowed or not, its window is still the one whose call this is.
+    ...(own.connectionId ? { connectionId: own.connectionId } : {}),
+    ...(own.replacementCall ? { replacementCall: own.replacementCall } : {}),
   }
 }
 

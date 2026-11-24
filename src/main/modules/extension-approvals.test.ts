@@ -8,9 +8,11 @@ import { test } from 'vitest'
 import {
   accessGrowth,
   createExtensionApprovalReader,
+  devFolderApprovalFingerprint,
   extensionAccess,
   extensionApprovalFingerprint,
   extensionNeedsApproval,
+  installedNeedsApproval,
   readExtensionApprovalsSync,
   writeExtensionApproval,
   type ExtensionAccess,
@@ -105,6 +107,14 @@ test('what a manifest asks for, and that only content needs no approval', () => 
     assert.equal(extensionNeedsApproval({ tier, contributes: NO_CONTRIBUTIONS }), true)
   const commanded = { ...NO_CONTRIBUTIONS, commands: [{ id: 'a.run', title: 'A', action: 'chat.new' as const }] }
   assert.equal(extensionNeedsApproval({ tier: 'declarative', contributes: commanded }), true)
+})
+
+test('an install nobody watched asks for anything but content, by the one rule standing and updates share', () => {
+  const skills = { ...NO_CONTRIBUTIONS, skills: [{ id: 'notes', path: 'skills/notes' }] }
+  assert.equal(installedNeedsApproval({ tier: 'declarative', contributes: skills }), false)
+  assert.equal(installedNeedsApproval({ tier: 'declarative', contributes: skills }, { askPerson: true }), true)
+  assert.equal(installedNeedsApproval({ tier: 'content', contributes: NO_CONTRIBUTIONS }, { askPerson: true }), false)
+  assert.equal(installedNeedsApproval({ tier: 'worker', contributes: NO_CONTRIBUTIONS }), true)
 })
 
 const STDIO = {
@@ -249,6 +259,30 @@ test('an update grows its access by a permission, a higher tier, a worker, backg
     accessGrowth(WORKER, { ...WORKER, actions: ['notes.open=settings.open'] }),
     ['the command "notes.open" running "settings.open"'],
     'the same command running another action is new',
+  )
+})
+
+test('a command that takes over one of Studio’s actions is access growth, and an unchanged one is not', () => {
+  const commands = [{ id: 'notes.back', title: 'Back', replaces: 'workspace.history.back' as const }]
+  const manifest = (list: ExtensionManifest['contributes']['commands']) =>
+    ({
+      tier: 'worker',
+      main: 'dist/main.cjs',
+      permissions: [],
+      contributes: { ...NO_CONTRIBUTIONS, commands: list },
+    }) as unknown as ExtensionManifest
+  const approved = extensionAccess(manifest([{ id: 'notes.back', title: 'Back' }]))
+  const next = extensionAccess(manifest(commands))
+  assert.deepEqual(next.actions, ['notes.back=replaces:workspace.history.back'])
+  assert.deepEqual(accessGrowth(approved, next), [
+    'the command "notes.back" running in place of Studio\'s "workspace.history.back"',
+  ])
+  assert.deepEqual(accessGrowth(next, next), [])
+  assert.deepEqual(accessGrowth(next, approved), [], 'giving it up is no growth')
+  assert.notEqual(
+    devFolderApprovalFingerprint(approved, '/Users/dev/notes'),
+    devFolderApprovalFingerprint(next, '/Users/dev/notes'),
+    'a development folder that starts replacing an action asks again',
   )
 })
 

@@ -15,6 +15,7 @@ import type { ModuleChatRuntimeOption } from './conversation.js'
 import type { HostCapability } from './host-api.js'
 import type { ExtensionHookHandlers } from './hooks.js'
 import type { ExtensionWorkerEvents } from './events.js'
+import type { ExtensionCommandAction, ExtensionReplaceableAction } from './extension-manifest.js'
 
 // ── Manifest ─────────────────────────────────────────────────────────────────
 
@@ -535,6 +536,15 @@ export type MainHost = {
    * one opens. `supports('notifications')` is false where nothing would show it.
    */
   notify(input: ModuleNotifyInput): void
+  /**
+   * Run one of Studio's own actions (a command `action` or `replaces` may
+   * name) in the window whose call set this code off: a command run from its
+   * palette, a menu or a shortcut, or in place of that action. It always runs
+   * Studio's own, never another extension's replacement, so a command that
+   * replaces an action can wrap it. Needs `workspace:operate`. Refused with
+   * `no_window` for work no window set off (a background worker's, an event's).
+   */
+  runCommand(action: ExtensionCommandAction | ExtensionReplaceableAction): Promise<void>
   /**
    * Push an event to your extension's surfaces — the subscribe verb your
    * declared methods do not have. The receiving end is
@@ -1267,10 +1277,14 @@ export type ExtensionActivate = (studio: MainHost) => void | Promise<void>
  * What a command without an `action` is called with: it runs the worker
  * method named by the command's id (`registerMethods`, access `operate`),
  * with this as its params. `where` says how it was run; the menu it was
- * picked from adds what it was picked on.
+ * picked from adds what it was picked on. `replaces` means the person fired
+ * the Studio action the command declares it `replaces`, and Studio is waiting
+ * on the command in place of its own.
  */
 export type ExtensionCommandContext = {
-  where: 'palette' | 'topBar' | 'backlog.item' | 'file' | 'notification'
+  where: 'palette' | 'topBar' | 'backlog.item' | 'file' | 'notification' | 'replaces'
+  /** `replaces`: the Studio action the person fired, which this command runs in place of. */
+  replaces?: ExtensionReplaceableAction
   /** The workspace the window was showing, or the one the item or file belongs to. */
   workspaceId: string | null
   /** `backlog.item`: the items the menu was opened on, the anchor row first. */
@@ -1540,6 +1554,8 @@ export {
 
 export {
   EXTENSION_COMMAND_ACTIONS,
+  EXTENSION_REPLACEABLE_ACTIONS,
+  EXTENSION_UNREPLACEABLE_ACTIONS,
   EXTENSION_ICONS,
   EXTENSION_MANIFEST_FIELDS,
   EXTENSION_MANIFEST_FILENAME,
@@ -1575,6 +1591,7 @@ export {
   studioReadsManifest,
   validateExtensionManifest,
   type ExtensionCommandAction,
+  type ExtensionReplaceableAction,
   type ExtensionCommandContribution,
   type ExtensionContributions,
   type ExtensionCustomEditorContribution,

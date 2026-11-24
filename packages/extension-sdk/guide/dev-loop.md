@@ -33,7 +33,7 @@ fix it. Without `--json` the same is printed as words, the failure on stderr.
 
 | `error.code` | What it means | Exit |
 | --- | --- | --- |
-| `invalid_argument` | A flag or argument is missing or wrong | 1 |
+| `invalid_argument` | A flag or argument is missing or wrong (Studio's tools answer the same as `invalid_arguments`) | 1 |
 | `extension_invalid` | Studio cannot load it: `data.issues` says where | 2 |
 | `approval_required` | It is waiting for approval in Studio, which only the person gives, in Studio's window: `data.growth` when it asks for more than before | 3 |
 | `studio_unavailable` | No running Studio could be reached on this machine | 1 |
@@ -44,6 +44,27 @@ fix it. Without `--json` the same is printed as words, the failure on stderr.
 | `extension_hook_failed` | A hook threw, timed out or answered nonsense | 1 |
 | `shot_failed` | The picture could not be taken | 1 |
 | `unavailable` | Studio could not do it now (starting, or something broke): try again | 1 |
+| `killed` | Studio's kill list removed that version: it never installs | 1 |
+| `release_lock_mismatch` | The version's bytes are not the ones the release lock holds for it | 1 |
+| `release_mismatch` | What was fetched is not the release the catalogue lists | 1 |
+| `owner_mismatch` | The repository is another owner's than the key names, or its owner changed | 1 |
+| `owner_unknown` | Studio cannot tell who owns the repository | 1 |
+| `kill_list_unavailable` | Studio could not read its kill list, so nothing installs until it can | 1 |
+| `origin_conflict` | It is installed from another source: remove it first | 1 |
+| `already_installed` | It is installed already: `update` it, or the person removes it in Studio first | 1 |
+| `install_in_progress` | Another install of that key from outside Studio's window is running now: wait for it | 1 |
+| `catalogue_ambiguous` | More than one catalogue lists that key: `data.catalogues` names them, for `--catalogue` | 1 |
+| `git_auth_failed` | This machine's git credentials cannot read the repository | 1 |
+| `reserved_name` | A name only Studio's official catalogue installs | 1 |
+| `changed` | The catalogue changed what it lists since it was read: look again | 1 |
+| `held_back` | A community or added catalogue listed that release less than 12 hours ago, so a takedown can land first: the row's `heldBackMs` says how long it still waits | 1 |
+| `install_failed` | The install failed for another reason: the message says why | 1 |
+| `not_updatable` | That extension does not update from here: a development folder, a git URL install, or one not installed | 1 |
+| `update_failed` | `update --all`: some were held or refused, none held for approval: `data.updates` has every row | 1 |
+| `no_window` | No Studio window is open on this machine to show it in | 1 |
+| `no_workspace` | No Studio window here shows a workspace | 1 |
+| `extension_unavailable` | It is switched off, or killed | 1 |
+| `not_permitted` | Not for this caller: a paired device, or an agent on a capped preset asking for what answers as the person (`open`, `shot`) | 1 |
 
 Exit codes: 0 ok, 1 an error, 2 `extension_invalid`, 3 `approval_required`.
 `test` exits with the test runner's code.
@@ -221,6 +242,63 @@ not the surfaces.
 - **`logs <key|dir> [--after <seq>]`**: what was kept of an extension's
   events, installed ones included, as `dev logs` answers.
 
+## Published extensions: `install`, `update`, `open`
+
+The path Settings ▸ Extensions takes, from a terminal or an agent: Studio checks
+the repository's owner, the kill list and the release lock before anything is
+installed, and a private repository is fetched with this machine's own git
+credentials, the ones `git` already uses here.
+
+- **`install <source> [--ref <ref>] [--catalogue <catalogue>]`**: `source` is
+  a catalogue key (`acme.notes`), a GitHub repository (`acme/notes`,
+  `acme/notes@v1.2.0`), any git URL (`#<ref>` names a ref), a link to a
+  folder in a repository (`https://github.com/acme/tools/tree/main/notes`: the
+  ref, then the folder; a branch holding `/` is read as the longest branch or
+  tag the link starts with), or a release's or tag's page
+  (`https://github.com/acme/notes/releases/tag/v1.2.0`: that tag). When more
+  than one catalogue lists a key, `--catalogue` chooses one (`official`,
+  `community`, or an added catalogue's URL); without it the install is refused
+  with `catalogue_ambiguous`, naming them. `--ref` names the ref of a
+  repository or git URL that names none; with none, the newest `vX.Y.Z` tag
+  the repository has is installed, else its default branch, and the answer's
+  `ref` says which. A repository this machine's git credentials cannot read
+  fails `git_auth_failed`. A file's link (`…/blob/…`), a commit's page and a
+  folder on this machine are not sources: a folder you are working on loads
+  with `dev load`, or installs from Settings. A ref is a branch, a tag or a commit: a pull request's ref
+  (`refs/pull/…`, `pull/…`) or another no publisher released is refused. An
+  extension installed already is refused with `already_installed`: `update`
+  it, or the person removes it in Settings first, since installing over it
+  would swap the code they approved. While one install of a key runs, another
+  from outside the window is refused with `install_in_progress`; and one that
+  would land after the person installed the key meanwhile is refused
+  `already_installed`. A content extension, and one from
+  Studio's official catalogue, is ready at once. Anything else installs
+  waiting for approval, even a declarative one that Settings installs without
+  asking (only skills and hosted MCP servers, which reach every agent here):
+  nobody saw it install. Studio's window asks the person straight away, and
+  nothing it adds reaches an agent until they approve it; `install` exits 3 with
+  `approval_required`. Nothing on the command line approves it.
+- **`update <key>`** or **`update --all`**: the newer release the extension's
+  catalogue lists, now. A release a community or added catalogue listed less
+  than 12 hours ago still waits, as an automatic update does, so a takedown
+  can land first: its row is `refused` with `held_back` and `heldBackMs`, the
+  time left. The kill list is read fresh, or nothing updates. One that asks
+  for more than was approved is held for the person's review in Studio, with
+  a notice, and the version installed keeps running; `update <key>` then exits
+  3. `update --all` exits 3 (`approval_required`) when any is held for
+  approval, else 1 (`update_failed`) when any was held or refused, with every
+  row in `data.updates`. `--json` answers `updates`, one row per extension: `{ key, from, to?,
+  status, reason?, code?, growth?, heldBackMs? }`, `status` being `updated`,
+  `up_to_date`, `held` or `refused`. Only catalogue installs update; install
+  a git URL again.
+- **`open <key> [--panel <id> | --editor <file>]`**: shows one of its panels
+  (its first by default) in the workspace a Studio window here shows, or opens
+  the file in its custom editor. It never brings the window forward. With no
+  window it fails `no_window`, with none showing a workspace `no_workspace`.
+  What it opens answers its calls as the person, in their window, so an agent
+  on a capped preset is refused with `not_permitted`: ask the person to open
+  it.
+
 ## `shot <dir|key> [--panel <id> | --door <id> | --settings <id>]`
 
 A PNG of one surface as Studio draws it: its real frame document, in a hidden
@@ -244,3 +322,8 @@ An agent with Studio's MCP tools can skip the CLI: `extension.dev.load`
 `visual.extension_shot` (`moduleId`, `point`, `id`, `out`). They answer the
 same results; a failure is the tool's error with the same codes. A paired
 device cannot use them: a development folder is a path on this machine.
+`extension.install` (`source`), `extension.update` (`moduleId`, or `all:
+true`) and `extension.open` (`moduleId`, `panel` or `editor`) are `install`,
+`update` and `open`, with the same rules: an install answers its
+`approval`, `pending` until the person approves it in Studio's window, and
+an agent, whatever its preset, never approves one.

@@ -27,6 +27,52 @@ export const CLI_ERROR_CODES = [
   'shot_failed',
   /** Studio could not do it now (it is starting, or something broke): try again. */
   'unavailable',
+  // install, update and open:
+  /** Studio's kill list removed that version: it never installs. */
+  'killed',
+  /** The version's bytes are not the ones Studio's release lock holds for it. */
+  'release_lock_mismatch',
+  /** What was fetched is not the release the catalogue lists (its hash, commit or manifest). */
+  'release_mismatch',
+  /** The repository's owner is not the one the key or the install names, or changed since. */
+  'owner_mismatch',
+  /** Studio cannot tell who owns the repository. */
+  'owner_unknown',
+  /** Studio could not read its kill list, so nothing installs until it can. */
+  'kill_list_unavailable',
+  /** It is installed from another source: remove it first. */
+  'origin_conflict',
+  /** It is installed already: `update` it, or the person removes it in Studio first. */
+  'already_installed',
+  /** Another install of that key from outside Studio's window is running now: wait for it. */
+  'install_in_progress',
+  /** More than one catalogue lists that key: `data.catalogues` names them, for `--catalogue`. */
+  'catalogue_ambiguous',
+  /** This machine's git credentials cannot read the repository. */
+  'git_auth_failed',
+  /** A name only Studio's official catalogue installs. */
+  'reserved_name',
+  /** The catalogue changed what it lists since it was read: look again. */
+  'changed',
+  /** A community or added catalogue listed that release less than 12 hours ago: `data` says how long it still waits. */
+  'held_back',
+  /** The install failed for another reason: the message says why. */
+  'install_failed',
+  /** `update --all`: some were held or refused (none held for approval): `data.updates` has every row. */
+  'update_failed',
+  /** That extension does not update from here: a development folder, a git URL install, or one not installed. */
+  'not_updatable',
+  /** No Studio window is open on this machine to show it in. */
+  'no_window',
+  /** No Studio window here shows a workspace to show it in. */
+  'no_workspace',
+  /** It is switched off, or killed. */
+  'extension_unavailable',
+  /**
+   * Not for this caller: a paired device's, or an agent on a capped preset
+   * asking for what answers as the person (`open`, `shot`).
+   */
+  'not_permitted',
 ] as const
 
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number]

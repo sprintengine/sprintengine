@@ -56,6 +56,9 @@ const ACCOUNT = shell(
 )
 const DIAGNOSTICS = shell("This app's own logs and processes.")
 const CHAT_LINK = shell("A chat link from the operating system, opened in one of this app's windows.")
+const EXTENSION_OPEN = shell(
+  "An extension's panel or custom editor shown in one of this app's windows (the extension tool agents are offered).",
+)
 const EXTENSION_LINK = shell(
   "An install link from the operating system: an extension's page opened in one of this app's windows, never an install.",
 )
@@ -272,6 +275,8 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'chat-link:open': CHAT_LINK('push'),
   'chat-link:ready': CHAT_LINK('send'),
   'chat-link:unready': CHAT_LINK('send'),
+  'extension-open:ack': EXTENSION_OPEN('send'),
+  'extension-open:request': EXTENSION_OPEN('push'),
   'extension-link:open': EXTENSION_LINK('push'),
   'extension-link:ready': EXTENSION_LINK('send'),
 

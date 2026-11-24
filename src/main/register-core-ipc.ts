@@ -38,6 +38,7 @@ import { createProjectlessChatFolder } from './projectless-chat-folders'
 import { registerCanvasIpc } from './ipc/canvas-ipc'
 import { createNodeCanvasFs } from './canvas/canvas-node-fs'
 import { registerEditorRevealIpc } from './ipc/editor-reveal-ipc'
+import { registerExtensionOpenIpc } from './ipc/extension-open-ipc'
 import { registerToursIpc } from './ipc/tours-ipc'
 import { pickCanvasExportDirectory, revealCanvasBoardFile } from './ipc/canvas-export-dialog'
 import {
@@ -116,6 +117,14 @@ export function registerCoreIpc(
   registerEditorRevealIpc(ipcMain, services.editorRevealBroker, {
     // The answering window, never a name the message carries; only workspace
     // windows show a workspace, so only they are heard.
+    senderId: (event) => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      return win && isWorkspaceWindowWebContents(event.sender) ? win : null
+    },
+  })
+  registerExtensionOpenIpc(ipcMain, services.extensionOpenBroker, {
+    // The same rule as the editor reveal: the answering window, and only a
+    // workspace window, since only one shows a workspace to open in.
     senderId: (event) => {
       const win = BrowserWindow.fromWebContents(event.sender)
       return win && isWorkspaceWindowWebContents(event.sender) ? win : null

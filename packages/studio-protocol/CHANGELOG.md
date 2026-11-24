@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Added (installing from outside the window)
+
+- `ThirdPartyModuleView.reviewAsked`: an extension installed from outside the
+  window (`sprintengine-extension install`, an agent's `extension.install`
+  tool) waits for the person's approval, and the person's own window asks
+  them at once.
+
+### Added (a command that takes over a Studio action)
+
+- An extension's command view carries `replaces`: the Studio action a worker
+  command runs in place of, from its shortcut, the palette or a menu.
+- An extension's contributions entry carries `installedAt`, so a window can
+  tell which of two extensions replacing the same action came first.
+- `ExtensionCommandContext.where` may be `replaces`, with `replaces` naming
+  the action, when a command runs in place of Studio's own.
+- **`extension.commandRuns`** (push, `extensions:read`): one of Studio's
+  actions an extension's worker asked to run (`studio.runCommand`) for a call
+  this connection made, `{ moduleId, action, call? }`. The window runs the
+  built-in action, never a replacement of it. Only the connection whose call
+  set the worker off hears it. A replacing call's params may carry
+  `replacementCall`, a token of the window's: Studio takes it off before the
+  extension sees the context, and `call` names it back on each run that call
+  asks for, so the window runs the action once per call however calls
+  overlap.
+
 ### Added (the extension catalogue)
 
 - **`extension.catalogues`** `{ refresh? }`: the official, community and

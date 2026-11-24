@@ -73,6 +73,8 @@ export type ExtensionCommandContributionView = {
   title: string
   when?: 'global' | 'workspace'
   action?: string
+  /** A Studio action this worker command runs in place of (extension.json's `replaces`). */
+  replaces?: string
 }
 export type ExtensionMenuContributionView = { where: 'backlog.item' | 'file' | 'notification'; command: string }
 export type ExtensionTopBarItemContributionView = {
@@ -295,6 +297,12 @@ export type ThirdPartyModuleView = {
   killed?: { reason: string; advisoryUrl?: string }
   /** A newer release the catalogue it came from lists: to install, or held for review and why. */
   update?: StudioExtensionUpdate
+  /**
+   * Installed from outside the window (`sprintengine-extension install`, an
+   * agent's `extension.install`) and waiting for approval: the person's own
+   * window asks them at once, as it does for a development folder.
+   */
+  reviewAsked?: true
 }
 
 /**
@@ -434,6 +442,12 @@ export type ExtensionContributions = {
    * draws its open surfaces again.
    */
   revision?: string
+  /**
+   * When it was installed (ms since the epoch), so a client can tell which of
+   * two extensions came first: the first replaces a Studio action both
+   * declare. A development folder's is after every installed one's.
+   */
+  installedAt?: number
 }
 
 /**

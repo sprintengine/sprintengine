@@ -144,6 +144,12 @@ export const SHELL_METHODS = {
    * `SERVER_EVENTS.artifactsSetupConsentClosed`.
    */
   artifactsSetupConsent: 'shell.artifacts-setup-consent',
+  /**
+   * `ExtensionOpenRequest` → `ExtensionOpenOutcome`: an extension's panel or
+   * custom editor shown in a window of this machine (`extension.open`); the
+   * windows are the shell's.
+   */
+  extensionOpen: 'shell.extension-open',
   /** → `StudioBrowserTab[]`: the built-in browser's tabs, which only the shell has (`browserTabs.list`). */
   browserTabsList: 'shell.browser-tabs.list',
   /** `{ tabId }` → whether it closed: a tab closed as its pane's close button does (`browserTabs.close`). */

@@ -11,17 +11,19 @@ import { accessItems, publisherName, sourceLabel } from './extensionsModel'
 import { useThirdPartyExtensions } from './useThirdPartyExtensions'
 
 // A development folder registered from outside the window (`sprintengine-
-// extension dev load`, or an agent's `extension.dev.load`) runs nothing until
-// the person approves it, and only the person can: nothing over Studio's
-// socket approves one. So the window asks as soon as one waits: the same
-// review Settings ▸ Extensions opens, naming the folder and what it may do.
+// extension dev load`, or an agent's `extension.dev.load`), or an extension
+// installed from there (`sprintengine-extension install`, an agent's
+// `extension.install`: `reviewAsked`), runs nothing until the person approves
+// it, and only the person can: nothing over Studio's socket approves one. So
+// the window asks as soon as one waits: the same review Settings ▸ Extensions
+// opens, naming the folder, or the source, and what it may do.
 // Closing it leaves the folder waiting, approvable in Settings; it is asked
 // again when what it asks for changes. Only a window whose Studio is this
 // machine's asks, as only its person may approve.
 
 /** One question per folder and what it asks for: a save that asks for more asks again. */
 const questionKey = (module: ThirdPartyModuleView) =>
-  `${module.development?.folder ?? ''}\n${module.approval.state === 'pending' ? module.approval.fingerprint : ''}`
+  `${module.development?.folder ?? module.manifest.id}\n${module.approval.state === 'pending' ? module.approval.fingerprint : ''}`
 
 function useSwitchOn(): (moduleId: string, enabled: boolean) => void {
   const setModuleEnabled = useWorkspaceStore((state) => state.setModuleEnabled)
@@ -48,12 +50,12 @@ function DevFolderApprovalQuestion(): JSX.Element | null {
   const asking =
     extensions.modules.find(
       (module) =>
-        module.development !== undefined &&
+        (module.development !== undefined || module.reviewAsked === true) &&
         module.approval.state === 'pending' &&
         !dismissed.current.has(questionKey(module)),
     ) ?? null
   const [approving, setApproving] = useState(false)
-  useEffect(() => setApproving(false), [asking?.development?.folder])
+  useEffect(() => setApproving(false), [asking?.development?.folder, asking?.manifest.id])
   if (!asking) return null
   const access = accessItems(asking.manifest.permissions)
   return (

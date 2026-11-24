@@ -891,6 +891,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
           : `"${grant.name}"`,
       starter: starterOfGrant(grant),
       ...(context.browser ? { noTerminals: true as const } : {}),
+      connectionId: context.connectionId,
     }
   }
   /**

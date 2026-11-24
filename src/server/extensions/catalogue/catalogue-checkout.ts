@@ -13,6 +13,7 @@ import {
 import {
   fetchGitCommit,
   isFetchableGitUrl,
+  isGitAuthFailure,
   materializeGitTree,
   type GitOptions,
 } from '../../../../packages/extension-sdk/src/git-source'
@@ -44,6 +45,8 @@ export type CheckOutResult =
   | {
       ok: false
       message: string
+      /** This machine's git credentials cannot read the repository. */
+      code?: 'git_auth_failed'
       /** A Claude Code plugin marketplace's plugin folders, when the folder checked out is one. */
       folders?: string[]
     }
@@ -100,7 +103,14 @@ export async function checkOutExtension(input: {
   try {
     fetched = await fetchGitCommit({ url: input.url, ref: input.ref, ...input.git })
   } catch (error) {
-    return { ok: false, message: `Studio could not fetch ${input.url} at ${input.ref}: ${(error as Error).message}` }
+    const why = (error as Error).message
+    return isGitAuthFailure(why)
+      ? {
+          ok: false,
+          code: 'git_auth_failed',
+          message: `This machine's git credentials cannot read ${input.url}: ${why} Sign git in to that host (the credentials \`git\` uses here), or check that the repository exists.`,
+        }
+      : { ok: false, message: `Studio could not fetch ${input.url} at ${input.ref}: ${why}` }
   }
   const staging = await mkdtemp(join(tmpdir(), 'sprintengine-extension-install-'))
   const dir = join(staging, 'extension')

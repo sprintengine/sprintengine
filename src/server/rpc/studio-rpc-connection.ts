@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type { Duplex } from 'node:stream'
+import { extensionCommandRuns } from '../extensions/events/command-runs'
 
 import {
   STUDIO_HELLO_TIMEOUT_MS,
@@ -1585,6 +1586,11 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         modules ? (deliver) => modules.onSettingsChanged((moduleId) => deliver({ moduleId })) : null,
       )
     },
+    // A worker's ask to run one of Studio's actions, for a call this connection made.
+    'extension.commandRuns': (id) =>
+      subscribeFeed(id, 'extension.commandRuns', (deliver) =>
+        extensionCommandRuns.listen(options.connectionId, deliver),
+      ),
     'cardFeed.changed': (id) =>
       subscribeFeed(id, 'cardFeed.changed', options.extensions?.feeds.onCardFeedChanged ?? null),
     // The questions open now, then the whole list again on each change: a

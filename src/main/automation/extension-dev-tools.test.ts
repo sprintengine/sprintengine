@@ -13,6 +13,7 @@ import {
   EXTENSION_DEV_TOOL_NAMES,
   type ExtensionDevBackend,
 } from './extension-dev-tools'
+import { createExtensionInstallTools } from './extension-install-tools'
 import { createExtensionShotTool } from './extension-shot-tool'
 
 // The dev loop's tools: paths on this machine, so never a paired device's;
@@ -164,6 +165,45 @@ test('a capped agent is refused a shot, whose surface calls are answered as the 
   assert.equal(shot, 0)
   assert.notEqual((await tool!.handler(args, local)).isError, true)
   assert.equal(shot, 1)
+})
+
+test('a capped agent is refused extension.open, whose panel or editor answers as the person in their window', async () => {
+  let opened = 0
+  const lifecycle = {
+    installed: async () => ({
+      modules: [
+        {
+          manifest: { id: 'acme.notes' },
+          approval: { state: 'approved', fingerprint: 'sha256-x' },
+          extension: { contributes: { panels: [{ id: 'main', title: 'Notes' }], customEditors: [] } },
+        },
+      ],
+      rejected: [],
+    }),
+    list: () => [{ id: 'acme.notes', enabled: true }],
+  } as unknown as ModuleLifecycle
+  const open = createExtensionInstallTools({
+    backend: () => ({ lifecycle: () => lifecycle }),
+    openInWindow: async () => {
+      opened += 1
+      return { ok: true, workspaceId: 'ws-1' }
+    },
+  }).find((tool) => tool.name === 'extension.open')!
+  for (const preset of ['manual', 'auto'] as const) {
+    const [tool] = bindDevToolsToCaller([open], (context) =>
+      ownerInvoker(context?.metadata.kind === 'studio-agent' ? preset : null),
+    )
+    const refused = await tool!.handler({ moduleId: 'acme.notes' }, agent)
+    assert.equal((refused.structuredContent as { error: { code: string } }).error.code, 'not_permitted', preset)
+    assert.equal(opened, 0, preset)
+  }
+  // The person's own call, and an agent on the loosest preset, open it.
+  const [tool] = bindDevToolsToCaller([open], (context) =>
+    ownerInvoker(context?.metadata.kind === 'studio-agent' ? 'bypass' : null),
+  )
+  assert.notEqual((await tool!.handler({ moduleId: 'acme.notes' }, local)).isError, true)
+  assert.notEqual((await tool!.handler({ moduleId: 'acme.notes' }, agent)).isError, true)
+  assert.equal(opened, 2)
 })
 
 test('a paired device cannot use development folders', async () => {

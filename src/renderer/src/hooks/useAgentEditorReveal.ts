@@ -51,7 +51,8 @@ export function revealShownFor(input: { windowVisible: boolean; ownerTyping: boo
   return { mode, shown: input.windowVisible ? mode : 'not_visible' }
 }
 
-async function openRevealedFile(
+/** Open one file the way an agent's reveal does: never taking the keyboard, never dropping unsaved edits. */
+export async function openRevealedFile(
   workspaceId: string,
   file: EditorRevealFileTarget,
   options: { background: boolean },
