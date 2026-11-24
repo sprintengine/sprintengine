@@ -155,6 +155,7 @@ test('terminal-runtime', async () => {
       await assertStandardAgentSpawnKeepsEnabledOptionalMcpSettings(runtimeModule)
       await assertAgentSpawnReportsSyncFailureWithoutPtySpawn(runtimeModule)
       await assertSpawnHoldsItsFolderUntilAttached(runtimeModule)
+      await assertWithdrawnLaunchStartsNoProcess(runtimeModule)
       await assertAgentSpawnExposesAgentIdentityEnv(runtimeModule)
       await assertIngestAgentStateFrameUpdatesSession(runtimeModule)
       await assertTurnEndIsHeldWhileBackgroundWorkIsOpen(runtimeModule)
@@ -4209,6 +4210,108 @@ test('terminal-runtime', async () => {
       syncFails = true
       assert.equal((await spawn('session_folder_refused')).ok, false)
       assert.deepEqual(await leases.holders(workspaceRoot), [], 'let go when the launch fails')
+    } finally {
+      await runtime.shutdown()
+      await rm(workspaceRoot, { recursive: true, force: true })
+    }
+  }
+
+  // A launch whose caller withdraws it (an extension's `create` cancelled by
+  // its removal, extension-terminals.ts) is asked `mayStart` after the folder
+  // wait and right before the process is spawned: withdrawn at either, no
+  // process starts at all, so no shell startup script runs.
+  async function assertWithdrawnLaunchStartsNoProcess(runtimeModule: RuntimeModule): Promise<void> {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-terminal-runtime-withdrawn-'))
+    const leases = createWorktreeLeases()
+    let syncGate: Promise<void> | null = null
+    let syncEntered!: () => void
+    const entered = new Promise<void>((resolve) => (syncEntered = resolve))
+    mockPty.spawnCalls = []
+    mockSender.sent = []
+    const runtime = runtimeModule.createTerminalRuntime({
+      diagnosticsEnabled: false,
+      logMainPerfEvent: () => undefined,
+      worktreeLeases: leases,
+      syncMcpConfig: async (): Promise<SyncResult> => {
+        syncEntered()
+        if (syncGate) await syncGate
+        return { ok: true }
+      },
+    })
+    let withdrawn: string | null = null
+    const mayStart = () => withdrawn
+    try {
+      // A shell waiting on the folder: withdrawn meanwhile, it never starts.
+      const removing = exclusive(await leases.tryExclusive(workspaceRoot, 'this worktree is being removed'))
+      const shell = runtime.sessions.spawnTerminal(
+        mockSender,
+        {
+          sessionId: 'session_withdrawn_shell',
+          cols: 120,
+          rows: 30,
+          cwd: workspaceRoot,
+          kind: 'terminal',
+          shellOnly: true,
+        },
+        { mayStart },
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      withdrawn = 'The extension was removed.'
+      removing.release()
+      const refused = await shell
+      assert.deepEqual(refused, {
+        ok: false,
+        sessionId: 'session_withdrawn_shell',
+        message: 'The extension was removed.',
+        exitCode: 1,
+      })
+      assert.equal(mockPty.spawnCalls.length, 0, 'no process spawned after the folder wait')
+      assert.equal(
+        runtime.sessions.listTerminals().some((session) => session.sessionId === 'session_withdrawn_shell'),
+        false,
+      )
+      assert.deepEqual(await leases.holders(workspaceRoot), [], 'the folder is let go')
+
+      // Past the folder wait, withdrawn during a later wait: the last check, right before the spawn, refuses it.
+      withdrawn = null
+      let releaseSync!: () => void
+      syncGate = new Promise<void>((resolve) => (releaseSync = resolve))
+      const agent = runtime.sessions.spawnTerminal(
+        mockSender,
+        {
+          sessionId: 'session_withdrawn_agent',
+          cols: 120,
+          rows: 30,
+          cwd: workspaceRoot,
+          cli: 'claude-code',
+          kind: 'agent',
+          shellOnly: false,
+          mcpSettings: { syncEnabled: false, servers: {} } satisfies McpSettings,
+        },
+        { mayStart },
+      )
+      await entered
+      withdrawn = 'The extension lost its approval.'
+      releaseSync()
+      const late = await agent
+      assert.equal(late.ok, false)
+      assert.equal(late.ok ? '' : late.message, 'The extension lost its approval.')
+      assert.equal(mockPty.spawnCalls.length, 0, 'no process spawned at the last check')
+      assert.equal(
+        runtime.sessions.listTerminals().some((session) => session.sessionId === 'session_withdrawn_agent'),
+        false,
+      )
+
+      // Not withdrawn: it starts as ever.
+      withdrawn = null
+      syncGate = null
+      const started = await runtime.sessions.spawnTerminal(
+        mockSender,
+        { sessionId: 'session_kept_shell', cols: 120, rows: 30, cwd: workspaceRoot, kind: 'terminal', shellOnly: true },
+        { mayStart },
+      )
+      assert.equal(started.ok, true, JSON.stringify(started))
+      assert.equal(mockPty.spawnCalls.length, 1)
     } finally {
       await runtime.shutdown()
       await rm(workspaceRoot, { recursive: true, force: true })

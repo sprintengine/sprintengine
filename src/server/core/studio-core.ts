@@ -677,18 +677,22 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       if (!terminals) return null
       return {
         list: () => terminals.runtime.sessions.listTerminals(),
-        spawnShell: ({ sessionId, terminalId, workspaceId, cwd }) =>
-          terminals.runtime.sessions.spawnTerminal(headlessTerminalViewer(), {
-            sessionId,
-            terminalId,
-            workspaceId,
-            cwd,
-            cols: 120,
-            rows: 30,
-            kind: 'terminal',
-            shellOnly: true,
-            visible: false,
-          }),
+        spawnShell: ({ sessionId, terminalId, workspaceId, cwd, mayStart }) =>
+          terminals.runtime.sessions.spawnTerminal(
+            headlessTerminalViewer(),
+            {
+              sessionId,
+              terminalId,
+              workspaceId,
+              cwd,
+              cols: 120,
+              rows: 30,
+              kind: 'terminal',
+              shellOnly: true,
+              visible: false,
+            },
+            { mayStart },
+          ),
         write: async (sessionId, data, stillMay) => {
           const written = await terminals.controlPlane.write({ sessionId }, data, stillMay ? { stillMay } : {})
           return written.ok

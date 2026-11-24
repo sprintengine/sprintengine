@@ -26,6 +26,10 @@ function machine(options: { refuse?: string; ceiling?: CliPermissionPreset | nul
   let spawnHeld: Promise<void> | null = null
   let writeHeld: Promise<void> | null = null
   const spawned: Array<Parameters<ExtensionTerminalHost['spawnShell']>[0]> = []
+  // The processes actually started: past every wait and the last `mayStart`, as the runtime starts them.
+  const started: string[] = []
+  // Launches waiting on their lease, abandoned by a kill of their session id (the runtime's killTerminal).
+  const waiting = new Map<string, () => void>()
   const killed: string[] = []
   let ceiling: CliPermissionPreset | null = options.ceiling ?? null
   const add = (sessionId: string, extra: Partial<TerminalSessionSnapshot> = {}, output = '') => {
@@ -45,7 +49,19 @@ function machine(options: { refuse?: string; ceiling?: CliPermissionPreset | nul
     list: () => [...sessions.values()].map((session) => session.snapshot),
     async spawnShell(input) {
       spawned.push(input)
-      if (spawnHeld) await spawnHeld
+      if (spawnHeld) {
+        const abandoned = await Promise.race([
+          spawnHeld.then(() => false),
+          new Promise<boolean>((resolve) => waiting.set(input.sessionId, () => resolve(true))),
+        ])
+        waiting.delete(input.sessionId)
+        if (abandoned)
+          return { ok: false, sessionId: input.sessionId, message: 'Stopped waiting for the worktree.', exitCode: 1 }
+      }
+      // Asked right before the process is spawned, as the runtime asks it.
+      const withdrawn = input.mayStart()
+      if (withdrawn) return { ok: false, sessionId: input.sessionId, message: withdrawn, exitCode: 1 }
+      started.push(input.sessionId)
       add(input.sessionId)
       return { ok: true, sessionId: input.sessionId }
     },
@@ -68,6 +84,7 @@ function machine(options: { refuse?: string; ceiling?: CliPermissionPreset | nul
     },
     kill(sessionId) {
       killed.push(sessionId)
+      waiting.get(sessionId)?.()
       sessions.delete(sessionId)
     },
   }
@@ -91,6 +108,7 @@ function machine(options: { refuse?: string; ceiling?: CliPermissionPreset | nul
     terminals,
     sessions,
     spawned,
+    started,
     killed,
     add,
     setCeiling: (next: CliPermissionPreset | null) => (ceiling = next),
@@ -135,13 +153,15 @@ test('create opens a shell in the workspace’s folder in the background, and ru
   })
   assert.match(terminalId, /^terminal-ext-/)
   assert.equal(m.spawned.length, 1)
+  assert.equal(typeof m.spawned[0]!.mayStart, 'function')
   assert.deepEqual(
-    { ...m.spawned[0], sessionId: '', terminalId: '' },
+    { ...m.spawned[0], sessionId: '', terminalId: '', mayStart: null },
     {
       sessionId: '',
       terminalId: '',
       workspaceId: 'ws-1',
       cwd: '/Users/dev/notes',
+      mayStart: null,
     },
   )
   assert.deepEqual(m.sessions.get(terminalId)!.typed, ['npm test\r'])
@@ -212,20 +232,40 @@ test('switched off, it lets go of its terminals and they stay open; uninstalled 
   assert.deepEqual(m.terminals.opened('local.b'), [])
 })
 
-test('removed while its shell is starting: nothing is kept, nothing typed, and the shell that started closes', async () => {
+test('removed while its shell waits on the lease: the launch is abandoned there and no process starts', async () => {
+  for (const remove of ['closeAll', 'forget'] as const) {
+    const m = machine()
+    const lease = hold()
+    m.holdSpawn(lease.released)
+    const creating = m.terminals.create('local.a', { workspaceId: 'ws-1', command: 'npm run build' })
+    await Promise.resolve()
+    assert.equal(m.spawned.length, 1, 'the shell is starting')
+    const sessionId = m.spawned[0]!.sessionId
+    m.terminals[remove]('local.a')
+    assert.deepEqual(m.killed, [sessionId], `${remove}: its pending launch is abandoned`)
+    lease.release()
+    await assert.rejects(creating, code('not_permitted'))
+    assert.deepEqual(m.started, [], `${remove}: no process was ever spawned`)
+    assert.deepEqual(m.terminals.opened('local.a'), [])
+    assert.equal(m.sessions.has(sessionId), false)
+  }
+})
+
+test('withdrawn while its launch is past the lease: the last check before the spawn refuses it', async () => {
   const m = machine()
-  const spawn = hold()
-  m.holdSpawn(spawn.released)
-  const creating = m.terminals.create('local.a', { workspaceId: 'ws-1', command: 'npm run build' })
+  let grant: readonly string[] | null = ['terminals:send']
+  m.terminals.bindGrants(() => grant)
+  const lease = hold()
+  m.holdSpawn(lease.released)
+  const creating = m.terminals.create('local.a', { workspaceId: 'ws-1' })
   await Promise.resolve()
-  assert.equal(m.spawned.length, 1, 'the shell is starting')
-  m.terminals.closeAll('local.a')
-  spawn.release()
+  // Not cancelled, so nothing aborts the wait: its approval lapses, and the runtime's own check catches it.
+  grant = []
+  lease.release()
   await assert.rejects(creating, code('not_permitted'))
-  const sessionId = m.spawned[0]!.sessionId
-  assert.deepEqual(m.killed, [sessionId], 'the shell that started for it is closed')
+  assert.deepEqual(m.started, [], 'no process was ever spawned')
+  assert.deepEqual(m.killed, [])
   assert.deepEqual(m.terminals.opened('local.a'), [])
-  assert.equal(m.sessions.has(sessionId), false)
 })
 
 test('switched off while its write waits in the queue: the write is cancelled', async () => {

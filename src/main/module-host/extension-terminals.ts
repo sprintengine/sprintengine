@@ -22,9 +22,10 @@
 // - Work that waits (a shell starting, which can wait on a workspace's lease;
 //   a write queued behind others or behind the write hooks) is the
 //   extension's until it is carried out: `forget` and `closeAll` cancel it,
-//   and the gate is asked again right before the shell starts and right
-//   before each write goes to the terminal. A shell that starts after its
-//   `create` was cancelled is closed, and nothing is typed into it.
+//   abandoning a shell's launch where it waits, and the gate is asked again
+//   after each of the runtime's waits, right before the shell's process is
+//   spawned, and right before each write goes to the terminal. A `create`
+//   cancelled before then starts no process at all.
 //
 // A terminal's id is its session id: what `create` answers, and what the
 // events carry.
@@ -56,12 +57,18 @@ const READ_MAX_CHARS = 64 * 1024
 /** What the registry needs of the machine's terminals; null where this Studio runs none. */
 export type ExtensionTerminalHost = {
   list(): readonly TerminalSessionSnapshot[]
-  /** Open a shell no pane shows yet: its output buffers until one does. */
+  /**
+   * Open a shell no pane shows yet: its output buffers until one does.
+   * `mayStart` is asked after every wait the launch makes and right before
+   * the process is spawned: a reason abandons it with nothing started. `kill`
+   * of the session id abandons a launch still waiting (the workspace's lease).
+   */
   spawnShell(input: {
     sessionId: string
     terminalId: string
     workspaceId: string
     cwd: string
+    mayStart: () => string | null
   }): Promise<TerminalSpawnResult>
   /**
    * Write through the control plane, so the extensions' write hooks run.
@@ -107,8 +114,12 @@ export type ExtensionTerminals = ExtensionTerminalRegistry & {
   bindGrants(grantOf: ((moduleId: string) => readonly string[] | null) | null): void
 }
 
-/** One piece of an extension's terminal work on its way: cancelled when it lets go of its terminals. */
-type Pending = { cancelled: boolean }
+/**
+ * One piece of an extension's terminal work on its way: cancelled when it lets
+ * go of its terminals. A shell starting keeps its session id, so cancelling
+ * also abandons its launch.
+ */
+type Pending = { cancelled: boolean; launching?: string }
 
 const TERMINALS_SERVICE = extensionHostService('terminals.module-service')!
 
@@ -172,7 +183,13 @@ export function createExtensionTerminals(deps: ExtensionTerminalDeps): Extension
   }
 
   function cancel(moduleId: string): void {
-    for (const pending of pendingBy.get(moduleId) ?? []) pending.cancelled = true
+    const terminals = deps.terminals()
+    for (const pending of pendingBy.get(moduleId) ?? []) {
+      pending.cancelled = true
+      // A shell still starting is abandoned where it waits (the runtime's kill
+      // of a pending launch); one past its waits meets `mayStart`.
+      if (pending.launching) terminals?.kill(pending.launching)
+    }
     pendingBy.delete(moduleId)
   }
 
@@ -335,18 +352,29 @@ export function createExtensionTerminals(deps: ExtensionTerminalDeps): Extension
       const invoker = currentInvoker()
       // Tracked before anything is awaited, so letting go of its terminals cancels it.
       const pending = begin(moduleId)
+      pending.launching = sessionId
       try {
         const stillMay = () => withdrawn(moduleId, 'create', pending, invoker)
         const before = stillMay()
         if (before) refuse('not_permitted', before)
-        const spawned = await terminals.spawnShell({ sessionId, terminalId, workspaceId, cwd: workspace.folderPath! })
-        if (!spawned.ok) refuse('action_failed', `The terminal did not start: ${spawned.message}`)
+        // Asked again by the runtime after its waits and right before the
+        // shell's process is spawned: cancelled or refused by then, no shell
+        // starts, so none of its startup scripts run.
+        const spawned = await terminals.spawnShell({
+          sessionId,
+          terminalId,
+          workspaceId,
+          cwd: workspace.folderPath!,
+          mayStart: stillMay,
+        })
+        pending.launching = undefined
         const after = stillMay()
         if (after) {
-          // It started for work that was cancelled meanwhile: it is no one's, so it closes.
+          // Withdrawn after it started (between the spawn and here): it is no one's, so it closes.
           if (terminals.list().some((session) => session.sessionId === sessionId)) terminals.kill(sessionId)
           refuse('not_permitted', after)
         }
+        if (!spawned.ok) refuse('action_failed', `The terminal did not start: ${spawned.message}`)
         remember(moduleId, sessionId, title?.trim() ? title.trim() : null)
         if (command !== undefined && command.length > 0) await write(terminals, sessionId, `${command}\r`, stillMay)
         return { terminalId: sessionId }
