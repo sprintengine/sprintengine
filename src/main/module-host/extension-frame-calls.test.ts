@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -233,4 +233,62 @@ test('a custom text editor’s save meets the save hooks, as the connection that
   assert.ok(plain.ok && !('text' in (plain.result as object)))
   assert.equal(onDisk(), '- [ ] six\n')
   assert.equal((await write({ content: 'x', save: 'yes' })).ok, false, 'a malformed save is refused')
+})
+
+test('a save whose extension is revoked while its hook runs writes nothing', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'frame-save-revoked-'))
+  writeFileSync(join(folder, 'list.todo'), '- [ ] one\n')
+  const workspaces = {
+    get: async (id: string) => (id === 'ws' ? { id, name: 'ws', folderPath: folder, mode: 'standard' } : null),
+    list: async () => [],
+  }
+  let runnable = true
+  let release: () => void = () => undefined
+  let hookStarted: () => void = () => undefined
+  const nextHook = () => new Promise<void>((resolve) => (hookStarted = resolve))
+  let started = nextHook()
+  const call = createExtensionFrameCalls({
+    // Null once the extension is killed, switched off or uninstalled.
+    grantOf: () => (runnable ? { grant: ['workspace-files:read', 'workspace-files:write'], outdated: false } : null),
+    service: (key) => (key === 'core.workspace-context' ? workspaces : undefined),
+    callModuleMethod: async () => ({ ok: false, code: 'extension_unavailable', message: 'none' }) as never,
+    emitNotification: () => undefined,
+    appState: () => undefined,
+    fileExclusions: () => [],
+    // A slow hook: the extension is revoked while it runs.
+    editorSaveHooks: ({ text }) => {
+      hookStarted()
+      return new Promise((resolve) => (release = () => resolve({ ok: true, text })))
+    },
+  })
+  const write = (path: string) =>
+    call({
+      moduleId: 'local.todo-editor',
+      frame: 'f'.repeat(64),
+      method: 'files.write',
+      params: { workspaceId: 'ws', path, content: '- [ ] two\n', save: {} },
+      clientId: 'c',
+      commandId: 'k',
+      invoker: OWNER,
+    })
+
+  // Over a file that exists.
+  const pending = write('list.todo')
+  await started
+  runnable = false
+  release()
+  const answer = await pending
+  assert.equal(answer.ok ? 'written' : answer.code, 'approval_required')
+  assert.equal(readFileSync(join(folder, 'list.todo'), 'utf8'), '- [ ] one\n')
+
+  // A new file: none is left behind.
+  runnable = true
+  started = nextHook()
+  const made = write('new.todo')
+  await started
+  runnable = false
+  release()
+  const madeAnswer = await made
+  assert.equal(madeAnswer.ok, false)
+  assert.equal(existsSync(join(folder, 'new.todo')), false)
 })

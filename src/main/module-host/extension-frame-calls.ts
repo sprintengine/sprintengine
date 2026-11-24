@@ -246,7 +246,17 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
     'files.write': async (request, params) => {
       const save = saveOf(params.save)
       let saved: string | undefined
-      const written = await writeExtensionFile(await filesScope(params), params.path, params.content, {
+      // The call was admitted before a save hook ran, which may take its time:
+      // the write is held to the frame's authority as it stands when the
+      // bytes go down, so an extension revoked meanwhile writes nothing.
+      const scope = {
+        ...(await filesScope(params)),
+        stillAdmitted: () => {
+          const refusal = admission(request)
+          if (refusal) throw new CallRefusal(refusal.code, refusal.message)
+        },
+      }
+      const written = await writeExtensionFile(scope, params.path, params.content, {
         create: params.create === true,
         encoding: params.encoding,
         expectedSha256: params.expectedSha256,
@@ -291,20 +301,21 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
     },
   }
 
-  return async function callFrameMethod(request: ExtensionFrameCallRequest): Promise<StudioExtensionCallAnswer> {
+  /**
+   * Why a frame's call is not admitted now, or null when it is: its
+   * extension's grant as it stands (deps.grantOf) and the gate as the
+   * extension and as the connection that drew the frame. Asked when the call
+   * arrives, and again by a write just before it changes a file.
+   */
+  function admission(request: ExtensionFrameCallRequest): { code: string; message: string } | null {
     const requirement = extensionFrameMethod(request.method)
     if (!requirement)
-      return {
-        ok: false,
-        code: 'unknown_method',
-        message: `"${request.method}" is not a host method a frame may call.`,
-      }
+      return { code: 'unknown_method', message: `"${request.method}" is not a host method a frame may call.` }
     const held = deps.grantOf(request.moduleId, request.frame)
     // A document built before the extension's access grew uses none of it:
     // the client draws the surface again from the extension as it is now.
     if (held?.outdated)
       return {
-        ok: false,
         code: 'frame_outdated',
         message: `This surface of extension "${request.moduleId}" was drawn before it changed; it is drawn again.`,
       }
@@ -315,7 +326,19 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
       grant: held ? held.grant : null,
       invoker: request.invoker,
     })
-    if (!decision.ok) return { ok: false, code: decision.code, message: decision.message }
+    return decision.ok ? null : { code: decision.code, message: decision.message }
+  }
+
+  return async function callFrameMethod(request: ExtensionFrameCallRequest): Promise<StudioExtensionCallAnswer> {
+    const requirement = extensionFrameMethod(request.method)
+    if (!requirement)
+      return {
+        ok: false,
+        code: 'unknown_method',
+        message: `"${request.method}" is not a host method a frame may call.`,
+      }
+    const refusal = admission(request)
+    if (refusal) return { ok: false, ...refusal }
     // Admitted: the window that drew the frame carries a client method out.
     if (requirement.runs === 'client') return { ok: true, result: null }
     try {

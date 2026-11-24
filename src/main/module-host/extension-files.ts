@@ -79,6 +79,13 @@ export type ExtensionFilesScope = {
   betweenCheckAndOpen?: () => Promise<void>
   /** Tests only: runs once a write's checks passed, just before it changes the file. */
   beforeCommit?: () => Promise<void>
+  /**
+   * Whether the caller may still write, asked inside the file's write turn
+   * just before it changes the file: a call admitted before a slow step (a
+   * save hook) is held to its authority as it stands when the bytes go down.
+   * Throws to refuse; nothing is written then.
+   */
+  stillAdmitted?: () => void
 }
 
 function inside(parent: string, child: string): boolean {
@@ -408,6 +415,13 @@ export async function writeExtensionFile(
         }
       }
       await scope.beforeCommit?.()
+      try {
+        scope.stillAdmitted?.()
+      } catch (refusal) {
+        // The empty file this write made is taken away again: nothing is written.
+        if (created) await unlink(target).catch(() => undefined)
+        throw refusal
+      }
       // The new content goes over the old, then the file is cut to its
       // length: a reader never finds it emptied in between.
       await handle.write(bytes, 0, bytes.byteLength, 0)
