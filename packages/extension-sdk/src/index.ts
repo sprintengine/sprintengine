@@ -1658,10 +1658,13 @@ export {
   extensionMcpServerName,
   extensionPathUseProblem,
   extensionProviderId,
+  holdsVariableReference,
   mcpCommandProblem,
+  mcpServerUrlProblem,
   providerEndpoint,
   providerOrigin,
   providerPathProblem,
+  variableReferenceProblem,
   withExtensionPath,
 } from './agent-contributions.js'
 

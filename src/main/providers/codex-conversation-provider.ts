@@ -1270,7 +1270,9 @@ export function createCodexConversationProvider(
       // names, so the entry names the token's and never carries it: these
       // overrides are the app-server's command line. An installed
       // extension's servers join them unless one of the session's own has
-      // the same name.
+      // the same name. Codex reads every value as written (it expands no
+      // `${NAME}` in its config, measured against codex-cli 0.161.0), so an
+      // extension's values reach its servers as the manifest has them.
       const extensionServers = (options.extensionContributions?.().mcpServers ?? []).filter(
         (server) => !(state.input.mcpServers ?? []).some((own) => own.id === server.id),
       )

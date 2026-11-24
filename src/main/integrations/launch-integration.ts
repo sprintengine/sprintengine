@@ -43,6 +43,7 @@ import type { PluginAgentStateSpec, PluginLaunchIntegrationSpec } from '../../sh
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../../shared/product-identity'
 import { MCP_CHANNEL_TOKEN_ENV } from '../../shared/studio-env'
 import { writeFileAtomic } from '../../server/platform/atomic-file'
+import { holdsVariableReference } from '../../../packages/extension-sdk/src/agent-contributions'
 import { registeredAgentStateEvents, renderAgentStatePluginTemplate } from '../agent-state'
 import { writeSkillPlugin } from '../agent-integration-home'
 import {
@@ -450,7 +451,17 @@ export async function prepareLaunchIntegration(
   // says: switching the extension off is how they are taken away. A server of
   // the person's under the same name is theirs, and wins.
   const own = new Set(resolved.servers.map((server) => server.id))
-  const handedExtensionServers = extensions.servers.filter((server) => !own.has(server.id))
+  const handedExtensionServers = extensions.servers.filter((server) => {
+    if (own.has(server.id)) return false
+    // Claude Code and Cursor fill a `${NAME}` in their MCP files from the
+    // terminal's environment, and OpenCode a `{env:NAME}`; an extension's
+    // value naming one would send the person's own variables wherever the
+    // extension says. The manifest refuses them, so one here came through its
+    // install path; it is left out rather than written where it is expanded.
+    if (!extensionServerNamesVariable(server)) return true
+    deps.warn?.(`MCP server "${server.id}" names a variable of this machine, so ${input.cli} starts without it.`)
+    return false
+  })
   const servers = [...resolved.servers, ...handedExtensionServers]
   const extensionSkills: LaunchSkill[] = extensions.skills.map((skill) => ({ id: skill.name, sourceDir: skill.dir }))
   const dir = deps.launchFilesDir()
@@ -521,6 +532,17 @@ export async function prepareLaunchIntegration(
 }
 
 /** Each extension skill with the plugin directory carrying it: an extension's projection folder carries all of its skills. */
+/** Whether a value of an extension's server holds a reference a CLI would expand. */
+function extensionServerNamesVariable(server: McpServerConfig): boolean {
+  return [
+    server.command ?? '',
+    server.url ?? '',
+    ...(server.args ?? []),
+    ...Object.values(server.env ?? {}),
+    ...Object.values(server.headers ?? {}),
+  ].some(holdsVariableReference)
+}
+
 function extensionPluginDirs(extensions: LaunchExtensionContributions): Array<{ id: string; dir: string }> {
   return extensions.skills.map((skill) => ({ id: skill.name, dir: skill.pluginDir }))
 }

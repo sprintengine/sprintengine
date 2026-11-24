@@ -1064,11 +1064,11 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     const instructions = await readWorkspaceInstructions(state.workspaceRoot)
     const studioGateway = await options.resolveStudioMcpServer?.().catch(() => null)
     const extensions = options.extensionContributions?.() ?? { mcpServers: [], pluginDirs: [] }
-    const sessionServerIds = new Set((state.mcpServers ?? []).map((server) => server.id))
-    const mcpServers = claudeMcpLaunch(studioGateway ? withAgentIdentity(studioGateway, env) : null, [
-      ...(state.mcpServers ?? []),
-      ...extensions.mcpServers.filter((server) => !sessionServerIds.has(server.id)),
-    ])
+    const mcpServers = claudeMcpLaunch(
+      studioGateway ? withAgentIdentity(studioGateway, env) : null,
+      state.mcpServers ?? [],
+      extensions.mcpServers,
+    )
     // Only a chat that has the gateway has the pool's tools, and only one in a
     // git checkout has a repository to lease a worktree of.
     const leasesWorktrees = Boolean(studioGateway) && (await isInGitCheckout(state.workspaceRoot))
@@ -4385,10 +4385,21 @@ export function claudeMcpServers(servers: readonly ConversationMcpServer[]): Non
  * values and header values are swapped for references too, to variables in
  * `env` that the child's environment gets, so no value it carries is on the
  * command line.
+ *
+ * An installed extension's servers (`extensionServers`) are the author's, not
+ * the person's: a reference in one would have the CLI fill in the person's
+ * environment (their tokens, the other servers' secrets in it) and send it
+ * wherever the extension says. The manifest refuses them, but one that holds
+ * `${` all the same (an extension path that does) goes on the command line
+ * with every value it has, its command and URL too, moved into a variable of
+ * Studio's own: the CLI expands each reference once, to the value as the
+ * extension wrote it, and never what that value names. A session server of
+ * the same name is the person's, and wins.
  */
 export function claudeMcpLaunch(
   gateway: ConversationMcpServer | null,
   sessionServers: readonly ConversationMcpServer[],
+  extensionServers: readonly ConversationMcpServer[] = [],
 ): {
   commandLine: NonNullable<Options['mcpServers']>
   control: NonNullable<Options['mcpServers']>
@@ -4397,12 +4408,19 @@ export function claudeMcpLaunch(
   const commandLine = claudeMcpServers(gateway ? [gateway] : [])
   const control: NonNullable<Options['mcpServers']> = {}
   const env: Record<string, string> = {}
-  for (const [id, server] of Object.entries(claudeMcpServers(sessionServers))) {
+  const sessionIds = new Set(sessionServers.map((server) => server.id))
+  const handed = extensionServers.filter((server) => !sessionIds.has(server.id))
+  const fromExtension = new Set(handed.map((server) => server.id))
+  for (const [id, server] of Object.entries(claudeMcpServers([...sessionServers, ...handed]))) {
     // A session server of the gateway's own name stands in its place, as it
     // always did.
     delete commandLine[id]
-    if (JSON.stringify(server).includes('${')) commandLine[id] = withValuesByReference(server, env)
-    else control[id] = server
+    if (!JSON.stringify(server).includes('${')) {
+      control[id] = server
+      continue
+    }
+    const byReference = withValuesByReference(server, env, { everyValue: fromExtension.has(id) })
+    if (byReference) commandLine[id] = byReference
   }
   return { commandLine, control, env }
 }
@@ -4415,10 +4433,21 @@ type SdkMcpServer = NonNullable<Options['mcpServers']>[string]
  * which the CLI expands from its environment. A value that already holds a
  * reference is the person's own and stays; so does one with a NUL, which no
  * environment variable can hold.
+ *
+ * `everyValue`, for an extension's server: its command and URL move too, and
+ * a value holding a reference moves like any other, so nothing the author
+ * wrote is expanded. One with a NUL cannot move, so that server is left out
+ * (null).
  */
-function withValuesByReference(server: SdkMcpServer, env: Record<string, string>): SdkMcpServer {
+function withValuesByReference(
+  server: SdkMcpServer,
+  env: Record<string, string>,
+  options: { everyValue?: boolean } = {},
+): SdkMcpServer | null {
+  const everyValue = options.everyValue === true
+  if (everyValue && JSON.stringify(server).includes('\\u0000')) return null
   const reference = (value: string): string => {
-    if (value.includes('${') || value.includes('\0')) return value
+    if (!everyValue && (value.includes('${') || value.includes('\0'))) return value
     let index = 1
     while (`${MCP_SECRET_ENV_PREFIX}${index}` in env) index += 1
     const name = `${MCP_SECRET_ENV_PREFIX}${index}`
@@ -4430,12 +4459,17 @@ function withValuesByReference(server: SdkMcpServer, env: Record<string, string>
   if ('command' in server) {
     return {
       ...server,
+      ...(everyValue ? { command: reference(server.command) } : {}),
       ...(server.args ? { args: server.args.map(reference) } : {}),
       ...(server.env ? { env: values(server.env) } : {}),
     }
   }
-  if ('headers' in server && server.headers) return { ...server, headers: values(server.headers) }
-  return server
+  if (!('url' in server)) return server
+  return {
+    ...server,
+    ...(everyValue ? { url: reference(server.url) } : {}),
+    ...('headers' in server && server.headers ? { headers: values(server.headers) } : {}),
+  }
 }
 
 // The gateway's bridge says which agent is calling from its environment. A
