@@ -104,7 +104,8 @@ function frameLogAdmits(moduleId: string, now = Date.now()): boolean {
 }
 
 /** The frame methods the window that drew the frame carries out. */
-type ClientFrameMethod = 'toast' | 'chat.draft' | 'doors.open' | 'tabs.focus' | 'events.subscribe' | 'shell.openExternal'
+type ClientFrameMethod =
+  'toast' | 'chat.draft' | 'doors.open' | 'tabs.focus' | 'events.subscribe' | 'shell.openExternal'
 
 /** The longest Settings key, and the most a Settings value may hold. */
 const MAX_SETTING_KEY_CHARS = 200

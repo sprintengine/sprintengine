@@ -217,10 +217,12 @@ test('a refused render keeps the shown tree’s handlers, and retries when asked
   const fake = fakeBridge()
   const n = atom(0)
   const runtime = installComponentsRuntime({ bridge: fake.bridge, schedule: sync })
-  await runtime.boot({ default: () => jsx('Button', { onPress: () => update(n, (x) => x + 1), children: String(read(n)) }) })
+  await runtime.boot({
+    default: () => jsx('Button', { onPress: () => update(n, (x) => x + 1), children: String(read(n)) }),
+  })
   const first = fake.renders()[0]!.payload
   runtime.acknowledge({ document: runtime.document, revision: first.revision, accepted: true })
-  const callback = ((first.tree as { props: { onPress: { $callback: string } } }).props.onPress).$callback
+  const callback = (first.tree as { props: { onPress: { $callback: string } } }).props.onPress.$callback
   runtime.dispatchEvent({ document: runtime.document, revision: 1, callback, args: [] })
   runtime.acknowledge({ document: runtime.document, revision: 2, accepted: false })
   // The shown tree is still revision 1, and its press still works.

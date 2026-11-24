@@ -215,7 +215,14 @@ test('a panel draws as html by default or as components; only a panel takes ui, 
   const plain = validateExtensionManifest(ui({}))
   assert.ok(plain.ok)
   assert.equal(plain.manifest.contributes.panels[0]!.ui, undefined)
-  for (const entry of ['src/panel.tsx', 'src/panel.ts', 'src/panel.jsx', 'src/panel.mts', 'dist/panel.js', 'dist/panel.mjs']) {
+  for (const entry of [
+    'src/panel.tsx',
+    'src/panel.ts',
+    'src/panel.jsx',
+    'src/panel.mts',
+    'dist/panel.js',
+    'dist/panel.mjs',
+  ]) {
     const result = validateExtensionManifest(ui({ ui: 'components', entry }))
     assert.ok(result.ok, entry)
     assert.equal(result.manifest.contributes.panels[0]!.ui, 'components')

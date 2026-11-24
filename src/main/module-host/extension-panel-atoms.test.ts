@@ -30,13 +30,18 @@ test('the extension’s atoms and each workspace’s are kept apart', async () =
       { scope: 'workspace', key: 'draft', version: 2, value: { text: 'hi' } },
     ],
   })
-  await writePanelAtoms(dir, { workspaceId: 'ws-2', entries: [{ scope: 'workspace', key: 'draft', version: 2, value: null }] })
+  await writePanelAtoms(dir, {
+    workspaceId: 'ws-2',
+    entries: [{ scope: 'workspace', key: 'draft', version: 2, value: null }],
+  })
   await writePanelAtoms(dir, { entries: [{ scope: 'plugin', key: 'count', version: 1, value: 4 }] })
   assert.deepEqual(await readPanelAtoms(dir, { workspaceId: 'ws-1' }), {
     plugin: { count: { version: 1, value: 4 } },
     workspace: { draft: { version: 2, value: { text: 'hi' } } },
   })
-  assert.deepEqual((await readPanelAtoms(dir, { workspaceId: 'ws-2' })).workspace, { draft: { version: 2, value: null } })
+  assert.deepEqual((await readPanelAtoms(dir, { workspaceId: 'ws-2' })).workspace, {
+    draft: { version: 2, value: null },
+  })
   assert.deepEqual((await readPanelAtoms(dir, {})).workspace, {})
 })
 

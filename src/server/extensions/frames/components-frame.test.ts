@@ -20,7 +20,11 @@ test('the components module the server ships is the one the SDK builds now', asy
     '../../../../scripts/build-components-runtime.mjs'
   )) as { bundleComponentsRuntime(): string; renderComponentsRuntime(code: string): string }
   const written = readFileSync(join(__dirname, 'components-runtime.generated.ts'), 'utf8')
-  assert.equal(written, renderComponentsRuntime(bundleComponentsRuntime()), 'run node scripts/build-components-runtime.mjs')
+  assert.equal(
+    written,
+    renderComponentsRuntime(bundleComponentsRuntime()),
+    'run node scripts/build-components-runtime.mjs',
+  )
 })
 
 const files: Record<string, string> = {

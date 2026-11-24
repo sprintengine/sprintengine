@@ -25,7 +25,10 @@ export class PanelAtomsRefusal extends Error {
 function scopeFile(dataDir: string, scope: 'plugin' | 'workspace', workspaceId?: string): string {
   if (scope === 'plugin') return join(dataDir, FOLDER, 'plugin.json')
   // The id is the workspace's own; hashed, so any id is a safe file name.
-  const name = createHash('sha256').update(workspaceId ?? '', 'utf8').digest('hex').slice(0, 24)
+  const name = createHash('sha256')
+    .update(workspaceId ?? '', 'utf8')
+    .digest('hex')
+    .slice(0, 24)
   return join(dataDir, FOLDER, `workspace-${name}.json`)
 }
 
@@ -87,10 +90,12 @@ export async function writePanelAtoms(dataDir: string, params: Record<string, un
   for (const raw of entries) {
     const entry = (raw ?? {}) as Record<string, unknown>
     const { scope, key, version } = entry
-    if (scope !== 'plugin' && scope !== 'workspace') throw new PanelAtomsRefusal('An atom’s scope is plugin or workspace.')
+    if (scope !== 'plugin' && scope !== 'workspace')
+      throw new PanelAtomsRefusal('An atom’s scope is plugin or workspace.')
     if (scope === 'workspace' && workspaceId === undefined)
       throw new PanelAtomsRefusal('A workspace atom is stored for the workspace its panel was opened in.')
-    if (typeof key !== 'string' || !ATOM_KEY.test(key)) throw new PanelAtomsRefusal('An atom key is 1-128 letters, digits or . _ : -')
+    if (typeof key !== 'string' || !ATOM_KEY.test(key))
+      throw new PanelAtomsRefusal('An atom key is 1-128 letters, digits or . _ : -')
     if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1)
       throw new PanelAtomsRefusal('An atom’s version is a whole number from 1.')
     if (!('value' in entry)) throw new PanelAtomsRefusal('An atom carries its value.')
@@ -106,7 +111,9 @@ export async function writePanelAtoms(dataDir: string, params: Record<string, un
         throw new PanelAtomsRefusal(`A panel keeps at most ${PANEL_ATOMS_MAX_KEYS} persisted atoms in a scope.`)
       const text = JSON.stringify(next)
       if (Buffer.byteLength(text, 'utf8') > PANEL_ATOMS_MAX_BYTES)
-        throw new PanelAtomsRefusal(`A panel’s persisted atoms are at most ${PANEL_ATOMS_MAX_BYTES / 1024} KiB in a scope.`)
+        throw new PanelAtomsRefusal(
+          `A panel’s persisted atoms are at most ${PANEL_ATOMS_MAX_BYTES / 1024} KiB in a scope.`,
+        )
       await mkdir(join(dataDir, FOLDER), { recursive: true })
       const temporary = `${file}.${process.pid}.${Date.now()}.tmp`
       await writeFile(temporary, text, 'utf8')

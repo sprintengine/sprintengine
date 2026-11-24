@@ -302,10 +302,13 @@ test('a frame that is not a custom editor has no document to edit', () => {
 
 test('a components panel’s ui events ride a lane of their own, larger than a call’s', () => {
   const heard: Array<{ event: string; refused?: string }> = []
-  const { send } = harness({}, {
-    receive: (event, _payload, refused) => heard.push({ event, ...(refused ? { refused } : {}) }),
-    takeGesture: () => false,
-  })
+  const { send } = harness(
+    {},
+    {
+      receive: (event, _payload, refused) => heard.push({ event, ...(refused ? { refused } : {}) }),
+      takeGesture: () => false,
+    },
+  )
   // A 200 KiB tree is over a call's 64 KiB, and within the render lane.
   const tree = { type: 'Text', props: {}, children: ['x'.repeat(200 * 1024)] }
   send({ se: 1, kind: 'evt', event: 'ui.render', payload: { document: 'd', revision: 1, tree } })

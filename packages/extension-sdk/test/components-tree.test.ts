@@ -50,7 +50,10 @@ test('the node, depth, size, text, label, props and Select caps refuse the rende
   refused(node('Card', { title: 'x'.repeat(L.maxLabelLength + 1) }), /title is longer than 1024/)
   const props = Object.fromEntries(Array.from({ length: L.maxPropsPerNode + 1 }, (_, index) => [`p${index}`, 1]))
   refused(node('Stack', props), /at most 32 fields/)
-  const options = Array.from({ length: L.maxSelectOptions + 1 }, (_, index) => ({ value: `${index}`, label: `${index}` }))
+  const options = Array.from({ length: L.maxSelectOptions + 1 }, (_, index) => ({
+    value: `${index}`,
+    label: `${index}`,
+  }))
   refused(node('Select', { label: 'Pick', options }), /more than 500 options/)
   const big = Array.from({ length: 40 }, (_, index) => node('Text', {}, ['y'.repeat(15_000)], `t${index}`))
   refused(node('Stack', {}, big), /larger than 512 KiB/)
@@ -85,7 +88,10 @@ test('a component over its own cap is drawn as a placeholder, with a warning', (
     const result = drawn(node('Stack', {}, [node(type, props)]))
     const child = (result.tree as ComponentNode).children[0] as ComponentNode
     assert.equal(child.type, 'Unsupported', type)
-    assert.ok(result.warnings.some((warning) => warning.startsWith(type)), type)
+    assert.ok(
+      result.warnings.some((warning) => warning.startsWith(type)),
+      type,
+    )
   }
   // Tree items nest at most 16 deep.
   let items: unknown[] = [{ key: 'leaf', label: 'leaf' }]
@@ -121,7 +127,10 @@ test('unknown props, values and components degrade; structure refuses', () => {
     { key: 'a', cells: {} },
     { key: 'a', cells: {} },
   ]
-  assert.equal(drawn(node('Table', { label: 'T', columns: [{ key: 'a', label: 'A' }], rows })).tree?.type, 'Unsupported')
+  assert.equal(
+    drawn(node('Table', { label: 'T', columns: [{ key: 'a', label: 'A' }], rows })).tree?.type,
+    'Unsupported',
+  )
 })
 
 test('Box takes only px and whole percents, tones and the gap scale', () => {
