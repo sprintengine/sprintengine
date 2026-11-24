@@ -12,8 +12,18 @@ import { createExtensionTerminals, type ExtensionTerminalHost } from './extensio
 
 type Session = { snapshot: TerminalSessionSnapshot; output: string; typed: string[] }
 
+/** A gate held open until the test lets it go. */
+function hold() {
+  let release!: () => void
+  const released = new Promise<void>((resolve) => (release = resolve))
+  return { released, release }
+}
+
 function machine(options: { refuse?: string; ceiling?: CliPermissionPreset | null } = {}) {
   const sessions = new Map<string, Session>()
+  // Set by a test: the next spawn, or every write, waits for it (a workspace lease, the control plane's queue).
+  let spawnHeld: Promise<void> | null = null
+  let writeHeld: Promise<void> | null = null
   const spawned: Array<Parameters<ExtensionTerminalHost['spawnShell']>[0]> = []
   const killed: string[] = []
   let ceiling: CliPermissionPreset | null = options.ceiling ?? null
@@ -34,12 +44,17 @@ function machine(options: { refuse?: string; ceiling?: CliPermissionPreset | nul
     list: () => [...sessions.values()].map((session) => session.snapshot),
     async spawnShell(input) {
       spawned.push(input)
+      if (spawnHeld) await spawnHeld
       add(input.sessionId)
       return { ok: true, sessionId: input.sessionId }
     },
-    async write(sessionId, data) {
+    async write(sessionId, data, stillMay) {
+      if (writeHeld) await writeHeld
       const session = sessions.get(sessionId)
       if (!session) return { ok: false, reason: 'not_found', message: 'gone' }
+      // Asked last, as the control plane asks it after its queue and the hooks.
+      const withdrawn = stillMay?.()
+      if (withdrawn) return { ok: false, reason: 'withdrawn', message: withdrawn }
       // An extension's write hook refused it.
       if (options.refuse && data.includes(options.refuse))
         return { ok: false, reason: 'refused', message: 'The extension "Guard" (local.guard) refused this: no.' }
@@ -76,6 +91,8 @@ function machine(options: { refuse?: string; ceiling?: CliPermissionPreset | nul
     add,
     setCeiling: (next: CliPermissionPreset | null) => (ceiling = next),
     setAvailable: (next: boolean) => (available = next),
+    holdSpawn: (held: Promise<void> | null) => (spawnHeld = held),
+    holdWrites: (held: Promise<void> | null) => (writeHeld = held),
   }
 }
 
@@ -188,4 +205,53 @@ test('switched off, it lets go of its terminals and they stay open; uninstalled 
   m.terminals.closeAll('local.b')
   assert.deepEqual(m.killed, [second])
   assert.deepEqual(m.terminals.opened('local.b'), [])
+})
+
+test('removed while its shell is starting: nothing is kept, nothing typed, and the shell that started closes', async () => {
+  const m = machine()
+  const spawn = hold()
+  m.holdSpawn(spawn.released)
+  const creating = m.terminals.create('local.a', { workspaceId: 'ws-1', command: 'npm run build' })
+  await Promise.resolve()
+  assert.equal(m.spawned.length, 1, 'the shell is starting')
+  m.terminals.closeAll('local.a')
+  spawn.release()
+  await assert.rejects(creating, code('not_permitted'))
+  const sessionId = m.spawned[0]!.sessionId
+  assert.deepEqual(m.killed, [sessionId], 'the shell that started for it is closed')
+  assert.deepEqual(m.terminals.opened('local.a'), [])
+  assert.equal(m.sessions.has(sessionId), false)
+})
+
+test('switched off while its write waits in the queue: the write is cancelled', async () => {
+  const m = machine()
+  m.add('t-1')
+  const queue = hold()
+  m.holdWrites(queue.released)
+  const sending = m.terminals.send('local.a', { terminalId: 't-1', text: 'rm -rf build', enter: true })
+  m.terminals.forget('local.a')
+  queue.release()
+  await assert.rejects(sending, code('not_permitted'))
+  assert.deepEqual(m.sessions.get('t-1')!.typed, [])
+})
+
+test('an approval narrowed while work waits is read again before the shell starts and before each write', async () => {
+  const m = machine()
+  m.add('t-1')
+  let grant: readonly string[] | null = ['terminals:send']
+  m.terminals.bindGrants(() => grant)
+  const queue = hold()
+  m.holdWrites(queue.released)
+  const sending = m.terminals.send('local.a', { terminalId: 't-1', text: 'ls', enter: true })
+  grant = []
+  queue.release()
+  await assert.rejects(sending, code('not_permitted'))
+  assert.deepEqual(m.sessions.get('t-1')!.typed, [])
+  m.holdWrites(null)
+  // Revoked before a create starts its shell: none starts.
+  grant = null
+  await assert.rejects(m.terminals.create('local.a', { workspaceId: 'ws-1' }), code('not_permitted'))
+  assert.equal(m.spawned.length, 0)
+  grant = ['terminals:send']
+  assert.match((await m.terminals.create('local.a', { workspaceId: 'ws-1' })).terminalId, /^terminal-ext-/)
 })

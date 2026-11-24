@@ -177,6 +177,9 @@ if (!serverHost) app.once('will-quit', () => void extensionWorkers.workers.close
 // server binds its own.
 if (!serverHost) services.studioCore.extensionHooks.bind(extensionWorkers.workers)
 if (!serverHost) services.studioCore.extensionEvents.bind(extensionWorkers.workers)
+// Terminal work an extension has on its way is held to its approval as it stands when carried out.
+if (!serverHost)
+  services.studioCore.extensionTerminals?.bindGrants((moduleId) => extensionWorkers.workers.grantOf(moduleId))
 const thirdPartyMainLoad = planInstalledExtensions(
   discoverUserModulesSync(defaultUserModuleRoot(), readExtensionStanding()),
   () => extensionWorkers.workers,

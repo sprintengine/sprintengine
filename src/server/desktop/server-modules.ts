@@ -124,6 +124,8 @@ export function createServerModules(deps: {
   core.extensionHooks.bind(workers)
   // Studio's events reach these workers, and the frames these extensions draw (extension-events.ts).
   core.extensionEvents.bind(workers)
+  // Terminal work an extension has on its way is held to its approval as it stands when carried out.
+  core.extensionTerminals.bindGrants((moduleId) => workers.grantOf(moduleId))
   let stopWatchingModules: (() => void) | null = null
   let manifests: CapabilityManifest[] = []
   let ineligible: Record<string, ModuleResolutionErrorCode> = {}

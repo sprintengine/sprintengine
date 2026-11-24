@@ -690,8 +690,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
             shellOnly: true,
             visible: false,
           }),
-        write: async (sessionId, data) => {
-          const written = await terminals.controlPlane.write({ sessionId }, data)
+        write: async (sessionId, data, stillMay) => {
+          const written = await terminals.controlPlane.write({ sessionId }, data, stillMay ? { stillMay } : {})
           return written.ok
             ? { ok: true as const }
             : { ok: false as const, reason: written.reason, message: written.message }
