@@ -781,7 +781,9 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           if (!contained.ok) return { ok: false, message: contained.message }
           deps.removing?.(moduleId, 'uninstalled')
           await rm(contained.path, { recursive: true, force: true })
-          // Nothing about it outlives it: its approval, enablement, stored secrets.
+          // Nothing about it outlives it: its approval, enablement, stored
+          // secrets, and the window's question from an install outside it.
+          reviewAsked.delete(moduleId)
           const revoked = await writeExtensionApproval(deps.dataDir, moduleId, null)
           const unforgotten = await forgetModules(deps.dataDir, [moduleId])
           await catalogue.forget(moduleId)

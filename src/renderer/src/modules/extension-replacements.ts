@@ -90,6 +90,12 @@ export const useExtensionReplacementSwitches = create<ReplacementSwitches>()(
   ),
 )
 
+/** An uninstalled extension's switch is forgotten: installed again, it starts on, as a new one does. */
+export function forgetExtensionReplacementSwitch(key: string): void {
+  if (useExtensionReplacementSwitches.getState().off[key] === true)
+    useExtensionReplacementSwitches.getState().setTakesOver(key, true)
+}
+
 /** Whether the person lets this extension take over Studio's actions (on unless switched off). */
 export function extensionTakesOver(key: string): boolean {
   return useExtensionReplacementSwitches.getState().off[key] !== true

@@ -1134,6 +1134,17 @@ describe('installing and updating from outside the window', () => {
     expect((await env.installed())[0]?.reviewAsked).toBe(true)
     await approveAll(env)
     expect((await env.installed())[0]?.reviewAsked).toBeUndefined()
+
+    // Asked, dismissed, uninstalled: the person's own install later is not asked again in the window.
+    await env.lifecycle.uninstall('acme.notes')
+    await env.lifecycle.catalogue.installFrom({ catalogue: 'community', id: 'acme.notes' })
+    env.lifecycle.askReview('acme.notes')
+    expect((await env.installed())[0]?.reviewAsked).toBe(true)
+    expect(await env.lifecycle.uninstall('acme.notes')).toMatchObject({ ok: true })
+    await env.lifecycle.catalogue.installFrom({ catalogue: 'community', id: 'acme.notes' })
+    const [again] = await env.installed()
+    expect(again?.approval.state).toBe('pending')
+    expect(again?.reviewAsked).toBeUndefined()
   })
 
   test('a key more than one catalogue lists is refused, naming them, until one is chosen', async () => {

@@ -6,6 +6,7 @@ import { setAppCommandRunner } from '../commands/appCommandRunner'
 import { forgetChangedExtensions, loadExtensionContributions } from './extension-contributions'
 import {
   REPLACEMENT_TIME_LIMIT_MS,
+  forgetExtensionReplacementSwitch,
   forgetExtensionReplacements,
   registerExtensionReplacement,
   replacementFor,
@@ -310,4 +311,11 @@ test('a served command that replaces an action registers it, at its install time
   // Served changed: taken out, so it replaces nothing until registered again.
   forgetChangedExtensions(served('local.served', 5, 'Back, changed'), () => undefined)
   assert.equal(replacementFor('workspace.history.back'), null)
+})
+
+test('an uninstalled extension’s takeover switch is forgotten, so installed again it starts on', () => {
+  useExtensionReplacementSwitches.getState().setTakesOver('acme.back', false)
+  useExtensionReplacementSwitches.getState().setTakesOver('acme.kept', false)
+  forgetExtensionReplacementSwitch('acme.back')
+  assert.deepEqual(useExtensionReplacementSwitches.getState().off, { 'acme.kept': true })
 })
