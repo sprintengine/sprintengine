@@ -147,7 +147,7 @@ its own data.
 | `studio.requireService(WorkspaceServiceToken)` | `workspace:operate` | `create({ name, folderPath })` a workspace |
 | `getBacklogService(studio)` | `backlog:read` / `backlog:operate` | List, locate, create and change Backlog items through the app — below |
 | `getUsageService(studio)` | `usage:read` | Token usage of every agent session on the machine — below |
-| `getTerminalService(studio)` | `terminals:send`, `terminals:read` | The person's terminals: `send`, `create`, `read`, `close` — the `events` topic |
+| `getTerminalService(studio)` | `terminals:send`, `terminals:read` | The person's terminals: `send`, `create`, `read`, `close`, `list` — the `events` topic |
 | `getActivityService(studio)` | `conversation:read` | The person's Studio chats and prompts, read-only — below |
 
 ## Settings in the worker

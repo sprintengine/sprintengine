@@ -234,6 +234,8 @@ export function followStudioEvents(events: ExtensionEvents, sources: StudioEvent
     seen = keys
     seenViews = views
   }
+  // What a new listener hears first: every workspace as it is now.
+  events.provide('workspace.changed', () => [...snapshot().values()].map((workspace) => ({ workspace })))
   stops.push(sources.workspaces.subscribe(compare))
   if (sources.terminals) stops.push(sources.terminals.onChanged(compare))
   // What is there when Studio starts is no news.

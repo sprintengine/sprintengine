@@ -30,6 +30,7 @@ import { randomUUID } from 'node:crypto'
 import { extensionHostService } from '../../../packages/extension-sdk/src/services'
 
 import {
+  EXTENSION_TERMINAL_LIST_MAX,
   EXTENSION_TERMINAL_OPENED_LIMIT,
   EXTENSION_TERMINAL_READ_DEFAULT_LINES,
   EXTENSION_TERMINAL_READ_MAX_LINES,
@@ -77,6 +78,8 @@ export type ExtensionTerminalDeps = {
   terminals(): ExtensionTerminalHost | null
   /** A workspace this Studio holds, as a terminal opens in it; null for one it does not. */
   workspace(workspaceId: string): { folderPath: string | null; remote: boolean } | null
+  /** An agent's name, as the sidebar shows it, for a terminal it runs in; null when Studio has none. */
+  agentTitle?: (workspaceId: string | undefined, agentId: string) => string | null
   /** The ceiling of whoever set off the call running now (tests pass their own). */
   ceiling?: () => CliPermissionPreset | null
 }
@@ -189,6 +192,11 @@ export function createExtensionTerminals(deps: ExtensionTerminalDeps): Extension
       invoker,
     })
     return decision.ok ? null : decision.message
+  }
+
+  function titleOfTerminal(terminalId: string): string | null {
+    for (const opened of openedBy.values()) if (opened.has(terminalId)) return opened.get(terminalId) ?? null
+    return null
   }
 
   function host(): ExtensionTerminalHost {
@@ -329,12 +337,31 @@ export function createExtensionTerminals(deps: ExtensionTerminalDeps): Extension
       return { closed: true as const }
     },
 
+    async list(moduleId, input) {
+      const params = input === undefined ? {} : record(input)
+      const workspaceId = params.workspaceId === undefined ? undefined : idOf(params, 'workspaceId')
+      const terminals = host()
+      const own = openedBy.get(moduleId)
+      const live = terminals
+        .list()
+        .filter((session) => session.processAlive && (workspaceId === undefined || session.workspaceId === workspaceId))
+      return {
+        terminals: live.slice(0, EXTENSION_TERMINAL_LIST_MAX).map((session) => ({
+          terminalId: session.sessionId,
+          workspaceId: session.workspaceId ?? null,
+          title:
+            (session.agentId ? deps.agentTitle?.(session.workspaceId, session.agentId) : null) ??
+            session.agentName ??
+            titleOfTerminal(session.sessionId),
+          opened: own?.has(session.sessionId) ?? false,
+        })),
+        truncated: live.length > EXTENSION_TERMINAL_LIST_MAX,
+      }
+    },
+
     opened: (moduleId) => [...(openedBy.get(moduleId) ?? [])].map(([id, title]) => ({ id, title })),
 
-    titleOf(terminalId) {
-      for (const opened of openedBy.values()) if (opened.has(terminalId)) return opened.get(terminalId) ?? null
-      return null
-    },
+    titleOf: titleOfTerminal,
 
     forget(moduleId) {
       cancel(moduleId)

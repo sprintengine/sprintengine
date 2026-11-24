@@ -11,9 +11,9 @@
 // never reach one through Studio. An agent that asks before it runs commands
 // cannot have an extension type or run a command for it either.
 //
-// A terminal is named by its id: the one `create` answers, or one an event
-// carries (`workspace.changed`'s `terminals`, `agent.status.changed`'s
-// `terminalId`). What the extension types passes the extensions' own
+// A terminal is named by its id: the one `create` answers, one `list` answers
+// (`terminals:read`), or one an event carries (`workspace.changed`'s
+// `terminals`, `agent.status.changed`'s `terminalId`). What the extension types passes the extensions' own
 // `terminal.write.before` hooks first, as any write Studio makes for someone
 // other than the person at the keyboard does.
 
@@ -27,6 +27,23 @@ export const EXTENSION_TERMINAL_TEXT_MAX_CHARS = 64 * 1024
 export const EXTENSION_TERMINAL_TITLE_MAX_CHARS = 200
 /** The most terminals Studio remembers an extension opened; the oldest is forgotten (not closed) past it. */
 export const EXTENSION_TERMINAL_OPENED_LIMIT = 128
+/** The most terminals one `list` answers. */
+export const EXTENSION_TERMINAL_LIST_MAX = 50
+
+/** A live terminal, as `list` answers it. */
+export type ExtensionTerminalSummary = {
+  /** Its id, which the other methods take. */
+  terminalId: string
+  workspaceId: string | null
+  /**
+   * The agent's name for an agent's terminal, or the title your extension gave
+   * one it opened; null for a shell the person opened (Studio does not know
+   * the name its tab shows).
+   */
+  title: string | null
+  /** Whether your extension opened it (`create`), so `close` reaches it. */
+  opened: boolean
+}
 
 /**
  * Why a terminal call was refused, as the rejected error's `code`:
@@ -74,6 +91,12 @@ export type ExtensionTerminalService = {
    * terminal is refused with `not_yours`.
    */
   close(input: { terminalId: string }): Promise<{ closed: true }>
+  /**
+   * The live terminals on this Studio's machine, in one workspace when
+   * `workspaceId` is given: at most 50, `truncated` saying more were left out.
+   * Needs `terminals:read`.
+   */
+  list(input?: { workspaceId?: string }): Promise<{ terminals: ExtensionTerminalSummary[]; truncated: boolean }>
 }
 
 /** The host's side: each method takes the calling extension's id first. */
@@ -99,5 +122,6 @@ export function getTerminalService(host: MainHost): ExtensionTerminalService {
     create: (input) => registry.create(moduleId, input),
     read: (input) => registry.read(moduleId, input),
     close: (input) => registry.close(moduleId, input),
+    list: (input) => registry.list(moduleId, input),
   }
 }

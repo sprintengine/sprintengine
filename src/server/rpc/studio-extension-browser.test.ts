@@ -39,14 +39,19 @@ function setup() {
     create: async () => (reached.push('create'), { terminalId: 't' }),
     read: async () => (reached.push('read'), { lines: ['secret'], truncated: false }),
     close: async () => (reached.push('close'), { closed: true as const }),
+    list: async () => (reached.push('list'), { terminals: [], truncated: false }),
   }))
   const host = kernel.hostFor('acme.shell')
   host.registerMethods<{
-    'terminal.poke': { access: 'operate'; params: { method: 'send' | 'create' | 'read' | 'close' }; result: string }
+    'terminal.poke': {
+      access: 'operate'
+      params: { method: 'send' | 'create' | 'read' | 'close' | 'list' }
+      result: string
+    }
   }>({
     'terminal.poke': {
       access: 'operate',
-      params: (value) => ({ ok: true, params: value as { method: 'send' | 'create' | 'read' | 'close' } }),
+      params: (value) => ({ ok: true, params: value as { method: 'send' | 'create' | 'read' | 'close' | 'list' } }),
       handler: async ({ method }) => {
         const terminals = host.requireService(TerminalsModuleServiceToken)
         try {
@@ -81,7 +86,7 @@ test('an owner’s browser tab reaches no terminal through an extension’s meth
     assert.equal(answer.ok, true)
     return (answer.result as { result: string }).result
   }
-  for (const method of ['send', 'create', 'read', 'close']) {
+  for (const method of ['send', 'create', 'read', 'close', 'list']) {
     assert.match(await poke(method, tab), /^refused: .*which no browser reaches/)
   }
   assert.deepEqual(reached, [], 'nothing reached the terminals for the tab')

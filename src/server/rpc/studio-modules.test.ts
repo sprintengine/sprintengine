@@ -215,6 +215,47 @@ test('a Studio event queued behind a slow reader is dropped when its extensionâ€
   assert.equal(late, 'dropped')
 })
 
+test('a surface that subscribes to workspace.changed hears every workspace as it is first, then each change, again on a new subscription', async () => {
+  const events = createExtensionEvents()
+  events.bind({ eventsListed: () => false, deliverEvent: () => undefined, grantOf: () => ['workspace:read'] })
+  const view = (workspaceId: string, name: string) => ({
+    workspace: { workspaceId, name, kind: 'folder' as const, folderPath: null, branch: null, terminals: [] },
+  })
+  let standing = [view('ws-1', 'Notes'), view('ws-2', 'Site')]
+  events.provide('workspace.changed', () => standing)
+  const started = await startTestServer({ modules: createStudioModuleHub(), extensionEvents: events })
+  cleanups.push(() => started.dispose())
+  const subscribe = async (id: string) => {
+    const client = await connectLineClient(started.path)
+    cleanups.push(() => client.close())
+    client.send(hello({ token: OWNER_TOKEN }))
+    await client.next((frame) => frame.t === 'welcome')
+    client.send({
+      t: 'sub',
+      id,
+      topic: 'extension.studioEvents',
+      params: { moduleId: 'acme.board', event: 'workspace.changed' },
+    })
+    return client
+  }
+  const heard = async (client: Awaited<ReturnType<typeof subscribe>>, id: string, count: number) => {
+    const names: string[] = []
+    while (names.length < count) {
+      const frame = await client.next((candidate) => candidate.t === 'push' && candidate.sub === id)
+      names.push((frame as { payload: { payload: ReturnType<typeof view> } }).payload.payload.workspace.name)
+    }
+    return names
+  }
+  const first = await subscribe('a')
+  assert.deepEqual(await heard(first, 'a', 2), ['Notes', 'Site'])
+  events.emit('workspace.changed', view('ws-1', 'Notes renamed'))
+  assert.deepEqual(await heard(first, 'a', 1), ['Notes renamed'])
+  // Back after a reconnect: a new subscription hears the state as it is now.
+  standing = [view('ws-1', 'Notes renamed')]
+  const again = await subscribe('b')
+  assert.deepEqual(await heard(again, 'b', 1), ['Notes renamed'])
+})
+
 test('a malformed module filter is refused', async () => {
   const { client } = await clientOver(createStudioModuleHub())
   client.send({ t: 'sub', id: 's1', topic: 'extension.events', params: { moduleId: 7 } })

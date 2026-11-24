@@ -60,7 +60,7 @@ export const EXTENSION_GUIDE_TOPICS: readonly ExtensionGuideTopic[] = [
   {
     id: 'events',
     summary:
-      "Studio's events (workspaces made, removed or changed, agents' status) in a worker and a surface, and the person's terminals from a worker: send, create, read, close.",
+      "Studio's events (workspaces made, removed or changed, agents' status) in a worker and a surface, and the person's terminals from a worker: send, create, read, close, list.",
   },
   { id: 'conversations', summary: "The extension's own chats, and one-shot text generation." },
   { id: 'brokers', summary: 'API keys and GitHub through the host, never a token in the extension.' },

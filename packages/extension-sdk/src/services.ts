@@ -247,7 +247,7 @@ export const EXTENSION_HOST_SERVICES: readonly ExtensionHostService[] = [
     providedBy: 'agent-runtime',
     methods: {
       ...each(['send', 'create', 'close'], need('terminals:send', 'terminals', 'reject')),
-      read: need('terminals:read', 'terminals', 'reject'),
+      ...each(['read', 'list'], need('terminals:read', 'terminals', 'reject')),
     },
   },
 ]

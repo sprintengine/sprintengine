@@ -166,7 +166,7 @@ export const EXTENSION_EVENT_SPECS: Readonly<Record<ExtensionFrameEventName, Ext
     invoker: 'workspace:read',
     heard: 'worker',
     summary:
-      'A workspace changed: renamed, its branch or folder changed, or a terminal in it opened or closed. Studio has no one focused workspace (each window has its own), so it says which.',
+      'A workspace changed: renamed, its branch or folder changed, or a terminal in it opened or closed. Studio has no one focused workspace (each window has its own), so it says which. A worker hears every workspace as it is when it starts, and a surface when it subscribes, before any change.',
     payload: `{ workspace: ${WORKSPACE.slice(0, -2)}; terminals: { id: string; title: string | null }[] } }`,
   },
   'editor.typography.changed': {

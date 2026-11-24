@@ -2494,6 +2494,21 @@ function terminalsRegistry(context: FakeServiceContext): { registry: object; han
       terminals.delete(found!.id)
       return { closed: true as const }
     },
+    async list(moduleId: string, input?: { workspaceId?: string }) {
+      const live = [...terminals.values()].filter(
+        (candidate) =>
+          candidate.alive && (input?.workspaceId === undefined || candidate.workspaceId === input.workspaceId),
+      )
+      return {
+        terminals: live.slice(0, 50).map((candidate) => ({
+          terminalId: candidate.id,
+          workspaceId: candidate.workspaceId,
+          title: candidate.title,
+          opened: candidate.openedBy === moduleId,
+        })),
+        truncated: live.length > 50,
+      }
+    },
   }
   const handle: FakeTerminals = {
     add({ id, workspaceId, lines = [] }) {

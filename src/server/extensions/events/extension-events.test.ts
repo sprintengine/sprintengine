@@ -89,6 +89,30 @@ test('a worker that lists an event is started to hear it, every handler in order
   assert.deepEqual(lines, ['created first', 'again first', 'created stop', 'again stop', 'again third'])
 })
 
+test('a worker that lists workspace.changed hears every workspace as it is when it starts, before anything else', async () => {
+  const events = start([
+    {
+      id: 'watcher',
+      main: `exports.activate = (studio) => {
+  studio.events.on('workspace.changed', ({ workspace }) => console.log('changed ' + workspace.name))
+}`,
+      permissions: ['workspace:read'],
+      events: ['workspace.changed'],
+    },
+  ])
+  const view = (workspaceId: string, name: string) => ({
+    workspace: { ...WORKSPACE, workspaceId, name, terminals: [] },
+  })
+  events.provide('workspace.changed', () => [view('ws-1', 'Notes'), view('ws-2', 'Site')])
+  events.emit('workspace.changed', view('ws-3', 'Later'))
+  await until(() => logOf('local.watcher').includes('changed Later'), 10_000, 'the change')
+  const lines = logOf('local.watcher')
+    .split('\n')
+    .filter((line) => / changed /.test(line) || /changed /.test(line))
+    .map((line) => line.replace(/^.*\] /, ''))
+  assert.deepEqual(lines, ['changed Notes', 'changed Site', 'changed Later'])
+})
+
 test('an event handler runs as the extension’s own work: its calls into Studio are the person’s', async () => {
   const events = start([listener()])
   events.emit('workspace.removed', { ...WORKSPACE, name: 'gone' })

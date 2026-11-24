@@ -173,6 +173,8 @@ type Entry = {
   events: Promise<void>
   /** How many are on their way: past `EVENTS_QUEUED_MAX` (a worker that cannot start), the newest are dropped. */
   eventsQueued: number
+  /** The worker process that has heard the standing state of its events; another must hear it again. */
+  standingGiven: WorkerSession | null
 }
 
 /** The most events one worker may have waiting; one that waits for a place cannot pile up a backlog without end. */
@@ -416,6 +418,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
       handlers: new Map(),
       events: Promise.resolve(),
       eventsQueued: 0,
+      standingGiven: null,
     }
     this.entries.set(spec.extensionId, entry)
     // Switching it off unloads it, and stops its worker without a restart.
@@ -690,6 +693,8 @@ export class ExtensionWorkers implements KernelWorkerPort {
       started.onExit((exit) => this.exited(entry, started, exit))
       entry.log(`[studio] worker started (pid ${proc.pid ?? 'unknown'})`)
       this.setState(entry, 'running')
+      // One that lists events hears their standing state first, whatever started it.
+      if (this.currentOf && entry.spec.declaredEvents?.length) this.queueEvent(entry, null)
     } catch (error) {
       session?.close()
       slot.release()
@@ -901,33 +906,62 @@ export class ExtensionWorkers implements KernelWorkerPort {
    */
   deliverEvent(event: ExtensionEventName, payload: unknown): void {
     if (this.closed) return
-    for (const entry of this.entries.values()) {
+    for (const entry of this.entries.values()) this.queueEvent(entry, event, payload)
+  }
+
+  /** Where the standing state of each event is read, for a worker that starts. */
+  currentFrom(current: (event: ExtensionEventName) => unknown[]): void {
+    this.currentOf = current
+  }
+
+  private currentOf: ((event: ExtensionEventName) => unknown[]) | null = null
+
+  /**
+   * A worker that started (or started again) hears the standing state of the
+   * events it lists before anything else, as a surface does when it
+   * subscribes: each workspace as it is now, for `workspace.changed`. Once
+   * per process, read when it is handed over.
+   */
+  private async giveStanding(entry: Entry, session: WorkerSession): Promise<void> {
+    if (entry.standingGiven === session || !this.currentOf) return
+    entry.standingGiven = session
+    for (const event of entry.spec.declaredEvents ?? []) {
       if (this.eventSkipReason(entry, event)) continue
-      if (entry.eventsQueued >= EVENTS_QUEUED_MAX) {
-        entry.log(`[studio] event ${event} was dropped: ${EVENTS_QUEUED_MAX} events already wait for its worker`)
-        continue
+      for (const payload of this.currentOf(event)) {
+        if (this.eventSkipReason(entry, event) || entry.session !== session) return
+        await session.run({ kind: 'event', event, payload }, ownerInvoker(null, 'its own work, hearing an event'))
       }
-      entry.eventsQueued += 1
-      const copy = structuredClone(payload)
-      entry.events = entry.events.then(async () => {
-        try {
-          // Checked again at its turn: it may have been switched off, changed or revoked meanwhile.
-          if (this.eventSkipReason(entry, event)) return
-          const running = await this.ensure(entry.spec.extensionId)
-          const session = running.session
-          if (!session) throw new Error(running.message ?? stoppedMeanwhile(entry.spec.extensionId))
-          if (this.eventSkipReason(running, event)) return
-          await session.run(
-            { kind: 'event', event, payload: copy },
-            ownerInvoker(null, 'its own work, hearing an event'),
-          )
-        } catch (error) {
-          entry.log(`[studio] event ${event} was not delivered: ${messageOf(error)}`)
-        } finally {
-          entry.eventsQueued -= 1
-        }
-      })
     }
+  }
+
+  /** Queue `event` for one extension's worker, or (no event) only the standing state it hears when it starts. */
+  private queueEvent(entry: Entry, event: ExtensionEventName | null, payload?: unknown): void {
+    if (event !== null && this.eventSkipReason(entry, event)) return
+    if (entry.eventsQueued >= EVENTS_QUEUED_MAX) {
+      entry.log(
+        `[studio] event ${event ?? 'state'} was dropped: ${EVENTS_QUEUED_MAX} events already wait for its worker`,
+      )
+      return
+    }
+    entry.eventsQueued += 1
+    const copy = event === null ? undefined : structuredClone(payload)
+    entry.events = entry.events.then(async () => {
+      try {
+        // Checked again at its turn: it may have been switched off, changed or revoked meanwhile.
+        if (event !== null && this.eventSkipReason(entry, event)) return
+        if (event === null && entry.state !== 'running') return
+        const running = await this.ensure(entry.spec.extensionId)
+        const session = running.session
+        if (!session) throw new Error(running.message ?? stoppedMeanwhile(entry.spec.extensionId))
+        await this.giveStanding(running, session)
+        if (event === null || this.eventSkipReason(running, event)) return
+        await session.run({ kind: 'event', event, payload: copy }, ownerInvoker(null, 'its own work, hearing an event'))
+      } catch (error) {
+        entry.log(`[studio] event ${event ?? 'state'} was not delivered: ${messageOf(error)}`)
+      } finally {
+        entry.eventsQueued -= 1
+      }
+    })
   }
 
   private toolHandler(moduleId: string, name: string): McpToolRegistration['handler'] {

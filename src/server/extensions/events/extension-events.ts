@@ -23,6 +23,10 @@ import type { ExtensionInvoker } from '../../../main/module-host/extension-invoc
 //   (studio-rpc-connection.ts): `admit` holds it to the extension's approval
 //   and to that connection's grant, at the subscription and again at each
 //   event, so an approval or a grant narrowed meanwhile stops it at once.
+//
+// A listener that starts listening (a surface subscribing, again after a
+// reconnect; a worker starting) hears `current` first: the standing state of
+// what it follows, so it never starts out stale.
 
 /** What the extensions' workers offer (worker-manager.ts). */
 export type ExtensionEventSink = {
@@ -30,6 +34,8 @@ export type ExtensionEventSink = {
   deliverEvent(event: ExtensionEventName, payload: unknown): void
   /** The permissions an extension's approval holds now; null when it is not approved as it is. */
   grantOf(moduleId: string): readonly string[] | null
+  /** Where a worker that starts reads the current state of what it hears (`current`), to hear it first. */
+  currentFrom?(current: (event: ExtensionEventName) => unknown[]): void
 }
 
 export type ExtensionEvents = {
@@ -39,6 +45,14 @@ export type ExtensionEvents = {
   emit<E extends ExtensionEventName>(event: E, payload: ExtensionEventPayloads[E]): void
   /** Hear `event` (a connection, for its frames); returns the unsubscriber. */
   listen<E extends ExtensionEventName>(event: E, listener: (payload: ExtensionEventPayloads[E]) => void): () => void
+  /**
+   * What a listener hears first when it starts listening, so it never starts
+   * out stale: for `workspace.changed`, one payload per workspace as it is
+   * now. Empty for an event with no standing state.
+   */
+  current<E extends ExtensionEventName>(event: E): Array<ExtensionEventPayloads[E]>
+  /** Where `current` reads `event`'s standing state (studio-events.ts). */
+  provide<E extends ExtensionEventName>(event: E, current: () => Array<ExtensionEventPayloads[E]>): void
   /** Whether extension `moduleId`'s frame opened by `invoker` may hear `event` now. */
   admit(moduleId: string, event: ExtensionEventName, invoker: ExtensionInvoker): ExtensionHostDecision
   /** The workers to tell; null (as at first, and in a Studio with no extensions) tells none. */
@@ -50,7 +64,22 @@ export function createExtensionEvents(options: { log?: (line: string) => void } 
   const listeners = new Map<ExtensionEventName, Set<(payload: unknown) => void>>(
     EXTENSION_EVENTS.map((event) => [event, new Set()]),
   )
+  const standing = new Map<ExtensionEventName, () => unknown[]>()
+  const current = (event: ExtensionEventName): unknown[] => {
+    const read = standing.get(event)
+    if (!read) return []
+    try {
+      return read().map((payload) => structuredClone(payload))
+    } catch (error) {
+      options.log?.(`the current ${event} could not be read: ${error instanceof Error ? error.message : String(error)}`)
+      return []
+    }
+  }
   return {
+    current: current as ExtensionEvents['current'],
+    provide(event, read) {
+      standing.set(event, read)
+    },
     wants: (event) => listeners.get(event)!.size > 0 || sink?.eventsListed(event) === true,
     emit(event, payload) {
       if (sink?.eventsListed(event)) {
@@ -99,6 +128,7 @@ export function createExtensionEvents(options: { log?: (line: string) => void } 
     },
     bind(next) {
       sink = next
+      next?.currentFrom?.(current)
     },
   }
 }

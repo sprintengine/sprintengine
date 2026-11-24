@@ -1188,6 +1188,10 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     // Asked when the event happens and again as it is written, so one queued
     // behind a slow reader is dropped when the approval or grant lapsed meanwhile.
     const stillAdmitted = () => state !== 'closed' && subscriptions.get(id) === subscription && admitted()?.ok === true
+    // The standing state first (each workspace as it is, for `workspace.changed`),
+    // so a new surface, or one back after a reconnect, never starts out stale;
+    // then each change, in order behind it.
+    for (const payload of events.current(event)) push('extension.studioEvents', id, { event, payload }, stillAdmitted)
     const stop = events.listen(event, (payload) => {
       if (!stillAdmitted()) return
       push('extension.studioEvents', id, { event, payload }, stillAdmitted)

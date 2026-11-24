@@ -102,8 +102,9 @@
   `agent.status.changed`) for one extension's surfaces, as
   `StudioExtensionStudioEvent` (`{ event, payload }`). The Studio admits it as
   that extension, by its approval, and as the connection, by its grant, when it
-  is followed and again at every event; a refusal is `subFailed` with
-  `not_permitted` or `approval_required`.
+  is followed, at every event and again as each is written; a refusal is
+  `subFailed` with `not_permitted` or `approval_required`. Following
+  `workspace.changed` sends each workspace as it is first, then each change.
 
 ### Added (agent hooks)
 

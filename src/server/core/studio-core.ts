@@ -699,6 +699,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         kill: (sessionId) => terminals.runtime.sessions.killTerminal(sessionId),
       }
     },
+    agentTitle: (workspaceId, agentId) =>
+      (workspaceId ? workspaceRegistry.getRecord(workspaceId)?.agents[agentId]?.name : undefined) ?? null,
     workspace: (workspaceId) => {
       const record = workspaceRegistry.getRecord(workspaceId)
       if (!record) return null

@@ -110,6 +110,7 @@ function setup(approved: () => readonly string[] | null = () => reader.permissio
         create: async (moduleId: string) => (calls.push(`create-terminal:${moduleId}`), { terminalId: 't' }),
         read: async (moduleId: string) => (calls.push(`read:${moduleId}`), { lines: [], truncated: false }),
         close: async (moduleId: string) => (calls.push(`close:${moduleId}`), { closed: true }),
+        list: async (moduleId: string) => (calls.push(`list:${moduleId}`), { terminals: [], truncated: false }),
       }) as never,
   )
   host.provideService(
@@ -248,13 +249,14 @@ test('a frame’s host calls are held to the extension’s approval and to the c
 test('the terminals are the person’s: an extension needs its permission, and a device, the phone or another app is refused', async () => {
   const { kernel, calls } = setup()
   type Terminals = {
-    [M in 'send' | 'create' | 'read' | 'close']: (moduleId: string, input: unknown) => Promise<unknown>
+    [M in 'send' | 'create' | 'read' | 'close' | 'list']: (moduleId: string, input: unknown) => Promise<unknown>
   }
   const terminals = (id: string) =>
     kernel.hostFor(id).requireService(serviceTokens.TerminalsModuleServiceToken) as unknown as Terminals
   // Approved to type, not to read.
   assert.deepEqual(await terminals('local.reader').send('local.reader', {}), { accepted: true })
   await assert.rejects(terminals('local.reader').read('local.reader', {}), /not approved for "terminals:read"/)
+  await assert.rejects(terminals('local.reader').list('local.reader', {}), /not approved for "terminals:read"/)
   await assert.rejects(terminals('local.bare').create('local.bare', {}), /not approved for "terminals:send"/)
   // A paired device holding every permission it can be granted is still not the person.
   const phone: ExtensionInvoker = {

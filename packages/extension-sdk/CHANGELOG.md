@@ -255,8 +255,12 @@ main })` take the parsed extension.json; the install key defaults to
   and to whoever opened the surface.
 - The permissions `terminals:send` and `terminals:read`, worker tier only, and
   `getTerminalService(studio)`: `send`, `create`, `read` (at most 2000 lines)
-  and `close` (only a terminal the extension opened). Whoever set a call off
-  must be the person at this machine.
+  and `close` (only a terminal the extension opened), and `list` (the live
+  terminals, at most 50, with `terminals:read`). Whoever set a call off must
+  be the person at this machine, and not from a browser tab.
+- A worker that lists `workspace.changed` hears each workspace as it is when
+  it starts, and a surface when it subscribes (again after a reconnect),
+  before any change.
 - `host.supports('events')` and `host.supports('terminals')`.
 - `createFakeMainHost` serves both: `fake.events.fire(event, payload)` and
   `fake.services.terminals`; `createFakeFrameStudio`'s `studioEvent(event,

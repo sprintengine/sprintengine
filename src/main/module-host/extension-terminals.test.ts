@@ -255,3 +255,28 @@ test('an approval narrowed while work waits is read again before the shell start
   grant = ['terminals:send']
   assert.match((await m.terminals.create('local.a', { workspaceId: 'ws-1' })).terminalId, /^terminal-ext-/)
 })
+
+test('list answers the live terminals, in one workspace when asked, saying which the extension opened', async () => {
+  const m = machine()
+  m.add('t-person')
+  m.add('t-agent', { agentId: 'agent-1', agentName: 'Builder', kind: 'agent' })
+  m.add('t-other', { workspaceId: 'ws-2' })
+  m.add('t-exited', { processAlive: false })
+  const mine = (await m.terminals.create('local.a', { workspaceId: 'ws-1', title: 'Tests' })).terminalId
+  const listed = await m.terminals.list('local.a', { workspaceId: 'ws-1' })
+  assert.deepEqual(listed, {
+    terminals: [
+      { terminalId: 't-person', workspaceId: 'ws-1', title: null, opened: false },
+      { terminalId: 't-agent', workspaceId: 'ws-1', title: 'Builder', opened: false },
+      { terminalId: mine, workspaceId: 'ws-1', title: 'Tests', opened: true },
+    ],
+    truncated: false,
+  })
+  assert.equal((await m.terminals.list('local.b')).terminals.length, 4)
+  assert.equal((await m.terminals.list('local.b')).terminals.find((t) => t.terminalId === mine)?.opened, false)
+  for (let index = 0; index < 60; index++) m.add(`t-${index}`)
+  const many = await m.terminals.list('local.a')
+  assert.equal(many.terminals.length, 50)
+  assert.equal(many.truncated, true)
+  await assert.rejects(m.terminals.list('local.a', { workspaceId: 7 } as never), code('invalid_params'))
+})

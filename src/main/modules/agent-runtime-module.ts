@@ -133,13 +133,14 @@ export function createAgentRuntimeModule(
       if (agentControlPlane) host.provideService(AgentControlPlaneToken, () => agentControlPlane)
       if (agentLaunchService) host.provideService(AgentLaunchServiceToken, () => agentLaunchService)
       const { extensionTerminals } = services
-      // Its four methods alone: what it keeps of each extension's terminals is Studio's.
+      // Its five methods alone: what it keeps of each extension's terminals is Studio's.
       if (extensionTerminals)
         host.provideService(TerminalsModuleServiceToken, () => ({
           send: (moduleId, input) => extensionTerminals.send(moduleId, input),
           create: (moduleId, input) => extensionTerminals.create(moduleId, input),
           read: (moduleId, input) => extensionTerminals.read(moduleId, input),
           close: (moduleId, input) => extensionTerminals.close(moduleId, input),
+          list: (moduleId, input) => extensionTerminals.list(moduleId, input),
         }))
       host.provideService(AgentLaunchSettingsToken, () => services.agentLaunchSettings)
       host.provideService(GitHubTokenStoreToken, () => services.githubTokenStore)
