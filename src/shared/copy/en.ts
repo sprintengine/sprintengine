@@ -5155,8 +5155,17 @@ export const en = {
     accountSurfaces: {
       n1PairRequest: '1 pair request',
       pairRequests: (requestCount: unknown) => `${requestCount} pair requests`,
-      n1SessionRunning: '1 session running',
-      sessionsRunning: (length: unknown) => `${length} sessions running`,
+      // The Sessions row's meta: what runs, and apart from it what failed.
+      sessionsMeta: (running: number, failed: number) =>
+        [running > 0 ? `${running} running` : null, failed > 0 ? `${failed} failed` : null].filter(Boolean).join(' · '),
+      // The avatar badge's accessible name, counting the same rows.
+      sessionsBadge: (running: number, failed: number) =>
+        [
+          running > 0 ? (running === 1 ? '1 session running' : `${running} sessions running`) : null,
+          failed > 0 ? (failed === 1 ? '1 session failed' : `${failed} sessions failed`) : null,
+        ]
+          .filter(Boolean)
+          .join(', '),
       sessions: 'Sessions',
       remote: 'Remote',
       processes: 'Processes',

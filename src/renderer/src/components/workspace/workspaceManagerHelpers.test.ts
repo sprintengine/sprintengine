@@ -11,9 +11,11 @@ import {
   newChatInheritedRemoteProject,
   newChatInheritedScope,
   newChatProjectOptionsOf,
+  sessionCounts,
   sessionsAttentionTone,
 } from './workspaceManagerHelpers'
 import type { SessionItem } from './topbar/SessionsPopover'
+import { copy } from '../../../../shared/copy'
 import { test } from 'vitest'
 
 test('workspaceManagerHelpers', async () => {
@@ -605,4 +607,81 @@ test("New chat over a paired machine's chat opens on that chat's project there",
   assert.equal(newChatInheritedRemoteProject(null, null, remote), null)
   assert.equal(newChatInheritedRemoteProject('/Users/dev/site', null, remote), null)
   assert.equal(newChatInheritedRemoteProject(undefined, '/Users/dev/site', remote), null)
+})
+
+// The Sessions list is what runs: a chat at rest holds no process, and a
+// failed session is told apart from the running ones.
+const chatSession = (
+  sessionId: string,
+  status: ConversationSessionSummary['status'],
+  resting?: true,
+): ConversationSessionSummary => ({
+  sessionId,
+  workspaceId: 'ws-1',
+  agentId: `agent-${sessionId}`,
+  providerId: 'claude-agent',
+  modelId: 'sonnet',
+  status,
+  createdAt: 1,
+  updatedAt: 2,
+  ...(resting ? { resting } : {}),
+})
+const listedWorkspace = { id: 'ws-1', name: 'Workspace One', agents: {} } as unknown as Workspace
+
+test('a resting chat is not listed among the sessions, whether it ended ready or failed', () => {
+  const items = getSessionItems(
+    [listedWorkspace],
+    [],
+    [
+      chatSession('live', 'ready'),
+      chatSession('swept', 'ready', true),
+      chatSession('settled-after-failing', 'failed', true),
+      chatSession('stopped', 'stopped'),
+    ],
+  )
+  assert.deepEqual(
+    items.map((row) => row.sessionId),
+    ['live'],
+  )
+})
+
+test('a turn still open is listed even when its child is already gone', () => {
+  const items = getSessionItems(
+    [listedWorkspace],
+    [],
+    [
+      chatSession('crashing', 'active', true),
+      chatSession('asking', 'awaiting_approval'),
+      chatSession('opening', 'starting'),
+    ],
+  )
+  assert.deepEqual(
+    items.map((row) => [row.sessionId, row.status]),
+    [
+      ['crashing', 'working'],
+      ['asking', 'needs-input'],
+      ['opening', 'working'],
+    ],
+  )
+})
+
+test('failed sessions are counted apart from the running ones', () => {
+  const items = getSessionItems(
+    [listedWorkspace],
+    [],
+    [
+      chatSession('a', 'ready'),
+      chatSession('b', 'active'),
+      chatSession('c', 'failed'),
+      chatSession('d', 'ready', true),
+    ],
+  )
+  assert.deepEqual(sessionCounts(items), { running: 2, failed: 1 })
+  assert.deepEqual(sessionCounts([]), { running: 0, failed: 0 })
+  const words = copy.workspace.accountSurfaces
+  assert.equal(words.sessionsMeta(2, 1), '2 running · 1 failed')
+  assert.equal(words.sessionsMeta(2, 0), '2 running')
+  assert.equal(words.sessionsMeta(0, 1), '1 failed')
+  assert.equal(words.sessionsBadge(1, 0), '1 session running')
+  assert.equal(words.sessionsBadge(3, 2), '3 sessions running, 2 sessions failed')
 })

@@ -141,6 +141,30 @@ const CONVERSATION_SESSION_STATUS: Record<ConversationSessionStatus, SessionStat
   stopped: null,
 }
 
+// The list is of what runs: a session with a turn open, or one whose child
+// may still be live. A settled, snoozed or idle-swept chat keeps its session
+// (`ready`, or `failed` after a turn that failed) so the next message resumes
+// it, but it holds no process until then, so it is not listed, as it is not
+// resident either (workspaceResidency.ts). A turn still open is listed even
+// while its child is gone: it is about to end, and says how.
+function conversationSessionStatus(summary: ConversationSessionSummary): SessionStatus | null {
+  const status = CONVERSATION_SESSION_STATUS[summary.status]
+  if (!status) return null
+  if (summary.resting && (summary.status === 'ready' || summary.status === 'failed')) return null
+  return status
+}
+
+/**
+ * What the Sessions row and the avatar's badge say: the rows that run (with a
+ * turn open or a live process), and apart from them the ones that failed,
+ * which still want looking at but are not running.
+ */
+export function sessionCounts(items: readonly Pick<SessionItem, 'status'>[]): { running: number; failed: number } {
+  let failed = 0
+  for (const item of items) if (item.status === 'failed') failed += 1
+  return { running: items.length - failed, failed }
+}
+
 // Readable names for sessions with no workspace.agents record (the Design
 // a detached session uses a stable agent id, not a workspace agent).
 // Shared with the wizard's session adapters so both transports label from
@@ -222,7 +246,7 @@ export function getSessionItems(
   options: SessionItemOptions = {},
 ): SessionItem[] {
   const conversationItems = conversationSessions.flatMap((summary): SessionItem[] => {
-    const status = CONVERSATION_SESSION_STATUS[summary.status]
+    const status = conversationSessionStatus(summary)
     if (!status) return []
     // A summary keyed to an id no workspace row claims (the review guide runs
     // under its review id, or its chat was closed) is NOT dropped — it lands in
@@ -274,7 +298,7 @@ export function getSessionItems(
   // closed chats' `agent-1`s are not twins.
   const conversationAgentKeys = new Set(
     conversationSessions
-      .filter((summary) => CONVERSATION_SESSION_STATUS[summary.status])
+      .filter((summary) => conversationSessionStatus(summary))
       .map((summary) => `${summary.workspaceId} ${summary.agentId}`),
   )
 

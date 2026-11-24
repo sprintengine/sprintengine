@@ -2,7 +2,7 @@ import React from 'react'
 
 import { PointerPopover } from '../ui'
 import type { Tone } from '../ui/tokens'
-import { sessionsAttentionTone } from './workspaceManagerHelpers'
+import { sessionCounts, sessionsAttentionTone } from './workspaceManagerHelpers'
 import { remoteGlyphState, remoteGlyphToneClass, remoteGlyphTooltip, useOpenRemoteSettings } from './topbar/remoteGlyph'
 import { SessionsPopover, type SessionGroup, type SessionItem } from './topbar/SessionsPopover'
 import { useTailnetPresence } from './topbar/useTailnetPresence'
@@ -21,7 +21,7 @@ import { copy } from '../../../../shared/copy'
 // row: it opens at the avatar, from here, and stays up on its own. The avatar
 // wears what the two glyphs used to wear in the top row, or it would go quiet
 // inside a menu: a pair request waiting, which asks for a person, else how many
-// sessions are running.
+// sessions are running or failed, its tone saying which.
 //
 // Popovers rather than anything in the menu, so an OS notification about a pair
 // request can open Remote with the account menu shut.
@@ -85,8 +85,17 @@ export function useAccountSurfaces({
     setProcessesOpen(true)
   }, [setNotificationsOpen, setSessionsOpen])
 
+  // Counted apart: a failed session wants looking at, but it is not running.
+  const sessionCount = sessionCounts(sessions)
+  const sessionsListed = sessionCount.running + sessionCount.failed
   const sessionsRow: AccountMenuRow | null = sessionsOffered
-    ? { meta: sessions.length > 0 ? `${sessions.length} running` : null, onSelect: openSessions }
+    ? {
+        meta:
+          sessionsListed > 0
+            ? copy.workspace.accountSurfaces.sessionsMeta(sessionCount.running, sessionCount.failed)
+            : null,
+        onSelect: openSessions,
+      }
     : null
   // Absent while the feature is off and no machine is paired, as the glyph was:
   // not present-but-empty.
@@ -133,14 +142,11 @@ export function useAccountSurfaces({
               ? copy.workspace.accountSurfaces.n1PairRequest
               : copy.workspace.accountSurfaces.pairRequests(remoteState.requestCount),
         }
-      : sessions.length > 0
+      : sessionsListed > 0
         ? {
-            count: sessions.length,
+            count: sessionsListed,
             tone: sessionsTone,
-            label:
-              sessions.length === 1
-                ? copy.workspace.accountSurfaces.n1SessionRunning
-                : copy.workspace.accountSurfaces.sessionsRunning(sessions.length),
+            label: copy.workspace.accountSurfaces.sessionsBadge(sessionCount.running, sessionCount.failed),
           }
         : null
 
