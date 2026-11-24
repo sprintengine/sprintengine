@@ -246,13 +246,18 @@ describe('a release against the manifest it was made from', () => {
     expect(
       catalogueContributions(
         manifest({
+          tier: 'worker',
+          main: 'dist/main.cjs',
+          permissions: ['workspace:read'],
           contributes: {
             skills: [{ id: 'a', path: 'skills/a' }],
             mcpServers: [{ id: 'srv', name: 'Server', transport: 'http', url: 'https://example.com/mcp' }],
+            events: [{ on: 'workspace.created' }],
           },
         }),
       ),
     ).toEqual([
+      { kind: 'events', name: 'workspace.created' },
       { kind: 'skills', name: 'a' },
       { kind: 'mcpServers', name: 'srv' },
     ])

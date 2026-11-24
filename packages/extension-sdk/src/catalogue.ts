@@ -111,6 +111,7 @@ export const CATALOGUE_CONTRIBUTION_KINDS = [
   'settingsSections',
   'mcpTools',
   'hooks',
+  'events',
   'syntaxes',
   'customEditors',
   'keybindings',
@@ -444,6 +445,7 @@ function contributionName(kind: CatalogueContributionKind, item: Record<string, 
   if (kind === 'menus') return `${String(item.where)} ${String(item.command)}`
   if (kind === 'keybindings') return `${String(item.key)} ${String(item.command)}`
   if (kind === 'hooks') return String(item.point)
+  if (kind === 'events') return String(item.on)
   if (kind === 'settings') return String(item.key)
   if (kind === 'mcpTools') return String(item.name)
   return String(item.id)
