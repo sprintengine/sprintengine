@@ -173,6 +173,19 @@ export function extensionNeedsApproval(manifest: Pick<ExtensionManifest, 'tier' 
   )
 }
 
+/**
+ * Whether an installed extension waits for the person's approval, as Studio
+ * judges it: its tier and contributions (`extensionNeedsApproval`), or, for
+ * one installed from outside the window (`askPerson`), anything but content.
+ * One rule for its standing and for whether an update of it asks more.
+ */
+export function installedNeedsApproval(
+  manifest: Pick<ExtensionManifest, 'tier' | 'contributes'>,
+  options: { askPerson?: boolean } = {},
+): boolean {
+  return extensionNeedsApproval(manifest) || (options.askPerson === true && manifest.tier !== 'content')
+}
+
 /** The fingerprint an approval is bound to: what it may do, and the content of its files. */
 export function extensionApprovalFingerprint(access: ExtensionAccess, contentDigest: string): string {
   const canonical = [

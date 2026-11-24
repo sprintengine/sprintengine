@@ -30,7 +30,7 @@ import {
   devFolderApprovalFingerprint,
   extensionAccess,
   extensionApprovalFingerprint,
-  extensionNeedsApproval,
+  installedNeedsApproval,
   type ExtensionApprovalRecord,
 } from './extension-approvals'
 
@@ -186,7 +186,7 @@ function classifyInstalled(
   const access = extensionAccess(manifest, scan.files)
   const content = { contentDigest: contentDigest!, verifiedFiles: scan.files }
   // An install nobody watched asks the person for anything but content.
-  const asks = extensionNeedsApproval(manifest) || (manifest.tier !== 'content' && ctx.askPerson?.has(key) === true)
+  const asks = installedNeedsApproval(manifest, { askPerson: ctx.askPerson?.has(key) === true })
   if (!asks) return { signature, ...signed, approval: { state: 'not-needed' }, ...content }
   const fingerprint = extensionApprovalFingerprint(access, contentDigest!)
   // A development folder's approval never covers the installed extension under its key.

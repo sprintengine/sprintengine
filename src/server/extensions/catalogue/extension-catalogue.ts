@@ -45,7 +45,7 @@ import type {
 import {
   accessGrowth,
   extensionAccess,
-  extensionNeedsApproval,
+  installedNeedsApproval,
   readExtensionApprovalsSync,
   writeExtensionApproval,
 } from '../../../main/modules/extension-approvals'
@@ -1268,7 +1268,8 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     const approval = readExtensionApprovalsSync(deps.dataDir).get(module.key)
     const growth =
       module.approval === 'not-needed'
-        ? extensionNeedsApproval(next)
+        ? // The rule its standing is judged by: an install nobody watched asks for anything but content.
+          installedNeedsApproval(next, { askPerson: record.askPerson === true })
           ? ['your approval, which it did not need before']
           : []
         : approval

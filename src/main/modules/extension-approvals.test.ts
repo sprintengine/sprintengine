@@ -12,6 +12,7 @@ import {
   extensionAccess,
   extensionApprovalFingerprint,
   extensionNeedsApproval,
+  installedNeedsApproval,
   readExtensionApprovalsSync,
   writeExtensionApproval,
   type ExtensionAccess,
@@ -106,6 +107,14 @@ test('what a manifest asks for, and that only content needs no approval', () => 
     assert.equal(extensionNeedsApproval({ tier, contributes: NO_CONTRIBUTIONS }), true)
   const commanded = { ...NO_CONTRIBUTIONS, commands: [{ id: 'a.run', title: 'A', action: 'chat.new' as const }] }
   assert.equal(extensionNeedsApproval({ tier: 'declarative', contributes: commanded }), true)
+})
+
+test('an install nobody watched asks for anything but content, by the one rule standing and updates share', () => {
+  const skills = { ...NO_CONTRIBUTIONS, skills: [{ id: 'notes', path: 'skills/notes' }] }
+  assert.equal(installedNeedsApproval({ tier: 'declarative', contributes: skills }), false)
+  assert.equal(installedNeedsApproval({ tier: 'declarative', contributes: skills }, { askPerson: true }), true)
+  assert.equal(installedNeedsApproval({ tier: 'content', contributes: NO_CONTRIBUTIONS }, { askPerson: true }), false)
+  assert.equal(installedNeedsApproval({ tier: 'worker', contributes: NO_CONTRIBUTIONS }), true)
 })
 
 const STDIO = {

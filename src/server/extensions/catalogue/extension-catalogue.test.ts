@@ -1289,6 +1289,61 @@ describe('installing and updating from outside the window', () => {
     ])
   })
 
+  test('content installed from outside the window that becomes declarative is held for the person, not updated', async () => {
+    const content = (version: string) => ({
+      'extension.json': JSON.stringify(
+        notesManifest({
+          version,
+          tier: 'content',
+          contributes: { keybindings: [{ command: 'usage.show', key: 'Mod+Alt+U' }] },
+        }),
+        null,
+        2,
+      ),
+    })
+    const declarative = {
+      'extension.json': JSON.stringify(
+        notesManifest({ version: '1.1.0', contributes: { skills: [{ id: 'notes', path: 'skills/notes' }] } }),
+        null,
+        2,
+      ),
+      'skills/notes/SKILL.md': SKILL,
+    }
+    for (const unattended of [true, false]) {
+      const env = setup()
+      const repo = env.repository('acme', 'notes', content('1.0.0'))
+      const v1 = await env.release(repo.folder)
+      const entry = (releases: CatalogueRelease[]) => ({
+        id: 'acme.notes',
+        source: { url: repo.url, ref: 'main' },
+        releases,
+      })
+      env.serveCatalogue('community', [entry([v1])])
+      const installed = await env.lifecycle.catalogue.installKey('acme.notes', { unattended })
+      expect(installed).toMatchObject({ ok: true, approval: { state: 'not-needed' } })
+      env.commit(repo.folder, repo.dir, declarative)
+      env.serveCatalogue('community', [entry([await env.release(repo.folder), v1])])
+      env.advance(60_000)
+      await env.lifecycle.catalogue.updateNow('acme.notes')
+      env.advance(AUTO_UPDATE_HOLD_BACK_MS)
+      const [row] = await env.lifecycle.catalogue.updateNow('acme.notes')
+      const [view] = await env.installed()
+      if (unattended) {
+        // Nobody saw it install, so the skills it would now hand every agent wait for the person.
+        expect(row).toMatchObject({ to: '1.1.0', status: 'held', code: 'approval_required' })
+        expect(row?.growth).toEqual(['your approval, which it did not need before'])
+        expect(view?.extension.version).toBe('1.0.0')
+        expect(view?.approval.state).toBe('not-needed')
+        expect(view?.update).toMatchObject({ version: '1.1.0', held: 'access' })
+      } else {
+        // Installed in Settings, a skills-only declarative release asks nothing, as ever.
+        expect(row).toMatchObject({ to: '1.1.0', status: 'updated' })
+        expect(view?.extension.version).toBe('1.1.0')
+        expect(view?.approval.state).toBe('not-needed')
+      }
+    }
+  })
+
   test('a killed newer release is refused by name, not reported as up to date', async () => {
     const env = setup()
     const { repo, v1, entry } = await installedV1(env)
