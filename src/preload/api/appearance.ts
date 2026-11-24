@@ -14,6 +14,8 @@ type AppearanceIpcRenderer = {
   invoke(channel: 'app:get-agent-notifications'): Promise<AgentNotificationMode>
   invoke(channel: 'app:set-agent-notifications', mode: AgentNotificationMode): Promise<AgentNotificationMode>
   invoke(channel: 'app:get-keep-awake'): Promise<boolean>
+  invoke(channel: 'app:get-browser-tab-auto-close'): Promise<number | null>
+  invoke(channel: 'app:set-browser-tab-auto-close', hours: number | null): Promise<number | null>
   invoke(channel: 'app:set-keep-awake', enabled: boolean): Promise<boolean>
 }
 
@@ -43,6 +45,10 @@ function createAppearanceApi(renderer: AppearanceIpcRenderer) {
     // the blocker, with or without a window.
     getKeepAwake: (): Promise<boolean> => renderer.invoke('app:get-keep-awake'),
     setKeepAwake: (enabled: boolean): Promise<boolean> => renderer.invoke('app:set-keep-awake', enabled),
+    // And "Close browser tabs unused for": main closes them, with or without a window.
+    getBrowserTabAutoClose: (): Promise<number | null> => renderer.invoke('app:get-browser-tab-auto-close'),
+    setBrowserTabAutoClose: (hours: number | null): Promise<number | null> =>
+      renderer.invoke('app:set-browser-tab-auto-close', hours),
   } satisfies Pick<
     ElectronApi,
     | 'setColorScheme'
@@ -57,6 +63,8 @@ function createAppearanceApi(renderer: AppearanceIpcRenderer) {
     | 'setAgentNotifications'
     | 'getKeepAwake'
     | 'setKeepAwake'
+    | 'getBrowserTabAutoClose'
+    | 'setBrowserTabAutoClose'
   >
 }
 

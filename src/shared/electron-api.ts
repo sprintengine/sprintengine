@@ -298,6 +298,8 @@ export type ElectronApi = {
   browserLocalServers: (workspaceId: string) => Promise<LocalServer[]>
   /** Tell main which tab the person is looking at in a workspace's pane (agent tools target it). */
   browserNoteActive: (workspaceId: string, tabId: string | null) => Promise<void>
+  /** Close this browser tab as its close button does (the Processes list, or a tab gone unused). */
+  onBrowserCloseRequest?: (cb: (payload: { workspaceId: string; tabId: string }) => void) => () => void
   /** An agent asked for a URL in this workspace's pane (browser.open); the renderer opens or navigates a tab. */
   onBrowserOpenRequest: (
     cb: (payload: { workspaceId: string; url: string | null; tabId: string | null }) => void,
@@ -683,6 +685,9 @@ export type ElectronApi = {
   /** Whether agents are given the built-in browser's tools (Settings → Agents); null where main has none. */
   getAgentBrowserTools: () => Promise<boolean | null>
   setAgentBrowserTools: (enabled: boolean) => Promise<boolean | null>
+  /** Hours a built-in browser tab may go unused before it is closed, null for never (Settings → Agents); absent where main has none. */
+  getBrowserTabAutoClose?: () => Promise<number | null>
+  setBrowserTabAutoClose?: (hours: number | null) => Promise<number | null>
   /** Banners for a chat that finished or waits on the person (Settings → General); null where main has none. */
   getAgentNotifications: () => Promise<AgentNotificationMode | null>
   setAgentNotifications: (mode: AgentNotificationMode) => Promise<AgentNotificationMode | null>

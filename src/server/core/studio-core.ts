@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { normalizeCliPermissionPreset, parseCliPermissionPreset } from '../../shared/cli-permission-preset'
 import { conversationWorkingRoot, defaultAgent } from '../../shared/agent-state'
+import { isMintedAgentId } from '../../shared/agent-ids'
 import { getWorkspaceChangeSummary } from '../../main/workspace-change-summary'
 import { isMachinePath } from '../../shared/machine-paths'
 import { isWorkspaceTombstoned } from '../../shared/workspace-registry'
@@ -111,6 +112,7 @@ import { listKnownWorkspaceRoots } from '../../main/workspace-roots'
 import type { StudioPaths } from '../platform/studio-paths'
 import { createPullRequestDomain } from '../pull-requests/pull-request-domain'
 import { createLocalServerDomain } from '../local-servers/local-server-domain'
+import { createAgentProcessDomain } from '../processes/agent-process-domain'
 import { localConversationBackend, refuseOtherEnvironments, type ConversationBackend } from './conversation-backend'
 import { environmentRouteOfRecord, type EnvironmentClients } from '../../shared/environment-clients'
 import { createEnvironmentReplicas } from '../environment/environment-replicas'
@@ -649,6 +651,21 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   conversationRuntime.onSessionIdle((summary) => subagents.onSessionIdle(summary))
   workspaceSyncService.subscribeEvents((event) => {
     if (event.type === 'workspace.agents_updated') subagents.onAgentsChanged(event.payload.workspaceId)
+    // A chat that is gone takes its sessions and their processes with it,
+    // rather than leaving them listed under no chat until the app quits.
+    if (event.type === 'workspace.removed') {
+      const { workspaceId } = event.payload
+      void conversationRuntime
+        .forgetWorkspaceSessions(workspaceId, {
+          // An agent moved to another chat is followed there by its minted id.
+          followedElsewhere: (agentId) =>
+            isMintedAgentId(agentId) &&
+            workspaceRegistry.getRecords().some((record) => record.id !== workspaceId && record.agents[agentId]),
+        })
+        .catch((error: unknown) => {
+          console.warn(`[conversations] Ending a removed chat's sessions failed: ${String(error)}`)
+        })
+    }
   })
   subagents.reconcile()
 
@@ -952,6 +969,32 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         level: 'warning',
         source: 'workspace',
         title: 'Local servers',
+        message,
+        ...(error === undefined
+          ? {}
+          : { details: error instanceof Error ? (error.stack ?? error.message) : String(error) }),
+      })
+    },
+  })
+  // What this machine's agents started and left running (agent-process-domain.ts):
+  // read from the processes themselves on each ask, where the agents run.
+  const processes = createAgentProcessDomain({
+    // A program is left behind only once its chat is: settled, removed, or
+    // its workspace gone. A registry with no records at all may simply not
+    // have loaded, which is not every chat removed.
+    chatOpen: (workspaceId, agentId) => {
+      if (isWorkspaceTombstoned(workspaceRegistry.getTombstones(), workspaceId)) return false
+      const record = workspaceRegistry.getRecord(workspaceId)
+      if (!record) return workspaceRegistry.getRecords().length > 0 ? false : null
+      if (record.settledAt) return false
+      if (agentId && !record.agents[agentId]) return false
+      return true
+    },
+    log: (message, error) => {
+      void writeDiagnosticLog({
+        level: 'warning',
+        source: 'workspace',
+        title: 'Agent processes',
         message,
         ...(error === undefined
           ? {}
@@ -1841,6 +1884,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     stopSettlementSweep,
     pullRequests,
     localServers,
+    processes,
     usageLimitResumes,
     scheduledMessages,
     /** This server's scheduled agents (studio-scheduled-agents.ts). */

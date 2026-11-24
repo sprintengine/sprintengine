@@ -5317,6 +5317,9 @@ export default function WorkspaceManager() {
         remoteOpen={accountSurfaces.remoteOpen}
         onCloseRemote={() => accountSurfaces.setRemoteOpen(false)}
         presence={accountSurfaces.presence}
+        processesOpen={accountSurfaces.processesOpen}
+        onCloseProcesses={() => accountSurfaces.setProcessesOpen(false)}
+        processes={accountSurfaces.processes}
       />
 
       <div className="relative flex min-h-0 flex-1 flex-row">
@@ -5357,6 +5360,7 @@ export default function WorkspaceManager() {
                 logout={logout}
                 remoteRow={accountSurfaces.remoteRow}
                 sessionsRow={accountSurfaces.sessionsRow}
+                processesRow={accountSurfaces.processesRow}
                 accountBadge={accountSurfaces.badge}
                 bellSlot={railHoldsAccount ? notificationBell(true) : null}
                 accountInBand={!railHoldsAccount}
@@ -5817,6 +5821,7 @@ export default function WorkspaceManager() {
                       logout={logout}
                       remoteRow={accountSurfaces.remoteRow}
                       sessionsRow={accountSurfaces.sessionsRow}
+                      processesRow={accountSurfaces.processesRow}
                       accountBadge={accountSurfaces.badge}
                       onRail={false}
                       placement="bottom-end"

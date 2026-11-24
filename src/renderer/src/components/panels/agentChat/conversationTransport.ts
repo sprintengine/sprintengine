@@ -77,8 +77,9 @@ export type ConversationTransportCapabilities = ChatCapabilities
 /** What an action answers: the local session API's result, or a remote command's. */
 type ConversationTransportResult =
   | { ok: true; session?: ConversationSessionSummary; notice?: string }
-  // `code` as the runtime names a refusal (`session_not_found`: the session is gone there).
-  | { ok: false; message: string; code?: string }
+  // `code` as the runtime names a refusal (`session_not_found`: the session is
+  // gone there; `busy`: a turn runs there, to send again after `retryAfterMs`).
+  | { ok: false; message: string; code?: string; retryAfterMs?: number }
 
 /**
  * The environment a chat runs in, as its server names it: what a chat view

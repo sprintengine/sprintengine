@@ -570,6 +570,7 @@ if (serverHost) {
     studioPluginStatus: (workspaceRoot) => services.studioPluginStatus(workspaceRoot),
     artifacts: { thumbnailer: createElectronThumbnailer(), askNatively: askToSetUpArtifacts },
     extensionOpener: services.extensionOpener,
+    browserTabs: services.browserTabs,
   })
 }
 

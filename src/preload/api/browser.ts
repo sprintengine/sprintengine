@@ -63,6 +63,8 @@ export const browserApi = {
   onBrowserOpenRequest: (
     cb: (payload: { workspaceId: string; url: string | null; tabId: string | null }) => void,
   ): (() => void) => subscribe('browser:open-request', cb),
+  onBrowserCloseRequest: (cb: (payload: { workspaceId: string; tabId: string }) => void): (() => void) =>
+    subscribe('browser:close-request', cb),
   onBrowserPointer: (cb: (event: BrowserPointerEvent) => void): (() => void) => subscribe('browser:pointer', cb),
   onBrowserViewportRequest: (cb: (payload: { tabId: string; viewport: BrowserViewport }) => void): (() => void) =>
     subscribe('browser:viewport-request', cb),
@@ -104,6 +106,7 @@ export const browserApi = {
   | 'browserLocalServers'
   | 'browserNoteActive'
   | 'onBrowserOpenRequest'
+  | 'onBrowserCloseRequest'
   | 'onBrowserPointer'
   | 'onBrowserViewportRequest'
   | 'onBrowserState'

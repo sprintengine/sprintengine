@@ -40,6 +40,7 @@ import { createServerStateMirror, type ServerStateMirror } from './server-mirror
 import { createServerSupervisor, type ServerSupervisor, type ShutdownProgress } from './supervisor'
 import { forkUtilityServer } from './utility-launcher'
 import { prefixedId } from '../../shared/random-id'
+import type { StudioBrowserTabs } from '../../server/processes/browser-tabs'
 
 // The shell's half of the Studio server out of process, put together: the
 // supervisor that forks and watches it, the log its output goes to, the port
@@ -70,6 +71,8 @@ export type DesktopServerHost = {
       studioPluginStatus(workspaceRoot: string | null): Promise<unknown>
       artifacts: { thumbnailer: ArtifactThumbnailer; askNatively: ArtifactsSetupConsent }
       extensionOpener: ExtensionOpener
+      /** The built-in browser's tabs, which the server lists and closes from any client. */
+      browserTabs: StudioBrowserTabs
     },
   ): void
   /** Tickets for the windows' connections to the server's window listener, once it is serving. */
@@ -232,6 +235,11 @@ export function createDesktopServerHost(options: {
       })
       serveArtifactsShell(supervisor.rpc, caches.artifacts)
       serveExtensionOpen(supervisor.rpc, caches.extensionOpener)
+      supervisor.rpc.handle(SHELL_METHODS.browserTabsList, () => caches.browserTabs.list())
+      supervisor.rpc.handle(SHELL_METHODS.browserTabsClose, async (params) => {
+        const tabId = (params as { tabId?: unknown } | null)?.tabId
+        return typeof tabId === 'string' && tabId.length > 0 ? caches.browserTabs.close(tabId) : false
+      })
     },
     windowTickets: {
       async windowTicket(request) {

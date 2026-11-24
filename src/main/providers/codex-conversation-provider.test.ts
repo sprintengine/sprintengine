@@ -481,6 +481,29 @@ test('resume uses a stored thread cursor and crash terminates a running turn', a
   expect(f.adapter.listLiveSessions?.()[0]?.hasChildProcess).toBe(false)
 })
 
+test('an app-server that ends by itself between turns tells the runtime, and one closed on purpose does not', async () => {
+  const f = fixture()
+  let exited = 0
+  await f.adapter.startSession({ ...f.input, onChildExited: () => exited++ })
+  const done = f.send()
+  await f.started
+  await f.message({ method: 'turn/completed', params: { turn: { status: 'completed' } } })
+  await done
+  // Closed by the idle sweep: the runtime asked for it, and is not told again.
+  expect(f.adapter.disposeChildProcess?.(f.input.sessionId)).toBe(true)
+  f.crash()
+  expect(exited).toBe(0)
+
+  f.nextTurn()
+  const again = f.send()
+  await f.started
+  await f.message({ method: 'turn/completed', params: { turn: { status: 'completed' } } })
+  await again
+  f.crash()
+  expect(exited).toBe(1)
+  expect(f.adapter.listLiveSessions?.()[0]?.hasChildProcess).toBe(false)
+})
+
 test('unowned threads and unknown server requests never get an implicit approval', async () => {
   const f = fixture()
   await f.adapter.startSession(f.input)

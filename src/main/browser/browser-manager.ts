@@ -132,6 +132,9 @@ export type BrowserManagerDeps = {
   /** Linux without a working `lsof`: the listeners these pids hold, read from `/proc`. */
   listProcListeners?: (pids: readonly number[]) => Promise<Array<{ pid: number; port: number }>>
   probeServer?: (url: string) => Promise<boolean>
+  /** Whether the window a tab is hosted in is on screen; by default, visible and not minimised. */
+  isHostShowing?: (host: WebContents) => boolean
+  now?: () => number
   /**
    * SSH machines' partitions (phase 8): a workspace on one gets that
    * machine's, behind its forward; null keeps this computer's.
@@ -498,9 +501,47 @@ export function createAgentTabAssignments(now: () => number = Date.now) {
   }
 }
 
+/**
+ * One tab as the Processes list shows it: what it is, which chat holds it, how
+ * long it has been open and unused, and whether it is making sound now.
+ */
+export type BrowserTabListing = {
+  tabId: string
+  workspaceId: string
+  title: string
+  url: string
+  openedAt: number
+  lastUsedAt: number
+  audible: boolean
+  agentIds: string[]
+  /** The tab the person has in front of them: its pane's active tab, in a window on screen. */
+  inView: boolean
+}
+
+/** How long a close asked of the windows waits for the tab to go. */
+const CLOSE_WAIT_MS = 3_000
+
 export function createBrowserManager(deps: BrowserManagerDeps) {
+  const now = deps.now ?? Date.now
   const tabs = new Map<string, BrowserTab>()
+  // When each tab was opened and last used, kept by id so a tab moving
+  // between windows (unregistered here, registered there) keeps its clock.
+  const usage = new Map<string, { openedAt: number; lastUsedAt: number }>()
+  const used = (tabId: string) => {
+    const known = usage.get(tabId)
+    if (known) known.lastUsedAt = now()
+  }
+  const isHostShowing =
+    deps.isHostShowing ??
+    ((host: WebContents) => {
+      const window = BrowserWindow.fromWebContents(host)
+      return Boolean(window && !window.isDestroyed() && window.isVisible() && !window.isMinimized())
+    })
   const activeTabByWorkspace = new Map<string, string>()
+  // What each window shows of each workspace's pane, by the window: a tab
+  // popped out into a window of its own is in view there whatever the pane it
+  // came from shows next (the Processes list, and closing tabs left unused).
+  const shownByHost = new Map<number, Map<string, string | null>>()
   const agentAssignments = createAgentTabAssignments()
   const unregisterListeners = new Set<(tabId: string) => void>()
   const humanInputListeners = new Set<(tabId: string) => void>()
@@ -520,6 +561,7 @@ export function createBrowserManager(deps: BrowserManagerDeps) {
   /** The person acted on the page: the epoch moves, the page is theirs, the control layer hears it. */
   function humanTookOver(tab: BrowserTab): void {
     tab.epoch += 1
+    used(tab.tabId)
     claim(tab, 'human')
     for (const listener of humanInputListeners) listener(tab.tabId)
   }
@@ -658,6 +700,7 @@ export function createBrowserManager(deps: BrowserManagerDeps) {
       patch(tab, { url: details.url, title: '', faviconUrl: null, error: null, loading: true })
     })
     on('did-navigate', () => {
+      used(tab.tabId)
       const navigation = readNavigation(wc)
       patch(tab, { ...navigation, documentUrl: navigation.url, error: null })
       // A new document loses the emulated media; re-assert the scheme.
@@ -681,7 +724,10 @@ export function createBrowserManager(deps: BrowserManagerDeps) {
       void applyColorScheme(tab)
     })
     on('zoom-changed', () => patch(tab, { zoomFactor: wc.getZoomFactor() }))
-    on('did-navigate-in-page', () => patch(tab, { ...readNavigation(wc) }))
+    on('did-navigate-in-page', () => {
+      used(tab.tabId)
+      patch(tab, { ...readNavigation(wc) })
+    })
     on('page-title-updated', (_event: unknown, title: string) => patch(tab, { title }))
     on('page-favicon-updated', (_event: unknown, favicons: string[]) => {
       const [first] = favicons
@@ -889,6 +935,7 @@ export function createBrowserManager(deps: BrowserManagerDeps) {
         controllerTimer: null,
       }
       tab.dispose = attach(tab)
+      if (!usage.has(input.tabId)) usage.set(input.tabId, { openedAt: now(), lastUsedAt: now() })
       // Guests inherit the embedder's zoom; a tab is its own document.
       wc.setZoomFactor(1)
       tabs.set(input.tabId, tab)
@@ -912,6 +959,10 @@ export function createBrowserManager(deps: BrowserManagerDeps) {
       // afresh rather than failing against a tab that is gone — unless the
       // tab is only moving windows and registers again (`restore` above).
       agentAssignments.release(tabId, tab.workspaceId)
+      // Its clock outlives a move between windows, not a close.
+      setTimeout(() => {
+        if (!tabs.has(tabId)) usage.delete(tabId)
+      }, TAB_MOVE_GRACE_MS).unref?.()
       for (const listener of unregisterListeners) listener(tabId)
     },
 
@@ -932,6 +983,21 @@ export function createBrowserManager(deps: BrowserManagerDeps) {
     noteActive(workspaceId: string, tabId: string | null): void {
       if (tabId) activeTabByWorkspace.set(workspaceId, tabId)
       else activeTabByWorkspace.delete(workspaceId)
+    },
+
+    /**
+     * The browser tab a window shows of a workspace's pane, as that window
+     * says, whether or not it may name the agents' tab: what makes a tab "in
+     * view" wherever it is.
+     */
+    noteShown(host: WebContents, workspaceId: string, tabId: string | null): void {
+      let shown = shownByHost.get(host.id)
+      if (!shown) {
+        shown = new Map()
+        shownByHost.set(host.id, shown)
+        host.once?.('destroyed', () => shownByHost.delete(host.id))
+      }
+      shown.set(workspaceId, tabId)
     },
 
     /** The tab last noted as the one the person is looking at, as noted. */
@@ -991,7 +1057,9 @@ export function createBrowserManager(deps: BrowserManagerDeps) {
     /** The agent holds the page for a moment; the toolbar badge and the cursor overlay show it. */
     noteAgentActivity(tabId: string): void {
       const tab = requireTab(tabId)
-      if (tab) claim(tab, 'agent')
+      if (!tab) return
+      used(tabId)
+      claim(tab, 'agent')
     },
 
     /** Called with the tab id whenever the person's own input moves the epoch. */
@@ -1039,6 +1107,59 @@ export function createBrowserManager(deps: BrowserManagerDeps) {
       return [...tabs.values()]
         .filter((tab) => tab.workspaceId === workspaceId && !tab.wc.isDestroyed())
         .map((tab) => tab.state)
+    },
+
+    /** Every tab open, in every workspace and window, the longest-open first (the Processes list). */
+    listAllTabs(): BrowserTabListing[] {
+      const listed: BrowserTabListing[] = []
+      for (const tab of tabs.values()) {
+        if (tab.wc.isDestroyed()) continue
+        const clock = usage.get(tab.tabId) ?? { openedAt: now(), lastUsedAt: now() }
+        listed.push({
+          tabId: tab.tabId,
+          workspaceId: tab.workspaceId,
+          title: tab.state.title,
+          url: tab.state.url,
+          openedAt: clock.openedAt,
+          lastUsedAt: clock.lastUsedAt,
+          audible: tab.wc.isCurrentlyAudible(),
+          agentIds: agentAssignments
+            .holding(tab.workspaceId)
+            .filter((held) => held.tabId === tab.tabId)
+            .map((held) => held.agentId),
+          // In view in any window that shows it, the pane's or a pop-out's.
+          inView:
+            !tab.host.isDestroyed() &&
+            shownByHost.get(tab.host.id)?.get(tab.workspaceId) === tab.tabId &&
+            isHostShowing(tab.host),
+        })
+      }
+      return listed.sort((a, b) => a.openedAt - b.openedAt)
+    },
+
+    /**
+     * Close a tab the way its pane's close button does: the pane is the
+     * renderer's, so the windows are asked to close it (each closes it if its
+     * pane holds it), and this answers once the guest has gone, or false when
+     * no window took it in time.
+     */
+    requestClose(tabId: string): Promise<boolean> {
+      const tab = tabs.get(tabId)
+      if (!tab) return Promise.resolve(false)
+      return new Promise((resolvePromise) => {
+        const timer = setTimeout(() => {
+          unregisterListeners.delete(listener)
+          resolvePromise(!tabs.has(tabId))
+        }, CLOSE_WAIT_MS)
+        const listener = (gone: string) => {
+          if (gone !== tabId) return
+          clearTimeout(timer)
+          unregisterListeners.delete(listener)
+          resolvePromise(true)
+        }
+        unregisterListeners.add(listener)
+        deps.broadcast('browser:close-request', { workspaceId: tab.workspaceId, tabId })
+      })
     },
 
     /** The window WebContents hosting a tab, for sender checks in IPC. */

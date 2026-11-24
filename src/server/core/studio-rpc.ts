@@ -4,6 +4,7 @@ import type { DistributionMachine } from '../wsl/distribution-machine'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { basename, isAbsolute, join, relative, sep } from 'node:path'
+import type { StudioBrowserTabs } from '../processes/browser-tabs'
 
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import {
@@ -99,6 +100,8 @@ export function createStudioRpc(
     terminalHost?: DistributionTerminalHost
     /** A WSL distribution's: what it does on its machine for the desktop (git, the home). */
     machine?: DistributionMachine
+    /** The built-in browser's tabs, where the shell around this Studio has the browser pane (a desktop). */
+    browserTabs?: StudioBrowserTabs
   } = {},
 ): StudioRpcService {
   // The dev servers this machine publishes on the tailnet: Settings and the
@@ -106,6 +109,7 @@ export function createStudioRpc(
   const shares = createTailnetShareService()
   const service = createStudioRpcService({
     ...(options.hostKind ? { hostKind: options.hostKind } : {}),
+    ...(options.browserTabs ? { browserTabs: options.browserTabs } : {}),
     // A save the person made in an editor, on whichever client, meets this
     // Studio's extensions' hooks, as the connection that saved.
     editorSaveHooks: ({ path, text, grant, workspaceId, languageId }) =>
@@ -243,6 +247,9 @@ export function createStudioRpc(
     // The servers the conversations' agents started, checked here and drawn
     // by every client.
     localServers: core.localServers,
+    // The programs its agents started on this machine, read here and
+    // stopped from any owner's client.
+    processes: core.processes,
     // The machines this computer offers (itself, its WSL distributions), for
     // the owner's New chat and Settings ▸ Machines. A machine's own Studio
     // is one of those machines, and lists none.

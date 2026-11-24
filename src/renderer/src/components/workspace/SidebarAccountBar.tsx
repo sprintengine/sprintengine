@@ -19,6 +19,7 @@ import { InstalledStack } from './globalSurface/extensions/catalogue/InstalledSt
 import type { RailBadge } from './AppRail'
 import type { Tone } from '../ui/tokens'
 import { SessionsIcon } from './topbar/SessionsPopover'
+import { ProcessesIcon } from './topbar/ProcessesPopover'
 import { copy as appCopy } from '../../../../shared/copy'
 
 // The account + Settings cluster lives at the sidebar bottom, relocated from
@@ -172,6 +173,7 @@ function AccountPopover({
   onSignIn,
   remote,
   sessions,
+  processes = null,
   onChosen,
 }: {
   authState: SprintEngineAuthState
@@ -181,6 +183,7 @@ function AccountPopover({
   onSignIn: () => void
   remote: AccountMenuRow | null
   sessions: AccountMenuRow | null
+  processes?: AccountMenuRow | null
   /** A row was pressed: the menu closes, and what it opened stands on its own. */
   onChosen: () => void
 }) {
@@ -233,7 +236,7 @@ function AccountPopover({
           <AccountMenuItem onSelect={onRetry}>{appCopy.workspace.sidebarAccountBar.tryAgain}</AccountMenuItem>
         </div>
       ) : null}
-      {remote || sessions ? (
+      {remote || sessions || processes ? (
         <div className="pb-1">
           {remote ? (
             <AccountRow
@@ -251,9 +254,17 @@ function AccountPopover({
               onChosen={onChosen}
             />
           ) : null}
+          {processes ? (
+            <AccountRow
+              glyph={<ProcessesIcon className="icon-sm" />}
+              label={appCopy.workspace.sidebarAccountBar.processes}
+              row={processes}
+              onChosen={onChosen}
+            />
+          ) : null}
         </div>
       ) : null}
-      {message || remote || sessions ? <MenuDivider /> : null}
+      {message || remote || sessions || processes ? <MenuDivider /> : null}
       <div className="pb-1">
         {signedIn ? (
           <AccountMenuItem onSelect={onLogout}>{appCopy.workspace.sidebarAccountBar.signOut}</AccountMenuItem>
@@ -276,6 +287,8 @@ export type AccountControlProps = {
   /** Null: the row is absent, as its glyph was while the feature is off. */
   remoteRow?: AccountMenuRow | null
   sessionsRow?: AccountMenuRow | null
+  /** What agents started and left running here, and the built-in browser's tabs. */
+  processesRow?: AccountMenuRow | null
   /** What the avatar wears for those rows, which would go quiet inside a menu. */
   accountBadge?: AccountBadge | null
 }
@@ -328,6 +341,7 @@ export function AccountControl({
   logout,
   remoteRow = null,
   sessionsRow = null,
+  processesRow = null,
   accountBadge = null,
   onRail,
   placement = 'top-start',
@@ -426,6 +440,7 @@ export function AccountControl({
         }}
         remote={remoteRow}
         sessions={sessionsRow}
+        processes={processesRow}
         onChosen={() => setAccountOpen(false)}
       />
     </Popover>
@@ -454,6 +469,7 @@ export default function SidebarAccountBar({
   openExtensions,
   remoteRow = null,
   sessionsRow = null,
+  processesRow = null,
   accountBadge = null,
   bellSlot = null,
   accountInBand = false,
@@ -563,6 +579,7 @@ export default function SidebarAccountBar({
           logout={logout}
           remoteRow={remoteRow}
           sessionsRow={sessionsRow}
+          processesRow={processesRow}
           accountBadge={accountBadge}
           onRail={collapsed}
         />

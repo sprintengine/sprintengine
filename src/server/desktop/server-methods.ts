@@ -20,6 +20,8 @@ export const SERVER_METHODS = {
   conversationPeekEvents: 'conversations.peek-events',
   /** → the folders the chats live in, for diagnostics. */
   conversationRoots: 'conversations.live-roots',
+  /** → the workspace ids whose chats have a turn running now: what keeps their browser tabs open. */
+  conversationsWorking: 'conversations.working',
   /**
    * `{ workspaceRoot, name, baseRef? }` → `{ worktreePath, branch, dependencyInstall? }` or
    * `{ error }`: an agent-at-launch worktree for the shell's `agent.launch`, cut
@@ -148,6 +150,10 @@ export const SHELL_METHODS = {
    * windows are the shell's.
    */
   extensionOpen: 'shell.extension-open',
+  /** → `StudioBrowserTab[]`: the built-in browser's tabs, which only the shell has (`browserTabs.list`). */
+  browserTabsList: 'shell.browser-tabs.list',
+  /** `{ tabId }` → whether it closed: a tab closed as its pane's close button does (`browserTabs.close`). */
+  browserTabsClose: 'shell.browser-tabs.close',
 } as const
 
 /** One-way, either direction. */

@@ -86,6 +86,12 @@ import { createQuitConfirmationStore } from './quit-confirmation-store'
 import { createAgentNotificationsStore } from './agent-notifications-store'
 import { readStudioEnvironmentId } from '../server/environment/environment-id'
 import { agentBrowserToolGate, createAgentBrowserToolsStore } from './agent-browser-tools-store'
+import {
+  createBrowserTabAutoCloseSetting,
+  createBrowserTabSweep,
+  listedBrowserTabs,
+} from './browser/browser-tab-auto-close'
+import type { StudioBrowserTabs } from '../server/processes/browser-tabs'
 import { createAgentNotifier } from './agent-notifications'
 import type { ChatLink } from '../shared/deep-link'
 import { createKeepAwakeStore } from './keep-awake-store'
@@ -94,6 +100,7 @@ import { countWorkingTerminalAgents, createQuitConfirmation, type QuitStopping }
 import { backgroundWorkOf, quitStopsOf } from '../server/core/background-work'
 import { askToQuitWhileWorking } from './quit-confirmation-electron'
 import { conversationSummaryPhase, conversationTurnInProgress } from '../shared/conversation/phase'
+import { workspaceLastActiveAt } from '../shared/workspace-lifecycle'
 import { createAnalyticsService } from './telemetry/analytics-service'
 import { createTelemetryConsentStore } from './telemetry/consent-store'
 import { readInstallId } from './telemetry/install-id'
@@ -1221,6 +1228,63 @@ export function createAppServices(
     ...(ssh ? { machinePartitions: ssh.panes } : {}),
   })
   const browserControl = createBrowserControl(browserManager)
+  // Built-in browser tabs, for the Processes list on every client
+  // (`browserTabs.*`), and closed once unused for the setting's time
+  // (browser-tab-auto-close.ts). Whether a chat's agent is still at work is
+  // read off the registry's clocks, and off its live session where the chats
+  // run in this process.
+  const browserTabAutoClose = createBrowserTabAutoCloseSetting({
+    resolveUserDataDir: () => app.getPath('userData'),
+    log: (message) =>
+      void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Browser tabs', message }),
+  })
+  // Which chats' agents are working right now: a terminal agent by its pty
+  // and hook state, a chat by its session, asked of the server when the chats
+  // run in its process. Null when that could not be asked: then every chat
+  // counts as working, and nothing is closed on a guess.
+  const workingWorkspaceIds = async (): Promise<ReadonlySet<string> | null> => {
+    const ids = new Set<string>()
+    for (const session of shellTerminals.list()) {
+      if (session.kind === 'agent' && session.workspaceId && terminalAgentWorking(session)) ids.add(session.workspaceId)
+    }
+    if (server) {
+      const working = await server.rpc.call<string[]>(SERVER_METHODS.conversationsWorking, {}).catch(() => null)
+      if (!Array.isArray(working)) return null
+      for (const id of working) ids.add(id)
+    } else {
+      const listed = conversations.listSessions()
+      if (listed.ok)
+        for (const session of listed.sessions)
+          if (conversationSummaryPhase(session) === 'running') ids.add(session.workspaceId)
+    }
+    return ids
+  }
+  // When each chat's agent last worked: now while it works, its registry
+  // clocks otherwise, null once the chat is settled or gone.
+  const browserTabAgentClock = async (): Promise<(workspaceId: string) => number | null> => {
+    const working = await workingWorkspaceIds()
+    const at = Date.now()
+    const records = new Map(workspaceSyncService.getSnapshot().state.workspaces.map((record) => [record.id, record]))
+    return (workspaceId) => {
+      if (!working || working.has(workspaceId)) return at
+      const record = records.get(workspaceId)
+      if (!record || record.settledAt) return null
+      return workspaceLastActiveAt(record)
+    }
+  }
+  const browserTabs: StudioBrowserTabs = {
+    list: async () =>
+      listedBrowserTabs(browserManager.listAllTabs(), browserTabAutoClose.hours(), await browserTabAgentClock()),
+    close: (tabId) => browserManager.requestClose(tabId),
+  }
+  const browserTabSweep = createBrowserTabSweep({
+    listTabs: () => browserManager.listAllTabs(),
+    close: (tabId) => browserManager.requestClose(tabId),
+    setting: browserTabAutoClose,
+    agentClock: browserTabAgentClock,
+    log: (message) => void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Browser tabs', message }),
+  })
+  browserTabSweep.start()
   browserManager.onUnregister((tabId) => browserControl.forget(tabId))
   setAfterWindowZoom((contents) => browserManager.reapplyGuestZoom(contents))
   // Recording a tab to video for the agents' `browser.record_*` tools: the
@@ -1778,6 +1842,7 @@ export function createAppServices(
         // windows and agents use, and the same tools that list and draw them,
         // each held to where a board's file really is.
         canvas: canvasRemoteSubscribers.host(canvasService, canvasToolsOver),
+        browserTabs,
       })
     : null
   // Where the person's attention is, for routing a call to the window in
@@ -2172,6 +2237,10 @@ export function createAppServices(
     agentNotificationsStore,
     agentNotifier,
     agentBrowserToolsStore,
+    browserTabAutoClose,
+    /** The built-in browser's tabs, which the server serves from the shell when it runs out of process. */
+    browserTabs,
+    browserTabSweep,
     setChatLinkOpener(open: (link: ChatLink) => void): void {
       chatLinkOpener = open
     },

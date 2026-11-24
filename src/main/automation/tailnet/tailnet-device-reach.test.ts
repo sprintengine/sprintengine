@@ -192,6 +192,11 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'canvas.stage': WORKSPACE_OPERATE,
   'canvas.commit': WORKSPACE_OPERATE,
   'canvas.takePen': WORKSPACE_OPERATE,
+
+  // The desktop's built-in browser tabs: listed on a workspace read, closed
+  // on `workspace:operate`, as a person closes one in the pane.
+  'browserTabs.list': WORKSPACE,
+  'browserTabs.close': WORKSPACE_OPERATE,
 }
 
 const DEVICE_TOPICS: Readonly<Record<string, readonly TailnetScope[]>> = {
@@ -224,6 +229,8 @@ const REFUSED_TO_DEVICES: Readonly<Record<string, string>> = {
   'localServers.stop': 'stops a program on this machine',
   'localServers.remove': 'drops what an agent recorded',
   'localServers.changed': 'the list’s change push',
+  'processes.list': 'the programs agents started on this machine and the command lines they were started with',
+  'processes.stop': 'ends programs on this machine',
   'tools.grant': 'changes which apps’ tools an agent may call: settings:write, which no device holds',
   'tools.grants': 'client tools, for an app that offers them (tools:offer)',
   'tools.catalog': 'client tools, for an app that offers them (tools:offer); the topic too',
