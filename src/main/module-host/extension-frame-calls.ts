@@ -10,6 +10,11 @@
 // frame's bridge turns into a rejected call with that code.
 
 import { extensionFrameMethod } from '../../../packages/extension-sdk/src/services'
+import {
+  EXTENSION_EVENT_SPECS,
+  EXTENSION_FRAME_EVENTS,
+  isExtensionFrameEventName,
+} from '../../../packages/extension-sdk/src/events'
 import type { ExtensionFrameMethod } from '../../../packages/extension-sdk/src/frame'
 import type {
   ModuleMethodAccess,
@@ -96,7 +101,7 @@ function frameLogAdmits(moduleId: string, now = Date.now()): boolean {
 }
 
 /** The frame methods the window that drew the frame carries out. */
-type ClientFrameMethod = 'toast' | 'chat.draft' | 'doors.open' | 'tabs.focus'
+type ClientFrameMethod = 'toast' | 'chat.draft' | 'doors.open' | 'tabs.focus' | 'events.subscribe'
 
 /** The longest Settings key, and the most a Settings value may hold. */
 const MAX_SETTING_KEY_CHARS = 200
@@ -324,6 +329,30 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
       method: request.method,
       requirement,
       grant: held ? held.grant : null,
+      invoker: request.invoker,
+    })
+    if (!decision.ok) return { code: decision.code, message: decision.message }
+    if (request.method === 'events.subscribe') return eventAdmission(request, held ? held.grant : null)
+    return null
+  }
+
+  /** One of Studio's events, held to its own permission as the extension and as whoever opened the surface. */
+  function eventAdmission(
+    request: ExtensionFrameCallRequest,
+    grant: readonly string[] | null,
+  ): { code: string; message: string } | null {
+    const event = (request.params as { event?: unknown } | null | undefined)?.event
+    if (!isExtensionFrameEventName(event))
+      return {
+        code: 'invalid_params',
+        message: `"event" names one of Studio's events: ${EXTENSION_FRAME_EVENTS.join(', ')}.`,
+      }
+    const spec = EXTENSION_EVENT_SPECS[event]
+    const decision = gateExtensionHostCall({
+      extensionId: request.moduleId,
+      method: `the event ${event}`,
+      requirement: { extension: spec.permission, invoker: spec.invoker, refusal: 'answer' },
+      grant,
       invoker: request.invoker,
     })
     return decision.ok ? null : { code: decision.code, message: decision.message }

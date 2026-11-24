@@ -410,7 +410,7 @@
     },
     {
       "name": "extension.guide",
-      "sha256": "063ebc49a741d8d7f1d554611d2a50f992d5a8b1ecd35b80fec8326ff5515102"
+      "sha256": "ade786d5056bd9fce65b6a8b42f59aee07a25d0b08adf0b5bbe50463fce01b41"
     },
     {
       "name": "extension.dev.load",
@@ -439,6 +439,10 @@
     {
       "name": "extension.dev.emit",
       "sha256": "038d4d63b1a18f3cb7c4a5753c4ef5f8a5cd0855fe288ec6af0a23ca39e6c9d5"
+    },
+    {
+      "name": "extension.dev.studioEvent",
+      "sha256": "2658285005168e33e1e5e58c8b7373b91cfa72b1984f77553faf78f41d61e8f3"
     },
     {
       "name": "plugin.search",
@@ -892,7 +896,7 @@
     },
     {
       "name": "extension.guide",
-      "sha256": "063ebc49a741d8d7f1d554611d2a50f992d5a8b1ecd35b80fec8326ff5515102"
+      "sha256": "ade786d5056bd9fce65b6a8b42f59aee07a25d0b08adf0b5bbe50463fce01b41"
     },
     {
       "name": "extension.dev.load",
@@ -921,6 +925,10 @@
     {
       "name": "extension.dev.emit",
       "sha256": "038d4d63b1a18f3cb7c4a5753c4ef5f8a5cd0855fe288ec6af0a23ca39e6c9d5"
+    },
+    {
+      "name": "extension.dev.studioEvent",
+      "sha256": "2658285005168e33e1e5e58c8b7373b91cfa72b1984f77553faf78f41d61e8f3"
     },
     {
       "name": "plugin.search",

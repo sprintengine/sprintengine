@@ -146,6 +146,7 @@ function module(
         settingsSections: [],
         mcpTools: [],
         hooks: [],
+        events: [],
         syntaxes: [],
         customEditors: [],
         keybindings: [],

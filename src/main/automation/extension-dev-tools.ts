@@ -2,6 +2,11 @@ import { isAbsolute } from 'node:path'
 
 import { isExtensionHookPoint } from '../../../packages/extension-sdk/src/hooks'
 import {
+  EXTENSION_EVENTS,
+  isExtensionEventName,
+  type ExtensionEventName,
+} from '../../../packages/extension-sdk/src/events'
+import {
   isRecord,
   toolError,
   toolSuccess,
@@ -26,11 +31,12 @@ import { extensionDevEvents, type ExtensionDevEvents } from '../../server/extens
 //   extension.dev.request  call one of its worker's methods, as a frame does
 //   extension.dev.hook     run one of its worker's hooks with a made-up event
 //   extension.dev.emit     send its open frames a push, as its worker would
+//   extension.dev.studioEvent  fire one of Studio's events at its worker and its surfaces alone
 //
 // Development folders are paths on this machine, so a paired device's call is
 // refused. An agent may register a folder, but nothing here approves one: the
 // person does, in Studio's window, where a registration that waits asks them
-// (or in Settings > Extensions). `request`, `hook` and `emit` reach only a
+// (or in Settings > Extensions). `request`, `hook`, `emit` and `studioEvent` reach only a
 // registered development folder's extension, never an installed one, and run
 // as their caller (`bindDevToolsToCaller`): what a worker starts for a capped
 // agent is no looser than that agent.
@@ -43,6 +49,7 @@ export const EXTENSION_DEV_TOOL_NAMES = [
   'extension.dev.request',
   'extension.dev.hook',
   'extension.dev.emit',
+  'extension.dev.studioEvent',
 ] as const
 
 /** Change something: registering, removing, a worker's operate, a hook, a push. */
@@ -52,6 +59,7 @@ export const EXTENSION_DEV_MUTATION_TOOL_NAMES: readonly string[] = [
   'extension.dev.request',
   'extension.dev.hook',
   'extension.dev.emit',
+  'extension.dev.studioEvent',
 ]
 
 /** What the tools reach of the Studio that serves them; null before its extensions load. */
@@ -62,6 +70,16 @@ export type ExtensionDevBackend = {
   runHook(moduleId: string, point: string, event: unknown, invoker: ExtensionInvoker): Promise<unknown>
   /** Deliver a push to the extension's open frames, as `MainHost.emit` does. */
   emit(moduleId: string, topic: string, payload: unknown): void
+  /**
+   * One of Studio's events, to this extension alone: its worker (why it did
+   * not hear it, or null) and its surfaces' subscriptions (how many did).
+   */
+  studioEvent?(
+    moduleId: string,
+    event: ExtensionEventName,
+    payload: unknown,
+    invoker: ExtensionInvoker,
+  ): { worker: string | null; surfaces: number; surfacesWithheld?: string }
 }
 
 export type ExtensionDevToolsDeps = {
@@ -70,6 +88,63 @@ export type ExtensionDevToolsDeps = {
 }
 
 const HOOK_TIMEOUT_MS = 10_000
+
+const WORKSPACE_KINDS = ['worktree', 'folder']
+const AGENT_STATES = ['working', 'blocked', 'done']
+
+/** What is wrong with a made-up workspace, or null: the shape the workspace events carry. */
+function workspaceProblem(value: unknown, at: string): string | null {
+  if (!isRecord(value)) return `${at} is an object.`
+  if (typeof value.workspaceId !== 'string') return `${at}.workspaceId is a string.`
+  if (typeof value.name !== 'string') return `${at}.name is a string.`
+  if (!WORKSPACE_KINDS.includes(value.kind as string)) return `${at}.kind is 'worktree' or 'folder'.`
+  for (const key of ['folderPath', 'branch'])
+    if (value[key] !== null && typeof value[key] !== 'string') return `${at}.${key} is a string or null.`
+  return null
+}
+
+/**
+ * What is wrong with a made-up payload for `event`, or null: the shape an
+ * extension's handler is handed for it (`ExtensionEventPayloads`), so a test
+ * cannot pass a payload Studio would never send.
+ */
+export function studioEventPayloadProblem(event: ExtensionEventName, payload: unknown): string | null {
+  switch (event) {
+    case 'workspace.created':
+    case 'workspace.removed':
+      return workspaceProblem(payload, 'The payload')
+    case 'workspace.changed': {
+      if (!isRecord(payload)) return 'The payload is { workspace }.'
+      const workspace = payload.workspace
+      const problem = workspaceProblem(workspace, 'The payload’s workspace')
+      if (problem) return problem
+      const terminals = (workspace as Record<string, unknown>).terminals
+      if (
+        !Array.isArray(terminals) ||
+        !terminals.every(
+          (terminal) =>
+            isRecord(terminal) &&
+            typeof terminal.id === 'string' &&
+            (terminal.title === null || typeof terminal.title === 'string'),
+        )
+      )
+        return 'The payload’s workspace.terminals is a list of { id, title }.'
+      return null
+    }
+    case 'agent.status.changed': {
+      if (!isRecord(payload)) return 'The payload is an object.'
+      if (typeof payload.agentId !== 'string') return 'The payload’s agentId is a string.'
+      if (payload.where !== 'chat' && payload.where !== 'terminal') return 'The payload’s where is chat or terminal.'
+      if (!AGENT_STATES.includes(payload.state as string)) return 'The payload’s state is working, blocked or done.'
+      if (typeof payload.failed !== 'boolean') return 'The payload’s failed is true or false.'
+      for (const key of ['workspaceId', 'terminalId', 'title'])
+        if (payload[key] !== null && typeof payload[key] !== 'string')
+          return `The payload’s ${key} is a string or null.`
+      if (typeof payload.receivedAt !== 'number') return 'The payload’s receivedAt is a number.'
+      return null
+    }
+  }
+}
 
 /** A refusal with what the caller may act on: the issues, the folders, the worker's own code. */
 function devError(code: string, message: string, data?: Record<string, unknown>): McpToolResult {
@@ -87,8 +162,13 @@ function refusedRemote(context: McpConnectionContext | undefined): McpToolResult
     : null
 }
 
-/** The tools that run extension code for their caller: run as that caller. */
-const RUN_AS_CALLER = new Set(['extension.dev.request', 'extension.dev.hook'])
+/**
+ * The tools that run extension code for their caller: run as that caller. A
+ * Studio event's worker handlers run as the caller too (the invoker rides the
+ * event's queue); its surfaces, which answer as the person, are not told for a
+ * caller narrower than the person (extension-events.ts `emitTo`).
+ */
+const RUN_AS_CALLER = new Set(['extension.dev.request', 'extension.dev.hook', 'extension.dev.studioEvent'])
 /** Answered by the desktop shell over its own connection, which holds no caller: refused to a capped one. */
 const REFUSED_TO_CAPPED = new Set(['visual.extension_shot'])
 
@@ -399,6 +479,46 @@ export function createExtensionDevTools(deps: ExtensionDevToolsDeps): McpToolReg
         if (!topic) return toolError('invalid_arguments', '"topic" is the push’s name.')
         backend.emit(moduleId, topic, args.payload)
         return toolSuccess({ moduleId, topic, delivered: true })
+      },
+    },
+    {
+      name: 'extension.dev.studioEvent',
+      description:
+        'Fire one of Studio’s events (`workspace.created`, `workspace.removed`, `workspace.changed`, ' +
+        '`agent.status.changed`) at a development folder’s extension alone: its worker’s `studio.events.on` ' +
+        'handlers and its open surfaces’ `studio.on`, as Studio would send it, to test a handler without making ' +
+        'the change. The payload is checked against the event’s shape. Its worker hears it only if extension.json ' +
+        'lists the event and its approval holds the event’s permission. Its handlers run as you, under your own ' +
+        'permission preset; below bypass, its surfaces (which answer as the person) are not told.',
+      inputSchema: {
+        type: 'object',
+        properties: { ...target, event: { type: 'string', enum: [...EXTENSION_EVENTS] }, payload: {} },
+        required: ['event', 'payload'],
+        additionalProperties: false,
+      },
+      mutates: true,
+      handler: async (args, context) => {
+        const remote = refusedRemote(context)
+        if (remote) return remote
+        const backend = deps.backend()
+        const lifecycle = lifecycleOf(deps)
+        if (isResult(lifecycle) || !backend?.studioEvent)
+          return isResult(lifecycle) ? lifecycle : toolError('unavailable', 'Not loaded yet.')
+        const moduleId = await moduleIdOf(lifecycle, args)
+        if (typeof moduleId !== 'string') return moduleId
+        if (!isExtensionEventName(args.event))
+          return toolError('invalid_arguments', `"event" is one of Studio's events: ${EXTENSION_EVENTS.join(', ')}.`)
+        const problem = studioEventPayloadProblem(args.event, args.payload)
+        if (problem) return toolError('invalid_arguments', problem)
+        // Who fired it (bindDevToolsToCaller): its worker's handlers run as them.
+        const heard = backend.studioEvent(moduleId, args.event, args.payload, currentInvoker())
+        return toolSuccess({
+          moduleId,
+          event: args.event,
+          worker: heard.worker === null ? 'queued' : `not delivered: ${heard.worker}`,
+          surfaces: heard.surfaces,
+          ...(heard.surfacesWithheld ? { surfacesWithheld: heard.surfacesWithheld } : {}),
+        })
       },
     },
   ]

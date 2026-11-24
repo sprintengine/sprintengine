@@ -93,6 +93,7 @@ import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioProcesses } from '../processes/agent-process-domain'
 import type { StudioBrowserTabs } from '../processes/browser-tabs'
 import type { StudioModules } from './studio-modules'
+import type { ExtensionEvents } from '../extensions/events/extension-events'
 import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
@@ -235,6 +236,8 @@ export type StudioRpcServerOptions = {
   protocol?: StudioProtocolWindow
   /** What this Studio's modules say to clients. Advertised as `modules` only when given. */
   modules?: StudioModules
+  /** Studio's events, as extensions' surfaces hear them (`extension.studioEvents`). */
+  extensionEvents?: ExtensionEvents
   /** What this machine has and lacks for its background work. Advertised as `environment-readiness` only when given. */
   readiness?: () => Promise<StudioEnvironmentReadiness>
   /** A ticket for one connection of a window of the desktop that holds this Studio. Advertised as `window-tickets` only when given. */
@@ -452,6 +455,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
         ...(options.localServers ? { localServers: options.localServers } : {}),
         ...(options.modules ? { modules: options.modules } : {}),
+        ...(options.extensionEvents ? { extensionEvents: options.extensionEvents } : {}),
         ...(options.terminals ? { terminals: options.terminals } : {}),
         ...(options.runtimes ? { runtimes: options.runtimes } : {}),
         ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
@@ -508,6 +512,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
         ...(options.localServers ? { localServers: options.localServers } : {}),
         ...(options.modules ? { modules: options.modules } : {}),
+        ...(options.extensionEvents ? { extensionEvents: options.extensionEvents } : {}),
         ...(options.terminals ? { terminals: options.terminals } : {}),
         ...(options.runtimes ? { runtimes: options.runtimes } : {}),
         ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),

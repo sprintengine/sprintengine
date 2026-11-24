@@ -14,6 +14,7 @@
 import type { ModuleChatRuntimeOption } from './conversation.js'
 import type { HostCapability } from './host-api.js'
 import type { ExtensionHookHandlers } from './hooks.js'
+import type { ExtensionWorkerEvents } from './events.js'
 
 // ── Manifest ─────────────────────────────────────────────────────────────────
 
@@ -431,6 +432,15 @@ export type MainHost = {
    * the guide's hooks topic.
    */
   registerHooks(handlers: ExtensionHookHandlers): () => void
+  /**
+   * Hear the Studio events your extension.json lists (`contributes.events`):
+   * `studio.events.on('workspace.created', (workspace) => …)` answers
+   * `{ dispose() }`. A worker that is not running is started to hear one, so
+   * register in `activate`. A handler runs as your extension's own work, as
+   * the person who approved it. Each event needs its permission; see the
+   * guide's events topic. Check `host.supports('events')`.
+   */
+  readonly events: ExtensionWorkerEvents
   /**
    * Make a skill present in a workspace now, rather than at the next agent
    * launch — how you pre-install the skill an agent will be told to invoke.
@@ -1561,6 +1571,7 @@ export {
   parseExtensionInstallKey,
   parseExtensionManifest,
   requiredExtensionTier,
+  WORKER_ONLY_PERMISSIONS,
   studioReadsManifest,
   validateExtensionManifest,
   type ExtensionCommandAction,
@@ -1581,6 +1592,7 @@ export {
   type ExtensionMenuPlace,
   type ExtensionSurfaceContribution,
   type ExtensionSurfacePoint,
+  type ExtensionEventContribution,
   type ExtensionHookContribution,
   type ExtensionKeybindingContribution,
   type ExtensionSettingContribution,
@@ -1632,6 +1644,39 @@ export {
   type ExtensionHookVerdict,
   type ExtensionPromptInputKind,
 } from './hooks.js'
+
+// Studio's events, for a worker (`studio.events.on`) and a surface (`studio.on`).
+export {
+  EXTENSION_EVENTS,
+  EXTENSION_EVENTS_MAX,
+  EXTENSION_EVENT_SPECS,
+  EXTENSION_EVENT_TERMINALS_MAX,
+  EXTENSION_FRAME_EVENTS,
+  extensionEventReference,
+  isExtensionEventName,
+  isExtensionFrameEventName,
+  type ExtensionAgentState,
+  type ExtensionEventHandler,
+  type ExtensionEventName,
+  type ExtensionEventPayloads,
+  type ExtensionEventSpec,
+  type ExtensionEventWorkspace,
+  type ExtensionFrameEventName,
+  type ExtensionWorkerEvents,
+} from './events.js'
+
+// The person's terminals, for a worker (`terminals:send`, `terminals:read`).
+export {
+  EXTENSION_TERMINAL_OPENED_LIMIT,
+  EXTENSION_TERMINAL_READ_DEFAULT_LINES,
+  EXTENSION_TERMINAL_READ_MAX_LINES,
+  EXTENSION_TERMINAL_TEXT_MAX_CHARS,
+  EXTENSION_TERMINAL_TITLE_MAX_CHARS,
+  getTerminalService,
+  type ExtensionTerminalErrorCode,
+  type ExtensionTerminalRegistry,
+  type ExtensionTerminalService,
+} from './terminals.js'
 
 // What a content extension's syntax files hold, checked the same way by the
 // author's tools, at install and each time Studio serves them.

@@ -1,3 +1,4 @@
+import type { ExtensionEvents } from '../extensions/events/extension-events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import type { StudioEditorSaveHooks } from './studio-file-system'
 import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
@@ -418,6 +419,7 @@ export async function startTestServer(
     updates?: StudioUpdates
     protocol?: StudioProtocolWindow
     modules?: StudioModules
+    extensionEvents?: ExtensionEvents
     readiness?: () => Promise<StudioEnvironmentReadiness>
     environmentAccess?: StudioEnvironmentAccess
     adoption?: EnvironmentAdoption
@@ -484,6 +486,7 @@ export async function startTestServer(
     ...(input.updates ? { updates: input.updates } : {}),
     ...(input.protocol ? { protocol: input.protocol } : {}),
     ...(input.modules ? { modules: input.modules } : {}),
+    ...(input.extensionEvents ? { extensionEvents: input.extensionEvents } : {}),
     ...(input.readiness ? { readiness: input.readiness } : {}),
     ...(input.environmentAccess ? { environmentAccess: input.environmentAccess } : {}),
     ...(input.adoption ? { adoption: input.adoption } : {}),

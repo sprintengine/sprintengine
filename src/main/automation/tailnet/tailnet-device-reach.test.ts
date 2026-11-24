@@ -389,11 +389,12 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ['tools.offer', 'tools.withdraw', 'tools.focus'],
       ],
       [
-        'modules, extensions’ frames and the host calls they make, what content extensions add and the settings extensions declare (extensions:read, extensions:operate, settings:write for the settings; each frame call is held to the device’s own permissions too)',
+        'modules, extensions’ frames and the host calls they make, what content extensions add and the settings extensions declare (extensions:read, extensions:operate, settings:write for the settings; each frame call, and each Studio event a frame hears, is held to the device’s own permissions too)',
         [
           'extension.read',
           'extension.operate',
           'extension.events',
+          'extension.studioEvents',
           'extension.notifications',
           'extension.list',
           'extension.installed',

@@ -48,6 +48,9 @@ export const HOST_CAPABILITIES: ReadonlySet<HostCapability> = new Set<HostCapabi
   'conversation-worktrees',
   'chat-runtimes',
   'scheduled-agent-runs',
+  // The terminal service and the worker's events (extension-terminals.ts, extension-events.ts).
+  'terminals',
+  'events',
 ])
 
 export function hostSupports(capability: HostCapability): boolean {

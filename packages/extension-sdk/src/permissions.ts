@@ -60,6 +60,12 @@ export const EXTENSION_PERMISSIONS = [
   'github:api',
   // Tools that agents reach through Studio's MCP server.
   'tools:contribute',
+  // ── The person's terminals (worker tier only) ──
+  // Type into a terminal and press Enter, open a terminal in a workspace
+  // (running a command in it), and close the terminals it opened.
+  'terminals:send',
+  // What a terminal shows: its newest output, as plain text.
+  'terminals:read',
 ] as const
 
 export type ExtensionPermission = (typeof EXTENSION_PERMISSIONS)[number]

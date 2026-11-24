@@ -12,6 +12,7 @@ import {
 } from './cli-authoring.js'
 import {
   devEmit,
+  devStudioEvent,
   devHook,
   devList,
   devLoad,
@@ -177,6 +178,7 @@ async function run(output: Output, command: string, args: string[]): Promise<voi
       'shot-panel': { type: 'string' },
       data: { type: 'string' },
       read: { type: 'boolean' },
+      studio: { type: 'boolean' },
       after: { type: 'string' },
       'timeout-ms': { type: 'string' },
     },
@@ -225,7 +227,13 @@ async function run(output: Output, command: string, args: string[]): Promise<voi
     }
     case 'emit': {
       const topic = positionals[1]
-      if (!target || !topic) throw new CliError('invalid_argument', 'dev emit <dir|key> <topic> [--data <json>]')
+      if (!target || !topic)
+        throw new CliError(
+          'invalid_argument',
+          'dev emit <dir|key> <topic> [--data <json>], or <event> --studio --data <json>',
+        )
+      if (values.studio)
+        return devStudioEvent(output, keyOrDir(target), topic, { ...dataDir, data: parseData(values.data, true) })
       return devEmit(output, keyOrDir(target), topic, { ...dataDir, data: parseData(values.data, false) })
     }
     default:

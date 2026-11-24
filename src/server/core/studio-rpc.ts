@@ -132,6 +132,8 @@ export function createStudioRpc(
     // SSH server by the desktop that manages it, a hand-started one by hand).
     ...(options.updates ? { updates: options.updates } : {}),
     ...(options.modules ? { modules: options.modules } : {}),
+    // A surface's `studio.on`, held to its extension's approval and its client's grant.
+    extensionEvents: core.extensionEvents,
     ...(options.canvas ? { canvas: createStudioCanvasDomain(options.canvas) } : {}),
     ...(options.signIns ? { signIns: options.signIns } : {}),
     // A Studio a desktop holds over its front door keeps what that desktop

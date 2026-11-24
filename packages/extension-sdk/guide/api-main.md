@@ -117,6 +117,7 @@ nothing useful without one.
 | `listChatRuntimes()` | `Promise<[{ id, label, available, models, lastSelected }]>`: the agent runtimes a chat can run on, with missing ones `available: false`. `id` is the runtime id every `cli` takes. May probe (cached a minute). `supports('chat-runtimes')`. `providers:read`. |
 | `registerMethods<Contract>(methods)` | Methods the surfaces call with `studio.methods<Contract>()`, and the methods your commands run: each `{ access: 'read' \| 'operate', params, handler }`. `params` validates what was sent (`{ ok: true, params }` or `{ ok: false, message }`, answered `invalid_params`); the handler gets `(params, { clientId, commandId? })` and answers `{ ok: true, result }` (JSON) or `{ ok: false, code, message }`. Names: a lower-case letter, then letters, digits, dots, dashes. Needs no permission. |
 | `emit(topic, payload?)` | Push a signal to every open surface (`studio.on('push', cb)`). No replay. |
+| `events.on(event, handler)` | Hear one of the Studio events extension.json lists (`contributes.events`): `{ dispose() }`. A worker that is not running is started to hear one. Each needs its permission; the `events` topic has the table. `supports('events')`. |
 | `registerMcpTools(tools)` | Serve the MCP tools extension.json declares (`contributes.mcpTools`). A tool not declared there is refused; the declaration's `description` and `access` are what agents see. Needs `tools:contribute`. |
 | `ensureSkillInstalled(root, id)` / `getSkillStatus(root, id)` | Put one of Studio's own skills in a workspace, or check without writing (below). `workspace:operate` / `workspace:read`. |
 | `getModuleAppState(key)` / `watchModuleAppState(cb)` | Your extension's app state (what its surfaces and its settings section write), read-only, with no window open. `settings:own`. |
@@ -146,6 +147,7 @@ its own data.
 | `studio.requireService(WorkspaceServiceToken)` | `workspace:operate` | `create({ name, folderPath })` a workspace |
 | `getBacklogService(studio)` | `backlog:read` / `backlog:operate` | List, locate, create and change Backlog items through the app — below |
 | `getUsageService(studio)` | `usage:read` | Token usage of every agent session on the machine — below |
+| `getTerminalService(studio)` | `terminals:send`, `terminals:read` | The person's terminals: `send`, `create`, `read`, `close`, `list` — the `events` topic |
 | `getActivityService(studio)` | `conversation:read` | The person's Studio chats and prompts, read-only — below |
 
 ## Settings in the worker

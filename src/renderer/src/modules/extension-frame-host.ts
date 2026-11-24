@@ -34,6 +34,12 @@ export type ExtensionFrameClient = {
   chatDraft(params: Record<string, unknown>): Promise<unknown>
   openDoor(id: string): boolean
   focusTab(input: { workspaceId: string; kind: 'chat' | 'file'; id: string }): boolean
+  /**
+   * Follow one of Studio's events for the frame, once the Studio admitted it:
+   * its Studio's stream, held there to the extension and this window's grant,
+   * or the window's own (the editor's typography). Returns the stop.
+   */
+  followStudioEvent(event: string, deliver: (payload: unknown) => void): () => void
 }
 
 /**
@@ -118,6 +124,9 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
       })
   }
 
+  // Studio's events the frame follows, each with its stop.
+  const followed = new Map<string, () => void>()
+
   async function carryOut(method: string, params: unknown): Promise<unknown> {
     const given = (params ?? {}) as Record<string, unknown>
     if (method === 'toast') {
@@ -126,6 +135,19 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
     }
     if (method === 'chat.draft') return options.client.chatDraft(given)
     if (method === 'doors.open') return { opened: typeof given.id === 'string' && options.client.openDoor(given.id) }
+    if (method === 'events.subscribe') {
+      const event = given.event
+      if (typeof event !== 'string') throw new Error('"events.subscribe" takes an event.')
+      // Once per event: more listeners in the frame share it.
+      if (!followed.has(event))
+        followed.set(
+          event,
+          options.client.followStudioEvent(event, (payload) =>
+            post({ kind: 'evt', event: EXTENSION_FRAME_EVENTS.studio, payload: { event, payload } }),
+          ),
+        )
+      return { ok: true }
+    }
     if (method === 'tabs.focus') {
       const { workspaceId, kind, id } = given
       if (typeof workspaceId !== 'string' || (kind !== 'chat' && kind !== 'file') || typeof id !== 'string')
@@ -233,6 +255,8 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
     },
     dispose() {
       alive = false
+      for (const stop of followed.values()) stop()
+      followed.clear()
     },
   }
 }

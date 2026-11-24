@@ -41,7 +41,12 @@
 import type { ExtensionFrameMethod } from './frame.js'
 import type { ExtensionPermission } from './permissions.js'
 
-/** What whoever set a call off must hold: a Studio protocol permission, or `owner`. */
+/**
+ * What whoever set a call off must hold: a Studio protocol permission, `owner`
+ * (the person), or `terminals` (the person, from somewhere that reaches this
+ * machine's terminals: never a browser tab, which Studio refuses its terminals
+ * whoever holds it).
+ */
 export type ExtensionInvokerRequirement =
   | 'workspace:read'
   | 'workspace:operate'
@@ -57,6 +62,7 @@ export type ExtensionInvokerRequirement =
   | 'extension:operate'
   | 'settings:write'
   | 'owner'
+  | 'terminals'
 
 export type ExtensionHostRequirement = {
   readonly extension: ExtensionPermission | null
@@ -231,6 +237,19 @@ export const EXTENSION_HOST_SERVICES: readonly ExtensionHostService[] = [
     providedBy: 'agent-runtime',
     methods: { generate: need('agents:generate', 'conversation:create', 'answer') },
   },
+  {
+    // The person's terminals: theirs alone, as Studio's own terminal methods
+    // are, so no paired device, phone, other app or browser tab (an owner's
+    // included) reaches one through an extension (extension-terminals.ts adds
+    // an agent's ceiling).
+    key: 'terminals.module-service',
+    via: 'getTerminalService',
+    providedBy: 'agent-runtime',
+    methods: {
+      ...each(['send', 'create', 'close'], need('terminals:send', 'terminals', 'reject')),
+      ...each(['read', 'list'], need('terminals:read', 'terminals', 'reject')),
+    },
+  },
 ]
 
 /** The service for `key`, or undefined for a key the SDK does not publish. */
@@ -250,6 +269,9 @@ export const EXTENSION_MAIN_HOST_METHODS: Readonly<Record<string, ExtensionHostR
   registerMethods: need(null, null, 'throw'),
   registerMcpTools: need('tools:contribute', null, 'throw'),
   registerHooks: need(null, null, 'throw'),
+  // Its handlers are its own; Studio holds each event to its permission
+  // before it delivers it (worker-manager.ts), so registering one needs nothing.
+  events: need(null, null, 'throw'),
   ensureSkillInstalled: need('workspace:operate', 'workspace:operate', 'reject'),
   getSkillStatus: need('workspace:read', 'workspace:read', 'reject'),
   getModuleDataDir: need('storage:own', null, 'throw'),
@@ -325,6 +347,10 @@ export const EXTENSION_FRAME_METHODS: Readonly<Record<ExtensionFrameMethod, Exte
   'chat.draft': inFrame('chat:draft', 'conversation:create', 'client'),
   'doors.open': inFrame(null, 'extension:read', 'client'),
   'tabs.focus': inFrame(null, 'workspace:read', 'client'),
+  // Studio's events: each event's own permission is checked beside this row
+  // (extension-frame-calls.ts), as the extension and as whoever opened the
+  // surface; the window that drew it follows them.
+  'events.subscribe': inFrame(null, 'extension:read', 'client'),
   // Its own log: nothing beyond the extension, read by whoever may open it.
   'log.write': inFrame(null, 'extension:read'),
 }

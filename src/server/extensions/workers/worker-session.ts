@@ -114,13 +114,15 @@ function tighter(a: CliPermissionPreset | null, b: CliPermissionPreset | null): 
 /**
  * `own`, held to every other invoker the worker serves now: only what all of
  * them hold, the person's own reach only if every one is the person, and the
- * tightest ceiling. The words name whoever narrowed it.
+ * tightest ceiling, and no terminals if any of them may not reach them. The
+ * words name whoever narrowed it.
  */
 export function heldToAll(own: ExtensionInvoker, others: readonly ExtensionInvoker[]): ExtensionInvoker {
   const narrower = others.filter(
     (other) =>
       other !== own &&
       ((own.principal.owner && !other.principal.owner) ||
+        (other.noTerminals === true && own.noTerminals !== true) ||
         [...own.principal.permissions].some((permission) => !other.principal.permissions.has(permission)) ||
         tighter(own.permissionCeiling, other.permissionCeiling) !== own.permissionCeiling),
   )
@@ -128,7 +130,9 @@ export function heldToAll(own: ExtensionInvoker, others: readonly ExtensionInvok
   let permissions: Set<StudioPermission> = new Set(own.principal.permissions)
   let owner = own.principal.owner
   let ceiling = own.permissionCeiling
+  let noTerminals = own.noTerminals === true
   for (const other of narrower) {
+    noTerminals ||= other.noTerminals === true
     permissions = new Set([...permissions].filter((permission) => other.principal.permissions.has(permission)))
     owner = owner && other.principal.owner
     ceiling = tighter(ceiling, other.permissionCeiling)
@@ -139,6 +143,7 @@ export function heldToAll(own: ExtensionInvoker, others: readonly ExtensionInvok
     permissionCeiling: ceiling,
     label: `${labels} (whom the extension's worker is also serving now)`,
     starter: sharedStarter([own, ...narrower]),
+    ...(noTerminals ? { noTerminals: true as const } : {}),
   }
 }
 

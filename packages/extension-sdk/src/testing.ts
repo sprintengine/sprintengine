@@ -92,6 +92,14 @@ import {
   type FakeUsage,
   type FakeWorkspaces,
 } from './testing-services.js'
+import {
+  EXTENSION_EVENT_SPECS,
+  isExtensionEventName,
+  isExtensionFrameEventName,
+  type ExtensionEventName,
+  type ExtensionEventPayloads,
+  type ExtensionFrameEventName,
+} from './events.js'
 import type { ReactNode } from 'react'
 
 export type {
@@ -138,6 +146,8 @@ export const DEFAULT_FAKE_WORKSPACES: readonly ModuleWorkspaceView[] = [
 // told otherwise, so a module's "older host" branch is opt-in to test. A test
 // fails when HostCapability (host-api.ts) names one this list does not.
 const KNOWN_CAPABILITIES: readonly HostCapability[] = [
+  'terminals',
+  'events',
   'conversations',
   'conversation-controls',
   'conversation-streams',
@@ -186,6 +196,7 @@ export type FakeExtensionManifest = {
     doors?: ReadonlyArray<{ id: string }>
     mcpTools?: ReadonlyArray<{ name: string; description: string; access: 'read' | 'operate' }>
     hooks?: ReadonlyArray<{ point: string; onError?: 'pass' | 'deny' }>
+    events?: ReadonlyArray<{ on: string }>
   }
 }
 
@@ -391,6 +402,18 @@ export type FakeMainHost = {
     /** The points the worker registered, in order. */
     registered(): ExtensionHookPoint[]
   }
+  /** Studio's side of the worker's events (`studio.events.on`). */
+  events: {
+    /**
+     * Deliver `event` to the worker's handlers, one after another, as Studio
+     * would: an event extension.json does not list throws, and one whose
+     * permission the manifest does not ask for is delivered to nobody and
+     * recorded in `undeclared`, as Studio drops it. A handler that throws rejects.
+     */
+    fire<E extends ExtensionEventName>(event: E, payload: ExtensionEventPayloads[E]): Promise<void>
+    /** The events the worker has a handler for now. */
+    heard(): ExtensionEventName[]
+  }
   /** Every `emit`, in order. */
   emitted: Array<{ topic: string; payload?: unknown }>
   /** Every `notify`, validated as the host validates it. */
@@ -553,6 +576,8 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
   const tools = new Map<string, McpToolRegistration>()
   // Each point's handlers, in the order registered.
   const hookHandlers = new Map<ExtensionHookPoint, Array<(event: unknown) => unknown>>()
+  // One registration each, as Studio keeps them: the same function twice is called twice.
+  const eventHandlers = new Map<ExtensionEventName, Array<{ handler: (payload: unknown) => unknown }>>()
   const startupHooks: Array<() => unknown> = []
   const shutdownBeginHooks: Array<() => unknown> = []
   const shutdownHooks: Array<() => unknown> = []
@@ -594,6 +619,23 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
         return readExtensionHookAnswer(point, event as unknown as Record<string, unknown>, answer)
       },
       registered: () => [...hookHandlers.keys()],
+    },
+    events: {
+      async fire(event, payload) {
+        const listed = options.manifest?.contributes?.events
+        if (listed && !listed.some((entry) => entry.on === event))
+          throw new Error(`extension.json lists no event "${event}" (contributes.events).`)
+        const needed = EXTENSION_EVENT_SPECS[event].permission
+        if (
+          !covered(
+            `events.${event}`,
+            needed === null ? undefined : { extension: needed, invoker: null, refusal: 'throw' },
+          )
+        )
+          return
+        for (const { handler } of [...(eventHandlers.get(event) ?? [])]) await handler(structuredClone(payload))
+      },
+      heard: () => [...eventHandlers].filter(([, handlers]) => handlers.length > 0).map(([event]) => event),
     },
     tools: {
       async call(name, args = {}, metadata) {
@@ -838,6 +880,27 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
         }
       }
     },
+    events: Object.freeze({
+      on(event: unknown, handler: unknown) {
+        const listed = options.manifest?.contributes?.events
+        if (!isExtensionEventName(event) || (listed && !listed.some((entry) => entry.on === event)))
+          throw new Error(
+            `Event "${String(event)}" is not listed in extension "${moduleId}"'s extension.json (contributes.events).`,
+          )
+        if (typeof handler !== 'function') throw new Error(`The handler for event "${event}" is not a function.`)
+        const registration = { handler: handler as (payload: unknown) => unknown }
+        let list = eventHandlers.get(event)
+        if (!list) eventHandlers.set(event, (list = []))
+        list.push(registration)
+        return {
+          dispose: () => {
+            const now = eventHandlers.get(event)
+            const at = now?.indexOf(registration) ?? -1
+            if (at >= 0) now!.splice(at, 1)
+          },
+        }
+      },
+    }) as MainHost['events'],
     async ensureSkillInstalled(workspaceRoot, skillId) {
       use('ensureSkillInstalled')
       fake.skills.ensured.push({ workspaceRoot, skillId })
@@ -1072,6 +1135,12 @@ export type FakeFrameStudio = {
   file(workspaceId: string, path: string): string | undefined
   /** Deliver a worker event to `on('push')` listeners. */
   emit(topic: string, payload?: unknown): void
+  /**
+   * Deliver one of Studio's events to the `studio.on(event)` listeners whose
+   * subscription was admitted (the extension's permissions and the invoker's
+   * hold what the event needs), as Studio would.
+   */
+  studioEvent<E extends ExtensionFrameEventName>(event: E, payload: ExtensionEventPayloads[E]): void
   /** Change the theme; `on('theme')` listeners hear it. */
   setColorScheme(scheme: 'light' | 'dark'): void
   /** The `studio` one surface's `mount` is handed. */
@@ -1264,6 +1333,9 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
   const hear = (event: 'theme' | 'push', payload: unknown) => {
     for (const listener of [...listeners[event]]) listener(structuredClone(payload))
   }
+  // Studio's events: each one's listeners, and the ones whose subscription was admitted.
+  const studioListeners = new Map<ExtensionFrameEventName, Set<(payload: unknown) => void>>()
+  const admittedEvents = new Set<ExtensionFrameEventName>()
 
   const workspace = (workspaceId: unknown): ModuleWorkspaceView => {
     const found = world.workspaces.all().find((candidate) => candidate.id === workspaceId)
@@ -1410,6 +1482,26 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
       if (opened) fake.openedDoors.push(p.id as string)
       return { opened }
     },
+    'events.subscribe': (p) => {
+      const event = p.event
+      if (!isExtensionFrameEventName(event))
+        throw frameError('invalid_params', '"event" names one of Studio\'s events.')
+      const spec = EXTENSION_EVENT_SPECS[event]
+      if (spec.permission !== null && !permissions.has(spec.permission)) {
+        fake.undeclared.push({ what: `events.subscribe ${event}`, needs: [spec.permission] })
+        throw frameError(
+          'not_permitted',
+          `Extension "${moduleId}" was not approved for "${spec.permission}", which the event ${event} needs.`,
+        )
+      }
+      if (invoker && spec.invoker !== null && !invoker.has(spec.invoker))
+        throw frameError(
+          'not_permitted',
+          `The event ${event} needs "${spec.invoker}", which whoever opened the surface does not hold.`,
+        )
+      admittedEvents.add(event)
+      return { ok: true as const }
+    },
     'log.write': (p) => {
       if (typeof p.message !== 'string' || p.message.length === 0)
         throw frameError('invalid_params', '"message" is a string.')
@@ -1457,6 +1549,10 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
     settings: () => world.settings.all(),
     file: (workspaceId, path) => files.get(workspaceId)?.get(path),
     emit: (topic, payload) => hear('push', payload === undefined ? { topic } : { topic, payload }),
+    studioEvent(event, payload) {
+      if (!admittedEvents.has(event)) return
+      for (const listener of [...(studioListeners.get(event) ?? [])]) listener(structuredClone(payload))
+    },
     setColorScheme(scheme) {
       colorScheme = scheme
       hear('theme', { colorScheme })
@@ -1487,8 +1583,21 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
         get theme() {
           return { colorScheme }
         },
-        on(event: 'theme' | 'push', listener: (payload: never) => void) {
-          const set = listeners[event]
+        on(event: string, listener: (payload: never) => void) {
+          if (isExtensionFrameEventName(event)) {
+            let heard = studioListeners.get(event)
+            if (!heard) studioListeners.set(event, (heard = new Set()))
+            const entry = (payload: unknown) => listener(payload as never)
+            // The first listener subscribes; a refusal is the frame's console's, and so its log's.
+            if (heard.size === 0)
+              call('events.subscribe', { event }).catch((error: { message?: string }) =>
+                fake.logs.push({ level: 'error', message: String(error?.message ?? error) }),
+              )
+            heard.add(entry)
+            const set = heard
+            return { dispose: () => set.delete(entry) }
+          }
+          const set = listeners[event as 'theme' | 'push']
           if (!set) throw new TypeError(`No frame event "${String(event)}".`)
           const entry = (payload: unknown) => listener(payload as never)
           set.add(entry)

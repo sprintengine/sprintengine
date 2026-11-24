@@ -125,6 +125,8 @@ export type ExtensionSettingContributionView = {
 }
 /** A point the extension's worker hooks, and whether its failure refuses the action. */
 export type ExtensionHookContributionView = { point: string; onError?: 'pass' | 'deny' }
+/** A Studio event an extension's worker hears (`workspace.created`, `agent.status.changed`, …). */
+export type ExtensionEventContributionView = { on: string }
 /** A skill an extension hands agents: a folder holding a SKILL.md. */
 export type ExtensionSkillContributionView = { id: string; path: string }
 /** An MCP server an extension hands agents: a local command (`stdio`) or a hosted server (`http`). */
@@ -157,6 +159,7 @@ export type ExtensionContributionsView = {
   settingsSections: ExtensionSurfaceContributionView[]
   mcpTools: ExtensionMcpToolContributionView[]
   hooks: ExtensionHookContributionView[]
+  events: ExtensionEventContributionView[]
   syntaxes: ExtensionSyntaxContributionView[]
   customEditors: ExtensionCustomEditorContributionView[]
   keybindings: ExtensionKeybindingContributionView[]

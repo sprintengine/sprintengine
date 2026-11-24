@@ -559,8 +559,10 @@ const SDK_SERVICE_TOKEN_KEYS = [
   'usage.module-service',
   'activity.module-service',
   'text-generation.module-service',
+  // The person's terminals.
+  'terminals.module-service',
 ] as const
-const sdkRuntime = ['index.js', 'conversation.js', 'brokers.js', 'backlog.js', 'activity.js']
+const sdkRuntime = ['index.js', 'conversation.js', 'brokers.js', 'backlog.js', 'activity.js', 'terminals.js']
   .map((file) => readFileSync(join(process.cwd(), 'packages', 'extension-sdk', 'dist', file), 'utf8'))
   .join('\n')
 const sdkKeysInRuntime = new Set(
@@ -675,7 +677,7 @@ for (const [name, requirement] of allRequirements) {
       (SDK_EXTENSION_PERMISSIONS as readonly string[]).includes(requirement.extension),
       `${name} needs "${requirement.extension}" of an extension, which extension.json cannot ask for`,
     )
-  if (requirement.invoker !== null && requirement.invoker !== 'owner')
+  if (requirement.invoker !== null && requirement.invoker !== 'owner' && requirement.invoker !== 'terminals')
     assert.ok(
       isStudioPermission(requirement.invoker),
       `${name} needs "${requirement.invoker}" of an invoker, which no principal holds`,

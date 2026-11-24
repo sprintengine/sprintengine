@@ -304,8 +304,25 @@ export type TerminalRuntimeOptions = {
   worktreeLeases?: WorktreeLeases
 }
 
+/**
+ * What a caller whose launch may be withdrawn while it waits (an extension's
+ * `create`, extension-terminals.ts) hands the spawn.
+ */
+export type TerminalSpawnOptions = {
+  /**
+   * Asked after each wait the launch makes and once more right before the
+   * process is spawned: a reason abandons the launch there, with nothing
+   * started (`ok: false`, the reason as its message).
+   */
+  mayStart?: () => string | null
+}
+
 type TerminalSessionHandlers = {
-  spawnTerminal(viewer: TerminalViewer, payload: TerminalSpawnPayload): Promise<TerminalSpawnResult>
+  spawnTerminal(
+    viewer: TerminalViewer,
+    payload: TerminalSpawnPayload,
+    options?: TerminalSpawnOptions,
+  ): Promise<TerminalSpawnResult>
   writeTerminal(sessionId: string, data: string): void
   resizeTerminal(sessionId: string, cols: number, rows: number): void
   getTerminalStatus(sessionId: string, viewer?: TerminalViewer): Promise<{ processAlive: boolean; suspended: boolean }>
@@ -3072,9 +3089,13 @@ function attachTerminalSession(
  * for, up to the lease's limit, and the launch is refused with its reason
  * after that. A reattach starts nothing and holds nothing.
  */
-async function spawnTerminal(viewer: TerminalViewer, payload: TerminalSpawnPayload): Promise<TerminalSpawnResult> {
+async function spawnTerminal(
+  viewer: TerminalViewer,
+  payload: TerminalSpawnPayload,
+  options: TerminalSpawnOptions = {},
+): Promise<TerminalSpawnResult> {
   const existing = terminals.get(payload.sessionId)
-  if ((existing && !existing.isDisposed) || !payload.cwd) return spawnTerminalNow(viewer, payload)
+  if ((existing && !existing.isDisposed) || !payload.cwd) return spawnTerminalNow(viewer, payload, options.mayStart)
   // Killing the session (or quitting) while it waits abandons the launch.
   const stop = new AbortController()
   spawnWaits.get(payload.sessionId)?.abort()
@@ -3090,7 +3111,10 @@ async function spawnTerminal(viewer: TerminalViewer, payload: TerminalSpawnPaylo
   }
   if ('busy' in folderHold) return { ok: false, sessionId: payload.sessionId, message: folderHold.busy, exitCode: 1 }
   try {
-    return await spawnTerminalNow(viewer, payload)
+    // Withdrawn while it waited for the folder: nothing is started.
+    const withdrawn = options.mayStart?.() ?? null
+    if (withdrawn) return { ok: false, sessionId: payload.sessionId, message: withdrawn, exitCode: 1 }
+    return await spawnTerminalNow(viewer, payload, options.mayStart)
   } finally {
     folderHold.release()
   }
@@ -3131,6 +3155,7 @@ async function spawnTerminalNow(
     spawnSkillId,
     agentRecord,
   }: TerminalSpawnPayload,
+  mayStart?: () => string | null,
 ): Promise<TerminalSpawnResult> {
   const existingSession = terminals.get(sessionId)
   if (existingSession && !existingSession.isDisposed) {
@@ -3561,6 +3586,23 @@ async function spawnTerminalNow(
       })
     }
 
+    // The last word before anything runs: a launch withdrawn during the waits
+    // above (the host, the startup files) starts no process, so no shell
+    // startup script runs for it. What it wrote for the launch is taken back.
+    const withdrawn = mayStart?.() ?? null
+    if (withdrawn) {
+      if (channelToken) {
+        host.revokeChannelToken?.(channelToken)
+        revokeGatewayLaunchToken(channelToken)
+      }
+      cleanupTerminalStartupScript(startupScriptPath)
+      void cleanupHostContextFile(hostContextPath)
+      if (unownedLaunchPromptPath) void cleanupHostContextFile(unownedLaunchPromptPath)
+      if (hostFiles && hostFiles.length > 0)
+        host.discardLaunchFiles?.([startupScriptPath, hostContextPath, launchPromptPath])
+      logMainPerfEvent('TerminalRuntime', 'terminal-spawn-withdrawn', { sessionId, workspaceId })
+      return { ok: false, sessionId, message: withdrawn, exitCode: 1 } satisfies TerminalSpawnResult
+    }
     const initialSize = getTerminalSize(cols, rows)
     const termProcess = loadPty().spawn(command, args, {
       name: 'xterm-256color',

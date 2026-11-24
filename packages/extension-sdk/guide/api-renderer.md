@@ -53,6 +53,7 @@ seconds, each at most 64 KiB.
 | `methods<Contract>()` | The worker's declared methods (`registerMethods`): `.read(name, params)`, `.operate(name, params)`. Never throws: a refusal, the worker's or Studio's, is an answer. |
 | `on('push', fn)` | The worker's events (`MainHost.emit`): `{ topic, payload? }`. Nothing is replayed: read the state again when an event says so. |
 | `on('theme', fn)`, `theme` | The person's theme changed: `{ colorScheme }`. The CSS variables are already updated. |
+| `on(event, fn)` for a Studio event | `workspace.created`, `.removed`, `.changed`, `agent.status.changed` and the window's `editor.typography.changed`: the first listener subscribes (`events.subscribe`), held to the extension's approval and to whoever opened the surface; a refusal goes to the frame's console. The `events` topic has the payloads. |
 | `ready()` | Say the surface has drawn its content. Studio measures the time from opening to this call. Call it once, after the first meaningful paint. |
 
 ## Host methods

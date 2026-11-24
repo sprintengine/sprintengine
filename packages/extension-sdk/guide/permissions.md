@@ -34,6 +34,9 @@ Rules:
 - Ask for what the code does, no more. "Might need it later" is not a reason.
 - Only the `ui` and `worker` tiers hold permissions. A `content` or
   `declarative` extension runs none of its own code, so it asks for nothing.
+- `terminals:send` and `terminals:read` are the `worker` tier's alone: no
+  surface has a way to a terminal, so a lower tier asking for one is refused
+  rather than asking the person for something it could never use.
 - The list is closed: a name the SDK does not know fails validation, so a typo
   is caught before anyone reads it.
 - An installed extension's approval is bound to its permissions, tier,
@@ -55,9 +58,9 @@ Rules:
 
 | Permission | The approval says | Ask for it when you use | Whoever set the call off needs |
 | --- | --- | --- | --- |
-| `workspace:read` | See your workspaces, their folders, branches and remotes | `WorkspaceContextToken`, `getWorkspaceGitInfo`, `getSkillStatus`, a surface's `workspace.list`, `workspace.get` | `workspace:read` |
+| `workspace:read` | See your workspaces, their folders, branches and remotes | `WorkspaceContextToken`, `getWorkspaceGitInfo`, `getSkillStatus`, a surface's `workspace.list`, `workspace.get`, the workspace events (`workspace.created`, `.removed`, `.changed`) | `workspace:read` |
 | `workspace:operate` | Make workspaces and put Studio’s skills in them | `WorkspaceServiceToken`, `ensureSkillInstalled` | `workspace:operate` |
-| `conversation:read` | Read every chat on this machine, including what you and the agents wrote (broad) | `getActivityService` | `conversation:read` |
+| `conversation:read` | Read every chat on this machine, including what you and the agents wrote (broad) | `getActivityService`, the `agent.status.changed` event | `conversation:read` |
 | `backlog:read` | Read Backlog items | `getBacklogService` reads, a surface's `backlog.list`, `backlog.location` | `backlog:read` |
 | `backlog:operate` | Create Backlog items and change their status, triage, links and metadata | `getBacklogService` writes, a surface's `backlog.create`, `.updateStatus`, `.updateTriage`, `.addLink`, `.updateModuleMetadata` | `backlog:operate` |
 | `providers:read` | See which agents a chat can run on | `listChatRuntimes` | `providers:read` |
@@ -76,6 +79,8 @@ Rules:
 | `agents:companion` | Run its own background agents inside a workspace | `getCompanionAgentsService` | `conversation:create` |
 | `github:api` | Use your GitHub sign-in to call the GitHub API (the token is never shown to the extension) | `getGitHubService` (`request`, `graphql`, `download`, `status`) | the person alone |
 | `tools:contribute` | Add tools that agents in your workspaces can call | `registerMcpTools`, and declaring `contributes.mcpTools` | — |
+| `terminals:send` | Type into your terminals and run commands: open terminals in your workspaces, type into the ones it opened and the ones in a workspace you have open, and close the ones it opened | `getTerminalService` `send`, `create`, `close` (worker tier only) | the person alone, and not from a browser tab; an agent that asks before running commands cannot set it off |
+| `terminals:read` | Read what your terminals show, which can include what commands print | `getTerminalService` `read`, `list` (worker tier only) | the person alone, and not from a browser tab |
 
 Your own methods (`registerMethods`, which your surfaces call with
 `studio.methods()` and your commands without an `action` run), your own events

@@ -259,6 +259,25 @@ export async function devEmit(
   output.done(answer, `Sent "${topic}" to ${String(answer.moduleId)}'s open frames.`)
 }
 
+/** One of Studio's events, made up, to a development folder's worker and surfaces alone. */
+export async function devStudioEvent(
+  output: Output,
+  target: string,
+  event: string,
+  options: { data?: unknown; dataDir?: string },
+) {
+  const answer = await withStudio(options.dataDir, async (studio) => {
+    const moduleId = await moduleIdOf(studio, target)
+    return studio.call('extension.dev.studioEvent', { moduleId, event, payload: options.data })
+  })
+  output.done(
+    answer,
+    answer.surfacesWithheld
+      ? `Fired ${event} at ${String(answer.moduleId)}: its worker ${String(answer.worker)}; its surfaces were not told: ${String(answer.surfacesWithheld)}.`
+      : `Fired ${event} at ${String(answer.moduleId)}: its worker ${String(answer.worker)}; ${String(answer.surfaces)} of its surfaces' subscriptions heard it.`,
+  )
+}
+
 // ── shot ─────────────────────────────────────────────────────────────────────
 
 export type ShotOptions = {
