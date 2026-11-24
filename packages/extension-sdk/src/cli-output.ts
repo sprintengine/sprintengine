@@ -56,6 +56,11 @@ export const CLI_ERROR_CODES = [
   'no_workspace',
   /** It is switched off, or killed. */
   'extension_unavailable',
+  /**
+   * Not for this caller: a paired device's, or an agent on a capped preset
+   * asking for what answers as the person (`open`, `shot`).
+   */
+  'not_permitted',
 ] as const
 
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number]

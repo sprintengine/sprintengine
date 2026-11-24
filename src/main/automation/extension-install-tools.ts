@@ -176,7 +176,8 @@ export function createExtensionInstallTools(deps: ExtensionInstallToolsDeps): Mc
         "Show one of an installed extension's panels (`panel`, its first when neither is named) in the workspace " +
         "a Studio window of this machine shows, or open a file there in the extension's custom editor (`editor`: an " +
         'absolute path). It never brings the window forward. Refused with `no_window` when no Studio window is ' +
-        'open here, and `no_workspace` when none shows a workspace.',
+        'open here, and `no_workspace` when none shows a workspace. What it opens answers its calls as the person, ' +
+        'in their window, so an agent on a capped preset is refused (`not_permitted`): ask the person to open it.',
       inputSchema: {
         type: 'object',
         properties: {

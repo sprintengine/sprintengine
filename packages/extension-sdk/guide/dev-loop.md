@@ -58,6 +58,7 @@ fix it. Without `--json` the same is printed as words, the failure on stderr.
 | `no_window` | No Studio window is open on this machine to show it in | 1 |
 | `no_workspace` | No Studio window here shows a workspace | 1 |
 | `extension_unavailable` | It is switched off, or killed | 1 |
+| `not_permitted` | Not for this caller: a paired device, or an agent on a capped preset asking for what answers as the person (`open`, `shot`) | 1 |
 
 Exit codes: 0 ok, 1 an error, 2 `extension_invalid`, 3 `approval_required`.
 `test` exits with the test runner's code.
@@ -266,6 +267,9 @@ credentials, the ones `git` already uses here.
   (its first by default) in the workspace a Studio window here shows, or opens
   the file in its custom editor. It never brings the window forward. With no
   window it fails `no_window`, with none showing a workspace `no_workspace`.
+  What it opens answers its calls as the person, in their window, so an agent
+  on a capped preset is refused with `not_permitted`: ask the person to open
+  it.
 
 ## `shot <dir|key> [--panel <id> | --door <id> | --settings <id>]`
 

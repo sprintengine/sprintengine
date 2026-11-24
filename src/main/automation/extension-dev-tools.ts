@@ -169,15 +169,32 @@ function refusedRemote(context: McpConnectionContext | undefined): McpToolResult
  * caller narrower than the person (extension-events.ts `emitTo`).
  */
 const RUN_AS_CALLER = new Set(['extension.dev.request', 'extension.dev.hook', 'extension.dev.studioEvent'])
-/** Answered by the desktop shell over its own connection, which holds no caller: refused to a capped one. */
-const REFUSED_TO_CAPPED = new Set(['visual.extension_shot'])
+/**
+ * Answered by the desktop shell over its own connection, which holds no
+ * caller: refused to a capped one. A shot runs the surface's calls as the
+ * person; an opened panel or editor lives on in the person's window, its
+ * calls answered as them for as long as it is open.
+ */
+const REFUSED_TO_CAPPED: ReadonlyMap<string, (ceiling: string) => string> = new Map([
+  [
+    'visual.extension_shot',
+    (ceiling: string) =>
+      `A picture runs the surface's calls as the person, and this agent runs on ${ceiling}: ask the person to take it (sprintengine-extension shot).`,
+  ],
+  [
+    'extension.open',
+    (ceiling: string) =>
+      `An opened panel or editor runs its calls as the person, in their window, and this agent runs on ${ceiling}: ask the person to open it.`,
+  ],
+])
 
 /**
  * The gateway's tools with the dev loop's held to who calls them: a request
  * or a hook runs as its caller (an agent here is the person under its own
  * launch ceiling), so a chat the worker starts for a `manual` agent runs on
- * `manual`. A shot's surface calls are answered over the shell's own
- * connection, which cannot carry a ceiling, so a capped agent is refused one.
+ * `manual`. A shot's surface calls, and an opened panel's or editor's, are
+ * answered over the shell's own connection, which cannot carry a ceiling, so
+ * a capped agent is refused both.
  */
 export function bindDevToolsToCaller(
   tools: McpToolRegistration[],
@@ -189,18 +206,14 @@ export function bindDevToolsToCaller(
         ...tool,
         handler: (args, context) => runAsInvoker(callerInvoker(context), () => tool.handler(args, context)),
       }
-    if (REFUSED_TO_CAPPED.has(tool.name))
+    const refusal = REFUSED_TO_CAPPED.get(tool.name)
+    if (refusal)
       return {
         ...tool,
         handler: (args, context) => {
           const ceiling = callerInvoker(context).permissionCeiling
           if (ceiling !== null && !isMostPermissiveCliPermissionPreset(ceiling))
-            return Promise.resolve(
-              toolError(
-                'not_permitted',
-                `A picture runs the surface's calls as the person, and this agent runs on ${ceiling}: ask the person to take it (sprintengine-extension shot).`,
-              ),
-            )
+            return Promise.resolve(toolError('not_permitted', refusal(ceiling)))
           return tool.handler(args, context)
         },
       }
