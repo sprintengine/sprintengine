@@ -805,6 +805,30 @@ describe('the release lock and the owner records', () => {
     await env.lifecycle.catalogue.dispose()
   })
 
+  test('disposing lets go of an added catalogue’s checkout, and a read that lands after is not kept', async () => {
+    const env = setup()
+    const index = env.repository('acme', 'catalogue', {
+      'catalogue.json': JSON.stringify({ catalogueVersion: 1, name: 'Acme', owner: 'acme', extensions: [] }),
+    })
+    // The checkouts go to the temporary folder: this test's own, to count them.
+    const temp = join(env.root, 'tmp')
+    mkdirSync(temp)
+    const before = process.env.TMPDIR
+    process.env.TMPDIR = temp
+    const checkouts = () => readdirSync(temp).filter((name) => name.startsWith('sprintengine-extension-git-'))
+    try {
+      expect(await env.lifecycle.catalogue.add(index.url)).toMatchObject({ ok: true })
+      expect(checkouts()).toHaveLength(1)
+      await env.lifecycle.catalogue.dispose()
+      expect(checkouts()).toEqual([])
+      await env.lifecycle.catalogue.catalogues(true)
+      expect(checkouts()).toEqual([])
+    } finally {
+      if (before === undefined) delete process.env.TMPDIR
+      else process.env.TMPDIR = before
+    }
+  })
+
   test('an owner Studio cannot read pauses updates; one learned later is recorded', async () => {
     const env = setup()
     const repo = env.repository('acme', 'notes', notesFiles())

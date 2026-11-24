@@ -297,7 +297,14 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     return { catalogue: read.catalogue, ...(fetched ? { fetched } : {}) }
   }
 
+  // Set once Studio lets go of its checkouts: a read that lands after is not kept.
+  let disposed = false
+
   async function keepRepository(id: CatalogueId, fetched: FetchedCommit | undefined): Promise<void> {
+    if (disposed) {
+      await fetched?.dispose()
+      return
+    }
     const before = addedRepositories.get(id)
     if (fetched) addedRepositories.set(id, fetched)
     else addedRepositories.delete(id)
@@ -1190,6 +1197,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     },
 
     async dispose() {
+      disposed = true
       const kept = [...addedRepositories.values()]
       addedRepositories.clear()
       await Promise.all(kept.map((repository) => repository.dispose()))

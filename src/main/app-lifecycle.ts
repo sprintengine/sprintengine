@@ -181,6 +181,10 @@ type RegisterAppLifecycleOptions = {
     runShutdownBegin(): Promise<void>
     runShutdown(): Promise<void>
   }
+  // The extension catalogue, in process only (out of process the server's own
+  // shutdown does this): its kill-list and update timers stop, and the added
+  // catalogues' checkouts kept in temporary folders are removed.
+  extensionCatalogue?: { dispose(): Promise<void> }
   // Settles once every asynchronous module registerMain has finished (or been
   // dropped), so startup hooks a module declared after an await still run.
   moduleLoadReady?: Promise<void>
@@ -273,6 +277,7 @@ export function registerAppLifecycle({
   launchNotices,
   analytics,
   moduleKernel,
+  extensionCatalogue,
   moduleLoadReady,
   updateService,
   handleAuthCallback,
@@ -808,6 +813,8 @@ export function registerAppLifecycle({
         },
       ],
       ['launch notices', () => launchNotices?.freeze()],
+      // With the timers: no update starts on the way out.
+      ['extension catalogue', () => extensionCatalogue?.dispose()],
       // Before the gateway, whose audit it writes to: its clients are told to
       // come back later, and resume from their cursors.
       ['local app socket', () => studioRpcService?.stop()],

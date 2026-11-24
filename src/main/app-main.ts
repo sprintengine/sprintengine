@@ -341,10 +341,19 @@ const moduleLifecycle = serverHost
         }
       },
     })
+// The kill list and automatic updates, for as long as the app runs. The
+// quit stops them and lets go of the added catalogues' checkouts kept in
+// temporary folders (the `extension catalogue` shutdown leg).
+let extensionCatalogue: { dispose(): Promise<void> } | undefined
 if (moduleLifecycle) {
   services.moduleHub.serveLifecycleFrom(moduleLifecycle)
-  // The kill list and automatic updates, for as long as the app runs.
-  moduleLifecycle.catalogue.start()
+  const stopCatalogue = moduleLifecycle.catalogue.start()
+  extensionCatalogue = {
+    dispose: async () => {
+      stopCatalogue()
+      await moduleLifecycle.catalogue.dispose()
+    },
+  }
 }
 // Changes while the app runs load live: a development folder's save, an
 // install, an approval (src/server/extensions/extension-reload.ts). Out of
@@ -574,6 +583,7 @@ registerAppLifecycle({
   analytics: services.analytics,
   // Out of process the server runs every module's startup and shutdown hooks.
   ...(serverHost ? {} : { moduleKernel: moduleLoad.kernel }),
+  ...(extensionCatalogue ? { extensionCatalogue } : {}),
   updateService: services.updateService,
   // The skill sources are the server's out of process: their hourly check runs there.
   checkPluginSourceUpdates: serverHost
