@@ -76,7 +76,6 @@ export function installRefProblem(ref: string): string | null {
   return null
 }
 
-/** A folder inside a repository: relative, with no `.` or `..` steps. */
 /** A link's escaped part as text, or null for a malformed `%` escape. */
 function decoded(part: string): string | null {
   try {
@@ -86,6 +85,7 @@ function decoded(part: string): string | null {
   }
 }
 
+/** A folder inside a repository: relative, with no `.` or `..` steps. */
 function folderOf(path: string): string | null {
   const text = decoded(path)
   if (text === null) return null
