@@ -12,6 +12,7 @@
 // moves fast, so version churn must not leak past this adapter. The package
 // is ESM-only and the main bundle is CJS, so the SDK is loaded via dynamic
 // import on first use.
+import { handedExtensionServers, withdrawnExtensionServers, type HandedExtensionServers } from './extension-mcp-servers'
 import type { ChatExtensionContributions } from '../../server/extensions/agent-contributions/projection'
 import {
   saveToolResultImages,
@@ -314,6 +315,10 @@ type SessionState = {
   // asking (`readableDirectories`, the images sent with its turns).
   readableDirectories?: string[]
   query: Query | null
+  // The installed extensions' MCP servers the live child was handed, and
+  // which of them ride its command line (claudeMcpLaunch), which only a new
+  // child can drop (followExtensionServers).
+  extensionServers: { handed: HandedExtensionServers; commandLine: ReadonlySet<string> } | null
   inputQueue: PushStream<SDKUserMessage> | null
   abort: AbortController | null
   childPid: number | null
@@ -746,6 +751,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     state.abort?.abort()
     state.abort = null
     state.query = null
+    state.extensionServers = null
     state.childPreset = null
     state.childMode = null
     state.cliMode = null
@@ -1346,6 +1352,11 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     // A resumed child restores the session's saved cost total and reports it
     // in its first result; only what it adds from here is this turn's.
     state.queryCostUsd = savedCostUsd
+    const handedServers = handedToSession(state.mcpServers ?? [], extensions.mcpServers)
+    state.extensionServers = {
+      handed: handedExtensionServers(handedServers),
+      commandLine: new Set(handedServers.flatMap((server) => (server.id in mcpServers.commandLine ? [server.id] : []))),
+    }
     state.childPreset = state.permissionPreset
     state.childMode = ownSdkMode(state)
     state.requestedSpawnMode = permissionMode ?? null
@@ -1360,6 +1371,40 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     // Stopped or replaced while the servers connected: the turn that asked
     // for this child has nothing to send its message to.
     if (state.query !== q) throw new Error('The conversation was closed before Claude Code started.')
+  }
+
+  // What the installed extensions hand chats follows them into a live child
+  // at each turn's start (extension-mcp-servers.ts): the servers it takes over
+  // its control channel are set again there, so a server of an extension
+  // killed, switched off, uninstalled or no longer approved since is
+  // disconnected (and its local process stopped by the CLI) before the turn
+  // runs, and one added since connects. One on the child's command line can
+  // only go with the child, so then the child is replaced and the next one
+  // resumes the session. Neither waits for background work: a withdrawn
+  // server must not serve this turn.
+  async function followExtensionServers(state: SessionState): Promise<void> {
+    const q = state.query
+    const started = state.extensionServers
+    if (!q || !started || state.spawning) return
+    const change = claudeExtensionServerChange(
+      started,
+      state.mcpServers ?? [],
+      options.extensionContributions?.().mcpServers ?? [],
+    )
+    if (change.kind === 'unchanged') return
+    if (change.kind === 'reconfigure') {
+      const answered = await answeredWithin(
+        Promise.resolve().then(() => q.setMcpServers(change.control)),
+        mcpRegistrationTimeoutMs,
+        { rejectAsUnanswered: true },
+      )
+      if (state.query !== q) return
+      if (answered) {
+        state.extensionServers = { handed: change.handed, commandLine: started.commandLine }
+        return
+      }
+    }
+    disposeChild(state)
   }
 
   // The SDK would put these on the child's command line, one `--mcp-config`
@@ -1748,6 +1793,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
         handoff: input.handoffPath?.trim() ? { path: input.handoffPath.trim(), owed: true } : null,
         ...(input.readableDirectories?.length ? { readableDirectories: input.readableDirectories } : {}),
         query: null,
+        extensionServers: null,
         inputQueue: null,
         abort: null,
         childPid: null,
@@ -1841,6 +1887,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
           }
         }
         await refreshProjectCommands(state, waiting)
+        await followExtensionServers(state)
         await reconcilePresetWhileBusy(state)
         await ensureQuery(state)
         await leaveStrayPlanMode(state)
@@ -4423,6 +4470,43 @@ export function claudeMcpLaunch(
     if (byReference) commandLine[id] = byReference
   }
   return { commandLine, control, env }
+}
+
+/** The extensions' servers a session is handed: all but those of a name one of its own has. */
+function handedToSession(
+  sessionServers: readonly ConversationMcpServer[],
+  extensionServers: readonly ConversationMcpServer[],
+): ConversationMcpServer[] {
+  const own = new Set(sessionServers.map((server) => server.id))
+  return extensionServers.filter((server) => !own.has(server.id))
+}
+
+/**
+ * What a live child does about the extensions' servers at a turn's start
+ * (followExtensionServers): nothing when they are as it was handed them; its
+ * control-channel servers set again (`control`, the whole set, its own
+ * servers with the extensions' as they are now) when every change is there;
+ * replaced when a server it was handed on its command line is withdrawn, or
+ * one handed now would have to go there.
+ */
+export function claudeExtensionServerChange(
+  started: { handed: HandedExtensionServers; commandLine: ReadonlySet<string> },
+  sessionServers: readonly ConversationMcpServer[],
+  extensionServers: readonly ConversationMcpServer[],
+):
+  | { kind: 'unchanged' }
+  | { kind: 'reconfigure'; control: NonNullable<Options['mcpServers']>; handed: HandedExtensionServers }
+  | { kind: 'restart' } {
+  const handed = handedExtensionServers(handedToSession(sessionServers, extensionServers))
+  if (handed.generation === started.handed.generation) return { kind: 'unchanged' }
+  const withdrawn = new Set(withdrawnExtensionServers(started.handed, handed))
+  if ([...started.commandLine].some((id) => withdrawn.has(id))) return { kind: 'restart' }
+  const launch = claudeMcpLaunch(null, sessionServers, extensionServers)
+  const needsCommandLine = [...handed.servers.keys()].some(
+    (id) => id in launch.commandLine && (!started.commandLine.has(id) || withdrawn.has(id)),
+  )
+  if (needsCommandLine) return { kind: 'restart' }
+  return { kind: 'reconfigure', control: launch.control, handed }
 }
 
 type SdkMcpServer = NonNullable<Options['mcpServers']>[string]

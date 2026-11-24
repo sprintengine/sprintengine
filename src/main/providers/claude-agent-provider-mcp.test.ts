@@ -4,12 +4,14 @@ import { afterEach, test, vi } from 'vitest'
 import type { ConversationEvent, ConversationMcpServer } from '../../shared/conversation-runtime'
 import {
   CLAUDE_AGENT_PROVIDER_ID,
+  claudeExtensionServerChange,
   claudeMcpLaunch,
   claudeMcpServers,
   createClaudeAgentProvider,
   mapSdkMessage,
 } from './claude-agent-provider'
 import type { MockAdapterTurnInput } from './conversation-provider-adapter'
+import { handedExtensionServers } from './extension-mcp-servers'
 
 // A Claude chat's child loads the person's user settings only, so neither the
 // gateway pinned into a workspace's `.mcp.json` nor a connector written there
@@ -45,6 +47,8 @@ function harness(
     removed: [],
     errors: {},
   }),
+  // What the installed extensions hand chats, read at each spawn and each turn.
+  extensions?: () => ConversationMcpServer[],
 ) {
   const options: Record<string, unknown>[] = []
   const gatewayAskedFor: string[] = []
@@ -86,6 +90,7 @@ function harness(
     }
   }
   const adapter = createClaudeAgentProvider({
+    ...(extensions ? { extensionContributions: () => ({ mcpServers: extensions(), pluginDirs: [] }) } : {}),
     mcpRegistrationTimeoutMs: 50,
     loadQuery: (async () => query) as never,
     resolveExecutable: async () => '/fake/bin/claude',
@@ -119,7 +124,13 @@ function harness(
       events.push(event)
     return options.at(-1)!
   }
-  return { adapter, firstTurn, gatewayAskedFor, sent }
+  const nextTurn = async (overrides: Partial<MockAdapterTurnInput> = {}) => {
+    const events: ConversationEvent[] = []
+    for await (const event of (await adapter.sendTurn(turn(overrides))) as AsyncIterable<ConversationEvent>)
+      events.push(event)
+    return events
+  }
+  return { adapter, firstTurn, nextTurn, gatewayAskedFor, sent, options }
 }
 
 // A connector's server as it is installed: its key in the environment it
@@ -456,4 +467,114 @@ test('an MCP call carries the title and server name Claude Code gave it, as shor
   assert.equal(started.get('toolu_read')?.displayTitle, undefined)
   assert.equal((started.get('toolu_bare')?.displayTitle as string).length, 120)
   assert.equal(started.get('toolu_bare')?.serverName, undefined)
+})
+
+// ── An extension's servers follow it into a live chat ──────────────────────
+
+/** The servers one registration set, by name. */
+function registeredIn(entry: unknown): string[] {
+  assert.ok(entry && typeof entry === 'object' && 'registered' in entry, 'a registration')
+  return Object.keys(entry.registered as Record<string, unknown>)
+}
+
+const NOTES_SEARCH: ConversationMcpServer = {
+  id: 'acme_notes_search',
+  name: 'Search',
+  transport: 'stdio',
+  command: '/Users/dev/.sprintengine/extensions/acme.notes/bin/search',
+}
+const TASKS_HOSTED: ConversationMcpServer = {
+  id: 'acme_tasks_hosted',
+  name: 'Tasks',
+  transport: 'http',
+  url: 'https://mcp.example.com/tasks',
+}
+// Its folder's path holds `${`, so it rides the command line (claudeMcpLaunch).
+const ODD_PATH: ConversationMcpServer = {
+  id: 'acme_odd_tool',
+  name: 'Odd',
+  transport: 'stdio',
+  command: '/Users/dev/${odd}/acme.odd/bin/tool',
+}
+
+test('a live chat drops a revoked extension’s server over its control channel before its next turn', async () => {
+  let handed = [NOTES_SEARCH, TASKS_HOSTED]
+  const { adapter, firstTurn, nextTurn, sent, options } = harness(GATEWAY, undefined, () => handed)
+  await firstTurn({ mcpServers: [STRIPE] })
+  assert.deepEqual(registeredIn(sent[0]).sort(), ['acme_notes_search', 'acme_tasks_hosted', 'stripe'])
+
+  // Nothing changed: the next turn sends its message and nothing else.
+  sent.length = 0
+  await nextTurn({ turnId: 'turn_2', message: 'again', mcpServers: [STRIPE] })
+  assert.deepEqual(sent, [{ message: 'again' }])
+
+  // The notes extension is killed: its server is set away before the turn's message, in the same child.
+  handed = [TASKS_HOSTED]
+  sent.length = 0
+  await nextTurn({ turnId: 'turn_3', message: 'after the kill', mcpServers: [STRIPE] })
+  assert.equal(options.length, 1, 'the child was kept')
+  assert.deepEqual(sent.length, 2)
+  assert.deepEqual(registeredIn(sent[0]).sort(), ['acme_tasks_hosted', 'stripe'])
+  assert.deepEqual(sent[1], { message: 'after the kill' })
+  await adapter.disposeAll()
+})
+
+test('a live chat is replaced before its next turn when a revoked server rides its command line', async () => {
+  let handed = [ODD_PATH, TASKS_HOSTED]
+  const { adapter, firstTurn, nextTurn, options } = harness(GATEWAY, undefined, () => handed)
+  const first = await firstTurn()
+  assert.ok('acme_odd_tool' in (first.mcpServers as Record<string, unknown>))
+  handed = [TASKS_HOSTED]
+  await nextTurn({ turnId: 'turn_2', message: 'after the uninstall' })
+  assert.equal(options.length, 2, 'a new child, resumed')
+  assert.equal('acme_odd_tool' in ((options[1]!.mcpServers as Record<string, unknown>) ?? {}), false)
+  await adapter.disposeAll()
+})
+
+test('what a live child does about the extensions’ servers is decided from what it was handed', () => {
+  const started = (servers: ConversationMcpServer[], commandLine: string[] = []) => ({
+    handed: handedExtensionServers(servers),
+    commandLine: new Set(commandLine),
+  })
+  // The same servers, in any order: nothing to do.
+  assert.deepEqual(
+    claudeExtensionServerChange(started([NOTES_SEARCH, TASKS_HOSTED]), [], [TASKS_HOSTED, NOTES_SEARCH]),
+    { kind: 'unchanged' },
+  )
+  // One withdrawn, or changed (an update moved its command), or one added: set over the control channel.
+  for (const now of [
+    [TASKS_HOSTED],
+    [{ ...NOTES_SEARCH, args: ['--v2'] }, TASKS_HOSTED],
+    [NOTES_SEARCH, TASKS_HOSTED, { ...TASKS_HOSTED, id: 'acme_tasks_more' }],
+  ]) {
+    const change = claudeExtensionServerChange(started([NOTES_SEARCH, TASKS_HOSTED]), [STRIPE], now)
+    assert.equal(change.kind, 'reconfigure')
+    assert.deepEqual(
+      Object.keys(change.kind === 'reconfigure' ? change.control : {}).sort(),
+      [...now.map((server) => server.id), 'stripe'].sort(),
+    )
+  }
+  // The person's own server of the same name stands in for the extension's, so its going changes nothing.
+  assert.deepEqual(
+    claudeExtensionServerChange(
+      started([TASKS_HOSTED]),
+      [{ ...NOTES_SEARCH, command: 'mine' }],
+      [NOTES_SEARCH, TASKS_HOSTED],
+    ),
+    { kind: 'unchanged' },
+  )
+  // One on the command line withdrawn, or one handed now that would have to go there: a new child.
+  assert.deepEqual(
+    claudeExtensionServerChange(started([ODD_PATH, TASKS_HOSTED], ['acme_odd_tool']), [], [TASKS_HOSTED]),
+    {
+      kind: 'restart',
+    },
+  )
+  assert.deepEqual(claudeExtensionServerChange(started([TASKS_HOSTED]), [], [TASKS_HOSTED, ODD_PATH]), {
+    kind: 'restart',
+  })
+  // One on the command line still handed as it was stays there while the rest are set again.
+  const kept = claudeExtensionServerChange(started([ODD_PATH, TASKS_HOSTED], ['acme_odd_tool']), [], [ODD_PATH])
+  assert.equal(kept.kind, 'reconfigure')
+  assert.deepEqual(kept.kind === 'reconfigure' && kept.control, {})
 })
