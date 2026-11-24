@@ -475,8 +475,8 @@ export function ModulesSettingsTab(): JSX.Element {
               onBack={() => setPage(null)}
               onInstall={
                 extensions.installFrom
-                  ? (catalogue, id, release) =>
-                      void extensions.installFrom?.({ catalogue, id, ...release }).then((outcome) => {
+                  ? (from) =>
+                      void extensions.installFrom?.(from).then((outcome) => {
                         // Installed, or refused because the catalogue lists another now: read it again.
                         void catalogueState.reload()
                         return outcome

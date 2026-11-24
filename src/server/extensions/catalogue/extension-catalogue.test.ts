@@ -650,21 +650,59 @@ describe('what installs is exactly what was checked', () => {
     expect((await env.installed())[0]?.extension.version).toBe('1.0.0')
   })
 
+  /** What a page's Install names: the whole release its page shows. */
+  async function shown(env: ReturnType<typeof setup>, catalogue: string, id: string) {
+    const page = await env.lifecycle.catalogue.entry(catalogue, id)
+    if (!page.ok) throw new Error(page.message)
+    const { version, commit, contentHash, source, ownerId } = page.entry
+    return { catalogue, id, version, commit, contentHash, source, ownerId: ownerId ?? null }
+  }
+
   test('a catalogue install names the release the page showed', async () => {
     const env = setup()
     const repo = env.repository('acme', 'notes', notesFiles())
     const v1 = await env.release(repo.folder)
     env.serveCatalogue('community', [{ id: 'acme.notes', source: { url: repo.url, ref: 'main' }, releases: [v1] }])
+    const page = await shown(env, 'community', 'acme.notes')
     const v2 = await v2Of(env, repo)
     env.serveCatalogue('community', [{ id: 'acme.notes', source: { url: repo.url, ref: 'main' }, releases: [v2, v1] }])
-    const answer = await env.lifecycle.catalogue.installFrom({
-      catalogue: 'community',
-      id: 'acme.notes',
-      version: '1.0.0',
-      commit: v1.commit,
-    })
+    const answer = await env.lifecycle.catalogue.installFrom(page)
     expect(!answer.ok && answer.message).toMatch(/now lists acme\.notes 1\.1\.0, not 1\.0\.0/)
     expect(await env.installed()).toEqual([])
+  })
+
+  test('a page’s Install refuses another folder at the same commit and version, and another owner', async () => {
+    const env = setup()
+    // One commit holding the extension twice: the folder the page showed, and another.
+    const dir = join(env.root, 'repos', 'acme', 'extensions')
+    const repo = env.repository('acme', 'extensions', notesFiles(), 'notes')
+    env.commit(join(dir, 'other'), dir, notesFiles())
+    const release = await env.release(repo.folder)
+    const listed = (path: string, ownerId: number) => ({
+      id: 'acme.notes',
+      source: { url: repo.url, ref: 'main', path },
+      ownerId,
+      releases: [release],
+    })
+    env.serveCatalogue('community', [listed('notes', 7)])
+    const page = await shown(env, 'community', 'acme.notes')
+    expect(page).toMatchObject({ source: { path: 'notes' }, ownerId: 7, contentHash: release.contentHash })
+
+    // Same version, commit and bytes, another folder: refused, nothing installed.
+    env.serveCatalogue('community', [listed('other', 7)])
+    const moved = await env.lifecycle.catalogue.installFrom(page)
+    expect(!moved.ok && moved.message).toMatch(/moved to another repository or folder\. Look at it again/)
+    expect(await env.installed()).toEqual([])
+
+    // Back in its folder, under another owner id: refused too.
+    env.serveCatalogue('community', [listed('notes', 8)])
+    const owner = await env.lifecycle.catalogue.installFrom(page)
+    expect(!owner.ok && owner.message).toMatch(/its owner changed/)
+    expect(await env.installed()).toEqual([])
+
+    // As shown: installs.
+    env.serveCatalogue('community', [listed('notes', 7)])
+    expect(await env.lifecycle.catalogue.installFrom(page)).toMatchObject({ ok: true, moduleId: 'acme.notes' })
   })
 })
 

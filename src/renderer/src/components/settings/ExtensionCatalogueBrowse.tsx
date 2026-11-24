@@ -5,6 +5,7 @@ import type {
   StudioCatalogueImage,
   StudioCatalogueListing,
   StudioCatalogueView,
+  StudioExtensionInstallSource,
 } from '../../../../../packages/studio-protocol/src/public'
 import { extensionCatalogueApi } from '../../studio/extensionCatalogue'
 import {
@@ -259,8 +260,8 @@ export function ExtensionCataloguePage({
   id: string
   busy: boolean
   onBack: () => void
-  /** Install the release this page shows: its version and commit. */
-  onInstall: ((catalogue: string, id: string, release: { version: string; commit: string }) => void) | null
+  /** Install the release this page shows: all of it, so a catalogue that lists anything else now is refused. */
+  onInstall: ((from: Extract<StudioExtensionInstallSource, { catalogue: string }>) => void) | null
   onUpdate: ((id: string, version: string) => void) | null
 }): JSX.Element {
   const [entry, setEntry] = useState<StudioCatalogueEntryView | null>(null)
@@ -331,7 +332,17 @@ export function ExtensionCataloguePage({
           {state.kind === 'install' && onInstall ? (
             <PrimaryButton
               busy={busy}
-              onClick={() => onInstall(catalogue, entry.id, { version: entry.version, commit: entry.commit })}
+              onClick={() =>
+                onInstall({
+                  catalogue,
+                  id: entry.id,
+                  version: entry.version,
+                  commit: entry.commit,
+                  contentHash: entry.contentHash,
+                  source: entry.source,
+                  ownerId: entry.ownerId ?? null,
+                })
+              }
             >
               Install
             </PrimaryButton>

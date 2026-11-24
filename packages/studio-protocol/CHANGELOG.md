@@ -14,8 +14,9 @@
   commandId }` (an owner's): a catalogue by its git URL, or `community` for
   the community catalogue.
 - **`extension.installFrom`** `{ from, commandId }` (an owner's): from a
-  catalogue entry (`{ catalogue, id, version?, commit? }`, the release the
-  person was shown) or a git URL (`{ git, ref?, path? }`); answers as
+  catalogue entry (`{ catalogue, id, version, commit, contentHash, source,
+  ownerId }`, the whole release the person was shown, refused when the
+  catalogue lists anything else now) or a git URL (`{ git, ref?, path? }`); answers as
   `extension.install`, with `leftOut` for a Claude Code plugin, and a refusal
   names a plugin marketplace's `folders`.
 - **`extension.update`** `{ moduleId, version?, commandId }` (an owner's): the

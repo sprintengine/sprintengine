@@ -81,6 +81,8 @@ vi.mock('../../studio/extensionCatalogue', () => ({
           catalogueName: 'Community',
           source: { url: 'https://github.com/acme/notes.git', ref: 'main' },
           commit: 'a'.repeat(40),
+          contentHash: 'b'.repeat(64),
+          ownerId: 7,
           releases: [{ version: '1.0.0', minimumStudio: '0.13.0' }],
           alsoListedBy: [],
         },
@@ -620,9 +622,17 @@ test('an install link opens the extension’s page and installs nothing until In
   expect(catalogueEntryCalls).toEqual([['community', 'acme.notes']])
   expect(installFromCalls).toEqual([])
   await click(button('Install', page!))
-  // The release the page showed: a catalogue that lists another now is refused.
+  // The whole release the page showed: a catalogue that lists anything else now is refused.
   expect(installFromCalls).toEqual([
-    { catalogue: 'community', id: 'acme.notes', version: NOTES_LISTING.version, commit: 'a'.repeat(40) },
+    {
+      catalogue: 'community',
+      id: 'acme.notes',
+      version: NOTES_LISTING.version,
+      commit: 'a'.repeat(40),
+      contentHash: 'b'.repeat(64),
+      source: { url: 'https://github.com/acme/notes.git', ref: 'main' },
+      ownerId: 7,
+    },
   ])
 })
 

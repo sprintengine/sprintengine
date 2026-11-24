@@ -20,6 +20,7 @@ import type {
   ModuleRegistrySnapshotWriteResult,
   ThirdPartyModuleListResult,
   StudioCatalogueEntryView,
+  StudioCatalogueSource,
   StudioCatalogueView,
 } from './extensions-types.js'
 
@@ -422,11 +423,22 @@ export type StudioModulesTopicMap = {
 
 /**
  * Where `extension.installFrom` installs from: a catalogue's entry, or a git
- * URL. A catalogue install names the `version` (and `commit`) the person was
- * shown, so a catalogue that lists another since is refused, not installed.
+ * URL. A catalogue install names the whole release the person was shown (its
+ * page, `StudioCatalogueEntryView`): the version, commit, content hash,
+ * source and owner id, `null` when the page named none. A catalogue that
+ * lists anything else since is refused, never installed in its place.
  */
 export type StudioExtensionInstallSource =
-  { catalogue: string; id: string; version?: string; commit?: string } | { git: string; ref?: string; path?: string }
+  | {
+      catalogue: string
+      id: string
+      version: string
+      commit: string
+      contentHash: string
+      source: StudioCatalogueSource
+      ownerId: number | null
+    }
+  | { git: string; ref?: string; path?: string }
 
 /** A manifest id, as the module kernel accepts one. */
 const MAX_MODULE_ID_CHARS = 200
@@ -482,6 +494,15 @@ const MAX_URL_CHARS = 512
 
 function shortText(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= max
+}
+
+/** A catalogue entry's git source, as its page showed it. */
+function catalogueSourceOf(value: unknown): StudioCatalogueSource | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const source = value as Record<string, unknown>
+  if (!shortText(source.url, MAX_URL_CHARS) || !shortText(source.ref, 256)) return null
+  if (source.path !== undefined && !shortText(source.path, 512)) return null
+  return { url: source.url, ref: source.ref, ...(source.path !== undefined ? { path: source.path as string } : {}) }
 }
 
 function catalogueUrlParams(value: Record<string, unknown>): StudioParsed<{ url: string; commandId: string }> {
@@ -625,17 +646,30 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
         })
       }
       if (!shortText(source.catalogue, MAX_URL_CHARS + 4) || !shortText(source.id, MAX_MODULE_ID_CHARS))
-        return studioParamsRefused('"from" is `{ catalogue, id }` or `{ git, ref?, path? }`.')
-      if (source.version !== undefined && !shortText(source.version, 64))
+        return studioParamsRefused(
+          '"from" is `{ catalogue, id, version, commit, contentHash, source, ownerId }` or `{ git, ref?, path? }`.',
+        )
+      // The whole release the page showed: what installs is that, or nothing.
+      if (!shortText(source.version, 64))
         return studioParamsRefused('"from.version" is the version the person was shown.')
-      if (source.commit !== undefined && (typeof source.commit !== 'string' || !/^[0-9a-f]{40}$/.test(source.commit)))
+      if (typeof source.commit !== 'string' || !/^[0-9a-f]{40}$/.test(source.commit))
         return studioParamsRefused('"from.commit" is the release\'s commit.')
+      if (typeof source.contentHash !== 'string' || !/^[0-9a-f]{64}$/.test(source.contentHash))
+        return studioParamsRefused('"from.contentHash" is the release\'s content hash.')
+      const shown = catalogueSourceOf(source.source)
+      if (!shown)
+        return studioParamsRefused('"from.source" is the entry\'s source the person was shown, `{ url, ref, path? }`.')
+      if (source.ownerId !== null && !(Number.isSafeInteger(source.ownerId) && (source.ownerId as number) > 0))
+        return studioParamsRefused('"from.ownerId" is the owner id the person was shown, or null.')
       return studioParams({
         from: {
           catalogue: source.catalogue,
           id: source.id,
-          ...(source.version !== undefined ? { version: source.version as string } : {}),
-          ...(source.commit !== undefined ? { commit: source.commit as string } : {}),
+          version: source.version,
+          commit: source.commit,
+          contentHash: source.contentHash,
+          source: shown,
+          ownerId: source.ownerId as number | null,
         },
         commandId: command.params,
       })

@@ -62,9 +62,10 @@ and the kill list are read over HTTPS from Studio's catalogue repository.
   came from (a catalogue, or a git URL's repository and folder) and updates
   it only from there. Installing it from another catalogue, another kind of
   source or another repository or folder means removing it first.
-- **What installs is what was checked.** An install names the release the
-  person was shown, and an update the release that was checked and held
-  back. A catalogue that lists another by the time it installs is refused.
+- **What installs is what was checked.** An install names the whole release
+  the person was shown (its version, commit, content hash, source and
+  owner), and an update the release that was checked and held back. A
+  catalogue that lists anything else by the time it installs is refused.
 - **Owners are pinned.** Studio records the owner's numeric id at the first
   install. When the owner is renamed or the repository changes hands, or
   Studio cannot tell who owns it now, updates pause until the extension is

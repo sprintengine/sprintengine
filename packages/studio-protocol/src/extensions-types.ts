@@ -370,6 +370,10 @@ export type StudioCatalogueEntryView = StudioCatalogueListing & {
   catalogueName: string
   source: StudioCatalogueSource
   commit: string
+  /** The release's content hash: Install names it, with the commit, source and owner id shown here. */
+  contentHash: string
+  /** The owner's numeric id the catalogue (or its owner records) names now. */
+  ownerId?: number
   license?: string
   repository?: string
   homepage?: string

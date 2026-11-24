@@ -176,7 +176,14 @@ export type ExtensionCatalogue = {
   ): Promise<{ ok: true; mime: string; base64: string } | { ok: false; message: string }>
   add(url: string): Promise<{ ok: true; catalogue: StudioCatalogueView } | { ok: false; message: string }>
   remove(url: string): Promise<{ ok: true } | { ok: false; message: string }>
-  installFrom(from: StudioExtensionInstallSource): Promise<InstallAnswer & { leftOut?: string[] }>
+  /**
+   * A catalogue install from a client names the whole release its page
+   * showed (`StudioExtensionInstallSource`); only Studio's own callers name
+   * just the entry, to install what the catalogue lists now.
+   */
+  installFrom(
+    from: StudioExtensionInstallSource | { catalogue: string; id: string },
+  ): Promise<InstallAnswer & { leftOut?: string[] }>
   /** Install the newer release of an installed extension; `version` is the one the person was shown. */
   update(key: string, version?: string): Promise<InstallAnswer>
   /** An installed extension's origin, its update and its kill, for `extension.installed`. */
@@ -957,7 +964,8 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
 
     async entry(id, key) {
       if (!isKnownCatalogue(id)) return { ok: false, message: 'That catalogue has not been added here.' }
-      if (!cached(id)) await refreshOne(id)
+      // Read with the owner records, so the owner id the page shows is the one an install checks.
+      if (!cached(id)) await Promise.all([refreshOne(id), refreshLists()])
       const entry = findEntry(id, key)
       if (!entry) return { ok: false, message: `${catalogueName(id)} does not list ${key}.` }
       const installed = await installedMap()
@@ -975,6 +983,8 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
           catalogueName: catalogueName(id),
           source: entry.source,
           commit: release.commit,
+          contentHash: release.contentHash,
+          ...(currentOwnerId(entry) !== undefined ? { ownerId: currentOwnerId(entry)! } : {}),
           ...(release.license ? { license: release.license } : {}),
           ...(release.repository ? { repository: release.repository } : {}),
           ...(release.homepage ? { homepage: release.homepage } : {}),
@@ -1103,14 +1113,22 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       return { ok: true }
     },
 
-    // A catalogue install names the release the person was shown, when it can.
+    // A page's Install names the whole release it showed: that installs, or nothing.
     installFrom: (from) =>
       'git' in from
         ? installFromGit(from)
         : installFromCatalogue(
             from.catalogue,
             from.id,
-            from.version ? { version: from.version, ...(from.commit ? { commit: from.commit } : {}) } : undefined,
+            'version' in from
+              ? {
+                  version: from.version,
+                  commit: from.commit,
+                  contentHash: from.contentHash,
+                  source: from.source,
+                  ownerId: from.ownerId,
+                }
+              : undefined,
           ),
 
     update,
