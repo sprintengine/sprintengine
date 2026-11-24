@@ -6725,7 +6725,10 @@ export const en = {
         chatNoLongerOpen: 'Chat no longer open',
         leftBehind: 'Left behind',
         leftBehindHint:
-          'Its agent has finished, and this kept running. That can be on purpose, a report server say; stop it when you no longer need it.',
+          'The chat that started it was settled or removed, and this kept running. That can be on purpose, a report server say; stop it when you no longer need it.',
+        agentIdle: 'Agent idle',
+        agentIdleHint:
+          'Its chat is still open and its agent is resting. This keeps running for when the chat picks up again.',
         onItsOwn: 'Running on its own',
         onItsOwnHint:
           'Its agent is still running, but this runs apart from it and will keep running after the chat ends.',
@@ -6746,6 +6749,12 @@ export const en = {
         stopAllLeftBehind: 'Stop all left behind',
         stopAllLeftBehindIn: (count: unknown, label: unknown) => `Stop all ${count} left behind in ${label}`,
         stopAll: 'Stop all',
+        confirmStop: (count: number) =>
+          count === 1 ? 'Stop 1 program left behind?' : `Stop ${count} programs left behind?`,
+        confirmStopButton: (count: number) => `Stop ${count}`,
+        cancel: 'Cancel',
+        notAllowed: 'This connection cannot read this machine’s programs',
+        notAllowedBody: 'Only Studio’s owner, on this machine’s own windows and clients, can list or stop them.',
         close: 'Close',
         closeNamed: (name: unknown) => `Close ${name}`,
         couldNotStop: (count: number) =>

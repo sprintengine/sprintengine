@@ -47,6 +47,12 @@ export type AgentProcessDomainOptions = {
   reader?: ProcessReader | null
   selfPid?: number
   isStudioCommand?: (command: string) => boolean
+  /**
+   * Whether a chat is still open here (false: settled, removed, or its
+   * workspace gone; null: not known). Only what a closed chat started reads
+   * as left behind.
+   */
+  chatOpen?: (workspaceId: string, agentId: string | undefined) => boolean | null
   /** `process.kill`, for tests. */
   kill?: (pid: number, signal: NodeJS.Signals) => void
   sleep?: (ms: number) => Promise<void>
@@ -77,7 +83,12 @@ export function createAgentProcessDomain(options: AgentProcessDomainOptions = {}
   const now = options.now ?? Date.now
 
   const analyze = (snapshot: ProcessSnapshot): ProcessAnalysis =>
-    analyzeProcesses(snapshot, { selfPid, isStudioCommand, now: snapshot.scannedAt })
+    analyzeProcesses(snapshot, {
+      selfPid,
+      isStudioCommand,
+      now: snapshot.scannedAt,
+      ...(options.chatOpen ? { chatOpen: options.chatOpen } : {}),
+    })
 
   let recent: { at: number; answer: Promise<StudioProcessesMethodMap['processes.list']['result']> } | null = null
 
@@ -176,12 +187,25 @@ export function createAgentProcessDomain(options: AgentProcessDomainOptions = {}
       // Wait for them to go, reading the machine again.
       let pending = targets.filter((target) => !outcomes.has(target.id))
       const deadline = now() + STOP_GRACE_MS
+      // Nothing is killed on the strength of the read from before SIGTERM: a
+      // pid it names may have ended and been handed to another program since.
+      let fresh = false
       while (pending.length > 0 && now() < deadline) {
         await sleep(STOP_POLL_MS)
         const again = await reader.read().catch(() => null)
         if (!again) continue
         snapshot = again
+        fresh = true
         pending = pending.filter((target) => stillThere(snapshot, target.pid, target.startedAt))
+      }
+      if (!fresh) {
+        const again = await reader.read().catch(() => null)
+        if (!again) {
+          options.log?.('Reading this machine’s processes after a stop failed; nothing was killed.')
+          for (const target of targets) if (!outcomes.has(target.id)) outcomes.set(target.id, 'failed')
+          return { results: ids.map((id) => ({ id, outcome: outcomes.get(id) ?? 'gone' })) }
+        }
+        snapshot = again
       }
 
       // Whatever is left, and still the same process, is killed.

@@ -244,7 +244,12 @@ function machine(): ProcessSnapshot {
 }
 
 test('rows are the top of what agents started, with their state and what they started folded in', () => {
-  const analysis = analyzeProcesses(machine(), { selfPid: SELF, now: NOW })
+  // Agent B's chat was settled; the rest are open.
+  const analysis = analyzeProcesses(machine(), {
+    selfPid: SELF,
+    now: NOW,
+    chatOpen: (workspaceId, agentId) => !(workspaceId === 'ws-b' && agentId === 'agent-b'),
+  })
   const rows = new Map(analysis.rows.map((row) => [row.pid, row]))
   assert.deepEqual(
     [...rows.keys()].sort((a, b) => a - b),
@@ -299,4 +304,68 @@ test('what Studio runs under is never a row, even when an agent started it', () 
     analysis.rows.some((row) => row.pid === 80 || row.pid === 81),
     false,
   )
+})
+
+test('a chat still open whose CLI rests is not left behind: what it started waits as agent idle', () => {
+  const snapshot = machine()
+  const ask = (chatOpen?: (workspaceId: string, agentId: string | undefined) => boolean | null) =>
+    analyzeProcesses(snapshot, { selfPid: SELF, now: NOW, ...(chatOpen ? { chatOpen } : {}) }).rows.find(
+      (row) => row.pid === 42,
+    )!.state
+  assert.equal(
+    ask(() => true),
+    'agent-idle',
+  )
+  // Not known here (another Studio's chat, a registry not loaded): idle, never left behind.
+  assert.equal(ask(), 'agent-idle')
+  assert.equal(
+    ask(() => null),
+    'agent-idle',
+  )
+  assert.equal(
+    ask(() => false),
+    'left-behind',
+  )
+})
+
+test('a terminal multiplexer and everything in its panes is neither listed nor folded into a row', () => {
+  const snapshot = machine()
+  snapshot.processes.push(
+    // An agent started a tmux server; a person attached later and runs a shell and a server in its panes.
+    proc(90, 1, 'tmux new-session -d -s work', { identity: B }),
+    proc(91, 90, '-zsh', { identity: B }),
+    proc(92, 91, 'python3 -m http.server 9090', { identity: B }),
+    // A script left behind that started a tmux server of its own.
+    proc(95, 1, 'node /Users/dev/runner.mjs', { identity: B }),
+    proc(96, 95, 'tmux -L agent new-session -d', { identity: B, pgid: 95 }),
+    proc(97, 96, 'bash', { identity: B, pgid: 95 }),
+  )
+  snapshot.listeners = new Map([...snapshot.listeners, [92, [9090]]])
+  const analysis = analyzeProcesses(snapshot, { selfPid: SELF, now: NOW, chatOpen: () => false })
+  const pids = analysis.rows.map((row) => row.pid)
+  for (const pid of [90, 91, 92, 96, 97]) assert.equal(pids.includes(pid), false, String(pid))
+  const runner = analysis.rows.find((row) => row.pid === 95)!
+  assert.deepEqual(runner.memberPids, [95])
+  assert.equal(runner.protectedInside, true)
+  assert.equal(analysis.roles.get(90), 'multiplexer')
+})
+
+test('a look-alike inside another value does not tag a process, and two disagreeing ids are no identity', () => {
+  // ps joins the environment with spaces, so a value holding spaces can carry a look-alike.
+  assert.deepEqual(
+    identityFromEnvironment(
+      ' NOTE=see SPRINTENGINE_WORKSPACE_ID=fake here SPRINTENGINE_WORKSPACE_ID=ws-real HOME=/Users/dev',
+    ),
+    { workspaceId: 'ws-real' },
+  )
+  assert.equal(
+    identityFromEnvironment(' NOTE=x SPRINTENGINE_WORKSPACE_ID=fake PATH=/bin SPRINTENGINE_WORKSPACE_ID=ws-real'),
+    null,
+  )
+  assert.equal(identityFromEnvironment(' NOTE=see SPRINTENGINE_WORKSPACE_ID=fake here'), null)
+  // NUL-separated entries are read whole.
+  assert.equal(identityFromEnvironment('NOTE=a SPRINTENGINE_WORKSPACE_ID=fake\0PATH=/bin\0'), null)
+  assert.deepEqual(identityFromEnvironment('NOTE=a SPRINTENGINE_WORKSPACE_ID=fake\0SPRINTENGINE_WORKSPACE_ID=ws-1\0'), {
+    workspaceId: 'ws-1',
+  })
 })

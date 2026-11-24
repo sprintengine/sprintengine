@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { StudioClient } from '../../../../../../packages/client-runtime/src/public'
+import { StudioError, type StudioClient } from '../../../../../../packages/client-runtime/src/public'
 import {
   STUDIO_BROWSER_TABS_CAPABILITY,
   STUDIO_PROCESSES_CAPABILITY,
@@ -25,7 +25,8 @@ export type ProcessesView = {
   loaded: boolean
   processes: readonly StudioAgentProcess[]
   tabs: readonly StudioBrowserTab[]
-  unavailable: StudioProcessesUnavailable | null
+  /** Why there is no list: the Studio's reason, or `not-allowed` when this connection may not read it. */
+  unavailable: StudioProcessesUnavailable | 'not-allowed' | null
 }
 
 const NONE: ProcessesView = { offered: false, loaded: false, processes: [], tabs: [], unavailable: null }
@@ -45,6 +46,14 @@ async function studio(): Promise<StudioClient | null> {
   }
 }
 
+type Read<T> = { value?: T; refused?: boolean }
+
+/** A refusal that says this connection may not read it, rather than a read that went nowhere. */
+function refusedHere(error: unknown): boolean {
+  const code = error instanceof StudioError ? error.code : (error as { code?: unknown } | null)?.code
+  return code === 'owner_required' || code === 'scope_required'
+}
+
 function commandId(): string {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
@@ -54,6 +63,11 @@ function commandId(): string {
 export function useProcesses(open: boolean) {
   const [view, setView] = useState<ProcessesView>(NONE)
   const alive = useRef(true)
+  // Asks overlap (a poll in flight when a stop's own ask goes out): only the
+  // latest one's answer is drawn, or a stopped row would come back for a beat.
+  const asked = useRef(0)
+  // The Studio the rows on screen came from: after a switch, its rows go.
+  const from = useRef<StudioClient | null>(null)
   useEffect(() => {
     alive.current = true
     return () => {
@@ -62,27 +76,43 @@ export function useProcesses(open: boolean) {
   }, [])
 
   const ask = useCallback(async (): Promise<void> => {
+    const turn = ++asked.current
     const client = await studio()
-    if (!client) return
+    if (!client || turn !== asked.current) return
+    const switched = from.current !== client
+    from.current = client
     const servesProcesses = client.supports(STUDIO_PROCESSES_CAPABILITY)
     const servesTabs = client.supports(STUDIO_BROWSER_TABS_CAPABILITY)
     if (!servesProcesses && !servesTabs) {
       if (alive.current) setView(NONE)
       return
     }
+    const read = <T>(request: Promise<T>): Promise<Read<T>> =>
+      request.then(
+        (value): Read<T> => ({ value }),
+        (error: unknown): Read<T> => ({ refused: refusedHere(error) }),
+      )
     const [processes, tabs] = await Promise.all([
-      servesProcesses ? client.request('processes.list', {}).catch(() => null) : Promise.resolve(null),
-      servesTabs ? client.request('browserTabs.list', {}).catch(() => null) : Promise.resolve(null),
+      servesProcesses ? read(client.request('processes.list', {})) : Promise.resolve(null),
+      servesTabs ? read(client.request('browserTabs.list', {})) : Promise.resolve(null),
     ])
-    if (!alive.current) return
-    setView((current) => ({
-      offered: true,
-      loaded: true,
-      // A read that reached nobody leaves what is on screen alone.
-      processes: processes ? processes.processes : current.processes,
-      tabs: tabs ? tabs.tabs : current.tabs,
-      unavailable: processes ? (processes.unavailable ?? null) : current.unavailable,
-    }))
+    if (!alive.current || turn !== asked.current) return
+    setView((current) => {
+      // A read that reached nobody leaves what is on screen alone, unless what
+      // is on screen came from another Studio.
+      const kept = switched ? NONE : current
+      return {
+        offered: true,
+        loaded: true,
+        processes: processes?.value ? processes.value.processes : processes?.refused ? [] : kept.processes,
+        tabs: tabs?.value ? tabs.value.tabs : tabs?.refused ? [] : kept.tabs,
+        unavailable: processes?.value
+          ? (processes.value.unavailable ?? null)
+          : processes?.refused
+            ? 'not-allowed'
+            : kept.unavailable,
+      }
+    })
   }, [])
 
   useEffect(() => {

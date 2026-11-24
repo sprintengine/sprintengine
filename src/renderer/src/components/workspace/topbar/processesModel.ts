@@ -79,6 +79,8 @@ export function processStateWords(state: StudioAgentProcess['state']): { word: s
   switch (state) {
     case 'left-behind':
       return { word: words.leftBehind, hint: words.leftBehindHint }
+    case 'agent-idle':
+      return { word: words.agentIdle, hint: words.agentIdleHint }
     case 'on-its-own':
       return { word: words.onItsOwn, hint: words.onItsOwnHint }
     case 'with-agent':

@@ -176,3 +176,29 @@ test.skipIf(reader === null)(
   },
   15_000,
 )
+
+test('when the machine cannot be read again after SIGTERM, nothing is killed on the old read', async () => {
+  const stubborn = proc(50, 1, 'node /Users/dev/stubborn.js')
+  const signals: Array<[number, NodeJS.Signals]> = []
+  let reads = 0
+  let clock = NOW
+  const domain = createAgentProcessDomain({
+    reader: {
+      read: async () => {
+        reads += 1
+        if (reads > 1) throw new Error('ps is gone')
+        return { processes: [...BASE, stubborn], listeners: new Map(), scannedAt: NOW }
+      },
+      cwds: async () => new Map(),
+    },
+    selfPid: SELF,
+    kill: (pid, signal) => void signals.push([pid, signal]),
+    sleep: async (ms) => {
+      clock += ms
+    },
+    now: () => clock,
+  })
+  const answer = await domain.stop([idOf(stubborn)])
+  assert.deepEqual(answer.results, [{ id: idOf(stubborn), outcome: 'failed' }])
+  assert.deepEqual(signals, [[-50, 'SIGTERM']])
+})

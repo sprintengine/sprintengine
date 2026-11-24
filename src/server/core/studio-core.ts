@@ -898,6 +898,17 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // What this machine's agents started and left running (agent-process-domain.ts):
   // read from the processes themselves on each ask, where the agents run.
   const processes = createAgentProcessDomain({
+    // A program is left behind only once its chat is: settled, removed, or
+    // its workspace gone. A registry with no records at all may simply not
+    // have loaded, which is not every chat removed.
+    chatOpen: (workspaceId, agentId) => {
+      if (isWorkspaceTombstoned(workspaceRegistry.getTombstones(), workspaceId)) return false
+      const record = workspaceRegistry.getRecord(workspaceId)
+      if (!record) return workspaceRegistry.getRecords().length > 0 ? false : null
+      if (record.settledAt) return false
+      if (agentId && !record.agents[agentId]) return false
+      return true
+    },
     log: (message, error) => {
       void writeDiagnosticLog({
         level: 'warning',

@@ -140,7 +140,15 @@ test('each row says its state and age in words, and Stop, Stop all and Close sen
   expect(calls.closed).toEqual(['tab-1'])
   await act(async () => button('Stop Headless Chrome')!.click())
   expect(calls.stopped).toEqual([['5-5']])
+  // A stop of more than one is asked again, with its count, first.
   await act(async () => button('Stop all left behind')!.click())
+  expect(calls.stopped).toHaveLength(1)
+  expect(el.textContent).toContain('Stop 2 programs left behind?')
+  await act(async () => button('Cancel')!.click())
+  expect(el.querySelector('[data-processes-confirm]')).toBeNull()
+  expect(calls.stopped).toHaveLength(1)
+  await act(async () => button('Stop all left behind')!.click())
+  await act(async () => button('Stop 2')!.click())
   expect(calls.stopped[1]?.sort()).toEqual(['4242-1700000000', '5-5'])
 })
 
@@ -150,4 +158,29 @@ test('on Windows the list says it is not available yet, and nothing reads as emp
     { stopped: [], closed: [] },
   )
   expect(el.textContent).toContain('Not available on Windows yet')
+})
+
+test('what a chat still open started reads as agent idle, and is never offered to Stop all', () => {
+  const el = render(
+    {
+      offered: true,
+      loaded: true,
+      processes: [row({ state: 'agent-idle' }), row({ id: '6-6', pid: 6, state: 'agent-idle' })],
+      tabs: [],
+      unavailable: null,
+    },
+    { stopped: [], closed: [] },
+  )
+  expect(el.textContent).toContain('Agent idle')
+  expect(el.textContent).not.toContain('Left behind')
+  expect(el.textContent).not.toContain('Stop all')
+})
+
+test('a connection that may not read the list says so, rather than that nothing runs', () => {
+  const el = render(
+    { offered: true, loaded: true, processes: [], tabs: [], unavailable: 'not-allowed' },
+    { stopped: [], closed: [] },
+  )
+  expect(el.textContent).toContain('cannot read this machine’s programs')
+  expect(el.textContent).not.toContain('Nothing agents started is running')
 })

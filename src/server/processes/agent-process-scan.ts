@@ -23,6 +23,8 @@ import { STUDIO_PROCESS_MAX_COMMAND, studioProcessId } from '../../../packages/s
 //   are Sessions, not Processes, and are never signalled from here.
 // - `tool-shell`: a shell an agent's CLI is running a command in. Transparent:
 //   what it runs is the agent's work.
+// - `multiplexer`: tmux, screen and the like, whose panes a person may have
+//   attached to. Never listed or signalled, and nothing in its panes is.
 // - `program`: everything else.
 //
 // A row is the top of what an agent started: a tagged program whose nearest
@@ -60,7 +62,7 @@ export type ProcessSnapshot = {
   scannedAt: number
 }
 
-export type ProcessRole = 'studio' | 'agent' | 'tool-shell' | 'program'
+export type ProcessRole = 'studio' | 'agent' | 'tool-shell' | 'multiplexer' | 'program'
 
 /** How long an adopted process has to have run before it is a row: a daemon forking away is not left behind. */
 export const ADOPTED_MIN_AGE_MS = 5_000
@@ -83,6 +85,11 @@ const AGENT_CLI_SCRIPTS = [
   '/claude-agent-sdk/',
 ]
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'fish', 'dash', 'ksh'])
+// Terminal multiplexers. An agent may start one, and a person may attach to it
+// later from a terminal of their own: its panes then carry the agent's
+// identity but may be the person's, and nothing here tells them apart. So a
+// multiplexer, and everything in its panes, is neither listed nor stopped.
+const MULTIPLEXERS = new Set(['tmux', 'screen', 'zellij', 'abduco', 'dtach'])
 // What runs something else: named after what it runs where it can be.
 const WRAPPERS = new Set(['npm', 'npx', 'pnpm', 'pnpx', 'yarn', 'bunx', 'env', 'nohup', 'timeout', 'caffeinate'])
 const INTERPRETERS = /^(node|nodejs|bun|deno|python\d*(?:\.\d+)?|ruby|php|perl)$/iu
@@ -96,14 +103,28 @@ const IDENTITY_VALUE = /^[A-Za-z0-9._:-]{1,200}$/u
 
 /**
  * The identity in an environment block written as `KEY=value` entries
- * separated by whitespace (ps) or NULs (/proc). Only the three ids are read:
+ * separated by NULs (/proc) or whitespace (ps). Only the three ids are read:
  * values are ids, with no spaces in them, and nothing else of the
  * environment (a token among it) is kept.
+ *
+ * NUL-separated, each entry is read whole. Space-separated, another
+ * variable's value may itself hold ` SPRINTENGINE_WORKSPACE_ID=…` (a value
+ * with spaces in it), so a match counts only where what follows it is the
+ * end or the next `KEY=`, and two such matches that disagree are no identity
+ * at all: a process Studio cannot place is one it neither lists nor stops.
  */
 export function identityFromEnvironment(env: string): AgentIdentity | null {
+  const entries = env.includes('\0') ? env.split('\0') : null
   const read = (key: string): string | undefined => {
-    const match = new RegExp(`(?:^|[\\s\\0])${key}=([^\\s\\0]*)`, 'u').exec(env)
-    const value = match?.[1]
+    let values: string[]
+    if (entries) {
+      values = entries.filter((entry) => entry.startsWith(`${key}=`)).map((entry) => entry.slice(key.length + 1))
+    } else {
+      const pattern = new RegExp(`(?:^|\\s)${key}=(\\S*)(?=\\s+[A-Za-z_][A-Za-z0-9_]*=|\\s*$)`, 'gu')
+      values = [...env.matchAll(pattern)].map((match) => match[1]!)
+    }
+    const distinct = [...new Set(values)]
+    const value = distinct.length === 1 ? distinct[0] : undefined
     return value && IDENTITY_VALUE.test(value) ? value : undefined
   }
   const workspaceId = read(ENV_IDENTITY_KEYS.workspaceId)
@@ -346,6 +367,12 @@ export type ProcessAnalysisOptions = {
   /** Whether a command line is the Studio app's own (its binary, its helpers). */
   isStudioCommand?: (command: string) => boolean
   now: number
+  /**
+   * Whether the chat an agent started a program in is still open: false when
+   * it was settled or removed (or its workspace is gone), true while it is
+   * open, null when this Studio does not know it.
+   */
+  chatOpen?: (workspaceId: string, agentId: string | undefined) => boolean | null
 }
 
 /** A row with the pids folded into it: what `stop` signals. */
@@ -412,6 +439,7 @@ export function analyzeProcesses(snapshot: ProcessSnapshot, options: ProcessAnal
     if (!proc) return null
     let role: ProcessRole
     if (selfLine.has(pid) || isStudioCommand(proc.command)) role = 'studio'
+    else if (MULTIPLEXERS.has(basename(words(proc.command)[0] ?? ''))) role = 'multiplexer'
     else {
       const parent = depth < 256 && proc.ppid !== pid ? roleOf(proc.ppid, depth + 1) : null
       if (isAgentCli(proc.command) || (proc.identity && parent === 'studio')) role = 'agent'
@@ -448,7 +476,7 @@ export function analyzeProcesses(snapshot: ProcessSnapshot, options: ProcessAnal
       if (seen.has(next)) continue
       seen.add(next)
       const role = roles.get(next)
-      if (next !== pid && (role === 'studio' || role === 'agent')) {
+      if (next !== pid && (role === 'studio' || role === 'agent' || role === 'multiplexer')) {
         protectedInside = true
         continue
       }
@@ -474,8 +502,13 @@ export function analyzeProcesses(snapshot: ProcessSnapshot, options: ProcessAnal
     // program above means this one is folded into that row.
     let host: ScannedProcess | null = null
     let attached = false
+    let inPane = false
     for (const up of ancestors(proc)) {
       const role = roles.get(up.pid)
+      if (role === 'multiplexer') {
+        inPane = true
+        break
+      }
       if (role === 'studio' || role === 'agent') {
         attached = true
         host ??= up
@@ -483,6 +516,7 @@ export function analyzeProcesses(snapshot: ProcessSnapshot, options: ProcessAnal
       }
       if (host === null && (role === 'tool-shell' || up.identity)) host = up
     }
+    if (inPane) continue
     const hostRole = host ? roles.get(host.pid) : null
     if (host && hostRole === 'program') continue
 
@@ -504,7 +538,17 @@ export function analyzeProcesses(snapshot: ProcessSnapshot, options: ProcessAnal
     const agentId = proc.identity.agentId
     const agentRunning =
       attached || (agentId !== undefined && runningAgents.has(`${proc.identity.workspaceId}\0${agentId}`))
-    const state: StudioProcessState = attached ? 'with-agent' : agentRunning ? 'on-its-own' : 'left-behind'
+    // Left behind only once its chat is: settled, removed, or its workspace
+    // gone. A chat still open whose CLI rests (idle chats are suspended after
+    // a while) is coming back, and what it started waits for it.
+    const chatOpen = options.chatOpen?.(proc.identity.workspaceId, agentId) ?? null
+    const state: StudioProcessState = attached
+      ? 'with-agent'
+      : chatOpen === false
+        ? 'left-behind'
+        : agentRunning
+          ? 'on-its-own'
+          : 'agent-idle'
     const kind: StudioProcessKind = browser
       ? 'browser'
       : ports.length > 0 || described.some((entry) => entry.kind === 'server')

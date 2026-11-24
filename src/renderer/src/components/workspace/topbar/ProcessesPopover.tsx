@@ -176,6 +176,9 @@ export function ProcessesPopover({
   const now = useRelativeNow(30_000)
   const [notice, setNotice] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState<ReadonlySet<string>>(() => new Set())
+  // A stop of more than one row is asked again, with its count, before it is
+  // sent: a program left behind may be kept running on purpose.
+  const [confirming, setConfirming] = React.useState<readonly string[] | null>(null)
   const groups = groupProcesses(
     view.processes.filter((row) => !busy.has(row.id)),
     chats,
@@ -200,7 +203,9 @@ export function ProcessesPopover({
   }
 
   const empty =
-    view.unavailable === 'platform' ? (
+    view.unavailable === 'not-allowed' ? (
+      <EmptyState density="list" title={words.notAllowed} body={words.notAllowedBody} />
+    ) : view.unavailable === 'platform' ? (
       <EmptyState density="list" title={words.notOnWindows} body={words.notOnWindowsBody} />
     ) : view.unavailable === 'failed' && tabs.length === 0 ? (
       <EmptyState density="list" title={words.couldNotRead} body={words.couldNotReadBody} />
@@ -217,13 +222,37 @@ export function ProcessesPopover({
           leftBehind.length > 1 ? (
             // Destructive stays ink: the outline's danger tone recolours the
             // label on hover and never fills the button with the error hue.
-            <OutlineButton size="xs" tone="danger" onClick={() => void stop(leftBehind.map((row) => row.id))}>
+            <OutlineButton size="xs" tone="danger" onClick={() => setConfirming(leftBehind.map((row) => row.id))}>
               <StopIcon className="icon-xs" />
               {words.stopAllLeftBehind}
             </OutlineButton>
           ) : undefined
         }
       />
+      {confirming ? (
+        <div
+          role="alertdialog"
+          aria-label={words.confirmStop(confirming.length)}
+          className="flex items-center gap-2 px-3 pb-2 text-body text-[color:var(--text-default)]"
+          data-processes-confirm={confirming.length}
+        >
+          <span className="min-w-0 flex-1">{words.confirmStop(confirming.length)}</span>
+          <OutlineButton size="xs" onClick={() => setConfirming(null)}>
+            {words.cancel}
+          </OutlineButton>
+          <OutlineButton
+            size="xs"
+            tone="danger"
+            onClick={() => {
+              const ids = confirming
+              setConfirming(null)
+              void stop(ids)
+            }}
+          >
+            {words.confirmStopButton(confirming.length)}
+          </OutlineButton>
+        </div>
+      ) : null}
       {notice ? (
         <div role="status" className="px-3 pb-1 text-meta text-[color:var(--text-muted)]">
           {notice}
@@ -261,7 +290,7 @@ export function ProcessesPopover({
                         size="xs"
                         tone="danger"
                         className="ml-auto shrink-0"
-                        onClick={() => void stop(group.leftBehind.map((row) => row.id))}
+                        onClick={() => setConfirming(group.leftBehind.map((row) => row.id))}
                         aria-label={words.stopAllLeftBehindIn(group.leftBehind.length, group.label)}
                       >
                         <StopIcon className="icon-xs" />

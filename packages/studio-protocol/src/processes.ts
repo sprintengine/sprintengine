@@ -22,11 +22,14 @@ import { STUDIO_BROWSER_TABS_CAPABILITY, STUDIO_PROCESSES_CAPABILITY } from './h
 // ask. A client asks when it opens the list and again every few seconds while
 // it is on screen; there is no change stream.
 //
-// A row is `left-behind` when nothing of its agent is running any more (the
-// chat's CLI ended, crashed or was closed) and the program was handed to the
-// system: nobody will stop it. `on-its-own` is the same hand-over while the
+// A row is `left-behind` when the chat whose agent started it was settled or
+// removed (or its workspace is gone), and the program was handed to the
+// system: nothing will stop it. `agent-idle` is the same hand-over in a chat
+// still open whose CLI is resting (idle chats are suspended after a while):
+// the chat may well come back to it. `on-its-own` is a hand-over while the
 // agent that started it is still running (a server it put in the background
 // on purpose, say), and `with-agent` is a program still under its agent.
+// None of these is an error: some programs are kept running on purpose.
 //
 // An owner's by declaration, behind the `processes` capability, as local
 // servers are: `stop` ends programs on this machine, and the list shows the
@@ -39,7 +42,7 @@ import { STUDIO_BROWSER_TABS_CAPABILITY, STUDIO_PROCESSES_CAPABILITY } from './h
 // still there a few seconds later.
 
 /** Whether the agent that started a program can still stop it. */
-export type StudioProcessState = 'left-behind' | 'on-its-own' | 'with-agent'
+export type StudioProcessState = 'left-behind' | 'agent-idle' | 'on-its-own' | 'with-agent'
 
 /** What kind of program a row is, for its glyph and its words. */
 export type StudioProcessKind = 'browser' | 'server' | 'program'
