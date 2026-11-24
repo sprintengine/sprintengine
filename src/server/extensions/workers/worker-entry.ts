@@ -398,6 +398,7 @@ function createStudio(start: WorkerInitMessage): Record<string, unknown> {
       }
     },
     notify: (input: unknown) => fireAndForget('notify', [input]),
+    runCommand: (action: unknown) => hostCall({ host: 'runCommand' }, [action]),
     emit: (topic: unknown, payload?: unknown) =>
       fireAndForget('emit', payload === undefined ? [topic] : [topic, payload]),
   })

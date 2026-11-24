@@ -57,6 +57,12 @@ export type ExtensionInvoker = {
    * invocation keeps it, so its later hooks run as the same someone.
    */
   starter?: AgentStarter
+  /**
+   * The Studio connection whose call set it off, when a window's did: where
+   * `runCommand` runs one of Studio's actions. Absent for work no window set
+   * off (an agent's tool call, an event, a worker's own background work).
+   */
+  connectionId?: string
 }
 
 /** The person at this machine: every permission, no ceiling. */

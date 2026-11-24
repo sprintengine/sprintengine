@@ -37,6 +37,12 @@ import {
   getSkillStatus as getSkillStatusOnDisk,
 } from '../builtin-skills'
 import { resolveContainedPath } from '../modules/entry-containment'
+import { watchReplacementCall } from '../modules/extension-replacement-log'
+import { extensionCommandRuns } from '../../server/extensions/events/command-runs'
+import {
+  EXTENSION_COMMAND_ACTIONS,
+  EXTENSION_REPLACEABLE_ACTIONS,
+} from '../../../packages/extension-sdk/src/extension-manifest'
 import type { StudioExtensionCallAnswer } from '../../../packages/studio-protocol/src/public'
 import {
   createExtensionFrameCalls,
@@ -56,6 +62,15 @@ import {
   refuseExtensionHostCall,
   type ExtensionHostDecision,
 } from './extension-host-gate'
+
+/** One of Studio's actions an extension may name: a command's `action`, or one it `replaces`. */
+function isStudioAction(action: unknown): action is string {
+  return (
+    typeof action === 'string' &&
+    ((EXTENSION_COMMAND_ACTIONS as readonly string[]).includes(action) ||
+      (EXTENSION_REPLACEABLE_ACTIONS as readonly string[]).includes(action))
+  )
+}
 
 // Main-process host kernel. Replaces the static, central wiring in
 // app-services.ts / register-*-ipc.ts with registries that capability modules
@@ -352,6 +367,12 @@ export type MainHost = {
    * open. `supports('notifications')` is true where delivery is wired.
    */
   notify(input: ModuleNotifyInput): void
+  /**
+   * Run one of Studio's own actions in the window whose call set this code
+   * off (`extension.commandRuns`), never a replacement of it; refused for
+   * work no window set off.
+   */
+  runCommand(action: string): Promise<void>
   /**
    * Push an event to this module's renderer half — the subscribe verb the
    * request/response bridge does not have. The source module id is stamped
@@ -720,7 +741,13 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     ...(options.frameEditorSaveHooks ? { editorSaveHooks: options.frameEditorSaveHooks } : {}),
   })
 
-  async function callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome> {
+  // A call that runs in place of a Studio action is watched, so the
+  // extension's log says when the window ran Studio's own instead.
+  function callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome> {
+    return watchReplacementCall(request, () => callModuleMethodNow(request))
+  }
+
+  async function callModuleMethodNow(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome> {
     const own = methods.get(request.moduleId)
     const active = options.isModuleActive ? options.isModuleActive(request.moduleId) : own !== undefined
     if (!active || request.moduleId.startsWith('@')) {
@@ -1232,6 +1259,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         enforce('notify')
         live.notify(input)
       },
+      runCommand: async (action) => (refuseRetired(), enforce('runCommand'), live.runCommand(action)),
       emit: (topic, payload) => {
         if (retired()) return
         enforce('emit')
@@ -1428,6 +1456,19 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       },
       emit(topic, payload) {
         emitModuleEvent(moduleId, topic, payload)
+      },
+      async runCommand(action) {
+        if (!isStudioAction(action))
+          throw new Error(`"${String(action)}" is not one of Studio's actions an extension may run.`)
+        // The window whose call this is: the person's, or a paired window, where the action is.
+        const connectionId = currentInvoker().connectionId
+        if (!connectionId || !extensionCommandRuns.run(connectionId, { moduleId, action }))
+          throw Object.assign(
+            new Error(
+              `Extension "${moduleId}" asked to run "${action}" for work no Studio window set off, so there is no window to run it in.`,
+            ),
+            { code: 'no_window' },
+          )
       },
     }
   }
