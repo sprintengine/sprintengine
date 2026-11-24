@@ -147,6 +147,7 @@ import { createHostRecordingEncoder } from './browser/recording-encoder'
 import { attachBuildSkewWatch } from './build-skew'
 import { createCanvasWorkerTransport } from './canvas/canvas-worker-window'
 import { registerChatLinkIpc } from './chat-link-ipc'
+import { registerExtensionLinkIpc } from './extension-link-router'
 import { registerSshPreviewIpc } from './environments/ssh/ssh-preview'
 import { registerAppRestartIpc } from './ipc/app-restart-ipc'
 import { registerEnvironmentsIpc } from './ipc/environments-ipc'
@@ -332,6 +333,7 @@ test('what main and the server register, and what the preload uses, is the inven
   registerSshEnvironmentsIpc(shell, anything(), anything())
   registerEnvironmentsIpc(shell, anything())
   registerChatLinkIpc({ ipcMain: shell, router: anything(), windowOf: anything(), isWorkspaceWindow: anything() })
+  registerExtensionLinkIpc({ ipcMain: shell, router: anything(), windowOf: anything(), isWorkspaceWindow: anything() })
   createHostRecordingEncoder({ ipcMain: shell, tabs: anything() })
   createCanvasWorkerTransport({ ipcMain: shell })
 

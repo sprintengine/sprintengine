@@ -26,6 +26,7 @@ import { devFolderStillResolves, insideRefusedRoot } from './extension-dev-folde
 import { contentFileIssues } from './extension-content'
 import { readStudioEnv } from '../../shared/studio-env'
 import { agentContributionIssues } from '../../server/extensions/agent-contributions/install-checks'
+import { isReservedInstallKey } from '../../../packages/extension-sdk/src/catalogue'
 
 // Discovery and install of extensions under
 // ~/.sprintengine/extensions/<publisher>.<id>/extension.json, and of the
@@ -119,7 +120,12 @@ export type LoadedManifest = { ok: true; extension: ExtensionManifest } | { ok: 
 
 // Validate extension.json's text for a folder, and that the folder's name is
 // the install key of the manifest it holds.
-function validateInstalledManifestSource(source: string, manifestPath: string, folderName: string): LoadedManifest {
+function validateInstalledManifestSource(
+  source: string,
+  manifestPath: string,
+  folderName: string,
+  installedFrom: ExtensionStandingContext['installedFrom'],
+): LoadedManifest {
   const key = parseExtensionInstallKey(folderName)
   if (!key) {
     return {
@@ -130,9 +136,16 @@ function validateInstalledManifestSource(source: string, manifestPath: string, f
       },
     }
   }
-  // Only a folder install puts an extension here, so its key's publisher is
-  // `local`; a folder named for another publisher was not put here by Studio.
-  if (key.publisher !== LOCAL_EXTENSION_PUBLISHER || isReservedExtensionId(key.id)) {
+  // A folder install puts an extension here under `local`; a catalogue or git
+  // install under the repository owner, and records it (catalogue-files.ts).
+  // A folder named for another publisher was not put here by Studio, and a
+  // reserved key only by Studio's official catalogue.
+  const from = installedFrom?.get(folderName)
+  const placed =
+    key.publisher === LOCAL_EXTENSION_PUBLISHER
+      ? !isReservedExtensionId(key.id)
+      : from !== undefined && (from === 'official' || !isReservedInstallKey(folderName))
+  if (!placed) {
     return {
       ok: false,
       rejection: {
@@ -176,19 +189,37 @@ function missingManifest(manifestPath: string, error: unknown): LoadedManifest {
   }
 }
 
-async function loadManifestFromDir(moduleRoot: string, folderName: string): Promise<LoadedManifest> {
+async function loadManifestFromDir(
+  moduleRoot: string,
+  folderName: string,
+  ctx: ExtensionStandingContext,
+): Promise<LoadedManifest> {
   const manifestPath = join(moduleRoot, EXTENSION_MANIFEST_FILENAME)
   try {
-    return validateInstalledManifestSource(await readFile(manifestPath, 'utf8'), manifestPath, folderName)
+    return validateInstalledManifestSource(
+      await readFile(manifestPath, 'utf8'),
+      manifestPath,
+      folderName,
+      ctx.installedFrom,
+    )
   } catch (error) {
     return missingManifest(manifestPath, error)
   }
 }
 
-function loadManifestFromDirSync(moduleRoot: string, folderName: string): LoadedManifest {
+function loadManifestFromDirSync(
+  moduleRoot: string,
+  folderName: string,
+  ctx: ExtensionStandingContext,
+): LoadedManifest {
   const manifestPath = join(moduleRoot, EXTENSION_MANIFEST_FILENAME)
   try {
-    return validateInstalledManifestSource(readFileSync(manifestPath, 'utf8'), manifestPath, folderName)
+    return validateInstalledManifestSource(
+      readFileSync(manifestPath, 'utf8'),
+      manifestPath,
+      folderName,
+      ctx.installedFrom,
+    )
   } catch (error) {
     return missingManifest(manifestPath, error)
   }
@@ -355,7 +386,7 @@ export async function discoverUserModules(root: string, ctx: ExtensionStandingCo
   for (const entry of await readDirSafe(root)) {
     if (!entry.isDirectory() || isHiddenModuleDir(entry.name)) continue
     const moduleRoot = join(root, entry.name)
-    const loaded = await loadManifestFromDir(moduleRoot, entry.name)
+    const loaded = await loadManifestFromDir(moduleRoot, entry.name, ctx)
     if (loaded.ok) result.modules.push(installedModule(loaded.extension, entry.name, moduleRoot, ctx))
     else result.rejected.push(loaded.rejection)
   }
@@ -368,7 +399,7 @@ export function discoverInstalledModulesSync(root: string, ctx: ExtensionStandin
   for (const entry of readDirSafeSync(root)) {
     if (!entry.isDirectory() || isHiddenModuleDir(entry.name)) continue
     const moduleRoot = join(root, entry.name)
-    const loaded = loadManifestFromDirSync(moduleRoot, entry.name)
+    const loaded = loadManifestFromDirSync(moduleRoot, entry.name, ctx)
     if (loaded.ok) result.modules.push(installedModule(loaded.extension, entry.name, moduleRoot, ctx))
     else result.rejected.push(loaded.rejection)
   }
@@ -384,8 +415,10 @@ export function discoverUserModulesSync(root: string, ctx: ExtensionStandingCont
 
 /**
  * Install the extension in a folder: validate its extension.json, then copy
- * the folder into `<root>/local.<id>/`, REPLACING any earlier install of that
- * key. Symbolic links are left out of the copy and named in the result, for
+ * the folder into `<root>/<publisher>.<id>/` (`local` for a folder the person
+ * picked; the repository owner for a catalogue or git install, which checked
+ * the folder out), REPLACING any earlier install of that key. A version on the
+ * kill list is refused. Symbolic links are left out of the copy and named in the result, for
  * the install review to show: their bytes live somewhere no digest follows.
  * The standing of the bytes that were installed comes back: what the person is asked to approve.
  */
@@ -393,7 +426,13 @@ export async function installModuleFolder(
   selectedDir: string,
   root: string,
   ctx: ExtensionStandingContext,
-  options: { protectedProviderIds?: ReadonlySet<string> } = {},
+  options: {
+    protectedProviderIds?: ReadonlySet<string>
+    /** The publisher Studio derived from where it came from: `local` for a folder (the default). */
+    publisher?: string
+    /** It came from Studio's official catalogue, which alone may install a reserved id. */
+    official?: boolean
+  } = {},
 ): Promise<InstallModuleResult> {
   // The folder itself, wherever a link to it points: a linked root would be
   // copied as the link, and the extension would never appear. A missing one
@@ -433,7 +472,7 @@ export async function installModuleFolder(
       message: readable.message,
     }
   }
-  if (isReservedExtensionId(extension.id)) {
+  if (isReservedExtensionId(extension.id) && !options.official) {
     const message = `"${extension.id}" is an id only Studio’s own catalogue installs; choose another id.`
     return { ok: false, rejected: { path: manifestPath, issues: [{ path: 'id', message }] }, message }
   }
@@ -467,7 +506,7 @@ export async function installModuleFolder(
     }
   }
 
-  const key = extensionInstallKey(LOCAL_EXTENSION_PUBLISHER, extension.id)
+  const key = extensionInstallKey(options.publisher ?? LOCAL_EXTENSION_PUBLISHER, extension.id)
   const destination = join(root, key)
   await mkdir(root, { recursive: true })
   // A re-install REPLACES the folder; it does not merge into it, so a file the
@@ -502,6 +541,11 @@ export async function installModuleFolder(
           ? `Extension "${extension.id}" has been changed since it was signed: its files do not match extension.sig.`
           : `Extension "${extension.id}" has an invalid signature.`,
       }
+    }
+    if (standing.killed) {
+      await rm(staging, { recursive: true, force: true })
+      const message = `Studio’s kill list removed ${key} ${extension.version}: ${standing.killed.reason}`
+      return { ok: false, rejected: { path: manifestPath, issues: [{ path: '', message }] }, message }
     }
     if (standing.contentDigest === undefined) {
       const issues = standing.issues ?? []

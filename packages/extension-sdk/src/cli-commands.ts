@@ -51,6 +51,14 @@ function positiveInt(value: string | undefined, name: string): number | undefine
 }
 
 async function run(output: Output, command: string, args: string[]): Promise<void> {
+  if (command === 'release-entry') {
+    const { positionals } = parseArgs({ args, options: COMMON, allowPositionals: true })
+    const dir = positionals[0] ?? '.'
+    const { releaseEntryForHead, releaseEntryWords } = await import('./release-entry.js')
+    const report = await releaseEntryForHead(dir)
+    if (!report.entry) throw new CliError('extension_invalid', releaseEntryWords(dir, report).join('\n'), { ...report })
+    output.done({ ...report }, releaseEntryWords(dir, report))
+  }
   if (command === 'validate' || command === 'inspect' || command === 'check' || command === 'test') {
     const { positionals } = parseArgs({ args, options: COMMON, allowPositionals: true })
     const target = positionals[0] ?? '.'

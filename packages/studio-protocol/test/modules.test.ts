@@ -194,6 +194,40 @@ test('a lifecycle command names its module or folder and carries a commandId', (
   })
 })
 
+test('a catalogue install names the whole release the page showed, and nothing less', () => {
+  const shown = {
+    catalogue: 'community',
+    id: 'acme.notes',
+    version: '1.0.0',
+    commit: 'a'.repeat(40),
+    contentHash: 'b'.repeat(64),
+    source: { url: 'https://github.com/acme/notes.git', ref: 'main', path: 'notes' },
+    ownerId: null,
+  }
+  assert.deepEqual(parseStudioMethodParams('extension.installFrom', { from: shown, commandId: 'c1' }), {
+    ok: true,
+    params: { from: shown, commandId: 'c1' },
+  })
+  assert.deepEqual(
+    parseStudioMethodParams('extension.installFrom', { from: { ...shown, ownerId: 7 }, commandId: 'c1' }),
+    { ok: true, params: { from: { ...shown, ownerId: 7 }, commandId: 'c1' } },
+  )
+  for (const missing of ['version', 'commit', 'contentHash', 'source', 'ownerId'] as const) {
+    const { [missing]: _left, ...partial } = shown
+    assert.equal(
+      refusal(parseStudioMethodParams('extension.installFrom', { from: partial, commandId: 'c1' })),
+      'invalid_params',
+      missing,
+    )
+  }
+  assert.equal(
+    refusal(
+      parseStudioMethodParams('extension.installFrom', { from: { ...shown, source: { url: 'x' } }, commandId: 'c1' }),
+    ),
+    'invalid_params',
+  )
+})
+
 test('an extension’s declared settings are read and changed as Studio’s settings are, by settings:write', () => {
   const grant = (scopes: string[]) => ({ owner: false, scopes })
   // A browser tab on this machine: every scope but operating extensions.

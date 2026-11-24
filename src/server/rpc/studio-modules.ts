@@ -71,6 +71,12 @@ export type StudioModules = {
   deliverEvent(event: StudioModuleEvent): void
   /** One bell row, to every listener. The kernel has already kept it. */
   deliverNotification(notification: StudioModuleNotification): void
+  /**
+   * One bell row the Studio itself raised (the catalogue's kill, hold and
+   * update notices): kept here beside the kernel's, so a client that was not
+   * connected is sent it when it follows the bell again, then delivered.
+   */
+  deliverKeptNotification(notification: StudioModuleNotification): void
   /** Hear each event from now on; returns the unsubscriber. */
   onEvent(listener: (event: StudioModuleEvent) => void): () => void
   /** What is installed or approved here changed, to every listener. */
@@ -89,12 +95,16 @@ export type StudioModules = {
   readRecentFrom(read: () => ReadonlyArray<StudioModuleNotification>): void
 }
 
+/** How many of the Studio's own bell rows are kept for a client that follows later, as the kernel keeps its. */
+const KEPT_NOTIFICATION_LIMIT = 50
+
 export function createStudioModuleHub(options: { log?: (message: string) => void } = {}): StudioModules {
   const eventListeners = new Set<(event: StudioModuleEvent) => void>()
   const notificationListeners = new Set<(notification: StudioModuleNotification) => void>()
   const changedListeners = new Set<(value: null) => void>()
   const settingsListeners = new Set<(moduleId: string) => void>()
   let readRecent: () => ReadonlyArray<StudioModuleNotification> = () => []
+  const kept: StudioModuleNotification[] = []
   let serve: ((request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>) | null = null
   let serveFrameCall: ((request: ExtensionFrameCallRequest) => Promise<StudioExtensionCallAnswer>) | null = null
   let lifecycle: ModuleLifecycle | null = null
@@ -143,6 +153,11 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
     },
     deliverEvent: (event) => each(eventListeners, event, 'event'),
     deliverNotification: (notification) => each(notificationListeners, notification, 'notification'),
+    deliverKeptNotification(notification) {
+      kept.push(notification)
+      if (kept.length > KEPT_NOTIFICATION_LIMIT) kept.splice(0, kept.length - KEPT_NOTIFICATION_LIMIT)
+      each(notificationListeners, notification, 'notification')
+    },
     deliverChanged: () => each(changedListeners, null, 'change'),
     deliverSettingsChanged: (moduleId) => each(settingsListeners, moduleId, 'settings change'),
     onSettingsChanged(listener) {
@@ -170,7 +185,10 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
         notificationListeners.delete(listener)
       }
     },
-    recentNotifications: () => readRecent().map((notification) => structuredClone(notification)),
+    recentNotifications: () =>
+      [...readRecent(), ...kept]
+        .sort((a, b) => a.emittedAt - b.emittedAt)
+        .map((notification) => structuredClone(notification)),
     readRecentFrom(read) {
       readRecent = read
     },

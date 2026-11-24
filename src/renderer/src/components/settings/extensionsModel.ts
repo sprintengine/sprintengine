@@ -27,9 +27,10 @@ export function isApproved(module: Pick<ThirdPartyModuleView, 'approval'>): bool
  * - `pending` — on, but its main entry waits on the next launch (Starts after restart);
  * - `off` — off (Off);
  * - `waiting` — on, but its worker waits for a place: too many already run (Waiting to start), with why as a notice;
- * - `failed` — it could not start (Couldn't start), with the reason as a notice.
+ * - `failed` — it could not start (Couldn't start), with the reason as a notice;
+ * - `killed` — Studio's kill list removed this version (Switched off by Studio), with why as a notice.
  */
-export type ExtensionRunState = 'running' | 'on' | 'pending' | 'off' | 'waiting' | 'failed'
+export type ExtensionRunState = 'running' | 'on' | 'pending' | 'off' | 'waiting' | 'failed' | 'killed'
 
 export const RUN_STATE_LABEL: Record<ExtensionRunState, string> = {
   running: 'Running',
@@ -38,6 +39,7 @@ export const RUN_STATE_LABEL: Record<ExtensionRunState, string> = {
   off: 'Off',
   waiting: 'Waiting to start',
   failed: 'Couldn’t start',
+  killed: 'Switched off by Studio',
 }
 
 export type ExtensionProblem =
@@ -45,6 +47,8 @@ export type ExtensionProblem =
   | { kind: 'invalid' }
   // It was loaded and failed, this session.
   | { kind: 'error'; message: string }
+  // Studio's kill list removed this version: it is switched off.
+  | { kind: 'killed'; reason: string; advisoryUrl?: string }
 
 /** Why a module cannot run as installed, whatever its approval, or null. */
 export function moduleProblem(
@@ -52,6 +56,7 @@ export function moduleProblem(
   rendererLoadState: ThirdPartyRendererLoadState | undefined,
   contributionError?: string,
 ): ExtensionProblem | null {
+  if (module.killed) return { kind: 'killed', ...module.killed }
   if (module.signature === 'invalid' || module.launch.status === 'blocked_invalid') return { kind: 'invalid' }
   if (!isApproved(module)) return null
   if (module.launch.status === 'launch_error') {
@@ -72,6 +77,8 @@ export function problemText(problem: ExtensionProblem): string {
       return 'Its signature doesn’t match its files, so it can’t be approved.'
     case 'error':
       return problem.message
+    case 'killed':
+      return `Studio switched it off: its kill list removed this version. ${problem.reason}${problem.advisoryUrl ? ` (${problem.advisoryUrl})` : ''}`
   }
 }
 
@@ -90,6 +97,7 @@ export function runState(
   rendererLoadState: ThirdPartyRendererLoadState | undefined,
   contributionError?: string,
 ): ExtensionRunState {
+  if (module.killed) return 'killed'
   if (moduleProblem(module, rendererLoadState, contributionError)) return 'failed'
   const mainLoaded = module.launch.mainLoaded === true
   // Switched off, a worker stops at once.
@@ -136,7 +144,9 @@ export function restartBannerTitle(waiting: readonly Pick<ThirdPartyModuleView, 
 // ── Identity ─────────────────────────────────────────────────────────────
 
 /** Where it came from: its publisher, which Studio derived from the install (`local` for a folder). */
-export function sourceLabel(module: Pick<ThirdPartyModuleView, 'manifest' | 'development'>): string | null {
+export function sourceLabel(
+  module: Pick<ThirdPartyModuleView, 'manifest' | 'development'> & Partial<Pick<ThirdPartyModuleView, 'origin'>>,
+): string | null {
   // Said plainly wherever it is listed: its code is a working copy, read again on every save.
   if (module.development)
     return module.development.waiting
@@ -144,7 +154,23 @@ export function sourceLabel(module: Pick<ThirdPartyModuleView, 'manifest' | 'dev
       : module.development.overrides
         ? 'Development folder, in place of the installed one'
         : 'Development folder'
+  // Where it came from decides the label, never its own words.
+  if (module.origin && module.origin.kind !== 'folder' && module.origin.kind !== 'development')
+    return module.origin.label
   return module.manifest.publisher === 'local' ? 'Local build' : null
+}
+
+/** What a row says of a newer release, or null: one to install, or one held for review and why. */
+export function updateText(module: Pick<ThirdPartyModuleView, 'update'>): string | null {
+  const update = module.update
+  if (!update) return null
+  if (update.held === 'access')
+    return `Version ${update.version} waits for your review: it asks for ${(update.growth ?? ['more access']).join(', ')}.`
+  if (update.held === 'repository')
+    return `Version ${update.version} waits for your review: it moved to another repository or folder.`
+  if (update.held === 'owner')
+    return `Updates are paused: the account that owns it was renamed or changed hands. Uninstall it and install it again to trust the new owner.`
+  return `Version ${update.version} is available.`
 }
 
 /** Whether it carries an extension.sig that checked out. */

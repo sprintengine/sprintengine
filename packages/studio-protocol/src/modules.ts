@@ -19,6 +19,9 @@ import type {
   ModuleRegistrySnapshot,
   ModuleRegistrySnapshotWriteResult,
   ThirdPartyModuleListResult,
+  StudioCatalogueEntryView,
+  StudioCatalogueSource,
+  StudioCatalogueView,
 } from './extensions-types.js'
 
 // What a Studio's modules say to its clients. A module is a capability its
@@ -269,10 +272,69 @@ export type StudioModulesMethodMap = {
     params: { moduleId: string; fingerprint: string; commandId: string }
     result: StudioModuleLifecycleAnswer
   }
-  /** Remove an extension added from a folder, and what was kept for it. */
+  /** Remove an installed extension, and what was kept for it. */
   'extension.uninstall': {
     params: { moduleId: string; commandId: string }
     result: { ok: true; removedModuleIds: string[] } | { ok: false; message: string }
+  }
+  /**
+   * The catalogues Browse shows: the official one, the community one and the
+   * ones the person added, each from its last copy, with why it could not be
+   * read when it could not. `refresh`: fetch them again first.
+   */
+  'extension.catalogues': { params: { refresh?: boolean }; result: { catalogues: StudioCatalogueView[] } }
+  /** One extension's page in one catalogue. */
+  'extension.catalogueEntry': {
+    params: { catalogue: string; id: string }
+    result: { ok: true; entry: StudioCatalogueEntryView } | { ok: false; message: string }
+  }
+  /** One catalogue image's bytes, held to its sha256. */
+  'extension.catalogueImage': {
+    params: { catalogue: string; path: string; sha256: string }
+    result: { ok: true; mime: string; base64: string } | { ok: false; message: string }
+  }
+  /** Add a catalogue by its git URL (the client asked the person first); answers it as read now. */
+  'extension.catalogueAdd': {
+    params: { url: string; commandId: string }
+    result: StudioModuleLifecycleAnswer<{ catalogue: StudioCatalogueView }>
+  }
+  /** Remove a catalogue the person added. What was installed from it stays, and no longer updates. */
+  'extension.catalogueRemove': { params: { url: string; commandId: string }; result: StudioModuleLifecycleAnswer }
+  /**
+   * Install from a catalogue entry (`{ catalogue, id }`) or a git URL
+   * (`{ git, ref?, path? }`): Studio checks out the pinned commit (or the
+   * ref's), installs only the extension's folder and refuses bytes or a
+   * manifest the catalogue does not vouch for. As `extension.install`
+   * answers; `leftOut` names what a Claude Code plugin had that Studio does not install.
+   */
+  'extension.installFrom': {
+    params: { from: StudioExtensionInstallSource; commandId: string }
+    result:
+      | {
+          ok: true
+          moduleId: string
+          approval: StudioExtensionApproval
+          strippedLinks: string[]
+          leftOut?: string[]
+        }
+      | {
+          ok: false
+          message: string
+          issues?: Array<{ path: string; message: string }>
+          /** A Claude Code plugin marketplace's plugin folders, when the repository's root is one: name one as `path`. */
+          folders?: string[]
+        }
+  }
+  /**
+   * Install the newer release the catalogue an extension came from lists:
+   * `version` is the one the person was shown, refused when the catalogue
+   * lists another now.
+   */
+  'extension.update': {
+    params: { moduleId: string; version?: string; commandId: string }
+    result:
+      | { ok: true; moduleId: string; approval: StudioExtensionApproval; strippedLinks: string[] }
+      | { ok: false; message: string }
   }
   /**
    * The development folders registered here, in the order they load (after
@@ -359,6 +421,25 @@ export type StudioModulesTopicMap = {
   'extension.settingsChanged': { params: Record<string, never>; payload: { moduleId: string }; stream: 'push' }
 }
 
+/**
+ * Where `extension.installFrom` installs from: a catalogue's entry, or a git
+ * URL. A catalogue install names the whole release the person was shown (its
+ * page, `StudioCatalogueEntryView`): the version, commit, content hash,
+ * source and owner id, `null` when the page named none. A catalogue that
+ * lists anything else since is refused, never installed in its place.
+ */
+export type StudioExtensionInstallSource =
+  | {
+      catalogue: string
+      id: string
+      version: string
+      commit: string
+      contentHash: string
+      source: StudioCatalogueSource
+      ownerId: number | null
+    }
+  | { git: string; ref?: string; path?: string }
+
 /** A manifest id, as the module kernel accepts one. */
 const MAX_MODULE_ID_CHARS = 200
 
@@ -406,6 +487,29 @@ function namedModule(value: Record<string, unknown>): StudioParsed<{ moduleId: s
   const command = commandIdOf(value)
   if (!command.ok) return command
   return studioParams({ moduleId: value.moduleId, commandId: command.params })
+}
+
+/** The longest git URL a catalogue or an install may name. */
+const MAX_URL_CHARS = 512
+
+function shortText(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= max
+}
+
+/** A catalogue entry's git source, as its page showed it. */
+function catalogueSourceOf(value: unknown): StudioCatalogueSource | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const source = value as Record<string, unknown>
+  if (!shortText(source.url, MAX_URL_CHARS) || !shortText(source.ref, 256)) return null
+  if (source.path !== undefined && !shortText(source.path, 512)) return null
+  return { url: source.url, ref: source.ref, ...(source.path !== undefined ? { path: source.path as string } : {}) }
+}
+
+function catalogueUrlParams(value: Record<string, unknown>): StudioParsed<{ url: string; commandId: string }> {
+  if (!shortText(value.url, MAX_URL_CHARS)) return studioParamsRefused('"url" is the catalogue\'s git URL.')
+  const command = commandIdOf(value)
+  if (!command.ok) return command
+  return studioParams({ url: value.url, commandId: command.params })
 }
 
 function devFolderParams(value: Record<string, unknown>): StudioParsed<{ path: string; commandId: string }> {
@@ -480,6 +584,110 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
     },
   },
   'extension.uninstall': { ...lifecycle, params: namedModule },
+  'extension.catalogues': {
+    scope: 'extensions:read',
+    mutation: false,
+    capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+    params: (value) => {
+      if (value.refresh !== undefined && typeof value.refresh !== 'boolean')
+        return studioParamsRefused('"refresh" is true to fetch the catalogues again first.')
+      return studioParams(value.refresh === true ? { refresh: true } : {})
+    },
+  },
+  'extension.catalogueEntry': {
+    scope: 'extensions:read',
+    mutation: false,
+    capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+    params: (value) => {
+      if (!shortText(value.catalogue, MAX_URL_CHARS + 4))
+        return studioParamsRefused('"catalogue" is the catalogue\'s id.')
+      if (!shortText(value.id, MAX_MODULE_ID_CHARS)) return studioParamsRefused('"id" is the extension\'s install key.')
+      return studioParams({ catalogue: value.catalogue, id: value.id })
+    },
+  },
+  'extension.catalogueImage': {
+    scope: 'extensions:read',
+    mutation: false,
+    capability: STUDIO_EXTENSION_HOST_CAPABILITY,
+    params: (value) => {
+      if (!shortText(value.catalogue, MAX_URL_CHARS + 4))
+        return studioParamsRefused('"catalogue" is the catalogue\'s id.')
+      if (!shortText(value.path, 512)) return studioParamsRefused('"path" is the image\'s path in the catalogue.')
+      if (typeof value.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(value.sha256))
+        return studioParamsRefused('"sha256" is the image\'s digest.')
+      return studioParams({ catalogue: value.catalogue, path: value.path, sha256: value.sha256 })
+    },
+  },
+  'extension.catalogueAdd': { ...lifecycle, params: catalogueUrlParams },
+  'extension.catalogueRemove': { ...lifecycle, params: catalogueUrlParams },
+  'extension.installFrom': {
+    ...lifecycle,
+    params: (value) => {
+      const command = commandIdOf(value)
+      if (!command.ok) return command
+      const from = value.from
+      if (typeof from !== 'object' || from === null || Array.isArray(from))
+        return studioParamsRefused('"from" is `{ catalogue, id }` or `{ git, ref?, path? }`.')
+      const source = from as Record<string, unknown>
+      if (source.git !== undefined) {
+        if (!shortText(source.git, MAX_URL_CHARS))
+          return studioParamsRefused('"from.git" is the repository\'s git URL.')
+        if (source.ref !== undefined && !shortText(source.ref, 256))
+          return studioParamsRefused('"from.ref" is a branch, tag or commit.')
+        if (source.path !== undefined && !shortText(source.path, 512))
+          return studioParamsRefused('"from.path" is the extension\'s folder in the repository.')
+        return studioParams({
+          from: {
+            git: source.git,
+            ...(source.ref !== undefined ? { ref: source.ref as string } : {}),
+            ...(source.path !== undefined ? { path: source.path as string } : {}),
+          },
+          commandId: command.params,
+        })
+      }
+      if (!shortText(source.catalogue, MAX_URL_CHARS + 4) || !shortText(source.id, MAX_MODULE_ID_CHARS))
+        return studioParamsRefused(
+          '"from" is `{ catalogue, id, version, commit, contentHash, source, ownerId }` or `{ git, ref?, path? }`.',
+        )
+      // The whole release the page showed: what installs is that, or nothing.
+      if (!shortText(source.version, 64))
+        return studioParamsRefused('"from.version" is the version the person was shown.')
+      if (typeof source.commit !== 'string' || !/^[0-9a-f]{40}$/.test(source.commit))
+        return studioParamsRefused('"from.commit" is the release\'s commit.')
+      if (typeof source.contentHash !== 'string' || !/^[0-9a-f]{64}$/.test(source.contentHash))
+        return studioParamsRefused('"from.contentHash" is the release\'s content hash.')
+      const shown = catalogueSourceOf(source.source)
+      if (!shown)
+        return studioParamsRefused('"from.source" is the entry\'s source the person was shown, `{ url, ref, path? }`.')
+      if (source.ownerId !== null && !(Number.isSafeInteger(source.ownerId) && (source.ownerId as number) > 0))
+        return studioParamsRefused('"from.ownerId" is the owner id the person was shown, or null.')
+      return studioParams({
+        from: {
+          catalogue: source.catalogue,
+          id: source.id,
+          version: source.version,
+          commit: source.commit,
+          contentHash: source.contentHash,
+          source: shown,
+          ownerId: source.ownerId as number | null,
+        },
+        commandId: command.params,
+      })
+    },
+  },
+  'extension.update': {
+    ...lifecycle,
+    params: (value) => {
+      const named = namedModule(value)
+      if (!named.ok) return named
+      if (value.version !== undefined && !shortText(value.version, 64))
+        return studioParamsRefused('"version" is the version the person was shown.')
+      return studioParams({
+        ...named.params,
+        ...(value.version !== undefined ? { version: value.version as string } : {}),
+      })
+    },
+  },
   // A development folder is a path on this machine, and what runs from it is
   // the owner's to choose: listing them names paths, so it is the owner's too.
   'extension.devFolders': {

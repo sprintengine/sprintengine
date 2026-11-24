@@ -923,7 +923,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       | 'extension.devLoad'
       | 'extension.devUnload'
       | 'extension.setSetting'
-      | 'extension.reportRegistry',
+      | 'extension.reportRegistry'
+      | 'extension.catalogueAdd'
+      | 'extension.catalogueRemove'
+      | 'extension.installFrom'
+      | 'extension.update',
     R,
   >(method: M, context: Asking, commandId: string, work: (lifecycle: ModuleLifecycle) => Promise<R>) {
     const modules = options.modules
@@ -2362,6 +2366,35 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       ),
     'extension.uninstall': ({ moduleId, commandId }, context) =>
       lifecycleCommand('extension.uninstall', context, commandId, (lifecycle) => lifecycle.uninstall(moduleId)),
+    // The catalogues: read by any client that reads the extensions; adding
+    // one, and installing or updating from one, an owner's, once per command id.
+    'extension.catalogues': async ({ refresh }) => {
+      const lifecycle = options.modules?.lifecycle()
+      if (!lifecycle) return unserved('extension.catalogues')
+      return { ok: true, result: { catalogues: await lifecycle.catalogue.catalogues(refresh === true) } }
+    },
+    'extension.catalogueEntry': async ({ catalogue, id }) => {
+      const lifecycle = options.modules?.lifecycle()
+      if (!lifecycle) return unserved('extension.catalogueEntry')
+      return { ok: true, result: await lifecycle.catalogue.entry(catalogue, id) }
+    },
+    'extension.catalogueImage': async ({ catalogue, path, sha256 }) => {
+      const lifecycle = options.modules?.lifecycle()
+      if (!lifecycle) return unserved('extension.catalogueImage')
+      return { ok: true, result: await lifecycle.catalogue.image(catalogue, path, sha256) }
+    },
+    'extension.catalogueAdd': ({ url, commandId }, context) =>
+      lifecycleCommand('extension.catalogueAdd', context, commandId, (lifecycle) => lifecycle.catalogue.add(url)),
+    'extension.catalogueRemove': ({ url, commandId }, context) =>
+      lifecycleCommand('extension.catalogueRemove', context, commandId, (lifecycle) => lifecycle.catalogue.remove(url)),
+    'extension.installFrom': ({ from, commandId }, context) =>
+      lifecycleCommand('extension.installFrom', context, commandId, (lifecycle) =>
+        lifecycle.catalogue.installFrom(from),
+      ),
+    'extension.update': ({ moduleId, version, commandId }, context) =>
+      lifecycleCommand('extension.update', context, commandId, (lifecycle) =>
+        lifecycle.catalogue.update(moduleId, version),
+      ),
     // Development folders: the owner's, by their place on this disk.
     'extension.devFolders': async () => {
       const lifecycle = options.modules?.lifecycle()

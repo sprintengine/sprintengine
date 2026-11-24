@@ -1,3 +1,4 @@
+import { catalogueNotification } from '../extensions/catalogue/extension-catalogue'
 import { GitHubTokenStore } from '../../main/github-token-store'
 import { readModuleOverridesSync } from '../../main/module-host/enablement-store'
 import { loadMainModules, type LoadMainModulesResult } from '../../main/module-host/load-modules'
@@ -173,6 +174,9 @@ export function createServerModules(deps: {
     // An extension's provider may not take a built-in's id.
     protectedProviderIds: bundledRegistryIds,
     warn: (message) => deps.log(`[extensions] ${message}`),
+    // Kill-list and update notices ring the bell of every client, and are
+    // kept for one that follows the bell later.
+    catalogue: { notify: (notice) => hub.deliverKeptNotification(catalogueNotification(notice)) },
     view: () => {
       const current = load
       if (!current) return null
@@ -188,6 +192,8 @@ export function createServerModules(deps: {
     },
   })
   hub.serveLifecycleFrom(lifecycle)
+  // The kill list and automatic updates, for as long as this server runs.
+  const stopCatalogue = lifecycle.catalogue.start()
 
   const extensionRunView = (): ExtensionRunView => {
     const current = load
@@ -334,6 +340,8 @@ export function createServerModules(deps: {
       stopWatchingModules?.()
       stopWatchingModules = null
       devWatch.close()
+      stopCatalogue()
+      await lifecycle.catalogue.dispose()
       await (load?.kernel.runShutdown() ?? Promise.resolve())
       await workers.close()
     },

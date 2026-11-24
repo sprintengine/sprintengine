@@ -383,3 +383,59 @@ export function referenceRows(node: ObjectNode, prefix = ''): ReferenceRow[] {
   }
   return rows
 }
+
+// ── Tolerant reading ────────────────────────────────────────────────────────
+
+/**
+ * Read `value` against `node` the way a list that only lists is read (a
+ * catalogue): keep whatever can be read. Unknown keys are ignored at every
+ * level, an optional field that does not read is dropped, a list item that
+ * does not read is skipped (and a repeat of a unique key keeps the first), a
+ * list over its limit is trimmed. Only a required field that does not read
+ * fails the object holding it. Returns undefined for a value that cannot be
+ * read at all. `validateNode` is the strict check of the same node.
+ */
+export function readNodeTolerant(node: SchemaNode, value: unknown): unknown {
+  switch (node.kind) {
+    case 'array': {
+      if (!Array.isArray(value)) return undefined
+      const out: unknown[] = []
+      const seen = new Set<string>()
+      for (const item of value) {
+        if (out.length >= node.max) break
+        const read = readNodeTolerant(node.items, item)
+        if (read === undefined) continue
+        if (node.unique) {
+          const key = node.unique.key(read)
+          if (seen.has(key)) continue
+          seen.add(key)
+        }
+        out.push(read)
+      }
+      return out
+    }
+    case 'object': {
+      if (!isPlainObject(value)) return undefined
+      const out: Record<string, unknown> = {}
+      for (const [key, field] of Object.entries(node.fields)) {
+        const present = Object.hasOwn(value, key) && value[key] !== undefined
+        if (!present) {
+          if (field.required) return undefined
+          continue
+        }
+        const read = readNodeTolerant(field.node, value[key])
+        if (read === undefined) {
+          if (field.required) return undefined
+          continue
+        }
+        if (!field.ignored) out[key] = read
+      }
+      return out
+    }
+    default: {
+      const issues: ManifestIssue[] = []
+      const read = validateNode(node, value, '', issues)
+      return issues.length > 0 ? undefined : read
+    }
+  }
+}

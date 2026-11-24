@@ -36,6 +36,7 @@ import {
   resolveModuleEnabled,
   runState,
   sourceLabel,
+  updateText,
 } from './extensionsModel'
 import { SettingsSectionTitle } from './SettingsAtoms'
 import { copy as appCopy } from '../../../../shared/copy'
@@ -94,6 +95,8 @@ export type ExtensionActions = {
   onUninstall: ((module: ThirdPartyModuleView) => void) | null
   onReveal: ((module: ThirdPartyModuleView) => void) | null
   onCopyId: (module: ThirdPartyModuleView) => void
+  /** Install the newer release its catalogue lists (it asks again when it asks for more). */
+  onUpdate: ((module: ThirdPartyModuleView) => void) | null
 }
 
 function signatureFact(module: ThirdPartyModuleView): string {
@@ -199,15 +202,28 @@ export function ExtensionListRow({
 
   // The row says a problem only where there is something to read: a failure,
   // or a signature that does not match; and why a worker waits to start.
+  const update = updateText(module)
   const notice = problem
     ? { text: problemText(problem) }
-    : state === 'waiting' && module.launch.waiting
-      ? { text: module.launch.waiting, tone: 'warn' as const }
-      : null
+    : update
+      ? { text: update, ...(module.update?.held ? { tone: 'warn' as const } : {}) }
+      : state === 'waiting' && module.launch.waiting
+        ? { text: module.launch.waiting, tone: 'warn' as const }
+        : null
+  const updatable = Boolean(module.update && module.update.held !== 'owner' && !module.killed && actions.onUpdate)
 
   const source = sourceLabel(module)
+  const origin = module.origin?.source
   const facts = [
     ...(source ? [{ term: 'Source', description: source }] : []),
+    ...(origin
+      ? [
+          {
+            term: 'From',
+            description: `${origin.url}${origin.path ? ` (${origin.path})` : ''}${module.origin?.commit ? ` at ${module.origin.commit.slice(0, 12)}` : ''}`,
+          },
+        ]
+      : []),
     ...(module.development ? [{ term: 'Folder', description: module.development.folder }] : []),
     { term: 'Signature', description: signatureFact(module) },
     { term: 'Approved', description: approvalFact(module) },
@@ -248,6 +264,13 @@ export function ExtensionListRow({
               {reviewable ? (
                 <OutlineButton size="xs" onClick={() => actions.onReview(module)}>
                   {appCopy.settings.thirdPartyModuleList.reviewAndApprove}
+                </OutlineButton>
+              ) : null}
+              {updatable && module.update ? (
+                <OutlineButton size="xs" disabled={pending} onClick={() => actions.onUpdate?.(module)}>
+                  {module.update.held
+                    ? `Review version ${module.update.version}`
+                    : `Update to ${module.update.version}`}
                 </OutlineButton>
               ) : null}
               <span className="flex-1" />

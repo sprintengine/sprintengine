@@ -2,6 +2,11 @@ import { webFrame, type IpcRendererEvent } from 'electron'
 import { ipc as ipcRenderer } from '../ipc-router'
 import type { ChatLink } from '../../shared/deep-link'
 import { subscribeToChatLinks } from './chat-link-subscription'
+import {
+  EXTENSION_LINK_OPEN_CHANNEL,
+  EXTENSION_LINK_READY_CHANNEL,
+  type ExtensionInstallLink,
+} from '../../shared/extension-install-link'
 import type {
   AuxWindowRetargetPayload,
   CreateWorkspaceWindowInput,
@@ -114,6 +119,13 @@ export const windowApi = {
   // The handshake with main, and the acknowledgement that lets main stop
   // holding a link, are in chat-link-subscription.ts.
   onChatLinkOpen: (cb: (link: ChatLink) => void): (() => void) => subscribeToChatLinks(ipcRenderer, cb),
+  // Listening first, then the word to main, which hands over a link that launched the app.
+  onExtensionLinkOpen: (cb: (link: ExtensionInstallLink) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, link: ExtensionInstallLink) => cb(link)
+    ipcRenderer.on(EXTENSION_LINK_OPEN_CHANNEL, handler)
+    ipcRenderer.send(EXTENSION_LINK_READY_CHANNEL)
+    return () => ipcRenderer.removeListener(EXTENSION_LINK_OPEN_CHANNEL, handler)
+  },
   panePopOutOpen: (input: PanePopOutOpenInput): Promise<PanePopOutOpenResult> =>
     ipcRenderer.invoke('pane-popout:open', input),
   // Sends rather than invokes: the owner pushes on every change to the tabs it
@@ -174,6 +186,7 @@ export const windowApi = {
   | 'onWindowPlacementChanged'
   | 'onWindowCloseRequested'
   | 'onChatLinkOpen'
+  | 'onExtensionLinkOpen'
   | 'panePopOutOpen'
   | 'panePopOutPush'
   | 'panePopOutFocus'

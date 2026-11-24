@@ -4,11 +4,15 @@ import { afterEach, test } from 'vitest'
 
 import type { StudioModuleEvent, StudioModuleNotification } from '../../../packages/studio-protocol/src/public'
 import { createMainKernel, createServiceToken } from '../../main/module-host/main-host'
+import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 import type { ModuleUsageRegistry } from '../../shared/modules/activity-service'
 import type { ModuleBacklogRegistry } from '../../shared/modules/backlog-service'
 import type { ModuleMethodParsed } from '../../shared/modules/methods'
 import { createStudioModuleHub, type StudioModules } from './studio-modules'
 import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
+
+// The catalogue is not what these tests are about.
+const NO_CATALOGUE = {} as ModuleLifecycle['catalogue']
 
 // `extension.events` and `extension.notifications` over the owner socket: the
 // capability, the scope, the module filter, and the bell's kept rows sent
@@ -136,6 +140,25 @@ test('the bell sends the kept rows first, then each new one, and again on a new 
     resent.map((frame) => frame.t === 'push' && (frame.payload as StudioModuleNotification).id),
     ['k1-0', 'k1-1'],
     'a client that subscribes again (a reconnect) hears the kept rows again; their ids dedupe them',
+  )
+})
+
+test('a row the Studio raised while no client followed the bell is sent to the next one', async () => {
+  const { hub, listening } = hubWithListening()
+  hub.readRecentFrom(() => [{ ...row('k1-0', 'Failed to load'), emittedAt: 1 }])
+  // A kill found while every window was closed.
+  hub.deliverKeptNotification({ ...row('catalogue-1', 'Notes was switched off'), emittedAt: 2 })
+  const { client } = await clientOver(hub)
+  const subscribed = listening()
+  client.send({ t: 'sub', id: 'bell', topic: 'extension.notifications', params: {} })
+  await subscribed
+  const sent = [
+    await client.next((frame) => frame.t === 'push' && frame.sub === 'bell'),
+    await client.next((frame) => frame.t === 'push' && frame.sub === 'bell'),
+  ]
+  assert.deepEqual(
+    sent.map((frame) => frame.t === 'push' && (frame.payload as StudioModuleNotification).id),
+    ['k1-0', 'catalogue-1'],
   )
 })
 
@@ -563,6 +586,7 @@ test('the installed list names a folder Studio could not read by its place only 
     setSetting: async () => ({ ok: false, message: 'none' }),
     reportRegistry: () => ({ ok: true }),
     reproject: async () => undefined,
+    catalogue: NO_CATALOGUE,
   })
   const owner = await caller(hub)
   assert.deepEqual(answerOf(await owner.request('extension.installed', {})), { modules: [], rejected })
@@ -602,6 +626,7 @@ test('a change to what runs is an owner’s: a paired client holding extensions:
     setSetting: async () => ({ ok: false, message: 'none' }),
     reportRegistry: () => ({ ok: true }),
     reproject: async () => undefined,
+    catalogue: NO_CATALOGUE,
   })
   const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['extensions:operate']))
   assert.deepEqual(answerOf(await paired.request('extension.list', {})), { modules: [] })
@@ -636,6 +661,7 @@ test('the window’s module report is an owner’s: a paired client holding exte
     setSetting: async () => ({ ok: false, message: 'none' }),
     reportRegistry: (snapshot) => (reported.push(snapshot), { ok: true }),
     reproject: async () => undefined,
+    catalogue: NO_CATALOGUE,
   })
   const snapshot = { modules: [] }
   const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['extensions:operate']))

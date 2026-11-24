@@ -196,6 +196,8 @@ import {
 } from './agentComposer/newChatDraft'
 import { bootComposerLive, dropBootComposerSnapshot, releaseBootComposer } from './agentComposer/bootComposer'
 import { showToast, useToastStore } from '../../store/toastStore'
+import { requestExtensionPage } from '../settings/extensionPageRequest'
+import { MODULES_SETTINGS_TAB } from '../settings/extensionsRoute'
 import { chatsWaitingOnYou, nextWaitingChatId } from './nextWaitingChat'
 import { createNewChatStay, NEW_CHAT_STAY_WATCH_MS, type NewChatStay } from './newChatStay'
 import { WorkspaceBand, WorkspaceBandGround } from './WorkspaceBand'
@@ -5086,6 +5088,20 @@ export default function WorkspaceManager() {
     setSidebarSection('home')
     setNarrowSidebarShown(false)
   })
+  // An install link (`sprintengine://extensions/…`) main handed this window:
+  // it opens the extension's page in Settings → Extensions, and never installs.
+  // Only where the operating system hands links over: a browser tab has none.
+  useEffect(() => {
+    if (!clientSupports('deep-links') || typeof window.api.onExtensionLinkOpen !== 'function') return
+    return window.api.onExtensionLinkOpen((link) => {
+      if (!link.ok) {
+        showToast({ tone: 'error', title: 'Couldn’t open that extension link', description: link.message })
+        return
+      }
+      requestExtensionPage({ catalogue: link.catalogue, id: link.id })
+      openSettingsOverlay({ initialTab: MODULES_SETTINGS_TAB })
+    })
+  }, [openSettingsOverlay])
   // A `sprintengine://chat/…` link main handed this window (chatLinkOpener.ts).
   // Listening only once the registry has loaded: main holds a link that
   // launched the app until then, and a store that has not loaded yet would

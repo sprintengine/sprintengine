@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Added (the extension catalogue)
+
+- **`extension.catalogues`** `{ refresh? }`: the official, community and
+  added catalogues as `StudioCatalogueView`s, each from its last copy, with
+  why it could not be read now.
+- **`extension.catalogueEntry`** `{ catalogue, id }`: one extension's page
+  (`StudioCatalogueEntryView`). **`extension.catalogueImage`** `{ catalogue,
+  path, sha256 }`: one listing image's bytes, held to its digest.
+- **`extension.catalogueAdd`** / **`extension.catalogueRemove`** `{ url,
+  commandId }` (an owner's): a catalogue by its git URL, or `community` for
+  the community catalogue.
+- **`extension.installFrom`** `{ from, commandId }` (an owner's): from a
+  catalogue entry (`{ catalogue, id, version, commit, contentHash, source,
+  ownerId }`, the whole release the person was shown, refused when the
+  catalogue lists anything else now) or a git URL (`{ git, ref?, path? }`); answers as
+  `extension.install`, with `leftOut` for a Claude Code plugin, and a refusal
+  names a plugin marketplace's `folders`.
+- **`extension.update`** `{ moduleId, version?, commandId }` (an owner's): the
+  newer release the catalogue an extension came from lists; `version` is the
+  one the person was shown, refused when the catalogue lists another now.
+- `ThirdPartyModuleView.origin`, `.killed` and `.update`; launch status `killed`.
+
 ### Added (development folders and the extension dev loop)
 
 - **`extension.devFolders`** (an owner's): the development folders

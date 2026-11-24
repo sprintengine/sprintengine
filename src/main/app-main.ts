@@ -20,6 +20,7 @@ import type { ExtensionStandingContext } from './modules/module-signature'
 import { createExtensionApprovalReader } from './modules/extension-approvals'
 import { createExtensionFrameGrant } from './modules/extension-frame-grant'
 import { readExtensionStandingContextSync } from './modules/extension-standing-context'
+import { catalogueNotification } from '../server/extensions/catalogue/extension-catalogue'
 import { installedStandingOf, planInstalledExtensions } from '../server/extensions/extension-plan'
 import { createExtensionDiscovery } from '../server/extensions/extension-discovery'
 import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
@@ -324,6 +325,9 @@ const moduleLifecycle = serverHost
         if (scheduledAgentsError) return { ok: false, message: scheduledAgentsError.message }
         return { ok: true }
       },
+      // Kill-list and update notices ring the bell of every client, and are
+      // kept for one that follows the bell later.
+      catalogue: { notify: (notice) => services.moduleHub.deliverKeptNotification(catalogueNotification(notice)) },
       view: () => {
         const overrides = readModuleEnablementOverrides()
         return {
@@ -337,7 +341,20 @@ const moduleLifecycle = serverHost
         }
       },
     })
-if (moduleLifecycle) services.moduleHub.serveLifecycleFrom(moduleLifecycle)
+// The kill list and automatic updates, for as long as the app runs. The
+// quit stops them and lets go of the added catalogues' checkouts kept in
+// temporary folders (the `extension catalogue` shutdown leg).
+let extensionCatalogue: { dispose(): Promise<void> } | undefined
+if (moduleLifecycle) {
+  services.moduleHub.serveLifecycleFrom(moduleLifecycle)
+  const stopCatalogue = moduleLifecycle.catalogue.start()
+  extensionCatalogue = {
+    dispose: async () => {
+      stopCatalogue()
+      await moduleLifecycle.catalogue.dispose()
+    },
+  }
+}
 // Changes while the app runs load live: a development folder's save, an
 // install, an approval (src/server/extensions/extension-reload.ts). Out of
 // process the server does this.
@@ -566,6 +583,7 @@ registerAppLifecycle({
   analytics: services.analytics,
   // Out of process the server runs every module's startup and shutdown hooks.
   ...(serverHost ? {} : { moduleKernel: moduleLoad.kernel }),
+  ...(extensionCatalogue ? { extensionCatalogue } : {}),
   updateService: services.updateService,
   // The skill sources are the server's out of process: their hourly check runs there.
   checkPluginSourceUpdates: serverHost

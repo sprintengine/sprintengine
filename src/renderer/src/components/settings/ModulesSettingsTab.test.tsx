@@ -15,6 +15,7 @@ import { ModulesSettingsTab } from './ModulesSettingsTab'
 import { COMING_SOON_IDS, MODULE_CATEGORY_GROUPS } from './ModuleControls'
 import type { StudioModuleSummary } from '../../../../../packages/studio-protocol/src/public'
 import { adoptExtensionsDouble } from '../../studio/extensions.double'
+import { requestExtensionPage } from './extensionPageRequest'
 
 // What the window's Studio is extended with: answered from this test's own stand-in for the window.
 vi.mock('../../studio/extensions', () => import('../../studio/extensions.double'))
@@ -31,10 +32,13 @@ vi.mock('../../modules', async (importOriginal) => ({
   refreshThirdPartyRendererModules: async () => {},
 }))
 
+// Whether the window is a browser tab, read by the mocks below before the module body runs.
+const tab = vi.hoisted(() => ({ browser: false }))
+
 // What runs on the window's Studio is changed through it (`extension.approve`,
 // `extension.uninstall`); this stands in for the window's connection.
-vi.mock('../../studio/moduleLifecycle', () => ({
-  windowModuleLifecycle: () => ({
+vi.mock('../../studio/moduleLifecycle', () => {
+  const lifecycle = () => ({
     setEnabled: async (id: string, enabled: boolean | null) => {
       enableCalls.push([id, enabled])
       return setEnabledAnswer
@@ -44,12 +48,62 @@ vi.mock('../../studio/moduleLifecycle', () => ({
       approveCalls.push([id, fingerprint])
       return { ok: true }
     },
+    installFrom: async (from: unknown) => {
+      installFromCalls.push(from)
+      return installFromAnswer
+    },
+    update: async (id: string, version?: string) => {
+      updateCalls.push(version ? `${id}@${version}` : id)
+      return { ok: false, message: 'not here' }
+    },
+    addCatalogue: async (url: string) => {
+      addCatalogueCalls.push(url)
+      return { ok: true, catalogue: { id: `git:${url}`, kind: 'added', name: 'Acme', url, entries: [] } }
+    },
+    removeCatalogue: async () => ({ ok: true }),
     uninstall: async (id: string) => {
       uninstallCalls.push(id)
       installed = installed.filter((candidate) => candidate.manifest.id !== id)
       return { ok: true, removedModuleIds: [id] }
     },
-  }),
+  })
+  // A browser tab: its Studio is another machine, so it has no folder lifecycle.
+  return { windowModuleLifecycle: () => (tab.browser ? null : lifecycle()), windowCatalogueLifecycle: lifecycle }
+})
+
+// A browser tab has no window switches of its own Studio either.
+vi.mock('../../studio/moduleSwitches', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../studio/moduleSwitches')>()
+  return {
+    ...actual,
+    windowModuleSwitches: (store: Parameters<typeof actual.windowModuleSwitches>[0]) =>
+      tab.browser ? null : actual.windowModuleSwitches(store),
+  }
+})
+
+// The catalogues the window's Studio reads: one community listing.
+vi.mock('../../studio/extensionCatalogue', () => ({
+  extensionCatalogueApi: {
+    catalogues: async () => cataloguesServed,
+    entry: async (catalogue: string, id: string) => {
+      catalogueEntryCalls.push([catalogue, id])
+      return {
+        ok: true,
+        entry: {
+          ...NOTES_LISTING,
+          catalogue,
+          catalogueName: 'Community',
+          source: { url: 'https://github.com/acme/notes.git', ref: 'main' },
+          commit: 'a'.repeat(40),
+          contentHash: 'b'.repeat(64),
+          ownerId: 7,
+          releases: [{ version: '1.0.0', minimumStudio: '0.13.0' }],
+          alsoListedBy: [],
+        },
+      }
+    },
+    image: async () => null,
+  },
 }))
 
 vi.mock('../../modules/extension-contributions', async (importOriginal) => ({
@@ -166,6 +220,20 @@ const TAMPERED = module('acme.tampered', 'Tampered', {
   launch: { status: 'blocked_invalid', mainLoaded: false },
 })
 
+const NOTES_LISTING = {
+  id: 'acme.notes',
+  name: 'Notes',
+  publisher: 'acme',
+  description: 'Take notes.',
+  categories: ['productivity'],
+  version: '1.0.0',
+  installable: true,
+  tier: 'declarative' as const,
+  permissions: [],
+  contributes: [{ kind: 'skills', name: 'notes' }],
+  label: 'Community · acme',
+}
+
 let installed: ThirdPartyModuleView[] = []
 let installAnswer:
   | { ok: true; moduleId: string; approval: { state: 'pending'; fingerprint: string }; strippedLinks: string[] }
@@ -178,19 +246,37 @@ const enableCalls: Array<[string, boolean | null]> = []
 let setEnabledAnswer: { ok: true; module: null } | { ok: false; message: string } = { ok: true, module: null }
 const approveCalls: Array<[string, string]> = []
 const uninstallCalls: string[] = []
+const installFromCalls: unknown[] = []
+let installFromAnswer: { ok: false; message: string; folders?: string[] } = { ok: false, message: 'not here' }
+const updateCalls: string[] = []
+const addCatalogueCalls: string[] = []
+const catalogueEntryCalls: Array<[string, string]> = []
 const restartApp = vi.fn(async () => ({ restarting: false }))
 let root: Root | null = null
 let host: HTMLElement | null = null
+
+const defaultCatalogues = (): unknown[] => [
+  { id: 'official', kind: 'official', name: 'Official', entries: [] },
+  { id: 'community', kind: 'community', name: 'Community', entries: [NOTES_LISTING] },
+]
+let cataloguesServed = defaultCatalogues()
 
 beforeEach(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   installed = [INSIGHTS, SIGNED, DECISION_LOG, PR_RADAR, TAMPERED]
   installAnswer = { ok: false, message: 'not here' }
   openDirAnswer = null
+  tab.browser = false
   approveCalls.length = 0
   enableCalls.length = 0
   setEnabledAnswer = { ok: true, module: null }
   uninstallCalls.length = 0
+  installFromCalls.length = 0
+  installFromAnswer = { ok: false, message: 'not here' }
+  cataloguesServed = defaultCatalogues()
+  updateCalls.length = 0
+  addCatalogueCalls.length = 0
+  catalogueEntryCalls.length = 0
   restartApp.mockClear()
   ;(window as unknown as { api: unknown }).api = {
     listThirdPartyModules: async () => ({ modules: installed, rejected: [] }),
@@ -245,17 +331,24 @@ const click = async (element: Element | undefined | null) => {
   await act(async () => {})
 }
 const modal = () => document.querySelector('[role="dialog"][aria-modal="true"]')
+const typeInto = async (input: HTMLInputElement, value: string) => {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
 
-test('the page is Extensions, with Browse marketplace and an Install menu, and says nothing about itself', async () => {
+test('the page is Extensions, with Browse and an Install menu, and says nothing about itself', async () => {
   await mount()
   expect(panel().querySelector('h3')?.textContent).toBe('Extensions')
-  expect(button('Browse marketplace', panel())).toBeTruthy()
+  expect(button('Browse', panel())).toBeTruthy()
   await click(button('Install', panel()))
   const menu = document.querySelector('[role="menu"][aria-label="Install"]')!
   expect([...menu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim())).toEqual([
     'From a folder',
     'As a development folder',
-    'Browse marketplace',
+    'From a git URL',
+    'From a catalogue',
   ])
   // No trailing ellipsis on any label.
   expect(buttons().some((candidate) => (candidate.textContent?.trim() ?? '').endsWith('…'))).toBe(false)
@@ -491,6 +584,41 @@ test('a module added from a folder is uninstalled by the Studio, and forgotten h
   expect(panel().textContent).not.toContain('Decision Log')
 })
 
+test('a browser tab approves, switches and uninstalls on the Studio; only folder installs stay with the desktop', async () => {
+  tab.browser = true
+  await mount()
+  await click(button('Install', panel()))
+  expect(
+    [...document.querySelectorAll('[role="menu"][aria-label="Install"] [role="menuitem"]')].map((item) =>
+      item.textContent?.trim(),
+    ),
+  ).toEqual(['From a git URL', 'From a catalogue'])
+  await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+
+  // Approving turns it on on the Studio, not only in this tab's copy.
+  await click(button('Review Insights'))
+  await click(button('Approve and turn on', modal()!))
+  expect(approveCalls).toEqual([['acme.insights', 'sha256-insights']])
+  expect(enableCalls).toEqual([['acme.insights', true]])
+  expect(useWorkspaceStore.getState().appSettings.modules['acme.insights']).toBe(true)
+
+  // A row's switch reaches the Studio too; one it refused changes nothing here.
+  setEnabledAnswer = { ok: false, message: 'The choice could not be saved.' }
+  await click(rowOf('Decision Log').querySelector('[role="switch"]'))
+  expect(enableCalls.at(-1)).toEqual(['local.decision-log', false])
+  expect(panel().textContent).toContain('The choice could not be saved.')
+  expect(useWorkspaceStore.getState().appSettings.modules['local.decision-log']).toBe(true)
+  setEnabledAnswer = { ok: true, module: null }
+  await click(rowOf('Decision Log').querySelector('[role="switch"]'))
+  expect(useWorkspaceStore.getState().appSettings.modules['local.decision-log']).toBe(false)
+
+  await click(button('More for Decision Log'))
+  await click([...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === 'Uninstall'))
+  await click(buttons(modal()!).find((candidate) => candidate.textContent?.trim() === 'Uninstall'))
+  expect(uninstallCalls).toEqual(['local.decision-log'])
+  expect(panel().textContent).not.toContain('Decision Log')
+})
+
 test('a folder install that left symbolic links out says which', async () => {
   openDirAnswer = '/Users/dev/extensions/notes'
   installAnswer = {
@@ -532,4 +660,117 @@ test('a folder the Studio refuses says why', async () => {
     [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.trim() === 'From a folder'),
   )
   expect(panel().textContent).toContain('It needs Studio 9.0.0 or newer.')
+})
+
+test('an install link opens the extension’s page and installs nothing until Install is pressed', async () => {
+  requestExtensionPage({ catalogue: 'community', id: 'acme.notes' })
+  await mount()
+  await act(async () => {})
+  const page = panel().querySelector('article[aria-label="Notes"]')
+  expect(page).toBeTruthy()
+  expect(page?.textContent).toContain('Community · acme')
+  expect(catalogueEntryCalls).toEqual([['community', 'acme.notes']])
+  expect(installFromCalls).toEqual([])
+  await click(button('Install', page!))
+  // The whole release the page showed: a catalogue that lists anything else now is refused.
+  expect(installFromCalls).toEqual([
+    {
+      catalogue: 'community',
+      id: 'acme.notes',
+      version: NOTES_LISTING.version,
+      commit: 'a'.repeat(40),
+      contentHash: 'b'.repeat(64),
+      source: { url: 'https://github.com/acme/notes.git', ref: 'main' },
+      ownerId: 7,
+    },
+  ])
+})
+
+test('an install link naming a catalogue not added asks before adding it, and adds nothing when declined', async () => {
+  requestExtensionPage({ catalogue: 'git:https://github.com/acme/catalogue.git', id: 'acme.notes' })
+  await mount()
+  await act(async () => {})
+  expect(modal()?.textContent).toContain('Add catalogue https://github.com/acme/catalogue.git?')
+  await click(button('Cancel', modal()!))
+  expect(addCatalogueCalls).toEqual([])
+  expect(catalogueEntryCalls).toEqual([])
+  expect(installFromCalls).toEqual([])
+})
+
+test('a git URL install names its folder, and a marketplace’s plugin folders are offered to pick from', async () => {
+  await mount()
+  await click(button('Install', panel()))
+  await click(
+    [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.trim() === 'From a git URL'),
+  )
+  const dialog = modal()!
+  expect(dialog.textContent).toContain('Install from a git URL')
+  const [url] = [...dialog.querySelectorAll('input')] as HTMLInputElement[]
+  await typeInto(url!, 'https://github.com/acme/plugins.git#v2')
+  installFromAnswer = {
+    ok: false,
+    message:
+      'That repository is a Claude Code plugin marketplace. Name the folder of the plugin to install: plugins/review-kit.',
+    folders: ['plugins/review-kit'],
+  }
+  await click(button('Install', dialog))
+  expect(installFromCalls).toEqual([{ git: 'https://github.com/acme/plugins.git', ref: 'v2' }])
+
+  // The dialog comes back with the answer, the URL kept, and the folders to pick from.
+  const again = modal()!
+  expect(again.textContent).toContain('plugin marketplace')
+  expect(([...again.querySelectorAll('input')][0] as HTMLInputElement).value).toBe(
+    'https://github.com/acme/plugins.git#v2',
+  )
+  await click(button('plugins/review-kit', again))
+  await click(button('Install', again))
+  expect(installFromCalls.at(-1)).toEqual({
+    git: 'https://github.com/acme/plugins.git',
+    ref: 'v2',
+    path: 'plugins/review-kit',
+  })
+})
+
+test('an install link naming the community catalogue, removed here, asks before adding it back', async () => {
+  cataloguesServed = [{ id: 'official', kind: 'official', name: 'Official', entries: [] }]
+  requestExtensionPage({ catalogue: 'community', id: 'acme.notes' })
+  await mount()
+  await act(async () => {})
+  expect(modal()?.textContent).toContain('Add the community catalogue?')
+  await click(button('Add catalogue', modal()!))
+  expect(addCatalogueCalls).toEqual(['community'])
+})
+
+test('an update held for review says why, and reviewing it closes the details for the approval to show', async () => {
+  installed = [{ ...DECISION_LOG, update: { version: '1.1.0', held: 'access', growth: ['the "network" permission'] } }]
+  await mount()
+  expect(rowOf('Decision Log').textContent).toContain(
+    'Version 1.1.0 waits for your review: it asks for the "network" permission.',
+  )
+  await click(button('Decision Log'))
+  const details = document.querySelector('[role="dialog"][aria-label="Decision Log details"]')!
+  // A press, as a pointer makes it: down, then the click.
+  const review = button('Review version 1.1.0', details)!
+  await act(async () => {
+    review.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  })
+  await click(review)
+  // The version the row showed, so a catalogue that lists another now is refused.
+  expect(updateCalls).toEqual(['local.decision-log@1.1.0'])
+  expect(document.querySelector('[aria-label="Decision Log details"]')).toBeNull()
+})
+
+test('a version Studio’s kill list removed says so, with why, and has no switch', async () => {
+  installed = [
+    {
+      ...DECISION_LOG,
+      killed: { reason: 'It sends your files away.', advisoryUrl: 'https://example.com/advisory' },
+      launch: { ...DECISION_LOG.launch, status: 'killed' },
+    },
+  ]
+  await mount()
+  const row = rowOf('Decision Log')
+  expect(row.textContent).toContain('Switched off by Studio')
+  expect(row.textContent).toContain('its kill list removed this version. It sends your files away.')
+  expect(row.querySelector('[role="switch"]')).toBeNull()
 })

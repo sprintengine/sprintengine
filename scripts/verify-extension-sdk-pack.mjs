@@ -57,11 +57,23 @@ run(`npm install --no-save --no-package-lock --no-audit --no-fund ../${tarball}`
 
 // Every entry point must be reachable the way an extension author reaches it:
 // through the INSTALLED package's `exports` map, with declarations and code
-// behind it. The JSON Schema is the one entry with neither: a plain file.
+// behind it. The JSON Schemas are the entries with neither: plain files.
 const installedDir = join(fixtureDir, 'node_modules', '@sprintengine', 'extension-sdk')
 const installedManifest = JSON.parse(readFileSync(join(installedDir, 'package.json'), 'utf8'))
 const SCHEMA_SUBPATH = './extension.schema.json'
-for (const subpath of ['.', './signing', './source', './scaffold', './guide', './testing', SCHEMA_SUBPATH]) {
+const CATALOGUE_SCHEMA_SUBPATH = './catalogue.schema.json'
+const SCHEMAS = [SCHEMA_SUBPATH, CATALOGUE_SCHEMA_SUBPATH]
+for (const subpath of [
+  '.',
+  './signing',
+  './source',
+  './scaffold',
+  './guide',
+  './testing',
+  './catalogue',
+  './release-entry',
+  ...SCHEMAS,
+]) {
   if (!installedManifest.exports?.[subpath]) {
     throw new Error(`packed @sprintengine/extension-sdk does not export "${subpath}".`)
   }
@@ -73,7 +85,7 @@ for (const subpath of ['./ui', './surface', './testing/kit', './testing/register
     throw new Error(`packed @sprintengine/extension-sdk still exports "${subpath}", which the SDK no longer has.`)
   }
 }
-const entryPoints = Object.entries(installedManifest.exports ?? {}).filter(([subpath]) => subpath !== SCHEMA_SUBPATH)
+const entryPoints = Object.entries(installedManifest.exports ?? {}).filter(([subpath]) => !SCHEMAS.includes(subpath))
 for (const [subpath, entry] of entryPoints) {
   if (!entry?.types || !entry?.default) {
     throw new Error(`packed @sprintengine/extension-sdk exports "${subpath}" without both types and default.`)

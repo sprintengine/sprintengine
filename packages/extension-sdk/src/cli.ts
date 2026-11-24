@@ -16,6 +16,7 @@
 //   dev              load a development folder into the running Studio, watch it,
 //                    and drive its worker (--json)
 //   shot             a PNG of one of its surfaces as Studio draws it (--json)
+//   release-entry    the catalogue release entry for the committed HEAD (--json)
 //
 // sign records the sha256 of every file the extension ships, extension.json
 // included, in extension.sig and signs those digests, so the signature covers
@@ -50,6 +51,7 @@ const USAGE = `sprintengine-extension — pack, sign, and verify SprintEngine St
 Usage:
   sprintengine-extension init <dir> --template <id> [--with <part,...>] [--id <module-id>] [--name <name>] [--sdk-tarball <file>] [--force]
   sprintengine-extension validate <dir|extension.json> [--json]
+  sprintengine-extension release-entry [dir] [--json]
   sprintengine-extension inspect <dir> [--json]
   sprintengine-extension test [dir] [--json]
   sprintengine-extension check [dir] [--json]
@@ -98,7 +100,11 @@ method, one its permissions or tier cannot use) at their file and line. test
 runs every *.test.ts, .tsx, .mts, .js, .jsx and .mjs with the project's own
 Vitest when it has one installed, else node --test; TypeScript and JSX load
 as Studio loads them. test and check run the extension's code on this machine, outside
-Studio: only on code you trust.
+Studio: only on code you trust. release-entry prints the release entry a
+catalogue lists for the committed HEAD of the repository holding the folder:
+its commit, the content hash Studio checks at install, its tier, the Studio it
+needs, its permissions and its contributions; and the folder's path in the
+repository when it is not the root. Uncommitted changes are not in it.
 
 dev and shot drive the SprintEngine Studio running on this machine (found in
 its data folder; --data-dir names another). dev load registers the folder as
@@ -450,7 +456,7 @@ async function add(args: string[]): Promise<void> {
 }
 
 const [command, ...rest] = process.argv.slice(2)
-const authoring = new Set(['validate', 'inspect', 'test', 'check', 'dev', 'shot', 'list', 'logs'])
+const authoring = new Set(['validate', 'inspect', 'test', 'check', 'dev', 'shot', 'list', 'logs', 'release-entry'])
 if (command && authoring.has(command)) {
   import('./cli-commands.js')
     .then(({ runAuthoringCommand }) => runAuthoringCommand(command, rest))

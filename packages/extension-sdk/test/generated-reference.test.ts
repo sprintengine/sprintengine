@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { expect, test } from 'vitest'
 
 import { extensionHookReference } from '../src/hooks.js'
+import { catalogueJsonSchema, catalogueReference } from '../src/catalogue.js'
 import {
   EXTENSION_MANIFEST_SINCE,
   extensionManifestJsonSchema,
@@ -44,6 +45,29 @@ test('guide/manifest.md carries the reference the field table produces', () => {
   assert.ok(
     readFileSync(GUIDE_PATH, 'utf8') === expected,
     `The generated reference in guide/manifest.md is out of date. ${HOW}`,
+  )
+})
+
+test('catalogue.schema.json is the schema the catalogue field table produces', () => {
+  const path = join(SDK, 'catalogue.schema.json')
+  const expected = `${JSON.stringify(catalogueJsonSchema(), null, 2)}\n`
+  if (UPDATE) writeFileSync(path, expected)
+  assert.ok(readFileSync(path, 'utf8') === expected, `catalogue.schema.json is out of date. ${HOW}`)
+})
+
+test('guide/catalogue.md carries the reference the catalogue field tables produce', () => {
+  const path = join(SDK, 'guide/catalogue.md')
+  const open = '<!-- generated:extension-catalogue-reference:start -->'
+  const close = '<!-- generated:extension-catalogue-reference:end -->'
+  const guide = readFileSync(path, 'utf8')
+  const start = guide.indexOf(open)
+  const end = guide.indexOf(close)
+  assert.ok(start !== -1 && end > start, `guide/catalogue.md must hold ${open} … ${close}.`)
+  const expected = `${guide.slice(0, start + open.length)}\n\n${catalogueReference()}\n\n${guide.slice(end)}`
+  if (UPDATE) writeFileSync(path, expected)
+  assert.ok(
+    readFileSync(path, 'utf8') === expected,
+    `The generated reference in guide/catalogue.md is out of date. ${HOW}`,
   )
 })
 
