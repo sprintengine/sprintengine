@@ -10,6 +10,7 @@ import {
   registerExtensionReplacement,
   replacementFor,
   runBuiltInAction,
+  runCommandForWorker,
   runReplaceable,
   setReplacementLog,
   useExtensionReplacementSwitches,
@@ -121,6 +122,66 @@ test('a worker that has not answered within 2 s has Studio run its own, once, an
   await vi.advanceTimersByTimeAsync(0)
   assert.equal(own.runs, 1, 'never twice')
   assert.equal(lines.length, 1)
+})
+
+/** Studio's own actions as `runCommand` reaches them: the window's app command runner. */
+function appRunner(): { runs: string[] } {
+  const seen = { runs: [] as string[] }
+  stopRunner = setAppCommandRunner((commandId) => {
+    seen.runs.push(commandId)
+    return true
+  })
+  return seen
+}
+
+test('a wrapping worker that answers after the 2 s floor does not run Studio’s action a second time', async () => {
+  vi.useFakeTimers()
+  const app = appRunner()
+  let answer: (value: Answer) => void = () => undefined
+  replacement('acme.slow', () => new Promise<Answer>((resolve) => (answer = resolve)))
+  const own = builtIn()
+  runReplaceable('workspace.history.back', own.run)
+  await vi.advanceTimersByTimeAsync(REPLACEMENT_TIME_LIMIT_MS)
+  assert.equal(own.runs, 1, 'Studio ran its own at the limit')
+  // The worker's `await studio.runCommand('workspace.history.back')` lands late.
+  assert.equal(runCommandForWorker({ moduleId: 'acme.slow', action: 'workspace.history.back' }), false)
+  assert.deepEqual(app.runs, [], 'not run again')
+  assert.match(lines.at(-1)!, /after Studio had already run it in its place/)
+  // Another action, or another extension's ask, is not held.
+  assert.equal(runCommandForWorker({ moduleId: 'acme.slow', action: 'pane.toggle' }), true)
+  assert.equal(runCommandForWorker({ moduleId: 'acme.other', action: 'workspace.history.back' }), true)
+  answer({ ok: true, result: null })
+  await vi.advanceTimersByTimeAsync(0)
+  // Once the call has settled, the worker's asks run as ever.
+  assert.equal(runCommandForWorker({ moduleId: 'acme.slow', action: 'workspace.history.back' }), true)
+  assert.deepEqual(app.runs, ['pane.toggle', 'workspace.history.back', 'workspace.history.back'])
+  assert.equal(own.runs, 1)
+})
+
+test('a worker that runs Studio’s action and then fails, or goes quiet, does not have Studio run it again', async () => {
+  vi.useFakeTimers()
+  const app = appRunner()
+  let fail: (value: Answer) => void = () => undefined
+  replacement('acme.wraps', () => new Promise<Answer>((resolve) => (fail = resolve)))
+  const failed = builtIn()
+  runReplaceable('workspace.history.back', failed.run)
+  await vi.advanceTimersByTimeAsync(10)
+  assert.equal(runCommandForWorker({ moduleId: 'acme.wraps', action: 'workspace.history.back' }), true)
+  fail({ ok: false, code: 'failed', message: 'after the back' })
+  await vi.advanceTimersByTimeAsync(0)
+  assert.equal(failed.runs, 0, 'no fallback on its failure')
+  assert.deepEqual(app.runs, ['workspace.history.back'], 'once, by the worker')
+  assert.match(lines.at(-1)!, /did not run: after the back, after running Studio's "workspace\.history\.back" itself/)
+
+  // The same with silence past the limit.
+  const quiet = builtIn()
+  runReplaceable('workspace.history.back', quiet.run)
+  await vi.advanceTimersByTimeAsync(10)
+  runCommandForWorker({ moduleId: 'acme.wraps', action: 'workspace.history.back' })
+  await vi.advanceTimersByTimeAsync(REPLACEMENT_TIME_LIMIT_MS)
+  assert.equal(quiet.runs, 0)
+  assert.deepEqual(app.runs, ['workspace.history.back', 'workspace.history.back'])
+  fail({ ok: true, result: null })
 })
 
 test('a worker that refuses or throws has Studio run its own at once', async () => {

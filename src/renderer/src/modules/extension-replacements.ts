@@ -19,7 +19,8 @@ import type { InternalRendererHost } from './renderer-host'
 // `runReplaceable` before running the built-in.
 //
 // Studio's own action is the floor. The extension has 2 s to answer; if it
-// refuses, throws, or is still thinking, Studio runs its own, once. Only the
+// refuses, throws, or is still thinking, Studio runs its own, once, and never
+// a second time around a worker that runs the action itself (`runCommandForWorker`). Only the
 // person's own gestures are taken over: a declarative command's `action`, a
 // surface handing on to a shell command and a worker's `studio.runCommand` go
 // through `runAppCommand`, which is always the built-in.
@@ -141,17 +142,71 @@ export function runReplaceable(actionId: string, runBuiltIn: () => boolean): boo
   return true
 }
 
+// ── Studio's own action runs once ───────────────────────────────────────────
+// A replacement that wraps Studio's action (`await studio.runCommand(action)`)
+// races the 2 s floor: Studio may run its own and then hear the worker ask
+// for the same, or the worker may run it and then fail. Each call this window
+// has made and not heard the end of is kept here, so the action runs once:
+// after Studio ran its own, the worker's ask for that action is dropped; after
+// the worker ran it, Studio does not run it again on its failure or silence.
+
+type ReplacementCall = {
+  key: string
+  action: string
+  /** Studio ran its own in the worker's place. */
+  fellBack: boolean
+  /** The worker ran the action itself (`studio.runCommand`), during the call. */
+  workerRan: boolean
+}
+
+/** Calls whose answer has not come; one the worker never answers is let go of after this long. */
+const REPLACEMENT_CALL_FORGET_MS = 60_000
+const inFlight = new Set<ReplacementCall>()
+
+/**
+ * A worker's `studio.runCommand(action)`, heard by this window
+ * (`extension.commandRuns`): Studio's own action, never a replacement
+ * (`runBuiltInAction`), unless it is the action one of this extension's
+ * replacement calls stands in for and Studio already ran its own in that
+ * call's place. Whether anything ran.
+ */
+export function runCommandForWorker(run: { moduleId: string; action: string }): boolean {
+  const calls = [...inFlight].filter((call) => call.key === run.moduleId && call.action === run.action)
+  if (calls.length > 0) {
+    const open = calls.find((call) => !call.fellBack)
+    if (!open) {
+      logLine(
+        run.moduleId,
+        `asked to run Studio's "${run.action}" after Studio had already run it in its place; it was not run again.`,
+      )
+      return false
+    }
+    open.workerRan = true
+  }
+  return runBuiltInAction(run.action)
+}
+
 async function runReplacement(replacement: ExtensionReplacement, runBuiltIn: () => boolean): Promise<void> {
   let settled = false
   let timer: ReturnType<typeof setTimeout> | undefined
+  const call: ReplacementCall = { key: replacement.key, action: replacement.action, fellBack: false, workerRan: false }
+  inFlight.add(call)
+  const forget = setTimeout(() => inFlight.delete(call), REPLACEMENT_CALL_FORGET_MS)
   const builtIn = (why: string) => {
     if (settled) return
     settled = true
     clearTimeout(timer)
-    logLine(
-      replacement.key,
-      `Studio ran its own "${replacement.action}": "${replacement.commandId}" ${why.replace(/[.\s]+$/u, '')}.`,
-    )
+    const reason = why.replace(/[.\s]+$/u, '')
+    // The worker ran the action itself: its failure, or its silence, does not run it twice.
+    if (call.workerRan) {
+      logLine(
+        replacement.key,
+        `"${replacement.commandId}" ${reason}, after running Studio's "${replacement.action}" itself; Studio did not run it again.`,
+      )
+      return
+    }
+    call.fellBack = true
+    logLine(replacement.key, `Studio ran its own "${replacement.action}": "${replacement.commandId}" ${reason}.`)
     runBuiltIn()
   }
   timer = setTimeout(
@@ -171,6 +226,9 @@ async function runReplacement(replacement: ExtensionReplacement, runBuiltIn: () 
     } else builtIn(`did not run: ${answer.message}`)
   } catch (error) {
     builtIn(`failed: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    clearTimeout(forget)
+    inFlight.delete(call)
   }
 }
 

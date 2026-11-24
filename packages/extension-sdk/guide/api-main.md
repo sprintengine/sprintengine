@@ -128,6 +128,10 @@ To wrap Studio's action rather than replace it, call `studio.runCommand(action)`
 (needs `workspace:operate`): it runs Studio's own in the window whose call set
 the command off, never a replacement, so it cannot call your command back. Work
 no window set off (an event, a background worker) is refused `no_window`.
+Studio's action still runs once: when Studio already ran its own because your
+command was past its 2 seconds, your `runCommand` of that action is not run
+again (the log says so), and when your command ran it and then fails, Studio
+does not run it a second time.
 
 ```ts
 'notes.sidebar': {

@@ -154,7 +154,7 @@ import { environmentIdsOf, environmentRouteOfMeshConnection } from '../../../../
 import { currentEnvironments } from '../../hooks/useEnvironments'
 import { registerRemoteChatOpener } from './remoteBand/remoteChatSearch'
 import { setAppCommandRunner } from '../../commands/appCommandRunner'
-import { runBuiltInAction, runReplaceable } from '../../modules/extension-replacements'
+import { runCommandForWorker, runReplaceable } from '../../modules/extension-replacements'
 import {
   markLaunchedAgentProjected,
   retiredLaunchedAgents,
@@ -4737,8 +4737,9 @@ export default function WorkspaceManager() {
   useEffect(() => setAppCommandRunner(runCommand), [runCommand])
 
   // A worker's `studio.runCommand`, for a call this window made (a command it
-  // ran in place of Studio's action): Studio's own action, never a replacement.
-  useEffect(() => extensionsApi.onCommandRuns((run) => void runBuiltInAction(run.action)), [])
+  // ran in place of Studio's action): Studio's own action, never a replacement,
+  // and not again when Studio already ran it in that call's place.
+  useEffect(() => extensionsApi.onCommandRuns((run) => void runCommandForWorker(run)), [])
 
   useEffect(() => {
     return window.api.onAppMenuCommand((command) => {
