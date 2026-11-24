@@ -43,6 +43,18 @@
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
     },
+    "./components": {
+      "types": "./dist/components/index.d.ts",
+      "default": "./dist/components/index.js"
+    },
+    "./components/jsx-runtime": {
+      "types": "./dist/components/jsx-runtime.d.ts",
+      "default": "./dist/components/jsx-runtime.js"
+    },
+    "./components/jsx-dev-runtime": {
+      "types": "./dist/components/jsx-runtime.d.ts",
+      "default": "./dist/components/jsx-runtime.js"
+    },
     "./catalogue": {
       "types": "./dist/catalogue.d.ts",
       "default": "./dist/catalogue.js"

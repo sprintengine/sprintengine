@@ -36,6 +36,7 @@ import { computeModuleFileDigestsSync, isDevelopmentSkippedPath } from './module
 import { extensionContentFingerprint } from './signing.js'
 import { buildSurfaceModules, formatSourceProblem } from './source-modules.js'
 import { skillFolderIssues } from './skill-folders.js'
+import { ownModuleAliases } from './source-jsx-hooks.js'
 
 type Issue = { path: string; message: string }
 
@@ -331,14 +332,24 @@ function projectVitest(root: string): string | null {
  */
 function vitestConfig(): string {
   const sourceModules = JSON.stringify(pathToFileURL(join(HERE, 'source-modules.js')).href)
+  // Exact names only: `…/components` must not catch `…/components/jsx-runtime`.
+  const aliases = Object.entries(ownModuleAliases()).map(([name, file]) => ({
+    find: `^${name.replace(/[.*+?^${}()|[\]\\/]/gu, '\\$&')}$`,
+    replacement: file,
+  }))
   return `// Written by \`sprintengine-extension test\`. Do not edit.
 import { transpileExtensionSource } from ${sourceModules}
 
 const SOURCE = /\\.(?:ts|tsx|mts|jsx)$/
+// A components panel's files compile their JSX for its module, as Studio compiles them.
+const COMPONENTS = /\\bfrom\\s*['"]@sprintengine\\/extension-sdk\\/components(?:\\/[\\w-]+)?['"]/
+// The components module and the testing kit are this SDK's own, so a panel and its test share one runtime.
+const OWN = ${JSON.stringify(aliases)}
 export default {
   // Studio's transpiler alone: neither of Vite's (esbuild before Vite 8, Oxc since).
   esbuild: false,
   oxc: false,
+  resolve: { alias: OWN.map((each) => ({ find: new RegExp(each.find), replacement: each.replacement })) },
   plugins: [
     {
       name: 'sprintengine-extension-sources',
@@ -346,7 +357,7 @@ export default {
       transform(code, id) {
         const file = id.split('?')[0]
         if (!SOURCE.test(file) || file.includes('/node_modules/')) return null
-        return { code: transpileExtensionSource(file, code), map: null }
+        return { code: transpileExtensionSource(file, code, COMPONENTS.test(code) ? 'components' : 'html'), map: null }
       },
     },
   ],
