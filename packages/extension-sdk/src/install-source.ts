@@ -77,10 +77,19 @@ export function installRefProblem(ref: string): string | null {
 }
 
 /** A folder inside a repository: relative, with no `.` or `..` steps. */
+/** A link's escaped part as text, or null for a malformed `%` escape. */
+function decoded(part: string): string | null {
+  try {
+    return decodeURIComponent(part)
+  } catch {
+    return null
+  }
+}
+
 function folderOf(path: string): string | null {
-  const parts = decodeURIComponent(path)
-    .split('/')
-    .filter((part) => part.length > 0)
+  const text = decoded(path)
+  if (text === null) return null
+  const parts = text.split('/').filter((part) => part.length > 0)
   if (parts.length === 0 || parts.some((part) => part === '.' || part === '..')) return null
   return parts.join('/')
 }
@@ -135,14 +144,17 @@ function readSource(value: string): ExtensionInstallSourceRead {
       const path = rest === undefined ? undefined : folderOf(rest)
       if (rest !== undefined && path === null)
         return { ok: false, message: `"${rest}" is not a folder in a repository.` }
-      const first = decodeURIComponent(treeRef!)
+      const first = decoded(treeRef!)
+      if (first === null) return { ok: false, message: `"${value}" is not a link Studio can read. ${FORMS}` }
       // With a folder, the branch may run on into it: Studio splits them where a ref ends.
       return git(repository(owner!, repo!), first, path ?? undefined, path ? `${first}/${path}` : undefined)
     }
     const tag = TAG_PATH.exec(parsed.pathname)
     if (tag) {
       const [, owner, repo, name] = tag
-      return git(repository(owner!, repo!), `refs/tags/${decodeURIComponent(name!)}`)
+      const named = decoded(name!)
+      if (named === null) return { ok: false, message: `"${value}" is not a link Studio can read. ${FORMS}` }
+      return git(repository(owner!, repo!), `refs/tags/${named}`)
     }
     if (/\/blob\//u.test(parsed.pathname))
       return {

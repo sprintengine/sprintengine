@@ -78,6 +78,10 @@ test('what is none of them is refused, with the forms', () => {
     'acme/notes@pull/42/head',
     'https://gitlab.example.com/acme/notes.git#refs/merge-requests/3/head',
     'https://github.com/acme/notes.git#refs/remotes/origin/main',
+    // A malformed escape is refused, not thrown.
+    'https://github.com/acme/tools/tree/main/%E0%A4%A',
+    'https://github.com/acme/tools/tree/%zz/notes',
+    'https://github.com/acme/notes/releases/tag/%',
   ])
     assert.equal(readExtensionInstallSource(text).ok, false, text)
 })
