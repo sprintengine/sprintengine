@@ -178,6 +178,43 @@ test('a surface’s Studio event is held to its extension’s approval and to th
   assert.equal(late, 'held back')
 })
 
+test('a Studio event queued behind a slow reader is dropped when its extension’s approval lapses before it is written', async () => {
+  const events = createExtensionEvents()
+  const grants: Record<string, readonly string[] | null> = { 'acme.board': ['workspace:read'] }
+  events.bind({ eventsListed: () => false, deliverEvent: () => undefined, grantOf: (id) => grants[id] ?? null })
+  const started = await startTestServer({ modules: createStudioModuleHub(), extensionEvents: events })
+  cleanups.push(() => started.dispose())
+  const client = await connectLineClient(started.path)
+  cleanups.push(() => client.close())
+  client.send(hello({ token: OWNER_TOKEN }))
+  await client.next((frame) => frame.t === 'welcome')
+  client.send({
+    t: 'sub',
+    id: 'w',
+    topic: 'extension.studioEvents',
+    params: { moduleId: 'acme.board', event: 'workspace.created' },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const created = (workspaceId: string, name: string) =>
+    events.emit('workspace.created', { workspaceId, name, kind: 'folder', folderPath: null, branch: null })
+  // The reader stops; a large first event holds the writer while the second waits in the queue.
+  client.socket.pause()
+  created('ws-big', 'x'.repeat(2_000_000))
+  created('ws-2', 'Site')
+  grants['acme.board'] = null
+  client.socket.resume()
+  const first = await client.next((frame) => frame.t === 'push' && frame.sub === 'w', 10_000)
+  assert.equal(
+    first.t === 'push' && (first.payload as { payload: { workspaceId: string } }).payload.workspaceId,
+    'ws-big',
+  )
+  const late = await Promise.race([
+    client.next((frame) => frame.t === 'push' && frame.sub === 'w' && frame !== first).then(() => 'sent'),
+    new Promise((resolve) => setTimeout(() => resolve('dropped'), 300)),
+  ])
+  assert.equal(late, 'dropped')
+})
+
 test('a malformed module filter is refused', async () => {
   const { client } = await clientOver(createStudioModuleHub())
   client.send({ t: 'sub', id: 's1', topic: 'extension.events', params: { moduleId: 7 } })

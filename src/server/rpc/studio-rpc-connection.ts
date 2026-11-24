@@ -238,6 +238,12 @@ type LiveEntry = {
   partialToolUseId?: string
   /** A terminal's `data` push: the next one for the same subscription joins it while it waits. */
   terminalData?: { data: string }
+  /**
+   * Asked again as it is about to be written: false drops it. For a payload
+   * whose authority can lapse while it waits behind a slow reader (an
+   * extension's Studio event, held to its approval and this grant).
+   */
+  admit?: () => boolean
 }
 // `end`: a replay's, called once when its fence goes out or it is done or dropped.
 type BulkEntry = {
@@ -405,6 +411,8 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
           pending.shift()
           liveFrames--
           liveBytes -= entry.bytes
+          // Its authority may have lapsed while it waited: then it never goes out.
+          if (entry.admit && !entry.admit()) continue
           // A logical frame's chunks go out back to back, with nothing between.
           for (const line of studioWireFrames(entry.json ?? JSON.stringify(entry.frame), nextFrameId())) {
             if (closed()) break
@@ -451,7 +459,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   }
 
   /** Queue one live frame, merging it into what already waits where it can. */
-  function enqueueLive(frame: StudioServerFrame, sub?: string, encoded?: string): void {
+  function enqueueLive(frame: StudioServerFrame, sub?: string, encoded?: string, admit?: () => boolean): void {
     if (state === 'closed') return
     const event = frame.t === 'frame' && frame.frame.type === 'event' ? (frame.frame.event as ConversationEvent) : null
     const key = event ? conversationDeltaKey(event) : null
@@ -499,6 +507,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         ? { delta: { key, event: (frame as { frame: { event: ConversationEvent } }).frame.event } }
         : {}),
       ...(toolUseId && event?.payload?.partial === true ? { partialToolUseId: toolUseId } : {}),
+      ...(admit ? { admit } : {}),
     })
     liveFrames++
     liveBytes += bytes
@@ -807,8 +816,13 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   }
 
   /** One push, its payload checked against its topic's. */
-  function push<T extends StudioPushTopic>(_topic: T, id: string, payload: StudioTopicPayload<T>): void {
-    enqueueLive({ t: 'push', sub: id, payload }, id)
+  function push<T extends StudioPushTopic>(
+    _topic: T,
+    id: string,
+    payload: StudioTopicPayload<T>,
+    admit?: () => boolean,
+  ): void {
+    enqueueLive({ t: 'push', sub: id, payload }, id, undefined, admit)
   }
 
   /** Every `/` command list a CLI reports, as it reports it. */
@@ -1140,8 +1154,9 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   /**
    * One of Studio's events for one extension's surfaces: admitted as that
    * extension (its approval holds the event's permission) and as this
-   * connection (its grant holds what the event tells), when it subscribes and
-   * again at each event, so a narrowed approval or grant stops it at once.
+   * connection (its grant holds what the event tells), when it subscribes, at
+   * each event and again as each is written, so a narrowed approval or grant
+   * stops it at once, queued events included.
    */
   function subscribeStudioEvents(id: string, params: StudioTopicParams<'extension.studioEvents'>): void {
     const events = options.extensionEvents
@@ -1170,11 +1185,12 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     }
     const subscription: Subscription = { id, topic: 'extension.studioEvents', key: null, replay: null, handle: null }
     subscriptions.set(id, subscription)
+    // Asked when the event happens and again as it is written, so one queued
+    // behind a slow reader is dropped when the approval or grant lapsed meanwhile.
+    const stillAdmitted = () => state !== 'closed' && subscriptions.get(id) === subscription && admitted()?.ok === true
     const stop = events.listen(event, (payload) => {
-      if (state === 'closed' || subscriptions.get(id) !== subscription) return
-      const now = admitted()
-      if (!now?.ok) return
-      push('extension.studioEvents', id, { event, payload })
+      if (!stillAdmitted()) return
+      push('extension.studioEvents', id, { event, payload }, stillAdmitted)
     })
     subscription.handle = { dispose: stop }
   }
