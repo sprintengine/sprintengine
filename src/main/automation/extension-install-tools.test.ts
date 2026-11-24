@@ -15,6 +15,8 @@ import { createExtensionInstallTools, EXTENSION_INSTALL_TOOL_NAMES } from './ext
 type Seen = {
   installKey: string[]
   installFrom: unknown[]
+  /** What each install was told of who is looking: nobody, from here. */
+  options: unknown[]
   updateNow: Array<string | undefined>
   askReview: string[]
   approve: number
@@ -48,16 +50,26 @@ function tools(
     open?: (request: ExtensionOpenRequest) => Promise<ExtensionOpenOutcome>
   } = {},
 ) {
-  const seen: Seen = { installKey: [], installFrom: [], updateNow: [], askReview: [], approve: 0, opened: [] }
+  const seen: Seen = {
+    installKey: [],
+    installFrom: [],
+    options: [],
+    updateNow: [],
+    askReview: [],
+    approve: 0,
+    opened: [],
+  }
   const answer = options.answer ?? { ok: true, moduleId: 'acme.notes', approval: pending, strippedLinks: [] }
   const lifecycle = {
     catalogue: {
-      installKey: async (key: string) => {
+      installKey: async (key: string, options: unknown) => {
         seen.installKey.push(key)
+        seen.options.push(options)
         return { ...answer, catalogue: 'community' }
       },
-      installFrom: async (from: unknown) => {
+      installFrom: async (from: unknown, options: unknown) => {
         seen.installFrom.push(from)
+        seen.options.push(options)
         return answer
       },
       updateNow: async (key?: string) => {
@@ -118,7 +130,20 @@ test('each source form reaches the install path Settings takes', async () => {
     { git: 'https://git.example.com/acme/notes.git', ref: 'main' },
     { git: 'https://github.com/acme/tools.git', ref: 'main', path: 'notes' },
   ])
+  // Nobody is looking at what installs from here: it never replaces an installed extension.
+  assert.deepEqual(seen.options, Array(4).fill({ unattended: true }))
   assert.equal(codeOf(await install.handler({ source: 'notes' }, local)), 'invalid_arguments')
+  // A pull request's ref never reaches the install path.
+  assert.equal(codeOf(await install.handler({ source: 'acme/notes@refs/pull/42/head' }, local)), 'invalid_arguments')
+  assert.equal(seen.installFrom.length, 3)
+})
+
+test('an install over an installed extension is refused, naming the update', async () => {
+  const { tool } = tools({
+    answer: { ok: false, code: 'already_installed', message: 'acme.notes is already installed. Update it.' },
+  })
+  const answer = await tool('extension.install').handler({ source: 'acme.notes' }, local)
+  assert.equal(codeOf(answer), 'already_installed')
 })
 
 test('an install that runs code waits for the person, whose window asks; nothing here approves, for an agent either', async () => {

@@ -38,7 +38,19 @@ export async function installExtension(output: Output, source: string, options: 
   const read = readExtensionInstallSource(source)
   if (!read.ok) throw new CliError('invalid_argument', read.message)
   // A fetch and a check-out can take a while.
-  const answer = await withStudio(options.dataDir, (studio) => studio.call('extension.install', { source }, 180_000))
+  const answer = await withStudio(options.dataDir, (studio) =>
+    studio.call('extension.install', { source }, 180_000),
+  ).catch((error: unknown) => {
+    // Installing over an installed extension is an update, or the person's to do.
+    if (error instanceof CliError && error.code === 'already_installed') {
+      const key = read.source.kind === 'catalogue' ? read.source.key : '<key>'
+      throw new CliError(error.code, error.message, error.data, [
+        `sprintengine-extension update ${key} installs the newer release its catalogue lists.`,
+        `To install it again from another source, the person removes it in Studio's Settings > Extensions first.`,
+      ])
+    }
+    throw error
+  })
   const moduleId = String(answer.moduleId)
   const approval = answer.approval as Approval
   if (approval.state === 'pending')

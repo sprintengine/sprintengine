@@ -42,6 +42,8 @@ export const CLI_ERROR_CODES = [
   'kill_list_unavailable',
   /** It is installed from another source: remove it first. */
   'origin_conflict',
+  /** It is installed already: `update` it, or the person removes it in Studio first. */
+  'already_installed',
   /** A name only Studio's official catalogue installs. */
   'reserved_name',
   /** The catalogue changed what it lists since it was read: look again. */

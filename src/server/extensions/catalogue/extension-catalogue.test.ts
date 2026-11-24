@@ -1198,6 +1198,51 @@ describe('installing and updating from outside the window', () => {
     expect(env.notices.some((notice) => notice.title === 'Notes 1.1.0 waits for your review')).toBe(true)
   })
 
+  test('an install from outside the window never replaces an installed extension: not after an owner change, not from a pull request', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'notes', notesFiles())
+    const v1 = await env.release(repo.folder)
+    const entry = (ownerId: number) => ({
+      id: 'acme.notes',
+      source: { url: repo.url, ref: 'main' },
+      ownerId,
+      releases: [v1],
+    })
+    env.serveCatalogue('community', [entry(7)])
+    // A first install still works.
+    expect(await env.lifecycle.catalogue.installKey('acme.notes', { unattended: true })).toMatchObject({
+      ok: true,
+      moduleId: 'acme.notes',
+    })
+    await approveAll(env)
+
+    // The name changed hands: updates pause, and installing it again by key does not re-trust the new owner.
+    env.serveCatalogue('community', [entry(8)])
+    env.advance(60_000)
+    const again = await env.lifecycle.catalogue.installKey('acme.notes', { unattended: true })
+    expect(again).toMatchObject({ ok: false, code: 'already_installed' })
+    expect(!again.ok && again.message).toMatch(/update acme\.notes/)
+    expect(readInstallRecordsSync(env.dataDir)['acme.notes']?.ownerId).toBe(7)
+
+    // A pull request's ref is refused whoever asks, and the same repository's branch is refused over the install.
+    const pull = await env.lifecycle.catalogue.installFrom({ git: repo.url, ref: 'refs/pull/42/head' })
+    expect(pull).toMatchObject({ ok: false, code: 'invalid_arguments' })
+    expect(await env.lifecycle.catalogue.installFrom({ git: repo.url, ref: 'pull/42/head' })).toMatchObject({
+      ok: false,
+      code: 'invalid_arguments',
+    })
+    const git = env.repository('bob', 'notes', notesFiles())
+    expect(await env.lifecycle.catalogue.installFrom({ git: git.url }, { unattended: true })).toMatchObject({
+      ok: true,
+      moduleId: 'bob.notes',
+    })
+    expect(
+      await env.lifecycle.catalogue.installFrom({ git: git.url, ref: 'main' }, { unattended: true }),
+    ).toMatchObject({ ok: false, code: 'already_installed' })
+    const [view] = (await env.installed()).filter((module) => module.manifest.id === 'acme.notes')
+    expect(view?.approval.state).toBe('approved')
+  })
+
   test('an update of one waiting for approval is the person’s, in Studio’s window', async () => {
     const env = setup()
     const repo = env.repository('acme', 'notes', notesFiles())

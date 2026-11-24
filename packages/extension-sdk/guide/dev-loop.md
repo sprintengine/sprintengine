@@ -51,6 +51,7 @@ fix it. Without `--json` the same is printed as words, the failure on stderr.
 | `owner_unknown` | Studio cannot tell who owns the repository | 1 |
 | `kill_list_unavailable` | Studio could not read its kill list, so nothing installs until it can | 1 |
 | `origin_conflict` | It is installed from another source: remove it first | 1 |
+| `already_installed` | It is installed already: `update` it, or the person removes it in Studio first | 1 |
 | `reserved_name` | A name only Studio's official catalogue installs | 1 |
 | `changed` | The catalogue changed what it lists since it was read: look again | 1 |
 | `install_failed` | The install failed for another reason: the message says why | 1 |
@@ -246,8 +247,12 @@ credentials, the ones `git` already uses here.
   GitHub repository (`acme/notes`, `acme/notes@v1.2.0`), any git URL (`#<ref>`
   names a ref) or a link to a folder in a repository
   (`https://github.com/acme/tools/tree/main/notes`: the ref, then the
-  folder). A content extension, and one from Studio's official catalogue, is
-  ready at once. Anything else installs waiting for approval: Studio's window
+  folder). A ref is a branch, a tag or a commit: a pull request's ref
+  (`refs/pull/…`, `pull/…`) or another no publisher released is refused. An
+  extension installed already is refused with `already_installed`: `update`
+  it, or the person removes it in Settings first, since installing over it
+  would swap the code they approved. A content extension, and one from
+  Studio's official catalogue, is ready at once. Anything else installs waiting for approval: Studio's window
   asks the person straight away, and `install` exits 3 with
   `approval_required`. Nothing on the command line approves it.
 - **`update <key>`** or **`update --all`**: the newer release the extension's

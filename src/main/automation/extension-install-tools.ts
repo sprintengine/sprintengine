@@ -80,7 +80,9 @@ export function createExtensionInstallTools(deps: ExtensionInstallToolsDeps): Mc
         '(`acme.notes`, from the first catalogue that lists it: official, community, then those added), a GitHub ' +
         'repository (`acme/notes`, `acme/notes@v1.2.0`), a git URL (`#<ref>` for a ref), or a link to a folder in ' +
         'a repository (`…/tree/<ref>/<folder>`). Studio checks the owner, the kill list and the release lock first; ' +
-        'a private repository is fetched with this machine’s own git credentials. A content extension, and one from ' +
+        'a private repository is fetched with this machine’s own git credentials. An extension installed already is ' +
+        'refused (`already_installed`): update it, or the person removes it in Settings first. A pull request’s ' +
+        'ref, or another no publisher released, is refused. A content extension, and one from ' +
         "Studio's official catalogue, is ready at once. Anything else installs waiting for approval " +
         "(`approval.state: pending`): Studio's window asks the person now, and nothing in it runs until they approve " +
         'it there. Nothing here approves it. Poll `extension.list` to see it approved.',
@@ -107,14 +109,19 @@ export function createExtensionInstallTools(deps: ExtensionInstallToolsDeps): Mc
         const lifecycle = lifecycleOf(deps)
         if (isResult(lifecycle)) return lifecycle
         const { source } = read
+        // Nobody is looking at what installs from here: it never replaces an
+        // installed extension (`already_installed`), and it reads the kill list fresh.
         const answer =
           source.kind === 'catalogue'
-            ? await lifecycle.catalogue.installKey(source.key)
-            : await lifecycle.catalogue.installFrom({
-                git: source.url,
-                ...(source.ref ? { ref: source.ref } : {}),
-                ...(source.path ? { path: source.path } : {}),
-              })
+            ? await lifecycle.catalogue.installKey(source.key, { unattended: true })
+            : await lifecycle.catalogue.installFrom(
+                {
+                  git: source.url,
+                  ...(source.ref ? { ref: source.ref } : {}),
+                  ...(source.path ? { path: source.path } : {}),
+                },
+                { unattended: true },
+              )
         if (!answer.ok)
           return refused(answer.code ?? 'install_failed', answer.message, {
             ...(answer.issues ? { issues: answer.issues } : {}),

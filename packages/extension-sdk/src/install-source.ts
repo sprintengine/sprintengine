@@ -25,9 +25,24 @@ const FORMS =
   'Name a catalogue key (acme.notes), a GitHub repository (acme/notes or acme/notes@<ref>), a git URL ' +
   '(with #<ref> for a ref), or a link to a folder in a repository (…/tree/<ref>/<folder>).'
 
-/** A ref as git takes it: no spaces, no `..`, nothing that reads as an option. */
-function refProblem(ref: string): string | null {
+/**
+ * The refs a git host keeps that no publisher released: a pull or merge
+ * request's, a review's, a note's (git reads a short `pull/42/head` as
+ * `refs/pull/42/head`). A host serves a fork's pull request through the
+ * parent repository's URL, so one of these would install someone else's code
+ * under the repository's owner.
+ */
+const NOT_RELEASED = /^(?:refs\/(?!heads\/|tags\/)|(?:pull|merge-requests)\/)/u
+
+/**
+ * Why `ref` is not one Studio installs from, or null: a ref as git takes it
+ * (no spaces, no `..`, nothing that reads as an option), and a branch, a tag
+ * or a commit, never a pull request's or another namespace's ref.
+ */
+export function installRefProblem(ref: string): string | null {
   if (!ref || ref.length > 255 || /\s|\.\.|^-|[~^:?*[\\]/u.test(ref)) return `"${ref}" is not a git ref.`
+  if (NOT_RELEASED.test(ref))
+    return `"${ref}" is not a branch, a tag or a commit. Studio installs what the repository's owner released, never a pull request's or another namespace's ref.`
   return null
 }
 
@@ -42,7 +57,7 @@ function folderOf(path: string): string | null {
 
 function git(url: string, ref?: string, path?: string): ExtensionInstallSourceRead {
   if (ref !== undefined) {
-    const problem = refProblem(ref)
+    const problem = installRefProblem(ref)
     if (problem) return { ok: false, message: problem }
   }
   return {

@@ -50,6 +50,15 @@ test('a folder link names the ref, then the folder', () => {
   })
 })
 
+test('a branch or a tag spelled in full is a ref; a pull request’s is not', () => {
+  assert.deepEqual(readExtensionInstallSource('acme/notes@refs/tags/v1.2.0'), {
+    ok: true,
+    source: { kind: 'git', url: 'https://github.com/acme/notes.git', ref: 'refs/tags/v1.2.0' },
+  })
+  const pull = readExtensionInstallSource('acme/notes@refs/pull/42/head')
+  assert.match(pull.ok ? '' : pull.message, /pull request/)
+})
+
 test('what is none of them is refused, with the forms', () => {
   for (const text of [
     '',
@@ -58,6 +67,10 @@ test('what is none of them is refused, with the forms', () => {
     'acme/notes@--upload-pack=x',
     'https://github.com/acme/tools/tree/main/../x',
     'acme/notes.git#',
+    'acme/notes@refs/pull/42/head',
+    'acme/notes@pull/42/head',
+    'https://gitlab.example.com/acme/notes.git#refs/merge-requests/3/head',
+    'https://github.com/acme/notes.git#refs/remotes/origin/main',
   ])
     assert.equal(readExtensionInstallSource(text).ok, false, text)
 })

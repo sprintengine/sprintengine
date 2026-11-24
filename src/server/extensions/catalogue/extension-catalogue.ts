@@ -27,6 +27,7 @@ import {
   type FetchedCommit,
   type GitOptions,
 } from '../../../../packages/extension-sdk/src/git-source'
+import { installRefProblem } from '../../../../packages/extension-sdk/src/install-source'
 import type {
   StudioCatalogueEntryView,
   StudioCatalogueListing,
@@ -147,6 +148,9 @@ export type InstallRefusal =
   | 'reserved_name'
   | 'not_found'
   | 'changed'
+  | 'already_installed'
+  /** What was named is not something Studio installs from (a pull request's ref). */
+  | 'invalid_arguments'
 
 /** One installed extension's `sprintengine-extension update`: what changed, or why nothing did. */
 export type UpdateRow = {
@@ -161,6 +165,15 @@ export type UpdateRow = {
   /** What a held release asks for beyond what was approved. */
   growth?: string[]
 }
+
+/**
+ * An install from outside the window (`sprintengine-extension install`, the
+ * `extension.install` tool), which an agent may make: nobody is looking at
+ * what installs. It never replaces an installed extension (`already_installed`:
+ * that is an update, or the person's own reinstall in Settings), and it reads
+ * the kill list fresh.
+ */
+export type UnattendedInstall = { unattended?: boolean }
 
 export type CatalogueNotice = {
   key: string
@@ -219,6 +232,7 @@ export type ExtensionCatalogue = {
    */
   installFrom(
     from: StudioExtensionInstallSource | { catalogue: string; id: string },
+    options?: UnattendedInstall,
   ): Promise<InstallAnswer & { leftOut?: string[] }>
   /** Install the newer release of an installed extension; `version` is the one the person was shown. */
   update(key: string, version?: string): Promise<InstallAnswer>
@@ -226,7 +240,7 @@ export type ExtensionCatalogue = {
    * Install what a catalogue lists under `key`: the first catalogue that
    * lists it, official, community, then those added, in that order.
    */
-  installKey(key: string): Promise<InstallAnswer & { catalogue?: CatalogueId }>
+  installKey(key: string, options?: UnattendedInstall): Promise<InstallAnswer & { catalogue?: CatalogueId }>
   /**
    * Update installed extensions now, from outside the window
    * (`sprintengine-extension update`): `key`'s, or every one installed from a
@@ -749,7 +763,35 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     return same ? null : `${key} is installed from ${originWords(from)}; remove it first to install it from ${there}.`
   }
 
-  async function installFromCatalogue(id: CatalogueId, key: string, checked?: CheckedRelease): Promise<InstallAnswer> {
+  /**
+   * Why an install from outside the window may not go ahead under `key`: an
+   * extension is installed there already. Installing over it would swap the
+   * code the person approved with nobody looking (approval carries across an
+   * install that asks for no more), and would re-trust an owner an update
+   * paused for, so it is refused; the update path, or the person's own
+   * reinstall in Settings, is how it changes.
+   */
+  async function installedAlready(key: string): Promise<InstallAnswer | null> {
+    const here = (await deps.installed()).some((module) => module.key === key && !module.development)
+    return here
+      ? {
+          ok: false,
+          code: 'already_installed',
+          message: `${key} is already installed. Update it (sprintengine-extension update ${key}), or remove it in Studio's Settings > Extensions first to install it again.`,
+        }
+      : null
+  }
+
+  async function installFromCatalogue(
+    id: CatalogueId,
+    key: string,
+    checked?: CheckedRelease,
+    options: UnattendedInstall = {},
+  ): Promise<InstallAnswer> {
+    if (options.unattended) {
+      const already = await installedAlready(key)
+      if (already) return already
+    }
     const entryNow = findEntry(id, key)
     const change = await originChange(key, {
       kind: 'catalogue',
@@ -757,7 +799,10 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       source: entryNow?.source ?? { url: '', ref: '' },
     })
     if (change) return { ok: false, code: 'origin_conflict', message: change }
-    const prepared = await prepareCatalogueRelease(id, key, checked ? { checked } : {})
+    const prepared = await prepareCatalogueRelease(id, key, {
+      ...(checked ? { checked } : {}),
+      ...(options.unattended ? { automatic: true } : {}),
+    })
     if (!prepared.ok) return prepared
     const { checkedOut, entry } = prepared.prepared
     const record = readInstallRecordsSync(deps.dataDir)[key]
@@ -774,10 +819,13 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     return installPrepared(checkedOut, key, { kind: 'catalogue', catalogue: id, source: entry.source }, ownerId)
   }
 
-  async function installFromGit(source: { git: string; ref?: string; path?: string }) {
+  async function installFromGit(source: { git: string; ref?: string; path?: string }, options: UnattendedInstall = {}) {
     const url = source.git.trim()
     const ref = source.ref?.trim() || 'HEAD'
     const path = source.path?.trim().replace(/^\/+|\/+$/g, '') || undefined
+    // A pull request's ref, or another no publisher released, never installs, whoever asks.
+    const refProblem = ref === 'HEAD' ? null : installRefProblem(ref)
+    if (refProblem) return { ok: false as const, code: 'invalid_arguments' as const, message: refProblem }
     const publisher = sourcePublisher(url)
     if (!publisher)
       return {
@@ -785,7 +833,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         code: 'owner_unknown' as const,
         message: 'Studio cannot tell who owns that repository from its URL.',
       }
-    const list = await killListForInstall(false)
+    const list = await killListForInstall(options.unattended === true)
     if (!list.ok) return list
     const checked = await checkOutExtension({ url, ref, ...(path ? { path } : {}), claudePlugins: true, git })
     if (!checked.ok) return checked
@@ -797,6 +845,10 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     }
     if (isReservedInstallKey(key))
       return refuse(`${key} uses a name only Studio’s official catalogue installs.`, 'reserved_name')
+    if (options.unattended) {
+      const already = await installedAlready(key)
+      if (already && !already.ok) return refuse(already.message, 'already_installed')
+    }
     const killed = findKilled(list.list, key, checkedOut.manifest.version)
     if (killed)
       return refuse(`Studio’s kill list removed ${key} ${checkedOut.manifest.version}: ${killed.reason}`, 'killed')
@@ -1061,10 +1113,18 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
   }
 
   /** The first catalogue that lists `key`, and why none does when a catalogue listing it was refused. */
-  async function installKey(key: string): Promise<InstallAnswer & { catalogue?: CatalogueId }> {
+  async function installKey(
+    key: string,
+    options: UnattendedInstall = {},
+  ): Promise<InstallAnswer & { catalogue?: CatalogueId }> {
+    if (options.unattended) {
+      // Before any catalogue is read: nothing about an installed key changes from here.
+      const already = await installedAlready(key)
+      if (already) return already
+    }
     await refreshAll()
     const listed = catalogueIds().find((id) => findEntry(id, key) !== null)
-    if (listed) return { ...(await installFromCatalogue(listed, key)), catalogue: listed }
+    if (listed) return { ...(await installFromCatalogue(listed, key, undefined, options)), catalogue: listed }
     // A catalogue listing it under another owner's name is refused whole (provenanceProblem).
     for (const id of catalogueIds()) {
       const error = errors.get(id)
@@ -1318,9 +1378,9 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     },
 
     // A page's Install names the whole release it showed: that installs, or nothing.
-    installFrom: (from) =>
+    installFrom: (from, options) =>
       'git' in from
-        ? installFromGit(from)
+        ? installFromGit(from, options)
         : installFromCatalogue(
             from.catalogue,
             from.id,
@@ -1333,6 +1393,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
                   ownerId: from.ownerId,
                 }
               : undefined,
+            options,
           ),
 
     update,
