@@ -209,6 +209,13 @@ export type MockAdapterSessionInput = {
   // card raised on this channel surfaces and resolves through the unchanged
   // respondToRequest → resolveApproval path. Absent for stateless adapters.
   onSessionEvent?: ConversationSessionEventSink
+  // The session's child process ended by itself: it crashed, was killed, or
+  // exited while the chat sat idle. Not called when the adapter ends the child
+  // on purpose (`disposeChildProcess`, a stop, a respawn for new settings),
+  // whose callers already know. The runtime marks the session resting, so no
+  // list goes on counting a process that is gone; a turn the child was running
+  // fails on its own stream. Absent for stateless adapters.
+  onChildExited?: () => void
   onBeforeTool?: (name: string) => Promise<void>
   // Extensions' agent hooks on this chat's tool calls (`agent.tool.before`
   // and `.after`), for a provider whose CLI asks before each tool runs. Absent

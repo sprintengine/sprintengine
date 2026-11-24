@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { normalizeCliPermissionPreset, parseCliPermissionPreset } from '../../shared/cli-permission-preset'
 import { conversationWorkingRoot, defaultAgent } from '../../shared/agent-state'
+import { isMintedAgentId } from '../../shared/agent-ids'
 import { getWorkspaceChangeSummary } from '../../main/workspace-change-summary'
 import { isMachinePath } from '../../shared/machine-paths'
 import { isWorkspaceTombstoned } from '../../shared/workspace-registry'
@@ -637,6 +638,21 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   conversationRuntime.onSessionIdle((summary) => subagents.onSessionIdle(summary))
   workspaceSyncService.subscribeEvents((event) => {
     if (event.type === 'workspace.agents_updated') subagents.onAgentsChanged(event.payload.workspaceId)
+    // A chat that is gone takes its sessions and their processes with it,
+    // rather than leaving them listed under no chat until the app quits.
+    if (event.type === 'workspace.removed') {
+      const { workspaceId } = event.payload
+      void conversationRuntime
+        .forgetWorkspaceSessions(workspaceId, {
+          // An agent moved to another chat is followed there by its minted id.
+          followedElsewhere: (agentId) =>
+            isMintedAgentId(agentId) &&
+            workspaceRegistry.getRecords().some((record) => record.id !== workspaceId && record.agents[agentId]),
+        })
+        .catch((error: unknown) => {
+          console.warn(`[conversations] Ending a removed chat's sessions failed: ${String(error)}`)
+        })
+    }
   })
   subagents.reconcile()
 

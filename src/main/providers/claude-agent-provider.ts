@@ -363,6 +363,9 @@ type SessionState = {
   // and any approval they raise — flow to the runtime over this sink via a
   // lazily opened continuation turn instead of being dropped/denied.
   onSessionEvent: ConversationSessionEventSink | null
+  // Told when the child ends by itself (pump's end), so the runtime stops
+  // counting the session as holding a process.
+  onChildExited?: () => void
   // Monotonic counter for continuation-turn ids, unique within the session.
   continuationSequence: number
   lastActivityAt: number
@@ -940,6 +943,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
           ])
         }
         disposeChild(state)
+        state.onChildExited?.()
       }
     }
   }
@@ -1820,6 +1824,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
         bypassRefused: false,
         pendingSessionEvents: [],
         onSessionEvent: input.onSessionEvent ?? null,
+        ...(input.onChildExited ? { onChildExited: input.onChildExited } : {}),
         continuationSequence: 0,
         lastActivityAt: now(),
         stderrTail: '',

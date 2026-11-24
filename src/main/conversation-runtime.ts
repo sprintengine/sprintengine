@@ -1046,6 +1046,9 @@ export class ConversationRuntime {
           // Continuation channel: the adapter opens a mirror turn here when its
           // child resumes after a `result` (background subagents completing).
           onSessionEvent: (event) => this.enqueueContinuationEvent(session, event),
+          // A child that ends by itself (a crash, or exiting while the chat sat
+          // idle) leaves the session holding no process.
+          onChildExited: () => this.childExited(session),
           onBeforeTool: (name) => this.captureBeforeTool(session, name),
           ...(this.extensionHooks ? { toolHooks: this.toolHooksFor(session) } : {}),
         }),
@@ -2662,9 +2665,63 @@ export class ConversationRuntime {
       if (adapter?.disposeChildProcess?.(session.sessionId)) {
         disposed.push(session.sessionId)
         this.markResting(session)
+      } else if (adapter && this.holdsNoChild(adapter, session)) {
+        // Nothing to dispose: the child never started (a chat opened and
+        // never sent to), or ended without its adapter saying so. The
+        // session already holds no process, and its summary says so now.
+        this.markResting(session)
       }
     }
     return disposed
+  }
+
+  /** Whether the adapter's own inventory says this session has no child; false when it keeps none. */
+  private holdsNoChild(adapter: ConversationProviderAdapter, session: RuntimeSession): boolean {
+    if (!adapter.listLiveSessions) return false
+    const live = adapter.listLiveSessions().find((entry) => entry.sessionId === session.sessionId)
+    return !live?.hasChildProcess
+  }
+
+  /**
+   * The session's child ended by itself (`onChildExited`). The session stays,
+   * as after the idle sweep, and the next message respawns the child; until
+   * then it holds no process, which the summary says. A turn the child was
+   * running fails on its own stream, and the session reads `failed` once that
+   * lands, resting too. A session already replaced or removed is left alone.
+   */
+  private childExited(session: RuntimeSession): void {
+    if (this.sessions.get(session.sessionId) !== session) return
+    this.markResting(session)
+  }
+
+  /**
+   * A chat removed from the registry (deleted, or rolled back after a failed
+   * start or import) takes its sessions with it: each is stopped, its child
+   * with it, and dropped from the list, so none lingers as a session no chat
+   * claims. The stop's own `session_closed` tells the lists to read again,
+   * and a stopped session is not listed as running by any of them.
+   *
+   * An agent dragged into another chat keeps the session it was started
+   * with, under the chat it left; `followedElsewhere` names those, and they
+   * are kept.
+   */
+  async forgetWorkspaceSessions(
+    workspaceId: string,
+    options: { followedElsewhere?: (agentId: string) => boolean } = {},
+  ): Promise<string[]> {
+    const matching = Array.from(this.sessions.values()).filter(
+      (session) => session.workspaceId === workspaceId && !options.followedElsewhere?.(session.agentId),
+    )
+    const forgotten: string[] = []
+    for (const session of matching) {
+      if (session.status !== 'stopped') await this.stopSessionNow({ sessionId: session.sessionId }).catch(() => null)
+      await session.continuationTail.catch(() => undefined)
+      // A chat started again under the same id meanwhile keeps its new session.
+      if (this.sessions.get(session.sessionId) !== session) continue
+      this.sessions.delete(session.sessionId)
+      forgotten.push(session.sessionId)
+    }
+    return forgotten
   }
 
   /**

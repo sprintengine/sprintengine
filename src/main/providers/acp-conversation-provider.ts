@@ -1208,6 +1208,7 @@ export function createAcpConversationProvider(profile: AcpProfile, options: Opti
           emit(state, 'turn_failed', { message: withStderrTail(`${profile.displayName} process exited.`, stderrTail) })
           state.queue.end()
         }
+        state.input.onChildExited?.()
       })
       // The bytes since the last newline: only the chunk's first and last
       // newline matter, found natively rather than by walking every byte.

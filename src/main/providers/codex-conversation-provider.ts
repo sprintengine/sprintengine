@@ -1334,6 +1334,7 @@ export function createCodexConversationProvider(
           state.spawnedAt = null
           stopLanes(state, 'The agent stopped when its Codex process ended.')
           finish(state, error.message)
+          state.input.onChildExited?.()
         },
       })
       state.transport = transport
