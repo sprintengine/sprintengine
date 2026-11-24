@@ -252,7 +252,9 @@ and `worker-entry.ts`; to a surface through the frame method `events.subscribe`
 and `src/renderer/src/components/extensions/ExtensionSurfaceMount.tsx`, and the connection's
 `extension.studioEvents` (`src/server/rpc/studio-rpc-connection.ts`); the window's own typography in
 `src/renderer/src/modules/extension-editor-typography.ts`. Wire: `extension.studioEvents`
-(`packages/studio-protocol/src/modules.ts`). Guide `packages/extension-sdk/guide/events.md`. Tests:
+(`packages/studio-protocol/src/modules.ts`); the dev loop fires one at a development folder's extension with
+`extension.dev.studioEvent` (`src/main/automation/extension-dev-tools.ts`). Guide
+`packages/extension-sdk/guide/events.md`. Tests:
 `src/server/extensions/events/extension-events.test.ts`, `src/server/rpc/studio-modules.test.ts`,
 `src/main/module-host/main-host.gate.test.ts`, `src/renderer/src/modules/extension-frame-host.test.ts`.
 
@@ -262,7 +264,8 @@ core's terminals in `src/server/core/studio-core.ts`, provided by `src/main/modu
 gate rows in `packages/extension-sdk/src/services.ts`; closed on uninstall and kill by
 `src/main/modules/module-lifecycle.ts` (`removing`), let go on switch-off by the workers' `released`. Guide
 `packages/extension-sdk/guide/events.md`. Tests: `src/main/module-host/extension-terminals.test.ts`,
-`src/main/module-host/main-host.gate.test.ts`, `src/server/extensions/worker-revocation.test.ts`.
+`src/main/module-host/main-host.gate.test.ts`, `src/server/extensions/worker-revocation.test.ts`,
+`src/server/rpc/studio-extension-browser.test.ts` (an owner's browser tab is refused them).
 
 **The extension dev loop** (no build step; a development folder loaded where it is and again on every save; the
 `sprintengine-extension` CLI): source as written in `packages/extension-sdk/src/source-modules.ts` (a surface's
