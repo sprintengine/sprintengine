@@ -1017,7 +1017,7 @@ const CONTRIBUTES: ObjectNode = {
             },
             url: {
               node: { kind: 'string', min: 1, max: 2048, check: mcpServerUrlProblem },
-              doc: 'Where an `http` server is: `https`, or plain `http` to localhost. It names no variable (`${…}`, `{env:…}`): an agent would fill one in from the person’s machine.',
+              doc: 'Where an `http` server is: `https`, or plain `http` to localhost. It names no variable (`${…}`, `{env:…}`): an agent would fill one in from the person’s machine. Nor `${extensionPath}`: a hosted server is not in the extension’s folder.',
               since: V1,
               example: 'https://mcp.example.com/mcp',
             },

@@ -97,9 +97,16 @@ export function agentEndpointUrlProblem(value: string): string | null {
   return null
 }
 
-/** Why `value` is not a URL for a hosted MCP server, or null: an endpoint URL (`agentEndpointUrlProblem`) naming no variable. */
+/**
+ * Why `value` is not a URL for a hosted MCP server, or null: an endpoint URL
+ * (`agentEndpointUrlProblem`) naming no variable at all. Not even
+ * `${extensionPath}`: a hosted server runs nowhere in the extension's folder,
+ * so Studio fills nothing in, and an agent CLI would read it as a variable.
+ */
 export function mcpServerUrlProblem(value: string): string | null {
-  return variableReferenceProblem(value) ?? agentEndpointUrlProblem(value)
+  return VARIABLE_REFERENCE_RE.test(value)
+    ? "must not name a variable or a file of the person's machine (${…}, {env:…}, {file:…}), nor the extension's path."
+    : agentEndpointUrlProblem(value)
 }
 
 /** The origin a provider's key is sent to: its base URL's scheme, host and port. */

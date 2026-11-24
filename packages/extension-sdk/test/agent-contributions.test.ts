@@ -12,6 +12,7 @@ import {
   extensionProviderId,
   holdsVariableReference,
   mcpCommandProblem,
+  mcpServerUrlProblem,
   providerEndpoint,
   providerOrigin,
   providerPathProblem,
@@ -148,6 +149,12 @@ test('no MCP server value names a variable or a file of the machine, the extensi
     expect(issues(manifest({ mcpServers: [{ ...http, url }] })).join('\n'), url).toMatch(
       /contributes\.mcpServers\[0\]\.url: must not name a variable/,
     )
+  // Nor the extension's path: a hosted server is not in the folder, and nothing fills it in.
+  expect(
+    issues(manifest({ mcpServers: [{ ...http, url: `https://x.example/${EXTENSION_PATH_TOKEN}` }] })).join('\n'),
+  ).toMatch(/contributes\.mcpServers\[0\]\.url: must not name a variable/)
+  expect(mcpServerUrlProblem(`https://x.example/mcp?p=${EXTENSION_PATH_TOKEN}`)).toMatch(/nor the extension's path/)
+  expect(mcpServerUrlProblem('https://x.example/mcp?price=$5')).toBeNull()
   expect(issues(manifest({ mcpServers: [{ ...stdio, args: ['--token=${GITHUB_TOKEN}'] }] })).join('\n')).toMatch(
     /args\[0\]: must not name a variable/,
   )

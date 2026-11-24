@@ -1367,7 +1367,7 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 2048,
-                "description": "Where an `http` server is: `https`, or plain `http` to localhost. It names no variable (`${…}`, `{env:…}`): an agent would fill one in from the person’s machine.",
+                "description": "Where an `http` server is: `https`, or plain `http` to localhost. It names no variable (`${…}`, `{env:…}`): an agent would fill one in from the person’s machine. Nor `${extensionPath}`: a hosted server is not in the extension’s folder.",
                 "x-since": "0.13.0",
                 "examples": [
                   "https://mcp.example.com/mcp"
