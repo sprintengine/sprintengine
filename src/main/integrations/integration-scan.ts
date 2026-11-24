@@ -47,8 +47,6 @@ import { launcherDirForHome } from './launcher'
 import type { IntegrationWrite } from './ledger'
 import { withoutLegacySharedPair, WORKTREE_EXCLUDE_FILE } from './worktree-exclude'
 
-export const KNOWLEDGE_ACTIVITY_HOOK_TAG = 'sprintengine-knowledge-activity'
-
 type RunGit = (cwd: string, args: string[]) => Promise<GitCommandResult>
 
 export type ScanRoot = { path: string; hostId: string }
@@ -115,16 +113,6 @@ export async function scanRepositoryIntegrations(root: ScanRoot): Promise<Integr
       (local.statusLine._sprintengine === true || isStatusLineForwarderCommand(local.statusLine.command))
     ) {
       found.push({ kind: 'status-line', path: localPath, marker: 'statusLine', cli: 'claude-code', ...base })
-    }
-    if (claudeHooksContain(local.hooks, (entry) => entry._sprintengine === KNOWLEDGE_ACTIVITY_HOOK_TAG)) {
-      found.push({
-        kind: 'knowledge-activity-hook',
-        path: localPath,
-        marker: KNOWLEDGE_ACTIVITY_HOOK_TAG,
-        cli: 'claude-code',
-        detail: { record: at('.sprintengine', 'hooks', 'installed.json') },
-        ...base,
-      })
     }
     if (Array.isArray(local.enabledMcpjsonServers) && local.enabledMcpjsonServers.includes(STUDIO_MCP_SERVER_ID)) {
       found.push({ kind: 'mcp-approval', path: localPath, marker: MCP_APPROVAL_MARKER, cli: 'claude-code', ...base })
@@ -235,7 +223,7 @@ export async function scanRepositoryIntegrations(root: ScanRoot): Promise<Integr
       ...base,
     })
   }
-  for (const name of ['agent-state.mjs', 'status-line.mjs', 'knowledge-activity.mjs']) {
+  for (const name of ['agent-state.mjs', 'status-line.mjs']) {
     const path = at('.sprintengine', 'hooks', name)
     if (existsSync(path)) found.push({ kind: 'hook-script', path, marker: 'owned', createdFile: true, ...base })
   }

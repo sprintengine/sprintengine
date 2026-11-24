@@ -402,7 +402,6 @@ export interface WorkspacesSliceDependencies {
   defaultWorkspaceWorktreeState: () => WorkspaceWorktreeState
   normalizeAgentState: (agent: AgentState) => AgentState
   normalizeWorkspaceWorktreeState: (input: Partial<WorkspaceWorktreeState> | null | undefined) => WorkspaceWorktreeState
-  hideNavRailTabStrip: (model: IJsonModel | null | undefined) => IJsonModel | null | undefined
   pickWorkspaceAgentName: (agents: Workspace['agents']) => string
   isPathOrChild: (path: string, parentPath: string) => boolean
 }
@@ -1404,16 +1403,13 @@ export function createWorkspacesSlice(
             agents[agent.id] = index === 0 && agentPatch ? { ...base, ...agentPatch } : base
           })
         }
-        // Standard/dev templates: normalize nav-only tabsets to strip-less so a
-        // user-saved template predating the nav-switch model never seeds a
-        // redundant tab strip on a nav switch. When a seed
-        // renames the lone tab or swaps it for a terminal, apply that transform.
-        const baseStandardLayout = deps.hideNavRailTabStrip(templateLayout) ?? templateLayout
+        // Standard/dev templates: when a seed renames the lone tab or swaps it
+        // for a terminal, apply that transform.
         const standardLayout =
           options?.seedAgent &&
           (options.seedAgent.tabName || options.seedAgent.terminal || options.seedAgent.meshConversation)
-            ? applySoloChatSeed(baseStandardLayout, options.seedAgent)
-            : baseStandardLayout
+            ? applySoloChatSeed(templateLayout, options.seedAgent)
+            : templateLayout
         const newWorkspace: Workspace = {
           id,
           name: workspaceName,

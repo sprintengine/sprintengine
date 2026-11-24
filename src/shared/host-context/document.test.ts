@@ -43,15 +43,15 @@ test('document', async () => {
     assert.match(HOST_CONTEXT_BOUNDARY_LINE, /not part of the user/)
   })
 
-  run('a design system with no knowledge graph still emits — the KG-independent invariant', () => {
+  run('a design system with no knowledge folder still emits — the knowledge-independent invariant', () => {
     const doc = buildHostContextDocument({ designSystem: { bundlePath: '/repo/design-system' } })
     assert.ok(doc)
     assert.ok(doc.includes(DESIGN_SYSTEM_ATTACHED_PROMPT_LINE), 'the shipped line, verbatim')
     assert.ok(doc.includes('/repo/design-system'), 'and the absolute path the flag channel can afford')
-    assert.ok(!doc.includes('Knowledge Graph'), 'no knowledge section when none is configured')
+    assert.ok(!doc.includes('## Knowledge'), 'no knowledge section when none is configured')
   })
 
-  run('a knowledge graph with no design system still emits', () => {
+  run('a knowledge folder with no design system still emits', () => {
     const doc = buildHostContextDocument({
       knowledge: { ok: true, rootPath: '/repo/knowledge', relativeRoot: 'knowledge' },
     })
@@ -59,6 +59,8 @@ test('document', async () => {
     const shipped = knowledgeLaunchContext({ ok: true, rootPath: '/repo/knowledge', relativeRoot: 'knowledge' })
     assert.ok(shipped.promptSuffix)
     assert.ok(doc.includes(shipped.promptSuffix), 'same sentence the prompt suffix used')
+    assert.ok(doc.includes('## Knowledge\n\nThis project keeps its notes as Markdown in `knowledge`.'))
+    assert.match(doc, /Read the index notes there first\./)
     assert.ok(!doc.includes('design system is attached'), 'no design section when none is attached')
   })
 
@@ -77,7 +79,8 @@ test('document', async () => {
       knowledge: { ok: true, rootPath: '/repo/knowledge', relativeRoot: 'knowledge' },
     })
     assert.ok(doc)
-    assert.ok(doc.indexOf('## Design system') < doc.indexOf('## Knowledge graph'))
+    assert.ok(doc.indexOf('## Knowledge') > 0, 'the knowledge section is there')
+    assert.ok(doc.indexOf('## Design system') < doc.indexOf('## Knowledge'))
   })
 
   run('the prompt fallback puts the block AFTER the request', () => {

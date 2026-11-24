@@ -72,8 +72,8 @@ const EXCLUDED_DIRS = new Set(['__preview__'])
 
 // Per-file rule exemptions. Each entry MUST cite the exception category
 // (a) terminal ANSI output or (c) brand SVG asset — and explain why the rule
-// cannot apply. ((b), the knowledge graph canvas's atmosphere, went with the
-// graph, 2026-11-21.)
+// cannot apply. (Category (b) is retired: the one file it covered was removed,
+// 2026-11-21.)
 //
 // Each entry is COUNTED, not blanket. `max` says how many occurrences of each
 // listed rule the file is allowed; occurrence N+1 is a violation like any other,
@@ -95,8 +95,8 @@ const PATH_EXEMPTIONS = [
 ]
 
 // Five entries were retired when the list was measured, 2026-09-08. Three
-// (`panels/PlainTerminalPanel.tsx`, `panels/TerminalView.tsx`, and the
-// knowledge graph's types) had drained to zero hex literals and were
+// (`panels/PlainTerminalPanel.tsx`, `panels/TerminalView.tsx`, and a
+// since-removed panel's types) had drained to zero hex literals and were
 // standing open over nothing; two (`brand/SprintEngineMark.tsx`,
 // `brand/SprintEngineWordmark.tsx`) named files that no longer exist. None of that
 // was visible while the exemption was blanket, which is the argument for the

@@ -1530,7 +1530,7 @@ test('designSystemConformance', async () => {
       // four bands survived three sweeps — each was outside the four directories
       // below and so read as done without being done. The four added
       // here are that item's: the kit's own `FilePreviewPane` and the
-      // `WorkspacePanel` shell, the knowledge-graph preview drawer, and the HTML
+      // `WorkspacePanel` shell, a since-removed graph panel's drawer, and the HTML
       // artifact frame's bands, which drew their rule in a SURFACE token.
       const SWEPT = [
         'components/panels',

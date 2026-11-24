@@ -431,22 +431,16 @@ test("the quit's removal takes out the session's entries and leaves what does it
   )
 })
 
-test("the quit's removal keeps the launcher while an entry it leaves still runs it", async () => {
-  const { home, repo, ledger } = await world()
-  await ledger.record([
-    {
-      kind: 'knowledge-activity-hook',
-      path: join(repo, '.claude', 'settings.local.json'),
-      marker: 'sprintengine-knowledge-activity',
-      hostId: 'local',
-      repo,
-    },
-  ])
-  const report = await removeIntegrations(deps(ledger), { kinds: SESSION_INTEGRATION_KINDS })
+test('a removal keeps the launcher while an entry it leaves still runs it', async () => {
+  const { home, ledger } = await world()
+  // The agent-state hooks are out of this run's scope, and they run the launcher.
+  const report = await removeIntegrations(deps(ledger), { kinds: new Set(['mcp-gateway', 'launcher']) })
   assert.equal(report.failed, 0)
   assert.equal(existsSync(join(home, '.sprintengine', 'bin', 'studio-run')), true)
-  const kinds = (await ledger.list()).map((entry) => entry.kind).sort()
-  assert.deepEqual(kinds, ['knowledge-activity-hook', 'launcher'])
+  const kinds = new Set((await ledger.list()).map((entry) => entry.kind))
+  assert.equal(kinds.has('mcp-gateway'), false, 'the gateway went')
+  assert.equal(kinds.has('agent-state-hooks'), true)
+  assert.equal(kinds.has('launcher'), true, 'the launcher stays listed')
 })
 
 test('a removal past its deadline stops, and what it did not reach stays listed', async () => {

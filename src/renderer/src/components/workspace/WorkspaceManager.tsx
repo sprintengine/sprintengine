@@ -112,7 +112,7 @@ import {
   getModel,
   removeAgentTab,
   removeNewAgentTab,
-  togglePanelRailComponent,
+  toggleEditorTab,
   visibleTerminalTabInLayout,
 } from '../../utils/modelRegistry'
 import { agentCliSupportsConversationResume, agentCliUsesStableSessionIdForResume } from '../../utils/agentCliResume'
@@ -4473,7 +4473,7 @@ export default function WorkspaceManager() {
         return true
       }
       if (commandId === 'panel.editor.toggle' && windowActiveWorkspaceId) {
-        togglePanelRailComponent(windowActiveWorkspaceId, 'editor', 'Editor')
+        toggleEditorTab(windowActiveWorkspaceId, 'Editor')
         return true
       }
       if (commandId === 'panel.git.toggle' && windowActiveWorkspaceId) {

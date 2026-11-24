@@ -1,5 +1,4 @@
 import type { IJsonModel } from 'flexlayout-react'
-import { railSideOfComponents } from '../../utils/modelRegistry'
 import { adoptLegacyBacklogTab, dropRetiredPaneTabs, paneStateFromLegacyLayout } from './workspacePaneSlice'
 import { workspaceSyncClient } from '../workspaceSyncClient'
 import type { Workspace, WorkspaceId } from '../../../../shared/workspace'
@@ -142,54 +141,6 @@ export function healRetiredRailLayout(ws: Workspace): Workspace {
     layoutModel: layoutModel as Workspace['layoutModel'],
     ...(paneState ? { paneState } : {}),
   }
-}
-
-// A rail's switches are exclusive and strip-less, sharing one edge's pane
-// (`NAV_RAIL_COMPONENTS`; none ships today); the membership answer is
-// owned by modelRegistry so the migration and the runtime toggle never drift.
-// A tabset qualifies only when every tab belongs to the SAME rail — a mixed
-// tabset keeps its strip and self-heals on the next toggle.
-function tabsetIsOneRail(record: Record<string, unknown>): boolean {
-  const children = Array.isArray(record.children) ? record.children : []
-  if (children.length === 0) return false
-  const components: string[] = []
-  for (const child of children) {
-    if (!child || typeof child !== 'object') return false
-    const childRecord = child as Record<string, unknown>
-    if (childRecord.type !== 'tab' || typeof childRecord.component !== 'string') return false
-    components.push(childRecord.component)
-  }
-  return railSideOfComponents(components) !== null
-}
-
-function hideNavRailTabStripInNode(node: unknown): unknown {
-  if (!node || typeof node !== 'object') return node
-  const record = node as Record<string, unknown>
-
-  if (record.type === 'tabset' && tabsetIsOneRail(record)) {
-    return { ...record, enableTabStrip: false }
-  }
-
-  const rawChildren = record.children
-  if (!Array.isArray(rawChildren)) return record
-
-  const nextChildren = rawChildren.map((child) => hideNavRailTabStripInNode(child))
-  return { ...record, children: nextChildren }
-}
-
-// The rail switches (Files / Git / Backlog before they moved into the
-// workspace pane, and the knowledge graph panel before it was removed) carry
-// their own selection chrome, so the FlexLayout tab strip on a tabset that
-// holds only one rail's switches is redundant. Stamp enableTabStrip: false onto those tabsets without touching
-// mixed tabsets (e.g. a nav tab parked beside the editor) — those keep their
-// strip and self-heal on the next toggle. Kept under its original name: four
-// store modules import it.
-export function hideNavRailTabStrip(layoutModel: IJsonModel | null | undefined): IJsonModel | null | undefined {
-  if (!layoutModel || typeof layoutModel !== 'object') return layoutModel
-  const layout = layoutModel.layout
-  if (!layout) return layoutModel
-  const nextLayout = hideNavRailTabStripInNode(layout)
-  return { ...layoutModel, layout: nextLayout as IJsonModel['layout'] }
 }
 
 // Layout state lives per-workspace in workspace.layoutModel; the layout slice

@@ -75,7 +75,7 @@ test('edge overrides where the header lives, both ways', () => {
 })
 
 test('the published divider={false} still drops the rule', () => {
-  const el = header(<PanelHeader title="Knowledge graph" divider={false} />)
+  const el = header(<PanelHeader title="Knowledge" divider={false} />)
   expect(el.dataset.edge).toBe('none')
   expect(classes(el)).not.toContain('border-b')
 })

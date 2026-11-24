@@ -7,7 +7,7 @@ import type {
   WorkspaceWindowState,
 } from '../../../../shared/workspace'
 import { defaultEditorState, normalizeAgentCli, normalizeAgentState } from './agentsSlice'
-import { hideNavRailTabStrip, healRetiredRailLayout, stripSettingsTabsFromLayout } from './layoutSlice'
+import { healRetiredRailLayout, stripSettingsTabsFromLayout } from './layoutSlice'
 import {
   defaultAppSettings,
   normalizeAppSettings,
@@ -458,17 +458,9 @@ export function migratePersistedWorkspaceState(persisted: unknown, version: numb
   // v52 hid the FlexLayout tab strip around the 'guided-brief' tab. Retired
   // with the Design Wizard (2026-09-08); the tab component itself is stripped
   // from persisted layouts by stripRetiredModuleTabsFromLayout.
-  if (version < 54) {
-    // Files / Git / the knowledge graph were then exclusive strip-less switches
-    // sharing one left pane; the sidebar PanelRail carried their selection
-    // chrome, so the FlexLayout tab strip on a nav-only tabset is redundant. Stamp
-    // enableTabStrip: false onto existing layouts' nav-only tabsets without
-    // touching mixed tabsets (those self-heal on the next rail toggle).
-    mapMigrationWorkspaces(migrationState, (ws) => {
-      const next = hideNavRailTabStrip(ws.layoutModel)
-      return next ? { ...ws, layoutModel: next } : ws
-    })
-  }
+  // v54 hid the tab strip on tabsets holding only left-rail switches. Every
+  // such switch has since moved to the workspace pane or been removed, so the
+  // rung is dropped rather than kept as a no-op.
   if (version < 55) {
     const normalized = normalizeWorkspaceWindows(
       migrationState.workspaces,

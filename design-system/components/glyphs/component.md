@@ -511,7 +511,7 @@ status mark.
 `AppearanceSettingsIcon` (half-filled disc), `ShortcutsSettingsIcon`
 (keyboard), `AgentsSettingsIcon` (robot), `ProvidersSettingsIcon` (plug),
 `GithubSettingsIcon` (branch),
-`TrackersSettingsIcon` (tagged file), `KnowledgeGraphSettingsIcon` (node
+`TrackersSettingsIcon` (tagged file), `KnowledgeSettingsIcon` (node
 triangle), `DesignSystemSettingsIcon` (disc, square and triangle),
 `ModulesSettingsIcon` (2 × 2 grid), `MachinesSettingsIcon` (a screen with a
 prompt; Windows only), `MobileSettingsIcon` (phone),

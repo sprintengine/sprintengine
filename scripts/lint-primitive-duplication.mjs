@@ -17,8 +17,8 @@
 //       task that will migrate it.
 //
 //   (c) no-radial-gradient — no `radial-gradient(...)`. Hierarchy comes from
-//       typography, spacing, and hairlines, not radial decoration. (The one
-//       exception, the knowledge graph canvas, went with the graph.)
+//       typography, spacing, and hairlines, not radial decoration. There is
+//       no exception.
 //
 //   (d) no-statusdot-from-app-icons — importing `StatusDot` from any module
 //       whose path includes `AppIcons` re-creates the deleted alias. Import
