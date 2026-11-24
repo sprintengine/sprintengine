@@ -521,6 +521,17 @@ test('events are the worker tier’s, at most five, each once, each with the per
   refusedAt(worker(Array.from({ length: 6 }, () => ({ on: 'workspace.created' }))), 'contributes.events', /at most 5/)
 })
 
+test('the terminal permissions are the worker tier’s: no surface has a way to a terminal', () => {
+  for (const permission of ['terminals:send', 'terminals:read']) {
+    refusedAt(
+      base({ tier: 'ui', permissions: [permission], contributes: { panels: [panel()] } }),
+      'tier',
+      /needs "worker"/,
+    )
+    accepted(base({ tier: 'worker', main: 'dist/main.cjs', permissions: [permission] }))
+  }
+})
+
 test('hooks are the worker tier’s, a point at most once, from the points Studio has, failing by pass or deny', () => {
   const worker = (hooks: unknown, extra: Raw = {}) =>
     base({ tier: 'worker', main: 'dist/main.cjs', contributes: { hooks }, ...extra })

@@ -108,6 +108,8 @@ export function createServerModules(deps: {
     logDir: join(platform.paths.logsDir(), 'extensions'),
     approvals,
     installed: () => installedStandingOf(discovery.current()),
+    // Switched off or no longer approved: its terminals stay open, the person's now.
+    released: (moduleId) => core.extensionTerminals.forget(moduleId),
     toolsChanged: () => gateway?.notifyToolsListChanged(),
     stateChanged: () => hub.deliverChanged(),
     // Read again, it is no longer loaded: registering it again asks again.
@@ -159,6 +161,8 @@ export function createServerModules(deps: {
   // What runs here, listed and changed over the Studio RPC (`module.*`).
   const lifecycle = createModuleLifecycle({
     dataDir,
+    // Uninstalled or killed: the terminals it opened close (extension-terminals.ts).
+    removing: (moduleId) => core.extensionTerminals.closeAll(moduleId),
     moduleRoot: defaultUserModuleRoot,
     applyEnablement,
     // Every client following `extension.changed` lists and loads them again,
@@ -249,6 +253,7 @@ export function createServerModules(deps: {
           conversationModelCatalog: core.conversationModelCatalog,
           createConversationHost: core.createConversationHost,
           extensionHooks: core.extensionHooks,
+          extensionTerminals: core.extensionTerminals,
         },
         {
           getModulePermissions: (moduleId) => byId.get(moduleId)?.permissions,

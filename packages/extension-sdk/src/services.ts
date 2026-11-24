@@ -231,6 +231,18 @@ export const EXTENSION_HOST_SERVICES: readonly ExtensionHostService[] = [
     providedBy: 'agent-runtime',
     methods: { generate: need('agents:generate', 'conversation:create', 'answer') },
   },
+  {
+    // The person's terminals: theirs alone, as Studio's own terminal methods
+    // are, so no paired device, phone or other app reaches one through an
+    // extension (extension-terminals.ts adds an agent's ceiling).
+    key: 'terminals.module-service',
+    via: 'getTerminalService',
+    providedBy: 'agent-runtime',
+    methods: {
+      ...each(['send', 'create', 'close'], need('terminals:send', 'owner', 'reject')),
+      read: need('terminals:read', 'owner', 'reject'),
+    },
+  },
 ]
 
 /** The service for `key`, or undefined for a key the SDK does not publish. */

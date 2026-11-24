@@ -1571,6 +1571,7 @@ export {
   parseExtensionInstallKey,
   parseExtensionManifest,
   requiredExtensionTier,
+  WORKER_ONLY_PERMISSIONS,
   studioReadsManifest,
   validateExtensionManifest,
   type ExtensionCommandAction,
@@ -1664,6 +1665,18 @@ export {
   type ExtensionWorkerEvents,
 } from './events.js'
 
+// The person's terminals, for a worker (`terminals:send`, `terminals:read`).
+export {
+  EXTENSION_TERMINAL_OPENED_LIMIT,
+  EXTENSION_TERMINAL_READ_DEFAULT_LINES,
+  EXTENSION_TERMINAL_READ_MAX_LINES,
+  EXTENSION_TERMINAL_TEXT_MAX_CHARS,
+  EXTENSION_TERMINAL_TITLE_MAX_CHARS,
+  getTerminalService,
+  type ExtensionTerminalErrorCode,
+  type ExtensionTerminalRegistry,
+  type ExtensionTerminalService,
+} from './terminals.js'
 
 // What a content extension's syntax files hold, checked the same way by the
 // author's tools, at install and each time Studio serves them.

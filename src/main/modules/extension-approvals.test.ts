@@ -335,7 +335,7 @@ test('a hook the approved version did not have is growth, said in the approvalâ€
   ])
 })
 
-test('an event whose permission is new is growth; an event the approval already covers is not', () => {
+test('an event whose permission is new, or a terminal permission, is growth; an event the approval already covers is not', () => {
   const manifest = (permissions: string[], events: string[]) =>
     extensionAccess({
       permissions: permissions as ExtensionManifest['permissions'],
@@ -354,6 +354,15 @@ test('an event whose permission is new is growth; an event the approval already 
       manifest(['workspace:read', 'conversation:read'], ['workspace.created', 'agent.status.changed']),
     ),
     ['the "conversation:read" permission'],
+  )
+  assert.deepEqual(accessGrowth(before, manifest(['workspace:read', 'terminals:send', 'terminals:read'], [])), [
+    'the "terminals:read" permission',
+    'the "terminals:send" permission',
+  ])
+  // Bound to the fingerprint: a new permission changes it.
+  assert.notEqual(
+    extensionApprovalFingerprint(before, 'sha256-files'),
+    extensionApprovalFingerprint(manifest(['workspace:read', 'terminals:send'], ['workspace.created']), 'sha256-files'),
   )
 })
 

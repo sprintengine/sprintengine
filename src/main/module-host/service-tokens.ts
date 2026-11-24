@@ -11,6 +11,7 @@ import type {
 } from '../../shared/modules/conversation-service'
 import type { ModuleBacklogRegistry } from '../../shared/modules/backlog-service'
 import type { ModuleActivityRegistry, ModuleUsageRegistry } from '../../shared/modules/activity-service'
+import type { ExtensionTerminalRegistry } from '../../../packages/extension-sdk/src/terminals'
 import type { ScheduledAgentsModuleRegistry, ScheduledAgentsService } from '../scheduled-agents/service'
 import {
   CHAT_RUNTIMES_SERVICE_KEY,
@@ -120,6 +121,8 @@ export const GitHubModuleServiceToken = createServiceToken<ModuleGitHubRegistry>
 export const BacklogModuleServiceToken = createServiceToken<ModuleBacklogRegistry>('backlog.module-service')
 export const UsageModuleServiceToken = createServiceToken<ModuleUsageRegistry>('usage.module-service')
 export const ActivityModuleServiceToken = createServiceToken<ModuleActivityRegistry>('activity.module-service')
+// The person's terminals, for an extension's worker (extension-terminals.ts).
+export const TerminalsModuleServiceToken = createServiceToken<ExtensionTerminalRegistry>('terminals.module-service')
 // A workspace's branch and remotes, read for the module host's own
 // `getWorkspaceGitInfo` (which checks the calling module's permission first).
 // First-party only: not on the third-party service list, and not resolved by

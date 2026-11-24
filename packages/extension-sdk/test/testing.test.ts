@@ -23,6 +23,7 @@ import {
 } from '../src/index.js'
 import { EXTENSION_HOST_SERVICES } from '../src/services.js'
 import { createFakeFrameStudio, createFakeMainHost, renderToHtml } from '../src/testing.js'
+import { getTerminalService } from '../src/terminals.js'
 import { SERVICE_FAKES } from '../src/testing-services.js'
 
 const ROOT = '/Users/dev/projects/app'
@@ -88,6 +89,35 @@ describe('createFakeMainHost', () => {
     await bare.events.fire('workspace.created', workspace)
     assert.equal(heard.includes('bare'), false)
     assert.deepEqual(bare.undeclared, [{ what: 'events.workspace.created', needs: ['workspace:read'] }])
+  })
+
+  test('the terminal fake types, opens, reads and closes as the host does', async () => {
+    const fake = createFakeMainHost({
+      moduleId: 'local.runner',
+      manifest: { id: 'runner', permissions: ['terminals:send', 'terminals:read'] },
+    })
+    const terminals = getTerminalService(fake.host)
+    const person = fake.services.terminals.add({ id: 'terminal-person', workspaceId: 'ws-app', lines: ['$'] })
+    assert.deepEqual(await terminals.send({ terminalId: person.id, text: 'ls', enter: true }), { accepted: true })
+    assert.deepEqual(person.typed, ['ls\r'])
+    const { terminalId } = await terminals.create({
+      workspaceId: fake.services.workspaces.all()[0]!.id,
+      command: 'npm test',
+    })
+    fake.services.terminals.print(terminalId, 'ok')
+    assert.deepEqual(await terminals.read({ terminalId }), { lines: ['ok'], truncated: false })
+    await assert.rejects(
+      terminals.close({ terminalId: person.id }),
+      (error: { code?: string }) => error.code === 'not_yours',
+    )
+    assert.deepEqual(await terminals.close({ terminalId }), { closed: true })
+    fake.services.terminals.setInvokerCeiling('auto')
+    await assert.rejects(
+      terminals.send({ terminalId: person.id, text: 'ls' }),
+      (error: { code?: string }) => error.code === 'not_permitted',
+    )
+    const reader = createFakeMainHost({ manifest: { id: 'reader', permissions: ['terminals:read'] } })
+    await assert.rejects(getTerminalService(reader.host).send({ terminalId: 'x', text: 'ls' }), /terminals:send/)
   })
 
   test('a surface hears one of Studio’s events once its subscription is admitted', async () => {

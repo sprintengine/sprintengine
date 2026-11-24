@@ -64,7 +64,10 @@ import { ConversationOutbox } from '../../main/conversation-outbox'
 import { createExtensionHooks } from '../extensions/hooks/extension-hooks'
 import { createExtensionEvents } from '../extensions/events/extension-events'
 import { followStudioEvents } from '../extensions/events/studio-events'
+import { createExtensionTerminals } from '../../main/module-host/extension-terminals'
 import { createConversationAttentionListener } from '../../main/conversation-attention'
+import { headlessTerminalViewer } from '../terminals/terminal-viewer'
+import { LOCAL_HOST_ID, workspaceHostIdOf } from '../../shared/execution-host'
 import { createHookInvokers } from '../extensions/hooks/hook-invokers'
 import { activeInvoker } from '../../main/module-host/extension-invocation'
 import { ConversationRuntime, type ConversationRuntimeOptions } from '../../main/conversation-runtime'
@@ -667,6 +670,45 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     setChatIdleThresholdMs: (value) => conversationRuntime.setIdleThresholdMs(value),
     ...(options.terminalHost ? { host: options.terminalHost } : {}),
   })
+  // What extensions' workers reach of the terminals here, and which they opened
+  // (extension-terminals.ts); a workspace on another machine keeps its own.
+  const extensionTerminals = createExtensionTerminals({
+    terminals: () => {
+      const terminals = agentTerminals
+      if (!terminals) return null
+      return {
+        list: () => terminals.runtime.sessions.listTerminals(),
+        spawnShell: ({ sessionId, terminalId, workspaceId, cwd }) =>
+          terminals.runtime.sessions.spawnTerminal(headlessTerminalViewer(), {
+            sessionId,
+            terminalId,
+            workspaceId,
+            cwd,
+            cols: 120,
+            rows: 30,
+            kind: 'terminal',
+            shellOnly: true,
+            visible: false,
+          }),
+        write: async (sessionId, data) => {
+          const written = await terminals.controlPlane.write({ sessionId }, data)
+          return written.ok
+            ? { ok: true as const }
+            : { ok: false as const, reason: written.reason, message: written.message }
+        },
+        readTail: (sessionId, maxBytes) => terminals.runtime.readTerminalOutputTail(sessionId, { maxBytes }),
+        kill: (sessionId) => terminals.runtime.sessions.killTerminal(sessionId),
+      }
+    },
+    workspace: (workspaceId) => {
+      const record = workspaceRegistry.getRecord(workspaceId)
+      if (!record) return null
+      return {
+        folderPath: record.folderPath ?? null,
+        remote: Boolean(record.environment) || workspaceHostIdOf(record) !== LOCAL_HOST_ID,
+      }
+    },
+  })
   // Studio's events, as extensions hear them: bound to the workers once the
   // module kernel holds them (server-modules.ts, app-main.ts).
   const extensionEvents = createExtensionEvents()
@@ -683,6 +725,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         }
       : null,
     onChatPhase: (listener) => conversations.onEvent(createConversationAttentionListener({ onAgentPhase: listener })),
+    terminalTitle: (terminalId) => extensionTerminals.titleOf(terminalId),
   })
 
   // What this desktop's WSL terminals' agents report from inside their
@@ -1737,6 +1780,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     extensionHooks,
     /** Studio's events, as extensions hear them; bound to the workers by whoever holds them. */
     extensionEvents,
+    /** The terminals extensions' workers reach (`getTerminalService`). */
+    extensionTerminals,
     hookInvokers,
     chatInvoker,
     /** Who started an agent here, as its record keeps it. */

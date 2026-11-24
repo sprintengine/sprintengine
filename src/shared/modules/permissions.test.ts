@@ -74,6 +74,8 @@ const NEEDS_CARE = [
   'usage:read',
   'backlog:operate',
   'workspace-files:write',
+  'terminals:send',
+  'terminals:read',
 ]
 
 test('every permission has a short title, and exactly the sensitive ones need care', () => {

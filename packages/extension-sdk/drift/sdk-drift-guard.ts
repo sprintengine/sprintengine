@@ -559,8 +559,10 @@ const SDK_SERVICE_TOKEN_KEYS = [
   'usage.module-service',
   'activity.module-service',
   'text-generation.module-service',
+  // The person's terminals.
+  'terminals.module-service',
 ] as const
-const sdkRuntime = ['index.js', 'conversation.js', 'brokers.js', 'backlog.js', 'activity.js']
+const sdkRuntime = ['index.js', 'conversation.js', 'brokers.js', 'backlog.js', 'activity.js', 'terminals.js']
   .map((file) => readFileSync(join(process.cwd(), 'packages', 'extension-sdk', 'dist', file), 'utf8'))
   .join('\n')
 const sdkKeysInRuntime = new Set(

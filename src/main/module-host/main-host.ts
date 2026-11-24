@@ -172,6 +172,8 @@ export const THIRD_PARTY_SERVICE_KEYS: ReadonlySet<string> = new Set([
   'usage.module-service',
   'activity.module-service',
   'text-generation.module-service',
+  // The person's terminals, for a worker (extension-terminals.ts).
+  'terminals.module-service',
 ])
 
 // Those of them whose every method takes the calling module's id first (the

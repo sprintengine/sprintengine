@@ -28,6 +28,7 @@ const reader: CapabilityManifest = {
     'github:api',
     'tools:contribute',
     'agents:companion',
+    'terminals:send',
     'workspace:read',
   ],
 }
@@ -99,6 +100,16 @@ function setup(approved: () => readonly string[] | null = () => reader.permissio
     () =>
       ({
         request: async (moduleId: string) => (calls.push(`github:${moduleId}`), { ok: true }),
+      }) as never,
+  )
+  host.provideService(
+    serviceTokens.TerminalsModuleServiceToken,
+    () =>
+      ({
+        send: async (moduleId: string) => (calls.push(`send:${moduleId}`), { accepted: true }),
+        create: async (moduleId: string) => (calls.push(`create-terminal:${moduleId}`), { terminalId: 't' }),
+        read: async (moduleId: string) => (calls.push(`read:${moduleId}`), { lines: [], truncated: false }),
+        close: async (moduleId: string) => (calls.push(`close:${moduleId}`), { closed: true }),
       }) as never,
   )
   host.provideService(
@@ -232,6 +243,38 @@ test('a frame’s host calls are held to the extension’s approval and to the c
   const unknown = await call('local.reader', 'shell.run', ownerInvoker())
   assert.equal(!unknown.ok && unknown.code, 'unknown_method')
   assert.deepEqual(calls, ['backlog:local.reader'])
+})
+
+test('the terminals are the person’s: an extension needs its permission, and a device, the phone or another app is refused', async () => {
+  const { kernel, calls } = setup()
+  type Terminals = {
+    [M in 'send' | 'create' | 'read' | 'close']: (moduleId: string, input: unknown) => Promise<unknown>
+  }
+  const terminals = (id: string) =>
+    kernel.hostFor(id).requireService(serviceTokens.TerminalsModuleServiceToken) as unknown as Terminals
+  // Approved to type, not to read.
+  assert.deepEqual(await terminals('local.reader').send('local.reader', {}), { accepted: true })
+  await assert.rejects(terminals('local.reader').read('local.reader', {}), /not approved for "terminals:read"/)
+  await assert.rejects(terminals('local.bare').create('local.bare', {}), /not approved for "terminals:send"/)
+  // A paired device holding every permission it can be granted is still not the person.
+  const phone: ExtensionInvoker = {
+    principal: studioPrincipal({
+      owner: false,
+      permissions: studioGrantPrincipal({ owner: true, scopes: [] }).permissions,
+    }),
+    permissionCeiling: null,
+    label: 'the device "android-phone"',
+  }
+  await assert.rejects(
+    runAsInvoker(phone, () => terminals('local.reader').send('local.reader', {})),
+    (error: Error & { code?: string }) =>
+      error.code === 'not_permitted' && /only they can set it off/.test(error.message),
+  )
+  await assert.rejects(
+    runAsInvoker(DEVICE, () => terminals('local.reader').close('local.reader', {})),
+    /only they/,
+  )
+  assert.deepEqual(calls, ['send:local.reader'])
 })
 
 test('a frame hears one of Studio’s events only with its permission, held to the extension and the connection', async () => {

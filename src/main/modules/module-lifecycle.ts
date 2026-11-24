@@ -120,6 +120,11 @@ export type ModuleLifecycleView = {
 export type ModuleLifecycleDeps = {
   /** The data folder: enablement, approvals and plugin receipts. */
   dataDir: string
+  /**
+   * An extension is about to leave for good: uninstalled, or its version
+   * killed. What it opened that outlives a switch-off (its terminals) closes.
+   */
+  removing?: (moduleId: string, why: 'uninstalled' | 'killed') => void
   /** Where installed extensions live. */
   moduleRoot: () => string
   view: () => ModuleLifecycleView | null
@@ -392,7 +397,13 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     },
     // A killed version stops, and what it handed agents is taken back.
     killListChanged: async () => {
-      await oneAtATime(() => project())
+      await oneAtATime(async () => {
+        if (deps.removing) {
+          const { modules, waiting = [] } = await discoverUserModules(deps.moduleRoot(), standingContext())
+          for (const module of [...modules, ...waiting]) if (module.standing.killed) deps.removing(module.key, 'killed')
+        }
+        await project()
+      })
       deps.changed()
     },
   })
@@ -740,6 +751,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
             }
           const contained = await containedModuleFolder(deps.moduleRoot(), target.moduleRoot)
           if (!contained.ok) return { ok: false, message: contained.message }
+          deps.removing?.(moduleId, 'uninstalled')
           await rm(contained.path, { recursive: true, force: true })
           // Nothing about it outlives it: its approval, enablement, stored secrets.
           const revoked = await writeExtensionApproval(deps.dataDir, moduleId, null)

@@ -160,6 +160,8 @@ const extensionWorkers = createExtensionWorkers({
   logDir: join(app.getPath('logs'), 'extensions'),
   approvals: extensionApprovals,
   installed: () => installedStandingOf(extensionDiscovery.current()),
+  // Switched off or no longer approved: its terminals stay open, the person's now.
+  released: (moduleId) => services.studioCore.extensionTerminals?.forget(moduleId),
   toolsChanged: () => services.automationService?.notifyToolsListChanged(),
   stateChanged: () => services.moduleHub.deliverChanged(),
   // Read again, it is no longer loaded: registering it again asks again.
@@ -291,6 +293,8 @@ const moduleLifecycle = serverHost
   : createModuleLifecycle({
       dataDir: app.getPath('userData'),
       moduleRoot: defaultUserModuleRoot,
+      // Uninstalled or killed: the terminals it opened close (extension-terminals.ts).
+      removing: (moduleId) => services.studioCore.extensionTerminals?.closeAll(moduleId),
       // A worker whose approval is gone or changed stops, and the windows hear.
       changed: () => {
         extensionDiscovery.invalidate()

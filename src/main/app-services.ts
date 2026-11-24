@@ -2168,6 +2168,8 @@ export function createAppServices(
     agentControlPlane: coreTerminals?.controlPlane ?? null,
     /** The core's extensions' hooks, in process; null out of process (the server runs its own). */
     extensionHooks: localCore?.extensionHooks ?? null,
+    /** The core's terminals for extensions' workers, in process; null out of process. */
+    extensionTerminals: localCore?.extensionTerminals ?? null,
     agentLaunchService,
     conversationTerminalHandoff,
     /** What the shell reads of the terminals and asks of them, in either mode (shell-terminals.ts). */

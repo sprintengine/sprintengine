@@ -1,4 +1,5 @@
 import type { ExtensionHooks } from '../../server/extensions/hooks/extension-hooks'
+import type { ExtensionTerminalRegistry } from '../../../packages/extension-sdk/src/terminals'
 import type { AppServices } from '../app-services'
 import type { StudioPlatform } from '../../server/platform/platform'
 import type { ConversationCliRuntimeOverrides } from '../../shared/conversation-runtime'
@@ -23,6 +24,7 @@ import {
   ModuleStorageToken,
   SprintEngineAuthToken,
   TerminalRuntimeToken,
+  TerminalsModuleServiceToken,
   TextGenerationModuleServiceToken,
   WorkspaceContextToken,
   WorkspaceGitInfoToken,
@@ -105,6 +107,8 @@ export type AgentRuntimeServices = Pick<
   Partial<Pick<AppServices, 'terminalRuntime' | 'agentControlPlane' | 'agentLaunchService' | 'sprintengineAuth'>> & {
     /** Extensions' agent hooks, where the core runs in this process. */
     extensionHooks?: ExtensionHooks | null
+    /** The terminals extensions' workers reach, where the core runs in this process. */
+    extensionTerminals?: ExtensionTerminalRegistry | null
   }
 
 export function createAgentRuntimeModule(
@@ -128,6 +132,15 @@ export function createAgentRuntimeModule(
       if (terminalRuntime) host.provideService(TerminalRuntimeToken, () => terminalRuntime)
       if (agentControlPlane) host.provideService(AgentControlPlaneToken, () => agentControlPlane)
       if (agentLaunchService) host.provideService(AgentLaunchServiceToken, () => agentLaunchService)
+      const { extensionTerminals } = services
+      // Its four methods alone: what it keeps of each extension's terminals is Studio's.
+      if (extensionTerminals)
+        host.provideService(TerminalsModuleServiceToken, () => ({
+          send: (moduleId, input) => extensionTerminals.send(moduleId, input),
+          create: (moduleId, input) => extensionTerminals.create(moduleId, input),
+          read: (moduleId, input) => extensionTerminals.read(moduleId, input),
+          close: (moduleId, input) => extensionTerminals.close(moduleId, input),
+        }))
       host.provideService(AgentLaunchSettingsToken, () => services.agentLaunchSettings)
       host.provideService(GitHubTokenStoreToken, () => services.githubTokenStore)
       if (sprintengineAuth) host.provideService(SprintEngineAuthToken, () => sprintengineAuth)

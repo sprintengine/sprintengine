@@ -1441,6 +1441,13 @@ export function compareStudioVersions(a: string, b: string): number {
   return 0
 }
 
+/**
+ * Permissions only a worker can use: no surface's frame has a way to a
+ * terminal, so a lower tier asking for one would ask the person for something
+ * it could never use.
+ */
+export const WORKER_ONLY_PERMISSIONS: readonly ExtensionPermission[] = ['terminals:send', 'terminals:read']
+
 /** The least tier a manifest's contents need. */
 export function requiredExtensionTier(
   manifest: Pick<ExtensionManifest, 'main' | 'background' | 'permissions' | 'contributes'>,
@@ -1451,6 +1458,7 @@ export function requiredExtensionTier(
   }
   if (manifest.main !== undefined || manifest.background !== undefined) raise('worker')
   if (manifest.permissions.length > 0) raise('ui')
+  if (manifest.permissions.some((permission) => WORKER_ONLY_PERMISSIONS.includes(permission))) raise('worker')
   for (const [point, field] of Object.entries(CONTRIBUTES.fields)) {
     const list = (manifest.contributes as Record<string, unknown[] | undefined>)[point]
     if (field.tier && list && list.length > 0) raise(field.tier)

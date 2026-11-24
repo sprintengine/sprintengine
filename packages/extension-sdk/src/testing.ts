@@ -146,6 +146,7 @@ export const DEFAULT_FAKE_WORKSPACES: readonly ModuleWorkspaceView[] = [
 // told otherwise, so a module's "older host" branch is opt-in to test. A test
 // fails when HostCapability (host-api.ts) names one this list does not.
 const KNOWN_CAPABILITIES: readonly HostCapability[] = [
+  'terminals',
   'events',
   'conversations',
   'conversation-controls',

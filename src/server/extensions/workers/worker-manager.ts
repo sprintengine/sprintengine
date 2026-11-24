@@ -121,6 +121,11 @@ export type ExtensionWorkersOptions = {
   notify: (moduleId: string, input: ModuleNotifyInput) => void
   /** Its tools changed: tell the MCP clients. */
   toolsChanged?: () => void
+  /**
+   * It was switched off, or its approval is gone: it no longer holds what it
+   * opened that outlives its worker (its terminals). Not for a reload.
+   */
+  released?: (moduleId: string) => void
   /** A worker's state changed: tell the windows. */
   stateChanged?: (moduleId: string) => void
   /**
@@ -432,6 +437,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
     const entry = this.entries.get(moduleId)
     const reloading = this.reloading.delete(moduleId)
     if (!entry) return
+    if (!reloading) this.options.released?.(moduleId)
     await this.stop(
       entry,
       'stopped',
@@ -461,6 +467,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
       if (entry.state === 'stopped') continue
       const why = this.approvalProblem(entry) ?? (installed ? this.installProblem(entry, installed) : null)
       if (!why) continue
+      if (!this.options.approvals().has(entry.spec.extensionId)) this.options.released?.(entry.spec.extensionId)
       void this.stop(entry, 'stopped', why)
       if (entry.spec.declaredTools.length > 0) toolsLeft = true
     }

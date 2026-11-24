@@ -100,6 +100,8 @@ type Studio = {
   dataDir: string
   scratch: string
   lifecycle: ModuleLifecycle
+  /** Each extension the lifecycle said was leaving for good, and why: what closes the terminals it opened. */
+  removing: Array<[string, string]>
   serveKillList(extensions: unknown[]): void
   /** Start the server's half over what is installed now, as a Studio does at its start. */
   start(): Promise<{ load: LoadMainModulesResult; workers: ExtensionWorkers; hooks: ExtensionHooks }>
@@ -123,9 +125,12 @@ function studioFor(): Studio {
   ])
   const discovery = createExtensionDiscovery({ moduleRoot: () => moduleRoot, dataDir })
   let workers: ExtensionWorkers | null = null
+  const removing: Array<[string, string]> = []
   const lifecycle = createModuleLifecycle({
     dataDir,
     moduleRoot: () => moduleRoot,
+    // What server-modules.ts closes the extension's terminals on.
+    removing: (moduleId, why) => void removing.push([moduleId, why]),
     view: () => null,
     applyEnablement: async () => ({ ok: true }),
     // What server-modules.ts does: read the disk again, and stop a worker that may not run now.
@@ -147,6 +152,7 @@ function studioFor(): Studio {
     dataDir,
     scratch,
     lifecycle,
+    removing,
     serveKillList: (extensions) =>
       served.set(urls.killList, { killListVersion: 1, generatedAt: '2026-11-21T00:00:00Z', extensions }),
     async start() {
@@ -268,6 +274,10 @@ test('a worker extension killed while in use stops everywhere: its process, hook
 
   await until(() => !alive(pid), 10_000, 'its process to stop')
   assert.equal(workers.status(KEY)?.state, 'stopped')
+  assert.ok(
+    studio.removing.some(([id, why]) => id === KEY && why === 'killed'),
+    'the terminals it opened are closed',
+  )
   assert.equal(hooks.wants('agent.prompt.before'), false, 'its hook no longer fires')
   assert.equal((await hooks.run('agent.prompt.before', prompt('a forbidden thing'), ownerInvoker())).kind, 'continue')
   assert.deepEqual(load.kernel.mcpToolRegistrations(), [], 'its tool left the gateway')
@@ -313,6 +323,7 @@ test('uninstalling a worker with hooks, a local server, settings, secrets, stora
   assert.ok(alive(pid))
 
   assert.deepEqual(await studio.lifecycle.uninstall(KEY), { ok: true, removedModuleIds: [KEY] })
+  assert.deepEqual(studio.removing, [[KEY, 'uninstalled']], 'the terminals it opened are closed')
   await until(() => !alive(pid), 10_000, 'its process to stop')
   assert.equal(hooks.wants('agent.prompt.before'), false)
   assert.deepEqual(load.kernel.mcpToolRegistrations(), [])
