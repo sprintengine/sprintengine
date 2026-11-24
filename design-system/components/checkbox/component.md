@@ -56,7 +56,8 @@ a round mark hand-rolled outside the system is a status dot by another name.
 
 **Usage.** Only as the picture of a choice another element owns: a row with
 `role="radio"` in a `radiogroup`, which is the tab stop and carries
-`aria-checked`. There is no radio control in the kit. A value picked from a
+`aria-checked`; the [radio group](../radio-group/component.md) is that list of
+rows, built. A value picked from a
 closed list is a [select](../select/component.md) or a segmented control; a
 choose-many list of rows takes `CheckboxBox`.
 

@@ -683,6 +683,8 @@ code {
 #ds-view-component-board-lane:checked ~ .ds-catalog #component-board-lane { display: block; }
 #ds-view-component-button:checked ~ .ds-catalog #components { display: block; }
 #ds-view-component-button:checked ~ .ds-catalog #component-button { display: block; }
+#ds-view-component-callout:checked ~ .ds-catalog #components { display: block; }
+#ds-view-component-callout:checked ~ .ds-catalog #component-callout { display: block; }
 #ds-view-component-card-button:checked ~ .ds-catalog #components { display: block; }
 #ds-view-component-card-button:checked ~ .ds-catalog #component-card-button { display: block; }
 #ds-view-component-card-scroller:checked ~ .ds-catalog #components { display: block; }
@@ -753,6 +755,8 @@ code {
 #ds-view-component-provider-row:checked ~ .ds-catalog #component-provider-row { display: block; }
 #ds-view-component-quote-chip:checked ~ .ds-catalog #components { display: block; }
 #ds-view-component-quote-chip:checked ~ .ds-catalog #component-quote-chip { display: block; }
+#ds-view-component-radio-group:checked ~ .ds-catalog #components { display: block; }
+#ds-view-component-radio-group:checked ~ .ds-catalog #component-radio-group { display: block; }
 #ds-view-component-row-button:checked ~ .ds-catalog #components { display: block; }
 #ds-view-component-row-button:checked ~ .ds-catalog #component-row-button { display: block; }
 #ds-view-component-scope-pill:checked ~ .ds-catalog #components { display: block; }
@@ -821,6 +825,8 @@ code {
 #ds-view-component-board-lane:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-board-lane"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-button:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-button"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
 #ds-view-component-button:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-button"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
+#ds-view-component-callout:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-callout"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
+#ds-view-component-callout:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-callout"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-card-button:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-card-button"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
 #ds-view-component-card-button:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-card-button"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-card-scroller:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-card-scroller"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
@@ -891,6 +897,8 @@ code {
 #ds-view-component-provider-row:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-provider-row"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-quote-chip:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-quote-chip"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
 #ds-view-component-quote-chip:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-quote-chip"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
+#ds-view-component-radio-group:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-radio-group"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
+#ds-view-component-radio-group:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-radio-group"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-row-button:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-row-button"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
 #ds-view-component-row-button:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-row-button"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-scope-pill:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-scope-pill"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
@@ -2201,6 +2209,50 @@ code {
 .ds-caption-button--close:focus {
   background: #c42b1c; /* ds-lint-allow: Windows 11 OS-native close-button hover red — an identity colour of the platform, not of this system */
   color: #ffffff; /* ds-lint-allow: the white the platform pairs with its close red */
+}
+
+/* components/callout/component.css */
+/* Callout — a boxed note inside a panel's content: a title, a body, and the
+ * tone as an edge and a word, never as a field of colour. Extracted from the
+ * shipped Callout primitive (src/renderer/src/components/ui/Callout.tsx). */
+
+.ds-callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sem-space-2xs);
+  padding: var(--sem-space-sm) var(--sem-space-lg);
+  border: 1px solid var(--sem-color-border-subtle);
+  border-radius: var(--sem-radius-control);
+  background: var(--sem-color-bg-surface);
+  color: var(--sem-color-text-default);
+  font-size: var(--sem-font-size-body);
+}
+
+.ds-callout-title {
+  color: var(--sem-color-text-primary);
+  font-weight: var(--sem-font-weight-emphasis);
+}
+
+.ds-callout-body {
+  color: var(--sem-color-text-default);
+}
+
+/* Warning and danger are the inline notice's two tones: its soft fill. */
+.ds-callout--warning {
+  background: var(--sem-color-status-warn-soft);
+}
+
+.ds-callout--danger {
+  background: var(--sem-color-status-danger-soft);
+}
+
+/* Accent and success colour the title's ink only: information is content. */
+.ds-callout--accent .ds-callout-title {
+  color: var(--sem-color-accent-primary);
+}
+
+.ds-callout--success .ds-callout-title {
+  color: var(--sem-color-status-good);
 }
 
 /* components/card-button/component.css */
@@ -7540,6 +7592,70 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   color: var(--sem-color-text-muted);
 }
 
+/* components/radio-group/component.css */
+/* Radio group — a choose-one list of rows, each with the checkbox's radio mark
+ * as its picture. Extracted from the shipped RadioGroup primitive
+ * (src/renderer/src/components/ui/RadioGroup.tsx). */
+
+.ds-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sem-space-xs);
+}
+
+.ds-radio-group--horizontal {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--sem-space-lg);
+}
+
+.ds-radio-group-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sem-space-sm);
+  padding: var(--sem-space-xs) var(--sem-space-sm);
+  border-radius: var(--sem-radius-control);
+  color: var(--sem-color-text-default);
+  font-size: var(--sem-font-size-body);
+  cursor: pointer;
+}
+
+.ds-radio-group-row:hover {
+  background: var(--sem-color-bg-hover);
+}
+
+.ds-radio-group-row[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.45; /* ds-lint-allow: the kit's one disabled fade, as the checkbox's */
+}
+
+.ds-radio-group-mark {
+  display: inline-flex;
+  inline-size: var(--sem-icon-size-sm);
+  block-size: var(--sem-icon-size-sm);
+  margin-block-start: var(--sem-space-2xs);
+  border: 1px solid var(--sem-color-border-default);
+  border-radius: var(--sem-radius-pill);
+  background: var(--sem-color-bg-app);
+}
+
+.ds-radio-group-row[aria-checked='true'] .ds-radio-group-mark {
+  border-color: var(--sem-color-accent-primary);
+  /* The disc is the well's own ground showing through an accent ring. */
+  background: var(--sem-color-text-on-accent);
+  box-shadow: inset 0 0 0 4px var(--sem-color-accent-primary); /* ds-lint-allow: the ring that leaves the disc, as the radio mark draws it */
+}
+
+.ds-radio-group-label {
+  display: block;
+}
+
+.ds-radio-group-description {
+  display: block;
+  color: var(--sem-color-text-muted);
+  font-size: var(--sem-font-size-meta);
+}
+
 /* components/row-button/component.css */
 /* Row button — the list ROW as a control. Extracted from the shipped
  * `RowButton` primitive (src/renderer/src/components/ui/RowButton.tsx).
@@ -10708,6 +10824,25 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
     color: var(--sem-color-text-subtle);
     width: 100%;
   }
+.ds-embed-component-callout {
+    margin: 0;
+    font-family: var(--sem-font-family-ui);
+  }
+.ds-embed-component-callout .demo-stage {
+    padding: var(--sem-space-3xl);
+    background: var(--sem-color-bg-app);
+    color: var(--sem-color-text-default);
+  }
+.ds-embed-component-callout .demo-label {
+    font-size: var(--sem-font-size-meta);
+    color: var(--sem-color-text-subtle);
+    margin: 0 0 var(--sem-space-lg);
+  }
+.ds-embed-component-callout .demo-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sem-space-md);
+  }
 .ds-embed-component-card-button {
     margin: 0;
     font-family: var(--sem-font-family-ui);
@@ -12093,6 +12228,25 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
     width: 12px;
     height: 12px;
     vertical-align: -0.1em;
+  }
+.ds-embed-component-radio-group {
+    margin: 0;
+    font-family: var(--sem-font-family-ui);
+  }
+.ds-embed-component-radio-group .demo-stage {
+    padding: var(--sem-space-3xl);
+    background: var(--sem-color-bg-app);
+    color: var(--sem-color-text-default);
+  }
+.ds-embed-component-radio-group .demo-label {
+    font-size: var(--sem-font-size-meta);
+    color: var(--sem-color-text-subtle);
+    margin: 0 0 var(--sem-space-lg);
+  }
+.ds-embed-component-radio-group .demo-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sem-space-md);
   }
 .ds-embed-component-row-button {
     margin: 0;
@@ -13791,6 +13945,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-banner" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-board-lane" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-button" />
+<input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-callout" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-card-button" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-card-scroller" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-check-row" />
@@ -13826,6 +13981,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-popover" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-provider-row" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-quote-chip" />
+<input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-radio-group" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-row-button" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-scope-pill" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-scroll-area" />
@@ -13880,6 +14036,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <label class="catalog-nav-item" for="ds-view-component-banner">Banner</label>
 <label class="catalog-nav-item" for="ds-view-component-board-lane">Board lane</label>
 <label class="catalog-nav-item" for="ds-view-component-button">Button</label>
+<label class="catalog-nav-item" for="ds-view-component-callout">Callout</label>
 <label class="catalog-nav-item" for="ds-view-component-card-button">Card button</label>
 <label class="catalog-nav-item" for="ds-view-component-card-scroller">Card scroller</label>
 <label class="catalog-nav-item" for="ds-view-component-check-row">Check row</label>
@@ -13915,6 +14072,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <label class="catalog-nav-item" for="ds-view-component-popover">Popover</label>
 <label class="catalog-nav-item" for="ds-view-component-provider-row">Provider row</label>
 <label class="catalog-nav-item" for="ds-view-component-quote-chip">Quote chip</label>
+<label class="catalog-nav-item" for="ds-view-component-radio-group">Radio group</label>
 <label class="catalog-nav-item" for="ds-view-component-row-button">Row button</label>
 <label class="catalog-nav-item" for="ds-view-component-scope-pill">Scope pill</label>
 <label class="catalog-nav-item" for="ds-view-component-scroll-area">Scroll area</label>
@@ -17731,6 +17889,144 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 &lt;/html&gt;
 </code></pre></details>
 </div>
+<div id="component-callout" class="catalog-view catalog-component">
+<h3>Callout</h3>
+<div class="catalog-component-grid">
+<div class="catalog-stage ds-embed-component-callout">
+<div class="demo-stage" data-mode="light">
+  <p class="demo-label">Light — a boxed note in each tone.</p>
+  <div class="demo-stack">
+    <div class="ds-callout" role="note"><span class="ds-callout-title">Neutral</span><span class="ds-callout-body">A fact the reader should notice.</span></div>
+    <div class="ds-callout ds-callout--accent" role="note"><span class="ds-callout-title">Accent</span><span class="ds-callout-body">Something new to try.</span></div>
+    <div class="ds-callout ds-callout--success" role="note"><span class="ds-callout-title">Success</span><span class="ds-callout-body">The deploy is healthy.</span></div>
+    <div class="ds-callout ds-callout--warning" role="status"><span class="ds-callout-title">Warning</span><span class="ds-callout-body">Two checks are slow.</span></div>
+    <div class="ds-callout ds-callout--danger" role="alert"><span class="ds-callout-title">Danger</span><span class="ds-callout-body">The last run failed.</span></div>
+  </div>
+</div>
+<div class="demo-stage" data-mode="dark">
+  <p class="demo-label">Dark — a boxed note in each tone.</p>
+  <div class="demo-stack">
+    <div class="ds-callout" role="note"><span class="ds-callout-title">Neutral</span><span class="ds-callout-body">A fact the reader should notice.</span></div>
+    <div class="ds-callout ds-callout--accent" role="note"><span class="ds-callout-title">Accent</span><span class="ds-callout-body">Something new to try.</span></div>
+    <div class="ds-callout ds-callout--success" role="note"><span class="ds-callout-title">Success</span><span class="ds-callout-body">The deploy is healthy.</span></div>
+    <div class="ds-callout ds-callout--warning" role="status"><span class="ds-callout-title">Warning</span><span class="ds-callout-body">Two checks are slow.</span></div>
+    <div class="ds-callout ds-callout--danger" role="alert"><span class="ds-callout-title">Danger</span><span class="ds-callout-body">The last run failed.</span></div>
+  </div>
+</div>
+</div>
+<div class="catalog-doc">
+<p>A boxed note inside a panel's content: an optional title, the note, and a tone. It is what an extension's components panel draws for <code>Callout</code>, through the shipped <code>Callout</code> primitive (<code>src/renderer/src/components/ui/Callout.tsx</code>).</p>
+<p><strong>Why not the inline notice.</strong> The [inline notice](../inline-notice/component.md) has two tones on purpose — a failure and a degraded state — and there is no info or success notice. A panel's author still needs a box for &quot;read this first&quot;, so the callout's <code>warning</code> and <code>danger</code> are the notice's own treatment (its soft fill, and the notice's role), and its <code>neutral</code>, <code>accent</code> and <code>success</code> stay content: a hairline box on the surface, with the tone in the title's ink only, never a tinted field.</p>
+<h4>Anatomy</h4>
+<p>| Part | Class | Required | |---|---|---| | Box | <code>.ds-callout</code> | yes — <code>border.subtle</code> hairline, <code>radius.control</code>, <code>bg.surface</code> | | Glyph | <code>.ds-callout-glyph</code> | no — <code>icon.size.sm</code>, before the title | | Title | <code>.ds-callout-title</code> | no — <code>text.primary</code> at <code>font.weight.emphasis</code> | | Body | <code>.ds-callout-body</code> | yes — the note's content |</p>
+<h4>Variants</h4>
+<ul><li><strong>Neutral</strong> (default) — the box alone.</li><li><strong><code>--accent</code></strong> — the title in <code>accent.primary</code> ink.</li><li><strong><code>--success</code></strong> — the title in <code>status.good</code> ink.</li><li><strong><code>--warning</code></strong> — the inline notice's warn treatment: <code>status.warn-soft</code> ground.</li><li><strong><code>--danger</code></strong> — the inline notice's error treatment: <code>status.danger-soft</code> ground.</li></ul>
+<h4>States</h4>
+<p>A callout is not interactive. A control inside it keeps its own states.</p>
+<h4>Usage</h4>
+<ul><li>One callout per thing to read; do not stack them as a list of facts.</li><li>Put what to do next in the body, as a button or a link.</li><li>For a failure the person must act on in the app's own chrome, use the inline notice or a banner, not this.</li></ul>
+<h4>Accessibility</h4>
+<ul><li><code>danger</code> is <code>role=&quot;alert&quot;</code>, <code>warning</code> is <code>role=&quot;status&quot;</code>, the rest <code>role=&quot;note&quot;</code>.</li><li>The tone is never colour alone: the title or the body says it in words.</li></ul>
+</div>
+</div>
+<details class="catalog-source"><summary>components/callout/component.css</summary><pre><code>/* Callout — a boxed note inside a panel's content: a title, a body, and the
+ * tone as an edge and a word, never as a field of colour. Extracted from the
+ * shipped Callout primitive (src/renderer/src/components/ui/Callout.tsx). */
+
+.ds-callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sem-space-2xs);
+  padding: var(--sem-space-sm) var(--sem-space-lg);
+  border: 1px solid var(--sem-color-border-subtle);
+  border-radius: var(--sem-radius-control);
+  background: var(--sem-color-bg-surface);
+  color: var(--sem-color-text-default);
+  font-size: var(--sem-font-size-body);
+}
+
+.ds-callout-title {
+  color: var(--sem-color-text-primary);
+  font-weight: var(--sem-font-weight-emphasis);
+}
+
+.ds-callout-body {
+  color: var(--sem-color-text-default);
+}
+
+/* Warning and danger are the inline notice's two tones: its soft fill. */
+.ds-callout--warning {
+  background: var(--sem-color-status-warn-soft);
+}
+
+.ds-callout--danger {
+  background: var(--sem-color-status-danger-soft);
+}
+
+/* Accent and success colour the title's ink only: information is content. */
+.ds-callout--accent .ds-callout-title {
+  color: var(--sem-color-accent-primary);
+}
+
+.ds-callout--success .ds-callout-title {
+  color: var(--sem-color-status-good);
+}
+</code></pre></details>
+<details class="catalog-source"><summary>components/callout/component.html (demo)</summary><pre><code>&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot; /&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot; /&gt;
+&lt;title&gt;Callout&lt;/title&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;../../foundations/tokens.css&quot; /&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;component.css&quot; /&gt;
+&lt;style&gt;
+  body {
+    margin: 0;
+    font-family: var(--sem-font-family-ui);
+  }
+  .demo-stage {
+    padding: var(--sem-space-3xl);
+    background: var(--sem-color-bg-app);
+    color: var(--sem-color-text-default);
+  }
+  .demo-label {
+    font-size: var(--sem-font-size-meta);
+    color: var(--sem-color-text-subtle);
+    margin: 0 0 var(--sem-space-lg);
+  }
+  .demo-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sem-space-md);
+  }
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div class=&quot;demo-stage&quot; data-mode=&quot;light&quot;&gt;
+  &lt;p class=&quot;demo-label&quot;&gt;Light — a boxed note in each tone.&lt;/p&gt;
+  &lt;div class=&quot;demo-stack&quot;&gt;
+    &lt;div class=&quot;ds-callout&quot; role=&quot;note&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Neutral&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;A fact the reader should notice.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--accent&quot; role=&quot;note&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Accent&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;Something new to try.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--success&quot; role=&quot;note&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Success&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;The deploy is healthy.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--warning&quot; role=&quot;status&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Warning&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;Two checks are slow.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--danger&quot; role=&quot;alert&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Danger&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;The last run failed.&lt;/span&gt;&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+&lt;div class=&quot;demo-stage&quot; data-mode=&quot;dark&quot;&gt;
+  &lt;p class=&quot;demo-label&quot;&gt;Dark — a boxed note in each tone.&lt;/p&gt;
+  &lt;div class=&quot;demo-stack&quot;&gt;
+    &lt;div class=&quot;ds-callout&quot; role=&quot;note&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Neutral&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;A fact the reader should notice.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--accent&quot; role=&quot;note&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Accent&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;Something new to try.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--success&quot; role=&quot;note&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Success&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;The deploy is healthy.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--warning&quot; role=&quot;status&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Warning&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;Two checks are slow.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--danger&quot; role=&quot;alert&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Danger&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;The last run failed.&lt;/span&gt;&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre></details>
+</div>
 <div id="component-card-button" class="catalog-view catalog-component">
 <h3>Card button</h3>
 <div class="catalog-component-grid">
@@ -20117,7 +20413,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <p><code>RadioMark</code>, exported beside <code>CheckboxBox</code>: the box's single-answer twin. Same <code>icon.size.sm</code> square, same <code>border.default</code> edge on the <code>bg.app</code> well, same <code>accent.primary</code> fill once chosen — fully round (<code>radius.pill</code>), with a disc where the tick would be. A question's choose-one rows had drawn their own, and a round mark hand-rolled outside the system is a status dot by another name.</p>
 <p><strong>Anatomy.</strong> One round well; when checked, the accent fill and a disc in <code>text.on-accent</code>. No input.</p>
 <p><strong>States.</strong> Unchecked, checked, and disabled (the box's 45% fade).</p>
-<p><strong>Usage.</strong> Only as the picture of a choice another element owns: a row with <code>role=&quot;radio&quot;</code> in a <code>radiogroup</code>, which is the tab stop and carries <code>aria-checked</code>. There is no radio control in the kit. A value picked from a closed list is a [select](../select/component.md) or a segmented control; a choose-many list of rows takes <code>CheckboxBox</code>.</p>
+<p><strong>Usage.</strong> Only as the picture of a choice another element owns: a row with <code>role=&quot;radio&quot;</code> in a <code>radiogroup</code>, which is the tab stop and carries <code>aria-checked</code>; the [radio group](../radio-group/component.md) is that list of rows, built. A value picked from a closed list is a [select](../select/component.md) or a segmented control; a choose-many list of rows takes <code>CheckboxBox</code>.</p>
 <p><strong>Accessibility.</strong> Always <code>aria-hidden</code>. The row announces the state; the mark is only its picture and must never be met twice.</p>
 </div>
 </div>
@@ -39587,6 +39883,192 @@ window.addEventListener('resize', repositionAll)
     &lt;span&gt;Is a warm cache still needed?&lt;/span&gt;
     &lt;button type=&quot;button&quot; class=&quot;ds-quote-chip__edit&quot; aria-label=&quot;Edit comment&quot;&gt;✎&lt;/button&gt;
     &lt;button type=&quot;button&quot; class=&quot;ds-quote-chip__edit&quot; aria-label=&quot;Remove quote&quot;&gt;×&lt;/button&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre></details>
+</div>
+<div id="component-radio-group" class="catalog-view catalog-component">
+<h3>Radio group</h3>
+<div class="catalog-component-grid">
+<div class="catalog-stage ds-embed-component-radio-group">
+<div class="demo-stage" data-mode="light">
+  <p class="demo-label">Light — a choose-one list of rows, each saying what its choice means.</p>
+  <div class="ds-radio-group" role="radiogroup" aria-label="Sync">
+    <div class="ds-radio-group-row" role="radio" aria-checked="true" tabindex="0">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span><span class="ds-radio-group-label">Every hour</span><span class="ds-radio-group-description">Fetch on the hour, in the background.</span></span>
+    </div>
+    <div class="ds-radio-group-row" role="radio" aria-checked="false" tabindex="-1">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span><span class="ds-radio-group-label">On demand</span><span class="ds-radio-group-description">Only when you press Refresh.</span></span>
+    </div>
+    <div class="ds-radio-group-row" role="radio" aria-checked="false" aria-disabled="true" tabindex="-1">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span class="ds-radio-group-label">Never</span>
+    </div>
+  </div>
+</div>
+<div class="demo-stage" data-mode="dark">
+  <p class="demo-label">Dark — a choose-one list of rows, each saying what its choice means.</p>
+  <div class="ds-radio-group" role="radiogroup" aria-label="Sync">
+    <div class="ds-radio-group-row" role="radio" aria-checked="true" tabindex="0">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span><span class="ds-radio-group-label">Every hour</span><span class="ds-radio-group-description">Fetch on the hour, in the background.</span></span>
+    </div>
+    <div class="ds-radio-group-row" role="radio" aria-checked="false" tabindex="-1">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span><span class="ds-radio-group-label">On demand</span><span class="ds-radio-group-description">Only when you press Refresh.</span></span>
+    </div>
+    <div class="ds-radio-group-row" role="radio" aria-checked="false" aria-disabled="true" tabindex="-1">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span class="ds-radio-group-label">Never</span>
+    </div>
+  </div>
+</div>
+</div>
+<div class="catalog-doc">
+<p>A choose-one list of rows: each row is a choice, with the [checkbox](../checkbox/component.md)'s radio mark as its picture, a label, and an optional line saying what the choice means. Extracted from the shipped <code>RadioGroup</code> primitive (<code>src/renderer/src/components/ui/RadioGroup.tsx</code>).</p>
+<p>It is the &quot;radiogroup of rows&quot; the checkbox's radio mark was drawn for. Reach for it when each choice needs a sentence to be understood, or when there are more than a segmented control holds (2–4 short words). A value picked from a long closed list with no explanation is a [select](../select/component.md).</p>
+<h4>Anatomy</h4>
+<p>| Part | Class | Required | |---|---|---| | Group | <code>.ds-radio-group</code> | yes — <code>role=&quot;radiogroup&quot;</code> with an accessible name | | Row | <code>.ds-radio-group-row</code> | yes — <code>role=&quot;radio&quot;</code>, <code>aria-checked</code>; the tab stop when chosen | | Mark | <code>.ds-radio-group-mark</code> | yes — the radio mark, <code>aria-hidden</code> | | Label | <code>.ds-radio-group-label</code> | yes — <code>text.default</code> at <code>font.size.body</code> | | Description | <code>.ds-radio-group-description</code> | no — <code>text.muted</code> at <code>font.size.meta</code>, under the label |</p>
+<h4>Variants</h4>
+<ul><li><strong>Vertical</strong> (default) — one row under another, <code>space.xs</code> apart.</li><li><strong><code>--horizontal</code></strong> — rows side by side, wrapping, <code>space.lg</code> apart. Only for short labels with no descriptions.</li></ul>
+<h4>States</h4>
+<p>| State | Treatment | |---|---| | Rest | the mark's well, label in <code>text.default</code> | | Hover | the row takes <code>bg.hover</code> | | Chosen | the mark's accent fill and disc | | Focus | the shared focus ring on the row | | Disabled | the row at the kit's 45% fade, <code>aria-disabled</code>, still in the walk |</p>
+<h4>Usage</h4>
+<ul><li>One choice is always the answer once chosen; a group never clears itself.</li><li>Keep labels to a few words and put the explanation in the description.</li><li>Do not mix a radio group and checkboxes in one list.</li></ul>
+<h4>Accessibility</h4>
+<ul><li><code>role=&quot;radiogroup&quot;</code> with <code>aria-label</code> (or <code>aria-labelledby</code>) on the group.</li><li>Each row is <code>role=&quot;radio&quot;</code> with <code>aria-checked</code>, and the chosen row (or the first enabled one when none is) is the one tab stop.</li><li>Arrow keys move the choice to the next or previous enabled row and choose it; Home and End go to the first and last. Space chooses the focused row.</li><li>A description is the row's <code>aria-describedby</code>.</li></ul>
+</div>
+</div>
+<details class="catalog-source"><summary>components/radio-group/component.css</summary><pre><code>/* Radio group — a choose-one list of rows, each with the checkbox's radio mark
+ * as its picture. Extracted from the shipped RadioGroup primitive
+ * (src/renderer/src/components/ui/RadioGroup.tsx). */
+
+.ds-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sem-space-xs);
+}
+
+.ds-radio-group--horizontal {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--sem-space-lg);
+}
+
+.ds-radio-group-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sem-space-sm);
+  padding: var(--sem-space-xs) var(--sem-space-sm);
+  border-radius: var(--sem-radius-control);
+  color: var(--sem-color-text-default);
+  font-size: var(--sem-font-size-body);
+  cursor: pointer;
+}
+
+.ds-radio-group-row:hover {
+  background: var(--sem-color-bg-hover);
+}
+
+.ds-radio-group-row[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.45; /* ds-lint-allow: the kit's one disabled fade, as the checkbox's */
+}
+
+.ds-radio-group-mark {
+  display: inline-flex;
+  inline-size: var(--sem-icon-size-sm);
+  block-size: var(--sem-icon-size-sm);
+  margin-block-start: var(--sem-space-2xs);
+  border: 1px solid var(--sem-color-border-default);
+  border-radius: var(--sem-radius-pill);
+  background: var(--sem-color-bg-app);
+}
+
+.ds-radio-group-row[aria-checked='true'] .ds-radio-group-mark {
+  border-color: var(--sem-color-accent-primary);
+  /* The disc is the well's own ground showing through an accent ring. */
+  background: var(--sem-color-text-on-accent);
+  box-shadow: inset 0 0 0 4px var(--sem-color-accent-primary); /* ds-lint-allow: the ring that leaves the disc, as the radio mark draws it */
+}
+
+.ds-radio-group-label {
+  display: block;
+}
+
+.ds-radio-group-description {
+  display: block;
+  color: var(--sem-color-text-muted);
+  font-size: var(--sem-font-size-meta);
+}
+</code></pre></details>
+<details class="catalog-source"><summary>components/radio-group/component.html (demo)</summary><pre><code>&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot; /&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot; /&gt;
+&lt;title&gt;Radio group&lt;/title&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;../../foundations/tokens.css&quot; /&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;component.css&quot; /&gt;
+&lt;style&gt;
+  body {
+    margin: 0;
+    font-family: var(--sem-font-family-ui);
+  }
+  .demo-stage {
+    padding: var(--sem-space-3xl);
+    background: var(--sem-color-bg-app);
+    color: var(--sem-color-text-default);
+  }
+  .demo-label {
+    font-size: var(--sem-font-size-meta);
+    color: var(--sem-color-text-subtle);
+    margin: 0 0 var(--sem-space-lg);
+  }
+  .demo-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sem-space-md);
+  }
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div class=&quot;demo-stage&quot; data-mode=&quot;light&quot;&gt;
+  &lt;p class=&quot;demo-label&quot;&gt;Light — a choose-one list of rows, each saying what its choice means.&lt;/p&gt;
+  &lt;div class=&quot;ds-radio-group&quot; role=&quot;radiogroup&quot; aria-label=&quot;Sync&quot;&gt;
+    &lt;div class=&quot;ds-radio-group-row&quot; role=&quot;radio&quot; aria-checked=&quot;true&quot; tabindex=&quot;0&quot;&gt;
+      &lt;span class=&quot;ds-radio-group-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span&gt;&lt;span class=&quot;ds-radio-group-label&quot;&gt;Every hour&lt;/span&gt;&lt;span class=&quot;ds-radio-group-description&quot;&gt;Fetch on the hour, in the background.&lt;/span&gt;&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;ds-radio-group-row&quot; role=&quot;radio&quot; aria-checked=&quot;false&quot; tabindex=&quot;-1&quot;&gt;
+      &lt;span class=&quot;ds-radio-group-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span&gt;&lt;span class=&quot;ds-radio-group-label&quot;&gt;On demand&lt;/span&gt;&lt;span class=&quot;ds-radio-group-description&quot;&gt;Only when you press Refresh.&lt;/span&gt;&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;ds-radio-group-row&quot; role=&quot;radio&quot; aria-checked=&quot;false&quot; aria-disabled=&quot;true&quot; tabindex=&quot;-1&quot;&gt;
+      &lt;span class=&quot;ds-radio-group-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span class=&quot;ds-radio-group-label&quot;&gt;Never&lt;/span&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+&lt;div class=&quot;demo-stage&quot; data-mode=&quot;dark&quot;&gt;
+  &lt;p class=&quot;demo-label&quot;&gt;Dark — a choose-one list of rows, each saying what its choice means.&lt;/p&gt;
+  &lt;div class=&quot;ds-radio-group&quot; role=&quot;radiogroup&quot; aria-label=&quot;Sync&quot;&gt;
+    &lt;div class=&quot;ds-radio-group-row&quot; role=&quot;radio&quot; aria-checked=&quot;true&quot; tabindex=&quot;0&quot;&gt;
+      &lt;span class=&quot;ds-radio-group-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span&gt;&lt;span class=&quot;ds-radio-group-label&quot;&gt;Every hour&lt;/span&gt;&lt;span class=&quot;ds-radio-group-description&quot;&gt;Fetch on the hour, in the background.&lt;/span&gt;&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;ds-radio-group-row&quot; role=&quot;radio&quot; aria-checked=&quot;false&quot; tabindex=&quot;-1&quot;&gt;
+      &lt;span class=&quot;ds-radio-group-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span&gt;&lt;span class=&quot;ds-radio-group-label&quot;&gt;On demand&lt;/span&gt;&lt;span class=&quot;ds-radio-group-description&quot;&gt;Only when you press Refresh.&lt;/span&gt;&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;ds-radio-group-row&quot; role=&quot;radio&quot; aria-checked=&quot;false&quot; aria-disabled=&quot;true&quot; tabindex=&quot;-1&quot;&gt;
+      &lt;span class=&quot;ds-radio-group-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span class=&quot;ds-radio-group-label&quot;&gt;Never&lt;/span&gt;
+    &lt;/div&gt;
   &lt;/div&gt;
 &lt;/div&gt;
 &lt;/body&gt;

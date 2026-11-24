@@ -21,6 +21,14 @@ import {
 import { extensionsApi } from '../../studio/extensions'
 import { followEditorTypography } from '../../modules/extension-editor-typography'
 import { EmptyState } from '../ui/EmptyState'
+import { useOptionalConfirmDialog } from '../ui/ConfirmDialog'
+import { ComponentsPanelHost } from './components/ComponentsPanelHost'
+import {
+  createComponentsPanelSession,
+  forgetRetainedPanel,
+  retainedPanel,
+  type ComponentsPanelSession,
+} from './components/componentsPanelSession'
 
 // One extension surface (a pane tab, a door, a settings section, a custom editor), drawn in a
 // sandboxed frame of its own: `allow-scripts` and nothing else, so its code
@@ -63,6 +71,31 @@ const LEFT_ITS_DOCUMENT = 'It tried to load another page in its place, so Studio
 
 const now = () => performance.timeOrigin + performance.now()
 
+// Web addresses the person let an extension open without asking again, for this window's session.
+const allowedHosts = new Map<string, Set<string>>()
+const MAX_IMAGE_SIDE = 4096
+
+/** One of the extension's own images as a `data:` URL, or null when it is not one Studio shows. */
+async function readOwnImage(extensionKey: string, frame: string, src: string): Promise<string | null> {
+  const answer = await extensionsApi.extensionCall({
+    moduleId: extensionKey,
+    frame,
+    method: 'assets.image',
+    params: { path: src },
+  })
+  const image = answer.ok ? (answer.result as { mime?: unknown; data?: unknown } | null) : null
+  if (!image || typeof image.mime !== 'string' || typeof image.data !== 'string') return null
+  const url = `data:${image.mime};base64,${image.data}`
+  // At most 4096 pixels a side, as Studio decodes it.
+  return new Promise((resolve) => {
+    const probe = new Image()
+    probe.onload = () =>
+      resolve(probe.naturalWidth <= MAX_IMAGE_SIDE && probe.naturalHeight <= MAX_IMAGE_SIDE ? url : null)
+    probe.onerror = () => resolve(null)
+    probe.src = url
+  })
+}
+
 export function ExtensionSurfaceMount({
   extensionKey,
   point,
@@ -90,6 +123,20 @@ export function ExtensionSurfaceMount({
   // or lost its approval is gone, and its frame with it.
   useSyncExternalStore(subscribeExtensionSurfaces, extensionSurfacesVersion, extensionSurfacesVersion)
   const loaded = getExtensionSurface(extensionKey, point, id)
+  // A components panel: its frame runs hidden, and the window draws its tree.
+  const components = point === 'panels' && loaded?.contribution.ui === 'components'
+  const [session, setSession] = useState<ComponentsPanelSession | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const dialogs = useOptionalConfirmDialog()
+  const dialogsRef = useRef(dialogs)
+  dialogsRef.current = dialogs
+  const frameHashRef = useRef('')
+  const openLinkRef = useRef<(href: string) => void>(() => undefined)
+  const retainKey = `${extensionKey}/${point}/${id}/${workspaceId ?? ''}`
+  const retainKeyRef = useRef(retainKey)
+  retainKeyRef.current = retainKey
+  // The tab closed: what a development folder's saves carry over goes with it.
+  useEffect(() => () => forgetRetainedPanel(retainKeyRef.current), [])
 
   useEffect(() => {
     if (!loaded) return
@@ -99,9 +146,57 @@ export function ExtensionSurfaceMount({
     let paintAt: number | null = null
     setSrc(null)
     setFailure(null)
+    const extensionName = loaded.extension?.name ?? extensionKey
+    // Open a URL a components panel earned with a press: a web address asks first.
+    const openExternal = async (url: string): Promise<boolean> => {
+      if (/^mailto:/iu.test(url)) {
+        window.open(url, '_blank', 'noopener,noreferrer')
+        return true
+      }
+      let target: URL
+      try {
+        target = new URL(url)
+      } catch {
+        return false
+      }
+      const allowed = allowedHosts.get(extensionKey)
+      if (!allowed?.has(target.host)) {
+        const dialog = dialogsRef.current
+        if (!dialog) return false
+        const choice = await dialog.choose({
+          title: `${extensionName} wants to open ${target.host}`,
+          body: url.length > 300 ? `${url.slice(0, 300)}…` : url,
+          confirmLabel: 'Open',
+          alternateLabel: `Always allow ${target.host}`,
+          cancelLabel: 'Cancel',
+        })
+        if (choice === 'cancel') return false
+        if (choice === 'alternate') {
+          let hosts = allowedHosts.get(extensionKey)
+          if (!hosts) allowedHosts.set(extensionKey, (hosts = new Set()))
+          hosts.add(target.host)
+        }
+      }
+      const opened = await host.openExternal(url)
+      return opened.ok
+    }
+    let componentsSession: ComponentsPanelSession | null = null
+    if (components) {
+      componentsSession = createComponentsPanelSession({
+        send: (event, payload) => bridge.sendComponents(event, payload),
+        retained: retainedPanel(retainKeyRef.current),
+        development: loaded.development === true,
+        visible: true,
+        warn: (message) => console.warn(`[extensions] ${extensionKey} panel ${id}: ${message}`),
+      })
+      setSession(componentsSession)
+    } else setSession(null)
     const fail = (error: unknown) => {
       if (closed) return
-      setFailure(sanitizeEntryMessage(error instanceof Error ? error.message : String(error), DRAW_FAILED))
+      const message = sanitizeEntryMessage(error instanceof Error ? error.message : String(error), DRAW_FAILED)
+      // A components panel keeps its last tree, inert, with the error over it.
+      if (componentsSession) return componentsSession.failed(message)
+      setFailure(message)
       // A custom editor stops waiting on a frame that failed: leaving it, or
       // saving, never hangs on a flush nobody will answer.
       editorRef.current?.close()
@@ -136,6 +231,8 @@ export function ExtensionSurfaceMount({
       return wrapped ? ((outer?.frames[0] as Window | undefined) ?? null) : outer
     }
     let frameHash = ''
+    const openLink = (href: string) => void openExternal(href)
+    openLinkRef.current = openLink
     const call = async (method: string, params: unknown): Promise<StudioExtensionCallAnswer> => {
       const answer = await extensionsApi.extensionCall({ moduleId: extensionKey, frame: frameHash, method, params })
       if (answer.ok || answer.code !== 'frame_outdated') return answer
@@ -152,6 +249,8 @@ export function ExtensionSurfaceMount({
       post: (message) => surfaceWindow()?.postMessage(message, '*'),
       ...(workspaceId ? { workspaceId } : {}),
       ...(link ? { document: link.document, onFrameReady: () => link.frameReady() } : {}),
+      ...(componentsSession ? { components: componentsSession } : {}),
+      clientKind: window.api?.stageExtensionFrame ? 'desktop' : 'web',
       call,
       client: {
         toast: (params) => {
@@ -174,6 +273,7 @@ export function ExtensionSurfaceMount({
           event === 'editor.typography.changed'
             ? followEditorTypography(deliver)
             : extensionsApi.onStudioEvents(extensionKey, event, deliver),
+        openExternal,
       },
       theme: () => readWindowFrameTheme(THEME_TOKENS),
       onReady: (at) => {
@@ -207,6 +307,7 @@ export function ExtensionSurfaceMount({
       .extensionFrame({ moduleId: extensionKey, point, id, ...(theme ? { theme } : {}) })
       .then(async (document) => {
         frameHash = document.hash
+        frameHashRef.current = document.hash
         if (!closed)
           link?.open({
             call,
@@ -228,15 +329,25 @@ export function ExtensionSurfaceMount({
       .then((next) => {
         if (!closed) setSrc(next)
       }, fail)
+    // Whether the person can see the panel, for its `ctx.visible`.
+    const seen =
+      componentsSession && containerRef.current && typeof IntersectionObserver === 'function'
+        ? new IntersectionObserver((entries) => {
+            const entry = entries[entries.length - 1]
+            if (entry) componentsSession?.setVisible(entry.isIntersecting)
+          })
+        : null
+    if (seen && containerRef.current) seen.observe(containerRef.current)
     return () => {
       closed = true
+      seen?.disconnect()
       link?.close()
       bridge.dispose()
       window.removeEventListener('message', receive)
       themes.disconnect()
       stopEvents()
     }
-  }, [loaded, extensionKey, point, id, workspaceId, generation])
+  }, [loaded, extensionKey, point, id, workspaceId, generation, components])
 
   if (!loaded) {
     return (
@@ -247,8 +358,17 @@ export function ExtensionSurfaceMount({
     )
   }
   return (
-    <div className={['relative h-full min-h-0 w-full', className ?? ''].join(' ')}>
+    <div ref={containerRef} className={['relative h-full min-h-0 w-full', className ?? ''].join(' ')}>
       {failure ? <EmptyState title={DRAW_FAILED} body={failure} /> : null}
+      {components && session && !failure ? (
+        <ComponentsPanelHost
+          session={session}
+          extensionName={loaded.extension?.name ?? extensionKey}
+          openLink={(href) => openLinkRef.current(href)}
+          readImage={(source) => readOwnImage(extensionKey, frameHashRef.current, source)}
+          locale={navigator.language}
+        />
+      ) : null}
       {src && !failure ? (
         <iframe
           key={src.url}
@@ -261,7 +381,13 @@ export function ExtensionSurfaceMount({
           title={title ?? loaded.contribution.title}
           data-extension={extensionKey}
           data-extension-surface={`${point}/${id}`}
-          className="block h-full w-full border-0"
+          // A components panel's frame runs its module and shows nothing: Studio draws its tree.
+          {...(components ? { 'aria-hidden': true, tabIndex: -1 } : {})}
+          className={
+            components
+              ? 'pointer-events-none absolute left-0 top-0 h-px w-px border-0 opacity-0'
+              : 'block h-full w-full border-0'
+          }
         />
       ) : null}
     </div>

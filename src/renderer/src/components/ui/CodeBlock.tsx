@@ -59,6 +59,8 @@ export type CodeBlockProps = {
   note?: string
   /** An action the note offers, set after it as a link: "Retry" when a drawing failed to load. */
   noteAction?: CodeBlockNoteAction
+  /** Start with long lines wrapped; the block's own toggle still turns it off. */
+  defaultWrap?: boolean
 }
 
 export type CodeBlockNoteAction = { label: string; onClick: () => void }
@@ -232,7 +234,7 @@ function markOverflowEdges(pre: HTMLPreElement) {
 
 export function CodeBlock(props: CodeBlockProps) {
   const { code, streaming } = props
-  const [wrap, setWrap] = useState(false)
+  const [wrap, setWrap] = useState(props.defaultWrap === true)
   // A block first seen while it streamed stays open when it settles: folding it
   // then would pull the lines out from under someone reading them. One that
   // arrives settled — scrolled back to, reopened — starts folded.

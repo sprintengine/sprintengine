@@ -194,10 +194,9 @@ export function CheckboxBox({
  * 2026-10-08 for a question's choose-one rows, which had drawn their own.
  *
  * Like the box it is only the picture: always `aria-hidden`, the state carried
- * by whatever owns it (a row's `aria-checked` on `role="radio"`). There is no
- * radio control in the kit — a choose-one list of rows is a `radiogroup` of
- * rows, and a value picked from a closed list is a `Select` or a
- * `SegmentedControl`.
+ * by whatever owns it (a row's `aria-checked` on `role="radio"`). A
+ * choose-one list of rows is the kit's `RadioGroup`, and a value picked from
+ * a closed list is a `Select` or a `SegmentedControl`.
  */
 export function RadioMark({ checked, disabled = false }: { checked: boolean; disabled?: boolean }): JSX.Element {
   return (

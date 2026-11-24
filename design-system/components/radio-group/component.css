@@ -1,0 +1,62 @@
+/* Radio group — a choose-one list of rows, each with the checkbox's radio mark
+ * as its picture. Extracted from the shipped RadioGroup primitive
+ * (src/renderer/src/components/ui/RadioGroup.tsx). */
+
+.ds-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sem-space-xs);
+}
+
+.ds-radio-group--horizontal {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--sem-space-lg);
+}
+
+.ds-radio-group-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sem-space-sm);
+  padding: var(--sem-space-xs) var(--sem-space-sm);
+  border-radius: var(--sem-radius-control);
+  color: var(--sem-color-text-default);
+  font-size: var(--sem-font-size-body);
+  cursor: pointer;
+}
+
+.ds-radio-group-row:hover {
+  background: var(--sem-color-bg-hover);
+}
+
+.ds-radio-group-row[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.45; /* ds-lint-allow: the kit's one disabled fade, as the checkbox's */
+}
+
+.ds-radio-group-mark {
+  display: inline-flex;
+  inline-size: var(--sem-icon-size-sm);
+  block-size: var(--sem-icon-size-sm);
+  margin-block-start: var(--sem-space-2xs);
+  border: 1px solid var(--sem-color-border-default);
+  border-radius: var(--sem-radius-pill);
+  background: var(--sem-color-bg-app);
+}
+
+.ds-radio-group-row[aria-checked='true'] .ds-radio-group-mark {
+  border-color: var(--sem-color-accent-primary);
+  /* The disc is the well's own ground showing through an accent ring. */
+  background: var(--sem-color-text-on-accent);
+  box-shadow: inset 0 0 0 4px var(--sem-color-accent-primary); /* ds-lint-allow: the ring that leaves the disc, as the radio mark draws it */
+}
+
+.ds-radio-group-label {
+  display: block;
+}
+
+.ds-radio-group-description {
+  display: block;
+  color: var(--sem-color-text-muted);
+  font-size: var(--sem-font-size-meta);
+}

@@ -1,0 +1,42 @@
+/* Callout — a boxed note inside a panel's content: a title, a body, and the
+ * tone as an edge and a word, never as a field of colour. Extracted from the
+ * shipped Callout primitive (src/renderer/src/components/ui/Callout.tsx). */
+
+.ds-callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sem-space-2xs);
+  padding: var(--sem-space-sm) var(--sem-space-lg);
+  border: 1px solid var(--sem-color-border-subtle);
+  border-radius: var(--sem-radius-control);
+  background: var(--sem-color-bg-surface);
+  color: var(--sem-color-text-default);
+  font-size: var(--sem-font-size-body);
+}
+
+.ds-callout-title {
+  color: var(--sem-color-text-primary);
+  font-weight: var(--sem-font-weight-emphasis);
+}
+
+.ds-callout-body {
+  color: var(--sem-color-text-default);
+}
+
+/* Warning and danger are the inline notice's two tones: its soft fill. */
+.ds-callout--warning {
+  background: var(--sem-color-status-warn-soft);
+}
+
+.ds-callout--danger {
+  background: var(--sem-color-status-danger-soft);
+}
+
+/* Accent and success colour the title's ink only: information is content. */
+.ds-callout--accent .ds-callout-title {
+  color: var(--sem-color-accent-primary);
+}
+
+.ds-callout--success .ds-callout-title {
+  color: var(--sem-color-status-good);
+}
