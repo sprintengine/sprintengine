@@ -12,7 +12,12 @@
 // moves fast, so version churn must not leak past this adapter. The package
 // is ESM-only and the main bundle is CJS, so the SDK is loaded via dynamic
 // import on first use.
-import { handedExtensionServers, withdrawnExtensionServers, type HandedExtensionServers } from './extension-mcp-servers'
+import {
+  handedExtensionServers,
+  restartedExtensionServers,
+  withdrawnExtensionServers,
+  type HandedExtensionServers,
+} from './extension-mcp-servers'
 import type { ChatExtensionContributions } from '../../server/extensions/agent-contributions/projection'
 import {
   saveToolResultImages,
@@ -1380,8 +1385,9 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
   // disconnected (and its local process stopped by the CLI) before the turn
   // runs, and one added since connects. One on the child's command line can
   // only go with the child, so then the child is replaced and the next one
-  // resumes the session. Neither waits for background work: a withdrawn
-  // server must not serve this turn.
+  // resumes the session. A server whose extension's code changed under the
+  // same launch is started again in place. Neither waits for background
+  // work: a withdrawn server must not serve this turn.
   async function followExtensionServers(state: SessionState): Promise<void> {
     const q = state.query
     const started = state.extensionServers
@@ -1393,8 +1399,14 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     )
     if (change.kind === 'unchanged') return
     if (change.kind === 'reconfigure') {
+      // Set again, then each one whose code changed under the same launch is
+      // started again: setting a server as it was leaves its old process.
       const answered = await answeredWithin(
-        Promise.resolve().then(() => q.setMcpServers(change.control)),
+        Promise.resolve()
+          .then(() => q.setMcpServers(change.control))
+          .then(async () => {
+            for (const id of change.reconnect) await q.reconnectMcpServer(id)
+          }),
         mcpRegistrationTimeoutMs,
         { rejectAsUnanswered: true },
       )
@@ -4495,7 +4507,13 @@ export function claudeExtensionServerChange(
   extensionServers: readonly ConversationMcpServer[],
 ):
   | { kind: 'unchanged' }
-  | { kind: 'reconfigure'; control: NonNullable<Options['mcpServers']>; handed: HandedExtensionServers }
+  | {
+      kind: 'reconfigure'
+      control: NonNullable<Options['mcpServers']>
+      handed: HandedExtensionServers
+      /** Servers launched as before whose extension's code changed: started again once set. */
+      reconnect: string[]
+    }
   | { kind: 'restart' } {
   const handed = handedExtensionServers(handedToSession(sessionServers, extensionServers))
   if (handed.generation === started.handed.generation) return { kind: 'unchanged' }
@@ -4506,7 +4524,12 @@ export function claudeExtensionServerChange(
     (id) => id in launch.commandLine && (!started.commandLine.has(id) || withdrawn.has(id)),
   )
   if (needsCommandLine) return { kind: 'restart' }
-  return { kind: 'reconfigure', control: launch.control, handed }
+  return {
+    kind: 'reconfigure',
+    control: launch.control,
+    handed,
+    reconnect: restartedExtensionServers(started.handed, handed),
+  }
 }
 
 type SdkMcpServer = NonNullable<Options['mcpServers']>[string]

@@ -520,6 +520,7 @@ export function chatExtensionContributions(dataDir: string): ChatExtensionContri
   return {
     mcpServers: extensions.flatMap((extension) =>
       serversToHand(extension).map((server) => ({
+        extensionGeneration: extensionContentGeneration(extension),
         id: server.id,
         name: server.name,
         transport: server.transport,
@@ -531,6 +532,19 @@ export function chatExtensionContributions(dataDir: string): ChatExtensionContri
     ),
     pluginDirs: extensions.flatMap((extension) => (extension.pluginDir ? [extension.pluginDir] : [])),
   }
+}
+
+/**
+ * The content an extension's servers run, as one value: its projection's
+ * generation (its version and skills) and its folder's digest as projected,
+ * which changes when its code does, an update or a development folder's
+ * reload, even under the same command.
+ */
+function extensionContentGeneration(extension: ProjectedExtension): string {
+  return createHash('sha256')
+    .update(`${extension.generation}\0${extension.runsFrom?.contentDigest ?? ''}`)
+    .digest('hex')
+    .slice(0, 24)
 }
 
 export type ChatExtensionContributions = {

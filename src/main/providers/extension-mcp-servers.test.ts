@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import type { ConversationMcpServer } from '../../shared/conversation-runtime'
-import { handedExtensionServers, withdrawnExtensionServers } from './extension-mcp-servers'
+import { handedExtensionServers, restartedExtensionServers, withdrawnExtensionServers } from './extension-mcp-servers'
 
 const search: ConversationMcpServer = {
   id: 'acme_notes_search',
@@ -44,4 +44,20 @@ test('a server gone, or handed differently, is withdrawn; one only added is not'
   assert.deepEqual(withdrawnExtensionServers(started, added), [])
   // A display name is not what a child runs.
   assert.equal(handedExtensionServers([{ ...search, name: 'Renamed' }, tasks]).generation, started.generation)
+})
+
+test('a server whose extension’s code changed under the same launch is withdrawn, and started again', () => {
+  const v1 = { ...search, extensionGeneration: 'g1' }
+  const started = handedExtensionServers([v1, tasks])
+  // The same content: nothing to do.
+  assert.equal(handedExtensionServers([tasks, v1]).generation, started.generation)
+  // Its server.js changed (an update, a reload), its command did not.
+  const now = handedExtensionServers([{ ...search, extensionGeneration: 'g2' }, tasks])
+  assert.notEqual(now.generation, started.generation)
+  assert.deepEqual(withdrawnExtensionServers(started, now), ['acme_notes_search'], 'a Codex child is replaced')
+  assert.deepEqual(restartedExtensionServers(started, now), ['acme_notes_search'], 'a Claude child restarts it')
+  // One whose launch changed is set again with its new launch, not restarted as well.
+  const moved = handedExtensionServers([{ ...search, args: ['--v2'], extensionGeneration: 'g2' }, tasks])
+  assert.deepEqual(restartedExtensionServers(started, moved), [])
+  assert.deepEqual(restartedExtensionServers(started, handedExtensionServers([tasks])), [], 'a server gone is not')
 })

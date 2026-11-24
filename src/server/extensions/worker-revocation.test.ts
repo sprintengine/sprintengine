@@ -278,6 +278,7 @@ test('a worker extension killed while in use stops everywhere: its process, hook
     kind: 'reconfigure',
     control: {},
     handed: handedExtensionServers([]),
+    reconnect: [],
   })
   assert.deepEqual(withdrawnExtensionServers(codexStarted, handedExtensionServers(now)), ['local_guard_search'])
   // Its open frame is refused.

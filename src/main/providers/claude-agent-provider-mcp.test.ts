@@ -519,6 +519,24 @@ test('a live chat drops a revoked extension’s server over its control channel 
   await adapter.disposeAll()
 })
 
+test('a live chat starts an extension’s server again before its next turn when its code changed under the same launch', async () => {
+  let handed = [{ ...NOTES_SEARCH, extensionGeneration: 'g1' }, TASKS_HOSTED]
+  const { adapter, firstTurn, nextTurn, sent, options } = harness(GATEWAY, undefined, () => handed)
+  await firstTurn()
+  // The notes extension is updated: its server.js changed, its command did not.
+  handed = [{ ...NOTES_SEARCH, extensionGeneration: 'g2' }, TASKS_HOSTED]
+  sent.length = 0
+  await nextTurn({ turnId: 'turn_2', message: 'after the update' })
+  assert.equal(options.length, 1, 'the child was kept')
+  assert.deepEqual(registeredIn(sent[0]).sort(), ['acme_notes_search', 'acme_tasks_hosted'])
+  assert.deepEqual(sent.slice(1), [{ reconnected: 'acme_notes_search' }, { message: 'after the update' }])
+  // As it is now: the next turn does nothing more.
+  sent.length = 0
+  await nextTurn({ turnId: 'turn_3', message: 'again' })
+  assert.deepEqual(sent, [{ message: 'again' }])
+  await adapter.disposeAll()
+})
+
 test('a live chat is replaced before its next turn when a revoked server rides its command line', async () => {
   let handed = [ODD_PATH, TASKS_HOSTED]
   const { adapter, firstTurn, nextTurn, options } = harness(GATEWAY, undefined, () => handed)

@@ -289,6 +289,7 @@ test('a local MCP server is approved once at install; a changed command asks aga
   if (!changed.ok || changed.approval.state !== 'pending') throw new Error('expected a pending approval')
   await lifecycle.approve(KEY, changed.approval.fingerprint)
   expect(launchExtensionContributions(dataDir).servers).toHaveLength(1)
+  const launchedBeforeRecode = chatExtensionContributions(dataDir).mcpServers[0]!.extensionGeneration
   const recoded = await lifecycle.install(
     source(
       { mcpServers: [stdio(['${extensionPath}/dist/server.js', '--write'])] },
@@ -297,6 +298,15 @@ test('a local MCP server is approved once at install; a changed command asks aga
   )
   expect(recoded).toMatchObject({ approval: { state: 'pending' } })
   expect(launchExtensionContributions(dataDir).servers).toEqual([])
+
+  // Approved: a chat is handed it under the same launch, with a new content
+  // generation, so a live chat starts it again (extension-mcp-servers.ts).
+  if (!recoded.ok || recoded.approval.state !== 'pending') throw new Error('expected a pending approval')
+  await lifecycle.approve(KEY, recoded.approval.fingerprint)
+  const [rerun] = chatExtensionContributions(dataDir).mcpServers
+  expect(rerun).toMatchObject({ id: 'local_tools_search', command: 'node' })
+  expect(rerun!.extensionGeneration).toMatch(/^[0-9a-f]{24}$/)
+  expect(rerun!.extensionGeneration).not.toBe(launchedBeforeRecode)
 })
 
 /** Install a local server and approve it: the lifecycle, and the installed server file. */
