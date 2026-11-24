@@ -106,6 +106,7 @@ import { listKnownWorkspaceRoots } from '../../main/workspace-roots'
 import type { StudioPaths } from '../platform/studio-paths'
 import { createPullRequestDomain } from '../pull-requests/pull-request-domain'
 import { createLocalServerDomain } from '../local-servers/local-server-domain'
+import { createAgentProcessDomain } from '../processes/agent-process-domain'
 import { localConversationBackend, refuseOtherEnvironments, type ConversationBackend } from './conversation-backend'
 import { environmentRouteOfRecord, type EnvironmentClients } from '../../shared/environment-clients'
 import { createEnvironmentReplicas } from '../environment/environment-replicas'
@@ -871,6 +872,21 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         level: 'warning',
         source: 'workspace',
         title: 'Local servers',
+        message,
+        ...(error === undefined
+          ? {}
+          : { details: error instanceof Error ? (error.stack ?? error.message) : String(error) }),
+      })
+    },
+  })
+  // What this machine's agents started and left running (agent-process-domain.ts):
+  // read from the processes themselves on each ask, where the agents run.
+  const processes = createAgentProcessDomain({
+    log: (message, error) => {
+      void writeDiagnosticLog({
+        level: 'warning',
+        source: 'workspace',
+        title: 'Agent processes',
         message,
         ...(error === undefined
           ? {}
@@ -1755,6 +1771,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     stopSettlementSweep,
     pullRequests,
     localServers,
+    processes,
     usageLimitResumes,
     scheduledMessages,
     /** This server's scheduled agents (studio-scheduled-agents.ts). */

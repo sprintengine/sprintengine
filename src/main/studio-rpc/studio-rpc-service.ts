@@ -54,6 +54,7 @@ import type { StudioExtensions } from '../../server/extensions/extensions-domain
 import type { StudioArtifacts } from '../../server/artifacts/artifacts-domain'
 import type { StudioPullRequests } from '../../server/pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../../server/local-servers/local-server-domain'
+import type { StudioProcesses } from '../../server/processes/agent-process-domain'
 import type { StudioHosts } from '../../server/rpc/studio-rpc-router'
 import type { StudioTerminals } from '../../server/terminals/studio-terminals'
 import type { CliRuntimes } from '../cli-runtimes'
@@ -225,6 +226,8 @@ export type StudioRpcServiceOptions = {
   pullRequestCreation?: ConversationPullRequests
   /** The local servers the conversations started, for owners (`local-servers`). */
   localServers?: StudioLocalServers
+  /** The programs this machine's agents started, for owners (`processes`). */
+  processes?: StudioProcesses
   /** The machines this desktop's computer offers, for owners (`execution-hosts`). */
   hosts?: StudioHosts
   /** What a client reads before it starts a chat (`workspaces`). */
@@ -512,6 +515,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
       ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
       ...(options.localServers ? { localServers: options.localServers } : {}),
+      ...(options.processes ? { processes: options.processes } : {}),
       ...(options.hosts ? { hosts: options.hosts } : {}),
       ...(options.discovery ? { discovery: options.discovery } : {}),
       ...(options.readiness ? { readiness: options.readiness } : {}),

@@ -170,6 +170,12 @@ Doc: `docs/design/browser-recording.md`.
 
 ## Running on its own
 
+**Processes agents started** (dev servers, headless browsers, anything left running): read from the machine's
+processes by the identity agents pass down, in `src/server/processes/` (`agent-process-scan.ts` says what is a row,
+`agent-process-reader.ts` reads `ps` and `lsof`, or the proc filesystem on Linux, `agent-process-domain.ts` lists and stops). Wire:
+`processes.*` (`packages/studio-protocol/src/processes.ts`). Tests: `src/server/processes/agent-process-scan.test.ts`,
+`src/server/processes/agent-process-domain.test.ts`, `src/server/rpc/studio-processes.test.ts`.
+
 **Scheduled agents**: `src/main/scheduled-agents/` (`scheduler.ts`, `service.ts`), `src/server/schedules/schedules-domain.ts`.
 Wire: `schedules.*`. Tests: `src/main/scheduled-agents/scheduled-agents.test.ts`.
 

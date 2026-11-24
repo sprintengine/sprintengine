@@ -66,6 +66,7 @@ import {
   type StudioLocalServersMethodMap,
   type StudioLocalServersTopicMap,
 } from './local-servers.js'
+import { STUDIO_PROCESSES_METHODS, type StudioProcessesMethodMap } from './processes.js'
 import {
   STUDIO_MODULES_METHODS,
   STUDIO_MODULES_TOPICS,
@@ -307,6 +308,7 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioFilesMethodMap &
   StudioPullRequestsMethodMap &
   StudioLocalServersMethodMap &
+  StudioProcessesMethodMap &
   StudioModulesMethodMap &
   StudioTerminalsMethodMap &
   StudioUpdateMethodMap &
@@ -770,6 +772,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_FILES_METHODS,
   ...STUDIO_PULL_REQUESTS_METHODS,
   ...STUDIO_LOCAL_SERVERS_METHODS,
+  ...STUDIO_PROCESSES_METHODS,
   ...STUDIO_MODULES_METHODS,
   ...STUDIO_TERMINALS_METHODS,
   ...STUDIO_UPDATE_METHODS,

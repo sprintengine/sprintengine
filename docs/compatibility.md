@@ -11,13 +11,13 @@ a private data structure, and changing one is not a local edit.**
 
 ## What is versioned
 
-| Wire                                                                                  | Version                                 | Window                                           | Declared in                                     |
-| ------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------ | ----------------------------------------------- |
-| Tailnet transport — a paired phone or Studio reaching this one                        | `TAILNET_TRANSPORT_VERSION` (integer)   | current only (3)                                 | `src/main/automation/tailnet/tailnet-routes.ts` |
-| MCP                                                                                   | dated strings, newest first             | every entry in the list                          | `src/shared/mcp/protocol.ts`                    |
-| Extension manifest — an installed extension's `extension.json`                       | `engines.studio` (`>=x.y.z`)            | every manifest up to `STUDIO_EXTENSION_VERSION`  | `packages/extension-sdk/src/extension-manifest.ts` |
-| Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)     | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current       | `packages/studio-protocol/src/handshake.ts`     |
-| Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`) | current only (one version of slack when 2 ships) | `src/renderer/src/web/embed/embedProtocol.ts`   |
+| Wire                                                                                  | Version                                 | Window                                           | Declared in                                        |
+| ------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------ | -------------------------------------------------- |
+| Tailnet transport — a paired phone or Studio reaching this one                        | `TAILNET_TRANSPORT_VERSION` (integer)   | current only (3)                                 | `src/main/automation/tailnet/tailnet-routes.ts`    |
+| MCP                                                                                   | dated strings, newest first             | every entry in the list                          | `src/shared/mcp/protocol.ts`                       |
+| Extension manifest — an installed extension's `extension.json`                        | `engines.studio` (`>=x.y.z`)            | every manifest up to `STUDIO_EXTENSION_VERSION`  | `packages/extension-sdk/src/extension-manifest.ts` |
+| Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)     | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current       | `packages/studio-protocol/src/handshake.ts`        |
+| Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`) | current only (one version of slack when 2 ships) | `src/renderer/src/web/embed/embedProtocol.ts`      |
 
 One more version number is near these and is **not** a wire window: the
 backlog item schema version is a file format, and is not negotiated with a peer.
@@ -205,6 +205,19 @@ on the chat's Studio with `fileViews.read` and `fileViews.write` (capability
 the chat's key and the path the agent showed. It is additive: a Studio built
 before it does not list the capability, and a client says to update it
 rather than open the view; a client built before it draws the call as a step.
+
+The programs a Studio's agents started on its machine and left running (a dev
+server, a headless browser, a script's helper) are read with `processes.list`
+and stopped with `processes.stop` (capability `processes`, 2026-11-24; an
+owner's, `workspaces:read` and `conversation:operate`). The list is read from
+the machine's processes on each ask, by the agent identity every process an
+agent starts inherits; a row names a process by its pid and the second it
+started (`<pid>-<second>`), and a stop reads the machine again and signals only
+that same process, still carrying an agent's identity. A Studio that cannot
+read its processes (Windows) advertises the capability and answers the list
+`unavailable: 'platform'`, which a client says in words. It is additive: a
+Studio built before it does not list the capability, and a client offers no
+Processes list for it.
 
 Bump the version instead when the change is not additive: a field that changes
 meaning or type, a field that is removed, a response whose shape a peer is

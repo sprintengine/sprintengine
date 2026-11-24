@@ -241,6 +241,9 @@ export function createStudioRpc(
     // The servers the conversations' agents started, checked here and drawn
     // by every client.
     localServers: core.localServers,
+    // The programs its agents started on this machine, read here and
+    // stopped from any owner's client.
+    processes: core.processes,
     // The machines this computer offers (itself, its WSL distributions), for
     // the owner's New chat and Settings ▸ Machines. A machine's own Studio
     // is one of those machines, and lists none.

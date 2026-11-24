@@ -28,6 +28,7 @@ import { createStudioRpcServer, type StudioRpcServer } from './studio-rpc-server
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
+import type { StudioProcesses } from '../processes/agent-process-domain'
 import type { StudioHosts } from './studio-rpc-router'
 import type { StudioModules } from './studio-modules'
 import type { CliRuntimes } from '../../main/cli-runtimes'
@@ -399,6 +400,7 @@ export async function startTestServer(
     pullRequests?: StudioPullRequests
     pullRequestCreation?: ConversationPullRequests
     localServers?: StudioLocalServers
+    processes?: StudioProcesses
     hosts?: StudioHosts
     discovery?: StudioDiscovery
     terminals?: StudioTerminals
@@ -463,6 +465,7 @@ export async function startTestServer(
     ...(input.pullRequests ? { pullRequests: input.pullRequests } : {}),
     ...(input.pullRequestCreation ? { pullRequestCreation: input.pullRequestCreation } : {}),
     ...(input.localServers ? { localServers: input.localServers } : {}),
+    ...(input.processes ? { processes: input.processes } : {}),
     ...(input.hosts ? { hosts: input.hosts } : {}),
     ...(input.discovery ? { discovery: input.discovery } : {}),
     ...(input.terminals ? { terminals: input.terminals } : {}),

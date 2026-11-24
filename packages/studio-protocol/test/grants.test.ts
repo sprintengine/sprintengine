@@ -31,7 +31,8 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * opens a terminal on this machine's screen, or records an agent's own work
  * (the local servers an agent linked here, which `localServers.run` and
  * `.stop` start and stop; a title or a commit message an agent CLI writes
- * outside any chat);
+ * outside any chat; the programs agents started here, which `processes.stop`
+ * ends);
  * of the terminals, the words a person wrote for an agent and the
  * machine-wide idle policy; the launch settings, which name the programs
  * each CLI and MCP server runs here and hold the MCP servers' keys; and what
@@ -245,6 +246,8 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'workspaceBackup.read',
   'workspaceBackup.write',
   'projectlessChats.root',
+  'processes.list',
+  'processes.stop',
   'projectlessChats.createFolder',
   'workspaceSync.events',
   // The browsers paired with the web listener: who may reach this Studio from a browser.
