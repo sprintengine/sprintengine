@@ -109,6 +109,38 @@ export function activate(studio: MainHost): void {
 `action` needs an `operate` method of its name there, and in Studio it does
 nothing useful without one.
 
+### Taking over one of Studio's actions
+
+A worker command may declare `"replaces": "<action>"` (the list is in the
+manifest topic: history back and forward, the sidebar, the pane and its
+panels). When the person fires that action from its shortcut, the palette or a
+menu, Studio runs the command instead, with `where: 'replaces'` and
+`replaces` naming the action. If the worker fails, or has not answered within
+2 seconds, Studio runs its own, and the extension's log says why. The person
+sees each replacement before approving the extension, and it counts as access:
+adding one asks again. They can switch replacements off on the extension's
+page. When two extensions replace one action, the one installed first does,
+and the other's log says so. An extension that is switched off, killed or not
+approved replaces nothing. The buttons Studio draws for an action (the sidebar's
+own toggle) run Studio's own.
+
+To wrap Studio's action rather than replace it, call `studio.runCommand(action)`
+(needs `workspace:operate`): it runs Studio's own in the window whose call set
+the command off, never a replacement, so it cannot call your command back. Work
+no window set off (an event, a background worker) is refused `no_window`.
+
+```ts
+'notes.sidebar': {
+  access: 'operate',
+  params: readContext,
+  handler: async () => {
+    await studio.runCommand('workspace.sidebar.toggle')
+    // … then your own part
+    return { ok: true, result: null }
+  },
+},
+```
+
 ## `studio`
 
 | Member | Notes |
@@ -124,6 +156,7 @@ nothing useful without one.
 | `getWorkspaceGitInfo(workspaceId)` | `{ ok, branch, remotes: [{ name, url, github? }] }`, read by git from the workspace's folder. Checked: `workspace:read`. |
 | `getModuleDataDir()` | A private directory under user data for data past the 1 MB value limit; removed at uninstall. `storage:own`. |
 | `getAssetPath(relative)` | Absolute path of a file your extension ships (a worker thread, WASM, a data table); verified files only. |
+| `runCommand(action)`                                             | One of Studio's actions (a command `action` or `replaces` names), run in the window whose call set this code off: always Studio's own, never a replacement. Refused `no_window` for work no window set off. `workspace:operate`.                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `notify({ severity, title, body?, target? })` | A row in the bell of every open window, under the extension's name. The bell is for what went wrong: only `warning` and `error` reach it, and an `info` notify files nothing (say routine news with `toast` from a surface). `target: { surfaceId }` (one of your own doors) gives the row an Open that lands there. Dropped: an identical repeat within 10 s, or more than 20 rows in 10 s — fold a burst into one row. Rows sent before a window opens are kept (last 50). A `notification` menu item in extension.json adds a command to your rows. `supports('notifications')` is false where no window can show it. `notifications:show`. |
 | `onStartup(hook)` / `onShutdownBegin(hook)` / `onShutdown(hook)` | Start watchers on startup; stop loops at shutdown begin; release everything at shutdown. |
 | `requireService(token)` / `getService(token)` | Host services by token (below). `requireService` throws when absent. |

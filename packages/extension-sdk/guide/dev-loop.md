@@ -44,6 +44,19 @@ fix it. Without `--json` the same is printed as words, the failure on stderr.
 | `extension_hook_failed` | A hook threw, timed out or answered nonsense | 1 |
 | `shot_failed` | The picture could not be taken | 1 |
 | `unavailable` | Studio could not do it now (starting, or something broke): try again | 1 |
+| `killed` | Studio's kill list removed that version: it never installs | 1 |
+| `release_lock_mismatch` | The version's bytes are not the ones the release lock holds for it | 1 |
+| `release_mismatch` | What was fetched is not the release the catalogue lists | 1 |
+| `owner_mismatch` | The repository is another owner's than the key names, or its owner changed | 1 |
+| `owner_unknown` | Studio cannot tell who owns the repository | 1 |
+| `kill_list_unavailable` | Studio could not read its kill list, so nothing installs until it can | 1 |
+| `origin_conflict` | It is installed from another source: remove it first | 1 |
+| `reserved_name` | A name only Studio's official catalogue installs | 1 |
+| `changed` | The catalogue changed what it lists since it was read: look again | 1 |
+| `install_failed` | The install failed for another reason: the message says why | 1 |
+| `no_window` | No Studio window is open on this machine to show it in | 1 |
+| `no_workspace` | No Studio window here shows a workspace | 1 |
+| `extension_unavailable` | It is switched off, or killed | 1 |
 
 Exit codes: 0 ok, 1 an error, 2 `extension_invalid`, 3 `approval_required`.
 `test` exits with the test runner's code.
@@ -221,6 +234,34 @@ not the surfaces.
 - **`logs <key|dir> [--after <seq>]`**: what was kept of an extension's
   events, installed ones included, as `dev logs` answers.
 
+## Published extensions: `install`, `update`, `open`
+
+The path Settings ▸ Extensions takes, from a terminal or an agent: Studio checks
+the repository's owner, the kill list and the release lock before anything is
+installed, and a private repository is fetched with this machine's own git
+credentials, the ones `git` already uses here.
+
+- **`install <source>`**: `source` is a catalogue key (`acme.notes`, from the
+  first catalogue that lists it: official, community, then those you added), a
+  GitHub repository (`acme/notes`, `acme/notes@v1.2.0`), any git URL (`#<ref>`
+  names a ref) or a link to a folder in a repository
+  (`https://github.com/acme/tools/tree/main/notes`: the ref, then the
+  folder). A content extension, and one from Studio's official catalogue, is
+  ready at once. Anything else installs waiting for approval: Studio's window
+  asks the person straight away, and `install` exits 3 with
+  `approval_required`. Nothing on the command line approves it.
+- **`update <key>`** or **`update --all`**: the newer release the extension's
+  catalogue lists, now (no hold-back: you asked). One that asks for more than
+  was approved is held for the person's review in Studio, with a notice, and
+  the version installed keeps running; `update <key>` then exits 3. `--json`
+  answers `updates`, one row per extension: `{ key, from, to?, status, reason?,
+  code?, growth? }`, `status` being `updated`, `up_to_date`, `held` or
+  `refused`. Only catalogue installs update; install a git URL again.
+- **`open <key> [--panel <id> | --editor <file>]`**: shows one of its panels
+  (its first by default) in the workspace a Studio window here shows, or opens
+  the file in its custom editor. It never brings the window forward. With no
+  window it fails `no_window`, with none showing a workspace `no_workspace`.
+
 ## `shot <dir|key> [--panel <id> | --door <id> | --settings <id>]`
 
 A PNG of one surface as Studio draws it: its real frame document, in a hidden
@@ -244,3 +285,8 @@ An agent with Studio's MCP tools can skip the CLI: `extension.dev.load`
 `visual.extension_shot` (`moduleId`, `point`, `id`, `out`). They answer the
 same results; a failure is the tool's error with the same codes. A paired
 device cannot use them: a development folder is a path on this machine.
+`extension.install` (`source`), `extension.update` (`moduleId`, or `all:
+true`) and `extension.open` (`moduleId`, `panel` or `editor`) are `install`,
+`update` and `open`, with the same rules: an install answers its
+`approval`, `pending` until the person approves it in Studio's window, and
+an agent, whatever its preset, never approves one.
