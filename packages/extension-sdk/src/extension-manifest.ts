@@ -924,7 +924,7 @@ const CONTRIBUTES: ObjectNode = {
             on: {
               node: { kind: 'string', max: 64, enum: EXTENSION_EVENTS },
               required: true,
-              doc: 'The event the worker hears, with `studio.events.on(event, handler)`. Each needs the permission the guide’s events topic names for it (`workspace:read` for the workspace and agent events); the editor’s typography needs none.',
+              doc: 'The event the worker hears, with `studio.events.on(event, handler)`. Each needs the permission the guide’s events topic names for it: `workspace:read` for the workspace events, `conversation:read` for `agent.status.changed`.',
               since: V1,
               example: 'workspace.created',
             },
