@@ -177,8 +177,10 @@ A project's `npm run dev` is
 `request`, `hook`, `emit` (with or without `--studio`) and `shot` reach a development folder's extension
 only; an installed one is refused (`not_found`). They run as whoever calls
 them: a request or hook from an agent runs under that agent's own permission
-preset, and an agent below `bypass` is refused a shot, whose surface calls
-are answered as the person.
+preset, and so do the worker's handlers of a Studio event it fires; an agent
+below `bypass` is refused a shot, whose surface calls are answered as the
+person, and for the same reason its Studio event reaches the worker alone,
+not the surfaces.
 
 - **`dev reload [<dir|key>]`**: reads one development folder, or every one,
   again now, for a folder whose saves Studio does not hear (a network share).
@@ -209,7 +211,8 @@ are answered as the person.
   making the change. The payload is checked against the event's shape (the
   `events` topic's table); the worker hears it only if extension.json lists
   the event and its approval holds the event's permission, and the answer
-  says whether it did.
+  says whether it did. The handlers run as whoever fired it; fired by an agent
+  below `bypass`, the surfaces are not told (`surfacesWithheld` says why).
 
 ## Installed extensions
 

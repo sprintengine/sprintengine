@@ -272,7 +272,9 @@ export async function devStudioEvent(
   })
   output.done(
     answer,
-    `Fired ${event} at ${String(answer.moduleId)}: its worker ${String(answer.worker)}; ${String(answer.surfaces)} of its surfaces' subscriptions heard it.`,
+    answer.surfacesWithheld
+      ? `Fired ${event} at ${String(answer.moduleId)}: its worker ${String(answer.worker)}; its surfaces were not told: ${String(answer.surfacesWithheld)}.`
+      : `Fired ${event} at ${String(answer.moduleId)}: its worker ${String(answer.worker)}; ${String(answer.surfaces)} of its surfaces' subscriptions heard it.`,
   )
 }
 

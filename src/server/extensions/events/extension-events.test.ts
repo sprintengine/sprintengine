@@ -9,7 +9,9 @@ import type { ExtensionEventPayloads } from '../../../../packages/extension-sdk/
 import type { TerminalSessionSnapshot } from '../../../../packages/studio-protocol/src/terminals'
 import type { ConversationEvent } from '../../../shared/conversation-runtime'
 import type { AgentPhaseEvent } from '../../../shared/agent-runtime'
-import { ownerInvoker, type ExtensionInvoker } from '../../../main/module-host/extension-invocation'
+import { currentInvoker, ownerInvoker, type ExtensionInvoker } from '../../../main/module-host/extension-invocation'
+import { bindDevToolsToCaller, createExtensionDevTools } from '../../../main/automation/extension-dev-tools'
+import type { ModuleLifecycle } from '../../../main/modules/module-lifecycle'
 import { startWorkerHarness, until, type TestExtension, type WorkerHarness } from '../../../../tests/extension-workers'
 import { createExtensionEvents, type ExtensionEventSink, type ExtensionEvents } from './extension-events'
 import { followStudioEvents, type StudioEventWorkspaceRecord } from './studio-events'
@@ -485,4 +487,84 @@ test('a terminal agent that finished says done once, not again when its terminal
   s.terminalPhase({ phase: 'idle', turnFailure: true, turnEnd: true })
   assert.deepEqual(states(s), ['terminal:working', 'terminal:done:failed'])
   s.stop()
+})
+
+// A Studio event fired through the dev loop by an agent that asks before it
+// runs commands: its handler's calls are held to that agent's ceiling, never
+// run as the person with no ceiling; its surfaces, which answer as the person,
+// are not told.
+test('a dev-loop event fired by a manual agent runs its handler as that agent, and its surfaces are not told', async () => {
+  const calledAs: ExtensionInvoker[] = []
+  const terminals = {
+    list: () => {
+      calledAs.push(currentInvoker())
+      return { terminals: [], truncated: false }
+    },
+  }
+  harness = startWorkerHarness(
+    [
+      {
+        id: 'prober',
+        main: `exports.activate = (studio) => {
+  const terminals = studio.requireService({ key: 'terminals.module-service' })
+  studio.events.on('workspace.created', async (workspace) => {
+    const answer = await Promise.resolve(terminals.list(studio.moduleId, {})).then(() => 'ok', (error) => error.code || error.message)
+    console.log('heard ' + workspace.name + ' ' + answer)
+  })
+}`,
+        permissions: ['workspace:read', 'terminals:read'],
+        events: ['workspace.created'],
+      },
+    ],
+    {},
+    { 'terminals.module-service': terminals },
+  )
+  const events = createExtensionEvents()
+  events.bind(harness.workers)
+  const surface: unknown[] = []
+  events.listen('workspace.created', (payload) => surface.push(payload), 'local.prober')
+  const lifecycle = {
+    devFolders: async () => [{ path: '/Users/dev/prober', moduleId: 'local.prober' }],
+  } as unknown as ModuleLifecycle
+  const [tool] = bindDevToolsToCaller(
+    createExtensionDevTools({
+      backend: () => ({
+        lifecycle: () => lifecycle,
+        callModuleMethod: async () => ({ ok: false }) as never,
+        runHook: async () => null,
+        emit: () => undefined,
+        studioEvent: (moduleId, event, payload, invoker) => events.emitTo(moduleId, event, payload as never, invoker),
+      }),
+    }).filter((registration) => registration.name === 'extension.dev.studioEvent'),
+    (context) => ownerInvoker(context?.metadata.kind === 'studio-agent' ? 'manual' : null, 'the agent'),
+  )
+  const agent = { metadata: { kind: 'studio-agent', agentId: 'a', workspaceId: 'ws-1', verified: true } } as const
+  const answer = await tool!.handler(
+    { moduleId: 'local.prober', event: 'workspace.created', payload: { ...WORKSPACE, name: 'by-agent' } },
+    agent,
+  )
+  assert.notEqual(answer.isError, true, JSON.stringify(answer))
+  const told = answer.structuredContent as { worker: string; surfaces: number; surfacesWithheld?: string }
+  assert.equal(told.worker, 'queued')
+  assert.equal(told.surfaces, 0)
+  assert.match(told.surfacesWithheld ?? '', /runs on manual/)
+  assert.deepEqual(surface, [], 'its surfaces, which answer as the person, are not told')
+  await until(() => logOf('local.prober').includes('heard by-agent'), 10_000, 'the handler')
+  assert.equal(calledAs.length, 1)
+  assert.equal(calledAs[0]!.permissionCeiling, 'manual', 'the handler runs held to the agent’s ceiling')
+  assert.notDeepEqual(
+    { owner: calledAs[0]!.principal.owner, ceiling: calledAs[0]!.permissionCeiling },
+    { owner: true, ceiling: null },
+  )
+
+  // The person's own call: the handler runs as the person, and the surfaces hear it.
+  const local = { metadata: { kind: 'external-local' } } as const
+  const own = await tool!.handler(
+    { moduleId: 'local.prober', event: 'workspace.created', payload: { ...WORKSPACE, name: 'by-person' } },
+    local,
+  )
+  assert.equal((own.structuredContent as { surfaces: number }).surfaces, 1)
+  assert.equal(surface.length, 1)
+  await until(() => logOf('local.prober').includes('heard by-person'), 10_000, 'the person’s event')
+  assert.equal(calledAs[1]!.permissionCeiling, null)
 })

@@ -25,6 +25,7 @@ function tools(
     request?: ModuleMethodCallRequest
     hook?: ExtensionInvoker
     studioEvent?: { moduleId: string; event: string; payload: unknown }
+    studioEventBy?: ExtensionInvoker
   } = {},
 ) {
   const lifecycle = {
@@ -51,8 +52,9 @@ function tools(
       return { verdict: 'pass' }
     },
     emit: () => undefined,
-    studioEvent: (moduleId, event, payload) => {
+    studioEvent: (moduleId, event, payload, invoker) => {
       seen.studioEvent = { moduleId, event, payload }
+      seen.studioEventBy = invoker
       return { worker: null, surfaces: 1 }
     },
   }
@@ -122,6 +124,19 @@ test('a request and a hook run as their caller: a manual agent’s cannot start 
   const hook = await bound[1]!.handler({ moduleId: 'local.notes', point: 'agent.prompt.before', event: {} }, agent)
   assert.notEqual(hook.isError, true)
   assert.equal(seen.hook?.permissionCeiling, 'manual')
+})
+
+test('a Studio event is fired as its caller: a manual agent’s reaches the extension held to manual', async () => {
+  const seen: { studioEventBy?: ExtensionInvoker } = {}
+  const [tool] = bindDevToolsToCaller([tools([], seen)('extension.dev.studioEvent')], (context) =>
+    ownerInvoker(context?.metadata.kind === 'studio-agent' ? 'manual' : null, 'the agent'),
+  )
+  const workspace = { workspaceId: 'ws-1', name: 'Notes', kind: 'folder', folderPath: null, branch: null }
+  const answer = await tool!.handler({ moduleId: 'local.notes', event: 'workspace.created', payload: workspace }, agent)
+  assert.notEqual(answer.isError, true)
+  assert.equal(seen.studioEventBy?.permissionCeiling, 'manual', 'the agent’s ceiling rides the event')
+  await tool!.handler({ moduleId: 'local.notes', event: 'workspace.created', payload: workspace }, local)
+  assert.equal(seen.studioEventBy?.permissionCeiling, null, 'the person’s own call is not capped')
 })
 
 test('a capped agent is refused a shot, whose surface calls are answered as the person', async () => {

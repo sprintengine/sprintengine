@@ -335,7 +335,8 @@ export function createServerModules(deps: {
         },
         emit: (moduleId, topic, payload) =>
           hub.deliverEvent({ sourceModuleId: moduleId, topic, payload, emittedAt: Date.now() }),
-        studioEvent: (moduleId, event, payload) => core.extensionEvents.emitTo(moduleId, event, payload as never),
+        studioEvent: (moduleId, event, payload, invoker) =>
+          core.extensionEvents.emitTo(moduleId, event, payload as never, invoker),
       }
     },
     startup() {

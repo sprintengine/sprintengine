@@ -34,7 +34,7 @@ import {
   type StudioPrincipal,
 } from '../../../packages/studio-protocol/src/permissions'
 import type { AgentStarter } from '../../shared/agent-state'
-import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
+import { isMostPermissiveCliPermissionPreset, type CliPermissionPreset } from '../../shared/cli-permission-preset'
 import { clampPresetToCeiling } from '../../shared/permission-ceiling'
 
 export type ExtensionInvoker = {
@@ -105,6 +105,21 @@ export function boundToRegistrant<A extends unknown[], R>(listener: (...args: A)
   const registrant = storage.getStore()
   return (...args: A) =>
     registrant ? storage.run(registrant, () => listener(...args)) : storage.exit(() => listener(...args))
+}
+
+/**
+ * Why `invoker`'s authority would be lost on a path that answers as the person
+ * (a surface's calls go over the window's own connection, which carries no
+ * ceiling), or null when nothing would be: the person, held to no ceiling
+ * short of the loosest preset, and not a browser tab.
+ */
+export function narrowerThanThePerson(invoker: ExtensionInvoker): string | null {
+  if (!invoker.principal.owner) return `${invoker.label} is not the person at this machine`
+  if (invoker.noTerminals) return `${invoker.label} is a browser tab, which does not reach the terminals`
+  const ceiling = invoker.permissionCeiling
+  if (ceiling !== null && !isMostPermissiveCliPermissionPreset(ceiling))
+    return `${invoker.label} runs on ${ceiling}, and asks before it runs a command`
+  return null
 }
 
 /** Who invoked the extension code running now, or null outside any extension's call. */

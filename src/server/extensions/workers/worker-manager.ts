@@ -918,13 +918,23 @@ export class ExtensionWorkers implements KernelWorkerPort {
     for (const entry of this.entries.values()) this.queueEvent(entry, event, payload)
   }
 
-  /** Hand `payload` to one extension's worker alone (the dev loop): why it was not, or null when it was queued. */
-  deliverEventTo(moduleId: string, event: ExtensionEventName, payload: unknown): string | null {
+  /**
+   * Hand `payload` to one extension's worker alone (the dev loop): why it was
+   * not, or null when it was queued. Its handlers run as `invoker`, whoever
+   * fired it, held to its ceiling and its marks as any call of theirs is
+   * (the person, as an event's own work, when absent).
+   */
+  deliverEventTo(
+    moduleId: string,
+    event: ExtensionEventName,
+    payload: unknown,
+    invoker?: ExtensionInvoker,
+  ): string | null {
     const entry = this.entries.get(moduleId)
     if (!entry || this.closed) return 'its worker is not loaded here'
     const why = this.eventSkipReason(entry, event)
     if (why) return why
-    this.queueEvent(entry, event, payload)
+    this.queueEvent(entry, event, payload, invoker)
     return null
   }
 
@@ -981,7 +991,12 @@ export class ExtensionWorkers implements KernelWorkerPort {
   }
 
   /** Queue `event` for one extension's worker, or (no event) only the standing state it hears when it starts. */
-  private queueEvent(entry: Entry, event: ExtensionEventName | null, payload?: unknown): void {
+  private queueEvent(
+    entry: Entry,
+    event: ExtensionEventName | null,
+    payload?: unknown,
+    invoker: ExtensionInvoker = ownerInvoker(null, 'its own work, hearing an event'),
+  ): void {
     if (event !== null && this.eventSkipReason(entry, event)) return
     if (entry.eventsQueued >= EVENTS_QUEUED_MAX) {
       entry.log(
@@ -1002,11 +1017,7 @@ export class ExtensionWorkers implements KernelWorkerPort {
         try {
           await this.giveStanding(running, session)
           if (event === null || this.eventSkipReason(running, event)) return
-          await session.run(
-            { kind: 'event', event, payload: copy },
-            ownerInvoker(null, 'its own work, hearing an event'),
-            this.eventTimeoutMs(),
-          )
+          await session.run({ kind: 'event', event, payload: copy }, invoker, this.eventTimeoutMs())
         } catch (error) {
           // Timed out: its handler is still running, and must not run beside the next.
           if ((error as { code?: unknown }).code === 'timeout') await this.stopStalled(entry, session, event ?? 'state')

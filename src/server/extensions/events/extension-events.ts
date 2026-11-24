@@ -6,7 +6,7 @@ import {
 } from '../../../../packages/extension-sdk/src/events'
 import { EXTENSION_HOST_REFUSALS } from '../../../../packages/extension-sdk/src/services'
 import { gateExtensionHostCall, type ExtensionHostDecision } from '../../../main/module-host/extension-host-gate'
-import type { ExtensionInvoker } from '../../../main/module-host/extension-invocation'
+import { narrowerThanThePerson, type ExtensionInvoker } from '../../../main/module-host/extension-invocation'
 
 // Studio's events, as its extensions hear them (the events themselves, and
 // what each needs, are packages/extension-sdk/src/events.ts).
@@ -36,8 +36,17 @@ export type ExtensionEventSink = {
   grantOf(moduleId: string): readonly string[] | null
   /** Where a worker that starts reads the current state of what it hears (`current`), to hear it first. */
   currentFrom?(current: (event: ExtensionEventName) => unknown[]): void
-  /** Hand `payload` to one extension's worker alone (the dev loop); why it was not, or null when it was queued. */
-  deliverEventTo?(moduleId: string, event: ExtensionEventName, payload: unknown): string | null
+  /**
+   * Hand `payload` to one extension's worker alone (the dev loop), its
+   * handlers run as `invoker` (whoever fired it); why it was not, or null
+   * when it was queued.
+   */
+  deliverEventTo?(
+    moduleId: string,
+    event: ExtensionEventName,
+    payload: unknown,
+    invoker?: ExtensionInvoker,
+  ): string | null
 }
 
 export type ExtensionEvents = {
@@ -53,14 +62,21 @@ export type ExtensionEvents = {
   ): () => void
   /**
    * Tell one extension alone, its worker and its surfaces (the dev loop's
-   * made-up event): why its worker did not hear it (null when it was queued),
-   * and how many of its surfaces' subscriptions did.
+   * made-up event), on behalf of `invoker`, whoever fired it (the person when
+   * absent): why its worker did not hear it (null when it was queued), and
+   * how many of its surfaces' subscriptions did.
+   *
+   * Its worker's handlers run as `invoker`, held to its ceiling. Its surfaces
+   * answer over the window's own connection, as the person, which cannot hold
+   * them to a ceiling: one narrower than the person does not reach them
+   * (`surfacesWithheld` says why).
    */
   emitTo<E extends ExtensionEventName>(
     moduleId: string,
     event: E,
     payload: ExtensionEventPayloads[E],
-  ): { worker: string | null; surfaces: number }
+    invoker?: ExtensionInvoker,
+  ): { worker: string | null; surfaces: number; surfacesWithheld?: string }
   /**
    * What a listener hears first when it starts listening, so it never starts
    * out stale: for `workspace.changed`, one payload per workspace as it is
@@ -119,10 +135,17 @@ export function createExtensionEvents(options: { log?: (line: string) => void } 
       }
       for (const listener of [...listeners.get(event)!]) tell(event, listener, payload)
     },
-    emitTo(moduleId, event, payload) {
+    emitTo(moduleId, event, payload, invoker) {
       const worker = sink?.deliverEventTo
-        ? sink.deliverEventTo(moduleId, event, payload)
+        ? sink.deliverEventTo(moduleId, event, payload, invoker)
         : 'this Studio has no workers to tell'
+      const withheld = invoker ? narrowerThanThePerson(invoker) : null
+      if (withheld)
+        return {
+          worker,
+          surfaces: 0,
+          surfacesWithheld: `its surfaces answer as the person, and ${withheld}`,
+        }
       let surfaces = 0
       for (const listener of [...listeners.get(event)!])
         if (listener.moduleId === moduleId && tell(event, listener, payload)) surfaces += 1

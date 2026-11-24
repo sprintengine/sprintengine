@@ -78,7 +78,8 @@ export type ExtensionDevBackend = {
     moduleId: string,
     event: ExtensionEventName,
     payload: unknown,
-  ): { worker: string | null; surfaces: number }
+    invoker: ExtensionInvoker,
+  ): { worker: string | null; surfaces: number; surfacesWithheld?: string }
 }
 
 export type ExtensionDevToolsDeps = {
@@ -161,8 +162,13 @@ function refusedRemote(context: McpConnectionContext | undefined): McpToolResult
     : null
 }
 
-/** The tools that run extension code for their caller: run as that caller. */
-const RUN_AS_CALLER = new Set(['extension.dev.request', 'extension.dev.hook'])
+/**
+ * The tools that run extension code for their caller: run as that caller. A
+ * Studio event's worker handlers run as the caller too (the invoker rides the
+ * event's queue); its surfaces, which answer as the person, are not told for a
+ * caller narrower than the person (extension-events.ts `emitTo`).
+ */
+const RUN_AS_CALLER = new Set(['extension.dev.request', 'extension.dev.hook', 'extension.dev.studioEvent'])
 /** Answered by the desktop shell over its own connection, which holds no caller: refused to a capped one. */
 const REFUSED_TO_CAPPED = new Set(['visual.extension_shot'])
 
@@ -482,7 +488,8 @@ export function createExtensionDevTools(deps: ExtensionDevToolsDeps): McpToolReg
         '`agent.status.changed`) at a development folder’s extension alone: its worker’s `studio.events.on` ' +
         'handlers and its open surfaces’ `studio.on`, as Studio would send it, to test a handler without making ' +
         'the change. The payload is checked against the event’s shape. Its worker hears it only if extension.json ' +
-        'lists the event and its approval holds the event’s permission.',
+        'lists the event and its approval holds the event’s permission. Its handlers run as you, under your own ' +
+        'permission preset; below bypass, its surfaces (which answer as the person) are not told.',
       inputSchema: {
         type: 'object',
         properties: { ...target, event: { type: 'string', enum: [...EXTENSION_EVENTS] }, payload: {} },
@@ -503,12 +510,14 @@ export function createExtensionDevTools(deps: ExtensionDevToolsDeps): McpToolReg
           return toolError('invalid_arguments', `"event" is one of Studio's events: ${EXTENSION_EVENTS.join(', ')}.`)
         const problem = studioEventPayloadProblem(args.event, args.payload)
         if (problem) return toolError('invalid_arguments', problem)
-        const heard = backend.studioEvent(moduleId, args.event, args.payload)
+        // Who fired it (bindDevToolsToCaller): its worker's handlers run as them.
+        const heard = backend.studioEvent(moduleId, args.event, args.payload, currentInvoker())
         return toolSuccess({
           moduleId,
           event: args.event,
           worker: heard.worker === null ? 'queued' : `not delivered: ${heard.worker}`,
           surfaces: heard.surfaces,
+          ...(heard.surfacesWithheld ? { surfacesWithheld: heard.surfacesWithheld } : {}),
         })
       },
     },

@@ -262,7 +262,9 @@ main })` take the parsed extension.json; the install key defaults to
 - `sprintengine-extension dev emit <dir|key> <event> --studio --data <json>`
   (and the tool `extension.dev.studioEvent`) fires one of Studio's events at a
   development folder's worker and surfaces alone, its payload checked against
-  the event's shape.
+  the event's shape. Its worker's handlers run as whoever fired it, under an
+  agent's own permission preset; an agent below `bypass` reaches the worker
+  alone (`surfacesWithheld`), since surfaces answer as the person.
 - A worker that lists `workspace.changed` hears each workspace as it is when
   it starts, and a surface when it subscribes (again after a reconnect),
   before any change.

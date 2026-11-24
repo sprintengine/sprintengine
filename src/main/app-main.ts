@@ -438,8 +438,8 @@ if (moduleLifecycle)
     },
     emit: (moduleId, topic, payload) =>
       services.moduleHub.deliverEvent({ sourceModuleId: moduleId, topic, payload, emittedAt: Date.now() }),
-    studioEvent: (moduleId, event, payload) =>
-      services.studioCore.extensionEvents.emitTo(moduleId, event, payload as never),
+    studioEvent: (moduleId, event, payload, invoker) =>
+      services.studioCore.extensionEvents.emitTo(moduleId, event, payload as never, invoker),
   }))
 void app.whenReady().then(() => {
   // The hosted relay's leftover pairings and push tokens (retired-relay-state.ts).
