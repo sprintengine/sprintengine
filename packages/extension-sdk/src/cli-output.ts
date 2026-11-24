@@ -48,6 +48,8 @@ export const CLI_ERROR_CODES = [
   'reserved_name',
   /** The catalogue changed what it lists since it was read: look again. */
   'changed',
+  /** A community or added catalogue listed that release less than 12 hours ago: `data` says how long it still waits. */
+  'held_back',
   /** The install failed for another reason: the message says why. */
   'install_failed',
   /** No Studio window is open on this machine to show it in. */

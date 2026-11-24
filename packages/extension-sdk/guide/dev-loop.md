@@ -54,6 +54,7 @@ fix it. Without `--json` the same is printed as words, the failure on stderr.
 | `already_installed` | It is installed already: `update` it, or the person removes it in Studio first | 1 |
 | `reserved_name` | A name only Studio's official catalogue installs | 1 |
 | `changed` | The catalogue changed what it lists since it was read: look again | 1 |
+| `held_back` | A community or added catalogue listed that release less than 12 hours ago, so a takedown can land first: the row's `heldBackMs` says how long it still waits | 1 |
 | `install_failed` | The install failed for another reason: the message says why | 1 |
 | `no_window` | No Studio window is open on this machine to show it in | 1 |
 | `no_workspace` | No Studio window here shows a workspace | 1 |
@@ -260,12 +261,16 @@ credentials, the ones `git` already uses here.
   nothing it adds reaches an agent until they approve it; `install` exits 3 with
   `approval_required`. Nothing on the command line approves it.
 - **`update <key>`** or **`update --all`**: the newer release the extension's
-  catalogue lists, now (no hold-back: you asked). One that asks for more than
-  was approved is held for the person's review in Studio, with a notice, and
-  the version installed keeps running; `update <key>` then exits 3. `--json`
-  answers `updates`, one row per extension: `{ key, from, to?, status, reason?,
-  code?, growth? }`, `status` being `updated`, `up_to_date`, `held` or
-  `refused`. Only catalogue installs update; install a git URL again.
+  catalogue lists, now. A release a community or added catalogue listed less
+  than 12 hours ago still waits, as an automatic update does, so a takedown
+  can land first: its row is `refused` with `held_back` and `heldBackMs`, the
+  time left. The kill list is read fresh, or nothing updates. One that asks
+  for more than was approved is held for the person's review in Studio, with
+  a notice, and the version installed keeps running; `update <key>` then exits
+  3. `--json` answers `updates`, one row per extension: `{ key, from, to?,
+  status, reason?, code?, growth?, heldBackMs? }`, `status` being `updated`,
+  `up_to_date`, `held` or `refused`. Only catalogue installs update; install
+  a git URL again.
 - **`open <key> [--panel <id> | --editor <file>]`**: shows one of its panels
   (its first by default) in the workspace a Studio window here shows, or opens
   the file in its custom editor. It never brings the window forward. With no

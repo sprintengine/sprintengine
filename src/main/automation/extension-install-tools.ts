@@ -147,7 +147,8 @@ export function createExtensionInstallTools(deps: ExtensionInstallToolsDeps): Mc
         'the newer release its catalogue lists, with the same checks as an install. One row per extension: ' +
         '`updated` (from, to), `up_to_date`, `held` or `refused` with why. A release that asks for more than was ' +
         "approved is held for the person's review in Studio's window, and the version installed keeps running; " +
-        'nothing here approves it.',
+        'nothing here approves it. A community or added catalogue’s release installs only once it has been listed ' +
+        'for 12 hours, so a takedown can land first: until then it is `refused` with `held_back` and the time left.',
       inputSchema: {
         type: 'object',
         properties: {

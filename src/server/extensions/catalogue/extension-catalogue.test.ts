@@ -1148,7 +1148,21 @@ describe('installing and updating from outside the window', () => {
     })
     env.serveCatalogue('community', [entry([await env.release(repo.folder), v1])])
     env.advance(60_000)
-    // No hold-back: the person (or their agent) asked for it.
+    // An agent may ask for it: a community release still waits out the hold-back, so a takedown can land.
+    const [held] = await env.lifecycle.catalogue.updateNow()
+    expect(held).toMatchObject({ key: 'acme.notes', from: '1.0.0', to: '1.1.0', status: 'refused', code: 'held_back' })
+    expect(held?.heldBackMs).toBe(AUTO_UPDATE_HOLD_BACK_MS)
+    expect(held?.reason).toMatch(/installs in 12 h/)
+    expect((await env.installed())[0]?.extension.version).toBe('1.0.0')
+    env.advance(AUTO_UPDATE_HOLD_BACK_MS - 60 * 60_000)
+    expect((await env.lifecycle.catalogue.updateNow())[0]).toMatchObject({ code: 'held_back', heldBackMs: 3_600_000 })
+    env.advance(60 * 60_000)
+    // With no kill list read now, the kept copy is not enough: nobody is watching.
+    env.served.delete(env.urls.killList)
+    expect(await env.lifecycle.catalogue.updateNow()).toMatchObject([
+      { key: 'acme.notes', status: 'refused', code: 'kill_list_unavailable' },
+    ])
+    env.serveKillList([])
     expect(await env.lifecycle.catalogue.updateNow()).toEqual([
       { key: 'acme.notes', from: '1.0.0', to: '1.1.0', status: 'updated' },
     ])
@@ -1183,6 +1197,8 @@ describe('installing and updating from outside the window', () => {
     })
     env.serveCatalogue('community', [entry([await env.release(repo.folder), v1])])
     env.advance(60_000)
+    await env.lifecycle.catalogue.updateNow('acme.notes')
+    env.advance(AUTO_UPDATE_HOLD_BACK_MS)
     const [row] = await env.lifecycle.catalogue.updateNow('acme.notes')
     expect(row).toMatchObject({
       key: 'acme.notes',

@@ -161,7 +161,9 @@ export type UpdateRow = {
   status: 'updated' | 'up_to_date' | 'held' | 'refused'
   /** Why it was held or refused. */
   reason?: string
-  code?: InstallRefusal | 'approval_required' | 'not_updatable'
+  code?: InstallRefusal | 'approval_required' | 'not_updatable' | 'held_back'
+  /** How long a release that is `held_back` still waits, in milliseconds. */
+  heldBackMs?: number
   /** What a held release asks for beyond what was approved. */
   growth?: string[]
 }
@@ -247,9 +249,12 @@ export type ExtensionCatalogue = {
   /**
    * Update installed extensions now, from outside the window
    * (`sprintengine-extension update`): `key`'s, or every one installed from a
-   * catalogue. As an automatic update, but at once: a release that asks for
-   * more than was approved is held for the person's review in Studio's
-   * window, the running version keeps running, and nothing is approved here.
+   * catalogue. As an automatic update, but now rather than at the next
+   * pass: a release that asks for more than was approved is held for the
+   * person's review in Studio's window, the running version keeps running,
+   * and nothing is approved here. An agent may ask for it, so a community or
+   * added catalogue's release still waits out the hold-back (`held_back`, with
+   * the time left), and the kill list must be read fresh.
    */
   updateNow(key?: string): Promise<UpdateRow[]>
   /** An installed extension's origin, its update and its kill, for `extension.installed`. */
@@ -619,7 +624,8 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
   async function prepareCatalogueRelease(
     id: CatalogueId,
     key: string,
-    options: { checked?: CheckedRelease; automatic?: boolean } = {},
+    /** `fresh`: nobody is watching, so the kill list must be read now, not the kept copy. */
+    options: { checked?: CheckedRelease; fresh?: boolean } = {},
   ): Promise<{ ok: true; prepared: Prepared } | { ok: false; message: string; code?: InstallRefusal; changed?: true }> {
     if (!isKnownCatalogue(id))
       return { ok: false, code: 'not_found', message: 'That catalogue has not been added here.' }
@@ -646,7 +652,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       const changed = changedSince(key, id, entry, release, options.checked)
       if (changed) return { ok: false, code: 'changed', message: changed, changed: true }
     }
-    const list = await killListForInstall(options.automatic === true)
+    const list = await killListForInstall(options.fresh === true)
     if (!list.ok) return list
     const killed = findKilled(list.list, key, release.version)
     if (killed)
@@ -811,7 +817,7 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     if (change) return { ok: false, code: 'origin_conflict', message: change }
     const prepared = await prepareCatalogueRelease(id, key, {
       ...(checked ? { checked } : {}),
-      ...(options.unattended ? { automatic: true } : {}),
+      ...(options.unattended ? { fresh: true } : {}),
     })
     if (!prepared.ok) return prepared
     const { checkedOut, entry } = prepared.prepared
@@ -971,9 +977,12 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
    * as nobody reviews it: a release whose owner changed, that moved to
    * another repository, or that asks for more than was approved is held for
    * the person's review (with a notice), and the running version keeps
-   * running. `automatic` is the periodic pass: it also skips an extension
-   * switched off or not approved, and waits out the hold-back. Without it the
-   * update was asked for now (`sprintengine-extension update`).
+   * running. Nobody is watching either way: a community or added
+   * catalogue's release waits out the hold-back, so a takedown can land, and
+   * the kill list is read fresh. `automatic` is the periodic pass: it also
+   * skips an extension switched off or not approved. Without it the update
+   * was asked for now (`sprintengine-extension update`, which an agent may
+   * run).
    */
   async function updateCore(
     module: InstalledForCatalogue,
@@ -1027,17 +1036,24 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         reason: 'It moved to another repository or folder: review it in Studio’s window.',
       })
     }
-    if (options.automatic && catalogue !== OFFICIAL_CATALOGUE) {
+    if (catalogue !== OFFICIAL_CATALOGUE) {
       await lockReleases(deps.dataDir, [{ key: module.key, ...exact }], options.startedAt)
       const firstSeen =
         readReleaseLockSync(deps.dataDir)[module.key]?.[release.version]?.firstSeenAt ?? options.startedAt
-      if (options.startedAt - firstSeen < AUTO_UPDATE_HOLD_BACK_MS)
-        return row({ to, status: 'refused', reason: 'It is held back until it has been listed long enough.' })
+      const left = AUTO_UPDATE_HOLD_BACK_MS - (options.startedAt - firstSeen)
+      if (left > 0)
+        return row({
+          to,
+          status: 'refused',
+          code: 'held_back',
+          reason: `${catalogueName(catalogue)} listed ${to} less than ${AUTO_UPDATE_HOLD_BACK_MS / 3_600_000} hours ago, so a takedown can land first: it installs in ${timeLeft(left)}.`,
+          heldBackMs: left,
+        })
     }
     // Exactly the release checked here: one the catalogue lists in its place
     // since is the next pass's, held back and checked in turn.
     const prepared = await prepareCatalogueRelease(catalogue, module.key, {
-      automatic: options.automatic,
+      fresh: true,
       checked: { ...exact, source: record.origin.source, ownerId: currentOwnerId(entry) ?? null },
     })
     if (!prepared.ok) {
@@ -1484,6 +1500,14 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
 let noticeCount = 0
 
 /** A catalogue notice as a bell row, under the extension it is about. */
+/** "5 h 20 min", "40 min": how long a held-back release still waits. */
+function timeLeft(ms: number): string {
+  const minutes = Math.max(1, Math.ceil(ms / 60_000))
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return hours === 0 ? `${rest} min` : rest === 0 ? `${hours} h` : `${hours} h ${rest} min`
+}
+
 export function catalogueNotification(notice: CatalogueNotice): StudioModuleNotification {
   noticeCount += 1
   return {

@@ -20,6 +20,8 @@ type UpdateRow = {
   reason?: string
   code?: string
   growth?: string[]
+  /** How long a `held_back` release still waits, in milliseconds. */
+  heldBackMs?: number
 }
 
 async function withStudio<T>(dataDir: string | undefined, work: (studio: StudioTools) => Promise<T>): Promise<T> {
