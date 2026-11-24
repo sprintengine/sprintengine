@@ -10,6 +10,7 @@ import {
   type StudioProcessStopOutcome,
 } from '../../../../../../packages/studio-protocol/src/public'
 import { watchWindowStudio, windowStudioClient } from '../../../studio/windowStudioClient'
+import { isWindowVisible } from '../../../utils/windowActivity'
 
 // The programs agents started on this window's machine, and the built-in
 // browser's tabs, for the account menu's Processes: read from the window's
@@ -88,7 +89,8 @@ export function useProcesses(open: boolean) {
     void ask()
     const timer = setInterval(
       () => {
-        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+        // A window nobody can see asks nothing.
+        if (!isWindowVisible()) return
         void ask()
       },
       open ? OPEN_POLL_MS : CLOSED_POLL_MS,
