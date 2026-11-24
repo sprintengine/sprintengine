@@ -176,7 +176,9 @@
           "agents:generate",
           "agents:companion",
           "github:api",
-          "tools:contribute"
+          "tools:contribute",
+          "terminals:send",
+          "terminals:read"
         ]
       },
       "description": "What it asks the person to allow. `content` and `declarative` extensions hold none.",
@@ -1224,6 +1226,38 @@
           "x-since": "0.13.0",
           "x-tier": "worker"
         },
+        "events": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "title": "EventContribution",
+            "additionalProperties": false,
+            "properties": {
+              "on": {
+                "type": "string",
+                "maxLength": 64,
+                "enum": [
+                  "workspace.created",
+                  "workspace.removed",
+                  "agent.status.changed",
+                  "workspace.changed"
+                ],
+                "description": "The event the worker hears, with `studio.events.on(event, handler)`. Each needs the permission the guide’s events topic names for it (`workspace:read` for the workspace and agent events); the editor’s typography needs none.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "workspace.created"
+                ]
+              }
+            },
+            "required": [
+              "on"
+            ]
+          },
+          "description": "Events Studio delivers to the worker, at most 5. A worker that is not running is started to hear one. Each event needs its permission, and an extension switched off, stopped or not approved as it is hears none.",
+          "x-since": "0.13.0",
+          "x-tier": "worker"
+        },
         "skills": {
           "type": "array",
           "maxItems": 64,
@@ -1536,12 +1570,6 @@
           "type": "array",
           "maxItems": 0,
           "description": "Reserved for new file templates; must be empty.",
-          "x-since": "0.13.0"
-        },
-        "events": {
-          "type": "array",
-          "maxItems": 0,
-          "description": "Reserved for events delivered to the worker; must be empty.",
           "x-since": "0.13.0"
         },
         "sidecars": {

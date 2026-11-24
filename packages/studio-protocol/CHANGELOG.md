@@ -94,6 +94,17 @@
   model providers now arrive as contributions in an extension's
   extension.json (`contributes.skills`, `.mcpServers`, `.providers`).
 
+### Added (Studio's events for extension surfaces)
+
+- **`extension.studioEvents`** (push, scope `extensions:read`, capability
+  `extension-frames`), params `{ moduleId, event }`: one of Studio's events
+  (`workspace.created`, `workspace.removed`, `workspace.changed`,
+  `agent.status.changed`) for one extension's surfaces, as
+  `StudioExtensionStudioEvent` (`{ event, payload }`). The Studio admits it as
+  that extension, by its approval, and as the connection, by its grant, when it
+  is followed and again at every event; a refusal is `subFailed` with
+  `not_permitted` or `approval_required`.
+
 ### Added (agent hooks)
 
 - `AgentLaunchRecord` carries `startedBy` (`AgentLaunchStarter`): who asked

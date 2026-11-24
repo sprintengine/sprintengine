@@ -240,6 +240,28 @@ main })` take the parsed extension.json; the install key defaults to
 - The approval says what a `ui` extension's code can do: it runs isolated,
   and can do only what the person allows. A worker's still says full access.
 
+### Studio's events and the person's terminals
+
+- `contributes.events` (worker tier, at most five, no longer reserved) lists
+  the Studio events a worker hears with `studio.events.on(event, handler)`,
+  which answers `{ dispose() }`: `workspace.created`, `workspace.removed`,
+  `workspace.changed` (each needs `workspace:read`) and `agent.status.changed`
+  (needs `conversation:read`). A worker that is not running is started to hear
+  one; its handler runs as the extension's own work. The payloads are
+  `ExtensionEventPayloads`; the `events` guide topic carries the table.
+- A surface hears the same events, and the window's own
+  `editor.typography.changed`, with `studio.on(event, listener)`, which calls
+  the new frame method `events.subscribe`: held to the extension's approval
+  and to whoever opened the surface.
+- The permissions `terminals:send` and `terminals:read`, worker tier only, and
+  `getTerminalService(studio)`: `send`, `create`, `read` (at most 2000 lines)
+  and `close` (only a terminal the extension opened). Whoever set a call off
+  must be the person at this machine.
+- `host.supports('events')` and `host.supports('terminals')`.
+- `createFakeMainHost` serves both: `fake.events.fire(event, payload)` and
+  `fake.services.terminals`; `createFakeFrameStudio`'s `studioEvent(event,
+  payload)` reaches `studio.on` once its subscription was admitted.
+
 ### Agent hooks
 
 - `contributes.hooks` (worker tier) lists the points the worker hooks, each

@@ -196,6 +196,7 @@ declared MCP tool must be among them.
 | `api-renderer` | The `studio` a surface's `mount` is handed |
 | `api-main` | The worker's `activate(studio)`: methods, commands, MCP tools, services, storage |
 | `hooks` | Checking, changing or refusing agents' tool calls, prompts, launches and saves, and hearing what they did |
+| `events` | Hearing Studio's events (workspaces made, removed or changed, agents' status) in a worker or a surface, and reaching the person's terminals from a worker |
 | `conversations` | Starting, prompting and reading the extension's own chats; one-shot text generation |
 | `brokers` | API keys and GitHub through the host |
 | `styling` | Drawing a surface: plain DOM or JSX, the theme's properties, your own CSS |

@@ -241,6 +241,29 @@ Tests: `src/server/extensions/agent-contributions/projection.test.ts`, `packages
 `worker-env.ts`; its TypeScript loaded as written by `packages/extension-sdk/src/source-hooks.ts`). Tests: `src/server/extensions/workers/worker-lifecycle.test.ts`,
 `src/server/extensions/workers/worker-invocations.test.ts`.
 
+**Studio's events for extensions** (a worker's `contributes.events` and `studio.events.on`, a surface's `studio.on`):
+the events, their permissions and payloads in `packages/extension-sdk/src/events.ts` (the manifest field in
+`packages/extension-sdk/src/extension-manifest.ts`); read off Studio's workspaces, terminals and agents by
+`src/server/extensions/events/studio-events.ts` and carried by `src/server/extensions/events/extension-events.ts`
+(wired in `src/server/core/studio-core.ts`, bound to the workers in `src/server/desktop/server-modules.ts` and
+`src/main/app-main.ts`); delivered to a worker by `src/server/extensions/workers/worker-manager.ts` (`deliverEvent`)
+and `worker-entry.ts`; to a surface through the frame method `events.subscribe`
+(`src/main/module-host/extension-frame-calls.ts`), the window's `src/renderer/src/modules/extension-frame-host.ts`
+and `src/renderer/src/components/extensions/ExtensionSurfaceMount.tsx`, and the connection's
+`extension.studioEvents` (`src/server/rpc/studio-rpc-connection.ts`); the window's own typography in
+`src/renderer/src/modules/extension-editor-typography.ts`. Wire: `extension.studioEvents`
+(`packages/studio-protocol/src/modules.ts`). Guide `packages/extension-sdk/guide/events.md`. Tests:
+`src/server/extensions/events/extension-events.test.ts`, `src/server/rpc/studio-modules.test.ts`,
+`src/main/module-host/main-host.gate.test.ts`, `src/renderer/src/modules/extension-frame-host.test.ts`.
+
+**Terminals for extensions** (`terminals:send`, `terminals:read`, a worker's `getTerminalService`): the SDK's
+`packages/extension-sdk/src/terminals.ts`; the host's `src/main/module-host/extension-terminals.ts` (built over the
+core's terminals in `src/server/core/studio-core.ts`, provided by `src/main/modules/agent-runtime-module.ts`), its
+gate rows in `packages/extension-sdk/src/services.ts`; closed on uninstall and kill by
+`src/main/modules/module-lifecycle.ts` (`removing`), let go on switch-off by the workers' `released`. Guide
+`packages/extension-sdk/guide/events.md`. Tests: `src/main/module-host/extension-terminals.test.ts`,
+`src/main/module-host/main-host.gate.test.ts`, `src/server/extensions/worker-revocation.test.ts`.
+
 **The extension dev loop** (no build step; a development folder loaded where it is and again on every save; the
 `sprintengine-extension` CLI): source as written in `packages/extension-sdk/src/source-modules.ts` (a surface's
 types, JSX and relative imports, gathered by `src/main/modules/extension-surface-entries.ts` `readSurfaceModules`

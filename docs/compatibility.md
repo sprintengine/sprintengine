@@ -409,6 +409,32 @@ refusal of any other hooked action (a launch, a workspace, a prompt) comes back
 in the refusal that action already had, its words naming the extension. An
 approval grows when an update hooks a point the approved version did not.
 
+### Studio's events and the person's terminals (no compatibility)
+
+A worker extension's `contributes.events` (at most five) lists the Studio
+events its worker hears with `studio.events.on`: `workspace.created`,
+`workspace.removed` and `workspace.changed` (permission `workspace:read`), and
+`agent.status.changed` (`conversation:read`). They are read on the Studio
+that holds the extensions and delivered there, so nothing about them crosses
+the wire to a worker. A surface hears them with `studio.on`: its frame's
+`events.subscribe` is admitted by that Studio as the extension and as the
+connection that drew the frame, and the window then follows the new push
+topic `extension.studioEvents` (`{ moduleId, event }`, scope
+`extensions:read`, capability `extension-frames`), which the Studio holds to
+the extension's approval and the connection's grant again at every event. A
+paired desktop window hears what its grant reaches; the phone draws no
+extension surfaces. `editor.typography.changed` is each window's own and
+never crosses the wire.
+
+The new permissions `terminals:send` and `terminals:read` (worker tier only)
+give a worker `getTerminalService`: send text to a terminal, open a shell in a
+workspace in the background, read a terminal's newest output, and close a
+terminal it opened. Every call needs the person at this machine as its
+invoker (a paired device, the phone and another app are refused, as Studio's
+own `terminal.*` methods are owner-only), so nothing about it crosses the
+wire either. There is no capability for any of it: a window and its Studio
+are one build.
+
 ### Skills, MCP servers and model providers from extensions (no compatibility)
 
 An extension's `contributes.skills`, `.mcpServers` and `.providers` replace the
@@ -452,9 +478,7 @@ a web tab draws no extension surfaces.
 
 Not built in this platform, and not offered by the SDK:
 
-- worker events (an `events:subscribe` permission and Studio events a worker
-  hears), and the components runtime (host-drawn controls an extension
-  declares);
+- the components runtime (host-drawn controls an extension declares);
 - `install`, `update` and `open` of a published extension from the CLI or an
   agent: they are the person's, in Settings;
 - a command that `replaces` a built-in action: commands bind to the fixed

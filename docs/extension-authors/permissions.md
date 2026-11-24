@@ -91,9 +91,9 @@ whoever set the call off must hold, in the Studio protocol's permission names.
 
 | Permission | What the person allows | Methods | Invoker |
 | --- | --- | --- | --- |
-| `workspace:read` | See your workspaces, their folders, branches and remotes | `WorkspaceContextToken`, `getWorkspaceGitInfo`, `getSkillStatus`; a surface's workspace reads | `workspace:read` |
+| `workspace:read` | See your workspaces, their folders, branches and remotes | `WorkspaceContextToken`, `getWorkspaceGitInfo`, `getSkillStatus`; a surface's workspace reads, the workspace events (`workspace.created`, `.removed`, `.changed`) | `workspace:read` |
 | `workspace:operate` | Make workspaces and put Studio's skills in them | `WorkspaceServiceToken`, `ensureSkillInstalled` | `workspace:operate` |
-| `conversation:read` | Read every chat on this machine (broad) | `getActivityService` | `conversation:read` |
+| `conversation:read` | Read every chat on this machine (broad) | `getActivityService`, the `agent.status.changed` event | `conversation:read` |
 | `backlog:read` | Read Backlog items | `getBacklogService` reads; a surface's `backlog.list`, `backlog.location` | `backlog:read` |
 | `backlog:operate` | Create Backlog items and change them | `getBacklogService` writes; a surface's other `backlog.*` | `backlog:operate` |
 | `providers:read` | See which agents a chat can run on | `listChatRuntimes` | `providers:read` |
@@ -112,6 +112,8 @@ whoever set the call off must hold, in the Studio protocol's permission names.
 | `agents:companion` | Run its own background agents | `getCompanionAgentsService` | `conversation:create` |
 | `github:api` | Call the GitHub API with your sign-in | `getGitHubService` | the person alone |
 | `tools:contribute` | Add tools that agents can call | `registerMcpTools`, `contributes.mcpTools` | — |
+| `terminals:send` | Type into your terminals and run commands: open terminals in your workspaces, type into any of them, and close the ones it opened | `getTerminalService` `send`, `create`, `close` (worker tier only) | the person alone; an agent that asks before running commands cannot set it off |
+| `terminals:read` | Read what your terminals show, which can include what commands print | `getTerminalService` `read` (worker tier only) | the person alone |
 
 Its own methods (`registerMethods`), events (`emit`) and files
 (`getAssetPath`) need no permission.
