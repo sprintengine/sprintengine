@@ -615,6 +615,30 @@ describe('automatic updates', () => {
     expect((await env.installed())[0]?.update).toBeUndefined()
   })
 
+  test('an installed extension’s page reads its catalogue again first, so it previews a release published since', async () => {
+    const env = setup()
+    const { repo, v1, entry } = await installedV1(env)
+    env.commit(repo.folder, repo.dir, {
+      'extension.json': JSON.stringify(notesManifest({ version: '1.1.0' }), null, 2),
+    })
+    const v2 = await env.release(repo.folder)
+    // Published after the catalogue was last read.
+    env.serveCatalogue('community', [entry([v2, v1])])
+    // A moment after the last read, the copy is still the one shown.
+    const soon = await env.lifecycle.catalogue.entry('community', 'acme.notes')
+    expect(soon.ok && soon.entry.version).toBe('1.0.0')
+    env.advance(60_000)
+    const page = await env.lifecycle.catalogue.entry('community', 'acme.notes')
+    expect(page.ok && page.entry.version).toBe('1.1.0')
+    expect((await env.installed())[0]?.update).toMatchObject({ version: '1.1.0' })
+
+    // Offline, the last copy is shown.
+    env.served.delete(env.urls.community)
+    env.advance(60_000)
+    const offline = await env.lifecycle.catalogue.entry('community', 'acme.notes')
+    expect(offline.ok && offline.entry.version).toBe('1.1.0')
+  })
+
   test('a renamed or transferred owner pauses updates', async () => {
     const env = setup()
     const { repo, v1, entry } = await installedV1(env, 7)

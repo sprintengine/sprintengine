@@ -979,7 +979,15 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     async entry(id, key) {
       if (!isKnownCatalogue(id)) return { ok: false, message: 'That catalogue has not been added here.' }
       // Read with the owner records, so the owner id the page shows is the one an install checks.
-      if (!cached(id)) await Promise.all([refreshOne(id), refreshLists()])
+      // The page of one installed from this catalogue previews its update, so
+      // the catalogue is read again first (unless it was a moment ago): a
+      // release published since the last read is the one shown, not "up to
+      // date". Offline, the last copy is shown.
+      const copy = cached(id)
+      const from = readInstallRecordsSync(deps.dataDir)[key]?.origin
+      const previewsUpdate = from?.kind === 'catalogue' && from.catalogue === id
+      if (!copy || (previewsUpdate && now() - copy.fetchedAt >= REFRESH_MIN_INTERVAL_MS))
+        await Promise.all([refreshOne(id), refreshLists()])
       const entry = findEntry(id, key)
       if (!entry) return { ok: false, message: `${catalogueName(id)} does not list ${key}.` }
       const installed = await installedMap()
