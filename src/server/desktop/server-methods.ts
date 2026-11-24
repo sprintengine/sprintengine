@@ -142,6 +142,10 @@ export const SHELL_METHODS = {
    * `SERVER_EVENTS.artifactsSetupConsentClosed`.
    */
   artifactsSetupConsent: 'shell.artifacts-setup-consent',
+  /** → `StudioBrowserTab[]`: the built-in browser's tabs, which only the shell has (`browserTabs.list`). */
+  browserTabsList: 'shell.browser-tabs.list',
+  /** `{ tabId }` → whether it closed: a tab closed as its pane's close button does (`browserTabs.close`). */
+  browserTabsClose: 'shell.browser-tabs.close',
 } as const
 
 /** One-way, either direction. */

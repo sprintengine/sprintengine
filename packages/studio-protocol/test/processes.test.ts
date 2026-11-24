@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { STUDIO_CAPABILITIES, STUDIO_PROCESSES_CAPABILITY } from '../src/handshake'
+import { STUDIO_BROWSER_TABS_CAPABILITY, STUDIO_CAPABILITIES, STUDIO_PROCESSES_CAPABILITY } from '../src/handshake'
 import { STUDIO_METHODS, parseStudioMethodParams } from '../src/methods'
 import {
+  STUDIO_BROWSER_TABS_METHODS,
   STUDIO_PROCESSES_MAX_STOP,
   STUDIO_PROCESSES_METHODS,
   parseStudioProcessId,
@@ -50,5 +51,26 @@ test('the list takes no params; a stop takes ids and a command id, de-duplicated
     { ids: '1-2', commandId: 'c' },
   ]) {
     assert.equal(refusal(parseStudioMethodParams('processes.stop', params)), 'invalid_params', JSON.stringify(params))
+  }
+})
+
+test('browser tabs are reached by scope, behind their own capability, and a close names one tab', () => {
+  for (const [method, spec] of Object.entries(STUDIO_BROWSER_TABS_METHODS)) {
+    assert.equal(spec.owner, undefined, method)
+    assert.equal(spec.capability, STUDIO_BROWSER_TABS_CAPABILITY, method)
+    assert.equal(STUDIO_METHODS[method as keyof typeof STUDIO_METHODS], spec, method)
+  }
+  assert.equal(STUDIO_BROWSER_TABS_METHODS['browserTabs.list'].scope, 'workspaces:read')
+  assert.equal(STUDIO_BROWSER_TABS_METHODS['browserTabs.close'].scope, 'workspaces:operate')
+  assert.deepEqual(parseStudioMethodParams('browserTabs.close', { tabId: 't1', commandId: 'c', x: 1 }), {
+    ok: true,
+    params: { tabId: 't1', commandId: 'c' },
+  })
+  for (const params of [{ tabId: 't1' }, { tabId: '', commandId: 'c' }, { tabId: 'x'.repeat(201), commandId: 'c' }]) {
+    assert.equal(
+      refusal(parseStudioMethodParams('browserTabs.close', params)),
+      'invalid_params',
+      JSON.stringify(params),
+    )
   }
 })

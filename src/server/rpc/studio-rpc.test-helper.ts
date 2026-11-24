@@ -29,6 +29,7 @@ import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioProcesses } from '../processes/agent-process-domain'
+import type { StudioBrowserTabs } from '../processes/browser-tabs'
 import type { StudioHosts } from './studio-rpc-router'
 import type { StudioModules } from './studio-modules'
 import type { CliRuntimes } from '../../main/cli-runtimes'
@@ -401,6 +402,7 @@ export async function startTestServer(
     pullRequestCreation?: ConversationPullRequests
     localServers?: StudioLocalServers
     processes?: StudioProcesses
+    browserTabs?: StudioBrowserTabs
     hosts?: StudioHosts
     discovery?: StudioDiscovery
     terminals?: StudioTerminals
@@ -466,6 +468,7 @@ export async function startTestServer(
     ...(input.pullRequestCreation ? { pullRequestCreation: input.pullRequestCreation } : {}),
     ...(input.localServers ? { localServers: input.localServers } : {}),
     ...(input.processes ? { processes: input.processes } : {}),
+    ...(input.browserTabs ? { browserTabs: input.browserTabs } : {}),
     ...(input.hosts ? { hosts: input.hosts } : {}),
     ...(input.discovery ? { discovery: input.discovery } : {}),
     ...(input.terminals ? { terminals: input.terminals } : {}),

@@ -59,6 +59,7 @@ import {
 } from '../../main/automation/conversation-pull-request-tools'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioProcesses } from '../processes/agent-process-domain'
+import type { StudioBrowserTabs } from '../processes/browser-tabs'
 import type { StudioTerminalCaller, StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
@@ -249,6 +250,8 @@ export type StudioRpcRouterOptions = {
   localServers?: StudioLocalServers
   /** The programs this machine's agents started; without it, `processes.*` is answered `unavailable`. */
   processes?: StudioProcesses
+  /** The built-in browser's tabs, the shell's; without it, `browserTabs.*` is answered `unavailable`. */
+  browserTabs?: StudioBrowserTabs
   /** The machines this desktop's computer offers; without it, `hosts.*` is answered `unavailable`. */
   hosts?: StudioHosts
   /** What a client reads before it starts a chat; without it, `workspaces.*` and `cliRuntimes.list` are `unavailable`. */
@@ -2077,6 +2080,14 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       options.processes ? { ok: true, result: await options.processes.list() } : unserved('processes.list'),
     'processes.stop': async ({ ids }) =>
       options.processes ? { ok: true, result: await options.processes.stop(ids) } : unserved('processes.stop'),
+    'browserTabs.list': async () =>
+      options.browserTabs
+        ? { ok: true, result: { tabs: await options.browserTabs.list() } }
+        : unserved('browserTabs.list'),
+    'browserTabs.close': async ({ tabId }) =>
+      options.browserTabs
+        ? { ok: true, result: { closed: await options.browserTabs.close(tabId) } }
+        : unserved('browserTabs.close'),
 
     // ── Terminals ──────────────────────────────────────────────────────────
     // An owner's only, and never a browser's. An owner's connection other

@@ -218,6 +218,13 @@ read its processes (Windows) advertises the capability and answers the list
 `unavailable: 'platform'`, which a client says in words. It is additive: a
 Studio built before it does not list the capability, and a client offers no
 Processes list for it.
+`browser-tabs` (2026-11-24) adds `browserTabs.list` (`workspaces:read`) and
+`browserTabs.close` (`workspaces:operate`): the pages open in a desktop's
+built-in browser across its chats, each with its clocks and whether it is
+making sound, and one closed as its pane's close button closes it. Reached by
+scope, so a paired device sees and closes them; offered only by a desktop
+whose shell has the browser pane. A Studio before it does not list it, and a
+client shows no tabs for it.
 
 Bump the version instead when the change is not additive: a field that changes
 meaning or type, a field that is removed, a response whose shape a peer is

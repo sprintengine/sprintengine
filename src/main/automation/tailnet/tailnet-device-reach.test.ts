@@ -192,6 +192,11 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'canvas.stage': WORKSPACE_OPERATE,
   'canvas.commit': WORKSPACE_OPERATE,
   'canvas.takePen': WORKSPACE_OPERATE,
+
+  // The desktop's built-in browser tabs: listed on a workspace read, closed
+  // on `workspace:operate`, as a person closes one in the pane.
+  'browserTabs.list': WORKSPACE,
+  'browserTabs.close': WORKSPACE_OPERATE,
 }
 
 const DEVICE_TOPICS: Readonly<Record<string, readonly TailnetScope[]>> = {

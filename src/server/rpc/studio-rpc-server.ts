@@ -36,6 +36,7 @@ import {
   STUDIO_PULL_REQUEST_CREATE_CAPABILITY,
   STUDIO_LOCAL_SERVERS_CAPABILITY,
   STUDIO_PROCESSES_CAPABILITY,
+  STUDIO_BROWSER_TABS_CAPABILITY,
   STUDIO_WORKSPACES_CAPABILITY,
   STUDIO_EXTENSION_EDITORS_CAPABILITY,
   STUDIO_EXTENSION_HOST_CAPABILITY,
@@ -90,6 +91,7 @@ import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioUpdates } from '../update/studio-updates'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioProcesses } from '../processes/agent-process-domain'
+import type { StudioBrowserTabs } from '../processes/browser-tabs'
 import type { StudioModules } from './studio-modules'
 import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
@@ -199,6 +201,8 @@ export type StudioRpcServerOptions = {
   localServers?: StudioLocalServers
   /** The programs this machine's agents started, for owners. Advertised as `processes` only when given. */
   processes?: StudioProcesses
+  /** The built-in browser's tabs, the shell's. Advertised as `browser-tabs` only when given. */
+  browserTabs?: StudioBrowserTabs
   /** The machines a desktop's computer offers, for owners. Advertised as `execution-hosts` only when given. */
   hosts?: StudioHosts
   /** What a client reads before it starts a chat. Advertised as `workspaces` only when given. */
@@ -325,6 +329,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_PULL_REQUEST_CREATE_CAPABILITY || options.pullRequestCreation !== undefined) &&
         (capability !== STUDIO_LOCAL_SERVERS_CAPABILITY || options.localServers !== undefined) &&
         (capability !== STUDIO_PROCESSES_CAPABILITY || options.processes !== undefined) &&
+        (capability !== STUDIO_BROWSER_TABS_CAPABILITY || options.browserTabs !== undefined) &&
         (capability !== STUDIO_WORKSPACES_CAPABILITY || options.discovery !== undefined) &&
         ((capability !== STUDIO_EXTENSION_HOST_CAPABILITY && capability !== STUDIO_EXTENSION_EDITORS_CAPABILITY) ||
           options.modules !== undefined) &&
@@ -391,6 +396,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
     ...(options.localServers ? { localServers: options.localServers } : {}),
     ...(options.processes ? { processes: options.processes } : {}),
+    ...(options.browserTabs ? { browserTabs: options.browserTabs } : {}),
     ...(options.hosts ? { hosts: options.hosts } : {}),
     ...(options.discovery ? { discovery: options.discovery } : {}),
     ...(options.readiness ? { readiness: options.readiness } : {}),

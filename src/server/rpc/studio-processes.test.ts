@@ -5,6 +5,7 @@ import { afterEach, test } from 'vitest'
 import type { StudioAgentProcess, StudioProcessesMethodMap } from '../../../packages/studio-protocol/src/public'
 import { STUDIO_SCOPES } from '../../../packages/studio-protocol/src/scopes'
 import type { StudioProcesses } from '../processes/agent-process-domain'
+import type { StudioBrowserTabs } from '../processes/browser-tabs'
 import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
 
 // `processes.*` over the owner socket: the capability and the two methods, as
@@ -118,4 +119,77 @@ test('a paired app is refused the list and every stop, whatever it holds', async
     assert.equal(codeOf(refused), 'owner_required', method)
   }
   assert.deepEqual(asked, [])
+})
+
+// ── Browser tabs ────────────────────────────────────────────────────────────
+
+const TAB = {
+  tabId: 'tab-1',
+  workspaceId: 'ws-1',
+  title: 'Game',
+  url: 'http://localhost:5173/',
+  openedAt: 1,
+  lastUsedAt: 2,
+  audible: true,
+  agentIds: ['agent-1'],
+  inView: false,
+  closesAt: 3,
+}
+
+function stubTabs() {
+  const closed: string[] = []
+  const stub: StudioBrowserTabs = {
+    list: async () => [TAB],
+    close: async (tabId) => {
+      closed.push(tabId)
+      return tabId === TAB.tabId
+    },
+  }
+  return { stub, closed }
+}
+
+test('a Studio given the browser tabs advertises them; an owner lists and closes one', async () => {
+  const { stub, closed } = stubTabs()
+  const started = await startTestServer({ browserTabs: stub })
+  cleanups.push(() => started.dispose())
+  const owner = await connectLineClient(started.path)
+  cleanups.push(() => owner.close())
+  owner.send(hello({ token: OWNER_TOKEN }))
+  const welcome = await owner.next((frame) => frame.t === 'welcome')
+  assert.equal(welcome.t === 'welcome' && welcome.capabilities.includes('browser-tabs'), true)
+  owner.send({ t: 'req', id: 'l', method: 'browserTabs.list', params: {} })
+  const listed = await owner.next((frame) => frame.t === 'res' && frame.id === 'l')
+  assert.deepEqual(listed.t === 'res' && listed.ok && listed.result, { tabs: [TAB] })
+  owner.send({ t: 'req', id: 'c', method: 'browserTabs.close', params: { tabId: 'tab-1', commandId: 'c1' } })
+  const answer = await owner.next((frame) => frame.t === 'res' && frame.id === 'c')
+  assert.deepEqual(answer.t === 'res' && answer.ok && answer.result, { closed: true })
+  owner.send({ t: 'req', id: 'bad', method: 'browserTabs.close', params: { tabId: '', commandId: 'c2' } })
+  assert.equal(codeOf(await owner.next((frame) => frame.t === 'res' && frame.id === 'bad')), 'invalid_params')
+  assert.deepEqual(closed, ['tab-1'])
+  const without = await ownerOver()
+  assert.equal(without.welcome.t === 'welcome' && without.welcome.capabilities.includes('browser-tabs'), false)
+})
+
+test('a paired app that may operate a workspace sees the tabs and closes one; one that may not is refused', async () => {
+  const { stub, closed } = stubTabs()
+  const started = await startTestServer({ browserTabs: stub })
+  cleanups.push(() => started.dispose())
+  const app = await connectLineClient(started.path)
+  cleanups.push(() => app.close())
+  app.send(hello({ token: pairFakeClient(started.auth, 'app', ['workspaces:read', 'workspaces:operate']) }))
+  await app.next((frame) => frame.t === 'welcome')
+  app.send({ t: 'req', id: 'l', method: 'browserTabs.list', params: {} })
+  const listed = await app.next((frame) => frame.t === 'res' && frame.id === 'l')
+  assert.equal(listed.t === 'res' && listed.ok, true)
+  app.send({ t: 'req', id: 'c', method: 'browserTabs.close', params: { tabId: 'tab-1', commandId: 'a1' } })
+  const answer = await app.next((frame) => frame.t === 'res' && frame.id === 'c')
+  assert.deepEqual(answer.t === 'res' && answer.ok && answer.result, { closed: true })
+
+  const reader = await connectLineClient(started.path)
+  cleanups.push(() => reader.close())
+  reader.send(hello({ token: pairFakeClient(started.auth, 'reader', ['workspaces:read']) }))
+  await reader.next((frame) => frame.t === 'welcome')
+  reader.send({ t: 'req', id: 'c', method: 'browserTabs.close', params: { tabId: 'tab-1', commandId: 'r1' } })
+  assert.equal(codeOf(await reader.next((frame) => frame.t === 'res' && frame.id === 'c')), 'scope_required')
+  assert.deepEqual(closed, ['tab-1'])
 })

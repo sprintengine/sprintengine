@@ -558,6 +558,7 @@ if (serverHost) {
     trash: (path) => shellTrash(path),
     studioPluginStatus: (workspaceRoot) => services.studioPluginStatus(workspaceRoot),
     artifacts: { thumbnailer: createElectronThumbnailer(), askNatively: askToSetUpArtifacts },
+    browserTabs: services.browserTabs,
   })
 }
 

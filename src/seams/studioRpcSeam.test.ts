@@ -416,6 +416,8 @@ test('every method the server serves has its call in the SDK, under the same sco
     'localServers.remove': 'request',
     'processes.list': 'request',
     'processes.stop': 'request',
+    'browserTabs.list': 'request',
+    'browserTabs.close': 'request',
     // A module's declared methods, called by name: a window's renderer halves.
     'extension.read': 'request',
     'extension.operate': 'request',

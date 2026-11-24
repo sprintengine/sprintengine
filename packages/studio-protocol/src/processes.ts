@@ -5,7 +5,7 @@ import {
   type StudioMethodTable,
   type StudioParamsRefusal,
 } from './contract.js'
-import { STUDIO_PROCESSES_CAPABILITY } from './handshake.js'
+import { STUDIO_BROWSER_TABS_CAPABILITY, STUDIO_PROCESSES_CAPABILITY } from './handshake.js'
 
 // The programs a Studio's agents started on its machine and that are still
 // running: a dev server an agent ran in the background, a headless browser a
@@ -129,6 +129,50 @@ export type StudioProcessesMethodMap = {
 
 export type StudioProcessesMethod = keyof StudioProcessesMethodMap
 
+// ── Browser tabs ────────────────────────────────────────────────────────────
+//
+// The pages open in a desktop's built-in browser, across every chat and
+// window: what an agent or the person opened and nobody is looking at, a
+// game's music among them. Listed with whether each is making sound now, and
+// closed from any client the way the pane's own close button closes it.
+// Behind `browser-tabs`, which only a desktop with the browser pane offers.
+// Reached by scope: a paired device that may read a workspace sees its tabs,
+// and one that may operate it closes them. Nothing here reaches into a page.
+
+/** One page open in the built-in browser. */
+export type StudioBrowserTab = {
+  tabId: string
+  /** The chat whose pane holds it. */
+  workspaceId: string
+  title: string
+  url: string
+  /** When it was opened in this run of the app, ms epoch. */
+  openedAt: number
+  /** When the person or an agent last navigated or acted on it, ms epoch. */
+  lastUsedAt: number
+  /** It is playing sound right now. */
+  audible: boolean
+  /** The agents driving it, if any. */
+  agentIds: string[]
+  /** It is the tab the person has in front of them. */
+  inView: boolean
+  /** When it will be closed for going unused, ms epoch; absent when it will not be. */
+  closesAt?: number
+}
+
+/** The longest title or URL a listed tab carries. */
+export const STUDIO_BROWSER_TAB_MAX_TEXT = 2048
+
+export type StudioBrowserTabsMethodMap = {
+  /** Every tab open in the built-in browser, the longest-open first. */
+  'browserTabs.list': { params: Record<string, never>; result: { tabs: StudioBrowserTab[] } }
+  /**
+   * Close a tab as its pane's close button does. `closed` is false when there
+   * was no such tab, or no window took the close.
+   */
+  'browserTabs.close': { params: { tabId: string; commandId: string }; result: { closed: boolean } }
+}
+
 // ── Validation ──────────────────────────────────────────────────────────────
 
 const refuse = (message: string): StudioParamsRefusal => studioParamsRefused(message)
@@ -150,6 +194,27 @@ export function studioProcessId(pid: number, startedAt: number): string {
 
 // Stopping a program here, and the command lines of what an agent ran.
 const PROCESSES_OWNER = "Only an owner's connection reads the programs agents started on this machine, or stops one."
+
+export const STUDIO_BROWSER_TABS_METHODS: StudioMethodTable<StudioBrowserTabsMethodMap> = {
+  'browserTabs.list': {
+    scope: 'workspaces:read',
+    mutation: false,
+    capability: STUDIO_BROWSER_TABS_CAPABILITY,
+    params: studioNoParams,
+  },
+  'browserTabs.close': {
+    scope: 'workspaces:operate',
+    mutation: true,
+    capability: STUDIO_BROWSER_TABS_CAPABILITY,
+    params: (value) => {
+      if (typeof value.commandId !== 'string' || value.commandId.length === 0 || value.commandId.length > 200)
+        return refuse('"commandId" must be a string of 1 to 200 characters.')
+      if (typeof value.tabId !== 'string' || value.tabId.length === 0 || value.tabId.length > 200)
+        return refuse('"tabId" is a tab\'s id, from browserTabs.list.')
+      return studioParams({ tabId: value.tabId, commandId: value.commandId })
+    },
+  },
+}
 
 export const STUDIO_PROCESSES_METHODS: StudioMethodTable<StudioProcessesMethodMap> = {
   'processes.list': {

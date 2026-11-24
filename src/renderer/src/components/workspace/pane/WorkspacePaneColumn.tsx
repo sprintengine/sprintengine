@@ -13,6 +13,7 @@ import { useRecordingWorkspaceIds } from './browser/recordingTabs'
 import { revealPoppedOutTab, showPaneTab, usePanePopOutHost } from './popout/panePopOutHost'
 import { canvasBoardSourceOf, watchPairedCanvasOpens } from './canvas/canvasBoardSource'
 import { copy } from '../../../../../shared/copy'
+import { closePaneTabAndItsTerminal } from './paneTerminals'
 
 // The pane column (browser-pane epic): the full-height column on the shell
 // row's right edge, beside the band, that hosts every retained
@@ -166,6 +167,18 @@ export function WorkspacePaneColumn({
         store.setPaneOpen(workspaceId, true)
       }),
     [activeWorkspaceId],
+  )
+
+  // A tab closed from the Processes list, or closed for going unused: closed
+  // as its own close button closes it, by whichever window's pane holds it.
+  useEffect(
+    () =>
+      window.api.onBrowserCloseRequest?.(({ workspaceId, tabId }) => {
+        const pane = useWorkspaceStore.getState().workspaces.find((w) => w.id === workspaceId)?.paneState
+        const tab = pane?.tabs.find((candidate) => candidate.id === tabId)
+        if (tab) closePaneTabAndItsTerminal(workspaceId, tab)
+      }),
+    [],
   )
 
   // canvas.open from an agent: the same rule as the browser's, and the same
