@@ -186,7 +186,7 @@ answers the least tier a manifest needs.
     (`command`, `args`, and `env` as `{ "name", "value" }` pairs, values as
     written: Studio reads none from its own environment), or `http`, a hosted
     server agents reach at `url`. `${extensionPath}` in a command, an argument
-    or a value stands for the extension's folder (the installed copy, or the
+    or an environment value (never a `url`) stands for the extension's folder (the installed copy, or the
     development folder itself):
     `"command": "node", "args": ["${extensionPath}/src/server.mjs"]`. Agents
     see the server as `<publisher>_<id>_<server id>`. A hosted server asks
@@ -373,8 +373,8 @@ markers.
 | `contributes.mcpServers[].args` | string[] (at most 64) |  | 0.13.0 |  | Its arguments. `${extensionPath}` stands for the extension’s installed folder. |
 | `contributes.mcpServers[].env` | object[] (at most 32) |  | 0.13.0 |  | Environment variables the command runs with, shown on the install review. |
 | `contributes.mcpServers[].env[].name` | string | yes | 0.13.0 |  | The variable’s name. |
-| `contributes.mcpServers[].env[].value` | string | yes | 0.13.0 |  | Its value, as written: Studio reads none from its own environment. `${extensionPath}` stands for the installed folder. |
-| `contributes.mcpServers[].url` | string |  | 0.13.0 |  | Where an `http` server is: `https`, or plain `http` to localhost. |
+| `contributes.mcpServers[].env[].value` | string | yes | 0.13.0 |  | Its value, as written: Studio reads none from its own environment, and a value naming a variable (`${…}`, `{env:…}`) is refused, since an agent would fill it in from the person’s machine. `${extensionPath}` stands for the installed folder. |
+| `contributes.mcpServers[].url` | string |  | 0.13.0 |  | Where an `http` server is: `https`, or plain `http` to localhost. It names no variable (`${…}`, `{env:…}`): an agent would fill one in from the person’s machine. Nor `${extensionPath}`: a hosted server is not in the extension’s folder. |
 | `contributes.providers` | object[] (at most 8) |  | 0.13.0 | declarative | Model providers for chats: OpenAI-compatible endpoints. The person approves each at install, seeing the origin its key goes to; an update that adds one or moves it to another origin asks again. |
 | `contributes.providers[].id` | string | yes | 0.13.0 |  | Id, unique among this extension’s providers. Studio knows it, and keeps its key, as `<publisher>.<id>/<provider id>`. |
 | `contributes.providers[].name` | string | yes | 0.13.0 |  | Its name in the model picker. |

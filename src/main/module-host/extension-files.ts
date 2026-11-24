@@ -79,6 +79,13 @@ export type ExtensionFilesScope = {
   betweenCheckAndOpen?: () => Promise<void>
   /** Tests only: runs once a write's checks passed, just before it changes the file. */
   beforeCommit?: () => Promise<void>
+  /**
+   * Whether the caller may still write, asked inside the file's write turn
+   * just before it changes the file: a call admitted before a slow step (a
+   * save hook) is held to its authority as it stands when the bytes go down.
+   * Throws to refuse; nothing is written then.
+   */
+  stillAdmitted?: () => void
 }
 
 function inside(parent: string, child: string): boolean {
@@ -282,6 +289,12 @@ export type ExtensionFileWriteOptions = {
    * since it was read is refused with `conflict`.
    */
   expectedSha256?: unknown
+  /**
+   * A person's save of text (a custom text editor's): what to write instead,
+   * decided once the path is checked and before a byte is written (the
+   * extensions' `editor.save.before` hooks). It may refuse by throwing.
+   */
+  saveText?: (target: { path: string; relativePath: string }, text: string) => Promise<string>
 }
 
 export async function writeExtensionFile(
@@ -298,9 +311,10 @@ export async function writeExtensionFile(
   if (typeof content !== 'string') throw new ExtensionFileRefusal('invalid_params', '"content" is the text to write.')
   if (as === 'base64' && !/^[A-Za-z0-9+/]*={0,2}$/u.test(content))
     throw new ExtensionFileRefusal('invalid_params', '"content" is base64.')
-  const bytes = Buffer.from(content, as)
-  if (bytes.byteLength > EXTENSION_FILE_MAX_BYTES)
-    throw new ExtensionFileRefusal('invalid_params', 'A file Studio writes for an extension is at most 4 MiB.')
+  let bytes = Buffer.from(content, as)
+  const tooLarge = () =>
+    new ExtensionFileRefusal('invalid_params', 'A file Studio writes for an extension is at most 4 MiB.')
+  if (bytes.byteLength > EXTENSION_FILE_MAX_BYTES) throw tooLarge()
   const parts = partsOf(path)
   const shown = parts.join('/')
   // Named as a .git folder: refused before anything is looked up, whatever
@@ -331,6 +345,14 @@ export async function writeExtensionFile(
     throw new ExtensionFileRefusal('missing', `The folder ${dirname(shown)} does not exist.`)
   }
   const target = join(folder, basename(shown))
+  // A person's save of text meets what decides it (the extensions' hooks)
+  // here: after its path is checked, before a byte is written, and outside
+  // the file's write turn, so a slow hook holds up no other writer.
+  if (options.saveText && as === 'utf8') {
+    const text = await options.saveText({ path: target, relativePath: shown }, content)
+    bytes = Buffer.from(text, 'utf8')
+    if (bytes.byteLength > EXTENSION_FILE_MAX_BYTES) throw tooLarge()
+  }
   // One write at a time to a file, from every client and window: the check
   // and the write below are one step for whoever else saves it.
   return withFileWriteTurn(target, async () => {
@@ -393,6 +415,13 @@ export async function writeExtensionFile(
         }
       }
       await scope.beforeCommit?.()
+      try {
+        scope.stillAdmitted?.()
+      } catch (refusal) {
+        // The empty file this write made is taken away again: nothing is written.
+        if (created) await unlink(target).catch(() => undefined)
+        throw refusal
+      }
       // The new content goes over the old, then the file is cut to its
       // length: a reader never finds it emptied in between.
       await handle.write(bytes, 0, bytes.byteLength, 0)

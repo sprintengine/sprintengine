@@ -135,6 +135,12 @@ export type ConversationMcpServer = {
   url?: string
   headers?: Record<string, string>
   envVarNames?: string[]
+  /**
+   * An installed extension's server: the generation of the extension's
+   * content it runs (its projection and its folder's digest), so a live chat
+   * starts it again when its code changed under the same launch.
+   */
+  extensionGeneration?: string
 }
 
 export type ConversationStartSessionInput = {

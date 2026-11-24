@@ -12,6 +12,12 @@
 // moves fast, so version churn must not leak past this adapter. The package
 // is ESM-only and the main bundle is CJS, so the SDK is loaded via dynamic
 // import on first use.
+import {
+  handedExtensionServers,
+  restartedExtensionServers,
+  withdrawnExtensionServers,
+  type HandedExtensionServers,
+} from './extension-mcp-servers'
 import type { ChatExtensionContributions } from '../../server/extensions/agent-contributions/projection'
 import {
   saveToolResultImages,
@@ -314,6 +320,10 @@ type SessionState = {
   // asking (`readableDirectories`, the images sent with its turns).
   readableDirectories?: string[]
   query: Query | null
+  // The installed extensions' MCP servers the live child was handed, and
+  // which of them ride its command line (claudeMcpLaunch), which only a new
+  // child can drop (followExtensionServers).
+  extensionServers: { handed: HandedExtensionServers; commandLine: ReadonlySet<string> } | null
   inputQueue: PushStream<SDKUserMessage> | null
   abort: AbortController | null
   childPid: number | null
@@ -746,6 +756,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     state.abort?.abort()
     state.abort = null
     state.query = null
+    state.extensionServers = null
     state.childPreset = null
     state.childMode = null
     state.cliMode = null
@@ -1064,11 +1075,11 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     const instructions = await readWorkspaceInstructions(state.workspaceRoot)
     const studioGateway = await options.resolveStudioMcpServer?.().catch(() => null)
     const extensions = options.extensionContributions?.() ?? { mcpServers: [], pluginDirs: [] }
-    const sessionServerIds = new Set((state.mcpServers ?? []).map((server) => server.id))
-    const mcpServers = claudeMcpLaunch(studioGateway ? withAgentIdentity(studioGateway, env) : null, [
-      ...(state.mcpServers ?? []),
-      ...extensions.mcpServers.filter((server) => !sessionServerIds.has(server.id)),
-    ])
+    const mcpServers = claudeMcpLaunch(
+      studioGateway ? withAgentIdentity(studioGateway, env) : null,
+      state.mcpServers ?? [],
+      extensions.mcpServers,
+    )
     // Only a chat that has the gateway has the pool's tools, and only one in a
     // git checkout has a repository to lease a worktree of.
     const leasesWorktrees = Boolean(studioGateway) && (await isInGitCheckout(state.workspaceRoot))
@@ -1346,6 +1357,11 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     // A resumed child restores the session's saved cost total and reports it
     // in its first result; only what it adds from here is this turn's.
     state.queryCostUsd = savedCostUsd
+    const handedServers = handedToSession(state.mcpServers ?? [], extensions.mcpServers)
+    state.extensionServers = {
+      handed: handedExtensionServers(handedServers),
+      commandLine: new Set(handedServers.flatMap((server) => (server.id in mcpServers.commandLine ? [server.id] : []))),
+    }
     state.childPreset = state.permissionPreset
     state.childMode = ownSdkMode(state)
     state.requestedSpawnMode = permissionMode ?? null
@@ -1360,6 +1376,47 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     // Stopped or replaced while the servers connected: the turn that asked
     // for this child has nothing to send its message to.
     if (state.query !== q) throw new Error('The conversation was closed before Claude Code started.')
+  }
+
+  // What the installed extensions hand chats follows them into a live child
+  // at each turn's start (extension-mcp-servers.ts): the servers it takes over
+  // its control channel are set again there, so a server of an extension
+  // killed, switched off, uninstalled or no longer approved since is
+  // disconnected (and its local process stopped by the CLI) before the turn
+  // runs, and one added since connects. One on the child's command line can
+  // only go with the child, so then the child is replaced and the next one
+  // resumes the session. A server whose extension's code changed under the
+  // same launch is started again in place. Neither waits for background
+  // work: a withdrawn server must not serve this turn.
+  async function followExtensionServers(state: SessionState): Promise<void> {
+    const q = state.query
+    const started = state.extensionServers
+    if (!q || !started || state.spawning) return
+    const change = claudeExtensionServerChange(
+      started,
+      state.mcpServers ?? [],
+      options.extensionContributions?.().mcpServers ?? [],
+    )
+    if (change.kind === 'unchanged') return
+    if (change.kind === 'reconfigure') {
+      // Set again, then each one whose code changed under the same launch is
+      // started again: setting a server as it was leaves its old process.
+      const answered = await answeredWithin(
+        Promise.resolve()
+          .then(() => q.setMcpServers(change.control))
+          .then(async () => {
+            for (const id of change.reconnect) await q.reconnectMcpServer(id)
+          }),
+        mcpRegistrationTimeoutMs,
+        { rejectAsUnanswered: true },
+      )
+      if (state.query !== q) return
+      if (answered) {
+        state.extensionServers = { handed: change.handed, commandLine: started.commandLine }
+        return
+      }
+    }
+    disposeChild(state)
   }
 
   // The SDK would put these on the child's command line, one `--mcp-config`
@@ -1748,6 +1805,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
         handoff: input.handoffPath?.trim() ? { path: input.handoffPath.trim(), owed: true } : null,
         ...(input.readableDirectories?.length ? { readableDirectories: input.readableDirectories } : {}),
         query: null,
+        extensionServers: null,
         inputQueue: null,
         abort: null,
         childPid: null,
@@ -1841,6 +1899,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
           }
         }
         await refreshProjectCommands(state, waiting)
+        await followExtensionServers(state)
         await reconcilePresetWhileBusy(state)
         await ensureQuery(state)
         await leaveStrayPlanMode(state)
@@ -4385,10 +4444,21 @@ export function claudeMcpServers(servers: readonly ConversationMcpServer[]): Non
  * values and header values are swapped for references too, to variables in
  * `env` that the child's environment gets, so no value it carries is on the
  * command line.
+ *
+ * An installed extension's servers (`extensionServers`) are the author's, not
+ * the person's: a reference in one would have the CLI fill in the person's
+ * environment (their tokens, the other servers' secrets in it) and send it
+ * wherever the extension says. The manifest refuses them, but one that holds
+ * `${` all the same (an extension path that does) goes on the command line
+ * with every value it has, its command and URL too, moved into a variable of
+ * Studio's own: the CLI expands each reference once, to the value as the
+ * extension wrote it, and never what that value names. A session server of
+ * the same name is the person's, and wins.
  */
 export function claudeMcpLaunch(
   gateway: ConversationMcpServer | null,
   sessionServers: readonly ConversationMcpServer[],
+  extensionServers: readonly ConversationMcpServer[] = [],
 ): {
   commandLine: NonNullable<Options['mcpServers']>
   control: NonNullable<Options['mcpServers']>
@@ -4397,14 +4467,69 @@ export function claudeMcpLaunch(
   const commandLine = claudeMcpServers(gateway ? [gateway] : [])
   const control: NonNullable<Options['mcpServers']> = {}
   const env: Record<string, string> = {}
-  for (const [id, server] of Object.entries(claudeMcpServers(sessionServers))) {
+  const sessionIds = new Set(sessionServers.map((server) => server.id))
+  const handed = extensionServers.filter((server) => !sessionIds.has(server.id))
+  const fromExtension = new Set(handed.map((server) => server.id))
+  for (const [id, server] of Object.entries(claudeMcpServers([...sessionServers, ...handed]))) {
     // A session server of the gateway's own name stands in its place, as it
     // always did.
     delete commandLine[id]
-    if (JSON.stringify(server).includes('${')) commandLine[id] = withValuesByReference(server, env)
-    else control[id] = server
+    if (!JSON.stringify(server).includes('${')) {
+      control[id] = server
+      continue
+    }
+    const byReference = withValuesByReference(server, env, { everyValue: fromExtension.has(id) })
+    if (byReference) commandLine[id] = byReference
   }
   return { commandLine, control, env }
+}
+
+/** The extensions' servers a session is handed: all but those of a name one of its own has. */
+function handedToSession(
+  sessionServers: readonly ConversationMcpServer[],
+  extensionServers: readonly ConversationMcpServer[],
+): ConversationMcpServer[] {
+  const own = new Set(sessionServers.map((server) => server.id))
+  return extensionServers.filter((server) => !own.has(server.id))
+}
+
+/**
+ * What a live child does about the extensions' servers at a turn's start
+ * (followExtensionServers): nothing when they are as it was handed them; its
+ * control-channel servers set again (`control`, the whole set, its own
+ * servers with the extensions' as they are now) when every change is there;
+ * replaced when a server it was handed on its command line is withdrawn, or
+ * one handed now would have to go there.
+ */
+export function claudeExtensionServerChange(
+  started: { handed: HandedExtensionServers; commandLine: ReadonlySet<string> },
+  sessionServers: readonly ConversationMcpServer[],
+  extensionServers: readonly ConversationMcpServer[],
+):
+  | { kind: 'unchanged' }
+  | {
+      kind: 'reconfigure'
+      control: NonNullable<Options['mcpServers']>
+      handed: HandedExtensionServers
+      /** Servers launched as before whose extension's code changed: started again once set. */
+      reconnect: string[]
+    }
+  | { kind: 'restart' } {
+  const handed = handedExtensionServers(handedToSession(sessionServers, extensionServers))
+  if (handed.generation === started.handed.generation) return { kind: 'unchanged' }
+  const withdrawn = new Set(withdrawnExtensionServers(started.handed, handed))
+  if ([...started.commandLine].some((id) => withdrawn.has(id))) return { kind: 'restart' }
+  const launch = claudeMcpLaunch(null, sessionServers, extensionServers)
+  const needsCommandLine = [...handed.servers.keys()].some(
+    (id) => id in launch.commandLine && (!started.commandLine.has(id) || withdrawn.has(id)),
+  )
+  if (needsCommandLine) return { kind: 'restart' }
+  return {
+    kind: 'reconfigure',
+    control: launch.control,
+    handed,
+    reconnect: restartedExtensionServers(started.handed, handed),
+  }
 }
 
 type SdkMcpServer = NonNullable<Options['mcpServers']>[string]
@@ -4415,10 +4540,21 @@ type SdkMcpServer = NonNullable<Options['mcpServers']>[string]
  * which the CLI expands from its environment. A value that already holds a
  * reference is the person's own and stays; so does one with a NUL, which no
  * environment variable can hold.
+ *
+ * `everyValue`, for an extension's server: its command and URL move too, and
+ * a value holding a reference moves like any other, so nothing the author
+ * wrote is expanded. One with a NUL cannot move, so that server is left out
+ * (null).
  */
-function withValuesByReference(server: SdkMcpServer, env: Record<string, string>): SdkMcpServer {
+function withValuesByReference(
+  server: SdkMcpServer,
+  env: Record<string, string>,
+  options: { everyValue?: boolean } = {},
+): SdkMcpServer | null {
+  const everyValue = options.everyValue === true
+  if (everyValue && JSON.stringify(server).includes('\\u0000')) return null
   const reference = (value: string): string => {
-    if (value.includes('${') || value.includes('\0')) return value
+    if (!everyValue && (value.includes('${') || value.includes('\0'))) return value
     let index = 1
     while (`${MCP_SECRET_ENV_PREFIX}${index}` in env) index += 1
     const name = `${MCP_SECRET_ENV_PREFIX}${index}`
@@ -4430,12 +4566,17 @@ function withValuesByReference(server: SdkMcpServer, env: Record<string, string>
   if ('command' in server) {
     return {
       ...server,
+      ...(everyValue ? { command: reference(server.command) } : {}),
       ...(server.args ? { args: server.args.map(reference) } : {}),
       ...(server.env ? { env: values(server.env) } : {}),
     }
   }
-  if ('headers' in server && server.headers) return { ...server, headers: values(server.headers) }
-  return server
+  if (!('url' in server)) return server
+  return {
+    ...server,
+    ...(everyValue ? { url: reference(server.url) } : {}),
+    ...('headers' in server && server.headers ? { headers: values(server.headers) } : {}),
+  }
 }
 
 // The gateway's bridge says which agent is calling from its environment. A

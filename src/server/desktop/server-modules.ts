@@ -9,7 +9,7 @@ import { createModuleLifecycle, liveModuleIds } from '../../main/modules/module-
 import { bundledRegistryIds } from '../../main/plugin-registry-instance'
 import type { ExtensionRunView } from '../../main/modules/third-party-module-view'
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
-import { installedStandingOf, planInstalledExtensions } from '../extensions/extension-plan'
+import { frameStandingOf, installedStandingOf, planInstalledExtensions } from '../extensions/extension-plan'
 import { createExtensionDiscovery } from '../extensions/extension-discovery'
 import { createExtensionReloader, type ExtensionReloader } from '../extensions/extension-reload'
 import { watchDevFolders } from '../extensions/dev/dev-folder-watch'
@@ -21,6 +21,7 @@ import { resolveExtensionSdkRoot, resolveWorkerEntryPath } from '../extensions/w
 import { join } from 'node:path'
 import { createExtensionApprovalReader } from '../../main/modules/extension-approvals'
 import { createExtensionFrameGrant } from '../../main/modules/extension-frame-grant'
+import { editorSaveDecision } from '../extensions/hooks/extension-hooks'
 import { defaultUserModuleRoot } from '../../main/modules/user-module-registry'
 import { watchUserModuleRoot } from '../../main/modules/user-module-watch'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
@@ -262,9 +263,17 @@ export function createServerModules(deps: {
         // What each extension runs under; its calls are refused once that approval is gone.
         extensionApprovals: plan.approvals,
         currentApprovals: approvals,
-        resolveFrameGrant: createExtensionFrameGrant({ approvals, dataDir }),
+        resolveFrameGrant: createExtensionFrameGrant({
+          approvals,
+          dataDir,
+          standing: (moduleId) => frameStandingOf(discovery.current(), moduleId),
+          // A folder changed where no watcher heard it: discovery reads it again.
+          refresh: () => discovery.invalidate(),
+        }),
         onKernel: bindWorkers,
         frameFileExclusions: () => [dataDir, defaultUserModuleRoot()],
+        // A save in a custom text editor meets the save hooks as one in Studio's text editor does.
+        frameEditorSaveHooks: ({ invoker, ...event }) => editorSaveDecision(core.extensionHooks, event, invoker),
         ineligible: plan.ineligible,
         launchErrors: plan.launchErrors,
         deliverModuleEvent: (event) => hub.deliverEvent(event),

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -10,7 +10,9 @@ import { writeModuleOverrides } from '../module-host/enablement-store'
 import { createMainKernel } from '../module-host/main-host'
 import * as serviceTokens from '../module-host/service-tokens'
 import { createExtensionApprovalReader, writeExtensionApproval, type ExtensionAccess } from './extension-approvals'
-import { createExtensionFrameGrant, pinExtensionFrame } from './extension-frame-grant'
+import { writeKillListCache } from '../../server/extensions/catalogue/catalogue-files'
+import { createExtensionFrameGrant, pinExtensionFrame, type ExtensionFrameStanding } from './extension-frame-grant'
+import { extensionContentSync } from './module-signature'
 
 // A frame's calls are judged by the approvals and switches as they stand now,
 // pinned to what was approved when its document was built: an extension
@@ -40,20 +42,57 @@ const access = (over: Partial<ExtensionAccess> = {}): ExtensionAccess => ({
   ...over,
 })
 
+/**
+ * How each extension stands, as the server's discovery would read it: every
+ * key asked about is installed, runnable, at 1.0.0, unless a test says
+ * otherwise.
+ */
+function standings(dataDir: string) {
+  const moduleRoot = join(dataDir, 'extensions', 'installed')
+  mkdirSync(moduleRoot, { recursive: true })
+  writeFileSync(join(moduleRoot, 'extension.json'), '{}')
+  const overrides = new Map<string, ExtensionFrameStanding | undefined>()
+  const content = extensionContentSync(moduleRoot)
+  const runnable: ExtensionFrameStanding = {
+    runnable: true,
+    version: '1.0.0',
+    moduleRoot,
+    contentDigest: content.ok ? content.fingerprint : undefined,
+    development: false,
+  }
+  return {
+    moduleRoot,
+    set: (moduleId: string, standing: Partial<ExtensionFrameStanding> | undefined) =>
+      overrides.set(moduleId, standing && { ...runnable, ...standing }),
+    standing: (moduleId: string): ExtensionFrameStanding | undefined =>
+      overrides.has(moduleId) ? overrides.get(moduleId) : runnable,
+  }
+}
+
 function setup() {
   const dataDir = mkdtempSync(join(tmpdir(), 'frame-grant-'))
   dirs.push(dataDir)
+  const discovered = standings(dataDir)
   const kernel = createMainKernel({
     // The kernel started knowing no extension at all.
     resolveModuleManifest: () => undefined,
-    resolveFrameGrant: createExtensionFrameGrant({ approvals: createExtensionApprovalReader(dataDir), dataDir }),
+    resolveFrameGrant: createExtensionFrameGrant({
+      approvals: createExtensionApprovalReader(dataDir),
+      dataDir,
+      standing: discovered.standing,
+      refresh: () => undefined,
+    }),
   })
+  const created: unknown[] = []
   kernel.hostFor('@host').provideService(
     serviceTokens.BacklogModuleServiceToken,
     () =>
       ({
         getLocation: async (moduleId: string) => ({ ok: true, location: { root: moduleId } }),
-        create: async () => ({ ok: true }),
+        create: async (...args: unknown[]) => {
+          created.push(args)
+          return { ok: true }
+        },
       }) as never,
   )
   const call = (frame: string, method = 'backlog.location', params: unknown = { workspaceId: 'ws' }) =>
@@ -66,7 +105,7 @@ function setup() {
       commandId: 'k',
       invoker: ownerInvoker(),
     })
-  return { dataDir, call }
+  return { dataDir, call, created, discovered }
 }
 
 test('an extension approved after the kernel started is served at once, and refused once switched off or forgotten', async () => {
@@ -115,7 +154,12 @@ test('a frame drawn before an update that asks for more is refused the new permi
 test('an approval that shrank holds an older frame to what is left', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'frame-grant-'))
   dirs.push(dataDir)
-  const grant = createExtensionFrameGrant({ approvals: createExtensionApprovalReader(dataDir), dataDir })
+  const grant = createExtensionFrameGrant({
+    approvals: createExtensionApprovalReader(dataDir),
+    dataDir,
+    standing: standings(dataDir).standing,
+    refresh: () => undefined,
+  })
   pinExtensionFrame(V1, 'local.ui', ['backlog:read', 'storage:own'])
   await writeExtensionApproval(dataDir, 'local.ui', { fingerprint: 'sha256-a', access: access() })
   assert.deepEqual(grant('local.ui', V1), { grant: ['backlog:read'], outdated: false })
@@ -128,4 +172,58 @@ test('an approval that shrank holds an older frame to what is left', async () =>
   })
   assert.equal(grant('local.plain', V1), null, 'no surfaces')
   assert.equal(grant('backlog', V1), null, 'one of the app’s own modules is not an extension')
+})
+
+test('a frame kept open is refused at its next call once its extension is killed, and nothing it asked for happens', async () => {
+  const { dataDir, call, created } = setup()
+  await writeExtensionApproval(dataDir, 'local.fresh', {
+    fingerprint: 'sha256-a',
+    access: access({ permissions: ['backlog:operate', 'backlog:read'] }),
+  })
+  pinExtensionFrame(V1, 'local.fresh', ['backlog:operate', 'backlog:read'])
+  const create = { workspaceId: 'ws', input: { title: 'x' } }
+  assert.deepEqual(await call(V1, 'backlog.create', create), { ok: true, result: { ok: true } })
+  assert.equal(created.length, 1)
+
+  // The kill list names its version. The approval stays on record, and the
+  // discovery has not heard yet: the call is refused all the same.
+  await writeKillListCache(dataDir, {
+    killListVersion: 1,
+    generatedAt: '2026-11-24T00:00:00.000Z',
+    extensions: [{ id: 'local.fresh', versions: ['1.0.0'], reason: 'It sends your files away.' }],
+  })
+  const killed = await call(V1, 'backlog.create', create)
+  assert.equal(!killed.ok && killed.code, 'approval_required')
+  assert.equal(created.length, 1, 'the replayed call had no effect')
+
+  // Taken off the list, it runs again, but the frame drawn before is drawn again first.
+  await writeKillListCache(dataDir, { killListVersion: 1, generatedAt: '2026-11-24T01:00:00.000Z', extensions: [] })
+  const again = await call(V1, 'backlog.create', create)
+  assert.equal(!again.ok && again.code, 'frame_outdated')
+  assert.equal(created.length, 1)
+})
+
+test('a frame is refused once its extension no longer runs as approved, or its folder is gone', async () => {
+  const { dataDir, call, created, discovered } = setup()
+  await writeExtensionApproval(dataDir, 'local.fresh', { fingerprint: 'sha256-a', access: access() })
+  const create = { workspaceId: 'ws', input: { title: 'x' } }
+
+  // Its files changed under its approval, or its signature no longer holds: not runnable.
+  pinExtensionFrame(V1, 'local.fresh', ['backlog:read'])
+  discovered.set('local.fresh', { runnable: false })
+  assert.equal((await call(V1)).ok, false)
+
+  // No folder holds it any more.
+  discovered.set('local.fresh', undefined)
+  pinExtensionFrame(V1, 'local.fresh', ['backlog:read'])
+  assert.equal((await call(V1)).ok, false)
+
+  // The discovery still lists it, but its folder was removed under it.
+  discovered.set('local.fresh', {})
+  pinExtensionFrame(V1, 'local.fresh', ['backlog:read'])
+  assert.equal((await call(V1)).ok, true)
+  rmSync(discovered.moduleRoot, { recursive: true, force: true })
+  const gone = await call(V1, 'backlog.create', create)
+  assert.equal(gone.ok, false)
+  assert.equal(created.length, 0)
 })

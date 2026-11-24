@@ -266,6 +266,23 @@ describe('publishers and git URLs', () => {
     expect(gitUrlPublisher('https://example.com/notes.git')).toBeNull()
   })
 
+  test('on another host the publisher carries the host, so it cannot pass for the GitHub owner', () => {
+    expect(gitUrlPublisher('https://evil.example/alice/notes')).toBe('from-evil-example-alice')
+    expect(gitUrlPublisher('git@gitlab.com:alice/notes.git')).toBe('from-gitlab-com-alice')
+    // The marked form is kept for other hosts: a GitHub owner named like one makes no publisher.
+    expect(gitUrlPublisher('https://github.com/from-gitlab-com-alice/notes')).toBeNull()
+    expect(gitUrlPublisher('https://github.com/From-Anything/notes')).toBeNull()
+    // One that only looks like a host and an owner is a GitHub owner like any other.
+    expect(gitUrlPublisher('https://github.com/gitlab-com-alice/notes')).toBe('gitlab-com-alice')
+    expect(gitUrlPublisher('https://www.github.com/alice/notes')).toBe('alice')
+    expect(gitUrlPublisher('ssh://git@github.com/alice/notes.git')).toBe('alice')
+    // One that would be too long is no publisher at all.
+    expect(gitUrlPublisher(`https://${'h'.repeat(30)}.example/alice/notes`)).toBeNull()
+    // A host that spells a reserved publisher is marked, so it never takes one.
+    expect(gitUrlPublisher('https://studio.example/alice/notes')).toBe('from-studio-example-alice')
+    expect(gitUrlPublisher('https://sprintengine.example/official/notes')).toBe('from-sprintengine-example-official')
+  })
+
   test('only HTTPS without credentials and SSH are fetched', () => {
     expect(isAllowedGitUrl('https://github.com/acme/notes.git')).toBe(true)
     expect(isAllowedGitUrl('ssh://git@github.com/acme/notes.git')).toBe(true)

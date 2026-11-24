@@ -3618,6 +3618,8 @@ export const en = {
     // src/renderer/src/components/settings/ExtensionRow.tsx
     extensionRow: {
       adds: 'Adds',
+      hooks: 'Hooks',
+      hooksThisComputerOnly: 'Applies to chats on this computer only, not to chats in WSL or on SSH machines',
       forAgents: 'For your agents and chats',
       access: 'Access',
       needsCare: 'Needs care',
@@ -4188,6 +4190,7 @@ export const en = {
       editorOpens: (editor: unknown, files: unknown) => `${editor}: ${files}`,
       hooks: 'Hooks into what your agents and Studio do',
       hooksFailClosed: 'If it fails or is slow, it refuses rather than lets the action through',
+      hooksThisComputerOnly: 'Applies to chats on this computer only, not to chats in WSL or on SSH machines',
       forAgents: 'For your agents and chats',
       needsCare: 'Needs care',
       also: 'Also',

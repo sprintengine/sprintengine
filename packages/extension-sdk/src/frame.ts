@@ -108,7 +108,11 @@ export type ExtensionFrameMethods = {
    * bytes in base64. `create: true` makes a new one and refuses one that
    * exists with `conflict`. With `expectedSha256` it writes only over a file whose bytes
    * still hash to it, and refuses with `conflict` otherwise (one gone too),
-   * so nothing changed meanwhile is written over unseen.
+   * so nothing changed meanwhile is written over unseen. `save` marks UTF-8
+   * text as the person's save (a custom text editor's, which Studio sends):
+   * it meets the extensions' `editor.save.before` hooks first, which may
+   * refuse it (`refused_by_extension`) or change it, and `text` answers what
+   * was written when a hook changed it.
    */
   'files.write': {
     params: {
@@ -118,8 +122,9 @@ export type ExtensionFrameMethods = {
       create?: boolean
       encoding?: ExtensionFileEncoding
       expectedSha256?: string
+      save?: { languageId?: string }
     }
-    result: { size: number; created: boolean; sha256: string }
+    result: { size: number; created: boolean; sha256: string; text?: string }
   }
   // ── Telling the person ──
   notify: { params: ModuleNotifyInput; result: { ok: true } }

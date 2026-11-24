@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -123,4 +124,171 @@ test('a custom editor’s file reads and saves are held to the extension’s fil
   const stale = await writer('files.write', { ...path, content: '- [ ] two\n', expectedSha256: sha256 })
   assert.equal(stale.ok ? 'written' : stale.code, 'conflict')
   assert.equal(readFileSync(join(folder, 'list.todo'), 'utf8'), '- [x] one\n')
+})
+
+test('a custom text editor’s save meets the save hooks, as the connection that saved, after its path is checked', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'frame-editor-save-'))
+  writeFileSync(join(folder, 'list.todo'), '- [ ] one\n')
+  const sha = (text: string) => createHash('sha256').update(text).digest('hex')
+  const workspaces = {
+    get: async (id: string) => (id === 'ws' ? { id, name: 'ws', folderPath: folder, mode: 'standard' } : null),
+    list: async () => [],
+  }
+  const asked: Array<{ path: string; relativePath: string; workspaceId: string; text: string; invoker: string }> = []
+  // A format-on-save hook, and a guard that refuses a save holding "secret".
+  let hooked = true
+  const call = createExtensionFrameCalls({
+    grantOf: () => ({ grant: ['workspace-files:read', 'workspace-files:write'], outdated: false }),
+    service: (key) => (key === 'core.workspace-context' ? workspaces : undefined),
+    callModuleMethod: async () => ({ ok: false, code: 'extension_unavailable', message: 'none' }) as never,
+    emitNotification: () => undefined,
+    appState: () => undefined,
+    fileExclusions: () => [],
+    editorSaveHooks: ({ invoker, ...event }) => {
+      if (!hooked) return null
+      asked.push({ ...event, invoker: invoker.label })
+      return Promise.resolve(
+        event.text.includes('secret')
+          ? { ok: false as const, message: 'The extension "Guard" (acme.guard) refused this: it holds a secret.' }
+          : { ok: true as const, text: event.text.toUpperCase() },
+      )
+    },
+  })
+  // A paired window that may write files.
+  const WRITER: ExtensionInvoker = {
+    principal: studioGrantPrincipal({
+      owner: false,
+      scopes: ['extensions:read', 'extensions:operate', 'files:read', 'files:write'],
+    }),
+    permissionCeiling: null,
+    label: 'the device "dev-macbook-air"',
+  }
+  const write = (params: Record<string, unknown>, invoker = WRITER) =>
+    call({
+      moduleId: 'local.todo-editor',
+      frame: 'f'.repeat(64),
+      method: 'files.write',
+      params: { workspaceId: 'ws', path: 'list.todo', ...params },
+      clientId: 'c',
+      commandId: 'k',
+      invoker,
+    })
+  const onDisk = () => readFileSync(join(folder, 'list.todo'), 'utf8')
+
+  // One that may not write files is refused before any hook hears of it.
+  const notAllowed = await write({ content: '- [ ] two\n', save: {} }, PAIRED)
+  assert.equal(notAllowed.ok ? 'written' : notAllowed.code, 'not_permitted')
+  assert.equal(asked.length, 0)
+
+  // Refused: nothing is written.
+  const refused = await write({ content: '- [ ] secret\n', expectedSha256: sha('- [ ] one\n'), save: {} })
+  assert.deepEqual(refused, {
+    ok: false,
+    code: 'refused_by_extension',
+    message: 'The extension "Guard" (acme.guard) refused this: it holds a secret.',
+  })
+  assert.equal(onDisk(), '- [ ] one\n')
+  assert.deepEqual(asked.at(-1), {
+    path: join(realpathSync(folder), 'list.todo'),
+    relativePath: 'list.todo',
+    workspaceId: 'ws',
+    text: '- [ ] secret\n',
+    languageId: null,
+    invoker: WRITER.label,
+  })
+
+  // Changed: what the hook made is written, and answered for the editor to take.
+  const changed = await write({ content: '- [ ] two\n', expectedSha256: sha('- [ ] one\n'), save: {} })
+  assert.ok(changed.ok)
+  assert.equal(onDisk(), '- [ ] TWO\n')
+  assert.deepEqual(changed.ok && changed.result, {
+    size: 10,
+    created: false,
+    sha256: sha('- [ ] TWO\n'),
+    text: '- [ ] TWO\n',
+  })
+
+  // The conditional write still holds after the hook: a stale base is refused.
+  const stale = await write({ content: '- [ ] three\n', expectedSha256: sha('- [ ] two\n'), save: {} })
+  assert.equal(stale.ok ? 'written' : stale.code, 'conflict')
+  assert.equal(onDisk(), '- [ ] TWO\n')
+
+  // A path outside the workspace is refused before any hook hears of it.
+  const before = asked.length
+  const outside = await write({ path: '../elsewhere.todo', content: 'x', save: {} })
+  assert.equal(outside.ok, false)
+  assert.equal(asked.length, before)
+
+  // A frame's own write, and a write of bytes, are no person's save of text.
+  assert.ok((await write({ content: '- [ ] four\n' })).ok)
+  assert.equal(onDisk(), '- [ ] four\n')
+  const bytes = Buffer.from('- [ ] five\n').toString('base64')
+  assert.ok((await write({ content: bytes, encoding: 'base64', save: {} })).ok)
+  assert.equal(onDisk(), '- [ ] five\n')
+  assert.equal(asked.length, before)
+
+  // With no hook on the point, a save writes what it was given.
+  hooked = false
+  const plain = await write({ content: '- [ ] six\n', save: { languageId: 'todo' } })
+  assert.ok(plain.ok && !('text' in (plain.result as object)))
+  assert.equal(onDisk(), '- [ ] six\n')
+  assert.equal((await write({ content: 'x', save: 'yes' })).ok, false, 'a malformed save is refused')
+})
+
+test('a save whose extension is revoked while its hook runs writes nothing', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'frame-save-revoked-'))
+  writeFileSync(join(folder, 'list.todo'), '- [ ] one\n')
+  const workspaces = {
+    get: async (id: string) => (id === 'ws' ? { id, name: 'ws', folderPath: folder, mode: 'standard' } : null),
+    list: async () => [],
+  }
+  let runnable = true
+  let release: () => void = () => undefined
+  let hookStarted: () => void = () => undefined
+  const nextHook = () => new Promise<void>((resolve) => (hookStarted = resolve))
+  let started = nextHook()
+  const call = createExtensionFrameCalls({
+    // Null once the extension is killed, switched off or uninstalled.
+    grantOf: () => (runnable ? { grant: ['workspace-files:read', 'workspace-files:write'], outdated: false } : null),
+    service: (key) => (key === 'core.workspace-context' ? workspaces : undefined),
+    callModuleMethod: async () => ({ ok: false, code: 'extension_unavailable', message: 'none' }) as never,
+    emitNotification: () => undefined,
+    appState: () => undefined,
+    fileExclusions: () => [],
+    // A slow hook: the extension is revoked while it runs.
+    editorSaveHooks: ({ text }) => {
+      hookStarted()
+      return new Promise((resolve) => (release = () => resolve({ ok: true, text })))
+    },
+  })
+  const write = (path: string) =>
+    call({
+      moduleId: 'local.todo-editor',
+      frame: 'f'.repeat(64),
+      method: 'files.write',
+      params: { workspaceId: 'ws', path, content: '- [ ] two\n', save: {} },
+      clientId: 'c',
+      commandId: 'k',
+      invoker: OWNER,
+    })
+
+  // Over a file that exists.
+  const pending = write('list.todo')
+  await started
+  runnable = false
+  release()
+  const answer = await pending
+  assert.equal(answer.ok ? 'written' : answer.code, 'approval_required')
+  assert.equal(readFileSync(join(folder, 'list.todo'), 'utf8'), '- [ ] one\n')
+
+  // A new file: none is left behind.
+  runnable = true
+  started = nextHook()
+  const made = write('new.todo')
+  await started
+  runnable = false
+  release()
+  const madeAnswer = await made
+  assert.equal(madeAnswer.ok, false)
+  assert.equal(existsSync(join(folder, 'new.todo')), false)
 })

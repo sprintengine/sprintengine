@@ -1351,7 +1351,7 @@
                     "value": {
                       "type": "string",
                       "maxLength": 1024,
-                      "description": "Its value, as written: Studio reads none from its own environment. `${extensionPath}` stands for the installed folder.",
+                      "description": "Its value, as written: Studio reads none from its own environment, and a value naming a variable (`${…}`, `{env:…}`) is refused, since an agent would fill it in from the person’s machine. `${extensionPath}` stands for the installed folder.",
                       "x-since": "0.13.0"
                     }
                   },
@@ -1367,7 +1367,7 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 2048,
-                "description": "Where an `http` server is: `https`, or plain `http` to localhost.",
+                "description": "Where an `http` server is: `https`, or plain `http` to localhost. It names no variable (`${…}`, `{env:…}`): an agent would fill one in from the person’s machine. Nor `${extensionPath}`: a hosted server is not in the extension’s folder.",
                 "x-since": "0.13.0",
                 "examples": [
                   "https://mcp.example.com/mcp"

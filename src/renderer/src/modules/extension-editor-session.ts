@@ -50,7 +50,14 @@ export type EditorDocumentModel = {
 export type EditorRead =
   { ok: true; content: EditorContent; sha256: string } | { ok: false; code: string; message: string }
 
-export type EditorWrite = { ok: true; sha256: string } | { ok: false; code: string; message: string }
+export type EditorWrite =
+  | {
+      ok: true
+      sha256: string
+      /** What was written instead of the content given: a save hook changed it. */
+      written?: EditorContent
+    }
+  | { ok: false; code: string; message: string }
 
 /** What the frame is handed. */
 export type EditorFrameDocument = {
@@ -265,9 +272,17 @@ export function createEditorSession(options: EditorSessionOptions): EditorSessio
     if (written.ok) {
       diskGeneration += 1
       diskSha = written.sha256
-      model.setBaseline(content)
-      if (sameContent(model.get(), content)) model.markClean()
+      // What is on disk now: a save hook may have changed it (formatted it).
+      // Unless the person typed on meanwhile, the document becomes that, and
+      // the frame is handed it like any change from disk.
+      const onDisk = written.written ?? content
+      model.setBaseline(onDisk)
+      if (sameContent(model.get(), content)) {
+        if (!sameContent(onDisk, content)) model.set(onDisk, 'disk')
+        model.markClean()
+      }
       update({ saving: false, conflict: null })
+      handOver()
       return true
     }
     if (written.code === 'conflict') {

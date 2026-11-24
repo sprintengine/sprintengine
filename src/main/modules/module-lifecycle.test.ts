@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, test } from 'vitest'
+import { afterEach, test, vi } from 'vitest'
 
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import { readModuleOverridesSync } from '../module-host/enablement-store'
@@ -19,8 +19,11 @@ import {
   writeExtensionApproval,
 } from './extension-approvals'
 import { createExtensionFrameGrant } from './extension-frame-grant'
+import { createExtensionDiscovery } from '../../server/extensions/extension-discovery'
+import { frameStandingOf } from '../../server/extensions/extension-plan'
 import { approvalOf } from './extension-approvals.test-helper'
 import { NO_EXTENSION_RUN } from './third-party-module-view'
+import { MODULE_APP_STATE_FILE, moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
 
 // The lifecycle's own rules: which switches apply at once, how a module is
 // listed, and that switches arriving together are each kept. Its whole path
@@ -195,7 +198,14 @@ test('an approved extension’s surface is drawn from its verified entry, in the
   assert.equal(frame.hash, extensionFrameHash(frame.html))
   assert.equal(extensionFrameDocuments.get(frame.hash), frame.html)
   // Its calls are held to what the approval held when it was built.
-  const grant = createExtensionFrameGrant({ approvals: createExtensionApprovalReader(dataDir), dataDir })
+  const discovery = createExtensionDiscovery({ moduleRoot: () => root, dataDir })
+  const grant = createExtensionFrameGrant({
+    approvals: createExtensionApprovalReader(dataDir),
+    dataDir,
+    standing: (moduleId) => frameStandingOf(discovery.current(), moduleId),
+    // A folder changed where no watcher heard it: discovery reads it again.
+    refresh: () => discovery.invalidate(),
+  })
   assert.deepEqual(grant('local.deck', frame.hash), { grant: ['storage:own'], outdated: false })
   assert.ok(frame.html.includes(JSON.stringify(HELLO_MOUNT_SOURCE).slice(1, 20)), 'the entry is in the document')
   assert.ok(frame.html.includes(`--bg-app:${EXTENSION_FRAME_THEMES.nord!.tokens['--bg-app']}`), 'drawn in nord')
@@ -204,6 +214,60 @@ test('an approved extension’s surface is drawn from its verified entry, in the
   // Switched off: no frame.
   await lifecycle.setEnabled('local.deck', false)
   assert.equal((await lifecycle.frame({ moduleId: 'local.deck', point: 'doors', id: 'deck' })).ok, false)
+})
+
+test('a frame is refused once a file deep in its installed folder changes, though no watcher told discovery', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'module-lifecycle-'))
+  dirs.push(dataDir)
+  const root = join(dataDir, 'modules')
+  const folder = writeExtensionFolder(join(root, 'local.deck'), {
+    manifest: extensionManifest({
+      id: 'deck',
+      tier: 'ui',
+      main: undefined,
+      contributes: { doors: [{ id: 'deck', title: 'Deck', entry: 'dist/door.js' }] },
+    }),
+    files: { 'dist/door.js': HELLO_MOUNT_SOURCE, 'dist/parts/deep/more.js': 'export const more = 1\n' },
+  })
+  await writeExtensionApproval(dataDir, 'local.deck', approvalOf(folder))
+  const lifecycle = createModuleLifecycle({
+    dataDir,
+    moduleRoot: () => root,
+    view: () => null,
+    applyEnablement: async () => ({ ok: true }),
+    changed: () => undefined,
+    ...quiet(),
+    registry: createModuleRegistryMirror(),
+  })
+  const frame = await lifecycle.frame({ moduleId: 'local.deck', point: 'doors', id: 'deck' })
+  assert.ok(frame.ok)
+  const discovery = createExtensionDiscovery({ moduleRoot: () => root, dataDir })
+  let refreshed = 0
+  const grant = createExtensionFrameGrant({
+    approvals: createExtensionApprovalReader(dataDir),
+    dataDir,
+    standing: (moduleId) => frameStandingOf(discovery.current(), moduleId),
+    refresh: () => {
+      refreshed += 1
+      discovery.invalidate()
+    },
+  })
+  assert.deepEqual(grant('local.deck', frame.hash), { grant: ['storage:own'], outdated: false })
+  assert.equal(refreshed, 0, 'files as discovery judged them: nothing is read again')
+
+  // A nested file changes: discovery, holding its first reading, still calls it runnable.
+  writeFileSync(join(folder, 'dist', 'parts', 'deep', 'more.js'), 'export const more = 2\n')
+  assert.equal(frameStandingOf(discovery.current(), 'local.deck')?.runnable, true, 'discovery has not heard')
+  // Past the two seconds a matching digest is trusted for.
+  const later = Date.now() + 3_000
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(later)
+  try {
+    assert.equal(grant('local.deck', frame.hash), null, 'the files no longer match the approval')
+  } finally {
+    clock.mockRestore()
+  }
+  assert.equal(refreshed, 1)
+  assert.equal(frameStandingOf(discovery.current(), 'local.deck')?.runnable, false, 'discovery read it again')
 })
 
 test('a development folder registered over an installed extension waits for the person, who approves it in its place; removing it forgets its approval under every key', async () => {
@@ -279,4 +343,33 @@ test('a development folder registered over an installed extension waits for the 
     [...readExtensionApprovalsSync(dataDir).values()].some((record) => record.devFolder === folder),
     false,
   )
+})
+
+test('an uninstall whose Settings values cannot be forgotten says so, and forgets the rest', async () => {
+  const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'module-lifecycle-')))
+  dirs.push(dataDir)
+  const root = join(dataDir, 'modules')
+  const source = writeExtensionFolder(join(dataDir, 'src'), {
+    manifest: extensionManifest({ id: 'notes', tier: 'declarative', permissions: [], main: undefined }),
+  })
+  const lifecycle = createModuleLifecycle({
+    dataDir,
+    moduleRoot: () => root,
+    view: () => null,
+    applyEnablement: async () => ({ ok: true }),
+    changed: () => undefined,
+    ...quiet(),
+    registry: createModuleRegistryMirror(),
+  })
+  assert.ok((await lifecycle.install(source)).ok)
+  const settings = moduleAppStateMirrorFor(dataDir)
+  settings.setValue('local.notes', 'folder', 'inbox')
+  // The settings file cannot be written: where its temporary file goes is a folder.
+  const tmp = join(dataDir, `${MODULE_APP_STATE_FILE}.${process.pid}.tmp`)
+  mkdirSync(tmp)
+  const answer = await lifecycle.uninstall('local.notes')
+  assert.equal(answer.ok, false)
+  assert.match(answer.ok ? '' : answer.message, /^Removed "local\.notes" but could not forget its Settings values/)
+  assert.equal(existsSync(join(root, 'local.notes')), false, 'its folder is gone all the same')
+  assert.deepEqual(settings.get('local.notes'), { folder: 'inbox' }, 'what is still on disk is what is shown')
 })

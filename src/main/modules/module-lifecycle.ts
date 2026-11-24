@@ -347,6 +347,24 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
         })
         if (carried.ok) approval = { state: 'approved', fingerprint: result.standing.approval.fingerprint }
       }
+      // A release of Studio's official catalogue installs without asking, and
+      // so does its update that asks for more (owner ruling): the catalogue
+      // checked it was the release it lists, its bytes, its owner and the
+      // kill list before it came here. The approval is written for exactly
+      // the fingerprint installed, so any other bytes under the key ask as
+      // ever. Added and community catalogues, git URLs and folders never get
+      // this (`official` is set by the catalogue for its official one only).
+      else if (
+        options.official === true &&
+        result.standing.approval.state === 'pending' &&
+        result.standing.killed === undefined
+      ) {
+        const granted = await writeExtensionApproval(deps.dataDir, result.id, {
+          fingerprint: result.standing.approval.fingerprint,
+          access: extensionAccess(result.extension, result.standing.verifiedFiles),
+        })
+        if (granted.ok) approval = { state: 'approved', fingerprint: result.standing.approval.fingerprint }
+      }
       await project()
       deps.changed()
       return { ok: true as const, moduleId: result.id, approval, strippedLinks: result.strippedLinks }
@@ -594,11 +612,23 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           // every key it was given (its id may have changed since, or its
           // extension.json may not read now).
           const revoked: string[] = []
+          const held = new Set(moduleId ? [moduleId] : [])
           for (const [key, record] of readExtensionApprovalsSync(deps.dataDir)) {
             if (record.devFolder !== folder) continue
+            held.add(key)
             const written = await writeExtensionApproval(deps.dataDir, key, null)
             if (!written.ok) revoked.push(`${key}: ${written.message}`)
           }
+          // And everything kept for it, as an uninstall forgets (its
+          // Settings values, secrets, storage, provider keys and switch), so
+          // a later folder or install under its key starts with none of it.
+          // Not under a key an installed extension holds: a folder standing
+          // in for it shared its data, which stays the installed one's.
+          const installedKeys = new Set((await installedOnly()).map((module) => module.key))
+          const unforgotten = await forgetModules(
+            deps.dataDir,
+            [...held].filter((key) => !installedKeys.has(key)),
+          )
           if (moduleId)
             extensionDevEvents.add({
               key: moduleId,
@@ -612,6 +642,12 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
               ok: false,
               code: 'unavailable',
               message: `Removed ${folder}, but could not forget its approval (${revoked.join('; ')}).`,
+            }
+          if (unforgotten.length > 0)
+            return {
+              ok: false,
+              code: 'unavailable',
+              message: `Removed ${folder}, but could not forget ${unforgotten.join('; ')}.`,
             }
           return { ok: true, path: folder, moduleId }
         } catch (error) {
@@ -707,7 +743,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           await rm(contained.path, { recursive: true, force: true })
           // Nothing about it outlives it: its approval, enablement, stored secrets.
           const revoked = await writeExtensionApproval(deps.dataDir, moduleId, null)
-          await forgetModules(deps.dataDir, [moduleId])
+          const unforgotten = await forgetModules(deps.dataDir, [moduleId])
           await catalogue.forget(moduleId)
           await project()
           deps.changed()
@@ -716,6 +752,8 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
               ok: false,
               message: `Removed "${moduleId}" but could not forget its approval: ${revoked.message}`,
             }
+          if (unforgotten.length > 0)
+            return { ok: false, message: `Removed "${moduleId}" but could not forget ${unforgotten.join('; ')}.` }
           return { ok: true, removedModuleIds: [moduleId] }
         } catch (error) {
           return failed(error)

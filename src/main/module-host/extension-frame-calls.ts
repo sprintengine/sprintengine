@@ -66,6 +66,20 @@ export type ExtensionFrameCallDeps = {
   fileExclusions(): readonly string[]
   /** A line in the extension's log file (`log.write`), beside its worker's. */
   frameLog?: (moduleId: string, line: string) => void
+  /**
+   * The extensions' `editor.save.before` hooks on a person's save of text,
+   * run as the connection that saved: null at once when none hooks the
+   * point, else the text to write or a refusal naming the extension. The
+   * same decision Studio's own text editor's save meets (studio-rpc.ts).
+   */
+  editorSaveHooks?: (input: {
+    path: string
+    relativePath: string
+    workspaceId: string
+    languageId: string | null
+    text: string
+    invoker: ExtensionInvoker
+  }) => Promise<{ ok: true; text: string } | { ok: false; message: string }> | null
 }
 
 // At most FRAME_LOG_LIMIT lines per extension in each window, whatever its frames send.
@@ -110,6 +124,17 @@ function text(params: Record<string, unknown>, name: string, max = 4096): string
   const value = params[name]
   if (typeof value !== 'string' || value.length === 0 || value.length > max) throw invalid(`"${name}" is a string.`)
   return value
+}
+
+/** A `files.write`'s `save`, `{ languageId? }`, or undefined for a write that is no person's save. */
+function saveOf(value: unknown): { languageId: string | null } | undefined {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    throw invalid('"save" is { languageId? }, for a person’s save of text.')
+  const languageId = (value as { languageId?: unknown }).languageId
+  if (languageId !== undefined && (typeof languageId !== 'string' || languageId.length > 100))
+    throw invalid('"save.languageId" is a language’s id.')
+  return { languageId: languageId ?? null }
 }
 
 type Registry = Record<string, (...args: unknown[]) => Promise<unknown>>
@@ -214,12 +239,47 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
     'files.stat': async (_request, params) => statExtensionFile(await filesScope(params), params.path),
     'files.search': async (_request, params) =>
       searchExtensionFiles(await filesScope(params), params.query, params.limit),
-    'files.write': async (_request, params) =>
-      writeExtensionFile(await filesScope(params), params.path, params.content, {
+    // `save`: the person saved a custom text editor (its window's controller
+    // says so), so the write meets the extensions' save hooks as a save in
+    // Studio's text editor does, and answers the text written when a hook
+    // changed it, for the editor to take. A write of bytes is no text save.
+    'files.write': async (request, params) => {
+      const save = saveOf(params.save)
+      let saved: string | undefined
+      // The call was admitted before a save hook ran, which may take its time:
+      // the write is held to the frame's authority as it stands when the
+      // bytes go down, so an extension revoked meanwhile writes nothing.
+      const scope = {
+        ...(await filesScope(params)),
+        stillAdmitted: () => {
+          const refusal = admission(request)
+          if (refusal) throw new CallRefusal(refusal.code, refusal.message)
+        },
+      }
+      const written = await writeExtensionFile(scope, params.path, params.content, {
         create: params.create === true,
         encoding: params.encoding,
         expectedSha256: params.expectedSha256,
-      }),
+        ...(save
+          ? {
+              saveText: async (target: { path: string; relativePath: string }, text: string) => {
+                const hooked = deps.editorSaveHooks?.({
+                  ...target,
+                  workspaceId: params.workspaceId as string,
+                  languageId: save.languageId,
+                  text,
+                  invoker: request.invoker,
+                })
+                const decided = hooked ? await hooked : null
+                if (decided && !decided.ok) throw new CallRefusal('refused_by_extension', decided.message)
+                saved = decided ? decided.text : text
+                return saved
+              },
+            }
+          : {}),
+      })
+      return saved !== undefined && saved !== params.content ? { ...written, text: saved } : written
+    },
     notify: (request, params) => {
       try {
         deps.emitNotification(request.moduleId, params as ModuleNotifyInput)
@@ -241,20 +301,21 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
     },
   }
 
-  return async function callFrameMethod(request: ExtensionFrameCallRequest): Promise<StudioExtensionCallAnswer> {
+  /**
+   * Why a frame's call is not admitted now, or null when it is: its
+   * extension's grant as it stands (deps.grantOf) and the gate as the
+   * extension and as the connection that drew the frame. Asked when the call
+   * arrives, and again by a write just before it changes a file.
+   */
+  function admission(request: ExtensionFrameCallRequest): { code: string; message: string } | null {
     const requirement = extensionFrameMethod(request.method)
     if (!requirement)
-      return {
-        ok: false,
-        code: 'unknown_method',
-        message: `"${request.method}" is not a host method a frame may call.`,
-      }
+      return { code: 'unknown_method', message: `"${request.method}" is not a host method a frame may call.` }
     const held = deps.grantOf(request.moduleId, request.frame)
     // A document built before the extension's access grew uses none of it:
     // the client draws the surface again from the extension as it is now.
     if (held?.outdated)
       return {
-        ok: false,
         code: 'frame_outdated',
         message: `This surface of extension "${request.moduleId}" was drawn before it changed; it is drawn again.`,
       }
@@ -265,7 +326,19 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
       grant: held ? held.grant : null,
       invoker: request.invoker,
     })
-    if (!decision.ok) return { ok: false, code: decision.code, message: decision.message }
+    return decision.ok ? null : { code: decision.code, message: decision.message }
+  }
+
+  return async function callFrameMethod(request: ExtensionFrameCallRequest): Promise<StudioExtensionCallAnswer> {
+    const requirement = extensionFrameMethod(request.method)
+    if (!requirement)
+      return {
+        ok: false,
+        code: 'unknown_method',
+        message: `"${request.method}" is not a host method a frame may call.`,
+      }
+    const refusal = admission(request)
+    if (refusal) return { ok: false, ...refusal }
     // Admitted: the window that drew the frame carries a client method out.
     if (requirement.runs === 'client') return { ok: true, result: null }
     try {

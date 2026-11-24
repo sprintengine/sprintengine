@@ -15,6 +15,11 @@ const WORKER_ENV_ALLOWLIST = [
   'TMPDIR',
   'TEMP',
   'TMP',
+  // Where the session's sockets are, not credentials: a git credential helper
+  // and ssh-agent connect through them, so a worker's git over SSH works.
+  'XDG_RUNTIME_DIR',
+  'DBUS_SESSION_BUS_ADDRESS',
+  'SSH_AUTH_SOCK',
   // Node and libuv on Windows look up DLLs and the system root through these.
   'SYSTEMROOT',
   'SYSTEMDRIVE',
@@ -41,6 +46,13 @@ export function buildWorkerEnv(
     const value = platform === 'win32' ? windows.get(key) : baseEnv[key]
     if (value !== undefined) env[key === 'SYSTEMROOT' ? 'SystemRoot' : key] = value
   }
+  // Electron (Chromium) marks the session bus `disabled:` in its own
+  // environment; a child keeping that mark never finds the real bus at
+  // `$XDG_RUNTIME_DIR/bus`. A real address is kept.
+  if (env.DBUS_SESSION_BUS_ADDRESS === 'disabled:') delete env.DBUS_SESSION_BUS_ADDRESS
+  // A worker has no terminal: a git credential prompt would hang it, or take
+  // the terminal Studio was started from.
+  env.GIT_TERMINAL_PROMPT = '0'
   // Under Electron the fork runs Electron's own binary; this makes it Node.
   env.ELECTRON_RUN_AS_NODE = '1'
   return env

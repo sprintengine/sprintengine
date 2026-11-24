@@ -370,6 +370,27 @@ trust label from where it came from), `killed` and `update`, and its launch
 status `killed`. All of it rides on `extension-host`: a window and its Studio
 are one build, so there is no older peer to serve.
 
+A release of the official catalogue installs without asking for approval,
+and so does an official update that asks for more (owner ruling: content and
+official extensions install without a prompt); the update's notice says what
+it now has. Studio approves it only after every check an install makes (the
+release, its content hash, its owner and the kill list), for exactly the
+fingerprint it installed, so other bytes under its key ask as ever. Community
+and added catalogues, git URLs and folders always ask. The official
+catalogue, its kill list, its owner records and its release lock are trusted
+as Studio reads them over HTTPS from the catalogue repository: they are not
+signed, so whoever can change that repository's `main` decides what is
+official, and what an official update may do.
+
+An extension's publisher is its repository's owner, lowercased, on
+github.com (`github.com/acme/notes` is `acme`). On any other host the
+publisher is marked and carries the host (`gitlab.com/alice/notes` is
+`from-gitlab-com-alice`), and every catalogue, an added one included, must
+list an extension under its repository's owner. A publisher allows nothing a
+GitHub login could not also be, so the mark is reserved: a GitHub owner whose
+name begins `from-` makes no publisher, and cannot install or be listed under
+another host's.
+
 ### Agent hooks (no compatibility)
 
 A worker extension's `contributes.hooks` lets it check, change or refuse what
@@ -404,6 +425,43 @@ extension's provider id, `<publisher>.<id>/<provider id>`, goes through
 are one build. An approval grows when an update adds a local MCP server or
 changes its command, arguments, environment or the files it runs, and when it
 adds a provider or moves one to another origin.
+
+No MCP value an extension supplies (command, arguments, environment values,
+URL) may name a variable or a file of the person's machine (`${NAME}`,
+`${env:NAME}`, `{env:NAME}`, `{file:path}`), which Claude Code, Cursor or
+OpenCode would fill in from the person's environment; only the
+`${extensionPath}` token, which Studio fills in, is allowed. A live chat
+follows the projection: a server withdrawn since its child started (killed,
+switched off, uninstalled, no longer approved, or changed) is dropped before
+the chat's next turn, over Claude Code's control channel or by replacing the
+Codex app-server, never mid-turn. A CLI launched in a terminal reads the
+servers once, at launch, and keeps a withdrawn one until it is started again.
+
+### Where extensions run, and what is not built yet (declared)
+
+Extensions run only on the desktop app's own Studio, in its process or its
+server process. A Studio in a WSL distribution or on an SSH machine, and one
+started on its own (`studio-server serve`, the web listener), holds no
+extension host: no workers, hooks, frames, extension MCP tools or projection
+run there (running the host there is not built). So a hook does not guard a chat such a Studio runs,
+whatever its `onError` says; the install review and the extension's row say
+a hook applies to chats on this computer only. A desktop window paired with
+the desktop draws that desktop's extensions. A browser tab is not granted
+`extensions:operate`, and no Studio with a web listener holds extensions, so
+a web tab draws no extension surfaces.
+
+Not built in this platform, and not offered by the SDK:
+
+- worker events (an `events:subscribe` permission and Studio events a worker
+  hears), and the components runtime (host-drawn controls an extension
+  declares);
+- `install`, `update` and `open` of a published extension from the CLI or an
+  agent: they are the person's, in Settings;
+- a command that `replaces` a built-in action: commands bind to the fixed
+  list of Studio actions;
+- signed official lists: the official catalogue, its kill list, owner records
+  and release lock are trusted as read over HTTPS from the catalogue
+  repository (see the catalogue above).
 
 ### Permissions checked at the host; approvals replace trust (no compatibility)
 

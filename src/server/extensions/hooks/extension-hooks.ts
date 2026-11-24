@@ -260,6 +260,28 @@ export function createExtensionHooks(options: ExtensionHooksOptions = {}): Exten
 }
 
 /**
+ * The decision a person's save of text meets, from whichever editor made it
+ * (Studio's text editor over `files.writeText`, an extension's custom text
+ * editor over a frame's `files.write`): null at once when no extension hooks
+ * `editor.save.before`, else the text to write or a refusal naming the
+ * extension that refused.
+ */
+export function editorSaveDecision(
+  hooks: ExtensionHooks | null | undefined,
+  event: ExtensionHookEvents['editor.save.before'],
+  invoker: ExtensionInvoker,
+): Promise<{ ok: true; text: string } | { ok: false; message: string }> | null {
+  if (!hooks?.wants('editor.save.before')) return null
+  return hooks
+    .run('editor.save.before', event, invoker)
+    .then((outcome) =>
+      outcome.kind === 'deny'
+        ? { ok: false as const, message: extensionHookRefusal(outcome) }
+        : { ok: true as const, text: outcome.event.text },
+    )
+}
+
+/**
  * Run a `before` point and hand back the event to act on, or throw
  * `ExtensionHookDenied`. With no hooks listed it answers the event as given,
  * without awaiting anything but itself.

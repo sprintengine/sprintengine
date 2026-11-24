@@ -41,6 +41,7 @@ import {
   agentEndpointUrlProblem,
   extensionPathUseProblem,
   mcpCommandProblem,
+  mcpServerUrlProblem,
   providerEndpoint,
   providerPathProblem,
 } from './agent-contributions.js'
@@ -1005,7 +1006,7 @@ const CONTRIBUTES: ObjectNode = {
                     value: {
                       node: { kind: 'string', max: 1024, check: extensionPathUseProblem },
                       required: true,
-                      doc: `Its value, as written: Studio reads none from its own environment. \`${EXTENSION_PATH_TOKEN}\` stands for the installed folder.`,
+                      doc: `Its value, as written: Studio reads none from its own environment, and a value naming a variable (\`\${…}\`, \`{env:…}\`) is refused, since an agent would fill it in from the person’s machine. \`${EXTENSION_PATH_TOKEN}\` stands for the installed folder.`,
                       since: V1,
                     },
                   },
@@ -1015,8 +1016,8 @@ const CONTRIBUTES: ObjectNode = {
               since: V1,
             },
             url: {
-              node: { kind: 'string', min: 1, max: 2048, check: agentEndpointUrlProblem },
-              doc: 'Where an `http` server is: `https`, or plain `http` to localhost.',
+              node: { kind: 'string', min: 1, max: 2048, check: mcpServerUrlProblem },
+              doc: 'Where an `http` server is: `https`, or plain `http` to localhost. It names no variable (`${…}`, `{env:…}`): an agent would fill one in from the person’s machine. Nor `${extensionPath}`: a hosted server is not in the extension’s folder.',
               since: V1,
               example: 'https://mcp.example.com/mcp',
             },

@@ -91,9 +91,10 @@ import { createKillListService, type KillListService } from './kill-list'
 // that install:
 //
 // - the publisher is the repository's owner (the catalogue's `id` says it,
-//   and for the official and community catalogues it must be the source
-//   URL's owner); reserved publishers and ids install only from the official
-//   catalogue, and a catalogue listing one otherwise is refused whole;
+//   and for every catalogue it must be the source URL's owner, the host
+//   first on a host other than github.com); reserved publishers and ids
+//   install only from the official catalogue, and a catalogue listing one
+//   otherwise is refused whole;
 // - the checked-out bytes must be the release's (`contentHash`) and its
 //   manifest what the release declares;
 // - a version keeps the commit and hash it was first seen with, here
@@ -271,12 +272,14 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     for (const entry of catalogue.extensions) {
       if (isReservedInstallKey(entry.id) && !official)
         return `It lists ${entry.id}, a name only Studio’s official catalogue may list, so it was refused.`
-      // Studio's own catalogues list each extension under its repository's owner.
-      if (official || id === COMMUNITY_CATALOGUE) {
-        const owner = sourcePublisher(entry.source.url)
-        if (owner !== null && owner !== parseExtensionInstallKey(entry.id)!.publisher)
-          return `It lists ${entry.id} from a repository owned by ${owner}, so it was refused.`
-      }
+      // Every catalogue, an added one too, lists each extension under its
+      // repository's owner: one listing another owner's name would install
+      // as them, block their own and share their kills.
+      const owner = sourcePublisher(entry.source.url)
+      if (owner !== parseExtensionInstallKey(entry.id)!.publisher)
+        return owner === null
+          ? `It lists ${entry.id} from a repository Studio cannot tell the owner of, so it was refused.`
+          : `It lists ${entry.id} from a repository owned by ${owner}, so it was refused.`
     }
     return null
   }
@@ -866,7 +869,9 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         : approval
           ? accessGrowth(approval.access, extensionAccess(next, checkedOut.files))
           : ['your approval']
-    if (growth.length > 0) {
+    // An official release that asks for more goes through too, approved as
+    // it installs (module-lifecycle.ts), and its notice says what it now has.
+    if (growth.length > 0 && catalogue !== OFFICIAL_CATALOGUE) {
       await checkedOut.dispose()
       return hold(module.key, module.manifest.name, { ...exact, reason: 'access', growth })
     }
@@ -876,12 +881,14 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
       deps.warn?.(`Update of ${module.key} failed: ${answer.message}`)
       return
     }
+    const grew = growth.length > 0 ? `It now also has: ${growth.join(', ')}.` : ''
+    const body = [grew, release.changelog ?? ''].filter(Boolean).join('\n\n')
     deps.notify?.({
       key: module.key,
       name: next.name,
       severity: 'info',
       title: `${next.name} updated to ${next.version}`,
-      ...(release.changelog ? { body: release.changelog } : {}),
+      ...(body ? { body } : {}),
     })
   }
 
@@ -972,7 +979,15 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
     async entry(id, key) {
       if (!isKnownCatalogue(id)) return { ok: false, message: 'That catalogue has not been added here.' }
       // Read with the owner records, so the owner id the page shows is the one an install checks.
-      if (!cached(id)) await Promise.all([refreshOne(id), refreshLists()])
+      // The page of one installed from this catalogue previews its update, so
+      // the catalogue is read again first (unless it was a moment ago): a
+      // release published since the last read is the one shown, not "up to
+      // date". Offline, the last copy is shown.
+      const copy = cached(id)
+      const from = readInstallRecordsSync(deps.dataDir)[key]?.origin
+      const previewsUpdate = from?.kind === 'catalogue' && from.catalogue === id
+      if (!copy || (previewsUpdate && now() - copy.fetchedAt >= REFRESH_MIN_INTERVAL_MS))
+        await Promise.all([refreshOne(id), refreshLists()])
       const entry = findEntry(id, key)
       if (!entry) return { ok: false, message: `${catalogueName(id)} does not list ${key}.` }
       const installed = await installedMap()

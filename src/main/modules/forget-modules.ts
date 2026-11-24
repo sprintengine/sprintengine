@@ -2,23 +2,29 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { readModuleOverridesSync, writeModuleOverrides } from '../module-host/enablement-store'
+import { moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
 import { deleteModuleSecrets } from '../module-host/module-secrets'
 import { MODULE_DATA_DIRECTORY } from '../module-host/module-storage'
 import { getSharedCredentialStore } from '../secret-store'
 
 // Everything the app kept for a module outside its folder, dropped once the
 // module is uninstalled — by whichever door: Settings → Extensions, or the
-// marketplace's own Uninstall. Its enablement choice, its stored secrets, the
-// keys entered for its model providers, its
-// per-user storage and its data directory would otherwise wait under its id
+// marketplace's own Uninstall — or its development folder removed. Its
+// enablement choice, its Settings values, its stored secrets, the keys entered
+// for its model providers, its per-user storage and its data directory would
+// otherwise wait under its id
 // for the next module to take that id, which would start with the keys and
 // data the person gave this one. Trust is revoked by whoever removed the folder.
 //
 // Storage a module kept for a project (`modules/<id>` in the project's store,
 // workspace-store.ts) is the project's, and stays with it.
-export async function forgetModules(userData: string, moduleIds: readonly string[]): Promise<void> {
+//
+// Answers what could not be forgotten, in words, for whoever removed it to
+// say (empty when everything went): the rest is forgotten all the same.
+export async function forgetModules(userData: string, moduleIds: readonly string[]): Promise<string[]> {
   const ids = moduleIds.filter(isModuleIdSegment)
-  if (ids.length === 0) return
+  if (ids.length === 0) return []
+  const problems: string[] = []
   const overrides = readModuleOverridesSync(userData)
   if (ids.some((id) => id in overrides)) {
     const next = { ...overrides }
@@ -26,6 +32,13 @@ export async function forgetModules(userData: string, moduleIds: readonly string
     await writeModuleOverrides(userData, next)
   }
   for (const id of ids) {
+    // Its Settings values (`module:<id>`), on disk and in the process's copy,
+    // whose listeners (Settings, its worker's watch) hear them gone.
+    try {
+      moduleAppStateMirrorFor(userData).forget(id)
+    } catch (error) {
+      problems.push(`its Settings values (${error instanceof Error ? error.message : String(error)})`)
+    }
     await deleteModuleSecrets(userData, id).catch(() => undefined)
     await rm(join(userData, 'module-storage', id), { recursive: true, force: true }).catch(() => undefined)
     // The module's private directory (`MainHost.getModuleDataDir`).
@@ -35,6 +48,7 @@ export async function forgetModules(userData: string, moduleIds: readonly string
       .forgetUnder(`${id}/`)
       .catch(() => undefined)
   }
+  return problems
 }
 
 export function isModuleIdSegment(id: string): boolean {

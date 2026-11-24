@@ -18,6 +18,7 @@ import {
   type AccessItem,
   type OverflowMenuItem,
 } from '../ui'
+import { extensionHookApprovalLines } from '../../../../../packages/extension-sdk/src/hooks'
 import { agentContributionLines, type ExtensionContribution } from './extensionContributions'
 import { AgentContributionList } from './AgentContributionList'
 import { RUN_STATE_LABEL, publisherName, type ExtensionRunState } from './extensionsModel'
@@ -99,6 +100,7 @@ export function ExtensionDetails({
 }: ExtensionDetailsProps): JSX.Element {
   const { manifest } = module
   const agentLines = agentContributionLines(module.extension, module.ignoredSkillKeys)
+  const hookLines = extensionHookApprovalLines((module.extension.contributes.hooks ?? []).map((hook) => hook.point))
   return (
     <div className="flex flex-col">
       <div className="flex items-start gap-3 px-4 pb-3 pt-4">
@@ -131,6 +133,19 @@ export function ExtensionDetails({
                   {add.label}
                 </li>
               ))}
+            </ul>
+          </section>
+        ) : null}
+        {hookLines.length > 0 ? (
+          <section aria-label={copy.settings.extensionRow.hooks}>
+            <DetailsHeading>{copy.settings.extensionRow.hooks}</DetailsHeading>
+            <ul className="list-disc space-y-0.5 pl-5 text-meta text-[color:var(--text-default)]">
+              {hookLines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+              {/* Extensions run on this computer's Studio alone: a chat a WSL
+                  distribution or an SSH machine runs meets none of its hooks. */}
+              <li>{copy.settings.extensionRow.hooksThisComputerOnly}</li>
             </ul>
           </section>
         ) : null}

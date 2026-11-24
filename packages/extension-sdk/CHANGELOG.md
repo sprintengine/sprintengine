@@ -33,7 +33,12 @@ extension built against 3.x must be rewritten to this one.
     key is dropped and listed as ignored at install. It asks for no approval.
   - An MCP server is `stdio` (`command`, `args`, `env` as `{ name, value }`
     pairs; `${extensionPath}` stands for the installed folder) or `http`
-    (`url`: https, or plain http to localhost). Agents see it as
+    (`url`: https, or plain http to localhost). No value may name a variable
+    or a file of the person's machine (`${NAME}`, `${env:NAME}`,
+    `{env:NAME}`, `{file:path}`), which an agent CLI would fill in from the
+    person's environment; only `${extensionPath}` is filled in, by Studio,
+    and never in a `url`, which names no reference at all.
+    Agents see it as
     `<publisher>_<id>_<server id>`. A hosted one asks for no approval. A local
     one is approved at install, bound to its command, arguments, environment
     and every file the extension ships, so an update that changes any of them
@@ -46,7 +51,8 @@ extension built against 3.x must be rewritten to this one.
     update moves it to another origin.
 - New exports for the rules the validator, the install review and Studio
   share: `EXTENSION_PATH_TOKEN`, `withExtensionPath`, `mcpCommandProblem`,
-  `extensionPathUseProblem`, `agentEndpointUrlProblem`, `providerPathProblem`,
+  `extensionPathUseProblem`, `mcpServerUrlProblem`, `holdsVariableReference`,
+  `variableReferenceProblem`, `agentEndpointUrlProblem`, `providerPathProblem`,
   `providerEndpoint`, `providerOrigin`, `extensionMcpServerName`,
   `extensionProviderId`, `SKILL_FILE_MAX_BYTES` and
   `SKILL_FOLDER_MAX_FILES`; types `ExtensionSkillContribution`,

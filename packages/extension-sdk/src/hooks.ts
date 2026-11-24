@@ -325,7 +325,7 @@ export const EXTENSION_HOOK_SPECS: Readonly<Record<ExtensionHookPoint, Extension
     changes: { text: text(EXTENSION_HOOK_FILE_MAX_CHARS) },
     approval: 'Can check, change or refuse the files you save in the editor',
     summary:
-      'The person is about to save a text file from Studio’s editor, on whichever machine holds it. Change `text` (format on save), and the editor shows what was saved; or return `{ deny }` to refuse the save, and the editor shows the reason and keeps the edits unsaved.',
+      'The person is about to save a text file from Studio’s editor or from an extension’s custom editor of text. Change `text` (format on save), and the editor shows what was saved; or return `{ deny }` to refuse the save, and the editor shows the reason and keeps the edits unsaved.',
     event:
       '{ path: string; workspaceId: string | null; relativePath: string | null; languageId: string | null; text: string }',
   },

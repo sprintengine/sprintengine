@@ -11,6 +11,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -288,6 +289,7 @@ test('a local MCP server is approved once at install; a changed command asks aga
   if (!changed.ok || changed.approval.state !== 'pending') throw new Error('expected a pending approval')
   await lifecycle.approve(KEY, changed.approval.fingerprint)
   expect(launchExtensionContributions(dataDir).servers).toHaveLength(1)
+  const launchedBeforeRecode = chatExtensionContributions(dataDir).mcpServers[0]!.extensionGeneration
   const recoded = await lifecycle.install(
     source(
       { mcpServers: [stdio(['${extensionPath}/dist/server.js', '--write'])] },
@@ -296,6 +298,15 @@ test('a local MCP server is approved once at install; a changed command asks aga
   )
   expect(recoded).toMatchObject({ approval: { state: 'pending' } })
   expect(launchExtensionContributions(dataDir).servers).toEqual([])
+
+  // Approved: a chat is handed it under the same launch, with a new content
+  // generation, so a live chat starts it again (extension-mcp-servers.ts).
+  if (!recoded.ok || recoded.approval.state !== 'pending') throw new Error('expected a pending approval')
+  await lifecycle.approve(KEY, recoded.approval.fingerprint)
+  const [rerun] = chatExtensionContributions(dataDir).mcpServers
+  expect(rerun).toMatchObject({ id: 'local_tools_search', command: 'node' })
+  expect(rerun!.extensionGeneration).toMatch(/^[0-9a-f]{24}$/)
+  expect(rerun!.extensionGeneration).not.toBe(launchedBeforeRecode)
 })
 
 /** Install a local server and approve it: the lifecycle, and the installed server file. */
@@ -362,6 +373,47 @@ test('a launch or a chat leaves out a local server whose folder no longer holds 
     vi.useRealTimers()
     warn.mockRestore()
   }
+})
+
+test('a development folder in a git checkout hands its local server out once approved, checked as a working copy', async () => {
+  const { dataDir, start } = setup()
+  const lifecycle = start()
+  // A development folder is a working copy: its .git and node_modules are
+  // left out of its content, never a reason to hold its server back.
+  const work = realpathSync(mkdtempSync(join(tmpdir(), 'agent-contributions-work-')))
+  const folder = writeExtensionFolder(join(work, 'tools'), {
+    manifest: extensionManifest({
+      id: 'tools',
+      tier: 'declarative',
+      permissions: [],
+      main: undefined,
+      contributes: { mcpServers: [stdio()] },
+    }),
+    files: {
+      'dist/server.js': 'console.log(1)\n',
+      '.git/HEAD': 'ref: refs/heads/main\n',
+      'node_modules/dep/index.js': 'module.exports = 1\n',
+    },
+  })
+  const loaded = await lifecycle.devLoad(folder)
+  if (!loaded.ok || loaded.approval.state !== 'pending') throw new Error('expected a pending approval')
+  expect(launchExtensionContributions(dataDir).servers, 'nothing runs before the approval').toEqual([])
+  expect(await lifecycle.approve(loaded.moduleId, loaded.approval.fingerprint)).toEqual({ ok: true })
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  try {
+    expect(projectedExtensions(dataDir)[0]?.runsFrom).toMatchObject({ moduleRoot: folder, development: true })
+    expect(chatExtensionContributions(dataDir).mcpServers).toEqual([
+      expect.objectContaining({ id: `${loaded.moduleId.replace('.', '_')}_search`, command: 'node' }),
+    ])
+    expect(launchExtensionContributions(dataDir).servers).toHaveLength(1)
+    expect(warn).not.toHaveBeenCalled()
+  } finally {
+    warn.mockRestore()
+  }
+
+  // The same files installed are refused for their .git, as at any install.
+  const installed = await lifecycle.install(folder)
+  expect(installed.ok).toBe(false)
 })
 
 test('switching an extension off retracts what it hands agents; switching it on brings it back', async () => {

@@ -104,9 +104,14 @@ export function isExtensionRunnable(standing: ExtensionStanding): boolean {
 export type ExtensionContentResult =
   { ok: true; fingerprint: string; files: ModuleFileDigests } | { ok: false; issues: ModuleTrustIssue[] }
 
-/** The content identity of an extension's folder, or why it has none (a symbolic link, a .git …). */
-export function extensionContentSync(root: string): ExtensionContentResult {
-  const scan = computeModuleFileDigestsSync(root)
+/**
+ * The content identity of an extension's folder, or why it has none (a
+ * symbolic link, a .git …). `development`: a development folder's, walked as
+ * its standing is (`classifyDevelopmentExtension`: node_modules, .git, dotted
+ * folders and links left out), not refused for holding them.
+ */
+export function extensionContentSync(root: string, options: { development?: boolean } = {}): ExtensionContentResult {
+  const scan = computeModuleFileDigestsSync(root, options.development ? { walk: 'development' } : {})
   if (!scan.ok) return { ok: false, issues: scan.issues }
   return { ok: true, fingerprint: extensionContentFingerprint(scan.files), files: scan.files }
 }

@@ -4,6 +4,7 @@ import type { CapabilityModule, MainModuleLoadError } from '../../main/module-ho
 import { isExtensionRunnable } from '../../main/modules/module-signature'
 import type { InstalledModule, ModuleRejection, UserModuleListResult } from '../../main/modules/user-module-registry'
 import type { ExtensionWorkers, InstalledStanding } from './workers/worker-manager'
+import type { ExtensionFrameStanding } from '../../main/modules/extension-frame-grant'
 
 // The installed extensions as one Studio server's module kernel loads them.
 //
@@ -131,4 +132,17 @@ export function installedStandingOf(discovered: UserModuleListResult): Map<strin
       },
     ]),
   )
+}
+
+/** How one extension stands as discovery found it, for its frames' calls (extension-frame-grant.ts). */
+export function frameStandingOf(discovered: UserModuleListResult, key: string): ExtensionFrameStanding | undefined {
+  const module = discovered.modules.find((candidate) => candidate.key === key)
+  if (!module) return undefined
+  return {
+    runnable: isExtensionRunnable(module.standing),
+    version: module.extension.version,
+    moduleRoot: module.moduleRoot,
+    contentDigest: module.standing.contentDigest,
+    development: module.development !== undefined,
+  }
 }

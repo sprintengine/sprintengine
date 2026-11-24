@@ -113,6 +113,9 @@ export function ApprovalReviewDialog({
                 <li key={line}>{line}</li>
               ))}
               {failsClosed ? <li>{t.hooksFailClosed}</li> : null}
+              {/* Extensions run on this computer's Studio alone: a chat a WSL
+                  distribution or an SSH machine runs meets none of its hooks. */}
+              <li>{t.hooksThisComputerOnly}</li>
             </ul>
           </section>
         ) : null}

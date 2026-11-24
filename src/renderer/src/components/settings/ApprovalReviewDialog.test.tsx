@@ -118,3 +118,11 @@ test('a local MCP server is approved with its whole command line and environment
   expect(text).toContain('Skill “review”')
   expect(text).toContain('Your key for it is sent to https://api.example.com only')
 })
+
+test('hooks are approved as applying to chats on this computer only', () => {
+  const module = view('worker', [])
+  ;(module.extension.contributes as Record<string, unknown>).hooks = [{ point: 'agent.tool.before', onError: 'deny' }]
+  const text = shown(module)
+  expect(text).toContain('Hooks into what your agents and Studio do')
+  expect(text).toContain('Applies to chats on this computer only, not to chats in WSL or on SSH machines')
+})

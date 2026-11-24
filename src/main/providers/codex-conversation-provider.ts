@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { handedExtensionServers, withdrawnExtensionServers, type HandedExtensionServers } from './extension-mcp-servers'
 import type { ChatExtensionContributions } from '../../server/extensions/agent-contributions/projection'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -223,6 +224,10 @@ type Session = {
   // app-server is restarted before the next turn so the thread resumes
   // without it. Set while a turn was running, when it could not be then.
   resetPolicy?: boolean
+  // The installed extensions' MCP servers the app-server was started with
+  // (extension-mcp-servers.ts): one withdrawn since restarts it before the
+  // next turn (followExtensionServers).
+  extensionServers?: HandedExtensionServers
   // How the signed-in account pays, from `account/read`: only a ChatGPT
   // sign-in has plan limits to read. Null until known.
   usageBilling?: 'subscription' | 'api' | null
@@ -462,6 +467,26 @@ export function createCodexConversationProvider(
     state.transport = null
     state.spawnedAt = null
     stopLanes(state, 'The agent stopped when Codex restarted with the new permissions.')
+    transport.close()
+  }
+  // The extensions' servers ride the app-server's command line, which a
+  // running one cannot drop: `config/mcpServer/reload` reads the config files
+  // again, never the overrides. So an app-server started with a server of an
+  // extension killed, switched off, uninstalled or no longer approved since,
+  // or one changed since, is closed before the next turn, and that turn
+  // resumes the thread on one started with the servers as they are now; its
+  // local servers end with it. Never mid-turn. A server only added since
+  // waits for the next start, which nothing needs to hurry.
+  function followExtensionServers(state: Session) {
+    const started = state.extensionServers
+    const transport = state.transport
+    if (!started || !transport) return
+    const now = handedExtensionServers(handedToCodexSession(state, options.extensionContributions?.().mcpServers ?? []))
+    if (withdrawnExtensionServers(started, now).length === 0) return
+    state.transport = null
+    state.spawnedAt = null
+    state.extensionServers = undefined
+    stopLanes(state, 'The agent stopped when Codex restarted without an extension’s MCP server.')
     transport.close()
   }
   // Ends the turn on this side and closes the app-server, whose thread the
@@ -1270,10 +1295,10 @@ export function createCodexConversationProvider(
       // names, so the entry names the token's and never carries it: these
       // overrides are the app-server's command line. An installed
       // extension's servers join them unless one of the session's own has
-      // the same name.
-      const extensionServers = (options.extensionContributions?.().mcpServers ?? []).filter(
-        (server) => !(state.input.mcpServers ?? []).some((own) => own.id === server.id),
-      )
+      // the same name. Codex reads every value as written (it expands no
+      // `${NAME}` in its config, measured against codex-cli 0.161.0), so an
+      // extension's values reach its servers as the manifest has them.
+      const extensionServers = handedToCodexSession(state, options.extensionContributions?.().mcpServers ?? [])
       const mcpServers = withStudioGateway(
         gateway
           ? studioGatewayForChat(
@@ -1313,6 +1338,7 @@ export function createCodexConversationProvider(
       })
       state.transport = transport
       state.spawnedAt = Date.now()
+      state.extensionServers = handedExtensionServers(extensionServers)
       try {
         await transport.request('initialize', CODEX_INITIALIZE)
         transport.notify('initialized', {})
@@ -1549,6 +1575,7 @@ export function createCodexConversationProvider(
           // Capture before starting the autonomous turn, not after an edit notification.
           await state.input.onBeforeTool?.('Edit')
           if (state.resetPolicy) restartForPolicy(state)
+          followExtensionServers(state)
           await ensureConnected(state)
           if (state.closed || !state.turn || state.turn.cancelled || input.signal?.aborted) {
             finish(state, undefined, true)
@@ -2030,6 +2057,14 @@ const CODEX_MCP_STATUS: Readonly<Record<string, AgentMcpServerStatus>> = {
   starting: 'pending',
   ready: 'connected',
   failed: 'failed',
+}
+
+/** The extensions' servers a Codex session is handed: all but those of a name one of its own has. */
+function handedToCodexSession(
+  state: { input: { mcpServers?: readonly ConversationMcpServer[] } },
+  servers: readonly ConversationMcpServer[],
+): ConversationMcpServer[] {
+  return servers.filter((server) => !(state.input.mcpServers ?? []).some((own) => own.id === server.id))
 }
 
 export function codexMcpServerArgs(

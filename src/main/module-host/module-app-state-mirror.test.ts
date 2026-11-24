@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'vitest'
@@ -130,4 +130,50 @@ test('unloading a module drops its app-state watches', async () => {
   await kernel.unregisterModule('insights')
   mirror.setValue('insights', 'time', '06:00')
   assert.deepEqual(heard, [])
+})
+
+test('forgetting a module drops its namespace on disk and here, and its listeners hear it emptied', () => {
+  writeFileSync(filePath, JSON.stringify({ 'module:acme.notes': { folder: 'inbox' }, 'module:other': { keep: 1 } }))
+  const mirror = createModuleAppStateMirror({ filePath, watchFile: false })
+  const heard: unknown[] = []
+  const changed: string[] = []
+  mirror.subscribe('acme.notes', (values) => heard.push(values))
+  mirror.subscribeAll((moduleId) => changed.push(moduleId))
+  assert.deepEqual(mirror.get('acme.notes'), { folder: 'inbox' })
+
+  mirror.forget('acme.notes')
+  assert.deepEqual(mirror.get('acme.notes'), {})
+  assert.deepEqual(mirror.get('other'), { keep: 1 })
+  assert.deepEqual(heard, [{}])
+  assert.deepEqual(changed, ['acme.notes'])
+  assert.deepEqual(JSON.parse(readFileSync(filePath, 'utf8')), { 'module:other': { keep: 1 } })
+
+  // Forgetting one with nothing kept writes nothing and tells no one.
+  mirror.forget('acme.notes')
+  assert.deepEqual(changed, ['acme.notes'])
+  mirror.dispose()
+})
+
+test('a forgetting whose file cannot be written changes nothing here, and says so', () => {
+  const kept = { 'module:acme.notes': { folder: 'inbox' } }
+  writeFileSync(filePath, JSON.stringify(kept))
+  const mirror = createModuleAppStateMirror({ filePath, watchFile: false })
+  const heard: unknown[] = []
+  mirror.subscribe('acme.notes', (values) => heard.push(values))
+  // The write cannot land: where its temporary file goes is a folder.
+  const tmp = `${filePath}.${process.pid}.tmp`
+  mkdirSync(tmp)
+  try {
+    assert.throws(() => mirror.forget('acme.notes'))
+    assert.deepEqual(mirror.get('acme.notes'), { folder: 'inbox' }, 'not emptied here')
+    assert.deepEqual(heard, [], 'no listener told')
+    assert.deepEqual(JSON.parse(readFileSync(filePath, 'utf8')), kept)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+  // Once it can be written, it is forgotten.
+  mirror.forget('acme.notes')
+  assert.deepEqual(mirror.get('acme.notes'), {})
+  assert.deepEqual(heard, [{}])
+  mirror.dispose()
 })

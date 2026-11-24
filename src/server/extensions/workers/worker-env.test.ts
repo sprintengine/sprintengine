@@ -25,7 +25,38 @@ test('the environment is the allow-list, and Electron runs as Node', () => {
     },
     'darwin',
   )
-  assert.deepEqual(env, { PATH: '/usr/bin', HOME: '/Users/dev', LANG: 'en_GB.UTF-8', ELECTRON_RUN_AS_NODE: '1' })
+  assert.deepEqual(env, {
+    PATH: '/usr/bin',
+    HOME: '/Users/dev',
+    LANG: 'en_GB.UTF-8',
+    GIT_TERMINAL_PROMPT: '0',
+    ELECTRON_RUN_AS_NODE: '1',
+  })
+})
+
+test('the session’s socket pointers pass, so git over SSH and credential helpers work, and git never prompts', () => {
+  const env = buildWorkerEnv(
+    {
+      PATH: '/usr/bin',
+      SSH_AUTH_SOCK: '/tmp/ssh-agent.sock',
+      XDG_RUNTIME_DIR: '/run/user/1000',
+      DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+      GIT_TERMINAL_PROMPT: '1',
+      GIT_ASKPASS: '/usr/bin/askpass',
+    },
+    'linux',
+  )
+  assert.deepEqual(env, {
+    PATH: '/usr/bin',
+    XDG_RUNTIME_DIR: '/run/user/1000',
+    DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+    SSH_AUTH_SOCK: '/tmp/ssh-agent.sock',
+    GIT_TERMINAL_PROMPT: '0',
+    ELECTRON_RUN_AS_NODE: '1',
+  })
+  // Chromium's no-bus mark is dropped, so the child looks for the real one.
+  assert.equal(buildWorkerEnv({ DBUS_SESSION_BUS_ADDRESS: 'disabled:' }, 'linux').DBUS_SESSION_BUS_ADDRESS, undefined)
+  assert.equal(buildWorkerEnv({ SSH_AUTH_SOCK: '\\\\.\\pipe\\agent' }, 'win32').SSH_AUTH_SOCK, '\\\\.\\pipe\\agent')
 })
 
 test('on Windows names fold, and the system root keeps its spelling', () => {
@@ -34,6 +65,7 @@ test('on Windows names fold, and the system root keeps its spelling', () => {
     PATH: 'C:\\Windows',
     USERPROFILE: 'C:\\Users\\dev',
     SystemRoot: 'C:\\Windows',
+    GIT_TERMINAL_PROMPT: '0',
     ELECTRON_RUN_AS_NODE: '1',
   })
 })
@@ -82,6 +114,10 @@ test('a real worker sees only the allow-list, and runs with no Node flags of Stu
         'TMPDIR',
         'TEMP',
         'TMP',
+        'XDG_RUNTIME_DIR',
+        'DBUS_SESSION_BUS_ADDRESS',
+        'SSH_AUTH_SOCK',
+        'GIT_TERMINAL_PROMPT',
         'ELECTRON_RUN_AS_NODE',
       ].includes(key) ||
         // What Node itself sets in a child it starts.

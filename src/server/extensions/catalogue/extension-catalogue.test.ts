@@ -410,6 +410,91 @@ describe('installing from a git URL', () => {
   })
 })
 
+describe('the official catalogue', () => {
+  const growingManifest = (version: string) =>
+    notesManifest({
+      version,
+      contributes: {
+        skills: [{ id: 'notes', path: 'skills/notes' }],
+        commands: [{ id: 'notes.settings', title: 'Notes settings', action: 'app.settings.open' }],
+        mcpServers: [{ id: 'notes', name: 'Notes', transport: 'stdio', command: 'npx', args: ['some-server'] }],
+      },
+    })
+
+  test('an official release installs approved, for exactly its bytes; no other source of it does', async () => {
+    const env = setup()
+    const repo = env.repository('sprintengine', 'notes', notesFiles())
+    const entry = {
+      id: 'sprintengine.notes',
+      source: { url: repo.url, ref: 'main' },
+      releases: [await env.release(repo.folder)],
+    }
+    env.serveCatalogue('official', [entry])
+    const answer = await env.lifecycle.catalogue.installFrom({ catalogue: 'official', id: 'sprintengine.notes' })
+    expect(answer).toMatchObject({ ok: true, approval: { state: 'approved' } })
+    const [view] = await env.installed()
+    expect(view?.approval.state).toBe('approved')
+
+    // Bound to the fingerprint installed: its files changed on disk ask as ever.
+    writeFileSync(join(env.moduleRoot, 'sprintengine.notes', 'skills/notes/SKILL.md'), `${SKILL}\nChanged.\n`)
+    expect((await env.installed())[0]?.approval.state).toBe('pending')
+  })
+
+  test('the same release from the community catalogue, an added catalogue or a git URL asks', async () => {
+    const env = setup()
+    const repo = env.repository('acme', 'notes', notesFiles())
+    const entry = {
+      id: 'acme.notes',
+      source: { url: repo.url, ref: 'main' },
+      releases: [await env.release(repo.folder)],
+    }
+    env.serveCatalogue('community', [entry])
+    const community = await env.lifecycle.catalogue.installFrom({ catalogue: 'community', id: 'acme.notes' })
+    expect(community).toMatchObject({ ok: true, approval: { state: 'pending' } })
+    await env.lifecycle.uninstall('acme.notes')
+    const git = await env.lifecycle.catalogue.installFrom({ git: repo.url })
+    expect(git).toMatchObject({ ok: true, approval: { state: 'pending' } })
+  })
+
+  test('an official update that asks for more installs quietly, approved, and its notice says what it now has', async () => {
+    const env = setup()
+    const repo = env.repository('sprintengine', 'notes', notesFiles())
+    const v1 = await env.release(repo.folder)
+    const entry = (releases: CatalogueRelease[]) => ({
+      id: 'sprintengine.notes',
+      source: { url: repo.url, ref: 'main' },
+      releases,
+    })
+    env.serveCatalogue('official', [entry([v1])])
+    await env.lifecycle.catalogue.installFrom({ catalogue: 'official', id: 'sprintengine.notes' })
+    env.commit(repo.folder, repo.dir, { 'extension.json': JSON.stringify(growingManifest('1.1.0'), null, 2) })
+    const v2 = await env.release(repo.folder)
+    env.serveCatalogue('official', [entry([v2, v1])])
+    await env.lifecycle.catalogue.runUpdates()
+
+    const [view] = await env.installed()
+    expect(env.warnings).toEqual([])
+    expect(view?.extension.version).toBe('1.1.0')
+    expect(view?.approval.state).toBe('approved')
+    expect(view?.update).toBeUndefined()
+    const notice = env.notices.find((candidate) => candidate.title === 'Notes updated to 1.1.0')
+    expect(notice?.body).toMatch(/It now also has: .*local MCP server "notes"/)
+  })
+
+  test('a killed official release is refused, never approved', async () => {
+    const env = setup()
+    const repo = env.repository('sprintengine', 'notes', notesFiles())
+    const release = await env.release(repo.folder)
+    env.serveCatalogue('official', [
+      { id: 'sprintengine.notes', source: { url: repo.url, ref: 'main' }, releases: [release] },
+    ])
+    env.serveKillList([{ id: 'sprintengine.notes', reason: 'It was withdrawn.' }])
+    const answer = await env.lifecycle.catalogue.installFrom({ catalogue: 'official', id: 'sprintengine.notes' })
+    expect(answer).toMatchObject({ ok: false })
+    expect(await env.installed()).toEqual([])
+  })
+})
+
 describe('the kill list', () => {
   test('a killed version is switched off, what it added is retracted, and it cannot be installed again', async () => {
     const env = setup()
@@ -528,6 +613,30 @@ describe('automatic updates', () => {
     const updated = await env.lifecycle.catalogue.update('acme.notes')
     expect(updated).toMatchObject({ ok: true, approval: { state: 'pending' } })
     expect((await env.installed())[0]?.update).toBeUndefined()
+  })
+
+  test('an installed extension’s page reads its catalogue again first, so it previews a release published since', async () => {
+    const env = setup()
+    const { repo, v1, entry } = await installedV1(env)
+    env.commit(repo.folder, repo.dir, {
+      'extension.json': JSON.stringify(notesManifest({ version: '1.1.0' }), null, 2),
+    })
+    const v2 = await env.release(repo.folder)
+    // Published after the catalogue was last read.
+    env.serveCatalogue('community', [entry([v2, v1])])
+    // A moment after the last read, the copy is still the one shown.
+    const soon = await env.lifecycle.catalogue.entry('community', 'acme.notes')
+    expect(soon.ok && soon.entry.version).toBe('1.0.0')
+    env.advance(60_000)
+    const page = await env.lifecycle.catalogue.entry('community', 'acme.notes')
+    expect(page.ok && page.entry.version).toBe('1.1.0')
+    expect((await env.installed())[0]?.update).toMatchObject({ version: '1.1.0' })
+
+    // Offline, the last copy is shown.
+    env.served.delete(env.urls.community)
+    env.advance(60_000)
+    const offline = await env.lifecycle.catalogue.entry('community', 'acme.notes')
+    expect(offline.ok && offline.entry.version).toBe('1.1.0')
   })
 
   test('a renamed or transferred owner pauses updates', async () => {
@@ -771,7 +880,7 @@ describe('an install keeps its source', () => {
 })
 
 describe('the release lock and the owner records', () => {
-  test('another catalogue listing the same id locks nothing for the install', async () => {
+  test('an added catalogue listing another owner’s id is refused whole, and locks nothing for the install', async () => {
     const env = setup()
     const repo = env.repository('acme', 'notes', notesFiles())
     const v1 = await env.release(repo.folder)
@@ -789,8 +898,9 @@ describe('the release lock and the owner records', () => {
         extensions: [{ id: 'acme.notes', source: { url: fork.url, ref: 'main' }, releases: [forked, v1] }],
       }),
     })
-    expect(await env.lifecycle.catalogue.add(index.url)).toMatchObject({ ok: true })
-    await env.lifecycle.catalogue.catalogues(true)
+    const added = await env.lifecycle.catalogue.add(index.url)
+    expect(!added.ok && added.message).toMatch(/lists acme\.notes from a repository owned by mallory/)
+    expect((await env.lifecycle.catalogue.catalogues(true)).map((catalogue) => catalogue.name)).not.toContain('Mirror')
     expect(readReleaseLockSync(env.dataDir)['acme.notes']?.['1.1.0']).toBeUndefined()
 
     // The real 1.1.0 installs from the catalogue it came from.

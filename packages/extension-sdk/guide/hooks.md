@@ -91,9 +91,13 @@ not. A hook can never widen what anyone may do.
 ## Where hooks run
 
 Hooks run on the Studio that holds the action: the one whose chat, terminal,
-workspace or file it is. A chat on a paired machine is decided by the
-extensions installed on that machine's Studio, and a save of a file on another
-machine by that machine's.
+workspace or file it is. Extensions run only on the desktop app's own Studio,
+so a hook guards the chats, terminals, workspaces and files on this computer
+only. A chat in a WSL distribution or on an SSH machine, and anything a Studio
+started on its own (`studio-server serve`) runs, is run by a Studio that holds
+no extensions: no hook guards it, whatever its `onError` says. The install
+review says so beside the hooks it lists. A chat on a paired desktop is decided
+by the extensions installed on the desktop that runs it.
 
 ## What each point reaches today
 
@@ -133,9 +137,11 @@ machine by that machine's.
   For a new chat cut a worktree of its own, the hook runs before the cut, and
   a changed `branch` or `base` is the one it is cut on or forks from; a
   worktree that already exists keeps its own.
-- `editor.save.before`: a save the person makes in Studio's editor, docked or
-  popped out, of a text file on any machine whose Studio runs hooks. Autosave
-  and an agent's own edits are not saves the person made. The event carries
+- `editor.save.before`: a save the person makes of a text file in Studio's
+  editor, docked or popped out, or in an extension's custom editor of text
+  (the editor's own Save, and the save Studio asks for before the tab closes).
+  Autosave, an agent's own edits, a frame's own `files.write` and a custom
+  editor of bytes are not saves the person made of text. The event carries
   the file's `path` on its machine, the workspace it was opened in
   (`workspaceId`), its path inside that workspace's folder (`relativePath`,
   null outside it) and its language as the editor names it (`languageId`).
@@ -153,7 +159,7 @@ machine by that machine's.
 | `terminal.write.before` | `{ terminalId: string; workspaceId: string \| null; agent: string \| null; from: 'studio' \| 'extension'; inputKind: 'send' \| 'notice'; text: string; enter: boolean }` | `{ deny }`, `{ change }` or nothing | `text`, `enter` | Studio is about to type into a terminal for someone other than a person at its keyboard: an extension’s or a tool’s raw write. Keystrokes from a person (on any machine) are never hooked, and a prompt to an agent takes `agent.prompt.before` instead. Change `text` or `enter`, or return `{ deny }` to refuse the write. |
 | `workspace.create.before` | `{ for: 'chat' \| 'workspace'; name: string \| null; folderPath: string \| null; project: string \| null; worktree: boolean; branch: string \| null; base: string \| null }` | `{ deny }`, `{ change }` or nothing | `name`, `branch`, `base` | Studio is about to make a workspace: for a new chat, or one an agent or extension asked for. Change `name`; for a new chat cut a worktree of its own, change the `branch` it is cut on or the `base` it forks from (a change to either is ignored where the worktree already exists); or return `{ deny }` to refuse it. |
 | `workspace.create.after` | `{ for: 'chat' \| 'workspace'; workspaceId: string; name: string; folderPath: string \| null; project: string \| null; worktree: boolean; branch: string \| null; base: string \| null }` | nothing: it observes | — | Studio made a workspace. Observe only: Studio does not wait for it. |
-| `editor.save.before` | `{ path: string; workspaceId: string \| null; relativePath: string \| null; languageId: string \| null; text: string }` | `{ deny }`, `{ change }` or nothing | `text` | The person is about to save a text file from Studio’s editor, on whichever machine holds it. Change `text` (format on save), and the editor shows what was saved; or return `{ deny }` to refuse the save, and the editor shows the reason and keeps the edits unsaved. |
+| `editor.save.before` | `{ path: string; workspaceId: string \| null; relativePath: string \| null; languageId: string \| null; text: string }` | `{ deny }`, `{ change }` or nothing | `text` | The person is about to save a text file from Studio’s editor or from an extension’s custom editor of text. Change `text` (format on save), and the editor shows what was saved; or return `{ deny }` to refuse the save, and the editor shows the reason and keeps the edits unsaved. |
 
 <!-- generated:extension-hook-reference:end -->
 

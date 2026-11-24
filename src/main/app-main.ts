@@ -19,9 +19,10 @@ import { SCHEDULED_AGENTS_MANIFEST, scheduledAgentsSwitchModule } from './module
 import type { ExtensionStandingContext } from './modules/module-signature'
 import { createExtensionApprovalReader } from './modules/extension-approvals'
 import { createExtensionFrameGrant } from './modules/extension-frame-grant'
+import { editorSaveDecision } from '../server/extensions/hooks/extension-hooks'
 import { readExtensionStandingContextSync } from './modules/extension-standing-context'
 import { catalogueNotification } from '../server/extensions/catalogue/extension-catalogue'
-import { installedStandingOf, planInstalledExtensions } from '../server/extensions/extension-plan'
+import { frameStandingOf, installedStandingOf, planInstalledExtensions } from '../server/extensions/extension-plan'
 import { createExtensionDiscovery } from '../server/extensions/extension-discovery'
 import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
 import { resolveWorkerEntryPath, resolveExtensionSdkRoot } from '../server/extensions/workers/worker-process'
@@ -233,9 +234,15 @@ const moduleLoad = loadMainModules({
   resolveFrameGrant: createExtensionFrameGrant({
     approvals: extensionApprovals,
     dataDir: app.getPath('userData'),
+    standing: (moduleId) => frameStandingOf(extensionDiscovery.current(), moduleId),
+    // A folder changed where no watcher heard it: discovery reads it again.
+    refresh: () => extensionDiscovery.invalidate(),
   }),
   onKernel: extensionWorkers.bind,
   frameFileExclusions: () => [app.getPath('userData'), defaultUserModuleRoot()],
+  // A save in a custom text editor meets the save hooks as one in Studio's text editor does.
+  frameEditorSaveHooks: ({ invoker, ...event }) =>
+    editorSaveDecision(services.studioCore.extensionHooks, event, invoker),
   ineligible: thirdPartyMainLoad.ineligible,
   launchErrors: thirdPartyMainLoad.launchErrors,
   // Module events reach every client following the Studio's `extension.events`
