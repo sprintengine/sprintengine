@@ -1176,6 +1176,29 @@ describe('installing and updating from outside the window', () => {
     ])
   })
 
+  test('a killed newer release is refused by name, not reported as up to date', async () => {
+    const env = setup()
+    const { repo, v1, entry } = await installedV1(env)
+    env.commit(repo.folder, repo.dir, {
+      'extension.json': JSON.stringify(notesManifest({ version: '1.1.0' }), null, 2),
+    })
+    env.serveCatalogue('community', [entry([await env.release(repo.folder), v1])])
+    env.serveKillList([{ id: 'acme.notes', versions: ['1.1.0'], reason: 'It sends your files away.' }])
+    await env.lifecycle.catalogue.killList.refresh()
+    env.advance(AUTO_UPDATE_HOLD_BACK_MS + 60_000)
+    expect(await env.lifecycle.catalogue.updateNow()).toEqual([
+      {
+        key: 'acme.notes',
+        from: '1.0.0',
+        to: '1.1.0',
+        status: 'refused',
+        code: 'killed',
+        reason: 'Studio’s kill list removed acme.notes 1.1.0: It sends your files away.',
+      },
+    ])
+    expect((await env.installed())[0]?.extension.version).toBe('1.0.0')
+  })
+
   test('an update that asks for more is held for the person, and the running version keeps running', async () => {
     const env = setup()
     const { repo, v1, entry } = await installedV1(env)

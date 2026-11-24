@@ -910,6 +910,21 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
   }
 
   /**
+   * The newer release an install's own catalogue lists that Studio's kill
+   * list removed, with why, or null: "no newer release" and "the newer one
+   * was refused" are not the same answer.
+   */
+  function killedNewerRelease(key: string, installedVersion: string): { version: string; reason: string } | null {
+    const record = readInstallRecordsSync(deps.dataDir)[key]
+    if (record?.origin.kind !== 'catalogue' || !isKnownCatalogue(record.origin.catalogue)) return null
+    const entry = findEntry(record.origin.catalogue, key)
+    const chosen = entry ? selectCatalogueRelease(entry.releases, studioVersion) : null
+    if (!chosen?.installable || compareStudioVersions(chosen.release.version, installedVersion) <= 0) return null
+    const killed = findKilled(killList.current(), key, chosen.release.version)
+    return killed ? { version: chosen.release.version, reason: killed.reason } : null
+  }
+
+  /**
    * "Review version X": install exactly the release the person was shown
    * (and, when it was held, the commit and bytes it was held with). A
    * catalogue that lists another now is refused, and the row then shows the
@@ -1013,7 +1028,17 @@ export function createExtensionCatalogue(deps: ExtensionCatalogueDeps): Extensio
         reason: 'It waits for the person’s approval in Studio’s window; update it there.',
       })
     const found = newerRelease(module.key, from)
-    if (!found) return row({ status: 'up_to_date' })
+    if (!found) {
+      const killed = killedNewerRelease(module.key, from)
+      return killed
+        ? row({
+            to: killed.version,
+            status: 'refused',
+            code: 'killed',
+            reason: `Studio’s kill list removed ${module.key} ${killed.version}: ${killed.reason}`,
+          })
+        : row({ status: 'up_to_date' })
+    }
     const { entry, release, catalogue } = found
     const to = release.version
     const exact = { version: release.version, commit: release.commit, contentHash: release.contentHash }
