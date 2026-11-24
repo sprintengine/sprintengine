@@ -3295,9 +3295,15 @@ export function mapSdkMessage(
   // model turn, so no streamed text either. Shown once per exchange whichever
   // way the CLI reported it. `/compact` prints a line the compaction divider
   // already says, so a compacting exchange shows the divider alone.
+  //
+  // Output that arrives once its exchange is over (no turn is open) is that
+  // exchange's, echoed late: only a message sent by the person runs a local
+  // command, and their send's turn lasts until its result. Shown then, it
+  // would open a continuation turn that no result ever closes, and the chat
+  // would read as working with nothing running, holding back what was queued.
   const commandOutput = (output: string, command: string | undefined): void => {
     const text = stripLocalCommandTags(output).trim()
-    if (!text || state.commandOutputShown) return
+    if (!text || state.commandOutputShown || !turnId) return
     if (command === 'compact' && state.compactedInExchange) return
     state.commandOutputShown = true
     events.push(eventFor(state, 'command_output', { turnId, ...(command ? { command } : {}), output: text }))

@@ -3566,6 +3566,53 @@ test('/compact still marks the compaction, and what it printed is left to that d
   assert.deepEqual(events[1]?.payload, { turnId: 'turn_1', trigger: 'manual', preTokens: 180000, postTokens: 20000 })
 })
 
+test('what the CLI prints after a /compact has ended opens no turn the chat would wait on', async () => {
+  // A turn opened after the result would have no result to close it: the chat
+  // would read as working, and a message queued during the compaction would
+  // wait on it for good.
+  const h = scriptedHarness()
+  try {
+    const between: ConversationEvent[] = []
+    await h.adapter.startSession({ ...h.turn('turn_1'), onSessionEvent: (event) => between.push(event) })
+    const turn = reader(
+      (await h.adapter.sendTurn(h.turn('turn_1', { message: '/compact' }))) as AsyncIterable<ConversationEvent>,
+    )
+    await promptsRead(h.prompts, 1)
+    h.emit(init)
+    h.emit({ type: 'system', subtype: 'status', status: 'compacting' })
+    h.emit({ type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'manual', pre_tokens: 9 } })
+    h.emit(localTwin('compact', 'Compacted'))
+    h.emit(success({ user_message_uuids: [h.uuidOf(0)], local_command: 'compact', result: 'Compacted' }))
+    await turn.done
+    assert.deepEqual(
+      turn.events.filter((event) => event.type !== 'session_updated').map((event) => event.type),
+      ['turn_started', 'context_compacting', 'context_compacted', 'turn_completed'],
+    )
+    // What may still come once the result is in: the status cleared, the
+    // command's output again, a hook's word on the session it resumed, the
+    // output as a twin, and the CLI's own record of it.
+    h.emit({ type: 'system', subtype: 'status', status: null })
+    h.emit({ type: 'system', subtype: 'local_command_output', content: 'Compacted' })
+    h.emit({ type: 'system', subtype: 'hook_response', hook_name: 'SessionStart:compact', output: '', exit_code: 0 })
+    h.emit(localTwin('compact', 'Compacted'))
+    h.emit({
+      type: 'user',
+      uuid: 'stdout-1',
+      parent_tool_use_id: null,
+      message: { role: 'user', content: '<local-command-stdout>Compacted</local-command-stdout>' },
+    })
+    await settle()
+    await settle()
+    assert.deepEqual(
+      between.filter((event) => event.type !== 'session_updated').map((event) => [event.type, event.payload?.turnId]),
+      [],
+      'nothing turn-scoped rides out after the compaction, and no continuation turn opens',
+    )
+  } finally {
+    await h.adapter.disposeAll()
+  }
+})
+
 test('a /clear typed into the chat leaves a note that the model no longer has what came before', async () => {
   const events = await commandTurn('/clear', (h) => {
     h.emit({ type: 'conversation_reset', new_conversation_id: 'fresh', uuid: 'reset-1' })
