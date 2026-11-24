@@ -612,11 +612,23 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           // every key it was given (its id may have changed since, or its
           // extension.json may not read now).
           const revoked: string[] = []
+          const held = new Set(moduleId ? [moduleId] : [])
           for (const [key, record] of readExtensionApprovalsSync(deps.dataDir)) {
             if (record.devFolder !== folder) continue
+            held.add(key)
             const written = await writeExtensionApproval(deps.dataDir, key, null)
             if (!written.ok) revoked.push(`${key}: ${written.message}`)
           }
+          // And everything kept for it, as an uninstall forgets (its
+          // Settings values, secrets, storage, provider keys and switch), so
+          // a later folder or install under its key starts with none of it.
+          // Not under a key an installed extension holds: a folder standing
+          // in for it shared its data, which stays the installed one's.
+          const installedKeys = new Set((await installedOnly()).map((module) => module.key))
+          await forgetModules(
+            deps.dataDir,
+            [...held].filter((key) => !installedKeys.has(key)),
+          )
           if (moduleId)
             extensionDevEvents.add({
               key: moduleId,

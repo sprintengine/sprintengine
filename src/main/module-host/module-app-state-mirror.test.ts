@@ -131,3 +131,25 @@ test('unloading a module drops its app-state watches', async () => {
   mirror.setValue('insights', 'time', '06:00')
   assert.deepEqual(heard, [])
 })
+
+test('forgetting a module drops its namespace on disk and here, and its listeners hear it emptied', () => {
+  writeFileSync(filePath, JSON.stringify({ 'module:acme.notes': { folder: 'inbox' }, 'module:other': { keep: 1 } }))
+  const mirror = createModuleAppStateMirror({ filePath, watchFile: false })
+  const heard: unknown[] = []
+  const changed: string[] = []
+  mirror.subscribe('acme.notes', (values) => heard.push(values))
+  mirror.subscribeAll((moduleId) => changed.push(moduleId))
+  assert.deepEqual(mirror.get('acme.notes'), { folder: 'inbox' })
+
+  mirror.forget('acme.notes')
+  assert.deepEqual(mirror.get('acme.notes'), {})
+  assert.deepEqual(mirror.get('other'), { keep: 1 })
+  assert.deepEqual(heard, [{}])
+  assert.deepEqual(changed, ['acme.notes'])
+  assert.deepEqual(JSON.parse(readFileSync(filePath, 'utf8')), { 'module:other': { keep: 1 } })
+
+  // Forgetting one with nothing kept writes nothing and tells no one.
+  mirror.forget('acme.notes')
+  assert.deepEqual(changed, ['acme.notes'])
+  mirror.dispose()
+})

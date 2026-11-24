@@ -35,6 +35,8 @@ export type ModuleAppStateMirror = {
 export type ModuleAppStateStore = ModuleAppStateMirror & {
   /** Hear which module's namespace changed, whichever it is, here or in another process. */
   subscribeAll(listener: (moduleId: string) => void): () => void
+  /** Drop the module's whole namespace (an uninstall), on disk and here; its listeners hear it emptied. */
+  forget(moduleId: string): void
 }
 
 const EMPTY: Readonly<Record<string, unknown>> = Object.freeze({})
@@ -129,32 +131,49 @@ export function createModuleAppStateMirror(options: {
     watching = null
   }
 
+  // A push another process wrote since this one last looked, taken first.
+  const catchUp = (): void => {
+    if (namespaces !== null && !watching && options.watchFile !== false && fileSignature() !== seen) adopt(read())
+  }
+  // Hand `next` to the listeners and write it, whole, over the file (a
+  // temporary file renamed into place). An unchanged one never rewrites it.
+  const commit = (next: Namespaces): void => {
+    if (!adopt(next)) return
+    const tmp = `${options.filePath}.${process.pid}.tmp`
+    try {
+      mkdirSync(dirname(options.filePath), { recursive: true })
+      writeFileSync(tmp, `${JSON.stringify(next)}\n`, { encoding: 'utf8', mode: 0o600 })
+      renameSync(tmp, options.filePath)
+      seen = fileSignature()
+    } catch {
+      // The in-memory copy is current; the file catches up on the next change.
+      rmSync(tmp, { force: true })
+    }
+  }
+
   return {
     get(moduleId) {
-      if (namespaces !== null && !watching && options.watchFile !== false && fileSignature() !== seen) adopt(read())
+      catchUp()
       const namespace = current()[`${NAMESPACE_PREFIX}${moduleId.trim()}`]
       return namespace ? Object.freeze({ ...namespace }) : EMPTY
     },
     setValue(moduleId, key, value) {
-      if (namespaces !== null && !watching && options.watchFile !== false && fileSignature() !== seen) adopt(read())
+      catchUp()
       const namespace = `${NAMESPACE_PREFIX}${moduleId.trim()}`
       const values = { ...current()[namespace] }
       if (value === undefined) delete values[key]
       else values[key] = structuredClone(value)
       const next = { ...current(), [namespace]: values }
       if (Object.keys(values).length === 0) delete next[namespace]
-      // An unchanged value never rewrites the file.
-      if (!adopt(next)) return
-      const tmp = `${options.filePath}.${process.pid}.tmp`
-      try {
-        mkdirSync(dirname(options.filePath), { recursive: true })
-        writeFileSync(tmp, `${JSON.stringify(next)}\n`, { encoding: 'utf8', mode: 0o600 })
-        renameSync(tmp, options.filePath)
-        seen = fileSignature()
-      } catch {
-        // The in-memory copy is current; the file catches up on the next change.
-        rmSync(tmp, { force: true })
-      }
+      commit(next)
+    },
+    forget(moduleId) {
+      catchUp()
+      const namespace = `${NAMESPACE_PREFIX}${moduleId.trim()}`
+      if (!(namespace in current())) return
+      const next = { ...current() }
+      delete next[namespace]
+      commit(next)
     },
     subscribe(moduleId, listener) {
       const namespace = `${NAMESPACE_PREFIX}${moduleId.trim()}`
