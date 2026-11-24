@@ -570,6 +570,8 @@ export type MainKernelOptions = {
   frameFileExclusions?: () => readonly string[]
   /** A person's save in a custom text editor meets the extensions' save hooks here (`ExtensionFrameCallDeps.editorSaveHooks`). */
   frameEditorSaveHooks?: ExtensionFrameCallDeps['editorSaveHooks']
+  /** One of an extension's own images, for a components panel (`ExtensionFrameCallDeps.ownImage`). */
+  frameOwnImage?: ExtensionFrameCallDeps['ownImage']
   /**
    * What an extension's frame calls are held to (extension-frame-grant.ts):
    * its approval's permissions as they stand now, pinned to those its
@@ -732,6 +734,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     appState: () => services.get(MODULE_APP_STATE_SERVICE_KEY)?.value as ModuleAppStateMirror | undefined,
     fileExclusions: () => options.frameFileExclusions?.() ?? [],
     ...(options.frameEditorSaveHooks ? { editorSaveHooks: options.frameEditorSaveHooks } : {}),
+    ...(options.frameOwnImage ? { ownImage: options.frameOwnImage } : {}),
   })
 
   // A call that runs in place of a Studio action is watched, so the

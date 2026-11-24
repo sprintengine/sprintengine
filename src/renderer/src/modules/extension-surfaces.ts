@@ -20,6 +20,8 @@ export type LoadedExtensionSurface = {
   live?: () => boolean
   /** The extension's name and the permissions it holds, as its extension.json says them. */
   extension?: { name: string; permissions: readonly string[] }
+  /** Loaded from a development folder: a components panel hands its keyed state to the next save's run. */
+  development?: boolean
 }
 
 const surfaces = new Map<string, LoadedExtensionSurface>()

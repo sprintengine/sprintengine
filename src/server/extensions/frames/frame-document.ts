@@ -50,6 +50,8 @@ export type FrameDocumentInput = {
   problem?: string
   /** The theme to draw it in; null when this server does not know the client's, which then sends it before anything shows. */
   theme: ExtensionFrameTheme | null
+  /** A components panel: its module runs hidden and the window draws the tree it renders. */
+  components?: boolean
 }
 
 function tokensCss(theme: ExtensionFrameTheme | null): string {
@@ -81,6 +83,7 @@ export function buildExtensionFrameDocument(input: FrameDocumentInput): string {
       ...(input.problem ? { problem: input.problem } : {}),
       surface: input.surface,
       colorScheme: scheme,
+      ...(input.components ? { components: true } : {}),
     })}</script>`,
     '</body>',
     '</html>',

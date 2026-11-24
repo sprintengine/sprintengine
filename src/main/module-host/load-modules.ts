@@ -169,6 +169,8 @@ export function loadMainModules(options: {
   frameFileExclusions?: () => readonly string[]
   /** A custom text editor's save meets the save hooks: see `MainKernelOptions.frameEditorSaveHooks`. */
   frameEditorSaveHooks?: MainKernelOptions['frameEditorSaveHooks']
+  /** A components panel's images: see `MainKernelOptions.frameOwnImage`. */
+  frameOwnImage?: MainKernelOptions['frameOwnImage']
   /** What frame calls are held to: see `MainKernelOptions.resolveFrameGrant`. */
   resolveFrameGrant?: (moduleId: string, frame: string) => { grant: readonly string[]; outdated: boolean } | null
   /** Handed the kernel as soon as it exists, before any module registers (the workers bind to it). */
@@ -201,6 +203,7 @@ export function loadMainModules(options: {
     resolveDeclaredMcpTools: (moduleId) => options.moduleMcpTools?.[moduleId],
     ...(options.frameFileExclusions ? { frameFileExclusions: options.frameFileExclusions } : {}),
     ...(options.frameEditorSaveHooks ? { frameEditorSaveHooks: options.frameEditorSaveHooks } : {}),
+    ...(options.frameOwnImage ? { frameOwnImage: options.frameOwnImage } : {}),
     ...(options.resolveFrameGrant ? { resolveFrameGrant: options.resolveFrameGrant } : {}),
     resolveExtensionGrant: (moduleId) => {
       // Without the loader's record (tests), an extension holds what its manifest asks.

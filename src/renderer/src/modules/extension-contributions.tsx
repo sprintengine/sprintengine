@@ -246,6 +246,7 @@ function registerContributions(
   drawsFrames: boolean,
   drawsEditors: boolean,
   installedAt: number | undefined,
+  development = false,
 ): void {
   const { contributes } = extension
   const live = () => !retired.has(key) && isEnabled(key)
@@ -264,6 +265,7 @@ function registerContributions(
         host,
         live,
         extension: { name: extension.name, permissions: extension.permissions },
+        ...(development ? { development: true } : {}),
       })
     }
   }
@@ -511,6 +513,7 @@ export function loadExtensionContributions(
         drawsFrames,
         drawsEditors,
         entry.installedAt,
+        entry.development === true,
       )
       loadStates.set(entry.id, { status: 'loaded' })
       loadedSignatures.set(entry.id, servedSignature(entry))

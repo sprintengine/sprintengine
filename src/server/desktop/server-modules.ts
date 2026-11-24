@@ -6,6 +6,7 @@ import type { McpToolContribution } from '../../main/module-host/main-host'
 import { ScheduledAgentsServiceToken } from '../../main/module-host/service-tokens'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from '../../main/modules/agent-runtime-module'
 import { createModuleLifecycle, liveModuleIds } from '../../main/modules/module-lifecycle'
+import { readSurfaceImage } from '../../main/modules/extension-surface-entries'
 import { bundledRegistryIds } from '../../main/plugin-registry-instance'
 import type { ExtensionRunView } from '../../main/modules/third-party-module-view'
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
@@ -283,6 +284,11 @@ export function createServerModules(deps: {
         frameFileExclusions: () => [dataDir, defaultUserModuleRoot()],
         // A save in a custom text editor meets the save hooks as one in Studio's text editor does.
         frameEditorSaveHooks: ({ invoker, ...event }) => editorSaveDecision(core.extensionHooks, event, invoker),
+        frameOwnImage: (moduleId, path) =>
+          readSurfaceImage(
+            discovery.current().modules.find((module) => module.key === moduleId),
+            path,
+          ),
         ineligible: plan.ineligible,
         launchErrors: plan.launchErrors,
         deliverModuleEvent: (event) => hub.deliverEvent(event),

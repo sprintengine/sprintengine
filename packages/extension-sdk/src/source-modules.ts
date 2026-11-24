@@ -11,6 +11,9 @@
 //   frame is the line in the file. Transpiling never type-checks: run `tsc`.
 // - JSX is the classic form: `<b>x</b>` calls `h('b', null, 'x')`, and `<>`
 //   is `Fragment`. Import both from a file of your own; there is no runtime.
+//   A components panel (`ui: "components"`) is the exception: its JSX
+//   compiles for `@sprintengine/extension-sdk/components`, which Studio
+//   provides, and that module is the one bare name it may import.
 // - A surface imports relative files only (`./list` finds `list.tsx`,
 //   `list.ts`, … then `list/index.*`; `./list.js` finds `list.ts` too). A bare
 //   name such as `react` is refused: nothing bundles it. Copy its ESM files
@@ -29,6 +32,17 @@ export const EXTENSION_MODULE_EXTENSIONS = ['.tsx', '.ts', '.jsx', '.js', '.mts'
 
 /** What Studio transpiles before it runs it. */
 export const TRANSPILED_SOURCE_EXTENSIONS = ['.ts', '.mts', '.tsx', '.jsx'] as const
+
+/** The module Studio provides a components panel, and the JSX runtime its `.tsx` compiles against. */
+export const COMPONENTS_MODULE = '@sprintengine/extension-sdk/components'
+const COMPONENTS_SPECIFIERS: ReadonlySet<string> = new Set([
+  COMPONENTS_MODULE,
+  `${COMPONENTS_MODULE}/jsx-runtime`,
+  `${COMPONENTS_MODULE}/jsx-dev-runtime`,
+])
+
+/** How a surface's sources compile: `html` for a frame that draws itself, `components` for a components panel. */
+export type SurfaceJsx = 'html' | 'components'
 
 /** The largest source file Studio transpiles. */
 export const MAX_TRANSPILED_SOURCE_BYTES = 1024 * 1024
@@ -71,15 +85,15 @@ export function isTranspiledSource(path: string): boolean {
  * One file's source as it runs: types and JSX removed, every line where it
  * was. Throws a `SourceProblem` (with `file`, `line`, `column`) on a syntax error.
  */
-export function transpileExtensionSource(path: string, source: string): string {
+export function transpileExtensionSource(path: string, source: string, jsx: SurfaceJsx = 'html'): string {
   const transforms = TRANSFORMS[posix.extname(path).toLowerCase()]
   if (!transforms) return source
   try {
     return transform(source, {
       transforms,
-      jsxRuntime: 'classic',
-      jsxPragma: 'h',
-      jsxFragmentPragma: 'Fragment',
+      ...(jsx === 'components'
+        ? { jsxRuntime: 'automatic' as const, jsxImportSource: COMPONENTS_MODULE }
+        : { jsxRuntime: 'classic' as const, jsxPragma: 'h', jsxFragmentPragma: 'Fragment' }),
       production: true,
       // Chromium and Node run modern syntax as written; only types and JSX go.
       disableESTransforms: true,
@@ -143,8 +157,19 @@ export type SurfaceModuleGraph =
 
 type Resolved = { ok: true; path: string } | { ok: false; reason: string }
 
-function resolveImport(fromPath: string, specifier: string, read: ExtensionFileReader): Resolved {
+function resolveImport(
+  fromPath: string,
+  specifier: string,
+  read: ExtensionFileReader,
+  jsx: SurfaceJsx = 'html',
+): Resolved {
+  if (jsx === 'components' && COMPONENTS_SPECIFIERS.has(specifier)) return { ok: true, path: COMPONENTS_MODULE }
   if (!specifier.startsWith('./') && !specifier.startsWith('../')) {
+    if (jsx === 'html' && COMPONENTS_SPECIFIERS.has(specifier))
+      return {
+        ok: false,
+        reason: `cannot import "${specifier}": only a components panel (a panel with "ui": "components") loads it.`,
+      }
     return {
       ok: false,
       reason: `cannot import "${specifier}": an extension loads without a bundler, so only its own files can be imported by a relative path (./ or ../). Copy the package's ESM files in, or bundle it and import the bundle.`,
@@ -182,7 +207,16 @@ function lineAndColumn(source: string, offset: number): { line: number; column: 
  * extension, an import cycle or a syntax error is a problem at its file and
  * line, and nothing loads.
  */
-export function buildSurfaceModules(entry: string, read: ExtensionFileReader): SurfaceModuleGraph {
+export function buildSurfaceModules(
+  entry: string,
+  read: ExtensionFileReader,
+  options: {
+    jsx?: SurfaceJsx
+    /** A components panel's module, as Studio loads it: placed first, under COMPONENTS_MODULE. */
+    componentsModule?: string
+  } = {},
+): SurfaceModuleGraph {
+  const jsx = options.jsx ?? 'html'
   type Node = { path: string; code: string; imports: Array<{ start: number; end: number; path: string }> }
   const nodes = new Map<string, Node>()
   const order: string[] = []
@@ -190,6 +224,11 @@ export function buildSurfaceModules(entry: string, read: ExtensionFileReader): S
 
   const visit = (path: string, from?: SourceLocation): SourceProblem | null => {
     if (order.includes(path)) return null
+    if (path === COMPONENTS_MODULE) {
+      nodes.set(path, { path, code: options.componentsModule ?? '', imports: [] })
+      order.push(path)
+      return null
+    }
     if (visiting.has(path))
       return { ...(from ?? { file: path }), message: `imports ${path}, which imports it back: cycles cannot load.` }
     if (nodes.size >= MAX_SURFACE_MODULES)
@@ -203,7 +242,7 @@ export function buildSurfaceModules(entry: string, read: ExtensionFileReader): S
       }
     let code: string
     try {
-      code = transpileExtensionSource(path, source)
+      code = transpileExtensionSource(path, source, jsx)
     } catch (problem) {
       return problem as SourceProblem
     }
@@ -234,7 +273,7 @@ export function buildSurfaceModules(entry: string, read: ExtensionFileReader): S
         continue
       }
       if ('typeOnly' in each && each.typeOnly) continue
-      const resolved = resolveImport(path, each.specifier, read)
+      const resolved = resolveImport(path, each.specifier, read, jsx)
       const at = { file: path, ...lineAndColumn(code, each.start) }
       if (!resolved.ok) {
         visiting.delete(path)
@@ -259,6 +298,8 @@ export function buildSurfaceModules(entry: string, read: ExtensionFileReader): S
     return null
   }
 
+  // A components panel always loads the module Studio provides, whether or not its entry imports it.
+  if (jsx === 'components') visit(COMPONENTS_MODULE)
   const problem = visit(entry)
   if (problem) return { ok: false, problem }
   // A token no source can hold by accident: derived from every module's text,

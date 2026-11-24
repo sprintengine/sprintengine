@@ -36,6 +36,7 @@ import type { ModuleMethodCallOutcome, ModuleMethodCallRequest } from './main-ho
 import type { ModuleAppStateMirror } from './module-app-state-mirror'
 import { moduleEventPayloadProblem } from '../../shared/modules/events'
 import { extensionDevEvents } from '../../server/extensions/dev/dev-events'
+import { PanelAtomsRefusal, readPanelAtoms, writePanelAtoms } from './extension-panel-atoms'
 import { FRAME_LOG_LIMIT, FRAME_LOG_WINDOW_MS } from '../../server/extensions/frames/frame-bootstrap'
 
 /** One frame call, as the router hands it over. */
@@ -69,6 +70,8 @@ export type ExtensionFrameCallDeps = {
   appState(): Pick<ModuleAppStateMirror, 'get' | 'setValue'> | undefined
   /** Folders no `files.*` call may reach even inside a workspace. */
   fileExclusions(): readonly string[]
+  /** One of the extension's own images (`assets.image`), or null. */
+  ownImage?: (moduleId: string, path: string) => { mime: string; data: string } | null
   /** A line in the extension's log file (`log.write`), beside its worker's. */
   frameLog?: (moduleId: string, line: string) => void
   /**
@@ -101,7 +104,7 @@ function frameLogAdmits(moduleId: string, now = Date.now()): boolean {
 }
 
 /** The frame methods the window that drew the frame carries out. */
-type ClientFrameMethod = 'toast' | 'chat.draft' | 'doors.open' | 'tabs.focus' | 'events.subscribe'
+type ClientFrameMethod = 'toast' | 'chat.draft' | 'doors.open' | 'tabs.focus' | 'events.subscribe' | 'shell.openExternal'
 
 /** The longest Settings key, and the most a Settings value may hold. */
 const MAX_SETTING_KEY_CHARS = 200
@@ -158,6 +161,12 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
     const found = await workspaces().get(workspaceId)
     if (!found?.folderPath) throw new CallRefusal('action_failed', 'That workspace is not open here, or has no folder.')
     return found as ModuleWorkspaceView & { folderPath: string }
+  }
+  function dataDir(moduleId: string): string {
+    const storage = registry('core.module-storage') as unknown as { dataDir?: (moduleId: string) => string }
+    if (typeof storage.dataDir !== 'function')
+      throw new CallRefusal('unavailable', 'This Studio keeps no data folder for extensions.')
+    return storage.dataDir(moduleId)
   }
   async function storageInput(params: Record<string, unknown>, more: Record<string, unknown>) {
     return {
@@ -295,6 +304,21 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
     },
     'worker.read': (request, params) => worker(request, 'read', params),
     'worker.operate': (request, params) => worker(request, 'operate', params),
+    'assets.image': (request, params) => deps.ownImage?.(request.moduleId, text(params, 'path', 512)) ?? null,
+    'atoms.read': (request, params) => readPanelAtoms(dataDir(request.moduleId), params),
+    'atoms.write': (request, params) => writePanelAtoms(dataDir(request.moduleId), params),
+    'secrets.has': async (request, params) => ({
+      has: (await registry('module-secrets.module-service').has!(request.moduleId, text(params, 'key', 200))) === true,
+    }),
+    'secrets.set': (request, params) =>
+      registry('module-secrets.module-service').set!(
+        request.moduleId,
+        text(params, 'key', 200),
+        text(params, 'value', 16 * 1024),
+        { allowedOrigins: params.allowedOrigins },
+      ),
+    'secrets.delete': (request, params) =>
+      registry('module-secrets.module-service').delete!(request.moduleId, text(params, 'key', 200)),
     'log.write': async (request, params) => {
       const level = params.level === 'info' || params.level === 'warn' ? params.level : 'error'
       const message = text(params, 'message', 4000).replace(/[\r\n]+/gu, ' ')
@@ -376,7 +400,7 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
       const result = await runAsInvoker(request.invoker, () => serve(request, params))
       return { ok: true, result: result ?? null }
     } catch (error) {
-      if (error instanceof CallRefusal || error instanceof ExtensionFileRefusal)
+      if (error instanceof CallRefusal || error instanceof ExtensionFileRefusal || error instanceof PanelAtomsRefusal)
         return { ok: false, code: error.code, message: error.message }
       return {
         ok: false,

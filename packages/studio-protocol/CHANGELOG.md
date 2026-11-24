@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added (components panels)
+
+- An extension's contributions entry carries `development: true` when it is
+  loaded from a development folder, so a window hands a components panel's
+  keyed memory atoms to the run each save starts, and keeps the last tree on
+  screen when a save fails to load.
+- An extension's panel contribution carries `ui` (`html` or `components`).
+  A components panel's frame runs hidden: its runtime speaks `ui.*` events
+  over the frame's own envelope, and its host calls add `atoms.read`,
+  `atoms.write`, `secrets.has`, `secrets.set`, `secrets.delete` and
+  `shell.openExternal` (carried out by the window, after a press on one of
+  Studio's own controls that stood still) to `extension.call`'s methods.
+
 ### Added (installing from outside the window)
 
 - `ThirdPartyModuleView.reviewAsked`: an extension installed from outside the

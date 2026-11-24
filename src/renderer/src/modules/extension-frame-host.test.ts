@@ -3,7 +3,7 @@ import { test } from 'vitest'
 
 import type { StudioExtensionCallAnswer } from '../../../../packages/studio-protocol/src/public'
 import { EXTENSION_FRAME_RATE_LIMIT } from '../../../shared/extension-frames'
-import { createExtensionFrameHost } from './extension-frame-host'
+import { createExtensionFrameHost, type ExtensionFrameComponentsChannel } from './extension-frame-host'
 
 // The window's side of a frame's bridge: it hears the frame's own window
 // alone, holds each message to the frame's budget, passes host calls to the
@@ -12,7 +12,11 @@ import { createExtensionFrameHost } from './extension-frame-host'
 const frame = { name: 'frame' } as unknown as MessageEventSource
 const stranger = { name: 'stranger' } as unknown as MessageEventSource
 
-function harness(answers: Record<string, StudioExtensionCallAnswer> = {}) {
+function harness(
+  answers: Record<string, StudioExtensionCallAnswer> = {},
+  components?: ExtensionFrameComponentsChannel,
+) {
+  const opened: string[] = []
   const posted: Array<Record<string, unknown>> = []
   const called: string[] = []
   const toasts: unknown[] = []
@@ -39,7 +43,13 @@ function harness(answers: Record<string, StudioExtensionCallAnswer> = {}) {
         followed.push(entry)
         return () => void (entry.stopped = true)
       },
+      openExternal: async (url) => {
+        opened.push(url)
+        return true
+      },
     },
+    locale: () => 'en-GB',
+    ...(components ? { components } : {}),
     theme: () => ({ colorScheme: 'dark', tokens: { '--bg-app': '#000' } }),
     onReady: (at) => ready.push(at),
     onPaint: () => undefined,
@@ -50,7 +60,19 @@ function harness(answers: Record<string, StudioExtensionCallAnswer> = {}) {
   const send = (data: unknown, source: MessageEventSource = frame) =>
     host.receive({ source, data } as unknown as MessageEvent)
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
-  return { host, posted, called, toasts, ready, left, followed, send, settle, tick: (ms: number) => (clock += ms) }
+  return {
+    host,
+    posted,
+    called,
+    toasts,
+    ready,
+    left,
+    followed,
+    opened,
+    send,
+    settle,
+    tick: (ms: number) => (clock += ms),
+  }
 }
 
 test('the frame is answered hello with the theme and its workspace; a stranger is not heard', () => {
@@ -64,7 +86,12 @@ test('the frame is answered hello with the theme and its workspace; a stranger i
       se: 1,
       kind: 'evt',
       event: 'hello',
-      payload: { theme: { colorScheme: 'dark', tokens: { '--bg-app': '#000' } }, workspaceId: 'ws-1' },
+      payload: {
+        theme: { colorScheme: 'dark', tokens: { '--bg-app': '#000' } },
+        locale: 'en-GB',
+        client: 'desktop',
+        workspaceId: 'ws-1',
+      },
     },
   ])
 })
@@ -270,4 +297,40 @@ test('a frame that is not a custom editor has no document to edit', () => {
   })
   assert.deepEqual(called, [])
   assert.equal((posted[0]!.error as { code: string }).code, 'unknown_method')
+})
+
+test('a components panel’s ui events ride a lane of their own, larger than a call’s', () => {
+  const heard: Array<{ event: string; refused?: string }> = []
+  const { send } = harness({}, {
+    receive: (event, _payload, refused) => heard.push({ event, ...(refused ? { refused } : {}) }),
+    takeGesture: () => false,
+  })
+  // A 200 KiB tree is over a call's 64 KiB, and within the render lane.
+  const tree = { type: 'Text', props: {}, children: ['x'.repeat(200 * 1024)] }
+  send({ se: 1, kind: 'evt', event: 'ui.render', payload: { document: 'd', revision: 1, tree } })
+  const huge = { type: 'Text', props: {}, children: ['x'.repeat(700 * 1024)] }
+  send({ se: 1, kind: 'evt', event: 'ui.render', payload: { document: 'd', revision: 2, tree: huge } })
+  assert.deepEqual(heard, [{ event: 'ui.render' }, { event: 'ui.render', refused: 'too_large' }])
+})
+
+test('shell.openExternal needs a press a components panel granted; a frame drawing itself never has one', async () => {
+  let granted = false
+  const panel = harness({}, { receive: () => undefined, takeGesture: () => granted && !(granted = false) })
+  panel.send({ se: 1, kind: 'req', id: 1, method: 'shell.openExternal', params: { url: 'https://example.com/a' } })
+  await panel.settle()
+  assert.deepEqual(panel.called, [])
+  assert.equal((panel.posted.at(-1)!.error as { code: string }).code, 'not_permitted')
+  granted = true
+  panel.send({ se: 1, kind: 'req', id: 2, method: 'shell.openExternal', params: { url: 'https://example.com/a' } })
+  await panel.settle()
+  assert.deepEqual(panel.called, ['shell.openExternal'])
+  assert.deepEqual(panel.opened, ['https://example.com/a'])
+  assert.deepEqual(panel.posted.at(-1), { se: 1, kind: 'res', id: 2, result: { opened: true } })
+
+  const page = harness()
+  page.send({ se: 1, kind: 'req', id: 1, method: 'shell.openExternal', params: { url: 'https://example.com/a' } })
+  await page.settle()
+  assert.deepEqual(page.called, [])
+  assert.deepEqual(page.opened, [])
+  assert.equal((page.posted.at(-1)!.error as { code: string }).code, 'not_permitted')
 })

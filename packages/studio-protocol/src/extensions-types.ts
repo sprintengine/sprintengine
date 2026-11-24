@@ -448,6 +448,11 @@ export type ExtensionContributions = {
    * declare. A development folder's is after every installed one's.
    */
   installedAt?: number
+  /**
+   * Loaded from a development folder: a components panel's keyed memory atoms
+   * carry over each save, and a save that fails to load keeps the last tree.
+   */
+  development?: true
 }
 
 /**

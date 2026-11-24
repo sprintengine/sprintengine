@@ -141,7 +141,14 @@ const encoder = new TextEncoder()
  * once it is past `stopAfter`. Anything that is not plain data (a function, a
  * class instance, a cycle past the walk's limits) counts as too large.
  */
-export function extensionFrameMessageBytes(data: unknown, stopAfter = EXTENSION_FRAME_MESSAGE_MAX_BYTES): number {
+export function extensionFrameMessageBytes(
+  data: unknown,
+  stopAfter = EXTENSION_FRAME_MESSAGE_MAX_BYTES,
+  /** How deep and how many objects the walk follows; a components panel's tree is deeper and larger than a call. */
+  walk: { maxDepth?: number; maxObjects?: number } = {},
+): number {
+  const maxDepth = walk.maxDepth ?? 100
+  const maxObjects = walk.maxObjects ?? 10_000
   const seen = new WeakSet<object>()
   let total = 0
   let nodes = 0
@@ -161,7 +168,7 @@ export function extensionFrameMessageBytes(data: unknown, stopAfter = EXTENSION_
     if (seen.has(value)) return add(8)
     seen.add(value)
     nodes += 1
-    if (nodes > 10_000 || depth > 100) {
+    if (nodes > maxObjects || depth > maxDepth) {
       total = stopAfter + 1
       return
     }

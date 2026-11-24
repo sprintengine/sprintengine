@@ -163,6 +163,49 @@ export type ExtensionFrameMethods = {
    * and line; at most 20 lines every 10 seconds are kept.
    */
   'log.write': { params: { level?: 'info' | 'warn' | 'error'; message: string }; result: { ok: true } }
+  // ── A components panel ──
+  /**
+   * Its persisted atoms (`atom(key, initial, { persist: 'plugin' | 'workspace' })`):
+   * the components runtime reads them before the first render. Each is
+   * `{ version, value }` by key.
+   */
+  'atoms.read': {
+    params: { workspaceId?: string }
+    result: {
+      plugin: Record<string, { version: number; value: unknown }>
+      workspace: Record<string, { version: number; value: unknown }>
+    }
+  }
+  /** Store changed persisted atoms; the runtime calls it a moment after they change. */
+  'atoms.write': {
+    params: {
+      workspaceId?: string
+      entries: Array<{ scope: 'plugin' | 'workspace'; key: string; version: number; value: unknown }>
+    }
+    result: { ok: true }
+  }
+  /**
+   * One of its own image files (PNG, JPEG or WebP, at most 8 MiB), base64:
+   * what a components panel's `Image` and Markdown show. Null when it is not
+   * one of its files, or not such an image.
+   */
+  'assets.image': { params: { path: string }; result: { mime: string; data: string } | null }
+  /**
+   * Open an `https:`, `http:` or `mailto:` URL in the system browser of the
+   * window's machine. Only a components panel can: a press on one of
+   * Studio's own controls that stood still for 500 ms grants it once, and the
+   * person is asked before a web address opens. Anything else is `not_permitted`.
+   */
+  'shell.openExternal': { params: { url: string }; result: { opened: boolean } }
+  // ── Its secrets ──
+  /** Whether a secret is set; its value never comes back. */
+  'secrets.has': { params: { key: string }; result: { has: boolean } }
+  /** Store a secret and the https origins its worker may send it to (`fetchWithSecret`). */
+  'secrets.set': {
+    params: { key: string; value: string; allowedOrigins: string[] }
+    result: { ok: true } | { ok: false; code: string; message: string }
+  }
+  'secrets.delete': { params: { key: string }; result: { ok: true } | { ok: false; code: string; message: string } }
 }
 
 export type ExtensionFrameMethod = keyof ExtensionFrameMethods

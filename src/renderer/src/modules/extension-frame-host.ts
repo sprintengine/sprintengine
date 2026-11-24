@@ -19,6 +19,7 @@
 import { extensionFrameMethod } from '../../../../packages/extension-sdk/src/services'
 import type { StudioExtensionCallAnswer } from '../../../../packages/studio-protocol/src/public'
 import { EXTENSION_EDITOR_TEXT_MAX_BYTES } from '../../../../packages/extension-sdk/src/custom-editors'
+import { COMPONENT_RENDER_LANE } from '../../../../packages/extension-sdk/src/components/messages'
 import {
   EXTENSION_EDITOR_APPLY_EDIT,
   EXTENSION_FRAME_EVENTS,
@@ -40,6 +41,26 @@ export type ExtensionFrameClient = {
    * or the window's own (the editor's typography). Returns the stop.
    */
   followStudioEvent(event: string, deliver: (payload: unknown) => void): () => void
+  /**
+   * Open a URL in this machine's system browser, asking the person first for
+   * a web address; resolves whether it opened. Reached only by a components
+   * panel's gesture (`shell.openExternal`).
+   */
+  openExternal(url: string): Promise<boolean>
+}
+
+/**
+ * A components panel's side of the bridge: its runtime's `ui.*` events, and
+ * the gestures a press on one of Studio's own controls grants it.
+ */
+export type ExtensionFrameComponentsChannel = {
+  /**
+   * One `ui.*` event from the guest. `refused` says the render lane refused
+   * it (too large, or too many), so the host answers that render as refused.
+   */
+  receive(event: string, payload: unknown, refused?: 'too_large' | 'rate_limited'): void
+  /** Spend the one gesture a recent press on a still control granted; false when there is none. */
+  takeGesture(): boolean
 }
 
 /**
@@ -63,6 +84,12 @@ export type ExtensionFrameHostOptions = {
   workspaceId?: string
   /** A custom editor's document; absent for every other surface. */
   document?: ExtensionFrameDocumentChannel
+  /** A components panel's runtime; absent for every surface that draws itself. */
+  components?: ExtensionFrameComponentsChannel
+  /** Studio's language, handed to the frame with `hello`. Default: the window's. */
+  locale?: () => string
+  /** Which client this window is: a desktop window (local or paired) or the web client. */
+  clientKind?: 'desktop' | 'web'
   /** The frame's bootstrap is listening and was sent `hello`: a custom editor is handed its document now. */
   onFrameReady?: () => void
   call: (method: string, params: unknown) => Promise<StudioExtensionCallAnswer>
@@ -82,6 +109,8 @@ export type ExtensionFrameHost = {
   sendDocument(document: unknown): void
   /** Ask a custom editor to hand over what it holds back before a save. */
   requestFlush(id: number): void
+  /** Send a components panel's runtime one of its `ui.*` events. */
+  sendComponents(event: string, payload: unknown): void
   sendTheme(): void
   push(topic: string, payload?: unknown): void
   dispose(): void
@@ -96,6 +125,9 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
   // A custom editor's edits are whole documents: up to the document's size,
   // on a budget of their own so typing never starves the frame's calls.
   const editBudget = createExtensionFrameBudget({ maxBytes: EXTENSION_EDITOR_TEXT_MAX_BYTES + 4096 })
+  // A components panel's trees ride a lane of their own, bigger than a call and
+  // apart from it, so a busy panel never starves its own host calls.
+  const renderBudget = createExtensionFrameBudget(COMPONENT_RENDER_LANE)
   const now = options.now ?? Date.now
   // The calls waiting for the Studio, and those of them the frame gave up on:
   // a cancel counts only for a call still waiting, and both forget an id once
@@ -135,6 +167,12 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
     }
     if (method === 'chat.draft') return options.client.chatDraft(given)
     if (method === 'doors.open') return { opened: typeof given.id === 'string' && options.client.openDoor(given.id) }
+    if (method === 'shell.openExternal') {
+      const url = typeof given.url === 'string' ? given.url : ''
+      if (url.length > 2048 || !/^(https?:\/\/|mailto:)/iu.test(url))
+        throw new Error('"shell.openExternal" opens an https:, http: or mailto: URL of at most 2048 characters.')
+      return { opened: await options.client.openExternal(url) }
+    }
     if (method === 'events.subscribe') {
       const event = given.event
       if (typeof event !== 'string') throw new Error('"events.subscribe" takes an event.')
@@ -158,6 +196,14 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
   }
 
   async function request(id: number, method: string, params: unknown): Promise<void> {
+    // Only a press on one of Studio's own controls that stood still grants
+    // this, and only a components panel has such presses: a frame drawing
+    // itself shares the window's activation, which any keystroke sets.
+    if (method === 'shell.openExternal' && !options.components?.takeGesture())
+      return answer(id, {
+        code: 'not_permitted',
+        message: 'Opening a URL needs a press on one of Studio’s controls, in a components panel.',
+      })
     const answered = await options.call(method, params)
     if (!answered.ok) return answer(id, { code: answered.code, message: answered.message })
     if (extensionFrameMethod(method)?.runs !== 'client') return answer(id, { result: answered.result })
@@ -180,6 +226,19 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
       if (!message || typeof message !== 'object' || message.se !== EXTENSION_FRAME_PROTOCOL) return
       const id = Number.isSafeInteger(message.id) ? (message.id as number) : null
       const edit = message.kind === 'req' && message.method === EXTENSION_EDITOR_APPLY_EDIT
+      if (
+        options.components &&
+        message.kind === 'evt' &&
+        typeof message.event === 'string' &&
+        message.event.startsWith('ui.')
+      ) {
+        const lane = renderBudget.admit(
+          now(),
+          extensionFrameMessageBytes(message, COMPONENT_RENDER_LANE.maxBytes, COMPONENT_RENDER_LANE),
+        )
+        options.components.receive(message.event, message.payload, lane ?? undefined)
+        return
+      }
       const refused = edit
         ? editBudget.admit(now(), extensionFrameMessageBytes(message, EXTENSION_EDITOR_TEXT_MAX_BYTES + 4096))
         : budget.admit(now(), extensionFrameMessageBytes(message))
@@ -214,7 +273,12 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
           post({
             kind: 'evt',
             event: EXTENSION_FRAME_EVENTS.hello,
-            payload: { theme: options.theme(), ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}) },
+            payload: {
+              theme: options.theme(),
+              locale: options.locale?.() ?? navigator.language,
+              client: options.clientKind ?? 'desktop',
+              ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+            },
           })
           options.onFrameReady?.()
         } else if (message.event === EXTENSION_FRAME_EVENTS.surfaceReady) {
@@ -242,6 +306,9 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
     },
     requestFlush(id) {
       post({ kind: 'evt', event: EXTENSION_FRAME_EVENTS.documentFlush, payload: { id } })
+    },
+    sendComponents(event, payload) {
+      post({ kind: 'evt', event, payload })
     },
     sendTheme() {
       post({ kind: 'evt', event: EXTENSION_FRAME_EVENTS.theme, payload: options.theme() })
