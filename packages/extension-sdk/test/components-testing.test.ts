@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { afterEach, test } from 'vitest'
 
-import { atom, env, host, jsx, read, set, settings, shell, update, type Atom } from '../src/components/index.js'
+import { atom, env, host, jsx, mount, read, set, settings, shell, update, type Atom } from '../src/components/index.js'
 import { forgetKeyedAtoms } from '../src/components/runtime/atoms.js'
 import { hostError } from '../src/testing.js'
 import { defineCheck, mountPanel, runPanelScenario, stored } from '../src/testing-components.js'
@@ -342,4 +342,17 @@ test('a scenario: stubbed results, storage and events, summarized', async () => 
   const broken = await runPanelScenario(panel, scenarios.broken, base)
   assert.deepEqual(broken.summary, ['empty state: Nothing yet'])
   assert.equal(broken.refusals[0]?.code, 'unavailable')
+})
+
+test('a module that mounts its panel with mount() draws in every mountPanel of the process', async () => {
+  const Panel = () => jsx('Text', { children: 'Mounted panel' })
+  // As a module's top level runs it: once, before any panel is mounted.
+  mount(Panel)
+  const panelModule = { setup: () => undefined }
+  for (const _ of [1, 2]) {
+    const view = await mountPanel(panelModule, { manifest })
+    assert.ok(view.find({ text: 'Mounted panel' }))
+    assert.deepEqual(view.errors, [])
+    await view.unmount()
+  }
 })

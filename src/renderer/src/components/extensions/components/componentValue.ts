@@ -6,8 +6,14 @@
 // rendered. A render that has seen every edit is the panel's word, including
 // a reset to the same value it showed before ('' after a submit); one that
 // lags the person's typing is an echo, and leaves what is shown alone.
+//
+// The count belongs to one run of the panel: a new run (a development
+// folder's save, a reload) has handled none of this window's edits, so the
+// count starts over with it, and its first render is the panel's word.
 
-import { useState } from 'react'
+import { useContext, useState } from 'react'
+
+import { ComponentsContext } from './componentsContext'
 
 type HostValueState<T> = {
   local: T
@@ -16,6 +22,8 @@ type HostValueState<T> = {
   acked: number
   /** The newest edit sent for this control. */
   sent: number
+  /** The run these counts belong to. */
+  run: string
 }
 
 export function useHostValue<T>(options: {
@@ -30,14 +38,20 @@ export function useHostValue<T>(options: {
 }): { value: T; change: (next: T) => void; readOnly: boolean } {
   const { value, callback, send } = options
   const acked = options.acked ?? 0
+  const run = useContext(ComponentsContext)?.run ?? ''
   const [state, setState] = useState<HostValueState<T>>(() => ({
     local: value ?? options.defaultValue ?? options.fallback,
     remote: value,
     acked,
     sent: 0,
+    run,
   }))
   let current = state
-  if (!Object.is(state.remote, value) || state.acked !== acked) {
+  if (state.run !== run) {
+    // A new run: nothing it rendered lags an edit of this window's, so a value it renders is its word.
+    current = { local: value !== undefined ? value : state.local, remote: value, acked, sent: 0, run }
+    setState(current)
+  } else if (!Object.is(state.remote, value) || state.acked !== acked) {
     const caughtUp = acked >= state.sent
     current = { ...state, remote: value, acked, local: value !== undefined && caughtUp ? value : state.local }
     setState(current)

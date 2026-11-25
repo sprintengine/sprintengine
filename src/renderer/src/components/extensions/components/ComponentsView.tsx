@@ -142,6 +142,7 @@ export function ComponentsView({
   readImage,
   inert,
   locale,
+  run = '',
 }: ComponentsViewProps): JSX.Element {
   const container = useRef<HTMLDivElement | null>(null)
   const gestures = useMemo<ComponentGestures>(() => {
@@ -179,10 +180,11 @@ export function ComponentsView({
       readImage,
       inert,
       locale,
+      run,
       gestures,
       renderChildren,
     }),
-    [dispatch, grantGesture, openLink, readImage, inert, locale, gestures],
+    [dispatch, grantGesture, openLink, readImage, inert, locale, run, gestures],
   )
 
   return (

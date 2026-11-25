@@ -30,7 +30,7 @@ export type Drawn = {
   sent: Sent[]
   grants: number
   opened: string[]
-  draw(raw: unknown, options?: { inert?: boolean }): void
+  draw(raw: unknown, options?: { inert?: boolean; run?: string }): void
   unmount(): void
 }
 
@@ -62,6 +62,7 @@ export function draw(
         readImage: async (src) => options.images?.[src] ?? null,
         inert: again.inert ?? options.inert ?? false,
         locale: 'en',
+        ...(again.run === undefined ? {} : { run: again.run }),
       }
       act(() => root.render(<ComponentsView {...props} />))
     },

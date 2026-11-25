@@ -16,7 +16,8 @@
 // window keeps the last tree and the memory atoms (`RetainedPanel`): the new
 // run's first tree replaces the old with a brief Reloaded mark, and a run
 // that fails to load leaves the old tree on screen, inert, with the error at
-// its file, line and column.
+// its file, line and column. An installed extension's run starts from
+// nothing: no kept tree, no Reloaded mark.
 
 import { COMPONENT_MESSAGES as M } from '../../../../../../packages/extension-sdk/src/components/messages'
 import { parseComponentTree } from '../../../../../../packages/extension-sdk/src/components/tree'
@@ -30,6 +31,8 @@ export type RetainedPanel = {
   memory: Map<string, { version: number; value: unknown }>
   /** Whether a run has drawn before: the next run's first tree shows the Reloaded mark. */
   drawn: boolean
+  /** The run that drew `tree`. */
+  run: string
 }
 
 const retained = new Map<string, RetainedPanel>()
@@ -37,7 +40,7 @@ const retained = new Map<string, RetainedPanel>()
 /** The panel's kept state, by its surface and workspace. */
 export function retainedPanel(key: string): RetainedPanel {
   let found = retained.get(key)
-  if (!found) retained.set(key, (found = { tree: null, memory: new Map(), drawn: false }))
+  if (!found) retained.set(key, (found = { tree: null, memory: new Map(), drawn: false, run: '' }))
   return found
 }
 
@@ -50,6 +53,8 @@ export type ComponentsPanelState = {
   tree: ComponentsTree
   /** The guest's revision of the tree on screen. */
   revision: number
+  /** The run (its guest's document) that drew the tree on screen. */
+  run: string
   /** The panel threw: a sentence each, newest last, at most a few. */
   errors: string[]
   /** The last render was refused (over a limit, malformed): why, while the last good tree stays. */
@@ -90,8 +95,10 @@ export function createComponentsPanelSession(options: {
   let gestureUntil = 0
   let visible = options.visible
   let state: ComponentsPanelState = {
-    tree: kept.tree,
+    // Only a development folder's run takes over the tree the run before drew.
+    tree: options.development ? kept.tree : null,
     revision: 0,
+    run: options.development ? kept.run : '',
     errors: [],
     refused: null,
     loadError: null,
@@ -154,13 +161,17 @@ export function createComponentsPanelSession(options: {
       warnings.push(warning)
       options.warn?.(warning)
     }
-    const reloaded = !state.drawn && kept.drawn
-    kept.tree = checked.tree
-    kept.drawn = true
+    const reloaded = options.development && !state.drawn && kept.drawn
+    if (options.development) {
+      kept.tree = checked.tree
+      kept.drawn = true
+      kept.run = document ?? ''
+    }
     ack(true)
     change({
       tree: checked.tree,
       revision,
+      run: document ?? '',
       refused: null,
       loadError: null,
       drawn: true,
@@ -194,6 +205,8 @@ export function createComponentsPanelSession(options: {
   return {
     /** One `ui.*` event from the guest, with the lane's refusal if any. */
     receive(event: string, payload: unknown, refused?: 'too_large' | 'rate_limited') {
+      // Over the lane, nothing is taken; a render is answered as refused, so the guest knows.
+      if (refused && event !== M.render) return
       if (event === M.ready) ready(payload)
       else if (event === M.render) render(payload, refused)
       else if (event === M.error) error(payload)
@@ -231,6 +244,8 @@ export function createComponentsPanelSession(options: {
     dismissError() {
       change({ errors: [] })
     },
+    /** A development folder's run: a load that fails keeps the run before's tree. */
+    development: options.development,
     state: () => state,
     subscribe(listener: () => void) {
       listeners.add(listener)

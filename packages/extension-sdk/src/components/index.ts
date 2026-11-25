@@ -41,7 +41,9 @@ export type { ComponentsBridge, Disposable, PanelContext, Theme, ColorScheme } f
 export type * from './types.js'
 
 let runtime: ComponentsRuntime | null = null
-let pendingMount: ComponentFunction | null = null
+// What `mount()` was given last. Kept: a module runs once per process, and
+// every runtime started after it (a test's second mount) draws it too.
+let mounted: ComponentFunction | null = null
 
 /**
  * Start the runtime on a bridge (the frame's bootstrap, or a test's
@@ -57,9 +59,8 @@ export function installComponentsRuntime(options: {
   resetAtoms()
   const installed = createComponentsRuntime(options)
   runtime = installed
-  const queued = pendingMount
-  pendingMount = null
-  if (queued) installed.mount(queued)
+  // Drawn when the runtime boots, where a default export is: after setup.
+  if (mounted) installed.mount(mounted)
   return installed
 }
 
@@ -80,11 +81,14 @@ export async function bootComponentsPanel(bridge: ComponentsBridge, module: Pane
   return installed
 }
 
-/** Draw `component` as the panel; a module's default export is mounted the same way. */
+/**
+ * Draw `component` as the panel, as a module's default export is drawn: once
+ * the stored atoms are loaded and `setup` ran. A default export comes first.
+ */
 export function mount(component: (props: Record<string, never>) => unknown): void {
-  const next = component as ComponentFunction
-  if (runtime) runtime.mount(next)
-  else pendingMount = next
+  if (typeof component !== 'function') throw new TypeError('mount() takes a component function.')
+  mounted = component as ComponentFunction
+  runtime?.mount(mounted)
 }
 
 const sdk = createComponentsSdk({

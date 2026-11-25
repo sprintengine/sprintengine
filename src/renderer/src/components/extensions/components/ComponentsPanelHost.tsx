@@ -52,7 +52,8 @@ export function ComponentsPanelHost({
   if (!state.tree && state.loadError) {
     return <EmptyState title="This panel could not load" body={state.loadError} />
   }
-  if (!state.tree && !state.drawn) {
+  // Waiting for the first tree, unless the panel already threw or drew what Studio refused.
+  if (!state.tree && !state.drawn && state.errors.length === 0 && !state.refused) {
     return (
       <div className="flex h-full items-center justify-center" aria-busy="true">
         {waited ? <Spinner label="Loading the panel" /> : null}
@@ -79,7 +80,11 @@ export function ComponentsPanelHost({
         // The first line names the file, line and column, so it is shown; the rest (a stack) waits behind details.
         <InlineNotice
           tone="error"
-          title="This save did not load; the last version that did is shown"
+          title={
+            session.development
+              ? 'This save did not load; the last version that did is shown'
+              : 'This panel stopped; the last view it drew is shown'
+          }
           hint={loadErrorLines[0]}
           {...(loadErrorLines.length > 1 ? { detail: state.loadError ?? '' } : {})}
           className="m-[var(--sem-space-sm)]"
@@ -96,6 +101,7 @@ export function ComponentsPanelHost({
           readImage={readImage}
           inert={inert}
           locale={locale}
+          run={state.run}
         />
       </div>
       {reloadedShown ? (

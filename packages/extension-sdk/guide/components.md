@@ -65,7 +65,8 @@ export default function Counter() {
   function components are fine; they are called while rendering, and only
   the catalogue's components reach Studio.
 - `mount(Component)` from the same module draws a component too, for an entry
-  that does not default-export one.
+  that does not default-export one. It is drawn where a default export is:
+  after the stored atoms load and `setup` runs.
 - The entry imports its own files by relative paths, as every surface does,
   and nothing else by a package name but the components module.
 - A `key` on an element keeps its identity across renders (`list.map((item)
@@ -142,6 +143,10 @@ Studio hands over the persisted atoms, `setup` runs, then the first render.
 
 An optional named export `setup(ctx)` runs once per run, before the first
 render, and may return a cleanup function, which runs when the run ends.
+
+The module's top level runs before Studio starts the panel: `on()`,
+`worker.on()` and `host.call()` there throw an error that says so. Call them
+from `setup` or a handler.
 
 | `ctx.` | What it is |
 | --- | --- |

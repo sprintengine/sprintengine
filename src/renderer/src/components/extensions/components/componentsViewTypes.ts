@@ -33,4 +33,10 @@ export type ComponentsViewProps = {
   inert: boolean
   /** Studio's language, for relative times and numbers. */
   locale: string
+  /**
+   * The run that drew the tree (its guest's document id). A new run counts
+   * its edits from nothing, so the window's count of what it sent starts
+   * over with it; what was typed carries over only in the panel's atoms.
+   */
+  run?: string
 }

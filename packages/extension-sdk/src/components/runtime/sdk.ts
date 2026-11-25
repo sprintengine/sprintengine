@@ -14,17 +14,24 @@ function hostError(code: string, message: string): Error {
   return Object.assign(new Error(message), { code, retryable: code === 'timeout' })
 }
 
-const NOTHING: Disposable = { dispose: () => undefined }
-
 export function createComponentsSdk(source: { bridge: () => ComponentsBridge | null; theme: () => Theme }) {
-  function unavailable(what: string): Promise<never> {
-    return Promise.reject(hostError('unavailable', `${what} is only available while the panel runs in Studio.`))
+  /**
+   * The bridge, or a clear error: a module's top level runs before Studio
+   * starts the panel, so what it calls there would reach nothing.
+   */
+  function running(what: string): ComponentsBridge {
+    const bridge = source.bridge()
+    if (!bridge)
+      throw hostError(
+        'unavailable',
+        `${what} was called before the panel runs; call it from setup(ctx) or a handler, not at the top level of the module.`,
+      )
+    return bridge
   }
 
   const host = Object.freeze({
     call(method: string, params?: unknown, options: HostCallOptions = {}): Promise<unknown> {
-      const bridge = source.bridge()
-      if (!bridge) return unavailable('host.call')
+      const bridge = running(`host.call("${String(method)}")`)
       const { signal, timeoutMs } = options
       if (timeoutMs === undefined) return bridge.call(method, params, signal ? { signal } : undefined)
       const controller = new AbortController()
@@ -81,8 +88,7 @@ export function createComponentsSdk(source: { bridge: () => ComponentsBridge | n
     if (typeof event !== 'string' || isReservedComponentEvent(event))
       throw new TypeError(`"${String(event)}" is not an event a panel can follow.`)
     if (typeof handler !== 'function') throw new TypeError('on() takes a handler function.')
-    const bridge = source.bridge()
-    if (!bridge) return NOTHING
+    const bridge = running(`on("${event}")`)
     if (event === 'theme') return bridge.on('theme', handler)
     return bridge.listen(event, handler)
   }
@@ -160,8 +166,7 @@ export function createComponentsSdk(source: { bridge: () => ComponentsBridge | n
     },
     /** Hear the worker's events (`MainHost.emit`) of one topic, or every one with `'*'`. */
     on(topic: string, handler: (payload: unknown) => void): Disposable {
-      const bridge = source.bridge()
-      if (!bridge) return NOTHING
+      const bridge = running(`worker.on("${String(topic)}")`)
       return bridge.listen('push', (message) => {
         const heard = message as { topic?: unknown; payload?: unknown }
         if (topic === '*' || heard.topic === topic) handler(topic === '*' ? heard : heard.payload)

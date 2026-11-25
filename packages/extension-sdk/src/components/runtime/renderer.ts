@@ -128,8 +128,9 @@ function storedValues(raw: unknown): Map<string, StoredValue> | null {
 
 export type ComponentsRuntime = {
   readonly document: string
-  /** Loads persisted atoms, runs `setup`, then mounts the default export. */
+  /** Loads persisted atoms, runs `setup`, then mounts the default export (or what `mount` was given). */
   boot(module: PanelModule): Promise<void>
+  /** Draw `component`; before `boot` has run `setup`, it waits to be drawn then. */
   mount(component: ComponentFunction): void
   unmount(): void
   /** Handles `ui.event`; false unless its callback is in the tree it names. */
@@ -170,6 +171,9 @@ export function createComponentsRuntime(options: {
     },
   }
   let component: ComponentFunction | null = null
+  // A component given before boot ran setup: drawn by boot, after setup.
+  let requested: ComponentFunction | null = null
+  let booted = false
   let revision = 0
   let lastRenderAt = Number.NEGATIVE_INFINITY
   // Handler tables by revision: the one on screen (accepted) and every newer one.
@@ -248,17 +252,31 @@ export function createComponentsRuntime(options: {
     // Strictly the tree the person saw: a newer render may bind the same id elsewhere.
     const handler = typeof at === 'number' ? renders.get(at)?.get(callback) : undefined
     if (!handler) return false
-    if (typeof edit === 'number' && Number.isSafeInteger(edit)) {
-      editsSeen.set(callback, Math.max(edit, editsSeen.get(callback) ?? 0))
-      // The next render reports the edit as seen, even when the panel ignores it.
-      invalidate()
-    }
+    // An edit counts as handled once its handler is done, an async one once
+    // it settles: a render before then is an echo, and leaves the typing alone.
+    const handled =
+      typeof edit === 'number' && Number.isSafeInteger(edit)
+        ? () => {
+            if (disposed) return
+            editsSeen.set(callback, Math.max(edit, editsSeen.get(callback) ?? 0))
+            // The next render reports the edit as seen, even when the panel ignores it.
+            invalidate()
+          }
+        : () => undefined
+    let result: unknown
     try {
-      const result = handler(...(Array.isArray(args) ? args : []))
-      if (result instanceof Promise) result.catch(report)
+      result = handler(...(Array.isArray(args) ? args : []))
     } catch (error) {
       report(error)
+      handled()
+      return true
     }
+    if (typeof (result as PromiseLike<unknown> | null)?.then === 'function')
+      Promise.resolve(result).then(handled, (error: unknown) => {
+        report(error)
+        handled()
+      })
+    else handled()
     return true
   }
 
@@ -557,16 +575,23 @@ export function createComponentsRuntime(options: {
         const cleanup = module.setup(context)
         setupCleanup = isCallable(cleanup) ? () => void cleanup() : null
       }
+      booted = true
       const panel = module.default
-      if (isCallable(panel)) runtime.mount((props) => panel(props))
-      else if (!component) {
+      const next: ComponentFunction | null = isCallable(panel) ? (props) => panel(props) : (requested ?? component)
+      requested = null
+      if (!next) {
         const kind = module.default === null ? 'null' : typeof module.default
         throw new Error(
-          `A components panel's entry exports its component function as its default export (got ${kind}).`,
+          `A components panel's entry exports its component function as its default export, or calls mount() with it (got ${kind}).`,
         )
       }
+      runtime.mount(next)
     },
     mount(next) {
+      if (!booted) {
+        requested = next
+        return
+      }
       component = next
       if (hydratedNow) {
         render()

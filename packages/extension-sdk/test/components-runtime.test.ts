@@ -11,6 +11,7 @@ import {
   derived,
   installComponentsRuntime,
   jsx,
+  mount,
   read,
   set,
   update,
@@ -18,6 +19,7 @@ import {
 } from '../src/components/index.js'
 import { forgetKeyedAtoms } from '../src/components/runtime/atoms.js'
 import { COMPONENT_MESSAGES as M } from '../src/components/messages.js'
+import { createComponentsSdk } from '../src/components/runtime/sdk.js'
 import { parseComponentTree } from '../src/components/tree.js'
 
 type Posted = { event: string; payload: Record<string, unknown> }
@@ -421,4 +423,70 @@ test('a refused write is sent again after the wait it names, with the value then
   assert.equal(fake.writes().length, 2)
   assert.equal(fake.posted.filter((each) => each.event === M.error).length, 0)
   runtime.dispose()
+})
+
+test('mount(Panel) draws in every runtime started after it, once setup ran, as a default export does', async () => {
+  const order: string[] = []
+  const Panel = () => {
+    order.push('render')
+    return jsx('Text', { children: 'mounted' })
+  }
+  // At the module's top level: before Studio starts a runtime.
+  mount(Panel)
+  for (const run of [1, 2]) {
+    const fake = fakeBridge()
+    const runtime = installComponentsRuntime({ bridge: fake.bridge, schedule: sync, awaitHydration: true })
+    const booted = runtime.boot({ setup: () => void order.push(`setup ${run}`) })
+    const ready = fake.posted.find((each) => each.event === M.ready)!
+    order.push(`ready ${run}`)
+    assert.equal(fake.renders().length, 0, 'nothing renders before the window hydrates')
+    fake.send(M.hydrate, { document: ready.payload.document, visible: true })
+    await booted
+    assert.match(JSON.stringify(fake.renders()[0]?.payload.tree), /mounted/)
+    runtime.dispose()
+  }
+  assert.deepEqual(order, ['ready 1', 'setup 1', 'render', 'ready 2', 'setup 2', 'render'])
+})
+
+test('an async onChange: the edit counts as handled once the handler settles, so typed text is never dropped', async () => {
+  const fake = fakeBridge()
+  const draft = atom('')
+  let release: () => void = () => undefined
+  const runtime = installComponentsRuntime({ bridge: fake.bridge, schedule: sync })
+  await runtime.boot({
+    default: () =>
+      jsx('Input', {
+        label: 'Draft',
+        value: read(draft),
+        onChange: async (value: string) => {
+          await new Promise<void>((done) => (release = done))
+          set(draft, value)
+        },
+      }),
+  })
+  const tree = fake.renders()[0]!.payload.tree as { props: Record<string, unknown> }
+  const callback = (tree.props.onChange as { $callback: string }).$callback
+  runtime.dispatchEvent({ document: runtime.document, revision: 1, callback, args: ['ab'], edit: 1 })
+  // Whatever renders while the handler waits has not seen the edit: an echo the window leaves alone.
+  runtime.rerender()
+  for (const each of fake.renders()) assert.equal((each.payload.tree as { props: { $edit: number } }).props.$edit, 0)
+  release()
+  await tick()
+  const after = fake.renders().at(-1)!.payload.tree as { props: Record<string, unknown> }
+  assert.equal(after.props.value, 'ab')
+  assert.equal(after.props.$edit, 1)
+  runtime.dispose()
+})
+
+test('on(), worker.on() and host.call() before the panel runs throw, naming where to call them', () => {
+  const sdk = createComponentsSdk({ bridge: () => null, theme: () => ({ colorScheme: 'dark' }) })
+  assert.throws(
+    () => sdk.on('workspace.changed', () => undefined),
+    /on\("workspace\.changed"\) was called before the panel runs; call it from setup\(ctx\)/u,
+  )
+  assert.throws(() => sdk.worker.on('*', () => undefined), /worker\.on\("\*"\) was called before the panel runs/u)
+  assert.throws(
+    () => sdk.host.call('workspace.list'),
+    /host\.call\("workspace\.list"\) was called before the panel runs/u,
+  )
 })

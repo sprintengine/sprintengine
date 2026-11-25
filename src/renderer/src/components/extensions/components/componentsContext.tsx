@@ -22,6 +22,8 @@ export type ComponentsContextValue = {
   readImage(src: string): Promise<string | null>
   inert: boolean
   locale: string
+  /** The run that drew the tree: the edit protocol's count starts over with a new one. */
+  run: string
   gestures: ComponentGestures
   /** Draw one node's children. */
   renderChildren(children: ComponentChild[], path: string): ReactNode

@@ -120,6 +120,23 @@ test('typing reports each edit with its number; a render that has not seen it ke
   expect(field.value).toBe('Sh')
 })
 
+test('a new run counts its edits afresh: after a reload, a Clear that renders an empty value clears the field', () => {
+  drawn = draw(input({ value: '' }), {})
+  drawn.draw(input({ value: '' }), { run: 'one' })
+  const field = drawn.host.querySelector('input')!
+  typeInto(field, 'S')
+  typeInto(field, 'Sh')
+  drawn.draw(input({ value: 'Sh', $edit: 2 }), { run: 'one' })
+  // A development folder's save: the next run hands back the draft from its atoms, having seen no edit.
+  drawn.draw(input({ value: 'Sh', $edit: 0 }), { run: 'two' })
+  expect(field.value).toBe('Sh')
+  // Its Clear button renders the empty value: the panel's word, though its count is below the window's.
+  drawn.draw(input({ value: '', $edit: 0 }), { run: 'two' })
+  expect(field.value).toBe('')
+  typeInto(field, 'N')
+  expect(drawn.sent.at(-1)).toEqual({ callback: 'change', args: ['N'], edit: 1 })
+})
+
 test('Enter submits what is on screen, and a reset to the same empty value applies', () => {
   drawn = draw(input({ value: '' }))
   const field = drawn.host.querySelector('input')!
