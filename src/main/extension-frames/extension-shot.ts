@@ -11,9 +11,10 @@ import { appDocumentUrl, refusesFrameNavigation } from '../privileged-window-nav
 import {
   componentsShotImages,
   componentsShotImageUrl,
+  componentsShotReplay,
   componentsShotRequestAllowed,
   createComponentsShotExchange,
-  type ComponentsShotExchange,
+  type ComponentsShotDrawing,
 } from './components-shot-exchange'
 
 // `visual.extension_shot`: a picture of one of an extension's surfaces (a
@@ -38,6 +39,12 @@ import {
 // own renderer (`?view=components-shot`, ComponentsShotApp.tsx), which is the
 // one captured. That window runs no extension code: it is handed the tree and
 // the images it draws, as data.
+//
+// A scenario's shot (`shot --scenario`) brings its tree with it: the author's
+// CLI rendered the panel in that scenario on its own machine, as `check` does.
+// The tree is checked again as the window checks a posted one and drawn in the
+// same second window; the panel's frame is never loaded, so the scenario's
+// data reaches neither the live panel nor its worker.
 
 const PARTITION = 'extension-shot'
 const VIEW_PARTITION = 'extension-shot-view'
@@ -116,6 +123,7 @@ export async function shootExtensionSurface(
     throw new Error(
       `${input.moduleId} is not a development folder's extension here. Shots are taken of development folders only; installed extensions are refused.`,
     )
+  if (input.tree !== undefined) return shootScenario(client, input)
   const document = await client.request('extension.frame', {
     moduleId: input.moduleId,
     point: input.point,
@@ -253,6 +261,43 @@ export async function shootExtensionSurface(
   }
 }
 
+/** A scenario's tree, rendered by the author's CLI, drawn without running the panel. */
+async function shootScenario(client: StudioClient, input: ExtensionShotInput): Promise<ExtensionShotResult> {
+  const { extensions } = await client.request('extension.contributions', {})
+  const panel =
+    input.point === 'panels'
+      ? extensions
+          .find((extension) => extension.id === input.moduleId)
+          ?.extension.contributes.panels.find((each) => each.id === input.id)
+      : undefined
+  if (panel?.ui !== 'components')
+    throw new Error(`${input.moduleId} has no components panel ${input.id}: a scenario is drawn for one only.`)
+  const replay = componentsShotReplay(input.tree)
+  if (!replay.ok) throw new Error(replay.error)
+  // Only built, never loaded: its hash is what the panel's images are read through, as the window reads them.
+  const document = await client.request('extension.frame', {
+    moduleId: input.moduleId,
+    point: input.point,
+    id: input.id,
+    theme: input.theme,
+  })
+  const image = await shootComponentsView(client, input, document.hash, replay.drawing, null)
+  if (image.isEmpty()) throw new Error('The scenario drew nothing to capture.')
+  const size = image.getSize()
+  mkdirSync(dirname(input.out), { recursive: true })
+  writeFileSync(input.out, image.toPNG())
+  return {
+    path: input.out,
+    width: size.width,
+    height: size.height,
+    theme: input.theme,
+    settled: true,
+    pendingRequests: 0,
+    errors: replay.errors,
+    ...(input.scenario !== undefined ? { scenario: input.scenario } : {}),
+  }
+}
+
 /** One of the extension's images, read as the window reads it (`assets.image`), or null. */
 async function readShotImage(
   client: StudioClient,
@@ -279,7 +324,7 @@ async function shootComponentsView(
   client: StudioClient,
   input: ExtensionShotInput,
   frame: string,
-  components: ComponentsShotExchange,
+  components: ComponentsShotDrawing,
   failure: string | null,
 ): Promise<NativeImage> {
   const images: Record<string, string> = {}

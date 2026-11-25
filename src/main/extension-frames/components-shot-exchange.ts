@@ -103,6 +103,27 @@ export function createComponentsShotExchange() {
   }
 }
 
+/** What a shot draws: a checked tree, the tree as posted, and what the check said of it. */
+export type ComponentsShotDrawing = { drawn: boolean; tree: ComponentsShotTree; raw: unknown }
+
+/**
+ * A tree the author's CLI rendered on its own machine (`shot --scenario`),
+ * checked as the window checks a posted one: the drawing, and its warnings in
+ * the shot's words; or why Studio would not draw it.
+ */
+export function componentsShotReplay(
+  posted: unknown,
+): { ok: true; drawing: ComponentsShotDrawing; errors: string[] } | { ok: false; error: string } {
+  const checked = parseComponentTree(posted)
+  if (!checked.ok) return { ok: false, error: `Studio did not draw the scenario’s view: ${checked.error}` }
+  const errors: string[] = []
+  for (const warning of checked.warnings) {
+    const line = `Warning: ${warning}`.slice(0, MAX_MESSAGE_LENGTH)
+    if (!errors.includes(line) && errors.length < MAX_MESSAGES) errors.push(line)
+  }
+  return { ok: true, drawing: { drawn: true, tree: checked.tree, raw: posted }, errors }
+}
+
 /** The extension images a checked tree draws (Image, and images in Markdown), at most MAX_SHOT_IMAGES. */
 export function componentsShotImages(tree: ComponentsShotTree): string[] {
   const found = new Set<string>()

@@ -150,7 +150,7 @@
     },
     {
       "name": "visual.extension_shot",
-      "sha256": "86c86f077da95a1c8e1c81ef842589e2a39e0b0b41264d5a040d834f97c69ef8"
+      "sha256": "41b2a8a9fa8797055d662ddb3480088b38dab28da1afd22079654c435bae9c7d"
     },
     {
       "name": "conversation.create",
@@ -648,7 +648,7 @@
     },
     {
       "name": "visual.extension_shot",
-      "sha256": "86c86f077da95a1c8e1c81ef842589e2a39e0b0b41264d5a040d834f97c69ef8"
+      "sha256": "41b2a8a9fa8797055d662ddb3480088b38dab28da1afd22079654c435bae9c7d"
     },
     {
       "name": "conversation.create",

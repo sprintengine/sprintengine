@@ -6,6 +6,7 @@ import {
   MAX_SHOT_IMAGES,
   componentsShotImages,
   componentsShotImageUrl,
+  componentsShotReplay,
   componentsShotRequestAllowed,
   createComponentsShotExchange,
 } from './components-shot-exchange'
@@ -135,4 +136,25 @@ test('the view window loads the app’s own renderer and nothing else', () => {
   assert.equal(componentsShotRequestAllowed('ws://localhost:5173/', dev), true)
   assert.equal(componentsShotRequestAllowed('http://localhost:8080/', dev), false)
   assert.equal(componentsShotRequestAllowed('not a url', dev), false)
+})
+
+test('a scenario’s tree is checked as a posted one: drawn with its warnings, or refused with the reason', () => {
+  const posted = n('Stack', {}, [
+    n('Text', {}, ['7 clicks']),
+    n('Button', { onPress: { $callback: 'shot.1' }, colour: 'red' }, ['Add']),
+  ])
+  const replay = componentsShotReplay(posted)
+  assert.equal(replay.ok, true)
+  if (!replay.ok) return
+  assert.equal(replay.drawing.drawn, true)
+  assert.equal(replay.drawing.raw, posted)
+  assert.equal(replay.drawing.tree?.type, 'Stack')
+  assert.equal(replay.errors.length, 1)
+  assert.match(replay.errors[0]!, /^Warning: .*colour/u)
+
+  const refused = componentsShotReplay({ type: 'Stack', props: {}, children: 'not a list' })
+  assert.equal(refused.ok, false)
+  if (refused.ok) return
+  assert.match(refused.error, /^Studio did not draw the scenario’s view: /u)
+  assert.equal(componentsShotReplay('just text').ok, false)
 })

@@ -323,13 +323,30 @@ loading), `pendingRequests` and `errors` (what it threw or logged, at
 `file:line:col`). A Studio without its desktop window (a server on its own)
 fails `shot_failed`.
 
+### `shot <dir> --scenario <name> [--panel <id>]`
+
+A components panel in one of its `.check.ts` scenarios (see `check`): the
+panel is rendered on this machine as `check` renders it, against the SDK's
+fake Studio with the worker mounted beside it, and Studio draws the tree it
+drew, checked as the window checks one, in the same hidden window. The live
+panel is never loaded, so the scenario's data reaches neither it nor the
+worker in Studio. It takes the folder, not a key; without `--panel`, the
+first components panel. The default file is
+`<dir>/.sprintengine/shots/<key>-<id>.<scenario>.png`; the other options are
+`shot`'s. Answers what `shot` does plus `scenario`; `errors` adds what the
+panel threw in the scenario. A scenario the panel lacks is
+`invalid_argument`, naming the ones it has; one that drew nothing is
+`extension_check_failed`. A control's value is the one its props give, and
+nothing is pressed.
+
 ## The same from Studio's tools
 
 An agent with Studio's MCP tools can skip the CLI: `extension.dev.load`
 (`path`, the folder's absolute path), `extension.dev.unload`,
 `extension.dev.list`, `extension.dev.events` (`after`, `moduleId`, `limit`),
 `extension.dev.request`, `extension.dev.hook`, `extension.dev.emit`, `extension.dev.studioEvent` and
-`visual.extension_shot` (`moduleId`, `point`, `id`, `out`). They answer the
+`visual.extension_shot` (`moduleId`, `point`, `id`, `out`; `tree` and
+`scenario` for a scenario's tree). They answer the
 same results; a failure is the tool's error with the same codes. A paired
 device cannot use them: a development folder is a path on this machine.
 `extension.install` (`source`), `extension.update` (`moduleId`, or `all:

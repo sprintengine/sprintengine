@@ -137,10 +137,15 @@ async function run(output: Output, command: string, args: string[]): Promise<voi
         width: { type: 'string' },
         height: { type: 'string' },
         out: { type: 'string' },
+        scenario: { type: 'string' },
       },
       allowPositionals: true,
     })
     const target = positionals[0] ?? '.'
+    if (values.scenario !== undefined && values.scenario.trim() === '')
+      throw new CliError('invalid_argument', '--scenario names one of the panel’s .check.ts scenarios.')
+    if (values.scenario !== undefined && (values.door !== undefined || values.settings !== undefined))
+      throw new CliError('invalid_argument', '--scenario draws a components panel: name it with --panel <id>.')
     if (values.theme !== undefined && values.theme !== 'light' && values.theme !== 'dark')
       throw new CliError('invalid_argument', '--theme is light or dark.')
     const point = values.panel ? 'panels' : values.door ? 'doors' : values.settings ? 'settingsSections' : undefined
@@ -154,6 +159,7 @@ async function run(output: Output, command: string, args: string[]): Promise<voi
       ...(height ? { height } : {}),
       ...(values.out ? { out: values.out } : {}),
       ...(values['data-dir'] ? { dataDir: values['data-dir'] } : {}),
+      ...(values.scenario !== undefined ? { scenario: values.scenario } : {}),
     })
     return
   }

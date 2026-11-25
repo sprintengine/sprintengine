@@ -329,7 +329,10 @@ entry, scenarios?, results: [{ name, summary, errors, warnings, refusals, tree
 `sprintengine-extension shot` (and `npm run dev`'s `--shot`) draws a
 components panel's tree with Studio's own renderer, as the window draws it, in
 the theme asked for: open the PNG to see the panel. Its host calls are
-answered by Studio.
+answered by Studio. `shot <dir> --scenario <name>` pictures the panel in one
+of its `.check.ts` scenarios instead: rendered on this machine as `check`
+renders it, then drawn by Studio from that tree, so the scenario never
+reaches the live panel or its worker.
 
 ## Inputs: Studio owns what is typed
 
