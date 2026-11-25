@@ -42,3 +42,25 @@ test('a real call is still found, at its line and column, inside a template expr
     ],
   )
 })
+
+test('a components panel’s file is read for the host it imports: host.call, and worker without a worker', () => {
+  const source = [
+    `import { host, worker } from '@sprintengine/extension-sdk/components'`,
+    `void host.call('files.read', { workspaceId: 'w', path: 'a' })`,
+    `void worker.read('cards.list')`,
+    `void myhost.call('not.ours')`,
+  ].join('\n')
+  const issues = surfaceHostCallIssues('src/panel.tsx', source, 'panels', { permissions: [] }, { components: true })
+  assert.deepEqual(
+    issues.map((issue) => [issue.line, issue.message]),
+    [
+      [3, "worker.read and worker.operate reach the extension's worker, and it has none (worker tier)."],
+      [
+        2,
+        'host.call("files.read") needs the "workspace-files:read" permission, which extension.json does not ask for.',
+      ],
+    ],
+  )
+  // A frame's file is read as before: a bare `host.call` is not its `studio.host.call`.
+  assert.deepEqual(surfaceHostCallIssues('src/panel.ts', source, 'panels', manifest), [])
+})

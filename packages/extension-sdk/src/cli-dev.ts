@@ -8,7 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 
 import { CliError, type Output } from './cli-output.js'
 import { connectStudio, type StudioTools } from './cli-studio.js'
-import { checkSurfaces, checkWorker, validateExtensionFolder } from './cli-authoring.js'
+import { checkPanels, checkSurfaces, checkWorker, panelCheckWords, validateExtensionFolder } from './cli-authoring.js'
 import { EXTENSION_MANIFEST_FILENAME, parseExtensionManifest } from './extension-manifest.js'
 
 type Approval = { state: string; fingerprint?: string; growth?: string[] }
@@ -446,13 +446,19 @@ export async function devWatch(
         const validated = validateExtensionFolder(path)
         const worker = await checkWorker(validated)
         const surfaces = checkSurfaces(path, validated.manifest)
-        const offline = (worker?.ok ?? true) && surfaces.every((surface) => surface.ok)
+        // Components panels render against the fake Studio, scenario by scenario.
+        const panels = await checkPanels(validated, surfaces)
+        const offline = (worker?.ok ?? true) && surfaces.every((surface) => surface.ok) && (panels?.ok ?? true)
         const ok = offline && live.ok
+        const panelIssues =
+          panels && !panels.ok
+            ? panelCheckWords(panels).filter((line) => !line.startsWith('  ') || line.startsWith('  error:'))
+            : []
         output.line(
-          { type: 'check', key, ok, offline: { ok: offline, worker, surfaces }, live },
+          { type: 'check', key, ok, offline: { ok: offline, worker, surfaces, ...(panels ? { panels } : {}) }, live },
           ok
             ? '✓ check passed'
-            : `✗ check: ${[liveWords, worker && !worker.ok ? `worker: ${worker.error}` : '', ...surfaces.filter((s) => !s.ok).map((s) => `${s.id}: ${s.problem}`)].filter(Boolean).join('; ')}`,
+            : `✗ check: ${[liveWords, worker && !worker.ok ? `worker: ${worker.error}` : '', ...surfaces.filter((s) => !s.ok).map((s) => `${s.id}: ${s.problem}`), ...panelIssues.map((line) => line.trim())].filter(Boolean).join('; ')}`,
         )
       } catch (error) {
         const issues = error instanceof CliError ? error.data?.issues : undefined

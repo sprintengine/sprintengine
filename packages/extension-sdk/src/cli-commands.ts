@@ -4,6 +4,8 @@
 import { parseArgs } from 'node:util'
 
 import {
+  checkPanels,
+  panelCheckWords,
   checkSurfaces,
   checkWorker,
   inspectExtension,
@@ -97,8 +99,11 @@ async function run(output: Output, command: string, args: string[]): Promise<voi
     }
     const worker = await checkWorker(validated)
     const surfaces = checkSurfaces(validated.root, validated.manifest)
-    const ok = (worker?.ok ?? true) && surfaces.every((surface) => surface.ok)
-    const result = { key: validated.key, ok, worker, surfaces }
+    const panels = await checkPanels(validated, surfaces)
+    const ok = (worker?.ok ?? true) && surfaces.every((surface) => surface.ok) && (panels?.ok ?? true)
+    // The drawn trees are for --json: a scenario read without opening Studio.
+    const result = { key: validated.key, ok, worker, surfaces, ...(panels ? { panels } : {}) }
+    const panelWords = panels ? panelCheckWords(panels) : []
     if (!ok)
       throw new CliError(
         'extension_check_failed',
@@ -107,6 +112,7 @@ async function run(output: Output, command: string, args: string[]): Promise<voi
           ...surfaces
             .filter((surface) => !surface.ok)
             .map((surface) => `${surface.point} ${surface.id}: ${surface.problem}`),
+          ...panelWords,
         ].join('\n'),
         result,
       )
@@ -115,6 +121,7 @@ async function run(output: Output, command: string, args: string[]): Promise<voi
         ? `worker: activated; methods ${worker.ok ? worker.methods.length : 0}, tools ${worker.ok ? worker.tools.length : 0}, hooks ${worker.ok ? worker.hooks.length : 0}`
         : 'worker: none',
       ...surfaces.map((surface) => `${surface.point} ${surface.id}: loads (${surface.modules} module(s))`),
+      ...panelWords,
     ])
   }
 

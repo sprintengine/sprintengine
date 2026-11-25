@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { buildSync } from 'esbuild'
+import { build, type Plugin } from 'esbuild'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import { CLI_ERROR_CODES } from '../src/cli-output.js'
@@ -18,24 +18,39 @@ import { EXTENSION_MANIFEST_SINCE } from '../src/extension-manifest.js'
 let workDir = ''
 let cli = ''
 
-beforeAll(() => {
+beforeAll(async () => {
   workDir = mkdtempSync(join(tmpdir(), 'sprintengine-cli-authoring-'))
   const bin = join(workDir, 'bin')
   // As the package ships them: the CLI with its two helpers beside it.
+  // The components runtime is one module beside them, as in dist/: a panel and
+  // check's child must share it, so every other bundle imports it.
+  const ownRuntime: Plugin = {
+    name: 'components-runtime',
+    setup(on) {
+      on.onResolve({ filter: /^\.\/components\/index\.js$/ }, () => ({
+        path: './components/index.js',
+        external: true,
+      }))
+    },
+  }
   for (const [entry, out] of [
     ['cli.ts', 'cli.js'],
     ['check-worker.ts', 'check-worker.js'],
+    ['check-panel.ts', 'check-panel.js'],
     ['test-register.ts', 'test-register.js'],
+    ['testing.ts', 'testing.js'],
+    ['components/index.ts', 'components/index.js'],
     // What the Vitest config `test` writes imports, beside it in dist/.
     ['source-modules.ts', 'source-modules.js'],
   ] as const)
-    buildSync({
+    await build({
       entryPoints: [join(process.cwd(), 'packages/extension-sdk/src', entry)],
       bundle: true,
       platform: 'node',
       format: 'esm',
       outfile: join(bin, out),
       external: ['react', 'react-dom', 'react-dom/*'],
+      ...(entry === 'components/index.ts' ? {} : { plugins: [ownRuntime] }),
       banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
       logLevel: 'silent',
     })
@@ -143,6 +158,125 @@ test('check activates the worker and builds each surface; a worker that throws f
   assert.equal(throwing.status, 1)
   assert.equal(throwing.answer.error?.code, 'extension_check_failed')
   assert.match(throwing.answer.error?.message ?? '', /src\/greet\.ts:2:7 boom/u)
+})
+
+const PANEL = `import { atom, read, update, Stack, Heading, Button, Text, host } from '@sprintengine/extension-sdk/components'
+
+const count = atom('count', 0, { persist: 'plugin' })
+
+export default function Panel() {
+  return (
+    <Stack gap="sm">
+      <Heading>Counter</Heading>
+      <Text>{read(count)} clicks</Text>
+      <Button colour="red" onPress={() => update(count, (n: number) => n + 1)}>Add</Button>
+    </Stack>
+  )
+}
+
+// Named at run time, so only rendering finds it: Studio would refuse it, and the panel catches that.
+const method = ['files', 'read'].join('.')
+export function setup() {
+  void host.call(method, { workspaceId: 'ws-app', path: 'x' }).catch(() => undefined)
+}
+`
+
+function componentsExtension(name: string, files: Record<string, string>): string {
+  return extension(
+    name,
+    { 'src/main.ts': GOOD['src/main.ts'], 'src/greet.ts': GOOD['src/greet.ts'], ...files },
+    { contributes: { panels: [{ id: 'counter', title: 'Counter', entry: 'src/panel.tsx', ui: 'components' }] } },
+  )
+}
+
+test('check renders a components panel once, or once per scenario, and says what it drew and what Studio would refuse', () => {
+  const plain = run(['check', componentsExtension('cli-components', { 'src/panel.tsx': PANEL })])
+  assert.equal(plain.status, 0, JSON.stringify(plain.answer))
+  const panels = plain.answer.result?.panels as {
+    ok: boolean
+    panels: Array<{
+      id: string
+      results: Array<{
+        name: string
+        summary: string[]
+        warnings: string[]
+        refusals: Array<{ method: string }>
+        tree: unknown
+      }>
+    }>
+  }
+  assert.equal(panels.ok, true)
+  const [only] = panels.panels[0]!.results
+  assert.equal(only!.name, 'default')
+  assert.deepEqual(only!.summary, ['heading: Counter'])
+  assert.deepEqual(only!.warnings, ['Button: ignored unknown prop "colour"'])
+  assert.equal(only!.refusals[0]?.method, 'files.read')
+  assert.match(JSON.stringify(only!.tree), /0 clicks/)
+
+  const scenarios = run([
+    'check',
+    componentsExtension('cli-components-scenarios', {
+      'src/panel.tsx': PANEL,
+      'src/panel.check.ts':
+        "import { defineCheck } from '@sprintengine/extension-sdk/testing'\nexport default defineCheck({ fresh: {}, 'clicked before': { persisted: { plugin: { count: 7 } } } })\n",
+    }),
+  ])
+  assert.equal(scenarios.status, 0, JSON.stringify(scenarios.answer))
+  const results = (scenarios.answer.result?.panels as typeof panels).panels[0]!.results
+  assert.deepEqual(
+    results.map((result) => result.name),
+    ['fresh', 'clicked before'],
+  )
+  assert.match(JSON.stringify(results[1]!.tree), /7 clicks/)
+})
+
+test('check fails a components panel that throws, at its file and line, and one with no component to draw', () => {
+  const throwing = run([
+    'check',
+    componentsExtension('cli-components-throws', {
+      'src/panel.tsx':
+        "import { Text } from '@sprintengine/extension-sdk/components'\n\nexport default function Panel() {\n  throw new Error('no data')\n  return <Text>never</Text>\n}\n",
+    }),
+  ])
+  assert.equal(throwing.status, 1)
+  assert.equal(throwing.answer.error?.code, 'extension_check_failed')
+  assert.match(throwing.answer.error?.message ?? '', /src\/panel\.tsx:4:\d+ no data/u)
+
+  const nothing = run([
+    'validate',
+    componentsExtension('cli-components-nothing', {
+      'src/panel.tsx':
+        "import { Text } from '@sprintengine/extension-sdk/components'\nexport const Panel = () => <Text>hi</Text>\n",
+    }),
+  ])
+  assert.equal(nothing.status, 2)
+  const issues = nothing.answer.error?.data?.issues as Array<{ message: string }>
+  assert.match(issues[0]!.message, /default export/u)
+  assert.doesNotMatch(issues[0]!.message, /mount\(root, studio\)/u)
+})
+
+test('test mounts a components panel from its .tsx with the SDK’s own runtime, under node:test', () => {
+  const dir = componentsExtension('cli-components-tests', { 'src/panel.tsx': PANEL })
+  writeFileSync(
+    join(dir, 'panel.test.tsx'),
+    [
+      "import { test } from 'node:test'",
+      "import assert from 'node:assert/strict'",
+      "import { mountPanel } from '@sprintengine/extension-sdk/testing'",
+      "import * as panel from './src/panel'",
+      "test('counts', async () => {",
+      "  const view = await mountPanel(panel, { manifest: { id: 'cli-components-tests', permissions: [] } })",
+      "  await view.press({ role: 'button', text: 'Add' })",
+      "  assert.ok(view.find({ text: '1 clicks' }))",
+      '  assert.deepEqual(view.persisted.plugin, { count: 1 })',
+      '  await view.unmount()',
+      '})',
+      '',
+    ].join('\n'),
+  )
+  const passing = run(['test', dir])
+  assert.equal(passing.status, 0, passing.stderr)
+  assert.deepEqual(passing.answer.result?.files, ['panel.test.tsx'])
 })
 
 test('test runs the project’s tests as written and exits with the runner’s code', () => {
