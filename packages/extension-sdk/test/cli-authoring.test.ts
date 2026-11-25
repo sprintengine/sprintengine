@@ -228,6 +228,18 @@ test('check renders a components panel once, or once per scenario, and says what
     ['fresh', 'clicked before'],
   )
   assert.match(JSON.stringify(results[1]!.tree), /7 clicks/)
+
+  // An empty set of scenarios would pass having drawn nothing: it fails, and says why.
+  const empty = run([
+    'check',
+    componentsExtension('cli-components-no-scenarios', {
+      'src/panel.tsx': PANEL,
+      'src/panel.check.ts':
+        "import { defineCheck } from '@sprintengine/extension-sdk/testing'\nexport default defineCheck({})\n",
+    }),
+  ])
+  assert.equal(empty.status, 1, JSON.stringify(empty.answer))
+  assert.match(JSON.stringify(empty.answer), /src\/panel\.check\.ts defines no scenarios/u)
 })
 
 test('check’s answer survives a pipe when its drawing is larger than the pipe’s buffer', () => {

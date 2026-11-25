@@ -129,6 +129,9 @@ async function run(): Promise<void> {
         if (typeof loaded.default !== 'object' || loaded.default === null || Array.isArray(loaded.default))
           throw new Error(`${file} must export its scenarios as its default export: export default defineCheck({ … }).`)
         scenarios = loaded.default as Record<string, CheckScenario>
+        // An empty set would pass without drawing anything.
+        if (Object.keys(scenarios).length === 0)
+          throw new Error(`${file} defines no scenarios: give defineCheck({ … }) at least one, or delete the file.`)
       } catch (error) {
         check.problem = described(error)
         continue
