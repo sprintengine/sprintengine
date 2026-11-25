@@ -16,8 +16,9 @@ approves what it may do.
   `npx sprintengine-extension init <dir> --template <id>` (an unknown
   `--template` lists them). Then `npm install`.
 - Read the guide before you change anything: `extension_guide` with topic
-  `start`, then the topic the work needs (`surfaces`, `manifest`,
-  `permissions`, `rules`, `api-renderer`, `api-main`, `hooks`, `styling`,
+  `start`, then the topic the work needs (`surfaces`, `components`,
+  `manifest`, `permissions`, `rules`, `api-renderer`, `api-main`, `hooks`,
+  `styling`,
   `troubleshooting`, `publishing`, and `dev-loop` for every CLI flag and
   answer). Without Studio's tools the same topics are in
   `node_modules/@sprintengine/extension-sdk/guide/`.
@@ -25,6 +26,32 @@ approves what it may do.
 - Pick the smallest surface and the lowest `tier` that do the job, and ask
   for the fewest `permissions`. Add a part with
   `npx sprintengine-extension add main|mcp|settings|door`.
+
+### A panel: components or a page of its own
+
+A panel with `"ui": "components"` renders a tree of Studio's own components
+(the `components` template, and the `components` guide topic); Studio draws
+it with its own controls, in light and dark, with its keyboard and focus
+rules. Choose it for lists, forms, tables, trees, status and settings-like
+panels: that is most panels, and there is no HTML, CSS or theme to get
+right. Draw a page of your own (a panel without `ui`, the `panel` template,
+the `styling` topic) only for what the catalogue cannot draw: a canvas, a
+chart, a custom widget.
+
+- The entry (`src/panel.tsx`) default-exports a component and imports
+  `@sprintengine/extension-sdk/components`, which Studio provides; Studio
+  compiles its JSX for that module. State lives in atoms (`atom`, `read`,
+  `set`, `update`); key one with `persist: 'plugin' | 'workspace'` to keep it,
+  or keep it in memory and keyed so a save's reload keeps it.
+- Test it whole: `mountPanel` from `@sprintengine/extension-sdk/testing`
+  boots it against the fake Studio, `type`, `press`, `toggle`, `select`, …
+  act as the person, and `find`, `valueOf`, `persisted`, `errors`,
+  `warnings` and `refusals` read back. Import `test` and `assert` from the
+  runner.
+- `src/panel.check.ts` (`export default defineCheck({ … })`) names the
+  states `check` renders it in: `persisted` atoms, `storage`, `settings`,
+  `results` by host method, `theme`, `events`. A throw or a refused render
+  fails the check; a dropped prop or a refused call is a warning. Fix both.
 
 ## 2. Run the loop
 
@@ -45,7 +72,8 @@ JSON object per line. Act on its `type`:
 - `reloaded`: your save is live: the worker restarted, every open surface
   redrew.
 - `check`: `ok: false` names the worker's error or each surface's `problem`
-  at `file:line:col`. Fix it there.
+  at `file:line:col`. Fix it there. For a components panel, `panels` says
+  what each scenario drew and its errors and warnings.
 - `shot`: a PNG at `path`. **Open it and look at it** before you say a
   surface works. `settled: false` means it never called `studio.ready()` or
   its calls were still waiting.
@@ -121,9 +149,11 @@ With `--json` a failure is `{ "ok": false, "error": { "code", "message",
 - A surface imports only its own files by relative paths (`./list` finds
   `list.ts`). Never import a package by name in a surface (`react`, values
   from the SDK): copy its ESM files into `extension/`, or bundle it yourself
-  and import the bundle. `import type` from the SDK is fine.
+  and import the bundle. `import type` from the SDK is fine. A components
+  panel also imports `@sprintengine/extension-sdk/components`, and only that.
 - JSX is the classic form calling `h()` and `Fragment`: import both from a
-  file of your own.
+  file of your own. A components panel's JSX compiles for its module
+  instead, with nothing to import for it.
 - The worker's TypeScript is types only: no `enum`, `namespace` or parameter
   properties, no JSX.
 - A frame cannot import CSS: keep styles in a string and append a `<style>`

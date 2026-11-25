@@ -190,6 +190,7 @@ declared MCP tool must be among them.
 | --- | --- |
 | `dev-loop` | The `sprintengine-extension` commands: every flag, the `--json` answers, events, error and exit codes |
 | `surfaces` | Choosing what the extension adds to Studio, its tier, and which API does it |
+| `components` | A panel drawn with Studio's own controls (`"ui": "components"`): atoms, testing with `mountPanel`, check scenarios, the catalogue |
 | `manifest` | Writing `extension/extension.json` |
 | `permissions` | Choosing permissions; what each one allows; how an approval holds |
 | `rules` | Before writing a surface or a worker: the mistakes that cost earlier extensions time |

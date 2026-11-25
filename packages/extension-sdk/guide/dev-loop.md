@@ -96,16 +96,24 @@ run them only on code you trust.
   `.mjs`) under the folder, leaving out `node_modules`, `dist` and dotted
   folders. With the project's own Vitest when it has one installed (with a
   config `test` writes to `.sprintengine/test/`), else with `node --test`;
-  either way TypeScript and JSX (classic `h()` and `Fragment`) load as Studio
-  loads them. Answers `runner` (`vitest` or `node:test`), `code`, `files`.
+  either way TypeScript and JSX (classic `h()` and `Fragment`, or a
+  components panel's for its module) load as Studio loads them, and
+  `@sprintengine/extension-sdk/components` and `/testing` are the SDK's own
+  copies, so a panel and the test that mounts it share one runtime. Answers
+  `runner` (`vitest` or `node:test`), `code`, `files`.
   A project's `npm test`.
 - **`check [dir]`**: `validate`, then the worker activated against the SDK's
   fake host in a child process (at most 15 seconds), then each surface's
-  module graph built as Studio builds it and its entry checked for `mount`.
-  Answers `key`, `ok`, `worker` (`{ ok, methods, tools, hooks, logs }` or
-  `{ ok: false, error }`, the error at `file:line:col`; `null` without a
-  worker) and `surfaces` (`[{ point, id, entry, ok, modules }]`, or `problem`
-  at `file:line:col`). A project's `npm run check` runs `typecheck`, `test`
+  module graph built as Studio builds it and its entry checked for `mount`
+  (a components panel's for its default export), then each components panel
+  rendered against the fake Studio, once per scenario of its
+  `<entry>.check.ts` (the `components` topic). Answers `key`, `ok`, `worker`
+  (`{ ok, methods, tools, hooks, logs }` or `{ ok: false, error }`, the error
+  at `file:line:col`; `null` without a worker), `surfaces` (`[{ point, id,
+  entry, ok, modules }]`, or `problem` at `file:line:col`) and, with a
+  components panel, `panels` (`{ ok, panels: [{ id, entry, results: [{ name,
+  summary, errors, warnings, refusals, tree }] }] }`): an error fails the
+  check, a warning does not. A project's `npm run check` runs `typecheck`, `test`
   and then this.
 
 ## Reaching Studio

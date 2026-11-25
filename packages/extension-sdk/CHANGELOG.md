@@ -2,6 +2,40 @@
 
 ## 4.0.0-beta.1
 
+### Components panels
+
+- A panel may declare `"ui": "components"`: its entry runs hidden and
+  sandboxed and default-exports a component that renders a tree of Studio's
+  components, which Studio checks and draws with its own controls, in light
+  and dark, on the desktop window, a paired desktop and the web client.
+  `ui` is `html` (the default, a frame that draws itself) or `components`.
+- `@sprintengine/extension-sdk/components`, which Studio provides to a
+  components panel and its JSX compiles against (`/jsx-runtime`): atoms
+  (`atom`, `derived`, `read`, `set`, `update`; persisted per extension, per
+  workspace or in its storage, with `version` and `migrate`; keyed memory
+  atoms carried across a development folder's reload), `mount`, `setup(ctx)`,
+  `host`, `env`, `ui`, `on`, `storage`, `settings`, `secrets` (has, set and
+  delete: a value never reaches a panel), `worker` (`read`, `operate`, `on`),
+  `shell.openExternal` behind a press on a still control, and the catalogue's
+  components with their prop types. The catalogue, its limits and the tree
+  check Studio runs are the same code (`components/catalog.ts`,
+  `components/tree.ts`).
+- The testing kit: `mountPanel` boots a panel as Studio does against the fake
+  Studio and acts on it as the person would (`press`, `type`, `toggle`,
+  `select`, `sort`, `selectRows`, `expand`, …), reading back what Studio
+  would draw and store and what it would drop or refuse; `stored(value,
+  version)` seeds an older version's value. `sprintengine-extension test`
+  compiles a panel's JSX for its module and resolves the components module
+  and `/testing` to the SDK's own copies.
+- `check` renders each components panel against the fake Studio, once per
+  scenario of its `<entry>.check.ts` (`defineCheck`): a throw or a refused
+  render fails it, a dropped prop or a refused call is a warning, and
+  `--json` carries each scenario's tree. `dev watch --check` runs it after
+  every save, and `shot` draws the tree with Studio's own renderer.
+- A new template, `components` (a checklist kept per workspace, with its tests
+  and check scenarios), the `components` guide topic, and a sample folder,
+  `examples/components-sample/` (a counter, a form, and a table with a tree).
+
 ### The extension catalogue
 
 - `@sprintengine/extension-sdk/catalogue`: catalogue format 1 (`Catalogue`,

@@ -60,6 +60,16 @@ may do (the `permissions` reference).
   Studio shares no React or UI kit with it. It styles with Studio's
   `--sem-*` CSS custom properties and calls `studio.ready()` once drawn, and
   Studio measures the time from opening to that call.
+- **Or Studio draws a panel.** A panel with `"ui": "components"` default-exports
+  a component instead: its module runs hidden and sandboxed and renders a tree
+  of Studio's components (`@sprintengine/extension-sdk/components`, which
+  Studio provides), and Studio checks the tree and draws it with its own
+  controls, on the desktop window, a paired desktop and the web client. Its
+  state lives in atoms Studio can keep for it; its tests mount it with
+  `mountPanel`, and `check` renders it once per scenario of its
+  `<entry>.check.ts`. The template is `components`, the guide topic
+  `components`, and `packages/extension-sdk/examples/components-sample/` a
+  sample to load.
 - **Commands without an `action` run worker code.** Studio calls the worker
   method of the command's name (access `operate`) with an
   `ExtensionCommandContext`: where it ran and what it was picked on. Menu items

@@ -8,6 +8,7 @@ import { join } from 'node:path'
 
 import { test } from 'vitest'
 
+import { COMPONENT_CATALOG, COMPONENT_EDIT_PROP, COMPONENT_LIMITS } from '../src/components/catalog.js'
 import {
   EXTENSION_GUIDE_TOPICS,
   defaultGuideRoot,
@@ -49,4 +50,19 @@ test('the topics a topic names exist, and none links a file or names the old ski
   for (const id of ids.filter((topic) => topic !== 'start')) {
     assert.ok(start.includes(`| \`${id}\` |`), `start's table of topics leaves out "${id}"`)
   }
+})
+
+test('the components topic lists every component of the catalogue, with each of its props', () => {
+  const text = readExtensionGuideTopic('components') ?? ''
+  for (const [name, entry] of Object.entries(COMPONENT_CATALOG)) {
+    const row = text.split('\n').find((line) => line.startsWith(`| \`${name}\` |`))
+    assert.ok(row, `the catalogue table has no row for ${name}`)
+    assert.ok(row.includes(` | ${entry.since} | `), `${name} arrived in catalogue ${entry.since}`)
+    for (const [prop, spec] of Object.entries(entry.props)) {
+      if (prop === COMPONENT_EDIT_PROP) continue
+      assert.ok(row.includes(`\`${prop}${spec.required ? '' : '?'}: `), `${name}'s row leaves out ${prop}`)
+    }
+  }
+  assert.ok(text.includes(`| \`Select\` options | ${COMPONENT_LIMITS.maxSelectOptions}:`), 'the Select cap')
+  assert.ok(text.includes(`| Nodes (components and texts) | ${COMPONENT_LIMITS.maxNodes} |`), 'the node cap')
 })
