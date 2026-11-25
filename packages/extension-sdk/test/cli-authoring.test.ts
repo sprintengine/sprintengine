@@ -424,6 +424,65 @@ test('test uses the project’s own Vitest when it has one installed', () => {
   assert.equal(answer.answer.result?.runner, 'vitest')
 }, 60_000)
 
+// A panel whose tags come from a local barrel, with a helper that draws with fragments alone:
+// neither file imports the components module, and both compile for it as Studio compiles them.
+const BARREL_PANEL = {
+  'src/ui.ts': "export { Stack, Text } from '@sprintengine/extension-sdk/components'\n",
+  'src/pair.tsx': 'export const Pair = (props: { a: unknown; b: unknown }) => <>{props.a}{props.b}</>\n',
+  'src/panel.tsx': [
+    "import { Stack, Text } from './ui'",
+    "import { Pair } from './pair'",
+    '',
+    'export default function Panel() {',
+    '  return (',
+    '    <Stack>',
+    '      <Pair a={<Text>left side</Text>} b={<Text>right side</Text>} />',
+    '    </Stack>',
+    '  )',
+    '}',
+    '',
+  ].join('\n'),
+}
+
+function barrelPanelTest(runner: 'node' | 'vitest'): string {
+  return [
+    runner === 'vitest' ? "import { expect, test } from 'vitest'" : "import { test } from 'node:test'",
+    "import assert from 'node:assert/strict'",
+    "import { mountPanel } from '@sprintengine/extension-sdk/testing'",
+    "import * as panel from './src/panel'",
+    "test('draws both sides', async () => {",
+    "  const view = await mountPanel(panel, { manifest: { id: 'cli-barrel', permissions: [] } })",
+    "  assert.ok(view.find({ text: 'left side' }))",
+    "  assert.ok(view.find({ text: 'right side' }))",
+    runner === 'vitest' ? '  expect(true).toBe(true)' : '',
+    '  await view.unmount()',
+    '})',
+    '',
+  ].join('\n')
+}
+
+test('test compiles a components panel’s module graph for the components module, as check does, under node:test', () => {
+  const dir = componentsExtension('cli-barrel-node', BARREL_PANEL)
+  assert.equal(run(['check', dir]).status, 0)
+  writeFileSync(join(dir, 'panel.test.ts'), barrelPanelTest('node'))
+  const answer = run(['test', dir])
+  assert.equal(answer.status, 0, answer.stderr)
+  assert.equal(answer.answer.result?.runner, 'node:test')
+})
+
+test('test compiles a components panel’s module graph for the components module, as check does, under Vitest', () => {
+  const vitest = join(process.cwd(), 'node_modules', 'vitest')
+  if (!existsSync(join(vitest, 'vitest.mjs'))) return
+  const dir = componentsExtension('cli-barrel-vitest', BARREL_PANEL)
+  writeFileSync(join(dir, 'package.json'), '{"name":"cli-barrel-vitest","private":true,"type":"module"}')
+  mkdirSync(join(dir, 'node_modules'), { recursive: true })
+  symlinkSync(vitest, join(dir, 'node_modules', 'vitest'), 'dir')
+  writeFileSync(join(dir, 'panel.test.ts'), barrelPanelTest('vitest'))
+  const answer = run(['test', dir])
+  assert.equal(answer.status, 0, answer.stderr)
+  assert.equal(answer.answer.result?.runner, 'vitest')
+}, 60_000)
+
 test('with no Studio running, dev and shot are studio_unavailable, exit 1', () => {
   const answer = run(['dev', 'list'])
   assert.equal(answer.status, 1)

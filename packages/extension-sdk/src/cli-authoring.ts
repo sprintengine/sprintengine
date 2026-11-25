@@ -155,6 +155,33 @@ export function checkSurfaces(root: string, manifest: ExtensionManifest): Surfac
   return checks
 }
 
+/**
+ * The files Studio compiles for the components module, absolute: every
+ * components panel's module graph, as `check` takes them from its surfaces.
+ * `test` compiles these the same way, so a helper that gets its tags from a
+ * local barrel, or draws with fragments alone, compiles as in Studio. Empty
+ * when the folder has no extension.json Studio could read.
+ */
+export function componentsPanelFiles(root: string): string[] {
+  let manifest: { contributes?: { panels?: unknown } } | null
+  try {
+    manifest = JSON.parse(readFileSync(join(root, EXTENSION_MANIFEST_FILENAME), 'utf8')) as typeof manifest
+  } catch {
+    return []
+  }
+  const panels = manifest?.contributes?.panels
+  if (!Array.isArray(panels)) return []
+  const read = reader(root)
+  const files = new Set<string>()
+  for (const panel of panels as Array<{ ui?: unknown; entry?: unknown } | null>) {
+    if (panel?.ui !== 'components' || typeof panel.entry !== 'string') continue
+    const graph = buildSurfaceModules(panel.entry, read, { jsx: 'components' })
+    if (!graph.ok) continue
+    for (const module of graph.modules) if (module.path !== COMPONENTS_MODULE) files.add(resolve(root, module.path))
+  }
+  return [...files]
+}
+
 export type ValidatedExtension = {
   root: string
   manifest: ExtensionManifest
@@ -338,6 +365,14 @@ function findTests(root: string): string[] {
   return found
 }
 
+function realOf(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
 /** The project's own Vitest, when it has one installed: its CLI entry. */
 function projectVitest(root: string): string | null {
   try {
@@ -351,10 +386,15 @@ function projectVitest(root: string): string | null {
 
 /**
  * The Vitest config `test` writes for a project with Vitest: its sources
- * transpiled as Studio transpiles them (types and classic `h()` JSX removed,
- * every line kept), and the test files `test` found.
+ * transpiled as Studio transpiles them (types and JSX removed, every line
+ * kept; a components panel's files, `componentFiles`, for its module, any
+ * other's for the classic `h()`), and the test files `test` found.
  */
-function vitestConfig(): string {
+function vitestConfig(componentFiles: string[]): string {
+  // As Vite names them: forward slashes, and the real path as well as the one written.
+  const named = [
+    ...new Set(componentFiles.flatMap((file) => [file, realOf(file)]).map((file) => file.split(sep).join('/'))),
+  ]
   const sourceModules = JSON.stringify(pathToFileURL(join(HERE, 'source-modules.js')).href)
   // Exact names only: `…/components` must not catch `…/components/jsx-runtime`.
   const aliases = Object.entries(ownModuleAliases()).map(([name, file]) => ({
@@ -365,7 +405,9 @@ function vitestConfig(): string {
 import { transpileExtensionSource } from ${sourceModules}
 
 const SOURCE = /\\.(?:ts|tsx|mts|jsx)$/
-// A components panel's files compile their JSX for its module, as Studio compiles them.
+// A components panel's files compile their JSX for its module, as Studio compiles them: every
+// file of a components panel's module graph, and any other that imports the module itself.
+const COMPONENT_FILES = new Set(${JSON.stringify(named)})
 const COMPONENTS = /\\bfrom\\s*['"]@sprintengine\\/extension-sdk\\/components(?:\\/[\\w-]+)?['"]/
 // The components module and the testing kit are this SDK's own, so a panel and its test share one runtime.
 const OWN = ${JSON.stringify(aliases)}
@@ -381,7 +423,8 @@ export default {
       transform(code, id) {
         const file = id.split('?')[0]
         if (!SOURCE.test(file) || file.includes('/node_modules/')) return null
-        return { code: transpileExtensionSource(file, code, COMPONENTS.test(code) ? 'components' : 'html'), map: null }
+        const jsx = COMPONENT_FILES.has(file) || COMPONENTS.test(code) ? 'components' : 'html'
+        return { code: transpileExtensionSource(file, code, jsx), map: null }
       },
     },
   ],
@@ -409,13 +452,14 @@ export async function runExtensionTests(
   if (files.length === 0)
     throw new CliError('not_found', `No test files (*.test.ts, .tsx, .mts, .js, .jsx, .mjs) under ${root}.`)
   const vitest = projectVitest(root)
+  const componentFiles = componentsPanelFiles(root)
   let args: string[]
   if (vitest) {
     // `.sprintengine/` is the CLI's own folder in a project, as its shots are.
     const configDir = join(root, '.sprintengine', 'test')
     mkdirSync(configDir, { recursive: true })
     const config = join(configDir, 'vitest.config.mjs')
-    writeFileSync(config, vitestConfig())
+    writeFileSync(config, vitestConfig(componentFiles))
     // Relative to the root, as Vitest matches them against the files it finds there.
     args = [vitest, 'run', '--config', config, '--root', root, ...files.map((file) => relative(root, file))]
   } else {
@@ -424,7 +468,12 @@ export async function runExtensionTests(
   const code = await new Promise<number>((settle) => {
     const child = spawn(process.execPath, args, {
       cwd: root,
-      env: { ...process.env, SPRINTENGINE_EXTENSION_TEST_ROOT: root },
+      env: {
+        ...process.env,
+        SPRINTENGINE_EXTENSION_TEST_ROOT: root,
+        // The Node hooks' own copy of the components panels' files (test-register.ts).
+        SPRINTENGINE_EXTENSION_COMPONENT_FILES: JSON.stringify(componentFiles),
+      },
       // With --json the answer alone is on stdout; what the runner prints goes to stderr.
       stdio: json ? ['ignore', process.stderr, 'inherit'] : 'inherit',
     })

@@ -96,10 +96,12 @@ run them only on code you trust.
   `.mjs`) under the folder, leaving out `node_modules`, `dist` and dotted
   folders. With the project's own Vitest when it has one installed (with a
   config `test` writes to `.sprintengine/test/`), else with `node --test`;
-  either way TypeScript and JSX (classic `h()` and `Fragment`, or a
-  components panel's for its module) load as Studio loads them, and
-  `@sprintengine/extension-sdk/components` and `/testing` are the SDK's own
-  copies, so a panel and the test that mounts it share one runtime. Answers
+  either way TypeScript and JSX (classic `h()` and `Fragment`, or for
+  the components module in every file a components panel's entry
+  imports, as `check` and Studio compile them) load as Studio loads
+  them, and `@sprintengine/extension-sdk/components` and `/testing` are
+  the SDK's own copies, so a panel and the test that mounts it share one
+  runtime. Answers
   `runner` (`vitest` or `node:test`), `code`, `files`.
   A project's `npm test`.
 - **`check [dir]`**: `validate`, then the worker activated against the SDK's

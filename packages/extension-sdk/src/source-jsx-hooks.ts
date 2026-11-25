@@ -7,7 +7,9 @@
 //   components panel's, or its test's) compiles its JSX for that module, as
 //   Studio compiles a components panel; any other keeps the classic `h()` and
 //   `Fragment` a frame that draws itself uses. `components` names more files
-//   to compile for it (`check` passes each components panel's modules).
+//   to compile for it: `check` and `test` pass each components panel's
+//   modules, so a helper that takes its tags from a local barrel or draws
+//   with fragments alone compiles as Studio compiles it.
 // - `@sprintengine/extension-sdk/components` (and its JSX runtimes) and
 //   `@sprintengine/extension-sdk/testing` resolve to this SDK's own files,
 //   whatever the project has installed, so a panel and the test that mounts
