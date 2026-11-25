@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState, type JSX } from 'react'
 
+import { FilterGlyph } from './CommonGlyphs'
 import { Popover } from './Popover'
 import type { SelectItem } from './Select'
 import { MENU_GROUP_LABEL_CLASS, MENU_ITEM_CLASS, MENU_LIST_CLASS } from './menuClasses'
@@ -114,7 +115,7 @@ export function FilterMenu({ ariaLabel, groups, className, size = 'sm' }: Filter
             opened ? 'bg-[color:var(--bg-hover)]' : 'hover:bg-[color:var(--bg-hover)]',
           ].join(' ')}
         >
-          <FilterGlyph />
+          <FilterGlyph className="icon-sm" />
         </button>
       )}
     >
@@ -188,14 +189,6 @@ function FilterGroup({
         )
       })}
     </div>
-  )
-}
-
-function FilterGlyph(): JSX.Element {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
-      <path d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
   )
 }
 

@@ -161,7 +161,14 @@
       "glyphs/send.svg",
       "glyphs/terminal-agent.svg",
       "glyphs/queue.svg",
-      "glyphs/steer.svg"
+      "glyphs/steer.svg",
+      "glyphs/info.svg",
+      "glyphs/error.svg",
+      "glyphs/download.svg",
+      "glyphs/filter.svg",
+      "glyphs/link.svg",
+      "glyphs/rocket.svg",
+      "glyphs/database.svg"
     ],
     "assets": []
   },

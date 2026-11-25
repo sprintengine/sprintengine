@@ -81,6 +81,18 @@ export { CreatePatchGlyph, DeleteChangelistGlyph, EditChangelistGlyph, NewChange
 export { PauseGlyph, PlayGlyph, StepListGlyph, TourGlyph } from './TourGlyphs'
 // "In a window of its own": the Diff tab's separate window, and the pane's pop-out.
 export { OpenInWindowGlyph } from './OpenInWindowGlyph'
+// Everyday marks: find, dismiss, info, error, download, filter, link, launch, data.
+export {
+  CloseGlyph,
+  DatabaseGlyph,
+  DownloadGlyph,
+  ErrorGlyph,
+  FilterGlyph,
+  InfoGlyph,
+  LinkGlyph,
+  RocketGlyph,
+  SearchGlyph,
+} from './CommonGlyphs'
 export { ToolKindGlyph } from './ToolKindGlyph'
 // The diff tour's surfaces (design-system/components/tour-strip, tour-callout):
 // the band, the callout a step is said in, the step list and the Start card.
