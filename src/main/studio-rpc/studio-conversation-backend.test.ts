@@ -98,6 +98,47 @@ test('a create carries New chat’s options to the launch service, and "No proje
   assert.deepEqual(made, ['fix it'])
 })
 
+test('a create in a folder there starts a new chat of its own in it, when the folder is there', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'folder-create-'))
+  try {
+    const launched: unknown[] = []
+    const create = createStudioConversationBackend({
+      host: { permissionOf: () => 'manual' } as never,
+      launch: async (request) => {
+        launched.push(request)
+        return { ok: false, code: 'stop_here', message: 'stop here' }
+      },
+      listSessions: () => ({ ok: true, sessions: [] }),
+      stopSession: async () => ({ ok: true, session: session() }),
+      getWorkspaceAgents: () => [],
+    }).create
+    await create({ folder: root, worktree: true, worktreeName: 'fix', prompt: 'fix it' }, 'launch-1', {
+      kind: 'person',
+    })
+    assert.deepEqual(launched, [
+      {
+        newChatIn: { folderPath: root },
+        newChat: true,
+        newWorktree: true,
+        worktreeName: 'fix',
+        prompt: 'fix it',
+        launchCommandId: 'launch-1',
+        startedBy: { kind: 'person' },
+      },
+    ])
+    // A folder that is not there is said, and nothing is launched.
+    const missing = await create({ folder: join(root, 'gone') }, 'launch-2', { kind: 'person' })
+    assert.equal(missing.ok, false)
+    assert.equal(!missing.ok && missing.code, 'folder_missing')
+    const file = join(root, 'a-file')
+    writeFileSync(file, '')
+    assert.equal((await create({ folder: file }, 'launch-3', { kind: 'person' })).ok, false)
+    assert.equal(launched.length, 1)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('a "No project" create the launch refuses leaves no empty folder behind', async () => {
   const root = mkdtempSync(join(tmpdir(), 'projectless-'))
   try {
