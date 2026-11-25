@@ -22,10 +22,14 @@ import { parseComponentTree } from '../src/components/tree.js'
 
 type Posted = { event: string; payload: Record<string, unknown> }
 
-function fakeBridge(stored: { plugin?: Record<string, unknown>; workspace?: Record<string, unknown> } = {}) {
+function fakeBridge(
+  stored: { plugin?: Record<string, unknown>; workspace?: Record<string, unknown> } = {},
+  answer?: (method: string, params: unknown) => unknown,
+) {
   const posted: Posted[] = []
   const calls: Array<{ method: string; params: unknown }> = []
   const handlers = new Map<string, Set<(payload: unknown) => void>>()
+  const leaving = new Set<() => void>()
   const bridge: ComponentsBridge = {
     post: (event, payload) => posted.push({ event, payload: payload as Record<string, unknown> }),
     on(event, handler) {
@@ -36,6 +40,10 @@ function fakeBridge(stored: { plugin?: Record<string, unknown>; workspace?: Reco
     },
     async call(method, params) {
       calls.push({ method, params })
+      if (answer) {
+        const answered = await answer(method, params)
+        if (answered !== undefined) return answered
+      }
       if (method === 'atoms.read') return { plugin: stored.plugin ?? {}, workspace: stored.workspace ?? {} }
       return { ok: true }
     },
@@ -45,13 +53,24 @@ function fakeBridge(stored: { plugin?: Record<string, unknown>; workspace?: Reco
     colorScheme: 'light',
     locale: 'en',
     client: 'desktop',
+    onLeave(flush) {
+      leaving.add(flush)
+      return { dispose: () => leaving.delete(flush) }
+    },
+  }
+  /** The frame's document unloads, as the bootstrap's pagehide runs it. */
+  const leave = () => {
+    for (const flush of [...leaving]) flush()
   }
   const send = (event: string, payload: unknown) => {
     for (const handler of handlers.get(event) ?? []) handler(payload)
   }
   const renders = () => posted.filter((each) => each.event === M.render)
-  return { bridge, posted, calls, send, renders }
+  const writes = () => calls.filter((each) => each.method === 'atoms.write')
+  return { bridge, posted, calls, send, renders, leave, writes }
 }
+
+const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const sync = (flush: () => void) => flush()
 
@@ -228,5 +247,178 @@ test('a refused render keeps the shown tree’s handlers, and retries when asked
   // The shown tree is still revision 1, and its press still works.
   assert.ok(runtime.dispatchEvent({ document: runtime.document, revision: 1, callback, args: [] }))
   assert.equal(read(n), 2)
+  runtime.dispose()
+})
+
+test('a change in the last moment before the frame unloads is sent before it says it is leaving', async () => {
+  const fake = fakeBridge()
+  const done = atom('done', false, { persist: 'workspace' })
+  const runtime = installComponentsRuntime({ bridge: fake.bridge, schedule: sync })
+  await runtime.boot({ default: () => jsx('Switch', { label: 'Done', checked: read(done) }) })
+  set(done, true)
+  // Closed well within the 400 ms a change waits.
+  fake.leave()
+  assert.deepEqual(fake.writes().at(-1)?.params, {
+    workspaceId: 'ws-1',
+    entries: [{ scope: 'workspace', key: 'done', version: 1, value: true }],
+  })
+  runtime.dispose()
+  assert.equal(fake.writes().length, 1, 'nothing is sent twice')
+})
+
+test('a panel hidden sends what changed at once, and a reload’s memory atoms with it', async () => {
+  const fake = fakeBridge()
+  const theme = atom('theme', 'roomy', { persist: 'plugin' })
+  const draft = atom('draft', '')
+  const runtime = installComponentsRuntime({ bridge: fake.bridge, schedule: sync, awaitHydration: true })
+  const booted = runtime.boot({ default: () => jsx('Text', { children: `${read(theme)} ${read(draft)}` }) })
+  const ready = fake.posted.find((each) => each.event === M.ready)!
+  fake.send(M.hydrate, { document: ready.payload.document, visible: true, retain: true })
+  await booted
+  set(theme, 'dense')
+  set(draft, 'half')
+  fake.send(M.visibility, { document: runtime.document, visible: false })
+  assert.deepEqual((fake.writes().at(-1)?.params as { entries: unknown }).entries, [
+    { scope: 'plugin', key: 'theme', version: 1, value: 'dense' },
+  ])
+  const retained = fake.posted.filter((each) => each.event === M.retain).flatMap((each) => each.payload.entries as [])
+  assert.deepEqual(retained.at(-1), { key: 'draft', version: 1, value: 'half' })
+  runtime.dispose()
+})
+
+test('a migrate that throws starts its atom over and reports it; the rest load, each scope on its own', async () => {
+  const fake = fakeBridge({
+    plugin: { broken: { version: 1, value: 'x' }, fine: { version: 1, value: 'kept' } },
+    workspace: { draft: { version: 1, value: 'typed' } },
+  })
+  const broken = atom('broken', 'initial', {
+    persist: 'plugin',
+    version: 2,
+    migrate: () => {
+      throw new Error('cannot read v1')
+    },
+  })
+  const fine = atom('fine', '', { persist: 'plugin' })
+  const draft = atom('draft', '', { persist: 'workspace' })
+  const runtime = installComponentsRuntime({ bridge: fake.bridge, schedule: sync })
+  await runtime.boot({ default: () => jsx('Text', { children: 'x' }) })
+  assert.equal(read(broken), 'initial')
+  assert.equal(read(fine), 'kept')
+  assert.equal(read(draft), 'typed')
+  const error = fake.posted.find((each) => each.event === M.error)
+  assert.match(String(error?.payload.message), /migrate\(\) for the atom "broken" threw.*cannot read v1/u)
+  runtime.dispose()
+})
+
+test('a value a newer version stored is not migrated, and not written until the atom changes', async () => {
+  const fake = fakeBridge({ plugin: { layout: { version: 3, value: { columns: 4 } } } })
+  const migrated: number[] = []
+  const layout = atom(
+    'layout',
+    { columns: 2 },
+    {
+      persist: 'plugin',
+      version: 2,
+      migrate: (_stored, from) => {
+        migrated.push(from)
+        return { columns: 1 }
+      },
+    },
+  )
+  const runtime = installComponentsRuntime({ bridge: fake.bridge, schedule: sync })
+  await runtime.boot({ default: () => jsx('Text', { children: String(read(layout).columns) }) })
+  assert.deepEqual(read(layout), { columns: 2 })
+  assert.deepEqual(migrated, [])
+  runtime.flush()
+  fake.leave()
+  assert.equal(fake.writes().length, 0)
+  set(layout, { columns: 3 })
+  runtime.flush()
+  assert.equal(fake.writes().length, 1)
+  runtime.dispose()
+})
+
+test('a storage read that answers after the panel set the atom leaves the edit, and the edit is written', async () => {
+  let answerRead: (value: unknown) => void = () => undefined
+  const fake = fakeBridge({}, (method) =>
+    method === 'storage.get' ? new Promise((resolve) => (answerRead = resolve)) : undefined,
+  )
+  const runtime = installComponentsRuntime({ bridge: fake.bridge, schedule: sync })
+  await runtime.boot({ default: () => jsx('Text', { children: 'x' }) })
+  // Made after boot: its read goes out now, and is slow.
+  const note = atom('note', '', { persist: 'storage' })
+  set(note, 'typed meanwhile')
+  answerRead({ found: true, value: 'stored before' })
+  await tick()
+  assert.equal(read(note), 'typed meanwhile')
+  runtime.flush()
+  await tick()
+  assert.deepEqual(fake.calls.filter((each) => each.method === 'storage.set').at(-1)?.params, {
+    key: 'note',
+    value: 'typed meanwhile',
+  })
+  runtime.dispose()
+})
+
+test('a large atom is stored, writes are split to fit the lane, and one over the cap stays in the run', async () => {
+  const fake = fakeBridge()
+  const big = atom('big', '', { persist: 'plugin' })
+  const half = atom('half', '', { persist: 'plugin' })
+  const other = atom('other', '', { persist: 'plugin' })
+  const huge = atom('huge', '', { persist: 'plugin' })
+  const runtime = installComponentsRuntime({ bridge: fake.bridge, schedule: sync })
+  await runtime.boot({ default: () => jsx('Text', { children: 'x' }) })
+  // About 70 KiB: more than a frame call carries.
+  set(big, 'b'.repeat(70 * 1024))
+  runtime.flush()
+  await tick()
+  assert.equal((fake.writes()[0]?.params as { entries: Array<{ value: string }> }).entries[0]?.value.length, 70 * 1024)
+  // Two of 400 KiB do not fit one write: each goes in its own.
+  set(half, 'h'.repeat(400 * 1024))
+  set(other, 'o'.repeat(400 * 1024))
+  runtime.flush()
+  await tick()
+  const split = fake.writes().slice(1)
+  assert.deepEqual(
+    split.map((each) => (each.params as { entries: Array<{ key: string }> }).entries.map((entry) => entry.key)),
+    [['half'], ['other']],
+  )
+  set(huge, 'x'.repeat(600 * 1024))
+  runtime.flush()
+  await tick()
+  assert.equal(fake.writes().length, 3)
+  assert.match(
+    String(fake.posted.filter((each) => each.event === M.error).at(-1)?.payload.message),
+    /"huge" is over 512 KiB/u,
+  )
+  runtime.dispose()
+})
+
+test('a refused write is sent again after the wait it names, with the value then', async () => {
+  let refusals = 1
+  const fake = fakeBridge({}, (method) => {
+    if (method !== 'atoms.write' || refusals === 0) return undefined
+    refusals -= 1
+    throw Object.assign(new Error('This frame sent too many messages.'), {
+      code: 'rate_limited',
+      retryable: true,
+      retryAfterMs: 20,
+    })
+  })
+  const count = atom('count', 0, { persist: 'plugin' })
+  const runtime = installComponentsRuntime({ bridge: fake.bridge, schedule: sync })
+  await runtime.boot({ default: () => jsx('Text', { children: String(read(count)) }) })
+  set(count, 1)
+  runtime.flush()
+  await tick()
+  assert.equal(fake.writes().length, 1)
+  // Changed while the refusal waits: the retry carries the newest value.
+  set(count, 2)
+  await tick(80)
+  assert.deepEqual((fake.writes().at(-1)?.params as { entries: unknown }).entries, [
+    { scope: 'plugin', key: 'count', version: 1, value: 2 },
+  ])
+  assert.equal(fake.writes().length, 2)
+  assert.equal(fake.posted.filter((each) => each.event === M.error).length, 0)
   runtime.dispose()
 })

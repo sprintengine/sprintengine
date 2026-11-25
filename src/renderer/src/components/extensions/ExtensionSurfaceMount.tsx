@@ -73,6 +73,8 @@ const DRAW_FAILED = 'The extension could not draw this.'
 const LEFT_ITS_DOCUMENT = 'It tried to load another page in its place, so Studio closed it.'
 
 const now = () => performance.timeOrigin + performance.now()
+// How long a closed components panel's bridge still hears its document's last writes.
+const COMPONENTS_CLOSE_GRACE_MS = 300
 
 onExtensionRetired(forgetAllowedHosts)
 const MAX_IMAGE_SIDE = 4096
@@ -330,9 +332,15 @@ export function ExtensionSurfaceMount({
       runEnded.abort()
       seen?.disconnect()
       link?.close()
-      bridge.dispose()
-      window.removeEventListener('message', receive)
       themes.disconnect()
+      // A components panel's unloading document sends its last persisted
+      // writes before it says it is leaving: hear them a moment more.
+      if (componentsSession)
+        void bridge.close(COMPONENTS_CLOSE_GRACE_MS).then(() => window.removeEventListener('message', receive))
+      else {
+        bridge.dispose()
+        window.removeEventListener('message', receive)
+      }
       stopEvents()
     }
   }, [loaded, extensionKey, point, id, workspaceId, generation, components])

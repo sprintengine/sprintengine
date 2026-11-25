@@ -14,6 +14,15 @@
   `atoms.write`, `secrets.has`, `secrets.set`, `secrets.delete` and
   `shell.openExternal` (carried out by the window, after a press on one of
   Studio's own controls that stood still) to `extension.call`'s methods.
+- A components panel's `atoms.write` rides a lane of its own in the window
+  (640 KiB a write, 60 writes every 10 seconds), apart from its renders and
+  its other calls; the runtime splits a large change to fit, and holds one
+  value to 512 KiB. A lane refusal for too many writes answers the frame
+  with `retryAfterMs` beside `code` and `retryable`, and the runtime sends
+  the write again after it. As its document unloads, the runtime sends what
+  changed before the bootstrap's `leaving`, and a window that closed the
+  panel still passes on those last writes (and `ui.retain`) for a moment,
+  until `leaving`.
 
 ### Added (installing from outside the window)
 

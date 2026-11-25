@@ -25,8 +25,10 @@ function harness(
   // Studio's events the window follows for the frame, and the deliver of each.
   const followed: Array<{ event: string; deliver: (payload: unknown) => void; stopped: boolean }> = []
   let clock = 0
+  // The frame's window, until the surface's frame is taken out of the page.
+  let source: MessageEventSource | null = frame
   const host = createExtensionFrameHost({
-    source: () => frame,
+    source: () => source,
     post: (message) => posted.push(message as Record<string, unknown>),
     workspaceId: 'ws-1',
     call: async (method) => {
@@ -72,6 +74,7 @@ function harness(
     send,
     settle,
     tick: (ms: number) => (clock += ms),
+    detach: () => void (source = null),
   }
 }
 
@@ -371,6 +374,89 @@ test('a components panel’s timers are kept by the window, bounded, and stopped
     page.send({ se: 1, kind: 'timer', id: 1, ms: 1 })
     vi.advanceTimersByTime(5)
     assert.deepEqual(page.posted, [])
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('a components panel’s persisted writes ride a lane of their own, and a refusal for too many names its wait', async () => {
+  const channel: ExtensionFrameComponentsChannel = { receive: () => undefined, takeGesture: () => false }
+  const { send, posted, called, settle } = harness({}, channel)
+  // About 70 KiB: over a call's 64 KiB, within the atoms lane.
+  const entries = [{ scope: 'plugin', key: 'big', version: 1, value: 'x'.repeat(70 * 1024) }]
+  send({ se: 1, kind: 'req', id: 1, method: 'atoms.write', params: { entries } })
+  await settle()
+  assert.deepEqual(called, ['atoms.write'])
+  assert.deepEqual(posted.at(-1), { se: 1, kind: 'res', id: 1, result: { from: 'atoms.write' } })
+  // Any other call that large is still refused.
+  send({ se: 1, kind: 'req', id: 2, method: 'storage.set', params: { key: 'k', value: 'x'.repeat(70 * 1024) } })
+  assert.equal((posted.at(-1)!.error as { code: string }).code, 'too_large')
+  for (let id = 3; id < 3 + 60; id++)
+    send({
+      se: 1,
+      kind: 'req',
+      id,
+      method: 'atoms.write',
+      params: { entries: [{ scope: 'plugin', key: 'n', version: 1, value: id }] },
+    })
+  await settle()
+  // The first write and these 59 fill the lane's ten seconds; the 60th is refused.
+  const refused = posted.find((message) => message.id === 62)!.error as {
+    code: string
+    retryable: boolean
+    retryAfterMs?: number
+  }
+  assert.deepEqual(
+    { code: refused.code, retryable: refused.retryable, retryAfterMs: refused.retryAfterMs },
+    { code: 'rate_limited', retryable: true, retryAfterMs: 1000 },
+  )
+})
+
+test('a closed components panel still passes on its unloading document’s last writes, until it says it is leaving', async () => {
+  const heard: string[] = []
+  const channel: ExtensionFrameComponentsChannel = { receive: (event) => heard.push(event), takeGesture: () => false }
+  const { host, send, called, settle, detach, left } = harness({}, channel)
+  send({ se: 1, kind: 'req', id: 1, method: 'events.subscribe', params: { event: 'workspace.changed' } })
+  await settle()
+  let closed = false
+  void host.close(300).then(() => (closed = true))
+  // The frame is out of the page now; its document unloads and flushes.
+  detach()
+  send({
+    se: 1,
+    kind: 'req',
+    id: 2,
+    method: 'atoms.write',
+    params: { entries: [{ scope: 'plugin', key: 'a', version: 1, value: 1 }] },
+  })
+  send({ se: 1, kind: 'evt', event: 'ui.retain', payload: { document: 'd', entries: [] } })
+  // Nothing else is heard while closing: no other call, no timer, no render.
+  send({ se: 1, kind: 'req', id: 3, method: 'toast', params: { message: 'late' } })
+  send({ se: 1, kind: 'evt', event: 'ui.render', payload: { document: 'd', revision: 9, tree: null } })
+  send({ se: 1, kind: 'req', id: 4, method: 'atoms.write', params: {} }, stranger)
+  send({ se: 1, kind: 'evt', event: 'leaving', payload: {} })
+  await settle()
+  assert.equal(closed, true)
+  assert.deepEqual(called, ['events.subscribe', 'atoms.write'])
+  assert.deepEqual(heard, ['ui.retain'])
+  assert.deepEqual(left, [], 'a closed surface is not failed for leaving')
+  // Stopped for good.
+  send({ se: 1, kind: 'req', id: 5, method: 'atoms.write', params: {} })
+  await settle()
+  assert.deepEqual(called, ['events.subscribe', 'atoms.write'])
+})
+
+test('a closed surface whose document never says it is leaving stops after the grace', async () => {
+  vi.useFakeTimers()
+  try {
+    const { host, send, called, detach } = harness({}, { receive: () => undefined, takeGesture: () => false })
+    let closed = false
+    void host.close(300).then(() => (closed = true))
+    detach()
+    await vi.advanceTimersByTimeAsync(301)
+    assert.equal(closed, true)
+    send({ se: 1, kind: 'req', id: 1, method: 'atoms.write', params: {} })
+    assert.deepEqual(called, [])
   } finally {
     vi.useRealTimers()
   }

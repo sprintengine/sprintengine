@@ -10,7 +10,13 @@
 // handlers only, so a newer render that moved a handler elsewhere is never
 // what a press runs.
 
-import { COMPONENT_MESSAGES as M, type ComponentAtomsSnapshot } from '../messages.js'
+import {
+  COMPONENT_ATOM_VALUE_MAX_BYTES,
+  COMPONENT_ATOMS_LANE,
+  COMPONENT_MESSAGES as M,
+  measureComponentValue,
+  type ComponentAtomsSnapshot,
+} from '../messages.js'
 import {
   applyStorageValue,
   hostAtom,
@@ -21,6 +27,7 @@ import {
   read,
   subscribeAtom,
   trackAtomReads,
+  watchAtomErrors,
   watchMemoryAtoms,
   watchPersistedAtoms,
   watchStorageAtoms,
@@ -51,6 +58,12 @@ export type ComponentsBridge = {
   client: 'desktop' | 'web'
   /** `file:line:column message` for an error thrown in the extension's own files. */
   describe?(error: unknown): string
+  /**
+   * Run `flush` as the frame's document unloads, before the bootstrap tells
+   * the window it is leaving (after which the window hears nothing from it):
+   * the last moment a write can still be sent.
+   */
+  onLeave?(flush: () => void): Disposable
 }
 
 export type PanelContext = {
@@ -71,7 +84,14 @@ export const MIN_RENDER_INTERVAL_MS = 16
 export const MAX_RETAINED_RENDERS = 32
 // A window that never answers `ui.ready` must not keep the panel from drawing.
 export const HYDRATION_TIMEOUT_MS = 3000
-const PERSIST_DEBOUNCE_MS = 400
+export const PERSIST_DEBOUNCE_MS = 400
+// A refused write that names no wait is tried again after this, then less often.
+const PERSIST_RETRY_MS = 1000
+const PERSIST_RETRY_MAX_MS = 30_000
+// What a persisted write leaves of the lane for the rest of its message.
+const PERSIST_BATCH_BYTES = COMPONENT_ATOMS_LANE.maxBytes - 16 * 1024
+const PERSIST_BATCH_OBJECTS = COMPONENT_ATOMS_LANE.maxObjects - 1024
+const PERSIST_BATCH_KEYS = 512
 // Short: the guest is gone right after the save that replaces it.
 const RETAIN_DEBOUNCE_MS = 50
 const RETAIN_BATCH = 64
@@ -167,8 +187,8 @@ export function createComponentsRuntime(options: {
     return (error instanceof Error ? error.message : String(error)).slice(0, 4096)
   }
 
-  function report(error: unknown): void {
-    const message = errorText(error)
+  function report(error: unknown, context?: string): void {
+    const message = context ? `${context}: ${errorText(error)}`.slice(0, 4096) : errorText(error)
     console.error(message)
     const stack = error instanceof Error && error.stack ? error.stack.slice(0, 8192) : undefined
     bridge.post(M.error, { document, revision, message, ...(stack ? { stack } : {}) })
@@ -258,56 +278,149 @@ export function createComponentsRuntime(options: {
   }
 
   // ── Persisted atoms: Studio stores them (`atoms.write`), a moment after they change ──
+  // One write in flight at a time, so an older value never lands after a
+  // newer one; what changes meanwhile waits for its answer. A refusal worth
+  // retrying (too many writes, no answer in time) puts its atoms back, to be
+  // sent again with their values then, after the wait it names.
   const workspaceId = bridge.surface.workspaceId
   const pendingPersist = new Set<Atom<unknown>>()
   let persistTimer: ReturnType<typeof setTimeout> | null = null
-  const writes = new Set<Promise<unknown>>()
-  function track(promise: Promise<unknown>): void {
-    const settled = promise.catch(report).finally(() => writes.delete(settled))
-    writes.add(settled)
+  let persisting: Promise<void> | null = null
+  let retryMs = 0
+  // A `storage` atom's local edits, by key: a read begun before one never overwrites it.
+  const storageEdits = new Map<string, number>()
+
+  function schedulePersist(delayMs: number): void {
+    if (persistTimer !== null || disposed) return
+    persistTimer = setTimeout(() => {
+      persistTimer = null
+      flushPersist()
+    }, delayMs)
   }
-  function flushPersist(): void {
+
+  function retryable(error: unknown): boolean {
+    return typeof error === 'object' && error !== null && (error as { retryable?: unknown }).retryable === true
+  }
+
+  /** One write of `atoms`; a refusal worth retrying puts them back (true), any other is reported. */
+  function sendPersisted(method: string, params: unknown, atoms: Atom<unknown>[]): Promise<boolean> {
+    const putBack = (wait: unknown): true => {
+      for (const target of atoms) pendingPersist.add(target)
+      const asked = typeof wait === 'number' && Number.isFinite(wait) && wait > 0 ? wait : 0
+      // The wait the refusal names, else one that grows with each refusal in a row.
+      retryMs = Math.min(PERSIST_RETRY_MAX_MS, asked > 0 ? asked : retryMs > 0 ? retryMs * 2 : PERSIST_RETRY_MS)
+      return true
+    }
+    return bridge.call(method, params).then(
+      (answer) => {
+        // `storage.set` answers a refusal rather than throwing it.
+        if (field(answer, 'ok') !== false) return false
+        const code = String(field(answer, 'code') ?? 'action_failed')
+        if (code === 'rate_limited' && !disposed) return putBack(field(answer, 'retryAfterMs'))
+        report(new Error(String(field(answer, 'message') ?? `${method} was refused (${code}).`)))
+        return false
+      },
+      (error: unknown) => {
+        if (retryable(error) && !disposed) return putBack((error as { retryAfterMs?: unknown }).retryAfterMs)
+        report(error)
+        return false
+      },
+    )
+  }
+
+  /** Send what changed. `leaving`: the document is going, so it goes now, beside a write still in flight. */
+  function flushPersist(leaving = false): void {
     if (persistTimer !== null) clearTimeout(persistTimer)
     persistTimer = null
-    const entries: PersistedEntry[] = []
-    for (const target of pendingPersist) {
+    if (pendingPersist.size === 0 || (persisting && !leaving)) return
+    const changed = [...pendingPersist]
+    pendingPersist.clear()
+    const sends: Promise<boolean>[] = []
+    type Batch = { entries: PersistedEntry[]; atoms: Atom<unknown>[]; bytes: number; objects: number }
+    const batches: Batch[] = []
+    let outsideWorkspace = false
+    for (const target of changed) {
       const entry = persistedEntry(target)
       if (!entry) continue
       if (entry.scope === 'storage') {
-        track(bridge.call('storage.set', { key: entry.key, value: entry.value }))
+        sends.push(sendPersisted('storage.set', { key: entry.key, value: entry.value }, [target]))
+        continue
+      }
+      if (entry.scope === 'workspace' && workspaceId === undefined) {
+        outsideWorkspace = true
         continue
       }
       try {
         assertPlainJson(entry.value, `the persisted atom "${entry.key}"`)
-        entries.push(entry)
       } catch (error) {
         report(error)
+        continue
       }
+      // Measured as the window's lane measures it, where it sits in the message.
+      const size = measureComponentValue(entry, {
+        stopAfter: COMPONENT_ATOM_VALUE_MAX_BYTES,
+        maxDepth: COMPONENT_ATOMS_LANE.maxDepth,
+        maxObjects: PERSIST_BATCH_OBJECTS,
+        depth: 3,
+      })
+      if (size.bytes > COMPONENT_ATOM_VALUE_MAX_BYTES) {
+        report(
+          new Error(
+            `The persisted atom "${entry.key}" is over ${COMPONENT_ATOM_VALUE_MAX_BYTES / 1024} KiB; it is kept for this run only.`,
+          ),
+        )
+        continue
+      }
+      let batch = batches.at(-1)
+      if (
+        !batch ||
+        batch.bytes + size.bytes > PERSIST_BATCH_BYTES ||
+        batch.objects + size.objects > PERSIST_BATCH_OBJECTS ||
+        batch.entries.length >= PERSIST_BATCH_KEYS
+      )
+        batches.push((batch = { entries: [], atoms: [], bytes: 0, objects: 0 }))
+      batch.entries.push(entry)
+      batch.atoms.push(target)
+      batch.bytes += size.bytes
+      batch.objects += size.objects
     }
-    pendingPersist.clear()
-    if (entries.length === 0) return
-    const scoped = entries.filter((entry) => entry.scope === 'plugin' || workspaceId !== undefined)
-    if (scoped.length < entries.length)
+    if (outsideWorkspace)
       report(new Error('A workspace atom changed in a panel opened outside a workspace; it is kept for this run only.'))
-    if (scoped.length > 0)
-      track(bridge.call('atoms.write', { ...(workspaceId ? { workspaceId } : {}), entries: scoped }))
+    for (const batch of batches)
+      sends.push(
+        sendPersisted('atoms.write', { ...(workspaceId ? { workspaceId } : {}), entries: batch.entries }, batch.atoms),
+      )
+    if (sends.length === 0) return
+    const sent = Promise.all(sends).then((putBack) => {
+      if (persisting === sent) persisting = null
+      // Every write was answered: the next waits no longer than a change does.
+      if (!putBack.includes(true)) retryMs = 0
+      if (pendingPersist.size > 0) schedulePersist(retryMs)
+    })
+    persisting = sent
   }
   watchPersistedAtoms((target) => {
+    const entry = persistedEntry(target)
+    if (entry?.scope === 'storage') storageEdits.set(entry.key, (storageEdits.get(entry.key) ?? 0) + 1)
     pendingPersist.add(target)
-    persistTimer ??= setTimeout(flushPersist, PERSIST_DEBOUNCE_MS)
+    if (!persisting) schedulePersist(PERSIST_DEBOUNCE_MS)
   })
+  watchAtomErrors((error, context) => report(error, context))
 
   // `storage` atoms read the extension's storage before the first render, and as they are made after it.
   const storageLoads = new Set<Promise<void>>()
   watchStorageAtoms((key) => {
     if (!bridge.has('storage.get')) return
+    const edits = storageEdits.get(key) ?? 0
     const load = bridge
       .call('storage.get', { key })
       .then((answer) => {
+        // The panel set the atom while the read was out: its edit is newer than what storage held.
+        if ((storageEdits.get(key) ?? 0) !== edits) return
         const found = field(answer, 'found') === true
         applyStorageValue(key, found ? field(answer, 'value') : undefined)
       })
-      .catch(report)
+      .catch((error: unknown) => report(error))
     storageLoads.add(load)
   })
 
@@ -356,9 +469,18 @@ export function createComponentsRuntime(options: {
     }
   })
 
+  function setVisible(visible: unknown): void {
+    if (typeof visible !== 'boolean') return
+    visibility.set(visible)
+    // Hidden may be the last moment before the tab closes: what changed goes now.
+    if (!visible) {
+      flushPersist()
+      flushRetain()
+    }
+  }
+
   function hydrate(payload: unknown): void {
-    const visible = field(payload, 'visible')
-    if (typeof visible === 'boolean') visibility.set(visible)
+    setVisible(field(payload, 'visible'))
     const memory = storedValues(field(payload, 'memory'))
     if (memory) hydrateAtoms('memory', memory)
     if (field(payload, 'retain') === true) startRetaining()
@@ -371,14 +493,21 @@ export function createComponentsRuntime(options: {
 
   async function loadStoredAtoms(): Promise<void> {
     if (!bridge.has('atoms.read')) return
+    let stored: ComponentAtomsSnapshot
     try {
-      const stored = (await bridge.call('atoms.read', workspaceId ? { workspaceId } : {})) as ComponentAtomsSnapshot
-      const plugin = storedValues(stored?.plugin)
-      const workspace = storedValues(stored?.workspace)
-      if (plugin) hydrateAtoms('plugin', plugin)
-      if (workspace) hydrateAtoms('workspace', workspace)
+      stored = (await bridge.call('atoms.read', workspaceId ? { workspaceId } : {})) as ComponentAtomsSnapshot
     } catch (error) {
       report(error)
+      return
+    }
+    // Each scope on its own: one that does not load leaves the other's atoms loaded.
+    for (const scope of ['plugin', 'workspace'] as const) {
+      try {
+        const values = storedValues(stored?.[scope])
+        if (values) hydrateAtoms(scope, values)
+      } catch (error) {
+        report(error)
+      }
     }
   }
 
@@ -386,15 +515,21 @@ export function createComponentsRuntime(options: {
     bridge.on(M.event, dispatchEvent),
     bridge.on(M.ack, acknowledge),
     bridge.on(M.hydrate, hydrate),
-    bridge.on(M.visibility, (payload) => {
-      const visible = field(payload, 'visible')
-      if (typeof visible === 'boolean') visibility.set(visible)
-    }),
+    bridge.on(M.visibility, (payload) => setVisible(field(payload, 'visible'))),
     bridge.on('theme', (payload) => {
       const colorScheme = field(payload, 'colorScheme')
       if ((colorScheme === 'light' || colorScheme === 'dark') && read(theme.atom).colorScheme !== colorScheme)
         theme.set({ colorScheme })
     }),
+    // The document unloads: every change not yet sent goes before the window stops listening.
+    ...(bridge.onLeave
+      ? [
+          bridge.onLeave(() => {
+            flushPersist(true)
+            flushRetain()
+          }),
+        ]
+      : []),
   ]
 
   if (options.awaitHydration) {
@@ -465,13 +600,14 @@ export function createComponentsRuntime(options: {
     context,
     dispose() {
       if (disposed) return
-      flushPersist()
+      flushPersist(true)
       flushRetain()
       disposed = true
       component = null
       scheduled = false
       unsubscribeAll()
       watchPersistedAtoms(null)
+      watchAtomErrors(null)
       watchMemoryAtoms(null)
       watchStorageAtoms(null)
       for (const subscription of [...bridgeSubscriptions, ...context.subscriptions]) {

@@ -12,7 +12,11 @@ const ATOM = Symbol.for('sprintengine.components.atom')
 export type PersistScope = 'memory' | 'plugin' | 'workspace' | 'storage'
 export type AtomOptions<T> = {
   persist?: PersistScope
-  /** Bump when the stored shape changes; `migrate` then turns an older value into the new one. */
+  /**
+   * Bump when the stored shape changes; `migrate` then turns an older value
+   * into the new one. A value a newer version stored is left alone: the atom
+   * starts from `initial`, and is stored only once it changes.
+   */
   version?: number
   migrate?: (stored: unknown, fromVersion: number) => T
 }
@@ -48,6 +52,7 @@ const snapshot: Record<SnapshotScope, Map<string, StoredValue>> = {
 let onPersistedChange: ((atom: Atom<unknown>) => void) | null = null
 let onMemoryChange: ((atom: Atom<unknown>) => void) | null = null
 let onStorageAtom: ((key: string) => void) | null = null
+let onAtomError: ((error: unknown, context: string) => void) | null = null
 const writable = new Set<AtomState<unknown>>()
 
 function create<T>(initial: T, fields: Partial<AtomState<T>> = {}): Atom<T> {
@@ -87,9 +92,22 @@ function stored<T>(inner: AtomState<T>): Found<T> {
   if (!entry) return { found: false }
   if (entry.version === inner.version) return { found: true, value: entry.value as T }
   // A reload's hand-over never migrates: a new version there means "start this atom over".
-  return inner.migrate && inner.persist !== 'memory'
-    ? { found: true, value: inner.migrate(entry.value, entry.version) }
-    : { found: false }
+  // Only an older version migrates; a newer one is another build's, and stays as it is stored.
+  if (!inner.migrate || inner.persist === 'memory' || entry.version > inner.version) return { found: false }
+  try {
+    return { found: true, value: inner.migrate(entry.value, entry.version) }
+  } catch (error) {
+    // This atom starts from its initial value; every other atom still loads.
+    const context = `migrate() for the atom "${inner.key}" threw; it starts from its initial value`
+    if (onAtomError) onAtomError(error, context)
+    else console.error(context, error)
+    return { found: false }
+  }
+}
+
+/** Hear an atom's `migrate` throwing (the runtime reports it as the panel's error). */
+export function watchAtomErrors(listener: ((error: unknown, context: string) => void) | null): void {
+  onAtomError = listener
 }
 
 /**

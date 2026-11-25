@@ -383,3 +383,47 @@ test('a components panel’s assets.image answers its own image, and nothing els
   assert.equal(refused.ok, false)
   assert.equal(ownImages.length, asked)
 })
+
+// A components panel's `atoms.write` is admitted when it arrives, and again
+// just before it changes a file: one the extension's removal overtakes makes
+// neither its data folder nor a file.
+test('an atoms.write its extension’s removal overtakes makes no folder', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'frame-atoms-removed-'))
+  const folder = join(root, 'local.todo')
+  let runnable = true
+  const call = createExtensionFrameCalls({
+    grantOf: () => (runnable ? { grant: [], outdated: false } : null),
+    service: (key) =>
+      key === 'core.module-storage'
+        ? {
+            dataDir: () => {
+              mkdirSync(folder, { recursive: true })
+              return folder
+            },
+          }
+        : undefined,
+    callModuleMethod: async () => ({ ok: false, code: 'extension_unavailable', message: 'none' }) as never,
+    emitNotification: () => undefined,
+    appState: () => undefined,
+    fileExclusions: () => [],
+  })
+  const write = () =>
+    call({
+      moduleId: 'local.todo',
+      frame: 'f'.repeat(64),
+      method: 'atoms.write',
+      params: { entries: [{ scope: 'plugin', key: 'count', version: 1, value: 1 }] },
+      clientId: 'c',
+      commandId: 'k',
+      invoker: OWNER,
+    })
+  const pending = write()
+  // Uninstalled before the queued write's turn.
+  runnable = false
+  const answer = await pending
+  assert.equal(answer.ok, false)
+  assert.equal(existsSync(folder), false)
+  runnable = true
+  assert.deepEqual(await write(), { ok: true, result: { ok: true } })
+  assert.equal(existsSync(join(folder, 'panel-atoms', 'plugin.json')), true)
+})

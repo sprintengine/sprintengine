@@ -14,7 +14,9 @@
 // - reports when the surface said it was ready, and its first paint;
 // - keeps a components panel's timers (`timer`, answered with `wake`): its
 //   frame is not drawn, and the browser runs an undrawn frame's own timers
-//   about once a second.
+//   about once a second;
+// - gives a components panel's persisted writes (`atoms.write`) a lane of
+//   their own, bigger than a call's.
 //
 // The frame is told apart by its window object alone, never by anything it
 // says about itself.
@@ -22,7 +24,12 @@
 import { extensionFrameMethod } from '../../../../packages/extension-sdk/src/services'
 import type { StudioExtensionCallAnswer } from '../../../../packages/studio-protocol/src/public'
 import { EXTENSION_EDITOR_TEXT_MAX_BYTES } from '../../../../packages/extension-sdk/src/custom-editors'
-import { COMPONENT_RENDER_LANE } from '../../../../packages/extension-sdk/src/components/messages'
+import {
+  COMPONENT_ATOMS_LANE,
+  COMPONENT_LANE_RETRY_MS,
+  COMPONENT_MESSAGES,
+  COMPONENT_RENDER_LANE,
+} from '../../../../packages/extension-sdk/src/components/messages'
 import {
   COMPONENT_FRAME_MAX_TIMERS,
   EXTENSION_EDITOR_APPLY_EDIT,
@@ -118,7 +125,17 @@ export type ExtensionFrameHost = {
   sendTheme(): void
   push(topic: string, payload?: unknown): void
   dispose(): void
+  /**
+   * The surface closed: stop at once, but for up to `graceMs` still pass on
+   * the writes (`atoms.write`, `storage.set`, `ui.retain`) its unloading
+   * document sends, until it says it is leaving. Resolves once it stopped
+   * listening for good.
+   */
+  close(graceMs: number): Promise<void>
 }
+
+/** The calls a closed surface's unloading document may still make: its last writes. */
+const CLOSING_METHODS = new Set(['atoms.write', 'storage.set'])
 
 const RETRYABLE = new Set(['rate_limited', 'unavailable', 'timeout'])
 
@@ -140,6 +157,8 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
   // A components panel's trees ride a lane of their own, bigger than a call and
   // apart from it, so a busy panel never starves its own host calls.
   const renderBudget = createExtensionFrameBudget(COMPONENT_RENDER_LANE)
+  // Its persisted writes ride their own, so a large atom is stored and never starves the calls.
+  const atomsBudget = createExtensionFrameBudget(COMPONENT_ATOMS_LANE)
   const now = options.now ?? Date.now
   // The calls waiting for the Studio, and those of them the frame gave up on:
   // a cancel counts only for a call still waiting, and both forget an id once
@@ -147,13 +166,20 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
   const waiting = new Set<number>()
   const cancelled = new Set<number>()
   let alive = true
+  // Closed, and waiting a moment for the unloading document's last writes.
+  let closing: { finish: () => void } | null = null
+  // The frame's window as last heard: a closed surface's frame is no longer in the page.
+  let lastSource: MessageEventSource | null = null
   // A components panel's clock: the timers its undrawn frame asked the window to keep.
   const timers = new Set<ReturnType<typeof setTimeout>>()
 
   const post = (message: Record<string, unknown>) => {
     if (alive) options.post({ se: EXTENSION_FRAME_PROTOCOL, ...message })
   }
-  const answer = (id: number, outcome: { result: unknown } | { code: string; message: string; document?: unknown }) => {
+  const answer = (
+    id: number,
+    outcome: { result: unknown } | { code: string; message: string; document?: unknown; retryAfterMs?: number },
+  ) => {
     waiting.delete(id)
     if (cancelled.delete(id)) return
     if ('result' in outcome) post({ kind: 'res', id, result: outcome.result })
@@ -166,6 +192,7 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
           message: outcome.message.slice(0, 8192),
           retryable: RETRYABLE.has(outcome.code),
           ...(outcome.document === undefined ? {} : { document: outcome.document }),
+          ...(outcome.retryAfterMs === undefined ? {} : { retryAfterMs: outcome.retryAfterMs }),
         },
       })
   }
@@ -228,6 +255,14 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
     }
   }
 
+  // Timers and followed events end with the surface; calls still waiting are answered into nothing.
+  function stop(): void {
+    for (const timer of timers) clearTimeout(timer)
+    timers.clear()
+    for (const unfollow of followed.values()) unfollow()
+    followed.clear()
+  }
+
   const epoch = (payload: unknown): number | null => {
     const at = (payload as { at?: unknown } | null)?.at
     return typeof at === 'number' && Number.isFinite(at) ? at : null
@@ -235,10 +270,21 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
 
   return {
     receive(event) {
-      if (!alive || event.source === null || event.source !== options.source()) return
+      if (!alive || event.source === null) return
+      const source = options.source() ?? (closing ? lastSource : null)
+      if (event.source !== source) return
+      lastSource = source
       const message = event.data as Envelope & { se?: unknown }
       if (!message || typeof message !== 'object' || message.se !== EXTENSION_FRAME_PROTOCOL) return
       const id = Number.isSafeInteger(message.id) ? (message.id as number) : null
+      if (closing) {
+        const write =
+          message.kind === 'req' && typeof message.method === 'string' && CLOSING_METHODS.has(message.method)
+        const retained = message.kind === 'evt' && message.event === COMPONENT_MESSAGES.retain
+        const leaving = message.kind === 'evt' && message.event === EXTENSION_FRAME_EVENTS.leaving
+        if (leaving) return closing.finish()
+        if (!write && !retained) return
+      }
       const edit = message.kind === 'req' && message.method === EXTENSION_EDITOR_APPLY_EDIT
       if (
         options.components &&
@@ -264,9 +310,15 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
         timers.add(timer)
         return
       }
+      const atoms = Boolean(options.components) && message.kind === 'req' && message.method === 'atoms.write'
       const refused = edit
         ? editBudget.admit(now(), extensionFrameMessageBytes(message, EXTENSION_EDITOR_TEXT_MAX_BYTES + 4096))
-        : budget.admit(now(), extensionFrameMessageBytes(message))
+        : atoms
+          ? atomsBudget.admit(
+              now(),
+              extensionFrameMessageBytes(message, COMPONENT_ATOMS_LANE.maxBytes, COMPONENT_ATOMS_LANE),
+            )
+          : budget.admit(now(), extensionFrameMessageBytes(message))
       if (refused) {
         if (message.kind === 'req' && id !== null)
           answer(id, {
@@ -275,8 +327,11 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
               refused === 'too_large'
                 ? edit
                   ? 'A document is at most 1 MiB of text or 768 KiB of bytes.'
-                  : 'A message from a frame is at most 64 KiB.'
+                  : atoms
+                    ? `A persisted write is at most ${COMPONENT_ATOMS_LANE.maxBytes / 1024} KiB.`
+                    : 'A message from a frame is at most 64 KiB.'
                 : 'This frame sent too many messages; try again shortly.',
+            ...(refused === 'rate_limited' && atoms ? { retryAfterMs: COMPONENT_LANE_RETRY_MS } : {}),
           })
         return
       }
@@ -349,10 +404,23 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
     },
     dispose() {
       alive = false
-      for (const timer of timers) clearTimeout(timer)
-      timers.clear()
-      for (const stop of followed.values()) stop()
-      followed.clear()
+      closing?.finish()
+      stop()
+    },
+    close(graceMs) {
+      if (!alive || closing) return Promise.resolve()
+      stop()
+      return new Promise<void>((resolve) => {
+        const timer = setTimeout(() => closing?.finish(), Math.max(0, graceMs))
+        closing = {
+          finish: () => {
+            clearTimeout(timer)
+            closing = null
+            alive = false
+            resolve()
+          },
+        }
+      })
     },
   }
 }

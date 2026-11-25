@@ -203,11 +203,12 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
       else if (id > 0) { nativeClear(id / 2); nativeClearInterval(id / 2) }
     }
   })()
-  function failure(code, message, retryable, document) {
+  function failure(code, message, retryable, document, retryAfterMs) {
     var error = new Error(String(message || 'The host call failed.'))
     error.code = C.codes.indexOf(code) >= 0 ? code : 'action_failed'
     error.retryable = Boolean(retryable)
     if (document) error.document = document
+    if (typeof retryAfterMs === 'number' && retryAfterMs > 0) error.retryAfterMs = retryAfterMs
     return error
   }
   function call(method, params, options) {
@@ -232,7 +233,7 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
       pending.set(id, function (message) {
         clearTimeout(timer)
         if (signal) signal.removeEventListener('abort', abort)
-        if (message.error) reject(failure(message.error.code, message.error.message, message.error.retryable, message.error.document))
+        if (message.error) reject(failure(message.error.code, message.error.message, message.error.retryable, message.error.document, message.error.retryAfterMs))
         else resolve(message.result)
       })
       post({ kind: 'req', id: id, method: String(method), params: params === undefined ? {} : params })
@@ -434,6 +435,8 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
   // A components panel's runtime speaks the ui.* events over this; it reaches
   // Studio only through the same calls and events as any frame.
   var uiListeners = {}
+  // What the runtime sends as the document unloads, before the window hears it is leaving.
+  var leaveHooks = new Set()
   var context = { locale: 'en', client: 'desktop' }
   var componentsBridge = {
     post: function (event, payload) { post({ kind: 'evt', event: String(event), payload: payload }) },
@@ -450,7 +453,11 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     get colorScheme() { return theme.colorScheme },
     get locale() { return context.locale },
     get client() { return context.client },
-    describe: function (error) { return located(describe(error)) }
+    describe: function (error) { return located(describe(error)) },
+    onLeave: function (flush) {
+      leaveHooks.add(flush)
+      return { dispose: function () { leaveHooks.delete(flush) } }
+    }
   }
   window.addEventListener('message', function (event) {
     if (event.source !== host) return
@@ -492,7 +499,13 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
   } catch (_) {}
   // Registered before the extension's code runs, so nothing it does comes
   // first: the window drops the bridge as soon as this document unloads.
-  window.addEventListener('pagehide', function () { post({ kind: 'evt', event: E.leaving, payload: {} }) })
+  // A components panel's last writes go first: the window drops whatever follows the leaving event.
+  window.addEventListener('pagehide', function () {
+    Array.from(leaveHooks).forEach(function (flush) {
+      try { flush() } catch (error) { console.error(error) }
+    })
+    post({ kind: 'evt', event: E.leaving, payload: {} })
+  })
   post({ kind: 'evt', event: E.ready, payload: {} })
 })(${config})
 `

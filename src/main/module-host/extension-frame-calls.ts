@@ -307,7 +307,21 @@ export function createExtensionFrameCalls(deps: ExtensionFrameCallDeps) {
     'worker.operate': (request, params) => worker(request, 'operate', params),
     'assets.image': (request, params) => deps.ownImage?.(request.moduleId, text(params, 'path', 512)) ?? null,
     'atoms.read': (request, params) => readPanelAtoms(dataDir(request.moduleId), params),
-    'atoms.write': (request, params) => writePanelAtoms(dataDir(request.moduleId), params),
+    // Held to the frame's authority as it stands when each file is written, as
+    // `files.write` is: a write queued or reading while the extension is
+    // uninstalled makes no folder and no file.
+    'atoms.write': (request, params) =>
+      writePanelAtoms(
+        {
+          key: `extension:${request.moduleId}`,
+          dataDir: () => dataDir(request.moduleId),
+          stillAdmitted: () => {
+            const refusal = admission(request)
+            if (refusal) throw new CallRefusal(refusal.code, refusal.message)
+          },
+        },
+        params,
+      ),
     'secrets.has': async (request, params) => ({
       has: (await registry('module-secrets.module-service').has!(request.moduleId, text(params, 'key', 200))) === true,
     }),

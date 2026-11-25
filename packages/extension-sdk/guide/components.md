@@ -101,15 +101,24 @@ A named atom's `persist` says where its value lives:
 | `storage` | The extension's storage under the atom's key (needs `storage:own`) | The panel, and the worker with `getModuleStorage` |
 
 Studio reads the `plugin` and `workspace` atoms before the first render, and
-stores a change about 400 ms after it. Values are plain JSON: a value that is
-not is refused with an error and kept for this run only. A `workspace` atom in
-a panel opened outside a workspace is kept for the run alone.
+stores a change about 400 ms after it, or at once when the panel is hidden or
+closes. Values are plain JSON: a value that is not is refused with an error
+and kept for this run only. A value is at most 512 KiB (about its size as
+JSON), and each scope's atoms together at most 1 MiB; past either, the error
+says so and the value is kept for this run only. A write Studio turned away
+for coming too often is sent again shortly, with the atom's value then. A
+`workspace` atom in a panel opened outside a workspace is kept for the run
+alone.
 
 **Versions.** When a stored shape changes, raise `version` (a whole number
 from 1) and give `migrate(stored, fromVersion)`, which turns what an older
-version stored into the new shape. Without `migrate`, a value of another
-version is not read and the atom starts from `initial`. A development folder's
-reload never migrates: a memory atom whose version changed starts over.
+version stored into the new shape. Without `migrate`, a value of an older
+version is not read and the atom starts from `initial`. A `migrate` that
+throws is reported as the panel's error, and that atom alone starts from
+`initial`. A value a newer version stored (another build of the extension) is
+never migrated: the atom starts from `initial`, and the stored value stays
+until the atom changes. A development folder's reload never migrates: a
+memory atom whose version changed starts over.
 
 ```ts
 const name = atom('name', { first: '', last: '' }, {
@@ -456,8 +465,10 @@ placeholder, with a warning, and the rest of the panel draws:
 | `KeyValue` items | 200 |
 | `Markdown` and `CodeView` text | 64 KiB |
 
-Renders are sent at most about once a frame, and a panel's renders and stored
-writes share a budget of 640 KiB and 200 messages every 10 seconds.
+Renders are sent at most about once a frame, and share a budget of 640 KiB a
+message and 200 messages every 10 seconds. Stored atoms have a budget of their
+own, 640 KiB a write and 60 writes every 10 seconds; Studio splits a large
+change across writes to fit.
 
 ## Isolation
 
