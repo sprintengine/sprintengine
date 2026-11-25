@@ -83,8 +83,13 @@ const PRELUDE = `'use strict'
 // whose frame loads a second document. Links and forms here are only kept
 // from starting one.
 // The policy has no directive for peer connections, which would be a way out.
-;['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel'].forEach(function (name) {
-  try { Object.defineProperty(window, name, { value: undefined, writable: false, configurable: false }) } catch (_) {}
+// Every WebRTC interface goes, for good (not configurable), before the
+// extension's code runs. The document's policy keeps a child frame from
+// running script, so no fresh realm brings them back (frame-document.ts).
+Object.getOwnPropertyNames(window).filter(function (name) {
+  return /^(webkit)?RTC/.test(name)
+}).concat(['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel']).forEach(function (name) {
+  try { Object.defineProperty(window, name, { value: undefined, writable: false, configurable: false, enumerable: false }) } catch (_) {}
 })
 try { Object.defineProperty(window, 'open', { value: function () { return null }, writable: false, configurable: false }) } catch (_) {}
 window.addEventListener('click', function (event) {

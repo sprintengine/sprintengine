@@ -81,7 +81,9 @@ test('its document has the frames’ policy, so the module reaches no network, a
     theme: EXTENSION_FRAME_THEMES.light!,
     components: true,
   })
-  assert.ok(html.includes(EXTENSION_FRAME_CSP))
+  // The frames' policy, its one inline script named by hash (frame-document.ts).
+  const policy = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/u.exec(html)?.[1] ?? ''
+  assert.equal(policy.replace(/'sha256-[^']+'/u, "'unsafe-inline'"), EXTENSION_FRAME_CSP)
   assert.match(EXTENSION_FRAME_CSP, /connect-src 'none'/)
   assert.match(EXTENSION_FRAME_CSP, /default-src 'none'/)
   assert.match(html, /"components":true/)

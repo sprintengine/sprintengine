@@ -62,29 +62,44 @@ function tokensCss(theme: ExtensionFrameTheme | null): string {
     .join('')
 }
 
+/**
+ * The document's own policy: the frame's, with its one inline script named by
+ * hash instead of `'unsafe-inline'`. A child frame inherits the policy, so an
+ * `about:srcdoc` child, the one child `frame-src 'none'` still lets in, runs
+ * no script of its own: no fresh realm with the network constructors the
+ * bootstrap removed from this one.
+ */
+export function frameDocumentCsp(script: string): string {
+  const hash = createHash('sha256').update(script, 'utf8').digest('base64')
+  return EXTENSION_FRAME_CSP.replace("script-src 'unsafe-inline'", `script-src 'sha256-${hash}'`)
+}
+
 export function buildExtensionFrameDocument(input: FrameDocumentInput): string {
   const scheme = input.theme?.colorScheme ?? 'dark'
+  const script = frameBootstrapScript({
+    entryPath: input.entryPath,
+    modules: input.modules,
+    token: input.token,
+    ...(input.problem ? { problem: input.problem } : {}),
+    surface: input.surface,
+    colorScheme: scheme,
+    ...(input.components ? { components: true } : {}),
+  })
   return [
     '<!doctype html>',
     `<html class="${scheme}"${input.theme ? '' : ' data-se-waiting'}>`,
     '<head>',
     '<meta charset="utf-8">',
-    `<meta http-equiv="Content-Security-Policy" content="${EXTENSION_FRAME_CSP}">`,
+    `<meta http-equiv="Content-Security-Policy" content="${frameDocumentCsp(script)}">`,
+    // No name lookups ahead of time: a hint is a lookup nothing else in the frame may make.
+    '<meta http-equiv="x-dns-prefetch-control" content="off">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<style id="${FRAME_TOKENS_ID}">:root{${tokensCss(input.theme)}}</style>`,
     `<style>${EXTENSION_FRAME_KIT_CSS}</style>`,
     '</head>',
     '<body>',
     `<div id="${FRAME_ROOT_ID}"></div>`,
-    `<script>${frameBootstrapScript({
-      entryPath: input.entryPath,
-      modules: input.modules,
-      token: input.token,
-      ...(input.problem ? { problem: input.problem } : {}),
-      surface: input.surface,
-      colorScheme: scheme,
-      ...(input.components ? { components: true } : {}),
-    })}</script>`,
+    `<script>${script}</script>`,
     '</body>',
     '</html>',
     '',
