@@ -25,18 +25,21 @@ import { createFakeFrameStudio, type FakeFrameStudio, type FakeFrameStudioOption
 
 // ── Inputs ──────────────────────────────────────────────────────────────────
 
-const STORED = Symbol.for('sprintengine.components.stored')
-
 /** A persisted value as an earlier version of the panel stored it, to test `migrate`. */
-export type StoredAtomValue = { readonly [STORED]: true; value: unknown; version: number }
+export type StoredAtomValue = { readonly value: unknown; readonly version: number }
+
+// The values `stored` made: any other object is a plain value stored as version 1.
+const madeByStored = new WeakSet<object>()
 
 /** `value` as the atom's `version` (default 1) stored it. */
 export function stored(value: unknown, version = 1): StoredAtomValue {
-  return { [STORED]: true, value, version }
+  const made = Object.freeze({ value, version })
+  madeByStored.add(made)
+  return made
 }
 
 function isStored(value: unknown): value is StoredAtomValue {
-  return typeof value === 'object' && value !== null && (value as Partial<StoredAtomValue>)[STORED] === true
+  return typeof value === 'object' && value !== null && madeByStored.has(value)
 }
 
 /** Persisted atoms an earlier run left, by key: a plain value is version 1. */
