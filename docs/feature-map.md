@@ -226,7 +226,9 @@ by `src/server/extensions/frames/frame-bootstrap.ts`; drawn by the window's
 persisted atoms kept by `src/main/module-host/extension-panel-atoms.ts` behind the frame methods `atoms.read`,
 `atoms.write` (`src/main/module-host/extension-frame-calls.ts`). The testing kit
 `packages/extension-sdk/src/testing-components.ts` (`mountPanel`, `defineCheck`), `check`'s child
-`packages/extension-sdk/src/check-panel.ts`, and a shot drawn by `src/main/extension-frames/extension-shot.ts`. Wire:
+`packages/extension-sdk/src/check-panel.ts`, and a shot drawn by `src/main/extension-frames/extension-shot.ts`
+(the window's side of the run in `components-shot-exchange.ts`, the tree drawn by
+`src/renderer/src/components/extensions/components/ComponentsShotApp.tsx`). Wire:
 `extension.frame`, `extension.call` (capability `extension-frames`). Guide
 `packages/extension-sdk/guide/components.md`; template `packages/extension-sdk/templates/components/`; sample
 `packages/extension-sdk/examples/components-sample/`. Tests: `packages/extension-sdk/test/components-runtime.test.ts`,
