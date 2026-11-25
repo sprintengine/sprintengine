@@ -135,6 +135,21 @@ export type {
   FakeWorkspaces,
 } from './testing-services.js'
 export { MODULE_STORAGE_VALUE_LIMIT_BYTES } from './testing-services.js'
+// A components panel under test: mounted on the real runtime, drawn as Studio draws it.
+export { defineCheck, mountPanel, stored } from './testing-components.js'
+export type {
+  CheckScenario,
+  MountPanelOptions,
+  MountedPanel,
+  PanelElement,
+  PanelError,
+  PanelQuery,
+  PanelRefusal,
+  PanelTarget,
+  PanelTreeNode,
+  PersistedSeed,
+  StoredAtomValue,
+} from './testing-components.js'
 
 // ── Shared pieces ────────────────────────────────────────────────────────────
 
@@ -1094,6 +1109,14 @@ export type FakeFrameStudioOptions = FakeModuleIdentity & {
    * save it. Default: empty text.
    */
   document?: { text: string; readOnly?: boolean } | { bytes: Uint8Array; readOnly?: boolean }
+  /** Secrets already set, by name (their values never reach a surface). */
+  secrets?: Record<string, string>
+  /**
+   * Answers that stand in for Studio's, by host method: a value, or a function
+   * of the params (which may throw `hostError(code)`). A call is still checked
+   * against the permissions first, so a stub never admits what Studio refuses.
+   */
+  results?: Partial<Record<ExtensionFrameMethod, unknown>>
 }
 
 /** The document behind a custom editor's `studio.document`, as Studio holds it. */
@@ -1192,6 +1215,11 @@ type Registry = Record<string, (moduleId: string, ...args: never[]) => Promise<u
 
 function frameError(code: ExtensionFrameErrorCode, message: string): ExtensionFrameError {
   return Object.assign(new Error(message), { code, retryable: false })
+}
+
+/** A refusal as Studio makes it, for a stubbed answer (`results`) to throw. */
+export function hostError(code: ExtensionFrameErrorCode, message?: string): ExtensionFrameError {
+  return frameError(code, message ?? `Studio refused the call (${code}).`)
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -1395,7 +1423,7 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
     if (!stored) workspaceAtoms.set(workspaceId, (stored = {}))
     return stored
   }
-  const secrets = new Map<string, string>()
+  const secrets = new Map<string, string>(Object.entries(options.secrets ?? {}))
   let gestureUntil = 0
   const clock = options.now ?? Date.now
 
@@ -1615,6 +1643,9 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
       )
     const given = (params ?? {}) as Params
     if (typeof given !== 'object' || Array.isArray(given)) throw frameError('invalid_params', 'Params are an object.')
+    const stub = options.results?.[method as ExtensionFrameMethod]
+    if (stub !== undefined)
+      return structuredClone(await (typeof stub === 'function' ? (stub as (params: Params) => unknown)(given) : stub))
     return structuredClone(await serve[method as ExtensionFrameMethod](given))
   }
 
