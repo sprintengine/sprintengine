@@ -470,6 +470,8 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
       Array.from(uiListeners[message.event] || []).forEach(function (listener) {
         try { listener(message.payload) } catch (error) { console.error(error) }
       })
+    } else if (message.kind === 'evt' && message.event === E.leave) {
+      leave()
     } else if (message.kind === 'evt' && message.event === E.hello) {
       var hello = message.payload || {}
       if (typeof hello.locale === 'string') context.locale = hello.locale.slice(0, 35)
@@ -500,12 +502,18 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
   // Registered before the extension's code runs, so nothing it does comes
   // first: the window drops the bridge as soon as this document unloads.
   // A components panel's last writes go first: the window drops whatever follows the leaving event.
-  window.addEventListener('pagehide', function () {
+  // Once: the window asks first when the surface closes (\`leave\`), and the
+  // document unloading says it again.
+  var left = false
+  function leave() {
+    if (left) return
+    left = true
     Array.from(leaveHooks).forEach(function (flush) {
       try { flush() } catch (error) { console.error(error) }
     })
     post({ kind: 'evt', event: E.leaving, payload: {} })
-  })
+  }
+  window.addEventListener('pagehide', leave)
   post({ kind: 'evt', event: E.ready, payload: {} })
 })(${config})
 `

@@ -76,6 +76,22 @@ const now = () => performance.timeOrigin + performance.now()
 // How long a closed components panel's bridge still hears its document's last writes.
 const COMPONENTS_CLOSE_GRACE_MS = 300
 
+/**
+ * Where a components panel's frame lives: not drawn, so not in the panel's
+ * layout, and kept out of React's tree so it outlives the panel by the close
+ * grace: asked to leave, it hands over its last persisted writes first.
+ */
+function componentFramesHolder(): HTMLElement {
+  let holder = document.getElementById('se-component-frames')
+  if (!holder) {
+    holder = document.createElement('div')
+    holder.id = 'se-component-frames'
+    holder.hidden = true
+    document.body.append(holder)
+  }
+  return holder
+}
+
 onExtensionRetired(forgetAllowedHosts)
 const MAX_IMAGE_SIDE = 4096
 
@@ -207,8 +223,10 @@ export function ExtensionSurfaceMount({
       documentLoaded()
       inner.addEventListener('load', documentLoaded)
     }
+    // A components panel's frame, made in the holder once its document is staged.
+    let componentFrame: HTMLIFrameElement | null = null
     const surfaceWindow = (): Window | null => {
-      const outer = frameRef.current?.contentWindow ?? null
+      const outer = (componentFrame ?? frameRef.current)?.contentWindow ?? null
       return wrapped ? ((outer?.frames[0] as Window | undefined) ?? null) : outer
     }
     let frameHash = ''
@@ -322,7 +340,22 @@ export function ExtensionSurfaceMount({
         }
       })
       .then((next) => {
-        if (!closed) setSrc(next)
+        if (closed) return
+        if (!componentsSession) return setSrc(next)
+        // A components panel's frame: made here, in the holder, not drawn.
+        const frame = document.createElement('iframe')
+        if (!next.wrapped) frame.setAttribute('sandbox', 'allow-scripts')
+        frame.title = title ?? loaded.contribution.title
+        frame.dataset.extension = extensionKey
+        frame.dataset.extensionSurface = `${point}/${id}`
+        frame.setAttribute('aria-hidden', 'true')
+        frame.tabIndex = -1
+        frame.className = 'hidden'
+        frame.addEventListener('load', () => onFrameLoad.current())
+        frame.src = next.url
+        componentFrame = frame
+        frameRef.current = frame
+        componentFramesHolder().append(frame)
       }, fail)
     // Whether the person can see the panel, for its `ctx.visible`.
     const seen =
@@ -341,9 +374,15 @@ export function ExtensionSurfaceMount({
       themes.disconnect()
       // A components panel's unloading document sends its last persisted
       // writes before it says it is leaving: hear them a moment more.
-      if (componentsSession)
-        void bridge.close(COMPONENTS_CLOSE_GRACE_MS).then(() => window.removeEventListener('message', receive))
-      else {
+      if (componentsSession) {
+        const frame = componentFrame
+        if (frameRef.current === frame) frameRef.current = null
+        // Asked to leave, the frame sends its last persisted writes, heard for the grace; then it goes.
+        void bridge.close(COMPONENTS_CLOSE_GRACE_MS).then(() => {
+          window.removeEventListener('message', receive)
+          frame?.remove()
+        })
+      } else {
         bridge.dispose()
         window.removeEventListener('message', receive)
       }
@@ -371,7 +410,7 @@ export function ExtensionSurfaceMount({
           locale={navigator.language}
         />
       ) : null}
-      {src && !failure ? (
+      {src && !failure && !components ? (
         <iframe
           key={src.url}
           ref={frameRef}
@@ -383,10 +422,7 @@ export function ExtensionSurfaceMount({
           title={title ?? loaded.contribution.title}
           data-extension={extensionKey}
           data-extension-surface={`${point}/${id}`}
-          // A components panel's frame runs its module and shows nothing: Studio draws its tree.
-          // Not drawn at all (`display: none`), so nothing in it can take keyboard focus.
-          {...(components ? { 'aria-hidden': true, tabIndex: -1 } : {})}
-          className={components ? 'hidden' : 'block h-full w-full border-0'}
+          className="block h-full w-full border-0"
         />
       ) : null}
     </div>

@@ -409,6 +409,8 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
     },
     close(graceMs) {
       if (!alive || closing) return Promise.resolve()
+      // Asked, not waited on: the frame flushes and says `leaving`, or the grace ends it.
+      post({ kind: 'evt', event: EXTENSION_FRAME_EVENTS.leave, payload: {} })
       stop()
       return new Promise<void>((resolve) => {
         const timer = setTimeout(() => closing?.finish(), Math.max(0, graceMs))

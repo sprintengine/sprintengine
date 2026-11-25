@@ -93,6 +93,8 @@ export const EXTENSION_FRAME_EVENTS = {
   failed: 'failed',
   /** frame → host: the frame's document is unloading (`pagehide`); the host drops the bridge. */
   leaving: 'leaving',
+  /** host → frame: the surface closed; a components panel sends its last writes, then `leaving`. */
+  leave: 'leave',
   /** host → custom editor: the file's document, at a new version. */
   document: 'document',
   /** host → custom editor: a save is coming; hand over what you hold back (`id`). */

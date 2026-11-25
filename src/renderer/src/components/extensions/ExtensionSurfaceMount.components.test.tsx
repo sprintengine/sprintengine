@@ -62,6 +62,7 @@ afterEach(() => {
   container = null
   for (const key of keys.splice(0)) retireExtensionSurfaces(key)
   resetExtensionsDouble()
+  document.getElementById('se-component-frames')?.remove()
   runs.length = 0
   delete (window as { api?: unknown }).api
   vi.unstubAllGlobals()
@@ -144,7 +145,10 @@ async function panelDrawn(key: string) {
     root!.render(<ExtensionSurfaceMount extensionKey={key} point="panels" id="board" workspaceId="ws" />)
   })
   await act(async () => undefined)
-  const frame = () => container!.querySelector('iframe')
+  // Not in the panel's layout: in the window's holder of undrawn frames, until its close grace ends.
+  const frame = () =>
+    [...document.querySelectorAll<HTMLIFrameElement>(`#se-component-frames iframe[data-extension="${key}"]`)].at(-1) ??
+    null
   return { shipped, loaded, built, calls, following, frame }
 }
 
@@ -208,7 +212,9 @@ test('killed, or no longer approved: the frame goes, the run is heard no more, a
     kept = reconcileExtensionContributions(loaded, { extensions: [], failures: {} })
   })
   assert.deepEqual(kept, [])
-  assert.equal(frame(), null, 'the frame is gone')
+  assert.equal(container!.querySelector('iframe'), null, 'no frame is in the panel')
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 350)))
+  assert.equal(frame(), null, 'the frame is gone once it had its moment to hand over its last writes')
   assert.doesNotMatch(text(), /Before the revocation/, 'none of its tree is drawn')
   assert.match(text(), /not available here/)
   assert.equal(runs[0]!.listeners(), 0, 'nothing draws the run any more')
@@ -255,6 +261,7 @@ test('switched off: the frame goes with the panel, and switching it on again sta
   assert.match(text(), /While it was on/)
 
   await act(async () => root!.render(<p>This panel is not available.</p>))
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 350)))
   assert.equal(frame(), null)
   assert.doesNotMatch(text(), /While it was on/)
   assert.equal(runs[0]!.listeners(), 0)
@@ -339,4 +346,34 @@ test('an image larger than 4096 pixels a side is not drawn', async () => {
   await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
   assert.equal(container!.querySelector('img'), null)
   assert.equal(container!.querySelector('[data-image-placeholder]')!.getAttribute('aria-label'), 'Huge')
+})
+
+// A toggle right before the tab closes: the frame is asked to leave, its last
+// persisted write is heard for a moment more, and only then does the frame go.
+test('a closed panel’s frame is asked to leave, and its last write still reaches the Studio', async () => {
+  const { calls, frame } = await panelDrawn('local.closing-board')
+  const hidden = frame()!
+  const guest = guestIn(hidden)
+  await guest.ready('run-1')
+  await guest.render('run-1', 1, n('Text', {}, ['Open']))
+  await act(async () => root!.render(<p>Closed.</p>))
+  assert.ok(
+    guest.received.some((message) => message.event === 'leave'),
+    'the frame is asked to leave',
+  )
+  assert.equal(frame(), hidden, 'it stays a moment to hand over what it holds')
+  const write = { se: 1, kind: 'req', id: 7, method: 'atoms.write', params: { scope: 'plugin', changes: { on: 1 } } }
+  await act(async () => {
+    window.dispatchEvent(new MessageEvent('message', { source: hidden.contentWindow, data: write }))
+  })
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+  assert.deepEqual(
+    calls.filter((call) => call.method === 'atoms.write').map((call) => call.params),
+    [write.params],
+  )
+  // A render now is not heard; once the grace ends, the frame is gone.
+  await guest.render('run-1', 2, n('Text', {}, ['Late']))
+  assert.doesNotMatch(text(), /Late/)
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 350)))
+  assert.equal(frame(), null)
 })
