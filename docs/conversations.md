@@ -610,7 +610,7 @@ that every reader passes over (`conversation-command-receipts.ts`).
   (`scheduled-agents/run-recovery.ts`).
 - **Where background work runs.** Every Studio server runs its own schedules
   and pull request watches, with its scheduled messages and usage-limit
-  resumes: the desktop's (in process or out), a standalone server, a WSL
+  resumes: the desktop's (in its own process), a standalone server, a WSL
   distribution's and an SSH machine's (`server/core/studio-scheduled-agents.ts`,
   composed by `createStudioCore`). A schedule runs on the server whose store
   holds it, in its chats, from its worktree pool. New chat makes a schedule

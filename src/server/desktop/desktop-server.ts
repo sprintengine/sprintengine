@@ -152,10 +152,18 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   let anyWindowVisible = true
   let workspaceWindowVisible = true
   let appFocused = false
+  // The desktop's workspace windows open now; none until the shell says.
+  let workspaceWindowIds: ReadonlySet<string> = new Set()
   rpc.on(SERVER_EVENTS.hintVisibility, (payload) => {
-    const hint = payload as { anyWindowVisible?: unknown; workspaceWindowVisible?: unknown } | null
+    const hint = payload as {
+      anyWindowVisible?: unknown
+      workspaceWindowVisible?: unknown
+      workspaceWindowIds?: unknown
+    } | null
     anyWindowVisible = hint?.anyWindowVisible !== false
     workspaceWindowVisible = hint?.workspaceWindowVisible !== false
+    if (Array.isArray(hint?.workspaceWindowIds))
+      workspaceWindowIds = new Set(hint.workspaceWindowIds.filter((id): id is string => typeof id === 'string'))
   })
   rpc.on(SERVER_EVENTS.hintFocus, (payload) => {
     appFocused = (payload as { appFocused?: unknown })?.appFocused === true
@@ -261,6 +269,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       // client of that machine's Studio, over a stream main opens on its door.
       ...(shellEnvironments ? { environmentClients: shellEnvironments } : {}),
       role: 'desktop',
+      // What an extension's `send` may type into besides its own terminals is
+      // what one of the desktop's workspace windows shows.
+      liveWorkspaceWindowIds: () => workspaceWindowIds,
       // The person's Scheduled agents switch turns the scheduler on and off,
       // through the module kernel (modules/scheduled-agents-switch.ts).
       scheduledAgentsSwitch: 'modules',

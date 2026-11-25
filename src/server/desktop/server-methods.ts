@@ -256,7 +256,10 @@ export const SERVER_EVENTS = {
   agentFileWritten: 'agents.file-written',
   /** Shell → server hints (6.3). */
   hintPower: 'hint.power',
-  /** `{ anyWindowVisible, workspaceWindowVisible }`: whether any app window, and whether a workspace window, shows. */
+  /**
+   * `{ anyWindowVisible, workspaceWindowVisible, workspaceWindowIds }`: whether any app window, and whether a
+   * workspace window, shows, and the workspace windows open.
+   */
   hintVisibility: 'hint.visibility',
   hintFocus: 'hint.focus',
   hintOnline: 'hint.online',

@@ -33,7 +33,7 @@ import type { StudioWindowTicket } from '../../shared/studio-connection'
 import type { StudioWindowTicketIssuer } from '../ipc/studio-window-ticket-ipc'
 import { isCanvasWorkerWindow } from '../canvas/canvas-worker-window'
 import { isAppRendererUrl } from '../ipc/ipc-sender'
-import { isWorkspaceWindowWebContents } from '../window-factory'
+import { isWorkspaceWindowWebContents, listWorkspaceWindows, workspaceWindowIdOf } from '../window-factory'
 import { writeDiagnosticLog } from '../diagnostics-service'
 import { createPortBroker, type PortBroker } from './port-broker'
 import type { ShellServerLink } from './remote-core'
@@ -167,6 +167,9 @@ export function createDesktopServerHost(options: {
       anyWindowVisible: showing.length > 0,
       // Only a workspace window can answer an artifacts set-up question; a pop-out cannot.
       workspaceWindowVisible: showing.some((win) => isWorkspaceWindowWebContents(win.webContents)),
+      // The workspace windows open now, shown or not: what an extension's
+      // `send` may type into besides its own terminals is what one of them shows.
+      workspaceWindowIds: listWorkspaceWindows().map(workspaceWindowIdOf),
     })
     supervisor.rpc.emit(SERVER_EVENTS.hintFocus, { appFocused: windows.some((win) => win.isFocused()) })
   }

@@ -26,7 +26,8 @@ npm run dev
 start without it.
 
 `npm run dev` starts the Electron main process and the renderer dev server
-together. It takes port 5173 by default; if that port is busy it moves to the
+together; main forks the Studio server (`out/main/studio-server.js`, built with
+main) as a process of its own, as the packaged app does. It takes port 5173 by default; if that port is busy it moves to the
 next free one and gives that instance its own user-data directory, so you can
 run more than one dev build side by side. Set `SPRINTENGINE_RENDERER_PORT` to
 pin a port, or `SPRINTENGINE_USER_DATA_DIR` to pin a profile.
