@@ -66,27 +66,42 @@ test('app-lifecycle', async () => {
   async function main(): Promise<void> {
     const { registerAppLifecycle } = await import('./app-lifecycle')
 
+    // The server a lifecycle drains at quit; `gone` lets it exit.
+    function serverDouble(record: string[]) {
+      let gone: () => void = () => undefined
+      const budgets: number[] = []
+      return {
+        budgets,
+        gone: () => gone(),
+        server: {
+          start: () => undefined,
+          log: { note: () => undefined },
+          onAttentionPhase: () => undefined,
+          detectClis: async () => 0,
+          refreshCliVersions: async () => undefined,
+          shutdown: (options: { budgetMs: number }) => {
+            record.push('server.shutdown')
+            budgets.push(options.budgetMs)
+            return new Promise<'exited'>((resolve) => {
+              gone = () => {
+                record.push('server.exited')
+                resolve('exited')
+              }
+            })
+          },
+        },
+      }
+    }
+
     const order: string[] = []
-    let disposed = 0
     type LegReport = { name: string; done: number; total: number; failed: boolean }
     let prepareForInstall: ((report?: (leg: LegReport) => void) => Promise<void>) | null = null
+    const first = serverDouble(order)
     registerAppLifecycle({
       diagnosticsEnabled: false,
       refreshHostedFeeds: async () => undefined,
+      checkPluginSourceUpdates: async () => undefined,
       allowMultipleInstances: true,
-      terminalRuntime: {
-        shutdown: async () => {
-          order.push('terminal.shutdown')
-        },
-      },
-      conversationOwner: {
-        flushTranscripts: async () => {
-          order.push('conversation.flushTranscripts')
-        },
-        shutdown: async () => {
-          order.push('conversation.shutdown')
-        },
-      },
       // A leg that fails must not cost the legs after it.
       canvasService: {
         dispose: async () => {
@@ -94,18 +109,19 @@ test('app-lifecycle', async () => {
           throw new Error('canvas worker gone')
         },
       },
-      // The installs agent worktrees run are stopped with the new work, before
-      // anything is written: none of them outlives the app.
-      dependencyInstaller: {
-        shutdown: async () => {
-          order.push('dependencyInstaller.shutdown')
-        },
-      },
       // A recording an agent started is saved, with its length, before the
-      // canvas and the registry's last write.
+      // canvas's last write.
       browserRecorder: {
         stopAll: async () => {
           order.push('browserRecorder.stopAll')
+        },
+      },
+      // The shell's client of its server closes before the server drains, so
+      // the server's goodbye is not one it answers by reconnecting.
+      desktopShell: { stop: () => void order.push('desktopShell.stop') },
+      agentStateService: {
+        shutdown: async () => {
+          order.push('agentState.shutdown')
         },
       },
       analytics: {
@@ -118,43 +134,7 @@ test('app-lifecycle', async () => {
       removeSessionIntegrations: async () => {
         order.push('integrations.remove')
       },
-      // REVIEW FIX (finding 8). The record was created with the app and never
-      // flushed or disposed: a pull request captured in the last seconds before
-      // quit was lost with the unwritten store, and its watch timers outlived
-      // every service they were armed for.
-      pullRequestRecord: {
-        flush: async () => {
-          order.push('pullRequests.flush')
-        },
-        dispose: () => {
-          disposed += 1
-          order.push('pullRequests.dispose')
-        },
-      },
-      // Studio's own sends stop before the chats: a resume or a scheduled
-      // message due during the quit must not start an agent on the way out.
-      usageLimitResumes: {
-        dispose: async () => {
-          order.push('usageLimitResumes.dispose')
-        },
-      },
-      scheduledMessages: {
-        dispose: async () => {
-          order.push('scheduledMessages.dispose')
-        },
-      },
-      workspaceSyncService: {
-        flush: async () => {
-          order.push('workspaceSync.flush')
-        },
-      },
-      // Its update timers stop with the others, and the added catalogues'
-      // checkouts in temporary folders are removed, not left for each launch to add to.
-      extensionCatalogue: {
-        dispose: async () => {
-          order.push('extensionCatalogue.dispose')
-        },
-      },
+      server: first.server,
       updateService: {
         checkForUpdates: async () => undefined,
         setPrepareForInstall: (prepare: (report?: (leg: LegReport) => void) => Promise<void>) => {
@@ -171,7 +151,23 @@ test('app-lifecycle', async () => {
     // is started, and the app is not exited yet — the updater's quit does that.
     assert.ok(prepareForInstall, 'the lifecycle hands the update service its shutdown')
     const reports: LegReport[] = []
-    await (prepareForInstall as (report?: (leg: LegReport) => void) => Promise<void>)((leg) => reports.push(leg))
+    const prepared = (prepareForInstall as (report?: (leg: LegReport) => void) => Promise<void>)((leg) =>
+      reports.push(leg),
+    )
+    for (let pass = 0; pass < 50 && !order.includes('agentState.shutdown'); pass += 1)
+      await new Promise((resolve) => setImmediate(resolve))
+    // The chats, terminals, registry, pool and modules are the server's: it
+    // drains them itself, while the shell's legs run.
+    assert.deepEqual(order, [
+      'browserRecorder.stopAll',
+      'canvas.dispose',
+      'desktopShell.stop',
+      'server.shutdown',
+      'agentState.shutdown',
+    ])
+    assert.ok((first.budgets[0] ?? 0) <= 6_000, "an update's drain fits inside its 10 s")
+    first.gone()
+    await prepared
     assert.deepEqual(exitCalls, [], 'the installer, not the shutdown, ends the process')
     // Every leg reports as it finishes, in order, which is what moves the
     // update progress window's bar; a leg that throws still reports, as failed.
@@ -184,24 +180,8 @@ test('app-lifecycle', async () => {
       reports.filter((leg) => leg.failed).map((leg) => leg.name),
       ['canvas'],
     )
-    assert.ok(reports.some((leg) => leg.name === 'terminals'))
-    assert.deepEqual(order, [
-      'extensionCatalogue.dispose',
-      'dependencyInstaller.shutdown',
-      'workspaceSync.flush',
-      'conversation.flushTranscripts',
-      'terminal.shutdown',
-      'pullRequests.flush',
-      'pullRequests.dispose',
-      'usageLimitResumes.dispose',
-      'scheduledMessages.dispose',
-      'conversation.shutdown',
-      'browserRecorder.stopAll',
-      'canvas.dispose',
-      'workspaceSync.flush',
-      // Not the integrations' removal: the new build writes them straight back.
-      'analytics.shutdown',
-    ])
+    // Not the integrations' removal: the new build writes them straight back.
+    assert.deepEqual(order.slice(5), ['server.exited', 'analytics.shutdown'])
 
     let prevented = 0
     beforeQuit[0]({
@@ -210,91 +190,50 @@ test('app-lifecycle', async () => {
       },
     })
     assert.equal(prevented, 1, 'the quit is held while the shutdown legs run')
-
-    // The legs are promises; let them settle.
     for (let pass = 0; pass < 50 && exitCalls.length === 0; pass += 1)
       await new Promise((resolve) => setImmediate(resolve))
-
     assert.deepEqual(exitCalls, [0], 'the app still exits once every leg has run')
     assert.equal(
-      order.filter((entry) => entry === 'terminal.shutdown').length,
+      order.filter((entry) => entry === 'server.shutdown').length,
       1,
       'the updater’s quit joins the shutdown already run instead of running it again',
     )
-    assert.ok(order.includes('pullRequests.flush'), 'the record is flushed at quit')
-    assert.ok(order.includes('pullRequests.dispose'), 'and disposed, so no watch timer outlives it')
-    assert.equal(disposed, 1)
-    assert.ok(
-      order.indexOf('terminal.shutdown') < order.indexOf('pullRequests.flush'),
-      'after the terminal service: its last frames can still file a capture',
-    )
-    assert.ok(
-      order.indexOf('pullRequests.flush') < order.indexOf('pullRequests.dispose'),
-      'the write lands before the timers are torn down',
-    )
 
-    // A second quit is not a second shutdown.
-    beforeQuit[0]({
-      preventDefault: () => {
-        prevented += 1
-      },
-    })
-    for (let pass = 0; pass < 20; pass += 1) await new Promise((resolve) => setImmediate(resolve))
-    assert.equal(disposed, 1, 'a second before-quit does not run the legs again')
-
-    // ── Out of process (phase 6): the shell's client closes before the server
-    // drains, the shell's own legs run while it drains, and the integrations
-    // wait for the server to be gone.
+    // A plain quit: the shell's own legs run while the server drains, and the
+    // integrations wait for the server to be gone.
     appEvents.clear()
     exitCalls = []
     const split: string[] = []
-    let drainBudgetMs = -1
-    let serverGone: () => void = () => undefined
+    const second = serverDouble(split)
     registerAppLifecycle({
       diagnosticsEnabled: false,
       allowMultipleInstances: true,
-      terminalRuntime: {
+      refreshHostedFeeds: async () => undefined,
+      checkPluginSourceUpdates: async () => undefined,
+      desktopShell: { stop: () => void split.push('desktopShell.stop') },
+      agentStateService: {
         shutdown: async () => {
-          split.push('terminal.shutdown')
-        },
-      },
-      desktopShell: {
-        stop: () => {
-          split.push('desktopShell.stop')
+          split.push('agentState.shutdown')
         },
       },
       removeSessionIntegrations: async () => {
         split.push('integrations.remove')
       },
-      server: {
-        start: () => undefined,
-        log: { note: () => undefined },
-        onAttentionPhase: () => undefined,
-        shutdown: (options: { budgetMs: number }) => {
-          split.push('server.shutdown')
-          drainBudgetMs = options.budgetMs
-          return new Promise<'exited'>((resolve) => {
-            serverGone = () => {
-              split.push('server.exited')
-              resolve('exited')
-            }
-          })
-        },
-      },
+      server: second.server,
       updateService: {
         checkForUpdates: async () => undefined,
         setPrepareForInstall: () => undefined,
       } as unknown as Parameters<typeof registerAppLifecycle>[0]['updateService'],
       handleAuthCallback: () => undefined,
-    } as unknown as Parameters<typeof registerAppLifecycle>[0])
+    })
     const splitQuit = appEvents.get('before-quit') ?? []
     splitQuit[0]({ preventDefault: () => undefined })
-    for (let pass = 0; pass < 50 && !split.includes('terminal.shutdown'); pass += 1)
+    for (let pass = 0; pass < 50 && !split.includes('agentState.shutdown'); pass += 1)
       await new Promise((resolve) => setImmediate(resolve))
-    assert.deepEqual(split, ['desktopShell.stop', 'server.shutdown', 'terminal.shutdown'])
-    assert.equal(drainBudgetMs, 8_000)
+    assert.deepEqual(split, ['desktopShell.stop', 'server.shutdown', 'agentState.shutdown'])
+    assert.deepEqual(second.budgets, [8_000])
     assert.deepEqual(exitCalls, [], 'the app waits for the server')
-    serverGone()
+    second.gone()
     for (let pass = 0; pass < 50 && exitCalls.length === 0; pass += 1)
       await new Promise((resolve) => setImmediate(resolve))
     assert.deepEqual(split.slice(3), ['server.exited', 'integrations.remove'])
@@ -313,26 +252,31 @@ test('app-lifecycle', async () => {
     exitCalls = []
     const { QUIT_SHUTDOWN_BUDGET_MS } = await import('./app-lifecycle')
     let hung = false
+    const third = serverDouble([])
     registerAppLifecycle({
       diagnosticsEnabled: false,
       allowMultipleInstances: true,
-      terminalRuntime: {
+      refreshHostedFeeds: async () => undefined,
+      checkPluginSourceUpdates: async () => undefined,
+      desktopShell: { stop: () => undefined },
+      agentStateService: {
         shutdown: () => {
           hung = true
           return new Promise<void>(() => {})
         },
       },
+      server: third.server,
       updateService: {
         checkForUpdates: async () => undefined,
         setPrepareForInstall: () => undefined,
       } as unknown as Parameters<typeof registerAppLifecycle>[0]['updateService'],
       handleAuthCallback: () => undefined,
-    } as unknown as Parameters<typeof registerAppLifecycle>[0])
+    })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       appEvents.get('before-quit')?.[0]?.({ preventDefault: () => undefined })
       for (let pass = 0; pass < 50 && !hung; pass += 1) await new Promise((resolve) => setImmediate(resolve))
-      assert.ok(hung, 'the terminals leg is running')
+      assert.ok(hung, 'the agent-state leg is running')
       vi.advanceTimersByTime(QUIT_SHUTDOWN_BUDGET_MS - 1)
       for (let pass = 0; pass < 20; pass += 1) await new Promise((resolve) => setImmediate(resolve))
       assert.deepEqual(exitCalls, [], 'the quit waits for the leg within its budget')
@@ -347,7 +291,7 @@ test('app-lifecycle', async () => {
       .flatMap((name) => readFileSync(join(getDiagnosticsLogDirectory(), name), 'utf8').trim().split('\n'))
       .map((line) => JSON.parse(line) as { title: string; message: string })
     assert.ok(
-      notes.some((note) => note.message.includes('"terminals" shutdown step still running')),
+      notes.some((note) => note.message.includes('"agent state" shutdown step still running')),
       'the diagnostics name the leg the quit left running',
     )
   }

@@ -1,11 +1,10 @@
 import type { StudioTransportFactory } from '../../../packages/client-runtime/src/public'
-import type { StudioCore } from '../../server/core/studio-core'
 import type { ControlRpc } from '../../server/bootstrap/control-rpc'
 import { SERVER_EVENTS, SERVER_METHODS } from '../../server/desktop/server-methods'
 import { gitHostIdForPath } from '../../shared/execution-host'
 import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
 import { installGitHostResolver } from '../git-run'
-import { createHostRegistry, installHostRegistry } from '../hosts/host-registry'
+import { createHostRegistry, installHostRegistry, type HostRegistry } from '../hosts/host-registry'
 import { setWorktreeBranchPrefixReader } from '../worktree-branch-prefix'
 import type { TerminalRootInfo } from '../workspace-memory'
 import type { GitHubTokenStatus, GitHubTokenStore } from '../github-token-store'
@@ -16,16 +15,13 @@ import type {
   StudioEnvironmentRunOutcome,
 } from '../../../packages/studio-protocol/src/environment-access'
 
-// The shell's view of the core when the Studio server runs in a process of its
-// own (phase 6 spec, sections 5 and 7.3). The shell builds no server-owned
-// store: what it reads synchronously comes from the mirror, what it writes or
-// asks goes over the control channel, and the machines its terminals and git
-// run on come from a host registry of its own over the mirrored settings.
-//
-// It has the core's shape for the members the shell's composition uses, so
-// that composition does not branch on every read. Any other member is the
-// server's alone, and reaching for it throws by name rather than returning
-// nothing: a missed conversion fails in development, not quietly in the field.
+// The shell's view of the core, which the Studio server holds in a process of
+// its own (phase 6 spec, sections 5 and 7.3). The shell builds no
+// server-owned store: what it reads synchronously comes from the mirror, what
+// it writes or asks goes over the control channel, and the machines its
+// terminals and git run on come from a host registry of its own over the
+// mirrored settings. Typed as the slice the shell uses, so reaching for
+// anything else of the core fails typecheck.
 
 export type ShellServerLink = {
   rpc: ControlRpc
@@ -45,21 +41,21 @@ export type ShellServerLink = {
   attachSshPort?(clientId: string, port: Electron.MessagePortMain): boolean
 }
 
-/** The members of the core the shell uses, out of process. */
-const SHELL_CORE_MEMBERS = new Set([
-  'agentLaunchSettings',
-  'hosts',
-  'workspaceRegistry',
-  'workspaceSyncService',
-  'conversations',
-  'conversationOwner',
-  'dataDirLock',
-  // Read only by the gateway and module wiring that the shell skips out of
-  // process; present so destructuring the core does not throw.
-  'conversationModelCatalog',
-  'conversationLaunchService',
-  'resolveAgentPermissionPreset',
-])
+/** The slice of the core the shell reads, from the mirror and over the control channel. */
+export type ShellCore = {
+  agentLaunchSettings: ServerStateMirror['launchSettings']
+  hosts: HostRegistry
+  workspaceRegistry: ServerStateMirror['registry']
+  workspaceSyncService: ServerStateMirror['workspaceSync']
+  conversations: {
+    /** The folders the server's chats run in, for Diagnostics' per-workspace memory (the last answer). */
+    listLiveConversationRoots(): TerminalRootInfo[]
+  }
+  conversationOwner: {
+    /** One idle setting governs terminals and chats; the chats' half is the server's. */
+    setIdleThresholdMs(value: number): void
+  }
+}
 
 // How long a WSL ask forwarded to the server may take to reach a distribution's
 // Studio that has to be started (or installed) first, and the bound on a git
@@ -67,7 +63,7 @@ const SHELL_CORE_MEMBERS = new Set([
 const SERVER_START_MS = 5 * 60_000
 const NO_DEADLINE_MS = 24 * 60 * 60_000
 
-export function createRemoteCore(link: ShellServerLink): StudioCore {
+export function createRemoteCore(link: ShellServerLink): ShellCore {
   const { mirror, rpc } = link
   // The machines this computer offers, for the shell's terminal launches: one
   // registry in each process, over the same settings.
@@ -153,46 +149,16 @@ export function createRemoteCore(link: ShellServerLink): StudioCore {
     return conversationRoots
   }
 
-  const serverOnly = (member: string) => () => {
-    throw new Error(`${member} is the Studio server's; the shell reaches it over the control channel.`)
-  }
-  const members: Record<string, unknown> = {
+  return {
     agentLaunchSettings: mirror.launchSettings,
     hosts,
     workspaceRegistry: mirror.registry,
     workspaceSyncService: mirror.workspaceSync,
-    // Chats live in the server. The shell's own uses of them (the control
-    // plane that types at agents, the attention badge, the peek card) are
-    // served there or over the channel; what is left here answers as a
-    // process with no chats of its own, except the folders they run in, which
-    // Diagnostics asks the server for.
-    conversations: {
-      listSessions: () => ({ ok: true, sessions: [] }),
-      sendTurn: async () => ({ ok: false, message: 'Chats are served by the Studio server.' }),
-      interrupt: async () => ({ ok: false, message: 'Chats are served by the Studio server.' }),
-      onEvent: () => () => undefined,
-      listLiveConversationRoots: readConversationRoots,
-    },
+    conversations: { listLiveConversationRoots: readConversationRoots },
     conversationOwner: {
-      // One idle setting governs terminals and chats; the chats' half is the server's.
-      setIdleThresholdMs: (value: unknown) => rpc.emit(SERVER_EVENTS.conversationIdleThreshold, value),
-      // The chats run in the server; none of them is this process's to hear settle.
-      onSessionIdle: () => () => undefined,
-      flushTranscripts: () => undefined,
-      shutdown: () => undefined,
+      setIdleThresholdMs: (value) => rpc.emit(SERVER_EVENTS.conversationIdleThreshold, value),
     },
-    dataDirLock: null,
-    conversationModelCatalog: { forCli: serverOnly('conversationModelCatalog') },
-    conversationLaunchService: { launch: serverOnly('conversationLaunchService') },
-    resolveAgentPermissionPreset: serverOnly('resolveAgentPermissionPreset'),
   }
-  return new Proxy(members, {
-    get(target, property) {
-      if (typeof property === 'string' && SHELL_CORE_MEMBERS.has(property)) return target[property]
-      if (typeof property === 'symbol' || property === 'then') return undefined
-      throw new Error(`core.${String(property)} is the Studio server's; the shell does not hold it out of process.`)
-    },
-  }) as unknown as StudioCore
 }
 
 /** The GitHub token, which the server keeps: the shell's skills, cards and marketplace ask for it. */

@@ -232,7 +232,7 @@ async function main(): Promise<number> {
     clients.push(desktop, peer, phone)
     for (const client of writers) matrix.client(client.id, client.transport, client.simulated)
     matrix.simulate(
-      'the Electron app is not launched: the window runs its real client code in Node (the packaged app has smoke:server-mode)',
+      'the Electron app is not launched: the window runs its real client code in Node (the packaged app has smoke:studio-server)',
     )
     matrix.simulate('the agent: the built-in fake provider (mock-provider); no agent CLI runs')
 

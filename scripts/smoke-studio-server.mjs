@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Smoke-test the Studio server out of process against the built app (phase 6
-// spec, 16.3). A sibling of measure-startup.mjs: it launches `out/` with
-// SPRINTENGINE_SERVER_MODE=out-of-process and a temp profile, then
+// Smoke-test the Studio server, in its own process, against the built app
+// (phase 6 spec, 16.3). A sibling of measure-startup.mjs: it launches `out/`
+// with a temp profile, then
 //
 //   1. waits for the server's ready and for the window's port, and lists the
 //      gateway's tools: the shell's toolsets are there;
@@ -9,13 +9,13 @@
 //      lists again: the shell offered its toolsets to the new server, and the
 //      server answers its own terminal tools (the ptys are the server's);
 //   3. quits, and checks the app and its server are both gone in time;
-//   4. relaunches in process on the same profile (the rollback), and checks it
-//      reads the same data directory: the same environment id.
+//   4. launches again on the same profile, and checks its server reads the
+//      same data directory: the same environment id.
 //
 // Run `npx electron-vite build` first. On macOS the app is started with
 // Chromium's mock keychain, so a run never waits on a keychain prompt.
 //
-//   [SPRINTENGINE_SSH_MACHINES=on] node scripts/smoke-server-mode.mjs [--keep-profile]
+//   [SPRINTENGINE_SSH_MACHINES=on] node scripts/smoke-studio-server.mjs [--keep-profile]
 
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -32,23 +32,23 @@ const QUIT_BUDGET_MS = 15_000
 const keepProfile = process.argv.includes('--keep-profile')
 
 function fail(message) {
-  console.error(`[smoke-server-mode] FAILED: ${message}`)
+  console.error(`[smoke-studio-server] FAILED: ${message}`)
   process.exitCode = 1
 }
 
 function say(message) {
-  console.log(`[smoke-server-mode] ${message}`)
+  console.log(`[smoke-studio-server] ${message}`)
 }
 
 if (!existsSync(join(ROOT, 'out', 'main', 'studio-server.js'))) {
-  console.error('[smoke-server-mode] out/main/studio-server.js not found: run `npx electron-vite build` first.')
+  console.error('[smoke-studio-server] out/main/studio-server.js not found: run `npx electron-vite build` first.')
   process.exit(1)
 }
 
-function launch(profileDir, mode) {
+function launch(profileDir) {
   const env = {}
-  // SPRINTENGINE_SSH_MACHINES passes through, so the same run checks both
-  // modes with the SSH machines preview on (`=on`) or off.
+  // SPRINTENGINE_SSH_MACHINES passes through, so the same run checks the
+  // server with the SSH machines preview on (`=on`) or off.
   for (const key of [
     'PATH',
     'HOME',
@@ -65,7 +65,6 @@ function launch(profileDir, mode) {
   }
   env.SPRINTENGINE_USER_DATA_DIR = profileDir
   env.SPRINTENGINE_ALLOW_MULTI_INSTANCE = '1'
-  env.SPRINTENGINE_SERVER_MODE = mode
   const args = process.platform === 'darwin' ? ['--use-mock-keychain', ROOT] : [ROOT]
   const child = spawn(require('electron'), args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
   let output = ''
@@ -124,7 +123,7 @@ async function waitUntil(condition, what) {
   }
 }
 
-// One tool from each toolset the shell offers out of process (phase 6, 6.3).
+// One tool from each toolset the shell offers (phase 6, 6.3).
 // The terminal and agent tools are the server's own: the terminals run there.
 const SHELL_TOOLS = ['browser.open', 'canvas.list', 'editor.open', 'tour.status']
 
@@ -207,7 +206,7 @@ async function quit(app) {
 const profile = mkdtempSync(join(tmpdir(), 'studio-server-smoke-'))
 try {
   say(`profile ${profile}`)
-  const app = launch(profile, 'out-of-process')
+  const app = launch(profile)
   const ready = app.expect(/\[shell\] server ready \(pid (\d+)\)/, 'the server to be ready')
   const brokered = app.expect(/\[shell\] brokered (window-\d+-\d+)/, "the window's port")
   const serverPid = Number((await ready)[1])
@@ -243,22 +242,23 @@ try {
   say(`quit in ${exit.ms} ms; nothing left running`)
 
   const environment = JSON.parse(readFileSync(join(profile, 'studio-environment.json'), 'utf8')).id
-  const rollback = launch(profile, 'in-process')
-  // In process, main's own gateway writes its discovery file with main's pid.
+  const again = launch(profile)
+  const againReady = again.expect(/\[shell\] server ready \(pid (\d+)\)/, "the second launch's server to be ready")
+  await againReady
+  // The second launch's server writes the gateway's discovery file with its own pid.
   await waitUntil(() => {
     try {
-      return (
-        JSON.parse(readFileSync(join(profile, 'sprintengine-studio-mcp-info.json'), 'utf8')).pid === rollback.child.pid
+      return serverPids(again.child.pid).includes(
+        JSON.parse(readFileSync(join(profile, 'sprintengine-studio-mcp-info.json'), 'utf8')).pid,
       )
     } catch {
       return false
     }
-  }, 'the in-process gateway')
-  const rollbackExit = await quit(rollback)
+  }, "the second launch's gateway")
+  const againExit = await quit(again)
   const after = JSON.parse(readFileSync(join(profile, 'studio-environment.json'), 'utf8')).id
-  if (after !== environment) fail('the in-process launch saw another data directory')
-  if (/\[shell\] forked/.test(rollback.output())) fail('the in-process launch forked a server')
-  say(`rollback: in process on the same profile (environment ${after}), quit in ${rollbackExit.ms} ms`)
+  if (after !== environment) fail('the second launch saw another data directory')
+  say(`second launch on the same profile (environment ${after}), quit in ${againExit.ms} ms`)
 } catch (error) {
   fail(error instanceof Error ? error.message : String(error))
 } finally {

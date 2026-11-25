@@ -101,19 +101,30 @@ const settle = async () => {
 
 function register(
   decision: QuitDecision | Pick<QuitConfirmation, 'confirm' | 'quitWithoutAsking'>,
-  options: { allowMultipleInstances?: boolean; terminalShutdown?: () => Promise<void> } = {},
+  options: { allowMultipleInstances?: boolean; legShutdown?: () => Promise<void> } = {},
 ) {
-  const calls = { confirm: 0, quitWithoutAsking: 0, terminals: 0 }
+  const calls = { confirm: 0, quitWithoutAsking: 0, shutdowns: 0 }
   let prepareForInstall: (() => Promise<void>) | null = null
   registerAppLifecycle({
     diagnosticsEnabled: false,
     refreshHostedFeeds: async () => undefined,
     allowMultipleInstances: options.allowMultipleInstances ?? true,
-    terminalRuntime: {
+    checkPluginSourceUpdates: async () => undefined,
+    desktopShell: { stop: () => undefined },
+    // A shutdown leg the test can watch, and hold.
+    agentStateService: {
       shutdown: async () => {
-        calls.terminals += 1
-        await options.terminalShutdown?.()
+        calls.shutdowns += 1
+        await options.legShutdown?.()
       },
+    },
+    server: {
+      start: () => undefined,
+      log: { note: () => undefined },
+      onAttentionPhase: () => undefined,
+      detectClis: async () => 0,
+      refreshCliVersions: async () => undefined,
+      shutdown: async () => 'exited' as const,
     },
     quitConfirmation:
       typeof decision === 'string'
@@ -148,23 +159,23 @@ test('a quit the person confirms runs the shutdown and exits', async () => {
   assert.equal(beforeQuit(), true, 'held while the question is up')
   await settle()
   assert.equal(calls.confirm, 1)
-  assert.equal(calls.terminals, 1)
+  assert.equal(calls.shutdowns, 1)
   assert.deepEqual(exitCalls, [0])
 })
 
 test('a relaunch while the shutdown runs opens no window', async () => {
-  let finishTerminals = () => {}
-  const terminalsStopping = new Promise<void>((resolve) => (finishTerminals = resolve))
+  let finishLeg = () => {}
+  const legStopping = new Promise<void>((resolve) => (finishLeg = resolve))
   const { calls, beforeQuit } = register('quit', {
     allowMultipleInstances: false,
-    terminalShutdown: () => terminalsStopping,
+    legShutdown: () => legStopping,
   })
   beforeQuit()
   await settle()
-  assert.equal(calls.terminals, 1, 'the shutdown is running')
+  assert.equal(calls.shutdowns, 1, 'the shutdown is running')
   appEvents.get('second-instance')?.[0]?.({}, ['/opt/SprintEngine Studio/sprintengine-studio'])
   assert.equal(windowsCreated.length, 0, 'a window opened now would be gone when the app exits')
-  finishTerminals()
+  finishLeg()
   await settle()
   assert.deepEqual(exitCalls, [0])
 })
@@ -180,7 +191,7 @@ test('Cancel keeps the app: no shutdown, no exit', async () => {
   assert.equal(beforeQuit(), true)
   await settle()
   assert.equal(calls.confirm, 1)
-  assert.equal(calls.terminals, 0)
+  assert.equal(calls.shutdowns, 0)
   assert.deepEqual(exitCalls, [])
 })
 
@@ -188,7 +199,7 @@ test('a second quit while the question is up does nothing of its own', async () 
   const { calls, beforeQuit } = register('pending')
   beforeQuit()
   await settle()
-  assert.equal(calls.terminals, 0)
+  assert.equal(calls.shutdowns, 0)
   assert.deepEqual(exitCalls, [])
 })
 
@@ -196,7 +207,7 @@ test('"Restart to update" is never asked: its quit joins the shutdown it already
   const { calls, beforeQuit, prepareForInstall } = register('stay')
   await prepareForInstall()
   assert.equal(calls.quitWithoutAsking, 1)
-  assert.equal(calls.terminals, 1)
+  assert.equal(calls.shutdowns, 1)
   beforeQuit()
   await settle()
   assert.equal(calls.confirm, 0, 'the updater’s own quit is not a question')
@@ -245,7 +256,7 @@ test('Cancel after the last window closed brings a window back, and does not qui
   assert.equal(calls.confirm, 1)
   assert.equal(quitCalls, 0)
   assert.equal(windowsCreated.length, 1, 'a process with nothing on screen is not left behind')
-  assert.equal(calls.terminals, 0)
+  assert.equal(calls.shutdowns, 0)
   assert.deepEqual(exitCalls, [])
 })
 
@@ -266,13 +277,13 @@ test('a signal quits without asking, and the ordered shutdown runs before the ex
   await settle()
   assert.deepEqual(asked, [], 'nobody is there to answer')
   assert.equal(quitCalls, 1)
-  assert.equal(calls.terminals, 1, 'the shutdown legs ran')
+  assert.equal(calls.shutdowns, 1, 'the shutdown legs ran')
   assert.deepEqual(exitCalls, [0])
   // A second signal while it leaves is the same quit.
   process.emit('SIGINT')
   await settle()
   assert.equal(quitCalls, 1)
-  assert.equal(calls.terminals, 1)
+  assert.equal(calls.shutdowns, 1)
 })
 
 test('a signal while the question is up takes it down and quits', async () => {
@@ -296,6 +307,6 @@ test('a signal while the question is up takes it down and quits', async () => {
   process.emit('SIGHUP')
   await settle()
   assert.equal(signals[0]?.aborted, true)
-  assert.equal(calls.terminals, 1)
+  assert.equal(calls.shutdowns, 1)
   assert.deepEqual(exitCalls, [0])
 })

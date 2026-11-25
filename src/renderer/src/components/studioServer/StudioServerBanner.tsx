@@ -35,12 +35,12 @@ export function StudioServerBanner() {
       tone={notice.tone}
       message={notice.message}
       {...(notice.recoverable ? { onRetry: () => void window.api.studioServerRetry() } : {})}
-      // One recovery cluster: Retry, and the way back to running the server
-      // inside the app. Its log is a Settings action (Agents → Studio server).
+      // One recovery cluster: Retry, and the server's log, which says what
+      // went wrong in more words than the strip has room for.
       action={
         notice.recoverable ? (
-          <GhostButton onClick={() => void window.api.studioServerRelaunch({ compatibility: true })}>
-            {copy.studioServer.studioServerBanner.restartInCompatibilityMode}
+          <GhostButton onClick={() => void window.api.studioServerOpenLog()}>
+            {copy.studioServer.studioServerBanner.openLog}
           </GhostButton>
         ) : undefined
       }

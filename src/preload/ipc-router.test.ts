@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, test, vi } from 'vitest'
 
-import { serverModeFromArgv } from '../shared/server-mode'
 import { createIpcRouter, ServerUnavailable, type RouterPort } from './ipc-router'
 
 // The preload's router (phase 6 spec, 6.2): by table, a queue before the port,
@@ -88,20 +87,9 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-test('in process, every channel goes to main exactly as before', async () => {
+test('a server channel goes over the port and a shell channel stays with main', async () => {
   const renderer = fakeRenderer()
-  const router = createIpcRouter({ ipcRenderer: renderer, mode: 'in-process', table: TABLE })
-  assert.equal(await router.invoke('workspace-sync:get-snapshot'), 'main:workspace-sync:get-snapshot')
-  router.send('modules:registry-snapshot', { modules: [] })
-  assert.deepEqual(renderer.calls, [
-    ['invoke', 'workspace-sync:get-snapshot', []],
-    ['send', 'modules:registry-snapshot', [{ modules: [] }]],
-  ])
-})
-
-test('out of process, a server channel goes over the port and a shell channel stays with main', async () => {
-  const renderer = fakeRenderer()
-  const router = createIpcRouter({ ipcRenderer: renderer, mode: 'out-of-process', table: TABLE })
+  const router = createIpcRouter({ ipcRenderer: renderer, table: TABLE })
   const port = fakePort()
   router.attachPort(port as unknown as RouterPort)
   assert.equal(port.started, true)
@@ -122,7 +110,7 @@ test('out of process, a server channel goes over the port and a shell channel st
 })
 
 test("a server's refusal reads as Electron's own wording for a failed invoke", async () => {
-  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE })
+  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), table: TABLE })
   const port = fakePort()
   router.attachPort(port as unknown as RouterPort)
   const call = router.invoke('workspace-sync:dispatch', {})
@@ -138,7 +126,7 @@ test("a server's refusal reads as Electron's own wording for a failed invoke", a
 })
 
 test('before the port arrives, server calls wait, then go out in order', async () => {
-  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE })
+  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), table: TABLE })
   const first = router.invoke('workspace-sync:get-snapshot')
   const second = router.invoke('workspace-sync:dispatch', 1)
   router.send('modules:registry-snapshot', 'early')
@@ -159,7 +147,7 @@ test('before the port arrives, server calls wait, then go out in order', async (
 })
 
 test('a call that waits 30 s for a server fails with ServerUnavailable', async () => {
-  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE })
+  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), table: TABLE })
   const call = router.invoke('workspace-sync:get-snapshot')
   const failed = assert.rejects(call, (error: unknown) => {
     assert.ok(error instanceof ServerUnavailable)
@@ -172,14 +160,14 @@ test('a call that waits 30 s for a server fails with ServerUnavailable', async (
 })
 
 test('the queue holds 256 calls; the next is refused at once', async () => {
-  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE, queueLimit: 2 })
+  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), table: TABLE, queueLimit: 2 })
   void router.invoke('workspace-sync:get-snapshot').catch(() => undefined)
   void router.invoke('workspace-sync:get-snapshot').catch(() => undefined)
   await assert.rejects(router.invoke('workspace-sync:get-snapshot'), /Too many requests/)
 })
 
 test('a restart fails what was in flight, except the reads marked to retry, which go out on the next port', async () => {
-  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE })
+  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), table: TABLE })
   const first = fakePort()
   router.attachPort(first as unknown as RouterPort)
   const read = router.invoke('workspace-sync:get-snapshot')
@@ -197,7 +185,7 @@ test('a restart fails what was in flight, except the reads marked to retry, whic
 })
 
 test('a port that arrives before the old one says it closed settles what was in flight on the old one', async () => {
-  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE })
+  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), table: TABLE })
   const first = fakePort()
   router.attachPort(first as unknown as RouterPort)
   const read = router.invoke('workspace-sync:get-snapshot')
@@ -217,7 +205,7 @@ test('a port that arrives before the old one says it closed settles what was in 
 })
 
 test('a read retried once is not retried twice', async () => {
-  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE })
+  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), table: TABLE })
   const first = fakePort()
   router.attachPort(first as unknown as RouterPort)
   const read = router.invoke('workspace-sync:get-snapshot')
@@ -230,7 +218,7 @@ test('a read retried once is not retried twice', async () => {
 
 test('listeners hear pushes from main and from the server, and stop when removed', () => {
   const renderer = fakeRenderer()
-  const router = createIpcRouter({ ipcRenderer: renderer, mode: 'out-of-process', table: TABLE })
+  const router = createIpcRouter({ ipcRenderer: renderer, table: TABLE })
   const port = fakePort()
   router.attachPort(port as unknown as RouterPort)
   const heard: unknown[] = []
@@ -249,7 +237,7 @@ test('listeners hear pushes from main and from the server, and stop when removed
 
 test('a listener added once hears one push, from either side', () => {
   const renderer = fakeRenderer()
-  const router = createIpcRouter({ ipcRenderer: renderer, mode: 'out-of-process', table: TABLE })
+  const router = createIpcRouter({ ipcRenderer: renderer, table: TABLE })
   const port = fakePort()
   router.attachPort(port as unknown as RouterPort)
   const heard: unknown[] = []
@@ -257,12 +245,6 @@ test('a listener added once hears one push, from either side', () => {
   port.deliver({ t: 'ipc.push', channel: 'example:changed', args: ['first'] })
   renderer.emit('example:changed', 'second')
   assert.deepEqual(heard, ['first'])
-})
-
-test("a renderer's mode is the switch main put on its command line", () => {
-  assert.equal(serverModeFromArgv(['electron', '--studio-server-mode=out-of-process']), 'out-of-process')
-  assert.equal(serverModeFromArgv(['electron', '--studio-server-mode=nonsense']), 'in-process')
-  assert.equal(serverModeFromArgv(['electron']), 'in-process')
 })
 
 const SUBSCRIPTIONS = {
@@ -280,7 +262,7 @@ function answerLast(port: ReturnType<typeof fakePort>, value: unknown) {
 
 test('a new port makes every live subscription again, and an undone one is not', async () => {
   vi.useRealTimers()
-  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: SUBSCRIPTIONS })
+  const router = createIpcRouter({ ipcRenderer: fakeRenderer(), table: SUBSCRIPTIONS })
   const first = fakePort()
   router.attachPort(first as unknown as RouterPort)
   const session = router.invoke('session:subscribe', { subscriptionId: 'panel-1', key: 'k' })

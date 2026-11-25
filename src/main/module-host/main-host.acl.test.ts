@@ -64,27 +64,30 @@ function tool(name: string, extra: Partial<McpToolRegistration> = {}): McpToolRe
   } as McpToolRegistration
 }
 
+// A first-party service key no third-party module may resolve.
+const FIRST_PARTY_ONLY = createServiceToken<object>('core.terminal-runtime')
+
 test('a third-party module resolves only the published service keys', () => {
   const kernel = kernelWith(bundled, thirdParty)
   const host = kernel.hostFor('@host')
-  host.provideService(serviceTokens.TerminalRuntimeToken, () => ({}) as never)
+  host.provideService(FIRST_PARTY_ONLY, () => ({}) as never)
   host.provideService(serviceTokens.WorkspaceContextToken, () => ({}) as never)
 
   const module = kernel.hostFor('acme-deck')
   assert.ok(module.getService(serviceTokens.WorkspaceContextToken))
   assert.ok(module.requireService(serviceTokens.WorkspaceContextToken))
   assert.throws(
-    () => module.getService(serviceTokens.TerminalRuntimeToken),
+    () => module.getService(FIRST_PARTY_ONLY),
     /Service "core.terminal-runtime" is not available to third-party modules\./,
   )
-  assert.throws(() => module.requireService(serviceTokens.TerminalRuntimeToken), /not available to third-party/)
+  assert.throws(() => module.requireService(FIRST_PARTY_ONLY), /not available to third-party/)
   // Refused even when nothing provides it: the answer never says what exists.
   assert.throws(() => module.getService(serviceTokens.GitHubTokenStoreToken), /not available to third-party/)
   // An allowed key nothing provides yet is still an ordinary miss.
   assert.equal(module.getService(serviceTokens.ConversationModuleServiceToken), undefined)
 
   // First-party modules keep the whole kernel.
-  assert.ok(kernel.hostFor('bundled').getService(serviceTokens.TerminalRuntimeToken))
+  assert.ok(kernel.hostFor('bundled').getService(FIRST_PARTY_ONLY))
 })
 
 test('a third-party module reaches a service that names a module only as itself', () => {

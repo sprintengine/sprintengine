@@ -10,7 +10,6 @@ import { createExtensionLinkRouter, registerExtensionLinkIpc } from './extension
 import { EXTENSION_LINK_OPEN_CHANNEL, extensionLinkFromArgv } from '../shared/extension-install-link'
 import { registerLinuxUrlHandler, systemLinuxUrlHandlerDeps } from './linux-url-handler'
 import { BOOT_WORKSPACE_SYNC_BUDGET_MS, runBootDiscovery, settleWithin } from './boot-discovery'
-import { discoverAndBroadcastCliModels } from './model-discovery/discovery-pass'
 import { closeSplashWindow, createSplashWindow, sendSplashProgress } from './splash-window'
 import {
   createMainWindow,
@@ -31,15 +30,12 @@ import { sendWindowHidden } from './ipc/window-ipc'
 import type { SprintEngineUpdateService } from './update-service'
 import { registerUnaskedQuits, type QuitConfirmation } from './quit-confirmation'
 import type { ShutdownLegReport } from './update-install-progress'
-import type { AgentPhaseEvent, AgentPhaseListener } from '../shared/agent-runtime'
+import type { AgentPhaseEvent } from '../shared/agent-runtime'
 import type { DesktopServerHost } from './server-supervisor/desktop-server-host'
 import { createAgentAttention, isScriptSecondLaunch } from './agent-attention'
 import type { AgentKeepAwake } from './agent-keep-awake'
-import { createConversationAttentionListener } from './conversation-attention'
-import type { ConversationEvent } from '../shared/conversation-runtime'
 import { createHostedFeedPoller, type HostedFeedPoller } from './hosted-feed/poller'
 import { isCanvasWorkerWindow } from './canvas/canvas-worker-window'
-import { detectCliMachines, readCliVersionAdvisories } from './cli-version-advisory-service'
 import { hostRegistry } from './hosts/host-registry'
 import { recordIntegrationWrite } from './integrations/ledger'
 import { anyWindowFocused } from './window-broadcast'
@@ -47,50 +43,16 @@ import { anyWindowFocused } from './window-broadcast'
 type RegisterAppLifecycleOptions = {
   diagnosticsEnabled: boolean
   allowMultipleInstances?: boolean
-  terminalRuntime: {
-    shutdown(): Promise<void>
-    // Agent turn ends and questions, which ask for the person through the
-    // taskbar or dock (agent-attention.ts) and never by raising a window.
-    registerAgentPhaseListener?(listener: AgentPhaseListener): () => void
-  }
   /** Handed the one attention channel once it exists, for asks that are not a turn (a diff tour). */
   onAgentAttentionReady?(attention: { notify(key: string): void }): void
   /** Hears the same turn ends and questions, for the OS banner that names the chat (agent-notifications.ts). */
   agentNotifier?: { onAgentPhase(event: AgentPhaseEvent): void }
   /** Handed the chat-link router's opener once it exists, so a clicked banner can open its chat. */
   onChatLinksReady?(open: (link: ChatLink) => void): void
-  // The chats, as every caller drives them (the core's conversation backend):
-  // the attention channel follows their events.
-  conversations?: {
-    onEvent?(listener: (event: ConversationEvent) => void): () => void
-  }
-  // The conversation runtime's owner handle: quit must dispose its headless
-  // child processes too — they live outside the PTY reaper's sight.
-  conversationOwner?: {
-    /** Buffered transcript text to disk, before the slower session stops. */
-    flushTranscripts?(): Promise<void>
-    shutdown(): Promise<void>
-  }
-  automationService?: {
-    initialize(): Promise<unknown>
-    shutdown(): Promise<void>
-  }
-  /**
-   * The Studio RPC's owner socket, for applications paired with this app.
-   * Started beside the gateway and stopped with it; nothing waits on it.
-   */
-  studioRpcService?: {
-    start(): Promise<void>
-    stop(): Promise<void>
-  }
   // The reporter's installer: at quit it takes back out the user-scoped hook
   // registrations this run wrote. The reporter's socket is the core's.
   agentStateService?: {
     shutdown(): Promise<void>
-  }
-  workspaceSyncService?: {
-    /** Persist the debounced workspace registry write before the app exits. */
-    flush(): Promise<void>
   }
   /**
    * Takes back out the hooks, MCP entries and launcher the app writes into
@@ -98,13 +60,6 @@ type RegisterAppLifecycleOptions = {
    * so deleting the app leaves none of them behind. Once no agent is running.
    */
   removeSessionIntegrations?: () => Promise<void>
-  /**
-   * Lets go of the data directory's run lock (src/server/core/data-dir.ts), so
-   * a server started after the app quits finds it free rather than asking
-   * whether the process that held it is still running. Last, after every leg
-   * that writes into the directory.
-   */
-  releaseDataDir?: () => void
   // The Canvas pane's service: it holds a board mid-write (temp file, then a
   // rename), a directory watcher per open board, and a hidden worker window.
   // Quitting between those two fs calls would leave a stray temp file in the
@@ -112,82 +67,22 @@ type RegisterAppLifecycleOptions = {
   canvasService?: {
     dispose(): Promise<void>
   }
-  // The worktree pool, the Studio core's (in process; out of process the
-  // server quits its own): a lease or return in flight finishes its write,
-  // and each pool's container lock is given up so another Studio can take the
-  // pool over.
-  worktreePool?: {
-    shutdown(options?: { waitMs?: number }): Promise<void>
-  }
-  // The dependency installs agent worktrees are running (worktree-pool/
-  // dependency-install.ts), the core's beside its pool. Each runs detached, as
-  // a process group of its own, so nothing would end it with the app: the
-  // quit stops every one.
-  dependencyInstaller?: {
-    shutdown(options?: { waitMs?: number }): Promise<void>
-  }
   // Recordings of browser tabs an agent started: each is a file still being
   // written, so quit saves what was captured, with its length, before the
   // windows that encode them close.
   browserRecorder?: {
     stopAll(reason: 'app_quit'): Promise<void>
   }
-  // The shell's own client of an out-of-process server, offering its
-  // toolsets: closed before the server drains, so the server's goodbye is
-  // not one it answers by reconnecting.
-  desktopShell?: { stop(): void } | null
-  // The composer's command lists: the last good one per CLI and folder waits
-  // a moment before it is written, so quit writes what is still pending.
-  conversationCommands?: {
-    dispose(): Promise<void>
-  }
-  // The pull request record (epic `pull-request-marks`). In process the core
-  // holds it here: a chained write per repository and a watch timer per open
-  // pull request, so quit settles the writes — a lookup a last turn end started
-  // is otherwise lost — and tears the timers down. Either way the shell's own
-  // client for the terminals' marks closes here.
-  pullRequestRecord?: {
-    flush(): Promise<void>
-    dispose(): void
-  }
-  // The local servers the agents linked, in process only (out of process the
-  // server stops them in its own legs). The runs the Studio started itself
-  // stop here: left running, nothing would be left to stop them from.
-  localServers?: {
-    flush(): Promise<void>
-    dispose(): Promise<void>
-  }
-  // What Studio sends into chats on its own clock, in process only: a resume
-  // once a usage limit resets, a message a person scheduled. Both stop before
-  // the chats do; one due during the quit would start an agent on the way out.
-  usageLimitResumes?: { dispose(): Promise<void> }
-  scheduledMessages?: { dispose(): Promise<void> }
-  // Who launched which agent, kept for after a restart. Written first, before
-  // any session closes: the closes a quit makes are not parents going away.
-  launchNotices?: { freeze(): Promise<void> }
+  // The shell's own client of its server, offering its toolsets: closed
+  // before the server drains, so the server's goodbye is not one it answers
+  // by reconnecting.
+  desktopShell: { stop(): void }
   // Product telemetry. Given a shutdown leg of its own because everything above
   // it can emit a final event, and the buffer is in memory, so a quit that does
   // not drain it loses the whole session's tail.
   analytics?: {
     shutdown(): Promise<void>
   }
-  // Capability-module kernel: runs module startup hooks on ready and shutdown
-  // hooks on quit. Module-owned lifecycle runs here — the early begin phase
-  // (runShutdownBegin, registration order) stops self-scheduled loops before
-  // shared infrastructure tears down, and the late phase (runShutdown, reverse
-  // registration order) drains in-flight work and stops kernel-owned sidecars.
-  moduleKernel?: {
-    runStartup(): Promise<void>
-    runShutdownBegin(): Promise<void>
-    runShutdown(): Promise<void>
-  }
-  // The extension catalogue, in process only (out of process the server's own
-  // shutdown does this): its kill-list and update timers stop, and the added
-  // catalogues' checkouts kept in temporary folders are removed.
-  extensionCatalogue?: { dispose(): Promise<void> }
-  // Settles once every asynchronous module registerMain has finished (or been
-  // dropped), so startup hooks a module declared after an await still run.
-  moduleLoadReady?: Promise<void>
   updateService: SprintEngineUpdateService
   handleAuthCallback(argv: string[]): void
   /**
@@ -217,7 +112,7 @@ type RegisterAppLifecycleOptions = {
    */
   agentKeepAwake?: Pick<AgentKeepAwake, 'onAgentPhase' | 'dispose'>
   /** The plugin-source update check (skills service); rides the hourly feed leg. */
-  checkPluginSourceUpdates?: () => Promise<unknown>
+  checkPluginSourceUpdates: () => Promise<unknown>
   /** Fetch the Studio's hosted feeds when due (the cards and the recommended sources); the hourly feed leg. */
   refreshHostedFeeds: () => Promise<unknown>
   /**
@@ -235,11 +130,13 @@ type RegisterAppLifecycleOptions = {
    */
   prepareWorkspacesAtBoot?: () => Promise<unknown>
   /**
-   * The Studio server in a process of its own (phase 6). Forked at ready
+   * The Studio server, in a process of its own (phase 6). Forked at ready
    * before the plate goes up, drained at quit beside the shell's own legs, and
    * the source of chat phases for the dock badge.
    */
-  server?: Pick<DesktopServerHost, 'start' | 'shutdown' | 'log'> & {
+  server: Pick<DesktopServerHost, 'start' | 'shutdown'> & {
+    /** Where the drain's progress is noted. */
+    log: Pick<DesktopServerHost['log'], 'note'>
     onAttentionPhase(listener: (event: AgentPhaseEvent) => void): void
     /** Detect the CLIs on the machines named, where the version check is: the server's. */
     detectClis(which: 'local' | 'wsl'): Promise<unknown>
@@ -248,37 +145,15 @@ type RegisterAppLifecycleOptions = {
   }
 }
 
-// How long after boot CLI detection settles the first model discovery pass
-// runs; see the call site.
-const BOOT_MODEL_DISCOVERY_DELAY_MS = 10_000
-
 export function registerAppLifecycle({
   diagnosticsEnabled,
   allowMultipleInstances = false,
-  terminalRuntime,
-  conversations,
-  conversationOwner,
-  automationService,
-  studioRpcService,
   agentStateService,
-  workspaceSyncService,
   removeSessionIntegrations,
-  releaseDataDir,
   canvasService,
-  worktreePool,
-  dependencyInstaller,
   browserRecorder,
   desktopShell,
-  conversationCommands,
-  pullRequestRecord,
-  localServers,
-  usageLimitResumes,
-  scheduledMessages,
-  launchNotices,
   analytics,
-  moduleKernel,
-  extensionCatalogue,
-  moduleLoadReady,
   updateService,
   handleAuthCallback,
   chatWindows,
@@ -431,7 +306,6 @@ export function registerAppLifecycle({
   })
 
   let hostedFeedPoller: HostedFeedPoller | null = null
-  let bootModelDiscoveryTimer: ReturnType<typeof setTimeout> | null = null
 
   // On whenever a window has focus, and cheap: a report of "the main thread
   // stopped answering for N ms" is the one piece of evidence a frozen terminal
@@ -492,26 +366,11 @@ export function registerAppLifecycle({
 
     setChatWindowsForCloseChord(listWorkspaceWindows)
     Menu.setApplicationMenu(createAppMenu())
-    // Out of process the server is forked first thing: it can only start once
-    // the app is ready, and it composes in parallel with the windows below.
-    server?.start()
-    // Always-on: one local SprintEngine Studio MCP gateway per app instance.
-    // Started here and NOT awaited: it runs alongside the renderer's load
-    // rather than in front of the plate. Every agent launch waits for it
-    // instead (`whenAgentLaunchReady` in app-services.ts), so no agent can start
-    // before the listener its MCP config points at exists.
-    void automationService?.initialize().catch((error: unknown) => {
-      void writeDiagnosticLog({
-        level: 'warning',
-        source: 'workspace',
-        title: 'Studio MCP gateway did not start',
-        message: error instanceof Error ? error.message : String(error),
-      }).catch(() => undefined)
-    })
-    // The owner socket for paired local apps, beside it and not awaited
-    // either. Nothing in the app depends on it; a socket that cannot start
-    // says so in Settings.
-    void studioRpcService?.start().catch(() => undefined)
+    // The server is forked first thing: it can only start once the app is
+    // ready, and it composes in parallel with the windows below. Its gateway
+    // and owner socket start with it; every agent launch waits for the gateway
+    // (`whenAgentLaunchReady` in app-services.ts).
+    server.start()
 
     // The plate goes up BEFORE the main window is created: from here until the
     // reveal there is always something on screen. A nightly build opens on its
@@ -573,8 +432,8 @@ export function registerAppLifecycle({
       // renderer's first read is answered from it. What it finds schedules the
       // version check's comparison (the core's), which waits for a window to
       // say whether checks are on. WSL machines are detected after the reveal.
-      // Out of process the CLIs and their version check are the server's.
-      detectClis: () => (server ? server.detectClis('local') : detectCliMachines({ which: 'local' })),
+      // The CLIs and their version check are the server's.
+      detectClis: () => server.detectClis('local'),
       // Not awaited, so this mark can (and usually does) land after the reveal —
       // which is the point: it shows how much of the boot the user never waits
       // for, and how much of the CLI probe the splash actually covered.
@@ -586,17 +445,8 @@ export function registerAppLifecycle({
         await updateService.checkForUpdates(false)
       },
     }).finally(() => {
+      // Model discovery is the server's, which runs it where the cache is.
       markStartup('main.discovery-settled')
-      // Model discovery follows CLI detection, whose held answer it reads, and
-      // waits a little longer so the probes do not compete with the renderer's
-      // first paint. Each CLI is re-probed only when its catalog is a day old or
-      // its version changed, so on most launches this spawns nothing.
-      // Out of process the server runs this pass itself, where the cache is.
-      if (server) return
-      bootModelDiscoveryTimer = setTimeout(() => {
-        bootModelDiscoveryTimer = null
-        void discoverAndBroadcastCliModels().catch(() => undefined)
-      }, BOOT_MODEL_DISCOVERY_DELAY_MS)
     })
 
     // What the studio pulls on its own after boot: the hosted card and sources
@@ -622,7 +472,7 @@ export function registerAppLifecycle({
       // The sources feed rides it for the same reason again: a client's read
       // only ever reads disk, so this leg is the only thing that refreshes the
       // recommended list a machine offers. Both feeds are the Studio's
-      // (`cardFeed.get`, `sourcesFeed.get`): out of process the server
+      // (`cardFeed.get`, `sourcesFeed.get`): the server
       // fetches them when this leg asks.
       //
       // The tick is a heartbeat and not a schedule: every rider owns its own
@@ -639,14 +489,14 @@ export function registerAppLifecycle({
       refreshFeed: async () => {
         const failures: unknown[] = []
         await refreshHostedFeeds().catch((error: unknown) => void failures.push(error))
-        await checkPluginSourceUpdates?.().catch(() => undefined)
+        await checkPluginSourceUpdates().catch(() => undefined)
         if (failures.length > 0) throw failures[0]
       },
       // Compares the installed versions startup (or the last Re-check) found
       // against the registry. No detection: nothing is spawned on any machine,
       // no WSL distribution is started, and a CLI that is not installed is
       // never asked about.
-      refreshVersions: () => (server ? server.refreshCliVersions() : readCliVersionAdvisories()),
+      refreshVersions: () => server.refreshCliVersions(),
       isOnline: () => net.isOnline(),
     })
     hostedFeedPoller.start()
@@ -662,7 +512,7 @@ export function registerAppLifecycle({
       // so its CLI updates badge Settings without the person visiting its list.
       // After the reveal: asking may start the distribution's helper, which is
       // not something the first paint should wait behind.
-      void (server ? server.detectClis('wsl') : detectCliMachines({ which: 'wsl' })).catch(() => undefined)
+      void server.detectClis('wsl').catch(() => undefined)
       // One-shot cleanup of the retired checkpoint machinery
       // (the-diff-an-agent-made / remove-checkpoint-machinery). Deliberately not
       // awaited and deliberately after the window exists: it walks repos with
@@ -703,17 +553,13 @@ export function registerAppLifecycle({
       agentKeepAwake?.onAgentPhase(event)
     }
     if (agentKeepAwake) app.once('will-quit', () => agentKeepAwake.dispose())
-    terminalRuntime.registerAgentPhaseListener?.(onAgentPhase)
-    const disposeConversationAttention = conversations?.onEvent?.(createConversationAttentionListener({ onAgentPhase }))
-    if (disposeConversationAttention) app.once('will-quit', disposeConversationAttention)
-    // Out of process the server watches its chats and says when one's phase moves.
-    server?.onAttentionPhase(onAgentPhase)
+    // The server watches its chats and terminals and says when one's phase moves.
+    server.onAttentionPhase(onAgentPhase)
     onAgentAttentionReady?.(agentAttention)
     app.on('browser-window-focus', (_event, win) => {
       if (!isCanvasWorkerWindow(win)) agentAttention.onWindowFocused()
     })
 
-    void Promise.resolve(moduleLoadReady).then(() => moduleKernel?.runStartup())
     handleAuthCallback(process.argv)
     // A link that launched the app on Windows or Linux is one of its arguments.
     openChatLinkFrom(process.argv)
@@ -755,29 +601,19 @@ export function registerAppLifecycle({
   // updater's own quit could be cut off before its later legs ran.
   //
   // The legs are ordered by what a cut-short quit would cost, cheapest-to-save
-  // and most-missed first, within what they depend on:
-  //  1. Stop new work: module begin hooks, timers, the automations engine (so a
-  //     dying agent cannot finalize a run: open a PR, remove its worktree), the
-  //     dependency installs agent worktrees are running, and the agent-state
-  //     socket.
-  //  2. Small writes the person would miss: the workspace registry (every
-  //     sidebar change), then every chat's buffered transcript.
-  //  3. Terminal snapshots: the most valuable and, with many terminals, the
-  //     slowest.
-  //  4. What the terminal legs fed: captured pull requests. Then the chat
-  //     sessions' own stop, the canvas's in-flight write, and the registry
-  //     once more for anything the legs above changed.
-  //  5. The integrations the app writes into repositories, now that no agent
-  //     it launched is left to run them (a cut-short removal resumes next quit).
-  //  6. What costs nothing if lost: the machines' own hold on anything they
-  //     keep, telemetry's network send, and the module kernel's own shutdown.
+  // and most-missed first, within what they depend on. The chats, terminals,
+  // registry, pool and modules are the Studio server's, which drains them on
+  // its own (transcripts first) in parallel with the shell's legs:
+  //  1. Stop new work: the timers, the browser recordings being written, the
+  //     canvas's in-flight write, and the shell's own client of the server.
+  //  2. The server's drain, then the agent-state socket the shell installed.
+  //  3. The integrations the app writes into repositories, once the server is
+  //     gone, so no chat agent is left to use the entries being removed (spec
+  //     7.4; a cut-short removal resumes next quit).
+  //  4. What costs nothing if lost: the machines' own hold on anything they
+  //     keep, and telemetry's network send.
   let shutdownRun: Promise<void> | null = null
   let leavingForUpdate = false
-  // The pool's wait for slot steps in flight (in process; out of process the
-  // server keeps the pool and waits within its own drain), short when leaving
-  // for an update. A step cut short is recovered at the next start, as after a
-  // crash.
-  const poolShutdownOptions = () => (leavingForUpdate ? { waitMs: POOL_UPDATE_SHUTDOWN_WAIT_MS } : {})
   // Who hears about each leg as it finishes: "Restart to update" passes one in,
   // which drives the progress window and the diagnostics timings. Joined late
   // (the shutdown already running), it still hears the legs that are left.
@@ -800,95 +636,25 @@ export function registerAppLifecycle({
     stallMonitor.stop()
     releasePollerActivity?.()
     releasePollerActivity = null
-    const inProcessLegs: Array<[name: string, task: () => unknown]> = [
-      // Module begin hooks run first (registration order): they stop
-      // self-scheduled loops and flip shutting-down flags so no new work is
-      // dispatched while shared infrastructure tears down.
-      ['modules (begin)', () => moduleKernel?.runShutdownBegin()],
-      [
-        'timers',
-        () => {
-          if (bootModelDiscoveryTimer) clearTimeout(bootModelDiscoveryTimer)
-          hostedFeedPoller?.stop()
-        },
-      ],
-      ['launch notices', () => launchNotices?.freeze()],
-      // With the timers: no update starts on the way out.
-      ['extension catalogue', () => extensionCatalogue?.dispose()],
-      // Before the gateway, whose audit it writes to: its clients are told to
-      // come back later, and resume from their cursors.
-      ['local app socket', () => studioRpcService?.stop()],
-      ['automations', () => automationService?.shutdown()],
-      // With the new work: an install the quit cuts short is not recorded, so
-      // its worktree installs again at its next lease, and an agent that was
-      // waiting on it is not started on the way out.
-      ['dependency installs', () => dependencyInstaller?.shutdown()],
-      ['agent state', () => agentStateService?.shutdown()],
-      ['workspace registry', () => workspaceSyncService?.flush()],
-      ['chat transcripts', () => conversationOwner?.flushTranscripts?.()],
-      ['terminals', () => terminalRuntime.shutdown()],
-      // In process, the core's record: a lookup a last chat turn end started
-      // is written down, and the watch timers stop. The shell's client of it
-      // closed with the local app socket; out of process the server settles
-      // the record in its own legs.
-      ['pull requests (flush)', () => pullRequestRecord?.flush()],
-      ['pull requests (dispose)', () => pullRequestRecord?.dispose()],
-      ['local servers (flush)', () => localServers?.flush()],
-      ['local servers (dispose)', () => localServers?.dispose()],
-      ['usage-limit resumes', () => usageLimitResumes?.dispose()],
-      ['scheduled messages', () => scheduledMessages?.dispose()],
-      ['chats', () => conversationOwner?.shutdown()],
-      ['browser recordings', () => browserRecorder?.stopAll('app_quit')],
-      ['canvas', () => canvasService?.dispose()],
-      ['worktree pool', () => worktreePool?.shutdown(poolShutdownOptions())],
-      ['command lists', () => conversationCommands?.dispose()],
-      ['workspace registry (final)', () => workspaceSyncService?.flush()],
-      // Not when leaving for an update: the new build starts straight away and
-      // writes them back, and the installer's time limit is better spent on
-      // the legs after this one.
-      ['integrations', () => (leavingForUpdate ? undefined : removeSessionIntegrations?.())],
-      // Each machine lets go of what it keeps for itself.
-      ['machines', () => hostRegistry().dispose()],
-      // Last of the app-owned legs: every service above has had its chance to
-      // record, and a network round trip must not sit in front of anything
-      // that still has state to persist.
-      ['telemetry', () => analytics?.shutdown()],
-      // Module-owned shutdown runs here via each module's onShutdown hook —
-      // draining in-flight work and stopping kernel-owned sidecars in reverse
-      // registration order.
-      ['modules', () => moduleKernel?.runShutdown()],
-      ['data directory', () => releaseDataDir?.()],
-    ]
-    // Out of process the server drains on its own (transcripts first), in
-    // parallel with the shell's terminals; the integrations wait for it, so no
-    // chat agent is left to use the entries being removed (spec 7.4).
     let serverStopped: Promise<unknown> = Promise.resolve()
-    const outOfProcessLegs: Array<[name: string, task: () => unknown]> = [
-      ['modules (begin)', () => moduleKernel?.runShutdownBegin()],
-      [
-        'timers',
-        () => {
-          if (bootModelDiscoveryTimer) clearTimeout(bootModelDiscoveryTimer)
-          hostedFeedPoller?.stop()
-        },
-      ],
-      ['launch notices', () => launchNotices?.freeze()],
+    const legs: Array<[name: string, task: () => unknown]> = [
+      ['timers', () => hostedFeedPoller?.stop()],
       ['browser recordings', () => browserRecorder?.stopAll('app_quit')],
       // The canvas's last board write lands before the server stops serving.
       // The worktree pool and its installs are the server's, which ends them.
       ['canvas', () => canvasService?.dispose()],
-      ['desktop tools', () => desktopShell?.stop()],
+      ['desktop tools', () => desktopShell.stop()],
       [
         'studio server (drain)',
         () => {
-          serverStopped = server!
+          serverStopped = server
             .shutdown({
               drain: true,
               budgetMs: leavingForUpdate
                 ? serverUpdateDrainBudgetMs(Date.now() - shutdownStartedAt)
                 : SERVER_DRAIN_BUDGET_MS,
               onProgress: (progress) =>
-                server!.log.note(
+                server.log.note(
                   `shutdown ${progress.done}/${progress.total} ${progress.leg}${progress.failed ? ' (failed)' : ''}`,
                 ),
             })
@@ -896,16 +662,18 @@ export function registerAppLifecycle({
         },
       ],
       ['agent state', () => agentStateService?.shutdown()],
-      ['terminals', () => terminalRuntime.shutdown()],
-      ['pull requests (flush)', () => pullRequestRecord?.flush()],
-      ['pull requests (dispose)', () => pullRequestRecord?.dispose()],
       ['studio server', () => serverStopped],
+      // Not when leaving for an update: the new build starts straight away and
+      // writes them back, and the installer's time limit is better spent on
+      // the legs after this one.
       ['integrations', () => (leavingForUpdate ? undefined : removeSessionIntegrations?.())],
+      // Each machine lets go of what it keeps for itself.
       ['machines', () => hostRegistry().dispose()],
+      // Last: every leg above has had its chance to record, and a network
+      // round trip must not sit in front of anything that still has state to
+      // persist.
       ['telemetry', () => analytics?.shutdown()],
-      ['modules', () => moduleKernel?.runShutdown()],
     ]
-    const legs = server ? outOfProcessLegs : inProcessLegs
     const shutdown = async () => {
       for (const [index, [name, task]] of legs.entries()) {
         const started = Date.now()
@@ -1029,9 +797,6 @@ const QUIT_DIAGNOSTIC_WRITE_MS = 1_000
  * more than a leg that has hung.
  */
 const UPDATE_SHUTDOWN_BUDGET_MS = 10_000
-
-/** How long the worktree pool may wait for its steps in flight within that budget. */
-const POOL_UPDATE_SHUTDOWN_WAIT_MS = 2_000
 
 /**
  * How long the Studio server may drain at quit, and within "Restart to

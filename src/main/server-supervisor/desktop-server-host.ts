@@ -22,6 +22,8 @@ import {
 } from '../../server/desktop/server-methods'
 import { serveShellBridge } from '../../server/shell-bridge/serve-shell-bridge'
 import { serveArtifactsShell } from '../../server/artifacts/artifacts-shell-bridge'
+import { serveCanvasShell } from '../../server/canvas/canvas-shell-bridge'
+import type { StudioCanvasHost } from '../../server/canvas/canvas-domain'
 import { serveExtensionOpen } from '../../server/extensions/extension-open-bridge'
 import type { ExtensionOpener } from '../../shared/extension-open'
 import type { ArtifactThumbnailer } from '../artifacts/artifacts-service'
@@ -62,7 +64,8 @@ export type DesktopServerHost = {
   /**
    * Answer the server's requests of the shell: the bridge, its Trash, Studio's
    * plugin it installs, for artifacts a page's picture and the set-up
-   * question asked natively, and `extension.open`'s windows.
+   * question asked natively, `extension.open`'s windows, the built-in
+   * browser's tabs, and the canvas service's boards for other devices.
    */
   serveShell(
     bridge: ShellBridge,
@@ -73,6 +76,8 @@ export type DesktopServerHost = {
       extensionOpener: ExtensionOpener
       /** The built-in browser's tabs, which the server lists and closes from any client. */
       browserTabs: StudioBrowserTabs
+      /** The canvas service as other devices reach it, every board held to where its file really is. */
+      canvas: StudioCanvasHost
     },
   ): void
   /** Tickets for the windows' connections to the server's window listener, once it is serving. */
@@ -239,6 +244,12 @@ export function createDesktopServerHost(options: {
       supervisor.rpc.handle(SHELL_METHODS.browserTabsClose, async (params) => {
         const tabId = (params as { tabId?: unknown } | null)?.tabId
         return typeof tabId === 'string' && tabId.length > 0 ? caches.browserTabs.close(tabId) : false
+      })
+      // A server that stopped held boards open for devices that are gone with
+      // it: its subscribers go, and the next server makes its own.
+      const canvas = serveCanvasShell(supervisor.rpc, caches.canvas)
+      supervisor.onState((state) => {
+        if (state.kind !== 'ready') canvas.reset()
       })
     },
     windowTickets: {

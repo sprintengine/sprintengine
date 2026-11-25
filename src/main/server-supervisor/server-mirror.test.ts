@@ -181,7 +181,7 @@ test('an agent record written while the server is away is held, in order, and se
   assert.deepEqual(seen.at(-1), 'write Third')
 })
 
-test("the core proxy answers the shell's members and refuses the server's by name", () => {
+test("the shell's core is its slice: the mirror, the machines, and the chats' folders", () => {
   const { shell } = pair()
   const mirror = createServerStateMirror({ rpc: shell })
   const core = createRemoteCore({
@@ -195,10 +195,16 @@ test("the core proxy answers the shell's members and refuses the server's by nam
     },
   })
   assert.equal(core.workspaceRegistry.getRecords().length, 0)
-  assert.equal(core.conversations.listSessions().ok, true)
-  assert.equal(core.dataDirLock, null)
-  assert.throws(() => core.createConversationHost, /server's/)
-  assert.throws(() => core.conversationLaunchService.launch({} as never), /server's/)
+  // The chats are the server's: the shell's slice holds only the folders they run in.
+  assert.deepEqual(core.conversations.listLiveConversationRoots(), [])
+  assert.deepEqual(Object.keys(core).sort(), [
+    'agentLaunchSettings',
+    'conversationOwner',
+    'conversations',
+    'hosts',
+    'workspaceRegistry',
+    'workspaceSyncService',
+  ])
   installHostRegistry(null)
   installGitHostResolver(null)
 })

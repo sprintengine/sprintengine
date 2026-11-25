@@ -58,6 +58,12 @@ export const SERVER_METHODS = {
    * ptys are the server's (studio-agent-terminals.ts).
    */
   agentLaunch: 'agents.launch',
+  /**
+   * `ConversationLaunchRequest` → `ConversationLaunchResult`: a chat the shell
+   * starts for the person (a Canvas board's "Continue in new chat"), through
+   * the server's conversation launch service.
+   */
+  conversationLaunch: 'conversations.launch',
   /** `{ sessionId, data }` → nothing: typed into one of the server's terminals (a tour's question). */
   terminalWrite: 'terminals.write',
   /**
@@ -154,6 +160,24 @@ export const SHELL_METHODS = {
   browserTabsList: 'shell.browser-tabs.list',
   /** `{ tabId }` → whether it closed: a tab closed as its pane's close button does (`browserTabs.close`). */
   browserTabsClose: 'shell.browser-tabs.close',
+  /**
+   * `{ windowKey, sessionId }` → whether that window may take over a running
+   * terminal's output: a pane popped out may only while its owner still has
+   * that terminal out there (pane-popout-broker.ts), which only the shell knows.
+   */
+  terminalMayAttach: 'shell.terminal.may-attach',
+  // The machine's boards, for another device (`canvas.*`): the canvas service
+  // is the shell's (canvas-shell-bridge.ts). Each answers a `CanvasResult`.
+  /** `{ ref }`: whether the board's file really is inside the folder its ref is held to. */
+  canvasConfine: 'shell.canvas.confine',
+  /** `{ ref, create, subscriberId }` → the board, opened for the server's subscriber. */
+  canvasOpen: 'shell.canvas.open',
+  /** `{ ref }` → the board as it stands. */
+  canvasRead: 'shell.canvas.read',
+  /** `{ input, subscriberId }` → the new revision: a change another device committed. */
+  canvasCommit: 'shell.canvas.commit',
+  /** `{ name, args }` → `McpToolResult`: `canvas.list` or `canvas.screenshot`, over the held view. */
+  canvasTool: 'shell.canvas.tool',
 } as const
 
 /** One-way, either direction. */
@@ -208,6 +232,19 @@ export const SERVER_EVENTS = {
   sshConnected: 'ssh.connected',
   /** Server → shell: `{ id }`, a natively asked artifacts set-up question is no longer wanted (its call was cancelled). */
   artifactsSetupConsentClosed: 'artifacts.setup-consent-closed',
+  /** Shell → server: `{ subscriberId, channel, payload }`, what the canvas service pushed to one of the server's subscribers. */
+  canvasPush: 'canvas.push',
+  /** Shell → server: a `CanvasBoardRef`, an agent's `canvas.open`, for the clients that follow its workspace. */
+  canvasOpenRequest: 'canvas.open-request',
+  /** Server → shell: `{ subscriberId }`, a board another device held is closed. */
+  canvasUnsubscribe: 'canvas.unsubscribe',
+  /** Server → shell: `{ ref, subscriberId }`, a person drew on a board from another device. */
+  canvasHumanInput: 'canvas.human-input',
+  /**
+   * Server → shell: `{ workspaceId, agentId, path }`, a file an agent wrote, so
+   * the editor tools may show it without asking (agent-written-files.ts).
+   */
+  agentFileWritten: 'agents.file-written',
   /** Shell → server hints (6.3). */
   hintPower: 'hint.power',
   /** `{ anyWindowVisible, workspaceWindowVisible }`: whether any app window, and whether a workspace window, shows. */

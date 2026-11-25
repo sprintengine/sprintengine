@@ -109,7 +109,6 @@ import { installedStudioPlatform, installStudioPlatform, type StudioPlatform } f
 import { createStudioExtensions, type StudioExtensionsDeps } from '../extensions/extensions-domain'
 import { createStudioArtifacts, type StudioArtifactsShell } from '../artifacts/artifacts-domain'
 import { listKnownWorkspaceRoots } from '../../main/workspace-roots'
-import type { StudioPaths } from '../platform/studio-paths'
 import { createPullRequestDomain } from '../pull-requests/pull-request-domain'
 import { createLocalServerDomain } from '../local-servers/local-server-domain'
 import { createAgentProcessDomain } from '../processes/agent-process-domain'
@@ -1911,16 +1910,6 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     stopAutoCompact,
     shutdown,
   }
-}
-
-/**
- * The stdio bridge agents run to reach the gateway: shipped under
- * `resources/automation`, which an installed build unpacks into its resources
- * directory and a source checkout keeps at its root.
- */
-export function studioBridgeScriptPath(paths: StudioPaths): string {
-  const root = paths.isPackaged() ? paths.resourcesDir() : join(paths.appRoot() ?? process.cwd(), 'resources')
-  return join(root ?? '', 'automation', 'mcp-stdio-bridge.mjs')
 }
 
 /** `gh` on this machine: its command, and whether it holds a sign-in (`gh auth token`). */

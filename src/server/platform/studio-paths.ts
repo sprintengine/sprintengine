@@ -108,3 +108,13 @@ function nonEmpty(value: string | undefined): string | null {
   const trimmed = value?.trim()
   return trimmed ? trimmed : null
 }
+
+/**
+ * The stdio bridge agents run to reach the gateway: shipped under
+ * `resources/automation`, which an installed build unpacks into its resources
+ * directory and a source checkout keeps at its root.
+ */
+export function studioBridgeScriptPath(paths: StudioPaths): string {
+  const root = paths.isPackaged() ? paths.resourcesDir() : join(paths.appRoot() ?? process.cwd(), 'resources')
+  return join(root ?? '', 'automation', 'mcp-stdio-bridge.mjs')
+}
