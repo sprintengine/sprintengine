@@ -1,0 +1,10 @@
+{
+  "id": "components",
+  "title": "Components panel",
+  "summary": "A checklist panel drawn with Studio's own controls, kept for each workspace, with no HTML or CSS.",
+  "permissions": [],
+  "capabilities": [
+    "panel",
+    "components"
+  ]
+}

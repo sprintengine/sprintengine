@@ -41,6 +41,7 @@ export const EXTENSION_MUTATION_TOOL_NAMES: readonly string[] = [EXTENSION_CREAT
 export const EXTENSION_TEMPLATE_IDS: readonly string[] = [
   'blank',
   'panel',
+  'components',
   'door',
   'editor',
   'chat-companion',
@@ -150,7 +151,8 @@ export function createExtensionTools(deps: ExtensionToolsDeps): McpToolRegistrat
           description:
             'What the project starts as. "blank" (the default) is the smallest project that runs: start there ' +
             'unless one of the others is plainly the surface asked for. The others: panel (a panel in a ' +
-            'workspace’s pane), door (a page of its own in the Extensions drawer), chat-companion (an agent ' +
+            'workspace’s pane that draws its own page), components (a panel drawn with Studio’s own controls ' +
+            'from the tree its module renders: lists, forms, tables and trees with no HTML or CSS), door (a page of its own in the Extensions drawer), chat-companion (an agent ' +
             'working in chats it starts), top-bar-item, settings-section, backlog-action, ' +
             'file-action, mcp-tools (tools agents call).',
         },

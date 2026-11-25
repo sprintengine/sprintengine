@@ -5238,6 +5238,8 @@ export const en = {
         splitABacklogItemInto: 'Split a Backlog item into smaller ones.',
         projectScratchpad: 'Project scratchpad',
         perProjectNotesThatPersist: 'Per-project notes that persist.',
+        featureFlagSwitches: 'Feature flag switches',
+        turnThisProjectsFlagsOnAndOff: 'Turn this project’s flags on and off.',
         explainThisFile: 'Explain this file',
         aChatThatWalksThrough: 'A chat that walks through any file.',
         envFileForm: 'Env file editor',

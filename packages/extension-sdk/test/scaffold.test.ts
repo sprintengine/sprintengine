@@ -56,6 +56,7 @@ import {
   scaffoldModuleProject,
 } from '../src/scaffold.js'
 import { buildSurfaceModules, formatSourceProblem } from '../src/source-modules.js'
+import type { PanelCheckAnswer } from '../src/check-panel.js'
 
 const REPO = process.cwd()
 const SDK = join(REPO, 'packages/extension-sdk')
@@ -89,10 +90,10 @@ function sharedNodeModules(root: string): string {
   }
 
   // The SDK as a project installs it, transpiled from source: one file per
-  // source file, so `./signing`, `./testing` and the source hooks exist as
-  // they do in dist/.
+  // source file, so `./signing`, `./testing`, `./components` and the source
+  // hooks exist as they do in dist/.
   const sdkPackage = join(nodeModules, '@sprintengine', 'extension-sdk')
-  const sources = readdirSync(join(SDK, 'src')).filter((name) => name.endsWith('.ts'))
+  const sources = walk(join(SDK, 'src')).filter((name) => name.endsWith('.ts'))
   buildSync({
     entryPoints: sources.map((name) => join(SDK, 'src', name)),
     outdir: join(sdkPackage, 'dist'),
@@ -113,6 +114,8 @@ function sharedNodeModules(root: string): string {
         './signing': sub('signing'),
         './source': sub('source-modules'),
         './testing': sub('testing'),
+        './components': sub('components/index'),
+        './components/jsx-runtime': sub('components/jsx-runtime'),
       },
       bin: { 'sprintengine-extension': './dist/cli.js' },
     }),
@@ -130,6 +133,8 @@ function typecheckAgainstSource(dir: string, env: NodeJS.ProcessEnv): void {
         paths: {
           '@sprintengine/extension-sdk': [join(SDK, 'src/index.ts')],
           '@sprintengine/extension-sdk/testing': [join(SDK, 'src/testing.ts')],
+          '@sprintengine/extension-sdk/components': [join(SDK, 'src/components/index.ts')],
+          '@sprintengine/extension-sdk/components/jsx-runtime': [join(SDK, 'src/components/jsx-runtime.ts')],
         },
       },
     }),
@@ -156,12 +161,17 @@ function extensionReader(extensionDir: string): (path: string) => string | null 
   }
 }
 
-/** Each surface's module graph builds as the frame builds it: relative imports only, every one found. */
+/**
+ * Each surface's module graph builds as the frame builds it: relative imports
+ * only, every one found, and a components panel's JSX for the module Studio
+ * provides it.
+ */
 function buildSurfaces(dir: string, manifest: ExtensionManifest): void {
   const read = extensionReader(join(dir, 'extension'))
   for (const point of EXTENSION_SURFACE_POINTS) {
     for (const surface of manifest.contributes[point]) {
-      const graph = buildSurfaceModules(surface.entry, read)
+      const components = point === 'panels' && (surface as { ui?: string }).ui === 'components'
+      const graph = buildSurfaceModules(surface.entry, read, components ? { jsx: 'components' } : {})
       assert.ok(graph.ok, `${dir}: ${surface.entry}: ${graph.ok ? '' : formatSourceProblem(graph.problem)}`)
       assert.equal(graph.modules.at(-1)?.path, surface.entry)
     }
@@ -172,18 +182,50 @@ function buildSurfaces(dir: string, manifest: ExtensionManifest): void {
 let testHooks = ''
 let activateProbe = ''
 
-/** The project's tests, run as `sprintengine-extension test` runs them: node --test, TypeScript as written. */
+/** The project's tests, run as `sprintengine-extension test` runs them: node --test, TypeScript and JSX as written. */
 function runProjectTests(dir: string): string {
   const files = walk(join(dir, 'test'))
-    .filter((file) => /\.test\.(?:ts|mts|js|mjs)$/.test(file))
+    .filter((file) => /\.test\.(?:ts|tsx|mts|js|mjs)$/.test(file))
     .map((file) => join('test', file))
   assert.ok(files.length > 0, `${dir}: no tests`)
-  return run(process.execPath, ['--import', pathToFileURL(testHooks).href, '--test', ...files], dir, env)
+  return run(process.execPath, ['--import', testHooks, '--test', ...files], dir, env)
 }
 
 /** The worker, loaded from source and activated against the fake main host, as `check` does. */
 function activateWorker(dir: string): void {
   run(process.execPath, [activateProbe, join(dir, 'extension')], dir, env)
+}
+
+/**
+ * Each components panel rendered against the fake Studio, once per scenario
+ * in its `<entry>.check.ts`, as `check` renders it: nothing thrown, nothing
+ * Studio would drop or refuse.
+ */
+function checkComponentPanels(dir: string, manifest: ExtensionManifest): void {
+  const panels = manifest.contributes.panels
+    .filter((panel) => (panel as { ui?: string }).ui === 'components')
+    .map((panel) => ({ id: panel.id, entry: panel.entry, files: [panel.entry] }))
+  if (panels.length === 0) return
+  const extensionDir = join(dir, 'extension')
+  const checker = join(work, 'node_modules/@sprintengine/extension-sdk/dist/check-panel.js')
+  const output = run(
+    process.execPath,
+    [checker, extensionDir, join(extensionDir, 'extension.json'), JSON.stringify(panels)],
+    extensionDir,
+    env,
+  )
+  const answer = JSON.parse(output.trim().split('\n').at(-1) ?? '') as PanelCheckAnswer
+  assert.equal(answer.worker, undefined, `${dir}: ${answer.worker}`)
+  for (const panel of answer.panels) {
+    assert.equal(panel.problem, undefined, `${dir}: ${panel.id}: ${panel.problem}`)
+    assert.ok(panel.results.length > 0, `${dir}: ${panel.id} rendered`)
+    for (const result of panel.results) {
+      const label = `${dir}: ${panel.id} [${result.name}]`
+      assert.deepEqual(result.errors, [], label)
+      assert.deepEqual(result.warnings, [], label)
+      assert.deepEqual(result.refusals, [], label)
+    }
+  }
 }
 
 function assertNoBuild(dir: string, label: string, manifest: ExtensionManifest): void {
@@ -245,8 +287,8 @@ beforeAll(() => {
     npm_config_update_notifier: 'false',
   }
   const hooks = pathToFileURL(join(work, 'node_modules/@sprintengine/extension-sdk/dist/source-hooks.js')).href
-  testHooks = join(work, 'test-hooks.mjs')
-  writeFileSync(testHooks, `import { installTypeScriptHooks } from '${hooks}'\ninstallTypeScriptHooks(process.cwd())\n`)
+  // What `test` preloads: TypeScript, then JSX (a components panel's for the SDK's own module).
+  testHooks = pathToFileURL(join(work, 'node_modules/@sprintengine/extension-sdk/dist/test-register.js')).href
   activateProbe = join(work, 'activate-probe.mjs')
   writeFileSync(
     activateProbe,
@@ -297,6 +339,7 @@ test('the templates on offer, what no template or part carries, and the refusals
   assert.deepEqual(templateIds, [
     'blank',
     'panel',
+    'components',
     'door',
     'editor',
     'chat-companion',
@@ -403,11 +446,14 @@ for (const template of templates) {
       'CLAUDE.md',
       '.gitignore',
       'test/manifest.ts',
-      'test/module.test.ts',
       'scripts/check-toolchain.mjs',
     ]) {
       assert.ok(files.includes(required), `${template.id}: ${required} is missing`)
     }
+    assert.ok(
+      files.some((file) => /^test\/[^/]+\.test\.tsx?$/.test(file)),
+      `${template.id}: a test of its own in test/`,
+    )
     for (const gone of [
       'plugin.json',
       'module/manifest.json',
@@ -451,6 +497,7 @@ for (const template of templates) {
     typecheckAgainstSource(dir, env)
     buildSurfaces(dir, manifest)
     if (manifest.main) activateWorker(dir)
+    checkComponentPanels(dir, manifest)
     runProjectTests(dir)
     assert.ok(!walk(dir).some((file) => /(^|\/)dist\//.test(file)), `${template.id}: testing wrote a dist/`)
   })

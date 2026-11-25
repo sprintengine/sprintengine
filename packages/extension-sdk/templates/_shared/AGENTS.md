@@ -61,6 +61,11 @@ Studio loads the files in `extension/` as they are; nothing is compiled.
 - The worker (`main`) runs in Node. Studio strips its types with Node's own
   transpiler, so write only erasable TypeScript (no `enum`, no `namespace`;
   `tsc` refuses them here), and import relative files without an extension.
+- A components panel (`"ui": "components"` on a panel) is the exception: its
+  entry default-exports a component, imports
+  `@sprintengine/extension-sdk/components` (which Studio provides), and
+  renders Studio's own controls from JSX that Studio compiles for that
+  module, with no HTML or CSS. Read the guide's `components` topic.
 - `tsc` is the only type check: run `npm run typecheck` (or `npm run check`).
 
 ## Tests
@@ -75,6 +80,12 @@ TypeScript the way Studio loads the extension. Import the source extensionless
 rather than in Studio. A test has no DOM: keep what a surface asks Studio for,
 and how it reads the answer, in functions a test can call, and look at the
 drawing in the shots `npm run dev` writes.
+
+A components panel is tested whole: `mountPanel` from
+`@sprintengine/extension-sdk/testing` boots it as Studio does, acts on it as
+the person would (`type`, `press`, `toggle`, …) and reads back what Studio
+would draw and store. Its `<entry>.check.ts` names the states `npm run check`
+renders it in (`defineCheck`).
 
 ## Rules
 
