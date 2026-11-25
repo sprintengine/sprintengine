@@ -31,6 +31,46 @@ test('an icon button is named by its label', () => {
   expect(drawn.sent[0]!.callback).toBe('r')
 })
 
+test('a button with no variant is the outline; solid is the neutral fill, the primary only with the accent tone', () => {
+  const button = (props: Record<string, unknown>, key: string) =>
+    n('Button', { onPress: cb(key), ...props }, [key], key)
+  drawn = draw(
+    n('Stack', {}, [
+      button({}, 'plain'),
+      button({ variant: 'solid' }, 'solid'),
+      button({ variant: 'solid', tone: 'accent' }, 'primary'),
+      button({ variant: 'solid', tone: 'danger' }, 'danger'),
+      button({ variant: 'ghost' }, 'ghost'),
+    ]),
+  )
+  const classOf = (label: string) =>
+    [...drawn!.host.querySelectorAll('button')].find((each) => each.textContent === label)!.className
+  expect(classOf('plain')).toContain('border-[color:var(--border-strong)]')
+  expect(classOf('plain')).toContain('bg-transparent')
+  expect(classOf('solid')).not.toContain('accent-primary')
+  expect(classOf('solid')).not.toContain('bg-transparent')
+  expect(classOf('primary')).toContain('bg-[color:var(--accent-primary)]')
+  expect(classOf('danger')).toContain('bg-[color:var(--tone-error)]')
+  expect(classOf('ghost')).not.toContain('border-[color:var(--border-strong)]')
+})
+
+test('an icon button honours its variant, and stays borderless without one', () => {
+  drawn = draw(
+    n('Row', {}, [
+      n('IconButton', { icon: 'add', label: 'Plain', onPress: cb('a') }, [], 'a'),
+      n('IconButton', { icon: 'add', label: 'Outlined', variant: 'outline', onPress: cb('b') }, [], 'b'),
+      n('IconButton', { icon: 'add', label: 'Primary', variant: 'solid', tone: 'accent', onPress: cb('c') }, [], 'c'),
+    ]),
+  )
+  const classOf = (label: string) => drawn!.host.querySelector(`button[aria-label="${label}"]`)!.className
+  expect(classOf('Plain')).not.toContain('border-[color:var(--border-strong)]')
+  expect(classOf('Outlined')).toContain('border-[color:var(--border-strong)]')
+  expect(classOf('Outlined')).toContain('aspect-square')
+  expect(classOf('Primary')).toContain('bg-[color:var(--accent-primary)]')
+  click(drawn.host.querySelector('button[aria-label="Outlined"]')!)
+  expect(drawn.sent).toEqual([{ callback: 'b', args: [] }])
+})
+
 test('a press grants a gesture only on a control that stood still for 500 ms', () => {
   let now = 1000
   vi.spyOn(performance, 'now').mockImplementation(() => now)

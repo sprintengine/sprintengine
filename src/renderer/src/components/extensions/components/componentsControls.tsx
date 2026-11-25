@@ -2,11 +2,12 @@
 // own controls. Each value control follows the edit protocol (componentValue.ts):
 // Studio owns what the person types, so a render never drops characters.
 
-import { useContext, useId, useMemo, type JSX, type ReactNode } from 'react'
+import { useContext, useId, useMemo, type ComponentProps, type JSX, type ReactNode } from 'react'
 
 import type { ComponentNode } from '../../../../../../packages/extension-sdk/src/components/tree'
 import {
   DangerButton,
+  FloatingButton,
   GhostButton,
   IconButton,
   OutlineButton,
@@ -42,45 +43,52 @@ function gestureIdOf(node: ComponentNode): string | null {
   return callback ? componentGestureId.callback(callback) : null
 }
 
+type ButtonProps = ComponentProps<typeof PrimaryButton>
+
+/**
+ * The app's button for a variant and tone. No variant is the outline; `solid`
+ * is the neutral filled button, the primary with `tone="accent"`, and the
+ * destructive fill with `tone="danger"`.
+ */
+function drawButton(variant: unknown, tone: unknown, props: ButtonProps): JSX.Element {
+  const danger = tone === 'danger'
+  if (variant === 'ghost')
+    return <GhostButton {...props} tone={danger ? 'danger' : tone === 'accent' ? 'accent' : 'neutral'} />
+  if (variant === 'solid') {
+    if (danger) return <DangerButton {...props} />
+    if (tone === 'accent') return <PrimaryButton {...props} />
+    return <FloatingButton {...props} />
+  }
+  return <OutlineButton {...props} tone={danger ? 'danger' : 'neutral'} />
+}
+
 export function ButtonView({ node, path }: Props): JSX.Element {
   const view = useComponents()
   const onPress = usePress(node)
   const ref = useGestureRef(gestureIdOf(node))
   const inBand = useInToolbarBand()
   const inColumn = useContext(ColumnContext)
-  const { variant = 'solid', tone, size, icon, disabled, tooltip } = node.props
-  const shared = {
+  const { variant, tone, size, icon, disabled, tooltip } = node.props
+  const control = drawButton(variant, tone, {
     ref: ref as never,
     size: BUTTON_SIZE[String(size)] ?? 'sm',
     disabled: disabled === true || !onPress,
     onClick: onPress,
-    className: inColumn ? 'self-start' : undefined,
+    ...(inColumn ? { className: 'self-start' } : {}),
     ...toolbarItemProps(inBand),
     ...(inBand ? { tabIndex: -1 } : {}),
-  }
-  const content: ReactNode = (
-    <>
-      {typeof icon === 'string' ? <ComponentIcon name={icon} /> : null}
-      {view.renderChildren(node.children, path)}
-    </>
-  )
-  const danger = tone === 'danger'
-  const control =
-    variant === 'ghost' ? (
-      <GhostButton {...shared} tone={danger ? 'danger' : tone === 'accent' ? 'accent' : 'neutral'}>
-        {content}
-      </GhostButton>
-    ) : variant === 'outline' ? (
-      <OutlineButton {...shared} tone={danger ? 'danger' : 'neutral'}>
-        {content}
-      </OutlineButton>
-    ) : danger ? (
-      <DangerButton {...shared}>{content}</DangerButton>
-    ) : (
-      <PrimaryButton {...shared}>{content}</PrimaryButton>
-    )
+    children: (
+      <>
+        {typeof icon === 'string' ? <ComponentIcon name={icon} /> : null}
+        {view.renderChildren(node.children, path)}
+      </>
+    ),
+  })
   return withTooltip(tooltip, control)
 }
+
+/** An icon button's step on the labelled buttons' ramp, for a variant drawn as one of them. */
+const ICON_AS_BUTTON_SIZE: Record<string, ButtonSize> = { xs: 'xs', sm: 'xs', md: 'sm' }
 
 export function IconButtonView({ node }: Props): JSX.Element {
   const onPress = usePress(node)
@@ -88,22 +96,36 @@ export function IconButtonView({ node }: Props): JSX.Element {
   const inBand = useInToolbarBand()
   const label = String(node.props.label ?? '')
   const tooltip = typeof node.props.tooltip === 'string' && node.props.tooltip ? node.props.tooltip : label
-  return (
-    <Tooltip content={tooltip}>
+  const { variant, tone } = node.props
+  const shared = {
+    ref: ref as never,
+    'aria-label': label,
+    disabled: node.props.disabled === true || !onPress,
+    onClick: onPress,
+    ...toolbarItemProps(inBand),
+    ...(inBand ? { tabIndex: -1 } : {}),
+  }
+  const glyph = <ComponentIcon name={String(node.props.icon ?? '')} />
+  // No variant, or `ghost`, is the borderless icon button; `outline` and `solid`
+  // are the labelled buttons' own, squared around the glyph.
+  const control =
+    variant === 'outline' || variant === 'solid' ? (
+      drawButton(variant, tone, {
+        ...shared,
+        size: ICON_AS_BUTTON_SIZE[String(node.props.size)] ?? 'xs',
+        className: 'aspect-square justify-center px-0',
+        children: glyph,
+      })
+    ) : (
       <IconButton
-        ref={ref as never}
-        aria-label={label}
+        {...shared}
         size={ICON_SIZE[String(node.props.size)] ?? 'sm'}
-        tone={node.props.tone === 'danger' ? 'danger' : node.props.tone === 'accent' ? 'accent' : 'neutral'}
-        disabled={node.props.disabled === true || !onPress}
-        onClick={onPress}
-        {...toolbarItemProps(inBand)}
-        {...(inBand ? { tabIndex: -1 } : {})}
+        tone={tone === 'danger' ? 'danger' : tone === 'accent' ? 'accent' : 'neutral'}
       >
-        <ComponentIcon name={String(node.props.icon ?? '')} />
+        {glyph}
       </IconButton>
-    </Tooltip>
-  )
+    )
+  return <Tooltip content={tooltip}>{control}</Tooltip>
 }
 
 export function ListView({ node, path }: Props): JSX.Element {
