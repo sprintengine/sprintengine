@@ -140,9 +140,9 @@ agent's own work") and the line's spoken label ("Open this agent's diff",
 
 ### 2.5 The server split
 
-Phase 6 runs the Studio server out of process behind
-`SPRINTENGINE_SERVER_MODE` and an Advanced toggle. In process stays the default
-(`src/shared/server-mode.ts:12`, `DEFAULT_SERVER_MODE = 'in-process'`). Its
+Phase 6 runs the Studio server out of process (written when it was behind
+`SPRINTENGINE_SERVER_MODE` and an Advanced toggle with in process the default;
+since 2026-11-25 it is the only mode). Its
 decision D7 (`docs/design/studio-server/phase-6-server-process.md:252`, and the
 ownership table in section 5, `:334`) leaves git changelists and pull requests
 with the shell (Electron main) until phase 10. Chats live in the server.

@@ -46,6 +46,12 @@ retried on its own (`run/update-failed.json`). Bump `MUX_VERSION` whenever a
 frame does. A number once on `main` is spent, even before a release, since a
 nightly may already carry it: two changes made side by side take one each.
 
+The control channel between the desktop app's main process and its own Studio
+server (`SERVER_METHODS`, `SHELL_METHODS` and `SERVER_EVENTS` in
+`src/server/desktop/server-methods.ts`) is private too: main forks that server
+from the same build at every start, so both ends always match. A change to it
+needs no bump.
+
 There was a fourth, the conversation backend wire (`BACKEND_WIRE_VERSION`, last
 9), which carried a WSL distribution's chats to the desktop's router while a
 per-distribution switch sent them there. It went on 2026-11-13 with the router
@@ -194,8 +200,9 @@ id. `canvas.openRequests` tells a device an agent's `canvas.open` in the
 workspaces it follows. Looking needs `workspaces:read` (a device's
 `workspace:read`); `canvas.commit`, `canvas.stage` and `canvas.takePen` need
 `workspaces:operate` (`workspace:operate`). Only a Studio given the machine's
-canvas service advertises `canvas-boards` (today the desktop with its server in
-process); a client of one that does not says to update or open Studio there.
+canvas service advertises `canvas-boards` (a desktop: its server reaches the
+shell's canvas service over their control channel); a client of one that does
+not says to update or open Studio there.
 There is no fallback to the old socket or tools: a machine on an older build
 shows its boards to a current desktop or phone once it is updated.
 

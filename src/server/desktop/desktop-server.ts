@@ -374,6 +374,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     platform,
     core,
     log,
+    // The shell's canvas tools hold to the person's Canvas switch, which a window reports here.
+    registryReported: (snapshot) => rpc.emit(SERVER_EVENTS.mirrorModuleRegistry, snapshot),
   })
   // `extension.open`'s window half: the windows are the shell's, asked over
   // the control channel (extension-open-bridge.ts).

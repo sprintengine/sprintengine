@@ -885,10 +885,11 @@ export function createAppServices(
   // on every WSL launch, and the same sentence each time is noise.
   const mcpWslWarningsSeen = new Set<string>()
 
-  // The renderer's module registry, as a window reports it. The windows report
-  // to their Studio (`extension.reportRegistry`), so this copy stays empty and
-  // the canvas tools below read the module's default.
+  // The renderer's module registry, as a window reports it to its Studio
+  // (`extension.reportRegistry`) and the server passes it on: the canvas tools
+  // below hold to the person's Canvas switch in it.
   const moduleRegistryMirror = createModuleRegistryMirror()
+  server.rpc.on(SERVER_EVENTS.mirrorModuleRegistry, (snapshot) => void moduleRegistryMirror.write(snapshot))
 
   // What each agent wrote, for the editor reveal: a file outside the workspace
   // that the asking agent wrote itself may be shown without asking the person.

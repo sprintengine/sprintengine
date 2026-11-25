@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, test, vi } from 'vitest'
 
-import { createIpcRouter, ServerUnavailable, type RouterPort } from './ipc-router'
+import { createIpcRouter, ServerUnavailable, type RouterPort } from './ipc-router-core'
 
 // The preload's router (phase 6 spec, 6.2): by table, a queue before the port,
-// in-flight calls failed on a restart, idempotent reads sent again once, and
-// everything to ipcRenderer in process.
+// in-flight calls failed on a restart, and idempotent reads sent again once.
 
 const TABLE = {
   'workspace-sync:get-snapshot': { retry: 'once' as const },

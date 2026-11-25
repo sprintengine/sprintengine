@@ -12,7 +12,9 @@ export * from './ipc-router-core'
 /** This window's router, over Electron's `ipcRenderer`. */
 function createWindowRouter() {
   const router = createIpcRouter({ ipcRenderer })
-  ipcRenderer.on(SERVER_PORT_CHANNEL, (event) => {
+  // Outside a renderer (a unit test that loads an api module) there is no
+  // `ipcRenderer` to hear a port on.
+  ipcRenderer?.on(SERVER_PORT_CHANNEL, (event) => {
     const [port] = event.ports
     if (port) router.attachPort(port as unknown as RouterPort)
   })

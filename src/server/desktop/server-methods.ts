@@ -217,6 +217,12 @@ export const SERVER_EVENTS = {
    */
   mirrorAreaSkills: 'mirror.area-skills',
   /**
+   * Server → shell: the module registry a window reported
+   * (`ModuleRegistrySnapshot`), on every report: the shell's canvas tools
+   * hold to the person's Canvas switch in it.
+   */
+  mirrorModuleRegistry: 'mirror.module-registry',
+  /**
    * Shell → server: the gateway launch tokens the shell issued, by digest
    * (decision R87). `{ reset, changes }`: `reset` says
    * the list is every live one, sent to a server that has just started.

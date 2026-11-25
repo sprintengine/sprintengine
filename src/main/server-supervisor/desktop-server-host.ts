@@ -44,14 +44,14 @@ import { forkUtilityServer } from './utility-launcher'
 import { prefixedId } from '../../shared/random-id'
 import type { StudioBrowserTabs } from '../../server/processes/browser-tabs'
 
-// The shell's half of the Studio server out of process, put together: the
+// The shell's half of the Studio server, in its own process, put together: the
 // supervisor that forks and watches it, the log its output goes to, the port
 // broker that hands every app window its port, the mirror of what the shell
 // reads synchronously, the shell bridge and the two caches the server asks
 // about, and the hints the shell sends (power, focus, visibility).
 //
-// Built at boot, before any window, when the session's mode is out of process;
-// forked at `ready`, which is the earliest a utility process can start.
+// Built at boot, before any window; forked at `ready`, which is the earliest a
+// utility process can start.
 
 export type DesktopServerHost = {
   supervisor: ServerSupervisor

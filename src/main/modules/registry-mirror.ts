@@ -20,7 +20,7 @@ export type ModuleRegistryMirror = {
 
 export function createModuleRegistryMirror(
   options: {
-    /** Told of every accepted snapshot: the shell passes them on to the Studio server out of process. */
+    /** Told of every accepted snapshot: the server passes them on to the shell's canvas tools. */
     onWrite?: (snapshot: ModuleRegistrySnapshot) => void
   } = {},
 ): ModuleRegistryMirror {

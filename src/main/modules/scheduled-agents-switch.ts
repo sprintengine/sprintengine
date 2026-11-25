@@ -14,7 +14,7 @@ import type { StudioScheduledAgents } from '../../server/core/studio-scheduled-a
 // gone (every door says "switched off") and no schedule runs; nothing is built
 // or torn down.
 
-export const SCHEDULED_AGENTS_MANIFEST: CapabilityManifest = {
+const SCHEDULED_AGENTS_MANIFEST: CapabilityManifest = {
   id: 'scheduled-agents',
   displayName: 'Scheduled agents',
   version: 1,
