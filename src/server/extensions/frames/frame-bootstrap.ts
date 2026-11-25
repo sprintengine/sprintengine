@@ -15,6 +15,7 @@ import { EXTENSION_FRAME_METHODS } from '../../../../packages/extension-sdk/src/
 import { EXTENSION_FRAME_EVENTS as STUDIO_FRAME_EVENTS } from '../../../../packages/extension-sdk/src/events'
 import { COMPONENTS_MODULE } from '../../../../packages/extension-sdk/src/source-modules'
 import {
+  COMPONENT_FRAME_MAX_TIMERS,
   EXTENSION_FRAME_CALL_DEADLINE_MS,
   EXTENSION_FRAME_EVENTS,
   EXTENSION_FRAME_MAX_PENDING,
@@ -121,6 +122,7 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     logWindowMs: FRAME_LOG_WINDOW_MS,
     components: input.components === true,
     componentsModule: COMPONENTS_MODULE,
+    maxTimers: COMPONENT_FRAME_MAX_TIMERS,
   })
   return `${PRELUDE};(function (C) {
   var E = C.events
@@ -140,6 +142,62 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     message.se = C.protocol
     try { host.postMessage(message, '*') } catch (_) {}
   }
+  // A components panel's frame is not drawn (display: none), and the browser
+  // runs an undrawn frame's timers about once a second. Its timers are kept by
+  // the window instead: the frame says when, the window wakes it then. Past
+  // C.maxTimers waiting at once, or for a handler that is not a function, the
+  // frame's own timers take over.
+  if (C.components) (function () {
+    var nativeSet = window.setTimeout.bind(window)
+    var nativeClear = window.clearTimeout.bind(window)
+    var nativeSetInterval = window.setInterval.bind(window)
+    var nativeClearInterval = window.clearInterval.bind(window)
+    var timers = new Map()
+    var nextTimer = 1
+    // Ids the window kept count apart from the frame's own (odd, and the frame's even).
+    var waiting = 0
+    function delayOf(ms) {
+      ms = Number(ms)
+      return ms > 0 && ms < 2147483647 ? Math.floor(ms) : 0
+    }
+    function arm(id, timer) {
+      waiting++
+      post({ kind: 'timer', id: id, ms: timer.ms })
+    }
+    function schedule(handler, ms, args, repeat) {
+      if (typeof handler !== 'function' || waiting >= C.maxTimers) return null
+      var id = nextTimer
+      nextTimer += 2
+      var timer = { handler: handler, args: args, ms: repeat ? Math.max(4, delayOf(ms)) : delayOf(ms), repeat: repeat }
+      timers.set(id, timer)
+      arm(id, timer)
+      return id
+    }
+    window.addEventListener('message', function (event) {
+      if (event.source !== host) return
+      var message = event.data
+      if (!message || message.se !== C.protocol || message.kind !== 'wake' || typeof message.id !== 'number') return
+      waiting = Math.max(0, waiting - 1)
+      var timer = timers.get(message.id)
+      if (!timer) return
+      if (timer.repeat) arm(message.id, timer)
+      else timers.delete(message.id)
+      try { timer.handler.apply(window, timer.args) } catch (error) { setTimeout(function () { throw error }) }
+    })
+    window.setTimeout = function (handler, ms) {
+      var id = schedule(handler, ms, Array.prototype.slice.call(arguments, 2), false)
+      return id === null ? nativeSet.apply(null, arguments) * 2 : id
+    }
+    window.setInterval = function (handler, ms) {
+      var id = schedule(handler, ms, Array.prototype.slice.call(arguments, 2), true)
+      return id === null ? nativeSetInterval.apply(null, arguments) * 2 : id
+    }
+    window.clearTimeout = window.clearInterval = function (id) {
+      id = Number(id)
+      if (id % 2 === 1) timers.delete(id)
+      else if (id > 0) { nativeClear(id / 2); nativeClearInterval(id / 2) }
+    }
+  })()
   function failure(code, message, retryable, document) {
     var error = new Error(String(message || 'The host call failed.'))
     error.code = C.codes.indexOf(code) >= 0 ? code : 'action_failed'

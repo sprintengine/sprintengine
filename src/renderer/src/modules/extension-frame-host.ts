@@ -11,7 +11,10 @@
 //   door) is then carried out here;
 // - sends the theme again when the window's changes, and the extension's
 //   worker events as `push`;
-// - reports when the surface said it was ready, and its first paint.
+// - reports when the surface said it was ready, and its first paint;
+// - keeps a components panel's timers (`timer`, answered with `wake`): its
+//   frame is not drawn, and the browser runs an undrawn frame's own timers
+//   about once a second.
 //
 // The frame is told apart by its window object alone, never by anything it
 // says about itself.
@@ -21,6 +24,7 @@ import type { StudioExtensionCallAnswer } from '../../../../packages/studio-prot
 import { EXTENSION_EDITOR_TEXT_MAX_BYTES } from '../../../../packages/extension-sdk/src/custom-editors'
 import { COMPONENT_RENDER_LANE } from '../../../../packages/extension-sdk/src/components/messages'
 import {
+  COMPONENT_FRAME_MAX_TIMERS,
   EXTENSION_EDITOR_APPLY_EDIT,
   EXTENSION_FRAME_EVENTS,
   EXTENSION_FRAME_PROTOCOL,
@@ -118,7 +122,15 @@ export type ExtensionFrameHost = {
 
 const RETRYABLE = new Set(['rate_limited', 'unavailable', 'timeout'])
 
-type Envelope = { kind?: unknown; id?: unknown; method?: unknown; params?: unknown; event?: unknown; payload?: unknown }
+type Envelope = {
+  kind?: unknown
+  id?: unknown
+  method?: unknown
+  params?: unknown
+  event?: unknown
+  payload?: unknown
+  ms?: unknown
+}
 
 export function createExtensionFrameHost(options: ExtensionFrameHostOptions): ExtensionFrameHost {
   const budget = createExtensionFrameBudget()
@@ -135,6 +147,8 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
   const waiting = new Set<number>()
   const cancelled = new Set<number>()
   let alive = true
+  // A components panel's clock: the timers its undrawn frame asked the window to keep.
+  const timers = new Set<ReturnType<typeof setTimeout>>()
 
   const post = (message: Record<string, unknown>) => {
     if (alive) options.post({ se: EXTENSION_FRAME_PROTOCOL, ...message })
@@ -239,6 +253,17 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
         options.components.receive(message.event, message.payload, lane ?? undefined)
         return
       }
+      if (options.components && message.kind === 'timer') {
+        const ms = message.ms
+        if (id === null || id % 2 !== 1 || typeof ms !== 'number' || !(ms >= 0 && ms < 2 ** 31)) return
+        if (timers.size >= COMPONENT_FRAME_MAX_TIMERS) return
+        const timer = setTimeout(() => {
+          timers.delete(timer)
+          post({ kind: 'wake', id })
+        }, ms)
+        timers.add(timer)
+        return
+      }
       const refused = edit
         ? editBudget.admit(now(), extensionFrameMessageBytes(message, EXTENSION_EDITOR_TEXT_MAX_BYTES + 4096))
         : budget.admit(now(), extensionFrameMessageBytes(message))
@@ -294,6 +319,8 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
           options.document?.save()
         } else if (message.event === EXTENSION_FRAME_EVENTS.leaving) {
           alive = false
+          for (const timer of timers) clearTimeout(timer)
+          timers.clear()
           options.onLeaving?.()
         } else if (message.event === EXTENSION_FRAME_EVENTS.failed) {
           const words = (message.payload as { message?: unknown } | null)?.message
@@ -322,6 +349,8 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
     },
     dispose() {
       alive = false
+      for (const timer of timers) clearTimeout(timer)
+      timers.clear()
       for (const stop of followed.values()) stop()
       followed.clear()
     },

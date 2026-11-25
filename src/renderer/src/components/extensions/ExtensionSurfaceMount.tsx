@@ -20,6 +20,7 @@ import {
 } from '../../modules/extension-surfaces'
 import { extensionsApi } from '../../studio/extensions'
 import { followEditorTypography } from '../../modules/extension-editor-typography'
+import { holdExtensionFrameFocusGuard } from '../../modules/extension-frame-focus'
 import { EmptyState } from '../ui/EmptyState'
 import { useOptionalConfirmDialog } from '../ui/ConfirmDialog'
 import { ComponentsPanelHost } from './components/ComponentsPanelHost'
@@ -137,6 +138,8 @@ export function ExtensionSurfaceMount({
   retainKeyRef.current = retainKey
   // The tab closed: what a development folder's saves carry over goes with it.
   useEffect(() => () => forgetRetainedPanel(retainKeyRef.current), [])
+  // A frame takes keyboard focus only on the person's gesture toward it.
+  useEffect(() => holdExtensionFrameFocusGuard(), [])
 
   useEffect(() => {
     // Its extension went (killed, no longer approved, uninstalled): nothing of
@@ -387,12 +390,9 @@ export function ExtensionSurfaceMount({
           data-extension={extensionKey}
           data-extension-surface={`${point}/${id}`}
           // A components panel's frame runs its module and shows nothing: Studio draws its tree.
+          // Not drawn at all (`display: none`), so nothing in it can take keyboard focus.
           {...(components ? { 'aria-hidden': true, tabIndex: -1 } : {})}
-          className={
-            components
-              ? 'pointer-events-none absolute left-0 top-0 h-px w-px border-0 opacity-0'
-              : 'block h-full w-full border-0'
-          }
+          className={components ? 'hidden' : 'block h-full w-full border-0'}
         />
       ) : null}
     </div>

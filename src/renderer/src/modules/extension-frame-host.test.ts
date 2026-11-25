@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 
 import type { StudioExtensionCallAnswer } from '../../../../packages/studio-protocol/src/public'
-import { EXTENSION_FRAME_RATE_LIMIT } from '../../../shared/extension-frames'
+import { COMPONENT_FRAME_MAX_TIMERS, EXTENSION_FRAME_RATE_LIMIT } from '../../../shared/extension-frames'
 import { createExtensionFrameHost, type ExtensionFrameComponentsChannel } from './extension-frame-host'
 
 // The window's side of a frame's bridge: it hears the frame's own window
@@ -337,4 +337,41 @@ test('shell.openExternal needs a press a components panel granted; a frame drawi
   assert.deepEqual(page.called, [])
   assert.deepEqual(page.opened, [])
   assert.equal((page.posted.at(-1)!.error as { code: string }).code, 'not_permitted')
+})
+
+// A components panel's frame is not drawn, and the browser runs an undrawn
+// frame's own timers about once a second, so the window keeps its timers.
+test('a components panel’s timers are kept by the window, bounded, and stopped with the frame', async () => {
+  vi.useFakeTimers()
+  try {
+    const panel = harness({}, { receive: () => undefined, takeGesture: () => false })
+    panel.send({ se: 1, kind: 'timer', id: 1, ms: 16 })
+    // Not an id the frame's clock gives out, or not a delay: not kept.
+    panel.send({ se: 1, kind: 'timer', id: 2, ms: 16 })
+    panel.send({ se: 1, kind: 'timer', id: 3, ms: -1 })
+    vi.advanceTimersByTime(15)
+    assert.deepEqual(panel.posted, [])
+    vi.advanceTimersByTime(1)
+    assert.deepEqual(panel.posted, [{ se: 1, kind: 'wake', id: 1 }])
+
+    panel.posted.length = 0
+    for (let id = 1; id < 2 * (COMPONENT_FRAME_MAX_TIMERS + 10); id += 2)
+      panel.send({ se: 1, kind: 'timer', id, ms: 5 })
+    vi.advanceTimersByTime(5)
+    assert.equal(panel.posted.length, COMPONENT_FRAME_MAX_TIMERS, 'no more than the bound wait at once')
+
+    panel.send({ se: 1, kind: 'timer', id: 7, ms: 50 })
+    panel.host.dispose()
+    panel.posted.length = 0
+    vi.advanceTimersByTime(100)
+    assert.deepEqual(panel.posted, [])
+
+    // A frame that draws itself keeps its own timers.
+    const page = harness()
+    page.send({ se: 1, kind: 'timer', id: 1, ms: 1 })
+    vi.advanceTimersByTime(5)
+    assert.deepEqual(page.posted, [])
+  } finally {
+    vi.useRealTimers()
+  }
 })

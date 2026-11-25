@@ -170,16 +170,15 @@ function guestIn(frame: HTMLIFrameElement) {
 
 const text = () => container?.textContent ?? ''
 
-test('a components panel runs hidden in its frame, and the window draws the tree it renders', async () => {
+test('a components panel runs undrawn in its frame, and the window draws the tree it renders', async () => {
   const { frame, built } = await panelDrawn('local.cards')
   const hidden = frame()!
   assert.equal(hidden.getAttribute('src'), `studio-ext://frame/${built[0]}`)
   assert.equal(hidden.getAttribute('sandbox'), 'allow-scripts')
   assert.equal(hidden.getAttribute('aria-hidden'), 'true')
   assert.equal(hidden.getAttribute('tabindex'), '-1')
-  assert.match(hidden.className, /\bh-px\b/)
-  assert.match(hidden.className, /\bw-px\b/)
-  assert.match(hidden.className, /\bopacity-0\b/)
+  // Not drawn at all (`display: none`): a frame laid out at 1 px, however faint, can take keyboard focus.
+  assert.equal(hidden.className, 'hidden')
 
   const guest = guestIn(hidden)
   await guest.ready('run-1')

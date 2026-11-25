@@ -67,6 +67,13 @@ export const EXTENSION_FRAME_HASH_PATTERN = /^[0-9a-f]{64}$/u
 export const EXTENSION_FRAME_PROTOCOL = 1
 
 /** The events a frame and its host send each other beside calls. */
+/**
+ * The most timers a components panel's frame has the window keep at once. Its
+ * frame is not drawn, so the browser would run the frame's own timers about
+ * once a second; the window keeps them instead (frame-bootstrap.ts).
+ */
+export const COMPONENT_FRAME_MAX_TIMERS = 512
+
 export const EXTENSION_FRAME_EVENTS = {
   /** frame → host: the bootstrap listens. */
   ready: 'ready',
