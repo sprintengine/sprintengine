@@ -64,10 +64,18 @@ function tokensCss(theme: ExtensionFrameTheme | null): string {
 
 /**
  * The document's own policy: the frame's, with its one inline script named by
- * hash instead of `'unsafe-inline'`. A child frame inherits the policy, so an
- * `about:srcdoc` child, the one child `frame-src 'none'` still lets in, runs
- * no script of its own: no fresh realm with the network constructors the
- * bootstrap removed from this one.
+ * hash instead of `'unsafe-inline'`. No child frame runs script, so none is a
+ * fresh realm with the network constructors the bootstrap removed from this one:
+ *
+ * - `frame-src 'none'` blocks every child but `about:srcdoc`, a blank one and
+ *   a document made as a blob included;
+ * - an `about:srcdoc` child inherits this policy, whose one hash is the
+ *   bootstrap's, so its inline script and `on*=` handlers do not run;
+ * - the policy does admit `blob:` scripts (the frame's own module graph loads
+ *   that way), but a sandboxed child has an opaque origin of its own, and the
+ *   browser lets only the origin that made a blob load it: the frame's blobs
+ *   are refused to the child, which cannot make one without running script
+ *   first. The live probe in extension-frame-shell.test.ts watches this.
  */
 export function frameDocumentCsp(script: string): string {
   const hash = createHash('sha256').update(script, 'utf8').digest('base64')

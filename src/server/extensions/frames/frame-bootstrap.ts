@@ -84,8 +84,8 @@ const PRELUDE = `'use strict'
 // from starting one.
 // The policy has no directive for peer connections, which would be a way out.
 // Every WebRTC interface goes, for good (not configurable), before the
-// extension's code runs. The document's policy keeps a child frame from
-// running script, so no fresh realm brings them back (frame-document.ts).
+// extension's code runs. No child frame runs script, so no fresh realm
+// brings them back (frame-document.ts says why).
 Object.getOwnPropertyNames(window).filter(function (name) {
   return /^(webkit)?RTC/.test(name)
 }).concat(['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel']).forEach(function (name) {

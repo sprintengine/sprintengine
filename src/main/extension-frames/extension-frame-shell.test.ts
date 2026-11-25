@@ -184,7 +184,8 @@ app.whenReady().then(async () => {
 `
 
 // The extension's own code: a peer connection from its realm, from a child
-// frame's script, and through a child frame's window.
+// frame's script, through a child frame's window, and from a blob script the
+// frame made, loaded by the frame and by its child frames.
 const PROBE_ENTRY = String.raw`
 const report = (entry) => window.top.postMessage({ report: entry }, '*')
 const attempt = (scope, build) => {
@@ -215,6 +216,37 @@ function probe() {
   document.body.appendChild(blank)
   attempt('blank child', () => peer(blank.contentWindow.RTCPeerConnection))
   attempt('window[1]', () => peer(window[1].RTCPeerConnection))
+  // A script the frame makes as a blob, which the policy's blob: admits. Here
+  // it runs in the frame's realm, whose constructors are gone: the control
+  // that a blob script loads at all. A child frame has an opaque origin of
+  // its own, so it may not load the frame's blob, nor a document made as one.
+  const where = 'window.parent === window.top ? "frame" : "child"'
+  const script = URL.createObjectURL(new Blob([
+    'window.top.postMessage({ report: "blob script ran in " + (' + where + ') }, "*");' +
+    'try { const pc = new RTCPeerConnection({ iceServers: [{ urls: ' + JSON.stringify(servers.stun) + ' }, { urls: ' + JSON.stringify(servers.turn) + ', username: "u", credential: "c" }] });' +
+    ' pc.createDataChannel("x"); pc.createOffer().then((offer) => pc.setLocalDescription(offer));' +
+    ' window.top.postMessage({ report: "blob script in " + (' + where + ') + ": built" }, "*") }' +
+    ' catch (error) { window.top.postMessage({ report: "blob script in " + (' + where + ') + ": refused" }, "*") }',
+  ], { type: 'text/javascript' }))
+  const own = document.createElement('script')
+  own.src = script
+  document.head.appendChild(own)
+  const srcdoc = document.createElement('iframe')
+  srcdoc.srcdoc = '<script src="' + script + '"><\/script>'
+  document.body.appendChild(srcdoc)
+  const page = document.createElement('iframe')
+  page.src = URL.createObjectURL(new Blob(['<script src="' + script + '"><\/script>'], { type: 'text/html' }))
+  document.body.appendChild(page)
+  const empty = document.createElement('iframe')
+  document.body.appendChild(empty)
+  try {
+    const tag = empty.contentDocument.createElement('script')
+    tag.src = script
+    empty.contentDocument.head.appendChild(tag)
+    report('blank child took a blob script')
+  } catch (error) {
+    report('blank child: no document to add a script to')
+  }
   report('done')
 }
 `
@@ -233,7 +265,7 @@ function electronBinary(): string | null {
 const ELECTRON = process.platform === 'linux' && !process.env.DISPLAY ? null : electronBinary()
 
 test.skipIf(!ELECTRON)(
-  'live: extension code cannot build a peer connection, not even through a child frame, and no STUN or TURN server hears from it',
+  'live: extension code cannot build a peer connection, not even through a child frame or a blob script, and no STUN or TURN server hears from it',
   async () => {
     const graph = buildSurfaceModules('src/entry.js', (path) => (path === 'src/entry.js' ? PROBE_ENTRY : null), {})
     assert.ok(graph.ok, graph.ok ? '' : graph.problem.message)
@@ -269,12 +301,19 @@ test.skipIf(!ELECTRON)(
         control: string
         controlHeard: { udp: number; tcp: number }
       }
-      assert.deepEqual(result.frame.reports, [
+      // The blob script loads later than the rest: its reports come in any order after them.
+      assert.deepEqual(result.frame.reports.slice(0, 6), [
         'frame: refused',
         'frame (webkit): refused',
         'blank child: refused',
         'window[1]: refused',
+        'blank child: no document to add a script to',
         'done',
+      ])
+      // A blob script runs in the frame (with nothing to build from), and in no child frame.
+      assert.deepEqual(result.frame.reports.slice(6).sort(), [
+        'blob script in frame: refused',
+        'blob script ran in frame',
       ])
       assert.deepEqual({ udp: result.frame.udp, tcp: result.frame.tcp }, { udp: 0, tcp: 0 })
       // The control: the window's own peer connection reaches TURN over TCP, never over UDP.
