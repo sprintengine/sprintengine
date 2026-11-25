@@ -72,7 +72,7 @@ function served(key: string): ExtensionContributionsResult {
   const id = key.slice(key.indexOf('.') + 1)
   // The served extension carries its extension.json as it is, `ui` included,
   // though the wire's view of a surface does not name it.
-  const panel = { id: 'board', title: 'Board', entry: 'src/board.tsx', ui: 'components' }
+  const panel = { id: 'board', title: 'Board', entry: 'src/board.tsx', ui: 'components' as const }
   return {
     extensions: [
       {
