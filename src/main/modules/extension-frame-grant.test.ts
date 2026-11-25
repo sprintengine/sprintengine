@@ -73,9 +73,15 @@ function setup() {
   const dataDir = mkdtempSync(join(tmpdir(), 'frame-grant-'))
   dirs.push(dataDir)
   const discovered = standings(dataDir)
+  // A components panel's images, as the server reads them (readSurfaceImage).
+  const imagesRead: string[] = []
   const kernel = createMainKernel({
     // The kernel started knowing no extension at all.
     resolveModuleManifest: () => undefined,
+    frameOwnImage: (moduleId, path) => {
+      imagesRead.push(`${moduleId}:${path}`)
+      return { mime: 'image/png', data: 'iVBORw0KGgo=' }
+    },
     resolveFrameGrant: createExtensionFrameGrant({
       approvals: createExtensionApprovalReader(dataDir),
       dataDir,
@@ -105,7 +111,7 @@ function setup() {
       commandId: 'k',
       invoker: ownerInvoker(),
     })
-  return { dataDir, call, created, discovered }
+  return { dataDir, call, created, discovered, imagesRead }
 }
 
 test('an extension approved after the kernel started is served at once, and refused once switched off or forgotten', async () => {
@@ -226,4 +232,36 @@ test('a frame is refused once its extension no longer runs as approved, or its f
   const gone = await call(V1, 'backlog.create', create)
   assert.equal(gone.ok, false)
   assert.equal(created.length, 0)
+})
+
+// A components panel's frame is judged like any frame. Its images need no
+// permission of the extension's, so only its standing stands between a kept
+// frame and its files: killed, switched off or no longer approved, it is
+// refused before anything is read.
+test('a components panel’s frame is refused its images once its extension is killed, switched off or unapproved', async () => {
+  const { dataDir, call, imagesRead } = setup()
+  const image = () => call(V1, 'assets.image', { path: 'assets/logo.png' })
+  await writeExtensionApproval(dataDir, 'local.fresh', { fingerprint: 'sha256-a', access: access({ permissions: [] }) })
+  pinExtensionFrame(V1, 'local.fresh', [])
+  assert.deepEqual(await image(), { ok: true, result: { mime: 'image/png', data: 'iVBORw0KGgo=' } })
+  assert.deepEqual(imagesRead, ['local.fresh:assets/logo.png'])
+
+  await writeKillListCache(dataDir, {
+    killListVersion: 1,
+    generatedAt: '2026-11-24T00:00:00.000Z',
+    extensions: [{ id: 'local.fresh', versions: ['1.0.0'], reason: 'It sends your files away.' }],
+  })
+  const killed = await image()
+  assert.equal(!killed.ok && killed.code, 'approval_required')
+  await writeKillListCache(dataDir, { killListVersion: 1, generatedAt: '2026-11-24T01:00:00.000Z', extensions: [] })
+
+  await writeModuleOverrides(dataDir, { 'local.fresh': false })
+  const off = await image()
+  assert.equal(!off.ok && off.code, 'approval_required')
+  await writeModuleOverrides(dataDir, {})
+
+  await writeExtensionApproval(dataDir, 'local.fresh', null)
+  const unapproved = await image()
+  assert.equal(!unapproved.ok && unapproved.code, 'approval_required')
+  assert.equal(imagesRead.length, 1, 'nothing was read for a refused frame')
 })

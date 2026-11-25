@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { test } from 'vitest'
 
 import { declaredSettingsReader, withDeclaredSettings } from '../modules/extension-declared-settings'
+import { approvedContext } from '../modules/extension-approvals.test-helper'
+import { readSurfaceImage } from '../modules/extension-surface-entries'
+import { discoverUserModules } from '../modules/user-module-registry'
 import { createExtensionFrameCalls } from './extension-frame-calls'
 import { studioGrantPrincipal } from '../../../packages/studio-protocol/src/permissions'
 import { OWNER_PRINCIPAL, type ExtensionInvoker } from './extension-invocation'
@@ -291,4 +294,92 @@ test('a save whose extension is revoked while its hook runs writes nothing', asy
   const madeAnswer = await made
   assert.equal(madeAnswer.ok, false)
   assert.equal(existsSync(join(folder, 'new.todo')), false)
+})
+
+// A components panel's `Image` asks for one of its extension's own files
+// (`assets.image`): the call is answered from the extension that drew the
+// frame, through the same reader the server is wired with (server-modules.ts,
+// app-main.ts), as a `{ mime, data }` the window turns into a `data:` URL.
+// Anything it is not, outside the folder, missing or another extension's, is
+// null; a malformed path is refused.
+test('a components panel’s assets.image answers its own image, and nothing else', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'frame-images-'))
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==',
+    'base64',
+  )
+  const panelExtension = (id: string) => {
+    const folder = writeExtensionFolder(join(root, `local.${id}`), {
+      manifest: extensionManifest({
+        id,
+        tier: 'ui',
+        main: undefined,
+        contributes: { panels: [{ id: 'board', title: 'Board', entry: 'src/panel.tsx', ui: 'components' }] },
+      }),
+      files: { 'src/panel.tsx': 'export default function Panel() { return null }\n', 'assets/readme.txt': 'words' },
+    })
+    mkdirSync(join(folder, 'assets'), { recursive: true })
+    writeFileSync(join(folder, 'assets', `${id}.png`), png)
+    return folder
+  }
+  const pictures = panelExtension('pictures')
+  panelExtension('neighbour')
+  writeFileSync(join(root, 'outside.png'), png)
+  const { modules } = await discoverUserModules(root, approvedContext({ 'local.pictures': pictures }))
+  const ownImages: string[] = []
+  const call = createExtensionFrameCalls({
+    // A panel that declares no permission at all: its images need none.
+    grantOf: () => ({ grant: [], outdated: false }),
+    service: () => undefined,
+    callModuleMethod: async () => ({ ok: false, code: 'extension_unavailable', message: 'none' }) as never,
+    emitNotification: () => undefined,
+    appState: () => undefined,
+    fileExclusions: () => [],
+    ownImage: (moduleId, path) => {
+      ownImages.push(`${moduleId}:${path}`)
+      return readSurfaceImage(
+        modules.find((module) => module.key === moduleId),
+        path,
+      )
+    },
+  })
+  const image = (params: unknown, invoker: ExtensionInvoker = OWNER, moduleId = 'local.pictures') =>
+    call({ moduleId, frame: 'f'.repeat(64), method: 'assets.image', params, clientId: 'c', commandId: 'k', invoker })
+
+  const drawn = await image({ path: 'assets/pictures.png' })
+  assert.deepEqual(drawn, { ok: true, result: { mime: 'image/png', data: png.toString('base64') } })
+  // What the window draws: the same bytes, as a data: URL.
+  const result = (drawn.ok ? drawn.result : null) as { mime: string; data: string }
+  assert.ok(Buffer.from(`data:${result.mime};base64,${result.data}`.split(',')[1]!, 'base64').equals(png))
+  // A paired device that may use extensions sees the panel's images too.
+  assert.deepEqual(await image({ path: 'assets/pictures.png' }, PAIRED), drawn)
+
+  assert.deepEqual(await image({ path: 'assets/readme.txt' }), { ok: true, result: null }, 'not an image')
+  assert.deepEqual(await image({ path: 'assets/missing.png' }), { ok: true, result: null }, 'missing')
+  assert.deepEqual(await image({ path: '../outside.png' }), { ok: true, result: null }, 'outside its folder')
+  assert.deepEqual(
+    await image({ path: '../local.neighbour/assets/neighbour.png' }),
+    { ok: true, result: null },
+    'another extension’s, by a path',
+  )
+  // Another extension's frame asks for this one's image: it is read from its own folder, which has none.
+  assert.deepEqual(await image({ path: 'assets/pictures.png' }, OWNER, 'local.neighbour'), { ok: true, result: null })
+
+  // A path that is not one is refused before anything is read.
+  const asked = ownImages.length
+  for (const params of [{}, { path: '' }, { path: 42 }, { path: `${'a/'.repeat(300)}x.png` }, 'assets/pictures.png']) {
+    const refused = await image(params)
+    assert.equal(refused.ok ? 'answered' : refused.code, 'invalid_params', JSON.stringify(params).slice(0, 40))
+  }
+  assert.equal(ownImages.length, asked)
+
+  // A connection that may not use extensions at all is not shown it.
+  const stranger: ExtensionInvoker = {
+    principal: studioGrantPrincipal({ owner: false, scopes: [] }),
+    permissionCeiling: null,
+    label: 'the device "android-phone"',
+  }
+  const refused = await image({ path: 'assets/pictures.png' }, stranger)
+  assert.equal(refused.ok, false)
+  assert.equal(ownImages.length, asked)
 })

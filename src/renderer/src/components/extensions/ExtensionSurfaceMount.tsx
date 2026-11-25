@@ -139,7 +139,12 @@ export function ExtensionSurfaceMount({
   useEffect(() => () => forgetRetainedPanel(retainKeyRef.current), [])
 
   useEffect(() => {
-    if (!loaded) return
+    // Its extension went (killed, no longer approved, uninstalled): nothing of
+    // its run carries over, so an approval later starts the panel from nothing.
+    if (!loaded) {
+      forgetRetainedPanel(retainKeyRef.current)
+      return
+    }
     const openedAt = now()
     let closed = false
     let readyAt: number | null = null
