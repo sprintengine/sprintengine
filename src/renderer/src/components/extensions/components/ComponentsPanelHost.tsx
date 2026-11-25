@@ -61,6 +61,7 @@ export function ComponentsPanelHost({
   }
 
   const inert = state.loadError !== null || !state.drawn
+  const loadErrorLines = state.loadError ? state.loadError.split('\n').filter((line) => line.trim()) : null
   return (
     <div className="relative flex h-full min-h-0 flex-col" data-components-panel="">
       {state.errors.length > 0 ? (
@@ -74,16 +75,18 @@ export function ComponentsPanelHost({
           }
         />
       ) : null}
-      {state.loadError ? (
+      {loadErrorLines ? (
+        // The first line names the file, line and column, so it is shown; the rest (a stack) waits behind details.
         <InlineNotice
           tone="error"
           title="This save did not load; the last version that did is shown"
-          detail={state.loadError}
-          className="m-[var(--sem-space-2)]"
+          hint={loadErrorLines[0]}
+          {...(loadErrorLines.length > 1 ? { detail: state.loadError ?? '' } : {})}
+          className="m-[var(--sem-space-sm)]"
         />
       ) : null}
-      {state.refused ? <InlineNotice tone="warn" title={state.refused} className="m-[var(--sem-space-2)]" /> : null}
-      <div className="min-h-0 flex-1 overflow-auto" data-components-scroll="">
+      {state.refused ? <InlineNotice tone="warn" title={state.refused} className="m-[var(--sem-space-sm)]" /> : null}
+      <div className="min-h-0 flex-1 overflow-auto p-[var(--sem-space-lg)]" data-components-scroll="">
         <ComponentsView
           tree={state.tree}
           revision={state.revision}
@@ -96,7 +99,7 @@ export function ComponentsPanelHost({
         />
       </div>
       {reloadedShown ? (
-        <div className="pointer-events-none absolute right-[var(--sem-space-2)] top-[var(--sem-space-2)]">
+        <div className="pointer-events-none absolute right-[var(--sem-space-sm)] top-[var(--sem-space-sm)]">
           <Badge tone="accent">Reloaded</Badge>
         </div>
       ) : null}

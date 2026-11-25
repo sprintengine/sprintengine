@@ -140,13 +140,13 @@ export default function ComponentsShotApp(): ReactElement {
 
   return (
     <div
-      className="h-full min-h-0 overflow-hidden bg-[color:var(--bg-surface)] text-[color:var(--text-default)]"
+      className="h-full min-h-0 overflow-hidden bg-[color:var(--bg-surface)] p-[var(--sem-space-lg)] text-[color:var(--text-default)]"
       data-components-shot=""
     >
       {shot && !shot.tree && shot.failure ? (
         <EmptyState title="This panel could not load" body={shot.failure} />
       ) : shot ? (
-        // The panel host adds no padding of its own: the panel's tree lays itself out.
+        // Inset as the panel host insets it in a pane (ComponentsPanelHost.tsx).
         <ComponentsView
           tree={shot.tree}
           revision={1}
