@@ -5,8 +5,9 @@
 // type, label and target, and the same position on screen. Anything that
 // moves it, a sibling growing above it included, starts the wait again, so a
 // panel cannot slide a control under the pointer just before a click. The
-// person scrolling the panel is not a move: positions are measured in the
-// panel's scroll content.
+// person scrolling the panel is not a move: positions are measured on screen,
+// with the panel's own scroll added back, and nothing else. A whole panel
+// moving (an error banner appearing above its tree) moves every control in it.
 //
 // Two halves, both on an injected clock so they are testable without a
 // window: what each accepted tree says about its controls (`observe`), and
@@ -51,19 +52,32 @@ export function componentGestureIdOf(node: ComponentNode): string | null {
   return callback === null ? null : componentGestureId.callback(callback)
 }
 
-function textOf(children: ComponentChild[]): string {
-  return children
-    .map((child) => (typeof child === 'string' ? child : `<${child.type}>`))
-    .join('')
-    .slice(0, 256)
+// Every visible prop a node inside a control can draw its words or marks with.
+const VISIBLE = ['label', 'title', 'description', 'icon', 'href', 'variant', 'tone', 'content', 'value', 'name', 'alt']
+
+/** Everything a control shows, nested Text and Badges included: a short id of its whole content. */
+function contentOf(children: ComponentChild[]): string {
+  const parts: string[] = []
+  const walk = (list: ComponentChild[]) => {
+    for (const child of list) {
+      if (typeof child === 'string') parts.push(child)
+      else {
+        const props = child.props as Record<string, unknown>
+        parts.push(`<${child.type}`, ...VISIBLE.map((name) => String(props[name] ?? '')), '>')
+        walk(child.children)
+        parts.push('</>')
+      }
+    }
+  }
+  walk(children)
+  const text = parts.join('\u0000')
+  return `${text.length}:${contentHash(text)}`
 }
 
 /** What the person sees and what a press does: any change starts the wait again. */
 function signatureOf(node: ComponentNode, path: string): string {
-  const visible = ['label', 'title', 'description', 'icon', 'href', 'variant', 'tone', 'content']
-    .map((name) => String(node.props[name] ?? ''))
-    .join('\u0000')
-  return `${path}\u0001${node.type}\u0001${visible}\u0001${textOf(node.children)}`
+  const visible = VISIBLE.map((name) => String(node.props[name] ?? '')).join('\u0000')
+  return `${path}\u0001${node.type}\u0001${visible}\u0001${contentOf(node.children)}`
 }
 
 export type ComponentGestureStability = {
@@ -111,7 +125,7 @@ export function createComponentGestureStability(): ComponentGestureStability {
   }
 }
 
-/** Where each tracked control sits, in the panel's scroll content. */
+/** Where each tracked control sits on screen, the panel's own scroll added back. */
 export type ComponentGestureGeometry = {
   /** Stable per id, so React does not attach it again (and reset it) on every render. */
   refFor(id: string): (element: Element | null) => void
@@ -128,11 +142,12 @@ export function createComponentGestureGeometry(clock: () => number): ComponentGe
   const attached = new Map<string, Set<Element>>()
   let container: Element | null = null
 
+  // The window's viewport is the reference: it does not move. Only the
+  // panel's scrolling is taken out; the panel itself moving is a move.
   const rectOf = (element: Element): string => {
     const box = element.getBoundingClientRect()
-    const origin = container?.getBoundingClientRect()
-    const left = box.left - (origin?.left ?? 0) + (container?.scrollLeft ?? 0)
-    const top = box.top - (origin?.top ?? 0) + (container?.scrollTop ?? 0)
+    const left = box.left + (container?.scrollLeft ?? 0)
+    const top = box.top + (container?.scrollTop ?? 0)
     return `${left},${top},${box.width},${box.height}`
   }
 

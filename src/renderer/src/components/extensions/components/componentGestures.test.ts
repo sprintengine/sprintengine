@@ -77,3 +77,51 @@ test('on screen: a control that moved starts its wait again, and scrolling the p
   geometry.sample()
   expect(geometry.isSettled(id, now)).toBe(true)
 })
+
+test('a nested label that changes starts the wait again: the whole visible content is the signature', () => {
+  const stability = createComponentGestureStability()
+  const row = (label: string) =>
+    n('ListItem', { onPress: cb('c1') }, [n('Text', {}, [label], 't'), n('Badge', {}, ['new'], 'b')], 'row')
+  stability.observe(checked(n('List', {}, [row('Keep')])), 0)
+  expect(stability.isSettled(id, 600)).toBe(true)
+  stability.observe(checked(n('List', {}, [row('Delete everything')])), 600)
+  expect(stability.isSettled(id, 700)).toBe(false)
+  expect(stability.isSettled(id, 1100)).toBe(true)
+  // A nested Badge's words count too.
+  stability.observe(
+    checked(
+      n('List', {}, [
+        n(
+          'ListItem',
+          { onPress: cb('c1') },
+          [n('Text', {}, ['Delete everything'], 't'), n('Badge', {}, ['old'], 'b')],
+          'row',
+        ),
+      ]),
+    ),
+    1100,
+  )
+  expect(stability.isSettled(id, 1200)).toBe(false)
+})
+
+test('the whole panel moving down 100 px under the pointer is a move, though the control kept its place in the panel', () => {
+  let now = 0
+  const geometry = createComponentGestureGeometry(() => now)
+  let shift = 0
+  const container = boxed({ left: 0, top: 0, width: 300, height: 300 })
+  container.getBoundingClientRect = () => ({ left: 0, top: shift, width: 300, height: 300 }) as DOMRect
+  geometry.setContainer(container)
+  const control = boxed({ left: 10, top: 100, width: 80, height: 24 })
+  control.getBoundingClientRect = () => ({ left: 10, top: 100 + shift, width: 80, height: 24 }) as DOMRect
+  geometry.refFor(id)(control)
+  now = 600
+  geometry.sample()
+  expect(geometry.isSettled(id, now)).toBe(true)
+  // An error banner appeared above the tree: the panel and the control move down together.
+  shift = 100
+  geometry.sample()
+  expect(geometry.isSettled(id, now)).toBe(false)
+  now = 1100
+  geometry.sample()
+  expect(geometry.isSettled(id, now)).toBe(true)
+})
