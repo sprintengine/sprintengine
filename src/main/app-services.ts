@@ -90,7 +90,6 @@ import { syncStudioMcpConfig } from './studio-mcp-sync'
 import { excludeMcpConfigFromWorktree } from './git'
 import { excludeFromWorktree } from './integrations/worktree-exclude'
 import { createConversationPeekService } from './conversation-peek/service'
-import { listTerminalRoots } from './terminal-runtime'
 import type { TerminalLaunchPreparation } from '../server/terminals/terminal-launch-preparation'
 import { remoteShellTerminals, type ShellTerminals } from './shell-terminals'
 import type { AgentPhaseEvent } from '../shared/agent-runtime'
@@ -754,7 +753,7 @@ export function createAppServices(
     },
   }
   const core = createRemoteCore(server)
-  const { agentLaunchSettings, hosts, workspaceRegistry, workspaceSyncService, conversationOwner, conversations } = core
+  const { agentLaunchSettings, hosts, workspaceRegistry, workspaceSyncService, conversationOwner, processes } = core
   // The terminals and their agents are the server's (studio-agent-terminals.ts),
   // which the shell reads through `shellTerminals`.
   const shellTerminals: ShellTerminals = remoteShellTerminals(server.rpc)
@@ -928,7 +927,8 @@ export function createAppServices(
   // workspace's terminals are running. The control layer is the agents' hands
   // on those same tabs, exposed as the gateway's browser.* tools below.
   const browserManager = createBrowserManager({
-    listTerminalRoots,
+    // The dev servers the server's terminals and chats are running.
+    listTerminalRoots: () => processes.roots(),
     // A pane popped out of its window hosts its browser tabs there.
     isHostWindow: isBrowserHostWebContents,
     broadcast: broadcastToWorkspaceWindows,
@@ -1627,7 +1627,8 @@ export function createAppServices(
     studioPluginStatus,
     studioAreaSkillStore,
     conversationOwner,
-    conversations,
+    /** The server's live terminal and chat process roots. */
+    processes,
     githubTokenStore,
     logMainPerfEvent,
     mcpConfigService,

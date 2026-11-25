@@ -118,8 +118,8 @@ type TerminalRootInfo = {
 }
 
 export type BrowserManagerDeps = {
-  /** Every live pty and the workspace it belongs to (terminal-runtime's listTerminalRoots). */
-  listTerminalRoots: () => TerminalRootInfo[]
+  /** Every live terminal and chat process and the workspace it belongs to, as the Studio server runs them. */
+  listTerminalRoots: () => TerminalRootInfo[] | Promise<TerminalRootInfo[]>
   /** Whether a WebContents is one of this app's own windows — the only hosts a guest may register from. */
   isHostWindow: (host: WebContents) => boolean
   /** Push an event to every workspace window (open requests from the agent tools). */
@@ -1399,7 +1399,7 @@ export function createBrowserManager(deps: BrowserManagerDeps) {
     async listLocalServers(workspaceId: string): Promise<LocalServer[]> {
       const platform = deps.platform ?? process.platform
       if (platform !== 'darwin' && platform !== 'linux') return []
-      const roots = deps.listTerminalRoots().filter((root) => root.workspaceId === workspaceId)
+      const roots = (await deps.listTerminalRoots()).filter((root) => root.workspaceId === workspaceId)
       if (roots.length === 0) return []
       const runPs = deps.runPs ?? (() => execFileTextOrNull('ps', ['-axo', 'pid=,ppid=,pcpu=,args=']))
       const psOut = await runPs()

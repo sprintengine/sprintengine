@@ -18,8 +18,11 @@ export const SERVER_METHODS = {
   githubToken: 'github.token',
   /** `{ sessionId }` → the peek card's events, or null for a session the server does not have. */
   conversationPeekEvents: 'conversations.peek-events',
-  /** → the folders the chats live in, for diagnostics. */
-  conversationRoots: 'conversations.live-roots',
+  /**
+   * → `TerminalRootInfo[]`: every live terminal and chat process root on the
+   * server, for Diagnostics' per-workspace memory and the browser's dev servers.
+   */
+  liveRoots: 'processes.live-roots',
   /** → the workspace ids whose chats have a turn running now: what keeps their browser tabs open. */
   conversationsWorking: 'conversations.working',
   /**

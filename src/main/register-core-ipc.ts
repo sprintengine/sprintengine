@@ -164,7 +164,7 @@ export function registerCoreIpc(
     openDiagnosticsWindow: () => {
       createDiagnosticsWindow()
     },
-    listConversationRoots: () => services.conversations.listLiveConversationRoots(),
+    listProcessRoots: () => services.processes.lastRoots(),
   })
   registerUpdateIpc(ipcMain, { updateService: services.updateService })
   // A file attached to a message by path opens in its default app, and only

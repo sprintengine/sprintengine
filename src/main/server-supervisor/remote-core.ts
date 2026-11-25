@@ -47,9 +47,15 @@ export type ShellCore = {
   hosts: HostRegistry
   workspaceRegistry: ServerStateMirror['registry']
   workspaceSyncService: ServerStateMirror['workspaceSync']
-  conversations: {
-    /** The folders the server's chats run in, for Diagnostics' per-workspace memory (the last answer). */
-    listLiveConversationRoots(): TerminalRootInfo[]
+  processes: {
+    /**
+     * The server's live terminal and chat process roots, as last answered, for
+     * Diagnostics' per-workspace memory, which reads them synchronously; each
+     * read asks for the next.
+     */
+    lastRoots(): TerminalRootInfo[]
+    /** The same, asked now: the browser's dev servers. */
+    roots(): Promise<TerminalRootInfo[]>
   }
   conversationOwner: {
     /** One idle setting governs terminals and chats; the chats' half is the server's. */
@@ -122,31 +128,34 @@ export function createRemoteCore(link: ShellServerLink): ShellCore {
     return id ? hosts.get(id) : null
   })
 
-  // The folders the server's chats run in, for Diagnostics' per-workspace
-  // memory, which reads them synchronously: each read answers the last list
-  // and asks for the next, and the panel polls while it is open.
-  let conversationRoots: TerminalRootInfo[] = []
+  // The server's process roots, for Diagnostics' per-workspace memory, which
+  // reads them synchronously: each read answers the last list and asks for the
+  // next, and the panel polls while it is open.
+  let lastRoots: TerminalRootInfo[] = []
   let rootsInFlight = false
-  const readConversationRoots = (): TerminalRootInfo[] => {
+  const askRoots = (): Promise<TerminalRootInfo[]> =>
+    link.isServing()
+      ? rpc.call<TerminalRootInfo[]>(SERVER_METHODS.liveRoots).then(
+          (roots) => (Array.isArray(roots) ? roots : []),
+          () => [],
+        )
+      : Promise.resolve([])
+  const readLastRoots = (): TerminalRootInfo[] => {
     if (!link.isServing()) {
-      conversationRoots = []
-      return conversationRoots
+      lastRoots = []
+      return lastRoots
     }
     if (!rootsInFlight) {
       rootsInFlight = true
-      rpc
-        .call<TerminalRootInfo[]>(SERVER_METHODS.conversationRoots)
-        .then(
-          (roots) => {
-            conversationRoots = Array.isArray(roots) ? roots : []
-          },
-          () => undefined,
-        )
+      void askRoots()
+        .then((roots) => {
+          lastRoots = roots
+        })
         .finally(() => {
           rootsInFlight = false
         })
     }
-    return conversationRoots
+    return lastRoots
   }
 
   return {
@@ -154,7 +163,7 @@ export function createRemoteCore(link: ShellServerLink): ShellCore {
     hosts,
     workspaceRegistry: mirror.registry,
     workspaceSyncService: mirror.workspaceSync,
-    conversations: { listLiveConversationRoots: readConversationRoots },
+    processes: { lastRoots: readLastRoots, roots: askRoots },
     conversationOwner: {
       setIdleThresholdMs: (value) => rpc.emit(SERVER_EVENTS.conversationIdleThreshold, value),
     },

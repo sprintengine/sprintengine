@@ -8,6 +8,7 @@ import { SHELL_TOOLSETS, serverAutomationTools } from './shell-toolsets'
 import { shellArtifactsOverControl } from '../artifacts/artifacts-shell-bridge'
 import { shellCanvasOverControl } from '../canvas/canvas-shell-bridge'
 import { createAgentChangelistFeed } from '../../main/agent-changelist-feed'
+import { listTerminalRoots } from '../../main/terminal-runtime'
 import { announceChangelistsChanged } from '../git/changelist-events'
 import { getGitRepoWatch } from '../git/checkout-watch'
 import { shellExtensionOpenOverControl } from '../extensions/extension-open-bridge'
@@ -939,7 +940,10 @@ function serveShellRequests(deps: {
       .readPeekTranscript({ workspaceRoot, workspaceId: summary.workspaceId, agentId: summary.agentId })
       .catch(() => [])
   })
-  rpc.handle(SERVER_METHODS.conversationRoots, () => core.conversations.listLiveConversationRoots())
+  rpc.handle(SERVER_METHODS.liveRoots, () => [
+    ...listTerminalRoots(),
+    ...core.conversations.listLiveConversationRoots(),
+  ])
   rpc.handle(SERVER_METHODS.conversationsWorking, () => {
     const listed = core.conversations.listSessions()
     if (!listed.ok) return []

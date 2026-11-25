@@ -195,13 +195,13 @@ test("the shell's core is its slice: the mirror, the machines, and the chats' fo
     },
   })
   assert.equal(core.workspaceRegistry.getRecords().length, 0)
-  // The chats are the server's: the shell's slice holds only the folders they run in.
-  assert.deepEqual(core.conversations.listLiveConversationRoots(), [])
+  // The chats and terminals are the server's: the shell's slice holds only their process roots.
+  assert.deepEqual(core.processes.lastRoots(), [])
   assert.deepEqual(Object.keys(core).sort(), [
     'agentLaunchSettings',
     'conversationOwner',
-    'conversations',
     'hosts',
+    'processes',
     'workspaceRegistry',
     'workspaceSyncService',
   ])
@@ -209,10 +209,13 @@ test("the shell's core is its slice: the mirror, the machines, and the chats' fo
   installGitHostResolver(null)
 })
 
-test("Diagnostics reads the folders the server's chats run in, one poll behind", async () => {
+test("Diagnostics reads the server's terminal and chat process roots, one poll behind; the browser asks now", async () => {
   const { shell, server } = pair()
-  const roots = [{ sessionId: 'chat-1', rootPid: 4242, workspaceId: 'acme' }]
-  server.handle(SERVER_METHODS.conversationRoots, () => roots)
+  const roots = [
+    { sessionId: 'terminal-1', rootPid: 4141, workspaceId: 'acme' },
+    { sessionId: 'chat-1', rootPid: 4242, workspaceId: 'acme' },
+  ]
+  server.handle(SERVER_METHODS.liveRoots, () => roots)
   let serving = true
   const core = createRemoteCore({
     rpc: shell,
@@ -224,12 +227,14 @@ test("Diagnostics reads the folders the server's chats run in, one poll behind",
       throw new Error('not in this test')
     },
   })
-  assert.deepEqual(core.conversations.listLiveConversationRoots(), [])
+  assert.deepEqual(core.processes.lastRoots(), [])
   await settle()
-  assert.deepEqual(core.conversations.listLiveConversationRoots(), roots)
-  // A server that is not serving has no chats to attribute.
+  assert.deepEqual(core.processes.lastRoots(), roots)
+  assert.deepEqual(await core.processes.roots(), roots)
+  // A server that is not serving has no processes to attribute.
   serving = false
-  assert.deepEqual(core.conversations.listLiveConversationRoots(), [])
+  assert.deepEqual(core.processes.lastRoots(), [])
+  assert.deepEqual(await core.processes.roots(), [])
   installHostRegistry(null)
   installGitHostResolver(null)
 })
