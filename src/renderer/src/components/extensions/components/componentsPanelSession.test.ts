@@ -84,6 +84,10 @@ test('a gesture lasts one call within a second of the press', () => {
   session.grantGesture()
   clock.now += 1001
   assert.equal(session.takeGesture(), false)
+  // A press on a control that had not stood still takes back the grant a press before it left open.
+  session.grantGesture()
+  session.grantGesture(false)
+  assert.equal(session.takeGesture(), false)
 })
 
 test('a save: memory atoms and the last tree carry over, the next tree shows Reloaded', () => {

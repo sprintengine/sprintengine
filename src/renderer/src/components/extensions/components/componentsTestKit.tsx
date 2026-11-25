@@ -55,8 +55,8 @@ export function draw(
         revision,
         dispatch: (callback, args, extra) =>
           drawn.sent.push({ callback, args, ...(extra?.edit === undefined ? {} : { edit: extra.edit }) }),
-        grantGesture: () => {
-          drawn.grants += 1
+        grantGesture: (stood) => {
+          if (stood) drawn.grants += 1
         },
         openLink: (href) => drawn.opened.push(href),
         readImage: async (src) => options.images?.[src] ?? null,

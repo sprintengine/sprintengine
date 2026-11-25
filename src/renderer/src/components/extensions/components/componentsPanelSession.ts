@@ -223,9 +223,13 @@ export function createComponentsPanelSession(options: {
         ...(dispatchOptions.edit === undefined ? {} : { edit: dispatchOptions.edit }),
       })
     },
-    /** A press on a still control: one gesture-gated call within a second. */
-    grantGesture() {
-      gestureUntil = now() + GESTURE_WINDOW_MS
+    /**
+     * A press on a still control: one gesture-gated call within a second. A
+     * press on one that had not stood still takes back any grant still open,
+     * so the press that follows a control moving under the pointer opens nothing.
+     */
+    grantGesture(stood = true) {
+      gestureUntil = stood ? now() + GESTURE_WINDOW_MS : 0
     },
     takeGesture(): boolean {
       const granted = now() <= gestureUntil

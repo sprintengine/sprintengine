@@ -171,8 +171,8 @@ export function ComponentsView({
         if (inert) return
         dispatch(callback, args, edit === undefined ? undefined : { edit })
       },
-      grantGesture: () => {
-        if (!inert) grantGesture()
+      grantGesture: (stood) => {
+        if (!inert) grantGesture(stood)
       },
       openLink: (href) => {
         if (!inert) openLink(href)

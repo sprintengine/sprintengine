@@ -24,7 +24,7 @@ export type ComponentsViewProps = {
    * for 500 ms (the stationary rule): the host grants the panel one
    * gesture-gated call within a second.
    */
-  grantGesture(): void
+  grantGesture(stood: boolean): void
   /** Open an `https:`, `http:` or `mailto:` URL from a Link's `href` or a Markdown link; only after the stationary rule. */
   openLink(href: string): void
   /** One of the extension's images as a `data:` URL, or null when it cannot be shown. */

@@ -97,9 +97,10 @@ export function LinkView({ node, path }: Props): JSX.Element {
       disabled={!href && !callback}
       onClick={() => {
         if (view.inert || id === null) return
-        if (!isComponentControlSettled(view.gestures, id)) return
+        // A press on a link that had not stood still runs nothing, and takes back a grant still open.
+        if (!isComponentControlSettled(view.gestures, id)) return view.grantGesture(false)
         if (href) view.openLink(href)
-        else view.grantGesture()
+        else view.grantGesture(true)
         if (callback) view.send(callback, [])
       }}
     >

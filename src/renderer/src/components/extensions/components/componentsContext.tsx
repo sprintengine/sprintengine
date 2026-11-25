@@ -17,7 +17,8 @@ import {
 export type ComponentsContextValue = {
   /** Send a handler call; nothing while the view is inert. */
   send(callback: string, args: unknown[], edit?: number): void
-  grantGesture(): void
+  /** A press: `stood` when its control had stood still (a grant), else any open grant is taken back. */
+  grantGesture(stood: boolean): void
   openLink(href: string): void
   readImage(src: string): Promise<string | null>
   inert: boolean
@@ -112,7 +113,7 @@ export function usePress(node: ComponentNode): (() => void) | undefined {
   if (!callback) return undefined
   return () => {
     if (view.inert) return
-    if (isComponentControlSettled(view.gestures, componentGestureId.callback(callback))) view.grantGesture()
+    view.grantGesture(isComponentControlSettled(view.gestures, componentGestureId.callback(callback)))
     view.send(callback, [])
   }
 }
