@@ -2,6 +2,7 @@
 // A Table: rows in the panel's order, only those in view drawn, sorting,
 // selection, row actions and paging reported as plain data.
 
+import { act } from 'react'
 import { afterEach, expect, test } from 'vitest'
 
 import { cb, click, draw, key, n, type Drawn } from './componentsTestKit'
@@ -64,24 +65,63 @@ test('click, Cmd-click and Shift-click select; Enter and double click act', () =
   ])
   const region = drawn.host.querySelector('[data-component-table]')!
   key(region, 'Enter')
-  act(b!)
+  doubleClick(b!)
   expect(drawn.sent.filter((each) => each.callback === 'act').map((each) => each.args[0])).toEqual([
     { key: 'r1' },
     { key: 'r1' },
   ])
 })
 
-function act(row: HTMLElement) {
+function doubleClick(row: HTMLElement) {
   row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
 }
 
-test('only the rows in view are drawn, and the end asks for more once per length', () => {
+test('only the rows in view are drawn, and the end asks for more once per list', () => {
   drawn = draw(table({ rows: rows(2000), hasMore: true, onLoadMore: cb('more'), maxHeight: 'sm' }))
   expect(bodyRows(drawn.host).length).toBeLessThan(40)
-  expect(drawn.sent.filter((each) => each.callback === 'more')).toHaveLength(0)
+  const asked = () => drawn!.sent.filter((each) => each.callback === 'more').length
+  expect(asked()).toBe(0)
   drawn.draw(table({ rows: rows(5), hasMore: true, onLoadMore: cb('more') }))
   drawn.draw(table({ rows: rows(5), hasMore: true, onLoadMore: cb('more') }))
-  expect(drawn.sent.filter((each) => each.callback === 'more')).toHaveLength(1)
+  expect(asked()).toBe(1)
+  // The same length, sorted the other way, is another list.
+  drawn.draw(table({ rows: rows(5).reverse(), hasMore: true, onLoadMore: cb('more') }))
+  expect(asked()).toBe(2)
+})
+
+test('paging waits while a page loads, shows it loading, and asks again for a page that failed', () => {
+  const page = (extra: Record<string, unknown>) =>
+    table({ rows: rows(5), hasMore: true, onLoadMore: cb('more'), ...extra })
+  const asked = () => drawn!.sent.filter((each) => each.callback === 'more').length
+  drawn = draw(page({ loading: true }))
+  expect(asked()).toBe(0)
+  expect(drawn.host.querySelector('[data-table-loading]')!.textContent).toContain('Loading more…')
+  drawn.draw(page({}))
+  expect(asked()).toBe(1)
+  drawn.draw(page({ loading: true }))
+  // The page ended with the list unchanged: it failed, and nothing is asked until the person scrolls.
+  drawn.draw(page({}))
+  expect(drawn.host.querySelector('[data-table-loading]')).toBeNull()
+  expect(asked()).toBe(1)
+  const region = drawn.host.querySelector('[data-component-table]')!
+  act(() => {
+    region.dispatchEvent(new Event('scroll'))
+  })
+  expect(asked()).toBe(2)
+})
+
+test("a key on a control inside the table is that control's: Enter on a sortable header sorts, not acts", () => {
+  drawn = draw(table())
+  const header = [...drawn.host.querySelectorAll('thead button')].find((each) => each.textContent?.startsWith('Name'))!
+  const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+  act(() => {
+    header.dispatchEvent(enter)
+  })
+  expect(enter.defaultPrevented).toBe(false)
+  key(header, 'ArrowDown')
+  expect(drawn.sent.filter((each) => each.callback === 'act')).toEqual([])
+  const region = drawn.host.querySelector('[data-component-table]')!
+  expect(region.getAttribute('aria-activedescendant')).toMatch(/row-0$/u)
 })
 
 test('a narrow table drops the columns that hide below its width, keeping at least one', () => {

@@ -18,6 +18,7 @@ import {
   type RelativeTimeFormat,
 } from '../../../../../../packages/extension-sdk/src/components/catalog'
 import type { ComponentNode } from '../../../../../../packages/extension-sdk/src/components/tree'
+import { copy } from '../../../../../shared/copy'
 import { CheckIcon } from '../../AppIcons'
 import { GhostButton } from '../../ui/Buttons'
 import { Spinner } from '../../ui/Spinner'
@@ -48,6 +49,7 @@ const LOAD_MORE_WITHIN = 10
 const WIDTH: Record<string, string | undefined> = { auto: undefined, xs: '4rem', sm: '6rem', md: '9rem', lg: '14rem' }
 const MIN_WIDTH: Record<string, string> = { auto: '0px', xs: '4rem', sm: '6rem', md: '9rem' }
 const ALIGN_CLASS: Record<string, string> = { start: 'text-left', center: 'text-center', end: 'text-right' }
+const t = copy.extensions.components.componentsTable
 
 /** The columns a table this wide shows; at least one always stays. */
 export function visibleColumns<C extends { hideBelow?: 'sm' | 'md' }>(columns: readonly C[], width: number): C[] {
@@ -59,11 +61,11 @@ function CellContent({ cell, locale }: { cell: Cell | undefined; locale: string 
   if (cell === undefined || cell === null) return null
   if (typeof cell === 'boolean')
     return cell ? (
-      <span role="img" aria-label="Yes" className="inline-flex">
+      <span role="img" aria-label={t.yes} className="inline-flex">
         <CheckIcon className="icon-xs" />
       </span>
     ) : (
-      <span className="sr-only">No</span>
+      <span className="sr-only">{t.no}</span>
     )
   if (typeof cell === 'object') return <RelativeTimeText at={cell.at} format={cell.format ?? 'short'} locale={locale} />
   return <>{String(cell)}</>
@@ -95,7 +97,11 @@ export function TableView({ node }: { node: ComponentNode; path: string }): JSX.
   const [scrollTop, setScrollTop] = useState(0)
   const [cursor, setCursor] = useState(0)
   const anchor = useRef<number | null>(null)
-  const askedAt = useRef<number | null>(null)
+  // The list a page was asked for, and whether that page ended without changing it.
+  const askedFor = useRef<string | null>(null)
+  const failed = useRef(false)
+  const wasLoading = useRef(false)
+  const [retry, setRetry] = useState(0)
 
   useLayoutEffect(() => {
     const element = scroller.current
@@ -111,16 +117,33 @@ export function TableView({ node }: { node: ComponentNode; path: string }): JSX.
   const count = virtual ? Math.ceil(max / TABLE_ROW_HEIGHT) + OVERSCAN * 2 : rows.length
   const last = Math.min(rows.length, first + count)
 
-  // Paging: ask once per length of `rows`, when the end comes into reach.
+  // Paging: ask once per list (its length and its first and last rows, so a new
+  // sort or filter of the same length is a new list), when the end comes into
+  // reach and no page is loading. A page that finished loading without changing
+  // the list failed; the person's next scroll asks for it again.
   const loadMore = callbackOf(node.props.onLoadMore)
+  const loading = node.props.loading === true
+  const identity = `${rows.length}\u0000${rows[0]?.key ?? ''}\u0000${rows.at(-1)?.key ?? ''}`
   const lastInView = virtual ? Math.min(rows.length, Math.ceil((scrollTop + max) / TABLE_ROW_HEIGHT)) : rows.length
   useEffect(() => {
-    if (!loadMore || node.props.hasMore !== true || view.inert) return
+    if (wasLoading.current && !loading && askedFor.current === identity) failed.current = true
+    wasLoading.current = loading
+  }, [loading, identity])
+  useEffect(() => {
+    if (!loadMore || node.props.hasMore !== true || loading || view.inert) return
     if (lastInView < rows.length - LOAD_MORE_WITHIN) return
-    if (askedAt.current === rows.length) return
-    askedAt.current = rows.length
+    if (askedFor.current === identity) return
+    askedFor.current = identity
+    failed.current = false
     view.send(loadMore, [])
-  }, [loadMore, node.props.hasMore, lastInView, rows.length, view])
+  }, [loadMore, node.props.hasMore, loading, lastInView, rows.length, identity, retry, view])
+  const onScroll = (top: number) => {
+    setScrollTop(top)
+    if (!failed.current) return
+    failed.current = false
+    askedFor.current = null
+    setRetry((count) => count + 1)
+  }
 
   const choose = (keys: string[]) => {
     if (view.inert || selection.readOnly || mode === 'none') return
@@ -164,7 +187,9 @@ export function TableView({ node }: { node: ComponentNode; path: string }): JSX.
     else if (top + TABLE_ROW_HEIGHT > element.scrollTop + max) element.scrollTop = top + TABLE_ROW_HEIGHT - max
   }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (rows.length === 0) return
+    // Rows move only while the table itself has focus: a key on a control inside
+    // it (Enter on a sortable header) is that control's, and keeps its default.
+    if (event.target !== event.currentTarget || rows.length === 0) return
     const move = (next: number) => {
       const clamped = Math.max(0, Math.min(rows.length - 1, next))
       event.preventDefault()
@@ -204,7 +229,7 @@ export function TableView({ node }: { node: ComponentNode; path: string }): JSX.
       aria-label={label}
       tabIndex={0}
       onKeyDown={onKeyDown}
-      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
       aria-activedescendant={activeRow ? `${id}-row-${cursor}` : undefined}
       className="relative min-w-0 overflow-auto rounded-sm border border-[color:var(--border-subtle)] focus-visible:focus-ring"
       style={max ? { maxHeight: max } : undefined}
@@ -299,6 +324,16 @@ export function TableView({ node }: { node: ComponentNode; path: string }): JSX.
               <td colSpan={shown.length} />
             </tr>
           ) : null}
+          {loading && rows.length > 0 ? (
+            <tr data-table-loading="" style={{ height: TABLE_ROW_HEIGHT }}>
+              <td colSpan={shown.length} className="px-2 text-meta text-[color:var(--text-muted)]">
+                <span className="inline-flex items-center gap-2">
+                  <Spinner />
+                  {t.loadingMore}
+                </span>
+              </td>
+            </tr>
+          ) : null}
         </tbody>
       </Table>
       {rows.length === 0 && node.props.loading !== true ? (
@@ -306,7 +341,7 @@ export function TableView({ node }: { node: ComponentNode; path: string }): JSX.
           {typeof node.props.emptyText === 'string' ? node.props.emptyText : 'Nothing to show.'}
         </p>
       ) : null}
-      {node.props.loading === true ? (
+      {loading && rows.length === 0 ? (
         <div className="flex items-center gap-2 px-2 py-2 text-meta text-[color:var(--text-muted)]">
           <Spinner label="Loading" />
         </div>

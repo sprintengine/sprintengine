@@ -669,6 +669,19 @@ export const en = {
       buildYourOwnExtension: 'Build your own extension',
       describeItAndAnAgent: 'Describe it and an agent builds it with you, using the SDK.',
     },
+    components: {
+      // src/renderer/src/components/extensions/components/componentsContent.tsx
+      componentsContent: {
+        yes: 'Yes',
+        no: 'No',
+      },
+      // src/renderer/src/components/extensions/components/componentsTable.tsx
+      componentsTable: {
+        yes: 'Yes',
+        no: 'No',
+        loadingMore: 'Loading more…',
+      },
+    },
   },
   find: {
     // src/renderer/src/components/find/FindBar.tsx
