@@ -209,6 +209,31 @@ test('finders see what Studio draws: the selected tab, an open Collapsible', asy
   await view.unmount()
 })
 
+test('a switched tab unmounts its controls: what was typed in one tab is not in the next, nor kept for a return', async () => {
+  const field = (value: string) =>
+    jsx('Input', { key: 'name', label: 'Name', defaultValue: value, onChange: () => undefined })
+  const view = await mountPanel(
+    () =>
+      jsx('Tabs', {
+        label: 'Views',
+        onChange: () => undefined,
+        children: [
+          jsx('Tab', { key: 'one', value: 'one', label: 'One', children: field('ONE') }),
+          jsx('Tab', { key: 'two', value: 'two', label: 'Two', children: field('TWO') }),
+        ],
+      }),
+    { manifest },
+  )
+  await view.type({ type: 'Input' }, ' DRAFT')
+  assert.equal(view.valueOf({ type: 'Input' }), 'ONE DRAFT')
+  await view.select({ role: 'tablist' }, 'two')
+  assert.equal(view.valueOf({ type: 'Input' }), 'TWO')
+  await view.select({ role: 'tablist' }, 'one')
+  assert.equal(view.valueOf({ type: 'Input' }), 'ONE')
+  assert.deepEqual(view.errors, [])
+  await view.unmount()
+})
+
 test('errors, warnings and refusals: what Studio would refuse, drop, or the panel threw', async () => {
   const boom = atom(false)
   const Panel = () => {

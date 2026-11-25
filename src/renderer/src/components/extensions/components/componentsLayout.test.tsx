@@ -4,7 +4,7 @@
 
 import { afterEach, expect, test } from 'vitest'
 
-import { cb, click, draw, key, n, type Drawn } from './componentsTestKit'
+import { cb, click, draw, key, n, typeInto, type Drawn } from './componentsTestKit'
 
 let drawn: Drawn | null = null
 afterEach(() => {
@@ -105,6 +105,23 @@ test('tabs draw only the selected tab, and report a switch', () => {
   click([...drawn.host.querySelectorAll('[role="tab"]')][1]!)
   expect(drawn.sent).toEqual([{ callback: 'tab', args: ['two'], edit: 1 }])
   expect(drawn.host.textContent).toContain('second body')
+})
+
+test('a switch of tab draws the next tab afresh: a field of the same key does not carry what was typed', () => {
+  const field = (defaultValue: string) =>
+    n('Input', { label: 'Name', defaultValue, onChange: cb(`name-${defaultValue}`) }, [], 'name')
+  drawn = draw(
+    n('Tabs', { label: 'Views', onChange: cb('tab') }, [
+      n('Tab', { value: 'one', label: 'One' }, [field('ONE')], 'one'),
+      n('Tab', { value: 'two', label: 'Two' }, [field('TWO')], 'two'),
+    ]),
+  )
+  const input = () => drawn!.host.querySelector<HTMLInputElement>('input')!
+  expect(input().value).toBe('ONE')
+  typeInto(input(), 'DRAFT')
+  expect(input().value).toBe('DRAFT')
+  click([...drawn.host.querySelectorAll('[role="tab"]')][1]!)
+  expect(input().value).toBe('TWO')
 })
 
 test('a collapsible opens and closes, and its content is drawn only when open', () => {

@@ -379,6 +379,27 @@ export async function mountPanel(
   }
 
   // ── The edit protocol, as the window keeps it ──
+  /**
+   * What the window draws of a node's children: only the selected tab's content
+   * (the tab with the Tabs' value, else the first enabled one), and a
+   * Collapsible's only while open.
+   */
+  function shownChildren(node: ComponentNode, path: string): ComponentChild[] {
+    if (node.type === 'Collapsible') return controlState(node, path)?.local === true ? node.children : []
+    if (node.type !== 'Tabs') return node.children
+    const value = controlState(node, path)?.local
+    const tabs = node.children.filter(
+      (child): child is ComponentNode => typeof child === 'object' && child.type === 'Tab',
+    )
+    const selected = tabs.find((tab) => tab.props.value === value) ?? tabs.find((tab) => tab.props.disabled !== true)
+    return node.children.map((child) =>
+      typeof child === 'object' && child.type === 'Tab' && child !== selected
+        ? { ...(child as ComponentNode), children: [] }
+        : child,
+    )
+  }
+
+  /** Every node the window draws, parents first; hidden content is not walked. */
   function walk(visit: (node: ComponentNode, path: string) => void): void {
     const visitAll = (children: ComponentChild[], parent: string) => {
       children.forEach((child, index) => {
@@ -386,7 +407,7 @@ export async function mountPanel(
         const node = child as ComponentNode
         const path = `${parent}/${node.key ?? `#${index}`}`
         visit(node, path)
-        visitAll(node.children, path)
+        visitAll(shownChildren(node, path), path)
       })
     }
     if (tree) visitAll([tree], '')
@@ -415,6 +436,8 @@ export async function mountPanel(
         state.acked = acked
       }
     })
+    // A control the window no longer draws (gone from the tree, or in a tab or
+    // Collapsible now hidden) is unmounted there, and what was typed in it with it.
     for (const id of [...controls.keys()]) if (!seen.has(id)) controls.delete(id)
   }
 
@@ -425,17 +448,7 @@ export async function mountPanel(
     const build = (node: ComponentNode, path: string): Drawn => {
       const parts: string[] = []
       const children: Drawn[] = []
-      let shown = node.children
-      if (node.type === 'Tabs') {
-        const selected = controlState(node, path)?.local
-        shown = node.children.map((child) =>
-          typeof child === 'object' && child.type === 'Tab' && (child as ComponentNode).props.value !== selected
-            ? { ...(child as ComponentNode), children: [] }
-            : child,
-        )
-      }
-      if (node.type === 'Collapsible' && controlState(node, path)?.local !== true) shown = []
-      shown.forEach((child, index) => {
+      shownChildren(node, path).forEach((child, index) => {
         if (typeof child === 'string') {
           parts.push(child)
           return
@@ -546,6 +559,8 @@ export async function mountPanel(
     state.local = next
     state.sent += 1
     dispatch(callback, args, state.sent)
+    // A switched tab or a closed Collapsible unmounts what it held; an opened one draws its controls afresh.
+    if (at.node.type === 'Tabs' || at.node.type === 'Collapsible') syncControls()
   }
 
   // ── Settling ──

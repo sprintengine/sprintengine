@@ -226,6 +226,10 @@ export function TabsView({ node, path }: Props): JSX.Element {
     send: (id, value, edit) => view.send(id, [value], edit),
   })
   const selected = tabs.find((tab) => tab.props.value === state.value) ?? firstEnabled
+  // The tab's own segment of its content's path, and the key its content is drawn
+  // under: a switch draws the other tab's controls afresh, so what was typed in
+  // one tab's field never shows in a field of the same key in the next.
+  const selectedId = selected ? (selected.key ?? String(selected.props.value)) : ''
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <Tabs
@@ -245,9 +249,9 @@ export function TabsView({ node, path }: Props): JSX.Element {
       />
       {selected ? (
         <TabPanel idPrefix={prefix} tabId={String(selected.props.value)} active>
-          <div className="flex min-w-0 flex-col gap-2">
+          <div key={`${selectedId}\u0000${String(selected.props.value)}`} className="flex min-w-0 flex-col gap-2">
             <ColumnContext.Provider value={true}>
-              {view.renderChildren(selected.children, `${path}/${selected.key ?? String(selected.props.value)}`)}
+              {view.renderChildren(selected.children, `${path}/${selectedId}`)}
             </ColumnContext.Provider>
           </div>
         </TabPanel>
