@@ -41,9 +41,10 @@ export type PanelCheckAnswer = { worker?: string; panels: PanelCheck[]; logs: st
 
 const SCENARIO_EXTENSIONS = ['.ts', '.tsx', '.mts', '.js', '.jsx', '.mjs']
 
-function finish(answer: PanelCheckAnswer): never {
-  process.stdout.write(`${JSON.stringify(answer)}\n`)
-  process.exit(0)
+function finish(answer: PanelCheckAnswer): void {
+  // Exit once the line is written: a pipe takes stdout asynchronously, and
+  // exiting at once would cut an answer longer than the pipe's buffer.
+  process.stdout.write(`${JSON.stringify(answer)}\n`, () => process.exit(0))
 }
 
 /** `file:line:column message`, at the first frame in the extension's own files. */

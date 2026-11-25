@@ -3,6 +3,8 @@
 // `{ ok: false, error: { code, message, data?, nextSteps? } }`. Branch on
 // `error.code`, never on the words; the codes and exit codes below are kept.
 
+import { writeSync } from 'node:fs'
+
 /** Every code an authoring command fails with. */
 export const CLI_ERROR_CODES = [
   /** A flag or argument is missing or wrong. */
@@ -106,6 +108,28 @@ export type Output = {
   fail(error: unknown): never
 }
 
+const pause = new Int32Array(new SharedArrayBuffer(4))
+
+/**
+ * Write all of `text` to `fd` before returning. A pipe takes stdout and
+ * stderr asynchronously on macOS, so an answer written the usual way and
+ * followed by `process.exit` is cut at the pipe's buffer (64 KiB): a check
+ * with a large drawing would print half its JSON.
+ */
+function writeAll(fd: number, text: string): void {
+  const bytes = Buffer.from(text)
+  let at = 0
+  while (at < bytes.length) {
+    try {
+      at += writeSync(fd, bytes, at)
+    } catch (error) {
+      // The reader is slower than the writer: wait for room. Anything else (it closed the pipe) ends the answer.
+      if ((error as NodeJS.ErrnoException).code !== 'EAGAIN') return
+      Atomics.wait(pause, 0, 0, 2)
+    }
+  }
+}
+
 export function createOutput(json: boolean): Output {
   const fail = (error: unknown): never => {
     const failure =
@@ -113,7 +137,8 @@ export function createOutput(json: boolean): Output {
         ? error
         : new CliError('unavailable', error instanceof Error ? error.message : String(error))
     if (json) {
-      process.stdout.write(
+      writeAll(
+        1,
         `${JSON.stringify({
           ok: false,
           error: {
@@ -125,20 +150,25 @@ export function createOutput(json: boolean): Output {
         })}\n`,
       )
     } else {
-      console.error(`${failure.message}`)
+      const lines = [failure.message]
       const issues = failure.data?.issues
       if (Array.isArray(issues))
         for (const issue of issues as Array<{ path?: string; message?: string }>)
-          console.error(`  - ${issue.path ? `${issue.path}: ` : ''}${issue.message ?? ''}`)
-      for (const step of failure.nextSteps ?? []) console.error(`Next: ${step}`)
+          lines.push(`  - ${issue.path ? `${issue.path}: ` : ''}${issue.message ?? ''}`)
+      for (const step of failure.nextSteps ?? []) lines.push(`Next: ${step}`)
+      writeAll(2, `${lines.join('\n')}\n`)
     }
     process.exit(failure.exitCode ?? exitCodeOf(failure.code))
   }
   return {
     json,
     done(result, words) {
-      if (json) process.stdout.write(`${JSON.stringify({ ok: true, result })}\n`)
-      else for (const line of Array.isArray(words) ? words : [words]) console.log(line)
+      writeAll(
+        1,
+        json
+          ? `${JSON.stringify({ ok: true, result })}\n`
+          : (Array.isArray(words) ? words : [words]).map((line) => `${line}\n`).join(''),
+      )
       process.exit(0)
     },
     line(event, words) {

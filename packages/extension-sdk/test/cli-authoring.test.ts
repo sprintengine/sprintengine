@@ -230,6 +230,29 @@ test('check renders a components panel once, or once per scenario, and says what
   assert.match(JSON.stringify(results[1]!.tree), /7 clicks/)
 })
 
+test('check’s answer survives a pipe when its drawing is larger than the pipe’s buffer', () => {
+  const panel = [
+    "import { Table } from '@sprintengine/extension-sdk/components'",
+    '',
+    'const rows = Array.from({ length: 2000 }, (_, i) => ({',
+    '  key: `row-${i}`,',
+    "  cells: { name: `Row number ${i} of the table`, size: i * 7, note: 'a longer cell to fill the drawing' },",
+    '}))',
+    '',
+    'export default function Panel() {',
+    "  const columns = [{ key: 'name', label: 'Name' }, { key: 'size', label: 'Size' }, { key: 'note', label: 'Note' }]",
+    '  return <Table label="Rows" columns={columns} rows={rows} />',
+    '}',
+    '',
+  ].join('\n')
+  const answer = run(['check', componentsExtension('cli-components-large', { 'src/panel.tsx': panel })])
+  assert.equal(answer.status, 0, JSON.stringify(answer.answer).slice(0, 2000))
+  const panels = answer.answer.result?.panels as { panels: Array<{ results: Array<{ tree: unknown }> }> }
+  const tree = JSON.stringify(panels.panels[0]!.results[0]!.tree)
+  assert.ok(tree.length > 128 * 1024, `the drawing is ${tree.length} bytes`)
+  assert.match(tree, /Row number 1999 of the table/u)
+})
+
 test('check fails a components panel that throws, at its file and line, and one with no component to draw', () => {
   const throwing = run([
     'check',
