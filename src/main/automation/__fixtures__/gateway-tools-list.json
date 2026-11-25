@@ -406,11 +406,11 @@
     },
     {
       "name": "extension.create",
-      "sha256": "bd152a953739a77b320d8018673e67e4a105c42b310c261aa41b48ab46376c64"
+      "sha256": "f112a9ea3329a64de420151649bf57b9d5ce2a8ff34e3bcf3722fc433799dc4f"
     },
     {
       "name": "extension.guide",
-      "sha256": "ade786d5056bd9fce65b6a8b42f59aee07a25d0b08adf0b5bbe50463fce01b41"
+      "sha256": "a6c244d04eaea253cf5b5366ab4fe620ef5aa3685c57fa040302f6d0ea55c1fb"
     },
     {
       "name": "extension.dev.load",
@@ -904,11 +904,11 @@
     },
     {
       "name": "extension.create",
-      "sha256": "bd152a953739a77b320d8018673e67e4a105c42b310c261aa41b48ab46376c64"
+      "sha256": "f112a9ea3329a64de420151649bf57b9d5ce2a8ff34e3bcf3722fc433799dc4f"
     },
     {
       "name": "extension.guide",
-      "sha256": "ade786d5056bd9fce65b6a8b42f59aee07a25d0b08adf0b5bbe50463fce01b41"
+      "sha256": "a6c244d04eaea253cf5b5366ab4fe620ef5aa3685c57fa040302f6d0ea55c1fb"
     },
     {
       "name": "extension.dev.load",

@@ -291,7 +291,11 @@ test('a scenario: stubbed results, storage and events, summarized', async () => 
   const note = atom('note', '', { persist: 'storage' })
   const panel = {
     setup() {
-      void settings.get('greeting').then((value) => set(greeting, String(value ?? '')))
+      void settings
+        .get('greeting')
+        .then((value) => set(greeting, String(value ?? '')))
+        // Refused in one scenario: the panel shows its empty state, and the refusal is recorded.
+        .catch(() => undefined)
     },
     default: () =>
       read(greeting)
