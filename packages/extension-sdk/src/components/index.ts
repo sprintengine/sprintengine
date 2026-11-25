@@ -96,7 +96,7 @@ const sdk = createComponentsSdk({
   theme: () => (runtime ? read(runtime.themeAtom) : { colorScheme: 'dark' }),
 })
 
-export const { host, env, shell, on, ui, storage, settings, secrets, worker } = sdk
+export const { api, host, env, shell, on, ui, storage, settings, secrets, worker } = sdk
 
 // The catalogue's tags. JSX `<Stack>` compiles to a reference to `Stack`, so
 // a panel imports them by name; at run time each is its own name.

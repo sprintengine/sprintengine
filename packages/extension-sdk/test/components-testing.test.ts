@@ -356,3 +356,32 @@ test('a module that mounts its panel with mount() draws in every mountPanel of t
     await view.unmount()
   }
 })
+
+test('settings.onDidChange hands the values as they are now, each time Studio says they changed', async () => {
+  let values: Record<string, unknown> = { greeting: 'hi' }
+  const greeting = atom('greeting-live', '')
+  const view = await mountPanel(
+    {
+      setup() {
+        const heard = settings.onDidChange((now) => set(greeting, String(now.greeting ?? '')))
+        return () => heard.dispose()
+      },
+      default: () => jsx('Text', { children: read(greeting) || 'none' }),
+    },
+    { manifest, results: { 'settings.get': () => values } },
+  )
+  assert.equal(view.tree()?.children[0], 'none')
+  values = { greeting: 'hello' }
+  await view.emit('settings.changed', {})
+  await view.settled()
+  assert.equal(view.tree()?.children[0], 'hello')
+  await view.unmount()
+})
+
+test('host.call is typed by the frame methods, and the module says its shape version', async () => {
+  const { api } = await import('../src/components/index.js')
+  assert.equal(api.version, 1)
+  // @ts-expect-error Not a host method.
+  const typed: Parameters<typeof host.call>[0] = 'no.such.method'
+  void typed
+})

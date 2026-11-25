@@ -257,11 +257,17 @@ export function ExtensionSurfaceMount({
           }),
         openDoor: (door) => host.openGlobalSurface(extensionSurfaceId(extensionKey, door)),
         focusTab: (input) => host.focusTab(input),
-        // The editor's typography is this window's own; the rest are its Studio's.
+        // The editor's typography is this window's own, and so is hearing the
+        // extension's Settings values change (any writer, through its Studio);
+        // the rest are its Studio's stream.
         followStudioEvent: (event, deliver) =>
           event === 'editor.typography.changed'
             ? followEditorTypography(deliver)
-            : extensionsApi.onStudioEvents(extensionKey, event, deliver),
+            : event === 'settings.changed'
+              ? extensionsApi.onExtensionSettingsChanged((moduleId) => {
+                  if (moduleId === null || moduleId === extensionKey) deliver({})
+                })
+              : extensionsApi.onStudioEvents(extensionKey, event, deliver),
         openExternal: (url) => opener.openExternal(url),
       },
       theme: () => readWindowFrameTheme(THEME_TOKENS),

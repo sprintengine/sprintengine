@@ -319,6 +319,9 @@ test('a frame hears one of Studio’s events only with its permission, held to t
   assert.equal(!paired.ok && paired.code, 'not_permitted')
   const unknown = await subscribe('local.reader', 'workspace.exploded', ownerInvoker())
   assert.equal(!unknown.ok && unknown.code, 'invalid_params')
+  // Its own Settings values changing needs `settings:own`, as reading them does.
+  const settings = await subscribe('local.bare', 'settings.changed', ownerInvoker())
+  assert.equal(!settings.ok && settings.code, 'not_permitted')
 })
 
 test('a frame’s client method is admitted at the host and carried out by the window', async () => {

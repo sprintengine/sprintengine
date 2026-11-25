@@ -11,9 +11,15 @@
 - An extension's panel contribution carries `ui` (`html` or `components`).
   A components panel's frame runs hidden: its runtime speaks `ui.*` events
   over the frame's own envelope, and its host calls add `atoms.read`,
-  `atoms.write`, `secrets.has`, `secrets.set`, `secrets.delete` and
-  `shell.openExternal` (carried out by the window, after a press on one of
-  Studio's own controls that stood still) to `extension.call`'s methods.
+  `atoms.write`, `assets.image` (one of the extension's own image files),
+  `secrets.has`, `secrets.set`, `secrets.delete` and `shell.openExternal`
+  (carried out by the window, after a press on one of Studio's own controls
+  that stood still, and admitted again just before it opens) to
+  `extension.call`'s methods. Its timers ride the envelope too (`timer`,
+  answered with `wake`): the frame is not drawn.
+- `events.subscribe` takes `settings.changed`: the extension's own Settings
+  values changed (`settings:own`, and whoever opened the surface must be able
+  to read them). The window delivers it, from its Studio's settings stream.
 - A components panel's `atoms.write` rides a lane of its own in the window
   (640 KiB a write, 60 writes every 10 seconds), apart from its renders and
   its other calls; the runtime splits a large change to fit, and holds one

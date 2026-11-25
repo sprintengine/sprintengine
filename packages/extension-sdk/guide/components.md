@@ -176,11 +176,12 @@ panel.
 
 | Export | What it reaches |
 | --- | --- |
-| `host.call(method, params, { signal?, timeoutMs? })`, `host.has(method)` | Any frame host method (the `api-renderer` topic): `workspace.list`, `files.read`, `chat.draft`, `toast`, … A refusal rejects with its `code` |
+| `host.call(method, params, { signal?, timeoutMs? })`, `host.has(method)` | Any frame host method (the `api-renderer` topic): `workspace.list`, `files.read`, `chat.draft`, `toast`, … typed as a frame's `studio.host.call` is. A refusal rejects with its `code` |
+| `api.version` | The version of this module's shape (now 1), as a frame's `studio.api.version` |
 | `env.locale`, `env.theme`, `env.client` | Studio's language; `{ colorScheme }` (reading it while rendering draws again when the person switches light and dark); `'desktop'` (a local or paired desktop window) or `'web'` |
 | `ui.catalog`, `ui.has(component, prop?)` | The catalogue version this Studio draws (now 4), and whether it draws a component or takes a prop on it |
 | `storage.get(key)`, `.set(key, value)`, `.delete(key)`, `.keys({ prefix })` | The extension's storage, each taking `{ workspaceId }` for a workspace's (`storage:own`) |
-| `settings.get(key?)`, `settings.set(key, value)` | Its Settings values (`settings:own`) |
+| `settings.get(key?)`, `settings.set(key, value)`, `settings.onDidChange(handler)` | Its Settings values (`settings:own`). `onDidChange` hears them change, in Studio's Settings or by any other writer, and is handed the values as they are now; whoever opened the panel must be able to read them |
 | `secrets.has(key)`, `secrets.set(key, value, { allowedOrigins })`, `secrets.delete(key)` | Its secrets (`secrets:own`). The value goes in and never comes back to a panel: only whether one is set does. The worker sends it, with `fetchWithSecret`, to the origins given |
 | `worker.read(method, params)`, `worker.operate(method, params)` | Its worker's declared methods (`registerMethods`), as `read` or `operate` |
 | `worker.on(topic, handler)` | The worker's events (`studio.emit(topic, payload)`); `'*'` hears every topic as `{ topic, payload }` |
@@ -349,7 +350,9 @@ selected item) is either:
   the atom to `''` after a submit clears the box. A `value` with no handler is
   read-only.
 - **uncontrolled**: `defaultValue` (`defaultChecked`, …), with or without a
-  handler. Studio keeps the value; the panel hears it change.
+  handler. Studio keeps the value; the panel hears it change. Studio keeps it
+  across a development reload too, as a keyed atom's draft is kept: what was
+  typed stays while the control stays on screen.
 
 `Input`'s `onSubmit` is Enter; `Textarea`'s is Cmd+Enter (Ctrl+Enter off
 macOS). A Table's sort is the panel's: Studio draws the column a click asked
@@ -482,7 +485,10 @@ change across writes to fit.
 
 The panel's module runs in a hidden, sandboxed frame of its own, as every
 surface does: no network, no Node, nothing of Studio's window, and no DOM it
-can show. All it hands Studio is the tree, which comes from the extension's
+can show. The frame is not drawn at all, so nothing in it can take the
+keyboard; its timers are kept by the window, so they run on time though the
+frame is not drawn. Peer connections (WebRTC) are not there to build, in the
+frame or in a frame it makes, and a frame it makes runs no script. All it hands Studio is the tree, which comes from the extension's
 code and so is untrusted: Studio checks every render against the catalogue,
 keeps only the props it knows, and draws them with its own controls. A press
 runs only a handler bound in the tree on screen; links open only in the system
@@ -492,7 +498,10 @@ whoever opened the panel.
 
 ## Clients
 
-A components panel draws in the desktop window, in a paired desktop's window
-and in the web client, by the same path as every extension frame; `env.client`
-says `'desktop'` or `'web'`. `shell.openExternal` opens on the machine the
-window is on. The phone does not show extension panels.
+A components panel draws in the desktop window and in a paired desktop's
+window, by the same path as every extension frame. `shell.openExternal` opens
+on the machine the window is on. `env.client` says `'desktop'`, or `'web'` in
+a browser tab: the web client draws extension surfaces by the same path, but
+only from a Studio that hosts extensions, and the standalone web server does
+not host them yet, so a browser tab served by it shows none. The phone does
+not show extension panels.

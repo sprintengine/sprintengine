@@ -4,6 +4,7 @@
 // storage, settings, secrets and worker. Each goes through the hidden guest's
 // bridge to the window, and from there to Studio's gate, as a frame's calls do.
 
+import type { ExtensionFrameMethod, ExtensionFrameMethods } from '../../frame.js'
 import { COMPONENT_CATALOG_VERSION, componentPropNames, isComponentName } from '../catalog.js'
 import { isReservedComponentEvent } from '../messages.js'
 import type { ComponentsBridge, Disposable, Theme } from './renderer.js'
@@ -29,29 +30,38 @@ export function createComponentsSdk(source: { bridge: () => ComponentsBridge | n
     return bridge
   }
 
+  function call(method: string, params?: unknown, options: HostCallOptions = {}): Promise<unknown> {
+    const bridge = running(`host.call("${String(method)}")`)
+    const { signal, timeoutMs } = options
+    if (timeoutMs === undefined) return bridge.call(method, params, signal ? { signal } : undefined)
+    const controller = new AbortController()
+    const forward = (): void => controller.abort()
+    if (signal?.aborted) controller.abort()
+    signal?.addEventListener('abort', forward, { once: true })
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, timeoutMs)
+    return bridge
+      .call(method, params, { signal: controller.signal })
+      .catch((error: unknown) => {
+        throw timedOut ? hostError('timeout', `${method} took longer than ${timeoutMs} ms.`) : error
+      })
+      .finally(() => {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', forward)
+      })
+  }
+
   const host = Object.freeze({
-    call(method: string, params?: unknown, options: HostCallOptions = {}): Promise<unknown> {
-      const bridge = running(`host.call("${String(method)}")`)
-      const { signal, timeoutMs } = options
-      if (timeoutMs === undefined) return bridge.call(method, params, signal ? { signal } : undefined)
-      const controller = new AbortController()
-      const forward = (): void => controller.abort()
-      if (signal?.aborted) controller.abort()
-      signal?.addEventListener('abort', forward, { once: true })
-      let timedOut = false
-      const timer = setTimeout(() => {
-        timedOut = true
-        controller.abort()
-      }, timeoutMs)
-      return bridge
-        .call(method, params, { signal: controller.signal })
-        .catch((error: unknown) => {
-          throw timedOut ? hostError('timeout', `${method} took longer than ${timeoutMs} ms.`) : error
-        })
-        .finally(() => {
-          clearTimeout(timer)
-          signal?.removeEventListener('abort', forward)
-        })
+    /** Ask Studio to do one thing, typed as frame panels' `studio.host.call` is; rejects with the refusal's `code`. */
+    call<M extends ExtensionFrameMethod>(
+      method: M,
+      params: ExtensionFrameMethods[M]['params'],
+      options: HostCallOptions = {},
+    ): Promise<ExtensionFrameMethods[M]['result']> {
+      return call(method, params, options) as Promise<ExtensionFrameMethods[M]['result']>
     },
     has(method: string): boolean {
       return source.bridge()?.has(method) === true
@@ -76,7 +86,7 @@ export function createComponentsSdk(source: { bridge: () => ComponentsBridge | n
   const shell = Object.freeze({
     /** Open an `https:`, `http:` or `mailto:` URL in the system browser; needs a press on a still control. */
     openExternal(url: string): Promise<unknown> {
-      return host.call('shell.openExternal', { url: String(url) })
+      return call('shell.openExternal', { url: String(url) })
     },
   })
 
@@ -113,18 +123,18 @@ export function createComponentsSdk(source: { bridge: () => ComponentsBridge | n
   type Scope = { workspaceId?: string }
   const storage = Object.freeze({
     async get(key: string, scope: Scope = {}): Promise<unknown> {
-      return unwrap(await host.call('storage.get', { key, ...scope }), (answer) =>
+      return unwrap(await call('storage.get', { key, ...scope }), (answer) =>
         answer.found === true ? answer.value : undefined,
       )
     },
     async set(key: string, value: unknown, scope: Scope = {}): Promise<void> {
-      unwrap(await host.call('storage.set', { key, value, ...scope }), () => undefined)
+      unwrap(await call('storage.set', { key, value, ...scope }), () => undefined)
     },
     async delete(key: string, scope: Scope = {}): Promise<void> {
-      unwrap(await host.call('storage.delete', { key, ...scope }), () => undefined)
+      unwrap(await call('storage.delete', { key, ...scope }), () => undefined)
     },
     async keys(scope: Scope & { prefix?: string } = {}): Promise<string[]> {
-      return unwrap(await host.call('storage.list', scope), (answer) =>
+      return unwrap(await call('storage.list', scope), (answer) =>
         Array.isArray(answer.keys) ? (answer.keys as string[]) : [],
       )
     },
@@ -133,36 +143,54 @@ export function createComponentsSdk(source: { bridge: () => ComponentsBridge | n
   const settings = Object.freeze({
     /** Its Settings values, or one of them. */
     async get(key?: string): Promise<unknown> {
-      const values = ((await host.call('settings.get', {})) ?? {}) as Record<string, unknown>
+      const values = ((await call('settings.get', {})) ?? {}) as Record<string, unknown>
       return key === undefined ? values : values[key]
     },
     async set(key: string, value: unknown): Promise<void> {
-      await host.call('settings.set', { key, value })
+      await call('settings.set', { key, value })
+    },
+    /**
+     * Hear its Settings values change (in Studio's Settings, or by any other
+     * writer), handed the values as they are now. Needs `settings:own`, and
+     * whoever opened the panel must be able to read them.
+     */
+    onDidChange(handler: (values: Readonly<Record<string, unknown>>) => void): Disposable {
+      if (typeof handler !== 'function') throw new TypeError('settings.onDidChange() takes a handler function.')
+      const bridge = running('settings.onDidChange()')
+      return bridge.listen('settings.changed', () => {
+        void (async () => {
+          try {
+            handler(Object.freeze(((await call('settings.get', {})) ?? {}) as Record<string, unknown>))
+          } catch (error) {
+            console.error(error)
+          }
+        })()
+      })
     },
   })
 
   const secrets = Object.freeze({
     /** Whether a secret is set. Its value never reaches a panel: the worker uses it. */
     async has(key: string): Promise<boolean> {
-      const answer = (await host.call('secrets.has', { key })) as { has?: unknown } | null
+      const answer = (await call('secrets.has', { key })) as { has?: unknown } | null
       return answer?.has === true
     },
     /** Store a secret, and the https origins the worker may send it to. */
     async set(key: string, value: string, options: { allowedOrigins: string[] }): Promise<void> {
-      unwrap(await host.call('secrets.set', { key, value, allowedOrigins: options.allowedOrigins }), () => undefined)
+      unwrap(await call('secrets.set', { key, value, allowedOrigins: options.allowedOrigins }), () => undefined)
     },
     async delete(key: string): Promise<void> {
-      unwrap(await host.call('secrets.delete', { key }), () => undefined)
+      unwrap(await call('secrets.delete', { key }), () => undefined)
     },
   })
 
   /** The extension's worker: its declared methods, and the events it posts (`push`). */
   const worker = Object.freeze({
     read(method: string, params?: unknown): Promise<unknown> {
-      return host.call('worker.read', { method, ...(params === undefined ? {} : { params }) })
+      return call('worker.read', { method, ...(params === undefined ? {} : { params }) })
     },
     operate(method: string, params?: unknown): Promise<unknown> {
-      return host.call('worker.operate', { method, ...(params === undefined ? {} : { params }) })
+      return call('worker.operate', { method, ...(params === undefined ? {} : { params }) })
     },
     /** Hear the worker's events (`MainHost.emit`) of one topic, or every one with `'*'`. */
     on(topic: string, handler: (payload: unknown) => void): Disposable {
@@ -174,5 +202,8 @@ export function createComponentsSdk(source: { bridge: () => ComponentsBridge | n
     },
   })
 
-  return { host, env, shell, on, ui, storage, settings, secrets, worker }
+  /** The version of this module's shape, as frame panels' `studio.api.version`. */
+  const api = Object.freeze({ version: 1 as const })
+
+  return { api, host, env, shell, on, ui, storage, settings, secrets, worker }
 }
