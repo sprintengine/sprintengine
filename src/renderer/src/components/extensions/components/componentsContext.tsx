@@ -91,7 +91,7 @@ export const JUSTIFY: Record<string, string> = {
   between: 'justify-between',
 }
 /** A Table's, CodeView's or Tree's own scroll area. */
-export const MAX_HEIGHT_PX: Record<string, number | undefined> = { sm: 160, md: 320, lg: 480, none: undefined }
+export const MAX_HEIGHT_PX: Record<string, number | undefined> = { sm: 256, md: 384, lg: 512, none: undefined }
 
 /** The words of a node's text children, for a button's or a link's name. */
 export function textOf(children: ComponentChild[]): string {

@@ -159,19 +159,20 @@ export function CardView({ node, path }: Props): JSX.Element {
   const view = useComponents()
   const titleId = useId()
   const title = typeof node.props.title === 'string' ? node.props.title : undefined
+  const description = typeof node.props.description === 'string' ? node.props.description : undefined
   return (
     <section
       aria-labelledby={title ? titleId : undefined}
       className="flex min-w-0 flex-col gap-2 rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] p-3"
     >
-      {title ? (
+      {title || description ? (
         <div className="flex flex-col gap-0.5">
-          <h4 id={titleId} className="m-0 text-body font-semibold text-[color:var(--text-strong)]">
-            {title}
-          </h4>
-          {typeof node.props.description === 'string' ? (
-            <p className="m-0 text-meta text-[color:var(--text-muted)]">{node.props.description}</p>
+          {title ? (
+            <h4 id={titleId} className="m-0 text-body font-semibold text-[color:var(--text-strong)]">
+              {title}
+            </h4>
           ) : null}
+          {description ? <p className="m-0 text-meta text-[color:var(--text-muted)]">{description}</p> : null}
         </div>
       ) : null}
       <ColumnContext.Provider value={true}>{view.renderChildren(node.children, path)}</ColumnContext.Provider>
@@ -296,17 +297,25 @@ export function CollapsibleView({ node, path }: Props): JSX.Element {
 
 export function FieldView({ node, path }: Props): JSX.Element {
   const view = useComponents()
+  const messageId = useId()
+  const error = typeof node.props.error === 'string' && node.props.error ? node.props.error : undefined
+  const help = typeof node.props.description === 'string' && node.props.description ? node.props.description : undefined
+  // The group is the Field's control: it points at the message shown under it,
+  // the error while there is one, else the description.
+  const describedBy = error ? `${messageId}-error` : help ? `${messageId}-help` : undefined
   return (
     <Field
       label={String(node.props.label ?? '')}
-      {...(typeof node.props.description === 'string' ? { help: node.props.description } : {})}
-      {...(typeof node.props.error === 'string' && node.props.error ? { error: node.props.error } : {})}
+      messageId={messageId}
+      {...(help ? { help } : {})}
+      {...(error ? { error } : {})}
       required={node.props.required === true}
     >
       <div
         role="group"
         aria-label={String(node.props.label ?? '')}
-        aria-invalid={typeof node.props.error === 'string' && node.props.error ? true : undefined}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy}
         className="flex min-w-0 flex-col gap-2"
       >
         <ColumnContext.Provider value={true}>{view.renderChildren(node.children, path)}</ColumnContext.Provider>

@@ -4,6 +4,7 @@
 
 import { useEffect, useState, type JSX } from 'react'
 
+import { copy } from '../../../../../shared/copy'
 import type { ComponentNode } from '../../../../../../packages/extension-sdk/src/components/tree'
 import type { RelativeTimeFormat } from '../../../../../../packages/extension-sdk/src/components/catalog'
 import { Badge } from '../../ui/Badge'
@@ -22,6 +23,8 @@ import { formatRelativeTime, relativeTimeTickMs } from './componentRelativeTime'
 import { appTone, callbackOf, MAX_HEIGHT_PX, textOf, toneInk, useComponents } from './componentsContext'
 
 type Props = { node: ComponentNode; path: string }
+
+const t = copy.extensions.components.componentsContent
 
 const TEXT_SIZE: Record<string, string> = { xs: 'text-micro', sm: 'text-meta', md: 'text-body' }
 const WEIGHT: Record<string, string> = { regular: 'font-normal', medium: 'font-medium', semibold: 'font-semibold' }
@@ -165,25 +168,30 @@ export function CodeViewView({ node }: Props): JSX.Element {
         {...(typeof node.props.language === 'string' ? { language: node.props.language } : {})}
         {...(typeof node.props.label === 'string' ? { filename: node.props.label } : {})}
         collapsible={false}
+        // The block keeps its own wrap toggle, seeded once; a panel that changes
+        // `wrap` draws it afresh so the new value shows.
+        key={node.props.wrap === true ? 'wrap' : 'no-wrap'}
         defaultWrap={node.props.wrap === true}
       />
     </div>
   )
 }
 
-const IMAGE_SIZE: Record<string, string> = {
-  xs: 'size-8',
-  sm: 'size-16',
-  md: 'size-32',
-  lg: 'size-48',
-  full: 'w-full h-auto',
+/** An image's width; its height follows the picture, and only `cover` crops it square. */
+const IMAGE_WIDTH: Record<string, string> = {
+  xs: 'w-12',
+  sm: 'w-24',
+  md: 'w-40',
+  lg: 'w-64',
+  full: 'w-full',
 }
 
 export function ImageView({ node }: Props): JSX.Element {
   const src = String(node.props.src ?? '')
   const alt = String(node.props.alt ?? '')
   const url = useImage(src)
-  const size = IMAGE_SIZE[String(node.props.size ?? 'md')] ?? IMAGE_SIZE.md
+  const width = IMAGE_WIDTH[String(node.props.size ?? 'md')] ?? IMAGE_WIDTH.md
+  const cover = node.props.fit === 'cover'
   const corner = node.props.rounded ? 'rounded-md' : ''
   if (!url)
     return (
@@ -192,7 +200,7 @@ export function ImageView({ node }: Props): JSX.Element {
         aria-label={alt || undefined}
         aria-hidden={alt ? undefined : true}
         data-image-placeholder=""
-        className={`${size} ${corner} flex items-center justify-center border border-dashed border-[color:var(--border-default)] text-[color:var(--text-muted)]`}
+        className={`${width} max-w-full ${cover ? 'aspect-square' : 'aspect-video'} ${corner} flex items-center justify-center border border-dashed border-[color:var(--border-default)] text-[color:var(--text-muted)]`}
       >
         {url === undefined ? null : <ComponentIcon name="file" />}
       </div>
@@ -201,7 +209,7 @@ export function ImageView({ node }: Props): JSX.Element {
     <img
       src={url}
       alt={alt}
-      className={`${size} ${corner} ${node.props.fit === 'cover' ? 'object-cover' : 'object-contain'}`}
+      className={`${width} max-w-full ${cover ? 'aspect-square object-cover' : 'h-auto object-contain'} ${corner}`}
     />
   )
 }
@@ -212,7 +220,14 @@ export function KeyValueView({ node }: Props): JSX.Element {
     <div aria-label={typeof node.props.label === 'string' ? node.props.label : undefined} role="group">
       <DefinitionList
         items={items.map((item, index) => {
-          const text = item.value === null ? '—' : String(item.value)
+          const text =
+            item.value === null
+              ? '—'
+              : typeof item.value === 'boolean'
+                ? item.value
+                  ? t.yes
+                  : t.no
+                : String(item.value)
           const ink = toneInk(item.tone)
           return {
             id: undefined,
@@ -322,10 +337,14 @@ export function RelativeTimeText({
   locale: string
 }): JSX.Element {
   const [now, setNow] = useState(() => Date.now())
+  const valid = Number.isFinite(new Date(at).getTime())
   useEffect(() => {
+    if (!valid) return
     const timer = setTimeout(() => setNow(Date.now()), relativeTimeTickMs(at - now))
     return () => clearTimeout(timer)
-  }, [at, now])
+  }, [at, now, valid])
+  // A time outside the dates a clock can show (`at: 1e100`) has no words: a dash.
+  if (!valid) return <span data-relative-time-invalid="">—</span>
   return (
     <time dateTime={new Date(at).toISOString()} title={new Date(at).toLocaleString(locale)}>
       {formatRelativeTime(at, now, format, locale)}
@@ -340,7 +359,7 @@ export function RelativeTimeView({ node }: Props): JSX.Element {
     <span style={ink ? { color: ink } : undefined}>
       <RelativeTimeText
         at={Number(node.props.at)}
-        format={(node.props.format as RelativeTimeFormat | undefined) ?? 'long'}
+        format={(node.props.format as RelativeTimeFormat | undefined) ?? 'short'}
         locale={view.locale}
       />
     </span>

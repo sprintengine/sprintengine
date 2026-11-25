@@ -121,3 +121,53 @@ test('relative time, skeleton, spinner, progress and an empty state', () => {
   expect(drawn.host.textContent).toContain('No deploys')
   expect(drawn.host.textContent).toContain('Push')
 })
+
+test('key-value says Yes and No for a boolean', () => {
+  drawn = draw(
+    n('KeyValue', {
+      items: [
+        { label: 'Signed', value: true },
+        { label: 'Public', value: false },
+      ],
+    }),
+  )
+  const values = [...drawn.host.querySelectorAll('dd')].map((each) => each.textContent)
+  expect(values).toEqual(['Yes', 'No'])
+})
+
+test('a relative time is short unless asked otherwise, and a time no clock can show is a dash', () => {
+  const at = Date.now() - 5 * 60_000
+  drawn = draw(n('Stack', {}, [n('RelativeTime', { at }, [], 'a'), n('RelativeTime', { at: 1e100 }, [], 'b')]))
+  expect(drawn.host.querySelector('time')!.textContent).toBe('5m ago')
+  expect(drawn.host.querySelectorAll('time')).toHaveLength(1)
+  expect(drawn.host.querySelector('[data-relative-time-invalid]')!.textContent).toBe('—')
+})
+
+test('an image takes a width of the scale and keeps its proportions; only cover crops it square', async () => {
+  drawn = draw(
+    n('Stack', {}, [
+      n('Image', { src: 'assets/a.png', alt: 'Small', size: 'sm' }, [], 'a'),
+      n('Image', { src: 'assets/a.png', alt: 'Cover', size: 'lg', fit: 'cover' }, [], 'b'),
+    ]),
+    { images: { 'assets/a.png': 'data:image/png;base64,AAAA' } },
+  )
+  await settle()
+  const [small, cover] = [...drawn.host.querySelectorAll('img')]
+  expect(small!.className).toContain('w-24')
+  expect(small!.className).toContain('h-auto')
+  expect(small!.className).not.toContain('aspect-square')
+  expect(cover!.className).toContain('w-64')
+  expect(cover!.className).toContain('aspect-square')
+})
+
+test('a code view scrolls at the scale’s heights, and follows a change of wrap', () => {
+  const code = (extra: Record<string, unknown>) => n('CodeView', { code: 'const a = 1', ...extra })
+  drawn = draw(code({ maxHeight: 'sm' }))
+  expect(drawn.host.querySelector<HTMLElement>('[data-components-view] > div')!.style.maxHeight).toBe('256px')
+  drawn.draw(code({ maxHeight: 'lg' }))
+  expect(drawn.host.querySelector<HTMLElement>('[data-components-view] > div')!.style.maxHeight).toBe('512px')
+  expect(drawn.host.querySelector('.ds-code-block--wrap')).toBeNull()
+  drawn.draw(code({ wrap: true }))
+  expect(drawn.host.querySelector('.ds-code-block--wrap')).not.toBeNull()
+  expect(drawn.host.querySelector<HTMLElement>('[data-components-view] > div')!.style.maxHeight).toBe('384px')
+})

@@ -68,14 +68,25 @@ test('a card names its region; a separator is a separator', () => {
   expect(drawn.host.querySelector('[role="separator"]')).not.toBeNull()
 })
 
-test('a field labels its group and shows its error', () => {
-  drawn = draw(
-    n('Field', { label: 'Name', error: 'Required', required: true }, [
+test('a field labels its group, ties its error to it, and announces the error', () => {
+  const field = (extra: Record<string, unknown>) =>
+    n('Field', { label: 'Name', description: 'As on the invoice', required: true, ...extra }, [
       n('Input', { label: 'Name', labelHidden: true }, [], 'i'),
-    ]),
-  )
-  expect(drawn.host.textContent).toContain('Required')
-  expect(drawn.host.querySelector('[role="group"]')!.getAttribute('aria-invalid')).toBe('true')
+    ])
+  drawn = draw(field({}))
+  const group = () => drawn!.host.querySelector('[role="group"]')!
+  const described = () => document.getElementById(group().getAttribute('aria-describedby')!)!
+  expect(described().textContent).toBe('As on the invoice')
+  drawn.draw(field({ error: 'Required' }))
+  expect(group().getAttribute('aria-invalid')).toBe('true')
+  expect(described().textContent).toBe('Required')
+  expect(described().getAttribute('role')).toBe('alert')
+})
+
+test('a card shows its description without a title', () => {
+  drawn = draw(n('Card', { description: 'Only words' }, ['body']))
+  expect(drawn.host.querySelector('section p')!.textContent).toBe('Only words')
+  expect(drawn.host.querySelector('section h4')).toBeNull()
 })
 
 test('a toolbar moves between its controls with the arrow keys', () => {
