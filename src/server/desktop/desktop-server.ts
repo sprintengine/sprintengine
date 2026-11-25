@@ -62,6 +62,7 @@ import { createNodeStudioPaths } from '../platform/studio-paths'
 import { createRemoteShellBridge } from '../shell-bridge/remote'
 import { createShellSecretCipher, meshSealedTokens } from '../shell-bridge/shell-cipher'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from './gateway-backends'
+import { createWorkspaceExtensionsReader } from '../core/workspace-extensions-reader'
 import { provideServerChat } from './server-ipc'
 import {
   SERVER_EVENTS,
@@ -447,6 +448,12 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
           listModuleContributedTools: () =>
             modules.mcpTools().map((tool) => ({ moduleId: tool.moduleId, toolName: tool.registration.name })),
           readMarketplaceRegistry: (input) => extensions.marketplace.read(input),
+          // What a paired machine's composer offers a chat here.
+          readWorkspaceExtensions: createWorkspaceExtensionsReader({
+            listWorkspaceSkills: (input) => core.agents.skills.workspaceSkills.listWorkspaceSkills(input),
+            agentCapabilities: (input) => core.agents.skills.agentCapabilities.resolve(input),
+            listSources: () => core.agents.skills.skills.listSources(),
+          }),
         }),
       ),
       // `artifacts.*`: publishing agents' pages from this machine's disk, over
