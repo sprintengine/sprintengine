@@ -25,7 +25,8 @@ import { OpenInWindowGlyph } from '../../ui/OpenInWindowGlyph'
 import { RefreshIcon } from '../../ui/RefreshIcon'
 import { PlayGlyph } from '../../ui/TourGlyphs'
 import { TerminalAgentGlyph } from '../../ui/ComposerGlyphs'
-import { FilesGlyph, TerminalGlyph } from '../../workspace/pane/paneKinds'
+import { FileTypeGlyph } from '../../ui/FileTypeGlyph'
+import { TerminalGlyph } from '../../workspace/pane/paneKinds'
 import { StopGlyph } from '../../panels/agentChat/stopGlyph'
 
 type Glyph = ComponentType<{ className?: string }>
@@ -45,7 +46,8 @@ const GLYPHS: Record<string, Glyph> = {
   stop: StopGlyph,
   more: KebabGlyph,
   branch: GitBranchGlyph,
-  file: FilesGlyph,
+  // One file, as the Files tree draws a file of no known type (not the Files tab's folder).
+  file: GenericFileGlyph,
   folder: ProjectFolderGlyph,
   terminal: TerminalGlyph,
   agent: TerminalAgentGlyph,
@@ -55,6 +57,10 @@ const GLYPHS: Record<string, Glyph> = {
   spark: SparkGlyph,
   lock: LockGlyph,
   notes: ReleaseNotesIcon,
+}
+
+function GenericFileGlyph({ className }: { className?: string }): JSX.Element {
+  return <FileTypeGlyph kind="generic" {...(className ? { className } : {})} />
 }
 
 /** The glyph for an icon name; the neutral mark for one the app does not draw. */
