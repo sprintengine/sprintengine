@@ -379,6 +379,39 @@ test('a components panel’s timers are kept by the window, bounded, and stopped
   }
 })
 
+test('a components panel’s timer the frame cleared gives the window’s slot back, once, and never wakes', () => {
+  vi.useFakeTimers()
+  try {
+    const panel = harness({}, { receive: () => undefined, takeGesture: () => false })
+    // 600 long deadlines, each cleared when its call finished.
+    for (let index = 0; index < 600; index++) {
+      const id = 1 + 2 * index
+      panel.send({ se: 1, kind: 'timer', id, ms: 120_000 })
+      panel.send({ se: 1, kind: 'clear', id })
+      // A second clear, or one for an id never kept, frees nothing more.
+      panel.send({ se: 1, kind: 'clear', id })
+    }
+    panel.send({ se: 1, kind: 'clear', id: 999_999 })
+    // Every slot is free again: the full bound of timers is kept, and each wakes.
+    for (let index = 0; index < COMPONENT_FRAME_MAX_TIMERS + 5; index++)
+      panel.send({ se: 1, kind: 'timer', id: 10_001 + 2 * index, ms: 16 })
+    vi.advanceTimersByTime(16)
+    assert.equal(panel.posted.length, COMPONENT_FRAME_MAX_TIMERS)
+    assert.ok(panel.posted.every((message) => message.kind === 'wake'))
+    panel.posted.length = 0
+    vi.advanceTimersByTime(200_000)
+    assert.deepEqual(panel.posted, [], 'a cleared timer never wakes')
+
+    // An interval armed again for its next turn holds one slot, not two.
+    panel.send({ se: 1, kind: 'timer', id: 1, ms: 10 })
+    panel.send({ se: 1, kind: 'timer', id: 1, ms: 10 })
+    vi.advanceTimersByTime(10)
+    assert.deepEqual(panel.posted, [{ se: 1, kind: 'wake', id: 1 }])
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 test('a components panel’s persisted writes ride a lane of their own, and a refusal for too many names its wait', async () => {
   const channel: ExtensionFrameComponentsChannel = { receive: () => undefined, takeGesture: () => false }
   const { send, posted, called, settle } = harness({}, channel)

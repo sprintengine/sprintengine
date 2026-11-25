@@ -16,7 +16,8 @@
   (carried out by the window, after a press on one of Studio's own controls
   that stood still, and admitted again just before it opens) to
   `extension.call`'s methods. Its timers ride the envelope too (`timer`,
-  answered with `wake`): the frame is not drawn.
+  answered with `wake`, or dropped with `clear` when the frame clears one
+  first): the frame is not drawn.
 - `events.subscribe` takes `settings.changed`: the extension's own Settings
   values changed (`settings:own`, and whoever opened the surface must be able
   to read them). The window delivers it, from its Studio's settings stream.

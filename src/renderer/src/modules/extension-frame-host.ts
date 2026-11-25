@@ -12,9 +12,9 @@
 // - sends the theme again when the window's changes, and the extension's
 //   worker events as `push`;
 // - reports when the surface said it was ready, and its first paint;
-// - keeps a components panel's timers (`timer`, answered with `wake`): its
-//   frame is not drawn, and the browser runs an undrawn frame's own timers
-//   about once a second;
+// - keeps a components panel's timers (`timer`, answered with `wake`, or
+//   dropped on `clear`): its frame is not drawn, and the browser runs an
+//   undrawn frame's own timers about once a second;
 // - gives a components panel's persisted writes (`atoms.write`) a lane of
 //   their own, bigger than a call's.
 //
@@ -170,8 +170,9 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
   let closing: { finish: () => void } | null = null
   // The frame's window as last heard: a closed surface's frame is no longer in the page.
   let lastSource: MessageEventSource | null = null
-  // A components panel's clock: the timers its undrawn frame asked the window to keep.
-  const timers = new Set<ReturnType<typeof setTimeout>>()
+  // A components panel's clock: the timers its undrawn frame asked the window
+  // to keep, by the frame's id for each, so a cleared one gives its slot back.
+  const timers = new Map<number, ReturnType<typeof setTimeout>>()
 
   const post = (message: Record<string, unknown>) => {
     if (alive) options.post({ se: EXTENSION_FRAME_PROTOCOL, ...message })
@@ -257,7 +258,7 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
 
   // Timers and followed events end with the surface; calls still waiting are answered into nothing.
   function stop(): void {
-    for (const timer of timers) clearTimeout(timer)
+    for (const timer of timers.values()) clearTimeout(timer)
     timers.clear()
     for (const unfollow of followed.values()) unfollow()
     followed.clear()
@@ -302,12 +303,25 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
       if (options.components && message.kind === 'timer') {
         const ms = message.ms
         if (id === null || id % 2 !== 1 || typeof ms !== 'number' || !(ms >= 0 && ms < 2 ** 31)) return
-        if (timers.size >= COMPONENT_FRAME_MAX_TIMERS) return
-        const timer = setTimeout(() => {
-          timers.delete(timer)
-          post({ kind: 'wake', id })
-        }, ms)
-        timers.add(timer)
+        // The same id again (an interval armed for its next turn) replaces the one it had.
+        const before = timers.get(id)
+        if (before !== undefined) clearTimeout(before)
+        else if (timers.size >= COMPONENT_FRAME_MAX_TIMERS) return
+        timers.set(
+          id,
+          setTimeout(() => {
+            timers.delete(id)
+            post({ kind: 'wake', id })
+          }, ms),
+        )
+        return
+      }
+      if (options.components && message.kind === 'clear') {
+        // Once: an id already woken, or never kept, has no slot to give back.
+        const timer = id === null ? undefined : timers.get(id)
+        if (timer === undefined) return
+        clearTimeout(timer)
+        timers.delete(id!)
         return
       }
       const atoms = Boolean(options.components) && message.kind === 'req' && message.method === 'atoms.write'
@@ -374,7 +388,7 @@ export function createExtensionFrameHost(options: ExtensionFrameHostOptions): Ex
           options.document?.save()
         } else if (message.event === EXTENSION_FRAME_EVENTS.leaving) {
           alive = false
-          for (const timer of timers) clearTimeout(timer)
+          for (const timer of timers.values()) clearTimeout(timer)
           timers.clear()
           options.onLeaving?.()
         } else if (message.event === EXTENSION_FRAME_EVENTS.failed) {

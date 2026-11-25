@@ -149,9 +149,11 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
   }
   // A components panel's frame is not drawn (display: none), and the browser
   // runs an undrawn frame's timers about once a second. Its timers are kept by
-  // the window instead: the frame says when, the window wakes it then. Past
-  // C.maxTimers waiting at once, or for a handler that is not a function, the
-  // frame's own timers take over.
+  // the window instead: the frame says when ('timer'), the window wakes it then
+  // ('wake'), and a timer cleared before that is cleared there too ('clear'),
+  // so its slot comes back on both sides at once. Past C.maxTimers held at
+  // once, or for a handler that is not a function, the frame's own timers
+  // take over.
   if (C.components) (function () {
     var nativeSet = window.setTimeout.bind(window)
     var nativeClear = window.clearTimeout.bind(window)
@@ -159,18 +161,18 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     var nativeClearInterval = window.clearInterval.bind(window)
     var timers = new Map()
     var nextTimer = 1
-    // Ids the window kept count apart from the frame's own (odd, and the frame's even).
-    var waiting = 0
+    // Ids the window holds a timer for (odd, apart from the frame's own, which are even).
+    var held = new Set()
     function delayOf(ms) {
       ms = Number(ms)
       return ms > 0 && ms < 2147483647 ? Math.floor(ms) : 0
     }
     function arm(id, timer) {
-      waiting++
+      held.add(id)
       post({ kind: 'timer', id: id, ms: timer.ms })
     }
     function schedule(handler, ms, args, repeat) {
-      if (typeof handler !== 'function' || waiting >= C.maxTimers) return null
+      if (typeof handler !== 'function' || held.size >= C.maxTimers) return null
       var id = nextTimer
       nextTimer += 2
       var timer = { handler: handler, args: args, ms: repeat ? Math.max(4, delayOf(ms)) : delayOf(ms), repeat: repeat }
@@ -182,7 +184,8 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
       if (event.source !== host) return
       var message = event.data
       if (!message || message.se !== C.protocol || message.kind !== 'wake' || typeof message.id !== 'number') return
-      waiting = Math.max(0, waiting - 1)
+      // A wake already on its way when the timer was cleared: its slot is back already.
+      if (!held.delete(message.id)) return
       var timer = timers.get(message.id)
       if (!timer) return
       if (timer.repeat) arm(message.id, timer)
@@ -199,8 +202,10 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     }
     window.clearTimeout = window.clearInterval = function (id) {
       id = Number(id)
-      if (id % 2 === 1) timers.delete(id)
-      else if (id > 0) { nativeClear(id / 2); nativeClearInterval(id / 2) }
+      if (id % 2 === 1) {
+        timers.delete(id)
+        if (held.delete(id)) post({ kind: 'clear', id: id })
+      } else if (id > 0) { nativeClear(id / 2); nativeClearInterval(id / 2) }
     }
   })()
   function failure(code, message, retryable, document, retryAfterMs) {
