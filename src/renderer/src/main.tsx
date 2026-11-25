@@ -36,6 +36,10 @@ markStartup('renderer.script-start')
 // formatter) is heavy and only mounts in the `?view=diagnostics` window, so keep
 // it out of the eager boot chunk and fetch it when that window opens.
 const DiagnosticsWindowApp = React.lazy(() => import('./components/diagnostics/DiagnosticsWindowApp'))
+// The hidden window a shot of a components panel is drawn in (main's
+// extension-frames/extension-shot.ts): only the panel's drawing, fetched when
+// that window opens.
+const ComponentsShotApp = React.lazy(() => import('./components/extensions/components/ComponentsShotApp'))
 
 // Build identity, reported before anything else runs: if this document
 // and main are on different commits, every IPC below is suspect, and the point
@@ -166,6 +170,9 @@ function signalBootComplete(): void {
 // module boot (it needs none, and skipping it makes the monitor window snappy).
 const searchParams = new URLSearchParams(window.location.search)
 const isDiagnosticsWindow = searchParams.get('view') === 'diagnostics'
+// A components panel's shot: it draws a tree main hands it, with no preload,
+// no workspace shell and no module boot.
+const isComponentsShotWindow = searchParams.get('view') === 'components-shot'
 // Auxiliary windows (diff viewer, external file editor) mount a dedicated root —
 // no workspace shell, no third-party module boot — branching on `?aux=<kind>`.
 const auxWindowKind = searchParams.get('aux')
@@ -178,6 +185,14 @@ if (isDiagnosticsWindow) {
           <DiagnosticsWindowApp />
         </React.Suspense>
       </ConfirmDialogProvider>
+    </RootErrorBoundary>,
+  )
+} else if (isComponentsShotWindow) {
+  ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
+    <RootErrorBoundary>
+      <React.Suspense fallback={null}>
+        <ComponentsShotApp />
+      </React.Suspense>
     </RootErrorBoundary>,
   )
 } else if (auxWindowKind) {

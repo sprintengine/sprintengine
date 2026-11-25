@@ -1,13 +1,20 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 
-import { BrowserWindow, session as electronSession, type Session } from 'electron'
+import { BrowserWindow, session as electronSession, type NativeImage, type Session } from 'electron'
 
 import type { StudioClient } from '../../../packages/client-runtime/src/public'
 import type { StudioExtensionCallAnswer } from '../../../packages/studio-protocol/src/public'
 import { EXTENSION_FRAME_EVENTS, EXTENSION_FRAME_PROTOCOL } from '../../shared/extension-frames'
 import { isRecord } from '../../shared/modules/mcp-tools'
-import { refusesFrameNavigation } from '../privileged-window-navigation'
+import { appDocumentUrl, refusesFrameNavigation } from '../privileged-window-navigation'
+import {
+  componentsShotImages,
+  componentsShotImageUrl,
+  componentsShotRequestAllowed,
+  createComponentsShotExchange,
+  type ComponentsShotExchange,
+} from './components-shot-exchange'
 
 // `visual.extension_shot`: a picture of one of an extension's surfaces (a
 // panel, a door, a settings section) as Studio draws it, for its author and
@@ -23,8 +30,19 @@ import { refusesFrameNavigation } from '../privileged-window-navigation'
 // out (a toast, a drafted chat) is answered without doing it. The capture
 // waits for the surface to say it is ready (`studio.ready()`) and its calls
 // to be answered, at most `settleMs`.
+//
+// A components panel's frame draws nothing: its module renders a tree the
+// window draws with Studio's own controls. So main plays the window for it
+// (components-shot-exchange.ts), waits for the first tree Studio accepts and a
+// moment of quiet, and draws that tree in a second hidden window of the app's
+// own renderer (`?view=components-shot`, ComponentsShotApp.tsx), which is the
+// one captured. That window runs no extension code: it is handed the tree and
+// the images it draws, as data.
 
 const PARTITION = 'extension-shot'
+const VIEW_PARTITION = 'extension-shot-view'
+// How long the components view may take to load and draw its tree.
+const VIEW_DRAW_MS = 10_000
 const MAX_DOCUMENT_BYTES = 1.5 * 1024 * 1024
 const DEFAULT_SETTLE_MS = 8_000
 // Requests out of the frame, and answers in: console lines carrying this mark.
@@ -40,6 +58,20 @@ function shotSession(): Session {
   session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   session.setPermissionCheckHandler(() => false)
   sealedSession = session
+  return session
+}
+
+let viewSession: Session | null = null
+/** The session the components view is drawn in: the app's own renderer and nothing else. */
+function componentsViewSession(app: URL): Session {
+  if (viewSession) return viewSession
+  const session = electronSession.fromPartition(VIEW_PARTITION, { cache: false })
+  session.webRequest.onBeforeRequest((details, callback) =>
+    callback({ cancel: !componentsShotRequestAllowed(details.url, app) }),
+  )
+  session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+  session.setPermissionCheckHandler(() => false)
+  viewSession = session
   return session
 }
 
@@ -120,8 +152,12 @@ export async function shootExtensionSurface(
   contents.on('will-attach-webview', (event) => event.preventDefault())
   contents.setAudioMuted(true)
   const errors: string[] = []
+  const components = createComponentsShotExchange()
+  let failed: string | null = null
   let pending = 0
   let ready = false
+  // A components panel is ready once Studio accepted its first tree (or its run failed).
+  const isReady = () => (components.components ? components.drawn || failed !== null : ready)
   let settledAt = 0
   const answer = (message: Record<string, unknown>) => {
     if (window.isDestroyed()) return
@@ -167,12 +203,17 @@ export async function shootExtensionSurface(
     if (!isRecord(message)) return
     if (message.t === 'req' && typeof message.id === 'number' && typeof message.method === 'string')
       void call(message.id, message.method, message.params)
-    else if (message.t === 'evt' && message.event === EXTENSION_FRAME_EVENTS.surfaceReady) {
+    else if (message.t === 'evt' && typeof message.event === 'string' && message.event.startsWith('ui.')) {
+      for (const reply of components.hear(message.event, message.payload))
+        answer({ kind: 'evt', event: reply.event, payload: reply.payload })
+      settledAt = Date.now()
+    } else if (message.t === 'evt' && message.event === EXTENSION_FRAME_EVENTS.surfaceReady) {
       ready = true
       settledAt = Date.now()
     } else if (message.t === 'evt' && message.event === EXTENSION_FRAME_EVENTS.failed) {
       const failure = isRecord(message.payload) ? String(message.payload.message ?? '') : ''
       if (failure && !errors.includes(failure)) errors.push(failure)
+      if (failure) failed = failure
       ready = true
     }
   })
@@ -187,10 +228,13 @@ export async function shootExtensionSurface(
     )
     const deadline = Date.now() + (input.settleMs ?? DEFAULT_SETTLE_MS)
     // Ready, nothing waiting, and a moment of quiet for what its answers draw.
-    while (Date.now() < deadline && !(ready && pending === 0 && Date.now() - settledAt > 250))
+    while (Date.now() < deadline && !(isReady() && pending === 0 && Date.now() - settledAt > 250))
       await new Promise((resolve) => setTimeout(resolve, 50))
-    const settled = ready && pending === 0
-    const image = await contents.capturePage()
+    const settled = isReady() && pending === 0
+    for (const error of components.errors) if (!errors.includes(error)) errors.push(error)
+    const image = components.components
+      ? await shootComponentsView(client, input, document.hash, components, failed)
+      : await contents.capturePage()
     if (image.isEmpty()) throw new Error('The surface drew nothing to capture.')
     const size = image.getSize()
     mkdirSync(dirname(input.out), { recursive: true })
@@ -206,5 +250,106 @@ export async function shootExtensionSurface(
     }
   } finally {
     if (!window.isDestroyed()) window.destroy()
+  }
+}
+
+/** One of the extension's images, read as the window reads it (`assets.image`), or null. */
+async function readShotImage(
+  client: StudioClient,
+  moduleId: string,
+  frame: string,
+  src: string,
+): Promise<string | null> {
+  try {
+    const answered: StudioExtensionCallAnswer = await client.request('extension.call', {
+      moduleId,
+      frame,
+      method: 'assets.image',
+      params: { path: src },
+      commandId: commandId(),
+    })
+    return answered.ok ? componentsShotImageUrl(answered.result) : null
+  } catch {
+    return null
+  }
+}
+
+/** The components panel's accepted tree, drawn by the app's own renderer in a hidden window, captured. */
+async function shootComponentsView(
+  client: StudioClient,
+  input: ExtensionShotInput,
+  frame: string,
+  components: ComponentsShotExchange,
+  failure: string | null,
+): Promise<NativeImage> {
+  const images: Record<string, string> = {}
+  await Promise.all(
+    componentsShotImages(components.tree).map(async (src) => {
+      const url = await readShotImage(client, input.moduleId, frame, src)
+      if (url) images[src] = url
+    }),
+  )
+  const app = appDocumentUrl(process.env['ELECTRON_RENDERER_URL'], join(__dirname, '../renderer/index.html'))
+  // No preload: this page draws data it is handed and reaches nothing of the app.
+  const view = new BrowserWindow({
+    show: false,
+    width: input.width,
+    height: input.height,
+    useContentSize: true,
+    paintWhenInitiallyHidden: true,
+    focusable: false,
+    skipTaskbar: true,
+    webPreferences: {
+      offscreen: true,
+      sandbox: true,
+      nodeIntegration: false,
+      contextIsolation: true,
+      javascript: true,
+      session: componentsViewSession(app),
+      backgroundThrottling: false,
+      spellcheck: false,
+    },
+  })
+  const contents = view.webContents
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  contents.on('will-navigate', (event) => event.preventDefault())
+  contents.on('will-frame-navigate', (details) => {
+    if (refusesFrameNavigation(details)) details.preventDefault()
+  })
+  contents.on('will-attach-webview', (event) => event.preventDefault())
+  contents.setAudioMuted(true)
+  try {
+    const url = new URL(app)
+    url.searchParams.set('view', 'components-shot')
+    await view.loadURL(url.toString())
+    const shot = {
+      tree: components.drawn ? components.raw : null,
+      images,
+      theme: input.theme,
+      ...(failure && !components.drawn ? { failure } : {}),
+    }
+    // The view mounts behind a lazily loaded chunk: wait for its hand-over, then for it to draw.
+    const draw = contents.executeJavaScript(
+      `(async function () {
+  var until = Date.now() + ${VIEW_DRAW_MS}
+  while (!window.__seComponentsShot) {
+    if (Date.now() > until) throw new Error('The components view did not start.')
+    await new Promise(function (resolve) { setTimeout(resolve, 20) })
+  }
+  await window.__seComponentsShot(${JSON.stringify(shot)})
+  return true
+})()`,
+      false,
+    )
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([
+      draw,
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('The components view did not finish drawing.')), VIEW_DRAW_MS)
+      }),
+    ]).finally(() => clearTimeout(timer))
+    return await contents.capturePage()
+  } finally {
+    if (!view.isDestroyed()) view.destroy()
   }
 }
