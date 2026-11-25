@@ -59,10 +59,22 @@ export function registerExtensionSurface(surface: LoadedExtensionSurface): void 
   changed()
 }
 
+// Who keeps something of an extension's for the window's session hears when it goes.
+const retiredListeners = new Set<(key: string) => void>()
+
+/** Hear an extension's surfaces taken out (uninstalled, switched off, no longer approved, changed). */
+export function onExtensionRetired(listener: (key: string) => void): () => void {
+  retiredListeners.add(listener)
+  return () => {
+    retiredListeners.delete(listener)
+  }
+}
+
 /** Take every surface of an extension out, and hand them back for a later restore. */
 export function retireExtensionSurfaces(key: string): LoadedExtensionSurface[] {
   const retired = [...surfaces.entries()].filter(([, surface]) => surface.key === key)
   for (const [id] of retired) surfaces.delete(id)
+  for (const listener of [...retiredListeners]) listener(key)
   if (retired.length > 0) changed()
   return retired.map(([, surface]) => surface)
 }

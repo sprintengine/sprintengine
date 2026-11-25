@@ -85,3 +85,34 @@ test('without the option the offered extension always stays', async () => {
   await edit(input, 'plan.txt.md', 8)
   expect(input.value).toBe('plan.txt.md')
 })
+
+test('a question withdrawn by its signal closes, answered as cancelled', async () => {
+  let api: ReturnType<typeof useConfirmDialog> | null = null
+  function Grab() {
+    api = useConfirmDialog()
+    return null
+  }
+  host = document.createElement('div')
+  document.body.appendChild(host)
+  const created = createRoot(host)
+  root = created
+  await act(async () =>
+    created.render(
+      <ConfirmDialogProvider>
+        <Grab />
+      </ConfirmDialogProvider>,
+    ),
+  )
+  const withdraw = new AbortController()
+  let answer: Promise<string> | null = null
+  await act(async () => {
+    answer = api!.choose({ title: 'Open example.com?', alternateLabel: 'Always', signal: withdraw.signal })
+  })
+  expect(document.body.textContent).toContain('Open example.com?')
+  await act(async () => withdraw.abort())
+  expect(await answer).toBe('cancel')
+  expect(document.body.textContent).not.toContain('Open example.com?')
+  // Already withdrawn: never shown.
+  const late = api!.choose({ title: 'Too late', alternateLabel: 'Always', signal: withdraw.signal })
+  expect(await late).toBe('cancel')
+})

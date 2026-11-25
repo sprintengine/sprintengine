@@ -23,6 +23,8 @@ type ConfirmDialogBase = {
   tone?: ConfirmTone
   pending?: boolean
   contained?: boolean
+  /** Withdraws the question: the dialog closes as if cancelled. */
+  signal?: AbortSignal
 }
 
 type ConfirmDialogProps = ConfirmDialogBase & {
@@ -181,10 +183,22 @@ export function ConfirmDialogProvider({ children }: { children: React.ReactNode 
   const [request, setRequest] = useState<DialogRequest | null>(null)
 
   const replaceRequest = useCallback((nextRequest: DialogRequest) => {
+    const signal = nextRequest.options.signal
+    if (signal?.aborted) return settle(nextRequest)
     setRequest((current) => {
       if (current) settle(current)
       return nextRequest
     })
+    signal?.addEventListener(
+      'abort',
+      () =>
+        setRequest((current) => {
+          if (current !== nextRequest) return current
+          settle(current)
+          return null
+        }),
+      { once: true },
+    )
   }, [])
 
   const confirm = useCallback(

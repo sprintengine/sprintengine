@@ -15,6 +15,7 @@ import type { ExtensionEditorPort } from '../../modules/extension-editor-control
 import {
   extensionSurfacesVersion,
   getExtensionSurface,
+  onExtensionRetired,
   recordReadiness,
   subscribeExtensionSurfaces,
 } from '../../modules/extension-surfaces'
@@ -24,6 +25,7 @@ import { holdExtensionFrameFocusGuard } from '../../modules/extension-frame-focu
 import { EmptyState } from '../ui/EmptyState'
 import { useOptionalConfirmDialog } from '../ui/ConfirmDialog'
 import { ComponentsPanelHost } from './components/ComponentsPanelHost'
+import { createExtensionOpener, forgetAllowedHosts } from './extensionOpener'
 import {
   createComponentsPanelSession,
   forgetRetainedPanel,
@@ -72,8 +74,7 @@ const LEFT_ITS_DOCUMENT = 'It tried to load another page in its place, so Studio
 
 const now = () => performance.timeOrigin + performance.now()
 
-// Web addresses the person let an extension open without asking again, for this window's session.
-const allowedHosts = new Map<string, Set<string>>()
+onExtensionRetired(forgetAllowedHosts)
 const MAX_IMAGE_SIDE = 4096
 
 /** One of the extension's own images as a `data:` URL, or null when it is not one Studio shows. */
@@ -155,39 +156,9 @@ export function ExtensionSurfaceMount({
     setSrc(null)
     setFailure(null)
     const extensionName = loaded.extension?.name ?? extensionKey
-    // Open a URL a components panel earned with a press: a web address asks first.
-    const openExternal = async (url: string): Promise<boolean> => {
-      if (/^mailto:/iu.test(url)) {
-        window.open(url, '_blank', 'noopener,noreferrer')
-        return true
-      }
-      let target: URL
-      try {
-        target = new URL(url)
-      } catch {
-        return false
-      }
-      const allowed = allowedHosts.get(extensionKey)
-      if (!allowed?.has(target.host)) {
-        const dialog = dialogsRef.current
-        if (!dialog) return false
-        const choice = await dialog.choose({
-          title: `${extensionName} wants to open ${target.host}`,
-          body: url.length > 300 ? `${url.slice(0, 300)}…` : url,
-          confirmLabel: 'Open',
-          alternateLabel: `Always allow ${target.host}`,
-          cancelLabel: 'Cancel',
-        })
-        if (choice === 'cancel') return false
-        if (choice === 'alternate') {
-          let hosts = allowedHosts.get(extensionKey)
-          if (!hosts) allowedHosts.set(extensionKey, (hosts = new Set()))
-          hosts.add(target.host)
-        }
-      }
-      const opened = await host.openExternal(url)
-      return opened.ok
-    }
+    // The run ends (closed, killed, switched off, no longer approved,
+    // uninstalled): a question it left open is withdrawn, unanswered.
+    const runEnded = new AbortController()
     let componentsSession: ComponentsPanelSession | null = null
     if (components) {
       componentsSession = createComponentsPanelSession({
@@ -239,8 +210,6 @@ export function ExtensionSurfaceMount({
       return wrapped ? ((outer?.frames[0] as Window | undefined) ?? null) : outer
     }
     let frameHash = ''
-    const openLink = (href: string) => void openExternal(href)
-    openLinkRef.current = openLink
     const call = async (method: string, params: unknown): Promise<StudioExtensionCallAnswer> => {
       const answer = await extensionsApi.extensionCall({ moduleId: extensionKey, frame: frameHash, method, params })
       if (answer.ok || answer.code !== 'frame_outdated') return answer
@@ -251,6 +220,16 @@ export function ExtensionSurfaceMount({
       }
       return { ok: false, code: 'unavailable', message: answer.message }
     }
+    const opener = createExtensionOpener({
+      extensionKey,
+      extensionName,
+      call,
+      dialog: () => dialogsRef.current,
+      openWeb: async (url) => (await host.openExternal(url)).ok,
+      openMail: (url) => void window.open(url, '_blank', 'noopener,noreferrer'),
+      signal: runEnded.signal,
+    })
+    openLinkRef.current = (href) => void opener.openLink(href)
     const link = editorRef.current
     const bridge = createExtensionFrameHost({
       source: surfaceWindow,
@@ -281,7 +260,7 @@ export function ExtensionSurfaceMount({
           event === 'editor.typography.changed'
             ? followEditorTypography(deliver)
             : extensionsApi.onStudioEvents(extensionKey, event, deliver),
-        openExternal,
+        openExternal: (url) => opener.openExternal(url),
       },
       theme: () => readWindowFrameTheme(THEME_TOKENS),
       onReady: (at) => {
@@ -348,6 +327,7 @@ export function ExtensionSurfaceMount({
     if (seen && containerRef.current) seen.observe(containerRef.current)
     return () => {
       closed = true
+      runEnded.abort()
       seen?.disconnect()
       link?.close()
       bridge.dispose()
