@@ -135,6 +135,21 @@ export type {
   FakeWorkspaces,
 } from './testing-services.js'
 export { MODULE_STORAGE_VALUE_LIMIT_BYTES } from './testing-services.js'
+// A components panel under test: mounted on the real runtime, drawn as Studio draws it.
+export { defineCheck, mountPanel, stored } from './testing-components.js'
+export type {
+  CheckScenario,
+  MountPanelOptions,
+  MountedPanel,
+  PanelElement,
+  PanelError,
+  PanelQuery,
+  PanelRefusal,
+  PanelTarget,
+  PanelTreeNode,
+  PersistedSeed,
+  StoredAtomValue,
+} from './testing-components.js'
 
 // ── Shared pieces ────────────────────────────────────────────────────────────
 
@@ -1094,6 +1109,14 @@ export type FakeFrameStudioOptions = FakeModuleIdentity & {
    * save it. Default: empty text.
    */
   document?: { text: string; readOnly?: boolean } | { bytes: Uint8Array; readOnly?: boolean }
+  /** Secrets already set, by name (their values never reach a surface). */
+  secrets?: Record<string, string>
+  /**
+   * Answers that stand in for Studio's, by host method: a value, or a function
+   * of the params (which may throw `hostError(code)`). A call is still checked
+   * against the permissions first, so a stub never admits what Studio refuses.
+   */
+  results?: Partial<Record<ExtensionFrameMethod, unknown>>
 }
 
 /** The document behind a custom editor's `studio.document`, as Studio holds it. */
@@ -1137,6 +1160,27 @@ export type FakeFrameStudio = {
   logs: Array<{ level: 'info' | 'warn' | 'error'; message: string }>
   /** Every surface that called `ready()`, in order. */
   readied: ExtensionSurface[]
+  /** URLs opened with `shell.openExternal`, in order. */
+  openedUrls: string[]
+  /**
+   * Grant one gesture: the next `shell.openExternal` within a second is
+   * admitted, as a press on a still Studio control grants one in a
+   * components panel. Without one it is `not_permitted`.
+   */
+  grantGesture(): void
+  /** A components panel's persisted atoms as stored: the extension's, and each workspace's. */
+  atoms(): {
+    plugin: Record<string, { version: number; value: unknown }>
+    workspace: Record<string, Record<string, { version: number; value: unknown }>>
+  }
+  /** Seed persisted atoms, as an earlier run (or an older version, to test `migrate`) stored them. */
+  seedAtoms(
+    scope: 'plugin' | 'workspace',
+    values: Record<string, { version: number; value: unknown }>,
+    workspaceId?: string,
+  ): void
+  /** The names of the secrets set (their values never reach a surface). */
+  secretNames(): string[]
   /** The world the surface reads and writes: the main fake's when given one. */
   services: Pick<FakeServices, 'workspaces' | 'backlog' | 'usage' | 'storage'>
   /** The Settings values as saved. */
@@ -1171,6 +1215,11 @@ type Registry = Record<string, (moduleId: string, ...args: never[]) => Promise<u
 
 function frameError(code: ExtensionFrameErrorCode, message: string): ExtensionFrameError {
   return Object.assign(new Error(message), { code, retryable: false })
+}
+
+/** A refusal as Studio makes it, for a stubbed answer (`results`) to throw. */
+export function hostError(code: ExtensionFrameErrorCode, message?: string): ExtensionFrameError {
+  return frameError(code, message ?? `Studio refused the call (${code}).`)
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -1363,8 +1412,63 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
   const storageRoot = (workspaceId: unknown) =>
     workspaceId === undefined ? {} : { workspaceRoot: workspace(workspaceId).folderPath! }
 
+  type Stored = Record<string, { version: number; value: unknown }>
+  const pluginAtoms: Stored = {}
+  const workspaceAtoms = new Map<string, Stored>()
+  const atomScope = (scope: unknown, workspaceId: unknown): Stored => {
+    if (scope === 'plugin') return pluginAtoms
+    if (scope !== 'workspace' || typeof workspaceId !== 'string')
+      throw frameError('invalid_params', 'A workspace atom is stored for the workspace its panel was opened in.')
+    let stored = workspaceAtoms.get(workspaceId)
+    if (!stored) workspaceAtoms.set(workspaceId, (stored = {}))
+    return stored
+  }
+  const secrets = new Map<string, string>(Object.entries(options.secrets ?? {}))
+  let gestureUntil = 0
+  const clock = options.now ?? Date.now
+
   type Params = Record<string, unknown>
   const serve: Record<ExtensionFrameMethod, (params: Params) => unknown> = {
+    'atoms.read': (p) => ({
+      plugin: structuredClone(pluginAtoms),
+      workspace: typeof p.workspaceId === 'string' ? structuredClone(workspaceAtoms.get(p.workspaceId) ?? {}) : {},
+    }),
+    'atoms.write': (p) => {
+      if (!Array.isArray(p.entries)) throw frameError('invalid_params', '"entries" lists the atoms that changed.')
+      for (const entry of p.entries as Array<Record<string, unknown>>) {
+        if (typeof entry.key !== 'string' || typeof entry.version !== 'number')
+          throw frameError('invalid_params', 'Each atom has a key and a version.')
+        atomScope(entry.scope, p.workspaceId)[entry.key] = {
+          version: entry.version,
+          value: structuredClone(entry.value),
+        }
+      }
+      return { ok: true as const }
+    },
+    'assets.image': () => null,
+    'secrets.has': (p) => ({ has: typeof p.key === 'string' && secrets.has(p.key) }),
+    'secrets.set': (p) => {
+      if (typeof p.key !== 'string' || typeof p.value !== 'string' || !p.value)
+        throw frameError('invalid_params', 'A secret has a name and a value.')
+      if (!Array.isArray(p.allowedOrigins) || p.allowedOrigins.length === 0)
+        return { ok: false, code: 'origin_not_allowed', message: 'A secret names the https origins it may be sent to.' }
+      secrets.set(p.key, p.value)
+      return { ok: true as const }
+    },
+    'secrets.delete': (p) => {
+      if (typeof p.key === 'string') secrets.delete(p.key)
+      return { ok: true as const }
+    },
+    'shell.openExternal': (p) => {
+      const url = String(p.url ?? '')
+      if (!/^(https?:\/\/|mailto:)/iu.test(url))
+        throw frameError('invalid_params', 'Only an https:, http: or mailto: URL opens.')
+      if (clock() > gestureUntil)
+        throw frameError('not_permitted', 'Opening a URL needs a press on one of Studio’s controls first.')
+      gestureUntil = 0
+      fake.openedUrls.push(url)
+      return { opened: true }
+    },
     'workspace.list': () => world.workspaces.all(),
     'workspace.get': (p) => world.workspaces.all().find((candidate) => candidate.id === p.workspaceId) ?? null,
     'backlog.list': (p) => world.registry('backlog.module-service').list(moduleId, p.workspaceId as never),
@@ -1539,6 +1643,9 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
       )
     const given = (params ?? {}) as Params
     if (typeof given !== 'object' || Array.isArray(given)) throw frameError('invalid_params', 'Params are an object.')
+    const stub = options.results?.[method as ExtensionFrameMethod]
+    if (stub !== undefined)
+      return structuredClone(await (typeof stub === 'function' ? (stub as (params: Params) => unknown)(given) : stub))
     return structuredClone(await serve[method as ExtensionFrameMethod](given))
   }
 
@@ -1555,6 +1662,21 @@ export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFram
     notifications: [],
     logs: [],
     readied: [],
+    openedUrls: [],
+    grantGesture() {
+      gestureUntil = clock() + 1000
+    },
+    atoms: () => ({
+      plugin: structuredClone(pluginAtoms),
+      workspace: Object.fromEntries([...workspaceAtoms].map(([id, stored]) => [id, structuredClone(stored)])),
+    }),
+    seedAtoms(scope, values, workspaceId) {
+      Object.assign(
+        atomScope(scope, workspaceId ?? (scope === 'workspace' ? 'ws-app' : undefined)),
+        structuredClone(values),
+      )
+    },
+    secretNames: () => [...secrets.keys()].sort(),
     services: { workspaces: world.workspaces, ...world.handles },
     settings: () => world.settings.all(),
     file: (workspaceId, path) => files.get(workspaceId)?.get(path),

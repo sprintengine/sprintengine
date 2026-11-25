@@ -50,6 +50,8 @@ export type FrameDocumentInput = {
   problem?: string
   /** The theme to draw it in; null when this server does not know the client's, which then sends it before anything shows. */
   theme: ExtensionFrameTheme | null
+  /** A components panel: its module runs hidden and the window draws the tree it renders. */
+  components?: boolean
 }
 
 function tokensCss(theme: ExtensionFrameTheme | null): string {
@@ -60,28 +62,52 @@ function tokensCss(theme: ExtensionFrameTheme | null): string {
     .join('')
 }
 
+/**
+ * The document's own policy: the frame's, with its one inline script named by
+ * hash instead of `'unsafe-inline'`. No child frame runs script, so none is a
+ * fresh realm with the network constructors the bootstrap removed from this one:
+ *
+ * - `frame-src 'none'` blocks every child but `about:srcdoc`, a blank one and
+ *   a document made as a blob included;
+ * - an `about:srcdoc` child inherits this policy, whose one hash is the
+ *   bootstrap's, so its inline script and `on*=` handlers do not run;
+ * - the policy does admit `blob:` scripts (the frame's own module graph loads
+ *   that way), but a sandboxed child has an opaque origin of its own, and the
+ *   browser lets only the origin that made a blob load it: the frame's blobs
+ *   are refused to the child, which cannot make one without running script
+ *   first. The live probe in extension-frame-shell.test.ts watches this.
+ */
+export function frameDocumentCsp(script: string): string {
+  const hash = createHash('sha256').update(script, 'utf8').digest('base64')
+  return EXTENSION_FRAME_CSP.replace("script-src 'unsafe-inline'", `script-src 'sha256-${hash}'`)
+}
+
 export function buildExtensionFrameDocument(input: FrameDocumentInput): string {
   const scheme = input.theme?.colorScheme ?? 'dark'
+  const script = frameBootstrapScript({
+    entryPath: input.entryPath,
+    modules: input.modules,
+    token: input.token,
+    ...(input.problem ? { problem: input.problem } : {}),
+    surface: input.surface,
+    colorScheme: scheme,
+    ...(input.components ? { components: true } : {}),
+  })
   return [
     '<!doctype html>',
     `<html class="${scheme}"${input.theme ? '' : ' data-se-waiting'}>`,
     '<head>',
     '<meta charset="utf-8">',
-    `<meta http-equiv="Content-Security-Policy" content="${EXTENSION_FRAME_CSP}">`,
+    `<meta http-equiv="Content-Security-Policy" content="${frameDocumentCsp(script)}">`,
+    // No name lookups ahead of time: a hint is a lookup nothing else in the frame may make.
+    '<meta http-equiv="x-dns-prefetch-control" content="off">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<style id="${FRAME_TOKENS_ID}">:root{${tokensCss(input.theme)}}</style>`,
     `<style>${EXTENSION_FRAME_KIT_CSS}</style>`,
     '</head>',
     '<body>',
     `<div id="${FRAME_ROOT_ID}"></div>`,
-    `<script>${frameBootstrapScript({
-      entryPath: input.entryPath,
-      modules: input.modules,
-      token: input.token,
-      ...(input.problem ? { problem: input.problem } : {}),
-      surface: input.surface,
-      colorScheme: scheme,
-    })}</script>`,
+    `<script>${script}</script>`,
     '</body>',
     '</html>',
     '',

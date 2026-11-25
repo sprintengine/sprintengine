@@ -8,7 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 
 import { CliError, type Output } from './cli-output.js'
 import { connectStudio, type StudioTools } from './cli-studio.js'
-import { checkSurfaces, checkWorker, validateExtensionFolder } from './cli-authoring.js'
+import { checkPanels, checkSurfaces, checkWorker, panelCheckWords, validateExtensionFolder } from './cli-authoring.js'
 import { EXTENSION_MANIFEST_FILENAME, parseExtensionManifest } from './extension-manifest.js'
 
 type Approval = { state: string; fingerprint?: string; growth?: string[] }
@@ -290,13 +290,15 @@ export type ShotOptions = {
   /** The folder shots go to when `out` is not given. */
   outDir?: string
   dataDir?: string
+  /**
+   * A components panel's `.check.ts` scenario: rendered here as `check`
+   * renders it, and its tree drawn by Studio. The live panel never runs.
+   */
+  scenario?: string
 }
 
-/** The surface a shot draws: the one named, else the first panel, door or settings section. */
-function surfaceOf(dir: string | null, options: ShotOptions): { point: string; id: string } {
-  if (options.point && options.id) return { point: options.point, id: options.id }
-  if (!dir) throw new CliError('invalid_argument', 'Name the surface: --panel <id>, --door <id> or --settings <id>.')
-  // Only extension.json: a surface whose code does not load is still pictured, showing its error.
+/** The folder's extension.json, alone: a surface whose code does not load is still pictured, showing its error. */
+function manifestOf(dir: string) {
   let parsed
   try {
     parsed = parseExtensionManifest(readFileSync(join(dir, EXTENSION_MANIFEST_FILENAME), 'utf8'))
@@ -305,7 +307,14 @@ function surfaceOf(dir: string | null, options: ShotOptions): { point: string; i
   }
   if (!parsed.ok)
     throw new CliError('extension_invalid', `${dir}'s extension.json is not valid.`, { issues: parsed.issues })
-  const manifest = parsed.manifest
+  return parsed.manifest
+}
+
+/** The surface a shot draws: the one named, else the first panel, door or settings section. */
+function surfaceOf(dir: string | null, options: ShotOptions): { point: string; id: string } {
+  if (options.point && options.id) return { point: options.point, id: options.id }
+  if (!dir) throw new CliError('invalid_argument', 'Name the surface: --panel <id>, --door <id> or --settings <id>.')
+  const manifest = manifestOf(dir)
   for (const point of ['panels', 'doors', 'settingsSections'] as const) {
     const list = manifest.contributes[point]
     const chosen = options.point === point && options.id ? list.find((each) => each.id === options.id) : list[0]
@@ -314,16 +323,119 @@ function surfaceOf(dir: string | null, options: ShotOptions): { point: string; i
   throw new CliError('invalid_argument', 'It has no panel, door or settings section to picture.')
 }
 
+/** The components panel a scenario shot draws: the one named, else the first. */
+function scenarioPanelOf(dir: string, options: ShotOptions): { point: 'panels'; id: string } {
+  if (options.point && options.point !== 'panels')
+    throw new CliError('invalid_argument', '--scenario draws a components panel: name it with --panel <id>.')
+  const panels = manifestOf(dir).contributes.panels
+  const panel = options.id
+    ? panels.find((each) => each.id === options.id)
+    : panels.find((each) => each.ui === 'components')
+  if (!panel)
+    throw new CliError(
+      'invalid_argument',
+      options.id
+        ? `It has no panel ${options.id}; its panels: ${panels.map((each) => each.id).join(', ') || 'none'}.`
+        : 'It has no components panel; --scenario draws components panels only.',
+    )
+  if (panel.ui !== 'components')
+    throw new CliError('invalid_argument', `Panel ${panel.id} draws itself; --scenario draws components panels only.`)
+  return { point: 'panels', id: panel.id }
+}
+
+/** A scenario's name as part of a file name. */
+export function scenarioFileStem(scenario: string): string {
+  return scenario.replace(/[^A-Za-z0-9._-]+/gu, '-').replace(/^[.-]+/u, '') || 'scenario'
+}
+
+/**
+ * `check`'s drawn tree as the panel posted it, for Studio to check again and
+ * draw: each handler (`'[handler]'` in check's tree) an inert callback, since
+ * nothing in a picture is pressed.
+ */
+export function replayableTree(node: unknown): unknown {
+  let next = 0
+  const visit = (each: unknown): unknown => {
+    if (typeof each !== 'object' || each === null || Array.isArray(each)) return each
+    const { props, children, ...rest } = each as { props?: unknown; children?: unknown }
+    return {
+      ...rest,
+      props:
+        typeof props === 'object' && props !== null && !Array.isArray(props)
+          ? Object.fromEntries(
+              Object.entries(props).map(([name, value]) => [
+                name,
+                /^on[A-Z]/u.test(name) && value === '[handler]' ? { $callback: `shot.${(next += 1)}` } : value,
+              ]),
+            )
+          : props,
+      children: Array.isArray(children) ? children.map(visit) : children,
+    }
+  }
+  return visit(node)
+}
+
+/**
+ * The tree a components panel draws in one of its `.check.ts` scenarios,
+ * rendered on this machine as `check` renders it (against the SDK's fake
+ * Studio, the worker mounted beside it), and what went wrong drawing it.
+ */
+async function scenarioTree(
+  dir: string,
+  panelId: string,
+  scenario: string,
+): Promise<{ tree: unknown; errors: string[] }> {
+  const validated = validateExtensionFolder(dir)
+  const surface = checkSurfaces(validated.root, validated.manifest).find(
+    (each) => each.point === 'panels' && each.id === panelId,
+  )
+  if (!surface?.ok)
+    throw new CliError('extension_check_failed', `panels ${panelId}: ${surface?.problem ?? 'not found'}`)
+  const checked = await checkPanels(validated, [surface])
+  const panel = checked?.panels[0]
+  if (!checked || !panel) throw new CliError('extension_check_failed', `panels ${panelId}: it did not render.`)
+  if (panel.problem) throw new CliError('extension_check_failed', `panels ${panelId}: ${panel.problem}`)
+  if (!panel.scenarios)
+    throw new CliError(
+      'invalid_argument',
+      `${panel.entry} has no scenarios: add ${panel.entry.replace(/\.[^./]+$/u, '')}.check.ts beside it.`,
+    )
+  const result = panel.results.find((each) => each.name === scenario)
+  if (!result)
+    throw new CliError(
+      'invalid_argument',
+      `Panel ${panelId} has no scenario "${scenario}"; its scenarios (${panel.scenarios}): ${panel.results.map((each) => each.name).join(', ')}.`,
+    )
+  const errors = [
+    ...(checked.worker ? [`worker: ${checked.worker}`] : []),
+    ...result.errors.map((error) => error.message),
+  ]
+  if (!result.tree)
+    throw new CliError(
+      'extension_check_failed',
+      [`Panel ${panelId} drew nothing in scenario "${scenario}".`, ...errors].join('\n'),
+    )
+  return { tree: replayableTree(result.tree), errors }
+}
+
 export async function takeShot(studio: StudioTools, target: string, options: ShotOptions) {
   const folder = existsSync(target) ? canonical(target) : null
+  if (options.scenario !== undefined && !folder)
+    throw new CliError(
+      'invalid_argument',
+      "--scenario renders the panel from its source: pass the extension's folder, not its key.",
+    )
+  const surface = options.scenario !== undefined ? scenarioPanelOf(folder!, options) : surfaceOf(folder, options)
   const moduleId = await moduleIdOf(studio, target)
-  const surface = surfaceOf(folder, options)
   const base =
     options.outDir ?? (folder ? join(folder, '.sprintengine', 'shots') : join(process.cwd(), '.sprintengine', 'shots'))
-  const out = options.out ? resolve(options.out) : join(base, `${moduleId}-${surface.id}.png`)
+  const name = `${moduleId}-${surface.id}${options.scenario !== undefined ? `.${scenarioFileStem(options.scenario)}` : ''}`
+  const out = options.out ? resolve(options.out) : join(base, `${name}.png`)
   if (!isAbsolute(out) || !out.toLowerCase().endsWith('.png'))
     throw new CliError('invalid_argument', '--out is a .png file.')
-  return studio.call(
+  // The scenario is rendered here: its data never reaches the live panel or the worker in Studio.
+  const drawn = options.scenario !== undefined ? await scenarioTree(folder!, surface.id, options.scenario) : null
+  const answer = await studio.call(
     'visual.extension_shot',
     {
       moduleId,
@@ -333,9 +445,13 @@ export async function takeShot(studio: StudioTools, target: string, options: Sho
       theme: options.theme ?? 'dark',
       ...(options.width ? { width: options.width } : {}),
       ...(options.height ? { height: options.height } : {}),
+      ...(drawn ? { tree: drawn.tree, scenario: options.scenario } : {}),
     },
     60_000,
   )
+  if (!drawn) return answer
+  const errors = Array.isArray(answer.errors) ? (answer.errors as unknown[]) : []
+  return { ...answer, scenario: options.scenario, errors: [...drawn.errors, ...errors] }
 }
 
 export async function shot(output: Output, target: string, options: ShotOptions) {
@@ -350,7 +466,7 @@ export async function shot(output: Output, target: string, options: ShotOptions)
   if (errors.length > 0 && !output.json) for (const error of errors) console.error(`[frame] ${error}`)
   output.done(
     answer,
-    `Wrote ${String(answer.path)} (${String(answer.width)}x${String(answer.height)}${answer.settled ? '' : ', not settled'}).`,
+    `Wrote ${String(answer.path)} (${String(answer.width)}x${String(answer.height)}${answer.scenario === undefined ? '' : `, scenario "${String(answer.scenario)}"`}${answer.settled ? '' : ', not settled'}).`,
   )
 }
 
@@ -446,13 +562,19 @@ export async function devWatch(
         const validated = validateExtensionFolder(path)
         const worker = await checkWorker(validated)
         const surfaces = checkSurfaces(path, validated.manifest)
-        const offline = (worker?.ok ?? true) && surfaces.every((surface) => surface.ok)
+        // Components panels render against the fake Studio, scenario by scenario.
+        const panels = await checkPanels(validated, surfaces)
+        const offline = (worker?.ok ?? true) && surfaces.every((surface) => surface.ok) && (panels?.ok ?? true)
         const ok = offline && live.ok
+        const panelIssues =
+          panels && !panels.ok
+            ? panelCheckWords(panels).filter((line) => !line.startsWith('  ') || line.startsWith('  error:'))
+            : []
         output.line(
-          { type: 'check', key, ok, offline: { ok: offline, worker, surfaces }, live },
+          { type: 'check', key, ok, offline: { ok: offline, worker, surfaces, ...(panels ? { panels } : {}) }, live },
           ok
             ? '✓ check passed'
-            : `✗ check: ${[liveWords, worker && !worker.ok ? `worker: ${worker.error}` : '', ...surfaces.filter((s) => !s.ok).map((s) => `${s.id}: ${s.problem}`)].filter(Boolean).join('; ')}`,
+            : `✗ check: ${[liveWords, worker && !worker.ok ? `worker: ${worker.error}` : '', ...surfaces.filter((s) => !s.ok).map((s) => `${s.id}: ${s.problem}`), ...panelIssues.map((line) => line.trim())].filter(Boolean).join('; ')}`,
         )
       } catch (error) {
         const issues = error instanceof CliError ? error.data?.issues : undefined

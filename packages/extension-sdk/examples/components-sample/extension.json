@@ -1,0 +1,18 @@
+{
+  "$schema": "../../extension.schema.json",
+  "manifestVersion": 1,
+  "id": "components-sample",
+  "version": "1.0.0",
+  "engines": { "studio": ">=0.13.0" },
+  "tier": "ui",
+  "name": "Components sample",
+  "description": "Three panels drawn with Studio's own controls: a counter kept across restarts, a form, and a table and tree of files.",
+  "license": "MIT",
+  "contributes": {
+    "panels": [
+      { "id": "counter", "title": "Counter", "icon": "spark", "entry": "src/counter.tsx", "ui": "components" },
+      { "id": "form", "title": "Request form", "icon": "notes", "entry": "src/form.tsx", "ui": "components" },
+      { "id": "files", "title": "Files", "icon": "folder", "entry": "src/files.tsx", "ui": "components" }
+    ]
+  }
+}

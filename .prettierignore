@@ -20,3 +20,5 @@ src/main/providers/codex-protocol/
 mobile/
 # Built, not edited: rebuilt by scripts/build-extension-frame-themes.mjs.
 src/shared/extension-frame-themes.generated.ts
+# Built, not edited: rebuilt by scripts/build-components-runtime.mjs.
+src/server/extensions/frames/components-runtime.generated.ts

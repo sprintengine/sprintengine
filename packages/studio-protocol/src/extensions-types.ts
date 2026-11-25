@@ -85,6 +85,8 @@ export type ExtensionTopBarItemContributionView = {
   door?: string
 }
 export type ExtensionSurfaceContributionView = { id: string; title: string; icon?: string; entry: string }
+/** A panel: drawn by its own page in a frame (`html`, the default), or by Studio from the tree it renders (`components`). */
+export type ExtensionPanelContributionView = ExtensionSurfaceContributionView & { ui?: 'html' | 'components' }
 export type ExtensionMcpToolContributionView = { name: string; description: string; access: 'read' | 'operate' }
 export type ExtensionSyntaxContributionView = {
   id: string
@@ -156,7 +158,7 @@ export type ExtensionContributionsView = {
   commands: ExtensionCommandContributionView[]
   menus: ExtensionMenuContributionView[]
   topBarItems: ExtensionTopBarItemContributionView[]
-  panels: ExtensionSurfaceContributionView[]
+  panels: ExtensionPanelContributionView[]
   doors: ExtensionSurfaceContributionView[]
   settingsSections: ExtensionSurfaceContributionView[]
   mcpTools: ExtensionMcpToolContributionView[]
@@ -448,6 +450,11 @@ export type ExtensionContributions = {
    * declare. A development folder's is after every installed one's.
    */
   installedAt?: number
+  /**
+   * Loaded from a development folder: a components panel's keyed memory atoms
+   * carry over each save, and a save that fails to load keeps the last tree.
+   */
+  development?: true
 }
 
 /**

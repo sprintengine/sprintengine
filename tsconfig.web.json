@@ -50,7 +50,10 @@
     "packages/extension-sdk/src/events.ts",
     "packages/extension-sdk/src/terminals.ts",
     "packages/extension-sdk/src/editor-document-script.ts",
-    "packages/extension-sdk/src/catalogue.ts"
+    "packages/extension-sdk/src/catalogue.ts",
+    "packages/extension-sdk/src/components/catalog.ts",
+    "packages/extension-sdk/src/components/tree.ts",
+    "packages/extension-sdk/src/components/messages.ts"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "compilerOptions": {

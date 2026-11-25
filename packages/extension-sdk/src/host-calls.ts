@@ -118,6 +118,10 @@ const HOST_CALL = new RegExp(String.raw`\bstudio${DOT}host${DOT}call\s*\(\s*(?=[
 const HOST_HAS = new RegExp(String.raw`\bstudio${DOT}host${DOT}has\s*\(\s*(?=['"\x60])`, 'gu')
 const METHODS = new RegExp(String.raw`\bstudio${DOT}methods\s*(?:<[^>()]*>\s*)?\(`, 'gu')
 const DOCUMENT = new RegExp(String.raw`\bstudio${DOT}document\b`, 'gu')
+// A components panel's file calls the `host` it imports (`host.call`), and reaches its worker through `worker`.
+const PANEL_HOST_CALL = new RegExp(String.raw`(?<![\w$.])(?:studio${DOT})?host${DOT}call\s*\(\s*(?=['"\x60])`, 'gu')
+const PANEL_HOST_HAS = new RegExp(String.raw`(?<![\w$.])(?:studio${DOT})?host${DOT}has\s*\(\s*(?=['"\x60])`, 'gu')
+const PANEL_WORKER = new RegExp(String.raw`(?<![\w$.])worker${DOT}(?:read|operate)\s*\(`, 'gu')
 const WORKER_CALL = new RegExp(String.raw`\bstudio${DOT}([A-Za-z_$][\w$]*)\s*\(`, 'gu')
 
 const asks = (manifest: HostCallManifest, permission: string | null) =>
@@ -129,30 +133,40 @@ export function surfaceHostCallIssues(
   source: string,
   surface: ExtensionSurfacePoint,
   manifest: HostCallManifest,
+  /** A components panel's file: `host.call` as the components module exports it, and no `studio`. */
+  options: { components?: boolean } = {},
 ): HostCallIssue[] {
   const code = codeOnly(source)
   const issues: HostCallIssue[] = []
   const at = (offset: number, message: string) => issues.push({ file, ...place(code, offset), message })
   const literal = (match: RegExpMatchArray) => literalAt(source, match.index! + match[0].length)
-  const detected = new Set([...code.matchAll(HOST_HAS)].map(literal).filter((name) => name !== null))
-  for (const match of code.matchAll(HOST_CALL)) {
+  const components = options.components === true
+  const named = components ? 'host.call' : 'studio.host.call'
+  const detected = new Set(
+    [...code.matchAll(components ? PANEL_HOST_HAS : HOST_HAS)].map(literal).filter((name) => name !== null),
+  )
+  if (components && !manifest.main)
+    for (const match of code.matchAll(PANEL_WORKER))
+      at(match.index, "worker.read and worker.operate reach the extension's worker, and it has none (worker tier).")
+  for (const match of code.matchAll(components ? PANEL_HOST_CALL : HOST_CALL)) {
     const method = literal(match)
     if (method === null) continue
     const requirement = Object.hasOwn(EXTENSION_FRAME_METHODS, method)
       ? EXTENSION_FRAME_METHODS[method as keyof typeof EXTENSION_FRAME_METHODS]
       : undefined
     if (!requirement) {
-      if (!detected.has(method)) at(match.index, `studio.host.call("${method}") names no host method Studio offers.`)
+      if (!detected.has(method)) at(match.index, `${named}("${method}") names no host method Studio offers.`)
       continue
     }
     if (!asks(manifest, requirement.extension))
       at(
         match.index,
-        `studio.host.call("${method}") needs the "${requirement.extension}" permission, which extension.json does not ask for.`,
+        `${named}("${method}") needs the "${requirement.extension}" permission, which extension.json does not ask for.`,
       )
     if ((method === 'worker.read' || method === 'worker.operate') && !manifest.main)
-      at(match.index, `studio.host.call("${method}") reaches the extension's worker, and it has none (worker tier).`)
+      at(match.index, `${named}("${method}") reaches the extension's worker, and it has none (worker tier).`)
   }
+  if (components) return issues
   if (!manifest.main)
     for (const match of code.matchAll(METHODS))
       at(match.index, "studio.methods() reaches the extension's worker, and it has none (worker tier).")

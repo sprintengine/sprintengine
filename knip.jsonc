@@ -24,9 +24,12 @@
     "resources/marketplace/*.ts",
     "resources/hooks/*.mjs",
     "packages/extension-sdk/src/cli.ts",
-    // The CLI's two helpers, run by path beside it: check's worker child and test's preload.
+    // The CLI's helpers, run by path beside it: check's worker and panel children, and test's preload.
     "packages/extension-sdk/src/check-worker.ts",
     "packages/extension-sdk/src/test-register.ts",
+    "packages/extension-sdk/src/check-panel.ts",
+    // The components module's JSX runtime, published as its own export for a bundler's jsxImportSource.
+    "packages/extension-sdk/src/components/jsx-runtime.ts",
     "packages/extension-sdk/drift/*.ts",
     // The standalone Studio server, bundled by scripts/build-server.mjs.
     "src/server/main.ts",

@@ -44,6 +44,7 @@ scaffolds a project that already loads in Studio and passes its own tests. There
 | --- | --- | --- |
 | `blank` | One small panel: the smallest extension that draws something | `ui` |
 | `panel` | A notes panel, saved in the extension's app state | `ui` |
+| `components` | A checklist panel drawn with Studio's own controls (`"ui": "components"`), kept for each workspace, with its tests and `check` scenarios | `ui` |
 | `door` | A full-window door listing the open workspaces | `ui` |
 | `editor` | A custom editor for `.kv` files: a form of keys and values Studio opens, saves and keeps in step with disk | `ui` |
 | `chat-companion` | A worker that starts and follows chats of its own, and a panel to drive it | `worker` |

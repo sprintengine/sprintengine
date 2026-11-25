@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Radio group</title>
+<link rel="stylesheet" href="../../foundations/tokens.css" />
+<link rel="stylesheet" href="component.css" />
+<style>
+  body {
+    margin: 0;
+    font-family: var(--sem-font-family-ui);
+  }
+  .demo-stage {
+    padding: var(--sem-space-3xl);
+    background: var(--sem-color-bg-app);
+    color: var(--sem-color-text-default);
+  }
+  .demo-label {
+    font-size: var(--sem-font-size-meta);
+    color: var(--sem-color-text-subtle);
+    margin: 0 0 var(--sem-space-lg);
+  }
+  .demo-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sem-space-md);
+  }
+</style>
+</head>
+<body>
+<div class="demo-stage" data-mode="light">
+  <p class="demo-label">Light — a choose-one list of rows, each saying what its choice means.</p>
+  <div class="ds-radio-group" role="radiogroup" aria-label="Sync">
+    <div class="ds-radio-group-row" role="radio" aria-checked="true" tabindex="0">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span><span class="ds-radio-group-label">Every hour</span><span class="ds-radio-group-description">Fetch on the hour, in the background.</span></span>
+    </div>
+    <div class="ds-radio-group-row" role="radio" aria-checked="false" tabindex="-1">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span><span class="ds-radio-group-label">On demand</span><span class="ds-radio-group-description">Only when you press Refresh.</span></span>
+    </div>
+    <div class="ds-radio-group-row" role="radio" aria-checked="false" aria-disabled="true" tabindex="-1">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span class="ds-radio-group-label">Never</span>
+    </div>
+  </div>
+</div>
+<div class="demo-stage" data-mode="dark">
+  <p class="demo-label">Dark — a choose-one list of rows, each saying what its choice means.</p>
+  <div class="ds-radio-group" role="radiogroup" aria-label="Sync">
+    <div class="ds-radio-group-row" role="radio" aria-checked="true" tabindex="0">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span><span class="ds-radio-group-label">Every hour</span><span class="ds-radio-group-description">Fetch on the hour, in the background.</span></span>
+    </div>
+    <div class="ds-radio-group-row" role="radio" aria-checked="false" tabindex="-1">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span><span class="ds-radio-group-label">On demand</span><span class="ds-radio-group-description">Only when you press Refresh.</span></span>
+    </div>
+    <div class="ds-radio-group-row" role="radio" aria-checked="false" aria-disabled="true" tabindex="-1">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span class="ds-radio-group-label">Never</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

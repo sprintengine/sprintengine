@@ -683,6 +683,8 @@ code {
 #ds-view-component-board-lane:checked ~ .ds-catalog #component-board-lane { display: block; }
 #ds-view-component-button:checked ~ .ds-catalog #components { display: block; }
 #ds-view-component-button:checked ~ .ds-catalog #component-button { display: block; }
+#ds-view-component-callout:checked ~ .ds-catalog #components { display: block; }
+#ds-view-component-callout:checked ~ .ds-catalog #component-callout { display: block; }
 #ds-view-component-card-button:checked ~ .ds-catalog #components { display: block; }
 #ds-view-component-card-button:checked ~ .ds-catalog #component-card-button { display: block; }
 #ds-view-component-card-scroller:checked ~ .ds-catalog #components { display: block; }
@@ -753,6 +755,8 @@ code {
 #ds-view-component-provider-row:checked ~ .ds-catalog #component-provider-row { display: block; }
 #ds-view-component-quote-chip:checked ~ .ds-catalog #components { display: block; }
 #ds-view-component-quote-chip:checked ~ .ds-catalog #component-quote-chip { display: block; }
+#ds-view-component-radio-group:checked ~ .ds-catalog #components { display: block; }
+#ds-view-component-radio-group:checked ~ .ds-catalog #component-radio-group { display: block; }
 #ds-view-component-row-button:checked ~ .ds-catalog #components { display: block; }
 #ds-view-component-row-button:checked ~ .ds-catalog #component-row-button { display: block; }
 #ds-view-component-scope-pill:checked ~ .ds-catalog #components { display: block; }
@@ -821,6 +825,8 @@ code {
 #ds-view-component-board-lane:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-board-lane"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-button:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-button"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
 #ds-view-component-button:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-button"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
+#ds-view-component-callout:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-callout"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
+#ds-view-component-callout:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-callout"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-card-button:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-card-button"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
 #ds-view-component-card-button:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-card-button"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-card-scroller:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-card-scroller"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
@@ -891,6 +897,8 @@ code {
 #ds-view-component-provider-row:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-provider-row"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-quote-chip:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-quote-chip"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
 #ds-view-component-quote-chip:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-quote-chip"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
+#ds-view-component-radio-group:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-radio-group"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
+#ds-view-component-radio-group:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-radio-group"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-row-button:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-row-button"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
 #ds-view-component-row-button:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-row-button"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-scope-pill:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-scope-pill"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
@@ -2201,6 +2209,50 @@ code {
 .ds-caption-button--close:focus {
   background: #c42b1c; /* ds-lint-allow: Windows 11 OS-native close-button hover red — an identity colour of the platform, not of this system */
   color: #ffffff; /* ds-lint-allow: the white the platform pairs with its close red */
+}
+
+/* components/callout/component.css */
+/* Callout — a boxed note inside a panel's content: a title, a body, and the
+ * tone as an edge and a word, never as a field of colour. Extracted from the
+ * shipped Callout primitive (src/renderer/src/components/ui/Callout.tsx). */
+
+.ds-callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sem-space-2xs);
+  padding: var(--sem-space-sm) var(--sem-space-lg);
+  border: 1px solid var(--sem-color-border-subtle);
+  border-radius: var(--sem-radius-control);
+  background: var(--sem-color-bg-surface);
+  color: var(--sem-color-text-default);
+  font-size: var(--sem-font-size-body);
+}
+
+.ds-callout-title {
+  color: var(--sem-color-text-primary);
+  font-weight: var(--sem-font-weight-emphasis);
+}
+
+.ds-callout-body {
+  color: var(--sem-color-text-default);
+}
+
+/* Warning and danger are the inline notice's two tones: its soft fill. */
+.ds-callout--warning {
+  background: var(--sem-color-status-warn-soft);
+}
+
+.ds-callout--danger {
+  background: var(--sem-color-status-danger-soft);
+}
+
+/* Accent and success colour the title's ink only: information is content. */
+.ds-callout--accent .ds-callout-title {
+  color: var(--sem-color-accent-primary);
+}
+
+.ds-callout--success .ds-callout-title {
+  color: var(--sem-color-status-good);
 }
 
 /* components/card-button/component.css */
@@ -7540,6 +7592,70 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   color: var(--sem-color-text-muted);
 }
 
+/* components/radio-group/component.css */
+/* Radio group — a choose-one list of rows, each with the checkbox's radio mark
+ * as its picture. Extracted from the shipped RadioGroup primitive
+ * (src/renderer/src/components/ui/RadioGroup.tsx). */
+
+.ds-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sem-space-xs);
+}
+
+.ds-radio-group--horizontal {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--sem-space-lg);
+}
+
+.ds-radio-group-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sem-space-sm);
+  padding: var(--sem-space-xs) var(--sem-space-sm);
+  border-radius: var(--sem-radius-control);
+  color: var(--sem-color-text-default);
+  font-size: var(--sem-font-size-body);
+  cursor: pointer;
+}
+
+.ds-radio-group-row:hover {
+  background: var(--sem-color-bg-hover);
+}
+
+.ds-radio-group-row[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.45; /* ds-lint-allow: the kit's one disabled fade, as the checkbox's */
+}
+
+.ds-radio-group-mark {
+  display: inline-flex;
+  inline-size: var(--sem-icon-size-sm);
+  block-size: var(--sem-icon-size-sm);
+  margin-block-start: var(--sem-space-2xs);
+  border: 1px solid var(--sem-color-border-default);
+  border-radius: var(--sem-radius-pill);
+  background: var(--sem-color-bg-app);
+}
+
+.ds-radio-group-row[aria-checked='true'] .ds-radio-group-mark {
+  border-color: var(--sem-color-accent-primary);
+  /* The disc is the well's own ground showing through an accent ring. */
+  background: var(--sem-color-text-on-accent);
+  box-shadow: inset 0 0 0 4px var(--sem-color-accent-primary); /* ds-lint-allow: the ring that leaves the disc, as the radio mark draws it */
+}
+
+.ds-radio-group-label {
+  display: block;
+}
+
+.ds-radio-group-description {
+  display: block;
+  color: var(--sem-color-text-muted);
+  font-size: var(--sem-font-size-meta);
+}
+
 /* components/row-button/component.css */
 /* Row button — the list ROW as a control. Extracted from the shipped
  * `RowButton` primitive (src/renderer/src/components/ui/RowButton.tsx).
@@ -10708,6 +10824,25 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
     color: var(--sem-color-text-subtle);
     width: 100%;
   }
+.ds-embed-component-callout {
+    margin: 0;
+    font-family: var(--sem-font-family-ui);
+  }
+.ds-embed-component-callout .demo-stage {
+    padding: var(--sem-space-3xl);
+    background: var(--sem-color-bg-app);
+    color: var(--sem-color-text-default);
+  }
+.ds-embed-component-callout .demo-label {
+    font-size: var(--sem-font-size-meta);
+    color: var(--sem-color-text-subtle);
+    margin: 0 0 var(--sem-space-lg);
+  }
+.ds-embed-component-callout .demo-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sem-space-md);
+  }
 .ds-embed-component-card-button {
     margin: 0;
     font-family: var(--sem-font-family-ui);
@@ -12093,6 +12228,25 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
     width: 12px;
     height: 12px;
     vertical-align: -0.1em;
+  }
+.ds-embed-component-radio-group {
+    margin: 0;
+    font-family: var(--sem-font-family-ui);
+  }
+.ds-embed-component-radio-group .demo-stage {
+    padding: var(--sem-space-3xl);
+    background: var(--sem-color-bg-app);
+    color: var(--sem-color-text-default);
+  }
+.ds-embed-component-radio-group .demo-label {
+    font-size: var(--sem-font-size-meta);
+    color: var(--sem-color-text-subtle);
+    margin: 0 0 var(--sem-space-lg);
+  }
+.ds-embed-component-radio-group .demo-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sem-space-md);
   }
 .ds-embed-component-row-button {
     margin: 0;
@@ -13791,6 +13945,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-banner" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-board-lane" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-button" />
+<input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-callout" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-card-button" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-card-scroller" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-check-row" />
@@ -13826,6 +13981,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-popover" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-provider-row" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-quote-chip" />
+<input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-radio-group" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-row-button" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-scope-pill" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-scroll-area" />
@@ -13880,6 +14036,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <label class="catalog-nav-item" for="ds-view-component-banner">Banner</label>
 <label class="catalog-nav-item" for="ds-view-component-board-lane">Board lane</label>
 <label class="catalog-nav-item" for="ds-view-component-button">Button</label>
+<label class="catalog-nav-item" for="ds-view-component-callout">Callout</label>
 <label class="catalog-nav-item" for="ds-view-component-card-button">Card button</label>
 <label class="catalog-nav-item" for="ds-view-component-card-scroller">Card scroller</label>
 <label class="catalog-nav-item" for="ds-view-component-check-row">Check row</label>
@@ -13915,6 +14072,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <label class="catalog-nav-item" for="ds-view-component-popover">Popover</label>
 <label class="catalog-nav-item" for="ds-view-component-provider-row">Provider row</label>
 <label class="catalog-nav-item" for="ds-view-component-quote-chip">Quote chip</label>
+<label class="catalog-nav-item" for="ds-view-component-radio-group">Radio group</label>
 <label class="catalog-nav-item" for="ds-view-component-row-button">Row button</label>
 <label class="catalog-nav-item" for="ds-view-component-scope-pill">Scope pill</label>
 <label class="catalog-nav-item" for="ds-view-component-scroll-area">Scroll area</label>
@@ -14194,6 +14352,10 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   <path d="M6.9 9.1h2.2M8 8v2.2M6.9 12.1h2.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
 </svg><figcaption>create-patch</figcaption></figure>
 <figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <ellipse cx="8" cy="4" rx="4.75" ry="1.75" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M3.25 4v8c0 .97 2.13 1.75 4.75 1.75s4.75-.78 4.75-1.75V4M3.25 8c0 .97 2.13 1.75 4.75 1.75S12.75 8.97 12.75 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg><figcaption>database</figcaption></figure>
+<figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
   <path d="M3.25 8h9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
 </svg><figcaption>delete-changelist</figcaption></figure>
 <figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
@@ -14213,12 +14375,20 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   <path d="M6.9 12.1h2.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
 </svg><figcaption>device-phone</figcaption></figure>
 <figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M8 2.5v7.5M5 7l3 3 3-3M2.75 10.5v1.75c0 .69.56 1.25 1.25 1.25h8c.69 0 1.25-.56 1.25-1.25V10.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg><figcaption>download</figcaption></figure>
+<figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
   <path d="M3.25 12.75 3.9 10.1 10.4 3.6a1.2 1.2 0 0 1 1.7 0l.3.3a1.2 1.2 0 0 1 0 1.7l-6.5 6.5-2.65.65Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
   <path d="M9.3 4.7 11.3 6.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
 </svg><figcaption>edit-changelist</figcaption></figure>
 <figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
   <path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
 </svg><figcaption>enlarge</figcaption></figure>
+<figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <circle cx="8" cy="8" r="5.75" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M8 4.75v3.75" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="8" cy="10.85" r="0.8" fill="currentColor"/>
+</svg><figcaption>error</figcaption></figure>
 <figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
   <path d="M4.5 5.75 8 2.25l3.5 3.5M4.5 10.25 8 13.75l3.5-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
 </svg><figcaption>expand-all</figcaption></figure>
@@ -14231,6 +14401,9 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   <path d="M3.1 4.9h4.2M5.2 4.9v6.35" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/>
   <path d="M12.35 5.85c-.5-.65-1.25-1-2.05-1-1.15 0-1.9.6-1.9 1.45 0 .95.8 1.25 1.9 1.55 1.15.3 2 .75 2 1.8 0 1-.85 1.65-2.1 1.65-.95 0-1.7-.4-2.25-1.05" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/>
 </svg><figcaption>file-typescript</figcaption></figure>
+<figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M2.5 4.5h11M4.5 8h7M6.5 11.5h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+</svg><figcaption>filter</figcaption></figure>
 <figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
   <path d="M1.75 4.75c0-.83.67-1.5 1.5-1.5h3.1l1.5 1.5h5.4c.83 0 1.5.67 1.5 1.5v6c0 .83-.67 1.5-1.5 1.5H3.25c-.83 0-1.5-.67-1.5-1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
 </svg><figcaption>folder</figcaption></figure>
@@ -14254,10 +14427,18 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   <path d="M8 5.1V8.2l2.2 1.35" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
 </svg><figcaption>history</figcaption></figure>
 <figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <circle cx="8" cy="8" r="5.75" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M8 7.5v3.25" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="8" cy="5.25" r="0.8" fill="currentColor"/>
+</svg><figcaption>info</figcaption></figure>
+<figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
   <circle cx="8" cy="3.4" r="1.15" fill="currentColor"/>
   <circle cx="8" cy="8" r="1.15" fill="currentColor"/>
   <circle cx="8" cy="12.6" r="1.15" fill="currentColor"/>
 </svg><figcaption>kebab</figcaption></figure>
+<figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M6.5 9.5l3-3M7.25 4.75l1.25-1.25a2.5 2.5 0 0 1 3.54 3.54L10.75 8.25M8.75 11.25 7.5 12.5a2.5 2.5 0 0 1-3.54-3.54L5.25 7.75" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg><figcaption>link</figcaption></figure>
 <figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
   <rect x="2" y="3" width="12" height="10" rx="1.2" stroke="currentColor" stroke-width="1.4" fill="none"/>
   <rect x="4.2" y="5.6" width="4.6" height="4.8" rx="0.6" stroke="currentColor" stroke-width="1.4" fill="none"/>
@@ -14350,6 +14531,10 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
   <path d="M1.8 6.6h7.4v5.2H1.8ZM5.5 11.8v1.8M3.6 13.6h3.8M10.6 3.2a2.2 2.2 0 0 1 2.2 2.2M10.6 1.4a4 4 0 0 1 4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
 </svg><figcaption>remote-machine</figcaption></figure>
+<figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M13.25 2.75c-3.25 0-5.75 1.75-7.5 4.75l2.75 2.75c3-1.75 4.75-4.25 4.75-7.5ZM5.75 7.5H3.25l1.75-2.25h2.5M8.5 10.25v2.5l2.25-1.75v-2.5M4.5 10.5c-.85.5-1.4 1.6-1.5 2.5.9-.1 2-.65 2.5-1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="10.25" cy="5.75" r="0.9" fill="currentColor"/>
+</svg><figcaption>rocket</figcaption></figure>
 <figure class="catalog-glyph"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
   <path d="M5.25 6H9.5a2.75 2.75 0 0 1 0 5.5H4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
   <path d="M7.5 3.75 5.25 6l2.25 2.25" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
@@ -17731,6 +17916,144 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 &lt;/html&gt;
 </code></pre></details>
 </div>
+<div id="component-callout" class="catalog-view catalog-component">
+<h3>Callout</h3>
+<div class="catalog-component-grid">
+<div class="catalog-stage ds-embed-component-callout">
+<div class="demo-stage" data-mode="light">
+  <p class="demo-label">Light — a boxed note in each tone.</p>
+  <div class="demo-stack">
+    <div class="ds-callout" role="note"><span class="ds-callout-title">Neutral</span><span class="ds-callout-body">A fact the reader should notice.</span></div>
+    <div class="ds-callout ds-callout--accent" role="note"><span class="ds-callout-title">Accent</span><span class="ds-callout-body">Something new to try.</span></div>
+    <div class="ds-callout ds-callout--success" role="note"><span class="ds-callout-title">Success</span><span class="ds-callout-body">The deploy is healthy.</span></div>
+    <div class="ds-callout ds-callout--warning" role="status"><span class="ds-callout-title">Warning</span><span class="ds-callout-body">Two checks are slow.</span></div>
+    <div class="ds-callout ds-callout--danger" role="alert"><span class="ds-callout-title">Danger</span><span class="ds-callout-body">The last run failed.</span></div>
+  </div>
+</div>
+<div class="demo-stage" data-mode="dark">
+  <p class="demo-label">Dark — a boxed note in each tone.</p>
+  <div class="demo-stack">
+    <div class="ds-callout" role="note"><span class="ds-callout-title">Neutral</span><span class="ds-callout-body">A fact the reader should notice.</span></div>
+    <div class="ds-callout ds-callout--accent" role="note"><span class="ds-callout-title">Accent</span><span class="ds-callout-body">Something new to try.</span></div>
+    <div class="ds-callout ds-callout--success" role="note"><span class="ds-callout-title">Success</span><span class="ds-callout-body">The deploy is healthy.</span></div>
+    <div class="ds-callout ds-callout--warning" role="status"><span class="ds-callout-title">Warning</span><span class="ds-callout-body">Two checks are slow.</span></div>
+    <div class="ds-callout ds-callout--danger" role="alert"><span class="ds-callout-title">Danger</span><span class="ds-callout-body">The last run failed.</span></div>
+  </div>
+</div>
+</div>
+<div class="catalog-doc">
+<p>A boxed note inside a panel's content: an optional title, the note, and a tone. It is what an extension's components panel draws for <code>Callout</code>, through the shipped <code>Callout</code> primitive (<code>src/renderer/src/components/ui/Callout.tsx</code>).</p>
+<p><strong>Why not the inline notice.</strong> The [inline notice](../inline-notice/component.md) has two tones on purpose — a failure and a degraded state — and there is no info or success notice. A panel's author still needs a box for &quot;read this first&quot;, so the callout's <code>warning</code> and <code>danger</code> are the notice's own treatment (its soft fill, and the notice's role), and its <code>neutral</code>, <code>accent</code> and <code>success</code> stay content: a hairline box on the surface, with the tone in the title's ink only, never a tinted field.</p>
+<h4>Anatomy</h4>
+<p>| Part | Class | Required | |---|---|---| | Box | <code>.ds-callout</code> | yes — <code>border.subtle</code> hairline, <code>radius.control</code>, <code>bg.surface</code> | | Glyph | <code>.ds-callout-glyph</code> | no — <code>icon.size.sm</code>, before the title | | Title | <code>.ds-callout-title</code> | no — <code>text.primary</code> at <code>font.weight.emphasis</code> | | Body | <code>.ds-callout-body</code> | yes — the note's content |</p>
+<h4>Variants</h4>
+<ul><li><strong>Neutral</strong> (default) — the box alone.</li><li><strong><code>--accent</code></strong> — the title in <code>accent.primary</code> ink.</li><li><strong><code>--success</code></strong> — the title in <code>status.good</code> ink.</li><li><strong><code>--warning</code></strong> — the inline notice's warn treatment: <code>status.warn-soft</code> ground.</li><li><strong><code>--danger</code></strong> — the inline notice's error treatment: <code>status.danger-soft</code> ground.</li></ul>
+<h4>States</h4>
+<p>A callout is not interactive. A control inside it keeps its own states.</p>
+<h4>Usage</h4>
+<ul><li>One callout per thing to read; do not stack them as a list of facts.</li><li>Put what to do next in the body, as a button or a link.</li><li>For a failure the person must act on in the app's own chrome, use the inline notice or a banner, not this.</li></ul>
+<h4>Accessibility</h4>
+<ul><li><code>danger</code> is <code>role=&quot;alert&quot;</code>, <code>warning</code> is <code>role=&quot;status&quot;</code>, the rest <code>role=&quot;note&quot;</code>.</li><li>The tone is never colour alone: the title or the body says it in words.</li></ul>
+</div>
+</div>
+<details class="catalog-source"><summary>components/callout/component.css</summary><pre><code>/* Callout — a boxed note inside a panel's content: a title, a body, and the
+ * tone as an edge and a word, never as a field of colour. Extracted from the
+ * shipped Callout primitive (src/renderer/src/components/ui/Callout.tsx). */
+
+.ds-callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sem-space-2xs);
+  padding: var(--sem-space-sm) var(--sem-space-lg);
+  border: 1px solid var(--sem-color-border-subtle);
+  border-radius: var(--sem-radius-control);
+  background: var(--sem-color-bg-surface);
+  color: var(--sem-color-text-default);
+  font-size: var(--sem-font-size-body);
+}
+
+.ds-callout-title {
+  color: var(--sem-color-text-primary);
+  font-weight: var(--sem-font-weight-emphasis);
+}
+
+.ds-callout-body {
+  color: var(--sem-color-text-default);
+}
+
+/* Warning and danger are the inline notice's two tones: its soft fill. */
+.ds-callout--warning {
+  background: var(--sem-color-status-warn-soft);
+}
+
+.ds-callout--danger {
+  background: var(--sem-color-status-danger-soft);
+}
+
+/* Accent and success colour the title's ink only: information is content. */
+.ds-callout--accent .ds-callout-title {
+  color: var(--sem-color-accent-primary);
+}
+
+.ds-callout--success .ds-callout-title {
+  color: var(--sem-color-status-good);
+}
+</code></pre></details>
+<details class="catalog-source"><summary>components/callout/component.html (demo)</summary><pre><code>&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot; /&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot; /&gt;
+&lt;title&gt;Callout&lt;/title&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;../../foundations/tokens.css&quot; /&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;component.css&quot; /&gt;
+&lt;style&gt;
+  body {
+    margin: 0;
+    font-family: var(--sem-font-family-ui);
+  }
+  .demo-stage {
+    padding: var(--sem-space-3xl);
+    background: var(--sem-color-bg-app);
+    color: var(--sem-color-text-default);
+  }
+  .demo-label {
+    font-size: var(--sem-font-size-meta);
+    color: var(--sem-color-text-subtle);
+    margin: 0 0 var(--sem-space-lg);
+  }
+  .demo-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sem-space-md);
+  }
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div class=&quot;demo-stage&quot; data-mode=&quot;light&quot;&gt;
+  &lt;p class=&quot;demo-label&quot;&gt;Light — a boxed note in each tone.&lt;/p&gt;
+  &lt;div class=&quot;demo-stack&quot;&gt;
+    &lt;div class=&quot;ds-callout&quot; role=&quot;note&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Neutral&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;A fact the reader should notice.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--accent&quot; role=&quot;note&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Accent&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;Something new to try.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--success&quot; role=&quot;note&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Success&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;The deploy is healthy.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--warning&quot; role=&quot;status&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Warning&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;Two checks are slow.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--danger&quot; role=&quot;alert&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Danger&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;The last run failed.&lt;/span&gt;&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+&lt;div class=&quot;demo-stage&quot; data-mode=&quot;dark&quot;&gt;
+  &lt;p class=&quot;demo-label&quot;&gt;Dark — a boxed note in each tone.&lt;/p&gt;
+  &lt;div class=&quot;demo-stack&quot;&gt;
+    &lt;div class=&quot;ds-callout&quot; role=&quot;note&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Neutral&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;A fact the reader should notice.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--accent&quot; role=&quot;note&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Accent&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;Something new to try.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--success&quot; role=&quot;note&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Success&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;The deploy is healthy.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--warning&quot; role=&quot;status&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Warning&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;Two checks are slow.&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;ds-callout ds-callout--danger&quot; role=&quot;alert&quot;&gt;&lt;span class=&quot;ds-callout-title&quot;&gt;Danger&lt;/span&gt;&lt;span class=&quot;ds-callout-body&quot;&gt;The last run failed.&lt;/span&gt;&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre></details>
+</div>
 <div id="component-card-button" class="catalog-view catalog-component">
 <h3>Card button</h3>
 <div class="catalog-component-grid">
@@ -20117,7 +20440,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <p><code>RadioMark</code>, exported beside <code>CheckboxBox</code>: the box's single-answer twin. Same <code>icon.size.sm</code> square, same <code>border.default</code> edge on the <code>bg.app</code> well, same <code>accent.primary</code> fill once chosen — fully round (<code>radius.pill</code>), with a disc where the tick would be. A question's choose-one rows had drawn their own, and a round mark hand-rolled outside the system is a status dot by another name.</p>
 <p><strong>Anatomy.</strong> One round well; when checked, the accent fill and a disc in <code>text.on-accent</code>. No input.</p>
 <p><strong>States.</strong> Unchecked, checked, and disabled (the box's 45% fade).</p>
-<p><strong>Usage.</strong> Only as the picture of a choice another element owns: a row with <code>role=&quot;radio&quot;</code> in a <code>radiogroup</code>, which is the tab stop and carries <code>aria-checked</code>. There is no radio control in the kit. A value picked from a closed list is a [select](../select/component.md) or a segmented control; a choose-many list of rows takes <code>CheckboxBox</code>.</p>
+<p><strong>Usage.</strong> Only as the picture of a choice another element owns: a row with <code>role=&quot;radio&quot;</code> in a <code>radiogroup</code>, which is the tab stop and carries <code>aria-checked</code>; the [radio group](../radio-group/component.md) is that list of rows, built. A value picked from a closed list is a [select](../select/component.md) or a segmented control; a choose-many list of rows takes <code>CheckboxBox</code>.</p>
 <p><strong>Accessibility.</strong> Always <code>aria-hidden</code>. The row announces the state; the mark is only its picture and must never be met twice.</p>
 </div>
 </div>
@@ -24759,7 +25082,7 @@ for (const sentinel of root.querySelectorAll('[data-sentinel]')) {
 <h4>Usage</h4>
 <ul><li>Labels are sentence case, no trailing colon, and name the value (&quot;Folder path&quot;), not the interaction (&quot;Enter a folder path&quot;).</li><li>Do not label what the dialog title already labels: one field under &quot;New automation&quot; needs no &quot;Automation name&quot; label — give the control its accessible name and let the placeholder do the visible work.</li><li>Help text earns its line only by carrying what the screen cannot show: a consequence (&quot;Shown in the sidebar and the switcher&quot;), never a restatement of the placeholder or the label.</li><li>Error copy names the problem in a sentence a person can act on (&quot;That folder does not exist&quot;), not a validator's classification (&quot;Invalid path&quot;).</li><li>One control per field. Two controls under one label are two fields, or one composed control that owns its own internals.</li></ul>
 <h4>Accessibility</h4>
-<ul><li>The label is a real <code>&lt;label for&gt;</code> pointing at the control's <code>id</code>. For grouped controls (radiogroup, segmented control), the standalone label plus <code>aria-labelledby</code> replaces it.</li><li><code>aria-describedby</code> on the control points at the visible message — the help's id or the error's id, whichever is currently shown, never both, never a hidden node.</li><li>Invalid state is <code>aria-invalid=&quot;true&quot;</code> plus the error text naming the problem; the red border on the control (see <code>input</code>) is the echo, never the message.</li><li>The required <code>*</code> is <code>aria-hidden</code> decoration; <code>aria-required</code> on the control is what assistive tech hears. Neither appears as an accusation on an untouched form — see *Empty is not invalid*.</li></ul>
+<ul><li>The label is a real <code>&lt;label for&gt;</code> pointing at the control's <code>id</code>. For grouped controls (radiogroup, segmented control), the standalone label plus <code>aria-labelledby</code> replaces it.</li><li><code>aria-describedby</code> on the control points at the visible message — the help's id or the error's id, whichever is currently shown, never both, never a hidden node.</li><li>Invalid state is <code>aria-invalid=&quot;true&quot;</code> plus the error text naming the problem; the red border on the control (see <code>input</code>) is the echo, never the message.</li><li>The error message is an alert (<code>role=&quot;alert&quot;</code>), so an error that appears while the person is in the form is announced, not only drawn. A composite row that names itself (no <code>for</code>) still points its group's <code>aria-describedby</code> at the shown message, through the ids the row gives it.</li><li>The required <code>*</code> is <code>aria-hidden</code> decoration; <code>aria-required</code> on the control is what assistive tech hears. Neither appears as an accusation on an untouched form — see *Empty is not invalid*.</li></ul>
 <h4>Known drift</h4>
 <ul><li>~~Shipped <code>Field.tsx</code> renders the label at 12px (<code>text-meta</code>) and the help/error messages at 11px (<code>text-micro</code>). The system's spec — here and in the <code>input</code> entry, which shipped first — is label at <code>font.size.body</code>, messages at <code>font.size.meta</code>: supporting copy does not drop below the meta step, and 11px is reserved for micro chrome.~~ <strong>Resolved 2026-09-02:</strong> label <code>text-body</code>, messages <code>text-meta</code>. The same pass moved the required <code>*</code> from <code>status.danger</code> to <code>text.subtle</code> and corrected the Anatomy row above, which had contradicted this entry's own *Empty is not invalid* paragraph: the mark stays (with <code>aria-required</code>), it just stops being red.</li><li><code>Modal.tsx</code> exports a <strong>second</strong> <code>Field</code> — label at <code>text-micro</code>, hint in <code>text.disabled</code> ink, no error state, no ARIA wiring at all. It predates the real one and survives inside dialogs. It is drift, not a variant: one field contract, and a hint in disabled ink fails the rule that <code>text.disabled</code> never carries actionable copy.</li></ul>
 </div>
@@ -29413,7 +29736,7 @@ for (const sentinel of root.querySelectorAll('[data-sentinel]')) {
 </div>
 </div>
 <div class="catalog-doc">
-<p>The product's icon language: one concept per glyph, drawn in <code>currentColor</code> line work, sized only by the <code>--sem-icon-size-*</code> ramp. The seventy-three SVGs in <code>glyphs/</code> (close, search, spinner, sprintengine-mark, git-branch, remote-machine, schedule, wsl-machine, the four <code>device-*</code> marks, the six <code>machine-*</code> kinds, the composer's six — plus, conversation, terminal-agent, attach, plugins, send — commit, worktree, history, folder, file-typescript, file-generic, the three pull-request marks — pull-request-open, pull-request-merged, pull-request-closed — and the nineteen Commit-window action marks — rollback, move-to-changelist, stash, group-by, expand-all, collapse-all, next-difference, previous-difference, show-diff, side-by-side, unified, gear, open-in-editor, write-commit-message, new-changelist, delete-changelist, edit-changelist, create-patch, kebab — and the diff tour's four — tour, play, pause, step-list — and the copy affordance's pair — copy, and the check it confirms with — and the code block's three — wrap-lines, terminal-prompt, view-source — the chat's ten tool-step marks, <code>tool-*</code>, the quote mark — quote — and open-in-window) are the framework-neutral assets; the shipped vocabulary lives in React — <code>src/renderer/src/components/AppIcons.tsx</code> and the <code>ui/</code> glyph primitives beside it. This entry documents that vocabulary so a consumer can pick, size, and color a glyph without reading the React source.</p>
+<p>The product's icon language: one concept per glyph, drawn in <code>currentColor</code> line work, sized only by the <code>--sem-icon-size-*</code> ramp. The eighty-five SVGs in <code>glyphs/</code> (close, search, spinner, sprintengine-mark, git-branch, remote-machine, schedule, wsl-machine, the four <code>device-*</code> marks, the six <code>machine-*</code> kinds, the composer's six — plus, conversation, terminal-agent, attach, plugins, send — commit, worktree, history, folder, file-typescript, file-generic, the three pull-request marks — pull-request-open, pull-request-merged, pull-request-closed — and the nineteen Commit-window action marks — rollback, move-to-changelist, stash, group-by, expand-all, collapse-all, next-difference, previous-difference, show-diff, side-by-side, unified, gear, open-in-editor, write-commit-message, new-changelist, delete-changelist, edit-changelist, create-patch, kebab — and the diff tour's four — tour, play, pause, step-list — and the copy affordance's pair — copy, and the check it confirms with — and the code block's three — wrap-lines, terminal-prompt, view-source — the chat's ten tool-step marks, <code>tool-*</code>, the quote mark — quote — open-in-window, and the everyday marks' seven — info, error, download, filter, link, rocket, database) are the framework-neutral assets; the shipped vocabulary lives in React — <code>src/renderer/src/components/AppIcons.tsx</code> and the <code>ui/</code> glyph primitives beside it. This entry documents that vocabulary so a consumer can pick, size, and color a glyph without reading the React source.</p>
 <p>A glyph is not decoration and not a status pill. It answers exactly one question — _which thing is this_ (identity), _where is it in its pipeline_ (lifecycle), _which machine is it on_ (device), _what kind of capability_ (capability), _which runtime_ (CLI), or _what will this control do_ (action) — and each question has its own family below. A surface that reaches for two families to answer one question has the wrong hierarchy, not the wrong icon.</p>
 <h4>Anatomy</h4>
 <p>Two drawing grids, each with its own stroke discipline:</p>
@@ -29427,7 +29750,7 @@ for (const sentinel of root.querySelectorAll('[data-sentinel]')) {
 <p>The variants of this system are its families. Within a family, glyphs share a grid, a stroke, and a naming pattern; across families they share nothing but the ramp and <code>currentColor</code>.</p>
 <h5>Core actions and navigation (24-grid)</h5>
 <p>| Export             | Meaning                                                                                                                                                                                                                 | | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | | <code>CheckIcon</code>        | Confirmed / applied — <code>glyphs/check.svg</code> is its 16-grid sample                                                                                                                                                          | | <code>ChevronDownIcon</code>  | Disclosure; rotate for other directions rather than adding siblings                                                                                                                                                     | | <code>CopyIcon</code>         | Copy to clipboard — <code>glyphs/copy.svg</code> is its 16-grid sample. Reach for it through <code>CopyGlyphButton</code>, which swaps it for <code>CheckIcon</code> on a landed copy ([button → The copy glyph](../button/component.md#the-copy-glyph)) | | <code>NewChatIcon</code>      | Compose — pencil-in-square, deliberately _not_ a plus, because compose is not create                                                                                                                                    | | <code>WarningIcon</code>      | Finding / warning triangle — a real glyph so it scales and inks like one, never the <code>▲</code> character                                                                                                                       | | <code>FolderPlusIcon</code>   | Install from a folder on disk — a folder wearing the plus                                                                                                                                                               | | <code>ResetIcon</code>        | Restore a default: the shortcut a person rebound, a setting they changed                                                                                                                                                | | <code>ReleaseNotesIcon</code> | What changed in this version                                                                                                                                                                                            |</p>
-<p>There is no standalone <code>CloseIcon</code>. The dismiss mark lives inside <code>ui/CloseIconButton</code>, on its own 14-grid at stroke 1.4, because a close glyph is only ever a button — an unpadded one is below the hit-target floor. <code>glyphs/close.svg</code> is the framework-neutral sample of the same mark.</p>
+<p>There is no 24-grid <code>CloseIcon</code>. The dismiss mark is <code>CloseGlyph</code> (<code>ui/CommonGlyphs.tsx</code>, below), on its own 14-grid at stroke 1.4, and <code>ui/CloseIconButton</code> wears it; a close glyph is only ever a button — an unpadded one is below the hit-target floor. <code>glyphs/close.svg</code> is the framework-neutral sample of the same mark.</p>
 <h5>Workspace-type identity (24-grid, registry-resolved)</h5>
 <p><code>WorkspaceTypeIcon</code> is the dispatcher: it resolves a workspace mode through the renderer host registry, gated on module enablement when <code>moduleOverrides</code> is passed, and degrades to the standard glyph for anything disabled or unknown. Consumers go through it; the concrete marks exist for the registry to point at:</p>
 <p>| Mark                           | Drawing                                                                 | | ------------------------------ | ----------------------------------------------------------------------- | | the standard fallback          | Terminal-in-frame — module-private, reached only through the dispatcher | | <code>AutomationsWorkspaceTypeIcon</code> | Schedule dial around a lightning bolt — &quot;on a schedule, do work&quot;        | | <code>FolderTypeIcon</code>               | The project folder, optionally wearing a workspace's own logo           |</p>
@@ -29488,6 +29811,9 @@ for (const sentinel of root.querySelectorAll('[data-sentinel]')) {
 <p>Reused, not redrawn, by the same two surfaces: <code>RefreshIcon</code> (re-read the working tree), <code>FileTypeGlyph</code> <code>lock</code> (the padlock), <code>glyphs/commit.svg</code>, <code>glyphs/worktree.svg</code>, <code>glyphs/history.svg</code> (the view strip), and <code>ChevronDownIcon</code> rotated for disclosure.</p>
 <h5>Utility marks (16-grid)</h5>
 <p>| Export                                                                               | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | | <code>StarGlyph(filled, stroked)</code>                                                         | The one star path for starred/favorite — solid when earned, outlined for menu unstarred states. Caller owns size and ink                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | | <code>RefreshIcon</code>                                                                        | The canonical two-arrow refresh, shared by every panel that offers a manual re-read (Git status, Backlog scan)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | | <code>GitBranchGlyph</code>                                                                     | The branch fork beside a branch name — sidebar rows, the git button, the run-on strip. <code>glyphs/git-branch.svg</code>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | | <code>PresetDialGlyph</code> · <code>LockGlyph</code> · <code>UnlockedGlyph</code> · <code>SparkGlyph</code> · <code>RuleShieldGlyph</code> | The access-level vocabulary (CLI default · Manual · Bypass · Auto) on the permission-preset menu rows and the composer's permission pill — one drawing per concept, shared by both hosts. A CLI's own mode listed beside its level's own takes a mark of its own so two rows never share one: <code>RuleShieldGlyph</code> for Don't ask (never asks, held to the allow rules) and the bare pencil (<code>EditChangelistGlyph</code>) for Accept edits. Inline in <code>AppIcons.tsx</code>; no standalone asset.                                                                                                                                                                                                            | | <code>RemoteMachineGlyph</code>                                                                 | <strong>The Beam</strong> (redrawn 2026-10-04, owner ruling; it was a stack of two server units): a screen on its stand with two arcs of signal off its corner — a machine reached over the air. The one mark for &quot;another machine&quot; in general, where a surface does not say which: the paired-devices list, the &quot;Other machines&quot; group of the machine picker, the tailnet UI, a remote group header (remote-sessions-ux decision 7: one glyph, machine name beside it or in the tooltip). Also the Device identity family's fallback (above). A surface that names one machine wears that machine's own mark instead (Machine kinds). Stroke 1.4. <code>glyphs/remote-machine.svg</code>                           | | <code>ScheduleGlyph</code>                                                                      | A scheduled agent: a prompt that starts a new chat each time its schedule comes round. The plain clock face — hands at the hour, nothing else — on the New chat panel's Scheduled agent switch, its schedule row, the entry beside New chat, each scheduled agent's row in the sidebar's Scheduled section, and beside the title of every chat a scheduled run started, where it is named &quot;Started by a schedule&quot; (accessible name and tooltip) and says where the chat came from, never that it is working. <strong>Not</strong> <code>glyphs/history.svg</code>, whose clock carries a rewind arrow and means _the past_ (the Git log); this one means _a time that is coming_. Stroke 1.4. <code>glyphs/schedule.svg</code> | | <code>WslMachineGlyph</code>                                                                    | A WSL distribution on this computer, which is a machine of its own (&quot;WSL: Ubuntu&quot;): a window with a title bar and a prompt, because the distribution is reached as a shell. The title bar (redrawn 2026-10-04) is what keeps it apart from the plain terminal's frame, <code>TerminalPromptGlyph</code>, which the composer's &quot;Start as&quot; choice draws beside it. It is also the <code>wsl</code> machine kind (Machine kinds, above). Stroke 1.4. <code>glyphs/wsl-machine.svg</code>                                                                                                                                                                                                                                        | | <code>OpenInWindowGlyph</code>                                                                  | _In a window of its own_: a box with an arrow leaving it by the top-right corner. One drawing for every way a surface leaves for its own OS window — the workspace pane's &quot;Pop out pane&quot;, a tab's &quot;Pop out&quot; — and, in a pane tab's glyph slot, for a tab that is showing in a pop-out window right now: the mark the person clicked to send it there is the one that says where it went (the tab's accessible name says it in words). Extracted from the diff band in 2026-10, when the pane's pop-out reached for the same idea. Stroke 1.5. <code>glyphs/open-in-window.svg</code>                                                                                                                   |</p>
+<h5>Everyday marks (16-grid — <code>ui/CommonGlyphs.tsx</code>)</h5>
+<p>The marks a surface reaches for that belong to no one family: the ones an extension's components panel names through its <code>icon</code> props, and the app's own filter and close. Stroke 1.4 (the filter's three lines keep the 1.5 they were drawn at), <code>currentColor</code>.</p>
+<p>| Export          | Asset                 | Drawing                                                                                                               | | --------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------- | | <code>SearchGlyph</code>   | <code>glyphs/search.svg</code>   | A lens and its handle, drawn to the 16-grid                                                                           | | <code>CloseGlyph</code>    | <code>glyphs/close.svg</code>    | The ×, on its own 14-grid; <code>CloseIconButton</code> wears it                                                                 | | <code>InfoGlyph</code>     | <code>glyphs/info.svg</code>     | A lower-case i in a circle: something to know, nothing wrong                                                          | | <code>ErrorGlyph</code>    | <code>glyphs/error.svg</code>    | An exclamation mark in a circle. Never the warning triangle: a failure and a caution must not read alike in grayscale | | <code>DownloadGlyph</code> | <code>glyphs/download.svg</code> | An arrow coming down into a tray                                                                                      | | <code>FilterGlyph</code>   | <code>glyphs/filter.svg</code>   | Three lines narrowing; the filter menu's trigger                                                                      | | <code>LinkGlyph</code>     | <code>glyphs/link.svg</code>     | Two chain links joined on the diagonal. Not the open-external arrow, which leaves; this one joins                     | | <code>RocketGlyph</code>   | <code>glyphs/rocket.svg</code>   | A rocket climbing to the top right, two fins and a short flame: launch, ship                                          | | <code>DatabaseGlyph</code> | <code>glyphs/database.svg</code> | A drum of three disks: stored data                                                                                    |</p>
 <h5>Code block actions (16-grid — <code>ui/CodeBlockGlyphs.tsx</code>)</h5>
 <p>The three header actions a code block has beside its copy glyph ([code-block](../code-block/component.md)). Stroke 1.4, <code>currentColor</code>, drawn at <code>icon-xs</code> inside an <code>xs</code> icon button.</p>
 <p>| Export                | Asset                        | Drawing                                                                                                                                                                                                                                                                                                                                   | | --------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | | <code>WrapLinesGlyph</code>      | <code>glyphs/wrap-lines.svg</code>      | A full line, a line that runs to the edge and turns back under itself with an arrowhead, and the short line it continues on. The turn is the meaning; without it the mark is a paragraph icon. A toggle, so it takes the pressed fill when on                                                                                             | | <code>TerminalPromptGlyph</code> | <code>glyphs/terminal-prompt.svg</code> | A terminal frame with a <code>&gt;</code> prompt and the cursor after it: &quot;put this at a terminal's prompt&quot;. Deliberately not the play triangle — nothing runs until the person presses Enter, and a play mark would promise that it does. The same drawing as the terminal pane kind's private glyph (<code>workspace/pane/paneKinds.tsx</code>); see Known drift | | <code>ViewSourceGlyph</code>     | <code>glyphs/view-source.svg</code>     | A pair of angle brackets: &quot;the code behind this&quot;. On a block that draws its source (a diagram), it switches to the text the drawing was made from. A toggle, so it takes the pressed fill while the source shows                                                                                                                          |</p>
@@ -39587,6 +39913,192 @@ window.addEventListener('resize', repositionAll)
     &lt;span&gt;Is a warm cache still needed?&lt;/span&gt;
     &lt;button type=&quot;button&quot; class=&quot;ds-quote-chip__edit&quot; aria-label=&quot;Edit comment&quot;&gt;✎&lt;/button&gt;
     &lt;button type=&quot;button&quot; class=&quot;ds-quote-chip__edit&quot; aria-label=&quot;Remove quote&quot;&gt;×&lt;/button&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre></details>
+</div>
+<div id="component-radio-group" class="catalog-view catalog-component">
+<h3>Radio group</h3>
+<div class="catalog-component-grid">
+<div class="catalog-stage ds-embed-component-radio-group">
+<div class="demo-stage" data-mode="light">
+  <p class="demo-label">Light — a choose-one list of rows, each saying what its choice means.</p>
+  <div class="ds-radio-group" role="radiogroup" aria-label="Sync">
+    <div class="ds-radio-group-row" role="radio" aria-checked="true" tabindex="0">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span><span class="ds-radio-group-label">Every hour</span><span class="ds-radio-group-description">Fetch on the hour, in the background.</span></span>
+    </div>
+    <div class="ds-radio-group-row" role="radio" aria-checked="false" tabindex="-1">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span><span class="ds-radio-group-label">On demand</span><span class="ds-radio-group-description">Only when you press Refresh.</span></span>
+    </div>
+    <div class="ds-radio-group-row" role="radio" aria-checked="false" aria-disabled="true" tabindex="-1">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span class="ds-radio-group-label">Never</span>
+    </div>
+  </div>
+</div>
+<div class="demo-stage" data-mode="dark">
+  <p class="demo-label">Dark — a choose-one list of rows, each saying what its choice means.</p>
+  <div class="ds-radio-group" role="radiogroup" aria-label="Sync">
+    <div class="ds-radio-group-row" role="radio" aria-checked="true" tabindex="0">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span><span class="ds-radio-group-label">Every hour</span><span class="ds-radio-group-description">Fetch on the hour, in the background.</span></span>
+    </div>
+    <div class="ds-radio-group-row" role="radio" aria-checked="false" tabindex="-1">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span><span class="ds-radio-group-label">On demand</span><span class="ds-radio-group-description">Only when you press Refresh.</span></span>
+    </div>
+    <div class="ds-radio-group-row" role="radio" aria-checked="false" aria-disabled="true" tabindex="-1">
+      <span class="ds-radio-group-mark" aria-hidden="true"></span>
+      <span class="ds-radio-group-label">Never</span>
+    </div>
+  </div>
+</div>
+</div>
+<div class="catalog-doc">
+<p>A choose-one list of rows: each row is a choice, with the [checkbox](../checkbox/component.md)'s radio mark as its picture, a label, and an optional line saying what the choice means. Extracted from the shipped <code>RadioGroup</code> primitive (<code>src/renderer/src/components/ui/RadioGroup.tsx</code>).</p>
+<p>It is the &quot;radiogroup of rows&quot; the checkbox's radio mark was drawn for. Reach for it when each choice needs a sentence to be understood, or when there are more than a segmented control holds (2–4 short words). A value picked from a long closed list with no explanation is a [select](../select/component.md).</p>
+<h4>Anatomy</h4>
+<p>| Part | Class | Required | |---|---|---| | Group | <code>.ds-radio-group</code> | yes — <code>role=&quot;radiogroup&quot;</code> with an accessible name | | Row | <code>.ds-radio-group-row</code> | yes — <code>role=&quot;radio&quot;</code>, <code>aria-checked</code>; the tab stop when chosen | | Mark | <code>.ds-radio-group-mark</code> | yes — the radio mark, <code>aria-hidden</code> | | Label | <code>.ds-radio-group-label</code> | yes — <code>text.default</code> at <code>font.size.body</code> | | Description | <code>.ds-radio-group-description</code> | no — <code>text.muted</code> at <code>font.size.meta</code>, under the label |</p>
+<h4>Variants</h4>
+<ul><li><strong>Vertical</strong> (default) — one row under another, <code>space.xs</code> apart.</li><li><strong><code>--horizontal</code></strong> — rows side by side, wrapping, <code>space.lg</code> apart. Only for short labels with no descriptions.</li></ul>
+<h4>States</h4>
+<p>| State | Treatment | |---|---| | Rest | the mark's well, label in <code>text.default</code> | | Hover | the row takes <code>bg.hover</code> | | Chosen | the mark's accent fill and disc | | Focus | the shared focus ring on the row | | Disabled | the row at the kit's 45% fade, <code>aria-disabled</code>, still in the walk |</p>
+<h4>Usage</h4>
+<ul><li>One choice is always the answer once chosen; a group never clears itself.</li><li>Keep labels to a few words and put the explanation in the description.</li><li>Do not mix a radio group and checkboxes in one list.</li></ul>
+<h4>Accessibility</h4>
+<ul><li><code>role=&quot;radiogroup&quot;</code> with <code>aria-label</code> (or <code>aria-labelledby</code>) on the group.</li><li>Each row is <code>role=&quot;radio&quot;</code> with <code>aria-checked</code>, and the chosen row (or the first enabled one when none is) is the one tab stop.</li><li>Arrow keys move the choice to the next or previous enabled row and choose it; Home and End go to the first and last. Space chooses the focused row.</li><li>A description is the row's <code>aria-describedby</code>.</li></ul>
+</div>
+</div>
+<details class="catalog-source"><summary>components/radio-group/component.css</summary><pre><code>/* Radio group — a choose-one list of rows, each with the checkbox's radio mark
+ * as its picture. Extracted from the shipped RadioGroup primitive
+ * (src/renderer/src/components/ui/RadioGroup.tsx). */
+
+.ds-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sem-space-xs);
+}
+
+.ds-radio-group--horizontal {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--sem-space-lg);
+}
+
+.ds-radio-group-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sem-space-sm);
+  padding: var(--sem-space-xs) var(--sem-space-sm);
+  border-radius: var(--sem-radius-control);
+  color: var(--sem-color-text-default);
+  font-size: var(--sem-font-size-body);
+  cursor: pointer;
+}
+
+.ds-radio-group-row:hover {
+  background: var(--sem-color-bg-hover);
+}
+
+.ds-radio-group-row[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.45; /* ds-lint-allow: the kit's one disabled fade, as the checkbox's */
+}
+
+.ds-radio-group-mark {
+  display: inline-flex;
+  inline-size: var(--sem-icon-size-sm);
+  block-size: var(--sem-icon-size-sm);
+  margin-block-start: var(--sem-space-2xs);
+  border: 1px solid var(--sem-color-border-default);
+  border-radius: var(--sem-radius-pill);
+  background: var(--sem-color-bg-app);
+}
+
+.ds-radio-group-row[aria-checked='true'] .ds-radio-group-mark {
+  border-color: var(--sem-color-accent-primary);
+  /* The disc is the well's own ground showing through an accent ring. */
+  background: var(--sem-color-text-on-accent);
+  box-shadow: inset 0 0 0 4px var(--sem-color-accent-primary); /* ds-lint-allow: the ring that leaves the disc, as the radio mark draws it */
+}
+
+.ds-radio-group-label {
+  display: block;
+}
+
+.ds-radio-group-description {
+  display: block;
+  color: var(--sem-color-text-muted);
+  font-size: var(--sem-font-size-meta);
+}
+</code></pre></details>
+<details class="catalog-source"><summary>components/radio-group/component.html (demo)</summary><pre><code>&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot; /&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot; /&gt;
+&lt;title&gt;Radio group&lt;/title&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;../../foundations/tokens.css&quot; /&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;component.css&quot; /&gt;
+&lt;style&gt;
+  body {
+    margin: 0;
+    font-family: var(--sem-font-family-ui);
+  }
+  .demo-stage {
+    padding: var(--sem-space-3xl);
+    background: var(--sem-color-bg-app);
+    color: var(--sem-color-text-default);
+  }
+  .demo-label {
+    font-size: var(--sem-font-size-meta);
+    color: var(--sem-color-text-subtle);
+    margin: 0 0 var(--sem-space-lg);
+  }
+  .demo-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sem-space-md);
+  }
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div class=&quot;demo-stage&quot; data-mode=&quot;light&quot;&gt;
+  &lt;p class=&quot;demo-label&quot;&gt;Light — a choose-one list of rows, each saying what its choice means.&lt;/p&gt;
+  &lt;div class=&quot;ds-radio-group&quot; role=&quot;radiogroup&quot; aria-label=&quot;Sync&quot;&gt;
+    &lt;div class=&quot;ds-radio-group-row&quot; role=&quot;radio&quot; aria-checked=&quot;true&quot; tabindex=&quot;0&quot;&gt;
+      &lt;span class=&quot;ds-radio-group-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span&gt;&lt;span class=&quot;ds-radio-group-label&quot;&gt;Every hour&lt;/span&gt;&lt;span class=&quot;ds-radio-group-description&quot;&gt;Fetch on the hour, in the background.&lt;/span&gt;&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;ds-radio-group-row&quot; role=&quot;radio&quot; aria-checked=&quot;false&quot; tabindex=&quot;-1&quot;&gt;
+      &lt;span class=&quot;ds-radio-group-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span&gt;&lt;span class=&quot;ds-radio-group-label&quot;&gt;On demand&lt;/span&gt;&lt;span class=&quot;ds-radio-group-description&quot;&gt;Only when you press Refresh.&lt;/span&gt;&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;ds-radio-group-row&quot; role=&quot;radio&quot; aria-checked=&quot;false&quot; aria-disabled=&quot;true&quot; tabindex=&quot;-1&quot;&gt;
+      &lt;span class=&quot;ds-radio-group-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span class=&quot;ds-radio-group-label&quot;&gt;Never&lt;/span&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+&lt;div class=&quot;demo-stage&quot; data-mode=&quot;dark&quot;&gt;
+  &lt;p class=&quot;demo-label&quot;&gt;Dark — a choose-one list of rows, each saying what its choice means.&lt;/p&gt;
+  &lt;div class=&quot;ds-radio-group&quot; role=&quot;radiogroup&quot; aria-label=&quot;Sync&quot;&gt;
+    &lt;div class=&quot;ds-radio-group-row&quot; role=&quot;radio&quot; aria-checked=&quot;true&quot; tabindex=&quot;0&quot;&gt;
+      &lt;span class=&quot;ds-radio-group-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span&gt;&lt;span class=&quot;ds-radio-group-label&quot;&gt;Every hour&lt;/span&gt;&lt;span class=&quot;ds-radio-group-description&quot;&gt;Fetch on the hour, in the background.&lt;/span&gt;&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;ds-radio-group-row&quot; role=&quot;radio&quot; aria-checked=&quot;false&quot; tabindex=&quot;-1&quot;&gt;
+      &lt;span class=&quot;ds-radio-group-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span&gt;&lt;span class=&quot;ds-radio-group-label&quot;&gt;On demand&lt;/span&gt;&lt;span class=&quot;ds-radio-group-description&quot;&gt;Only when you press Refresh.&lt;/span&gt;&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;ds-radio-group-row&quot; role=&quot;radio&quot; aria-checked=&quot;false&quot; aria-disabled=&quot;true&quot; tabindex=&quot;-1&quot;&gt;
+      &lt;span class=&quot;ds-radio-group-mark&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+      &lt;span class=&quot;ds-radio-group-label&quot;&gt;Never&lt;/span&gt;
+    &lt;/div&gt;
   &lt;/div&gt;
 &lt;/div&gt;
 &lt;/body&gt;

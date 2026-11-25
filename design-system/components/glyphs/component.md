@@ -1,7 +1,7 @@
 # Glyphs
 
 The product's icon language: one concept per glyph, drawn in `currentColor`
-line work, sized only by the `--sem-icon-size-*` ramp. The seventy-three SVGs in
+line work, sized only by the `--sem-icon-size-*` ramp. The eighty-five SVGs in
 `glyphs/` (close, search, spinner, sprintengine-mark, git-branch, remote-machine,
 schedule, wsl-machine,
 the four `device-*` marks, the six `machine-*` kinds, the composer's six —
@@ -16,7 +16,9 @@ new-changelist, delete-changelist, edit-changelist, create-patch, kebab — and
 the diff tour's four — tour, play, pause, step-list — and the copy
 affordance's pair — copy, and the check it confirms with — and the code
 block's three — wrap-lines, terminal-prompt, view-source — the chat's ten tool-step
-marks, `tool-*`, the quote mark — quote — and open-in-window) are
+marks, `tool-*`, the quote mark — quote — open-in-window, and the
+everyday marks' seven — info, error, download, filter, link, rocket,
+database) are
 the framework-neutral assets; the shipped vocabulary lives in React —
 `src/renderer/src/components/AppIcons.tsx` and the `ui/` glyph primitives
 beside it. This entry documents that vocabulary so a consumer can pick, size,
@@ -94,10 +96,11 @@ the ramp and `currentColor`.
 | `ResetIcon`        | Restore a default: the shortcut a person rebound, a setting they changed                                                                                                                                                |
 | `ReleaseNotesIcon` | What changed in this version                                                                                                                                                                                            |
 
-There is no standalone `CloseIcon`. The dismiss mark lives inside
-`ui/CloseIconButton`, on its own 14-grid at stroke 1.4, because a close glyph
-is only ever a button — an unpadded one is below the hit-target floor.
-`glyphs/close.svg` is the framework-neutral sample of the same mark.
+There is no 24-grid `CloseIcon`. The dismiss mark is `CloseGlyph`
+(`ui/CommonGlyphs.tsx`, below), on its own 14-grid at stroke 1.4, and
+`ui/CloseIconButton` wears it; a close glyph is only ever a button — an
+unpadded one is below the hit-target floor. `glyphs/close.svg` is the
+framework-neutral sample of the same mark.
 
 ### Workspace-type identity (24-grid, registry-resolved)
 
@@ -462,6 +465,25 @@ working tree), `FileTypeGlyph` `lock` (the padlock), `glyphs/commit.svg`,
 | `ScheduleGlyph`                                                                      | A scheduled agent: a prompt that starts a new chat each time its schedule comes round. The plain clock face — hands at the hour, nothing else — on the New chat panel's Scheduled agent switch, its schedule row, the entry beside New chat, each scheduled agent's row in the sidebar's Scheduled section, and beside the title of every chat a scheduled run started, where it is named "Started by a schedule" (accessible name and tooltip) and says where the chat came from, never that it is working. **Not** `glyphs/history.svg`, whose clock carries a rewind arrow and means _the past_ (the Git log); this one means _a time that is coming_. Stroke 1.4. `glyphs/schedule.svg` |
 | `WslMachineGlyph`                                                                    | A WSL distribution on this computer, which is a machine of its own ("WSL: Ubuntu"): a window with a title bar and a prompt, because the distribution is reached as a shell. The title bar (redrawn 2026-10-04) is what keeps it apart from the plain terminal's frame, `TerminalPromptGlyph`, which the composer's "Start as" choice draws beside it. It is also the `wsl` machine kind (Machine kinds, above). Stroke 1.4. `glyphs/wsl-machine.svg`                                                                                                                                                                                                                                        |
 | `OpenInWindowGlyph`                                                                  | _In a window of its own_: a box with an arrow leaving it by the top-right corner. One drawing for every way a surface leaves for its own OS window — the workspace pane's "Pop out pane", a tab's "Pop out" — and, in a pane tab's glyph slot, for a tab that is showing in a pop-out window right now: the mark the person clicked to send it there is the one that says where it went (the tab's accessible name says it in words). Extracted from the diff band in 2026-10, when the pane's pop-out reached for the same idea. Stroke 1.5. `glyphs/open-in-window.svg`                                                                                                                   |
+
+### Everyday marks (16-grid — `ui/CommonGlyphs.tsx`)
+
+The marks a surface reaches for that belong to no one family: the ones an
+extension's components panel names through its `icon` props, and the app's own
+filter and close. Stroke 1.4 (the filter's three lines keep the 1.5 they were
+drawn at), `currentColor`.
+
+| Export          | Asset                 | Drawing                                                                                                               |
+| --------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `SearchGlyph`   | `glyphs/search.svg`   | A lens and its handle, drawn to the 16-grid                                                                           |
+| `CloseGlyph`    | `glyphs/close.svg`    | The ×, on its own 14-grid; `CloseIconButton` wears it                                                                 |
+| `InfoGlyph`     | `glyphs/info.svg`     | A lower-case i in a circle: something to know, nothing wrong                                                          |
+| `ErrorGlyph`    | `glyphs/error.svg`    | An exclamation mark in a circle. Never the warning triangle: a failure and a caution must not read alike in grayscale |
+| `DownloadGlyph` | `glyphs/download.svg` | An arrow coming down into a tray                                                                                      |
+| `FilterGlyph`   | `glyphs/filter.svg`   | Three lines narrowing; the filter menu's trigger                                                                      |
+| `LinkGlyph`     | `glyphs/link.svg`     | Two chain links joined on the diagonal. Not the open-external arrow, which leaves; this one joins                     |
+| `RocketGlyph`   | `glyphs/rocket.svg`   | A rocket climbing to the top right, two fins and a short flame: launch, ship                                          |
+| `DatabaseGlyph` | `glyphs/database.svg` | A drum of three disks: stored data                                                                                    |
 
 ### Code block actions (16-grid — `ui/CodeBlockGlyphs.tsx`)
 

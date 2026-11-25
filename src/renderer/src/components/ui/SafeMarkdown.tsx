@@ -41,6 +41,25 @@ export type SafeMarkdownProps = {
    *  the top of the hierarchy. */
   compact?: boolean
   className?: string
+  /**
+   * Where a link goes when the surface opens it itself: an extension's
+   * components panel, whose links open only through Studio's own checks.
+   * Given, an `https:`, `http:` or `mailto:` link is a link button calling it,
+   * and `links` is not consulted; any other scheme is still its label.
+   */
+  openLink?: (href: string) => void
+  /** Draws an image the surface can show (an extension's own file); absent, the alt-text chip. */
+  image?: (src: string, alt: string) => React.ReactNode
+}
+
+/** The address an `openLink` surface may open: http(s) or mailto, or nothing. */
+export function safeOpenableUrl(href: string): string | null {
+  try {
+    const url = new URL(href)
+    return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:' ? url.href : null
+  } catch {
+    return null
+  }
 }
 
 const LINK_CLASS =
@@ -87,18 +106,33 @@ function renderImageChip(_src: string, alt: string): React.ReactNode {
   )
 }
 
-export function SafeMarkdown({ text, links = 'open', compact = false, className }: SafeMarkdownProps) {
+export function SafeMarkdown({ text, links = 'open', compact = false, className, openLink, image }: SafeMarkdownProps) {
   const density = compact ? 'chat-compact' : 'chat'
   // Stable per `links`, so a re-render with the same policy keeps the
   // renderer's component types — recreating them remounts every block.
   const renderLink = React.useCallback(
-    (href: string, label: React.ReactNode) => renderSafeLink(links, href, label),
-    [links],
+    (href: string, label: React.ReactNode) => {
+      if (!openLink) return renderSafeLink(links, href, label)
+      const url = safeOpenableUrl(href)
+      if (!url) return <span>{label}</span>
+      return (
+        <LinkButton ink="accent" underline="always" size="inherit" onClick={() => openLink(url)}>
+          {label}
+        </LinkButton>
+      )
+    },
+    [links, openLink],
   )
   const root = markdownRootProps({ density })
   return (
     <div {...root} className={className ? `${root.className} ${className}` : root.className}>
-      {renderMarkdown(text, { density, bare: true, renderLink, renderImage: renderImageChip, inPageLinks: false })}
+      {renderMarkdown(text, {
+        density,
+        bare: true,
+        renderLink,
+        renderImage: image ?? renderImageChip,
+        inPageLinks: false,
+      })}
     </div>
   )
 }

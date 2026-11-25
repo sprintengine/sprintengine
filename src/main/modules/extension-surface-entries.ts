@@ -18,6 +18,8 @@ import { EXTENSION_SURFACE_POINTS } from '../../shared/modules/third-party-manif
 import { resolveContainedEntry, sanitizeEntryMessage } from './entry-containment'
 import { isExtensionRunnable } from './module-signature'
 import type { InstalledModule } from './user-module-registry'
+import { COMPONENTS_RUNTIME_SOURCE } from '../../server/extensions/frames/components-runtime.generated'
+import { isComponentImagePath } from '../../../packages/extension-sdk/src/components/catalog'
 
 // What an approved extension adds to a client, and the code its surfaces are
 // drawn from. Clients register its commands, menus, top bar items, panels,
@@ -112,6 +114,7 @@ export function collectExtensionContributions(modules: readonly InstalledModule[
       manifest: installed.manifest,
       extension: installed.extension,
       ...(installed.standing.contentDigest ? { revision: installed.standing.contentDigest } : {}),
+      ...(installed.development !== undefined ? { development: true as const } : {}),
     })
   }
   return result
@@ -179,7 +182,14 @@ export async function readSurfaceModules(
     cache.set(path, text)
     return text
   }
-  const graph = buildSurfaceModules(contribution.entry, read)
+  // A components panel compiles its JSX for Studio's components module, which is loaded with it.
+  const graph = buildSurfaceModules(
+    contribution.entry,
+    read,
+    point === 'panels' && contribution.ui === 'components'
+      ? { jsx: 'components', componentsModule: COMPONENTS_RUNTIME_SOURCE }
+      : {},
+  )
   if (changed) return { ok: false, message: CHANGED_MESSAGE }
   if (!graph.ok)
     return {
@@ -188,4 +198,44 @@ export async function readSurfaceModules(
       problem: graph.problem,
     }
   return { ok: true, entryPath: contribution.entry, modules: graph.modules, token: graph.token }
+}
+
+/** The largest image a components panel's `Image` shows. */
+export const SURFACE_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+
+function imageType(bytes: Buffer): 'image/png' | 'image/jpeg' | 'image/webp' | null {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])))
+    return 'image/png'
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
+  if (bytes.length >= 12 && bytes.toString('latin1', 0, 4) === 'RIFF' && bytes.toString('latin1', 8, 12) === 'WEBP')
+    return 'image/webp'
+  return null
+}
+
+/**
+ * One of an extension's own images, for a components panel's `Image` and its
+ * Markdown: a PNG, JPEG or WebP file among those it was verified with (an
+ * installed extension's bytes still matching), inside its folder, at most
+ * 8 MiB, its type read from its header. Null for anything else.
+ */
+export function readSurfaceImage(
+  installed: InstalledModule | undefined,
+  path: string,
+): { mime: string; data: string } | null {
+  if (!installed || !isExtensionRunnable(installed.standing) || !isComponentImagePath(path)) return null
+  const expected = installed.standing.verifiedFiles?.[path]
+  if (expected === undefined) return null
+  const development = installed.development !== undefined
+  try {
+    const absolute = resolveContainedEntry(installed.moduleRoot, path, 'entry')
+    const info = lstatSync(absolute)
+    if (!info.isFile() || info.size > SURFACE_IMAGE_MAX_BYTES) return null
+    if (development && throughLink(installed.moduleRoot, path)) return null
+    const bytes = readFileSync(absolute)
+    if (!development && createHash('sha256').update(bytes).digest('hex') !== expected) return null
+    const mime = imageType(bytes)
+    return mime ? { mime, data: bytes.toString('base64') } : null
+  } catch {
+    return null
+  }
 }

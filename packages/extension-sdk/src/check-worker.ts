@@ -15,9 +15,10 @@ import { createFakeMainHost, type FakeExtensionManifest } from './testing.js'
 
 const [root = '', main = '', manifestPath = ''] = process.argv.slice(2)
 
-function finish(answer: Record<string, unknown>): never {
-  process.stdout.write(`${JSON.stringify(answer)}\n`)
-  process.exit(0)
+function finish(answer: Record<string, unknown>): void {
+  // Exit once the line is written: a pipe takes stdout asynchronously, and
+  // exiting at once would cut an answer longer than the pipe's buffer.
+  process.stdout.write(`${JSON.stringify(answer)}\n`, () => process.exit(0))
 }
 
 async function run(): Promise<void> {

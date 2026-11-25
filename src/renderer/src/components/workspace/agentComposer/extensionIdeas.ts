@@ -61,6 +61,14 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
       'A scratchpad panel for each project that keeps my notes between sessions and lets me paste a note into a chat.',
   },
   {
+    id: 'components',
+    surface: 'Panel',
+    title: copy.workspace.agentComposer.extensionIdeas.featureFlagSwitches,
+    description: copy.workspace.agentComposer.extensionIdeas.turnThisProjectsFlagsOnAndOff,
+    prompt:
+      'A panel drawn with Studio’s own controls that lists the feature flags in this project’s flags file as switches, with a search box to find one.',
+  },
+  {
     id: 'hook-guard',
     surface: 'Agent hooks',
     title: copy.workspace.agentComposer.extensionIdeas.guardForAgentCommands,

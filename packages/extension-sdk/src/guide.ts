@@ -37,6 +37,11 @@ export const EXTENSION_GUIDE_TOPICS: readonly ExtensionGuideTopic[] = [
     summary:
       'Which contribution or API adds what to Studio (panel, door, command, menu, MCP tool, chat, …), and its tier and permission.',
   },
+  {
+    id: 'components',
+    summary:
+      'Components panels: a panel drawn with Studio’s own controls from the tree its module renders. Atoms and persistence, setup, talking to Studio, hot reload, testing with mountPanel, check scenarios, the catalogue and its limits.',
+  },
   { id: 'manifest', summary: 'extension.json, field by field: tiers, contributions, ids, versions, paths.' },
   { id: 'permissions', summary: 'Every permission, what it allows, and which the host enforces.' },
   {

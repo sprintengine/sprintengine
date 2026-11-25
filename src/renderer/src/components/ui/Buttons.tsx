@@ -1,4 +1,5 @@
 import React from 'react'
+import { CloseGlyph } from './CommonGlyphs'
 import { FOCUS_RING_CLASS, FOCUS_RING_INSET_CLASS } from './tokens'
 
 type ButtonBase = React.ButtonHTMLAttributes<HTMLButtonElement>
@@ -740,14 +741,7 @@ export const CaptionButton = React.forwardRef<
 export function CloseIconButton({ size = 'sm', ...rest }: Omit<IconButtonProps, 'children'>) {
   return (
     <IconButton {...rest} size={size}>
-      <svg className="icon-sm" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-        <path
-          d="M3.25 3.25L10.75 10.75M10.75 3.25L3.25 10.75"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-        />
-      </svg>
+      <CloseGlyph className="icon-sm" />
     </IconButton>
   )
 }

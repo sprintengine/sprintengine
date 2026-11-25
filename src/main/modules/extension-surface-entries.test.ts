@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { realpathSync, symlinkSync } from 'fs'
-import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { basename, join } from 'path'
+import { basename, dirname, join } from 'path'
 
 import { validateExtensionManifest } from '../../../packages/extension-sdk/src/extension-manifest'
 import {
@@ -18,7 +18,9 @@ import { approvedContext } from './extension-approvals.test-helper'
 import { extensionAccess } from './extension-approvals'
 import {
   collectExtensionContributions,
+  readSurfaceImage,
   readSurfaceModules,
+  SURFACE_IMAGE_MAX_BYTES,
   surfaceEntriesView as rendererEntryView,
 } from './extension-surface-entries'
 import { discoverUserModules, type InstalledModule } from './user-module-registry'
@@ -343,6 +345,174 @@ test('a development folder’s surface imports only files it holds: never throug
     assert.equal(read.ok, false, 'the import through the link is not read')
     assert.match(read.ok ? '' : read.message, /linked\/private\.js/)
     assert.ok(!JSON.stringify(read).includes('kept outside'))
+  } finally {
+    for (const dir of [root, work, outside]) await rm(dir, { recursive: true, force: true })
+  }
+})
+
+// A components panel's `Image` (and its Markdown) shows one of the
+// extension's own files: a PNG, JPEG or WebP among those it was verified
+// with, inside its folder, at most 8 MiB, its type read from its bytes.
+
+/** A real 1×1 PNG. */
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==',
+  'base64',
+)
+const TINY_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0xff, 0xd9])
+const TINY_WEBP = Buffer.concat([
+  Buffer.from('RIFF'),
+  Buffer.from([0x1a, 0x00, 0x00, 0x00]),
+  Buffer.from('WEBPVP8L'),
+  Buffer.from([0x0d, 0x00, 0x00, 0x00, 0x2f, 0x00, 0x00, 0x00, 0x10, 0x07, 0x10, 0x11, 0x11, 0x88, 0x88, 0xfe, 0x07]),
+])
+
+/** An extension with one components panel and the given files beside it, written before it is approved. */
+async function writePicturesExtension(root: string, id: string, extra: Record<string, Buffer | string>) {
+  const folder = writeExtensionFolder(join(root, `local.${id}`), {
+    manifest: extensionManifest({
+      id,
+      tier: 'ui',
+      main: undefined,
+      contributes: { panels: [{ id: 'board', title: 'Board', entry: 'src/panel.tsx', ui: 'components' }] },
+    }),
+    files: { 'src/panel.tsx': 'export default function Panel() { return null }\n' },
+  })
+  for (const [path, bytes] of Object.entries(extra)) {
+    await mkdir(join(folder, dirname(path)), { recursive: true })
+    await writeFile(join(folder, path), bytes)
+  }
+  return folder
+}
+
+test('a components panel’s image is one of the extension’s own PNG, JPEG or WebP files, read by its bytes', async () => {
+  await withTempDir(async (root) => {
+    const folder = await writePicturesExtension(root, 'pictures', {
+      'assets/logo.png': TINY_PNG,
+      'assets/photo.jpeg': TINY_JPEG,
+      'assets/Photo.JPG': TINY_JPEG,
+      'assets/sticker.webp': TINY_WEBP,
+      'assets/notes.txt': 'not an image',
+      'assets/fake.png': 'text dressed as a PNG',
+      'assets/swapped.png': TINY_JPEG,
+      'assets/anim.gif': Buffer.from('GIF89a'),
+      'assets/drawing.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>',
+    })
+    const { modules } = await discoverUserModules(root, grantsFor(folder))
+    const installed = modules.find((module) => module.key === 'local.pictures')
+    assert.equal(installed?.standing.approval.state, 'approved')
+    const image = (path: string) => readSurfaceImage(installed, path)
+
+    assert.deepEqual(image('assets/logo.png'), { mime: 'image/png', data: TINY_PNG.toString('base64') })
+    assert.deepEqual(image('assets/photo.jpeg'), { mime: 'image/jpeg', data: TINY_JPEG.toString('base64') })
+    assert.deepEqual(image('assets/Photo.JPG'), { mime: 'image/jpeg', data: TINY_JPEG.toString('base64') })
+    assert.deepEqual(image('assets/sticker.webp'), { mime: 'image/webp', data: TINY_WEBP.toString('base64') })
+    // Its type is read from its bytes, not its name.
+    assert.deepEqual(image('assets/swapped.png'), { mime: 'image/jpeg', data: TINY_JPEG.toString('base64') })
+    assert.equal(image('assets/fake.png'), null, 'a .png that is not one')
+
+    // Only the three image kinds, by name.
+    assert.equal(image('assets/notes.txt'), null)
+    assert.equal(image('assets/anim.gif'), null)
+    assert.equal(image('assets/drawing.svg'), null)
+    assert.equal(image('src/panel.tsx'), null)
+    assert.equal(image('extension.json'), null)
+    // A file it does not have.
+    assert.equal(image('assets/missing.png'), null)
+    // Nothing outside its folder, by any spelling.
+    for (const outside of [
+      '../local.pictures/assets/logo.png',
+      'assets/../../logo.png',
+      './assets/logo.png',
+      '/etc/logo.png',
+      `${folder}/assets/logo.png`,
+      'assets\\logo.png',
+      'https://example.com/logo.png',
+      'file:///assets/logo.png',
+      'data:image/png;base64,AAAA',
+      'assets//logo.png',
+      'assets/logo.png?x=1',
+      'assets/logo.png#frag',
+    ])
+      assert.equal(image(outside), null, outside)
+    // No extension at all.
+    assert.equal(readSurfaceImage(undefined, 'assets/logo.png'), null)
+  })
+})
+
+test('a components panel’s image is refused over 8 MiB, changed since it was verified, or once its extension stops running', async () => {
+  await withTempDir(async (root) => {
+    const big = Buffer.alloc(SURFACE_IMAGE_MAX_BYTES + 1)
+    TINY_PNG.copy(big)
+    const atLimit = Buffer.alloc(SURFACE_IMAGE_MAX_BYTES)
+    TINY_PNG.copy(atLimit)
+    const folder = await writePicturesExtension(root, 'heavy', {
+      'assets/logo.png': TINY_PNG,
+      'assets/edited.png': TINY_PNG,
+      'assets/limit.png': atLimit,
+      'assets/huge.png': big,
+    })
+    const approvals = grantsFor(folder)
+    const { modules } = await discoverUserModules(root, approvals)
+    const installed = modules[0]!
+    assert.equal(readSurfaceImage(installed, 'assets/limit.png')?.mime, 'image/png', 'at most 8 MiB')
+    assert.equal(readSurfaceImage(installed, 'assets/huge.png'), null, 'one byte over')
+
+    // Changed after its extension was verified.
+    await writeFile(join(folder, 'assets', 'edited.png'), Buffer.concat([TINY_PNG, Buffer.from([0])]))
+    assert.equal(readSurfaceImage(installed, 'assets/edited.png'), null)
+    assert.equal(readSurfaceImage(installed, 'assets/logo.png')?.mime, 'image/png')
+
+    // Not approved: its images are not shown either.
+    const pending = (await discoverUserModules(root, EMPTY_TRUST)).modules[0]!
+    assert.equal(pending.standing.approval.state, 'pending')
+    assert.equal(readSurfaceImage(pending, 'assets/logo.png'), null)
+
+    // Its version is on the kill list.
+    const killed = (
+      await discoverUserModules(root, {
+        ...approvals,
+        killList: {
+          killListVersion: 1,
+          generatedAt: '2026-11-24T00:00:00.000Z',
+          extensions: [{ id: 'local.heavy', reason: 'It sends your files away.' }],
+        },
+      })
+    ).modules[0]!
+    assert.ok(killed.standing.killed)
+    assert.equal(readSurfaceImage(killed, 'assets/logo.png'), null)
+  })
+})
+
+test('a development folder’s image is never read through a linked folder', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'surface-images-dev-root-'))
+  const work = realpathSync(await mkdtemp(join(tmpdir(), 'surface-images-dev-')))
+  const outside = realpathSync(await mkdtemp(join(tmpdir(), 'surface-images-outside-')))
+  try {
+    await writeFile(join(outside, 'private.png'), TINY_PNG)
+    const folder = await writePicturesExtension(work, 'linked', { 'assets/own.png': TINY_PNG })
+    symlinkSync(outside, join(folder, 'linked'))
+    symlinkSync(join(outside, 'private.png'), join(folder, 'assets', 'alias.png'))
+    const pending = (await discoverUserModules(root, { approvals: new Map(), devFolders: [folder] })).modules[0]!
+    const approval = pending.standing.approval
+    const ctx: ExtensionStandingContext = {
+      approvals: new Map([
+        [
+          'local.linked',
+          {
+            fingerprint: approval.state === 'pending' ? approval.fingerprint : '',
+            access: extensionAccess(pending.extension, {}),
+            devFolder: folder,
+          },
+        ],
+      ]),
+      devFolders: [folder],
+    }
+    const module = (await discoverUserModules(root, ctx)).modules.find((candidate) => candidate.development)!
+    assert.equal(module.standing.approval.state, 'approved')
+    assert.equal(readSurfaceImage(module, 'assets/own.png')?.mime, 'image/png')
+    assert.equal(readSurfaceImage(module, 'linked/private.png'), null)
+    assert.equal(readSurfaceImage(module, 'assets/alias.png'), null)
   } finally {
     for (const dir of [root, work, outside]) await rm(dir, { recursive: true, force: true })
   }

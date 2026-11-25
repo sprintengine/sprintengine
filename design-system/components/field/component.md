@@ -77,6 +77,10 @@ Validation appears after the first keystroke, never on open.
 - Invalid state is `aria-invalid="true"` plus the error text naming the
   problem; the red border on the control (see `input`) is the echo, never the
   message.
+- The error message is an alert (`role="alert"`), so an error that appears
+  while the person is in the form is announced, not only drawn. A composite
+  row that names itself (no `for`) still points its group's
+  `aria-describedby` at the shown message, through the ids the row gives it.
 - The required `*` is `aria-hidden` decoration; `aria-required` on the control
   is what assistive tech hears. Neither appears as an accusation on an
   untouched form — see *Empty is not invalid*.

@@ -20,6 +20,7 @@ import { pathToFileURL } from 'node:url'
 import { parse } from 'es-module-lexer/js'
 
 import { providerOrigin } from './agent-contributions.js'
+import type { PanelCheck, PanelCheckAnswer } from './check-panel.js'
 import { CliError } from './cli-output.js'
 import { parseLanguageConfiguration, parseTextMateGrammar } from './content-syntaxes.js'
 import {
@@ -34,8 +35,9 @@ import {
 import { surfaceHostCallIssues, workerHostCallIssues } from './host-calls.js'
 import { computeModuleFileDigestsSync, isDevelopmentSkippedPath } from './module-files.js'
 import { extensionContentFingerprint } from './signing.js'
-import { buildSurfaceModules, formatSourceProblem } from './source-modules.js'
+import { COMPONENTS_MODULE, buildSurfaceModules, formatSourceProblem } from './source-modules.js'
 import { skillFolderIssues } from './skill-folders.js'
+import { ownModuleAliases } from './source-jsx-hooks.js'
 
 type Issue = { path: string; message: string }
 
@@ -89,45 +91,95 @@ export type SurfaceCheck = {
   id: string
   entry: string
   ok: boolean
+  /** `components` for a panel Studio draws from the tree it renders. */
+  ui?: 'components'
   modules?: number
+  /** A components panel's own files, relative to the folder: the ones whose JSX compiles for its module. */
+  files?: string[]
   problem?: string
 }
 
-/** Each surface's module graph as Studio builds it, and whether its entry exports `mount`. */
+/** A components panel's entry draws by its default export, or by calling `mount(Component)`. */
+const CALLS_MOUNT = /(?<![\w$.])mount\s*\(/u
+
+/**
+ * Each surface's module graph as Studio builds it, and whether its entry has
+ * what Studio runs: `mount` for a frame that draws itself, a default export
+ * (or a `mount(Component)` call) for a components panel.
+ */
 export function checkSurfaces(root: string, manifest: ExtensionManifest): SurfaceCheck[] {
   const read = reader(root)
   const checks: SurfaceCheck[] = []
   for (const point of EXTENSION_SURFACE_POINTS) {
     for (const surface of manifest.contributes[point]) {
-      const graph = buildSurfaceModules(surface.entry, read)
-      const base = { point, id: surface.id, entry: surface.entry }
+      const components = point === 'panels' && (surface as { ui?: string }).ui === 'components'
+      const graph = buildSurfaceModules(surface.entry, read, components ? { jsx: 'components' } : {})
+      const base = { point, id: surface.id, entry: surface.entry, ...(components ? { ui: 'components' as const } : {}) }
       if (!graph.ok) {
         checks.push({ ...base, ok: false, problem: formatSourceProblem(graph.problem) })
         continue
       }
-      const entry = graph.modules.at(-1)!
-      let exportsMount = false
+      const own = graph.modules.filter((module) => module.path !== COMPONENTS_MODULE)
+      const entry = own.at(-1)!
+      let exported: string[] = []
       try {
-        exportsMount = parse(entry.code)[1].some((each) => (each as { name?: string }).name === 'mount')
+        exported = parse(entry.code)[1].map((each) => (each as { name?: string }).name ?? '')
       } catch {
-        exportsMount = false
+        exported = []
       }
+      const runnable = components
+        ? exported.includes('default') || CALLS_MOUNT.test(read(entry.path) ?? '')
+        : exported.includes('mount')
       // The host calls its files write out, against what Studio offers this extension.
-      const hostCalls = graph.modules.flatMap((module) =>
-        surfaceHostCallIssues(module.path, read(module.path) ?? '', point, manifest),
+      const hostCalls = own.flatMap((module) =>
+        surfaceHostCallIssues(module.path, read(module.path) ?? '', point, manifest, { components }),
       )
       const problems = [
-        ...(exportsMount ? [] : [`${surface.entry} must export mount(root, studio).`]),
+        ...(runnable
+          ? []
+          : [
+              components
+                ? `${surface.entry} must export its panel component as its default export (or call mount(Panel)).`
+                : `${surface.entry} must export mount(root, studio).`,
+            ]),
         ...hostCalls.map((issue) => formatSourceProblem(issue)),
       ]
+      const counted = { modules: own.length, ...(components ? { files: own.map((module) => module.path) } : {}) }
       checks.push(
         problems.length === 0
-          ? { ...base, ok: true, modules: graph.modules.length }
-          : { ...base, ok: false, modules: graph.modules.length, problem: problems.join('; ') },
+          ? { ...base, ok: true, ...counted }
+          : { ...base, ok: false, ...counted, problem: problems.join('; ') },
       )
     }
   }
   return checks
+}
+
+/**
+ * The files Studio compiles for the components module, absolute: every
+ * components panel's module graph, as `check` takes them from its surfaces.
+ * `test` compiles these the same way, so a helper that gets its tags from a
+ * local barrel, or draws with fragments alone, compiles as in Studio. Empty
+ * when the folder has no extension.json Studio could read.
+ */
+export function componentsPanelFiles(root: string): string[] {
+  let manifest: { contributes?: { panels?: unknown } } | null
+  try {
+    manifest = JSON.parse(readFileSync(join(root, EXTENSION_MANIFEST_FILENAME), 'utf8')) as typeof manifest
+  } catch {
+    return []
+  }
+  const panels = manifest?.contributes?.panels
+  if (!Array.isArray(panels)) return []
+  const read = reader(root)
+  const files = new Set<string>()
+  for (const panel of panels as Array<{ ui?: unknown; entry?: unknown } | null>) {
+    if (panel?.ui !== 'components' || typeof panel.entry !== 'string') continue
+    const graph = buildSurfaceModules(panel.entry, read, { jsx: 'components' })
+    if (!graph.ok) continue
+    for (const module of graph.modules) if (module.path !== COMPONENTS_MODULE) files.add(resolve(root, module.path))
+  }
+  return [...files]
 }
 
 export type ValidatedExtension = {
@@ -313,6 +365,14 @@ function findTests(root: string): string[] {
   return found
 }
 
+function realOf(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
 /** The project's own Vitest, when it has one installed: its CLI entry. */
 function projectVitest(root: string): string | null {
   try {
@@ -326,19 +386,36 @@ function projectVitest(root: string): string | null {
 
 /**
  * The Vitest config `test` writes for a project with Vitest: its sources
- * transpiled as Studio transpiles them (types and classic `h()` JSX removed,
- * every line kept), and the test files `test` found.
+ * transpiled as Studio transpiles them (types and JSX removed, every line
+ * kept; a components panel's files, `componentFiles`, for its module, any
+ * other's for the classic `h()`), and the test files `test` found.
  */
-function vitestConfig(): string {
+function vitestConfig(componentFiles: string[]): string {
+  // As Vite names them: forward slashes, and the real path as well as the one written.
+  const named = [
+    ...new Set(componentFiles.flatMap((file) => [file, realOf(file)]).map((file) => file.split(sep).join('/'))),
+  ]
   const sourceModules = JSON.stringify(pathToFileURL(join(HERE, 'source-modules.js')).href)
+  // Exact names only: `…/components` must not catch `…/components/jsx-runtime`.
+  const aliases = Object.entries(ownModuleAliases()).map(([name, file]) => ({
+    find: `^${name.replace(/[.*+?^${}()|[\]\\/]/gu, '\\$&')}$`,
+    replacement: file,
+  }))
   return `// Written by \`sprintengine-extension test\`. Do not edit.
 import { transpileExtensionSource } from ${sourceModules}
 
 const SOURCE = /\\.(?:ts|tsx|mts|jsx)$/
+// A components panel's files compile their JSX for its module, as Studio compiles them: every
+// file of a components panel's module graph, and any other that imports the module itself.
+const COMPONENT_FILES = new Set(${JSON.stringify(named)})
+const COMPONENTS = /\\bfrom\\s*['"]@sprintengine\\/extension-sdk\\/components(?:\\/[\\w-]+)?['"]/
+// The components module and the testing kit are this SDK's own, so a panel and its test share one runtime.
+const OWN = ${JSON.stringify(aliases)}
 export default {
   // Studio's transpiler alone: neither of Vite's (esbuild before Vite 8, Oxc since).
   esbuild: false,
   oxc: false,
+  resolve: { alias: OWN.map((each) => ({ find: new RegExp(each.find), replacement: each.replacement })) },
   plugins: [
     {
       name: 'sprintengine-extension-sources',
@@ -346,7 +423,8 @@ export default {
       transform(code, id) {
         const file = id.split('?')[0]
         if (!SOURCE.test(file) || file.includes('/node_modules/')) return null
-        return { code: transpileExtensionSource(file, code), map: null }
+        const jsx = COMPONENT_FILES.has(file) || COMPONENTS.test(code) ? 'components' : 'html'
+        return { code: transpileExtensionSource(file, code, jsx), map: null }
       },
     },
   ],
@@ -374,13 +452,14 @@ export async function runExtensionTests(
   if (files.length === 0)
     throw new CliError('not_found', `No test files (*.test.ts, .tsx, .mts, .js, .jsx, .mjs) under ${root}.`)
   const vitest = projectVitest(root)
+  const componentFiles = componentsPanelFiles(root)
   let args: string[]
   if (vitest) {
     // `.sprintengine/` is the CLI's own folder in a project, as its shots are.
     const configDir = join(root, '.sprintengine', 'test')
     mkdirSync(configDir, { recursive: true })
     const config = join(configDir, 'vitest.config.mjs')
-    writeFileSync(config, vitestConfig())
+    writeFileSync(config, vitestConfig(componentFiles))
     // Relative to the root, as Vitest matches them against the files it finds there.
     args = [vitest, 'run', '--config', config, '--root', root, ...files.map((file) => relative(root, file))]
   } else {
@@ -389,7 +468,12 @@ export async function runExtensionTests(
   const code = await new Promise<number>((settle) => {
     const child = spawn(process.execPath, args, {
       cwd: root,
-      env: { ...process.env, SPRINTENGINE_EXTENSION_TEST_ROOT: root },
+      env: {
+        ...process.env,
+        SPRINTENGINE_EXTENSION_TEST_ROOT: root,
+        // The Node hooks' own copy of the components panels' files (test-register.ts).
+        SPRINTENGINE_EXTENSION_COMPONENT_FILES: JSON.stringify(componentFiles),
+      },
       // With --json the answer alone is on stdout; what the runner prints goes to stderr.
       stdio: json ? ['ignore', process.stderr, 'inherit'] : 'inherit',
     })
@@ -441,4 +525,91 @@ export function checkWorker(validated: ValidatedExtension): Promise<WorkerCheck 
       }
     })
   })
+}
+
+/** What `check` says of the components panels: each scenario's drawing, and the issues that fail it. */
+export type PanelsCheck = {
+  ok: boolean
+  /** The worker could not be mounted for the panels to reach. */
+  worker?: string
+  panels: PanelCheck[]
+  logs: string[]
+}
+
+/**
+ * Render every components panel against the SDK's fake Studio in a child
+ * process, once per scenario (`<entry>.check.ts`, else once with an empty
+ * Studio): what each drew, what it threw, the renders Studio would refuse,
+ * the props it would drop and the calls it would refuse. A throw or a refused
+ * render fails the check; dropped props and refused calls are warnings.
+ */
+export function checkPanels(validated: ValidatedExtension, surfaces: SurfaceCheck[]): Promise<PanelsCheck | null> {
+  const panels = surfaces
+    .filter((surface) => surface.ui === 'components' && surface.ok)
+    .map((surface) => ({ id: surface.id, entry: surface.entry, files: surface.files ?? [surface.entry] }))
+  if (panels.length === 0) return Promise.resolve(null)
+  return new Promise((settle) => {
+    const child = spawn(
+      process.execPath,
+      [
+        join(HERE, 'check-panel.js'),
+        validated.root,
+        join(validated.root, EXTENSION_MANIFEST_FILENAME),
+        JSON.stringify(panels),
+      ],
+      { cwd: validated.root, stdio: ['ignore', 'pipe', 'pipe'] },
+    )
+    let out = ''
+    let err = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => (out += chunk))
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => (err += chunk))
+    const timer = setTimeout(() => child.kill(), 30_000)
+    child.on('close', () => {
+      clearTimeout(timer)
+      const line = out.trim().split('\n').at(-1) ?? ''
+      try {
+        const answer = JSON.parse(line) as PanelCheckAnswer
+        const ok =
+          answer.worker === undefined &&
+          answer.panels.every(
+            (panel) => panel.problem === undefined && panel.results.every((result) => result.errors.length === 0),
+          )
+        settle({ ok, ...answer })
+      } catch {
+        const message = (err.trim() || 'The panels did not finish rendering within 30 seconds.')
+          .split('\n')
+          .slice(0, 6)
+          .join('\n')
+        settle({
+          ok: false,
+          panels: panels.map((panel) => ({ id: panel.id, entry: panel.entry, problem: message, results: [] })),
+          logs: [],
+        })
+      }
+    })
+  })
+}
+
+/** The lines `check` prints for the components panels. */
+export function panelCheckWords(check: PanelsCheck): string[] {
+  const lines: string[] = []
+  if (check.worker) lines.push(`worker for the panels: ${check.worker}`)
+  for (const panel of check.panels) {
+    if (panel.problem) {
+      lines.push(`panels ${panel.id}: ${panel.problem}`)
+      continue
+    }
+    for (const result of panel.results) {
+      const issues = result.errors.length
+      lines.push(
+        `panels ${panel.id} [${result.name}]: ${issues === 0 ? 'renders' : `${issues} error${issues === 1 ? '' : 's'}`}`,
+      )
+      for (const error of result.errors) lines.push(`  error: ${error.message}`)
+      for (const warning of result.warnings) lines.push(`  warning: ${warning}`)
+      for (const refusal of result.refusals)
+        lines.push(`  warning: Studio would refuse ${refusal.method} (${refusal.code}): ${refusal.message}`)
+      for (const line of result.summary) lines.push(`  ${line}`)
+    }
+  }
+  return lines
 }

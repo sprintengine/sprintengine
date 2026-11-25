@@ -285,6 +285,30 @@ const surfaceObject = (title: string, entryDoc: string): ObjectNode => ({
   },
 })
 
+/** How a panel is drawn: `html` (its own frame) or `components` (Studio's controls, from the tree its module renders). */
+export const EXTENSION_PANEL_UIS = ['html', 'components'] as const
+export type ExtensionPanelUi = (typeof EXTENSION_PANEL_UIS)[number]
+
+const panelObject = (): ObjectNode => {
+  const surface = surfaceObject('PanelContribution', 'What the panel draws, as a tab in a workspace’s pane.')
+  return {
+    ...surface,
+    fields: {
+      ...surface.fields,
+      entry: {
+        ...surface.fields.entry!,
+        doc: 'What the panel draws, as a tab in a workspace’s pane. A module (`.js`, `.mjs`, or `.ts`, `.mts`, `.tsx`, `.jsx` loaded as written) that imports only its own files, by relative paths. With `ui` `html` it exports `mount(root, studio)`, which draws into `root` and may return a cleanup function; with `ui` `components` its default export is the panel’s component, and it may import `@sprintengine/extension-sdk/components`, which Studio provides.',
+      },
+      ui: {
+        node: { kind: 'string', max: 16, enum: EXTENSION_PANEL_UIS },
+        doc: 'How the panel is drawn. `html` (the default): its entry draws its own page in a sandboxed frame. `components`: its entry runs hidden and sandboxed and renders a tree of Studio’s components, which Studio draws with its own controls, in light and dark, with its keyboard and focus rules.',
+        since: V1,
+        example: 'components',
+      },
+    },
+  }
+}
+
 const byId = { key: (item: unknown) => String((item as { id: string }).id), label: 'id' }
 
 const KEYBINDING_MODIFIERS = new Set([
@@ -547,7 +571,7 @@ const CONTRIBUTES: ObjectNode = {
         kind: 'array',
         max: 16,
         unique: byId,
-        items: surfaceObject('PanelContribution', 'What the panel draws, as a tab in a workspace’s pane.'),
+        items: panelObject(),
       },
       doc: 'Pane tabs, offered by the pane’s + menu.',
       since: V1,
@@ -1312,7 +1336,14 @@ export type ExtensionTopBarItemContribution = {
   door?: string
 }
 /** A panel, door or settings section: drawn by its own `entry`. */
-export type ExtensionSurfaceContribution = { id: string; title: string; icon?: ExtensionIcon; entry: string }
+export type ExtensionSurfaceContribution = {
+  id: string
+  title: string
+  icon?: ExtensionIcon
+  entry: string
+  /** A panel's way of drawing; absent is `html`. Only panels carry it. */
+  ui?: ExtensionPanelUi
+}
 /** An event the worker hears. */
 export type ExtensionEventContribution = { on: ExtensionEventName }
 /** A point the worker hooks, and what its failure does. */

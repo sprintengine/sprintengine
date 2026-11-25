@@ -357,6 +357,23 @@ export const EXTENSION_FRAME_METHODS: Readonly<Record<ExtensionFrameMethod, Exte
   'events.subscribe': inFrame(null, 'extension:read', 'client'),
   // Its own log: nothing beyond the extension, read by whoever may open it.
   'log.write': inFrame(null, 'extension:read'),
+  // A components panel's persisted atoms: the extension's own panel state,
+  // kept in its data folder. Reading draws the panel; writing changes what
+  // the next run shows, so it is an operation, as `storage.set` is.
+  'atoms.read': inFrame(null, 'extension:read'),
+  'atoms.write': inFrame(null, 'extension:operate'),
+  // One of its own image files, for a components panel's Image and Markdown.
+  'assets.image': inFrame(null, 'extension:read'),
+  // Its own brokered secrets, as its worker's: the value goes in and never
+  // comes back; only whether one is set does.
+  'secrets.has': inFrame('secrets:own', 'extension:operate'),
+  'secrets.set': inFrame('secrets:own', 'extension:operate'),
+  'secrets.delete': inFrame('secrets:own', 'extension:operate'),
+  // Open a URL in the system browser of the machine the window is on. The
+  // window carries it out only after a press on one of Studio's own controls
+  // that had stood still (a components panel's gesture), and asks the person
+  // first for a web address; a frame that draws itself has no such press.
+  'shell.openExternal': inFrame(null, 'extension:read', 'client'),
 }
 
 /** The frame method `name` names, or undefined. */

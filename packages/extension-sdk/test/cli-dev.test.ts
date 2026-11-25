@@ -5,7 +5,7 @@ import { createServer, type Server } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { buildSync } from 'esbuild'
+import { build, type Plugin } from 'esbuild'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import { EXTENSION_MANIFEST_SINCE } from '../src/extension-manifest.js'
@@ -21,23 +21,35 @@ let cli = ''
 let dataDir = ''
 let server: Server
 let folder = ''
+let counter = ''
 const calls: Array<{ name: string; args: Record<string, unknown> }> = []
 let approvedAfterLists = Number.POSITIVE_INFINITY
 
 beforeAll(async () => {
   workDir = realpathSync(mkdtempSync(join(tmpdir(), 'se-cli-dev-')))
   const bin = join(workDir, 'bin')
+  // As the package ships them, `shot --scenario`'s check child and the one components runtime beside them.
+  const ownRuntime: Plugin = {
+    name: 'components-runtime',
+    setup(on) {
+      on.onResolve({ filter: /^\.\/components\/index\.js$/ }, () => ({ path: './components/index.js', external: true }))
+    },
+  }
   for (const [entry, out] of [
     ['cli.ts', 'cli.js'],
     ['check-worker.ts', 'check-worker.js'],
+    ['check-panel.ts', 'check-panel.js'],
+    ['testing.ts', 'testing.js'],
+    ['components/index.ts', 'components/index.js'],
   ] as const)
-    buildSync({
+    await build({
       entryPoints: [join(process.cwd(), 'packages/extension-sdk/src', entry)],
       bundle: true,
       platform: 'node',
       format: 'esm',
       outfile: join(bin, out),
       external: ['react', 'react-dom', 'react-dom/*'],
+      ...(entry === 'components/index.ts' ? {} : { plugins: [ownRuntime] }),
       banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
       logLevel: 'silent',
     })
@@ -64,6 +76,52 @@ beforeAll(async () => {
     'export function mount(root: HTMLElement) { root.textContent = "1" }\n',
   )
 
+  // A components panel with scenarios, for `shot --scenario`.
+  counter = join(workDir, 'counter')
+  mkdirSync(join(counter, 'src'), { recursive: true })
+  writeFileSync(
+    join(counter, 'extension.json'),
+    JSON.stringify({
+      manifestVersion: 1,
+      id: 'counter',
+      version: '1.0.0',
+      engines: { studio: `>=${EXTENSION_MANIFEST_SINCE}` },
+      tier: 'ui',
+      name: 'Counter',
+      permissions: [],
+      contributes: {
+        panels: [
+          { id: 'plain', title: 'Plain', entry: 'src/plain.ts' },
+          { id: 'counter', title: 'Counter', entry: 'src/panel.tsx', ui: 'components' },
+        ],
+      },
+    }),
+  )
+  writeFileSync(
+    join(counter, 'src', 'plain.ts'),
+    'export function mount(root: HTMLElement) { root.textContent = "1" }\n',
+  )
+  writeFileSync(
+    join(counter, 'src', 'panel.tsx'),
+    [
+      "import { atom, read, update, Stack, Text, Button } from '@sprintengine/extension-sdk/components'",
+      "const count = atom('count', 0, { persist: 'plugin' })",
+      'export default function Panel() {',
+      '  return (',
+      '    <Stack>',
+      '      <Text>{read(count)} clicks</Text>',
+      '      <Button onPress={() => update(count, (n: number) => n + 1)}>Add</Button>',
+      '    </Stack>',
+      '  )',
+      '}',
+      '',
+    ].join('\n'),
+  )
+  writeFileSync(
+    join(counter, 'src', 'panel.check.ts'),
+    "import { defineCheck } from '@sprintengine/extension-sdk/testing'\nexport default defineCheck({ fresh: {}, 'clicked before': { persisted: { plugin: { count: 7 } } } })\n",
+  )
+
   dataDir = join(workDir, 'data')
   mkdirSync(dataDir)
   const socketPath = join(workDir, 's.sock')
@@ -83,10 +141,21 @@ beforeAll(async () => {
             moduleId: 'local.notes',
             approval: approved ? { state: 'approved', fingerprint: 'sha256-x' } : pending,
           },
+          { path: counter, moduleId: 'local.counter', approval: { state: 'approved', fingerprint: 'sha256-y' } },
         ],
       }
     }
     if (name === 'extension.dev.events') return { events: [], latest: 0 }
+    if (name === 'visual.extension_shot')
+      return {
+        path: args.out,
+        width: 420,
+        height: 640,
+        theme: args.theme,
+        settled: true,
+        pendingRequests: 0,
+        errors: [],
+      }
     return { ok: true, path: folder }
   }
   server = createServer((socket) => {
@@ -177,3 +246,43 @@ test('dev watch waits for the approval, goes on once given, and Ctrl-C takes bac
   )
   assert.ok(!calls.some((call) => 'approve' in call.args))
 })
+
+test('shot --scenario renders the scenario here and hands Studio its tree, never running the live panel', async () => {
+  calls.splice(0)
+  const { status, lines } = await run(['shot', counter, '--scenario', 'clicked before', '--theme', 'light'])
+  assert.equal(status, 0, JSON.stringify(lines))
+  assert.deepEqual(
+    calls.map((call) => call.name),
+    ['extension.dev.list', 'visual.extension_shot'],
+    'only the shot itself reaches Studio',
+  )
+  const args = calls[1]!.args as { id: string; point: string; out: string; scenario: string; tree: unknown }
+  assert.equal(args.point, 'panels')
+  assert.equal(args.id, 'counter', 'the first components panel')
+  assert.equal(args.scenario, 'clicked before')
+  assert.match(args.out, /local\.counter-counter\.clicked-before\.png$/u)
+  const drawn = JSON.stringify(args.tree)
+  assert.match(drawn, /7 clicks/u)
+  assert.match(drawn, /"onPress":\{"\$callback":"shot\.1"\}/u, 'a handler is an inert callback')
+  assert.doesNotMatch(drawn, /\[handler\]/u)
+  const result = (lines.at(-1) as { result: { scenario: string } }).result
+  assert.equal(result.scenario, 'clicked before')
+}, 30_000)
+
+test('shot --scenario is refused for a key, a door, a panel that draws itself or a scenario the panel lacks', async () => {
+  const codeOf = async (args: string[]) => {
+    const { lines } = await run(args)
+    return (lines.at(-1) as { error: { code: string; message: string } }).error
+  }
+  assert.equal((await codeOf(['shot', 'local.counter', '--scenario', 'fresh'])).code, 'invalid_argument')
+  assert.equal((await codeOf(['shot', counter, '--scenario', 'fresh', '--door', 'd'])).code, 'invalid_argument')
+  assert.equal((await codeOf(['shot', counter, '--scenario', ''])).code, 'invalid_argument')
+  const plain = await codeOf(['shot', counter, '--scenario', 'fresh', '--panel', 'plain'])
+  assert.equal(plain.code, 'invalid_argument')
+  assert.match(plain.message, /components panels only/u)
+  calls.splice(0)
+  const missing = await codeOf(['shot', counter, '--scenario', 'nope'])
+  assert.equal(missing.code, 'invalid_argument')
+  assert.match(missing.message, /no scenario "nope".*fresh, clicked before/u)
+  assert.ok(!calls.some((call) => call.name === 'visual.extension_shot'))
+}, 30_000)

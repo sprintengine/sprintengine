@@ -16,6 +16,7 @@ Pick the smallest surface and the lowest tier that do the job.
 | An action on one of your own bell rows | `menus[]` `where: "notification"` | as above | — |
 | A button in the top bar | `topBarItems[]` with a `command` or a `door` | `declarative` | top-bar-item |
 | A tab in a workspace's pane | `panels[]` with an `entry` | `ui` | panel, blank |
+| A tab in a workspace's pane drawn with Studio's own controls (lists, forms, tables, trees) | `panels[]` with `"ui": "components"` and an `entry` whose default export is a component (the `components` topic) | `ui` | components |
 | A page of its own, with a row in the Extensions drawer | `doors[]` with an `entry` | `ui` | door |
 | Options in Settings | `settingsSections[]` with an `entry` | `ui` | settings-section |
 | An editor for files of a type (a form, a diagram, a binary format) | `customEditors[]` with an `entry` and its `extensions` or `filenames`; `workspace-files:read`, `:write` to save | `ui` | editor |

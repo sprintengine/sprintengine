@@ -35,7 +35,10 @@ cannot reach Studio's window, has no Node, and has no network (its policy
 refuses every connection, and it cannot open windows or submit forms). A
 frame that tries to load another page in its place (`location.href`, a
 refresh) is stopped by the desktop app, and closed by any client that sees it
-load a second document. Images and fonts must be `data:` or `blob:` URLs. Everything the
+load a second document. Images and fonts must be `data:` or `blob:` URLs. Script
+you inject yourself as inline `<script>` text or an inline `on*=` handler
+(`onclick="…"`) does not run: put the code in your modules and attach handlers
+with `addEventListener`. A frame you make runs no script. Everything the
 surface needs from Studio it asks for with `studio.host.call`, and Studio
 checks every call twice: against the permissions the person approved for the
 extension, and against what the person, device or browser that opened the

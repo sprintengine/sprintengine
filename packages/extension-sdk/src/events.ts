@@ -40,7 +40,7 @@ export const EXTENSION_EVENTS = [
 export type ExtensionEventName = (typeof EXTENSION_EVENTS)[number]
 
 /** Every event a surface's frame may hear with `studio.on`: the worker's, and the window's own typography. */
-export const EXTENSION_FRAME_EVENTS = [...EXTENSION_EVENTS, 'editor.typography.changed'] as const
+export const EXTENSION_FRAME_EVENTS = [...EXTENSION_EVENTS, 'editor.typography.changed', 'settings.changed'] as const
 export type ExtensionFrameEventName = (typeof EXTENSION_FRAME_EVENTS)[number]
 
 /** The most events one extension.json may list. */
@@ -119,13 +119,15 @@ export type ExtensionEventPayloads = {
     wordWrap: 'on' | 'off'
     minimap: boolean
   }
+  /** Nothing but that it happened: the surface reads its values again (`settings.get`). */
+  'settings.changed': Record<string, never>
 }
 
 export type ExtensionEventSpec = {
   /** What the extension's approval must hold; null for none. */
   permission: ExtensionPermission | null
   /** What whoever opened a surface must hold for it to hear the event there; null for none. */
-  invoker: 'workspace:read' | 'conversation:read' | null
+  invoker: 'workspace:read' | 'conversation:read' | 'extension:read' | null
   /** Who hears it: a worker and a surface, or a surface alone (the window's own). */
   heard: 'worker' | 'frame'
   /** For the guide: when it is delivered. */
@@ -177,6 +179,14 @@ export const EXTENSION_EVENT_SPECS: Readonly<Record<ExtensionFrameEventName, Ext
       'The code font the window’s editor draws with changed. A surface hears it from the window that drew it, the current one first; a worker cannot, since each window has its own.',
     payload:
       "{ fontFamily: string | null; cssFontFamily: string; fontSize: number; fontWeight: string; lineHeight: number; fontLigatures: boolean; wordWrap: 'on' | 'off'; minimap: boolean }",
+  },
+  'settings.changed': {
+    permission: 'settings:own',
+    invoker: 'extension:read',
+    heard: 'frame',
+    summary:
+      'One of the extension’s own Settings values changed, from Studio’s Settings or any other writer, and once more after the window reconnects. A surface hears it from its window and reads the values again with `settings.get`, as reading them needs; a worker watches them with `watchModuleAppState`.',
+    payload: '{}',
   },
 }
 

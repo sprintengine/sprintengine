@@ -130,6 +130,17 @@ function allowOnlyEmbeddedBrowserGuests(win: BrowserWindow): void {
 // Show a window created with `deferShow`. Safe on a window that is already
 // visible or already gone: the boot reveal races a renderer signal against a
 // timeout, and the loser must be a no-op rather than a throw.
+/**
+ * The app's own pages make no peer connections, and extension frames run in
+ * them: no UDP that does not go through a proxy, so a frame that somehow got
+ * a peer connection could neither gather candidates over UDP nor reach a STUN
+ * or TURN server over it. (TURN over TCP is not stopped here; the frame's
+ * bootstrap and policy keep the constructors out of reach.)
+ */
+function keepOffPeerNetworks(win: BrowserWindow): void {
+  win.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
+}
+
 export function revealMainWindow(win: BrowserWindow): void {
   if (win.isDestroyed()) return
   win.show()
@@ -234,6 +245,7 @@ export function createMainWindow({
     },
   })
 
+  keepOffPeerNetworks(win)
   workspaceWindows.add(win)
   workspaceWindowIds.set(win, windowId)
   win.on('closed', () => {
@@ -372,6 +384,7 @@ export function createDiagnosticsWindow(): BrowserWindow {
     },
   })
   diagnosticsWindow = win
+  keepOffPeerNetworks(win)
 
   win.on('ready-to-show', () => {
     win.show()
@@ -499,6 +512,7 @@ export function openAuxWindow({ kind, singletonKey, params, bounds = null, focus
     },
   })
   auxWindows.set(registryKey, win)
+  keepOffPeerNetworks(win)
   if (hostsPane) {
     panePopOutWindows.add(win)
     win.on('closed', () => panePopOutWindows.delete(win))

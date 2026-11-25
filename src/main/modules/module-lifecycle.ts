@@ -519,9 +519,11 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
       // load) is drawn in the frame, which logs it at its file and line; a
       // development folder's next save draws it again.
       if (!entry.ok && !entry.problem) return entry
+      const contribution = target.extension.contributes[point].find((surface) => surface.id === id)
       const html = buildExtensionFrameDocument({
         surface: { point, id },
-        entryPath: target.extension.contributes[point].find((surface) => surface.id === id)?.entry ?? '',
+        entryPath: contribution?.entry ?? '',
+        ...(point === 'panels' && contribution?.ui === 'components' ? { components: true } : {}),
         ...(entry.ok
           ? { modules: entry.modules, token: entry.token }
           : { modules: [], token: 'se-module-none-', problem: formatSourceProblem(entry.problem!) }),

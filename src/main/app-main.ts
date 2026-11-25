@@ -36,6 +36,7 @@ import { createExtensionReloader } from '../server/extensions/extension-reload'
 import { watchDevFolders } from '../server/extensions/dev/dev-folder-watch'
 import type { ExtensionHookPoint } from '../../packages/extension-sdk/src/hooks'
 import { createModuleLifecycle, liveModuleIds } from './modules/module-lifecycle'
+import { readSurfaceImage } from './modules/extension-surface-entries'
 import { bundledRegistryIds } from './plugin-registry-instance'
 import { attachBuildSkewWatch, createBuildSkewWatch } from './build-skew'
 import { registerCoreIpc } from './register-core-ipc'
@@ -249,6 +250,11 @@ const moduleLoad = loadMainModules({
   // A save in a custom text editor meets the save hooks as one in Studio's text editor does.
   frameEditorSaveHooks: ({ invoker, ...event }) =>
     editorSaveDecision(services.studioCore.extensionHooks, event, invoker),
+  frameOwnImage: (moduleId, path) =>
+    readSurfaceImage(
+      extensionDiscovery.current().modules.find((module) => module.key === moduleId),
+      path,
+    ),
   ineligible: thirdPartyMainLoad.ineligible,
   launchErrors: thirdPartyMainLoad.launchErrors,
   // Module events reach every client following the Studio's `extension.events`

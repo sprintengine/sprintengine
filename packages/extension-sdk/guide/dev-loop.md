@@ -96,16 +96,26 @@ run them only on code you trust.
   `.mjs`) under the folder, leaving out `node_modules`, `dist` and dotted
   folders. With the project's own Vitest when it has one installed (with a
   config `test` writes to `.sprintengine/test/`), else with `node --test`;
-  either way TypeScript and JSX (classic `h()` and `Fragment`) load as Studio
-  loads them. Answers `runner` (`vitest` or `node:test`), `code`, `files`.
+  either way TypeScript and JSX (classic `h()` and `Fragment`, or for
+  the components module in every file a components panel's entry
+  imports, as `check` and Studio compile them) load as Studio loads
+  them, and `@sprintengine/extension-sdk/components` and `/testing` are
+  the SDK's own copies, so a panel and the test that mounts it share one
+  runtime. Answers
+  `runner` (`vitest` or `node:test`), `code`, `files`.
   A project's `npm test`.
 - **`check [dir]`**: `validate`, then the worker activated against the SDK's
   fake host in a child process (at most 15 seconds), then each surface's
-  module graph built as Studio builds it and its entry checked for `mount`.
-  Answers `key`, `ok`, `worker` (`{ ok, methods, tools, hooks, logs }` or
-  `{ ok: false, error }`, the error at `file:line:col`; `null` without a
-  worker) and `surfaces` (`[{ point, id, entry, ok, modules }]`, or `problem`
-  at `file:line:col`). A project's `npm run check` runs `typecheck`, `test`
+  module graph built as Studio builds it and its entry checked for `mount`
+  (a components panel's for its default export), then each components panel
+  rendered against the fake Studio, once per scenario of its
+  `<entry>.check.ts` (the `components` topic). Answers `key`, `ok`, `worker`
+  (`{ ok, methods, tools, hooks, logs }` or `{ ok: false, error }`, the error
+  at `file:line:col`; `null` without a worker), `surfaces` (`[{ point, id,
+  entry, ok, modules }]`, or `problem` at `file:line:col`) and, with a
+  components panel, `panels` (`{ ok, panels: [{ id, entry, results: [{ name,
+  summary, errors, warnings, refusals, tree }] }] }`): an error fails the
+  check, a warning does not. A project's `npm run check` runs `typecheck`, `test`
   and then this.
 
 ## Reaching Studio
@@ -313,13 +323,30 @@ loading), `pendingRequests` and `errors` (what it threw or logged, at
 `file:line:col`). A Studio without its desktop window (a server on its own)
 fails `shot_failed`.
 
+### `shot <dir> --scenario <name> [--panel <id>]`
+
+A components panel in one of its `.check.ts` scenarios (see `check`): the
+panel is rendered on this machine as `check` renders it, against the SDK's
+fake Studio with the worker mounted beside it, and Studio draws the tree it
+drew, checked as the window checks one, in the same hidden window. The live
+panel is never loaded, so the scenario's data reaches neither it nor the
+worker in Studio. It takes the folder, not a key; without `--panel`, the
+first components panel. The default file is
+`<dir>/.sprintengine/shots/<key>-<id>.<scenario>.png`; the other options are
+`shot`'s. Answers what `shot` does plus `scenario`; `errors` adds what the
+panel threw in the scenario. A scenario the panel lacks is
+`invalid_argument`, naming the ones it has; one that drew nothing is
+`extension_check_failed`. A control's value is the one its props give, and
+nothing is pressed.
+
 ## The same from Studio's tools
 
 An agent with Studio's MCP tools can skip the CLI: `extension.dev.load`
 (`path`, the folder's absolute path), `extension.dev.unload`,
 `extension.dev.list`, `extension.dev.events` (`after`, `moduleId`, `limit`),
 `extension.dev.request`, `extension.dev.hook`, `extension.dev.emit`, `extension.dev.studioEvent` and
-`visual.extension_shot` (`moduleId`, `point`, `id`, `out`). They answer the
+`visual.extension_shot` (`moduleId`, `point`, `id`, `out`; `tree` and
+`scenario` for a scenario's tree). They answer the
 same results; a failure is the tool's error with the same codes. A paired
 device cannot use them: a development folder is a path on this machine.
 `extension.install` (`source`), `extension.update` (`moduleId`, or `all:

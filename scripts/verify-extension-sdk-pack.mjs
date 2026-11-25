@@ -70,6 +70,8 @@ for (const subpath of [
   './scaffold',
   './guide',
   './testing',
+  './components',
+  './components/jsx-runtime',
   './catalogue',
   './release-entry',
   ...SCHEMAS,

@@ -29,8 +29,15 @@ type FieldProps = {
    *  shown so the labelled element only references one supporting message. */
   help?: string
   /** Optional error message. When set, the labelled child receives
-   *  aria-invalid and aria-describedby pointing at this message. */
+   *  aria-invalid and aria-describedby pointing at this message, and the
+   *  message is announced as it appears. */
   error?: string
+  /**
+   * The id the help and error messages are named from when there is no
+   * `htmlFor` (`<messageId>-help`, `<messageId>-error`), so a composite that
+   * names itself can still point its own `aria-describedby` at the message.
+   */
+  messageId?: string
   required?: boolean
   /** A single focusable form control. Field injects id and ARIA wiring. */
   children: React.ReactElement<FieldChildProps>
@@ -50,9 +57,10 @@ function FieldLabel({ children, className }: { children: React.ReactNode; classN
   )
 }
 
-export function Field({ label, htmlFor, help, error, required, children, className }: FieldProps) {
-  const helpId = htmlFor && help && !error ? `${htmlFor}-help` : undefined
-  const errorId = htmlFor && error ? `${htmlFor}-error` : undefined
+export function Field({ label, htmlFor, messageId, help, error, required, children, className }: FieldProps) {
+  const idBase = htmlFor ?? messageId
+  const helpId = idBase && help && !error ? `${idBase}-help` : undefined
+  const errorId = idBase && error ? `${idBase}-error` : undefined
   const describedBy = errorId ?? helpId
 
   // Without an `htmlFor` there is no control to clone onto: the row is a
@@ -91,7 +99,8 @@ export function Field({ label, htmlFor, help, error, required, children, classNa
       )}
       {labelledChild}
       {error ? (
-        <p id={errorId} className="text-meta text-[color:var(--tone-error)]">
+        // An alert, so an error that appears while the person is in the form is heard, not only seen.
+        <p id={errorId} role="alert" className="text-meta text-[color:var(--tone-error)]">
           {error}
         </p>
       ) : null}

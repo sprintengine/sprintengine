@@ -14,7 +14,9 @@ class FakeWindow {
   minimized = false
   private listeners = new Map<string, Array<() => void>>()
   webContentsEvents: string[] = []
+  webRtcPolicy: string | null = null
   webContents = {
+    setWebRTCIPHandlingPolicy: (policy: string) => void (this.webRtcPolicy = policy),
     send: (channel: string) => this.calls.push(`send:${channel}`),
     on: (event: string) => this.webContentsEvents.push(event),
     setWindowOpenHandler: () => undefined,
@@ -131,4 +133,12 @@ test('no other aux window is given the webview tag', () => {
   assert.equal(preferences.webviewTag, undefined)
   assert.equal(win.webContentsEvents.includes('will-attach-webview'), false)
   assert.equal(isBrowserHostWebContents(win.webContents as never), false)
+})
+
+// Extension frames run in the app's pages, which make no peer connections of their own.
+test('an app window sends no UDP around a proxy: no peer-connection traffic from a frame in it', () => {
+  openAuxWindow({ kind: 'diff', singletonKey: 'webrtc', params: { repoRoot: '/Users/dev/repo' } })
+  const pane = openPanePopOutWindow({ popOutId: 'pop-rtc', workspaceId: 'ws-1', bounds: null }) as unknown as FakeWindow
+  assert.equal(created[0]!.webRtcPolicy, 'disable_non_proxied_udp')
+  assert.equal(pane.webRtcPolicy, 'disable_non_proxied_udp')
 })

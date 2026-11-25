@@ -71,6 +71,7 @@ Usage:
   sprintengine-extension list [--json]
   sprintengine-extension logs <key|dir> [--after <seq>] [--json]
   sprintengine-extension shot <dir|key> [--panel <id> | --door <id> | --settings <id>] [--theme light|dark] [--width <px>] [--height <px>] [--out <file.png>] [--json]
+  sprintengine-extension shot <dir> --scenario <name> [--panel <id>] [--theme light|dark] [--width <px>] [--height <px>] [--out <file.png>] [--json]
   sprintengine-extension add <part>... [--project <dir>] [--force]
   sprintengine-extension keygen [--out <file>] [--force]
   sprintengine-extension pack <extension-dir> [--out <dir>] [--force]
@@ -125,7 +126,10 @@ reloaded, log lines (errors at file:line:col), status, approval, and with
 a fresh PNG, after each save. Ctrl-C removes the folder again if the watch
 added it. dev reload reads one development folder, or every one, again now.
 dev request, hook, emit and shot reach development folders only. list and
-logs cover installed extensions too.
+logs cover installed extensions too. shot --scenario renders a components
+panel in one of its .check.ts scenarios on this machine, as check does, and
+Studio draws the tree it drew: the live panel and its worker never see the
+scenario.
 
 install, update and open act on published extensions through the Studio
 running on this machine, by the path Settings > Extensions takes: the owner,

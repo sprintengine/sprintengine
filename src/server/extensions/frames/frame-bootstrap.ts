@@ -13,7 +13,9 @@
 import { EDITOR_DOCUMENT_SCRIPT } from '../../../../packages/extension-sdk/src/editor-document-script'
 import { EXTENSION_FRAME_METHODS } from '../../../../packages/extension-sdk/src/services'
 import { EXTENSION_FRAME_EVENTS as STUDIO_FRAME_EVENTS } from '../../../../packages/extension-sdk/src/events'
+import { COMPONENTS_MODULE } from '../../../../packages/extension-sdk/src/source-modules'
 import {
+  COMPONENT_FRAME_MAX_TIMERS,
   EXTENSION_FRAME_CALL_DEADLINE_MS,
   EXTENSION_FRAME_EVENTS,
   EXTENSION_FRAME_MAX_PENDING,
@@ -57,6 +59,12 @@ export type FrameBootstrapInput = {
   /** The surface, before the host says which workspace it was opened in. */
   surface: { point: string; id: string }
   colorScheme: 'light' | 'dark'
+  /**
+   * A components panel: the entry's default export is booted by the
+   * components module (COMPONENTS_MODULE, among `modules`), which renders
+   * trees the window draws; the frame itself shows nothing.
+   */
+  components?: boolean
 }
 
 /** JSON safe to put inside an inline `<script>`. */
@@ -75,8 +83,13 @@ const PRELUDE = `'use strict'
 // whose frame loads a second document. Links and forms here are only kept
 // from starting one.
 // The policy has no directive for peer connections, which would be a way out.
-;['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel'].forEach(function (name) {
-  try { Object.defineProperty(window, name, { value: undefined, writable: false, configurable: false }) } catch (_) {}
+// Every WebRTC interface goes, for good (not configurable), before the
+// extension's code runs. No child frame runs script, so no fresh realm
+// brings them back (frame-document.ts says why).
+Object.getOwnPropertyNames(window).filter(function (name) {
+  return /^(webkit)?RTC/.test(name)
+}).concat(['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel']).forEach(function (name) {
+  try { Object.defineProperty(window, name, { value: undefined, writable: false, configurable: false, enumerable: false }) } catch (_) {}
 })
 try { Object.defineProperty(window, 'open', { value: function () { return null }, writable: false, configurable: false }) } catch (_) {}
 window.addEventListener('click', function (event) {
@@ -112,6 +125,9 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     problem: input.problem ?? null,
     logLimit: FRAME_LOG_LIMIT,
     logWindowMs: FRAME_LOG_WINDOW_MS,
+    components: input.components === true,
+    componentsModule: COMPONENTS_MODULE,
+    maxTimers: COMPONENT_FRAME_MAX_TIMERS,
   })
   return `${PRELUDE};(function (C) {
   var E = C.events
@@ -131,11 +147,73 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     message.se = C.protocol
     try { host.postMessage(message, '*') } catch (_) {}
   }
-  function failure(code, message, retryable, document) {
+  // A components panel's frame is not drawn (display: none), and the browser
+  // runs an undrawn frame's timers about once a second. Its timers are kept by
+  // the window instead: the frame says when ('timer'), the window wakes it then
+  // ('wake'), and a timer cleared before that is cleared there too ('clear'),
+  // so its slot comes back on both sides at once. Past C.maxTimers held at
+  // once, or for a handler that is not a function, the frame's own timers
+  // take over.
+  if (C.components) (function () {
+    var nativeSet = window.setTimeout.bind(window)
+    var nativeClear = window.clearTimeout.bind(window)
+    var nativeSetInterval = window.setInterval.bind(window)
+    var nativeClearInterval = window.clearInterval.bind(window)
+    var timers = new Map()
+    var nextTimer = 1
+    // Ids the window holds a timer for (odd, apart from the frame's own, which are even).
+    var held = new Set()
+    function delayOf(ms) {
+      ms = Number(ms)
+      return ms > 0 && ms < 2147483647 ? Math.floor(ms) : 0
+    }
+    function arm(id, timer) {
+      held.add(id)
+      post({ kind: 'timer', id: id, ms: timer.ms })
+    }
+    function schedule(handler, ms, args, repeat) {
+      if (typeof handler !== 'function' || held.size >= C.maxTimers) return null
+      var id = nextTimer
+      nextTimer += 2
+      var timer = { handler: handler, args: args, ms: repeat ? Math.max(4, delayOf(ms)) : delayOf(ms), repeat: repeat }
+      timers.set(id, timer)
+      arm(id, timer)
+      return id
+    }
+    window.addEventListener('message', function (event) {
+      if (event.source !== host) return
+      var message = event.data
+      if (!message || message.se !== C.protocol || message.kind !== 'wake' || typeof message.id !== 'number') return
+      // A wake already on its way when the timer was cleared: its slot is back already.
+      if (!held.delete(message.id)) return
+      var timer = timers.get(message.id)
+      if (!timer) return
+      if (timer.repeat) arm(message.id, timer)
+      else timers.delete(message.id)
+      try { timer.handler.apply(window, timer.args) } catch (error) { setTimeout(function () { throw error }) }
+    })
+    window.setTimeout = function (handler, ms) {
+      var id = schedule(handler, ms, Array.prototype.slice.call(arguments, 2), false)
+      return id === null ? nativeSet.apply(null, arguments) * 2 : id
+    }
+    window.setInterval = function (handler, ms) {
+      var id = schedule(handler, ms, Array.prototype.slice.call(arguments, 2), true)
+      return id === null ? nativeSetInterval.apply(null, arguments) * 2 : id
+    }
+    window.clearTimeout = window.clearInterval = function (id) {
+      id = Number(id)
+      if (id % 2 === 1) {
+        timers.delete(id)
+        if (held.delete(id)) post({ kind: 'clear', id: id })
+      } else if (id > 0) { nativeClear(id / 2); nativeClearInterval(id / 2) }
+    }
+  })()
+  function failure(code, message, retryable, document, retryAfterMs) {
     var error = new Error(String(message || 'The host call failed.'))
     error.code = C.codes.indexOf(code) >= 0 ? code : 'action_failed'
     error.retryable = Boolean(retryable)
     if (document) error.document = document
+    if (typeof retryAfterMs === 'number' && retryAfterMs > 0) error.retryAfterMs = retryAfterMs
     return error
   }
   function call(method, params, options) {
@@ -160,7 +238,7 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
       pending.set(id, function (message) {
         clearTimeout(timer)
         if (signal) signal.removeEventListener('abort', abort)
-        if (message.error) reject(failure(message.error.code, message.error.message, message.error.retryable, message.error.document))
+        if (message.error) reject(failure(message.error.code, message.error.message, message.error.retryable, message.error.document, message.error.retryAfterMs))
         else resolve(message.result)
       })
       post({ kind: 'req', id: id, method: String(method), params: params === undefined ? {} : params })
@@ -200,10 +278,13 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     return true
   }
   // Where the extension's code is: each module's blob URL, by the file it came from.
+  // Studio's components module is named apart, so a place is always the extension's own.
   var sources = {}
+  var studioModules = {}
   function located(text) {
     var out = String(text)
     Object.keys(sources).forEach(function (url) { out = out.split(url).join(sources[url]) })
+    Object.keys(studioModules).forEach(function (url) { out = out.split(url).join(studioModules[url]) })
     return out
   }
   // The first place in a stack that is the extension's own file, as file:line:col.
@@ -340,12 +421,48 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
       var code = module.code.replace(pattern, function (_, n) { return urls[Number(n)] || '' })
       var url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))
       urls[index] = url
-      sources[url] = module.path
+      if (C.components && module.path === C.componentsModule) studioModules[url] = module.path
+      else sources[url] = module.path
     })
+    if (C.components) {
+      var runtimeUrl = Object.keys(studioModules)[0]
+      if (!runtimeUrl) return fail(new Error('This Studio could not load the components module.'))
+      Promise.all([import(runtimeUrl), import(urls[urls.length - 1])]).then(function (loaded) {
+        return loaded[0].bootComponentsPanel(componentsBridge, loaded[1])
+      }).catch(fail)
+      return
+    }
     import(urls[urls.length - 1]).then(function (entry) {
       if (!entry || typeof entry.mount !== 'function') throw new Error(C.entryPath + ' must export mount(root, studio).')
       return entry.mount(document.getElementById(C.rootId), studio)
     }).catch(fail)
+  }
+  // A components panel's runtime speaks the ui.* events over this; it reaches
+  // Studio only through the same calls and events as any frame.
+  var uiListeners = {}
+  // What the runtime sends as the document unloads, before the window hears it is leaving.
+  var leaveHooks = new Set()
+  var context = { locale: 'en', client: 'desktop' }
+  var componentsBridge = {
+    post: function (event, payload) { post({ kind: 'evt', event: String(event), payload: payload }) },
+    on: function (event, handler) {
+      if (event === 'theme') return studio.on('theme', handler)
+      var set = uiListeners[event] || (uiListeners[event] = new Set())
+      set.add(handler)
+      return { dispose: function () { set.delete(handler) } }
+    },
+    call: call,
+    has: function (method) { return C.methods.indexOf(String(method)) >= 0 },
+    listen: function (event, handler) { return studio.on(event, handler) },
+    get surface() { return { id: surface.id, workspaceId: surface.workspaceId } },
+    get colorScheme() { return theme.colorScheme },
+    get locale() { return context.locale },
+    get client() { return context.client },
+    describe: function (error) { return located(describe(error)) },
+    onLeave: function (flush) {
+      leaveHooks.add(flush)
+      return { dispose: function () { leaveHooks.delete(flush) } }
+    }
   }
   window.addEventListener('message', function (event) {
     if (event.source !== host) return
@@ -354,8 +471,16 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
     if (message.kind === 'res') {
       var settle = pending.get(message.id)
       if (settle) { pending.delete(message.id); settle(message) }
+    } else if (message.kind === 'evt' && C.components && typeof message.event === 'string' && message.event.indexOf('ui.') === 0) {
+      Array.from(uiListeners[message.event] || []).forEach(function (listener) {
+        try { listener(message.payload) } catch (error) { console.error(error) }
+      })
+    } else if (message.kind === 'evt' && message.event === E.leave) {
+      leave()
     } else if (message.kind === 'evt' && message.event === E.hello) {
       var hello = message.payload || {}
+      if (typeof hello.locale === 'string') context.locale = hello.locale.slice(0, 35)
+      if (hello.client === 'web' || hello.client === 'desktop') context.client = hello.client
       applyTheme(hello.theme)
       start(hello.workspaceId)
     } else if (message.kind === 'evt' && message.event === E.theme) {
@@ -381,7 +506,19 @@ export function frameBootstrapScript(input: FrameBootstrapInput): string {
   } catch (_) {}
   // Registered before the extension's code runs, so nothing it does comes
   // first: the window drops the bridge as soon as this document unloads.
-  window.addEventListener('pagehide', function () { post({ kind: 'evt', event: E.leaving, payload: {} }) })
+  // A components panel's last writes go first: the window drops whatever follows the leaving event.
+  // Once: the window asks first when the surface closes (\`leave\`), and the
+  // document unloading says it again.
+  var left = false
+  function leave() {
+    if (left) return
+    left = true
+    Array.from(leaveHooks).forEach(function (flush) {
+      try { flush() } catch (error) { console.error(error) }
+    })
+    post({ kind: 'evt', event: E.leaving, payload: {} })
+  }
+  window.addEventListener('pagehide', leave)
   post({ kind: 'evt', event: E.ready, payload: {} })
 })(${config})
 `

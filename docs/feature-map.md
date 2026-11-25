@@ -215,6 +215,29 @@ Wire: `extension.frame`, `extension.call`, `extension.contributions` (capability
 `src/server/extensions/frames/frame-document.test.ts`, `src/renderer/src/modules/extension-frame-host.test.ts`,
 `src/main/module-host/extension-frame-calls.test.ts`.
 
+**Components panels** (a panel with `"ui": "components"`: its module renders a tree of Studio's components, which the
+window checks and draws with its own controls, on every client but the phone): the module a panel imports,
+`packages/extension-sdk/src/components/` (atoms, `setup`, the host facades, the catalogue and its limits in
+`catalog.ts`, the tree check in `tree.ts`, the guest's `ui.*` messages in `messages.ts`); bundled for the frame by
+`scripts/build-components-runtime.mjs` into `src/server/extensions/frames/components-runtime.generated.ts` and booted
+by `src/server/extensions/frames/frame-bootstrap.ts`; drawn by the window's
+`src/renderer/src/components/extensions/components/` (`ComponentsPanelHost.tsx`, the run in
+`componentsPanelSession.ts`, the edit protocol in `componentValue.ts`, the stationary rule in `componentGestures.ts`);
+persisted atoms kept by `src/main/module-host/extension-panel-atoms.ts` behind the frame methods `atoms.read`,
+`atoms.write` (`src/main/module-host/extension-frame-calls.ts`). The testing kit
+`packages/extension-sdk/src/testing-components.ts` (`mountPanel`, `defineCheck`), `check`'s child
+`packages/extension-sdk/src/check-panel.ts`, and a shot drawn by `src/main/extension-frames/extension-shot.ts`
+(the window's side of the run in `components-shot-exchange.ts`, the tree drawn by
+`src/renderer/src/components/extensions/components/ComponentsShotApp.tsx`). Wire:
+`extension.frame`, `extension.call` (capability `extension-frames`). Guide
+`packages/extension-sdk/guide/components.md`; template `packages/extension-sdk/templates/components/`; sample
+`packages/extension-sdk/examples/components-sample/`. Tests: `packages/extension-sdk/test/components-runtime.test.ts`,
+`packages/extension-sdk/test/components-tree.test.ts`, `packages/extension-sdk/test/components-testing.test.ts`,
+`packages/extension-sdk/test/components-sample.test.ts`, `src/server/extensions/frames/components-frame.test.ts`,
+`src/main/module-host/extension-panel-atoms.test.ts`,
+`src/renderer/src/components/extensions/components/componentsPanelSession.test.ts`,
+`src/renderer/src/components/extensions/components/componentGestures.test.ts`.
+
 **Custom editors** (an extension's editor for files of a type, in the file's tab, with a document session): the
 contribution in `packages/extension-sdk/src/extension-manifest.ts` and which editor takes a file in
 `packages/extension-sdk/src/custom-editors.ts`; the frame's `studio.document` in
