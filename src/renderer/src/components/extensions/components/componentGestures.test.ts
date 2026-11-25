@@ -125,3 +125,51 @@ test('the whole panel moving down 100 px under the pointer is a move, though the
   geometry.sample()
   expect(geometry.isSettled(id, now)).toBe(true)
 })
+
+// Two labels whose 32-bit FNV-1a hashes collide, found by a reviewer: the content is compared whole, not by a short id.
+test('two labels a panel picked to collide still start the wait again', () => {
+  const stability = createComponentGestureStability()
+  const row = (label: string) => n('ListItem', { onPress: cb('c1') }, [n('Text', {}, [label], 't')], 'row')
+  stability.observe(checked(n('List', {}, [row('Keep safe 07c0375f')])), 0)
+  expect(stability.isSettled(id, 600)).toBe(true)
+  stability.observe(checked(n('List', {}, [row('Send data 4676cbf5')])), 600)
+  expect(stability.isSettled(id, 601)).toBe(false)
+  expect(stability.isSettled(id, 1099)).toBe(false)
+  expect(stability.isSettled(id, 1100)).toBe(true)
+})
+
+test('a child image whose source changes, or any other drawn prop, starts the wait again', () => {
+  const stability = createComponentGestureStability()
+  const row = (image: Record<string, unknown>, badge: Record<string, unknown> = {}) =>
+    n(
+      'ListItem',
+      { onPress: cb('c1'), title: 'Open' },
+      [n('Image', { alt: 'mark', ...image }, [], 'i'), n('Badge', badge, ['tag'], 'b')],
+      'row',
+    )
+  stability.observe(checked(n('List', {}, [row({ src: 'assets/safe.png' })])), 0)
+  expect(stability.isSettled(id, 600)).toBe(true)
+  stability.observe(checked(n('List', {}, [row({ src: 'assets/danger.png' })])), 600)
+  expect(stability.isSettled(id, 601)).toBe(false)
+  expect(stability.isSettled(id, 1100)).toBe(true)
+  // Its fit, and a nested Badge's tone, are drawn too.
+  stability.observe(checked(n('List', {}, [row({ src: 'assets/danger.png', fit: 'cover' })])), 1100)
+  expect(stability.isSettled(id, 1101)).toBe(false)
+  stability.observe(checked(n('List', {}, [row({ src: 'assets/danger.png', fit: 'cover' }, { tone: 'danger' })])), 1700)
+  expect(stability.isSettled(id, 1701)).toBe(false)
+  // The same content again keeps its wait.
+  stability.observe(checked(n('List', {}, [row({ src: 'assets/danger.png', fit: 'cover' }, { tone: 'danger' })])), 2000)
+  expect(stability.isSettled(id, 2200)).toBe(true)
+})
+
+test('a control too large to keep starts the wait again on every render', () => {
+  const stability = createComponentGestureStability()
+  // Each Text is under its own cap; together they are over the signature's.
+  const texts = Array.from({ length: 12 }, (_, index) => n('Text', {}, ['x'.repeat(15_000)], `t${index}`))
+  const big = () => n('List', {}, [n('ListItem', { onPress: cb('c1') }, texts, 'row')])
+  stability.observe(checked(big()), 0)
+  expect(stability.isSettled(id, 600)).toBe(true)
+  stability.observe(checked(big()), 600)
+  expect(stability.isSettled(id, 601)).toBe(false)
+  expect(stability.isSettled(id, 1100)).toBe(true)
+})

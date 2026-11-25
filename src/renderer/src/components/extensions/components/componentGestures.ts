@@ -2,7 +2,8 @@
 // Studio's own controls (a Button, IconButton, ListItem or Link) grants the
 // panel one gesture-gated call, such as opening a URL, but only when that
 // control has stood still for 500 ms: the same place in the tree, the same
-// type, label and target, and the same position on screen. Anything that
+// type, target and everything it draws (every prop and text inside it,
+// compared whole), and the same position on screen. Anything that
 // moves it, a sibling growing above it included, starts the wait again, so a
 // panel cannot slide a control under the pointer just before a click. The
 // person scrolling the panel is not a move: positions are measured on screen,
@@ -24,18 +25,19 @@ export const COMPONENT_SETTLE_MS = 500
 /** The controls whose press may grant a gesture, and Markdown, whose links open only once it is still. */
 const TRACKED: ReadonlySet<string> = new Set(['Button', 'IconButton', 'ListItem', 'Link', 'Markdown'])
 
-/** 32-bit FNV-1a: a short id for long content. */
-function contentHash(text: string): string {
-  let hash = 0x811c9dc5
-  for (let index = 0; index < text.length; index++) hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193)
-  return (hash >>> 0).toString(36)
-}
+/**
+ * Past this, a control's content is not kept to compare: every render of it
+ * starts the wait again. Well above the largest Markdown (64 KiB), and a tree
+ * is at most 512 KiB, so it binds only a control holding a large part of one,
+ * and caps what nested controls cost to keep.
+ */
+export const COMPONENT_SIGNATURE_MAX_LENGTH = 160 * 1024
 
 /** The ids a control is tracked under: its press handler, a Link's href, or a Markdown block. */
 export const componentGestureId = {
   callback: (callback: string): string => `cb:${callback}`,
   href: (href: string): string => `href:${href}`,
-  markdown: (content: string): string => `md:${content.length}:${contentHash(content)}`,
+  markdown: (content: string): string => `md:${content}`,
 }
 
 function callbackOf(node: ComponentNode): string | null {
@@ -52,32 +54,61 @@ export function componentGestureIdOf(node: ComponentNode): string | null {
   return callback === null ? null : componentGestureId.callback(callback)
 }
 
-// Every visible prop a node inside a control can draw its words or marks with.
-const VISIBLE = ['label', 'title', 'description', 'icon', 'href', 'variant', 'tone', 'content', 'value', 'name', 'alt']
-
-/** Everything a control shows, nested Text and Badges included: a short id of its whole content. */
-function contentOf(children: ComponentChild[]): string {
-  const parts: string[] = []
-  const walk = (list: ComponentChild[]) => {
-    for (const child of list) {
-      if (typeof child === 'string') parts.push(child)
-      else {
-        const props = child.props as Record<string, unknown>
-        parts.push(`<${child.type}`, ...VISIBLE.map((name) => String(props[name] ?? '')), '>')
-        walk(child.children)
-        parts.push('</>')
-      }
+// A value, canonically: object keys in order, so equal content always reads
+// the same. A callback is only a marker: which handler a nested node holds
+// does not change how the control looks, and the control's own is its id.
+function canonical(value: unknown, parts: string[]): void {
+  if (Array.isArray(value)) {
+    parts.push('[')
+    for (const item of value) {
+      canonical(item, parts)
+      parts.push(',')
     }
-  }
-  walk(children)
-  const text = parts.join('\u0000')
-  return `${text.length}:${contentHash(text)}`
+    parts.push(']')
+  } else if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    if (typeof record.$callback === 'string') {
+      parts.push('$cb')
+      return
+    }
+    parts.push('{')
+    for (const name of Object.keys(record).sort()) {
+      parts.push(JSON.stringify(name), ':')
+      canonical(record[name], parts)
+      parts.push(',')
+    }
+    parts.push('}')
+  } else parts.push(JSON.stringify(value) ?? 'undefined')
 }
 
-/** What the person sees and what a press does: any change starts the wait again. */
-function signatureOf(node: ComponentNode, path: string): string {
-  const visible = VISIBLE.map((name) => String(node.props[name] ?? '')).join('\u0000')
-  return `${path}\u0001${node.type}\u0001${visible}\u0001${contentOf(node.children)}`
+const CLOSE: unique symbol = Symbol('close')
+
+/**
+ * Everything a control draws, kept whole: its type, every prop of it and of
+ * every node inside it (labels, icons, tones, variants, an Image's source),
+ * and all their text. Compared in full, never by a hash a panel could pick
+ * a colliding label for. Null when it is over the cap.
+ */
+function contentOf(node: ComponentNode): string | null {
+  const parts: string[] = []
+  let length = 0
+  const stack: (ComponentChild | typeof CLOSE)[] = [node]
+  for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
+    let part: string
+    if (item === CLOSE) part = '>'
+    else if (typeof item === 'string') part = JSON.stringify(item)
+    else {
+      const props: string[] = []
+      canonical(item.props, props)
+      part = `<${item.type}${props.join('')}`
+      stack.push(CLOSE)
+      for (let index = item.children.length - 1; index >= 0; index--) stack.push(item.children[index]!)
+    }
+    length += part.length
+    if (length > COMPONENT_SIGNATURE_MAX_LENGTH) return null
+    parts.push(part)
+  }
+  return parts.join('')
 }
 
 export type ComponentGestureStability = {
@@ -88,23 +119,21 @@ export type ComponentGestureStability = {
 }
 
 export function createComponentGestureStability(): ComponentGestureStability {
-  let records = new Map<string, { id: string; signature: string; since: number }>()
+  let records = new Map<string, { id: string; signature: string | null; since: number }>()
   return {
     observe(tree, now) {
-      const next = new Map<string, { id: string; signature: string; since: number }>()
+      const next = new Map<string, { id: string; signature: string | null; since: number }>()
       const stack: { node: ComponentNode; path: string }[] =
         tree && tree.type !== 'Unsupported' ? [{ node: tree, path: '' }] : []
       for (let item = stack.pop(); item; item = stack.pop()) {
         const { node, path } = item
         const id = componentGestureIdOf(node)
         if (id !== null) {
-          const signature = signatureOf(node, path)
+          // Over the cap, there is nothing to compare: the wait starts again.
+          const signature = contentOf(node)
           const previous = records.get(path)
-          next.set(path, {
-            id,
-            signature,
-            since: previous?.signature === signature && previous.id === id ? previous.since : now,
-          })
+          const same = signature !== null && previous?.signature === signature && previous.id === id
+          next.set(path, { id, signature, since: same ? previous.since : now })
         }
         node.children.forEach((child, index) => {
           if (typeof child !== 'string' && child.type !== 'Unsupported')
