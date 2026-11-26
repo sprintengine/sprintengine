@@ -21,9 +21,11 @@ import type { SqlParams } from './sqlite'
 // A chat moved to another project has its rows renamed with it
 // (`moveChatLogs`). That file, where it is, is the log's history from
 // before the upgrade: it is imported the first time the log is taken up (a
-// read, an append, a receipt lookup) or by the background pass, once, in one
-// transaction, and never read again (owner decision 2026-11-25). An import
-// that a stop cuts short is rolled back and runs again.
+// read, an append, a receipt lookup) or by the background pass, once, and
+// never read again (owner decision 2026-11-25). It is written a batch per
+// transaction, so other chats' writes go on between them, and noted as
+// imported with its last batch: an import a stop cuts short runs again, what
+// it left removed first.
 
 /** One stored record: an event, or a merged run of deltas as one. */
 export type ChatRecord = {
@@ -106,7 +108,9 @@ export function chatGeneration(firstLine: Buffer | string): string {
 }
 
 const IMPORT_BATCH_ROWS = 400
-const IMPORT_YIELD_BYTES = 4 * 1024 * 1024
+const IMPORT_BATCH_BYTES = 4 * 1024 * 1024
+// How long an import that failed is not tried again: not on every read, list and send.
+const IMPORT_RETRY_MS = 60_000
 // One line longer than this (a pathological tool output) is skipped, as the reader skipped it.
 const MAX_LINE_BYTES = 16 * 1024 * 1024
 
@@ -127,9 +131,11 @@ export function createChatLogs(options: { database: StudioDatabase; log?: (messa
     if (!pending) {
       pending = importOnce(key, path, root)
       taken.set(key, pending)
-      // A failed import is tried again next time, not remembered.
+      // A failed import is tried again a while later, not on every read.
       pending.catch(() => {
-        if (taken.get(key) === pending) taken.delete(key)
+        setTimeout(() => {
+          if (taken.get(key) === pending) taken.delete(key)
+        }, IMPORT_RETRY_MS).unref?.()
       })
     }
     return pending
@@ -227,12 +233,21 @@ export function createChatLogs(options: { database: StudioDatabase; log?: (messa
     },
     /**
      * Delete a log and everything kept with it, in one transaction. Its old
-     * transcript, if there was one, stays imported: it is never taken up again.
+     * transcript, if there was one, is noted as imported: it is never taken up
+     * again, whether or not it could be read.
      */
-    async remove(path: string, root: string): Promise<void> {
-      await ensure(path, root)
+    async remove(path: string, _root: string): Promise<void> {
       const key = chatLogKey(path)
-      await db.batch(removeStatements(key))
+      // An import under way finishes (or fails) first, so it writes nothing back.
+      await taken.get(key)?.catch(() => undefined)
+      await db.batch([
+        ...removeStatements(key),
+        {
+          sql: 'INSERT OR IGNORE INTO imports (source, imported_at, records, skipped) VALUES (?, ?, 0, 0)',
+          params: [importSource(key), Date.now()],
+        },
+      ])
+      taken.set(key, Promise.resolve())
     },
   }
 }
@@ -242,17 +257,23 @@ export function importSource(key: string): string {
   return `transcript:${key}`
 }
 
+/** The statements that delete a log's history: its events, receipts, list row and search rows. */
+function historyStatements(key: string): Array<{ sql: string; params: SqlParams }> {
+  return ['chat_events', 'chat_receipts', 'chat_threads', 'chat_search_docs', 'chat_logs'].map((table) => ({
+    sql: `DELETE FROM ${table} WHERE log_key = ?`,
+    params: [key],
+  }))
+}
+
 /** The statements that delete a log and what is kept with it. */
 export function removeStatements(key: string): Array<{ sql: string; params: SqlParams }> {
   return [
-    'chat_events',
-    'chat_receipts',
-    'chat_threads',
-    'chat_search_docs',
-    'tool_details',
-    'tool_outputs',
-    'chat_logs',
-  ].map((table) => ({ sql: `DELETE FROM ${table} WHERE log_key = ?`, params: [key] }))
+    ...historyStatements(key),
+    ...['tool_details', 'tool_outputs'].map((table) => ({
+      sql: `DELETE FROM ${table} WHERE log_key = ?`,
+      params: [key],
+    })),
+  ]
 }
 
 async function writeRows(
@@ -328,8 +349,9 @@ type StoredEvent = { type?: unknown; seq?: unknown; parts?: unknown; payload?: R
  * one without (a transcript from before sequence numbers) or out of order is
  * numbered by position, a merged run of such deltas split into its deltas
  * first. A line that does not read (torn by a crash, damaged) is skipped and
- * counted. Receipt lines become receipts. One transaction: a stop part way
- * leaves nothing, and the import runs again.
+ * counted. Receipt lines become receipts. A batch per transaction, the note
+ * that it was imported with the last: a stop part way leaves no note, and the
+ * import runs again, removing what it left first.
  */
 async function importTranscript(
   db: StudioDatabase,
@@ -341,106 +363,98 @@ async function importTranscript(
   // Read through the store's confinement, as every transcript read was: a
   // link out of the store, or a file a link shares, is refused, and the log
   // is not taken up until it is put right.
-  let file: FileHandle | null
+  let file: FileHandle
   try {
     file = await openConfinedExistingFile(await conversationConfinementRoot(root, path), path)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    file = null
+    // None: nothing is noted, so one that arrives later (a hand-over) is imported then.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
   }
   try {
     await importFrom(db, key, file, root, log)
   } finally {
-    await file?.close()
+    await file.close()
   }
 }
 
 async function importFrom(
   db: StudioDatabase,
   key: string,
-  file: FileHandle | null,
+  file: FileHandle,
   root: string,
   log?: (message: string) => void,
 ): Promise<void> {
-  const firstLine = file ? await readFirstLine(file) : null
+  const firstLine = await readFirstLine(file)
+  const generation = chatGeneration(firstLine)
+  const noted = { sql: 'INSERT INTO imports (source, imported_at, records, skipped) VALUES (?, ?, ?, ?)' }
+  const held = await db.get<{ generation: string }>('SELECT generation FROM chat_logs WHERE log_key = ?', [key])
+  if (held && held.generation !== generation) {
+    // The log began here before this file came: its history is the database's, and the file is not its past.
+    await db.run(noted.sql, [importSource(key), Date.now(), 0, 0])
+    return
+  }
+  // What an import a stop cut short wrote of this file.
+  if (held) await db.batch(historyStatements(key))
   let records = 0
   let skipped = 0
-  await db.transaction(async (tx) => {
-    // Imported meanwhile by another run of this (a second Studio on the same folder cannot be: the lock).
-    if (await tx.get('SELECT 1 FROM imports WHERE source = ?', [importSource(key)])) return
-    if (firstLine !== null) {
-      const rows: ChatRow[] = []
-      const receipts: ChatReceiptRow[] = []
-      let seq = 0
-      let begun = false
-      const flush = async () => {
-        if (rows.length === 0 && receipts.length === 0) return
-        if (!begun && rows.length > 0) {
-          await tx.run(
-            `INSERT INTO chat_logs (log_key, workspace_root, generation, last_seq) VALUES (?, ?, ?, 0)
-             ON CONFLICT (log_key) DO NOTHING`,
-            [key, root, chatGeneration(firstLine)],
-          )
-          begun = true
-        }
-        await writeRows(tx, key, root, rows.splice(0), receipts.splice(0))
-      }
-      let sinceYield = 0
-      for await (const line of readLines(file!)) {
-        if (!Buffer.isBuffer(line)) {
-          skipped += 1
-          continue
-        }
-        sinceYield += line.length
-        if (line.length > MAX_LINE_BYTES) {
-          skipped += 1
-          continue
-        }
-        const text = line.toString('utf8').trim()
-        if (!text) continue
-        let value: unknown
-        try {
-          value = JSON.parse(text)
-        } catch {
-          skipped += 1
-          continue
-        }
-        if (!value || typeof value !== 'object') {
-          skipped += 1
-          continue
-        }
-        const receipt = readReceipt(value)
-        if (receipt) {
-          receipts.push(receipt)
-        } else if (typeof (value as StoredEvent).type === 'string') {
-          for (const row of numbered(value as StoredEvent, seq)) {
-            rows.push(row)
-            seq = row.seq
-          }
-        } else skipped += 1
-        records += 1
-        if (rows.length >= IMPORT_BATCH_ROWS) await flush()
-        if (sinceYield >= IMPORT_YIELD_BYTES) {
-          sinceYield = 0
-          await new Promise((resolve) => setImmediate(resolve))
-        }
-      }
-      await flush()
-      // A log whose transcript held only receipts still begins here.
-      if (!begun && seq === 0 && records > 0)
+  let seq = 0
+  let begun = false
+  let batchBytes = 0
+  const rows: ChatRow[] = []
+  const receipts: ChatReceiptRow[] = []
+  const commit = (last: boolean) =>
+    db.transaction(async (tx) => {
+      const begin = !begun && (rows.length > 0 || (last && records > 0))
+      if (begin)
         await tx.run(
           `INSERT INTO chat_logs (log_key, workspace_root, generation, last_seq) VALUES (?, ?, ?, 0)
            ON CONFLICT (log_key) DO NOTHING`,
-          [key, root, chatGeneration(firstLine)],
+          [key, root, generation],
         )
+      await writeRows(tx, key, root, rows.splice(0), receipts.splice(0))
+      if (last) await tx.run(noted.sql, [importSource(key), Date.now(), records, skipped])
+      begun ||= begin
+    })
+  for await (const line of readLines(file)) {
+    if (!Buffer.isBuffer(line)) {
+      skipped += 1
+      continue
     }
-    await tx.run('INSERT INTO imports (source, imported_at, records, skipped) VALUES (?, ?, ?, ?)', [
-      importSource(key),
-      Date.now(),
-      records,
-      skipped,
-    ])
-  })
+    batchBytes += line.length
+    if (line.length > MAX_LINE_BYTES) {
+      skipped += 1
+      continue
+    }
+    const text = line.toString('utf8').trim()
+    if (!text) continue
+    let value: unknown
+    try {
+      value = JSON.parse(text)
+    } catch {
+      skipped += 1
+      continue
+    }
+    if (!value || typeof value !== 'object') {
+      skipped += 1
+      continue
+    }
+    const receipt = readReceipt(value)
+    if (receipt) {
+      receipts.push(receipt)
+    } else if (typeof (value as StoredEvent).type === 'string') {
+      for (const row of numbered(value as StoredEvent, seq)) {
+        rows.push(row)
+        seq = row.seq
+      }
+    } else skipped += 1
+    records += 1
+    if (rows.length >= IMPORT_BATCH_ROWS || batchBytes >= IMPORT_BATCH_BYTES) {
+      batchBytes = 0
+      await commit(false)
+    }
+  }
+  await commit(true)
   if (skipped > 0) log?.(`The history of ${key} was moved into the database; ${skipped} damaged lines were skipped.`)
 }
 
@@ -454,9 +468,11 @@ function numbered(event: StoredEvent, seq: number): ChatRow[] {
     const last = partSeqs?.length ? Math.max(own, ...(partSeqs as number[])) : own
     return [row(event, own, last)]
   }
-  // By position: a merged run split back into its deltas, each numbered.
-  return expand(event).map((single, index) => {
-    const at = typeof single.seq === 'number' && single.seq > seq + index ? single.seq : seq + index + 1
+  // By position: a merged run split back into its deltas, each numbered after the one before.
+  let last = seq
+  return expand(event).map((single) => {
+    const at = typeof single.seq === 'number' && single.seq > last ? single.seq : last + 1
+    last = at
     return row({ ...single, seq: at }, at, at)
   })
 }
