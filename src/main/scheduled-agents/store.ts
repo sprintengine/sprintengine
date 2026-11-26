@@ -192,9 +192,7 @@ export function createScheduledAgentsStore(options: ScheduledAgentsStoreOptions)
       ...(pausedAll ? { pausedAll } : {}),
       ...(Object.keys(runs).length > 0 ? { runs } : {}),
     }
-    writing = writing
-      .catch(() => undefined)
-      .then(() => options.storage.write(JSON.stringify(snapshot)))
+    writing = writing.catch(() => undefined).then(() => options.storage.write(JSON.stringify(snapshot)))
     return writing
   }
 
@@ -356,6 +354,15 @@ export function readStoredScheduledAgent(
       lastFailureSeenAt: typeof entry.lastFailureSeenAt === 'number' ? entry.lastFailureSeenAt : null,
       ...(isInstant(entry.pausedAt) ? { pausedAt: entry.pausedAt } : {}),
     },
+  }
+}
+
+/** Whether `text` (the file builds before the database kept) reads as this store's: what the import brings in. */
+export function scheduledAgentsFileReads(text: string): boolean {
+  try {
+    return parseStoreFile(JSON.parse(text), Date.now()) !== null
+  } catch {
+    return false
   }
 }
 

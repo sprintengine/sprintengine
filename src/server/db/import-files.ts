@@ -21,9 +21,9 @@ import { EMBEDS_FILENAME, readEmbedsFile } from '../web/embeds'
 import { readWebSessionsFile, WEB_SESSIONS_FILENAME } from '../web/web-sessions'
 import type { RecordTableName } from './record-table'
 import { readWorkspaceRegistryFile, WORKSPACE_REGISTRY_FILE_NAME } from '../../main/workspace-registry-store'
-import { scheduledAgentsFilePath } from '../../main/scheduled-agents/store'
-import { SCHEDULED_MESSAGES_FILE } from '../../main/scheduled-messages/scheduled-messages'
-import { USAGE_LIMIT_RESUMES_FILE } from '../../main/usage-limits/resume'
+import { scheduledAgentsFilePath, scheduledAgentsFileReads } from '../../main/scheduled-agents/store'
+import { SCHEDULED_MESSAGES_FILE, scheduledMessagesFileReads } from '../../main/scheduled-messages/scheduled-messages'
+import { USAGE_LIMIT_RESUMES_FILE, usageLimitResumesFileReads } from '../../main/usage-limits/resume'
 import { CONVERSATION_OUTBOX_FILENAME_FOR_IMPORT, readConversationOutboxFile } from '../../main/conversation-outbox'
 import type { DataFormatStep } from '../environment/data-format'
 import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from './database'
@@ -340,8 +340,9 @@ export const CHAT_HISTORY_STEP: DataFormatStep = {
 /**
  * Format 5: the chat records (the workspace registry, a row each) and the
  * stores kept whole as one record (schedules with their runs, scheduled
- * messages, usage-limit resumes). A whole-store file is kept as it was
- * written when it reads as JSON; its store reads it with its own parser.
+ * messages, usage-limit resumes). A whole-store file is brought in as it was
+ * written when its store's parser reads it, and read by that parser again
+ * from the row.
  */
 export function importChatRecords(connection: SyncConnection, dataDir: string): FileImport[] {
   const imports = [
@@ -357,22 +358,20 @@ export function importChatRecords(connection: SyncConnection, dataDir: string): 
           position,
           record.body,
         ]).changes
-      return { records, skipped: 0 }
+      return { records, skipped: registry.skipped }
     }),
     ...(
       [
-        [relative(dataDir, scheduledAgentsFilePath(dataDir)), 'schedules'],
-        [SCHEDULED_MESSAGES_FILE, 'scheduled_messages'],
-        [USAGE_LIMIT_RESUMES_FILE, 'usage_limit_resumes'],
+        [relative(dataDir, scheduledAgentsFilePath(dataDir)), 'schedules', scheduledAgentsFileReads],
+        [SCHEDULED_MESSAGES_FILE, 'scheduled_messages', scheduledMessagesFileReads],
+        [USAGE_LIMIT_RESUMES_FILE, 'usage_limit_resumes', usageLimitResumesFileReads],
       ] as const
-    ).map(([file, name]) =>
+    ).map(([file, name, reads]) =>
       importFile(connection, dataDir, file, (text) => {
         if (text === null) return { records: 0, skipped: 0 }
-        try {
-          JSON.parse(text)
-        } catch {
-          return { records: 0, skipped: 1 }
-        }
+        // One its store would not read (torn, hand-edited) is skipped, not
+        // brought in as nothing: the file stays as it was, to be looked at.
+        if (!reads(text)) return { records: 0, skipped: 1 }
         connection.run('INSERT OR IGNORE INTO store_records (name, body) VALUES (?, ?)', [name, text])
         return { records: 1, skipped: 0 }
       }),

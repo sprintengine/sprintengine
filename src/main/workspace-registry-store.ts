@@ -90,7 +90,21 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps): 
       })
       return { status: 'unreadable', details }
     }
-    if (head.length === 0) return { status: 'missing' }
+    if (head.length === 0) {
+      // None, because the file the import found did not read: that is damage,
+      // not a fresh folder, and the file is still there as it was.
+      const skipped = importSkipped()
+      if (skipped) {
+        deps.logDiagnostic?.({
+          level: 'warning',
+          title: 'Workspace registry parse failed',
+          message: `${WORKSPACE_REGISTRY_FILE_NAME} did not read when it was imported, and is kept as it was; falling back to the recovery order.`,
+          details: 'import_skipped',
+        })
+        return { status: 'unreadable', details: 'import_skipped' }
+      }
+      return { status: 'missing' }
+    }
     let parsed: ReturnType<typeof parseWorkspaceRegistryFile>
     try {
       const workspaces = rows.flatMap((row) => {
@@ -134,9 +148,23 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps): 
     return { status: 'loaded', file: parsed.file, droppedRecords: parsed.droppedRecords }
   }
 
+  function importSkipped(): boolean {
+    try {
+      const [imported] = db.readNow<{ records: number; skipped: number }>(
+        'SELECT records, skipped FROM imports WHERE source = ?',
+        [WORKSPACE_REGISTRY_FILE_NAME],
+      )
+      return imported !== undefined && imported.skipped > 0 && imported.records === 0
+    } catch {
+      return false
+    }
+  }
+
   async function persist(file: WorkspaceRegistryFile): Promise<void> {
     const head = headOf(file)
-    const rows = new Map(file.workspaces.map((record, position) => [record.id, { position, body: JSON.stringify(record) }]))
+    const rows = new Map(
+      file.workspaces.map((record, position) => [record.id, { position, body: JSON.stringify(record) }]),
+    )
     const statements: Array<{ sql: string; params: Array<string | number> }> = []
     if (head !== writtenHead)
       statements.push({
@@ -166,7 +194,8 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps): 
       deps.logDiagnostic?.({
         level: 'warning',
         title: 'Workspace registry not persisted',
-        message: 'The workspace registry could not be written; in-memory workspaces still apply until the app restarts.',
+        message:
+          'The workspace registry could not be written; in-memory workspaces still apply until the app restarts.',
         details: error instanceof Error ? error.message : String(error),
       })
     }
@@ -213,8 +242,14 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps): 
   }
 }
 
-/** The registry the file builds before the database wrote holds, rows and head apart (the import); null when it does not read. */
-export function readWorkspaceRegistryFile(raw: string): { head: string; records: Array<{ id: string; body: string }> } | null {
+/**
+ * The registry the file builds before the database wrote holds, rows and
+ * head apart (the import), read with the store's own parser: a record it
+ * would drop is counted in `skipped`. Null when the file does not read.
+ */
+export function readWorkspaceRegistryFile(
+  raw: string,
+): { head: string; records: Array<{ id: string; body: string }>; skipped: number } | null {
   let parsed: ReturnType<typeof parseWorkspaceRegistryFile>
   try {
     parsed = parseWorkspaceRegistryFile(JSON.parse(raw))
@@ -225,6 +260,7 @@ export function readWorkspaceRegistryFile(raw: string): { head: string; records:
   return {
     head: headOf(parsed.file),
     records: parsed.file.workspaces.map((record) => ({ id: record.id, body: JSON.stringify(record) })),
+    skipped: parsed.droppedRecords.length + parsed.retiredRecordIds.length,
   }
 }
 

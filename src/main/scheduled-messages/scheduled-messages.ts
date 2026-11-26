@@ -279,10 +279,13 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
   // Nothing goes out before this: the start's grace, then the stagger.
   let quietUntil = 0
   let writing: Promise<void> = Promise.resolve()
+  // The saved messages could not be read: nothing is written over them.
+  let unreadable = false
 
   // ── Keeping ──────────────────────────────────────────────────────────────
 
   function persist(): void {
+    if (unreadable) return
     // One on its way is kept as it was before it left: should the app stop
     // mid-send, it is sent again rather than lost.
     const kept = messages.map(({ retryAt: _retryAt, sending: _sending, ...entry }) => entry)
@@ -664,7 +667,15 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
     }
     quietUntil = now() + STARTUP_GRACE_MS
     unsubscribers.push(deps.onConversationEvent(onConversationEvent))
-    const saved = readSaved(await deps.storage.read().catch(() => null))
+    const saved = readSaved(
+      await deps.storage.read().catch((error: unknown) => {
+        unreadable = true
+        log(
+          `The scheduled messages could not be read, so no change is saved until they can be: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        return null
+      }),
+    )
     if (!running) return
     // One scheduled while the file was being read is newer than the file.
     const known = new Set(messages.map((entry) => entry.id))
@@ -730,6 +741,16 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
 }
 
 // ── The file ──────────────────────────────────────────────────────────────
+
+/** Whether `text` (the file builds before the database kept) reads as saved messages: what the import brings in. */
+export function scheduledMessagesFileReads(text: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return isRecord(parsed) && parsed.version === FORMAT_VERSION && Array.isArray(parsed.messages)
+  } catch {
+    return false
+  }
+}
 
 function readSaved(text: string | null): { messages: Pending[]; heldSources: Map<string, string> } {
   const none = { messages: [], heldSources: new Map<string, string>() }

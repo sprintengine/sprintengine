@@ -1,4 +1,3 @@
-
 import {
   readConversationMessageOrigin,
   type ConversationEvent,
@@ -200,6 +199,8 @@ export function createUsageLimitResumer(deps: UsageLimitResumerDeps): UsageLimit
   // No resume goes out before this: the start's grace, then the stagger.
   let quietUntil = 0
   let writing: Promise<void> = Promise.resolve()
+  // The saved resumes could not be read: nothing is written over them.
+  let unreadable = false
 
   const fireTimeFor = (resetsAt: number): number =>
     resetsAt + RESUME_BUFFER_MS + Math.floor(random() * RESUME_JITTER_MS)
@@ -207,7 +208,7 @@ export function createUsageLimitResumer(deps: UsageLimitResumerDeps): UsageLimit
   // ── Keeping ──────────────────────────────────────────────────────────────
 
   function persist(): void {
-    if (!loaded) return
+    if (!loaded || unreadable) return
     const body = JSON.stringify({
       version: FORMAT_VERSION,
       autoResume,
@@ -473,7 +474,15 @@ export function createUsageLimitResumer(deps: UsageLimitResumerDeps): UsageLimit
     running = true
     quietUntil = now() + STARTUP_GRACE_MS
     unsubscribers.push(deps.onLimitHit(onLimitHit), deps.onConversationEvent(onConversationEvent))
-    const saved = readSaved(await deps.storage.read().catch(() => null))
+    const saved = readSaved(
+      await deps.storage.read().catch((error: unknown) => {
+        unreadable = true
+        log(
+          `The usage-limit resumes could not be read, so no change is saved until they can be: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        return null
+      }),
+    )
     if (!running) return
     loaded = true
     autoResume = saved.autoResume
@@ -555,6 +564,16 @@ export function createUsageLimitResumer(deps: UsageLimitResumerDeps): UsageLimit
 // ── The file ──────────────────────────────────────────────────────────────
 
 type Saved = { autoResume: boolean; pending: PendingResume[]; resumed: ResumedHit[] }
+
+/** Whether `text` (the file builds before the database kept) reads as saved resumes: what the import brings in. */
+export function usageLimitResumesFileReads(text: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return isRecord(parsed) && parsed.version === FORMAT_VERSION
+  } catch {
+    return false
+  }
+}
 
 function readSaved(text: string | null): Saved {
   const empty: Saved = { autoResume: false, pending: [], resumed: [] }
