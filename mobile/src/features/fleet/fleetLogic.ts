@@ -1,3 +1,8 @@
+import {
+  environmentStatus,
+  type EnvironmentConnection,
+  type EnvironmentStatus,
+} from "../../../../packages/client-runtime/src/environments/environmentStatus";
 import type { DesktopSessionStatus, MobileSession } from "../../api/types";
 
 export interface FleetSnapshotSummary {
@@ -40,24 +45,43 @@ export function orderSessionsForFleet(sessions: MobileSession[]): MobileSession[
   });
 }
 
-export const sessionStatusLabel: Record<DesktopSessionStatus, string> = {
-  online: "Online",
-  offline: "Offline",
-  stale: "Session expired",
-  revoked: "Revoked",
-};
-
-export function sessionStatusTone(status: DesktopSessionStatus): "neutral" | "success" | "warning" | "danger" {
-  switch (status) {
+// How this phone's link to a desktop stands, as the desktop's own lists say a
+// machine's: the one function every client reads its words from
+// (`environmentStatus`, design-environments PR 5). A pairing the desktop
+// refused is fixed by pairing again.
+function desktopConnection(session: Pick<MobileSession, "status" | "lastSeenAt">): EnvironmentConnection {
+  const lastSeen = session.lastSeenAt ? Date.parse(session.lastSeenAt) : Number.NaN;
+  switch (sessionDisplayStatus(session)) {
     case "online":
-      return "success";
-    case "revoked":
-      return "danger";
-    case "stale":
-      return "warning";
+      return { state: "up", detail: null, lastReachedAt: null };
     case "offline":
-      return "neutral";
+      return { state: "offline", detail: null, lastReachedAt: Number.isFinite(lastSeen) ? lastSeen : null };
+    case "stale":
+      return { state: "signed-out", detail: "Session expired", lastReachedAt: null, remedy: "Pair again" };
+    case "revoked":
+      return { state: "signed-out", detail: "Revoked this device", lastReachedAt: null, remedy: "Pair again" };
   }
+}
+
+/** What a desktop's row says of it: the words, tone and action every machine list uses. */
+export function desktopStatus(
+  session: Pick<MobileSession, "status" | "lastSeenAt" | "desktopName">,
+  now: number = Date.now(),
+): EnvironmentStatus {
+  return environmentStatus(
+    { connection: desktopConnection(session), compatibility: "unknown", displayName: session.desktopName },
+    now,
+  );
+}
+
+/** The phone's pill tone for a machine's status tone. */
+export function desktopStatusPillTone(status: EnvironmentStatus): "neutral" | "success" | "danger" {
+  return status.tone === "good" ? "success" : status.tone === "danger" ? "danger" : "neutral";
+}
+
+/** The phone's dot tone for a machine's status tone (a shape, never a bare disc). */
+export function desktopStatusDotTone(status: EnvironmentStatus): "good" | "danger" | "neutral" {
+  return status.tone === "good" ? "good" : status.tone === "danger" ? "danger" : "neutral";
 }
 
 // Headline counts from a desktop snapshot, defensively read: the fleet row only

@@ -26,7 +26,10 @@ import { finishedUnseen } from '../../../../../shared/workspace-lifecycle'
 import type { Tone } from '../../ui'
 import type { RowRecency } from '../stableRowSlices'
 import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
-import { environmentStatus, type EnvironmentStatusKind } from '../../../../../shared/environment-status'
+import {
+  environmentStatus,
+  type EnvironmentStatusKind,
+} from '../../../../../../packages/client-runtime/src/environments/environmentStatus'
 import { copy as appCopy } from '../../../../../shared/copy'
 import { remoteLastKnownOf, type RemoteLastKnown, type RemoteListFailure } from './remoteListFreshness'
 

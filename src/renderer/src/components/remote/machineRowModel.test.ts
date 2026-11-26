@@ -5,7 +5,7 @@ import { test } from 'vitest'
 
 test('machineRowModel', async () => {
   // A machine row's name and platform word. How a machine stands is
-  // `src/shared/environment-status.test.ts`'s.
+  // `packages/client-runtime/test/environmentStatus.test.ts`'s.
 
   assert.equal(shortMachineName('sam-macbook-air.tailabc.ts.net'), 'sam-macbook-air')
   assert.equal(shortMachineName('100.64.0.101'), '100.64.0.101')

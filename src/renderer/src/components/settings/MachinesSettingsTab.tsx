@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 import { formatEnvironmentRoute, type EnvironmentRoute } from '../../../../../packages/studio-protocol/src/environment'
 import { hostIdOfEnvironmentRoute } from '../../../../shared/environment-keys'
-import { environmentStatus } from '../../../../shared/environment-status'
+import { environmentStatus } from '../../../../../packages/client-runtime/src/environments/environmentStatus'
 import { environmentKey } from '../../../../shared/environments'
 import {
   emptyExecutionHostSettings,

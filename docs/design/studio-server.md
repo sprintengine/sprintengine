@@ -1274,7 +1274,7 @@ Each entry carries how its connection stands, reported by the owner of each
 route today (the SSH machines' states, the paired desktops' reachability, the
 WSL distributions' states) and by its connection supervisor once the machines
 are direct environments, and a compatibility slot that `design-server-update`
-fills. `environmentStatus` (`src/shared/environment-status.ts`) turns that into
+fills. `environmentStatus` (`packages/client-runtime/src/environments/environmentStatus.ts`) turns that into
 the words, tone and one action every surface shows: Settings ▸ Machines lists
 every environment in one card, and the Remote popover, the Remote glyph's count
 and a paired machine's rows in the sidebar read the same status.

@@ -7,7 +7,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { StatusPill } from "../../components/StatusPill";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { space, typography, type Theme, fontWeight } from "../../theme/tokens";
-import { fleetHeadline, sessionDisplayStatus, sessionStatusLabel, sessionStatusTone, type FleetRowState } from "./fleetLogic";
+import { desktopStatus, desktopStatusPillTone, fleetHeadline, sessionDisplayStatus, type FleetRowState } from "./fleetLogic";
 import { copy as appCopy } from "../../../../src/shared/copy";
 
 interface DesktopRowProps {
@@ -27,14 +27,14 @@ interface DesktopRowProps {
 export function DesktopRow({ session, isActive, rowState, onSelect, onRemove }: DesktopRowProps) {
   const styles = useThemedStyles(createStyles);
 
-  const status = sessionDisplayStatus(session);
-  const isRevoked = status === "revoked";
-  const meta = buildMetaLine(session, status === "online" ? rowState : null);
+  const status = desktopStatus(session);
+  const isRevoked = sessionDisplayStatus(session) === "revoked";
+  const meta = buildMetaLine(session, status.kind === "ready" ? rowState : null);
 
   return (
     <View style={styles.stack}>
       <Pressable
-        accessibilityLabel={`${session.desktopName}, ${sessionStatusLabel[status]}${isActive ? appCopy.phone.fleet.desktopRow.activeDesktop : ""}`}
+        accessibilityLabel={`${session.desktopName}, ${status.words}${isActive ? appCopy.phone.fleet.desktopRow.activeDesktop : ""}`}
         accessibilityRole="button"
         accessibilityState={{ selected: isActive, disabled: isRevoked }}
         disabled={isRevoked}
@@ -47,11 +47,11 @@ export function DesktopRow({ session, isActive, rowState, onSelect, onRemove }: 
       >
         <View style={styles.copy}>
           <Text style={styles.desktopName}>{session.desktopName}</Text>
-          <Text numberOfLines={1} style={[styles.meta, rowState.kind === "error" && status === "online" ? styles.error : null]}>
+          <Text numberOfLines={1} style={[styles.meta, rowState.kind === "error" && status.kind === "ready" ? styles.error : null]}>
             {meta}
           </Text>
         </View>
-        {status === "online" ? null : <StatusPill label={sessionStatusLabel[status]} tone={sessionStatusTone(status)} />}
+        {status.kind === "ready" ? null : <StatusPill label={status.words} tone={desktopStatusPillTone(status)} />}
       </Pressable>
       {isRevoked ? (
         <View style={styles.revokedActions}>

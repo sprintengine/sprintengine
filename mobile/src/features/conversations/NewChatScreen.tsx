@@ -64,6 +64,7 @@ import {
 import { dictatedDraft, dictationPlaceholder, joinDictation, messageWithDictation } from "../dictation/dictationLogic";
 import { useDictation } from "../dictation/useDictation";
 import { studioTargetOf } from "../../api/desktopStudio";
+import { desktopStatus } from "../fleet/fleetLogic";
 import { copy as appCopy } from "../../../../src/shared/copy";
 
 /**
@@ -924,7 +925,7 @@ export function NewChatScreen({
         <Text style={styles.sheetLede}>{appCopy.phone.conversations.newChatScreen.theChatSAgentRuns}</Text>
         {machines.map((candidate) => {
           const paired = sessions.find((entry) => entry.deviceId === candidate.deviceId) ?? null;
-          const offline = paired?.status === "offline" || paired?.status === "stale";
+          const status = paired ? desktopStatus(paired) : null;
           return (
             <SheetOption
               icon={<DesktopGlyph desktop={candidate} size={iconSize.sm} />}
@@ -932,7 +933,7 @@ export function NewChatScreen({
               label={candidate.name}
               onPress={() => void chooseMachine({ deviceId: candidate.deviceId, name: candidate.name })}
               selected={candidate.deviceId === target.deviceId}
-              sub={offline ? "Offline" : undefined}
+              sub={status && status.kind !== "ready" ? status.words : undefined}
             />
           );
         })}

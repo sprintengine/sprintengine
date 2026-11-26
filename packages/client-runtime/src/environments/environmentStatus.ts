@@ -1,11 +1,50 @@
-import type { EnvironmentEntry } from './environments'
-
 // What every list of machines says about one (design-environments): the
 // state in words, its tone, and the one thing a person can do about it.
 // Every surface that names a machine's state reads it here, so a machine
-// reads the same in Settings, the Remote popover and the sidebar, whatever
-// kind of machine it is. The words a route's owner has for its state
+// reads the same in the desktop's Settings, its Remote popover and sidebar,
+// and on the phone, whatever kind of machine it is. The words a route's owner has for its state
 // ("Installing Studio server 0.4.0") win over the generic ones.
+
+/**
+ * How a client's connection to an environment stands, as the owner of its
+ * best route reports it (a desktop's SSH machines, its paired desktops'
+ * reachability, its WSL distributions; a phone's desktops).
+ */
+export type EnvironmentConnection = {
+  state: EnvironmentConnectionState
+  /** The owner's words for the state, when it has better ones than the state's own ("Installing Studio server 0.4.0"). */
+  detail: string | null
+  /** Epoch ms the machine last answered, when known and it is not answering now. */
+  lastReachedAt: number | null
+  /** What fixes a `signed-out` machine, in the owner's words ("Pair again", "Sign in"). */
+  remedy?: string
+}
+
+export type EnvironmentConnectionState =
+  /** Answering. */
+  | 'up'
+  /** A first attempt, or a reconnect, is under way. */
+  | 'connecting'
+  /** Tried and not answering, or given up on until asked again. */
+  | 'offline'
+  /** It refused this client's credentials: a pairing revoked there, an SSH sign-in needed. */
+  | 'signed-out'
+  /** Not tried yet: nothing has needed it. */
+  | 'unknown'
+
+/**
+ * Whether this client and the environment's server speak an overlapping
+ * protocol window (`studioCompatibility`), from the window the server last
+ * said it speaks; `unknown` before it has said.
+ */
+export type EnvironmentCompatibility = 'compatible' | 'client-outdated' | 'server-outdated' | 'unknown'
+
+/** What the status of one environment is read from. */
+export type EnvironmentStatusInput = {
+  connection: EnvironmentConnection
+  compatibility: EnvironmentCompatibility
+  displayName: string
+}
 
 export type EnvironmentStatusKind = 'ready' | 'connecting' | 'offline' | 'signed-out' | 'incompatible' | 'not-set-up'
 
@@ -29,10 +68,7 @@ export type EnvironmentStatus = {
   actionLabel: string | null
 }
 
-export function environmentStatus(
-  entry: Pick<EnvironmentEntry, 'connection' | 'compatibility' | 'displayName'>,
-  now: number = Date.now(),
-): EnvironmentStatus {
+export function environmentStatus(entry: EnvironmentStatusInput, now: number = Date.now()): EnvironmentStatus {
   const { connection, compatibility } = entry
   // A server whose protocol window does not overlap ours answers nothing
   // useful, whatever the socket does: say why, and where it is fixed. Work
@@ -97,7 +133,7 @@ export function environmentStatus(
 }
 
 /** Whether a machine is answering right now: what the Remote glyph counts. */
-export function environmentAnswering(entry: Pick<EnvironmentEntry, 'connection' | 'compatibility'>): boolean {
+export function environmentAnswering(entry: Omit<EnvironmentStatusInput, 'displayName'>): boolean {
   return environmentStatus({ ...entry, displayName: '' }).kind === 'ready'
 }
 

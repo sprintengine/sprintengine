@@ -8,7 +8,7 @@ import { StatusPill } from "../../components/StatusPill";
 import { useSessionData } from "../../navigation/SessionDataProvider";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { radius, space, typography, type Theme, hitTargetMin, fontWeight } from "../../theme/tokens";
-import { orderSessionsForFleet, sessionDisplayStatus, sessionStatusLabel, sessionStatusTone } from "../fleet/fleetLogic";
+import { desktopStatus, desktopStatusPillTone, orderSessionsForFleet, sessionDisplayStatus } from "../fleet/fleetLogic";
 import {
   buildProjectSwitcherRows,
   projectMetaLine,
@@ -134,9 +134,9 @@ function ProjectSwitcherPanel({ visible, onClose }: { visible: boolean; onClose:
         <>
           <Text style={styles.sectionLabel}>{appCopy.phone.projects.projectControl.desktop2}</Text>
           {orderedSessions.map((candidate) => {
-            const status = sessionDisplayStatus(candidate);
+            const status = desktopStatus(candidate);
             const isActive = candidate.deviceId === activeDeviceId;
-            const isRevoked = status === "revoked";
+            const isRevoked = sessionDisplayStatus(candidate) === "revoked";
             // One paired desktop is not a choice, so its row is a label rather
             // than a button that switches to what is already showing.
             const selectable = orderedSessions.length > 1 && !isRevoked && !isActive;
@@ -147,8 +147,8 @@ function ProjectSwitcherPanel({ visible, onClose }: { visible: boolean; onClose:
                   {candidate.desktopName}
                 </Text>
                 {/* Status is earned: a healthy desktop carries no mark. */}
-                {status === "online" ? null : (
-                  <StatusPill label={sessionStatusLabel[status]} tone={sessionStatusTone(status)} />
+                {status.kind === "ready" ? null : (
+                  <StatusPill label={status.words} tone={desktopStatusPillTone(status)} />
                 )}
               </>
             );
@@ -171,7 +171,7 @@ function ProjectSwitcherPanel({ visible, onClose }: { visible: boolean; onClose:
 
             return (
               <Pressable
-                accessibilityLabel={`${candidate.desktopName}, ${sessionStatusLabel[status]}`}
+                accessibilityLabel={`${candidate.desktopName}, ${status.words}`}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isActive }}
                 key={candidate.deviceId}

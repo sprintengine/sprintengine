@@ -6,7 +6,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { ScreenFrame, useListContentStyle, useRefreshControl } from "../../components/Screen";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { space, typography, type Theme } from "../../theme/tokens";
-import { orderSessionsForFleet, sessionDisplayStatus, sessionStatusLabel } from "../fleet/fleetLogic";
+import { desktopStatus, desktopStatusDotTone, orderSessionsForFleet } from "../fleet/fleetLogic";
 import { copy } from "../../../../src/shared/copy";
 
 /**
@@ -48,15 +48,15 @@ export function DesktopsScreen({
         ) : (
           <Card variant="list">
             {ordered.map((item, index) => {
-              const status = sessionDisplayStatus(item);
+              const status = desktopStatus(item);
               return (
                 <CardRow
-                  accessibilityLabel={`${item.desktopName}, ${sessionStatusLabel[status]}`}
+                  accessibilityLabel={`${item.desktopName}, ${status.words}`}
                   chevron
                   first={index === 0}
                   key={item.deviceId}
-                  leading={<StatusDot tone={status === "online" ? "good" : status === "revoked" ? "danger" : "neutral"} />}
-                  meta={sessionStatusLabel[status]}
+                  leading={<StatusDot tone={desktopStatusDotTone(status)} />}
+                  meta={status.words}
                   onPress={() => onOpenDesktop(item.deviceId)}
                   selected={item.deviceId === activeDeviceId}
                   title={item.desktopName}
