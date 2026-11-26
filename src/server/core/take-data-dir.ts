@@ -14,6 +14,7 @@ import {
 } from './data-dir'
 import { errorMessage } from '../../shared/errors'
 import { prepareDataFormat } from '../environment/data-format'
+import { openStudioDatabase, type StudioDatabase } from '../db/database'
 
 // How a core takes its data directory: the run lock, then the record of whose
 // cipher seals it. The two roles answer a problem in opposite ways.
@@ -191,6 +192,25 @@ function takeForServer(platform: StudioPlatform, deps: TakeDataDirDeps): TakenDa
     throw new StudioDataDirUnusableError(errorMessage(error))
   }
   return { lock, whenFree: Promise.resolve() }
+}
+
+/**
+ * The data folder's database, opened once its format is this build's. One
+ * that cannot be opened (damaged, on a file system without WAL, changed by a
+ * newer Studio) stops the start in its own words, the lock given back: there
+ * is no way to run without it, and none to run on an empty one in its place.
+ */
+export function openDataDirDatabase(
+  dataDir: string,
+  lock: DataDirLock | null,
+  open: (dataDir: string) => StudioDatabase = openStudioDatabase,
+): StudioDatabase {
+  try {
+    return open(dataDir)
+  } catch (error) {
+    lock?.release()
+    throw new StudioDataDirUnusableError(errorMessage(error))
+  }
 }
 
 function waitForExit(pid: number, deps: TakeDataDirDeps): Promise<void> {

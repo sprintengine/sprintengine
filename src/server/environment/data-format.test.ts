@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
@@ -12,6 +12,9 @@ import {
   StudioDataTooNewError,
   type DataFormatStep,
 } from './data-format'
+import { DATABASE_COPIES_DIRNAME } from '../db/copies'
+import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from '../db/database'
+import type { Migration } from '../db/migrations'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -27,6 +30,9 @@ function dataDir(files: Record<string, string> = {}): string {
   }
   return dir
 }
+
+/** A build that reads format 1 and knows no step: the data-format rules on their own. */
+const FORMAT_1 = { version: '1.0.0', format: 1, steps: [] }
 
 const format = (dir: string) => JSON.parse(readFileSync(join(dir, DATA_FORMAT_FILENAME), 'utf8')) as unknown
 const text = (dir: string, name: string) => readFileSync(join(dir, name), 'utf8')
@@ -53,17 +59,17 @@ const steps = (fail: number | null = null): DataFormatStep[] => [
 
 test("a directory with no marker is today's format, and is marked so", () => {
   const dir = dataDir({ 'stores/chats.json': '{"v":1}' })
-  assert.deepEqual(prepareDataFormat(dir, { version: '1.0.0' }), { format: 1, migrated: [], restored: false })
+  assert.deepEqual(prepareDataFormat(dir, FORMAT_1), { format: 1, migrated: [], restored: false })
   assert.deepEqual(format(dir), { format: 1, writtenBy: '1.0.0' })
   // Marked once: a later start by another version leaves the marker as it is.
-  prepareDataFormat(dir, { version: '1.0.1' })
+  prepareDataFormat(dir, { ...FORMAT_1, version: '1.0.1' })
   assert.deepEqual(format(dir), { format: 1, writtenBy: '1.0.0' })
 })
 
 test('data newer than this server reads is refused, naming who wrote it', () => {
   const dir = dataDir({ [DATA_FORMAT_FILENAME]: JSON.stringify({ format: 2, writtenBy: '2.0.0' }) })
   assert.throws(
-    () => prepareDataFormat(dir, { version: '1.0.0' }),
+    () => prepareDataFormat(dir, FORMAT_1),
     (error: unknown) =>
       error instanceof StudioDataTooNewError &&
       /written by Studio 2\.0\.0 .*this Studio server \(1\.0\.0\) .*Update this server\./u.test(error.message),
@@ -73,7 +79,7 @@ test('data newer than this server reads is refused, naming who wrote it', () => 
 
 test('a marker that does not read is refused rather than read as format 1', () => {
   const dir = dataDir({ [DATA_FORMAT_FILENAME]: 'not json' })
-  assert.throws(() => prepareDataFormat(dir, { version: '1.0.0' }), StudioDataMigrationError)
+  assert.throws(() => prepareDataFormat(dir, FORMAT_1), StudioDataMigrationError)
 })
 
 test('steps run in order, each marking the format it reached, and leave no backup', () => {
@@ -119,7 +125,7 @@ test('a start that finds an interrupted step restores its copies before anything
   )
   writeFileSync(join(dir, 'stores/chats.json'), '{"v":2, half')
   writeFileSync(join(dir, DATA_FORMAT_FILENAME), '{"format":2,"writtenBy":"2.0.0"}')
-  const prepared = prepareDataFormat(dir, { version: '1.0.0' })
+  const prepared = prepareDataFormat(dir, FORMAT_1)
   assert.deepEqual(prepared, { format: 1, migrated: [], restored: true })
   assert.equal(text(dir, 'stores/chats.json'), '{"v":1}')
   assert.deepEqual(format(dir), { format: 1, writtenBy: '1.0.0' })
@@ -128,7 +134,7 @@ test('a start that finds an interrupted step restores its copies before anything
 
 test('copies with no marker belong to a step that never started, and are dropped', () => {
   const dir = dataDir({ 'stores/chats.json': '{"v":1}', 'migration-backup/files/stores/chats.json': 'stale' })
-  assert.equal(prepareDataFormat(dir, { version: '1.0.0' }).restored, false)
+  assert.equal(prepareDataFormat(dir, FORMAT_1).restored, false)
   assert.equal(text(dir, 'stores/chats.json'), '{"v":1}')
   assert.ok(!existsSync(join(dir, MIGRATION_BACKUP_DIRNAME)))
 })
@@ -146,4 +152,140 @@ test('a step naming a file outside the data directory is refused before it runs'
     StudioDataMigrationError,
   )
   assert.equal(ran, false)
+})
+
+// Steps that change the database: a table of notes, changed by format 3 and 4.
+const NOTES: Migration[] = [{ id: 1, name: 'notes', up: (c) => c.exec('CREATE TABLE notes (body TEXT NOT NULL)') }]
+const databaseIn = (dir: string) => join(dir, STUDIO_DATABASE_FILENAME)
+const notes = (path: string): string[] => {
+  const connection = prepareStudioDatabase(path, NOTES)
+  try {
+    return connection.all<{ body: string }>('SELECT body FROM notes ORDER BY rowid').map((row) => row.body)
+  } finally {
+    connection.close()
+  }
+}
+const addNote = (dir: string, body: string) => {
+  const connection = prepareStudioDatabase(databaseIn(dir), NOTES)
+  try {
+    connection.run('INSERT INTO notes (body) VALUES (?)', [body])
+  } finally {
+    connection.close()
+  }
+}
+const noteStep = (to: number, body: string, after?: (dir: string) => void): DataFormatStep => ({
+  to,
+  files: [],
+  database: true,
+  run: (dir) => {
+    addNote(dir, body)
+    after?.(dir)
+  },
+})
+const copies = (dir: string) => readdirSync(join(dir, DATABASE_COPIES_DIRNAME)).sort()
+
+test('a step that changes the database copies it first, and keeps only the latest copy', () => {
+  const dir = dataDir({ [DATA_FORMAT_FILENAME]: '{"format":2,"writtenBy":"2.0.0"}' })
+  addNote(dir, 'from format 2')
+  prepareDataFormat(dir, { version: '3.0.0', format: 3, steps: [noteStep(3, 'by step 3')] })
+  assert.deepEqual(copies(dir), ['studio-before-format-3.sqlite'])
+  assert.deepEqual(notes(join(dir, DATABASE_COPIES_DIRNAME, 'studio-before-format-3.sqlite')), ['from format 2'])
+  assert.deepEqual(notes(databaseIn(dir)), ['from format 2', 'by step 3'])
+
+  // The next step's copy replaces it: after the first step the files are no
+  // longer the way back, so this copy is, and one is enough.
+  prepareDataFormat(dir, { version: '4.0.0', format: 4, steps: [noteStep(3, 'by step 3'), noteStep(4, 'by step 4')] })
+  assert.deepEqual(copies(dir), ['studio-before-format-4.sqlite'])
+  assert.deepEqual(notes(join(dir, DATABASE_COPIES_DIRNAME, 'studio-before-format-4.sqlite')), [
+    'from format 2',
+    'by step 3',
+  ])
+  assert.ok(!existsSync(join(dir, MIGRATION_BACKUP_DIRNAME)))
+})
+
+test('a database step that fails puts the database back from its copy, and the copy before stays the kept one', () => {
+  const dir = dataDir({ [DATA_FORMAT_FILENAME]: '{"format":2,"writtenBy":"2.0.0"}' })
+  addNote(dir, 'from format 2')
+  prepareDataFormat(dir, { version: '3.0.0', format: 3, steps: [noteStep(3, 'by step 3')] })
+  assert.throws(
+    () =>
+      prepareDataFormat(dir, {
+        version: '4.0.0',
+        format: 4,
+        steps: [
+          noteStep(3, 'by step 3'),
+          noteStep(4, 'by step 4', () => {
+            throw new Error('disk full')
+          }),
+        ],
+      }),
+    /from format 3 to 4 failed, so it was put back as it was: disk full/u,
+  )
+  assert.deepEqual(notes(databaseIn(dir)), ['from format 2', 'by step 3'])
+  assert.ok(!existsSync(`${databaseIn(dir)}-wal`))
+  assert.deepEqual(copies(dir), ['studio-before-format-3.sqlite'])
+  assert.deepEqual(format(dir), { format: 3, writtenBy: '3.0.0' })
+})
+
+test('a database step a crash cut short is undone from its copy at the next start', () => {
+  const dir = dataDir({ [DATA_FORMAT_FILENAME]: '{"format":2,"writtenBy":"2.0.0"}' })
+  addNote(dir, 'from format 2')
+  const crashed = join(dataDir(), 'crashed')
+  // The folder as a crash would leave it: copy and marker written, the step's
+  // change in the database, the format not yet moved.
+  prepareDataFormat(dir, {
+    version: '3.0.0',
+    format: 3,
+    steps: [noteStep(3, 'by step 3', (at) => cpSync(at, crashed, { recursive: true }))],
+  })
+  assert.deepEqual(notes(databaseIn(crashed)), ['from format 2', 'by step 3'])
+  assert.deepEqual(prepareDataFormat(crashed, { version: '2.0.0', format: 2, steps: [] }), {
+    format: 2,
+    migrated: [],
+    restored: true,
+  })
+  assert.deepEqual(notes(databaseIn(crashed)), ['from format 2'])
+  assert.ok(!existsSync(join(crashed, MIGRATION_BACKUP_DIRNAME)))
+})
+
+test('the step that makes the database has nothing to copy, and a failure leaves no database behind', () => {
+  const dir = dataDir()
+  assert.throws(
+    () =>
+      prepareDataFormat(dir, {
+        version: '2.0.0',
+        format: 2,
+        steps: [
+          noteStep(2, 'first', () => {
+            throw new Error('no')
+          }),
+        ],
+      }),
+    StudioDataMigrationError,
+  )
+  assert.ok(!existsSync(databaseIn(dir)))
+  assert.ok(!existsSync(join(dir, DATABASE_COPIES_DIRNAME)))
+  prepareDataFormat(dir, { version: '2.0.0', format: 2, steps: [noteStep(2, 'first')] })
+  assert.deepEqual(notes(databaseIn(dir)), ['first'])
+  assert.ok(!existsSync(join(dir, DATABASE_COPIES_DIRNAME)))
+})
+
+test('a database that cannot be copied stops the step before it changes anything', () => {
+  const dir = dataDir({
+    [DATA_FORMAT_FILENAME]: '{"format":2,"writtenBy":"2.0.0"}',
+    [STUDIO_DATABASE_FILENAME]: 'not a database, '.repeat(400),
+  })
+  let ran = false
+  assert.throws(
+    () =>
+      prepareDataFormat(dir, {
+        version: '3.0.0',
+        format: 3,
+        steps: [{ to: 3, files: [], database: true, run: () => (ran = true) }],
+      }),
+    /could not copy its database .* nothing was changed/u,
+  )
+  assert.equal(ran, false)
+  assert.deepEqual(format(dir), { format: 2, writtenBy: '2.0.0' })
+  assert.ok(!existsSync(join(dir, MIGRATION_BACKUP_DIRNAME)))
 })

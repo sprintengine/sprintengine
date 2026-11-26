@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { test } from 'vitest'
+
+import { openTestDatabase } from '../../tests/studio-database'
+import type { StudioDatabase } from '../server/db/database'
 
 import type { ConversationSessionActionResult, ConversationSessionSummary } from '../shared/conversation-runtime'
 import { emptyAgentLaunchSettings } from '../shared/launch-settings'
@@ -38,6 +41,19 @@ const PICTURE = {
   byteLength: PNG.length,
 }
 
+const databases = new Map<string, StudioDatabase>()
+
+/** The store as the core makes it, on the database in the folder `filePath` is in, its pictures beside. */
+function storeAt(filePath: string) {
+  const dir = dirname(filePath)
+  let database = databases.get(dir)
+  if (!database) {
+    database = openTestDatabase(dir)
+    databases.set(dir, database)
+  }
+  return createPendingFirstMessages({ database, imagesRoot: filePath.replace(/\.json$/u, '') })
+}
+
 async function until(done: () => boolean | Promise<boolean>, what: string, ms = 5_000): Promise<void> {
   const deadline = Date.now() + ms
   while (!(await done())) {
@@ -52,7 +68,7 @@ test('a created chat’s first message is written down before the launch answers
   let answer: (result: ConversationSessionActionResult) => void = () => undefined
   const sends: string[] = []
   try {
-    const store = createPendingFirstMessages({ filePath })
+    const store = storeAt(filePath)
     const service = createConversationLaunchService({
       getWorkspace: (id) => (id === 'ws-1' ? { id, folderPath: '/repo/a', agents: {} } : null),
       getLaunchSettings: () => emptyAgentLaunchSettings(),
@@ -88,14 +104,14 @@ test('a created chat’s first message is written down before the launch answers
     await until(() => sends.length > 0, 'the first message to be sent')
     assert.deepEqual(sends, [commandId], 'sent under its launch’s own id')
     // The next process reads it from disk.
-    const kept = await createPendingFirstMessages({ filePath }).all()
+    const kept = await storeAt(filePath).all()
     assert.deepEqual(Object.keys(kept), [commandId])
     assert.equal(kept[commandId]!.message, 'fix the build')
     assert.equal(kept[commandId]!.launchCommandId, 'client:phone:c1')
     // Answered, it is let go of.
     answer({ ok: true } as ConversationSessionActionResult)
     await until(
-      async () => Object.keys(await createPendingFirstMessages({ filePath }).all()).length === 0,
+      async () => Object.keys(await storeAt(filePath).all()).length === 0,
       'the answered first message to be let go of',
     )
   } finally {
@@ -134,7 +150,7 @@ test('a first message a stop cut off is sent at the next start, and one that wen
   const before = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
   const sessions = new Map<string, string>()
   try {
-    const store = createPendingFirstMessages({ filePath })
+    const store = storeAt(filePath)
     for (const chat of Object.values(chats)) {
       const started = await before.startSession({
         ...chat,
@@ -167,7 +183,7 @@ test('a first message a stop cut off is sent at the next start, and one that wen
     attachmentStore: new ConversationAttachmentStore(dir),
   })
   try {
-    const store = createPendingFirstMessages({ filePath })
+    const store = storeAt(filePath)
     const host = hostOf(after)
     await recoverFirstMessages({
       store,
@@ -254,7 +270,7 @@ test('a first message with pictures is kept whole, its pictures on disk, before 
   const dir = await mkdtemp(join(tmpdir(), 'first-messages-'))
   const filePath = join(dir, 'first.json')
   try {
-    const store = createPendingFirstMessages({ filePath })
+    const store = storeAt(filePath)
     const launched = await launcher({ store, send: () => new Promise(() => undefined) }).launch({
       workspaceId: 'ws-1',
       cli: 'claude-code',
@@ -264,7 +280,7 @@ test('a first message with pictures is kept whole, its pictures on disk, before 
     })
     assert.equal(launched.ok, true)
     const commandId = firstMessageCommandId('client:phone:c2')
-    const next = createPendingFirstMessages({ filePath })
+    const next = storeAt(filePath)
     const kept = (await next.all())[commandId]
     assert.equal(kept?.message, 'what is wrong here')
     assert.equal(kept?.images?.length, 1)
@@ -277,13 +293,13 @@ test('a first message with pictures is kept whole, its pictures on disk, before 
 
 test('a launch whose first message cannot be written down is refused before any chat is made', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'first-messages-'))
-  // There, but not a file that reads: its messages are not "none".
-  const filePath = join(dir, 'first.json')
-  await mkdir(filePath)
+  // A database that takes no write: the message cannot be kept.
+  const database = openTestDatabase(dir)
+  await database.close()
   const written: string[] = []
   try {
     const launched = await launcher({
-      store: createPendingFirstMessages({ filePath }),
+      store: createPendingFirstMessages({ database, imagesRoot: join(dir, 'first') }),
       send: async () => ({ ok: true }) as ConversationSessionActionResult,
       written,
     }).launch({ workspaceId: 'ws-1', cli: 'claude-code', prompt: 'fix it', launchCommandId: 'client:phone:c3' })
@@ -303,7 +319,7 @@ test('a refusal the chat did not record keeps the first message; one it recorded
     const dir = await mkdtemp(join(tmpdir(), 'first-messages-'))
     const filePath = join(dir, 'first.json')
     try {
-      const store = createPendingFirstMessages({ filePath })
+      const store = storeAt(filePath)
       let sent = false
       const launched = await launcher({
         store,
@@ -319,10 +335,10 @@ test('a refusal the chat did not record keeps the first message; one it recorded
       if (keptAfter) {
         // Give the settle a moment to (wrongly) let it go, then read the disk.
         await new Promise((resolve) => setTimeout(resolve, 50))
-        assert.ok(commandId in (await createPendingFirstMessages({ filePath }).all()), answer.message)
+        assert.ok(commandId in (await storeAt(filePath).all()), answer.message)
       } else
         await until(
-          async () => !(commandId in (await createPendingFirstMessages({ filePath }).all())),
+          async () => !(commandId in (await storeAt(filePath).all())),
           'the refused first message to be let go of',
         )
     } finally {
@@ -335,7 +351,7 @@ test('at the next start, a transient refusal keeps the first message for the sta
   const dir = await mkdtemp(join(tmpdir(), 'first-messages-'))
   const filePath = join(dir, 'first.json')
   try {
-    const store = createPendingFirstMessages({ filePath })
+    const store = storeAt(filePath)
     const commandId = firstMessageCommandId('client:phone:c5')
     await store.keep(commandId, { launchCommandId: 'client:phone:c5', message: 'hello', at: 1 }, [PICTURE])
     const warnings: string[] = []
@@ -409,7 +425,7 @@ test('a first message sent again at the next start meets the prompt hooks as a r
       permissionPreset: 'bypass',
     })
     assert.ok(started.ok)
-    const store = createPendingFirstMessages({ filePath: join(dir, 'first.json') })
+    const store = storeAt(join(dir, 'first.json'))
     const commandId = firstMessageCommandId('client:phone:lost')
     await store.keep(commandId, { launchCommandId: 'client:phone:lost', message: 'hello lost', at: 1 }, [])
     // As the core recovers them (studio-core.ts).
@@ -453,7 +469,7 @@ test('a kept first message says whether nobody typed it, and only such a one is 
   const dir = await mkdtemp(join(tmpdir(), 'first-messages-from-'))
   const filePath = join(dir, 'first.json')
   try {
-    const store = createPendingFirstMessages({ filePath })
+    const store = storeAt(filePath)
     let suffix = 0
     const service = createConversationLaunchService({
       getWorkspace: (id) => (id === 'ws-1' ? { id, folderPath: '/repo/a', agents: {} } : null),
@@ -483,7 +499,7 @@ test('a kept first message says whether nobody typed it, and only such a one is 
       launchCommandId: 'agent:c2',
       promptHookAs: { inputKind: 'launch', from: 'agent' },
     })
-    const kept = await createPendingFirstMessages({ filePath }).all()
+    const kept = await storeAt(filePath).all()
     const person = kept[firstMessageCommandId('client:phone:c1')]!
     const agent = kept[firstMessageCommandId('agent:c2')]!
     assert.equal(person.from, undefined)

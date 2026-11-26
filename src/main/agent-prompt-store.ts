@@ -9,36 +9,36 @@
  * session object and the snapshot sidecar, which is swept after 30 days while
  * the agent it belongs to lives on in the workspace registry.
  *
- * `<userData>/agent-prompts/<key>.json`, one small file per agent, next to the
- * registry that holds the agent's record. One file per agent rather than one
- * for all of them: a prompt rewrites only its own agent's file, and nothing is
- * ever read in bulk on a hot path. The directory is 0700 and every file 0600 —
- * this is a person's verbatim typing.
+ * One row per agent in the data folder's database (`agent_prompts`), its body
+ * the record builds before the database kept as `agent-prompts/<key>.json`
+ * (imported once, `server/db/import-files.ts`). A prompt rewrites only its own
+ * agent's row, and nothing is read in bulk on a hot path. The database is the
+ * owner's alone (0600): this is a person's verbatim typing.
  *
- * Bounded twice: each file keeps at most {@link MAX_LIVE_PEEK_PROMPTS} prompts
+ * Bounded twice: each row keeps at most {@link MAX_LIVE_PEEK_PROMPTS} prompts
  * of at most {@link MAX_AGENT_PROMPT_LENGTH} characters (the same trim the live
  * list applies, first prompt kept), and past {@link MAX_AGENT_PROMPT_FILES}
- * files the directory sheds agents that no longer exist. Recency alone would
- * be the wrong test: a burst of short-lived agents (frequent automation runs)
- * would push out an idle agent the person still sees in the sidebar, and the
- * whole point of this store is that such an agent keeps its history. So an
- * agent the registry still holds is never evicted; one it has dropped goes
- * first, oldest first, and one it cannot vouch for either way after that. An
- * agent removed from the registry has its file deleted there and then
- * (`remove`), since its prompts are verbatim typing nobody can see any more.
+ * agents the store sheds those that no longer exist. Recency alone would be the
+ * wrong test: a burst of short-lived agents (frequent automation runs) would
+ * push out an idle agent the person still sees in the sidebar, and the whole
+ * point of this store is that such an agent keeps its history. So an agent the
+ * registry still holds is never evicted; one it has dropped goes first, oldest
+ * first, and one it cannot vouch for either way after that. An agent removed
+ * from the registry has its row deleted there and then (`remove`), since its
+ * prompts are verbatim typing nobody can see any more.
  *
  * Every read is of untrusted input and goes through `parseSessionPrompts`.
  * Every failure is a diagnostic, never a throw: a card with no history is the
  * worst this can cause.
  */
 import { createHash } from 'node:crypto'
-import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
 
 import type { SessionPrompt } from '../shared/ipc/terminal'
+import type { StudioDatabase } from '../server/db/database'
 import { appendLivePeekPrompt } from './conversation-peek/service'
 import { parseSessionPrompts } from './terminal-session'
 
+/** The folder builds before the database kept them in, one file per agent; read once, by the import. */
 export const AGENT_PROMPTS_DIR_NAME = 'agent-prompts'
 
 /** Agents whose prompts are kept. Past this the least recently written go. */
@@ -47,7 +47,7 @@ export const MAX_AGENT_PROMPT_FILES = 256
 /** Session ids remembered per agent, newest last, for finding it by session. */
 const MAX_SESSION_IDS_PER_AGENT = 8
 
-/** Longest id accepted into a file. Workspace, agent and session ids are short. */
+/** Longest id accepted into a record. Workspace, agent and session ids are short. */
 const MAX_ID_LENGTH = 256
 
 export type AgentPromptOwner = {
@@ -85,7 +85,8 @@ export type AgentPromptStore = {
   flush(): Promise<void>
 }
 
-type AgentPromptFile = {
+/** One agent's record, as a row's body keeps it (and as each file kept it before the database). */
+export type AgentPromptFile = {
   version: 1
   workspaceId: string
   agentId: string
@@ -95,15 +96,15 @@ type AgentPromptFile = {
   prompts: SessionPrompt[]
 }
 
-type IndexEntry = { workspaceId: string; agentId: string; sessionIds: string[]; updatedAt: number }
+type Row = { key: string; workspace_id: string; agent_id: string; updated_at: number }
 
 export function createAgentPromptStore(options: {
-  resolveUserDataDir: () => string
+  database: StudioDatabase
   now?: () => number
   maxFiles?: number
   /**
    * Whether the agent still exists (is in the workspace registry): true keeps
-   * its file through eviction, false makes it the first to go, undefined (not
+   * its row through eviction, false makes it the first to go, undefined (not
    * known, or no answer given) falls back to least recently written.
    */
   agentExists?: (owner: { workspaceId: string; agentId: string }) => boolean | undefined
@@ -111,16 +112,11 @@ export function createAgentPromptStore(options: {
 }): AgentPromptStore {
   const now = options.now ?? Date.now
   const maxFiles = Math.max(1, options.maxFiles ?? MAX_AGENT_PROMPT_FILES)
-  const directory = () => join(options.resolveUserDataDir(), AGENT_PROMPTS_DIR_NAME)
-  const filePath = (key: string) => join(directory(), `${key}.json`)
+  const db = options.database
 
   // One chain per agent, so a read that follows a write sees it and two appends
   // for one agent land in order.
   const chains = new Map<string, Promise<unknown>>()
-  // Built by one scan of the directory the first time something needs to find
-  // an agent by session, or to decide which agent to evict. Kept current by
-  // every write after that.
-  let index: Promise<Map<string, IndexEntry>> | null = null
 
   const warn = (title: string, error: unknown): void => {
     options.logDiagnostic?.({
@@ -142,90 +138,53 @@ export function createAgentPromptStore(options: {
     return next
   }
 
-  async function readFileAt(key: string): Promise<AgentPromptFile | null> {
-    let raw: string
+  async function readRecord(key: string): Promise<AgentPromptFile | null> {
+    let row: { body: string } | undefined
     try {
-      raw = await readFile(filePath(key), 'utf8')
+      row = await db.get<{ body: string }>('SELECT body FROM agent_prompts WHERE key = ?', [key])
     } catch (error) {
-      if ((error as NodeJS.ErrnoException | undefined)?.code !== 'ENOENT') warn('Agent prompt read failed', error)
+      warn('Agent prompt read failed', error)
       return null
     }
+    if (!row) return null
     try {
-      return parseAgentPromptFile(JSON.parse(raw))
+      return parseAgentPromptFile(JSON.parse(row.body))
     } catch (error) {
       warn('Agent prompt parse failed', error)
       return null
     }
   }
 
-  async function loadIndex(): Promise<Map<string, IndexEntry>> {
-    const entries = new Map<string, IndexEntry>()
-    let names: string[]
+  function existence(row: Row): boolean | undefined {
     try {
-      names = await readdir(directory())
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException | undefined)?.code !== 'ENOENT') warn('Agent prompt scan failed', error)
-      return entries
-    }
-    for (const name of names) {
-      if (!name.endsWith('.json')) continue
-      const key = name.slice(0, -'.json'.length)
-      const file = await readFileAt(key)
-      if (!file) continue
-      entries.set(key, {
-        workspaceId: file.workspaceId,
-        agentId: file.agentId,
-        sessionIds: file.sessionIds,
-        updatedAt: file.updatedAt,
-      })
-    }
-    return entries
-  }
-
-  function ensureIndex(): Promise<Map<string, IndexEntry>> {
-    index ??= loadIndex()
-    return index
-  }
-
-  async function writeAgentFile(key: string, file: AgentPromptFile): Promise<void> {
-    const target = filePath(key)
-    const tmp = `${target}.${process.pid}.tmp`
-    await mkdir(directory(), { recursive: true, mode: 0o700 })
-    if (process.platform !== 'win32') await chmod(directory(), 0o700)
-    await writeFile(tmp, JSON.stringify(file), { mode: 0o600 })
-    await rename(tmp, target)
-    const entries = await ensureIndex()
-    entries.set(key, {
-      workspaceId: file.workspaceId,
-      agentId: file.agentId,
-      sessionIds: file.sessionIds,
-      updatedAt: file.updatedAt,
-    })
-    await evictBeyondLimit(entries, key)
-  }
-
-  function existence(entry: IndexEntry): boolean | undefined {
-    try {
-      return options.agentExists?.({ workspaceId: entry.workspaceId, agentId: entry.agentId })
+      return options.agentExists?.({ workspaceId: row.workspace_id, agentId: row.agent_id })
     } catch {
       return undefined
     }
   }
 
-  async function evictBeyondLimit(entries: Map<string, IndexEntry>, keep: string): Promise<void> {
-    if (entries.size <= maxFiles) return
-    // Gone agents first, then the ones nothing vouches for; each oldest first.
-    // An agent that still exists is never a candidate.
-    const rank = (exists: boolean | undefined): number => (exists === false ? 0 : 1)
-    const candidates = [...entries.entries()]
-      .filter(([key]) => key !== keep)
-      .map(([key, entry]) => ({ key, entry, exists: existence(entry) }))
-      .filter((candidate) => candidate.exists !== true)
-      .sort((a, b) => rank(a.exists) - rank(b.exists) || a.entry.updatedAt - b.entry.updatedAt)
-    for (const { key } of candidates.slice(0, entries.size - maxFiles)) {
-      entries.delete(key)
-      await rm(filePath(key), { force: true }).catch((error: unknown) => warn('Agent prompt eviction failed', error))
-    }
+  async function writeRecord(key: string, file: AgentPromptFile): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx.run(
+        `INSERT INTO agent_prompts (key, workspace_id, agent_id, updated_at, body) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (key) DO UPDATE SET workspace_id = excluded.workspace_id, agent_id = excluded.agent_id,
+           updated_at = excluded.updated_at, body = excluded.body`,
+        [key, file.workspaceId, file.agentId, file.updatedAt, JSON.stringify(file)],
+      )
+      const count = (await tx.get<{ n: number }>('SELECT COUNT(*) AS n FROM agent_prompts'))?.n ?? 0
+      if (count <= maxFiles) return
+      // Gone agents first, then the ones nothing vouches for; each oldest first.
+      // An agent that still exists is never a candidate.
+      const rank = (exists: boolean | undefined): number => (exists === false ? 0 : 1)
+      const candidates = (
+        await tx.all<Row>('SELECT key, workspace_id, agent_id, updated_at FROM agent_prompts WHERE key != ?', [key])
+      )
+        .map((row) => ({ row, exists: existence(row) }))
+        .filter((candidate) => candidate.exists !== true)
+        .sort((a, b) => rank(a.exists) - rank(b.exists) || a.row.updated_at - b.row.updated_at)
+      for (const { row } of candidates.slice(0, count - maxFiles))
+        await tx.run('DELETE FROM agent_prompts WHERE key = ?', [row.key])
+    })
   }
 
   function nextFile(
@@ -254,15 +213,15 @@ export function createAgentPromptStore(options: {
 
   return {
     append(owner, prompt) {
-      const key = ownerKey(owner)
+      const key = agentPromptKey(owner)
       if (!key) return Promise.resolve([])
       return run(key, async () => {
-        const existing = await readFileAt(key)
+        const existing = await readRecord(key)
         const text = capPrompt(prompt.text)
         if (!text) return existing?.prompts ?? []
         const prompts = appendLivePeekPrompt(existing?.prompts, text, prompt.at)
         try {
-          await writeAgentFile(key, nextFile(owner, existing, prompts))
+          await writeRecord(key, nextFile(owner, existing, prompts))
         } catch (error) {
           warn('Agent prompt write failed', error)
         }
@@ -271,10 +230,10 @@ export function createAgentPromptStore(options: {
     },
 
     merge(owner, prompts) {
-      const key = ownerKey(owner)
+      const key = agentPromptKey(owner)
       if (!key) return Promise.resolve([...prompts])
       return run(key, async () => {
-        const existing = await readFileAt(key)
+        const existing = await readRecord(key)
         const stored = existing?.prompts ?? []
         const seen = new Set(stored.map(promptIdentity))
         let merged = stored
@@ -286,7 +245,7 @@ export function createAgentPromptStore(options: {
         }
         if (merged !== stored) {
           try {
-            await writeAgentFile(key, nextFile(owner, existing, merged))
+            await writeRecord(key, nextFile(owner, existing, merged))
           } catch (error) {
             warn('Agent prompt write failed', error)
           }
@@ -296,30 +255,36 @@ export function createAgentPromptStore(options: {
     },
 
     read(owner) {
-      const key = ownerKey(owner)
+      const key = agentPromptKey(owner)
       if (!key) return Promise.resolve(null)
       return run(key, async () => {
-        const file = await readFileAt(key)
+        const file = await readRecord(key)
         return file && file.prompts.length > 0 ? file.prompts : null
       })
     },
 
     async findBySessionId(sessionId) {
       if (!safeId(sessionId)) return null
-      const entries = await ensureIndex()
-      let found: string | null = null
-      let foundAt = -1
-      for (const [key, entry] of entries) {
-        if (entry.updatedAt > foundAt && entry.sessionIds.includes(sessionId)) {
-          found = key
-          foundAt = entry.updatedAt
-        }
+      let found: { key: string } | undefined
+      try {
+        // The newest agent that names the session among its last few.
+        found = await db.get<{ key: string }>(
+          // A body that does not read is passed over, never a failure of the whole lookup.
+          `SELECT key FROM agent_prompts WHERE EXISTS (
+             SELECT 1 FROM json_each(CASE WHEN json_valid(agent_prompts.body) THEN agent_prompts.body ELSE '{}' END, '$.sessionIds')
+             WHERE json_each.value = ?
+           ) ORDER BY updated_at DESC LIMIT 1`,
+          [sessionId],
+        )
+      } catch (error) {
+        warn('Agent prompt lookup failed', error)
+        return null
       }
       if (!found) return null
-      const key = found
+      const key = found.key
       return run(key, async () => {
-        const file = await readFileAt(key)
-        if (!file) return null
+        const file = await readRecord(key)
+        if (!file || !file.sessionIds.includes(sessionId)) return null
         return {
           workspaceId: file.workspaceId,
           agentId: file.agentId,
@@ -330,18 +295,14 @@ export function createAgentPromptStore(options: {
     },
 
     remove(owner) {
-      const key = ownerKey(owner)
+      const key = agentPromptKey(owner)
       if (!key) return Promise.resolve()
       return run(key, async () => {
         try {
-          await rm(filePath(key), { force: true })
+          await db.run('DELETE FROM agent_prompts WHERE key = ?', [key])
         } catch (error) {
           warn('Agent prompt removal failed', error)
-          return
         }
-        // Only once the index exists: building it here would scan the whole
-        // directory for one delete.
-        if (index) (await index).delete(key)
       })
     },
 
@@ -368,10 +329,11 @@ export function registeredAgentOwners(state: {
 }
 
 /**
- * The file name for an agent: a hash of its two ids, because both are
- * caller-supplied strings and neither may choose a path.
+ * An agent's key: a hash of its two ids, because both are caller-supplied
+ * strings (and, as builds before the database kept them, its file's name,
+ * which neither could be let choose).
  */
-function ownerKey(owner: Pick<AgentPromptOwner, 'workspaceId' | 'agentId'>): string | null {
+export function agentPromptKey(owner: Pick<AgentPromptOwner, 'workspaceId' | 'agentId'>): string | null {
   const workspaceId = safeId(owner.workspaceId)
   const agentId = safeId(owner.agentId)
   if (!workspaceId || !agentId) return null
@@ -393,7 +355,8 @@ function capPrompt(text: string): string {
   return parseSessionPrompts([{ text, at: 0 }])?.[0]?.text ?? ''
 }
 
-function parseAgentPromptFile(raw: unknown): AgentPromptFile | null {
+/** A record as a row (or a file before the database) holds it, held to what this store writes; null for anything else. */
+export function parseAgentPromptFile(raw: unknown): AgentPromptFile | null {
   if (!raw || typeof raw !== 'object') return null
   const file = raw as Partial<AgentPromptFile>
   if (file.version !== 1) return null

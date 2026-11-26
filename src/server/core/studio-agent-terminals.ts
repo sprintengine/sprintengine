@@ -1,5 +1,3 @@
-import { join } from 'node:path'
-
 import type { ExtensionHooks } from '../extensions/hooks/extension-hooks'
 import type { ConversationPromptHookAs } from '../../shared/conversation-runtime'
 import type { AgentStarter } from '../../shared/agent-state'
@@ -10,12 +8,12 @@ import { ownerInvoker, type ExtensionInvoker } from '../../main/module-host/exte
 import { createAgentControlPlane } from '../../main/agent-control-plane'
 import {
   createAgentLaunchNotices,
-  LAUNCH_NOTICES_FILE,
-  launchNoticesFileStorage,
+  launchNoticesDatabaseStorage,
 } from '../../main/agent-launch-notices'
 import { createAgentLaunchService, type AgentLaunchService } from '../../main/agent-launch-service'
 import type { AgentCompactIpcDependencies } from '../../main/ipc/agent-compact-ipc'
 import { createAgentPromptStore, registeredAgentOwners } from '../../main/agent-prompt-store'
+import type { StudioDatabase } from '../db/database'
 import { resolveAgentStateSocketPath } from '../../main/agent-state-service'
 import { resolveCheckoutForCwd, type ResolvedCheckoutFacts } from '../../main/checkout-resolve'
 import { cliResumeCapabilities } from '../../main/cli-resume-capabilities'
@@ -98,6 +96,8 @@ export type StudioAgentTerminalsDeps = {
   whenDataDirFree: Promise<unknown>
   /** Whether this process opens the reporter's socket at all (it holds the directory, or is a desktop carrying on without). */
   reporterListens: boolean
+  /** The data folder's database: the agents' prompts and the launch notices are kept in it. */
+  database: StudioDatabase
   workspaceRegistry: Pick<WorkspaceRegistryService, 'getRecord' | 'getState' | 'subscribe' | 'needsHydration'>
   workspaceSyncService: WorkspaceSyncService
   agentLaunchSettings: Pick<AgentLaunchSettingsStore, 'get'>
@@ -149,7 +149,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
   // An agent's captured prompts outlive its session, for the conversation
   // peek; an agent removed from the registry takes them with it.
   const agentPrompts = createAgentPromptStore({
-    resolveUserDataDir: () => dataDir,
+    database: deps.database,
     agentExists: ({ workspaceId, agentId }) => {
       const record = workspaceRegistry.getRecord(workspaceId)
       if (record) return Object.hasOwn(record.agents, agentId)
@@ -291,7 +291,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
       return record ? isSettledWorkspace(record) : false
     },
     // Kept across a restart: a parent still hears of a child the quit stopped.
-    storage: launchNoticesFileStorage(join(dataDir, LAUNCH_NOTICES_FILE)),
+    storage: launchNoticesDatabaseStorage(deps.database),
     log: log('Launch notices'),
   })
   deps.subagents.onStopped((chat) => launchNotices.subagentStopped(chat))

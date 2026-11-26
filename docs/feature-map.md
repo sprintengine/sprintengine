@@ -154,6 +154,12 @@ Wire: `files.*` (`packages/studio-protocol/src/file-system.ts`).
 **Git and pull requests**: `src/server/git/studio-git.ts`, `src/server/pull-requests/`, the panel
 `src/renderer/src/components/panels/GitPanel.tsx`. Doc: `docs/design/agent-changes.md`.
 
+**The data folder's database** (`<data>/studio.sqlite`): opening, the worker connections and the damaged-file and
+folder errors in `src/server/db/database.ts`, the layout in `src/server/db/migrations.ts`, the one copy in
+`src/server/db/copies.ts`, the format steps and their imports in `src/server/environment/data-format.ts` and
+`src/server/db/import-files.ts`. Doc: `docs/data-folder.md`. Tests: `src/server/db/database.test.ts`,
+`src/server/db/import-files.test.ts`, `src/server/environment/data-format.test.ts`.
+
 ## Panes beside the chat
 
 **Editor pane** (and `editor.open`): `src/renderer/src/components/panels/EditorPanel.tsx`,

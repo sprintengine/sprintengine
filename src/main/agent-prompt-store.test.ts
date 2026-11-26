@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { AGENT_PROMPTS_DIR_NAME, createAgentPromptStore, registeredAgentOwners } from './agent-prompt-store'
+import { openTestDatabase } from '../../tests/studio-database'
+import { STUDIO_DATABASE_FILENAME, type StudioDatabase } from '../server/db/database'
+import { agentPromptKey, createAgentPromptStore, registeredAgentOwners } from './agent-prompt-store'
 import { MAX_LIVE_PEEK_PROMPTS } from './conversation-peek/service'
 import { MAX_AGENT_PROMPT_LENGTH } from './agent-state'
 import { test } from 'vitest'
@@ -12,15 +14,28 @@ async function scratch(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'sprintengine-agent-prompts-'))
 }
 
+const databases = new Map<string, StudioDatabase>()
+/** The data folder's database, one per scratch folder: a new store over it is a restart. */
+function databaseAt(dir: string): StudioDatabase {
+  let database = databases.get(dir)
+  if (!database) {
+    database = openTestDatabase(dir)
+    databases.set(dir, database)
+  }
+  return database
+}
+const agentsKept = async (dir: string) =>
+  (await databaseAt(dir).get<{ n: number }>('SELECT COUNT(*) AS n FROM agent_prompts'))?.n ?? 0
+
 const owner = { workspaceId: 'ws-1', agentId: 'agent-1', cli: 'codex', sessionId: 'session-1' }
 
 test('prompts appended for an agent come back from a new store over the same directory', async () => {
   const dir = await scratch()
-  const store = createAgentPromptStore({ resolveUserDataDir: () => dir })
+  const store = createAgentPromptStore({ database: databaseAt(dir) })
   await store.append(owner, { text: 'Port voice dictation', at: 1 })
   await store.append(owner, { text: 'Now the settings page', at: 2 })
 
-  const restarted = createAgentPromptStore({ resolveUserDataDir: () => dir })
+  const restarted = createAgentPromptStore({ database: databaseAt(dir) })
   assert.deepEqual(await restarted.read(owner), [
     { text: 'Port voice dictation', at: 1 },
     { text: 'Now the settings page', at: 2 },
@@ -30,11 +45,11 @@ test('prompts appended for an agent come back from a new store over the same dir
 
 test('an agent is found by any of its recent sessions', async () => {
   const dir = await scratch()
-  const store = createAgentPromptStore({ resolveUserDataDir: () => dir })
+  const store = createAgentPromptStore({ database: databaseAt(dir) })
   await store.append(owner, { text: 'first', at: 1 })
   await store.append({ ...owner, sessionId: 'session-2' }, { text: 'after a resume', at: 2 })
 
-  const restarted = createAgentPromptStore({ resolveUserDataDir: () => dir })
+  const restarted = createAgentPromptStore({ database: databaseAt(dir) })
   const found = await restarted.findBySessionId('session-1')
   assert.deepEqual(found, {
     workspaceId: 'ws-1',
@@ -49,9 +64,9 @@ test('an agent is found by any of its recent sessions', async () => {
   assert.equal(await restarted.findBySessionId('session-unknown'), null)
 })
 
-test('files are private and hold no more than the peek can show', async () => {
+test('prompts are private and hold no more than the peek can show', async () => {
   const dir = await scratch()
-  const store = createAgentPromptStore({ resolveUserDataDir: () => dir })
+  const store = createAgentPromptStore({ database: databaseAt(dir) })
   await store.append(owner, { text: 'x'.repeat(MAX_AGENT_PROMPT_LENGTH * 3), at: 0 })
   for (let index = 1; index < MAX_LIVE_PEEK_PROMPTS + 20; index += 1) {
     await store.append(owner, { text: `prompt ${index}`, at: index })
@@ -62,22 +77,19 @@ test('files are private and hold no more than the peek can show', async () => {
   assert.equal(prompts.at(-1)?.text, `prompt ${MAX_LIVE_PEEK_PROMPTS + 19}`)
 
   if (process.platform !== 'win32') {
-    const directory = join(dir, AGENT_PROMPTS_DIR_NAME)
-    const [file] = await readdir(directory)
-    assert.ok(file)
-    assert.equal((await stat(directory)).mode & 0o777, 0o700)
-    assert.equal((await stat(join(directory, file))).mode & 0o777, 0o600)
+    // A person's verbatim typing: the database is the owner's alone.
+    assert.equal((await stat(join(dir, STUDIO_DATABASE_FILENAME))).mode & 0o777, 0o600)
   }
 })
 
 test('the least recently written agents are evicted past the limit', async () => {
   const dir = await scratch()
   let now = 0
-  const store = createAgentPromptStore({ resolveUserDataDir: () => dir, maxFiles: 3, now: () => (now += 1) })
+  const store = createAgentPromptStore({ database: databaseAt(dir), maxFiles: 3, now: () => (now += 1) })
   for (const agentId of ['a', 'b', 'c', 'd']) {
     await store.append({ workspaceId: 'ws', agentId }, { text: `hello ${agentId}`, at: 1 })
   }
-  assert.equal((await readdir(join(dir, AGENT_PROMPTS_DIR_NAME))).length, 3)
+  assert.equal(await agentsKept(dir), 3)
   assert.equal(await store.read({ workspaceId: 'ws', agentId: 'a' }), null, 'the oldest agent went')
   assert.ok(await store.read({ workspaceId: 'ws', agentId: 'd' }))
 })
@@ -89,7 +101,7 @@ test('an agent still in the registry keeps its prompts however long it sits idle
   // agents comes and goes after it.
   const live = new Set(['idle'])
   const store = createAgentPromptStore({
-    resolveUserDataDir: () => dir,
+    database: databaseAt(dir),
     maxFiles: 3,
     now: () => (now += 1),
     agentExists: ({ agentId }) => live.has(agentId),
@@ -104,7 +116,7 @@ test('an agent still in the registry keeps its prompts however long it sits idle
   assert.deepEqual(await store.read({ workspaceId: 'ws', agentId: 'idle' }), [
     { text: 'the one I still look at', at: 1 },
   ])
-  assert.equal((await readdir(join(dir, AGENT_PROMPTS_DIR_NAME))).length, 3, 'gone agents still go')
+  assert.equal(await agentsKept(dir), 3, 'gone agents still go')
   assert.ok(await store.read({ workspaceId: 'ws', agentId: 'automation-9' }), 'the file just written stays')
   assert.equal(await store.read({ workspaceId: 'ws', agentId: 'automation-0' }), null, 'oldest gone agent first')
 })
@@ -119,7 +131,7 @@ test('eviction takes gone agents before ones nothing vouches for, and never a li
     ['newest', true],
   ])
   const store = createAgentPromptStore({
-    resolveUserDataDir: () => dir,
+    database: databaseAt(dir),
     maxFiles: 2,
     now: () => (now += 1),
     agentExists: ({ agentId }) => existence.get(agentId),
@@ -140,14 +152,14 @@ test('eviction takes gone agents before ones nothing vouches for, and never a li
 
 test('removing an agent deletes its prompts and forgets its sessions', async () => {
   const dir = await scratch()
-  const store = createAgentPromptStore({ resolveUserDataDir: () => dir })
+  const store = createAgentPromptStore({ database: databaseAt(dir) })
   await store.append(owner, { text: 'secret-ish', at: 1 })
   await store.append({ ...owner, agentId: 'agent-2', sessionId: 'session-9' }, { text: 'kept', at: 1 })
   assert.ok(await store.findBySessionId('session-1'), 'the index is built')
   await store.remove(owner)
   assert.equal(await store.read(owner), null)
   assert.equal(await store.findBySessionId('session-1'), null)
-  assert.equal((await readdir(join(dir, AGENT_PROMPTS_DIR_NAME))).length, 1, 'only the other agent is left')
+  assert.equal(await agentsKept(dir), 1, 'only the other agent is left')
   await store.remove(owner) // idempotent
   assert.ok(await store.read({ workspaceId: owner.workspaceId, agentId: 'agent-2' }))
 })
@@ -170,7 +182,7 @@ test('registeredAgentOwners lists every agent a registry state holds', () => {
 
 test('merging a session list keeps the stored history and adds only what is new', async () => {
   const dir = await scratch()
-  const store = createAgentPromptStore({ resolveUserDataDir: () => dir })
+  const store = createAgentPromptStore({ database: databaseAt(dir) })
   await store.append(owner, { text: 'from yesterday', at: 1 })
   const merged = await store.merge(owner, [
     { text: 'from yesterday', at: 1 },
@@ -183,42 +195,55 @@ test('merging a session list keeps the stored history and adds only what is new'
   assert.deepEqual(await store.read(owner), merged)
 })
 
-test('a corrupt or foreign file is ignored, not trusted', async () => {
+test('a corrupt or foreign record is ignored, not trusted', async () => {
   const dir = await scratch()
-  const directory = join(dir, AGENT_PROMPTS_DIR_NAME)
-  await mkdir(directory, { recursive: true })
-  await writeFile(join(directory, 'garbage.json'), '{ not json')
-  await writeFile(
-    join(directory, 'foreign.json'),
-    JSON.stringify({ version: 2, workspaceId: 'ws-1', agentId: 'agent-1', sessionIds: ['session-1'], prompts: [] }),
-  )
+  const database = databaseAt(dir)
+  const other = { workspaceId: 'ws-1', agentId: 'agent-2' }
+  await database.batch([
+    {
+      sql: 'INSERT INTO agent_prompts (key, workspace_id, agent_id, updated_at, body) VALUES (?, ?, ?, ?, ?)',
+      params: [agentPromptKey(other), other.workspaceId, other.agentId, 2, '{ not json'],
+    },
+    {
+      sql: 'INSERT INTO agent_prompts (key, workspace_id, agent_id, updated_at, body) VALUES (?, ?, ?, ?, ?)',
+      params: [
+        'foreign',
+        'ws-1',
+        'agent-1',
+        1,
+        JSON.stringify({ version: 2, workspaceId: 'ws-1', agentId: 'agent-1', sessionIds: ['session-1'], prompts: [] }),
+      ],
+    },
+  ])
   const warnings: string[] = []
   const store = createAgentPromptStore({
-    resolveUserDataDir: () => dir,
+    database,
     logDiagnostic: (diagnostic) => warnings.push(diagnostic.title),
   })
   assert.equal(await store.findBySessionId('session-1'), null)
+  assert.equal(await store.read(other), null)
   assert.ok(warnings.includes('Agent prompt parse failed'))
   // Appending still works beside them.
   await store.append(owner, { text: 'still fine', at: 1 })
   assert.deepEqual(await store.read(owner), [{ text: 'still fine', at: 1 }])
-  assert.match(
-    await readFile(join(directory, 'garbage.json'), 'utf8'),
-    /not json/,
+  assert.equal(
+    (await database.get<{ body: string }>('SELECT body FROM agent_prompts WHERE key = ?', [agentPromptKey(other)]))
+      ?.body,
+    '{ not json',
     'nothing it cannot read is rewritten',
   )
 })
 
 test('ids that could name a path are refused', async () => {
   const dir = await scratch()
-  const store = createAgentPromptStore({ resolveUserDataDir: () => dir })
+  const store = createAgentPromptStore({ database: databaseAt(dir) })
   assert.deepEqual(await store.append({ workspaceId: '', agentId: 'a' }, { text: 'x', at: 1 }), [])
   assert.equal(await store.read({ workspaceId: 'ws', agentId: 'a\0b' }), null)
   // A hostile id becomes a hash, never a path segment.
   await store.append({ workspaceId: '../../etc', agentId: 'passwd' }, { text: 'x', at: 1 })
-  const names = await readdir(join(dir, AGENT_PROMPTS_DIR_NAME))
+  const keys = (await databaseAt(dir).all<{ key: string }>('SELECT key FROM agent_prompts')).map((row) => row.key)
   assert.ok(
-    names.every((name) => /^[0-9a-f]{32}\.json$/.test(name)),
-    names.join(','),
+    keys.length === 1 && keys.every((key) => /^[0-9a-f]{32}$/.test(key)),
+    keys.join(','),
   )
 })
