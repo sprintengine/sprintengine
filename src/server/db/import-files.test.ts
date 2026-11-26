@@ -27,7 +27,16 @@ import { createPendingFirstMessages } from '../../main/conversation-first-messag
 import { DATA_FORMAT_FILENAME, prepareDataFormat, StudioDataMigrationError } from '../environment/data-format'
 import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME, studioDatabaseFiles } from './database'
 import { DATABASE_COPIES_DIRNAME } from './copies'
-import { CHAT_SIDE_RECORDS_STEP, importChatSideRecords } from './import-files'
+import { CHAT_RECORDS_STEP, CHAT_SIDE_RECORDS_STEP, importChatRecords, importChatSideRecords } from './import-files'
+import { createSnapshotStorage } from './snapshot-storage'
+import { createWorkspaceRegistryStore } from '../../main/workspace-registry-store'
+import { createScheduledAgentsStore } from '../../main/scheduled-agents/store'
+import {
+  emptyWorkspaceRegistryFile,
+  serializeWorkspaceRegistryFile,
+  toWorkspaceRegistryRecord,
+} from '../../shared/workspace-registry'
+import type { Workspace } from '../../shared/workspace'
 
 // The files builds before the database kept these four stores in, as they
 // wrote them, with what a crash or a hand edit leaves: a torn agent file, a
@@ -147,7 +156,7 @@ const imported = (dir: string) => {
 test('format 2 brings the four stores into the database, reads them as their stores did, and leaves every file as it was', async () => {
   const dir = legacyFolder()
   const before = snapshot(dir)
-  assert.deepEqual(prepareDataFormat(dir, { version: '2.0.0' }), { format: 4, migrated: [2, 3, 4], restored: false })
+  assert.deepEqual(prepareDataFormat(dir, { version: '2.0.0' }), { format: 5, migrated: [2, 3, 4, 5], restored: false })
   assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
   assert.deepEqual(imported(dir), [
     { source: 'agent-prompts/a.json', records: 1, skipped: 0 },
@@ -216,7 +225,11 @@ test('an import a crash cut short is put back and runs again whole at the next s
     }),
   )
   assert.ok(existsSync(join(crashed, 'migration-backup', 'marker.json')))
-  assert.deepEqual(prepareDataFormat(crashed, { version: '2.0.0' }), { format: 4, migrated: [2, 3, 4], restored: true })
+  assert.deepEqual(prepareDataFormat(crashed, { version: '2.0.0' }), {
+    format: 5,
+    migrated: [2, 3, 4, 5],
+    restored: true,
+  })
   assert.equal(imported(crashed).length, 6)
   const connection = prepareStudioDatabase(join(crashed, STUDIO_DATABASE_FILENAME))
   try {
@@ -251,7 +264,7 @@ test('rollback: with the database moved aside and the format set back, an older 
 
   // Upgrading again with the moved database put back loses nothing done since.
   renameSync(join(aside, STUDIO_DATABASE_FILENAME), join(dir, STUDIO_DATABASE_FILENAME))
-  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 4, writtenBy: '4.0.0' }))
+  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 5, writtenBy: '5.0.0' }))
   const back = openTestDatabase(dir)
   assert.deepEqual(await new ConversationApprovalRuleStore(back).list(), since)
   assert.deepEqual(
@@ -359,7 +372,7 @@ test('format 3 brings the device and session records in as their stores read the
   writeFileSync(join(dir, 'extension-approvals.json'), JSON.stringify({ 'local.one': { fingerprint: 'nope' } }))
   const before = snapshot(dir)
 
-  assert.deepEqual(prepareDataFormat(dir, { version: '3.0.0' }), { format: 4, migrated: [3, 4], restored: false })
+  assert.deepEqual(prepareDataFormat(dir, { version: '3.0.0' }), { format: 5, migrated: [3, 4, 5], restored: false })
   assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
   assert.deepEqual(imported(dir), [
     { source: 'client-toolsets.json', records: 1, skipped: 0 },
@@ -414,7 +427,7 @@ test('format 4 brings in the open-turn list; transcripts wait to be taken up', (
   writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 3, writtenBy: '3.0.0' }))
   const chat = { workspaceRoot: '/Users/dev/app', workspaceId: 'ws-1', agentId: 'agent-1' }
   writeFileSync(join(dir, 'conversation-outbox.json'), JSON.stringify({ version: 1, chats: [chat, { agentId: 'x' }] }))
-  assert.deepEqual(prepareDataFormat(dir, { version: '4.0.0' }), { format: 4, migrated: [4], restored: false })
+  assert.deepEqual(prepareDataFormat(dir, { version: '4.0.0' }), { format: 5, migrated: [4, 5], restored: false })
   const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
   try {
     assert.deepEqual(
@@ -426,3 +439,181 @@ test('format 4 brings in the open-turn list; transcripts wait to be taken up', (
     connection.close()
   }
 })
+
+// The chat records and the stores kept whole, as builds before format 5 wrote
+// them: a registry with a record its parser drops, schedules with a run on
+// its way, resumes, and scheduled messages torn by a crash mid-write.
+function chatRecord(id: string, name: string) {
+  return toWorkspaceRegistryRecord(
+    {
+      id,
+      name,
+      mode: 'standard',
+      folderPath: '/Users/dev/app',
+      templateId: 'solo',
+      layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
+      agents: {},
+      worktreeState: { containerPath: null, entries: {}, updatedAt: null },
+      editorState: { openFiles: [], activeFilePath: null },
+      createdAt: 1_000,
+    } as Workspace,
+    3,
+  )
+}
+
+const SCHEDULE = {
+  id: 'sa-1',
+  prompt: 'Triage the issues opened since the last run.',
+  schedule: { cron: '0 13 * * *', timezone: 'UTC' },
+  folderPath: '/Users/dev/app',
+  hostId: null,
+  cli: 'claude-code',
+  cliModel: null,
+  permissionPreset: null,
+  skills: [],
+  mcpServers: [],
+  worktree: null,
+  ownerModuleId: null,
+  createdAt: 1_000,
+  updatedAt: 1_000,
+  lastRun: null,
+  lastFailureSeenAt: null,
+}
+
+function chatRecordsFolder(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'se-import-records-'))
+  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 4, writtenBy: '4.0.0' }))
+  const registry = JSON.parse(
+    serializeWorkspaceRegistryFile({
+      ...emptyWorkspaceRegistryFile(5_000),
+      revision: 3,
+      workspaces: [chatRecord('ws-1', 'Fix the login bug'), chatRecord('ws-2', 'Release notes')],
+      activeWorkspaceId: 'ws-2',
+    }),
+  ) as { workspaces: unknown[] }
+  // A record no build keeps: dropped by the parser, counted.
+  registry.workspaces.push({ id: 'ws-junk' })
+  writeFileSync(join(dir, 'workspace-registry.json'), JSON.stringify(registry, null, 2))
+  writeFileSync(
+    join(dir, 'scheduled-agents.json'),
+    JSON.stringify(
+      { version: 1, agents: [SCHEDULE], runs: { 'scheduled-run:a': { scheduledAgentId: 'sa-1' } } },
+      null,
+      2,
+    ),
+  )
+  writeFileSync(
+    join(dir, 'usage-limit-resumes.json'),
+    JSON.stringify({ version: 1, autoResume: true, pending: [], resumed: [] }),
+  )
+  writeFileSync(join(dir, 'scheduled-messages.json'), '{"version":1,"messages":[{"id":"m-1",')
+  return dir
+}
+
+test('format 5 brings the chat records and the whole stores in, read by their own parsers, and leaves every file as it was', async () => {
+  const dir = chatRecordsFolder()
+  const before = snapshot(dir)
+  assert.deepEqual(prepareDataFormat(dir, { version: '5.0.0' }), { format: 5, migrated: [5], restored: false })
+  assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
+  assert.deepEqual(imported(dir), [
+    { source: 'scheduled-agents.json', records: 1, skipped: 0 },
+    { source: 'scheduled-messages.json', records: 0, skipped: 1 },
+    { source: 'usage-limit-resumes.json', records: 1, skipped: 0 },
+    { source: 'workspace-registry.json', records: 2, skipped: 1 },
+  ])
+
+  const database = openTestDatabase(dir)
+  const registry = createWorkspaceRegistryStore({ database }).read()
+  assert.equal(registry.status, 'loaded')
+  if (registry.status !== 'loaded') return
+  assert.deepEqual(
+    registry.file.workspaces.map((record) => [record.id, record.name]),
+    [
+      ['ws-1', 'Fix the login bug'],
+      ['ws-2', 'Release notes'],
+    ],
+  )
+  assert.equal(registry.file.revision, 3)
+  assert.equal(registry.file.activeWorkspaceId, 'ws-2')
+
+  const schedules = createScheduledAgentsStore({ storage: createSnapshotStorage(database, 'schedules') })
+  await schedules.load()
+  assert.deepEqual(
+    schedules.list().map((entry) => entry.id),
+    ['sa-1'],
+  )
+  assert.equal(
+    await createSnapshotStorage(database, 'usage_limit_resumes').read(),
+    readFileSync(join(dir, 'usage-limit-resumes.json'), 'utf8'),
+  )
+  // Torn: not brought in as nothing, so a later write cannot pass for it; the file is there to be looked at.
+  assert.equal(await createSnapshotStorage(database, 'scheduled_messages').read(), null)
+})
+
+test('the chat records import runs once: a second run brings nothing in twice', () => {
+  const dir = chatRecordsFolder()
+  prepareDataFormat(dir, { version: '5.0.0' })
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  try {
+    assert.deepEqual(importChatRecords(connection, dir), [])
+    assert.equal(connection.get<{ n: number }>('SELECT COUNT(*) AS n FROM chats')?.n, 2)
+    assert.equal(connection.get<{ n: number }>('SELECT COUNT(*) AS n FROM store_records')?.n, 2)
+  } finally {
+    connection.close()
+  }
+})
+
+test('a chat records import a crash cut short is put back and runs again whole at the next start', () => {
+  const dir = chatRecordsFolder()
+  const crashed = join(mkdtempSync(join(tmpdir(), 'se-import-records-crash-')), 'data')
+  // Format 4's database first, as the folder had it before this step.
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  connection.close()
+  assert.throws(() =>
+    prepareDataFormat(dir, {
+      version: '5.0.0',
+      format: 5,
+      steps: [
+        {
+          ...CHAT_RECORDS_STEP,
+          run: (at) => {
+            // The registry in, the stores not yet: then the process stops.
+            const half = prepareStudioDatabase(join(at, STUDIO_DATABASE_FILENAME))
+            half.run("INSERT INTO chats (id, position, body) VALUES ('ws-half', 0, '{}')")
+            cpSync(at, crashed, { recursive: true })
+            half.close()
+            throw new Error('the snapshot is taken')
+          },
+        },
+      ],
+    }),
+  )
+  assert.ok(existsSync(join(crashed, 'migration-backup', 'marker.json')))
+  assert.deepEqual(prepareDataFormat(crashed, { version: '5.0.0' }), { format: 5, migrated: [5], restored: true })
+  const after = prepareStudioDatabase(join(crashed, STUDIO_DATABASE_FILENAME))
+  try {
+    assert.deepEqual(
+      after.all<{ id: string }>('SELECT id FROM chats ORDER BY position').map((row) => row.id),
+      ['ws-1', 'ws-2'],
+      'the half-done import is gone; the whole one is in',
+    )
+    assert.equal(after.get<{ n: number }>('SELECT COUNT(*) AS n FROM store_records')?.n, 2)
+  } finally {
+    after.close()
+  }
+})
+
+test(
+  'a registry file there that cannot be read stops the step rather than importing it as nothing',
+  { skip: process.platform === 'win32' || process.getuid?.() === 0 },
+  () => {
+    const dir = chatRecordsFolder()
+    chmodSync(join(dir, 'workspace-registry.json'), 0o000)
+    try {
+      assert.throws(() => prepareDataFormat(dir, { version: '5.0.0' }), StudioDataMigrationError)
+      assert.equal(JSON.parse(readFileSync(join(dir, DATA_FORMAT_FILENAME), 'utf8')).format, 4)
+    } finally {
+      chmodSync(join(dir, 'workspace-registry.json'), 0o600)
+    }
+  },
+)

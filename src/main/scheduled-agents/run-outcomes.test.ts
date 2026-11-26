@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
+import { schedulesAt } from '../../../tests/studio-database'
 
 import { cronForInstant, type ScheduledAgent, type ScheduledAgentLastRun } from '../../shared/scheduled-agents'
 import { createScheduledRunOutcomes } from './run-outcomes'
@@ -21,7 +22,7 @@ async function setup(schedule: { once?: number } = { once: ONCE }) {
   const dir = mkdtempSync(join(tmpdir(), 'sprintengine-run-outcomes-'))
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
   const store = createScheduledAgentsStore({
-    filePath: join(dir, 'scheduled-agents.json'),
+    storage: schedulesAt(join(dir, 'scheduled-agents.json')),
     now: () => NOW,
     newId: () => 'sa-1',
   })

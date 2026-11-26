@@ -9,6 +9,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
+import { testDatabaseAt } from '../../tests/studio-database'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,7 +26,7 @@ function harness() {
   let clock = 1_000
   let ids = 0
   const registry = createWorkspaceRegistryService({
-    store: createWorkspaceRegistryStore({ resolveUserDataDir: () => dir, persistDebounceMs: 0 }),
+    store: createWorkspaceRegistryStore({ database: testDatabaseAt(dir) }),
     now: () => (clock += 1),
     newWorkspaceId: () => `ws-${++ids}`,
   })

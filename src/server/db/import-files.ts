@@ -20,6 +20,10 @@ import { CLIENT_TOOLSETS_FILENAME, readClientToolsetsFile } from '../tools/clien
 import { EMBEDS_FILENAME, readEmbedsFile } from '../web/embeds'
 import { readWebSessionsFile, WEB_SESSIONS_FILENAME } from '../web/web-sessions'
 import type { RecordTableName } from './record-table'
+import { readWorkspaceRegistryFile, WORKSPACE_REGISTRY_FILE_NAME } from '../../main/workspace-registry-store'
+import { scheduledAgentsFilePath, scheduledAgentsFileReads } from '../../main/scheduled-agents/store'
+import { SCHEDULED_MESSAGES_FILE, scheduledMessagesFileReads } from '../../main/scheduled-messages/scheduled-messages'
+import { USAGE_LIMIT_RESUMES_FILE, usageLimitResumesFileReads } from '../../main/usage-limits/resume'
 import { CONVERSATION_OUTBOX_FILENAME_FOR_IMPORT, readConversationOutboxFile } from '../../main/conversation-outbox'
 import type { DataFormatStep } from '../environment/data-format'
 import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from './database'
@@ -327,6 +331,64 @@ export const CHAT_HISTORY_STEP: DataFormatStep = {
     const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
     try {
       reportSkipped(importChatHistoryRecords(connection, dataDir))
+    } finally {
+      connection.close()
+    }
+  },
+}
+
+/**
+ * Format 5: the chat records (the workspace registry, a row each) and the
+ * stores kept whole as one record (schedules with their runs, scheduled
+ * messages, usage-limit resumes). A whole-store file is brought in as it was
+ * written when its store's parser reads it, and read by that parser again
+ * from the row.
+ */
+export function importChatRecords(connection: SyncConnection, dataDir: string): FileImport[] {
+  const imports = [
+    importFile(connection, dataDir, WORKSPACE_REGISTRY_FILE_NAME, (text) => {
+      if (text === null) return { records: 0, skipped: 0 }
+      const registry = readWorkspaceRegistryFile(text)
+      if (!registry) return { records: 0, skipped: 1 }
+      connection.run('INSERT OR IGNORE INTO chat_registry (id, body) VALUES (1, ?)', [registry.head])
+      let records = 0
+      for (const [position, record] of registry.records.entries())
+        records += connection.run('INSERT OR IGNORE INTO chats (id, position, body) VALUES (?, ?, ?)', [
+          record.id,
+          position,
+          record.body,
+        ]).changes
+      return { records, skipped: registry.skipped }
+    }),
+    ...(
+      [
+        [relative(dataDir, scheduledAgentsFilePath(dataDir)), 'schedules', scheduledAgentsFileReads],
+        [SCHEDULED_MESSAGES_FILE, 'scheduled_messages', scheduledMessagesFileReads],
+        [USAGE_LIMIT_RESUMES_FILE, 'usage_limit_resumes', usageLimitResumesFileReads],
+      ] as const
+    ).map(([file, name, reads]) =>
+      importFile(connection, dataDir, file, (text) => {
+        if (text === null) return { records: 0, skipped: 0 }
+        // One its store would not read (torn, hand-edited) is skipped, not
+        // brought in as nothing: the file stays as it was, to be looked at.
+        if (!reads(text)) return { records: 0, skipped: 1 }
+        connection.run('INSERT OR IGNORE INTO store_records (name, body) VALUES (?, ?)', [name, text])
+        return { records: 1, skipped: 0 }
+      }),
+    ),
+  ]
+  return imports.filter((entry): entry is FileImport => entry !== null)
+}
+
+/** The format step that moves the chat records: format 4 to 5. */
+export const CHAT_RECORDS_STEP: DataFormatStep = {
+  to: 5,
+  files: [],
+  database: true,
+  run(dataDir) {
+    const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
+    try {
+      reportSkipped(importChatRecords(connection, dataDir))
     } finally {
       connection.close()
     }

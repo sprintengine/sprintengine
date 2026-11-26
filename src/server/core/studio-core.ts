@@ -132,6 +132,7 @@ import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
 import { openDataDirDatabase, takeDataDir } from './take-data-dir'
 import { chatKey, moveChatStatements } from '../db/chat-logs'
+import { createSnapshotStorage } from '../db/snapshot-storage'
 import { conversationStorageSegment } from '../../main/conversation-index'
 import { workspaceStorePath } from '../../main/workspace-store'
 import { keepExtensionApprovalsIn } from '../../main/modules/extension-approvals'
@@ -399,7 +400,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // The authoritative workspace registry. Routing lives in the record, so no
   // side-map of names, folders or modes is needed beside it.
   const workspaceRegistryStore = createWorkspaceRegistryStore({
-    resolveUserDataDir: () => platform.paths.dataDir(),
+    database,
     logDiagnostic: logDiagnostic('workspace'),
   })
   const workspaceRegistry = createWorkspaceRegistryService({
@@ -1458,6 +1459,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // through the same send a paired device's does, marked as Studio's.
   const usageLimitResumes = createStudioUsageLimitResumes({
     dataDir,
+    storage: createSnapshotStorage(database, 'usage_limit_resumes'),
     conversations,
     workspaceRecord: (workspaceId) => workspaceRegistry.getRecord(workspaceId),
     createHost: (hostOptions) => createConversationHost(hostOptions),
@@ -1533,6 +1535,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // send a paired device's takes, as the person's own words.
   const scheduledMessages = createStudioScheduledMessages({
     dataDir,
+    storage: createSnapshotStorage(database, 'scheduled_messages'),
     conversations,
     workspaceRecord: (workspaceId) => workspaceRegistry.getRecord(workspaceId),
     createHost: () => createConversationHost(),
@@ -1656,6 +1659,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // run in its chats from its worktree pool, whatever kind of server it is.
   const scheduledAgents = createStudioScheduledAgents({
     platform,
+    database,
     // Nothing runs before the hand-over's first plan has finished, however
     // the scheduler is started: here, or by the desktop's Scheduled agents
     // switch (modules/scheduled-agents-switch.ts), which starts it with no

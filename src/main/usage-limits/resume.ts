@@ -1,6 +1,3 @@
-import { mkdir, readFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
-
 import {
   readConversationMessageOrigin,
   type ConversationEvent,
@@ -17,7 +14,6 @@ import type {
 } from '../../shared/usage-limit-resume'
 import { USAGE_LIMIT_PROVIDERS, type UsageLimitHit, type UsageLimitProvider } from '../../shared/usage-limits'
 import { STUDIO_NOTICE_PREFIX } from '../../shared/studio-notice'
-import { writeFileAtomically } from '../config-file-write'
 import type { UsageRateLimitAnswer } from './store'
 
 // A chat a usage limit stopped picks up again when the limit resets.
@@ -59,6 +55,7 @@ import type { UsageRateLimitAnswer } from './store'
 // a chat whose turn failed records that it failed, but not which window ran
 // out or when it resets, which is what the resume waits for.
 
+/** The file builds before the database kept the resumes in, under the data folder; read once, by the import. */
 export const USAGE_LIMIT_RESUMES_FILE = 'usage-limit-resumes.json'
 const FORMAT_VERSION = 1
 
@@ -202,6 +199,8 @@ export function createUsageLimitResumer(deps: UsageLimitResumerDeps): UsageLimit
   // No resume goes out before this: the start's grace, then the stagger.
   let quietUntil = 0
   let writing: Promise<void> = Promise.resolve()
+  // The saved resumes could not be read: nothing is written over them.
+  let unreadable = false
 
   const fireTimeFor = (resetsAt: number): number =>
     resetsAt + RESUME_BUFFER_MS + Math.floor(random() * RESUME_JITTER_MS)
@@ -209,7 +208,7 @@ export function createUsageLimitResumer(deps: UsageLimitResumerDeps): UsageLimit
   // ── Keeping ──────────────────────────────────────────────────────────────
 
   function persist(): void {
-    if (!loaded) return
+    if (!loaded || unreadable) return
     const body = JSON.stringify({
       version: FORMAT_VERSION,
       autoResume,
@@ -475,7 +474,15 @@ export function createUsageLimitResumer(deps: UsageLimitResumerDeps): UsageLimit
     running = true
     quietUntil = now() + STARTUP_GRACE_MS
     unsubscribers.push(deps.onLimitHit(onLimitHit), deps.onConversationEvent(onConversationEvent))
-    const saved = readSaved(await deps.storage.read().catch(() => null))
+    const saved = readSaved(
+      await deps.storage.read().catch((error: unknown) => {
+        unreadable = true
+        log(
+          `The usage-limit resumes could not be read, so no change is saved until they can be: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        return null
+      }),
+    )
     if (!running) return
     loaded = true
     autoResume = saved.autoResume
@@ -554,26 +561,19 @@ export function createUsageLimitResumer(deps: UsageLimitResumerDeps): UsageLimit
   }
 }
 
-/** The resumes kept in `file`: a missing or unreadable one is an empty one. */
-export function usageLimitResumeFileStorage(file: string): UsageLimitResumeStorage {
-  return {
-    async read() {
-      try {
-        return await readFile(file, 'utf8')
-      } catch {
-        return null
-      }
-    },
-    async write(body) {
-      await mkdir(dirname(file), { recursive: true })
-      await writeFileAtomically(file, body)
-    },
-  }
-}
-
 // ── The file ──────────────────────────────────────────────────────────────
 
 type Saved = { autoResume: boolean; pending: PendingResume[]; resumed: ResumedHit[] }
+
+/** Whether `text` (the file builds before the database kept) reads as saved resumes: what the import brings in. */
+export function usageLimitResumesFileReads(text: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return isRecord(parsed) && parsed.version === FORMAT_VERSION
+  } catch {
+    return false
+  }
+}
 
 function readSaved(text: string | null): Saved {
   const empty: Saved = { autoResume: false, pending: [], resumed: [] }

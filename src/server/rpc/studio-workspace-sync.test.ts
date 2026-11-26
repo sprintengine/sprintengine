@@ -1,17 +1,15 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, test } from 'vitest'
 
+import { savedRegistry, testDatabaseAt } from '../../../tests/studio-database'
+
 import { STUDIO_SCOPES, type StudioGrant } from '../../../packages/studio-protocol/src/public'
 import { createWorkspaceRegistryService } from '../../main/workspace-registry-service'
-import {
-  createInMemoryWorkspaceRegistryStore,
-  createWorkspaceRegistryStore,
-  WORKSPACE_REGISTRY_FILE_NAME,
-} from '../../main/workspace-registry-store'
+import { createInMemoryWorkspaceRegistryStore, createWorkspaceRegistryStore } from '../../main/workspace-registry-store'
 import { createWorkspaceSyncService } from '../../main/workspace-sync-service'
 import { createStudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
 import { studioWindowGrant } from './studio-frame-port'
@@ -38,17 +36,13 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
 
-function registry(options: { persistDebounceMs?: number } = {}) {
+function registry(options: { inDatabase?: boolean } = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), 'studio-workspace-sync-'))
   cleanups.push(() => rmSync(dataDir, { recursive: true, force: true }))
-  // On disk where a case reads what a kill would leave; in memory otherwise.
-  const store =
-    options.persistDebounceMs === undefined
-      ? createInMemoryWorkspaceRegistryStore()
-      : createWorkspaceRegistryStore({
-          resolveUserDataDir: () => dataDir,
-          persistDebounceMs: options.persistDebounceMs,
-        })
+  // In the database where a case reads what a kill would leave; in memory otherwise.
+  const store = options.inDatabase
+    ? createWorkspaceRegistryStore({ database: testDatabaseAt(dataDir) })
+    : createInMemoryWorkspaceRegistryStore()
   const workspaceRegistry = createWorkspaceRegistryService({ store })
   const workspaceSyncService = createWorkspaceSyncService({ registry: workspaceRegistry })
   const told = { settled: [] as unknown[], runStates: [] as unknown[] }
@@ -60,11 +54,8 @@ function registry(options: { persistDebounceMs?: number } = {}) {
     settlement: { setModuleRunStates: (states: unknown) => void told.runStates.push(states) },
     platform: { paths: { dataDir: () => dataDir } },
   } as never)
-  // The registry as a kill -9 would leave it: the file alone, nothing flushed.
-  const onDisk = (): { workspaces: Array<{ id: string; name: string }> } | null => {
-    const path = join(dataDir, WORKSPACE_REGISTRY_FILE_NAME)
-    return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as never) : null
-  }
+  // The registry as a kill -9 would leave it: what was committed, nothing flushed.
+  const onDisk = (): { workspaces: Array<{ id: string; name: string }> } | null => savedRegistry(dataDir) as never
   return { sync, told, onDisk }
 }
 
@@ -269,9 +260,8 @@ test('a browser’s window-only state is not taken, and a tailnet browser makes 
   )
 })
 
-test('a new chat is answered only once it is on disk, at once, so a kill right after the answer still lists it', async () => {
-  // The write delay is long: only a write the answer waits for is on disk.
-  const { sync, onDisk } = registry({ persistDebounceMs: 60_000 })
+test('a new chat is answered only once it is committed, so a kill right after the answer still lists it', async () => {
+  const { sync, onDisk } = registry({ inDatabase: true })
   const started = await startTestServer({ workspaceSync: sync })
   cleanups.push(() => started.dispose())
   const window = await client(started.path, OWNER_TOKEN)
@@ -286,12 +276,12 @@ test('a new chat is answered only once it is on disk, at once, so a kill right a
   assert.deepEqual(
     onDisk()?.workspaces.map((workspace) => workspace.id),
     ['ws-new'],
-    'the chat is in the file when the window hears it was made',
+    'the chat is in the database when the window hears it was made',
   )
 })
 
-test('a rename is answered only once it is on disk, on the registry’s own write delay', async () => {
-  const { sync, onDisk } = registry({ persistDebounceMs: 150 })
+test('a rename is answered only once it is committed', async () => {
+  const { sync, onDisk } = registry({ inDatabase: true })
   const started = await startTestServer({ workspaceSync: sync })
   cleanups.push(() => started.dispose())
   const window = await client(started.path, OWNER_TOKEN)
@@ -310,5 +300,9 @@ test('a rename is answered only once it is on disk, on the registry’s own writ
     }),
   )
   assert.equal(renamed.ok, true, JSON.stringify(renamed))
-  assert.equal(onDisk()?.workspaces[0]?.name, 'Renamed', 'the new name is in the file when the window hears it took')
+  assert.equal(
+    onDisk()?.workspaces[0]?.name,
+    'Renamed',
+    'the new name is in the database when the window hears it took',
+  )
 })

@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
 
 import type { StudioClient } from '../../../packages/client-runtime/src/public'
-import { openTestDatabase } from '../../../tests/studio-database'
+import { openTestDatabase, schedulesAt } from '../../../tests/studio-database'
 import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from '../db/database'
 import { ConversationApprovalRuleStore } from '../../main/conversation-approval-rules'
 import { workspaceStorePath } from '../../main/workspace-store'
@@ -334,7 +334,10 @@ test('a schedule saved here for a machine never runs here: its times are skipped
   let fire: (() => void) | null = null
   const ran: string[] = []
   try {
-    const store = createScheduledAgentsStore({ filePath: join(dir, 'scheduled-agents.json'), now: () => now })
+    const store = createScheduledAgentsStore({
+      storage: schedulesAt(join(dir, 'scheduled-agents.json')),
+      now: () => now,
+    })
     await store.load()
     const scheduler = schedulerWithRunRecords({
       list: () => store.list(),

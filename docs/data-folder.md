@@ -16,6 +16,7 @@ in `src/server/db/`.
 | 2            | a launched chat's first message, the "always allow" approval rules, the launch notices, the prompts a person sent each terminal agent |
 | 3            | the devices paired with this Studio and the machines it is paired with, browser sessions, embeds, linked local servers, apps' toolsets, file views, extension approvals |
 | 4            | chat history: each chat's events and command receipts, the chat list's rows, search, the list of turns a stop may have left open, and tools' details and streamed output |
+| 5            | the chat records (the workspace registry: a row per chat, and one for its windows, active chat and revision), the schedules with their runs, scheduled messages, usage-limit resumes |
 
 A paired machine's token is kept sealed by the platform's cipher, as its file
 kept it; an old file that still held one in plaintext is not imported, and
@@ -73,6 +74,26 @@ and its generation are kept, so a client that was following the chat before
 the upgrade carries on from its cursor. A line a crash tore or that does not
 read is skipped and counted. A tool's detail is imported the first time it is
 expanded. Pictures, plans and handoff notes stay files in the chat's folder.
+
+## Chat records and schedules
+
+Each chat record is a row of its own (`chats`), in the registry's order, and
+the rest of the registry (its revision, its windows, the active chat, the
+chats removed) is one row beside them (`chat_registry`). A change writes the
+rows it changed in one transaction, as soon as it is made: a settle, a snooze
+or a visit is committed before the change is answered, with no write delay,
+so a quit a moment later keeps it. The schedules with their runs, the
+scheduled messages and the usage-limit resumes are each kept whole as one row
+(`store_records`), written as their files were, each change one transaction.
+
+At the first start of format 5 each of those files is imported once. One that
+its store's own parser would not read (torn by a crash, hand-edited) is
+skipped and counted, never brought in as an empty list, and the file stays as
+it was. A registry file skipped that way reads as unreadable, as it did
+before, not as a fresh folder. Records the registry's parser drops are counted
+as skipped too. The uninstaller's command line (`--remove-integrations`)
+reads the chat records' folders from the database, read-only, and from the old
+file beside it.
 
 ## The first start of a new format
 

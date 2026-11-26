@@ -3,10 +3,11 @@
 // and start, every check made when a resume comes due, and the ways one is
 // taken back.
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, test } from 'vitest'
+import { savedStoreRecord, snapshotStorageAt } from '../../../tests/studio-database'
 
 import type {
   ConversationEvent,
@@ -17,7 +18,6 @@ import type { UsageLimitHit, UsageLimitProvider } from '../../shared/usage-limit
 import {
   createUsageLimitResumer,
   USAGE_LIMIT_RESUME_MESSAGE,
-  usageLimitResumeFileStorage,
   type UsageLimitResumeSendResult,
   type UsageLimitResumeStorage,
 } from './resume'
@@ -537,16 +537,16 @@ test('the timer is never armed further ahead than a quarter of an hour', async (
   assert.deepEqual(h.armed(), [T0 + 15 * MINUTE])
 })
 
-test('the file round-trips, and a malformed one is an empty one', async () => {
-  const file = join(scratch, 'resumes.json')
-  const storage = usageLimitResumeFileStorage(file)
+test('the saved resumes round-trip, and a malformed record is an empty one', async () => {
+  const dir = mkdtempSync(join(scratch, 'db-'))
+  const storage = snapshotStorageAt(dir, 'usage_limit_resumes')
   const first = harness({ storage })
   await first.resumer.start()
   first.resumer.update({ kind: 'auto', enabled: true })
   first.addChat()
   first.hit()
   await first.resumer.dispose()
-  const written = JSON.parse(readFileSync(file, 'utf8'))
+  const written = JSON.parse(savedStoreRecord(dir, 'usage_limit_resumes')!)
   assert.equal(written.version, 1)
   assert.equal(written.autoResume, true)
   assert.deepEqual(
@@ -558,7 +558,7 @@ test('the file round-trips, and a malformed one is an empty one', async () => {
     [['ws-1', 'claude', T0 + 2 * HOUR]],
   )
 
-  const second = harness({ storage: usageLimitResumeFileStorage(file) })
+  const second = harness({ storage: snapshotStorageAt(dir, 'usage_limit_resumes') })
   second.addChat()
   await second.resumer.start()
   assert.equal(second.resumer.state().notices.length, 1)
@@ -566,9 +566,28 @@ test('the file round-trips, and a malformed one is an empty one', async () => {
   const broken = harness({ storage: memoryStorage('{"version":1,"pending":[{"workspaceId":7}],"autoResume":"yes"}') })
   await broken.resumer.start()
   assert.deepEqual(broken.resumer.state(), { autoResume: false, notices: [] })
-  const missing = harness({ storage: usageLimitResumeFileStorage(join(scratch, 'none', 'resumes.json')) })
+  const missing = harness({ storage: snapshotStorageAt(mkdtempSync(join(scratch, 'db-')), 'usage_limit_resumes') })
   await missing.resumer.start()
   assert.deepEqual(missing.resumer.state(), { autoResume: false, notices: [] })
+})
+
+test('resumes that cannot be read are never written over', async () => {
+  const writes: string[] = []
+  const h = harness({
+    storage: {
+      read: async () => {
+        throw new Error('database disk image is malformed')
+      },
+      write: async (body) => void writes.push(body),
+    },
+  })
+  await h.resumer.start()
+  h.resumer.update({ kind: 'auto', enabled: true })
+  h.addChat()
+  h.hit()
+  await h.resumer.dispose()
+  assert.deepEqual(writes, [])
+  assert.ok(h.logs.some((message) => message.includes('could not be read')))
 })
 
 test('a hit for a session this process does not run is not its to resume', async () => {

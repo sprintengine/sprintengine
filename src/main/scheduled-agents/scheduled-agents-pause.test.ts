@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test, vi } from 'vitest'
+import { savedSchedules, schedulesAt, seedSchedules } from '../../../tests/studio-database'
 
 import type { ScheduledAgentDraft, ScheduledAgentLastRun } from '../../shared/scheduled-agents'
 import { createScheduledAgentsScheduler } from './scheduler'
@@ -109,7 +110,11 @@ function harness(
 ): Harness {
   const runs: Array<{ id: string; at: number }> = []
   let ids = 0
-  const store = createScheduledAgentsStore({ filePath, now: time.now, newId: () => `sa-${(ids += 1)}` })
+  const store = createScheduledAgentsStore({
+    storage: schedulesAt(filePath),
+    now: time.now,
+    newId: () => `sa-${(ids += 1)}`,
+  })
   let service: ScheduledAgentsService | null = null
   const scheduler = schedulerWithRunRecords({
     list: () => store.list(),
@@ -142,7 +147,7 @@ async function created(h: Harness, overrides: Partial<ScheduledAgentDraft> = {})
 
 test('a file from before pausing loads with every schedule running, and the file keeps its version', async () => {
   const filePath = tempFile()
-  writeFileSync(
+  seedSchedules(
     filePath,
     JSON.stringify({
       version: 1,
@@ -169,7 +174,7 @@ test('a file from before pausing loads with every schedule running, and the file
   // version: an older app reads the file, and runs the schedule as it did.
   await h.service.pause('sa-old')
   await h.service.pauseAll(NOW + HOUR)
-  const saved = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>
+  const saved = JSON.parse(savedSchedules(filePath)) as Record<string, unknown>
   assert.equal(saved.version, 1)
   assert.deepEqual(saved.pausedAll, { since: NOW, until: NOW + HOUR })
   const [entry] = saved.agents as Array<Record<string, unknown>>
@@ -177,12 +182,12 @@ test('a file from before pausing loads with every schedule running, and the file
   assert.equal(entry?.prompt, draft().prompt)
 
   // Read back, both pauses hold; a pause in a shape this build never writes is none.
-  const reread = createScheduledAgentsStore({ filePath, now: time.now })
+  const reread = createScheduledAgentsStore({ storage: schedulesAt(filePath), now: time.now })
   await reread.load()
   assert.equal(reread.get('sa-old')?.pausedAt, NOW)
   assert.deepEqual(reread.pausedAll(), { since: NOW, until: NOW + HOUR })
-  writeFileSync(filePath, JSON.stringify({ ...saved, pausedAll: { since: 'yesterday', until: null } }))
-  const garbled = createScheduledAgentsStore({ filePath, now: time.now })
+  seedSchedules(filePath, JSON.stringify({ ...saved, pausedAll: { since: 'yesterday', until: null } }))
+  const garbled = createScheduledAgentsStore({ storage: schedulesAt(filePath), now: time.now })
   await garbled.load()
   assert.equal(garbled.pausedAll(), null)
   assert.equal(garbled.list().length, 1, 'the schedules are kept')
@@ -294,7 +299,7 @@ test('a pause of them all outlives a restart, and ends at its time though the ap
   // Letting go of it at start is not awaited by anything the test holds, and
   // a few ticks are not always enough for the write on a busy machine.
   await vi.waitFor(() => {
-    const saved = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>
+    const saved = JSON.parse(savedSchedules(filePath)) as Record<string, unknown>
     assert.equal('pausedAll' in saved, false)
   })
   assert.equal(after.service.get(id)?.nextRunAt, at13(1))

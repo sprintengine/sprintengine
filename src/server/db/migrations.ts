@@ -182,6 +182,19 @@ export const STUDIO_MIGRATIONS: readonly Migration[] = [
         CREATE INDEX tool_outputs_log ON tool_outputs (log_key);
       `),
   },
+  {
+    id: 4,
+    name: 'chat-records',
+    up: (db) =>
+      db.exec(`
+        -- The chat records (the workspace registry), a row each, in their order.
+        CREATE TABLE chats (id TEXT PRIMARY KEY, position INTEGER NOT NULL, body TEXT NOT NULL);
+        -- The rest of the registry: its revision, windows, the active chat, tombstones.
+        CREATE TABLE chat_registry (id INTEGER PRIMARY KEY CHECK (id = 1), body TEXT NOT NULL);
+        -- Stores kept whole as one record each (snapshot-storage.ts).
+        CREATE TABLE store_records (name TEXT PRIMARY KEY, body TEXT NOT NULL);
+      `),
+  },
 ]
 
 /** Run the migrations `connection` has not had, in order; returns the ids it ran. */

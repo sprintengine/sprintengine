@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
+import { savedSchedules, schedulesAt, seedSchedules } from '../../../tests/studio-database'
 
 import { emptyAgentLaunchSettings } from '../../shared/launch-settings'
 import type { ConversationSessionSummary, ConversationSubscribeInput } from '../../shared/conversation-runtime'
@@ -82,7 +83,7 @@ test('a draft’s name and tag are trimmed text of a bounded length, absent when
 test('the store keeps a name and tag, an edit without them keeps them, and an empty one clears it', async () => {
   const file = tempFile()
   try {
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-1' })
+    const store = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW, newId: () => 'sa-1' })
     await store.load()
     await store.create({ ...draft(), name: 'Morning triage', tag: 'item-240' }, 'task-board')
     assert.equal(store.get('sa-1')?.name, 'Morning triage')
@@ -95,11 +96,11 @@ test('the store keeps a name and tag, an edit without them keeps them, and an em
     assert.equal(store.get('sa-1')?.tag, 'item-240')
     await store.recordRun('sa-1', { at: NOW, ok: true, workspaceId: 'w-1', agentId: 'agent-1' })
 
-    const reread = createScheduledAgentsStore({ filePath: file.path, now: () => NOW })
+    const reread = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW })
     await reread.load()
     assert.equal(reread.get('sa-1')?.tag, 'item-240')
     assert.deepEqual(reread.get('sa-1')?.lastRun, { at: NOW, ok: true, workspaceId: 'w-1', agentId: 'agent-1' })
-    const onDisk = JSON.parse(readFileSync(file.path, 'utf8')) as { agents: ScheduledAgent[] }
+    const onDisk = JSON.parse(savedSchedules(file.path)) as { agents: ScheduledAgent[] }
     assert.equal('name' in onDisk.agents[0]!, false, 'a cleared name is absent, never empty')
   } finally {
     file.cleanup()
@@ -109,7 +110,7 @@ test('the store keeps a name and tag, an edit without them keeps them, and an em
 test('a run recorded before the chat agent was kept reads back without one', async () => {
   const file = tempFile()
   try {
-    writeFileSync(
+    seedSchedules(
       file.path,
       JSON.stringify({
         version: 1,
@@ -126,7 +127,7 @@ test('a run recorded before the chat agent was kept reads back without one', asy
         ],
       }),
     )
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW })
+    const store = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW })
     await store.load()
     assert.deepEqual(store.get('sa-old')?.lastRun, { at: NOW, ok: true, workspaceId: 'w-old' })
   } finally {
@@ -177,7 +178,11 @@ test('onRun hears each run that started a chat, and an extension hears only its 
   const file = tempFile()
   try {
     let id = 0
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => `sa-${++id}` })
+    const store = createScheduledAgentsStore({
+      storage: schedulesAt(file.path),
+      now: () => NOW,
+      newId: () => `sa-${++id}`,
+    })
     await store.load()
     const scheduler = schedulerWithRunRecords({
       list: () => store.list(),
@@ -222,7 +227,7 @@ test('onRun hears each run that started a chat, and an extension hears only its 
 test('runNow tells onRun too, through the scheduler’s report', async () => {
   const file = tempFile()
   try {
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-1' })
+    const store = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW, newId: () => 'sa-1' })
     await store.load()
     let service: ReturnType<typeof createScheduledAgentsService> | null = null
     const scheduler = schedulerWithRunRecords({
