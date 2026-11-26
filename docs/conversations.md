@@ -1362,7 +1362,11 @@ chat beneath stays mounted and hidden, since a queued message lives in its view.
   running sub-agents only while its round runs.
 - An agent a chat's CLI spawned is a lane, read through its owner's session as a
   conversation (`laneTranscript`). What it asks the person is answered in the
-  normal dock.
+  normal dock. One whose launch is on a page not read yet, but whose statuses,
+  words or steps are on one that is, stands in as a lane where it is first heard
+  from, named by its statuses, until the page with its launch is read: an agent
+  still working is listed however long ago it started, and a page of nothing but
+  its work is never an empty chat.
 - A message box appears only where a message arrives (`subagentDelivery.ts`,
   owner ruling 2026-11-07). A Claude Code lane that is running or finished takes
   one, relayed through the parent's model, which costs that model a turn. One the

@@ -742,6 +742,10 @@ export function userEntryFromLocalTurn(userTurn: UserTurn): Extract<TranscriptEn
 
 // Events that, naming no turn, belong to the turn running when they came: an
 // older desktop's words, steps and requests named none.
+// The turn a lane started on an earlier page stands in (`laneFromEarlier`),
+// by the lane's call id. Not a turn the log has: no message or reply is its.
+const EARLIER_LANE_TURN = 'earlier-lane:'
+
 const JOINS_RUNNING_TURN: ReadonlySet<string> = new Set([
   'content_delta',
   'reasoning_delta',
@@ -868,6 +872,14 @@ export function projectConversation(
   const rewinds: Array<{ fromSeq: number; beforeSeq: number }> = []
   // Where each turn begins in the log, which is what a rewind's range covers.
   const turnStartSeq = new Map<string, number>()
+  // Every call these events start. A lane none of them starts began before
+  // them, on an earlier page; `laneFromEarlier` stands it in.
+  const startedHere = new Set<string>()
+  for (const event of events) {
+    if (event.type !== 'tool_started') continue
+    const id = readString(event.payload, 'toolUseId', 'callId', 'id', 'toolCallId')
+    if (id) startedHere.add(id)
+  }
 
   const ensureTurn = (turnId: string, answers = true): TurnAccumulator => {
     let turn = turns.get(turnId)
@@ -884,6 +896,40 @@ export function projectConversation(
       }
     }
     return turn
+  }
+
+  // A lane whose agent is heard from here, though the call that started it is
+  // on an earlier page: a page cut by size can begin hours into an agent's
+  // work, and a page of nothing else would draw an empty chat. It stands in
+  // where it is first heard from, named by what its statuses say, in a turn of
+  // its own that is not a reply, and its steps, words and state join it as
+  // they would the call. Undefined for a lane these events do start, whose
+  // call takes what arrived before it (`pendingAgents`).
+  const laneFromEarlier = (
+    id: string,
+    at: number,
+    status?: NonNullable<ReturnType<typeof readSubagentStatus>>,
+  ): ToolAccumulator | undefined => {
+    const known = toolsById.get(id)
+    if (known || startedHere.has(id)) return known
+    const turn = ensureTurn(`${EARLIER_LANE_TURN}${id}`, false)
+    turn.status = 'complete'
+    turn.startedAt = at
+    turn.completedAt = at
+    const tool: ToolAccumulator = {
+      id,
+      turnId: turn.turnId,
+      name: 'Agent',
+      toolKind: readToolKind(undefined, 'Agent'),
+      ...(status?.description ? { input: { description: status.description } } : {}),
+      status: 'running',
+      startedAt: at,
+      subagentLane: true,
+      ...(status?.subagentType ? { subagentType: status.subagentType } : {}),
+    }
+    turn.tools.set(id, tool)
+    toolsById.set(id, tool)
+    return tool
   }
 
   // The runtime/mock provider emits an interrupt as `turn_failed` with no
@@ -1088,7 +1134,8 @@ export function projectConversation(
         // A background agent's step after the turn that launched it ended
         // carries no turn: it joins the agent's lane, in the turn that holds it.
         const parentToolUseId = readString(event.payload, 'parentToolUseId')
-        const ownerTurnId = turnId ?? (parentToolUseId ? toolsById.get(parentToolUseId)?.turnId : undefined)
+        const ownerTurnId =
+          turnId ?? (parentToolUseId ? laneFromEarlier(parentToolUseId, event.createdAt)?.turnId : undefined)
         if (!ownerTurnId) break
         const turn = ensureTurn(ownerTurnId)
         closeReasoning(turn, event.createdAt)
@@ -1228,7 +1275,7 @@ export function projectConversation(
         if (status.taskId && !lane) lanesByTask.set(status.taskId, status.toolUseId)
         const toolUseId = lane ?? status.toolUseId
         const agent = agentStateOf(status)
-        const tool = toolsById.get(toolUseId)
+        const tool = laneFromEarlier(toolUseId, event.createdAt, status)
         if (tool) {
           if (isResumed(status, lane)) reopenAgentLane(tool)
           applyAgentState(tool, agent, status.endedAt ?? event.createdAt)
@@ -1244,7 +1291,7 @@ export function projectConversation(
           text,
           ...(event.payload?.truncated === true ? { truncated: true } : {}),
         }
-        const lane = toolsById.get(parentToolUseId)
+        const lane = laneFromEarlier(parentToolUseId, event.createdAt)
         if (lane) (lane.messages ??= []).push(message)
         else pendingMessages.set(parentToolUseId, [...(pendingMessages.get(parentToolUseId) ?? []), message])
         break
