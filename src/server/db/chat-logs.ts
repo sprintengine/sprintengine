@@ -187,6 +187,25 @@ export function createChatLogs(options: { database: StudioDatabase; log?: (messa
         [chatLogKey(path), afterSeq, limit],
       )
     },
+    /**
+     * The newest event of `type` for one tool use (`payload.toolUseId`),
+     * however far back it lies: by the log's type index, not a scan of its
+     * bytes.
+     */
+    async findTool(path: string, root: string, type: string, toolUseId: string): Promise<string | undefined> {
+      await ensure(path, root)
+      const rows = await db.all<{ body: string }>(
+        `SELECT body FROM chat_events WHERE log_key = ? AND type = ? AND instr(body, ?) > 0 ORDER BY seq DESC LIMIT 8`,
+        [chatLogKey(path), type, `"toolUseId":${JSON.stringify(toolUseId)}`],
+      )
+      return rows.find((row) => {
+        try {
+          return (JSON.parse(row.body) as { payload?: { toolUseId?: unknown } }).payload?.toolUseId === toolUseId
+        } catch {
+          return false
+        }
+      })?.body
+    },
     /** Every receipt of a log, oldest first. */
     async receipts(path: string, root: string): Promise<ChatReceiptRow[]> {
       await ensure(path, root)

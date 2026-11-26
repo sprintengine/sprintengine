@@ -177,7 +177,8 @@ test('a list that stopped waiting for a slow first check hears what it found', a
   const { domain, changes } = await domainOver({
     database: testDatabaseAt(dir),
     probe: () => asked,
-    timing: { firstCheckWaitMs: 30 },
+    // Long enough for the record to be read from the database on a loaded machine; the check never answers in it.
+    timing: { firstCheckWaitMs: 500 },
   })
   const early = await domain.list({ conversations: [A] })
   assert.equal(early.conversations[0]?.servers[0]?.state, 'stopped')

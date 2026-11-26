@@ -502,11 +502,6 @@ const ADAPTERS_WITHOUT_FALLBACK_HISTORY: ReadonlySet<string> = new Set([CLAUDE_A
 // characters of it either way.
 const PEEK_TURN_BYTES = 256 * 1024
 
-// How far back a picture request from a paired device looks for the step
-// that made the picture. The host keeps what it found, so only the first
-// request for a step pays for the scan.
-const TOOL_CALL_SCAN_BYTES = 32 * 1024 * 1024
-
 // Same cadence as the terminal runtime's stale-terminal sweep: often enough
 // that an idle child process does not outlive the threshold by much, rare
 // enough to be free.
@@ -3768,25 +3763,15 @@ export class ConversationRuntime {
     const path = this.transcriptPath(input.workspaceRoot, input.workspaceId, input.agentId)
     try {
       await this.eventLog.flush(path)
-      const event = await this.transcripts.findLast(
-        input.workspaceRoot,
-        path,
-        (candidate) => candidate.type === 'tool_started' && candidate.payload?.toolUseId === input.toolUseId,
-        // A paired device asks for a step it was shown, so it is recent; a
-        // miss past this reads as an unknown step rather than scanning the
-        // whole transcript on every request.
-        TOOL_CALL_SCAN_BYTES,
-      )
+      // Found however far back it lies, by the log's type index.
+      const started = await this.history.findTool(path, input.workspaceRoot, 'tool_started', input.toolUseId)
+      const event = started ? (JSON.parse(started) as ConversationEvent) : undefined
       if (!event?.payload) return null
       const name = event.payload.name ?? event.payload.tool
       // A step announces itself before it is approved, so its end is read as
       // well: a declined read showed nothing, and must not serve its file.
-      const output = await this.transcripts.findLast(
-        input.workspaceRoot,
-        path,
-        (candidate) => candidate.type === 'tool_output' && candidate.payload?.toolUseId === input.toolUseId,
-        TOOL_CALL_SCAN_BYTES,
-      )
+      const ended = await this.history.findTool(path, input.workspaceRoot, 'tool_output', input.toolUseId)
+      const output = ended ? (JSON.parse(ended) as ConversationEvent) : undefined
       const status = output?.payload?.status
       return {
         name: typeof name === 'string' ? name : '',

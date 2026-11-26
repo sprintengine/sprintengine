@@ -113,6 +113,7 @@ export const STUDIO_MIGRATIONS: readonly Migration[] = [
           PRIMARY KEY (log_key, seq)
         ) WITHOUT ROWID;
         CREATE INDEX chat_events_turn ON chat_events (log_key, turn_id) WHERE turn_id IS NOT NULL;
+        CREATE INDEX chat_events_type ON chat_events (log_key, type, seq);
         -- A command's receipt, written with what it committed. No cap.
         CREATE TABLE chat_receipts (
           log_key TEXT NOT NULL,
