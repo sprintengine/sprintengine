@@ -837,10 +837,8 @@ export class ConversationRuntime {
         // The chat's worktree, given back while it sat idle, is brought back
         // before anything is spawned in it; a new chat's checkout is brought up
         // to date before its agent reads it.
-        const fresh = !(await stat(path).then(
-          () => true,
-          () => false,
-        ))
+        // Fresh: no history yet, its transcript from before the database included.
+        const fresh = !(await this.history.exists(path, input.workspaceRoot))
         const folder = await this.prepareChatFolder({
           workspaceId: input.workspaceId.trim(),
           workspaceRoot: input.workspaceRoot,
