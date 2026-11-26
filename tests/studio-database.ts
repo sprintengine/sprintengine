@@ -99,5 +99,12 @@ export async function savedRecordRows(
  * same test file (a restart) reads the history the one before it wrote.
  */
 export function testChatDatabase(): StudioDatabase {
-  return testDatabaseAt(process.env.SPRINTENGINE_STORE_HOME?.trim() || tmpdir())
+  const home = resolve(process.env.SPRINTENGINE_STORE_HOME?.trim() || tmpdir())
+  const open = byFolder.get(home)
+  if (open) return open
+  // Kept for the whole file, as the store home is: a runtime one test makes may serve the next.
+  const database = openStudioDatabase(home, { readers: 1 })
+  outsideTests.push(database)
+  byFolder.set(home, database)
+  return database
 }

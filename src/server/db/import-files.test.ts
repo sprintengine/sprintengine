@@ -147,7 +147,7 @@ const imported = (dir: string) => {
 test('format 2 brings the four stores into the database, reads them as their stores did, and leaves every file as it was', async () => {
   const dir = legacyFolder()
   const before = snapshot(dir)
-  assert.deepEqual(prepareDataFormat(dir, { version: '2.0.0' }), { format: 3, migrated: [2, 3], restored: false })
+  assert.deepEqual(prepareDataFormat(dir, { version: '2.0.0' }), { format: 4, migrated: [2, 3, 4], restored: false })
   assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
   assert.deepEqual(imported(dir), [
     { source: 'agent-prompts/a.json', records: 1, skipped: 0 },
@@ -216,7 +216,7 @@ test('an import a crash cut short is put back and runs again whole at the next s
     }),
   )
   assert.ok(existsSync(join(crashed, 'migration-backup', 'marker.json')))
-  assert.deepEqual(prepareDataFormat(crashed, { version: '2.0.0' }), { format: 3, migrated: [2, 3], restored: true })
+  assert.deepEqual(prepareDataFormat(crashed, { version: '2.0.0' }), { format: 4, migrated: [2, 3, 4], restored: true })
   assert.equal(imported(crashed).length, 6)
   const connection = prepareStudioDatabase(join(crashed, STUDIO_DATABASE_FILENAME))
   try {
@@ -251,7 +251,7 @@ test('rollback: with the database moved aside and the format set back, an older 
 
   // Upgrading again with the moved database put back loses nothing done since.
   renameSync(join(aside, STUDIO_DATABASE_FILENAME), join(dir, STUDIO_DATABASE_FILENAME))
-  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 3, writtenBy: '3.0.0' }))
+  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 4, writtenBy: '4.0.0' }))
   const back = openTestDatabase(dir)
   assert.deepEqual(await new ConversationApprovalRuleStore(back).list(), since)
   assert.deepEqual(
@@ -359,7 +359,7 @@ test('format 3 brings the device and session records in as their stores read the
   writeFileSync(join(dir, 'extension-approvals.json'), JSON.stringify({ 'local.one': { fingerprint: 'nope' } }))
   const before = snapshot(dir)
 
-  assert.deepEqual(prepareDataFormat(dir, { version: '3.0.0' }), { format: 3, migrated: [3], restored: false })
+  assert.deepEqual(prepareDataFormat(dir, { version: '3.0.0' }), { format: 4, migrated: [3, 4], restored: false })
   assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
   assert.deepEqual(imported(dir), [
     { source: 'client-toolsets.json', records: 1, skipped: 0 },
