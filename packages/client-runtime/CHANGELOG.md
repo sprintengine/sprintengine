@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- `environmentStatus(entry)`: what every list of machines says of one (its
+  state in words, a tone and the one action), from its connection state,
+  whether its protocol window overlaps and its name. The desktop's machine
+  lists and the phone's desktops read the same words. With it,
+  `environmentAnswering`, `since` and the `EnvironmentConnection` and
+  `EnvironmentCompatibility` types.
+
 ### Fixed
 
 - A protocol mismatch names the side to update. `presentStudioFailure(error)`

@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { environmentAnswering, environmentStatus, since } from './environment-status'
-import type { EnvironmentConnection, EnvironmentEntry } from './environments'
+import {
+  environmentAnswering,
+  environmentStatus,
+  since,
+  type EnvironmentConnection,
+  type EnvironmentStatusInput,
+} from '../src/environments/environmentStatus'
 
 const NOW = Date.parse('2026-01-01T12:00:00.000Z')
 
 function entry(
   connection: Partial<EnvironmentConnection> & Pick<EnvironmentConnection, 'state'>,
-  compatibility: EnvironmentEntry['compatibility'] = 'unknown',
-): Pick<EnvironmentEntry, 'connection' | 'compatibility' | 'displayName'> {
+  compatibility: EnvironmentStatusInput['compatibility'] = 'unknown',
+): EnvironmentStatusInput {
   return { displayName: 'build-box', connection: { detail: null, lastReachedAt: null, ...connection }, compatibility }
 }
 

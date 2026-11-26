@@ -19,7 +19,7 @@ import {
   orderEnvironmentsForPicking,
   type EnvironmentEntry,
 } from '../../../../../shared/environments'
-import { environmentStatus } from '../../../../../shared/environment-status'
+import { environmentStatus } from '../../../../../../packages/client-runtime/src/environments/environmentStatus'
 import {
   createPairedScheduledAgent,
   pairedScheduledAgentAction,
