@@ -156,7 +156,9 @@ Wire: `files.*` (`packages/studio-protocol/src/file-system.ts`).
 
 **The data folder's database** (`studio.sqlite` in each data folder): opening, the worker connections and the damaged-file and
 folder errors in `src/server/db/database.ts`, chat history (logs, receipts, the one-time import of old transcripts) in
-`src/server/db/chat-logs.ts`, the layout in `src/server/db/migrations.ts`, the one copy in
+`src/server/db/chat-logs.ts`, the chat records (the workspace registry's rows) in `src/main/workspace-registry-store.ts`,
+stores kept whole as one row (schedules, scheduled messages, usage-limit resumes) in `src/server/db/snapshot-storage.ts`,
+the layout in `src/server/db/migrations.ts`, the one copy in
 `src/server/db/copies.ts`, the format steps and their imports in `src/server/environment/data-format.ts` and
 `src/server/db/import-files.ts`. Doc: `docs/data-folder.md`. Tests: `src/server/db/database.test.ts`,
 `src/server/db/import-files.test.ts`, `src/server/db/chat-logs.test.ts`, `src/server/environment/data-format.test.ts`.
