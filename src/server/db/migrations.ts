@@ -89,6 +89,98 @@ export const STUDIO_MIGRATIONS: readonly Migration[] = [
           .join('\n'),
       ),
   },
+  {
+    id: 3,
+    name: 'chat-history',
+    up: (db) =>
+      db.exec(`
+        -- One log per agent of a chat (chat-logs.ts), named <chat>/<agent>.
+        CREATE TABLE chat_logs (
+          log_key TEXT PRIMARY KEY,
+          workspace_root TEXT NOT NULL,
+          generation TEXT NOT NULL,
+          last_seq INTEGER NOT NULL
+        );
+        -- Its events by sequence number; a merged run of deltas is one row.
+        CREATE TABLE chat_events (
+          log_key TEXT NOT NULL,
+          seq INTEGER NOT NULL,
+          first_seq INTEGER NOT NULL,
+          type TEXT NOT NULL,
+          turn_id TEXT,
+          bytes INTEGER NOT NULL,
+          body TEXT NOT NULL,
+          PRIMARY KEY (log_key, seq)
+        ) WITHOUT ROWID;
+        CREATE INDEX chat_events_turn ON chat_events (log_key, turn_id) WHERE turn_id IS NOT NULL;
+        -- A command's receipt, written with what it committed. No cap.
+        CREATE TABLE chat_receipts (
+          log_key TEXT NOT NULL,
+          command_id TEXT NOT NULL,
+          at INTEGER NOT NULL,
+          body TEXT NOT NULL,
+          PRIMARY KEY (log_key, command_id)
+        );
+        -- The chat list's row for each log, folded from its events up to folded_seq.
+        CREATE TABLE chat_threads (
+          log_key TEXT PRIMARY KEY,
+          chat_key TEXT NOT NULL,
+          folded_seq INTEGER NOT NULL,
+          thread TEXT,
+          fold TEXT NOT NULL
+        );
+        CREATE INDEX chat_threads_chat ON chat_threads (chat_key);
+        -- What search reads: a person's message, and an agent's reply, per turn.
+        CREATE TABLE chat_search_docs (
+          id INTEGER PRIMARY KEY,
+          log_key TEXT NOT NULL,
+          chat_key TEXT NOT NULL,
+          agent_id TEXT NOT NULL,
+          turn_id TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          seq INTEGER NOT NULL,
+          origin TEXT NOT NULL,
+          body TEXT NOT NULL,
+          UNIQUE (log_key, turn_id, kind)
+        );
+        CREATE INDEX chat_search_docs_chat ON chat_search_docs (chat_key);
+        CREATE VIRTUAL TABLE chat_search USING fts5(
+          body, content = 'chat_search_docs', content_rowid = 'id', tokenize = 'trigram'
+        );
+        CREATE TRIGGER chat_search_docs_added AFTER INSERT ON chat_search_docs BEGIN
+          INSERT INTO chat_search (rowid, body) VALUES (new.id, new.body);
+        END;
+        CREATE TRIGGER chat_search_docs_removed AFTER DELETE ON chat_search_docs BEGIN
+          INSERT INTO chat_search (chat_search, rowid, body) VALUES ('delete', old.id, old.body);
+        END;
+        CREATE TRIGGER chat_search_docs_changed AFTER UPDATE ON chat_search_docs BEGIN
+          INSERT INTO chat_search (chat_search, rowid, body) VALUES ('delete', old.id, old.body);
+          INSERT INTO chat_search (rowid, body) VALUES (new.id, new.body);
+        END;
+        -- The chats whose provider turn may still be open (conversation-outbox.ts).
+        CREATE TABLE turn_outbox (
+          workspace_root TEXT NOT NULL,
+          workspace_id TEXT NOT NULL,
+          agent_id TEXT NOT NULL,
+          PRIMARY KEY (workspace_root, workspace_id, agent_id)
+        );
+        -- A tool's detail, and the output it streamed, by <chat>/<agent>/<tool use>.
+        CREATE TABLE tool_details (
+          detail_key TEXT PRIMARY KEY,
+          log_key TEXT NOT NULL,
+          body TEXT NOT NULL
+        );
+        CREATE INDEX tool_details_log ON tool_details (log_key);
+        CREATE TABLE tool_outputs (
+          detail_key TEXT NOT NULL,
+          part INTEGER NOT NULL,
+          log_key TEXT NOT NULL,
+          bytes BLOB NOT NULL,
+          PRIMARY KEY (detail_key, part)
+        );
+        CREATE INDEX tool_outputs_log ON tool_outputs (log_key);
+      `),
+  },
 ]
 
 /** Run the migrations `connection` has not had, in order; returns the ids it ran. */

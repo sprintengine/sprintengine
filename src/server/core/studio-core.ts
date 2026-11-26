@@ -522,6 +522,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   const chatInvoker = (chat: { workspaceId: string; agentId: string }) =>
     hookInvokers.ofAgent(workspaceRegistry.getRecord(chat.workspaceId)?.agents[chat.agentId])
   const conversationRuntime = new ConversationRuntime({
+    database,
     extensionHooks,
     chatInvoker,
     // A send that names who it is from (a launch's first message) runs as them.
@@ -531,7 +532,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     attachmentStore: new ConversationAttachmentStore(dataDir),
     uploadRoots: [join(dataDir, TAILNET_UPLOADS_DIRNAME), join(dataDir, WEB_UPLOADS_DIRNAME)],
     planStore: new ConversationPlanStore(dataDir),
-    outbox: new ConversationOutbox(dataDir),
+    outbox: new ConversationOutbox(database),
     heldChatMode: ({ workspaceId, agentId }) => {
       const agent = workspaceRegistry.getRecord(workspaceId)?.agents[agentId]
       return agent?.conversationModeHeld && agent.conversationMode !== 'default' ? agent.conversationMode : undefined

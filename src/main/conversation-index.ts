@@ -1,15 +1,9 @@
-import type { FileHandle } from 'node:fs/promises'
-import { lstat, readdir } from 'node:fs/promises'
+import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { openConfinedExistingFile } from './conversation-file-access'
-import {
-  MAX_CONVERSATION_METADATA_BYTES,
-  MAX_CONVERSATION_TRANSCRIPT_BYTES,
-  readConversationStorage,
-  removeConversationStorage,
-  writeConversationStorage,
-} from './conversation-persistence'
-import { conversationConfinementRoot, workspaceStorePath, workspaceStoreReady } from './workspace-store'
+
+import type { StudioDatabase } from '../server/db/database'
+import type { ChatLogs } from '../server/db/chat-logs'
+import { workspaceStorePath, workspaceStoreReady } from './workspace-store'
 import { CONVERSATION_MAX_REPLY_PREVIEW } from '../../packages/conversation-protocol/src/public'
 import {
   isStudioCompactionReason,
@@ -25,20 +19,19 @@ import type {
 } from '../shared/conversation-index'
 import { quotesToInlineText } from '../shared/chat-quotes'
 
-type Fingerprint = { file: string; size: number; mtime: number }
-// 3 since a row carries `lastTurnEndedAt`: a version 2 cache has rows read
-// before it was kept, so it is read again once rather than trusted, and every
-// chat that ever finished a turn says when. 4 since it carries
-// `lastAssistantText`, for the same reason: every chat that has a reply
-// previews it.
-const INDEX_VERSION = 4
-type Index = { version: typeof INDEX_VERSION; threads: ConversationThread[]; files: Fingerprint[] }
+// A chat's list of agents, their rows for the chat list, and search over what
+// people said and agents replied, out of the data folder's database.
+//
+// A row (`chat_threads`) is folded from the log's events and kept with the
+// number of the last event folded; a listing folds only what came since, in
+// one transaction with the search rows it adds (`chat_search_docs`, a full
+// text index by trigram), so a new turn costs its own events and never a
+// re-read of the chat. Search reads the index, whole chats included; it no
+// longer reads transcripts.
+
 /**
- * One transcript's row as it stood after reading the file up to `offset` (the
- * end of its last complete line), with what the row's counts are made from.
- * A transcript only grows, so the row after an append is this plus the lines
- * after `offset`; `head`, the file's first bytes, tells an append from a file
- * deleted and written again under the same name.
+ * One log's row as it stood after folding its events up to `folded`, with
+ * what the row's counts are made from.
  */
 type ThreadFold = {
   thread: ConversationThread | null
@@ -47,13 +40,9 @@ type ThreadFold = {
   // their end is not news for the person (`lastTurnEndedAt`).
   quietTurns: Set<string>
   costs: Map<string, number>
-  offset: number
-  head: Buffer
 }
-// Folds of the transcripts that changed this run, most recent last. Enough for
-// the chats a person works in; one that drops out is read whole once more.
-const MAX_CACHED_FOLDS = 64
-const FOLD_HEAD_BYTES = 512
+type StoredFold = { turns: string[]; quietTurns: string[]; costs: Array<[string, number]> }
+
 /** The folder (or file) name a chat's or agent's id is stored under in its store's `conversations/`. */
 export const conversationStorageSegment = (value: string) => {
   const encoded = encodeURIComponent(value.trim().replace(/[\\/]/g, '-'))
@@ -62,157 +51,107 @@ export const conversationStorageSegment = (value: string) => {
 const segment = conversationStorageSegment
 const directory = (key: ConversationWorkspaceKey) =>
   workspaceStorePath(key.workspaceRoot, 'conversations', segment(key.workspaceId))
+/** Where builds before the database kept an agent's transcript: still the name its log goes by (`chatLogKey`). */
 export const conversationIndexTranscriptPath = (key: ConversationKey) =>
   join(directory(key), `${segment(key.agentId)}.jsonl`)
-const record = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
-const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT'
 
-type IndexHooks = {
-  flush?: (path: string) => Promise<void>
-  close?: (path: string) => Promise<void>
-  // A transcript longer than this is indexed and searched from its first
-  // megabyte and its last `maxTranscriptBytes` only.
-  maxTranscriptBytes?: number
-}
+const FOLD_ROWS = 512
+const MAX_HITS = 200
 
-/**
- * Cache only. Titles, including explicit renames, are recovered from transcript events.
- *
- * A listing re-reads only the transcripts that changed since `index.json` was
- * written, and a transcript that grew since this run last read it only from
- * where that read ended. Every other row comes from the cache as it is: one
- * chat's new turn, or its child reporting in, costs that chat's new lines, not
- * a parse of every chat in the workspace.
- */
 export class ConversationIndex {
   private queues = new Map<string, Promise<unknown>>()
-  private readonly folds = new Map<string, ThreadFold>()
-  private readonly maxBytes: number
-  constructor(private readonly hooks: IndexHooks = {}) {
-    this.maxBytes = hooks.maxTranscriptBytes ?? MAX_CONVERSATION_TRANSCRIPT_BYTES
-  }
+  // The chats whose folders were looked through for transcripts not yet imported, this run.
+  private readonly scanned = new Set<string>()
+  constructor(
+    private readonly database: StudioDatabase,
+    private readonly history: Pick<ChatLogs, 'ensure' | 'oldest' | 'remove'>,
+    private readonly hooks: { flush?: (path: string) => Promise<void>; close?: (path: string) => Promise<void> } = {},
+  ) {}
   private async serialized<T>(key: ConversationWorkspaceKey, work: () => Promise<T>): Promise<T> {
-    const path = directory(key),
-      previous = this.queues.get(path) ?? Promise.resolve()
+    const id = segment(key.workspaceId),
+      previous = this.queues.get(id) ?? Promise.resolve()
     const next = previous.catch(() => undefined).then(work)
-    this.queues.set(path, next)
+    this.queues.set(id, next)
     try {
       return await next
     } finally {
-      if (this.queues.get(path) === next) this.queues.delete(path)
+      if (this.queues.get(id) === next) this.queues.delete(id)
     }
   }
   async list(key: ConversationWorkspaceKey): Promise<ConversationThread[]> {
+    requireWorkspace(key)
     return this.serialized(key, async () => {
-      if (!(await safeDirectory(key))) return []
-      const folder = directory(key)
-      const files = await this.files(key)
-      const cached = await readIndex(key.workspaceRoot, folder)
-      if (cached && JSON.stringify(cached.files) === JSON.stringify(files)) return sorted(cached.threads)
-      const rows = cachedRows(cached)
-      const threads: ConversationThread[] = []
-      for (const file of files) {
-        const thread = await this.thread(key.workspaceRoot, folder, file, rows.get(file.file))
-        if (thread) threads.push(thread)
-      }
-      await saveIndex(key.workspaceRoot, folder, { version: INDEX_VERSION, threads, files })
-      return sorted(threads)
+      const logs = await this.logsOf(key)
+      for (const log of logs) await this.catchUp(key, log)
+      const rows = await this.database.all<{ thread: string | null }>(
+        'SELECT thread FROM chat_threads WHERE chat_key = ?',
+        [segment(key.workspaceId)],
+      )
+      return sorted(rows.flatMap((row) => (row.thread ? [JSON.parse(row.thread) as ConversationThread] : [])))
     })
   }
-  /** Refresh one completed turn without rescanning every other transcript. */
+  /** Refresh one completed turn without folding any other agent's log. */
   async refresh(key: ConversationKey): Promise<ConversationThread | null> {
     if (!key.agentId.trim()) throw new Error('Conversation identity is required.')
+    requireWorkspace(key)
     return this.serialized(key, async () => {
-      if (!(await safeDirectory(key))) return null
-      const folder = directory(key)
-      const name = `${segment(key.agentId)}.jsonl`
-      await this.hooks.flush?.(join(folder, name))
-      const current = await fingerprint(join(folder, name), name)
-      const cache = await readIndex(key.workspaceRoot, folder)
-      const rows = cachedRows(cache)
-      const thread = current ? await this.thread(key.workspaceRoot, folder, current, rows.get(name)) : null
-      if (cache) {
-        const files = cache.files.filter((file) => file.file !== name)
-        if (current) files.push(current)
-        files.sort((a, b) => a.file.localeCompare(b.file))
-        const threads = cache.threads.filter((entry) => entry.agentId !== key.agentId)
-        if (thread) threads.push(thread)
-        await saveIndex(key.workspaceRoot, folder, { version: INDEX_VERSION, threads, files })
-      } else {
-        const files = await this.files(key)
-        const threads: ConversationThread[] = []
-        for (const file of files) {
-          const entry = file.file === name ? thread : await this.thread(key.workspaceRoot, folder, file)
-          if (entry) threads.push(entry)
-        }
-        await saveIndex(key.workspaceRoot, folder, { version: INDEX_VERSION, threads, files })
-      }
-      return thread
+      const path = conversationIndexTranscriptPath(key)
+      await this.hooks.flush?.(path)
+      await this.history.ensure(path, key.workspaceRoot)
+      const log = logKeyOf(key, segment(key.agentId))
+      await this.catchUp(key, log)
+      const row = await this.database.get<{ thread: string | null }>('SELECT thread FROM chat_threads WHERE log_key = ?', [
+        log,
+      ])
+      return row?.thread ? (JSON.parse(row.thread) as ConversationThread) : null
     })
   }
-  /** Incremental batches let IPC and remote consumers surface hits before scanning finishes. */
+  /** Hits in batches, so IPC and remote consumers surface them before the search finishes. */
   async search(
     input: ConversationSearchInput,
     options: { signal?: AbortSignal; onBatch?: (hits: ConversationSearchHit[]) => void } = {},
   ): Promise<ConversationSearchHit[]> {
     const query = input.query.trim().toLowerCase().slice(0, 500)
-    if (!query || !(await safeDirectory(input))) return []
-    const hits: ConversationSearchHit[] = [],
-      pending: ConversationSearchHit[] = []
-    for (const file of await this.files(input)) {
-      options.signal?.throwIfAborted()
-      const path = join(directory(input), file.file)
-      const seen = new Set<string>(),
-        tails = new Map<string, string>(),
-        turnSeq = new Map<string, number>()
-      let ordinal = 0
-      // One unreadable transcript costs its own hits, not the whole search.
-      // Only the two kinds of event a search reads are parsed: a transcript is
-      // mostly tool output, and the palette searches every chat the sidebar
-      // lists on each pause in typing, so parsing every line was most of it.
-      const events = guarded(
-        readEvents(input.workspaceRoot, path, this.maxBytes, options.signal, mightBeSearched),
-        options.signal,
-      )
-      for await (const event of events) {
-        ordinal = event.seq ?? ordinal + 1
-        const turnId = text(event.payload?.turnId)
-        if (event.type === 'user_message') turnSeq.set(turnId, ordinal)
-        if (event.type !== 'user_message' && event.type !== 'content_delta') continue
-        const key = `${event.type}:${turnId}`
-        if (seen.has(key)) continue
-        // A person's message is searched as its words: a quote it carries is
-        // its passage and comment, never the token it rides in.
-        const said =
-          event.type === 'user_message' ? quotesToInlineText(text(event.payload?.text)) : text(event.payload?.text)
-        const value = `${tails.get(key) ?? ''}${said}`
-        const offset = value.toLowerCase().indexOf(query)
-        tails.set(key, value.slice(-Math.max(160, query.length)))
-        if (offset < 0) continue
-        seen.add(key)
-        const snippet = `${offset > 80 ? '…' : ''}${value.slice(Math.max(0, offset - 80), offset + query.length + 100)}${value.length > offset + query.length + 100 ? '…' : ''}`
-        const hit: ConversationSearchHit = {
-          agentId: event.agentId,
-          seq: turnSeq.get(turnId) ?? ordinal,
-          ...(turnId ? { turnId } : {}),
-          snippet,
-          from:
-            event.type === 'content_delta'
-              ? 'agent'
-              : readConversationMessageOrigin(event.payload?.origin)
-                ? 'studio'
-                : 'person',
-        }
-        hits.push(hit)
-        pending.push(hit)
-        if (pending.length >= 20) options.onBatch?.(pending.splice(0))
-        if (hits.length >= 200) {
-          if (pending.length) options.onBatch?.(pending.splice(0))
-          return hits
-        }
+    requireWorkspace(input)
+    if (!query) return []
+    // What came since the last listing is indexed first.
+    await this.serialized(input, async () => {
+      for (const log of await this.logsOf(input)) await this.catchUp(input, log)
+    })
+    options.signal?.throwIfAborted()
+    const chat = segment(input.workspaceId)
+    // A trigram index finds three characters or more; a shorter query reads the chat's rows.
+    const rows =
+      [...query].length >= 3
+        ? await this.database.all<Doc>(
+            `SELECT d.agent_id, d.turn_id, d.kind, d.seq, d.origin, d.body FROM chat_search
+             JOIN chat_search_docs d ON d.id = chat_search.rowid
+             WHERE chat_search MATCH ? AND d.chat_key = ? ORDER BY d.agent_id, d.seq, d.kind DESC LIMIT ?`,
+            [`"${query.replace(/"/g, '""')}"`, chat, MAX_HITS],
+          )
+        : await this.database.all<Doc>(
+            `SELECT agent_id, turn_id, kind, seq, origin, body FROM chat_search_docs
+             WHERE chat_key = ? AND instr(lower(body), ?) > 0 ORDER BY agent_id, seq, kind DESC LIMIT ?`,
+            [chat, query, MAX_HITS],
+          )
+    options.signal?.throwIfAborted()
+    const hits: ConversationSearchHit[] = []
+    const pending: ConversationSearchHit[] = []
+    for (const row of rows) {
+      const offset = row.body.toLowerCase().indexOf(query)
+      if (offset < 0) continue
+      const snippet = `${offset > 80 ? '…' : ''}${row.body.slice(Math.max(0, offset - 80), offset + query.length + 100)}${row.body.length > offset + query.length + 100 ? '…' : ''}`
+      const hit: ConversationSearchHit = {
+        agentId: row.agent_id,
+        seq: row.seq,
+        ...(row.turn_id ? { turnId: row.turn_id } : {}),
+        snippet,
+        from: row.kind === 'agent' ? 'agent' : row.origin === 'studio' ? 'studio' : 'person',
       }
+      hits.push(hit)
+      pending.push(hit)
+      if (pending.length >= 20) options.onBatch?.(pending.splice(0))
     }
     if (pending.length) options.onBatch?.(pending)
     return hits
@@ -220,91 +159,136 @@ export class ConversationIndex {
   /** Caller must reject active sessions and obtain explicit confirmation before deleting. */
   async delete(key: ConversationKey): Promise<void> {
     if (!key.agentId.trim()) throw new Error('Conversation identity is required.')
+    requireWorkspace(key)
     await this.serialized(key, async () => {
-      if (!(await safeDirectory(key))) return
       const path = conversationIndexTranscriptPath(key)
       await this.hooks.close?.(path)
-      const file = await lstat(path).catch((error) => {
-        if (isMissing(error)) return null
-        throw error
-      })
-      if (file?.isSymbolicLink()) throw new Error('A conversation transcript cannot be a symbolic link.')
-      this.folds.delete(path)
-      if (file) await removeConversationStorage(key.workspaceRoot, path)
-      const tools = join(directory(key), `${segment(key.agentId)}.tools`)
-      const detail = await lstat(tools).catch((error) => {
-        if (isMissing(error)) return null
-        throw error
-      })
-      if (detail) await removeConversationStorage(key.workspaceRoot, tools)
-      const cache = await readIndex(key.workspaceRoot, directory(key))
-      if (cache)
-        await saveIndex(key.workspaceRoot, directory(key), {
-          ...cache,
-          threads: cache.threads.filter((entry) => entry.agentId !== key.agentId),
-          files: cache.files.filter((entry) => entry.file !== `${segment(key.agentId)}.jsonl`),
-        })
+      // The log, its row, its search rows and its tools' details, in one transaction.
+      await this.history.remove(path, key.workspaceRoot)
     })
   }
   /**
-   * One transcript's row: the cached one while the file is as it was cached,
-   * else read from what this run already read of it onwards. A transcript that
-   * cannot be read still gets a row — named from its file, dated from its last
-   * write — so one damaged chat does not hide every other chat in the workspace.
+   * The logs of a chat's agents. A chat's folder is looked through once a
+   * run for transcripts builds before the database left there, and each is
+   * imported before it is listed.
    */
-  private async thread(
-    root: string,
-    folder: string,
-    file: Fingerprint,
-    cached?: { file: Fingerprint; thread: ConversationThread },
-  ): Promise<ConversationThread | null> {
-    if (cached && cached.file.size === file.size && cached.file.mtime === file.mtime) return cached.thread
-    const path = join(folder, file.file)
-    try {
-      const fold = await readThread(root, path, this.maxBytes, this.folds.get(path))
-      this.folds.delete(path)
-      this.folds.set(path, fold)
-      if (this.folds.size > MAX_CACHED_FOLDS) this.folds.delete(this.folds.keys().next().value!)
-      return fold.thread && { ...fold.thread }
-    } catch (error) {
-      this.folds.delete(path)
-      // Gone since the directory was listed: it has no row, as it had none before it was written.
-      if (isMissing(error)) return null
-      console.warn(
-        `[conversation-index] ${file.file} could not be indexed:`,
-        error instanceof Error ? error.message : error,
-      )
-      return {
-        agentId: fileAgentId(file.file),
-        title: 'Unreadable conversation',
-        titleSource: 'first-message',
-        createdAt: file.mtime,
-        updatedAt: file.mtime,
-        turnCount: 0,
-        model: '',
-        providerId: '',
-        lastSeq: 0,
-        firstUserText: '',
+  private async logsOf(key: ConversationWorkspaceKey): Promise<string[]> {
+    const chat = segment(key.workspaceId)
+    if (!this.scanned.has(chat)) {
+      // Waits out the store's one-time move, so a listing right after an upgrade sees what it brings.
+      await workspaceStoreReady(key.workspaceRoot)
+      let names: string[] = []
+      try {
+        names = (await readdir(directory(key))).filter((name) => name.endsWith('.jsonl'))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
+      for (const name of names) {
+        const path = join(directory(key), name)
+        await this.hooks.flush?.(path)
+        await this.history.ensure(path, key.workspaceRoot)
+      }
+      this.scanned.add(chat)
     }
+    // Every key of this chat: `<chat>/` up to, not including, `<chat>0` ('0' follows '/').
+    const rows = await this.database.all<{ log_key: string }>(
+      'SELECT log_key FROM chat_logs WHERE log_key >= ? AND log_key < ? ORDER BY log_key',
+      [`${chat}/`, `${chat}0`],
+    )
+    for (const row of rows) await this.hooks.flush?.(join(directory(key), `${row.log_key.slice(chat.length + 1)}.jsonl`))
+    return rows.map((row) => row.log_key)
   }
-  private async files(key: ConversationWorkspaceKey): Promise<Fingerprint[]> {
-    const entries = await readdir(directory(key), { withFileTypes: true })
-    const files: Fingerprint[] = []
-    for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
-      const path = join(directory(key), entry.name)
-      await this.hooks.flush?.(path)
-      const value = await fingerprint(path, entry.name)
-      if (value) files.push(value)
+  /** Fold what one log gained since its row was folded, and index it for search, in one transaction. */
+  private async catchUp(key: ConversationWorkspaceKey, log: string): Promise<void> {
+    const kept = await this.database.get<{ folded_seq: number; thread: string | null; fold: string }>(
+      'SELECT folded_seq, thread, fold FROM chat_threads WHERE log_key = ?',
+      [log],
+    )
+    const last = await this.database.get<{ last_seq: number }>('SELECT last_seq FROM chat_logs WHERE log_key = ?', [log])
+    if (!last || (kept && kept.folded_seq >= last.last_seq)) return
+    const fold = readFold(kept)
+    const docs = new Map<string, Doc>()
+    const replied = new Set<string>()
+    const path = join(directory(key), `${log.slice(log.indexOf('/') + 1)}.jsonl`)
+    let folded = kept?.folded_seq ?? 0
+    for (;;) {
+      const rows = await this.history.oldest(path, key.workspaceRoot, folded, FOLD_ROWS)
+      for (const row of rows) {
+        folded = row.seq
+        const event = parseEvent(row.body)
+        if (!event) continue
+        foldEvent(fold, event)
+        const turnId = text(event.payload?.turnId)
+        if (event.type === 'user_message') {
+          docs.set(`${turnId}\0user`, {
+            agent_id: event.agentId,
+            turn_id: turnId,
+            kind: 'user',
+            seq: event.seq ?? row.seq,
+            origin: readConversationMessageOrigin(event.payload?.origin) ? 'studio' : 'person',
+            // A person's message is searched as its words: a quote it carries is its passage and comment.
+            body: quotesToInlineText(text(event.payload?.text)),
+          })
+        } else if (event.type === 'content_delta') replied.add(turnId)
+      }
+      if (rows.length < FOLD_ROWS) break
     }
-    return files.sort((a, b) => a.file.localeCompare(b.file))
+    if (fold.thread) {
+      fold.thread.turnCount = fold.turns.size
+      if (fold.costs.size) fold.thread.totalCostUsd = [...fold.costs.values()].reduce((sum, cost) => sum + cost, 0)
+      else delete fold.thread.totalCostUsd
+    }
+    const chat = segment(key.workspaceId)
+    const agentId = fold.thread?.agentId ?? decodeAgent(log)
+    await this.database.transaction(async (tx) => {
+      for (const turnId of replied) {
+        // A reply is searched whole: every delta of its turn, as stored.
+        const deltas = await tx.all<{ body: string }>(
+          "SELECT body FROM chat_events WHERE log_key = ? AND turn_id IS ? AND type = 'content_delta' ORDER BY seq",
+          [log, turnId || null],
+        )
+        const user = await tx.get<{ seq: number }>(
+          "SELECT seq FROM chat_search_docs WHERE log_key = ? AND turn_id = ? AND kind = 'user'",
+          [log, turnId],
+        )
+        docs.set(`${turnId}\0agent`, {
+          agent_id: agentId,
+          turn_id: turnId,
+          kind: 'agent',
+          seq: docs.get(`${turnId}\0user`)?.seq ?? user?.seq ?? folded,
+          origin: 'agent',
+          body: deltas.map((delta) => text(parseEvent(delta.body)?.payload?.text)).join(''),
+        })
+      }
+      for (const doc of docs.values())
+        await tx.run(
+          `INSERT INTO chat_search_docs (log_key, chat_key, agent_id, turn_id, kind, seq, origin, body)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (log_key, turn_id, kind) DO UPDATE SET seq = excluded.seq, origin = excluded.origin, body = excluded.body`,
+          [log, chat, doc.agent_id, doc.turn_id, doc.kind, doc.seq, doc.origin, doc.body],
+        )
+      await tx.run(
+        `INSERT INTO chat_threads (log_key, chat_key, folded_seq, thread, fold) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (log_key) DO UPDATE SET folded_seq = excluded.folded_seq, thread = excluded.thread, fold = excluded.fold`,
+        [log, chat, folded, fold.thread ? JSON.stringify(fold.thread) : null, JSON.stringify(storedFold(fold))],
+      )
+    })
   }
 }
 
-/** The agent a transcript file is named for. A name this app did not encode (`50%.jsonl`) is used as it is. */
-function fileAgentId(file: string): string {
-  const name = file.slice(0, -'.jsonl'.length)
+type Doc = { agent_id: string; turn_id: string; kind: string; seq: number; origin: string; body: string }
+
+function requireWorkspace(key: ConversationWorkspaceKey): void {
+  if (!key.workspaceRoot.trim() || !key.workspaceId.trim()) throw new Error('Workspace identity is required.')
+}
+
+function logKeyOf(key: ConversationWorkspaceKey, agentSegment: string): string {
+  return `${segment(key.workspaceId)}/${agentSegment}`
+}
+
+/** The agent a log is named for. A name this app did not encode (`50%`) is used as it is. */
+function decodeAgent(log: string): string {
+  const name = log.slice(log.indexOf('/') + 1)
   try {
     return decodeURIComponent(name)
   } catch {
@@ -312,168 +296,33 @@ function fileAgentId(file: string): string {
   }
 }
 
-async function safeDirectory(key: ConversationWorkspaceKey): Promise<boolean> {
-  if (!key.workspaceRoot.trim() || !key.workspaceId.trim()) throw new Error('Workspace identity is required.')
-  // Waits out the store's one-time move, so a listing right after an upgrade
-  // reads the history it brings rather than an empty folder.
-  let path = await workspaceStoreReady(key.workspaceRoot)
-  for (const part of ['conversations', segment(key.workspaceId)]) {
-    path = join(path, part)
-    let value
-    try {
-      value = await lstat(path)
-    } catch (error) {
-      if (isMissing(error)) return false
-      throw error
-    }
-    if (value.isSymbolicLink() || !value.isDirectory())
-      throw new Error("Conversation storage must be a real directory within the workspace's store.")
+function readFold(kept: { thread: string | null; fold: string } | undefined): ThreadFold {
+  if (!kept) return { thread: null, turns: new Set(), quietTurns: new Set(), costs: new Map() }
+  const stored = JSON.parse(kept.fold) as StoredFold
+  return {
+    thread: kept.thread ? (JSON.parse(kept.thread) as ConversationThread) : null,
+    turns: new Set(stored.turns),
+    quietTurns: new Set(stored.quietTurns),
+    costs: new Map(stored.costs),
   }
-  return true
 }
-async function fingerprint(path: string, file: string): Promise<Fingerprint | null> {
+
+function storedFold(fold: ThreadFold): StoredFold {
+  return { turns: [...fold.turns], quietTurns: [...fold.quietTurns], costs: [...fold.costs] }
+}
+
+function parseEvent(body: string): ConversationEvent | null {
   try {
-    const value = await lstat(path)
-    return value.isFile() && !value.isSymbolicLink() ? { file, size: value.size, mtime: value.mtimeMs } : null
-  } catch (error) {
-    if (isMissing(error)) return null
-    throw error
-  }
-}
-/** Where to read an oversized transcript: its opening and its end. */
-const HEAD_BYTES = 1024 * 1024
-const CHUNK_BYTES = 64 * 1024
-/**
- * Whether a transcript line can be an event search reads. A cheap test on the
- * raw text, before the parse: an event's type is written in it, so a line
- * that names neither type is neither, whatever its payload holds.
- */
-const mightBeSearched = (line: string) => line.includes('user_message') || line.includes('content_delta')
-async function* readEvents(
-  root: string,
-  path: string,
-  maxBytes: number,
-  signal?: AbortSignal,
-  keep?: (line: string) => boolean,
-): AsyncIterable<ConversationEvent> {
-  const info = await fingerprint(path, '')
-  if (!info) return
-  const file = await openConfinedExistingFile(await conversationConfinementRoot(root, path), path)
-  try {
-    const size = (await file.stat()).size
-    for (const range of wholeFileRanges(size, maxBytes))
-      for await (const line of readLines(file, range.start, range.end, signal)) {
-        signal?.throwIfAborted()
-        if (keep && !keep(line.text)) continue
-        const event = parseEvent(line.text)
-        if (event) yield event
-      }
-  } finally {
-    await file.close()
-  }
-}
-/** The whole file, or its opening and its last `maxBytes` when it is longer than that. */
-function wholeFileRanges(size: number, maxBytes: number): Array<{ start: number; end: number }> {
-  return size > maxBytes && size - maxBytes > HEAD_BYTES
-    ? [
-        { start: 0, end: HEAD_BYTES },
-        { start: size - maxBytes, end: size },
-      ]
-    : [{ start: 0, end: size }]
-}
-/**
- * The complete lines between two byte offsets, each with the offset just past
- * its newline. What follows the last newline is an append still in progress
- * (or the cut end of a range) and is left for the next read. A range that
- * starts mid-line yields that line's tail, which does not parse and is skipped.
- */
-async function* readLines(
-  file: FileHandle,
-  start: number,
-  end: number,
-  signal?: AbortSignal,
-): AsyncIterable<{ text: string; next: number }> {
-  const chunk = Buffer.alloc(CHUNK_BYTES)
-  let carry: Buffer[] = []
-  let position = start
-  while (position < end) {
-    signal?.throwIfAborted()
-    const { bytesRead } = await file.read(chunk, 0, Math.min(CHUNK_BYTES, end - position), position)
-    if (!bytesRead) return
-    let lineStart = 0
-    for (let index = chunk.indexOf(0x0a, 0); index >= 0 && index < bytesRead; index = chunk.indexOf(0x0a, index + 1)) {
-      carry.push(chunk.subarray(lineStart, index))
-      const text = Buffer.concat(carry).toString('utf8')
-      carry = []
-      lineStart = index + 1
-      yield { text, next: position + lineStart }
-    }
-    if (lineStart < bytesRead) carry.push(Buffer.from(chunk.subarray(lineStart, bytesRead)))
-    position += bytesRead
-  }
-}
-function parseEvent(line: string): ConversationEvent | null {
-  try {
-    const value = record(JSON.parse(line))
-    return typeof value.type === 'string' && typeof value.agentId === 'string' && typeof value.createdAt === 'number'
-      ? (value as ConversationEvent)
-      : null
+    const event = JSON.parse(body) as ConversationEvent
+    return event && typeof event === 'object' && typeof event.type === 'string' ? event : null
   } catch {
-    // A range cut mid-line leaves a fragment that does not parse; it is skipped.
     return null
   }
 }
-/** Rethrows cancellation; any other read failure ends that transcript's events. */
-async function* guarded(events: AsyncIterable<ConversationEvent>, signal?: AbortSignal) {
-  try {
-    yield* events
-  } catch (error) {
-    if ((error as Error).name === 'AbortError' || signal?.aborted) throw error
-  }
-}
-/**
- * A transcript's row, read on from `previous` when the file only grew since,
- * else read whole. An append larger than a whole read would be is read whole,
- * so a transcript past the read limit keeps being read from its two ends.
- */
-async function readThread(root: string, path: string, maxBytes: number, previous?: ThreadFold): Promise<ThreadFold> {
-  const file = await openConfinedExistingFile(await conversationConfinementRoot(root, path), path)
-  try {
-    const size = (await file.stat()).size
-    const head = Buffer.alloc(Math.min(size, FOLD_HEAD_BYTES))
-    await file.read(head, 0, head.length, 0)
-    const appended =
-      previous !== undefined &&
-      previous.offset <= size &&
-      size - previous.offset <= maxBytes &&
-      head.subarray(0, previous.head.length).equals(previous.head)
-    const fold: ThreadFold = appended
-      ? {
-          thread: previous.thread && { ...previous.thread },
-          turns: new Set(previous.turns),
-          quietTurns: new Set(previous.quietTurns),
-          costs: new Map(previous.costs),
-          offset: previous.offset,
-          head: previous.head,
-        }
-      : { thread: null, turns: new Set(), quietTurns: new Set(), costs: new Map(), offset: 0, head: Buffer.alloc(0) }
-    const ranges = appended ? [{ start: previous.offset, end: size }] : wholeFileRanges(size, maxBytes)
-    for (const range of ranges)
-      for await (const line of readLines(file, range.start, range.end)) {
-        fold.offset = line.next
-        const event = parseEvent(line.text)
-        if (event) foldEvent(fold, event)
-      }
-    if (!appended) fold.head = Buffer.from(head.subarray(0, Math.min(head.length, fold.offset)))
-    if (fold.thread) {
-      fold.thread.turnCount = fold.turns.size
-      if (fold.costs.size) fold.thread.totalCostUsd = [...fold.costs.values()].reduce((sum, cost) => sum + cost, 0)
-    }
-    return fold
-  } finally {
-    await file.close()
-  }
-}
+
+const record = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+
 function foldEvent(fold: ThreadFold, event: ConversationEvent): void {
   const thread = (fold.thread ??= {
     agentId: event.agentId,
@@ -548,75 +397,8 @@ function foldEvent(fold: ThreadFold, event: ConversationEvent): void {
     }
   }
 }
-/**
- * The cached rows by transcript file, with the fingerprint each was read at. A
- * row belongs to the file its agent's transcript is named for. A file no row
- * can be matched to (empty, or named for another agent) is read again.
- */
-function cachedRows(cache: Index | null): Map<string, { file: Fingerprint; thread: ConversationThread }> {
-  const rows = new Map<string, { file: Fingerprint; thread: ConversationThread }>()
-  if (!cache) return rows
-  const threads = new Map<string, ConversationThread>()
-  for (const thread of cache.threads) threads.set(`${segment(thread.agentId)}.jsonl`, thread)
-  for (const file of cache.files) {
-    const thread = threads.get(file.file) ?? cache.threads.find((entry) => entry.agentId === fileAgentId(file.file))
-    if (thread) rows.set(file.file, { file, thread })
-  }
-  return rows
-}
 /** A generated-title service can replace this ladder rung without changing index ownership. */
 export function firstMessageTitle(value: string): string {
   return value.trim().replace(/\s+/gu, ' ').slice(0, 60) || 'New conversation'
 }
 const sorted = (threads: ConversationThread[]) => [...threads].sort((a, b) => b.updatedAt - a.updatedAt)
-async function readIndex(root: string, path: string): Promise<Index | null> {
-  try {
-    const file = join(path, 'index.json')
-    if ((await lstat(file)).isSymbolicLink()) return null
-    const value = record(
-      JSON.parse((await readConversationStorage(root, file, MAX_CONVERSATION_METADATA_BYTES)).toString('utf8')),
-    )
-    if (value.version !== INDEX_VERSION || !Array.isArray(value.threads) || !Array.isArray(value.files)) return null
-    if (
-      !value.threads.every((thread) => {
-        const item = record(thread)
-        return (
-          typeof item.agentId === 'string' &&
-          typeof item.title === 'string' &&
-          typeof item.model === 'string' &&
-          typeof item.providerId === 'string' &&
-          typeof item.firstUserText === 'string' &&
-          Number.isFinite(item.createdAt) &&
-          Number.isFinite(item.updatedAt) &&
-          Number.isSafeInteger(item.turnCount) &&
-          Number.isSafeInteger(item.lastSeq) &&
-          (item.lastTurnEndedAt === undefined || Number.isFinite(item.lastTurnEndedAt)) &&
-          (item.lastAssistantText === undefined || typeof item.lastAssistantText === 'string') &&
-          (item.totalCostUsd === undefined ||
-            (typeof item.totalCostUsd === 'number' && Number.isFinite(item.totalCostUsd) && item.totalCostUsd >= 0)) &&
-          ['first-message', 'user', 'generated'].includes(text(item.titleSource))
-        )
-      })
-    )
-      return null
-    if (
-      !value.files.every((file) => {
-        const item = record(file)
-        return (
-          typeof item.file === 'string' &&
-          item.file.endsWith('.jsonl') &&
-          !/[\\/]/u.test(item.file) &&
-          Number.isFinite(item.size) &&
-          Number.isFinite(item.mtime)
-        )
-      })
-    )
-      return null
-    return value as Index
-  } catch {
-    return null
-  }
-}
-async function saveIndex(root: string, path: string, value: Index): Promise<void> {
-  await writeConversationStorage(root, join(path, 'index.json'), `${JSON.stringify(value)}\n`)
-}

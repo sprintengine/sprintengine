@@ -1,6 +1,4 @@
-import { mkdir, readFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import { writeFileAtomically } from './config-file-write'
+import type { StudioDatabase } from '../server/db/database'
 import type { ConversationKey } from '../shared/conversation-runtime'
 
 /**
@@ -14,35 +12,26 @@ import type { ConversationKey } from '../shared/conversation-runtime'
  * an answer a client is waiting on, a schedule's run and the chat list all
  * see the turn end.
  *
- * It is written ahead: a chat goes in before its turn's message is
- * committed, and comes out once the chat is at rest again. A chat listed
+ * It is written ahead: a chat goes in (`turn_outbox`, in the data folder's
+ * database) before its turn's message is committed, and comes out once the
+ * chat is at rest again. A chat listed
  * whose log has no open turn costs a look at the end of its log; nothing is
  * decided here, the log is what says whether a turn is open. It is an aid,
  * not a dependency: a list that cannot be read or written leaves a turn to
  * be closed when its chat is next opened, as it was before there was one.
  */
 
+/** The file builds before the database kept the list in, under the data folder; read once, by the import. */
 export const CONVERSATION_OUTBOX_FILE = 'conversation-outbox.json'
-
-type Stored = { version: 1; chats: ConversationKey[] }
 
 const chatId = (chat: ConversationKey) => JSON.stringify([chat.workspaceRoot, chat.workspaceId, chat.agentId])
 
 export class ConversationOutbox {
   private readonly chats = new Map<string, ConversationKey>()
   private loaded: Promise<void> | null = null
-  // Every change counts up; a write carries the count it was taken at, and
-  // `written` is the newest count on disk.
-  private changes = 0
-  private written = 0
-  private writing: Promise<void> | null = null
 
-  /** Without a directory nothing is kept, and a start recovers nothing: what tests that need no recovery construct. */
-  constructor(private readonly userDataDir?: string) {}
-
-  private get file(): string | null {
-    return this.userDataDir ? join(this.userDataDir, CONVERSATION_OUTBOX_FILE) : null
-  }
+  /** Without a database nothing is kept, and a start recovers nothing: what tests that need no recovery construct. */
+  constructor(private readonly database?: StudioDatabase) {}
 
   /** The chats the last run left listed. */
   async pending(): Promise<ConversationKey[]> {
@@ -50,30 +39,34 @@ export class ConversationOutbox {
     return [...this.chats.values()]
   }
 
-  /**
-   * List a chat before its turn's message is committed; settles once that is
-   * on disk, and fails when it could not be written.
-   */
+  /** List a chat before its turn's message is committed; settles once that is committed, and fails when it could not be. */
   async open(chat: ConversationKey): Promise<void> {
     await this.load()
     const id = chatId(chat)
-    if (this.chats.has(id) && this.written === this.changes) return
-    this.chats.set(id, { workspaceRoot: chat.workspaceRoot, workspaceId: chat.workspaceId, agentId: chat.agentId })
-    this.changes += 1
-    await this.save(this.changes)
+    const key = { workspaceRoot: chat.workspaceRoot, workspaceId: chat.workspaceId, agentId: chat.agentId }
+    await this.database?.run(
+      'INSERT OR IGNORE INTO turn_outbox (workspace_root, workspace_id, agent_id) VALUES (?, ?, ?)',
+      [key.workspaceRoot, key.workspaceId, key.agentId],
+    )
+    this.chats.set(id, key)
   }
 
   /** The chat is at rest. A chat listed too long only costs a look at a start, so a failed write is let go. */
   settle(chat: ConversationKey): Promise<void> {
     if (!this.chats.delete(chatId(chat))) return Promise.resolve()
-    this.changes += 1
-    return this.save(this.changes).catch(() => undefined)
+    return (
+      this.database
+        ?.run('DELETE FROM turn_outbox WHERE workspace_root = ? AND workspace_id = ? AND agent_id = ?', [
+          chat.workspaceRoot,
+          chat.workspaceId,
+          chat.agentId,
+        ])
+        .then(() => undefined)
+        .catch(() => undefined) ?? Promise.resolve()
+    )
   }
 
-  /**
-   * Read once. A file that does not read is not remembered as read: the next
-   * call tries again, and meanwhile nothing is listed from it.
-   */
+  /** Read once. A list that does not read is not remembered as read: the next call tries again. */
   private load(): Promise<void> {
     this.loaded ??= this.read().catch((error: unknown) => {
       this.loaded = null
@@ -86,54 +79,28 @@ export class ConversationOutbox {
   }
 
   private async read(): Promise<void> {
-    const file = this.file
-    if (!file) return
-    let raw: string
-    try {
-      raw = await readFile(file, 'utf8')
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
-      throw error
+    if (!this.database) return
+    const rows = await this.database.all<{ workspace_root: string; workspace_id: string; agent_id: string }>(
+      'SELECT workspace_root, workspace_id, agent_id FROM turn_outbox',
+    )
+    for (const row of rows) {
+      const chat = { workspaceRoot: row.workspace_root, workspaceId: row.workspace_id, agentId: row.agent_id }
+      if (!this.chats.has(chatId(chat))) this.chats.set(chatId(chat), chat)
     }
-    // A file that does not parse lists nothing: the turns it named are closed
-    // when their chats are next opened.
-    let stored: unknown
-    try {
-      stored = JSON.parse(raw)
-    } catch {
-      return
-    }
-    const chats = (stored as Partial<Stored> | null)?.chats
-    if (!Array.isArray(chats)) return
-    for (const chat of chats) if (isKey(chat) && !this.chats.has(chatId(chat))) this.chats.set(chatId(chat), chat)
   }
+}
 
-  /** Write until the file holds change `change` or later; fails when the write that should have carried it did not land. */
-  private async save(change: number): Promise<void> {
-    const file = this.file
-    if (!file) {
-      this.written = Math.max(this.written, change)
-      return
-    }
-    while (this.written < change) {
-      if (this.writing) {
-        await this.writing.catch(() => undefined)
-        continue
-      }
-      const taken = this.changes
-      const body: Stored = { version: 1, chats: [...this.chats.values()] }
-      this.writing = (async () => {
-        await mkdir(dirname(file), { recursive: true })
-        await writeFileAtomically(file, `${JSON.stringify(body)}\n`)
-        this.written = Math.max(this.written, taken)
-      })()
-      try {
-        await this.writing
-      } finally {
-        this.writing = null
-      }
-    }
+/** The chats the file builds before the database wrote lists (the import); null for one that is not that. */
+export function readConversationOutboxFile(raw: string): ConversationKey[] | null {
+  let stored: unknown
+  try {
+    stored = JSON.parse(raw)
+  } catch {
+    return null
   }
+  const chats = (stored as { chats?: unknown } | null)?.chats
+  if (!Array.isArray(chats)) return null
+  return chats.filter(isKey)
 }
 
 function isKey(value: unknown): value is ConversationKey {

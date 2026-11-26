@@ -1,26 +1,24 @@
-import { dirname } from 'path'
-import { openConfinedExistingFile } from './conversation-file-access'
-import { openConversationAppendFile } from './conversation-persistence'
-import { conversationConfinementRoot } from './workspace-store'
+import type { ChatLogs, ChatReceiptRow, ChatRow } from '../server/db/chat-logs'
 
 import type { ConversationEvent } from '../shared/conversation-runtime'
 
 /**
- * The append side of a chat's JSONL transcript.
+ * The append side of a chat's log, in the data folder's database
+ * (`server/db/chat-logs.ts`).
  *
  * Every event gets its sequence number before it reaches this log, and the
- * runtime publishes an event to subscribers only once the append for it has
- * resolved — so any sequence number a client has seen is on disk, and a client
- * that drops and reconnects can ask for "everything after N" instead of the
- * whole chat again. That makes the write sit on the live path, so it is
- * batched rather than awaited event by event:
+ * runtime publishes an event to subscribers only once the write for it has
+ * committed — so any sequence number a client has seen is stored, and a
+ * client that drops and reconnects can ask for "everything after N" instead
+ * of the whole chat again. That makes the write sit on the live path, so it
+ * is batched rather than awaited event by event:
  *
  *  - Events queue in memory. A boundary event (anything that is not a delta or
  *    a partial tool output) writes the queue at once, itself included; deltas
  *    wait at most {@link DEFAULT_DELTA_FLUSH_MS}, partial tool output at most
  *    {@link DEFAULT_TOOL_OUTPUT_FLUSH_MS}. A streaming chat therefore costs one
- *    write per flush window rather than one per token, and on-screen latency is
- *    bounded by the window.
+ *    transaction per flush window rather than one per token, and on-screen
+ *    latency is bounded by the window.
  *  - Consecutive deltas of one kind in one turn are merged into a single
  *    record. A merged record keeps the first delta's envelope and carries
  *    `parts` — each original delta's id, timestamp, length and sequence — so
@@ -28,12 +26,13 @@ import type { ConversationEvent } from '../shared/conversation-runtime'
  *    published live.
  *  - A partial tool output replaces the one before it for the same tool while
  *    both are still queued: each carries the latest preview, so the earlier one
- *    is dead weight on disk. Its append resolves `superseded` and the runtime
- *    does not publish it. Dropping it never exposes a sequence number past the
- *    durable end of the log, because the record that replaced it is written in
- *    the same batch with a higher one.
- *  - One append stream stays open per transcript file and every write goes
- *    through it in order, so on-disk order is sequence order.
+ *    is dead weight. Its append resolves `superseded` and the runtime does not
+ *    publish it. Dropping it never exposes a sequence number past the stored
+ *    end of the log, because the record that replaced it is written in the
+ *    same batch with a higher one.
+ *  - One batch is one transaction, its receipts included: a batch is stored
+ *    whole or not at all, and the (log, seq) key refuses a number twice.
+ *    Every write of a log goes through this one queue, in order.
  */
 
 /** How long a delta may sit in memory before its batch is written anyway. */
@@ -84,20 +83,22 @@ type Waiter = {
   reject: (error: unknown) => void
 }
 
-export type AppendStream = {
-  /**
-   * Append `chunk` whole or not at all: a write that fails leaves the file as
-   * it was before it (the default stream truncates back what got through).
-   */
-  write(chunk: string): Promise<void>
-  close(): Promise<void>
-}
+/** Where a batch goes: one log's rows and receipts, in one transaction. */
+export type ConversationLogWrite = (
+  filePath: string,
+  storageRoot: string,
+  rows: readonly ChatRow[],
+  receipts: readonly ChatReceiptRow[],
+) => Promise<void>
 
 export type ConversationEventLogOptions = {
+  /** The data folder's chat logs; or, for a test, `write` alone. */
+  history?: Pick<ChatLogs, 'append'>
+  /** Where each batch is written; `history.append` unless a test stands one in. */
+  write?: ConversationLogWrite
   flushDelayMs?: number
   toolOutputFlushDelayMs?: number
   slowWriteMs?: number
-  openStream?: (filePath: string, storageRoot?: string) => Promise<AppendStream>
   onError?: (filePath: string, error: unknown) => void
   /** A write has not settled in `slowWriteMs`; it is still waited for. */
   onStall?: (filePath: string, ms: number) => void
@@ -109,8 +110,7 @@ type FileLog = {
   waiters: Waiter[]
   timer: NodeJS.Timeout | null
   deadline: number
-  stream: Promise<AppendStream> | null
-  // Every write and close for this file, in order. Never rejects.
+  // Every write for this log, in order. Never rejects.
   tail: Promise<void>
 }
 
@@ -122,7 +122,7 @@ export class ConversationEventLog {
   private readonly flushDelayMs: number
   private readonly toolOutputFlushDelayMs: number
   private readonly slowWriteMs: number
-  private readonly openStream: (filePath: string, storageRoot?: string) => Promise<AppendStream>
+  private readonly writeBatch: ConversationLogWrite
   private readonly onError: (filePath: string, error: unknown) => void
   private readonly onStall: (filePath: string, ms: number) => void
 
@@ -133,7 +133,12 @@ export class ConversationEventLog {
       options.toolOutputFlushDelayMs ?? Math.max(DEFAULT_TOOL_OUTPUT_FLUSH_MS, this.flushDelayMs),
     )
     this.slowWriteMs = options.slowWriteMs ?? DEFAULT_SLOW_WRITE_MS
-    this.openStream = options.openStream ?? openAppendStream
+    const history = options.history
+    this.writeBatch =
+      options.write ??
+      (history
+        ? (filePath, storageRoot, rows, receipts) => history.append(filePath, storageRoot, rows, receipts)
+        : () => Promise.reject(new Error('This chat log keeps nothing: it was given no database.')))
     this.onError = options.onError ?? (() => undefined)
     this.onStall =
       options.onStall ??
@@ -207,7 +212,7 @@ export class ConversationEventLog {
     )
   }
 
-  /** Flush and close one file's stream. A later append simply opens a new one. */
+  /** Write what is queued for one log and let it go from memory. A later append takes it up again. */
   async close(filePath: string): Promise<void> {
     const log = this.files.get(filePath)
     // Already closing: the caller still expects it closed when this settles.
@@ -216,26 +221,16 @@ export class ConversationEventLog {
     // starts a new log (queued behind this close) instead of adding to one
     // that is about to be closed and forgotten.
     this.files.delete(filePath)
-    const done = this.write(filePath, log).then(async () => {
-      const stream = log.stream
-      log.stream = null
-      if (!stream) return
-      try {
-        await (await stream).close()
-      } catch (error) {
-        this.reportQuietly(filePath, error)
-      }
-    })
+    const done = this.write(filePath, log)
     this.closing.set(filePath, done)
     await done
     if (this.closing.get(filePath) === done) this.closing.delete(filePath)
   }
 
   /**
-   * Close every stream. An append racing the shutdown opens a fresh log while
-   * the first pass is closing, so this repeats until nothing is left open —
-   * a stream opened and never closed is a descriptor the garbage collector
-   * ends up closing, which newer Node versions treat as an error.
+   * Write and let go of every log. An append racing the shutdown opens a
+   * fresh log while the first pass is closing, so this repeats until nothing
+   * is left queued.
    */
   async closeAll(): Promise<void> {
     while (this.files.size > 0 || this.closing.size > 0) {
@@ -250,7 +245,7 @@ export class ConversationEventLog {
     let log = this.files.get(filePath)
     if (!log) {
       const tail = this.closing.get(filePath) ?? Promise.resolve()
-      log = { entries: [], waiters: [], timer: null, deadline: 0, stream: null, tail }
+      log = { entries: [], waiters: [], timer: null, deadline: 0, tail }
       this.files.set(filePath, log)
     }
     return log
@@ -307,36 +302,27 @@ export class ConversationEventLog {
     const waiters = log.waiters
     log.entries = []
     log.waiters = []
-    const chunk = entries
-      .filter((entry) => entry.kind !== 'event' || !entry.superseded)
-      .map((entry) =>
-        entry.kind === 'run'
-          ? serializeRun(entry.run)
-          : entry.kind === 'record'
-            ? `${JSON.stringify(entry.record)}\n`
-            : serialize(entry.event),
-      )
-      .join('')
+    const kept = entries.filter((entry) => entry.kind !== 'event' || !entry.superseded)
     const outcome = (entry: Entry, ok: boolean): ConversationAppendOutcome =>
       entry.kind === 'event' && entry.superseded ? 'superseded' : ok ? 'written' : 'failed'
     log.tail = log.tail.then(async () => {
       let ok = true
       let timer: NodeJS.Timeout | undefined
       try {
-        if (chunk) {
-          if (!log.stream) log.stream = this.openStream(filePath, log.storageRoot)
-          const stream = log.stream
+        const rows: ChatRow[] = []
+        const receipts: ChatReceiptRow[] = []
+        for (const entry of kept) {
+          if (entry.kind === 'run') rows.push(runRow(entry.run))
+          else if (entry.kind === 'event') rows.push(eventRow(entry.event))
+          else receipts.push(receiptRow(entry.record))
+        }
+        if (rows.length > 0 || receipts.length > 0) {
           timer = setTimeout(() => this.onStall(filePath, this.slowWriteMs), this.slowWriteMs)
           timer.unref?.()
-          await stream.then((open) => open.write(chunk)).finally(() => clearTimeout(timer))
+          await this.writeBatch(filePath, log.storageRoot ?? '', rows, receipts).finally(() => clearTimeout(timer))
         }
       } catch (error) {
         ok = false
-        // Drop the broken stream so the next write reopens rather than failing
-        // forever on a handle that is gone.
-        const broken = log.stream
-        log.stream = null
-        await broken?.then((stream) => stream.close()).catch(() => undefined)
         try {
           this.onError(filePath, error)
         } catch (reported) {
@@ -347,14 +333,6 @@ export class ConversationEventLog {
       for (const waiter of waiters) waiter.resolve(outcome(waiter.entry, ok))
     })
     return log.tail
-  }
-
-  private reportQuietly(filePath: string, error: unknown): void {
-    try {
-      this.onError(filePath, error)
-    } catch {
-      // A close failure has no caller left to tell.
-    }
   }
 }
 
@@ -433,6 +411,35 @@ function serializeRun(run: DeltaRun): string {
   return serialize(merged)
 }
 
+function numberOf(event: ConversationEvent): number {
+  if (typeof event.seq !== 'number' || !Number.isSafeInteger(event.seq))
+    throw new Error('A conversation event reached the log without its sequence number.')
+  return event.seq
+}
+
+function eventRow(event: ConversationEvent): ChatRow {
+  const seq = numberOf(event)
+  return { seq, firstSeq: seq, type: event.type, turnId: turnIdOf(event), body: JSON.stringify(event) }
+}
+
+function runRow(run: DeltaRun): ChatRow {
+  const firstSeq = numberOf(run.event)
+  const seq = run.parts.reduce((last, part) => Math.max(last, part[3] ?? last), firstSeq)
+  return { seq, firstSeq, type: run.event.type, turnId: turnIdOf(run.event), body: serializeRun(run).slice(0, -1) }
+}
+
+function turnIdOf(event: ConversationEvent): string | null {
+  return typeof event.payload?.turnId === 'string' ? event.payload.turnId : null
+}
+
+/** A receipt record (`receiptRecord`) as the receipt it is. Any other record is not one the log keeps. */
+function receiptRow(record: ConversationLogRecord): ChatReceiptRow {
+  const line = (record as { receipt?: unknown }).receipt as ChatReceiptRow | undefined
+  if (!line || typeof line.id !== 'string' || typeof line.at !== 'number')
+    throw new Error('A record the conversation log keeps is a command receipt.')
+  return line
+}
+
 function isDeltaPart(value: unknown): value is DeltaPart {
   return (
     Array.isArray(value) &&
@@ -443,85 +450,4 @@ function isDeltaPart(value: unknown): value is DeltaPart {
     Number.isInteger(value[2]) &&
     value[2] >= 0
   )
-}
-
-async function openAppendStream(filePath: string, storageRoot = dirname(filePath)): Promise<AppendStream> {
-  const file = await openConversationAppendFile(storageRoot, filePath)
-  let unterminated: boolean
-  try {
-    unterminated = await endsMidLine(storageRoot, filePath, (await file.stat()).size)
-  } catch (error) {
-    await file.close()
-    throw error
-  }
-  return {
-    write: async (chunk) => {
-      // A crash or a full disk can leave the last record without its newline.
-      // Appending straight after it would glue the next record onto the
-      // fragment, and both would be unreadable although this write succeeded
-      // and its events were published. The fragment gets a line of its own.
-      await writeWhole(file, unterminated ? `\n${chunk}` : chunk, (size) =>
-        truncateConversationLog(storageRoot, filePath, size),
-      )
-      unterminated = false
-    },
-    close: () => file.close(),
-  }
-}
-
-/**
- * Cut a chat's log back to `size` bytes, through a handle of its own: one
- * opened to append cannot be cut on every platform, and the log's own stays
- * open meanwhile.
- */
-export async function truncateConversationLog(storageRoot: string, filePath: string, size: number): Promise<void> {
-  const cut = await openConfinedExistingFile(
-    await conversationConfinementRoot(storageRoot, filePath),
-    filePath,
-    'write',
-  )
-  try {
-    await cut.truncate(size)
-  } finally {
-    await cut.close()
-  }
-}
-
-/**
- * Append `text` all of it or none: whatever part of a write that failed
- * reached the file (a disk that filled mid-write) is cut back off, so no line
- * of a batch that failed, a command's receipt among them, is read after a
- * restart. The size it cuts back to is read just before the write: this
- * file's one writer is the log, one write at a time. A cut that fails is
- * reported with the write's own error, so the batch counts as failed.
- */
-export async function writeWhole(
-  file: { stat(): Promise<{ size: number }>; writeFile(text: string, encoding: 'utf8'): Promise<void> },
-  text: string,
-  truncate: (size: number) => Promise<void>,
-): Promise<void> {
-  const { size } = await file.stat()
-  try {
-    await file.writeFile(text, 'utf8')
-  } catch (error) {
-    await truncate(size).catch((cut: unknown) => {
-      console.warn(
-        '[conversation-event-log] a failed write could not be taken back:',
-        cut instanceof Error ? cut.message : cut,
-      )
-    })
-    throw error
-  }
-}
-
-async function endsMidLine(storageRoot: string, filePath: string, size: number): Promise<boolean> {
-  if (size === 0) return false
-  const reader = await openConfinedExistingFile(await conversationConfinementRoot(storageRoot, filePath), filePath)
-  try {
-    const last = Buffer.alloc(1)
-    const { bytesRead } = await reader.read(last, 0, 1, size - 1)
-    return bytesRead === 1 && last[0] !== 0x0a
-  } finally {
-    await reader.close()
-  }
 }

@@ -75,7 +75,6 @@ import type {
   ConversationContextBreakdownInput,
   ConversationContextBreakdownResult,
 } from '../shared/conversation-runtime'
-import { ConversationRuntime } from './conversation-runtime'
 import type { ConversationBackend } from '../server/core/conversation-backend'
 import { ConversationSessionApi } from './conversation-session-api'
 import { detectAgentCliAvailability, recordCliDetection } from './cli-availability'
@@ -282,10 +281,8 @@ export function conversationLifecycleEvents(
 }
 
 export function createConversationService(
-  // The app passes the core's chats (the core owns the runtime, so shutdown and
-  // diagnostics reach it); constructing a runtime here keeps tests/legacy
-  // callers working standalone.
-  runtime: ConversationBackend = new ConversationRuntime({ secretStore: getSharedCredentialStore() }),
+  // The core's chats: the core owns the runtime, so shutdown and diagnostics reach it.
+  runtime: ConversationBackend,
 ): ConversationService {
   const secretStore = getSharedCredentialStore()
   const sessions = new ConversationSessionApi(runtime)
