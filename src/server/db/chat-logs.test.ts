@@ -109,7 +109,10 @@ test('an import a stop cuts short leaves nothing, and runs again whole', async (
   }
   await assert.rejects(createChatLogs({ database: failing }).ensure(path, root), /the power went/u)
   assert.equal((await database.get<{ n: number }>('SELECT COUNT(*) AS n FROM chat_events'))?.n, 0)
-  assert.equal(await database.get('SELECT 1 FROM imports WHERE source = ?', [importSource(chatLogKey(path))]), undefined)
+  assert.equal(
+    await database.get('SELECT 1 FROM imports WHERE source = ?', [importSource(chatLogKey(path))]),
+    undefined,
+  )
 
   const logs = createChatLogs({ database })
   assert.equal((await logs.info(path, root))?.lastSeq, 1200)

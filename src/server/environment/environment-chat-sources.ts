@@ -73,7 +73,8 @@ export async function chatSourceFiles(input: {
     const out = join(input.dataDir, HANDOVER_EXPORTS_DIRNAME, conversationStorageSegment(input.workspaceId), agent)
     await rm(out, { recursive: true, force: true })
     // Not imported here yet: its transcript and details are still the files builds before the database wrote.
-    const imported = (await input.database.all('SELECT 1 FROM imports WHERE source = ?', [importSource(log)])).length > 0
+    const imported =
+      (await input.database.all('SELECT 1 FROM imports WHERE source = ?', [importSource(log)])).length > 0
     if (!imported) {
       const transcript = join(store, `${agent}.jsonl`)
       if ((await stat(transcript).catch(() => null))?.isFile())
@@ -92,7 +93,10 @@ export async function chatSourceFiles(input: {
         'SELECT body FROM chat_receipts WHERE log_key = ? ORDER BY at',
         [log],
       )
-      const lines = [...events.map((row) => row.body), ...receipts.map((row) => JSON.stringify({ receipt: JSON.parse(row.body) }))]
+      const lines = [
+        ...events.map((row) => row.body),
+        ...receipts.map((row) => JSON.stringify({ receipt: JSON.parse(row.body) })),
+      ]
       await writeFile(join(out, `${agent}.jsonl`), `${lines.join('\n')}\n`, { mode: 0o600 })
       found.push({ place: 'store', path: `${agent}.jsonl`, source: join(out, `${agent}.jsonl`) })
       const details = await input.database.all<{ detail_key: string; body: string }>(

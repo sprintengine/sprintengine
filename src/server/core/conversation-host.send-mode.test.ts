@@ -19,7 +19,10 @@ async function fixture(options: { steer?: boolean } = {}) {
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const adapter = createMockConversationProvider({ steer: options.steer ?? true })
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const holds: string[] = []
   const heldMessages: ConversationHeldMessages = {
     hold: (_chat, text) => {
@@ -110,7 +113,10 @@ test('a sub-agent is no chat of the list: it belongs to its parent', async () =>
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-list-subagent-'))
   const adapter = createMockConversationProvider()
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const workspaceId = 'workspace'
   const host = createConversationGatewayHost(
     runtime,

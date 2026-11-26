@@ -2317,9 +2317,10 @@ test('conversation-runtime', async () => {
       `${agentId}.jsonl`,
     )
     // The log's rows, in order, as the database keeps them; merged runs split back into their deltas.
-    const rows = await testChatDatabase().all<{ body: string }>('SELECT body FROM chat_events WHERE log_key = ? ORDER BY seq', [
-      chatLogKey(path),
-    ])
+    const rows = await testChatDatabase().all<{ body: string }>(
+      'SELECT body FROM chat_events WHERE log_key = ? ORDER BY seq',
+      [chatLogKey(path)],
+    )
     return rows.map((row) => JSON.parse(row.body) as Record<string, any>)
   }
 

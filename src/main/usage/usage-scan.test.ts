@@ -214,9 +214,10 @@ test('Studio chats: usage, reported cost and the CLI session each turn ran, from
     turn(4, 3, {}),
   ]
   const connection = prepareStudioDatabase(roots.studioDatabase)
-  connection.run("INSERT INTO chat_logs (log_key, workspace_root, generation, last_seq) VALUES ('ws-1/chat%201', ?, 'g', 4)", [
-    root,
-  ])
+  connection.run(
+    "INSERT INTO chat_logs (log_key, workspace_root, generation, last_seq) VALUES ('ws-1/chat%201', ?, 'g', 4)",
+    [root],
+  )
   for (const event of events)
     connection.run(
       "INSERT INTO chat_events (log_key, seq, first_seq, type, turn_id, bytes, body) VALUES ('ws-1/chat%201', ?, ?, ?, NULL, 1, ?)",

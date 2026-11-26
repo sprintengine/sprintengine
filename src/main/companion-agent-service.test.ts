@@ -122,7 +122,7 @@ test('companion-agent-service', async () => {
 
   function companionRuntime(adapter: ConversationProviderAdapter): ConversationRuntime {
     return new ConversationRuntime({
-    database: testChatDatabase(),
+      database: testChatDatabase(),
       adapters: [adapter],
       getProviderById: () => undefined,
       secretStore: unusedSecretStore(),
@@ -485,7 +485,7 @@ test('companion-agent-service', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'companion-'))
     try {
       const runtime = new ConversationRuntime({
-    database: testChatDatabase(),
+        database: testChatDatabase(),
         adapters: [createMockConversationProvider()],
         getProviderById: () => undefined,
         secretStore: unusedSecretStore(),

@@ -42,7 +42,10 @@ async function fixture(
     setPermissionPreset: async () => ({ ok: true as const }),
   }
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const defaults: Array<{ workspaceId: string; agentId: string }> = []
   const written: AgentChoicePatch[] = []
   const host = createConversationGatewayHost(

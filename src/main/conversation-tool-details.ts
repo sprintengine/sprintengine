@@ -125,12 +125,10 @@ export class ToolDetailStore {
   /** @internal The stream's parts, as it appends them. */
   async appendOutput(path: string, part: number, bytes: Buffer): Promise<void> {
     const key = detailKey(path)
-    await this.database?.run('INSERT OR REPLACE INTO tool_outputs (detail_key, part, log_key, bytes) VALUES (?, ?, ?, ?)', [
-      key.detail,
-      part,
-      key.log,
-      bytes,
-    ])
+    await this.database?.run(
+      'INSERT OR REPLACE INTO tool_outputs (detail_key, part, log_key, bytes) VALUES (?, ?, ?, ?)',
+      [key.detail, part, key.log, bytes],
+    )
   }
 
   /** @internal Replace a stream's parts with one (its clipped head and tail). */
@@ -313,7 +311,10 @@ export class ToolOutputStream {
     if (!this.clipped || this.failed) return
     const head = ((await this.store.outputHead(this.path, MAX_DETAIL_BYTES)) ?? Buffer.alloc(0)).subarray(0, HEAD_BYTES)
     const tail = Buffer.concat(this.recent).subarray(-TAIL_BYTES)
-    await this.store.replaceOutput(this.path, Buffer.from(`${head.toString('utf8')}\n[clipped]\n${tail.toString('utf8')}`))
+    await this.store.replaceOutput(
+      this.path,
+      Buffer.from(`${head.toString('utf8')}\n[clipped]\n${tail.toString('utf8')}`),
+    )
   }
 }
 

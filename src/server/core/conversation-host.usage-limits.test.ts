@@ -105,7 +105,10 @@ async function fixture() {
   const key = { workspaceRoot, ...CHAT }
   const adapter = createMockConversationProvider()
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const resumes = resumesStandIn()
   const usage = usageStandIn()
   const host = createConversationGatewayHost(

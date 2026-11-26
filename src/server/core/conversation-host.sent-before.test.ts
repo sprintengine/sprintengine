@@ -36,7 +36,10 @@ test('a send carried out before is found after a restart, by its receipt or as h
       { heldMessages },
     )
   const before = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   try {
     const started = await before.startSession({
       ...key,
@@ -52,7 +55,10 @@ test('a send carried out before is found after a restart, by its receipt or as h
   }
   // Started again: no session is live, and nothing of the first run is in memory.
   const after = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   try {
     const host = hostOf(after)
     assert.equal(await host.sentBefore(key, 'phone', 'phone:c1'), true, 'found by its receipt in the chat’s log')

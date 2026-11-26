@@ -181,7 +181,10 @@ test('a revert holds its folder for its whole length, and waits for a return und
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-chat-folder-'))
   const leases = createWorktreeLeases()
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), getProviderById: () => undefined, worktreeLeases: leases })
+    database: testChatDatabase(),
+    getProviderById: () => undefined,
+    worktreeLeases: leases,
+  })
   try {
     const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
     const returning = exclusive(await leases.tryExclusive(workspaceRoot, 'the pool is returning this worktree'))

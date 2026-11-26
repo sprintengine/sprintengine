@@ -104,7 +104,7 @@ async function setup(options: { rewind?: boolean; cursors?: boolean } = {}) {
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const open = async () => {
     const runtime = new ConversationRuntime({
-    database: testChatDatabase(),
+      database: testChatDatabase(),
       adapters: [rewindingProvider(record, options)],
       getProviderById: () => undefined,
       secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },

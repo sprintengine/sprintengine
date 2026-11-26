@@ -24,7 +24,10 @@ async function fixture(options: { scheduled?: boolean } = {}) {
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const adapter = createMockConversationProvider()
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const sent: string[] = []
   let ids = 0
   const scheduled = createScheduledMessages({

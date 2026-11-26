@@ -18,7 +18,10 @@ async function fixture(options: { fork?: boolean; forks?: ConversationRegistryLi
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const adapter = createMockConversationProvider({ fork: options.fork ?? true })
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const added: Array<{ chat: { workspaceId: string; agentId: string }; newAgentId: string; name: string }> = []
   const taken = new Set<string>(['agent'])
   const forks: ConversationRegistryLink['forks'] =

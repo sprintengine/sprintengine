@@ -27,7 +27,10 @@ async function fixture(effort: string | null, reasoningEfforts: string[] | null)
     },
   }
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const host = createConversationGatewayHost(
     runtime,
     (id) => (id === key.workspaceId ? workspaceRoot : null),

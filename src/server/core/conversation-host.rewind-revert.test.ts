@@ -19,7 +19,10 @@ async function fixture(options: { rewind?: boolean; start?: boolean } = {}) {
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const adapter = createMockConversationProvider({ rewind: options.rewind ?? true })
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const host = createConversationGatewayHost(
     runtime,
     (id) => (id === key.workspaceId ? workspaceRoot : null),

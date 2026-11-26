@@ -103,7 +103,12 @@ test('a transcript from before sequence numbers is numbered by position, a merge
         ['d2', 2, 2],
       ],
     }) + '\n'
-  await writeFile(path, unnumbered('user_message', { turnId: 't', text: 'hi' }, 'u') + run + unnumbered('turn_completed', { turnId: 't' }, 'c'))
+  await writeFile(
+    path,
+    unnumbered('user_message', { turnId: 't', text: 'hi' }, 'u') +
+      run +
+      unnumbered('turn_completed', { turnId: 't' }, 'c'),
+  )
   const events = await readerOf().tail(root, path)
   expect(events.map((event) => [event.id, event.seq])).toEqual([
     ['u', 1],
@@ -198,4 +203,3 @@ test('an event is read back whole by the sequence and id it was sent under, a me
   expect(await read(9, 'event-9')).toBeUndefined()
   expect(await read(2, 'delta-4')).toBeUndefined()
 })
-

@@ -150,7 +150,10 @@ async function listFixture(marks: ConversationListMarks) {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'conversation-machine-'))
   const adapter = createMockConversationProvider()
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const host = createConversationGatewayHost(
     runtime,
     (id) => (id === 'workspace' ? workspaceRoot : null),

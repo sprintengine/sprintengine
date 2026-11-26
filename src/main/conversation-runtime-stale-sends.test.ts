@@ -52,7 +52,9 @@ async function chat() {
   const receipts = async () => {
     await runtime.flushTranscripts()
     const log = workspaceStorePath(workspaceRoot, 'conversations', 'workspace', 'agent.jsonl')
-    return [...(await readConversationReceipts(createChatLogs({ database: testChatDatabase() }), workspaceRoot, log)).keys()]
+    return [
+      ...(await readConversationReceipts(createChatLogs({ database: testChatDatabase() }), workspaceRoot, log)).keys(),
+    ]
   }
   return { runtime, sessionId: started.session.sessionId, clock, messages, receipts }
 }

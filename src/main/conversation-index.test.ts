@@ -106,10 +106,7 @@ test('search joins split assistant deltas and returns a jumpable user-turn seque
     )
     const batches: unknown[] = []
     expect(
-      await makeIndex().search(
-        { ...key, query: 'ALPHA BETA' },
-        { onBatch: (batch) => batches.push(batch) },
-      ),
+      await makeIndex().search({ ...key, query: 'ALPHA BETA' }, { onBatch: (batch) => batches.push(batch) }),
     ).toEqual([{ agentId: 'agent', seq: 1, turnId: 'turn', snippet: 'The alpha beta answer.', from: 'agent' }])
     expect(batches).toHaveLength(1)
   }))
@@ -270,12 +267,11 @@ test('costs and turns are counted once across an append', async () =>
     )
     const index = makeIndex()
     expect((await index.list(key))[0]).toMatchObject({ turnCount: 1, totalCostUsd: 0.25 })
-    await appendEvents(key, path, ([
-        event(3, 'turn_completed', { turnId: 'first', costUsd: 0.25 }),
-        event(4, 'user_message', { turnId: 'second', text: 'Another' }),
-        event(5, 'turn_completed', { turnId: 'second', costUsd: 0.5 }),
-      ]),
-    )
+    await appendEvents(key, path, [
+      event(3, 'turn_completed', { turnId: 'first', costUsd: 0.25 }),
+      event(4, 'user_message', { turnId: 'second', text: 'Another' }),
+      event(5, 'turn_completed', { turnId: 'second', costUsd: 0.5 }),
+    ])
     expect((await index.list(key))[0]).toMatchObject({ turnCount: 2, totalCostUsd: 0.75, lastSeq: 5 })
   }))
 
@@ -297,7 +293,7 @@ test('a row says when its agent last finished a turn, a steered end aside, and k
     expect(first?.lastTurnEndedAt).toBe(2000)
     // A rename moves `updatedAt`, never the turn end.
     expect(first?.updatedAt).toBe(5000)
-    await appendEvents(key, path, ([event(6, 'turn_failed', { turnId: 'two' })]))
+    await appendEvents(key, path, [event(6, 'turn_failed', { turnId: 'two' })])
     expect((await index.list(key))[0]?.lastTurnEndedAt).toBe(6000)
   }))
 
@@ -314,10 +310,10 @@ test('a chat keeps the opening of its last reply, cleared when the person writes
     )
     const index = makeIndex()
     expect((await index.list(key))[0]?.lastAssistantText).toBe('The answer is here.')
-    await appendEvents(key, path, ([event(5, 'user_message', { turnId: 'two', text: 'And then?' })]))
+    await appendEvents(key, path, [event(5, 'user_message', { turnId: 'two', text: 'And then?' })])
     expect((await index.list(key))[0]?.lastAssistantText).toBe('')
     // The opening only, as the runtime's session keeps it.
-    await appendEvents(key, path, ([event(6, 'content_delta', { turnId: 'two', text: 'x'.repeat(300) })]))
+    await appendEvents(key, path, [event(6, 'content_delta', { turnId: 'two', text: 'x'.repeat(300) })])
     expect((await index.list(key))[0]?.lastAssistantText).toHaveLength(240)
   }))
 

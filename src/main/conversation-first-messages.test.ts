@@ -148,7 +148,10 @@ test('a first message a stop cut off is sent at the next start, and one that wen
   })
   await mkdir(workspaceRoot)
   const before = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const sessions = new Map<string, string>()
   try {
     const store = storeAt(filePath)

@@ -23,7 +23,10 @@ async function fixture(options: { steer?: boolean; held?: boolean } = {}) {
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const adapter = createMockConversationProvider({ steer: options.steer ?? true })
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const holds: Array<{ text: string; source: string }> = []
   const carried: Array<ConversationHeldAttachments | undefined> = []
   const heldMessages: ConversationHeldMessages = {

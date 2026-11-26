@@ -646,11 +646,7 @@ export async function foldCodex(group: Group, yieldEveryBytes?: number): Promise
  * ran, kept as the bucket's link so the aggregation can prefer that CLI's own
  * log.
  */
-export async function foldStudio(
-  group: Group,
-  dir: UsageStudioDir,
-  db: SqliteDatabase,
-): Promise<UsageCacheEntry> {
+export async function foldStudio(group: Group, dir: UsageStudioDir, db: SqliteDatabase): Promise<UsageCacheEntry> {
   const entry = blankEntry(group, '')
   const agentId = decodeSegment(group.main.slice(group.main.indexOf('/') + 1))
   const links = new Set<string>()
@@ -698,7 +694,8 @@ function decodeSegment(value: string): string {
 /** A chat's title as the chat list has it (`chat_threads`), or null before it has a row. */
 function studioTitle(db: SqliteDatabase, log: string): string | null {
   try {
-    const row = db.prepare('SELECT thread FROM chat_threads WHERE log_key = ?').get(log) as { thread: string | null } | undefined
+    const row = db.prepare('SELECT thread FROM chat_threads WHERE log_key = ?').get(log) as
+      { thread: string | null } | undefined
     const title = str(rec(row?.thread ? JSON.parse(row.thread) : null)?.title)
     return title ? title.slice(0, 160) : null
   } catch {

@@ -144,7 +144,7 @@ async function setup(options: Parameters<typeof forkingProvider>[1] & { transcri
   }
   const open = () => {
     const runtime = new ConversationRuntime({
-    database: testChatDatabase(),
+      database: testChatDatabase(),
       adapters: [forkingProvider(record, options)],
       getProviderById: () => undefined,
       secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },

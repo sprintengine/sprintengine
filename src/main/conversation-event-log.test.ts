@@ -247,7 +247,10 @@ test('the chat logs keep what the log writes: a merged run is one row, read back
     const replayed = rows.flatMap((row) => expandCoalescedDeltas(JSON.parse(row.body) as ConversationEvent))
     assert.deepEqual(replayed, emitted)
     // A number written twice is refused: the batch fails, and nothing of it is kept.
-    assert.equal(await log.append(filePath, { ...event('user_message', {}), seq: 4 }, root).catch(() => 'failed'), 'failed')
+    assert.equal(
+      await log.append(filePath, { ...event('user_message', {}), seq: 4 }, root).catch(() => 'failed'),
+      'failed',
+    )
     assert.equal((await history.oldest(filePath, root, 0, 100)).length, 3)
   } finally {
     await rm(root, { recursive: true, force: true })

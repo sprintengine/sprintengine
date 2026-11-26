@@ -113,9 +113,10 @@ function transcriptFile(workspaceRoot: string): string {
 
 /** The events the database holds for the chat, in order. */
 async function readLines(workspaceRoot: string): Promise<Record<string, unknown>[]> {
-  const rows = await testChatDatabase().all<{ body: string }>('SELECT body FROM chat_events WHERE log_key = ? ORDER BY seq', [
-    chatLogKey(transcriptFile(workspaceRoot)),
-  ])
+  const rows = await testChatDatabase().all<{ body: string }>(
+    'SELECT body FROM chat_events WHERE log_key = ? ORDER BY seq',
+    [chatLogKey(transcriptFile(workspaceRoot))],
+  )
   return rows.map((row) => JSON.parse(row.body) as Record<string, unknown>)
 }
 
@@ -187,7 +188,8 @@ test('a crash with a batch still unwritten never leaves a published sequence num
       flushDelayMs: 1,
       write: async (path, root, rows, receipts) => {
         // The second batch of deltas never lands: the process dies with it in flight.
-        if (rows.some((row) => row.type === 'content_delta') && ++deltaWrites >= 2) return new Promise<void>(() => undefined)
+        if (rows.some((row) => row.type === 'content_delta') && ++deltaWrites >= 2)
+          return new Promise<void>(() => undefined)
         await logs.append(path, root, rows, receipts)
         written.push(...seqsOf(rows))
       },
@@ -272,7 +274,7 @@ test('after a write the disk refused, a restart numbers above every event a clie
   const run = async (diskFills: boolean) => {
     let full = false
     const runtime = new ConversationRuntime({
-    database: testChatDatabase(),
+      database: testChatDatabase(),
       adapters: [provider.adapter],
       getProviderById: () => undefined,
       eventLog: {

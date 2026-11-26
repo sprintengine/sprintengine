@@ -112,10 +112,7 @@ const MAX_LINE_BYTES = 16 * 1024 * 1024
 
 export type ChatLogs = ReturnType<typeof createChatLogs>
 
-export function createChatLogs(options: {
-  database: StudioDatabase
-  log?: (message: string) => void
-}) {
+export function createChatLogs(options: { database: StudioDatabase; log?: (message: string) => void }) {
   const db = options.database
   // The import (or the look that finds there is none) for each log, once a run.
   const taken = new Map<string, Promise<void>>()
@@ -159,7 +156,12 @@ export function createChatLogs(options: {
      * Append rows and receipts to a log, in one transaction: all of them or
      * none. A log's first rows begin it, its generation named by the first.
      */
-    async append(path: string, root: string, rows: readonly ChatRow[], receipts: readonly ChatReceiptRow[]): Promise<void> {
+    async append(
+      path: string,
+      root: string,
+      rows: readonly ChatRow[],
+      receipts: readonly ChatReceiptRow[],
+    ): Promise<void> {
       await ensure(path, root)
       const key = chatLogKey(path)
       await db.transaction(async (tx) => {
@@ -188,9 +190,10 @@ export function createChatLogs(options: {
     /** Every receipt of a log, oldest first. */
     async receipts(path: string, root: string): Promise<ChatReceiptRow[]> {
       await ensure(path, root)
-      const rows = await db.all<{ body: string }>('SELECT body FROM chat_receipts WHERE log_key = ? ORDER BY at, rowid', [
-        chatLogKey(path),
-      ])
+      const rows = await db.all<{ body: string }>(
+        'SELECT body FROM chat_receipts WHERE log_key = ? ORDER BY at, rowid',
+        [chatLogKey(path)],
+      )
       return rows.flatMap((row) => {
         try {
           return [JSON.parse(row.body) as ChatReceiptRow]
@@ -222,9 +225,15 @@ export function importSource(key: string): string {
 
 /** The statements that delete a log and what is kept with it. */
 export function removeStatements(key: string): Array<{ sql: string; params: SqlParams }> {
-  return ['chat_events', 'chat_receipts', 'chat_threads', 'chat_search_docs', 'tool_details', 'tool_outputs', 'chat_logs'].map(
-    (table) => ({ sql: `DELETE FROM ${table} WHERE log_key = ?`, params: [key] }),
-  )
+  return [
+    'chat_events',
+    'chat_receipts',
+    'chat_threads',
+    'chat_search_docs',
+    'tool_details',
+    'tool_outputs',
+    'chat_logs',
+  ].map((table) => ({ sql: `DELETE FROM ${table} WHERE log_key = ?`, params: [key] }))
 }
 
 async function writeRows(
@@ -247,16 +256,24 @@ async function writeRows(
         `INSERT INTO chat_events (log_key, seq, first_seq, type, turn_id, bytes, body) VALUES ${batch
           .map(() => '(?, ?, ?, ?, ?, ?, ?)')
           .join(', ')}`,
-        batch.flatMap((row) => [key, row.seq, row.firstSeq, row.type, row.turnId, Buffer.byteLength(row.body) + 1, row.body]),
+        batch.flatMap((row) => [
+          key,
+          row.seq,
+          row.firstSeq,
+          row.type,
+          row.turnId,
+          Buffer.byteLength(row.body) + 1,
+          row.body,
+        ]),
       )
     }
     await tx.run('UPDATE chat_logs SET last_seq = MAX(last_seq, ?) WHERE log_key = ?', [rows.at(-1)!.seq, key])
   }
   for (const receipt of receipts) {
-    const known = await tx.get<{ body: string }>('SELECT body FROM chat_receipts WHERE log_key = ? AND command_id = ?', [
-      key,
-      receipt.id,
-    ])
+    const known = await tx.get<{ body: string }>(
+      'SELECT body FROM chat_receipts WHERE log_key = ? AND command_id = ?',
+      [key, receipt.id],
+    )
     let merged: ChatReceiptRow = receipt
     if (known) {
       try {
@@ -489,7 +506,11 @@ async function readFirstLine(file: FileHandle): Promise<Buffer> {
 async function* readLines(file: FileHandle): AsyncGenerator<Buffer | { torn: true }> {
   let carry: Buffer[] = []
   let carried = 0
-  for await (const chunk of file.createReadStream({ start: 0, highWaterMark: 1024 * 1024, autoClose: false }) as AsyncIterable<Buffer>) {
+  for await (const chunk of file.createReadStream({
+    start: 0,
+    highWaterMark: 1024 * 1024,
+    autoClose: false,
+  }) as AsyncIterable<Buffer>) {
     let start = 0
     for (let end = chunk.indexOf(0x0a, start); end !== -1; end = chunk.indexOf(0x0a, start)) {
       const piece = chunk.subarray(start, end)

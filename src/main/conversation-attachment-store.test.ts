@@ -73,7 +73,7 @@ test('a sent image is recorded by reference, replays after a restart, and goes w
   const conversation = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const create = () =>
     new ConversationRuntime({
-    database: testChatDatabase(),
+      database: testChatDatabase(),
       adapters: [createMockConversationProvider()],
       getProviderById: () => undefined,
       attachmentStore: new ConversationAttachmentStore(userData),

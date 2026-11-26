@@ -20,7 +20,10 @@ async function fixture() {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-subagents-'))
   const adapter = createMockConversationProvider()
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const conversation = { providerId: adapter.id, modelId: 'mock-model' }
   const record: ConversationListWorkspace = {
     name: 'Project',

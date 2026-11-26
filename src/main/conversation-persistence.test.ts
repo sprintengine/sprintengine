@@ -92,7 +92,9 @@ test('a detail file from before the database that is a link is never imported, n
     const folder = join(f.root, '.sprintengine/conversations/workspace/agent.tools')
     await mkdir(folder, { recursive: true })
     const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [] })
+      database: testChatDatabase(),
+      adapters: [],
+    })
     for (const [name, create] of [
       ['symbolic', symlink],
       ['hard', link],
@@ -166,7 +168,9 @@ test('oversized detail files fail before allocating their contents and oversized
       ok: false,
     })
     const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [] })
+      database: testChatDatabase(),
+      adapters: [],
+    })
     // A transcript past the old whole-file limit still opens: its end is read,
     // and a file with no complete line has no events yet.
     expect(

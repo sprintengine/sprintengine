@@ -59,7 +59,10 @@ test('revert locks all conversations sharing files until the transaction settles
   const f = await repository()
   const adapter = createMockConversationProvider()
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   let release!: () => void
   let entered!: () => void
   const gate = new Promise<void>((resolve) => {
@@ -137,9 +140,15 @@ test('reverting a closed conversation persists markers and the next-send file-st
     },
   }
   const initial = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   try {
     assert.ok((await initial.startSession({ ...f.key, providerId: adapter.id, modelId: adapter.listModels()[0] })).ok)
     await initial.shutdown()
@@ -314,7 +323,10 @@ test('runtime captures lazily around writes, reports totals, blocks active rever
     },
   }
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   try {
     const started = await runtime.startSession({ ...f.key, providerId: 'mock-provider', modelId: 'mock-model' })
     assert.ok(started.ok)
@@ -802,7 +814,10 @@ test('a folder that becomes a repository after its chat started keeps checkpoint
     },
   }
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   try {
     const started = await runtime.startSession({ ...key, providerId: 'mock-provider', modelId: 'mock-model' })
     assert.ok(started.ok)

@@ -40,7 +40,10 @@ async function fixture(adapter = createMockConversationProvider()) {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const started = await runtime.startSession({ ...key, providerId: adapter.id, modelId: adapter.listModels()[0] })
   assert.equal(started.ok, true)
   return {
@@ -53,7 +56,6 @@ async function fixture(adapter = createMockConversationProvider()) {
     },
   }
 }
-
 
 /** The rows a chat's log holds in the test database, each as stored. */
 async function storedRows(key: { workspaceRoot: string; workspaceId: string; agentId: string }): Promise<string[]> {
@@ -295,7 +297,7 @@ test('concurrent duplicate commands and receipts after restart produce one user 
     assert.deepEqual(first, second)
     await f.runtime.shutdown()
     const restarted = new ConversationRuntime({
-    database: testChatDatabase(),
+      database: testChatDatabase(),
       adapters: [createMockConversationProvider()],
       getProviderById: () => undefined,
     })
@@ -350,7 +352,7 @@ test('a command id named for a different command is refused, while the first run
     assert.equal('fingerprint' in (await send('/tools', 'fp-tools')), false)
     await f.runtime.shutdown()
     const restarted = new ConversationRuntime({
-    database: testChatDatabase(),
+      database: testChatDatabase(),
       adapters: [createMockConversationProvider()],
       getProviderById: () => undefined,
     })
@@ -467,7 +469,11 @@ test('a start closes every turn the last run left open, without anyone opening t
     )
     void first.sendTurn({ sessionId: started.session.sessionId, commandId: 'phone-1', message: 'one effect' })
     await committed
-    assert.deepEqual(await new ConversationOutbox(testDatabaseAt(dataDir)).pending(), [key], 'listed before its turn began')
+    assert.deepEqual(
+      await new ConversationOutbox(testDatabaseAt(dataDir)).pending(),
+      [key],
+      'listed before its turn began',
+    )
 
     // The first process is gone without shutting down; the next one starts.
     const closed: ConversationEvent[] = []
@@ -478,7 +484,11 @@ test('a start closes every turn the last run left open, without anyone opening t
       [['turn_failed', 'interrupted']],
       'the turn is closed in the log and said, with no session started on the chat',
     )
-    assert.deepEqual(await new ConversationOutbox(testDatabaseAt(dataDir)).pending(), [], 'and the chat leaves the outbox')
+    assert.deepEqual(
+      await new ConversationOutbox(testDatabaseAt(dataDir)).pending(),
+      [],
+      'and the chat leaves the outbox',
+    )
     const replay = await restarted.readTranscript(key, { all: true, closeOpenTurns: false })
     assert.ok(replay.ok)
     assert.equal(replay.events.at(-1)?.type, 'turn_failed')
@@ -965,7 +975,7 @@ test('remembered approvals auto-resolve later matching tools and persistence fai
     const unreadable = openTestDatabase(join(storeRoot, 'unreadable'))
     await unreadable.close()
     const broken = new ConversationRuntime({
-    database: testChatDatabase(),
+      database: testChatDatabase(),
       adapters: [adapter],
       getProviderById: () => undefined,
       approvalRules: new ConversationApprovalRuleStore(unreadable),

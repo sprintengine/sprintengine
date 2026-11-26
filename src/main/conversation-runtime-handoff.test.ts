@@ -155,7 +155,7 @@ async function setup(script: { turn?: TurnScript; hold?: Promise<void> } = {}) {
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const open = async () => {
     const runtime = new ConversationRuntime({
-    database: testChatDatabase(),
+      database: testChatDatabase(),
       adapters: [handingProvider(record, script)],
       getProviderById: () => undefined,
       secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },

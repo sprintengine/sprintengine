@@ -282,7 +282,10 @@ test("with the runtime: a mock sub-agent's turn ends it, leaves it at rest, and 
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'subagent-lifecycle-'))
   const adapter = createMockConversationProvider()
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const agents: Record<string, AgentState> = {
     [parent.agentId]: chat(),
     [child.agentId]: chat({ subagentOf: { agentId: parent.agentId, startedAt: 1 } }),

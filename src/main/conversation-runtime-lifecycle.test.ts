@@ -353,7 +353,10 @@ test('the idle sweep rests while the machine sleeps', async () => {
   }) as typeof clearInterval
   try {
     const runtime = new ConversationRuntime({
-    database: testChatDatabase(), getProviderById: () => undefined, adapters: [echoProvider()] })
+      database: testChatDatabase(),
+      getProviderById: () => undefined,
+      adapters: [echoProvider()],
+    })
     runtime.startIdleSweep(activity)
     assert.equal(timers.size, 1)
     suspended = true
@@ -578,7 +581,10 @@ test('a chat started again after a restart hands its provider the lane each agen
   }
   const runtimeWith = (provider: ReturnType<typeof agentLaneProvider>) =>
     new ConversationRuntime({
-    database: testChatDatabase(), adapters: [provider.adapter], getProviderById: () => undefined })
+      database: testChatDatabase(),
+      adapters: [provider.adapter],
+      getProviderById: () => undefined,
+    })
   try {
     const before = agentLaneProvider()
     const first = runtimeWith(before)

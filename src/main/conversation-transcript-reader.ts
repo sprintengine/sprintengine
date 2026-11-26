@@ -102,12 +102,7 @@ export class ConversationTranscriptReader {
 
   /** The `turnLimit` turns that end just before `beforeCursor`. */
   before(root: string, path: string, beforeCursor: number, turnLimit?: number): Promise<ConversationPage> {
-    return this.read(
-      root,
-      path,
-      async (records) => (await this.page(records, turnLimit)).page,
-      beforeCursor,
-    )
+    return this.read(root, path, async (records) => (await this.page(records, turnLimit)).page, beforeCursor)
   }
 
   /**

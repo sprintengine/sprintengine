@@ -21,7 +21,10 @@ async function fixture(options: { efforts?: string[] | null; start?: boolean } =
     reasoningEfforts: options.efforts === undefined ? ['low', 'high'] : options.efforts,
   })
   const runtime = new ConversationRuntime({
-    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   let effort: string | undefined = 'low'
   const written: AgentChoicePatch[] = []
   const host = createConversationGatewayHost(

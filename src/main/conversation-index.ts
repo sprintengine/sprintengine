@@ -104,9 +104,10 @@ export class ConversationIndex {
       await this.history.ensure(path, key.workspaceRoot)
       const log = `${chatOf(key)}/${segment(key.agentId)}`
       await this.catchUp(key, log)
-      const row = await this.database.get<{ thread: string | null }>('SELECT thread FROM chat_threads WHERE log_key = ?', [
-        log,
-      ])
+      const row = await this.database.get<{ thread: string | null }>(
+        'SELECT thread FROM chat_threads WHERE log_key = ?',
+        [log],
+      )
       return row?.thread ? (JSON.parse(row.thread) as ConversationThread) : null
     })
   }
@@ -201,8 +202,14 @@ export class ConversationIndex {
           await this.history.ensure(path, key.workspaceRoot)
         } catch (error) {
           failed = true
-          console.warn(`[conversation-index] ${name} could not be taken up:`, error instanceof Error ? error.message : error)
-          const at = await lstat(path).then((info) => info.mtimeMs, () => 0)
+          console.warn(
+            `[conversation-index] ${name} could not be taken up:`,
+            error instanceof Error ? error.message : error,
+          )
+          const at = await lstat(path).then(
+            (info) => info.mtimeMs,
+            () => 0,
+          )
           unreadable.push({
             agentId: decodeAgent(`${chat}/${name.slice(0, -'.jsonl'.length)}`),
             title: 'Unreadable conversation',
@@ -225,7 +232,8 @@ export class ConversationIndex {
       'SELECT log_key FROM chat_logs WHERE log_key >= ? AND log_key < ? ORDER BY log_key',
       [`${chat}/`, `${chat}0`],
     )
-    for (const row of rows) await this.hooks.flush?.(join(directory(key), `${row.log_key.slice(chat.length + 1)}.jsonl`))
+    for (const row of rows)
+      await this.hooks.flush?.(join(directory(key), `${row.log_key.slice(chat.length + 1)}.jsonl`))
     return { logs: rows.map((row) => row.log_key), unreadable }
   }
   /** Fold what one log gained since its row was folded, and index it for search, in one transaction. */
@@ -234,7 +242,9 @@ export class ConversationIndex {
       'SELECT folded_seq, thread, fold FROM chat_threads WHERE log_key = ?',
       [log],
     )
-    const last = await this.database.get<{ last_seq: number }>('SELECT last_seq FROM chat_logs WHERE log_key = ?', [log])
+    const last = await this.database.get<{ last_seq: number }>('SELECT last_seq FROM chat_logs WHERE log_key = ?', [
+      log,
+    ])
     if (!last || (kept && kept.folded_seq >= last.last_seq)) return
     const fold = readFold(kept)
     const docs = new Map<string, Doc>()
