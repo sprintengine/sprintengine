@@ -60,6 +60,7 @@ import {
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioProcesses } from '../processes/agent-process-domain'
 import { tabsForReader, type StudioBrowserTabs } from '../processes/browser-tabs'
+import type { StudioTerminalAgents } from '../terminals/terminal-agents'
 import type { StudioTerminalCaller, StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
@@ -252,6 +253,12 @@ export type StudioRpcRouterOptions = {
   processes?: StudioProcesses
   /** The built-in browser's tabs, the shell's; without it, `browserTabs.*` is answered `unavailable`. */
   browserTabs?: StudioBrowserTabs
+  /**
+   * What a window asks of a session beside its pty: the peek card and a fresh
+   * read of its pull requests. Without it, `terminal.peek` and
+   * `terminal.refreshPullRequests` are `unavailable`.
+   */
+  terminalAgents?: StudioTerminalAgents
   /** The machines this desktop's computer offers; without it, `hosts.*` is answered `unavailable`. */
   hosts?: StudioHosts
   /** What a client reads before it starts a chat; without it, `workspaces.*` and `cliRuntimes.list` are `unavailable`. */
@@ -2170,6 +2177,14 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         terminals.configure(policy)
         return {}
       }),
+    'terminal.peek': async ({ sessionId }) =>
+      options.terminalAgents
+        ? { ok: true, result: await options.terminalAgents.peek(sessionId) }
+        : unserved('terminal.peek'),
+    'terminal.refreshPullRequests': async ({ sessionId }) =>
+      options.terminalAgents
+        ? { ok: true, result: { asked: await options.terminalAgents.refreshPullRequests(sessionId) } }
+        : unserved('terminal.refreshPullRequests'),
 
     // ── Agent CLIs and launch settings ─────────────────────────────────────
 

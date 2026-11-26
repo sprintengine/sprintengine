@@ -43,6 +43,8 @@ function blank(): Double {
     suspendTerminal: async () => undefined,
     closeTerminal: async () => undefined,
     setTerminalReapExempt: async () => undefined,
+    refreshTerminalPullRequests: async () => false,
+    readSessionPeek: async (sessionId) => ({ sessionId, source: 'unknown', first: null, since: [] }),
     configureTerminals: async () => undefined,
     takeUndeliveredPrompts: async () => [],
     ackTerminal: () => undefined,
@@ -87,6 +89,10 @@ export const closeTerminal: Module['closeTerminal'] = (...args) =>
   terminalsDouble.closeTerminal(...args) as ReturnType<Module['closeTerminal']>
 export const setTerminalReapExempt: Module['setTerminalReapExempt'] = (...args) =>
   terminalsDouble.setTerminalReapExempt(...args) as ReturnType<Module['setTerminalReapExempt']>
+export const refreshTerminalPullRequests: Module['refreshTerminalPullRequests'] = (...args) =>
+  terminalsDouble.refreshTerminalPullRequests(...args) as ReturnType<Module['refreshTerminalPullRequests']>
+export const readSessionPeek: Module['readSessionPeek'] = (...args) =>
+  terminalsDouble.readSessionPeek(...args) as ReturnType<Module['readSessionPeek']>
 export const configureTerminals: Module['configureTerminals'] = (...args) =>
   terminalsDouble.configureTerminals(...args) as ReturnType<Module['configureTerminals']>
 export const takeUndeliveredPrompts: Module['takeUndeliveredPrompts'] = (...args) =>

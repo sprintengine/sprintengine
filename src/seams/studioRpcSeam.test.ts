@@ -465,6 +465,8 @@ test('every method the server serves has its call in the SDK, under the same sco
     'terminal.setReapExempt': 'request',
     'terminal.takeUndeliveredPrompts': 'request',
     'terminal.configure': 'request',
+    'terminal.peek': 'request',
+    'terminal.refreshPullRequests': 'request',
     // Updates are asked like any method on a normal connection, and through
     // `openStudioUpdateSession` on one kept for them.
     'update.status': 'request',

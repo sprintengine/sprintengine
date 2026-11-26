@@ -14,8 +14,6 @@ import { registerAppMenuIpc } from './app-menu'
 import { registerClipboardIpc } from './ipc/clipboard-ipc'
 import { registerChatExportIpc } from './ipc/chat-export-ipc'
 import { getPluginRegistry } from './plugin-registry-instance'
-import { registerConversationPeekIpc } from './ipc/conversation-peek-ipc'
-import { registerAgentCompactIpc } from './ipc/agent-compact-ipc'
 import { registerDiagnosticsIpc } from './ipc/diagnostics-ipc'
 import { registerAttachedFilesIpc } from './ipc/attached-files-ipc'
 import { createAttachedFileRegistry, createAttachedFiles, createAttachedFileThumbnails } from './attached-files'
@@ -23,7 +21,6 @@ import { registerFilesystemShellIpc } from './ipc/filesystem-shell-ipc'
 import { createFolderOpenIpcDependencies, registerFolderOpenIpc } from './ipc/folder-open-ipc'
 import { registerGitShellIpc } from './ipc/git-shell-ipc'
 import { registerMenuDialogIpc } from './ipc/menu-dialog-ipc'
-import { registerPullRequestIpc } from './ipc/pull-request-ipc'
 import { webContentsIdOfWindowKey } from './ipc/studio-window-ticket-ipc'
 import { registerThirdPartyModuleIpc } from './ipc/third-party-module-ipc'
 import { registerExtensionFrameIpc, stagedExtensionFrames } from './extension-frames/extension-frame-shell'
@@ -213,20 +210,5 @@ export function registerCoreIpc(
     const id = webContentsIdOfWindowKey(windowKey)
     const contents = id === null ? undefined : webContents.fromId(id)
     return contents ? panePopOuts.mayAttachTerminal(contents, sessionId) : true
-  })
-
-  // The conversation peek reads a terminal session, so it registers alongside
-  // the runtime that owns one rather than with the core surfaces.
-  registerConversationPeekIpc(ipcMain, services.conversationPeek)
-
-  // Compacting a terminal agent types at its prompt, through the server's
-  // control plane, which checks the session as it stands then.
-  registerAgentCompactIpc(ipcMain, (sessionId) => services.shellTerminals.compact(sessionId))
-
-  // Same reason: a terminal agent's pull request marks follow its session, so
-  // the hover's refresh registers beside the runtime that owns the session.
-  // The lists themselves are the Studio server's, read over the protocol.
-  registerPullRequestIpc(ipcMain, {
-    refreshPullRequestsForSession: (sessionId) => services.refreshPullRequestsForSession(sessionId),
   })
 }

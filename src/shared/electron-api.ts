@@ -35,7 +35,6 @@ import type {
   TourRevealRequest,
   TourSummary,
 } from './tours/tour-types'
-import type { ConversationPeek } from './conversation-peek'
 
 export type { ConversationPeek, ConversationPeekMessage, ConversationPeekSource } from './conversation-peek'
 export type { HostedSource, HostedSourceKind, HostedSourcesFeed } from './hosted-sources-feed'
@@ -634,26 +633,6 @@ export type ElectronApi = {
    * path instead.
    */
   stageExtensionFrame?: (hash: string, html: string) => Promise<boolean>
-  // The conversation peek: what has been said in a chat the person is hovering
-  // rather than looking at — the first message and everything since, from the
-  // prompts this app captured. `source` says whether there is an answer, a
-  // runtime that reports nothing, or no record at all, because the card is
-  // required to say so rather than look broken. See `shared/conversation-peek.ts`.
-  readConversationPeek: (sessionId: string) => Promise<ConversationPeek>
-  // Compact a terminal agent's conversation: `/compact` at its prompt, once
-  // main has checked the prompt is Claude Code's, waiting and empty
-  // (terminalCompactBlocker in shared/prompt-cache.ts). Offered as its prompt
-  // cache expires, so the next message re-sends a summary rather than all of it.
-  compactAgentSession: (sessionId: string) => Promise<{ ok: true } | { ok: false; message: string }>
-  // The hover hook for a terminal agent's pull request marks: the shell asks
-  // the Studio server to look the session's branch up (once per key per hold)
-  // and re-read any state older than ~60s. The pull requests themselves arrive as a fresh
-  // `terminal.sessions` carrying the session's `pullRequests`, never as
-  // a return value, so one path owns the fact. The boolean says only whether
-  // there was anything to ask about — false for a session main cannot name, or
-  // one whose checkout has not resolved yet — so a caller that asks once per
-  // session can tell "asked" from "could not ask yet" and try again.
-  refreshPullRequestsForSession: (sessionId: string) => Promise<boolean>
   diagnosticsGetProcessMetrics: () => Promise<ProcessMetricsSnapshot>
   // Synchronous: returns the preload's accumulated IPC counters (empty channels
   // when diagnostics is disabled, since instrumentation is skipped entirely).

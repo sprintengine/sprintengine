@@ -1,3 +1,4 @@
+import type { StudioTerminalAgents } from '../../server/terminals/terminal-agents'
 import type { FileViews } from '../../server/file-views/file-views'
 import type { StudioEditorSaveHooks } from '../../server/rpc/studio-file-system'
 import type { Duplex } from 'node:stream'
@@ -232,6 +233,8 @@ export type StudioRpcServiceOptions = {
   processes?: StudioProcesses
   /** The built-in browser's tabs, the desktop shell's (`browser-tabs`). */
   browserTabs?: StudioBrowserTabs
+  /** The peek card and a pull request refresh for its sessions (`terminal.*`). */
+  terminalAgents?: StudioTerminalAgents
   /** The machines this desktop's computer offers, for owners (`execution-hosts`). */
   hosts?: StudioHosts
   /** What a client reads before it starts a chat (`workspaces`). */
@@ -523,6 +526,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.localServers ? { localServers: options.localServers } : {}),
       ...(options.processes ? { processes: options.processes } : {}),
       ...(options.browserTabs ? { browserTabs: options.browserTabs } : {}),
+      ...(options.terminalAgents ? { terminalAgents: options.terminalAgents } : {}),
       ...(options.hosts ? { hosts: options.hosts } : {}),
       ...(options.discovery ? { discovery: options.discovery } : {}),
       ...(options.readiness ? { readiness: options.readiness } : {}),

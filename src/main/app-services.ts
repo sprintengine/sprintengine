@@ -89,7 +89,6 @@ import { isTelemetryEventName, type TelemetryProperties } from '../shared/teleme
 import { syncStudioMcpConfig } from './studio-mcp-sync'
 import { excludeMcpConfigFromWorktree } from './git'
 import { excludeFromWorktree } from './integrations/worktree-exclude'
-import { createConversationPeekService } from './conversation-peek/service'
 import type { TerminalLaunchPreparation } from '../server/terminals/terminal-launch-preparation'
 import { remoteShellTerminals, type ShellTerminals } from './shell-terminals'
 import type { AgentPhaseEvent } from '../shared/agent-runtime'
@@ -155,7 +154,6 @@ import { desktopStudioUpdates, UPDATE_COMMAND_FILENAME, updateCommandFile } from
 import { SERVER_EVENTS, SERVER_METHODS, SHELL_METHODS } from '../server/desktop/server-methods'
 import { createRemoteCore, createRemoteGitHubTokenStore, type ShellServerLink } from './server-supervisor/remote-core'
 import type { ConversationLaunchRequest, ConversationLaunchResult } from './conversation-launch-service'
-import type { ConversationEvent } from '../shared/conversation-runtime'
 import { anyWindowFocused, broadcastToAllWindows } from './window-broadcast'
 
 // How long the quit gives the session integrations' removal. What it does not
@@ -1372,20 +1370,6 @@ export function createAppServices(
     // than at the end of its backoff, and the SDK offers every toolset again.
     desktopShell.client()?.wake()
   })
-  // The conversation peek (hover a chat row or an agent tab): the prompts this
-  // app captured for the session the card is anchored to. Built here rather
-  // than inside the runtime so its assembly rules stay Electron-free and
-  // testable.
-  const conversationPeek = createConversationPeekService({
-    readSessionState: (sessionId) => shellTerminals.peekState(sessionId),
-    // The chats are the server's: it reads the first message and the newest
-    // turn, never the whole transcript.
-    readConversationEvents: (sessionId) =>
-      server.rpc
-        .call<ConversationEvent[] | null>(SERVER_METHODS.conversationPeekEvents, { sessionId })
-        .catch(() => null),
-  })
-
   // The app's own plugin goes into every workspace it opens, at the two moments
   // a workspace becomes real to main: the roots the registry already holds when
   // this process starts, and every accepted registry event after that. Not at
@@ -1636,7 +1620,6 @@ export function createAppServices(
     sprintengineAuth,
     agentLaunchSettings,
     hosts,
-    conversationPeek,
     editorRevealBroker,
     extensionOpenBroker,
     /** `extension.open`'s window half, for the shell to serve the server. */
@@ -1652,12 +1635,6 @@ export function createAppServices(
           code: 'server_unavailable',
           message: `Studio server did not start the chat: ${error instanceof Error ? error.message : String(error)}`,
         })),
-    // A hover on a terminal agent's line: ask the server again.
-    refreshPullRequestsForSession: async (sessionId: string): Promise<boolean> =>
-      server.rpc
-        .call<boolean>(SERVER_METHODS.terminalPullRequestsRefresh, { sessionId })
-        .then((asked) => asked === true)
-        .catch(() => false),
     updateService,
     withIpcDiagnostics,
     workspaceSyncService,

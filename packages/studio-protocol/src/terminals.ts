@@ -401,6 +401,39 @@ export type TerminalOutputEvent =
 type SessionId = { sessionId: string }
 type Command = { commandId: string }
 
+/** One message of a peek card: the person's text with the bulk collapsed, and when it was sent. */
+export type ConversationPeekMessage = {
+  id: string
+  /**
+   * The person's text, with the bulk already collapsed: fenced blocks, pasted
+   * blobs and injected wrappers are dropped and dropped paths shortened to
+   * their names, so what is left is the sentence they typed.
+   */
+  text: string
+  /** Epoch ms the message was sent. Rendered as "2h", never as a clock. */
+  at: number
+  /** Characters cut from `text` by the cap; 0 when nothing was. */
+  truncatedChars: number
+}
+
+/**
+ * Where a peek's answer came from: `live`, the prompts Studio captured;
+ * `none`, a runtime that reports none (a plain shell); `unknown`, a session
+ * Studio holds no state for, which is not the same as `none`.
+ */
+export type ConversationPeekSource = 'live' | 'none' | 'unknown'
+
+/** What a hover over a chat row or an agent tab shows: the message that started it and the ones since. */
+export type ConversationPeek = {
+  sessionId: string
+  source: ConversationPeekSource
+  /** The message that started the chat, or null when none is known. */
+  first: ConversationPeekMessage | null
+  /** Everything after `first`, oldest first, at most the peek's cap. */
+  since: ConversationPeekMessage[]
+}
+
+
 export type StudioTerminalsMethodMap = {
   /** Every live session's snapshot. A client other than the app's own window is sent it projected (`projectTerminalSession`). */
   'terminal.list': { params: Record<string, never>; result: { sessions: TerminalSessionSnapshot[] } }
@@ -451,6 +484,10 @@ export type StudioTerminalsMethodMap = {
     params: { idleSuspendMs?: number; keepRecentAlive?: number }
     result: Record<string, never>
   }
+  /** The peek card for a terminal agent's or a chat's session (a hover on its tab or row). */
+  'terminal.peek': { params: SessionId; result: ConversationPeek }
+  /** A hover on a terminal agent's line: read its pull requests again. `asked` is false for a session not known. */
+  'terminal.refreshPullRequests': { params: SessionId; result: { asked: boolean } }
 }
 
 export type StudioTerminalsMethod = keyof StudioTerminalsMethodMap
@@ -684,6 +721,8 @@ export const STUDIO_TERMINALS_METHODS: StudioMethodTable<StudioTerminalsMethodMa
       return studioParams(params)
     },
   },
+  'terminal.peek': { ...owners, params: parseSessionId },
+  'terminal.refreshPullRequests': { ...owners, params: parseSessionId },
 }
 
 export const STUDIO_TERMINALS_TOPICS: StudioTopicTable<StudioTerminalsTopicMap> = {

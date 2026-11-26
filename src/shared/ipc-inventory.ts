@@ -23,7 +23,7 @@
 export type IpcDirection = 'invoke' | 'send' | 'push'
 
 /** Where a server channel goes: the area of the Studio protocol that replaces it. */
-export type IpcServerArea = 'terminals' | 'web-tab'
+export type IpcServerArea = 'web-tab'
 
 export type IpcInventoryRow =
   | { readonly dir: IpcDirection; readonly shell: string }
@@ -63,8 +63,6 @@ const EXTENSION_LINK = shell(
   "An install link from the operating system: an extension's page opened in one of this app's windows, never an install.",
 )
 
-/** Moves to the protocol: terminals and the agents that run in them. */
-const terminals = server('terminals')
 /** Moves to the protocol: what a browser tab asks its server for: folders, previews, local servers. */
 const webTab = server('web-tab')
 
@@ -279,9 +277,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'extension-link:ready': EXTENSION_LINK('send'),
 
   // ── The server: moves to the Studio protocol ──
-  'agent:compact': terminals('invoke'),
-  'conversation-peek:read': terminals('invoke'),
-  'pullRequest:refreshForSession': terminals('invoke'),
   'browser:local-servers': webTab('invoke'),
   'web:browse-folders': webTab('invoke'),
   'web:previews:changed': webTab('push'),

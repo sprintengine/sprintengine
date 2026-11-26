@@ -8,9 +8,6 @@ import { studioServerApi } from './api/studio-server'
 import { buildStampApi } from './api/build-stamp'
 import { clipboardApi } from './api/clipboard'
 import { chatExportApi } from './api/chat-export'
-import { conversationPeekApi } from './api/conversation-peek'
-import { agentCompactApi } from './api/agent-compact'
-import { pullRequestApi } from './api/pull-request'
 import { filesystemApi } from './api/filesystem'
 import { gitApi } from './api/git'
 import { modulesApi } from './api/modules'
@@ -64,9 +61,6 @@ export const apiModules = {
   ...environmentsApi,
   ...gitApi,
   ...modulesApi,
-  ...conversationPeekApi,
-  ...agentCompactApi,
-  ...pullRequestApi,
   ...updateApi,
   ...appMenuApi,
   ...previewsApi,

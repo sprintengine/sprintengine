@@ -296,6 +296,8 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
           'terminal.setReapExempt',
           'terminal.takeUndeliveredPrompts',
           'terminal.configure',
+          'terminal.peek',
+          'terminal.refreshPullRequests',
           'terminal.output',
           'terminal.sessions',
           'terminal.promptUndelivered',

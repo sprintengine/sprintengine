@@ -198,7 +198,6 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   })
   assert.equal(launched.ok, false)
   assert.equal(launched.code, 'unknown_workspace', JSON.stringify(launched))
-  assert.equal(await shellRpc.call(SERVER_METHODS.terminalPeekState, { sessionId: 'none' }), null)
 
   // The shell's mirror reads from the server.
   const mirror = await shellRpc.call<ServerMirrorState>(SERVER_METHODS.mirrorSnapshot)

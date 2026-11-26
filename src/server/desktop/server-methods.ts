@@ -16,8 +16,6 @@ export const SERVER_METHODS = {
   updateWorkspaceAgent: 'workspace.update-agent',
   /** `{ op, token? }` → the GitHub token store's answer. */
   githubToken: 'github.token',
-  /** `{ sessionId }` → the peek card's events, or null for a session the server does not have. */
-  conversationPeekEvents: 'conversations.peek-events',
   /**
    * → `TerminalRootInfo[]`: every live terminal and chat process root on the
    * server, for Diagnostics' per-workspace memory and the browser's dev servers.
@@ -75,12 +73,6 @@ export const SERVER_METHODS = {
    * prompt hooks where the terminal runs.
    */
   terminalHookPrompt: 'terminals.hook-prompt',
-  /** `{ sessionId }` → `AgentCompactResult`: Compact on an agent tab, typed through the server's control plane. */
-  agentCompact: 'agents.compact',
-  /** `{ sessionId }` → `ConversationPeekSessionState | null`: what the peek card reads of a terminal agent. */
-  terminalPeekState: 'terminals.peek-state',
-  /** `{ sessionId }` → whether a fresh read of the session's pull requests was asked for (a hover). */
-  terminalPullRequestsRefresh: 'terminals.pull-requests-refresh',
   /** `{ connectionId }` → nothing, once the check is done: ask a paired desktop now whether it answers (the mesh is this process's). */
   meshCheckReachability: 'mesh.check-reachability',
   /**

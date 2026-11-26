@@ -9,15 +9,15 @@ import { shellArtifactsOverControl } from '../artifacts/artifacts-shell-bridge'
 import { shellCanvasOverControl } from '../canvas/canvas-shell-bridge'
 import { createAgentChangelistFeed } from '../../main/agent-changelist-feed'
 import { listTerminalRoots } from '../../main/terminal-runtime'
+import { createConversationPeekService } from '../../main/conversation-peek/service'
 import { announceChangelistsChanged } from '../git/changelist-events'
 import { getGitRepoWatch } from '../git/checkout-watch'
 import { shellExtensionOpenOverControl } from '../extensions/extension-open-bridge'
 import type { AgentLaunchRequest, AgentLaunchResult } from '../../shared/agent-launch'
 import { isRecord } from '../../shared/records'
 import { applyGatewayLaunchTokenChanges, type LaunchTokenChange } from '../core/gateway-launch-tokens'
-import { compactDeps, type StudioAgentTerminals } from '../core/studio-agent-terminals'
+import type { StudioAgentTerminals } from '../core/studio-agent-terminals'
 import type { StudioAgents } from '../core/studio-agent-services'
-import { compactTerminalAgent } from '../../main/ipc/agent-compact-ipc'
 import { createTerminalPullRequests, type TerminalPullRequests } from '../../main/terminal-pull-requests'
 import {
   getTerminalSessionById,
@@ -546,7 +546,28 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       : { ok: false, message: 'The update could not be started.' }
   })
   rpc.on(SERVER_EVENTS.updateState, (payload) => desktopUpdates.mirror(payload))
+  // The peek card (a hover on a chat row or an agent tab): a terminal agent's
+  // captured prompts, or a chat's first message and newest turn, never the
+  // whole transcript.
+  const conversationPeek = createConversationPeekService({
+    readSessionState: async (sessionId) => terminals?.runtime.readConversationPeekSessionState(sessionId) ?? null,
+    readConversationEvents: async (sessionId) => {
+      const listed = core.conversations.listSessions()
+      const summary = listed.ok ? listed.sessions.find((session) => session.sessionId === sessionId) : undefined
+      if (!summary) return null
+      const workspaceRoot = core.workspaceRegistry.getRecord(summary.workspaceId)?.folderPath
+      if (!workspaceRoot) return []
+      return core.conversations
+        .readPeekTranscript({ workspaceRoot, workspaceId: summary.workspaceId, agentId: summary.agentId })
+        .catch(() => [])
+    },
+  })
   const studioRpc = createStudioRpc(core, gateway, {
+    // The peek card and a pull request refresh, where the sessions run: here.
+    terminalAgents: {
+      peek: (sessionId) => conversationPeek.readConversationPeek(sessionId),
+      refreshPullRequests: async (sessionId) => terminalPullRequests?.refreshForSession(sessionId) ?? false,
+    },
     updates: desktopUpdates.updates,
     // The built-in browser is the shell's: its tabs are listed and closed there.
     browserTabs: {
@@ -613,10 +634,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   if (terminalPullRequests) {
     const marks = terminalPullRequests
     setSessionPullRequestReader((session) => marks.listForSession(session))
-    rpc.handle(SERVER_METHODS.terminalPullRequestsRefresh, (params) => {
-      const sessionId = (params as { sessionId?: unknown } | null)?.sessionId
-      return typeof sessionId === 'string' ? marks.refreshForSession(sessionId) : false
-    })
   }
 
   // What the shell mirrors (6.3, ServerStateMirror), pushed as it changes.
@@ -863,16 +880,6 @@ function serveShellTerminalRequests(
     if (!terminals) return { ok: true, text: input.text }
     return terminals.hookPrompt(input.sessionId, input.text, hookAs as Omit<ConversationPromptHookAs, 'starter'>)
   })
-  rpc.handle(SERVER_METHODS.agentCompact, (params) => {
-    if (!terminals) return { ok: false, message: TERMINALS_UNAVAILABLE }
-    return compactTerminalAgent(compactDeps(terminals), (params as { sessionId?: unknown } | null)?.sessionId)
-  })
-  rpc.handle(SERVER_METHODS.terminalPeekState, (params) => {
-    const sessionId = (params as { sessionId?: unknown } | null)?.sessionId
-    return typeof sessionId === 'string' && terminals
-      ? terminals.runtime.readConversationPeekSessionState(sessionId)
-      : null
-  })
 }
 
 /**
@@ -941,19 +948,6 @@ function serveShellRequests(deps: {
       default:
         throw new Error('Unknown GitHub token operation.')
     }
-  })
-  rpc.handle(SERVER_METHODS.conversationPeekEvents, async (params) => {
-    const sessionId = (params as { sessionId?: unknown } | null)?.sessionId
-    if (typeof sessionId !== 'string') return null
-    const listed = core.conversations.listSessions()
-    const summary = listed.ok ? listed.sessions.find((session) => session.sessionId === sessionId) : undefined
-    if (!summary) return null
-    const workspaceRoot = core.workspaceRegistry.getRecord(summary.workspaceId)?.folderPath
-    if (!workspaceRoot) return []
-    // The first message and the newest turn, never the whole transcript.
-    return core.conversations
-      .readPeekTranscript({ workspaceRoot, workspaceId: summary.workspaceId, agentId: summary.agentId })
-      .catch(() => [])
   })
   rpc.handle(SERVER_METHODS.liveRoots, () => [
     ...listTerminalRoots(),

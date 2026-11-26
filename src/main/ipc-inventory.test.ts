@@ -178,7 +178,6 @@ import { extensionManifest, writeExtensionFolder } from '../../tests/extension-f
  * deletes their rows; lower the count in the same change.
  */
 const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
-  terminals: 3,
   'web-tab': 6,
 }
 

@@ -8,7 +8,6 @@ import { ownerInvoker, type ExtensionInvoker } from '../../main/module-host/exte
 import { createAgentControlPlane } from '../../main/agent-control-plane'
 import { createAgentLaunchNotices, launchNoticesDatabaseStorage } from '../../main/agent-launch-notices'
 import { createAgentLaunchService, type AgentLaunchService } from '../../main/agent-launch-service'
-import type { AgentCompactIpcDependencies } from '../../main/ipc/agent-compact-ipc'
 import { createAgentPromptStore, registeredAgentOwners } from '../../main/agent-prompt-store'
 import type { StudioDatabase } from '../db/database'
 import { resolveAgentStateSocketPath } from '../../main/agent-state-service'
@@ -486,14 +485,3 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
   }
 }
 
-/** What Compact on an agent tab reads and types through: the session as this runtime sees it, and the control plane. */
-export function compactDeps(terminals: StudioAgentTerminals): AgentCompactIpcDependencies {
-  return {
-    findTerminal: (sessionId) =>
-      terminals.runtime.sessions.listTerminals().find((session) => session.sessionId === sessionId) ?? null,
-    sendPrompt: async (sessionId, text, precondition) => {
-      const result = await terminals.controlPlane.send({ sessionId }, text, { submit: true, precondition })
-      return result.ok ? { ok: true } : { ok: false, message: result.message }
-    },
-  }
-}
