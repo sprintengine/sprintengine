@@ -30,7 +30,6 @@
 // another machine carries it as it is. An older app reading the file drops it,
 // and what it does then is what it did before runs were written down.
 
-import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 import type { SnapshotStorage } from '../../server/db/snapshot-storage'
@@ -71,9 +70,7 @@ export type ScheduledRunRecord = {
 }
 
 /** The file builds before the database kept the schedules in, under the data folder; read once, by the import. */
-export function scheduledAgentsFilePath(userDataDir: string): string {
-  return join(userDataDir, 'scheduled-agents.json')
-}
+export const SCHEDULED_AGENTS_FILE = 'scheduled-agents.json'
 
 export type ScheduledAgentsStoreOptions = {
   /** Where the schedules and their runs are kept: one record in the data folder's database (`createSnapshotStorage`). */
@@ -149,12 +146,16 @@ export function createScheduledAgentsStore(options: ScheduledAgentsStoreOptions)
   const describe = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
   async function read(): Promise<void> {
+    unreadable = null
     let raw: string | null
     try {
       raw = await options.storage.read()
     } catch (error) {
+      // A read that failed (the database busy or not yet there) is tried
+      // again by the next load or change; until one reads, nothing is saved.
       unreadable = `Scheduled agents could not be read, so no change is saved until they can be: ${describe(error)}`
       options.warn?.(unreadable)
+      ready = null
       return
     }
     if (raw === null) return
