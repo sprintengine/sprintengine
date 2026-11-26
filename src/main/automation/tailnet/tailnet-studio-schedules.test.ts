@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
+import { schedulesAt } from '../../../../tests/studio-database'
 
 import type { StudioSchedules } from '../../../../packages/studio-protocol/src/public'
 import { createStudioSchedulesDomain } from '../../../server/schedules/schedules-domain'
@@ -31,7 +32,7 @@ async function domain() {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-schedules-'))
   let ids = 0
   const store = createScheduledAgentsStore({
-    filePath: join(dir, 'scheduled-agents.json'),
+    storage: schedulesAt(join(dir, 'scheduled-agents.json')),
     newId: () => `sa-${(ids += 1)}`,
   })
   await store.load()

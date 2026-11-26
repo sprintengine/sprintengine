@@ -1,14 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  createInMemoryWorkspaceRegistryStore,
-  createWorkspaceRegistryStore,
-  WORKSPACE_REGISTRY_FILE_NAME,
-  type WorkspaceRegistryWriteOptions,
-} from './workspace-registry-store'
+import { savedRegistry, seedRegistry, testDatabaseAt } from '../../tests/studio-database'
+import { importChatRecords } from '../server/db/import-files'
+import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from '../server/db/database'
+import { createWorkspaceRegistryStore, WORKSPACE_REGISTRY_FILE_NAME } from './workspace-registry-store'
 import { createWorkspaceRegistryService } from './workspace-registry-service'
 import { createWorkspaceSyncService } from './workspace-sync-service'
 import { parseWorkspaceRegistryFile } from '../shared/workspace-registry'
@@ -17,14 +15,13 @@ import type { AgentState } from '../shared/agent-state'
 
 type Harness = ReturnType<typeof harness>
 
-function harness(options: { persistDebounceMs?: number } = {}) {
+function harness() {
   const dir = mkdtempSync(join(tmpdir(), 'sprintengine-workspace-registry-'))
   const diagnostics: WorkspaceRegistryDiagnostic[] = []
   let clock = 1_000
   const store = createWorkspaceRegistryStore({
-    resolveUserDataDir: () => dir,
+    database: testDatabaseAt(dir),
     logDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
-    persistDebounceMs: options.persistDebounceMs ?? 0,
   })
   let ids = 0
   const registry = createWorkspaceRegistryService({
@@ -43,8 +40,7 @@ function harness(options: { persistDebounceMs?: number } = {}) {
     advanceClock: (ms: number) => {
       clock += ms
     },
-    readFile: () =>
-      parseWorkspaceRegistryFile(JSON.parse(readFileSync(join(dir, WORKSPACE_REGISTRY_FILE_NAME), 'utf8'))),
+    readFile: () => parseWorkspaceRegistryFile(savedRegistry(dir)),
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   }
 }
@@ -170,7 +166,7 @@ test('a restart reloads a complete registry — no placeholders, every layout re
     await h.registry.flush()
 
     // Second boot against the same userData dir, with no window at any point.
-    const reloadedStore = createWorkspaceRegistryStore({ resolveUserDataDir: () => h.dir, persistDebounceMs: 0 })
+    const reloadedStore = createWorkspaceRegistryStore({ database: testDatabaseAt(h.dir) })
     const reloaded = createWorkspaceRegistryService({ store: reloadedStore })
     const records = reloaded.getRecords()
     assert.equal(records.length, 1)
@@ -186,27 +182,20 @@ test('a restart reloads a complete registry — no placeholders, every layout re
   }
 })
 
-test('a content-identical write does not churn the file', async () => {
-  const h = harness()
-  try {
-    create(h, { name: 'One' })
-    await h.registry.flush()
-    const before = readFileSync(join(h.dir, WORKSPACE_REGISTRY_FILE_NAME), 'utf8')
-    h.store.write(h.readFile()!.file)
-    await h.store.flush()
-    assert.equal(readFileSync(join(h.dir, WORKSPACE_REGISTRY_FILE_NAME), 'utf8'), before)
-  } finally {
-    h.cleanup()
-  }
-})
-
 test('a failed write warns and leaves in-memory state usable', async () => {
   const diagnostics: WorkspaceRegistryDiagnostic[] = []
-  // An unwritable userData path: the write fails, the app keeps working.
+  const dir = mkdtempSync(join(tmpdir(), 'sprintengine-workspace-registry-failing-'))
+  const database = testDatabaseAt(dir)
+  // A database that refuses every write: the app keeps working.
   const store = createWorkspaceRegistryStore({
-    resolveUserDataDir: () => '/dev/null/not-a-directory',
+    database: {
+      ...database,
+      readNow: (sql, params) => database.readNow(sql, params),
+      batch: async () => {
+        throw new Error('database or disk is full')
+      },
+    },
     logDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
-    persistDebounceMs: 0,
   })
   const registry = createWorkspaceRegistryService({ store, newWorkspaceId: () => 'ws-1' })
   const sync = createWorkspaceSyncService({ registry })
@@ -219,6 +208,7 @@ test('a failed write warns and leaves in-memory state usable', async () => {
     true,
     'a failed write is a named warning, never a silent success',
   )
+  rmSync(dir, { recursive: true, force: true })
 })
 
 test('hydration seeds once from a window and then no-ops', () => {
@@ -360,9 +350,17 @@ test('a corrupt registry file is refused rather than presented as an empty list'
   const dir = mkdtempSync(join(tmpdir(), 'sprintengine-workspace-registry-corrupt-'))
   try {
     writeFileSync(join(dir, WORKSPACE_REGISTRY_FILE_NAME), '{ truncated', 'utf8')
+    // The upgrade's import finds it, cannot read it, and leaves it as it was.
+    const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+    assert.deepEqual(importChatRecords(connection, dir)[0], {
+      source: WORKSPACE_REGISTRY_FILE_NAME,
+      records: 0,
+      skipped: 1,
+    })
+    connection.close()
     const diagnostics: WorkspaceRegistryDiagnostic[] = []
     const registry = createWorkspaceRegistryService({
-      store: createWorkspaceRegistryStore({ resolveUserDataDir: () => dir, persistDebounceMs: 0 }),
+      store: createWorkspaceRegistryStore({ database: testDatabaseAt(dir) }),
       logDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     })
     assert.equal(registry.getRecords().length, 0)
@@ -385,8 +383,7 @@ test('a retired-mode row is dropped on load and cannot be proposed back', async 
 
     // An older build wrote the second row as a sprint-engine workspace, and
     // left it the active one.
-    const path = join(h.dir, WORKSPACE_REGISTRY_FILE_NAME)
-    const raw = JSON.parse(readFileSync(path, 'utf8')) as {
+    const raw = savedRegistry(h.dir) as unknown as {
       workspaces: { id: string; mode: string }[]
       activeWorkspaceId: string | null
       workspaceWindows: { workspaceIds: string[]; activeWorkspaceId: string | null }[]
@@ -395,12 +392,11 @@ test('a retired-mode row is dropped on load and cannot be proposed back', async 
     raw.activeWorkspaceId = retired.workspace.id
     raw.workspaceWindows[0]!.activeWorkspaceId = retired.workspace.id
     assert.equal(raw.workspaceWindows[0]!.workspaceIds.includes(retired.workspace.id), true)
-    writeFileSync(path, JSON.stringify(raw), 'utf8')
+    seedRegistry(h.dir, raw)
 
     const diagnostics: WorkspaceRegistryDiagnostic[] = []
     const store = createWorkspaceRegistryStore({
-      resolveUserDataDir: () => h.dir,
-      persistDebounceMs: 0,
+      database: testDatabaseAt(h.dir),
       logDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     })
     const registry = createWorkspaceRegistryService({
@@ -462,7 +458,7 @@ test('a retired-mode row is dropped on load and cannot be proposed back', async 
     const ok = sync.createWorkspace({ name: 'Fresh', folderPath: '/repo' }, 'gateway')
     assert.ok(ok.ok)
     await registry.flush()
-    const persisted = JSON.parse(readFileSync(path, 'utf8')) as { workspaces: { id: string }[] }
+    const persisted = savedRegistry(h.dir) as unknown as { workspaces: { id: string }[] }
     assert.equal(
       persisted.workspaces.some((record) => record.id === retired.workspace.id),
       false,
@@ -496,37 +492,3 @@ test('an imported chat is dated by the session it came from, and stays in the li
 })
 
 console.log('workspace-registry-service.test.ts: ok')
-
-test('a visit stamp alone is persisted lazily, and any other field change is not', () => {
-  const store = createInMemoryWorkspaceRegistryStore()
-  const writes: Array<WorkspaceRegistryWriteOptions | undefined> = []
-  const registry = createWorkspaceRegistryService({
-    store: {
-      ...store,
-      write: (file, options) => {
-        writes.push(options)
-        store.write(file)
-      },
-    },
-    newWorkspaceId: () => 'ws-1',
-  })
-  const sync = createWorkspaceSyncService({ registry })
-  assert.ok(sync.createWorkspace({ name: 'Visited' }, 'ui').ok)
-  const lazy = () => writes.at(-1)?.lazy === true
-  // Later than the clock the create stamped, which only moves forward.
-  const at = Date.now() + 1_000_000
-
-  assert.equal(sync.updateWorkspaceFields('ws-1', { lastVisitedAt: at }, 'ui').ok, true)
-  assert.equal(lazy(), true, 'a visit stamp waits for company on disk')
-  assert.equal(registry.getRecord('ws-1')?.lastVisitedAt, at, 'and is read at once from memory')
-
-  assert.equal(sync.updateWorkspaceFields('ws-1', { lastTurnEndedAt: at + 10_000 }, 'ui').ok, true)
-  assert.equal(lazy(), false, 'a finished turn is written straight away')
-  assert.equal(
-    sync.updateWorkspaceFields('ws-1', { lastVisitedAt: at + 20_000, settledAt: at + 20_000 }, 'ui').ok,
-    true,
-  )
-  assert.equal(lazy(), false, 'a stamp riding with another field is written with it')
-  assert.equal(sync.rewindVisit('ws-1', at + 15_000, 'ui').ok, true)
-  assert.equal(lazy(), false, 'marking a chat unread is a gesture, not a stamp')
-})

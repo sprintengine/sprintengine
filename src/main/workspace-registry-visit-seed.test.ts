@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createWorkspaceRegistryStore, WORKSPACE_REGISTRY_FILE_NAME } from './workspace-registry-store'
+import { savedRegistry, seedRegistry, testDatabaseAt } from '../../tests/studio-database'
+import { createWorkspaceRegistryStore } from './workspace-registry-store'
 import { createWorkspaceRegistryService } from './workspace-registry-service'
 import { createWorkspaceSyncService } from './workspace-sync-service'
 
@@ -11,7 +12,7 @@ import { createWorkspaceSyncService } from './workspace-sync-service'
 // it counts as seen, once, and a chat made since never does by default.
 
 function boot(dir: string, now: number) {
-  const store = createWorkspaceRegistryStore({ resolveUserDataDir: () => dir, persistDebounceMs: 0 })
+  const store = createWorkspaceRegistryStore({ database: testDatabaseAt(dir) })
   let ids = 0
   const registry = createWorkspaceRegistryService({ store, now: () => now, newWorkspaceId: () => `ws-${++ids}` })
   const sync = createWorkspaceSyncService({ registry, now: () => now })
@@ -31,13 +32,12 @@ function withDir(run: (dir: string) => Promise<void> | void) {
 
 /** Rewrite the registry on disk as a build before the visit clock wrote it, keeping `kept` ids' clocks. */
 function asWrittenBeforeVisits(dir: string, kept: Record<string, number> = {}) {
-  const path = join(dir, WORKSPACE_REGISTRY_FILE_NAME)
-  const file = JSON.parse(readFileSync(path, 'utf8'))
-  for (const record of file.workspaces) {
+  const file = savedRegistry(dir)!
+  for (const record of file.workspaces as Array<{ id: string; lastVisitedAt?: number }>) {
     delete record.lastVisitedAt
     if (record.id in kept) record.lastVisitedAt = kept[record.id]
   }
-  writeFileSync(path, JSON.stringify(file))
+  seedRegistry(dir, file)
 }
 
 test(

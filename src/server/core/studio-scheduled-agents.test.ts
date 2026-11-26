@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, test } from 'vitest'
+import { testDatabaseAt } from '../../../tests/studio-database'
 
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
 import type { StudioPlatform } from '../platform/platform'
@@ -25,6 +26,7 @@ function scheduledAgents(after?: Promise<unknown>) {
   folders.push(dataDir)
   return createStudioScheduledAgents({
     platform: { paths: { dataDir: () => dataDir } } as unknown as Pick<StudioPlatform, 'paths'>,
+    database: testDatabaseAt(dataDir),
     conversations: { listSessions: () => ({ ok: true, sessions: [] }) },
     launch: async () => ({ ok: false, message: 'not in this test' }) as never,
     createConversationHost: () => ({ resolveKey: () => null, command: async () => ({ ok: false }) }) as never,
