@@ -1,4 +1,5 @@
 import { stat } from 'node:fs/promises'
+import type { StudioDatabase } from '../db/database'
 import { isAbsolute } from 'node:path'
 
 import type {
@@ -103,7 +104,8 @@ export type LocalServerDomain = StudioLocalServers & {
 }
 
 export type LocalServerDomainOptions = {
-  dataDir: string
+  /** The data folder's database: the linked servers are kept in it. */
+  database: StudioDatabase
   /** The folder a conversation works in: where a command an agent gave without one runs. */
   conversationFolder(key: LocalServerConversationKey): string | null
   /** Whether a workspace was removed; its links go with it (`prune`). */
@@ -166,7 +168,7 @@ export function createLocalServerDomain(options: LocalServerDomainOptions): Loca
   const probe = options.probe ?? createTcpProbe()
   const startRun = options.startRun ?? createLocalServerRunner()
   const record =
-    options.record ?? createLocalServerRecord({ dataDir: options.dataDir, now, log, keep: (id) => runs.has(id) })
+    options.record ?? createLocalServerRecord({ database: options.database, now, log, keep: (id) => runs.has(id) })
   const listeners = new Set<(change: LocalServersChanged) => void>()
   const live = new Map<string, Live>()
   const runs = new Map<string, OwnRun>()

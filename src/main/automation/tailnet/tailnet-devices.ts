@@ -1,6 +1,6 @@
 import { randomBytes, randomInt } from 'crypto'
-import { chmodSync, readFileSync, renameSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import type { StudioDatabase } from '../../../server/db/database'
+import { createRecordTable, type RecordRow } from '../../../server/db/record-table'
 
 import { hashSecret, secretsMatch } from './secret-hash'
 import type { TailnetPeerIdentity } from './tailnet-peer-identity'
@@ -42,6 +42,7 @@ import { isRecord } from '../../../shared/records'
 // window it would widen is how long a forgotten offer stays redeemable, which is
 // a decision about the product and not about this file.
 
+/** The file builds before the database kept paired devices in, under the data folder; read once, by the import. */
 export const TAILNET_DEVICES_FILENAME = 'tailnet-remote-devices.json'
 
 /**
@@ -311,10 +312,12 @@ export type TailnetDeviceStore = {
   ): TailnetCollectOutcome
 }
 
-type StoredDevice = TailnetDevice & { tokenHash: string; node: TailnetNodeBinding | null }
+/** A device as it is kept: its token's hash and the node it is bound to, beside what anyone may see. */
+export type StoredDevice = TailnetDevice & { tokenHash: string; node: TailnetNodeBinding | null }
 
 export function createTailnetDeviceStore(options: {
-  resolveUserDataDir: () => string
+  /** The data folder's database: the devices are kept in its `devices` table. */
+  database: StudioDatabase
   now?: () => Date
   /** How long an inbound pair request waits for an answer. Injected by tests that drive expiry for real. */
   pairRequestTtlMs?: number
@@ -324,14 +327,10 @@ export function createTailnetDeviceStore(options: {
   const pairRequestTtlMs = Math.max(1, options.pairRequestTtlMs ?? DEFAULT_PAIR_REQUEST_TTL_MS)
   const revokeListeners = new Set<(deviceId: string) => void>()
   const scopeListeners = new Set<(device: TailnetDevice) => void>()
-  const loaded = readDevices(options.resolveUserDataDir(), options.log)
-  let devices: StoredDevice[] = loaded.devices
-  // What the file on disk is when it could not be read as a list of devices.
-  // An unreadable one (a scanner holding it, a permission) is never written
-  // over this run: the next pairing would replace every paired device with
-  // what this run knows. One that is not valid JSON is moved aside, once,
-  // before the first write, so whatever it held can still be recovered.
-  let onDisk: 'readable' | 'unreadable' | 'invalid' = loaded.onDisk
+  // The devices as the database keeps them (`devices`, a row each), read once:
+  // this store is the authority after that, and saves the list on each change.
+  const table = createRecordTable(options.database, 'devices', options.log)
+  let devices: StoredDevice[] = readDeviceRows(table.loadNow(), options.log)
   let pairing: {
     tokenHash: string
     scopes: TailnetScope[]
@@ -365,36 +364,10 @@ export function createTailnetDeviceStore(options: {
   >()
   const deniedPeers = new Map<string, number>()
 
+  // Saved behind the change in hand; in memory it holds at once, so a
+  // revoked device is refused from this moment whatever the disk is doing.
   function persist(): void {
-    const path = join(options.resolveUserDataDir(), TAILNET_DEVICES_FILENAME)
-    if (onDisk === 'unreadable') {
-      options.log?.(
-        `${TAILNET_DEVICES_FILENAME} could not be read, so it is not written over; this change lasts until quit.`,
-      )
-      return
-    }
-    if (onDisk === 'invalid') {
-      const aside = `${path}.invalid-${now().getTime()}`
-      try {
-        renameSync(path, aside)
-        options.log?.(`${TAILNET_DEVICES_FILENAME} was not valid JSON; it was kept as ${aside}.`)
-      } catch (error) {
-        // Gone since it was read (the person deleted it): nothing is left to
-        // keep, and the write below starts a new one. Any other failure leaves
-        // it where it is, unwritten, for the rest of the run.
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          onDisk = 'unreadable'
-          options.log?.(
-            `${TAILNET_DEVICES_FILENAME} was not valid JSON and could not be moved aside (${error instanceof Error ? error.message : String(error)}), so it is not written over; this change lasts until quit.`,
-          )
-          return
-        }
-      }
-      onDisk = 'readable'
-    }
-    const body = `${JSON.stringify({ version: 1, devices }, null, 2)}\n`
-    writeFileSync(path, body, { mode: 0o600 })
-    if (process.platform !== 'win32') chmodSync(path, 0o600)
+    void table.save(devices.map((device) => ({ id: device.id, body: JSON.stringify(device) })))
   }
 
   // The one place a device and its token come into existence, so the two
@@ -968,33 +941,32 @@ function publicDevice(device: StoredDevice | TailnetDevice): TailnetDevice {
   }
 }
 
-function readDevices(
-  userDataDir: string,
-  log?: (message: string) => void,
-): { devices: StoredDevice[]; onDisk: 'readable' | 'unreadable' | 'invalid' } {
-  let raw: string
-  try {
-    raw = readFileSync(join(userDataDir, TAILNET_DEVICES_FILENAME), 'utf8')
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') return { devices: [], onDisk: 'readable' }
-    log?.(`Could not read ${TAILNET_DEVICES_FILENAME}: ${message(error)}`)
-    return { devices: [], onDisk: 'unreadable' }
+/**
+ * The devices the rows hold. A malformed entry is dropped, never repaired
+ * into a device with guessed scopes: an unreadable grant is not a grant.
+ */
+function readDeviceRows(rows: readonly RecordRow[], log?: (message: string) => void): StoredDevice[] {
+  const devices: StoredDevice[] = []
+  for (const row of rows) {
+    const entry = parseRow(row.body)
+    if (isStoredDevice(entry)) devices.push(normalizeStored(entry))
+    else log?.(`A paired device's record (${row.id}) does not read, so that device is not trusted.`)
   }
+  return devices
+}
+
+/** The devices a file builds before the database wrote holds, as its store read them (the import). */
+export function readTailnetDevicesFile(raw: string): StoredDevice[] | null {
+  const parsed = parseRow(raw)
+  if (!isRecord(parsed) || !Array.isArray(parsed.devices)) return null
+  return parsed.devices.flatMap((entry) => (isStoredDevice(entry) ? [normalizeStored(entry)] : []))
+}
+
+function parseRow(body: string): unknown {
   try {
-    const parsed: unknown = JSON.parse(raw)
-    const entries = isRecord(parsed) && Array.isArray(parsed.devices) ? parsed.devices : []
-    // A malformed entry is dropped, never repaired into a device with guessed
-    // scopes: an unreadable grant is not a grant.
-    return {
-      devices: entries.flatMap((entry) => (isStoredDevice(entry) ? [normalizeStored(entry)] : [])),
-      onDisk: 'readable',
-    }
-  } catch (error) {
-    log?.(
-      `${TAILNET_DEVICES_FILENAME} is not valid JSON (${message(error)}); no tailnet device is trusted until it is fixed.`,
-    )
-    return { devices: [], onDisk: 'invalid' }
+    return JSON.parse(body) as unknown
+  } catch {
+    return null
   }
 }
 

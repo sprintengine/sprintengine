@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, normalize, sep } from 'node:path'
 import { writeFileAtomicSync } from '../platform/atomic-file'
 import { copyStudioDatabase, databaseCopyName, keepOnlyDatabaseCopy } from '../db/copies'
 import { STUDIO_DATABASE_FILENAME, studioDatabaseFiles } from '../db/database'
-import { CHAT_SIDE_RECORDS_STEP } from '../db/import-files'
+import { CHAT_SIDE_RECORDS_STEP, DEVICE_AND_SESSION_RECORDS_STEP } from '../db/import-files'
 
 // The format a data directory's files are written in, and the one way it
 // changes (design-server-update, 8).
@@ -31,13 +31,16 @@ import { CHAT_SIDE_RECORDS_STEP } from '../db/import-files'
 // Format 2: the data folder has a database (`studio.sqlite`), and a chat's
 // first message, the approval rules, the launch notices and the agents'
 // prompts are kept in it rather than in their files.
+//
+// Format 3: paired devices and machines, browser sessions, embeds, linked
+// local servers, apps' toolsets, file views and extension approvals too.
 
 export const DATA_FORMAT_FILENAME = 'format.json'
 export const MIGRATION_BACKUP_DIRNAME = 'migration-backup'
 const MARKER = 'marker.json'
 
 /** The newest format this build reads and writes. */
-export const STUDIO_DATA_FORMAT = 2
+export const STUDIO_DATA_FORMAT = 3
 
 export type DataFormatStep = {
   /** The format the step brings the data to: one above the one before it. */
@@ -50,7 +53,10 @@ export type DataFormatStep = {
 }
 
 /** The steps this build knows, oldest first. */
-export const STUDIO_DATA_FORMAT_STEPS: readonly DataFormatStep[] = [CHAT_SIDE_RECORDS_STEP]
+export const STUDIO_DATA_FORMAT_STEPS: readonly DataFormatStep[] = [
+  CHAT_SIDE_RECORDS_STEP,
+  DEVICE_AND_SESSION_RECORDS_STEP,
+]
 
 /** Data written in a format this server does not read: it is updated, not the data rewritten. */
 export class StudioDataTooNewError extends Error {

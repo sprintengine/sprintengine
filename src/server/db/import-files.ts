@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
 
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import { LAUNCH_NOTICES_FILE, readSavedLaunchNotices } from '../../main/agent-launch-notices'
@@ -7,6 +7,19 @@ import { AGENT_PROMPTS_DIR_NAME, agentPromptKey, parseAgentPromptFile } from '..
 import { APPROVAL_RULES_FILENAME } from '../../main/conversation-approval-rules'
 import { FIRST_MESSAGES_FILENAME, readFirstMessagesFile } from '../../main/conversation-first-messages'
 import { migrateConversationApprovalRule } from '../../shared/conversation/approvalRules'
+import { readTailnetDevicesFile, TAILNET_DEVICES_FILENAME } from '../../main/automation/tailnet/tailnet-devices'
+import {
+  LEGACY_TAILNET_MESH_FILENAME,
+  readTailnetMeshFile,
+  TAILNET_MESH_FILENAME,
+} from '../../main/automation/tailnet/tailnet-mesh-store'
+import { EXTENSION_APPROVALS_FILENAME, readExtensionApprovalsFile } from '../../main/modules/extension-approvals'
+import { FILE_VIEWS_FILENAME, readFileViewsFile } from '../file-views/file-views'
+import { localServerStorePath, readLinkedServersFile } from '../local-servers/local-server-record'
+import { CLIENT_TOOLSETS_FILENAME, readClientToolsetsFile } from '../tools/client-toolset-store'
+import { EMBEDS_FILENAME, readEmbedsFile } from '../web/embeds'
+import { readWebSessionsFile, WEB_SESSIONS_FILENAME } from '../web/web-sessions'
+import type { RecordTableName } from './record-table'
 import type { DataFormatStep } from '../environment/data-format'
 import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from './database'
 import type { SyncConnection } from './sqlite'
@@ -172,6 +185,109 @@ export const CHAT_SIDE_RECORDS_STEP: DataFormatStep = {
     const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
     try {
       reportSkipped(importChatSideRecords(connection, dataDir))
+    } finally {
+      connection.close()
+    }
+  },
+}
+
+/**
+ * Import one store's file into its record table (`record-table.ts`): `read`
+ * gives the records it keeps, each with its id, or null for a file that is
+ * not one; `skipped` counts what it left out.
+ */
+function importRecordFile(
+  connection: SyncConnection,
+  dataDir: string,
+  source: string,
+  table: RecordTableName,
+  read: (text: string) => { rows: Array<{ id: string; body: unknown }>; skipped?: number } | null,
+): FileImport | null {
+  return importFile(connection, dataDir, source, (text) => {
+    if (text === null) return { records: 0, skipped: 0 }
+    const read_ = read(text)
+    if (!read_) return { records: 0, skipped: 1 }
+    let records = 0
+    for (const [position, row] of read_.rows.entries())
+      records += connection.run(`INSERT OR IGNORE INTO ${table} (id, position, body) VALUES (?, ?, ?)`, [
+        row.id,
+        position,
+        JSON.stringify(row.body),
+      ]).changes
+    return { records, skipped: read_.skipped ?? 0 }
+  })
+}
+
+/**
+ * Format 3: paired devices, the machines this one is paired with, browser
+ * sessions, embeds, linked local servers, apps' toolsets, file views and
+ * extension approvals. Only what each store would trust is brought in: a
+ * device revoked before the upgrade is not in its file and is not here
+ * either, and a token kept in plaintext by a file from before tokens were
+ * sealed never reaches the database (that machine is paired again).
+ */
+export function importDeviceAndSessionRecords(connection: SyncConnection, dataDir: string): FileImport[] {
+  const mesh = existsSync(join(dataDir, TAILNET_MESH_FILENAME))
+    ? TAILNET_MESH_FILENAME
+    : existsSync(join(dataDir, LEGACY_TAILNET_MESH_FILENAME))
+      ? LEGACY_TAILNET_MESH_FILENAME
+      : TAILNET_MESH_FILENAME
+  const imports = [
+    importRecordFile(connection, dataDir, TAILNET_DEVICES_FILENAME, 'devices', (text) => {
+      const devices = readTailnetDevicesFile(text)
+      return devices && { rows: devices.map((device) => ({ id: device.id, body: device })) }
+    }),
+    importRecordFile(connection, dataDir, mesh, 'mesh_links', (text) => {
+      const read = readTailnetMeshFile(text)
+      return (
+        read && { rows: read.sealed.map((entry) => ({ id: String(entry.id), body: entry })), skipped: read.plaintext }
+      )
+    }),
+    importRecordFile(connection, dataDir, WEB_SESSIONS_FILENAME, 'web_sessions', (text) => {
+      const sessions = readWebSessionsFile(text)
+      return sessions && { rows: sessions.map((session) => ({ id: session.id, body: session })) }
+    }),
+    importRecordFile(connection, dataDir, EMBEDS_FILENAME, 'embeds', (text) => {
+      const embeds = readEmbedsFile(text)
+      return embeds && { rows: embeds.map((embed) => ({ id: embed.embedId, body: embed })) }
+    }),
+    importRecordFile(
+      connection,
+      dataDir,
+      relative(dataDir, localServerStorePath(dataDir)),
+      'linked_servers',
+      (text) => {
+        const servers = readLinkedServersFile(text)
+        return servers && { rows: servers.map((server) => ({ id: server.id, body: server })) }
+      },
+    ),
+    importRecordFile(connection, dataDir, CLIENT_TOOLSETS_FILENAME, 'client_toolsets', (text) => {
+      const bindings = readClientToolsetsFile(text)
+      return bindings && { rows: bindings.map((binding) => ({ id: binding.toolset, body: binding })) }
+    }),
+    importRecordFile(connection, dataDir, FILE_VIEWS_FILENAME, 'file_views', (text) => {
+      const chats = readFileViewsFile(text)
+      return chats && { rows: chats.map(({ id, at, paths }) => ({ id, body: { at, paths } })) }
+    }),
+    importRecordFile(connection, dataDir, EXTENSION_APPROVALS_FILENAME, 'extension_approvals', (text) => {
+      const approvals = readExtensionApprovalsFile(text)
+      return (
+        approvals && { rows: [...approvals].sort(([a], [b]) => a.localeCompare(b)).map(([id, body]) => ({ id, body })) }
+      )
+    }),
+  ]
+  return imports.filter((entry): entry is FileImport => entry !== null)
+}
+
+/** The format step that moves the device and session records: format 2 to 3. */
+export const DEVICE_AND_SESSION_RECORDS_STEP: DataFormatStep = {
+  to: 3,
+  files: [],
+  database: true,
+  run(dataDir) {
+    const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
+    try {
+      reportSkipped(importDeviceAndSessionRecords(connection, dataDir))
     } finally {
       connection.close()
     }

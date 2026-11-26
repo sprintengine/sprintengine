@@ -276,7 +276,7 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   let automation: ReturnType<typeof createAutomationService> | null = null
   const clientTools: ClientToolRegistry = createClientToolRegistry({
     store: createClientToolsetStore({
-      dataDir: () => platform.paths.dataDir(),
+      database: core.database,
       log: (message) => {
         void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Client tools', message })
       },
@@ -334,6 +334,7 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
 
   const automationService = createAutomationService({
     resolveUserDataDir: () => platform.paths.dataDir(),
+    database: core.database,
     appVersion: platform.identity.version(),
     resolveBridgeScriptPath: () => studioBridgeScriptPath(platform.paths),
     ...(options.onTailnetEvent ? { onTailnetEvent: options.onTailnetEvent } : {}),

@@ -131,6 +131,7 @@ import { createWslMachineAccess, followCliPathsChanged } from '../wsl/wsl-machin
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
 import { openDataDirDatabase, takeDataDir } from './take-data-dir'
+import { keepExtensionApprovalsIn } from '../../main/modules/extension-approvals'
 import { createStudioUsageLimitResumes, studioConversationUsageLimits } from './studio-usage-limit-resumes'
 import { studioPullRequestWakes } from './studio-pull-request-wakes'
 import { createStudioScheduledAgents } from './studio-scheduled-agents'
@@ -279,6 +280,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // Opened once the data is in this build's format, before any store is
   // built; refused, in words, when it is damaged or cannot be kept there.
   const database = openDataDirDatabase(dataDir, dataDirLock)
+  // Extensions' approvals are read by the folder's path wherever they are checked.
+  const stopKeepingApprovals = keepExtensionApprovalsIn(dataDir, database)
 
   const logDiagnostic =
     (source: 'agents' | 'workspace') =>
@@ -958,7 +961,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // folder; a folder on another machine is not one to run in here.
   const localFolder = (folder: string | null | undefined) => (folder && !isMachinePath(folder) ? folder : null)
   const localServers = createLocalServerDomain({
-    dataDir,
+    database,
     conversationFolder: (key) => {
       const listed = conversations.listSessions({ workspaceId: key.workspaceId, agentId: key.agentId })
       const latest = listed.ok ? [...listed.sessions].sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined
@@ -1446,7 +1449,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // which the person saves from the chat (`fileViews.*`): kept here, beside
   // the chats, so a paired device and a browser tab save on this machine.
   const fileViews = createFileViews({
-    dataDir,
+    database,
     folderOf: ({ workspaceId, agentId }) => {
       const record = workspaceRegistry.getRecord(workspaceId)
       return conversationWorkingRoot(record?.agents[agentId], record?.folderPath) ?? null
@@ -1837,6 +1840,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       }
     }
     // Last, once every store has written: its close checkpoints the WAL.
+    stopKeepingApprovals()
     await database.close().catch(() => undefined)
     dataDirLock?.release()
   }

@@ -1,4 +1,5 @@
 import { createHash } from 'crypto'
+import type { StudioDatabase } from '../../server/db/database'
 import { chmodSync, existsSync, unlinkSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { privateSocketDirectory } from '../private-socket-dir'
@@ -45,6 +46,8 @@ const MAX_POSIX_SOCKET_PATH = 90
 
 type AutomationServiceOptions = {
   resolveUserDataDir: () => string
+  /** The data folder's database: paired devices and the machines this one is paired with. */
+  database: StudioDatabase
   appVersion: string
   /**
    * The gateway's current tool set (core + module-contributed), evaluated per
@@ -206,6 +209,7 @@ export function createAutomationService(options: AutomationServiceOptions) {
   function tailnetService(): TailnetRemoteService {
     tailnet ??= createTailnetRemoteService({
       resolveUserDataDir: options.resolveUserDataDir,
+      database: options.database,
       serverName: STUDIO_MCP_SERVER_ID,
       serverVersion: options.appVersion,
       resolveTools: options.resolveGatewayTools,
@@ -244,7 +248,7 @@ export function createAutomationService(options: AutomationServiceOptions) {
 
   function meshService(): TailnetMeshService {
     mesh ??= createTailnetMeshService({
-      resolveUserDataDir: options.resolveUserDataDir,
+      database: options.database,
       resolvePeerName: (address) => tailnetService().resolvePeerName(address),
       resolvePeerIdentity: (address) => tailnetService().resolvePeerIdentity(address),
       // Both-ways pairing (phase 6): the device this machine grants the one
