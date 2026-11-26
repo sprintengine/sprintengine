@@ -82,6 +82,7 @@ import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import type { StudioAccessDomain } from './studio-access'
 import type { StudioWebDevicesDomain } from './studio-web-devices'
 import type { StudioWebTabDomain } from './studio-web-tab'
+import type { StudioTerminalAgents } from '../terminals/terminal-agents'
 import type { StudioTailnetDomain } from './studio-tailnet'
 import type { SignIns } from '../machine/machine-sign-in'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
@@ -196,6 +197,8 @@ export type StudioRpcServerOptions = {
   webDevices?: () => StudioWebDevicesDomain | null
   /** A web tab's folder browser and previews, read when asked. Advertised as `web-tab` only while it gives one. */
   webTab?: () => StudioWebTabDomain | null
+  /** The peek card and a pull request refresh for its sessions (`terminal.peek`, `terminal.refreshPullRequests`). */
+  terminalAgents?: StudioTerminalAgents
   /** The tailnet listener and the machines this one drives. Advertised as `tailnet` only when given. */
   tailnet?: StudioTailnetDomain
   /** The pull requests the conversations opened, for owners. Advertised as `pull-requests` and `pull-request-tool-calls` only when given. */
@@ -406,6 +409,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.localServers ? { localServers: options.localServers } : {}),
     ...(options.processes ? { processes: options.processes } : {}),
     ...(options.browserTabs ? { browserTabs: options.browserTabs } : {}),
+    ...(options.terminalAgents ? { terminalAgents: options.terminalAgents } : {}),
     ...(options.hosts ? { hosts: options.hosts } : {}),
     ...(options.discovery ? { discovery: options.discovery } : {}),
     ...(options.readiness ? { readiness: options.readiness } : {}),
@@ -476,7 +480,6 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.access ? { access: options.access } : {}),
         ...(options.webDevices ? { webDevices: options.webDevices } : {}),
         ...(options.webTab ? { webTab: options.webTab } : {}),
-        ...(options.webTab ? { webTab: options.webTab } : {}),
         ...(options.tailnet ? { tailnet: options.tailnet } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
@@ -534,7 +537,6 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.artifacts ? { artifacts: options.artifacts } : {}),
         ...(options.access ? { access: options.access } : {}),
         ...(options.webDevices ? { webDevices: options.webDevices } : {}),
-        ...(options.webTab ? { webTab: options.webTab } : {}),
         ...(options.webTab ? { webTab: options.webTab } : {}),
         ...(options.tailnet ? { tailnet: options.tailnet } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
