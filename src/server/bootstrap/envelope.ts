@@ -64,8 +64,8 @@ export function serverExitRetryable(exit: { code: number | null; signal?: string
 export type ServerSecretsMode =
   /**
    * The desktop shell is the cipher: `safeStorage` behind the control
-   * channel, so every sealed file stays byte-identical to what an
-   * in-process build writes. `available` is the shell's answer at fork time.
+   * channel, so every sealed file is byte-identical to what the shell itself
+   * seals. `available` is the shell's answer at fork time.
    */
   | { kind: 'shell'; available: boolean }
   /** An owner-only key file in `<dataDir>/run/` (0600 in a 0700 directory), for a server with no shell. */
