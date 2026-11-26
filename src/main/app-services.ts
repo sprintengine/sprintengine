@@ -949,8 +949,9 @@ export function createAppServices(
       void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Browser tabs', message }),
   })
   // Which chats' agents are working right now: a terminal agent by its pty
-  // and hook state, a chat by its session, asked of the server. Null when that could not be asked: then every chat
-  // counts as working, and nothing is closed on a guess.
+  // and hook state, a chat by its session, asked of the server. Null when that
+  // could not be asked: then every chat counts as working, and nothing is
+  // closed on a guess.
   const workingWorkspaceIds = async (): Promise<ReadonlySet<string> | null> => {
     const ids = new Set<string>()
     for (const session of shellTerminals.list()) {
