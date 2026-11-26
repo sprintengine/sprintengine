@@ -1,7 +1,7 @@
 import { mkdir, open, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import { chatLogKey, importSource } from '../db/chat-logs'
+import { chatLogKey, IMPORT_PENDING, importSource } from '../db/chat-logs'
 import type { StudioDatabase } from '../db/database'
 
 import {
@@ -81,7 +81,12 @@ export async function chatSourceFiles(input: {
     const onDisk = (await stat(transcript).catch(() => null))?.isFile() === true
     // Its history is the database's once its file was imported, or when it began here with none.
     const imported =
-      (await input.database.all('SELECT 1 FROM imports WHERE source = ?', [importSource(log)])).length > 0 ||
+      (
+        await input.database.all('SELECT 1 FROM imports WHERE source = ? AND records <> ?', [
+          importSource(log),
+          IMPORT_PENDING,
+        ])
+      ).length > 0 ||
       (!onDisk && (await input.database.all('SELECT 1 FROM chat_logs WHERE log_key = ?', [log])).length > 0)
     if (!imported) {
       // Not taken up here since the database: its files are still its whole

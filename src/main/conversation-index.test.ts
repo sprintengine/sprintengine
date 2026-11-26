@@ -187,6 +187,37 @@ test('search caps hits, emits bounded batches and honours cancellation', async (
     })
   }))
 
+test('a query too short for the index reads the chat a page at a time, and stops once it has its hits', async () =>
+  fixture(async (key, path) => {
+    await writeFile(
+      path,
+      lines(
+        Array.from({ length: 1000 }, (_, index) =>
+          event(index + 1, 'user_message', { turnId: `turn-${index}`, text: 'Mañana' }),
+        ),
+      ),
+    )
+    const database = testChatDatabase()
+    let bodies = 0
+    const all = async (sql: string, params?: SqlParams) => {
+      const rows = await database.all(sql, params)
+      if (/\bbody\b/u.test(sql) && sql.includes('chat_search_docs')) bodies += rows.length
+      return rows
+    }
+    const watched = new Proxy(database, {
+      get: (target, name) => {
+        if (name === 'all') return all
+        const value: unknown = Reflect.get(target, name)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+    const index = new ConversationIndex(watched, createChatLogs({ database }))
+    await index.list(key)
+    // Folded as people read it, not as SQLite's ASCII lower() does.
+    expect(await index.search({ ...key, query: 'ÑA' })).toHaveLength(200)
+    expect(bodies).toBeLessThanOrEqual(256)
+  }))
+
 test('delete closes the log and removes only its rows; the files from before the database are left as they were', async () =>
   fixture(async (key, path) => {
     await writeFile(path, lines([event(1, 'user_message', { text: 'One' })]))

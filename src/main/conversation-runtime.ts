@@ -623,8 +623,7 @@ export class ConversationRuntime {
   private readonly toolStreams = new Map<string, ToolOutputStream>()
   private readonly toolDetailWrites: ToolDetailWriteQueue
   private readonly toolDetailStore: ToolDetailStore
-  /** The chats' history in the data folder's database: a hand-over takes up a transcript a chat brings through it. */
-  readonly history: ChatLogs
+  private readonly history: ChatLogs
   private readonly toolPreviews = new Map<string, ToolPreviewThrottle>()
   private readonly toolPreviewIntervalMs: number
   private eventSequence = 0
@@ -4297,6 +4296,32 @@ export class ConversationRuntime {
       })
       if (closed) await this.outbox.settle(chat)
     }
+  }
+
+  /**
+   * A transcript a hand-over brings for the chat whose log is at `path`
+   * (`ChatLogs.adopt`): taken as its history when what this Studio holds of
+   * it is a beginning of it. A chat a session here is running keeps its
+   * own. Its writes so far land first, and what this runtime knew of the
+   * log (its last number, its receipts) goes with the rows it replaces, so
+   * the next event is numbered after the transcript's.
+   */
+  async adoptTranscript(path: string, root: string, incoming: string): Promise<boolean> {
+    const running = Array.from(this.sessions.values()).some(
+      (session) =>
+        session.status !== 'stopped' &&
+        this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId) === path,
+    )
+    if (running) return false
+    await this.emissionTails.get(path)
+    await this.eventLog.flush(path)
+    const adopted = await this.history.adopt(path, root, incoming)
+    if (adopted) {
+      // Read again from the log (`initializeSequence`) before anything is written to it.
+      this.sequences.delete(path)
+      this.receipts.delete(path)
+    }
+    return adopted
   }
 
   async recoverTranscript(input: ConversationTranscriptInput): Promise<void> {

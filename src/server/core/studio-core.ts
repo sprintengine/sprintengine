@@ -1919,8 +1919,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     dataDirLock,
     /** The data folder's database (`server/db/`): the stores that moved out of files keep their records in it. */
     database,
-    /** The chats' history in it (`server/db/chat-logs.ts`), as the runtime takes it up. */
-    chatHistory: conversationRuntime.history,
+    /** The chats' history in it (`server/db/chat-logs.ts`), as the runtime writes it: what a hand-over brings goes through it. */
+    chatHistory: {
+      adopt: (path: string, root: string, incoming: string) =>
+        conversationRuntime.adoptTranscript(path, root, incoming),
+    },
     agentLaunchSettings,
     hosts,
     workspaceRegistry,
