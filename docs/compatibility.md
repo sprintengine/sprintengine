@@ -1386,8 +1386,10 @@ reads ("this data was written by Studio X; update this server"), so a server
 rolled back to an older tree never rewrites what a newer one wrote. A format
 changes only through a step in that file, which copies the files it touches
 aside first and is undone if it fails or is interrupted. Format 1 is the
-layout every build before the marker wrote; the first store change an older
-server cannot read adds format 2.
+layout every build before the marker wrote. Format 2 adds the data folder's
+database (`studio.sqlite`) and moves a chat's first message, the approval
+rules, the launch notices and the agents' prompts into it; `docs/data-folder.md`
+says what is in it and how to go back to an older build.
 
 **The `incompatible` frame, `update.status`, `update.start`, their params,
 results and codes never change shape**, since they are what two ends that

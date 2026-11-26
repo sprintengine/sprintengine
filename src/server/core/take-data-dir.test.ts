@@ -8,7 +8,9 @@ import type { DiagnosticLogInput } from '../../shared/ipc/diagnostics'
 import { createNodeStudioPlatform } from '../platform/platform'
 import { createUnavailableSecretCipher } from '../platform/secret-cipher'
 import { acquireDataDirLock, DATA_DIR_RECORD_FILE } from './data-dir'
-import { StudioDataDirBusyError, StudioDataDirUnusableError, takeDataDir } from './take-data-dir'
+import { STUDIO_DATABASE_FILENAME } from '../db/database'
+import { STUDIO_DATA_FORMAT } from '../environment/data-format'
+import { openDataDirDatabase, StudioDataDirBusyError, StudioDataDirUnusableError, takeDataDir } from './take-data-dir'
 
 const directories: string[] = []
 function dataDir(): string {
@@ -152,8 +154,23 @@ test('a server refuses data newer than it reads and lets the lock go; the deskto
   assert.ok(logged.some((entry) => entry.title === 'Data directory format' && /9\.0\.0/u.test(entry.message)))
   taken.lock?.release()
 
-  // A directory with no marker is marked with this build's format as it is taken.
+  // A directory with no marker is brought to this build's format as it is taken.
   const fresh = dataDir()
   takeDataDir(platformAt(fresh), 'server').lock?.release()
-  assert.deepEqual(JSON.parse(readFileSync(join(fresh, 'format.json'), 'utf8')), { format: 1, writtenBy: '1.0.0' })
+  assert.deepEqual(JSON.parse(readFileSync(join(fresh, 'format.json'), 'utf8')), {
+    format: STUDIO_DATA_FORMAT,
+    writtenBy: '1.0.0',
+  })
+})
+
+test("a database that cannot be opened stops a server's start in its own words and lets the lock go", () => {
+  const dir = dataDir()
+  const taken = takeDataDir(platformAt(dir), 'server')
+  writeFileSync(join(dir, STUDIO_DATABASE_FILENAME), 'not a database\n'.repeat(300))
+  assert.throws(
+    () => openDataDirDatabase(dir, taken.lock),
+    (error: unknown) =>
+      error instanceof StudioDataDirUnusableError && /damaged or is not a SQLite database/u.test(error.message),
+  )
+  assert.equal(taken.lock?.isHeld(), false, 'the lock is let go on refusal')
 })

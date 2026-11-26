@@ -663,10 +663,10 @@ that every reader passes over (`conversation-command-receipts.ts`).
   and spends nothing; the client starts the chat again and resends under the
   same id, which the receipt answers. A keyed send asks the conversation host
   whether it was held or carried out before its uploads are staged.
-- A launched chat's first message is written down whole, its pictures in the
-  folder beside it (`conversation-first-messages.json`,
-  `conversation-first-messages/`), and flushed to the disk before the chat is
-  made, under an id derived from the launch's. One that cannot be written
+- A launched chat's first message is written down whole, in the data
+  folder's database (`docs/data-folder.md`) with its pictures in
+  `conversation-first-messages/`, and committed before the chat is made,
+  under an id derived from the launch's. One that cannot be written
   refuses the launch. It is kept until the chat has answered it for good
   (taken, or refused in an answer its log keeps). A refusal the log did not
   keep, such as a busy chat or an agent that would not start, keeps it, and

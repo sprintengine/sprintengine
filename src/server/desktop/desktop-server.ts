@@ -774,6 +774,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         ['command lists', () => domains.conversationCommands.dispose()],
         ['workspace registry (final)', () => workspaceSyncService.flush()],
         ['modules', () => modules.shutdown()],
+        // Last of the stores: what they queued is committed, and its close
+        // folds the WAL back into the database.
+        ['database', () => core.database.close()],
         ['data directory', () => core.dataDirLock?.release()],
       ]
       // A lost parent: nothing can be shown, so only what cannot be lost runs.
@@ -784,6 +787,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         'pull requests',
         'local servers',
         'workspace registry (final)',
+        'database',
         'data directory',
       ])
       await runShutdownLegs(drain ? legs : legs.filter(([name]) => urgent.has(name)), onLeg)

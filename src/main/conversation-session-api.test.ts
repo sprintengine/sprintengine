@@ -14,6 +14,7 @@ import type {
   ConversationSessionSummary,
 } from '../shared/conversation-runtime'
 import { workspaceStorePath } from './workspace-store'
+import { openTestDatabase } from '../../tests/studio-database'
 import { ConversationApprovalRuleStore } from './conversation-approval-rules'
 import { ConversationOutbox } from './conversation-outbox'
 
@@ -873,7 +874,7 @@ test('remembered approvals auto-resolve later matching tools and persistence fai
   const runtime = new ConversationRuntime({
     adapters: [adapter],
     getProviderById: () => undefined,
-    approvalRules: new ConversationApprovalRuleStore(storeRoot),
+    approvalRules: new ConversationApprovalRuleStore(openTestDatabase(storeRoot)),
   })
   try {
     await writeFile(join(workspaceRoot, 'file.txt'), 'read me')
@@ -929,12 +930,13 @@ test('remembered approvals auto-resolve later matching tools and persistence fai
       )
     }
     approvalHints = {}
-    await mkdir(storeRoot, { recursive: true })
-    await writeFile(join(storeRoot, 'conversation-approval-rules.json'), '{bad')
+    // Rules that cannot be read (a database that takes nothing): never read as "none saved".
+    const unreadable = openTestDatabase(join(storeRoot, 'unreadable'))
+    await unreadable.close()
     const broken = new ConversationRuntime({
       adapters: [adapter],
       getProviderById: () => undefined,
-      approvalRules: new ConversationApprovalRuleStore(storeRoot),
+      approvalRules: new ConversationApprovalRuleStore(unreadable),
     })
     try {
       const session = await broken.startSession({

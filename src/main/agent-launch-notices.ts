@@ -1,5 +1,4 @@
-import { mkdir, readFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import type { StudioDatabase } from '../server/db/database'
 
 import type { AgentPhase } from '../shared/electron-api'
 import type { AgentPhaseEvent, AgentSessionExitEvent } from '../shared/agent-runtime'
@@ -18,7 +17,6 @@ import {
 } from '../shared/usage-limits'
 import { isRecord } from '../shared/records'
 import type { AgentControlPlane, ControlPlaneSendOptions, ControlPlaneSession } from './agent-control-plane'
-import { writeFileAtomically } from './config-file-write'
 import { SUBAGENT_RESULT_MAX_CHARS, turnWasInterrupted } from './subagent-lifecycle'
 
 /**
@@ -987,23 +985,20 @@ export function readSavedLaunchNotices(raw: string | null): SavedLaunchNotices |
   return { version: SAVED_VERSION, parents, children }
 }
 
-/** The file in the data directory the links and queues are kept in. */
+/** The file builds before the database kept the links and queues in, under the data folder; read once, by the import. */
 export const LAUNCH_NOTICES_FILE = 'launch-notices.json'
 
-/** The links and queues kept in `file`, written whole and atomically. */
-export function launchNoticesFileStorage(file: string): LaunchNoticesStorage {
+/** The links and queues, kept whole as the one row of the database's `launch_notices`. */
+export function launchNoticesDatabaseStorage(database: StudioDatabase): LaunchNoticesStorage {
   return {
     async read() {
-      try {
-        return await readFile(file, 'utf8')
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return null
-        throw error
-      }
+      return (await database.get<{ body: string }>('SELECT body FROM launch_notices WHERE id = 1'))?.body ?? null
     },
     async write(body) {
-      await mkdir(dirname(file), { recursive: true })
-      await writeFileAtomically(file, body)
+      await database.run(
+        'INSERT INTO launch_notices (id, body) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET body = excluded.body',
+        [body],
+      )
     },
   }
 }

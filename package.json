@@ -15,7 +15,7 @@
     "url": "https://github.com/sprintengine/sprintengine/issues"
   },
   "engines": {
-    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+    "node": "^22.13.0 || ^24.0.0 || >=26.0.0"
   },
   "scripts": {
     "start": "node scripts/dev.js",

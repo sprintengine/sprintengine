@@ -12,7 +12,7 @@
 // distribution with automount turned off does not have.
 //
 // Bumping the version: take the four sums for the new version from
-// https://nodejs.org/dist/<version>/SHASUMS256.txt. The server needs Node 22.12
+// https://nodejs.org/dist/<version>/SHASUMS256.txt. The server needs Node 22.13
 // or newer; an LTS line is pinned for its glibc floor (2.28) and its
 // support window.
 

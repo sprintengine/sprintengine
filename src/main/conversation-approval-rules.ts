@@ -1,6 +1,7 @@
-import { mkdir, readFile, realpath, rename, writeFile } from 'fs/promises'
-import { dirname, join, resolve } from 'path'
+import { realpath } from 'fs/promises'
+import { dirname, resolve } from 'path'
 import { randomUUID } from 'crypto'
+import type { StudioDatabase } from '../server/db/database'
 import { STUDIO_MCP_SERVER_ID } from '../shared/product-identity'
 import type { ConversationApprovalDecision } from '../shared/conversation-runtime'
 import {
@@ -14,29 +15,36 @@ import {
   type ConversationApprovalRule,
 } from '../shared/conversation/approvalRules'
 
-/** Grants live in app settings, never in a repository-controlled sidecar. */
+/** The file builds before the database kept the rules in, under the data folder; read once, by the import. */
+export const APPROVAL_RULES_FILENAME = 'conversation-approval-rules.json'
+
+/**
+ * Grants live in the data folder's database (`approval_rules`, in the order
+ * they were made), never in a repository-controlled sidecar. A rule a chat
+ * keeps for its session only is held here in memory.
+ */
 export class ConversationApprovalRuleStore {
   private persistent: ConversationApprovalRule[] = []
   private sessions = new Map<string, ConversationApprovalRule[]>()
   private loaded?: Promise<void>
   private writes: Promise<void> = Promise.resolve()
-  constructor(private readonly userDataDir?: string) {}
+  constructor(private readonly database?: StudioDatabase) {}
   private async load(): Promise<void> {
     this.loaded ??= (async () => {
-      if (!this.userDataDir) return
-      try {
-        const value: unknown = JSON.parse(
-          await readFile(join(this.userDataDir, 'conversation-approval-rules.json'), 'utf8'),
-        )
-        if (!Array.isArray(value)) throw new Error('Saved conversation approval rules are invalid.')
-        const rules = value.map(migrateConversationApprovalRule)
-        this.persistent = rules.filter((rule) => rule !== null)
-        // Narrowed or dropped grants are written back at once, so an older
-        // build reading the file later cannot revive the wider scope.
-        if (rules.some((rule, index) => rule !== value[index])) await this.save(this.persistent)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      }
+      if (!this.database) return
+      const rows = await this.database.all<{ body: string }>('SELECT body FROM approval_rules ORDER BY rowid')
+      const saved = rows.map((row): unknown => {
+        try {
+          return JSON.parse(row.body)
+        } catch {
+          return null
+        }
+      })
+      const rules = saved.map(migrateConversationApprovalRule)
+      this.persistent = rules.filter((rule) => rule !== null)
+      // Narrowed or dropped grants are written back at once, so nothing
+      // reading the rules later can revive the wider scope.
+      if (rules.some((rule, index) => rule !== saved[index])) await this.save(this.persistent)
     })()
     return this.loaded
   }
@@ -75,7 +83,7 @@ export class ConversationApprovalRuleStore {
         rule,
       ])
     else {
-      if (!this.userDataDir) throw new Error('Persistent conversation permissions are unavailable.')
+      if (!this.database) throw new Error('Persistent conversation permissions are unavailable.')
       await this.mutate((rules) => [
         ...rules.filter((entry) => !matchesApprovalRule(entry, request, workspaceRoot)),
         rule,
@@ -90,7 +98,7 @@ export class ConversationApprovalRuleStore {
    */
   async adopt(value: unknown): Promise<{ ok: true } | { ok: false; reason: string; exists?: true }> {
     await this.load()
-    if (!this.userDataDir) return { ok: false, reason: 'Persistent conversation permissions are unavailable.' }
+    if (!this.database) return { ok: false, reason: 'Persistent conversation permissions are unavailable.' }
     const rule = migrateConversationApprovalRule(value)
     // Kept only as it was given: one this build would narrow comes back as
     // another object (as `load` reads it), and is not this rule.
@@ -127,7 +135,7 @@ export class ConversationApprovalRuleStore {
         rules.filter((rule) => !forgets(rule)),
       )
     const before = this.persistent.length
-    if (this.userDataDir && this.persistent.some(forgets))
+    if (this.database && this.persistent.some(forgets))
       await this.mutate((rules) => rules.filter((rule) => !forgets(rule)))
     return before - this.persistent.length
   }
@@ -145,13 +153,16 @@ export class ConversationApprovalRuleStore {
     this.writes = write
     return write
   }
+  /** The rules, whole, in one transaction: there are few, and their order is the order they were made. */
   private async save(rules: ConversationApprovalRule[]): Promise<void> {
-    if (!this.userDataDir) throw new Error('Persistent conversation permissions are unavailable.')
-    await mkdir(this.userDataDir, { recursive: true })
-    const file = join(this.userDataDir, 'conversation-approval-rules.json')
-    const temp = `${file}.${randomUUID()}.tmp`
-    await writeFile(temp, `${JSON.stringify(rules, null, 2)}\n`, { mode: 0o600 })
-    await rename(temp, file)
+    if (!this.database) throw new Error('Persistent conversation permissions are unavailable.')
+    await this.database.batch([
+      { sql: 'DELETE FROM approval_rules' },
+      ...rules.map((rule) => ({
+        sql: 'INSERT INTO approval_rules (id, workspace_root, body) VALUES (?, ?, ?)',
+        params: [rule.id, rule.workspaceRoot, JSON.stringify(rule)],
+      })),
+    ])
   }
 }
 

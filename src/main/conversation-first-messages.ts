@@ -1,17 +1,18 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, rename, rm } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, rm } from 'node:fs/promises'
+import { join } from 'node:path'
 
 import type { ConversationImageAttachment, ConversationPromptHookAs } from '../shared/conversation-runtime'
+import type { StudioDatabase } from '../server/db/database'
 import { writeFileAtomic } from '../server/platform/atomic-file'
 
-// The first messages of chats a launch made, kept on disk until each is
-// answered. A launch answers once the chat and its session are there; its
+// The first messages of chats a launch made, kept in the data folder's
+// database (`first_messages`) until each is answered. A launch answers once the chat and its session are there; its
 // first message goes after that (once a new worktree's dependencies are in),
 // so a create resent after a restart finds its chat (`launchCommandId`) and is
 // answered as made, while the message it was made for went with the process.
-// Kept here first, whole (its pictures beside it) and flushed to the disk
-// before the launch answers, it is sent at the next start under the command
+// Kept here first, whole (its pictures in files beside the database) and
+// committed before the launch answers, it is sent at the next start under the command
 // id it was meant to go under, through the chat's ordinary send (which
 // resumes a chat at rest): one that went before the stop is answered from the
 // chat's receipt, and runs no second turn.
@@ -23,8 +24,11 @@ import { writeFileAtomic } from '../server/platform/atomic-file'
 //
 // A scheduled run keeps its own record (`ScheduledRunRecord`).
 
-/** The file under the data directory they are kept in; their pictures in the folder beside it, without `.json`. */
+/** The file builds before the database kept them in, under the data folder; read once, by the import. */
 export const FIRST_MESSAGES_FILENAME = 'conversation-first-messages.json'
+
+/** The folder under the data folder their pictures are kept in, one folder per message. */
+export const FIRST_MESSAGE_IMAGES_DIRNAME = 'conversation-first-messages'
 
 /** Who sends one again at start, to the conversation host: Studio itself. */
 export const FIRST_MESSAGE_CLIENT_ID = 'studio-first-messages'
@@ -62,7 +66,7 @@ export type PendingFirstMessage = {
 export type PendingFirstMessages = {
   /**
    * Write it down, pictures included, under the command id it goes under,
-   * flushed to the disk before this resolves: the launch answers only after.
+   * committed before this resolves: the launch answers only after.
    */
   keep(
     commandId: string,
@@ -71,24 +75,49 @@ export type PendingFirstMessages = {
   ): Promise<void>
   /** Let it go, with its pictures, once the chat has answered it for good. */
   done(commandId: string): Promise<void>
-  /** Every one still kept, read from disk once. */
+  /** Every one still kept. */
   all(): Promise<Record<string, PendingFirstMessage>>
   /** Where a kept message's picture lies on this disk. */
   imagePath(commandId: string, image: PendingFirstMessageImage): string
 }
 
-type FileShape = { v: 1; messages: Record<string, PendingFirstMessage> }
+/**
+ * What the file builds before the database kept them in says, as they wrote
+ * it; null for a file that is not that.
+ */
+export function readFirstMessagesFile(raw: string): Record<string, PendingFirstMessage> | null {
+  try {
+    const parsed = JSON.parse(raw) as { messages?: unknown } | null
+    if (!parsed || typeof parsed.messages !== 'object' || !parsed.messages || Array.isArray(parsed.messages))
+      return null
+    const messages: Record<string, PendingFirstMessage> = {}
+    for (const [commandId, message] of Object.entries(parsed.messages as Record<string, unknown>)) {
+      const read = readPendingFirstMessage(message)
+      if (read) messages[commandId] = read
+    }
+    return messages
+  } catch {
+    return null
+  }
+}
+
+/** One kept message, held to the fields it is sent with; null for one that is not that. */
+function readPendingFirstMessage(value: unknown): PendingFirstMessage | null {
+  if (!value || typeof value !== 'object') return null
+  const message = value as Partial<PendingFirstMessage>
+  if (typeof message.launchCommandId !== 'string' || typeof message.message !== 'string') return null
+  return { ...message, at: typeof message.at === 'number' ? message.at : 0 } as PendingFirstMessage
+}
 
 export function createPendingFirstMessages(options: {
-  filePath: string
+  database: StudioDatabase
+  /** Where their pictures are kept: `<data>/conversation-first-messages`. */
+  imagesRoot: string
   warn?: (message: string) => void
-  now?: () => number
 }): PendingFirstMessages {
-  const now = options.now ?? Date.now
-  const imagesRoot = options.filePath.replace(/\.json$/u, '')
+  const db = options.database
   const folderOf = (commandId: string) =>
-    join(imagesRoot, createHash('sha256').update(commandId).digest('hex').slice(0, 32))
-  let messages: Record<string, PendingFirstMessage> | null = null
+    join(options.imagesRoot, createHash('sha256').update(commandId).digest('hex').slice(0, 32))
   let queue: Promise<unknown> = Promise.resolve()
   const serial = <T>(work: () => Promise<T>): Promise<T> => {
     const next = queue.then(work)
@@ -96,46 +125,27 @@ export function createPendingFirstMessages(options: {
     return next
   }
 
-  async function load(): Promise<Record<string, PendingFirstMessage>> {
-    if (messages) return messages
-    let raw: string
-    try {
-      raw = await readFile(options.filePath, 'utf8')
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return (messages = {})
-      // There but unreadable is not "none kept": written over, it would lose
-      // every message it holds. Nothing is kept or let go of until it reads.
-      throw new Error(
-        `The first messages kept for new chats could not be read: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error },
-      )
-    }
-    try {
-      const parsed = JSON.parse(raw) as Partial<FileShape>
-      if (parsed && typeof parsed.messages === 'object' && parsed.messages) return (messages = { ...parsed.messages })
-    } catch {
-      // Malformed: set aside below.
-    }
-    // Malformed: kept aside for the owner rather than written over.
-    const aside = `${options.filePath}.unreadable-${now()}`
-    await rename(options.filePath, aside)
-    options.warn?.(`The first messages kept for new chats were not readable; the file was kept aside as ${aside}.`)
-    return (messages = {})
+  async function kept(commandId: string): Promise<PendingFirstMessage | null> {
+    const row = await db.get<{ body: string }>('SELECT body FROM first_messages WHERE command_id = ?', [commandId])
+    return row ? parseBody(commandId, row.body) : null
   }
 
-  async function save(next: Record<string, PendingFirstMessage>): Promise<void> {
-    await mkdir(dirname(options.filePath), { recursive: true, mode: 0o700 })
-    await writeFileAtomic(options.filePath, JSON.stringify({ v: 1, messages: next } satisfies FileShape), {
-      mode: 0o600,
-      durable: true,
-    })
+  function parseBody(commandId: string, body: string): PendingFirstMessage | null {
+    try {
+      const message = readPendingFirstMessage(JSON.parse(body))
+      if (message) return message
+    } catch {
+      // Said below.
+    }
+    // Left in place rather than deleted: it is the owner's to look at.
+    options.warn?.(`The first message kept for the launch ${commandId} does not read, so it is not sent.`)
+    return null
   }
 
   return {
     keep: (commandId, message, attachments = []) =>
       serial(async () => {
-        const kept = await load()
-        // The pictures first, each flushed: once the list names them they are there.
+        // The pictures first, each flushed: once the row names them they are there.
         const images: PendingFirstMessageImage[] = []
         if (attachments.length) {
           const folder = folderOf(commandId)
@@ -154,22 +164,31 @@ export function createPendingFirstMessages(options: {
             })
           }
         }
-        const next = { ...kept, [commandId]: { ...message, ...(images.length ? { images } : {}) } }
-        await save(next)
-        messages = next
+        const body: PendingFirstMessage = { ...message, ...(images.length ? { images } : {}) }
+        await db.run(
+          'INSERT INTO first_messages (command_id, body) VALUES (?, ?) ON CONFLICT (command_id) DO UPDATE SET body = excluded.body',
+          [commandId, JSON.stringify(body)],
+        )
       }),
     done: (commandId) =>
       serial(async () => {
-        const kept = await load()
-        if (!(commandId in kept)) return
-        const next = { ...kept }
-        const images = next[commandId]?.images?.length
-        delete next[commandId]
-        await save(next)
-        messages = next
-        if (images) await rm(folderOf(commandId), { recursive: true, force: true }).catch(() => undefined)
+        const message = await kept(commandId)
+        const { changes } = await db.run('DELETE FROM first_messages WHERE command_id = ?', [commandId])
+        if (changes && message?.images?.length)
+          await rm(folderOf(commandId), { recursive: true, force: true }).catch(() => undefined)
       }),
-    all: () => serial(async () => ({ ...(await load()) })),
+    all: () =>
+      serial(async () => {
+        const rows = await db.all<{ command_id: string; body: string }>(
+          'SELECT command_id, body FROM first_messages ORDER BY rowid',
+        )
+        const messages: Record<string, PendingFirstMessage> = {}
+        for (const row of rows) {
+          const message = parseBody(row.command_id, row.body)
+          if (message) messages[row.command_id] = message
+        }
+        return messages
+      }),
     imagePath: (commandId, image) => join(folderOf(commandId), image.file),
   }
 }

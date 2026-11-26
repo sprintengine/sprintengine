@@ -52,7 +52,7 @@ import { createConversationLaunchService, SUBAGENT_TASK_ORIGIN } from '../../mai
 import {
   createPendingFirstMessages,
   FIRST_MESSAGE_CLIENT_ID,
-  FIRST_MESSAGES_FILENAME,
+  FIRST_MESSAGE_IMAGES_DIRNAME,
   recoverFirstMessages,
   recoveryHookAs,
 } from '../../main/conversation-first-messages'
@@ -130,7 +130,7 @@ import { createWslTerminalSessions, terminalHostOf, type WslTerminalSessions } f
 import { createWslMachineAccess, followCliPathsChanged } from '../wsl/wsl-machine-client'
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
-import { takeDataDir } from './take-data-dir'
+import { openDataDirDatabase, takeDataDir } from './take-data-dir'
 import { createStudioUsageLimitResumes, studioConversationUsageLimits } from './studio-usage-limit-resumes'
 import { studioPullRequestWakes } from './studio-pull-request-wakes'
 import { createStudioScheduledAgents } from './studio-scheduled-agents'
@@ -276,6 +276,9 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   const dataDir = platform.paths.dataDir()
   const taken = takeDataDir(platform, options.role)
   const dataDirLock = taken.lock
+  // Opened once the data is in this build's format, before any store is
+  // built; refused, in words, when it is damaged or cannot be kept there.
+  const database = openDataDirDatabase(dataDir, dataDirLock)
 
   const logDiagnostic =
     (source: 'agents' | 'workspace') =>
@@ -495,7 +498,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // children behind them, transcripts, the thread index and checkpoints. Owned
   // here so the owner's shutdown disposes its child processes.
   // The saved approvals, which a revoked app's tools leave with it.
-  const approvalRules = new ConversationApprovalRuleStore(dataDir)
+  const approvalRules = new ConversationApprovalRuleStore(database)
   // Extensions' agent hooks: bound to the workers once the module kernel holds
   // them (server-modules.ts, app-main.ts), and run as each action's invoker.
   const extensionHooks = createExtensionHooks()
@@ -679,6 +682,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     // before the lock did, its reporter included; any other process listens
     // only with the lock, so two never share the socket.
     reporterListens: dataDirLock !== null || options.role === 'desktop',
+    database,
     workspaceRegistry,
     workspaceSyncService,
     agentLaunchSettings,
@@ -790,7 +794,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // A launched chat's first message, written down until it is answered, and
   // sent at the next start when a stop cut it off (conversation-first-messages.ts).
   const firstMessages = createPendingFirstMessages({
-    filePath: join(dataDir, FIRST_MESSAGES_FILENAME),
+    database,
+    imagesRoot: join(dataDir, FIRST_MESSAGE_IMAGES_DIRNAME),
     warn: (message) => void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'New chats', message }),
   })
   const conversationLaunchService = createConversationLaunchService({
@@ -1831,6 +1836,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         // Best effort, leg by leg: the process is leaving either way.
       }
     }
+    // Last, once every store has written: its close checkpoints the WAL.
+    await database.close().catch(() => undefined)
     dataDirLock?.release()
   }
 
@@ -1853,6 +1860,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     role: options.role,
     /** Null only in a desktop that could not take the directory and carried on, as builds before the lock did. */
     dataDirLock,
+    /** The data folder's database (`server/db/`): the stores that moved out of files keep their records in it. */
+    database,
     /** Resolves once a Studio server this desktop displaced has exited; a gateway or socket opens after it. */
     whenDataDirFree: taken.whenFree,
     agentLaunchSettings,

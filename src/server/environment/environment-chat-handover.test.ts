@@ -7,6 +7,8 @@ import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
 
 import type { StudioClient } from '../../../packages/client-runtime/src/public'
+import { openTestDatabase } from '../../../tests/studio-database'
+import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from '../db/database'
 import { ConversationApprovalRuleStore } from '../../main/conversation-approval-rules'
 import { workspaceStorePath } from '../../main/workspace-store'
 import { conversationWorkingRoot } from '../../shared/agent-state'
@@ -96,12 +98,20 @@ function handOverRig() {
     label: 'Write: files within c:/code/repo except .git',
     createdAt: 1,
   }
-  writeFileSync(join(desktopDir, 'conversation-approval-rules.json'), JSON.stringify([rule]))
-  const desktopRules = new ConversationApprovalRuleStore(desktopDir)
+  const kept = prepareStudioDatabase(join(desktopDir, STUDIO_DATABASE_FILENAME))
+  kept.run('INSERT INTO approval_rules (id, workspace_root, body) VALUES (?, ?, ?)', [
+    rule.id,
+    rule.workspaceRoot,
+    JSON.stringify(rule),
+  ])
+  kept.close()
+  const desktopDatabase = openTestDatabase(desktopDir)
+  const desktopRules = new ConversationApprovalRuleStore(desktopDatabase)
 
   // The distribution's Studio: its real adoption, its own registry and rule store.
   const theirs = new Map<string, Record<string, unknown>>()
-  const machineRules = new ConversationApprovalRuleStore(machineDir)
+  const machineDatabase = openTestDatabase(machineDir)
+  const machineRules = new ConversationApprovalRuleStore(machineDatabase)
   const adoptionStores: EnvironmentAdoptionStores = {
     flush: async () => undefined,
     workspaces: {
@@ -197,6 +207,8 @@ function handOverRig() {
     machineDir,
     desktopDir,
     sourceDir,
+    desktopDatabase,
+    machineDatabase,
     transcript,
     partsCalls: () => partsCalls,
     uploads: () => uploads,
@@ -204,7 +216,8 @@ function handOverRig() {
 }
 
 test("a WSL workspace's chat, its files and its saved approvals reach the distribution's Studio, respelled, in parts", async () => {
-  const { migration, theirs, machineDir, desktopDir, transcript, partsCalls, uploads } = handOverRig()
+  const { migration, theirs, machineDir, desktopDatabase, machineDatabase, transcript, partsCalls, uploads } =
+    handOverRig()
   await migration.plan()
   assert.equal(await migration.deliver('wsl:Ubuntu'), true)
   assert.equal(migration.handedOver('wsl:Ubuntu'), true)
@@ -230,12 +243,12 @@ test("a WSL workspace's chat, its files and its saved approvals reach the distri
     'no part waits for the sweep',
   )
   // The approval, its folder in the distribution's spelling, in its matcher and its words.
-  const kept = await new ConversationApprovalRuleStore(machineDir).list()
+  const kept = await new ConversationApprovalRuleStore(machineDatabase).list()
   assert.equal(kept.length, 1)
   assert.equal(kept[0]!.workspaceRoot, '/mnt/c/code/repo')
   assert.deepEqual(kept[0]!.matcher, { type: 'path', prefix: '/mnt/c/code/repo' })
   assert.match(kept[0]!.label, /files within \/mnt\/c\/code\/repo except \.git/u)
-  assert.deepEqual(await new ConversationApprovalRuleStore(desktopDir).list(), [], 'let go here')
+  assert.deepEqual(await new ConversationApprovalRuleStore(desktopDatabase).list(), [], 'let go here')
 
   // Planned again (a restart): nothing more goes.
   const before = uploads()
@@ -245,14 +258,14 @@ test("a WSL workspace's chat, its files and its saved approvals reach the distri
 })
 
 test('a chat whose files changed after it was planned is left here as a conflict; the rest of the hand-over goes on', async () => {
-  const { migration, theirs, machineDir, sourceDir } = handOverRig()
+  const { migration, theirs, sourceDir, machineDatabase } = handOverRig()
   await migration.plan()
   // The transcript is written again between the plan and the delivery.
   writeFileSync(join(sourceDir, 'a1.jsonl'), 'another transcript')
   assert.equal(await migration.deliver('wsl:Ubuntu'), true, 'not held up on every connect')
   assert.equal(migration.handedOver('wsl:Ubuntu'), true)
   assert.ok(theirs.has('ws-1'), 'the workspace went')
-  assert.equal((await new ConversationApprovalRuleStore(machineDir).list()).length, 1, 'its approval went')
+  assert.equal((await new ConversationApprovalRuleStore(machineDatabase).list()).length, 1, 'its approval went')
   const store = workspaceStorePath('/mnt/c/code/repo', 'conversations', 'ws-1')
   assert.throws(() => readFileSync(join(store, 'a1.jsonl')), 'the chat did not')
   assert.equal(readFileSync(join(sourceDir, 'a1.jsonl'), 'utf8'), 'another transcript', 'left where it lies')
