@@ -408,3 +408,21 @@ test('format 3 brings the device and session records in as their stores read the
     [JSON.stringify(['ws-1', 'agent-1'])],
   )
 })
+
+test('format 4 brings in the open-turn list; transcripts wait to be taken up', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'se-import-history-'))
+  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 3, writtenBy: '3.0.0' }))
+  const chat = { workspaceRoot: '/Users/dev/app', workspaceId: 'ws-1', agentId: 'agent-1' }
+  writeFileSync(join(dir, 'conversation-outbox.json'), JSON.stringify({ version: 1, chats: [chat, { agentId: 'x' }] }))
+  assert.deepEqual(prepareDataFormat(dir, { version: '4.0.0' }), { format: 4, migrated: [4], restored: false })
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  try {
+    assert.deepEqual(
+      connection.all('SELECT workspace_root, workspace_id, agent_id FROM turn_outbox').map((row) => ({ ...row })),
+      [{ workspace_root: chat.workspaceRoot, workspace_id: chat.workspaceId, agent_id: chat.agentId }],
+    )
+    assert.equal(connection.get<{ n: number }>('SELECT COUNT(*) AS n FROM chat_logs')?.n, 0)
+  } finally {
+    connection.close()
+  }
+})
