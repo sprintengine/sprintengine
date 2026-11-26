@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { workspaceStorePath } from './workspace-store'
 import { once } from 'node:events'
@@ -28,8 +29,8 @@ import { test } from 'vitest'
 // collector closes them, which newer Node versions report as an error.
 const liveRuntimes = new Set<ConversationRuntime>()
 class TrackedConversationRuntime extends ConversationRuntime {
-  constructor(options?: ConstructorParameters<typeof ConversationRuntime>[0]) {
-    super(options)
+  constructor(options: Omit<ConstructorParameters<typeof ConversationRuntime>[0], 'database'> = {}) {
+    super({ database: testChatDatabase(), ...options })
     liveRuntimes.add(this)
   }
 }

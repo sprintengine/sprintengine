@@ -14,7 +14,8 @@ import type {
   ConversationSessionSummary,
 } from '../shared/conversation-runtime'
 import { workspaceStorePath } from './workspace-store'
-import { openTestDatabase } from '../../tests/studio-database'
+import { openTestDatabase, testChatDatabase, testDatabaseAt } from '../../tests/studio-database'
+import { createChatLogs } from '../server/db/chat-logs'
 import { ConversationApprovalRuleStore } from './conversation-approval-rules'
 import { ConversationOutbox } from './conversation-outbox'
 
@@ -429,13 +430,13 @@ test('a start closes every turn the last run left open, without anyone opening t
     database: testChatDatabase(),
     adapters: [hanging],
     getProviderById: () => undefined,
-    outbox: new ConversationOutbox(dataDir),
+    outbox: new ConversationOutbox(testDatabaseAt(dataDir)),
   })
   const restarted = new ConversationRuntime({
     database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
-    outbox: new ConversationOutbox(dataDir),
+    outbox: new ConversationOutbox(testDatabaseAt(dataDir)),
   })
   try {
     const started = await first.startSession({ ...key, providerId: hanging.id, modelId: 'mock-model' })
@@ -447,7 +448,7 @@ test('a start closes every turn the last run left open, without anyone opening t
     )
     void first.sendTurn({ sessionId: started.session.sessionId, commandId: 'phone-1', message: 'one effect' })
     await committed
-    assert.deepEqual(await new ConversationOutbox(dataDir).pending(), [key], 'listed before its turn began')
+    assert.deepEqual(await new ConversationOutbox(testDatabaseAt(dataDir)).pending(), [key], 'listed before its turn began')
 
     // The first process is gone without shutting down; the next one starts.
     const closed: ConversationEvent[] = []
@@ -458,7 +459,7 @@ test('a start closes every turn the last run left open, without anyone opening t
       [['turn_failed', 'interrupted']],
       'the turn is closed in the log and said, with no session started on the chat',
     )
-    assert.deepEqual(await new ConversationOutbox(dataDir).pending(), [], 'and the chat leaves the outbox')
+    assert.deepEqual(await new ConversationOutbox(testDatabaseAt(dataDir)).pending(), [], 'and the chat leaves the outbox')
     const replay = await restarted.readTranscript(key, { all: true, closeOpenTurns: false })
     assert.ok(replay.ok)
     assert.equal(replay.events.at(-1)?.type, 'turn_failed')
@@ -487,8 +488,9 @@ test('a send goes when the list of open turns cannot be written: it is an aid, n
   const dataDir = await mkdtemp(join(tmpdir(), 'conversation-outbox-'))
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
-  const blocked = join(dataDir, 'data')
-  await writeFile(blocked, 'not a directory')
+  // A database that takes nothing: the list cannot be written.
+  const blocked = openTestDatabase(join(dataDir, 'data'))
+  await blocked.close()
   const runtime = new ConversationRuntime({
     database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
@@ -830,12 +832,9 @@ test('failed startup does not leave a zombie and a rejecting persister clears a 
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     eventLog: {
-      openStream: async () => ({
-        write: async () => {
-          if (++writes === 3) throw new Error('disk failed')
-        },
-        close: async () => {},
-      }),
+      write: async () => {
+        if (++writes === 3) throw new Error('disk failed')
+      },
       onError: (_path, error) => {
         throw error
       },
@@ -1586,20 +1585,15 @@ test('a send the log cannot take is not published and not recorded, so the same 
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-unwritable-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   let broken = false
+  const logs = createChatLogs({ database: testChatDatabase() })
   const runtime = new ConversationRuntime({
     database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     eventLog: {
-      openStream: async (filePath) => {
-        await mkdir(dirname(filePath), { recursive: true })
-        return {
-          write: async (chunk) => {
-            if (broken) throw new Error('disk failed')
-            await appendFile(filePath, chunk)
-          },
-          close: async () => {},
-        }
+      write: async (path, root, rows, receipts) => {
+        if (broken) throw new Error('disk failed')
+        await logs.append(path, root, rows, receipts)
       },
       onError: (_path, error) => {
         throw error
