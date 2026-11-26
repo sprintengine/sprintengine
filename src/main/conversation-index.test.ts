@@ -6,7 +6,9 @@ import { expect, test } from 'vitest'
 import { ConversationIndex, conversationIndexTranscriptPath, firstMessageTitle } from './conversation-index'
 import type { ConversationEvent } from '../shared/conversation-runtime'
 import { testChatDatabase } from '../../tests/studio-database'
-import { createChatLogs } from '../server/db/chat-logs'
+import { chatLogKey, createChatLogs } from '../server/db/chat-logs'
+import type { StudioDatabase, StudioTransaction } from '../server/db/database'
+import type { SqlParams } from '../server/db/sqlite'
 
 /** Events appended to a log after its import, as the runtime's log appends them. */
 async function appendEvents(key: { workspaceRoot: string }, path: string, events: ConversationEvent[]): Promise<void> {
@@ -109,6 +111,57 @@ test('search joins split assistant deltas and returns a jumpable user-turn seque
       await makeIndex().search({ ...key, query: 'ALPHA BETA' }, { onBatch: (batch) => batches.push(batch) }),
     ).toEqual([{ agentId: 'agent', seq: 1, turnId: 'turn', snippet: 'The alpha beta answer.', from: 'agent' }])
     expect(batches).toHaveLength(1)
+  }))
+
+test('a reply going on across listings is searched whole, from the deltas the fold reads: no turn reads the log again', async () =>
+  fixture(async (key, path) => {
+    await writeFile(
+      path,
+      lines([
+        event(1, 'user_message', { turnId: 'turn', text: 'Question' }),
+        event(2, 'content_delta', { turnId: 'turn', text: 'The alpha ' }),
+      ]),
+    )
+    const database = testChatDatabase()
+    // What the index itself asks of the database (the log's pages come through its history).
+    const asked: string[] = []
+    const spy = (target: Pick<StudioTransaction, 'all' | 'get' | 'run'>) => ({
+      all: (sql: string, params?: SqlParams) => (asked.push(sql), target.all(sql, params)),
+      get: (sql: string, params?: SqlParams) => (asked.push(sql), target.get(sql, params)),
+      run: (sql: string, params?: SqlParams) => (asked.push(sql), target.run(sql, params)),
+    })
+    const watched = {
+      ...database,
+      ...spy(database),
+      transaction: (work: (tx: StudioTransaction) => Promise<unknown>) =>
+        database.transaction((tx) => work(spy(tx) as StudioTransaction)),
+    } as StudioDatabase
+    const index = new ConversationIndex(watched, createChatLogs({ database }))
+    expect(await index.search({ ...key, query: 'alpha' })).toHaveLength(1)
+    await appendEvents(key, path, [event(3, 'content_delta', { turnId: 'turn', text: 'beta answer.' })])
+    expect(await index.search({ ...key, query: 'alpha beta' })).toEqual([
+      { agentId: 'agent', seq: 1, turnId: 'turn', snippet: 'The alpha beta answer.', from: 'agent' },
+    ])
+    expect(asked.filter((sql) => sql.includes('chat_events'))).toEqual([])
+  }))
+
+test('a log deleted while its row is folded gets no row back', async () =>
+  fixture(async (key, path) => {
+    await writeFile(path, lines([event(1, 'user_message', { turnId: 'turn', text: 'Question' })]))
+    const database = testChatDatabase()
+    const logs = createChatLogs({ database })
+    const index = new ConversationIndex(database, {
+      ...logs,
+      // The fork or import this log was is given up while the listing reads it.
+      oldest: async (...args) => {
+        const rows = await logs.oldest(...args)
+        await logs.remove(path, key.workspaceRoot)
+        return rows
+      },
+    })
+    expect(await index.list(key)).toEqual([])
+    for (const table of ['chat_threads', 'chat_search_docs'])
+      expect(await database.all(`SELECT 1 FROM ${table} WHERE log_key = ?`, [chatLogKey(path)])).toEqual([])
   }))
 
 test('search caps hits, emits bounded batches and honours cancellation', async () =>
