@@ -1429,8 +1429,10 @@ function joinRepoPath(skillId: string, relativePath: string): string {
  * dev run it is read out of the checkout.
  */
 function defaultStudioMarketplaceSeedRoot(): string | null {
+  // Electron sets it on a packaged app's processes; plain Node has none.
+  const resourcesPath = (process as { resourcesPath?: string }).resourcesPath
   const candidates = [
-    ...(process.resourcesPath ? [join(process.resourcesPath, STUDIO_MARKETPLACE_RESOURCE_DIR)] : []),
+    ...(resourcesPath ? [join(resourcesPath, STUDIO_MARKETPLACE_RESOURCE_DIR)] : []),
     join(process.cwd(), 'resources', STUDIO_MARKETPLACE_RESOURCE_DIR),
   ]
   return candidates.find((candidate) => existsSync(candidate)) ?? null
