@@ -22,7 +22,7 @@ import type { ConversationKey } from '../shared/conversation-runtime'
  */
 
 /** The file builds before the database kept the list in, under the data folder; read once, by the import. */
-export const CONVERSATION_OUTBOX_FILE = 'conversation-outbox.json'
+export const CONVERSATION_OUTBOX_FILENAME_FOR_IMPORT = 'conversation-outbox.json'
 
 const chatId = (chat: ConversationKey) => JSON.stringify([chat.workspaceRoot, chat.workspaceId, chat.agentId])
 

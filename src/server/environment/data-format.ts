@@ -14,7 +14,7 @@ import { dirname, isAbsolute, join, normalize, sep } from 'node:path'
 import { writeFileAtomicSync } from '../platform/atomic-file'
 import { copyStudioDatabase, databaseCopyName, keepOnlyDatabaseCopy } from '../db/copies'
 import { STUDIO_DATABASE_FILENAME, studioDatabaseFiles } from '../db/database'
-import { CHAT_SIDE_RECORDS_STEP, DEVICE_AND_SESSION_RECORDS_STEP } from '../db/import-files'
+import { CHAT_HISTORY_STEP, CHAT_SIDE_RECORDS_STEP, DEVICE_AND_SESSION_RECORDS_STEP } from '../db/import-files'
 
 // The format a data directory's files are written in, and the one way it
 // changes (design-server-update, 8).
@@ -44,13 +44,17 @@ import { CHAT_SIDE_RECORDS_STEP, DEVICE_AND_SESSION_RECORDS_STEP } from '../db/i
 //
 // Format 3: paired devices and machines, browser sessions, embeds, linked
 // local servers, apps' toolsets, file views and extension approvals too.
+//
+// Format 4: chat history (events, receipts, the chat list's rows, search,
+// the open-turn list, tool details). Each chat's transcript is imported when
+// it is first taken up, or by the background pass.
 
 export const DATA_FORMAT_FILENAME = 'format.json'
 export const MIGRATION_BACKUP_DIRNAME = 'migration-backup'
 const MARKER = 'marker.json'
 
 /** The newest format this build reads and writes. */
-export const STUDIO_DATA_FORMAT = 3
+export const STUDIO_DATA_FORMAT = 4
 
 export type DataFormatStep = {
   /** The format the step brings the data to: one above the one before it. */
@@ -66,6 +70,7 @@ export type DataFormatStep = {
 export const STUDIO_DATA_FORMAT_STEPS: readonly DataFormatStep[] = [
   CHAT_SIDE_RECORDS_STEP,
   DEVICE_AND_SESSION_RECORDS_STEP,
+  CHAT_HISTORY_STEP,
 ]
 
 /** Data written in a format this server does not read: it is updated, not the data rewritten. */

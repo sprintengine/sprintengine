@@ -16,6 +16,7 @@ import type {
 import { resolveClaudeConfigDir } from '../claude-config-dir'
 import { codexHomeDir } from '../conversation-import/codex-sessions'
 import { conversationStorageSegment } from '../conversation-index'
+import { STUDIO_DATABASE_FILENAME } from '../../server/db/database'
 import { workspaceStorePath } from '../workspace-store'
 import { aggregateUsage, type UsageSpeedRow } from './usage-aggregate'
 import { createPricingStore, type PricingStore, type UsagePricing } from './usage-pricing'
@@ -175,6 +176,7 @@ export function createUsageService(deps: UsageServiceDeps): UsageService {
       geminiHome: join(home, '.gemini'),
       grokHome: env.GROK_HOME?.trim() || join(home, '.grok'),
       studioDirs: studioDirs(deps.getWorkspaces()),
+      studioDatabase: join(deps.dataDir(), STUDIO_DATABASE_FILENAME),
     }
   }
 
@@ -428,10 +430,10 @@ export function opencodeDataDir(home: string, env: NodeJS.ProcessEnv): string {
 }
 
 /**
- * Where each open workspace keeps its chat transcripts: its project's store,
- * which a chat working in a worktree of the project writes to as well. The
- * root a folder is listed with is where its chat runs, the worktree when one
- * of its agents runs in one, since that is the folder its usage was spent in.
+ * Each open workspace's chats, by the name their logs go by in the data
+ * folder's database (`<chat>/…`), with the root each runs in: the worktree
+ * when one of its agents runs in one, since that is the folder its usage was
+ * spent in. A folder on an SSH machine is that machine's to count.
  */
 export function studioDirs(workspaces: readonly UsageServiceWorkspace[]): UsageStudioDir[] {
   const dirs = new Map<string, UsageStudioDir>()
@@ -451,7 +453,7 @@ export function studioDirs(workspaces: readonly UsageServiceWorkspace[]): UsageS
         // A folder on an SSH machine: its chats' usage is that machine's.
         continue
       }
-      dirs.set(dir, { dir, workspaceId: workspace.id, root })
+      dirs.set(dir, { dir, workspaceId: workspace.id, root, chatKey: conversationStorageSegment(workspace.id) })
     }
   }
   return [...dirs.values()]

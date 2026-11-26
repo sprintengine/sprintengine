@@ -269,6 +269,9 @@ export type StudioCore = ReturnType<typeof createStudioCore>
  */
 const TAILNET_FILE_SEARCH_SENDER = -1
 
+/** How long after start the background pass begins importing chat history: past the first start's busiest moments. */
+const HISTORY_PASS_DELAY_MS = 5_000
+
 export function createStudioCore(platform: StudioPlatform, options: StudioCoreOptions) {
   // Installed first, so a free function deep in the graph (the credential
   // store, a resource lookup) reads this platform even when the caller has not
@@ -558,6 +561,36 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     void conversationRuntime.recoverInterruptedTurns().catch((error: unknown) => {
       console.warn('[studio-core] open turns could not be closed:', error instanceof Error ? error.message : error)
     })
+  // Every chat's history from before the database, imported in the
+  // background one chat at a time, so the first start opens at once and a
+  // chat opened meanwhile is imported as it is opened (owner decision
+  // 2026-11-25).
+  let historyPass: NodeJS.Timeout | null = null
+  let stopHistoryPass = false
+  if (dataDirLock)
+    historyPass = setTimeout(() => {
+      historyPass = null
+      void (async () => {
+        for (const record of workspaceRegistry.getRecords()) {
+          for (const [agentId, agent] of Object.entries(record.agents ?? {})) {
+            if (stopHistoryPass) return
+            if (!agent?.conversation) continue
+            const workspaceRoot = conversationWorkingRoot(agent, record.folderPath)
+            if (!workspaceRoot) continue
+            await conversationRuntime
+              .takeUpHistory({ workspaceRoot, workspaceId: record.id, agentId })
+              .catch((error: unknown) =>
+                console.warn(
+                  `[studio-core] the history of ${record.id}/${agentId} could not be imported:`,
+                  error instanceof Error ? error.message : error,
+                ),
+              )
+            await new Promise((resolve) => setImmediate(resolve))
+          }
+        }
+      })()
+    }, HISTORY_PASS_DELAY_MS)
+  historyPass?.unref()
   // Each project's state lives in its store in the person's home, on the
   // machine its chats run on (main/workspace-store.ts). An older build kept it
   // in `<project>/.sprintengine/`: moved out the first time a folder reaches
@@ -1650,7 +1683,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
           usageLimitResumes,
           pullRequests: pullRequests.record,
           scheduledImages: (prompt) => keptImagesIn(prompt, dataDir),
-          chatSources: (chat) => chatSourceFiles({ dataDir, ...chat }),
+          chatSources: (chat) => chatSourceFiles({ dataDir, database, ...chat }),
           approvalRules,
         }),
         log: (message) => {
@@ -1837,6 +1870,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       }
     }
     // Last, once every store has written: its close checkpoints the WAL.
+    stopHistoryPass = true
+    if (historyPass) clearTimeout(historyPass)
     stopKeepingApprovals()
     await database.close().catch(() => undefined)
     dataDirLock?.release()

@@ -170,8 +170,8 @@ export function createChatLogs(options: {
   }
 }
 
-/** Where `imports` notes a log's old transcript. */
-function importSource(key: string): string {
+/** Where `imports` notes a log's old transcript: once there, the database is the log's whole history. */
+export function importSource(key: string): string {
   return `transcript:${key}`
 }
 

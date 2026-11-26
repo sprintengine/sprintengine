@@ -4283,6 +4283,16 @@ export class ConversationRuntime {
    * and the chat list hear the end without anyone opening the chat. A chat
    * stays listed while its log cannot be written, for the next start.
    */
+  /**
+   * Bring a chat's history from before the database in now (`chat-logs.ts`),
+   * if it has any and was not imported yet: the background pass's step, so a
+   * chat nobody opens is searched and listed whole too.
+   */
+  async takeUpHistory(key: ConversationTranscriptInput): Promise<void> {
+    if (this.shutDown) return
+    await this.history.ensure(this.transcriptPath(key.workspaceRoot, key.workspaceId, key.agentId), key.workspaceRoot)
+  }
+
   recoverInterruptedTurns(): Promise<void> {
     // Waited for by a quit, so nothing is appended after the logs close.
     const recovering = this.recoverInterruptedTurnsNow()

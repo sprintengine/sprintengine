@@ -20,7 +20,7 @@ import { basename, dirname, join, sep } from 'node:path'
 //   under `<data>/storage/message/<session>/`.
 // - Gemini CLI's chat recordings, `<home>/tmp/<project>/chats/session-*.json`.
 // - Grok's session updates, `<home>/sessions/<cwd>/<session>/updates.jsonl`.
-// - Studio's chat transcripts, `<store>/conversations/<ws>/<agent>.jsonl` (workspace-store.ts).
+// - Studio's chats, in the data folder's database (`chat_events`), read only.
 //   Their `turn_completed` events carry the turn's usage when the runtime
 //   reported it, the cost when it reported that, and the agent CLI session the
 //   turn ran (`providerCursor.sessionId`), which is the only link between a
@@ -81,8 +81,8 @@ export type UsageCacheEntry = {
   buckets: UsageBucket[]
 }
 
-/** A Studio transcript folder: one workspace's chats under one root. */
-export type UsageStudioDir = { dir: string; workspaceId: string; root: string }
+/** One workspace's chats under one root: their logs are named `<chatKey>/<agent>` in the database. */
+export type UsageStudioDir = { dir: string; workspaceId: string; root: string; chatKey: string }
 
 export type UsageScanRoots = {
   claudeProjects: string
@@ -94,6 +94,8 @@ export type UsageScanRoots = {
   /** Grok's home (`~/.grok`). Absent, Grok is not read. */
   grokHome?: string
   studioDirs: UsageStudioDir[]
+  /** The data folder's database, which keeps Studio's chats. Absent, they are not read. */
+  studioDatabase?: string
 }
 
 export type UsageSourceStatus = { id: UsageSourceId; found: number; error: string | null }
@@ -207,7 +209,6 @@ const CODEX_RECORD = markers(
 )
 const CODEX_USER_MESSAGE = markers('"user_message"')
 const CODEX_THREAD_NAME = markers('thread_name')
-const STUDIO_TURN = markers('"turn_completed"')
 const GROK_TURN = markers('turn_completed')
 
 function parseJson(line: string): Record<string, unknown> | null {
@@ -347,23 +348,44 @@ async function discoverCodex(codexHome: string, status: UsageSourceStatus): Prom
   return groups
 }
 
-async function discoverStudio(dirs: UsageStudioDir[], status: UsageSourceStatus): Promise<Group[]> {
+async function discoverStudio(
+  dirs: UsageStudioDir[],
+  path: string | undefined,
+  status: UsageSourceStatus,
+  databases: Map<string, SqliteDatabase>,
+): Promise<Group[]> {
   const groups: Group[] = []
+  if (!path || dirs.length === 0) return groups
+  let db = databases.get(path)
+  if (!db) {
+    const opened = await openSqlite(path)
+    if (!opened) return groups
+    db = opened
+    databases.set(path, db)
+  }
   const seen = new Set<string>()
-  for (const { dir } of dirs) {
-    let entries: Array<{ name: string; dir: boolean }>
+  for (const dir of dirs) {
+    let rows: Array<{ log_key: string; last_seq: number }>
     try {
-      entries = await listDir(dir)
+      // Every log of the chat: `<chat>/` up to, not including, `<chat>0`.
+      rows = db
+        .prepare('SELECT log_key, last_seq FROM chat_logs WHERE log_key >= ? AND log_key < ?')
+        .all(`${dir.chatKey}/`, `${dir.chatKey}0`) as Array<{ log_key: string; last_seq: number }>
     } catch {
       continue
     }
-    for (const entry of entries) {
-      if (entry.dir || !entry.name.endsWith('.jsonl')) continue
-      const file = join(dir, entry.name)
-      if (seen.has(file)) continue
-      seen.add(file)
-      const { fp, newest } = await fingerprint([file])
-      groups.push({ key: `studio:${file}`, src: 'studio', files: [file], main: file, fp, newest })
+    for (const row of rows) {
+      if (seen.has(row.log_key)) continue
+      seen.add(row.log_key)
+      groups.push({
+        key: `studio:${row.log_key}`,
+        src: 'studio',
+        files: [],
+        main: row.log_key,
+        fp: String(row.last_seq),
+        newest: row.last_seq,
+        sessionId: dir.chatKey,
+      })
     }
   }
   status.found = groups.length
@@ -627,22 +649,25 @@ export async function foldCodex(group: Group, yieldEveryBytes?: number): Promise
 export async function foldStudio(
   group: Group,
   dir: UsageStudioDir,
-  titles: Map<string, string>,
+  db: SqliteDatabase,
 ): Promise<UsageCacheEntry> {
   const entry = blankEntry(group, '')
-  const agentId = decodeSegment(basename(group.main, '.jsonl'))
+  const agentId = decodeSegment(group.main.slice(group.main.indexOf('/') + 1))
   const links = new Set<string>()
   const buckets = new Map<string, UsageBucket>()
   entry.sessionId = agentId
   entry.cwd = dir.root
-  entry.title = titles.get(agentId) ?? null
-  await forEachLine(group.main, STUDIO_TURN, (line) => {
-    const record = parseJson(line)
-    if (!record || record.type !== 'turn_completed') return
+  entry.title = studioTitle(db, group.main)
+  const turns = db
+    .prepare("SELECT body FROM chat_events WHERE log_key = ? AND type = 'turn_completed' ORDER BY seq")
+    .all(group.main) as Array<{ body: string }>
+  for (const turn of turns) {
+    const record = parseJson(turn.body)
+    if (!record || record.type !== 'turn_completed') continue
     entry.providerId = str(record.providerId) ?? entry.providerId
     const payload = rec(record.payload)
     const at = typeof record.createdAt === 'number' ? record.createdAt : timeOf(record.createdAt)
-    if (!payload || at === null) return
+    if (!payload || at === null) continue
     const link = str(rec(payload.providerCursor)?.sessionId) ?? ''
     if (link) links.add(link)
     const usage = rec(payload.usage)
@@ -654,9 +679,9 @@ export async function foldStudio(
       usage ? 1 : 0,
       num(payload.costUsd),
     ]
-    if (!usage && counts[5] === 0) return
+    if (!usage && counts[5] === 0) continue
     addUsage(buckets, at, str(record.modelId) ?? 'default', link, counts)
-  })
+  }
   entry.studio = { workspaceId: dir.workspaceId, agentId, root: dir.root, links: [...links].slice(0, 500) }
   entry.buckets = [...buckets.values()]
   return entry
@@ -670,23 +695,15 @@ function decodeSegment(value: string): string {
   }
 }
 
-async function studioTitles(dir: string, cache: Map<string, Map<string, string>>): Promise<Map<string, string>> {
-  const known = cache.get(dir)
-  if (known) return known
-  const titles = new Map<string, string>()
+/** A chat's title as the chat list has it (`chat_threads`), or null before it has a row. */
+function studioTitle(db: SqliteDatabase, log: string): string | null {
   try {
-    const index = rec(JSON.parse(await readFile(join(dir, 'index.json'), 'utf8')))
-    for (const thread of Array.isArray(index?.threads) ? index.threads : []) {
-      const row = rec(thread)
-      const id = str(row?.agentId)
-      const title = str(row?.title)
-      if (id && title) titles.set(id, title.slice(0, 160))
-    }
+    const row = db.prepare('SELECT thread FROM chat_threads WHERE log_key = ?').get(log) as { thread: string | null } | undefined
+    const title = str(rec(row?.thread ? JSON.parse(row.thread) : null)?.title)
+    return title ? title.slice(0, 160) : null
   } catch {
-    // No index yet: the chat's own record names it at query time.
+    return null
   }
-  cache.set(dir, titles)
-  return titles
 }
 
 async function codexTitles(codexHome: string): Promise<Map<string, string>> {
@@ -1148,13 +1165,12 @@ async function scanGroups(
     ...(await discoverOpencode(roots.opencodeData, status.opencode, databases)),
     ...(await discoverGemini(roots.geminiHome, status.gemini)),
     ...(await discoverGrok(roots.grokHome, status.grok)),
-    ...(await discoverStudio(roots.studioDirs, status.studio)),
+    ...(await discoverStudio(roots.studioDirs, roots.studioDatabase, status.studio, databases)),
   ]
   const present = new Set(groups.map((group) => group.key))
   const removed = Object.keys(previous).filter((key) => !present.has(key))
   const changed = groups.filter((group) => previous[group.key] !== group.fp).sort((a, b) => b.newest - a.newest)
-  const dirsByPath = new Map(roots.studioDirs.map((dir) => [dir.dir, dir]))
-  const titleCache = new Map<string, Map<string, string>>()
+  const dirsByChat = new Map(roots.studioDirs.map((dir) => [dir.chatKey, dir]))
   const codexNames = changed.some((group) => group.src === 'codex')
     ? await codexTitles(roots.codexHome)
     : new Map<string, string>()
@@ -1172,9 +1188,10 @@ async function scanGroups(
       else if (group.src === 'gemini') entry = await foldGemini(group)
       else if (group.src === 'grok') entry = await foldGrok(group)
       else {
-        const dir = dirsByPath.get(dirname(group.main))
-        if (!dir) continue
-        entry = await foldStudio(group, dir, await studioTitles(dir.dir, titleCache))
+        const dir = dirsByChat.get(group.sessionId ?? '')
+        const db = roots.studioDatabase ? databases.get(roots.studioDatabase) : undefined
+        if (!dir || !db) continue
+        entry = await foldStudio(group, dir, db)
       }
       if (entry.cwd && entry.src !== 'studio') {
         let root = repoRoots.get(entry.cwd)
