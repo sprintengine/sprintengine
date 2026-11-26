@@ -245,6 +245,8 @@ test('a create names a folder on that machine in place of a workspace, as a new 
     ok: true,
     params: { prompt: 'hi', folder: '/home/dev/app', worktree: true, worktreeName: 'fix', commandId: 'c-1' },
   })
+  // A Windows desktop's folder is a whole path too.
+  assert.equal(create({ folder: 'C:\\code\\app' }).ok, true)
   for (const refused of [
     { folder: '/home/dev/app', workspaceId: 'ws-1' },
     { folder: '/home/dev/app', noProject: true },
@@ -253,6 +255,11 @@ test('a create names a folder on that machine in place of a workspace, as a new 
     { folder: '   ' },
     { folder: 7 },
     { folder: 'x'.repeat(4097) },
+    // A folder is a whole path there: never one read against the server's own working folder.
+    { folder: 'home/dev/app' },
+    { folder: './app' },
+    { folder: '../etc' },
+    { folder: '~/app' },
   ])
     assert.equal(create(refused).ok, false, JSON.stringify(refused))
 })

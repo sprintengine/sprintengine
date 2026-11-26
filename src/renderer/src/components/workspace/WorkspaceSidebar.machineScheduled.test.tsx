@@ -336,6 +336,38 @@ test('WorkspaceSidebar.machineScheduled', async () => {
       studio.calls.some((call) => call.connectionId === 'c1' && call.method === 'schedules.list'),
       'a paired desktop is asked on its route, as any other machine is',
     )
+
+    // A machine whose first read did not answer, then pushes its list: it is
+    // read again whole, so its rows carry what this desktop may do there.
+    const late = {
+      ...machine,
+      environmentId: 'env-late',
+      displayName: 'late-box',
+      routes: [{ kind: 'ssh', machine: 'm3' }],
+    }
+    const answer = studio.answers['schedules.list']!
+    let refused = 1
+    studio.answers['schedules.list'] = (params, connectionId) => {
+      if (connectionId === 'ssh:m3' && refused-- > 0) throw new Error('late-box did not answer in time.')
+      return answer(params, connectionId)
+    }
+    environments = [local, late]
+    act(() => {
+      for (const listener of [...environmentsChanged]) listener()
+    })
+    await settle()
+    const lateReads = () =>
+      studio.calls.filter((call) => call.connectionId === 'ssh:m3' && call.method === 'schedules.list').length
+    assert.equal(lateReads(), 1, 'asked once, and it did not answer')
+    act(() => {
+      studio.push('schedules.changed', { schedules: [], pausedAll: null })
+    })
+    await settle()
+    assert.equal(lateReads(), 2, 'its push is read again whole, for what this desktop may do there')
+    assert.ok(
+      scheduledRows().some((row) => row.dataset.scheduledAgent === 'sa-box'),
+      'and its schedules are listed from that read',
+    )
   } finally {
     act(() => {
       root.unmount()

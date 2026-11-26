@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createEnvironmentChat } from '../../studio/environmentDiscovery'
 import { pairedConnectionOf } from '../../studio/environmentStudio'
+import { openEnvironmentChatWhenListed } from './environmentChatOpening'
 import { StudioServerBanner } from '../studioServer/StudioServerBanner'
 import { hostIdForFolder, isWslHostId, LOCAL_HOST_ID, type ExecutionHostId } from '../../../../shared/execution-host'
 import { isProjectlessChatsRoot, PROJECTLESS_CHATS_LABEL } from '../../../../shared/projectless-chats'
@@ -479,31 +480,6 @@ function addWorkingChatWorkspaces(
     if (session.turnStartedAt !== undefined || session.status === 'active' || session.status === 'awaiting_approval')
       busyWorkspaceIds.add(session.workspaceId)
   }
-}
-
-/** How long a chat another machine started waits for this desktop's copy of its record. */
-const ENVIRONMENT_RECORD_WAIT_MS = 10_000
-
-/**
- * Whether the record of a chat another machine just started is here, once
- * this desktop's copy of that machine's records holds it; false when none
- * arrives in time.
- */
-function waitForWorkspaceRecord(workspaceId: string): Promise<boolean> {
-  const has = () => useWorkspaceStore.getState().workspaces.some((workspace) => workspace.id === workspaceId)
-  if (has()) return Promise.resolve(true)
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      stop()
-      resolve(false)
-    }, ENVIRONMENT_RECORD_WAIT_MS)
-    const stop = useWorkspaceStore.subscribe(() => {
-      if (!has()) return
-      clearTimeout(timer)
-      stop()
-      resolve(true)
-    })
-  })
 }
 
 export default function WorkspaceManager() {
@@ -4117,17 +4093,25 @@ export default function WorkspaceManager() {
       // record is the chat, opened in this window.
       const connectionId = pairedConnectionOf(launch.route)
       if (!connectionId) {
-        const copied = await waitForWorkspaceRecord(created.workspaceId)
-        closeNewChatPanel()
-        if (copied) {
-          const holder = useWorkspaceStore
-            .getState()
-            .workspaceWindows.find((entry) => entry.workspaceIds.includes(created.workspaceId))
-          if (holder && holder.id !== workspaceWindowId)
-            moveWorkspaceToWindow(created.workspaceId, workspaceWindowId, holder.id)
-          setActiveWorkspaceForWindow(workspaceWindowId, created.workspaceId)
-        }
-        started()
+        // The chat is that machine's; this desktop lists it once its copy of
+        // the machine's records holds it. Opened then, in this window.
+        const chatId = created.workspaceId
+        await openEnvironmentChatWhenListed({
+          chatId,
+          toastId: `environment-chat:${launch.route}:${chatId}`,
+          title: created.title,
+          machineName: launch.machineName,
+          closePanel: closeNewChatPanel,
+          started,
+          openHere: () => {
+            const state = useWorkspaceStore.getState()
+            if (!state.workspaces.some((workspace) => workspace.id === chatId)) return false
+            const holder = state.workspaceWindows.find((entry) => entry.workspaceIds.includes(chatId))
+            if (holder && holder.id !== workspaceWindowId) moveWorkspaceToWindow(chatId, workspaceWindowId, holder.id)
+            setActiveWorkspaceForWindow(workspaceWindowId, chatId)
+            return true
+          },
+        })
         return
       }
       if (!SOLO_CHAT_TEMPLATE) {

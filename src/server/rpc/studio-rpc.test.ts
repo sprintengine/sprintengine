@@ -890,8 +890,13 @@ test('a create in a folder: any folder for the owner, only one Studio knows for 
   await create('/home/dev/app', paired as StudioGrant, tailnet, 'f2')
   const refused = await create('/srv/elsewhere', paired as StudioGrant, tailnet, 'f3')
   assert.equal(!refused.ok && refused.error?.code, 'not_found')
+  // The folder is passed on as one path, however it was spelled.
+  await create('/srv//elsewhere/./deep/../x/', studioWindowGrant(), window, 'f4')
+  // One that climbs out of a folder Studio knows is judged where it lands.
+  const climbed = await create('/home/dev/app/../../etc', paired as StudioGrant, tailnet, 'f5')
+  assert.equal(!climbed.ok && climbed.error?.code, 'not_found')
   assert.deepEqual(
     backend.creates.map((made) => made.request.folder),
-    ['/srv/elsewhere', '/home/dev/app'],
+    ['/srv/elsewhere', '/home/dev/app', '/srv/elsewhere/x'],
   )
 })
