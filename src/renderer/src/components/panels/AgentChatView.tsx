@@ -3397,7 +3397,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
             ...(environment.label ? { machineName: environment.label } : {}),
           }
         : null,
-    [pairedConnection, pairedWorkspaceId, environment.label],
+    [pairedConnection, pairedWorkspaceId, environment.route, environment.label],
   )
   const skillInventory = useWorkspaceSkills(workspaceRoot, null, supportsSkills && !pairedSkills)
   // Held from render to render, as the "+" menu that takes them is memoized:
