@@ -1299,6 +1299,24 @@ Same build on both ends: a web tab's 7 `web:devices:*` tunnel channels are gone,
 and so are its 3 `web:embeds:*` channels, which nothing called (embeds are made
 with `studio-server embed`).
 
+`web-tab` (2026-11-26) is what a web tab asks of the Studio that served it,
+offered only by a Studio that runs the web listener, once its front door has
+started: `webFolders.browse` (the folder browser that stands in for the native
+folder picker), `webPreviews.list`, `.open` (under a command id, naming the
+loopback `host` the tab was opened on) and `.close`, and the
+`webPreviews.changed` stream (this browser's open previews, whole at
+subscribing and on each change). Each is an owner's, an owner's web tab
+included, and a browser paired over the tailnet is shown no folder and no
+port. Same build on both ends: a web tab's `web:browse-folders` and 4
+`web:previews:*` tunnel channels are gone, and with them `/ws/ipc`: a tab
+reaches its Studio on `/ws` alone. `terminal.peek` and
+`terminal.refreshPullRequests` (owner-only, as every `terminal.*` method)
+replace a window's `conversation-peek:read` and `pullRequest:refreshForSession`
+IPC; its `agent:compact` channel had no caller and has no method. IPC between
+a window and the desktop app's main process now carries the shell's own
+channels only (`src/shared/ipc-inventory.ts`), and the permission
+`preview:operate`, which no method needs, is gone.
+
 `tailnet` (2026-11-13) is who reaches a Studio over the tailnet, and the
 machines it drives: its listener (`tailnet.status`, `.liveState`,
 `.setEnabled`, `.setHttps`, `.offerPairing`, `.cancelPairing`,
