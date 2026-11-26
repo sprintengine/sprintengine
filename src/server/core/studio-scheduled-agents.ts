@@ -45,7 +45,7 @@ import type { StudioPlatform } from '../platform/platform'
 const SCHEDULED_RUN_CLIENT_ID = 'studio-scheduled-agents'
 
 export type StudioScheduledAgentsDeps = {
-  platform: Pick<StudioPlatform, 'paths' | 'clients'>
+  platform: Pick<StudioPlatform, 'paths'>
   conversations: {
     listSessions(input: {
       workspaceId?: string

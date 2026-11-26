@@ -22,7 +22,6 @@ import { canvasApi } from './api/canvas'
 import { editorRevealApi } from './api/editor-reveal'
 import { extensionOpenApi } from './api/extension-open'
 import { toursApi } from './api/tours'
-import { previewsApi } from './api/previews'
 
 // Every `window.api` member the preload builds from its api modules: all of
 // them but the values it computes from its own process. One list, which
@@ -63,5 +62,4 @@ export const apiModules = {
   ...modulesApi,
   ...updateApi,
   ...appMenuApi,
-  ...previewsApi,
 } satisfies Omit<ElectronApi, ComputedApiMembers>

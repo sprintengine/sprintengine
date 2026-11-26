@@ -15,8 +15,8 @@ import { afterAll, test, vi } from 'vitest'
 //
 // Each side is then held to the inventory both ways, and each run is checked
 // to have reached every registration and every preload call written in the
-// source, so a site nobody drives cannot hide a channel. Last, the server rows
-// are counted per area: the ratchet that lets channels leave IPC and none join.
+// source, so a site nobody drives cannot hide a channel. Last, every row is a
+// shell row: a channel that is not the shell's own is a protocol method.
 
 type Seen = { channel: string; dir: 'invoke' | 'send' | 'push'; at: string[] }
 
@@ -138,10 +138,8 @@ vi.mock('../preload/ipc-router', () => {
 })
 
 import { apiModules } from '../preload/api-surface'
-import { SERVER_IPC_CHANNELS } from '../shared/ipc-channel-owners'
-import { IPC_INVENTORY, ipcInventoryRow, type IpcServerArea } from '../shared/ipc-inventory'
-import { WEB_TUNNEL_CHANNELS } from '../shared/web-client'
-import { provideServerChat, type ServerDomainIpcDeps } from '../server/desktop/server-ipc'
+import { IPC_INVENTORY, ipcInventoryRow } from '../shared/ipc-inventory'
+import { provideServerChat, type ServerChatDeps } from '../server/desktop/server-chat'
 import { onRendererBootComplete } from './boot-reveal'
 import { createHostRecordingEncoder } from './browser/recording-encoder'
 import { attachBuildSkewWatch } from './build-skew'
@@ -171,15 +169,6 @@ import { discoverUserModulesSync } from './modules/user-module-registry'
 import { registerCoreIpc } from './register-core-ipc'
 import { attachStartupTimeline } from './startup-timeline'
 import { extensionManifest, writeExtensionFolder } from '../../tests/extension-folder'
-
-/**
- * Server rows per area. A new server channel raises its area's count and fails
- * here: make it a Studio protocol method instead. Moving channels off IPC
- * deletes their rows; lower the count in the same change.
- */
-const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
-  'web-tab': 6,
-}
 
 /** Registrations written in the source that registering at boot does not reach, each with why. */
 const NOT_DRIVEN: ReadonlyArray<{ file: string; registers: string; channel: string; why: string }> = [
@@ -213,7 +202,6 @@ const NO_CHANNEL: Readonly<Record<string, string>> = {
 
 /** Push rows the api modules do not listen on, and the file that does. */
 const PUSHES_ELSEWHERE: Readonly<Record<string, string>> = {
-  'studio-server:port': 'src/preload/ipc-router.ts',
   'splash:progress': 'src/preload/splash.ts',
 }
 
@@ -234,7 +222,7 @@ function recordingIpcMain(seen: Seen[]): any {
   return ipc
 }
 
-function serverDomainStubs(dataDir: string): ServerDomainIpcDeps {
+function serverDomainStubs(dataDir: string): ServerChatDeps {
   return {
     core: {
       ...anything(),
@@ -337,9 +325,8 @@ test('what main and the server register, and what the preload uses, is the inven
   createCanvasWorkerTransport({ ipcMain: shell })
 
   // ── The server's chat surface and the module kernel, with an installed extension ──
-  // The server registers no window channel any more (its last, `hosts:*`,
-  // are `hosts.*` on the Studio protocol): nothing is ever seen here, and
-  // SERVER_IPC_CHANNELS is held empty below.
+  // The server registers no window channel: everything it serves is a
+  // Studio protocol method. Nothing is ever seen here.
   const serverSeen: Seen[] = []
   const domains = provideServerChat(serverDomainStubs(scratch))
   const installed = installExtension('weather-deck')
@@ -419,14 +406,8 @@ test('what main and the server register, and what the preload uses, is the inven
   )
   for (const [channel, row] of Object.entries(IPC_INVENTORY)) {
     if (row.dir === 'push') continue
-    // The web front door's own tunnel channels, held to its table below.
-    if (channel in WEB_TUNNEL_CHANNELS) continue
     if (NOT_DRIVEN.some((entry) => entry.channel === channel)) continue
     assert.ok(registered.has(channel), `"${channel}" is listed as ${row.dir} but nothing registers it`)
-  }
-  for (const channel of Object.keys(WEB_TUNNEL_CHANNELS)) {
-    const row = IPC_INVENTORY[channel]
-    assert.ok(row && 'server' in row && row.dir === 'invoke', `the web tunnel's "${channel}" is a server invoke row`)
   }
 
   // An installed extension declares methods, served over the Studio protocol
@@ -447,17 +428,8 @@ test('what main and the server register, and what the preload uses, is the inven
     'an installed extension registers no IPC channel',
   )
 
-  // What the server registers is what the preload routes to it out of process
-  // (SERVER_IPC_CHANNELS); all of it is server rows.
-  assert.deepEqual(
-    [...new Set(serverSeen.map((seen) => seen.channel))].sort(),
-    Object.keys(SERVER_IPC_CHANNELS).sort(),
-    'what the server registers and SERVER_IPC_CHANNELS differ',
-  )
-  for (const channel of Object.keys(SERVER_IPC_CHANNELS)) {
-    const row = IPC_INVENTORY[channel]
-    assert.ok(row && 'server' in row, `"${channel}" runs on the server but its row is not a server row`)
-  }
+  // The server registers no window channel.
+  assert.deepEqual(serverSeen, [], 'the server registers a window channel')
   void domains.conversationCommands.dispose()
   await modules.kernel.runShutdownBegin()
   await modules.kernel.runShutdown()
@@ -478,7 +450,7 @@ test('what main and the server register, and what the preload uses, is the inven
   for (const [channel, file] of Object.entries(PUSHES_ELSEWHERE)) {
     assert.equal(IPC_INVENTORY[channel]?.dir, 'push', channel)
     const text = readFileSync(join(ROOT, file), 'utf8')
-    assert.ok(text.includes(`'${channel}'`) || /SERVER_PORT_CHANNEL/u.test(text), `${file} listens on "${channel}"`)
+    assert.ok(text.includes(`'${channel}'`), `${file} listens on "${channel}"`)
   }
 
   // ── Every registration and preload call written in the source was reached ──
@@ -510,15 +482,8 @@ test('what main and the server register, and what the preload uses, is the inven
     'src/preload/splash.ts',
   ])
 
-  // ── The ratchet ──
-  const counted: Record<string, number> = {}
-  for (const row of Object.values(IPC_INVENTORY))
-    if ('server' in row) counted[row.server] = (counted[row.server] ?? 0) + 1
-  for (const area of Object.keys(SERVER_ROWS) as IpcServerArea[]) counted[area] ??= 0
-  assert.deepEqual(
-    counted,
-    SERVER_ROWS,
-    "server rows changed. A new window.api channel that is not the shell's own belongs on the Studio protocol, " +
-      'not IPC; if channels moved off IPC, lower their area in SERVER_ROWS.',
-  )
+  // ── Shell only ──
+  // Every row says why it is the shell's: there is no other kind of row.
+  for (const [channel, row] of Object.entries(IPC_INVENTORY))
+    assert.ok(typeof row.shell === 'string' && row.shell.length > 0, `"${channel}" has no shell reason`)
 })

@@ -56,7 +56,7 @@ import { resolveScaffoldRoots } from '../../main/extension-scaffold'
 import { createStudioRpc } from '../core/studio-rpc'
 import { mirroredStudioUpdates, type StudioUpdateStart } from '../update/studio-updates'
 import type { StudioBrowserTab } from '../../../packages/studio-protocol/src/public'
-import { createIpcTunnel, type TunnelPort } from '../ipc/ipc-tunnel'
+import type { MessagePortLike } from '../ipc/port-duplex'
 import { createStaticAppIdentity } from '../platform/app-identity'
 import { installStudioPlatform, type StudioPlatform } from '../platform/platform'
 import { createNodeStudioPaths } from '../platform/studio-paths'
@@ -64,7 +64,7 @@ import { createRemoteShellBridge } from '../shell-bridge/remote'
 import { createShellSecretCipher, meshSealedTokens } from '../shell-bridge/shell-cipher'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from './gateway-backends'
 import { createWorkspaceExtensionsReader } from '../core/workspace-extensions-reader'
-import { provideServerChat } from './server-ipc'
+import { provideServerChat } from './server-chat'
 import {
   SERVER_EVENTS,
   SERVER_METHODS,
@@ -91,9 +91,8 @@ import { readStudioEnv } from '../../shared/studio-env'
 import { createWorkspaceWithHooks } from '../extensions/hooks/workspace-hooks'
 import { activeInvoker } from '../../main/module-host/extension-invocation'
 
-// The desktop's own Studio server, out of process (phase 6 spec): the core,
-// its gateway and owner socket, the tunnelled window.api domains, and the
-// module kernel with every module's server half, composed in a utility
+// The desktop's own Studio server, in a process of its own (phase 6 spec): the
+// core, its gateway and owner socket, its window listener, and the module kernel with every module's server half, composed in a utility
 // process the shell forked, and the terminals with their ptys and reporter
 // (studio-agent-terminals.ts). What it asks of the shell (the keychain, a
 // notification, the shell's part of a terminal agent's launch) goes over the
@@ -121,7 +120,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   // The mesh store opens its tokens as it is built; they are opened ahead.
   await cipher.prime(meshSealedTokens(envelope.dataDir))
 
-  const tunnel = createIpcTunnel({ log })
   const platform: StudioPlatform = {
     paths: createNodeStudioPaths({
       dataDir: envelope.dataDir,
@@ -131,7 +129,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       appRoot: envelope.paths.appPath,
     }),
     secrets: cipher,
-    clients: tunnel.bus,
     // A click on a notice goes where the notice names, which the shell
     // carries out: no closure crosses the channel.
     notifier: {
@@ -190,7 +187,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
 
   // SSH machines (phase 8), when the preview is on: main holds their sessions
   // and hands this process a port per relay stream it needs.
-  const sshPorts = new Map<string, TunnelPort>()
+  const sshPorts = new Map<string, MessagePortLike>()
   const shellEnvironments = envelope.flags.sshMachines
     ? createShellEnvironmentClients({
         // Main may connect, install and start the machine's server first:
@@ -706,23 +703,11 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     tailnetBound: null,
     attachClient(attach, port) {
       if (!port) return
-      if (attach.kind === 'desktop-window') {
-        tunnel.attach(
-          {
-            clientId: attach.clientId,
-            windowId: attach.windowId,
-            kind: attach.kind,
-            workspaceWindow: attach.workspaceWindow === true,
-          },
-          port as TunnelPort,
-        )
-        return
-      }
       if (attach.kind === 'ssh-stream') {
         // Taken by the `shell.ssh.open` answer that names this client id; one
         // nobody takes (its call gave up, or no SSH machines this session) is
         // closed, so the machine's stream does not stay open behind it.
-        const sshPort = port as TunnelPort
+        const sshPort = port as MessagePortLike
         if (!shellEnvironments) {
           sshPort.close()
           return
@@ -738,11 +723,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       if (attach.kind === 'shell') {
         // The shell's own protocol connection: answered with its ticket by the
         // `studio.connect-shell` request that follows on the same channel.
-        handlers.pendingConnections.set(attach.clientId, port as TunnelPort)
+        handlers.pendingConnections.set(attach.clientId, port as MessagePortLike)
       }
-    },
-    detachClient(clientId) {
-      tunnel.detach(clientId)
     },
     async stop({ drain, onLeg }) {
       clearTimeout(discoveryTimer)
@@ -915,11 +897,11 @@ function serveShellRequests(deps: {
   gateway: StudioGateway
   envelope: Parameters<ServerStart>[0]['envelope']
   cipherKind: 'shell' | 'key-file'
-}): { pendingConnections: Map<string, TunnelPort> } {
+}): { pendingConnections: Map<string, MessagePortLike> } {
   const { rpc, core } = deps
   // A port that arrived for a connection, until its request takes it: a chat
   // view's, or the shell's, which only `studio.connect-shell` may take.
-  const pendingConnections = new Map<string, TunnelPort>()
+  const pendingConnections = new Map<string, MessagePortLike>()
   const startedAt = Date.now()
   rpc.handle(SERVER_METHODS.mirrorSnapshot, () => deps.mirror())
   rpc.handle(SERVER_METHODS.updateWorkspaceAgent, (params) => {
@@ -976,7 +958,7 @@ function serveShellRequests(deps: {
       ...quitStopsOf(backgroundWorkOf(core), wsl),
     }
   })
-  const takePort = (params: unknown): TunnelPort => {
+  const takePort = (params: unknown): MessagePortLike => {
     const clientId = (params as { clientId?: unknown } | null)?.clientId
     const pending = typeof clientId === 'string' ? pendingConnections.get(clientId) : undefined
     if (!pending || typeof clientId !== 'string') throw new Error('No connection port arrived for this request.')
@@ -1062,7 +1044,7 @@ function serveShellRequests(deps: {
 }
 
 /** A utility process's `MessagePortMain` as the frames a Studio connection reads and writes. */
-function tunnelPortFrames(port: TunnelPort) {
+function tunnelPortFrames(port: MessagePortLike) {
   const closeListeners: Array<() => void> = []
   let closed = false
   const end = () => {

@@ -20,7 +20,7 @@ import { createMessageHub, type ServerControlChannel } from '../bootstrap/contro
 import type { ServerBootstrapEnvelope } from '../bootstrap/envelope'
 import { serveOnChannel } from '../bootstrap/serve'
 import { applyGatewayLaunchTokenChange, resolveGatewayLaunchToken } from '../core/gateway-launch-tokens'
-import type { TunnelPort } from '../ipc/ipc-tunnel'
+import type { MessagePortLike } from '../ipc/port-duplex'
 import { resetStudioPlatform } from '../platform/platform'
 import { serveShellBridge } from '../shell-bridge/serve-shell-bridge'
 import type { ShellBridge } from '../shell-bridge/shell-bridge'
@@ -83,7 +83,6 @@ function shellBridge(): ShellBridge & { notices: unknown[]; prepared: string[] }
     notify: (notice) => notices.push(notice),
     analytics: () => undefined,
     integrationsReady: async () => undefined,
-    images: { downscale: async (bytes, mediaType) => ({ bytes, mediaType }) },
   }
 }
 
@@ -91,7 +90,7 @@ function shellBridge(): ShellBridge & { notices: unknown[]; prepared: string[] }
 function windowPort() {
   const server = { message: [] as Array<(event: { data: unknown }) => void>, close: [] as Array<() => void> }
   const received: Array<Record<string, any>> = []
-  const port: TunnelPort = {
+  const port: MessagePortLike = {
     postMessage: (message) => received.push(structuredClone(message) as Record<string, any>),
     on: (event: 'message' | 'close', listener: any) => {
       server[event].push(listener)

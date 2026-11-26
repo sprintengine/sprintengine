@@ -24,7 +24,7 @@ function scheduledAgents(after?: Promise<unknown>) {
   const dataDir = mkdtempSync(join(tmpdir(), 'scheduled-agents-'))
   folders.push(dataDir)
   return createStudioScheduledAgents({
-    platform: { paths: { dataDir: () => dataDir } } as unknown as Pick<StudioPlatform, 'paths' | 'clients'>,
+    platform: { paths: { dataDir: () => dataDir } } as unknown as Pick<StudioPlatform, 'paths'>,
     conversations: { listSessions: () => ({ ok: true, sessions: [] }) },
     launch: async () => ({ ok: false, message: 'not in this test' }) as never,
     createConversationHost: () => ({ resolveKey: () => null, command: async () => ({ ok: false }) }) as never,

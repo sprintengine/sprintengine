@@ -4,10 +4,9 @@ import type { ElectronApi } from '../../../shared/electron-api'
 import type { SprintEngineAuthState } from '../../../shared/ipc/account'
 import type { OpenExternalResult } from '../../../shared/ipc/window'
 import { browserPlatform } from './browserPlatform'
-import { WEB_BROWSE_FOLDERS_CHANNEL, type FolderBrowserListing } from '../../../shared/web-client'
+import { browseServerFolders } from '../studio/webTab'
 import { pickServerFolder } from './FolderBrowserDialog'
 import { refuse } from './unsupported'
-import { ipc } from './webIpcRouter'
 import { randomId } from '../../../shared/random-id'
 import { webStudioTicket } from './webStudio'
 import { uploadFilesToServer } from './webUploads'
@@ -176,11 +175,7 @@ export function createWebApi(): ElectronApi {
     getPathForFile: () => '',
     uploadFiles: (files) => uploadFilesToServer(files),
     // The server's folders, in an in-app dialog, where the desktop shows the OS picker.
-    openDir: (options) =>
-      pickServerFolder(
-        (input) => ipc.invoke(WEB_BROWSE_FOLDERS_CHANNEL, input) as Promise<FolderBrowserListing>,
-        options?.defaultPath,
-      ),
+    openDir: (options) => pickServerFolder((input) => browseServerFolders(input), options?.defaultPath),
 
     // "New window" is a new tab on a window of its own (phase 9 spec, 4.1 #24).
     createWorkspaceWindow: async (input) => {

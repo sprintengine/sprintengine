@@ -41,7 +41,6 @@ export type RunningServer = {
   stop(options: { drain: boolean; onLeg: (progress: ShutdownLegProgress) => void }): Promise<void>
   /** A client's port arrived (desktop-local only). */
   attachClient?(attach: ServerAttach, port: unknown): void
-  detachClient?(clientId: string): void
 }
 
 export type ShutdownLegProgress = { leg: string; done: number; total: number; failed: boolean; durationMs: number }
@@ -203,9 +202,6 @@ export async function serveOnChannel(channel: ServerControlChannel, options: Ser
         else pendingAttaches.push([attach, ports[0]])
         return
       }
-      case 'detach-client':
-        if (typeof frame.clientId === 'string') running?.detachClient?.(frame.clientId)
-        return
       default:
         return
     }

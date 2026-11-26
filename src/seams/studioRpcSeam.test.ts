@@ -467,6 +467,10 @@ test('every method the server serves has its call in the SDK, under the same sco
     'terminal.configure': 'request',
     'terminal.peek': 'request',
     'terminal.refreshPullRequests': 'request',
+    'webFolders.browse': 'request',
+    'webPreviews.list': 'request',
+    'webPreviews.open': 'request',
+    'webPreviews.close': 'request',
     // Updates are asked like any method on a normal connection, and through
     // `openStudioUpdateSession` on one kept for them.
     'update.status': 'request',

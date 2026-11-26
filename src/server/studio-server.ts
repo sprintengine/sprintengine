@@ -316,7 +316,6 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
         core,
         gateway: started,
         rpc,
-        clients: platform.clients,
         environmentId: readStudioEnvironmentId(options.dataDir),
         version: options.version,
         options: options.web,

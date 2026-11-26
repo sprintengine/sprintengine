@@ -469,6 +469,10 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ['webDevices.status', 'webDevices.revoke', 'webDevices.approve', 'webDevices.decline', 'webDevices.changed'],
       ],
       [
+        'what a web tab asks of the Studio that served it: this machine’s folders and previews of its agents’ ports, an owner’s (a browser on the loopback only); a device that browsed them would see the machine beyond the chats it was given',
+        ['webFolders.browse', 'webPreviews.list', 'webPreviews.open', 'webPreviews.close', 'webPreviews.changed'],
+      ],
+      [
         'who reaches this machine over the tailnet, read or narrowed: the listener’s status and live connections, withdrawing its offer, declining a request, revoking a device or a machine, forgetting MCP client registrations, the dev servers shared and taking one down, the machines this one drives and forgetting one: an owner’s, never a device’s (a device that could revoke or decline could end what it did not grant, and the gateway’s `tailnet.*` tools are the local socket’s alone)',
         [
           'tailnet.status',

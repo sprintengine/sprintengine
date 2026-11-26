@@ -6,7 +6,7 @@ import type { StudioCapability } from '../../../packages/studio-protocol/src/han
 import type { EnvironmentClients } from '../../shared/environment-clients'
 import { routeStudioClient } from '../../shared/machine-studio-client'
 import { portDuplex } from '../ipc/port-duplex'
-import type { TunnelPort } from '../ipc/ipc-tunnel'
+import type { MessagePortLike } from '../ipc/port-duplex'
 import { lineTransport, readTicket } from '../wsl/studio-door'
 
 // Another environment's Studio for the desktop's server when it runs as a
@@ -26,7 +26,7 @@ export type ShellEnvironmentClientsDeps = {
   /** Ask main for a stream on the machine's `studio` door; its port arrives on the control channel as `clientId`. */
   open(route: string): Promise<{ clientId: string; label: string }>
   /** The port main attached for `clientId`, once it has arrived. */
-  takePort(clientId: string): TunnelPort | null
+  takePort(clientId: string): MessagePortLike | null
   log?(message: string): void
 }
 

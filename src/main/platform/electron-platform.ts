@@ -48,25 +48,6 @@ export function createElectronPlatform(deps: ElectronPlatformDeps): StudioPlatfo
       seal: (plaintext) => deps.safeStorage.encryptString(plaintext),
       open: (sealed) => deps.safeStorage.decryptString(sealed),
     },
-    clients: {
-      // A window's client id in process is its contents' id, as the tunnel's
-      // stand-in sender numbers them out of process.
-      publish(topic, payload, target = 'all') {
-        for (const window of deps.BrowserWindow.getAllWindows()) {
-          if (window.isDestroyed() || window.webContents.isDestroyed()) continue
-          const id = String(window.webContents.id)
-          if (target === 'workspace-windows' && deps.isWorkspaceWindow && !deps.isWorkspaceWindow(window.webContents))
-            continue
-          if (typeof target === 'object' && 'clientId' in target && target.clientId !== id) continue
-          if (typeof target === 'object' && 'exceptClientId' in target && target.exceptClientId === id) continue
-          try {
-            window.webContents.send(topic, payload)
-          } catch {
-            // Best-effort per window.
-          }
-        }
-      },
-    },
     notifier: {
       notify(notice) {
         if (!deps.Notification.isSupported()) return

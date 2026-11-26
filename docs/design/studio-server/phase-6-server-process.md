@@ -572,7 +572,7 @@ interface CallerContext {
     A listener hears a push from either side, since a push comes from
     whichever process owns its domain; only invokes and sends need routing.
   - The server's domains are registered in one function,
-    `registerServerDomainIpc` (`src/server/desktop/server-ipc.ts`), which main
+    `registerServerDomainIpc` (`src/server/desktop/server-chat.ts`), which main
     calls on `ipcMain` in process and the server calls on its tunnel out of
     process, so both modes register the same handlers.
 - **Classification completeness.** A test fails when a channel the server

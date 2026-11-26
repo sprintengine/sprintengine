@@ -1,7 +1,7 @@
 import { WEB_BUILD_META } from '../../../shared/web-client'
 import { showToast, useToastStore } from '../store/toastStore'
 import { isWindowVisible } from '../utils/windowActivity'
-import { WEB_TUNNEL_REOPENED_EVENT, watchWebReconnectTriggers } from './webReconnect'
+import { watchWebReconnectTriggers } from './webReconnect'
 import { webPageUrl } from './webLocation'
 import { copy } from '../../../shared/copy'
 
@@ -70,13 +70,11 @@ export function startWebBuildWatch(): () => void {
     }
   }
   const onReopened = () => void check()
-  window.addEventListener(WEB_TUNNEL_REOPENED_EVENT, onReopened)
   const stopTriggers = watchWebReconnectTriggers(onReopened)
   const timer = setInterval(() => {
     if (isWindowVisible()) void check()
   }, POLL_MS)
   return () => {
-    window.removeEventListener(WEB_TUNNEL_REOPENED_EVENT, onReopened)
     stopTriggers()
     clearInterval(timer)
   }

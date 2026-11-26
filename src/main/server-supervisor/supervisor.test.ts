@@ -462,7 +462,7 @@ test('control requests reach the server that is running, and fail while none is'
 test('a frame posted with a port goes only to a server that is ready', () => {
   const { supervisor, fake } = setup()
   supervisor.start()
-  const attach = { t: 'attach-client', clientId: 'w1', windowId: 'primary', kind: 'desktop-window' } as const
+  const attach = { t: 'attach-client', clientId: 'shell-1', kind: 'shell' } as const
   assert.equal(supervisor.post(attach, [{}]), false)
   ready(fake.latest())
   assert.equal(supervisor.post(attach, [{}]), true)

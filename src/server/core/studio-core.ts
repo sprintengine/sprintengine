@@ -1244,7 +1244,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     settlement.dispose()
   }
   // The composer's `/` lists, one set for the process, made on first ask: a
-  // window's `conversation-commands:list` (server-ipc.ts) and a paired
+  // window's `conversation-commands:list` (server-chat.ts) and a paired
   // desktop's read of a chat here (`conversation-commands`) share its probes,
   // their limits and its disk cache.
   let commandLists: ConversationCommandsService | null = null

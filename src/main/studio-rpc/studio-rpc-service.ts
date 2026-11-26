@@ -13,6 +13,7 @@ import type {
   StudioLocalAppsStatus,
 } from '../../shared/studio-local-apps'
 import type { StudioWebDevicesDomain } from '../../server/rpc/studio-web-devices'
+import type { StudioWebTabDomain } from '../../server/rpc/studio-web-tab'
 import type { AppIdentity } from '../../server/platform/app-identity'
 import type { StudioAccessDomain } from '../../server/rpc/studio-access'
 import type { StudioTailnetDomain } from '../../server/rpc/studio-tailnet'
@@ -169,6 +170,8 @@ export type StudioRpcService = {
   provideChat(chat: StudioChatBackend): void
   /** The web listener's paired browsers, from the front door once it starts (`web-devices`). */
   provideWebDevices(domain: StudioWebDevicesDomain): void
+  /** A web tab's folder browser and previews, from the front door once it starts (`web-tab`). */
+  provideWebTab(domain: StudioWebTabDomain): void
   /** Which agents a paired app's tools reach. */
   toolReachOf(clientId: string): StudioLocalAppToolReach
   /** A paired app's grant as it stands now; null for one revoked or never paired. */
@@ -306,6 +309,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
   let server: StudioRpcServer | null = null
   let chat: StudioChatBackend | null = null
   let webDevices: StudioWebDevicesDomain | null = null
+  let webTab: StudioWebTabDomain | null = null
   let lastError: string | null = null
   let starting: Promise<void> | null = null
   let windows: StudioWindowListener | null = null
@@ -510,6 +514,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       backend: options.backend(),
       chat: () => chat,
       webDevices: () => webDevices,
+      webTab: () => webTab,
       authenticator: authenticator(appStore()),
       audit,
       ...(options.tools ? { tools: options.tools } : {}),
@@ -707,6 +712,9 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
     },
     provideWebDevices(next) {
       webDevices = next
+    },
+    provideWebTab(next) {
+      webTab = next
     },
     toolReachOf: (clientId) => appStore().toolReachOf(clientId),
     appGrantFor: (clientId) => appStore().grantFor(clientId),

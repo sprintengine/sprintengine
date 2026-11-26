@@ -34,7 +34,6 @@ import {
 } from './terminal-launch'
 import { CANVAS_MODULE_DEFAULT_ENABLED } from '../shared/modules/manifest'
 import { createShellBridge } from './shell-bridge'
-import { electronImageCodec } from './conversation-image-codec-electron'
 import { createShellReveal } from './shell-reveal'
 import { revealMainWindow } from './window-factory'
 import { createDesktopShellTools } from './desktop-shell-tools'
@@ -220,7 +219,6 @@ export function createAppServices(
       if (isTelemetryEventName(event.name)) analytics.record(event.name, event.properties as TelemetryProperties)
     },
     integrationsReady: () => agentIntegrationReady,
-    imageCodec: electronImageCodec,
   })
   // Learn the default WSL distribution's name once, in the background, so a WSL
   // launch built later can name it with `-d` (Windows only; a no-op elsewhere).

@@ -85,6 +85,7 @@ import { createStudioArtifactsHandlers } from './studio-artifacts'
 import { createStudioAccessHandlers, type StudioAccessDomain } from './studio-access'
 import type { ExtensionInvoker } from '../../main/module-host/extension-invocation'
 import { createStudioWebDevicesHandlers, type StudioWebDevicesDomain } from './studio-web-devices'
+import { createStudioWebTabHandlers, type StudioWebTabDomain } from './studio-web-tab'
 import { createStudioTailnetHandlers, type StudioTailnetDomain } from './studio-tailnet'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
@@ -241,6 +242,8 @@ export type StudioRpcRouterOptions = {
   access?: StudioAccessDomain
   /** The web listener's paired browsers, once its front door gave them; until then `webDevices.*` is answered `unavailable`. */
   webDevices?: () => StudioWebDevicesDomain | null
+  /** A web tab's folder browser and previews, once its front door gave them; until then `webFolders.*` and `webPreviews.*` are `unavailable`. */
+  webTab?: () => StudioWebTabDomain | null
   /** The tailnet listener and the machines this one drives; without it, `tailnet.*` and `mesh.*` are answered `unavailable`. */
   tailnet?: StudioTailnetDomain
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
@@ -1067,6 +1070,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   })
   const webDevicesRouting = createStudioWebDevicesHandlers({
     webDevices: () => options.webDevices?.() ?? null,
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const webTabRouting = createStudioWebTabHandlers({
+    webTab: () => options.webTab?.() ?? null,
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
   })
@@ -2229,6 +2237,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // ── The browsers paired with the web listener ──────────────────────────
 
     ...webDevicesRouting,
+    // ── What a web tab asks of the Studio that served it ───────────────────
+
+    ...webTabRouting,
 
     // ── Who reaches this machine over the tailnet, and the machines it drives ──
 

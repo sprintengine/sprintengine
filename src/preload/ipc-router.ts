@@ -1,24 +1,19 @@
-import { ipcRenderer } from 'electron'
+import { ipcRenderer, type IpcRendererEvent } from 'electron'
 
-import { SERVER_PORT_CHANNEL } from '../shared/server-port'
-import { createIpcRouter, type RendererIpc, type RouterPort } from './ipc-router-core'
+// This window's IPC: Electron's `ipcRenderer`, which carries the shell's
+// channels alone (src/shared/ipc-inventory.ts). Everything the Studio serves
+// is reached on the Studio protocol, over the window's connection to its
+// server. Every api module imports `ipc` from here rather than `ipcRenderer`
+// from Electron, so the web client's build can swap this one module for the
+// browser's stand-ins (src/renderer/src/web/webIpcRouter.ts).
 
-// This window's IPC: the router in `ipc-router-core.ts` over Electron's
-// `ipcRenderer`. The web client's build swaps this module for one over the
-// browser's socket.
-
-export * from './ipc-router-core'
-
-/** This window's router, over Electron's `ipcRenderer`. */
-function createWindowRouter() {
-  const router = createIpcRouter({ ipcRenderer })
-  // Outside a renderer (a unit test that loads an api module) there is no
-  // `ipcRenderer` to hear a port on.
-  ipcRenderer?.on(SERVER_PORT_CHANNEL, (event) => {
-    const [port] = event.ports
-    if (port) router.attachPort(port as unknown as RouterPort)
-  })
-  return router
+export type RendererIpc = {
+  invoke(channel: string, ...args: unknown[]): Promise<any>
+  send(channel: string, ...args: unknown[]): void
+  on(channel: string, listener: (event: IpcRendererEvent, ...args: any[]) => void): unknown
+  once(channel: string, listener: (event: IpcRendererEvent, ...args: any[]) => void): unknown
+  removeListener(channel: string, listener: (event: IpcRendererEvent, ...args: any[]) => void): unknown
+  removeAllListeners(channel: string): unknown
 }
 
-export const ipc: RendererIpc = createWindowRouter()
+export const ipc: RendererIpc = ipcRenderer
