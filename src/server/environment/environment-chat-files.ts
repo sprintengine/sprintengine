@@ -129,23 +129,42 @@ async function digestOf(path: string): Promise<string> {
   return hash.digest('hex')
 }
 
+/** What a hand-over asks of this Studio's chat history (`ChatLogs`). */
+export type AdoptedChatHistory = {
+  /** Whether a transcript brought (`incoming`) may take the place of the one at `path`: nothing here it lacks. */
+  supersedes(path: string, root: string, incoming: string): Promise<boolean>
+  /** Take up the transcript just put at `path`, again if what is imported here is an older copy. */
+  retake(path: string, root: string): Promise<void>
+}
+
 /**
  * Write a chat's files where this Studio reads them. A file already there
  * with the same bytes is held; one with other bytes is this Studio's own,
- * kept, and named in `kept`. A part not to be found refuses the chat, which
- * the hand-over sends again; nothing half-written is left in place.
+ * kept, and named in `kept`, except a transcript this Studio holds nothing
+ * more of than the one brought (a store shared with the desktop keeps the
+ * copy from before the upgrade): the one brought takes its place. A
+ * transcript is then taken up into this Studio's history. A part not to be
+ * found refuses the chat, which the hand-over sends again; nothing
+ * half-written is left in place.
  */
 export async function keepAdoptedChatFiles(
   dataDir: string,
   chat: AdoptedChat,
   partOf: (sha256: string) => Promise<Buffer | null>,
+  history: AdoptedChatHistory,
 ): Promise<{ ok: true; kept: string[] } | { ok: false; reason: string }> {
   const kept: string[] = []
   for (const file of chat.files) {
     const target = adoptedChatFilePath(dataDir, chat, file)
+    const transcript = file.place === 'store' && file.path === `${conversationStorageSegment(chat.agentId)}.jsonl`
     const there = await lstat(target).catch(() => null)
-    if (there) {
-      if (!there.isFile() || there.isSymbolicLink() || (await digestOf(target)) !== file.sha256) kept.push(file.path)
+    const regular = there?.isFile() === true && !there.isSymbolicLink()
+    if (there && regular && (await digestOf(target)) === file.sha256) {
+      if (transcript) await history.retake(target, chat.workspaceRoot)
+      continue
+    }
+    if (there && (!regular || !transcript)) {
+      kept.push(file.path)
       continue
     }
     await mkdir(dirname(target), { recursive: true, mode: 0o700 })
@@ -174,7 +193,13 @@ export async function keepAdoptedChatFiles(
       await rm(temporary, { force: true })
       return { ok: false, reason: missing }
     }
+    if (there && !(await history.supersedes(target, chat.workspaceRoot, temporary).catch(() => false))) {
+      await rm(temporary, { force: true })
+      kept.push(file.path)
+      continue
+    }
     await rename(temporary, target)
+    if (transcript) await history.retake(target, chat.workspaceRoot)
   }
   return { ok: true, kept }
 }

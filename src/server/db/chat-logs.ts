@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { FileHandle } from 'node:fs/promises'
+import { open, type FileHandle } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 
 import { openConfinedExistingFile } from '../../main/conversation-file-access'
@@ -127,17 +127,17 @@ export function createChatLogs(options: { database: StudioDatabase; log?: (messa
    */
   function ensure(path: string, root: string): Promise<void> {
     const key = chatLogKey(path)
-    let pending = taken.get(key)
-    if (!pending) {
-      pending = importOnce(key, path, root)
-      taken.set(key, pending)
-      // A failed import is tried again a while later, not on every read.
-      pending.catch(() => {
-        setTimeout(() => {
-          if (taken.get(key) === pending) taken.delete(key)
-        }, IMPORT_RETRY_MS).unref?.()
-      })
-    }
+    return taken.get(key) ?? take(key, importOnce(key, path, root))
+  }
+
+  function take(key: string, pending: Promise<void>): Promise<void> {
+    taken.set(key, pending)
+    // A failed import is tried again a while later, not on every read.
+    pending.catch(() => {
+      setTimeout(() => {
+        if (taken.get(key) === pending) taken.delete(key)
+      }, IMPORT_RETRY_MS).unref?.()
+    })
     return pending
   }
 
@@ -158,6 +158,65 @@ export function createChatLogs(options: { database: StudioDatabase; log?: (messa
   return {
     ensure,
     info,
+    /**
+     * A transcript a hand-over brings (`incoming`) for the log whose
+     * transcript goes at `path`: whether it may take the place of the file
+     * there, because this server holds nothing of the log it lacks. No log
+     * here, or one of the same history (its first record) no further on: an
+     * import of an older copy, as a store the desktop and a WSL distribution
+     * share leaves behind once the desktop keeps the chat in its database.
+     */
+    async supersedes(path: string, root: string, incoming: string): Promise<boolean> {
+      // What is there now is taken up first: it may be this server's own.
+      await ensure(path, root)
+      const row = await db.get<{ generation: string; last_seq: number }>(
+        'SELECT generation, last_seq FROM chat_logs WHERE log_key = ?',
+        [chatLogKey(path)],
+      )
+      if (!row) return true
+      const file = await open(incoming, 'r')
+      try {
+        const head = await transcriptHead(file)
+        return head.generation === row.generation && head.lastSeq !== null && head.lastSeq >= row.last_seq
+      } finally {
+        await file.close()
+      }
+    },
+    /**
+     * Take up the transcript a hand-over has just put at `path`: imported if
+     * it was not, and imported again when the log here is an import of an
+     * older copy of it. Resolves once the log is ready to import; the import
+     * itself runs behind, as a first read's does.
+     */
+    async retake(path: string, root: string): Promise<void> {
+      const key = chatLogKey(path)
+      await taken.get(key)?.catch(() => undefined)
+      const row = await db.get<{ generation: string; last_seq: number }>(
+        'SELECT generation, last_seq FROM chat_logs WHERE log_key = ?',
+        [key],
+      )
+      let older = false
+      if (row && (await db.get('SELECT 1 FROM imports WHERE source = ?', [importSource(key)]))) {
+        const file = await openConfinedExistingFile(await conversationConfinementRoot(root, path), path)
+        try {
+          const head = await transcriptHead(file)
+          older = head.generation === row.generation && head.lastSeq !== null && head.lastSeq > row.last_seq
+        } finally {
+          await file.close()
+        }
+      }
+      const cleared = older
+        ? db.batch([
+            ...historyStatements(key),
+            { sql: 'DELETE FROM imports WHERE source = ?', params: [importSource(key)] },
+          ])
+        : Promise.resolve()
+      take(
+        key,
+        cleared.then(() => importOnce(key, path, root)),
+      ).catch(() => undefined)
+      await cleared
+    },
     /**
      * Append rows and receipts to a log, in one transaction: all of them or
      * none. A log's first rows begin it, its generation named by the first.
@@ -522,6 +581,57 @@ function readReceipt(value: unknown): ChatReceiptRow | null {
   const { id, at } = line as { id?: unknown; at?: unknown }
   if (typeof id !== 'string' || !id || typeof at !== 'number') return null
   return line as ChatReceiptRow
+}
+
+/**
+ * A transcript's generation and the number of its last event (null when
+ * that event has none, as in transcripts from before sequence numbers), read
+ * from its end. What follows its last newline is a torn append, not read.
+ */
+async function transcriptHead(file: FileHandle): Promise<{ generation: string; lastSeq: number | null }> {
+  const generation = chatGeneration(await readFirstLine(file))
+  let end = (await file.stat()).size
+  let carry = Buffer.alloc(0)
+  let torn = true
+  while (end > 0 && carry.length <= MAX_LINE_BYTES) {
+    const start = Math.max(0, end - 1024 * 1024)
+    const chunk = Buffer.alloc(end - start)
+    await file.read(chunk, 0, chunk.length, start)
+    end = start
+    const text = Buffer.concat([chunk, carry])
+    let stop = text.length
+    for (;;) {
+      const at = stop > 0 ? text.lastIndexOf(0x0a, stop - 1) : -1
+      // The line goes on in the chunk before this one.
+      if (at < 0 && end > 0) break
+      if (!torn) {
+        const seq = eventSeq(text.subarray(at + 1, stop))
+        if (seq !== undefined) return { generation, lastSeq: seq }
+      }
+      torn = false
+      if (at < 0) break
+      stop = at
+    }
+    carry = text.subarray(0, stop)
+  }
+  return { generation, lastSeq: null }
+}
+
+/** An event line's last number (a merged run's last delta's); null for an event without one; undefined for no event. */
+function eventSeq(line: Buffer): number | null | undefined {
+  let value: StoredEvent
+  try {
+    value = JSON.parse(line.toString('utf8')) as StoredEvent
+  } catch {
+    return undefined
+  }
+  if (!value || typeof value !== 'object' || typeof value.type !== 'string') return undefined
+  if (typeof value.seq !== 'number') return null
+  const parts = Array.isArray(value.parts) ? (value.parts as unknown[]) : []
+  return Math.max(
+    value.seq,
+    ...parts.flatMap((part) => (Array.isArray(part) && typeof part[3] === 'number' ? [part[3] as number] : [])),
+  )
 }
 
 /** The first line of a file, as bytes (up to 64 KiB, as the reader hashed it). */

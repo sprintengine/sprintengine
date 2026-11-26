@@ -4,11 +4,13 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, test } from 'vitest'
+import { afterEach, test, vi } from 'vitest'
 
 import type { StudioClient } from '../../../packages/client-runtime/src/public'
 import { openTestDatabase, schedulesAt } from '../../../tests/studio-database'
+import { createChatLogs } from '../db/chat-logs'
 import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from '../db/database'
+import { ToolDetailStore } from '../../main/conversation-tool-details'
 import { ConversationApprovalRuleStore } from '../../main/conversation-approval-rules'
 import { workspaceStorePath } from '../../main/workspace-store'
 import { conversationWorkingRoot } from '../../shared/agent-state'
@@ -26,6 +28,18 @@ import { studioMigrationStores } from './environment-migration-stores'
 // and its saved approvals, each respelled for the distribution, through the
 // real journal on this side and the real adoption on that one.
 
+// A store the distribution keeps, as a project in its home has on Windows
+// (`\\wsl.localhost\<distro>\…`): named here, since this machine spells none.
+const shared = vi.hoisted(() => ({ store: null as string | null }))
+vi.mock('../../shared/host-paths', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../shared/host-paths')>()
+  return {
+    ...actual,
+    distroOfUncPath: (path: string) =>
+      shared.store && path.startsWith(shared.store) ? 'Ubuntu' : actual.distroOfUncPath(path),
+  }
+})
+
 const dirs: string[] = []
 const temp = (name: string) => {
   const dir = mkdtempSync(join(tmpdir(), name))
@@ -33,6 +47,7 @@ const temp = (name: string) => {
   return dir
 }
 afterEach(() => {
+  shared.store = null
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
   delete process.env.SPRINTENGINE_STORE_HOME
 })
@@ -67,6 +82,95 @@ test('a chat ran here lists its own files, those of its store only where the dis
     'store a1.tools/toolu_1.json',
     'store handoffs/a1-20261113-0930.md',
   ])
+})
+
+const line = (seq: number, text: string) =>
+  JSON.stringify({ id: `e${seq}`, seq, type: 'user_message', agentId: 'a1', createdAt: seq, payload: { text } })
+
+test("a chat in a store the distribution keeps sends its history from the database: the store's file stopped at the upgrade", async () => {
+  process.env.SPRINTENGINE_STORE_HOME = temp('chat-sources-home-')
+  const dataDir = temp('chat-sources-data-')
+  const key = { workspaceRoot: '/Users/dev/repo', workspaceId: 'ws-1', agentId: 'a1' }
+  const store = workspaceStorePath(key.workspaceRoot, 'conversations', 'ws-1')
+  shared.store = store
+  mkdirSync(join(store, 'a1.tools'), { recursive: true })
+  mkdirSync(join(store, 'handoffs'), { recursive: true })
+  const transcript = join(store, 'a1.jsonl')
+  writeFileSync(transcript, `${line(1, 'before the upgrade')}\n`)
+  writeFileSync(join(store, 'a1.tools', 'toolu_old.json'), '{"output":"old"}')
+  writeFileSync(join(store, 'handoffs', 'a1-20261113-0930.md'), '# a1')
+  // Taken up here, and gone on with in the database.
+  const database = openTestDatabase(dataDir)
+  await createChatLogs({ database }).append(
+    transcript,
+    key.workspaceRoot,
+    [{ seq: 2, firstSeq: 2, type: 'user_message', turnId: null, body: line(2, 'after it') }],
+    [{ id: 'cmd', at: 5 }],
+  )
+  await new ToolDetailStore(database).write(key.workspaceRoot, join(store, 'a1.tools', 'toolu_new.json'), {
+    input: {},
+    output: 'new',
+    status: 'ok',
+    clipped: false,
+  })
+
+  const found = await chatSourceFiles({ dataDir, database, distro: 'Ubuntu', ...key })
+  // What the store holds is in place there; what only the database holds goes.
+  assert.deepEqual(found.map((file) => `${file.place} ${file.path}`).sort(), [
+    'store a1.jsonl',
+    'store a1.tools/toolu_new.json',
+  ])
+  const sent = found.find((file) => file.path === 'a1.jsonl')!
+  assert.equal(
+    readFileSync(sent.source, 'utf8'),
+    `${line(1, 'before the upgrade')}\n${line(2, 'after it')}\n${JSON.stringify({ receipt: { id: 'cmd', at: 5 } })}\n`,
+  )
+})
+
+test("an imported chat's tool details not yet read into the database go with it, their streamed output joined", async () => {
+  process.env.SPRINTENGINE_STORE_HOME = temp('chat-sources-home-')
+  const dataDir = temp('chat-sources-data-')
+  const key = { workspaceRoot: '/Users/dev/repo', workspaceId: 'ws-1', agentId: 'a1' }
+  const store = workspaceStorePath(key.workspaceRoot, 'conversations', 'ws-1')
+  mkdirSync(join(store, 'a1.tools'), { recursive: true })
+  const transcript = join(store, 'a1.jsonl')
+  writeFileSync(transcript, `${line(1, 'run the tests')}\n`)
+  // A step from before the database, never expanded since: its detail and the output it streamed.
+  writeFileSync(join(store, 'a1.tools', 'toolu_1.json'), '{"input":{"command":"npm test"},"output":""}')
+  writeFileSync(join(store, 'a1.tools', 'toolu_1.output'), 'all green')
+  const database = openTestDatabase(dataDir)
+  await createChatLogs({ database }).ensure(transcript, key.workspaceRoot)
+
+  const found = await chatSourceFiles({ dataDir, database, distro: 'Ubuntu', ...key })
+  const detail = found.find((file) => file.path === 'a1.tools/toolu_1.json')
+  assert.ok(detail, 'its detail goes')
+  assert.deepEqual(JSON.parse(readFileSync(detail.source, 'utf8')), {
+    input: { command: 'npm test' },
+    output: 'all green',
+  })
+})
+
+test('a chat is written out for a hand-over a page of rows at a time, whole and in order', async () => {
+  process.env.SPRINTENGINE_STORE_HOME = temp('chat-sources-home-')
+  const dataDir = temp('chat-sources-data-')
+  const key = { workspaceRoot: '/Users/dev/repo', workspaceId: 'ws-1', agentId: 'a1' }
+  const transcript = workspaceStorePath(key.workspaceRoot, 'conversations', 'ws-1', 'a1.jsonl')
+  const database = openTestDatabase(dataDir)
+  const events = Array.from({ length: 1201 }, (_, index) => line(index + 1, `message ${index + 1}`))
+  // Receipts with the same time, ordered by when they were written.
+  const receipts = Array.from({ length: 1001 }, (_, index) => ({ id: `cmd-${index}`, at: Math.floor(index / 300) }))
+  await createChatLogs({ database }).append(
+    transcript,
+    key.workspaceRoot,
+    events.map((body, index) => ({ seq: index + 1, firstSeq: index + 1, type: 'user_message', turnId: null, body })),
+    receipts,
+  )
+  const found = await chatSourceFiles({ dataDir, database, distro: 'Ubuntu', ...key })
+  const sent = found.find((file) => file.path === 'a1.jsonl')!
+  assert.equal(
+    readFileSync(sent.source, 'utf8'),
+    `${[...events, ...receipts.map((receipt) => JSON.stringify({ receipt }))].join('\n')}\n`,
+  )
 })
 
 /** This desktop with one WSL workspace, its chat and a saved approval, and the distribution's real adoption. */
@@ -114,6 +218,7 @@ function handOverRig() {
   const machineRules = new ConversationApprovalRuleStore(machineDatabase)
   const adoptionStores: EnvironmentAdoptionStores = {
     flush: async () => undefined,
+    chatHistory: createChatLogs({ database: machineDatabase }),
     workspaces: {
       has: (id) => theirs.has(id),
       chatRoot: (id, agentId) => {

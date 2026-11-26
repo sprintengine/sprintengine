@@ -10,7 +10,8 @@ import type {
 } from '../shared/conversation-runtime'
 import { normalizeApiKeySource } from '../shared/conversation/apiKeySource'
 
-const MAX_DETAIL_BYTES = 5 * 1024 * 1024
+/** The most a tool's detail keeps (its streamed output too). */
+export const MAX_DETAIL_BYTES = 5 * 1024 * 1024
 const HEAD_BYTES = 1024 * 1024
 // What a clipped streamed output keeps from its end, beside the head.
 const TAIL_BYTES = MAX_DETAIL_BYTES - HEAD_BYTES - 1024
