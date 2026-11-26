@@ -122,12 +122,16 @@ export class ToolDetailStore {
     ])
   }
 
-  /** @internal The stream's parts, as it appends them. */
-  async appendOutput(path: string, part: number, bytes: Buffer): Promise<void> {
+  /**
+   * @internal A stream's next part, after every part already kept: a tool
+   * streaming again after a restart goes on from its output so far.
+   */
+  async appendOutput(path: string, bytes: Buffer): Promise<void> {
     const key = detailKey(path)
     await this.database?.run(
-      'INSERT OR REPLACE INTO tool_outputs (detail_key, part, log_key, bytes) VALUES (?, ?, ?, ?)',
-      [key.detail, part, key.log, bytes],
+      `INSERT INTO tool_outputs (detail_key, part, log_key, bytes)
+       VALUES (?, (SELECT COALESCE(MAX(part) + 1, 0) FROM tool_outputs WHERE detail_key = ?), ?, ?)`,
+      [key.detail, key.detail, key.log, bytes],
     )
   }
 
@@ -177,6 +181,8 @@ export class ToolDetailStore {
     const key = detailKey(path)
     const source = `tool:${key.detail}`
     if (await database.get('SELECT 1 FROM imports WHERE source = ?', [source])) return false
+    // A deleted chat's files stay where they were: they are not its details again.
+    if (!(await database.get('SELECT 1 FROM chat_logs WHERE log_key = ?', [key.log]))) return false
     const read = (file: string, limit: number) =>
       readConversationStorage(workspaceRoot, file, limit).catch((error: unknown) => {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
@@ -260,7 +266,6 @@ export class ToolOutputStream {
   private recentBytes = 0
   private queued: Buffer[] = []
   private writing = false
-  private part = 0
   private writes: Promise<void> = Promise.resolve()
   private failed = false
 
@@ -292,7 +297,7 @@ export class ToolOutputStream {
       const parts = this.queued.splice(0)
       if (this.failed || parts.length === 0) return
       try {
-        await this.store.appendOutput(this.path, this.part++, Buffer.concat(parts))
+        await this.store.appendOutput(this.path, Buffer.concat(parts))
       } catch {
         // The preview still streams; only the full output is lost.
         this.failed = true

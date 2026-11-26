@@ -154,9 +154,9 @@ test('oversized detail files fail before allocating their contents and oversized
   const f = await fixture()
   try {
     const folder = workspaceStorePath(f.root, 'conversations', 'workspace')
-    await mkdir(join(folder, 'agent.tools'), { recursive: true })
+    await mkdir(join(folder, 'other.tools'), { recursive: true })
     for (const [path, size] of [
-      [join(folder, 'agent.tools/large.json'), 6 * 1024 * 1024],
+      [join(folder, 'other.tools/large.json'), 6 * 1024 * 1024],
       [join(folder, 'agent.jsonl'), MAX_CONVERSATION_TRANSCRIPT_BYTES + 1],
     ] as const) {
       const file = await open(path, 'wx')
@@ -164,8 +164,24 @@ test('oversized detail files fail before allocating their contents and oversized
       await file.close()
     }
     const database = testChatDatabase()
-    expect(await new ToolDetailStore(database).read(f.root, join(folder, 'agent.tools/large.json'))).toMatchObject({
+    // A detail file is taken up only for a log the database has.
+    await createChatLogs({ database }).append(
+      join(folder, 'other.jsonl'),
+      f.root,
+      [
+        {
+          seq: 1,
+          firstSeq: 1,
+          type: 'user_message',
+          turnId: null,
+          body: JSON.stringify({ type: 'user_message', agentId: 'other', createdAt: 1, payload: {} }),
+        },
+      ],
+      [],
+    )
+    expect(await new ToolDetailStore(database).read(f.root, join(folder, 'other.tools/large.json'))).toMatchObject({
       ok: false,
+      code: 'unavailable',
     })
     const runtime = new ConversationRuntime({
       database: testChatDatabase(),
@@ -177,11 +193,13 @@ test('oversized detail files fail before allocating their contents and oversized
       await runtime.readTranscript({ workspaceRoot: f.root, workspaceId: 'workspace', agentId: 'agent' }),
     ).toMatchObject({ ok: true, events: [] })
     expect(
-      await new ConversationIndex(database, createChatLogs({ database })).list({
-        workspaceRoot: f.root,
-        workspaceId: 'workspace',
-      }),
-    ).toEqual([])
+      (
+        await new ConversationIndex(database, createChatLogs({ database })).list({
+          workspaceRoot: f.root,
+          workspaceId: 'workspace',
+        })
+      ).map((thread) => thread.agentId),
+    ).toEqual(['other'])
     await runtime.shutdown()
   } finally {
     await f.cleanup()
