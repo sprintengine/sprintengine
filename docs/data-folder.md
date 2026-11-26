@@ -68,8 +68,11 @@ them. A chat moved to another project has its rows renamed with its folder.
 The first start of format 4 opens at once. A chat's transcript from before
 the database is imported the first time the chat is taken up (opened, listed,
 searched, sent to), or by a background pass that goes through every chat a few
-seconds after start, one at a time. Each transcript is one transaction: a stop
-part way leaves nothing of it, and it is imported whole next time. Its numbers
+seconds after start, one at a time. A transcript is written a batch of rows
+per transaction, so other chats' writes go on meanwhile, and noted as imported
+with its last batch: a stop part way leaves no note, and it is imported whole
+next time, what it left removed first. One that fails is tried again a minute
+later, not on every read. Its numbers
 and its generation are kept, so a client that was following the chat before
 the upgrade carries on from its cursor. A line a crash tore or that does not
 read is skipped and counted. A tool's detail is imported the first time it is

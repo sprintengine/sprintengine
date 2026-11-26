@@ -1,5 +1,5 @@
-import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, open, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 
 import { chatLogKey, importSource } from '../db/chat-logs'
 import type { StudioDatabase } from '../db/database'
@@ -10,6 +10,8 @@ import {
   CONVERSATION_TOOL_IMAGES_DIRECTORY,
 } from '../../main/conversation-attachment-store'
 import { conversationStorageSegment } from '../../main/conversation-index'
+import { readConversationStorage } from '../../main/conversation-persistence'
+import { MAX_DETAIL_BYTES } from '../../main/conversation-tool-details'
 import { CONVERSATION_PLANS_DIRECTORY } from '../../main/conversation-plan-store'
 import { workspaceStorePath } from '../../main/workspace-store'
 import { distroOfUncPath } from '../../shared/host-paths'
@@ -22,11 +24,13 @@ import { distroOfUncPath } from '../../shared/host-paths'
 //
 // - Its history (with its commands' receipts) and its tools' details, from
 //   the data folder's database, written out as the transcript and detail
-//   files the distribution's Studio imports (`server/db/chat-logs.ts`) when
-//   it first opens the chat; and its handoffs, from its workspace's store,
-//   under `conversations/<workspaceId>/`. A project in the distribution's home already keeps its store
-//   inside the distribution, where its Studio reads it (workspace-store.ts
-//   `resolveWslShare`): those are in place, and not carried.
+//   files the distribution's Studio imports (`server/db/chat-logs.ts`); and
+//   its handoffs, from its workspace's store, under
+//   `conversations/<workspaceId>/`. A project in the distribution's home
+//   keeps its store inside the distribution, where its Studio reads it
+//   (workspace-store.ts `resolveWslShare`): the files there are in place and
+//   not carried, but its history is, as this desktop's database has it: the
+//   transcript in that store stopped at the upgrade.
 // - In this desktop's data directory, in a folder named for the chat: the
 //   pictures it was sent (its transcript names each by that folder), the
 //   pictures its steps returned, and its plans' copies.
@@ -68,60 +72,88 @@ export async function chatSourceFiles(input: {
     // A folder this computer keeps no store for has no transcript here.
   }
   const inPlace = store !== null && distroOfUncPath(store)?.toLowerCase() === input.distro.toLowerCase()
-  if (store && !inPlace) {
-    const log = chatLogKey(join(store, `${agent}.jsonl`))
+  if (store) {
+    const transcript = join(store, `${agent}.jsonl`)
+    const tools = join(store, `${agent}.tools`)
+    const log = chatLogKey(transcript)
     const out = join(input.dataDir, HANDOVER_EXPORTS_DIRNAME, conversationStorageSegment(input.workspaceId), agent)
     await rm(out, { recursive: true, force: true })
-    // Not imported here yet: its transcript and details are still the files builds before the database wrote.
+    const onDisk = (await stat(transcript).catch(() => null))?.isFile() === true
+    // Its history is the database's once its file was imported, or when it began here with none.
     const imported =
-      (await input.database.all('SELECT 1 FROM imports WHERE source = ?', [importSource(log)])).length > 0
+      (await input.database.all('SELECT 1 FROM imports WHERE source = ?', [importSource(log)])).length > 0 ||
+      (!onDisk && (await input.database.all('SELECT 1 FROM chat_logs WHERE log_key = ?', [log])).length > 0)
     if (!imported) {
-      const transcript = join(store, `${agent}.jsonl`)
-      if ((await stat(transcript).catch(() => null))?.isFile())
-        found.push({ place: 'store', path: `${agent}.jsonl`, source: transcript })
-      for (const name of await files(join(store, `${agent}.tools`)))
-        if (name.endsWith('.json'))
-          found.push({ place: 'store', path: `${agent}.tools/${name}`, source: join(store, `${agent}.tools`, name) })
-    }
-    const events = imported
-      ? await input.database.all<{ body: string }>('SELECT body FROM chat_events WHERE log_key = ? ORDER BY seq', [log])
-      : []
-    if (events.length > 0) {
-      await mkdir(join(out, `${agent}.tools`), { recursive: true, mode: 0o700 })
-      // The log as builds before the database kept it: its events in order, each receipt a line of its own.
-      const receipts = await input.database.all<{ body: string }>(
-        'SELECT body FROM chat_receipts WHERE log_key = ? ORDER BY at',
-        [log],
-      )
-      const lines = [
-        ...events.map((row) => row.body),
-        ...receipts.map((row) => JSON.stringify({ receipt: JSON.parse(row.body) })),
-      ]
-      await writeFile(join(out, `${agent}.jsonl`), `${lines.join('\n')}\n`, { mode: 0o600 })
+      // Not taken up here since the database: its files are still its whole
+      // history, and a store the distribution keeps has them already.
+      if (!inPlace) {
+        if (onDisk) found.push({ place: 'store', path: `${agent}.jsonl`, source: transcript })
+        for (const name of await files(tools))
+          if (name.endsWith('.json'))
+            found.push({ place: 'store', path: `${agent}.tools/${name}`, source: join(tools, name) })
+      }
+    } else if (await exportTranscript(input.database, log, join(out, `${agent}.jsonl`))) {
+      // Its history is this database's, newer than the file it left in the
+      // store, even in a store the distribution keeps: that file stopped at
+      // the upgrade.
       found.push({ place: 'store', path: `${agent}.jsonl`, source: join(out, `${agent}.jsonl`) })
-      const details = await input.database.all<{ detail_key: string; body: string }>(
-        'SELECT detail_key, body FROM tool_details WHERE log_key = ?',
-        [log],
-      )
-      for (const detail of details) {
-        const name = `${detail.detail_key.slice(log.length + 1)}.json`
-        if (!FOLDER_FILE.test(name)) continue
-        // The output a tool streamed, joined back into its detail.
-        const parsed = JSON.parse(detail.body) as { output?: unknown }
-        if (parsed.output === '') {
-          const parts = await input.database.all<{ bytes: Uint8Array }>(
-            'SELECT bytes FROM tool_outputs WHERE detail_key = ? ORDER BY part',
-            [detail.detail_key],
-          )
-          if (parts.length) parsed.output = Buffer.concat(parts.map((part) => Buffer.from(part.bytes))).toString('utf8')
-        }
-        await writeFile(join(out, `${agent}.tools`, name), JSON.stringify(parsed), { mode: 0o600 })
+      // Its tools' details: the database's, and the files from before it not
+      // read into it yet. In a store the distribution keeps, a file there is
+      // the distribution's to read.
+      const legacy = new Set((await files(tools)).filter((name) => name.endsWith('.json')))
+      const exported = new Set<string>()
+      const keep = async (name: string, detail: { output?: unknown }) => {
+        await mkdir(join(out, `${agent}.tools`), { recursive: true, mode: 0o700 })
+        await writeFile(join(out, `${agent}.tools`, name), JSON.stringify(detail), { mode: 0o600 })
         found.push({ place: 'store', path: `${agent}.tools/${name}`, source: join(out, `${agent}.tools`, name) })
       }
+      const keys = await input.database.all<{ detail_key: string }>(
+        'SELECT detail_key FROM tool_details WHERE log_key = ?',
+        [log],
+      )
+      for (const { detail_key: key } of keys) {
+        const name = `${key.slice(log.length + 1)}.json`
+        exported.add(name)
+        if (!FOLDER_FILE.test(name) || (inPlace && legacy.has(name))) continue
+        const [row] = await input.database.all<{ body: string }>('SELECT body FROM tool_details WHERE detail_key = ?', [
+          key,
+        ])
+        if (!row) continue
+        // The output a tool streamed, joined back into its detail.
+        const detail = JSON.parse(row.body) as { output?: unknown }
+        if (detail.output === '') {
+          const parts = await input.database.all<{ bytes: Uint8Array }>(
+            'SELECT bytes FROM tool_outputs WHERE detail_key = ? ORDER BY part',
+            [key],
+          )
+          if (parts.length) detail.output = Buffer.concat(parts.map((part) => Buffer.from(part.bytes))).toString('utf8')
+        }
+        await keep(name, detail)
+      }
+      if (!inPlace)
+        for (const name of legacy) {
+          if (exported.has(name) || !FOLDER_FILE.test(name)) continue
+          const read = (file: string, limit: number) =>
+            readConversationStorage(input.workspaceRoot, join(tools, file), limit).catch(() => null)
+          const body = await read(name, MAX_DETAIL_BYTES)
+          let detail: { output?: unknown }
+          try {
+            detail = JSON.parse(body?.toString('utf8') ?? '') as { output?: unknown }
+          } catch {
+            continue
+          }
+          // Its streamed output, beside it.
+          if (detail.output === '') {
+            const output = await read(name.replace(/\.json$/u, '.output'), MAX_DETAIL_BYTES + 1024)
+            if (output) detail.output = output.toString('utf8')
+          }
+          await keep(name, detail)
+        }
     }
-    for (const name of await files(join(store, 'handoffs')))
-      if (name.startsWith(`${agent}-`) && name.endsWith('.md'))
-        found.push({ place: 'store', path: `handoffs/${name}`, source: join(store, 'handoffs', name) })
+    if (!inPlace)
+      for (const name of await files(join(store, 'handoffs')))
+        if (name.startsWith(`${agent}-`) && name.endsWith('.md'))
+          found.push({ place: 'store', path: `handoffs/${name}`, source: join(store, 'handoffs', name) })
   }
   const folder = ConversationAttachmentStore.folderFor(input)
   for (const [place, directory] of [
@@ -134,4 +166,44 @@ export async function chatSourceFiles(input: {
       if (FOLDER_FILE.test(name))
         found.push({ place, path: `${folder}/${name}`, source: join(input.dataDir, directory, folder, name) })
   return found
+}
+
+const EXPORT_PAGE_ROWS = 500
+
+/**
+ * Write a log out as builds before the database kept it, a page of rows at a
+ * time: its events in order, then each receipt a line of its own. False for
+ * a log with no events, which writes nothing.
+ */
+async function exportTranscript(database: Pick<StudioDatabase, 'all'>, log: string, path: string): Promise<boolean> {
+  const events = (after: number) =>
+    database.all<{ seq: number; body: string }>(
+      'SELECT seq, body FROM chat_events WHERE log_key = ? AND seq > ? ORDER BY seq LIMIT ?',
+      [log, after, EXPORT_PAGE_ROWS],
+    )
+  let rows = await events(0)
+  if (rows.length === 0) return false
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+  const file = await open(path, 'w', 0o600)
+  try {
+    for (;;) {
+      await file.write(rows.map((row) => `${row.body}\n`).join(''))
+      if (rows.length < EXPORT_PAGE_ROWS) break
+      rows = await events(rows.at(-1)!.seq)
+    }
+    let after: { at: number; id: number } | null = null
+    for (;;) {
+      const receipts: Array<{ at: number; id: number; body: string }> = await database.all(
+        `SELECT at, rowid AS id, body FROM chat_receipts WHERE log_key = ?
+         ${after ? 'AND (at > ? OR (at = ? AND rowid > ?))' : ''} ORDER BY at, rowid LIMIT ?`,
+        after ? [log, after.at, after.at, after.id, EXPORT_PAGE_ROWS] : [log, EXPORT_PAGE_ROWS],
+      )
+      await file.write(receipts.map((row) => `${JSON.stringify({ receipt: JSON.parse(row.body) })}\n`).join(''))
+      if (receipts.length < EXPORT_PAGE_ROWS) break
+      after = receipts.at(-1)!
+    }
+  } finally {
+    await file.close()
+  }
+  return true
 }

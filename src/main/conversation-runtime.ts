@@ -623,7 +623,8 @@ export class ConversationRuntime {
   private readonly toolStreams = new Map<string, ToolOutputStream>()
   private readonly toolDetailWrites: ToolDetailWriteQueue
   private readonly toolDetailStore: ToolDetailStore
-  private readonly history: ChatLogs
+  /** The chats' history in the data folder's database: a hand-over takes up a transcript a chat brings through it. */
+  readonly history: ChatLogs
   private readonly toolPreviews = new Map<string, ToolPreviewThrottle>()
   private readonly toolPreviewIntervalMs: number
   private eventSequence = 0

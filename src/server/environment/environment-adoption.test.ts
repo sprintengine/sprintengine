@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, test } from 'vitest'
 
 import { MAX_ADOPTED_PART_BYTES, type StudioAdoptedRecord } from '../../../packages/studio-protocol/src/public'
+import { openTestDatabase } from '../../../tests/studio-database'
 import { workspaceStorePath } from '../../main/workspace-store'
+import { createChatLogs, type ChatLogs } from '../db/chat-logs'
 import {
   adoptedRecordDigest,
   canonicalRecordJson,
@@ -39,6 +41,7 @@ function fakeStores() {
       flushed += 1
       calls.push('flush')
     },
+    chatHistory: createChatLogs({ database: openTestDatabase() }),
     workspaces: {
       has: (id) => workspaces.has(id),
       // Every chat here works in the one folder the tests name.
@@ -595,9 +598,10 @@ test("a chat's file already here with other bytes is this Studio's, and a part t
     assert.match(answer.conflicts[0]!.reason, /another copy/)
     assert.equal(readFileSync(join(store, 'a1.jsonl'), 'utf8'), '{"type":"user_message"}\n')
 
-    // A chat whose transcript this Studio already writes (it ran here): its own is kept, the rest placed.
-    writeFileSync(join(store, 'a2.jsonl'), 'written here\n')
-    const mine = chatFile('store', 'a2.jsonl', Buffer.from('written on the desktop\n'))
+    // A chat whose transcript this Studio already has (it ran here): its own is kept, the rest placed.
+    const begun = (id: string) => `${JSON.stringify({ id, seq: 1, type: 'user_message', payload: {} })}\n`
+    writeFileSync(join(store, 'a2.jsonl'), begun('written here'))
+    const mine = chatFile('store', 'a2.jsonl', Buffer.from(begun('written on the desktop')))
     const tools = chatFile('store', 'a2.tools/toolu_2.json', Buffer.from('{}'))
     const ran = record('chat', 'ws-1:a2', {
       workspaceId: 'ws-1',
@@ -611,8 +615,64 @@ test("a chat's file already here with other bytes is this Studio's, and a part t
       files: new Map([...mine.staged, ...tools.staged]),
     })
     assert.match(kept.conflicts[0]!.reason, /keeps its own a2\.jsonl/)
-    assert.equal(readFileSync(join(store, 'a2.jsonl'), 'utf8'), 'written here\n')
+    assert.equal(readFileSync(join(store, 'a2.jsonl'), 'utf8'), begun('written here'))
     assert.equal(readFileSync(join(store, 'a2.tools', 'toolu_2.json'), 'utf8'), '{}')
+  })
+})
+
+test('a transcript brought takes the place of the older copy a store shared with the desktop kept, and is imported again', async () => {
+  await withStoreHome(async () => {
+    const { adoption, workspaces, stores } = rig()
+    workspaces.add('ws-1')
+    const line = (seq: number, text: string) =>
+      `${JSON.stringify({ id: `e${seq}`, seq, type: 'user_message', agentId: 'a1', createdAt: seq, payload: { text } })}\n`
+    // The store the desktop and the distribution share, as it stood at the upgrade, already taken up here.
+    const store = workspaceStorePath('/home/dev/repo', 'conversations', 'ws-1')
+    mkdirSync(store, { recursive: true })
+    const path = join(store, 'a1.jsonl')
+    writeFileSync(path, line(1, 'before the upgrade'))
+    const history = stores.chatHistory as ChatLogs
+    assert.equal((await history.info(path, '/home/dev/repo'))?.lastSeq, 1)
+
+    // The desktop went on in its database and writes the chat out for the hand-over.
+    const brought = chatFile('store', 'a1.jsonl', Buffer.from(line(1, 'before the upgrade') + line(2, 'after it')))
+    const chat = record('chat', 'ws-1:a1', {
+      workspaceId: 'ws-1',
+      agentId: 'a1',
+      workspaceRoot: '/home/dev/repo',
+      files: [brought.file],
+    })
+    const answer = await adoption.adopt({ migrationId: 'm-1', records: [chat], files: new Map(brought.staged) })
+    assert.deepEqual(answer, { held: [{ kind: 'chat', id: 'ws-1:a1' }], conflicts: [], refused: [] })
+    assert.deepEqual(
+      (await history.oldest(path, '/home/dev/repo', 0, 10)).map((row) => JSON.parse(row.body).payload.text),
+      ['before the upgrade', 'after it'],
+    )
+
+    // One this Studio went on with after its import is its own: kept as it is.
+    writeFileSync(join(store, 'a2.jsonl'), line(1, 'shared'))
+    await history.append(
+      join(store, 'a2.jsonl'),
+      '/home/dev/repo',
+      [{ seq: 2, firstSeq: 2, type: 'user_message', turnId: null, body: line(2, 'ran here').trim() }],
+      [],
+    )
+    // The same history no further on (another blank line, so not the bytes already there, which are simply held).
+    const stale = chatFile('store', 'a2.jsonl', Buffer.from(`${line(1, 'shared')}\n`))
+    const kept = await adoption.adopt({
+      migrationId: 'm-1',
+      records: [
+        record('chat', 'ws-1:a2', {
+          workspaceId: 'ws-1',
+          agentId: 'a2',
+          workspaceRoot: '/home/dev/repo',
+          files: [stale.file],
+        }),
+      ],
+      files: new Map(stale.staged),
+    })
+    assert.match(kept.conflicts[0]!.reason, /keeps its own a2\.jsonl/)
+    assert.equal((await history.info(join(store, 'a2.jsonl'), '/home/dev/repo'))?.lastSeq, 2)
   })
 })
 

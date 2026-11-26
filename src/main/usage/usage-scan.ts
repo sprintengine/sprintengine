@@ -81,7 +81,7 @@ export type UsageCacheEntry = {
   buckets: UsageBucket[]
 }
 
-/** One workspace's chats under one root: their logs are named `<chatKey>/<agent>` in the database. */
+/** One workspace's chats under one root: their logs are named `<chatKey>/<agent>` in the database, `chatKey` being `<store>/<chat>`. */
 export type UsageStudioDir = { dir: string; workspaceId: string; root: string; chatKey: string }
 
 export type UsageScanRoots = {
@@ -365,12 +365,19 @@ async function discoverStudio(
   }
   const seen = new Set<string>()
   for (const dir of dirs) {
-    let rows: Array<{ log_key: string; last_seq: number }>
+    let rows: Array<{ log_key: string; last_seq: number; at: unknown }>
     try {
-      // Every log of the chat: `<chat>/` up to, not including, `<chat>0`.
+      // Every log of the chat: `<chat>/` up to, not including, `<chat>0`, with
+      // when its newest event was published (what a file's time was), so the
+      // newest work is folded first beside the other sources.
       rows = db
-        .prepare('SELECT log_key, last_seq FROM chat_logs WHERE log_key >= ? AND log_key < ?')
-        .all(`${dir.chatKey}/`, `${dir.chatKey}0`) as Array<{ log_key: string; last_seq: number }>
+        .prepare(
+          `SELECT log_key, last_seq,
+             (SELECT json_extract(body, '$.createdAt') FROM chat_events e
+              WHERE e.log_key = chat_logs.log_key ORDER BY seq DESC LIMIT 1) AS at
+           FROM chat_logs WHERE log_key >= ? AND log_key < ?`,
+        )
+        .all(`${dir.chatKey}/`, `${dir.chatKey}0`) as Array<{ log_key: string; last_seq: number; at: unknown }>
     } catch {
       continue
     }
@@ -383,7 +390,7 @@ async function discoverStudio(
         files: [],
         main: row.log_key,
         fp: String(row.last_seq),
-        newest: row.last_seq,
+        newest: typeof row.at === 'number' ? row.at : 0,
         sessionId: dir.chatKey,
       })
     }
@@ -648,7 +655,8 @@ export async function foldCodex(group: Group, yieldEveryBytes?: number): Promise
  */
 export async function foldStudio(group: Group, dir: UsageStudioDir, db: SqliteDatabase): Promise<UsageCacheEntry> {
   const entry = blankEntry(group, '')
-  const agentId = decodeSegment(group.main.slice(group.main.indexOf('/') + 1))
+  // A log is named `<store>/<chat>/<agent>`: the agent is its last segment.
+  const agentId = decodeSegment(group.main.slice(group.main.lastIndexOf('/') + 1))
   const links = new Set<string>()
   const buckets = new Map<string, UsageBucket>()
   entry.sessionId = agentId

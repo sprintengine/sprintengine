@@ -382,6 +382,7 @@ function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
   return createEnvironmentAdoption({
     dataDir,
     stores: {
+      chatHistory: core.chatHistory,
       flush: async () => {
         await Promise.all([
           core.workspaceRegistry.flush(),

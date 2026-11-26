@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 
 import { respellPromptPath } from '../../main/scheduled-agents/prompt-images'
 import { writeFileAtomicSync } from '../platform/atomic-file'
-import { keepAdoptedChatFiles, readAdoptedChat } from './environment-chat-files'
+import { keepAdoptedChatFiles, readAdoptedChat, type AdoptedChatHistory } from './environment-chat-files'
 
 import {
   MAX_SCHEDULED_MESSAGE_LENGTH,
@@ -35,6 +35,8 @@ import {
 export type EnvironmentAdoptionStores = {
   /** Settles once every store's writes so far are on disk: the ledger goes down only after them. */
   flush(): Promise<void>
+  /** The chats' history, which takes up a transcript a chat brings. */
+  chatHistory: AdoptedChatHistory
   workspaces: {
     has(workspaceId: string): boolean
     /** The folder a chat of a workspace here works in (its agent's worktree, else the workspace's), or null. */
@@ -359,7 +361,12 @@ export function createEnvironmentAdoption(deps: {
         // folder its record here says would be a store its runtime never reads.
         if (stores.workspaces.chatRoot(read.chat.workspaceId, read.chat.agentId) !== read.chat.workspaceRoot)
           return { ok: false, reason: 'The chat names a folder its record here does not.' }
-        const kept = await keepAdoptedChatFiles(deps.dataDir, read.chat, (sha) => partOf(migrationId, files, sha))
+        const kept = await keepAdoptedChatFiles(
+          deps.dataDir,
+          read.chat,
+          (sha) => partOf(migrationId, files, sha),
+          stores.chatHistory,
+        )
         if (!kept.ok) return kept
         for (const file of read.chat.files) for (const part of file.parts) usedParts.add(part)
         return kept.kept.length

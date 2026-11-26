@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createWriteStream } from 'node:fs'
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { link, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'vitest'
@@ -80,12 +80,13 @@ test('an old transcript is imported once: numbers kept, merged runs kept, receip
   assert.equal((await createChatLogs({ database }).info(path, root))?.lastSeq, 4)
 })
 
-test('an import a stop cuts short leaves nothing, and runs again whole', async () => {
+test('an import commits a batch at a time; one a stop cuts short is not retried at once, and runs again whole', async () => {
   const lines = Array.from({ length: 1200 }, (_, index) => event(index + 1, 'tool_output', { output: 'x' }))
   const { root, path } = await transcriptAt(`${lines.join('\n')}\n`)
   const database = openTestDatabase()
-  // A database whose writes stop part way through the import's transaction, as a crash would.
+  // A database whose writes stop part way through the import, as a crash would.
   let writes = 0
+  let transactions = 0
   const failing: StudioDatabase = {
     path: database.path,
     all: (sql, params) => database.all(sql, params),
@@ -94,8 +95,9 @@ test('an import a stop cuts short leaves nothing, and runs again whole', async (
     batch: (statements) => database.batch(statements),
     readNow: (sql, params) => database.readNow(sql, params),
     close: () => database.close(),
-    transaction: (work) =>
-      database.transaction((tx) => {
+    transaction: (work) => {
+      transactions += 1
+      return database.transaction((tx) => {
         const cut: StudioTransaction = {
           all: (sql, params) => tx.all(sql, params),
           get: (sql, params) => tx.get(sql, params),
@@ -105,18 +107,63 @@ test('an import a stop cuts short leaves nothing, and runs again whole', async (
           },
         }
         return work(cut)
-      }),
+      })
+    },
   }
-  await assert.rejects(createChatLogs({ database: failing }).ensure(path, root), /the power went/u)
-  assert.equal((await database.get<{ n: number }>('SELECT COUNT(*) AS n FROM chat_events'))?.n, 0)
+  const cut = createChatLogs({ database: failing })
+  await assert.rejects(cut.ensure(path, root), /the power went/u)
+  // Its first batch was committed on its own, so other chats' writes were not held behind the whole file.
+  assert.equal((await database.get<{ n: number }>('SELECT COUNT(*) AS n FROM chat_events'))?.n, 400)
   assert.equal(
     await database.get('SELECT 1 FROM imports WHERE source = ?', [importSource(chatLogKey(path))]),
     undefined,
+    'not noted as imported',
   )
+  // Not tried again on the next read.
+  const before = transactions
+  await assert.rejects(cut.info(path, root), /the power went/u)
+  assert.equal(transactions, before)
 
   const logs = createChatLogs({ database })
   assert.equal((await logs.info(path, root))?.lastSeq, 1200)
   assert.equal((await database.get<{ n: number }>('SELECT COUNT(*) AS n FROM chat_events'))?.n, 1200)
+})
+
+test('deltas out of order are numbered each after the one before, and a log that could not be imported is still deleted', async () => {
+  const merged = JSON.stringify({
+    ...JSON.parse(event(3, 'content_delta', { turnId: 't', text: 'ab' })),
+    parts: [
+      ['d7', 7, 1, 7],
+      ['d6', 6, 1, 6],
+    ],
+  })
+  const { root, path } = await transcriptAt(`${[event(5, 'user_message'), merged].join('\n')}\n`)
+  const logs = createChatLogs({ database: openTestDatabase() })
+  assert.deepEqual(
+    (await logs.oldest(path, root, 0, 10)).map((row) => row.seq),
+    [5, 7, 8],
+  )
+
+  const refused = await transcriptAt(`${event(1, 'user_message')}\n`)
+  const outside = join(await mkdtemp(join(tmpdir(), 'chat-logs-outside-')), 'agent.jsonl')
+  await writeFile(outside, `${event(1, 'user_message')}\n`)
+  await rm(refused.path)
+  // A file a link shares is refused, as every transcript read refused it.
+  await link(outside, refused.path)
+  // (Its own database: a log is named by its store, chat and agent, which the first one shares.)
+  const others = createChatLogs({ database: openTestDatabase() })
+  await assert.rejects(others.ensure(refused.path, refused.root))
+  await others.remove(refused.path, refused.root)
+  assert.equal(await others.exists(refused.path, refused.root), false, 'gone, and its file never taken up')
+})
+
+test('a log with no transcript notes nothing: one that arrives later is imported', async () => {
+  const { root, path } = await transcriptAt('')
+  await rm(path)
+  const database = openTestDatabase()
+  assert.equal(await createChatLogs({ database }).exists(path, root), false)
+  await writeFile(path, `${event(1, 'user_message')}\n`)
+  assert.equal((await createChatLogs({ database }).info(path, root))?.lastSeq, 1)
 })
 
 test('a chat larger than the old read limit is imported whole, searched in its middle and paged to its start', async () => {

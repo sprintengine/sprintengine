@@ -125,7 +125,8 @@ export class ConversationIndex {
     })
     options.signal?.throwIfAborted()
     const chat = chatOf(input)
-    // A trigram index finds three characters or more; a shorter query reads the chat's rows.
+    // A trigram index finds three characters or more; a shorter query reads the
+    // chat's rows, matched below with the same case folding as every hit is.
     const rows =
       [...query].length >= 3
         ? await this.database.all<Doc>(
@@ -136,13 +137,14 @@ export class ConversationIndex {
           )
         : await this.database.all<Doc>(
             `SELECT agent_id, turn_id, kind, seq, origin, body FROM chat_search_docs
-             WHERE chat_key = ? AND instr(lower(body), ?) > 0 ORDER BY agent_id, seq, kind DESC LIMIT ?`,
-            [chat, query, MAX_HITS],
+             WHERE chat_key = ? ORDER BY agent_id, seq, kind DESC`,
+            [chat],
           )
     options.signal?.throwIfAborted()
     const hits: ConversationSearchHit[] = []
     const pending: ConversationSearchHit[] = []
     for (const row of rows) {
+      if (hits.length >= MAX_HITS) break
       const offset = row.body.toLowerCase().indexOf(query)
       if (offset < 0) continue
       const snippet = `${offset > 80 ? '…' : ''}${row.body.slice(Math.max(0, offset - 80), offset + query.length + 100)}${row.body.length > offset + query.length + 100 ? '…' : ''}`
@@ -248,7 +250,9 @@ export class ConversationIndex {
     if (!last || (kept && kept.folded_seq >= last.last_seq)) return
     const fold = readFold(kept)
     const docs = new Map<string, Doc>()
-    const replied = new Set<string>()
+    // Each turn's reply as the deltas read here spell it, in order; a turn
+    // that began before them goes on from the reply already indexed.
+    const replies = new Map<string, string>()
     const path = join(directory(key), `${log.slice(log.lastIndexOf('/') + 1)}.jsonl`)
     let folded = kept?.folded_seq ?? 0
     for (;;) {
@@ -269,7 +273,8 @@ export class ConversationIndex {
             // A person's message is searched as its words: a quote it carries is its passage and comment.
             body: quotesToInlineText(text(event.payload?.text)),
           })
-        } else if (event.type === 'content_delta') replied.add(turnId)
+        } else if (event.type === 'content_delta')
+          replies.set(turnId, (replies.get(turnId) ?? '') + text(event.payload?.text))
       }
       if (rows.length < FOLD_ROWS) break
     }
@@ -280,26 +285,26 @@ export class ConversationIndex {
     }
     const chat = chatOf(key)
     const agentId = fold.thread?.agentId ?? decodeAgent(log)
+    for (const [turnId, reply] of replies) {
+      // A reply is searched whole: what was indexed of its turn before, then what came since.
+      const before = kept
+        ? await this.database.all<{ kind: string; seq: number; body: string }>(
+            'SELECT kind, seq, body FROM chat_search_docs WHERE log_key = ? AND turn_id = ?',
+            [log, turnId],
+          )
+        : []
+      docs.set(`${turnId}\0agent`, {
+        agent_id: agentId,
+        turn_id: turnId,
+        kind: 'agent',
+        seq: docs.get(`${turnId}\0user`)?.seq ?? before.find((doc) => doc.kind === 'user')?.seq ?? folded,
+        origin: 'agent',
+        body: (before.find((doc) => doc.kind === 'agent')?.body ?? '') + reply,
+      })
+    }
     await this.database.transaction(async (tx) => {
-      for (const turnId of replied) {
-        // A reply is searched whole: every delta of its turn, as stored.
-        const deltas = await tx.all<{ body: string }>(
-          "SELECT body FROM chat_events WHERE log_key = ? AND turn_id IS ? AND type = 'content_delta' ORDER BY seq",
-          [log, turnId || null],
-        )
-        const user = await tx.get<{ seq: number }>(
-          "SELECT seq FROM chat_search_docs WHERE log_key = ? AND turn_id = ? AND kind = 'user'",
-          [log, turnId],
-        )
-        docs.set(`${turnId}\0agent`, {
-          agent_id: agentId,
-          turn_id: turnId,
-          kind: 'agent',
-          seq: docs.get(`${turnId}\0user`)?.seq ?? user?.seq ?? folded,
-          origin: 'agent',
-          body: deltas.map((delta) => text(parseEvent(delta.body)?.payload?.text)).join(''),
-        })
-      }
+      // Deleted meanwhile (a fork or an import that could not be saved): it gets no row back.
+      if (!(await tx.get('SELECT 1 FROM chat_logs WHERE log_key = ?', [log]))) return
       for (const doc of docs.values())
         await tx.run(
           `INSERT INTO chat_search_docs (log_key, chat_key, agent_id, turn_id, kind, seq, origin, body)

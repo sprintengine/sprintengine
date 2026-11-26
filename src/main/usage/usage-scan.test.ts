@@ -191,7 +191,7 @@ test('Studio chats: usage, reported cost and the CLI session each turn ran, from
   const root = join(home, 'project')
   const dir = join(root, '.sprintengine', 'conversations', 'ws-1')
   const dataDir = join(home, 'data')
-  roots.studioDirs = [{ dir, workspaceId: 'ws-1', root, chatKey: 'ws-1' }]
+  roots.studioDirs = [{ dir, workspaceId: 'ws-1', root, chatKey: 'store-1/ws-1' }]
   roots.studioDatabase = join(dataDir, STUDIO_DATABASE_FILENAME)
   const turn = (seq: number, minutes: number, payload: Record<string, unknown>) => ({
     type: 'turn_completed',
@@ -215,16 +215,16 @@ test('Studio chats: usage, reported cost and the CLI session each turn ran, from
   ]
   const connection = prepareStudioDatabase(roots.studioDatabase)
   connection.run(
-    "INSERT INTO chat_logs (log_key, workspace_root, generation, last_seq) VALUES ('ws-1/chat%201', ?, 'g', 4)",
+    "INSERT INTO chat_logs (log_key, workspace_root, generation, last_seq) VALUES ('store-1/ws-1/chat%201', ?, 'g', 4)",
     [root],
   )
   for (const event of events)
     connection.run(
-      "INSERT INTO chat_events (log_key, seq, first_seq, type, turn_id, bytes, body) VALUES ('ws-1/chat%201', ?, ?, ?, NULL, 1, ?)",
+      "INSERT INTO chat_events (log_key, seq, first_seq, type, turn_id, bytes, body) VALUES ('store-1/ws-1/chat%201', ?, ?, ?, NULL, 1, ?)",
       [event.seq, event.seq, event.type, JSON.stringify(event)],
     )
   connection.run(
-    "INSERT INTO chat_threads (log_key, chat_key, folded_seq, thread, fold) VALUES ('ws-1/chat%201', 'ws-1', 4, ?, '{}')",
+    "INSERT INTO chat_threads (log_key, chat_key, folded_seq, thread, fold) VALUES ('store-1/ws-1/chat%201', 'store-1/ws-1', 4, ?, '{}')",
     [JSON.stringify({ agentId: 'chat 1', title: 'Release notes' })],
   )
   connection.close()
