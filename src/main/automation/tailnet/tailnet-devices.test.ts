@@ -1,77 +1,68 @@
 import assert from 'node:assert/strict'
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
-import { createTailnetDeviceStore, TAILNET_DEVICES_FILENAME } from './tailnet-devices'
+import { testDatabaseAt } from '../../../../tests/studio-database'
+import { createTailnetDeviceStore, readTailnetDevicesFile } from './tailnet-devices'
 
-// A paired-devices file that could not be read is never replaced by what one
-// run knows: the next pairing would forget every device paired before.
+// The devices paired with this Studio are kept in the data folder's database,
+// a row each. In memory the store is the authority: a revoke holds at once,
+// and is saved behind it.
 
-function withDir(run: (dir: string) => void): void {
-  const dir = mkdtempSync(join(tmpdir(), 'tailnet-devices-'))
-  try {
-    run(dir)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-}
+const scratch = () => mkdtempSync(join(tmpdir(), 'tailnet-devices-'))
 
 const mint = { name: 'android-phone', scopes: ['workspace:read' as const], origin: { kind: 'code' as const, by: null } }
 
-test('a devices file that cannot be read is not written over by the next pairing', () => {
-  if (process.platform === 'win32') return
-  withDir((dir) => {
-    const path = join(dir, TAILNET_DEVICES_FILENAME)
-    const original = JSON.stringify({ version: 1, devices: [] }) + ' '
-    writeFileSync(path, original, { mode: 0o000 })
-    const store = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
-    store.mintDevice(mint as never)
-    assert.equal(store.listDevices().length, 1, 'the new device works for the session')
-    chmodSync(path, 0o600)
-    assert.equal(readFileSync(path, 'utf8'), original)
-  })
+test('a paired device is kept for the next start, and a revoked one stays revoked', async () => {
+  const dir = scratch()
+  const store = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
+  const kept = store.mintDevice(mint as never)
+  const revoked = store.mintDevice({ ...mint, name: 'dev-macbook-air' } as never)
+  assert.equal(store.revokeDevice(revoked.device.id), true)
+  assert.equal(store.authenticate(revoked.deviceToken), null, 'refused from this moment')
+  await store.flush()
+
+  const restarted = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
+  assert.deepEqual(
+    restarted.listDevices().map((device) => device.id),
+    [kept.device.id],
+  )
+  assert.equal(restarted.authenticate(kept.deviceToken)?.id, kept.device.id)
+  assert.equal(restarted.authenticate(revoked.deviceToken), null, 'and after a restart')
 })
 
-test('a devices file that is not valid JSON is kept aside before the next pairing is written', () => {
-  withDir((dir) => {
-    const path = join(dir, TAILNET_DEVICES_FILENAME)
-    writeFileSync(path, '{"version":1,"devices":[', { mode: 0o600 })
-    const store = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
-    store.mintDevice(mint as never)
-    const aside = readdirSync(dir).filter((name) => name.startsWith(`${TAILNET_DEVICES_FILENAME}.invalid-`))
-    assert.equal(aside.length, 1)
-    assert.equal(readFileSync(join(dir, aside[0]!), 'utf8'), '{"version":1,"devices":[')
-    assert.equal((JSON.parse(readFileSync(path, 'utf8')) as { devices: unknown[] }).devices.length, 1)
-  })
+test('a row that does not read is not trusted, and the others still are', async () => {
+  const dir = scratch()
+  const store = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
+  const kept = store.mintDevice(mint as never)
+  await store.flush()
+  await testDatabaseAt(dir).run('INSERT INTO devices (id, position, body) VALUES (?, 9, ?)', [
+    'tnd_broken',
+    '{"id":"tnd_broken","name":"x","scopes":["workspace:read"]',
+  ])
+  const logged: string[] = []
+  const restarted = createTailnetDeviceStore({ database: testDatabaseAt(dir), log: (line) => logged.push(line) })
+  assert.deepEqual(
+    restarted.listDevices().map((device) => device.id),
+    [kept.device.id],
+  )
+  assert.ok(logged.some((line) => /tnd_broken/u.test(line)))
 })
 
-test('an invalid devices file deleted since it was read leaves the next pairing free to write a new one', () => {
-  withDir((dir) => {
-    const path = join(dir, TAILNET_DEVICES_FILENAME)
-    writeFileSync(path, '{"version":1,"devices":[', { mode: 0o600 })
-    const store = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
-    unlinkSync(path)
-    store.mintDevice(mint as never)
-    assert.equal((JSON.parse(readFileSync(path, 'utf8')) as { devices: unknown[] }).devices.length, 1)
-  })
-})
-
-test('an invalid devices file that cannot be moved aside is left alone, and pairing still works', () => {
-  if (process.platform === 'win32' || process.getuid?.() === 0) return
-  withDir((dir) => {
-    const path = join(dir, TAILNET_DEVICES_FILENAME)
-    writeFileSync(path, '{"version":1,"devices":[', { mode: 0o600 })
-    const store = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
-    chmodSync(dir, 0o500)
-    try {
-      store.mintDevice(mint as never)
-      store.mintDevice(mint as never)
-    } finally {
-      chmodSync(dir, 0o700)
-    }
-    assert.equal(store.listDevices().length, 2, 'both devices work for the session')
-    assert.equal(readFileSync(path, 'utf8'), '{"version":1,"devices":[')
-  })
+test('a file from before the database is read as its store read it: a malformed entry is no grant', () => {
+  const device = {
+    id: 'tnd_1',
+    name: 'android-phone',
+    scopes: ['workspace:read'],
+    createdAt: '2026-09-01T00:00:00.000Z',
+    tokenHash: 'hash',
+  }
+  const read = readTailnetDevicesFile(JSON.stringify({ version: 1, devices: [device, { id: 'tnd_2', name: 'x' }] }))
+  assert.deepEqual(
+    read?.map((entry) => [entry.id, entry.origin.kind, entry.node]),
+    [['tnd_1', 'unknown', null]],
+  )
+  assert.equal(readTailnetDevicesFile('{"version":1,"devices":['), null)
 })

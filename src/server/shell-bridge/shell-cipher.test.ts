@@ -1,10 +1,11 @@
+import { testDatabaseAt } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
 
-import { createTailnetMeshStore, TAILNET_MESH_FILENAME } from '../../main/automation/tailnet/tailnet-mesh-store'
+import { createTailnetMeshStore } from '../../main/automation/tailnet/tailnet-mesh-store'
 import { GitHubTokenStore } from '../../main/github-token-store'
 import { createShellSecretCipher, meshSealedTokens } from './shell-cipher'
 import type { ShellBridge } from './shell-bridge'
@@ -93,31 +94,28 @@ test('the GitHub token is written as the keychain seals it and read back through
 
 test('the mesh store opens what was primed, and seals a new pairing once the keychain answers', async () => {
   const dir = dataDir()
-  writeFileSync(
-    join(dir, TAILNET_MESH_FILENAME),
-    JSON.stringify({
-      version: 2,
-      connections: [
-        {
-          id: 'tnc_existing',
-          machineName: 'mac-mini',
-          endpoint: '100.64.0.2:8471',
-          deviceId: 'dev_1',
-          deviceName: 'dev-macbook-air',
-          scopes: [],
-          pairedAt: '2026-10-01T00:00:00.000Z',
-          lastConnectedAt: null,
-          pairedVia: 'link',
-          sealedToken: keychainSeal('existing-token').toString('base64'),
-        },
-      ],
-    }),
-  )
+  const database = testDatabaseAt(dir)
+  const existing = {
+    id: 'tnc_existing',
+    machineName: 'mac-mini',
+    endpoint: '100.64.0.2:8471',
+    deviceId: 'dev_1',
+    deviceName: 'dev-macbook-air',
+    scopes: [],
+    pairedAt: '2026-10-01T00:00:00.000Z',
+    lastConnectedAt: null,
+    pairedVia: 'link',
+    sealedToken: keychainSeal('existing-token').toString('base64'),
+  }
+  await database.run('INSERT INTO mesh_links (id, position, body) VALUES (?, 0, ?)', [
+    existing.id,
+    JSON.stringify(existing),
+  ])
   const { bridge } = fakeBridge()
   const cipher = createShellSecretCipher(bridge, { available: true })
-  await cipher.prime(meshSealedTokens(dir))
+  await cipher.prime(meshSealedTokens(database))
   const logged: string[] = []
-  const store = createTailnetMeshStore({ resolveUserDataDir: () => dir, cipher, log: (line) => logged.push(line) })
+  const store = createTailnetMeshStore({ database: testDatabaseAt(dir), cipher, log: (line) => logged.push(line) })
   assert.equal(store.find('tnc_existing')?.deviceToken, 'existing-token')
 
   const added = store.add({
@@ -130,19 +128,18 @@ test('the mesh store opens what was primed, and seals a new pairing once the key
     pairedVia: 'link',
   })
   assert.deepEqual(logged, [], 'a pending seal is not reported as a keychain that cannot encrypt')
-  const onDisk = () =>
-    JSON.parse(readFileSync(join(dir, TAILNET_MESH_FILENAME), 'utf8')).connections as Array<{
-      id: string
-      sealedToken: string
-    }>
-  for (let tries = 0; tries < 100 && !onDisk().some((entry) => entry.id === added.id); tries++) {
+  const onDisk = async () =>
+    (await database.all<{ body: string }>('SELECT body FROM mesh_links ORDER BY position')).map(
+      (row) => JSON.parse(row.body) as { id: string; sealedToken: string },
+    )
+  for (let tries = 0; tries < 100 && !(await onDisk()).some((entry) => entry.id === added.id); tries++) {
     await new Promise((resolve) => setImmediate(resolve))
   }
-  const written = onDisk().find((entry) => entry.id === added.id)
+  const written = (await onDisk()).find((entry) => entry.id === added.id)
   assert.deepEqual(Buffer.from(written!.sealedToken, 'base64'), keychainSeal('new-token'))
   // The existing record was written back as it was.
   assert.equal(
-    onDisk().find((entry) => entry.id === 'tnc_existing')?.sealedToken,
+    (await onDisk()).find((entry) => entry.id === 'tnc_existing')?.sealedToken,
     keychainSeal('existing-token').toString('base64'),
   )
 })

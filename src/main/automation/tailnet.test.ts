@@ -1,3 +1,4 @@
+import { savedRecordRows, seedRecordRows, testDatabaseAt } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -8,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { createGatewayAuditStore, STUDIO_GATEWAY_AUDIT_FILENAME, type GatewayAuditRecord } from './gateway-audit'
-import { createTailnetDeviceStore, TAILNET_DEVICES_FILENAME, type TailnetDeviceStore } from './tailnet/tailnet-devices'
+import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet/tailnet-devices'
 import { hashSecret } from './tailnet/secret-hash'
 import {
   createTailnetGatewayServer,
@@ -93,7 +94,7 @@ test('tailnet', async () => {
   ): Promise<Harness> {
     const userDataDir = mkdtempSync(join(tmpdir(), 'sprintengine-tailnet-'))
     const calls: string[] = []
-    const devices = createTailnetDeviceStore({ resolveUserDataDir: () => userDataDir })
+    const devices = createTailnetDeviceStore({ database: testDatabaseAt(userDataDir) })
     const audit = createGatewayAuditStore({ resolveUserDataDir: () => userDataDir })
     const server = createTailnetGatewayServer({
       bindAddress: '127.0.0.1',
@@ -403,7 +404,7 @@ test('tailnet', async () => {
         serverVersion: '9.9.9',
         resolveTools: () => [],
         isMutation: () => false,
-        devices: createTailnetDeviceStore({ resolveUserDataDir: () => tmpdir() }),
+        devices: createTailnetDeviceStore({ database: testDatabaseAt(tmpdir()) }),
         peers: createTailnetPeerResolver({ runWhois: async () => null }),
       })
       await assert.rejects(() => refused.start(), /Refusing to bind the tailnet gateway/u)
@@ -435,6 +436,7 @@ test('tailnet', async () => {
 
       const service = createTailnetRemoteService({
         resolveUserDataDir: () => userDataDir,
+        database: testDatabaseAt(userDataDir),
         serverName: 'sprintengine-studio',
         serverVersion: '9.9.9',
         resolveTools: () => testTools(),
@@ -469,6 +471,7 @@ test('tailnet', async () => {
     try {
       const service = createTailnetRemoteService({
         resolveUserDataDir: () => userDataDir,
+        database: testDatabaseAt(userDataDir),
         serverName: 'sprintengine-studio',
         serverVersion: '9.9.9',
         resolveTools: () => [],
@@ -509,6 +512,7 @@ test('tailnet', async () => {
       let tailscaleIsUp = false
       const service = createTailnetRemoteService({
         resolveUserDataDir: () => userDataDir,
+        database: testDatabaseAt(userDataDir),
         serverName: 'sprintengine-studio',
         serverVersion: '9.9.9',
         resolveTools: () => [],
@@ -552,6 +556,7 @@ test('tailnet', async () => {
       const events: Array<{ running: boolean; error: string | null }> = []
       const service = createTailnetRemoteService({
         resolveUserDataDir: () => userDataDir,
+        database: testDatabaseAt(userDataDir),
         serverName: 'sprintengine-studio',
         serverVersion: '9.9.9',
         resolveTools: () => [],
@@ -612,6 +617,7 @@ test('tailnet', async () => {
       let looks = 0
       const service = createTailnetRemoteService({
         resolveUserDataDir: () => userDataDir,
+        database: testDatabaseAt(userDataDir),
         serverName: 'sprintengine-studio',
         serverVersion: '9.9.9',
         resolveTools: () => [],
@@ -701,9 +707,9 @@ test('tailnet', async () => {
       assert.equal(harness.devices.listDevices().length, 1)
 
       // Only the hash is persisted; the device token itself never reaches disk.
-      const stored = readFileSync(join(harness.userDataDir, TAILNET_DEVICES_FILENAME), 'utf8')
+      const stored = (await savedRecordRows(harness.userDataDir, 'devices')).map((row) => row.body).join('\n')
       assert.equal(stored.includes(device.deviceToken), false, 'the device token is never written to disk')
-      assert.match(stored, /"tokenHash": "[0-9a-f]{64}"/u)
+      assert.match(stored, /"tokenHash":"[0-9a-f]{64}"/u)
     } finally {
       await harness.close()
     }
@@ -1663,7 +1669,7 @@ test('tailnet', async () => {
   async function testWideningADevicesScopesPersistsAndAnUnknownIdThrows(): Promise<void> {
     const dir = mkdtempSync(join(tmpdir(), 'sprintengine-tailnet-scopes-'))
     try {
-      const store = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+      const store = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
       const minted = store.mintDevice({
         name: 'mac-mini',
         scopes: ['workspace:read', 'backlog:read'],
@@ -1677,7 +1683,8 @@ test('tailnet', async () => {
       assert.deepEqual(store.listDevices()[0]?.scopes, [...TAILNET_SCOPES])
 
       // A second store over the same directory is what the next launch sees.
-      const reloaded = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+      await store.flush()
+      const reloaded = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
       assert.deepEqual(reloaded.listDevices()[0]?.scopes, [...TAILNET_SCOPES])
 
       // It replaces rather than merges, so the same call takes access away — and
@@ -1689,7 +1696,8 @@ test('tailnet', async () => {
         'not:a:scope',
       ])
       assert.deepEqual(narrowed.scopes, ['workspace:read'])
-      assert.deepEqual(createTailnetDeviceStore({ resolveUserDataDir: () => dir }).listDevices()[0]?.scopes, [
+      await reloaded.flush()
+      assert.deepEqual(createTailnetDeviceStore({ database: testDatabaseAt(dir) }).listDevices()[0]?.scopes, [
         'workspace:read',
       ])
 
@@ -1711,29 +1719,18 @@ test('tailnet', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sprintengine-tailnet-retired-'))
     try {
       const deviceToken = 'mctn_retired-scopes-fixture'
-      writeFileSync(
-        join(dir, TAILNET_DEVICES_FILENAME),
-        `${JSON.stringify(
-          {
-            version: 1,
-            devices: [
-              {
-                id: 'tnd_dev_macbook_air',
-                name: 'dev-macbook-air',
-                scopes: ['workspace:read', 'terminal:observe', 'conversation:operate', 'terminal:control'],
-                createdAt: '2026-09-01T00:00:00.000Z',
-                lastSeenAt: null,
-                lastPeerNode: 'dev-macbook-air.tail1234.ts.net',
-                origin: { kind: 'code', by: null },
-                tokenHash: hashSecret(deviceToken),
-              },
-            ],
-          },
-          null,
-          2,
-        )}\n`,
-      )
-      const store = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+      const device = {
+        id: 'tnd_dev_macbook_air',
+        name: 'dev-macbook-air',
+        scopes: ['workspace:read', 'terminal:observe', 'conversation:operate', 'terminal:control'],
+        createdAt: '2026-09-01T00:00:00.000Z',
+        lastSeenAt: null,
+        lastPeerNode: 'dev-macbook-air.tail1234.ts.net',
+        origin: { kind: 'code', by: null },
+        tokenHash: hashSecret(deviceToken),
+      }
+      seedRecordRows(dir, 'devices', [{ id: device.id, body: device }])
+      const store = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
       const [loaded] = store.listDevices()
       assert.ok(loaded, 'the record loads rather than being dropped as malformed')
       assert.equal(loaded.id, 'tnd_dev_macbook_air')

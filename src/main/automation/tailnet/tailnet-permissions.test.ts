@@ -1,5 +1,6 @@
+import { testDatabaseAt } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
@@ -13,7 +14,8 @@ import {
   tailnetScopeGrantsAccess,
   type TailnetScope,
 } from '../../../shared/tailnet'
-import { TAILNET_DEVICES_FILENAME, createTailnetDeviceStore } from './tailnet-devices'
+import { createTailnetDeviceStore } from './tailnet-devices'
+import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from '../../../server/db/database'
 import { tailnetDeviceRouteOf, tailnetUpgradeRouteOf } from './tailnet-gateway-server'
 import {
   TAILNET_IDENTITY_PATH,
@@ -214,24 +216,18 @@ test('every tool, local-only or served, is judged for every set of scopes as bef
 test('a device stored before permissions loads as it was and is judged by its scopes, without pairing again', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-permissions-'))
   try {
-    writeFileSync(
-      join(dir, TAILNET_DEVICES_FILENAME),
-      JSON.stringify({
-        version: 1,
-        devices: [
-          {
-            id: 'dev-1',
-            name: 'android-phone',
-            tokenHash: 'stored-hash',
-            createdAt: '2026-09-01T00:00:00.000Z',
-            // A scope retired with the terminals, beside two that still mean something.
-            scopes: ['terminal:control', 'conversation:operate', 'backlog:read'],
-          },
-        ],
-      }),
-      { mode: 0o600 },
-    )
-    const store = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+    const seeded = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+    const stored = {
+      id: 'dev-1',
+      name: 'android-phone',
+      tokenHash: 'stored-hash',
+      createdAt: '2026-09-01T00:00:00.000Z',
+      // A scope retired with the terminals, beside two that still mean something.
+      scopes: ['terminal:control', 'conversation:operate', 'backlog:read'],
+    }
+    seeded.run('INSERT INTO devices (id, position, body) VALUES (?, 0, ?)', [stored.id, JSON.stringify(stored)])
+    seeded.close()
+    const store = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
     const [device] = store.listDevices()
     assert.deepEqual(device.scopes, ['backlog:read', 'conversation:operate'])
     const principal = tailnetDevicePrincipal(device.scopes)

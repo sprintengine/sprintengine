@@ -1,7 +1,8 @@
+import { savedRecordRows, testDatabaseAt } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { request as httpRequest } from 'node:http'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -120,6 +121,7 @@ test('tailnet-pair-approval', async () => {
     writeTailnetSettings(userDataDir, { enabled: true, port, notifications: true })
     const service = createTailnetRemoteService({
       resolveUserDataDir: () => userDataDir,
+      database: testDatabaseAt(userDataDir),
       serverName: 'sprintengine-studio',
       serverVersion: '9.9.9',
       resolveTools: testTools,
@@ -301,7 +303,7 @@ test('tailnet-pair-approval', async () => {
   })
 
   check('declining is an answer, and the declined peer waits before asking again', async () => {
-    const store = createTailnetDeviceStore({ resolveUserDataDir: () => mkdtempSync(join(tmpdir(), 'tnd-')) })
+    const store = createTailnetDeviceStore({ database: testDatabaseAt(mkdtempSync(join(tmpdir(), 'tnd-'))) })
     const asked = store.requestPairing({
       deviceName: 'Laptop',
       peerNode: 'laptop.example.ts.net',
@@ -325,7 +327,7 @@ test('tailnet-pair-approval', async () => {
   })
 
   check('one waiting request per peer, so a prompt cannot be spammed', async () => {
-    const store = createTailnetDeviceStore({ resolveUserDataDir: () => mkdtempSync(join(tmpdir(), 'tnd-')) })
+    const store = createTailnetDeviceStore({ database: testDatabaseAt(mkdtempSync(join(tmpdir(), 'tnd-'))) })
     const first = store.requestPairing({
       deviceName: 'Laptop',
       peerNode: null,
@@ -347,7 +349,7 @@ test('tailnet-pair-approval', async () => {
   check('a request nobody answered lapses, and cannot be approved afterwards', async () => {
     let clock = Date.parse('2026-09-02T21:00:00.000Z')
     const store = createTailnetDeviceStore({
-      resolveUserDataDir: () => mkdtempSync(join(tmpdir(), 'tnd-')),
+      database: testDatabaseAt(mkdtempSync(join(tmpdir(), 'tnd-'))),
       now: () => new Date(clock),
     })
     const asked = store.requestPairing({
@@ -367,7 +369,7 @@ test('tailnet-pair-approval', async () => {
   })
 
   check('the asker cannot influence what approving it grants', async () => {
-    const store = createTailnetDeviceStore({ resolveUserDataDir: () => mkdtempSync(join(tmpdir(), 'tnd-')) })
+    const store = createTailnetDeviceStore({ database: testDatabaseAt(mkdtempSync(join(tmpdir(), 'tnd-'))) })
     const asked = store.requestPairing({
       // Whatever a client puts in its body, the grant comes from the approver.
       deviceName: 'Laptop',
@@ -390,7 +392,7 @@ test('tailnet-pair-approval', async () => {
   // ── Confirm by typing the code (pair-from-the-scan-and-stay-paired, phase 2) ──
 
   check('approving needs the code from the asker’s screen, and three wrong codes decline the request', async () => {
-    const store = createTailnetDeviceStore({ resolveUserDataDir: () => mkdtempSync(join(tmpdir(), 'tnd-')) })
+    const store = createTailnetDeviceStore({ database: testDatabaseAt(mkdtempSync(join(tmpdir(), 'tnd-'))) })
     const asked = store.requestPairing({
       deviceName: 'Laptop',
       peerNode: 'laptop.example.ts.net',
@@ -420,7 +422,7 @@ test('tailnet-pair-approval', async () => {
   })
 
   check('the third wrong code declines the request and starts the cooldown', async () => {
-    const store = createTailnetDeviceStore({ resolveUserDataDir: () => mkdtempSync(join(tmpdir(), 'tnd-')) })
+    const store = createTailnetDeviceStore({ database: testDatabaseAt(mkdtempSync(join(tmpdir(), 'tnd-'))) })
     const asked = store.requestPairing({
       deviceName: 'Laptop',
       peerNode: null,
@@ -459,7 +461,7 @@ test('tailnet-pair-approval', async () => {
     'a device says where it came from: a code, an approval, an agent, or the reverse half of a pairing',
     async () => {
       const dir = mkdtempSync(join(tmpdir(), 'tnd-'))
-      const store = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+      const store = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
       const byCode = store.offerPairing({ scopes: ['workspace:read'] })
       const redeemed = store.redeemPairing({ token: byCode.token, deviceName: 'Phone' })
       assert.deepEqual(redeemed.ok ? redeemed.device.origin : null, { kind: 'code', by: null })
@@ -477,7 +479,8 @@ test('tailnet-pair-approval', async () => {
       assert.ok(store.authenticate(reverse.deviceToken), 'a reverse device authenticates like any other')
 
       // Persisted, and a record from before origins were kept reads as unknown.
-      const reread = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+      await store.flush()
+      const reread = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
       assert.deepEqual(
         reread
           .listDevices()
@@ -485,12 +488,16 @@ test('tailnet-pair-approval', async () => {
           .sort(),
         ['agent', 'code', 'reverse'],
       )
-      const legacy = JSON.parse(readFileSync(join(dir, 'tailnet-remote-devices.json'), 'utf8')) as {
-        devices: Array<Record<string, unknown>>
-      }
-      for (const device of legacy.devices) delete device.origin
-      writeFileSync(join(dir, 'tailnet-remote-devices.json'), JSON.stringify(legacy))
-      const older = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+      const rows = await savedRecordRows(dir, 'devices')
+      const legacy = rows.map((row) => JSON.parse(row.body) as Record<string, unknown>)
+      for (const device of legacy) delete device.origin
+      await testDatabaseAt(dir).batch(
+        legacy.map((device) => ({
+          sql: 'UPDATE devices SET body = ? WHERE id = ?',
+          params: [JSON.stringify(device), String(device.id)],
+        })),
+      )
+      const older = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
       assert.ok(
         older.listDevices().every((device) => device.origin.kind === 'unknown'),
         'no origin guessed for an older record',

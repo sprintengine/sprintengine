@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -160,7 +161,7 @@ beforeAll(async () => {
     send: (input) => runtime.sendTurn(input),
   })
   const audit = createGatewayAuditStore({ resolveUserDataDir: () => userData })
-  fileViews = createFileViews({ dataDir: userData, folderOf: () => folder })
+  fileViews = createFileViews({ database: testDatabaseAt(userData), folderOf: () => folder })
   service = createStudioRpcService({
     fileViews,
     // The platform's pieces, as a standalone server would install them.

@@ -1,10 +1,12 @@
+import { savedRecordRows, seedRecordRows, testDatabaseAt } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
 
-import { CLIENT_TOOLSETS_FILENAME, createClientToolsetStore } from './client-toolset-store'
+import { STUDIO_DATABASE_FILENAME } from '../db/database'
+import { createClientToolsetStore, readClientToolsetsFile } from './client-toolset-store'
 
 const directories: string[] = []
 afterEach(() => {
@@ -16,43 +18,41 @@ const dataDir = () => {
   return directory
 }
 
-test('bindings and grants survive a restart, in a file only its owner reads', () => {
+test('bindings and grants survive a restart, in a database only its owner reads', async () => {
   const directory = dataDir()
-  const store = createClientToolsetStore({ dataDir: () => directory })
+  const store = createClientToolsetStore({ database: testDatabaseAt(directory) })
   store.bind('game', 'sla_game', 'Acme Game')
   store.setGranted('game', { workspaceId: 'ws-1', agentId: 'chat' }, true)
-  const again = createClientToolsetStore({ dataDir: () => directory })
+  await savedRecordRows(directory, 'client_toolsets')
+  const again = createClientToolsetStore({ database: testDatabaseAt(directory) })
   assert.equal(again.binding('game')?.clientId, 'sla_game')
   assert.equal(again.binding('game')?.title, 'Acme Game')
   assert.deepEqual(again.grantsOf({ workspaceId: 'ws-1', agentId: 'chat' }), ['game'])
   if (process.platform !== 'win32')
-    assert.equal(statSync(join(directory, CLIENT_TOOLSETS_FILENAME)).mode & 0o777, 0o600)
+    assert.equal(statSync(join(directory, STUDIO_DATABASE_FILENAME)).mode & 0o777, 0o600)
   assert.throws(() => again.bind('game', 'sla_other', 'Other'), /bound to another client/)
   assert.deepEqual(again.forgetClient('sla_game'), ['game'])
-  const after = JSON.parse(readFileSync(join(directory, CLIENT_TOOLSETS_FILENAME), 'utf8')) as { bindings: unknown[] }
-  assert.deepEqual(after.bindings, [])
+  assert.deepEqual(await savedRecordRows(directory, 'client_toolsets'), [])
 })
 
-test('an unreadable file binds nothing, and an entry in the wrong shape is skipped', () => {
+test('a row that does not read binds nothing, and an entry in the wrong shape is skipped', () => {
   const directory = dataDir()
-  writeFileSync(join(directory, CLIENT_TOOLSETS_FILENAME), '{ not json')
+  seedRecordRows(directory, 'client_toolsets', [{ id: 'game', body: 'not a binding' }])
   const logs: string[] = []
-  const store = createClientToolsetStore({ dataDir: () => directory, log: (message) => logs.push(message) })
+  const store = createClientToolsetStore({ database: testDatabaseAt(directory), log: (message) => logs.push(message) })
   assert.deepEqual(store.bindings(), [])
   assert.equal(logs.length, 1)
-  writeFileSync(
-    join(directory, CLIENT_TOOLSETS_FILENAME),
-    JSON.stringify({
-      bindings: [
-        { toolset: 'Bad_Name', clientId: 'x' },
-        { toolset: 'ok-name', clientId: 'sla_1' },
-      ],
-    }),
-  )
+  // The file builds before the database kept, as the import reads it.
   assert.deepEqual(
-    createClientToolsetStore({ dataDir: () => directory })
-      .bindings()
-      .map((binding) => binding.toolset),
+    readClientToolsetsFile(
+      JSON.stringify({
+        bindings: [
+          { toolset: 'Bad_Name', clientId: 'x' },
+          { toolset: 'ok-name', clientId: 'sla_1' },
+        ],
+      }),
+    )?.map((binding) => binding.toolset),
     ['ok-name'],
   )
+  assert.equal(readClientToolsetsFile('{ not json'), null)
 })

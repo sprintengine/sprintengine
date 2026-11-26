@@ -1,15 +1,15 @@
+import { seedRecordRows, testDatabaseAt } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
 import { afterEach, test } from 'vitest'
 
 import type { StudioLocalServer } from '../../../packages/studio-protocol/src/public'
 import { createLocalServerDomain, type LocalServerDomainOptions, type LocalServersChanged } from './local-server-domain'
 import { createTcpProbe } from './local-server-probe'
-import { localServerStorePath } from './local-server-record'
 import { createLocalServerRunner } from './local-server-runner'
 
 const cleanups: Array<() => Promise<unknown> | unknown> = []
@@ -31,7 +31,7 @@ async function domainOver(options: Partial<LocalServerDomainOptions> = {}) {
   const dir = await tempDir()
   const changes: LocalServersChanged[] = []
   const domain = createLocalServerDomain({
-    dataDir: dir,
+    database: testDatabaseAt(dir),
     conversationFolder: () => dir,
     log: () => undefined,
     ...options,
@@ -125,16 +125,13 @@ test('another conversation linking the same port takes it over, and both are tol
 
 test('a list waits for the stored record to be read and checked', async () => {
   const dir = await tempDir()
-  const path = localServerStorePath(dir)
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(
-    path,
-    JSON.stringify({
-      version: 1,
-      servers: [
-        { id: 'k1', workspaceId: 'ws-1', agentId: 'agent-a', url: 'http://localhost:5173/', title: 'Web', linkedAt: 5 },
-      ],
-    }),
+  const servers = [
+    { id: 'k1', workspaceId: 'ws-1', agentId: 'agent-a', url: 'http://localhost:5173/', title: 'Web', linkedAt: 5 },
+  ]
+  seedRecordRows(
+    dir,
+    'linked_servers',
+    servers.map((server) => ({ id: server.id, body: server })),
   )
   let answer: (open: boolean) => void = () => undefined
   const asked = new Promise<boolean>((resolve) => {
@@ -142,7 +139,7 @@ test('a list waits for the stored record to be read and checked', async () => {
   })
   let probes = 0
   const { domain, changes } = await domainOver({
-    dataDir: dir,
+    database: testDatabaseAt(dir),
     probe: () => {
       probes += 1
       return probes === 1 ? asked : Promise.resolve(true)
@@ -165,23 +162,20 @@ test('a list waits for the stored record to be read and checked', async () => {
 
 test('a list that stopped waiting for a slow first check hears what it found', async () => {
   const dir = await tempDir()
-  const path = localServerStorePath(dir)
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(
-    path,
-    JSON.stringify({
-      version: 1,
-      servers: [
-        { id: 'k1', workspaceId: 'ws-1', agentId: 'agent-a', url: 'http://localhost:5173/', title: '', linkedAt: 5 },
-      ],
-    }),
+  const servers = [
+    { id: 'k1', workspaceId: 'ws-1', agentId: 'agent-a', url: 'http://localhost:5173/', title: '', linkedAt: 5 },
+  ]
+  seedRecordRows(
+    dir,
+    'linked_servers',
+    servers.map((server) => ({ id: server.id, body: server })),
   )
   let answer: (open: boolean) => void = () => undefined
   const asked = new Promise<boolean>((resolve) => {
     answer = resolve
   })
   const { domain, changes } = await domainOver({
-    dataDir: dir,
+    database: testDatabaseAt(dir),
     probe: () => asked,
     timing: { firstCheckWaitMs: 30 },
   })
@@ -449,21 +443,18 @@ test('a removed workspace’s links are forgotten, its run stopped first, and no
 
 test('links of a workspace removed while the Studio was not running are forgotten at start', async () => {
   const dir = await tempDir()
-  const path = localServerStorePath(dir)
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(
-    path,
-    JSON.stringify({
-      version: 1,
-      servers: [
-        { id: 'k1', workspaceId: 'ws-gone', agentId: 'agent-a', url: 'http://localhost:5173/', linkedAt: 5 },
-        { id: 'k2', workspaceId: 'ws-1', agentId: 'agent-a', url: 'http://localhost:5174/', linkedAt: 6 },
-      ],
-    }),
+  const servers = [
+    { id: 'k1', workspaceId: 'ws-gone', agentId: 'agent-a', url: 'http://localhost:5173/', linkedAt: 5 },
+    { id: 'k2', workspaceId: 'ws-1', agentId: 'agent-a', url: 'http://localhost:5174/', linkedAt: 6 },
+  ]
+  seedRecordRows(
+    dir,
+    'linked_servers',
+    servers.map((server) => ({ id: server.id, body: server })),
   )
   const probed: number[] = []
   const { domain } = await domainOver({
-    dataDir: dir,
+    database: testDatabaseAt(dir),
     workspaceRemoved: (workspaceId) => workspaceId === 'ws-gone',
     probe: async (_host, port) => {
       probed.push(port)

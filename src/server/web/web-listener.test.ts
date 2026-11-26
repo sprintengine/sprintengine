@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../tests/studio-database'
 import { createMcpHttpRoutes } from './mcp-http-routes'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http'
@@ -40,7 +41,10 @@ beforeEach(async () => {
   const script = 'console.log("app")'.repeat(100)
   writeFileSync(join(web, 'assets', 'app-abc123.js'), script)
   writeFileSync(join(web, 'assets', 'app-abc123.js.br'), brotliCompressSync(script))
-  sessions = createWebSessionStore({ dataDir: dir, environmentId: '05763914-5fa0-449b-96d7-15af49e0ec86' })
+  sessions = createWebSessionStore({
+    database: testDatabaseAt(dir),
+    environmentId: '05763914-5fa0-449b-96d7-15af49e0ec86',
+  })
   connected = []
   listener = createWebListener({
     sessions,

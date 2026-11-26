@@ -1,13 +1,14 @@
+import { savedRecordRows, seedRecordRows, testDatabaseAt } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
-import { afterEach, test, vi } from 'vitest'
+import { afterEach, test } from 'vitest'
 
 import {
   createLocalServerRecord,
-  localServerStorePath,
+  readLinkedServersFile,
   MAX_SERVERS,
   MAX_SERVERS_PER_CONVERSATION,
   readLocalServerUrl,
@@ -30,7 +31,7 @@ function recordIn(dir: string, extra: Partial<LocalServerRecordOptions> = {}) {
   let seq = 0
   const logs: string[] = []
   const record = createLocalServerRecord({
-    dataDir: dir,
+    database: testDatabaseAt(dir),
     now: () => ++clock,
     newId: () => `id-${++seq}`,
     log: (message) => logs.push(message),
@@ -125,7 +126,7 @@ test('a conversation keeps its newest links up to the cap, and the record its ne
   assert.deepEqual(record.forConversation(A), [])
 })
 
-test('the record is written to one file and read back after a restart', async () => {
+test('the record is kept in the database, a row per link, and read back after a restart', async () => {
   const dir = await dataDir()
   const { record } = recordIn(dir)
   await record.whenLoaded()
@@ -135,79 +136,13 @@ test('the record is written to one file and read back after a restart', async ()
   assert.notEqual(record.remove(removed.server.id), null)
   assert.equal(record.remove('nope'), null)
   await record.flush()
-  const stored = JSON.parse(await readFile(localServerStorePath(dir), 'utf8')) as {
-    version: number
-    servers: unknown[]
-  }
-  assert.equal(stored.version, 1)
-  assert.equal(stored.servers.length, 2)
+  assert.equal((await savedRecordRows(dir, 'linked_servers')).length, 2)
 
   const { record: reread } = recordIn(dir)
   await reread.whenLoaded()
   assert.deepEqual(reread.forConversation(A), record.forConversation(A))
   assert.deepEqual(reread.forConversation(B), record.forConversation(B))
 })
-
-test('a write that failed is tried again rather than left until the next change', async () => {
-  const dir = await dataDir()
-  const store = dirname(localServerStorePath(dir))
-  await mkdir(store, { recursive: true })
-  const { record, logs } = recordIn(dir)
-  await record.whenLoaded()
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-  try {
-    // The folder refuses writes for a while, as a full or locked disk does.
-    await chmod(store, 0o500)
-    record.link(A, { url: 'http://localhost:5173/' })
-    await record.flush()
-    assert.match(logs.join('\n'), /could not write the local server record/u)
-    await chmod(store, 0o700)
-    vi.advanceTimersByTime(5_000)
-    await record.flush()
-  } finally {
-    vi.useRealTimers()
-    await chmod(store, 0o700)
-  }
-  const stored = JSON.parse(await readFile(localServerStorePath(dir), 'utf8')) as { servers: unknown[] }
-  assert.equal(stored.servers.length, 1)
-})
-
-test('a record that cannot be read is kept aside and the record starts empty', async () => {
-  const dir = await dataDir()
-  const path = localServerStorePath(dir)
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, '{"version": 1, "servers": [', 'utf8')
-  const { record, logs } = recordIn(dir)
-  await record.whenLoaded()
-  assert.deepEqual(record.all(), [])
-  assert.equal(logs.length, 1)
-  assert.equal((await stat(`${path}.corrupt`)).isFile(), true)
-})
-
-// A file mode locks nothing on Windows, or for root.
-test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
-  'a record that is there but cannot be read is not written over',
-  async () => {
-    const dir = await dataDir()
-    const path = localServerStorePath(dir)
-    await mkdir(dirname(path), { recursive: true })
-    const stored = JSON.stringify({
-      version: 1,
-      servers: [{ id: 'k1', ...A, url: 'http://localhost:5173/', title: '', linkedAt: 5 }],
-    })
-    await writeFile(path, stored, 'utf8')
-    // Locked for this run, as a scanner or a permission can hold it.
-    await chmod(path, 0o000)
-    cleanups.push(() => chmod(path, 0o600).catch(() => undefined))
-    const { record, logs } = recordIn(dir)
-    await record.whenLoaded()
-    record.link(B, { url: 'http://localhost:3000/' })
-    await record.flush()
-    assert.equal(logs.length, 1)
-    await chmod(path, 0o600)
-    assert.equal(await readFile(path, 'utf8'), stored)
-  },
-)
 
 test('a missing record is an empty one, and entries it cannot read are skipped', async () => {
   const empty = recordIn(await dataDir())
@@ -216,8 +151,6 @@ test('a missing record is an empty one, and entries it cannot read are skipped',
   assert.deepEqual(empty.logs, [])
 
   const dir = await dataDir()
-  const path = localServerStorePath(dir)
-  await mkdir(dirname(path), { recursive: true })
   const good = {
     id: 'k1',
     workspaceId: 'ws-1',
@@ -226,20 +159,25 @@ test('a missing record is an empty one, and entries it cannot read are skipped',
     title: '',
     linkedAt: 5,
   }
-  await writeFile(
-    path,
-    JSON.stringify({
-      version: 1,
-      servers: [good, { ...good, id: 'k2', url: 'ftp://x/' }, { ...good, id: 'k3', cwd: 'relative' }],
-    }),
-    'utf8',
-  )
+  seedRecordRows(dir, 'linked_servers', [
+    { id: 'k1', body: good },
+    { id: 'k2', body: { ...good, id: 'k2', url: 'ftp://x/' } },
+    { id: 'k3', body: { ...good, id: 'k3', cwd: 'relative' } },
+  ])
   const { record } = recordIn(dir)
   await record.whenLoaded()
   assert.deepEqual(
     record.all().map((entry) => entry.id),
     ['k1'],
   )
+  // The file builds before the database kept, as the import reads it.
+  assert.deepEqual(
+    readLinkedServersFile(JSON.stringify({ version: 1, servers: [good, { ...good, id: 'k2', url: 'ftp://x/' }] }))?.map(
+      (entry) => entry.id,
+    ),
+    ['k1'],
+  )
+  assert.equal(readLinkedServersFile('{"version": 1, "servers": ['), null)
 })
 
 test('a link a run is following is never pushed out by the caps', async () => {

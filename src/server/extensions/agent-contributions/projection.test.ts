@@ -4,6 +4,7 @@
 // uninstalled, the approval each asks for or does not, and a projection a
 // crash interrupted, put right by the next start.
 
+import { keepTestApprovalsIn } from '../../../../tests/studio-database'
 import {
   cpSync,
   existsSync,
@@ -45,6 +46,7 @@ const PROJECTED_SKILL = `---\nname: ${extensionSkillName('local.tools', 'review'
 
 function setup(protectedIds: string[] = []) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agent-contributions-'))
+  keepTestApprovalsIn(dataDir)
   const moduleRoot = join(dataDir, 'extensions')
   const warnings: string[] = []
   const start = () =>

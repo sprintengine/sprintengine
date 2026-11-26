@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
@@ -82,7 +83,7 @@ async function withGateway(run: (gateway: Gateway) => Promise<void>): Promise<vo
   let caller: TailnetPeerIdentity | null = MAC_MINI
   let offset = 0
   const clock = () => Date.now() + offset
-  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir, now: () => new Date(clock()) })
+  const devices = createTailnetDeviceStore({ database: testDatabaseAt(dir), now: () => new Date(clock()) })
   const oauth = createTailnetOAuthStore({ resolveUserDataDir: () => dir, devices, now: clock })
   const server = createTailnetGatewayServer({
     bindAddress: '127.0.0.1',
@@ -953,7 +954,7 @@ test('the pure rules: redirect URIs, PKCE, resource indicators', () => {
 test('the store keeps its signing key across restarts and no registration at all', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-oauth-store-'))
   try {
-    const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+    const devices = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
     const store = createTailnetOAuthStore({ resolveUserDataDir: () => dir, devices })
     const registered = store.registerClient({ redirect_uris: [REDIRECT] })
     assert.equal(registered.ok, true)
@@ -974,7 +975,7 @@ test('the store keeps its signing key across restarts and no registration at all
 test('behind Tailscale Serve, only OAuth sign-in and OAuth MCP calls are served, Host is checked, and the forwarded address is the peer', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-oauth-serve-'))
   const asked: string[] = []
-  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+  const devices = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
   const oauth = createTailnetOAuthStore({ resolveUserDataDir: () => dir, devices })
   let tailnetOrigin = ''
   const server = createTailnetGatewayServer({
@@ -1091,6 +1092,7 @@ test('the service publishes HTTPS when asked, names it in the MCP URL, and takes
   writeTailnetSettings(dir, { enabled: true, port: await freePort(), notifications: false })
   const service = createTailnetRemoteService({
     resolveUserDataDir: () => dir,
+    database: testDatabaseAt(dir),
     serverName: 'sprintengine-studio',
     serverVersion: '9.9.9',
     resolveTools: () => tools(),
@@ -1245,7 +1247,7 @@ test('a sign-in is approved only with an explicit window answer', async () => {
 
 test('behind Tailscale Serve, a caller with no tailnet address, or one that came through Funnel, is refused', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-oauth-funnel-'))
-  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+  const devices = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
   const oauth = createTailnetOAuthStore({ resolveUserDataDir: () => dir, devices })
   const server = createTailnetGatewayServer({
     bindAddress: '127.0.0.1',
@@ -1318,6 +1320,7 @@ test('a serve mapping an earlier run left behind is withdrawn at startup while H
   writeTailnetSettings(serviceDir, { enabled: false, port: 1, notifications: false })
   const service = createTailnetRemoteService({
     resolveUserDataDir: () => serviceDir,
+    database: testDatabaseAt(serviceDir),
     serverName: 'sprintengine-studio',
     serverVersion: '9.9.9',
     resolveTools: () => tools(),

@@ -67,6 +67,8 @@ export type TailnetMeshStore = {
    */
   noteEnvironment(connectionId: string, environmentId: string | null): boolean
   forget(connectionId: string): boolean
+  /** Resolves once every change so far is saved (a quit, and the tests). */
+  flush(): Promise<void>
 }
 
 export function createTailnetMeshStore(options: {
@@ -154,6 +156,7 @@ export function createTailnetMeshStore(options: {
   }
 
   return {
+    flush: () => table.flush(),
     list: () => connections.map(publicConnection),
 
     find: (connectionId) => {

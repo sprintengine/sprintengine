@@ -117,8 +117,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   const cipher = createShellSecretCipher(bridge, {
     available: envelope.secrets.kind === 'shell' ? envelope.secrets.available : false,
   })
-  // The mesh store opens its tokens as it is built; they are opened ahead.
-  await cipher.prime(meshSealedTokens(envelope.dataDir))
 
   const platform: StudioPlatform = {
     paths: createNodeStudioPaths({
@@ -356,6 +354,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     }
     throw error
   }
+  // The mesh store (the gateway's) opens its tokens as it is built; they are
+  // opened ahead, from the database the core has just opened.
+  await cipher.prime(meshSealedTokens(core.database))
   const { agentLaunchSettings, workspaceRegistry, workspaceSyncService, conversations } = core
   // The terminals and their agents: null only where no pty can start.
   const terminals = core.agentTerminals

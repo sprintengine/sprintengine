@@ -1,3 +1,4 @@
+import { openStudioDatabase } from '../../../src/server/db/database'
 import { randomBytes } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 
@@ -33,8 +34,9 @@ export async function peerClient(input: {
   // than a keychain, which a CI runner has none of.
   const cipher = createDataKeySecretCipher(randomBytes(32))
   mkdirSync(input.dataDir, { recursive: true, mode: 0o700 })
+  const database = openStudioDatabase(input.dataDir, { readers: 1 })
   const mesh = createTailnetMeshService({
-    resolveUserDataDir: () => input.dataDir,
+    database,
     createStore: (options) => createTailnetMeshStore({ ...options, cipher }),
     resolveDeviceName: () => 'dev-macbook-air',
     resolvePeerName: async () => null,
@@ -182,6 +184,7 @@ export async function peerClient(input: {
       for (const stop of stops.splice(0)) stop()
       closeWindow()
       mesh.shutdown()
+      await database.close()
     },
   }
 }

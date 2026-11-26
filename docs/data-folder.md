@@ -14,6 +14,12 @@ in `src/server/db/`.
 | Since format | Records                                                                                                                               |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
 | 2            | a launched chat's first message, the "always allow" approval rules, the launch notices, the prompts a person sent each terminal agent |
+| 3            | the devices paired with this Studio and the machines it is paired with, browser sessions, embeds, linked local servers, apps' toolsets, file views, extension approvals |
+
+A paired machine's token is kept sealed by the platform's cipher, as its file
+kept it; an old file that still held one in plaintext is not imported, and
+that machine is paired again. A device revoked before the upgrade is not in
+its file and so not in the database either.
 
 What people or agent CLIs open by path stays a file: pictures (a first
 message's are in `conversation-first-messages/`), plans, handoff notes, CLI

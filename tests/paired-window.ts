@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs'
+import { openStudioDatabase } from '../src/server/db/database'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -100,8 +101,9 @@ let windowBefore: unknown
 export async function pairedWindow(peer: PairableMachine, scopes: TailnetScope[]): Promise<PairedWindow> {
   const offer = peer.devices.offerPairing({ scopes })
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-paired-window-'))
+  const database = openStudioDatabase(dir, { readers: 1 })
   const mesh = createTailnetMeshService({
-    resolveUserDataDir: () => dir,
+    database,
     resolveDeviceName: () => 'dev-macbook-air',
     resolvePeerName: async () => null,
   })
@@ -121,6 +123,7 @@ export async function pairedWindow(peer: PairableMachine, scopes: TailnetScope[]
     async close() {
       closeWindow()
       mesh.shutdown()
+      await database.close()
       rmSync(dir, { recursive: true, force: true })
     },
   }

@@ -1,3 +1,4 @@
+import { keepTestApprovalsIn } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -13,6 +14,7 @@ import {
   extensionApprovalFingerprint,
   extensionNeedsApproval,
   installedNeedsApproval,
+  readExtensionApprovalsFile,
   readExtensionApprovalsSync,
   writeExtensionApproval,
   type ExtensionAccess,
@@ -53,6 +55,7 @@ const NO_CONTRIBUTIONS: ExtensionManifest['contributes'] = {
 
 function withDataDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), 'mc-extension-approvals-'))
+  keepTestApprovalsIn(dir)
   return fn(dir).finally(() => rmSync(dir, { recursive: true, force: true }))
 }
 
@@ -328,10 +331,12 @@ test('approvals are kept per install key, forgotten on request, and nothing is a
     assert.deepEqual(await writeExtensionApproval(dir, 'local.one', null), { ok: true })
     assert.deepEqual([...readExtensionApprovalsSync(dir).keys()], ['local.two'])
 
-    writeFileSync(join(dir, 'extension-approvals.json'), '{"local.two": {"fingerprint": "nope"}}')
-    assert.equal(readExtensionApprovalsSync(dir).size, 0)
-    writeFileSync(join(dir, 'extension-approvals.json'), 'not json')
-    assert.equal(readExtensionApprovalsSync(dir).size, 0)
+    // A file builds before the database kept approves nothing it cannot read.
+    assert.equal(readExtensionApprovalsFile('{"local.two": {"fingerprint": "nope"}}')?.size, 0)
+    assert.equal(readExtensionApprovalsFile('not json'), null)
+    // Nor does a data folder no server here holds.
+    assert.equal(readExtensionApprovalsSync(join(dir, 'elsewhere')).size, 0)
+    assert.equal((await writeExtensionApproval(join(dir, 'elsewhere'), 'local.one', record)).ok, false)
   })
 })
 
@@ -402,6 +407,7 @@ test('an event whose permission is new, or a terminal permission, is growth; an 
 
 test('an approval stored without the hooks it covers approves nothing', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'approvals-hooks-'))
+  keepTestApprovalsIn(dir)
   writeFileSync(
     join(dir, 'extension-approvals.json'),
     JSON.stringify({ 'local.old': { fingerprint: 'sha256-abc', access: { ...WORKER, hooks: undefined } } }),

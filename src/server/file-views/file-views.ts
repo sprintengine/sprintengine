@@ -83,7 +83,8 @@ export type FileViewsDeps = {
 
 type Ledger = { version: number; chats: Record<string, { at: number; paths: string[] }> }
 
-const chatId = (chat: FileViewChat) => `${chat.workspaceId}\u0000${chat.agentId}`
+// A row's id: both ids, spelled so neither can run into the other.
+const chatId = (chat: FileViewChat) => JSON.stringify([chat.workspaceId, chat.agentId])
 const sha256 = (bytes: Uint8Array | string) => createHash('sha256').update(bytes).digest('hex')
 const errorCode = (error: unknown) => (error as NodeJS.ErrnoException | undefined)?.code
 
@@ -129,9 +130,13 @@ export function readFileViewsFile(raw: string): Array<{ id: string; at: number; 
     return null
   }
   if (parsed?.version !== LEDGER_VERSION || !parsed.chats || typeof parsed.chats !== 'object') return null
-  return Object.entries(parsed.chats).flatMap(([id, entry]) => {
+  return Object.entries(parsed.chats).flatMap(([key, entry]) => {
+    // The file named a chat by its two ids with a NUL between them.
+    const [workspaceId, agentId, ...rest] = key.split('\u0000')
     const chat = readLedgerChat(entry)
-    return chat ? [{ id, ...chat }] : []
+    return chat && workspaceId && agentId && rest.length === 0
+      ? [{ id: chatId({ workspaceId, agentId }), ...chat }]
+      : []
   })
 }
 

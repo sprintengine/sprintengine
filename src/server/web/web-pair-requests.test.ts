@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../tests/studio-database'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,7 +17,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
 function setup() {
   const sessions = createWebSessionStore({
-    dataDir: dir,
+    database: testDatabaseAt(dir),
     environmentId: '05763914-5fa0-449b-96d7-15af49e0ec86',
     now: () => now,
   })

@@ -2,6 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { openStudioDatabase } from '../../../server/db/database'
+
 import {
   connect,
   webSocketTransport,
@@ -48,7 +50,8 @@ export async function deviceRig(
   options: { port?: number; gateway?: Pick<TailnetGatewayServerOptions, 'fileUploads' | 'machine'> } = {},
 ): Promise<DeviceRig> {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-studio-family-'))
-  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+  const database = openStudioDatabase(dir, { readers: 1 })
+  const devices = createTailnetDeviceStore({ database })
   const studio = await startTestServer({ backend: createFakeBackend(['agent-1']), ...server })
   const gateway = createTailnetGatewayServer({
     bindAddress: '127.0.0.1',
@@ -113,6 +116,7 @@ export async function deviceRig(
       for (const client of clients.splice(0)) client.close()
       await gateway.stop()
       await studio.dispose()
+      await database.close()
       rmSync(dir, { recursive: true, force: true })
     },
   }

@@ -536,8 +536,8 @@ a refused call answers `not_permitted` or `approval_required`.
 
 The trust store (`trusted-modules.json`) is gone, and nothing reads it:
 earlier grants approve nothing, and every extension above `content` waits for
-the person's approval once. Approvals live in `extension-approvals.json` in
-the data folder. A bundle's or a provider's signed manifest is trusted only by
+the person's approval once. Approvals live in the data folder's database
+(`extension_approvals`). A bundle's or a provider's signed manifest is trusted only by
 a trusted publisher key; the person's grant of a manifest is gone with the
 store.
 
@@ -1406,8 +1406,10 @@ changes only through a step in that file, which copies the files it touches
 aside first and is undone if it fails or is interrupted. Format 1 is the
 layout every build before the marker wrote. Format 2 adds the data folder's
 database (`studio.sqlite`) and moves a chat's first message, the approval
-rules, the launch notices and the agents' prompts into it; `docs/data-folder.md`
-says what is in it and how to go back to an older build.
+rules, the launch notices and the agents' prompts into it. Format 3 moves the
+device and session records (paired devices and machines, browser sessions,
+embeds, linked local servers, apps' toolsets, file views, extension approvals).
+`docs/data-folder.md` says what is in it and how to go back to an older build.
 
 **The `incompatible` frame, `update.status`, `update.start`, their params,
 results and codes never change shape**, since they are what two ends that

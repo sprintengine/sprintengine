@@ -170,6 +170,8 @@ export type TailnetCollectOutcome = TailnetPairRequestOutcome & {
 }
 
 export type TailnetDeviceStore = {
+  /** Resolves once every change so far is saved (a quit, and the tests). */
+  flush(): Promise<void>
   listDevices(): TailnetDevice[]
   /**
    * Replace any outstanding pairing with a fresh one (the Settings "regenerate"
@@ -428,6 +430,7 @@ export function createTailnetDeviceStore(options: {
   }
 
   return {
+    flush: () => table.flush(),
     listDevices: () => devices.map(publicDevice),
 
     offerPairing(input): TailnetPairingOffer {
