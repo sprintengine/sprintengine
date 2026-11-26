@@ -26,8 +26,10 @@ export type WindowStudioSetup = {
    * the client parks until the network is back.
    */
   anotherMachine?: boolean
-  /** Hears each socket's close code (a revoked web session's, say). */
-  onSocketClose?: (code: number) => void
+  /** Hears each socket's close code (a revoked web session's, say), and whether it ever opened. */
+  onSocketClose?: (code: number, socket: { opened: boolean }) => void
+  /** The connection is open again after it was not (a reconnect): the Studio may have been replaced. */
+  onReopen?: () => void
   /** A WebSocket other than the global one (tests). */
   WebSocket?: StudioWebSocketConstructor
 }
@@ -165,7 +167,9 @@ export function windowStudioClient(api: TicketApi = window.api): Promise<StudioC
     ...(bound === undefined ? {} : { environmentId: bound }),
     onStateChange: (state) => {
       if (clients.get(api) !== connecting) return
+      const was = states.get(api)
       setWindowState(api, state === 'closed' ? 'unavailable' : state)
+      if (state === 'open' && (was === 'reconnecting' || was === 'parked')) setup.onReopen?.()
       // A reconnect is welcomed again before it opens.
       if (state === 'open') noteWelcome(api, settled.get(api))
     },

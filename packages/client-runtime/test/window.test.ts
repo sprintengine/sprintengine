@@ -419,6 +419,49 @@ test('a socket that never opens is given up after its open timeout, and closed',
   assert.equal(closed, 1)
 })
 
+test('a socket refused at its upgrade closes saying it never opened; one that opened says it did', async () => {
+  // A browser removed while its tab slept is refused at the upgrade (401),
+  // which a page hears only as a close with no code it can read: what tells
+  // it to ask whether it is still paired.
+  const heard: Array<[number, boolean]> = []
+  class Scripted {
+    static next: 'refuse' | 'open' = 'refuse'
+    readyState = 0
+    private listeners = new Map<string, Array<(event: { code?: number }) => void>>()
+    constructor() {
+      const how = Scripted.next
+      setTimeout(() => {
+        if (how === 'open') {
+          this.readyState = 1
+          this.emit('open', {})
+          setTimeout(() => this.emit('close', { code: 4401 }), 1)
+        } else this.emit('close', { code: 1006 })
+      }, 1)
+    }
+    send(): void {}
+    close(): void {}
+    addEventListener(type: string, listener: (event: { code?: number }) => void): void {
+      this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
+    }
+    private emit(type: string, event: { code?: number }): void {
+      for (const listener of this.listeners.get(type) ?? []) listener(event)
+    }
+  }
+  const transport = webSocketTransport({
+    ticket: async () => ({ url: 'ws://127.0.0.1:1/ws', token: 'web-session-cookie' }),
+    WebSocket: Scripted as never,
+    onSocketClose: (code, socket) => void heard.push([code, socket.opened]),
+  })
+  await assert.rejects(transport(), /refused the connection \(1006\)/)
+  Scripted.next = 'open'
+  await transport()
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.deepEqual(heard, [
+    [1006, false],
+    [4401, true],
+  ])
+})
+
 // ── Reconnecting, as the window meets it ────────────────────────────────────
 // One case each: a dropped socket, a refused ticket, a sleep and a wake, and a
 // server that came back on another port. The client's connection is kept by
