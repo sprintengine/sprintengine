@@ -31,8 +31,9 @@ examples call it `build-box`, with a user `dev`.
 
 ## 2. A chat there
 
-1. New chat › the machine menu › build-box. Type the folder's full path on
-   build-box, pick a chat engine installed there, and send a message.
+1. New chat › the machine menu › build-box. Pick one of its projects, or
+   Another folder… and type the folder's full path on build-box; the agent
+   menu lists only the CLIs installed there. Send a message.
    Expect: the chat runs, and the sidebar files it under that folder with the
    machine's name.
 2. Close the laptop's lid for a minute mid-turn, then open it.

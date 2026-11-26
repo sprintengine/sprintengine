@@ -155,7 +155,7 @@ export function useFileMentionSearch(workspaceRoot: string | null, query: string
 const RemoteInlineSkillPicker = forwardRef<
   InlineSkillPickerHandle,
   {
-    remote: { connectionId: string; workspaceId: string }
+    remote: { route: string; workspaceId: string }
     query: string
     onPick: (skill: WorkspaceSkill) => void
     onDismiss: () => void
@@ -289,7 +289,7 @@ export function useComposerContextPicker({
   skillsEnabled: boolean
   mentionsEnabled?: boolean
   /** A chat on a paired machine: its `$` lists that machine's skills for the chat's project there. */
-  remoteSkills?: { connectionId: string; workspaceId: string } | null
+  remoteSkills?: { route: string; workspaceId: string } | null
   /** Null where the chat has no command list: `/` then stays literal text. */
   commandMenu?: ComposerCommandMenuInput | null
   onPickSkill: (skill: WorkspaceSkill, range: TriggerRange) => void

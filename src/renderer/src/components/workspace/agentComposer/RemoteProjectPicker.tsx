@@ -1,18 +1,26 @@
 import React from 'react'
 
-import type { MeshConnection, MeshWorkspace, MeshWorkspaceCheckout } from '../../../../../shared/tailnet-mesh'
+import type { MeshWorkspace, MeshWorkspaceCheckout } from '../../../../../shared/tailnet-mesh'
+import type { EnvironmentTarget } from '../../../studio/environmentStudio'
 import { useProjectColors } from '../../../hooks/useProjectColors'
 import { projectColorKey, resolveProjectColor, type ProjectColor } from '../../../utils/projectColor'
 import { FolderTypeIcon, NoProjectGlyph } from '../../AppIcons'
 import { ChipButton, Input, MENU_DIVIDER_CLASS, MENU_LIST_CLASS, MenuOption, Popover } from '../../ui'
 import { ChipCaretGlyph } from './agentSpawnShared'
 import { focusProjectSearch } from './ProjectSourceMenu'
-import { isRemoteNoProject, REMOTE_NO_PROJECT, type RemoteProject } from './remoteProjects'
+import {
+  isRemoteNoProject,
+  isRemoteTypedFolder,
+  REMOTE_NO_PROJECT,
+  REMOTE_TYPED_FOLDER,
+  type RemoteProject,
+} from './remoteProjects'
 import { copy } from '../../../../../shared/copy'
 
-/** A paired machine New chat is aimed at, and what it has said so far. */
+/** Another environment New chat is aimed at, and what it has said so far. */
 export type RemoteTargetState = {
-  connection: MeshConnection
+  /** Its route and name (`environmentRouteOf`). */
+  target: EnvironmentTarget
   /** What `workspace.list` served: the machine's open CHATS, not its projects. */
   workspaces: MeshWorkspace[] | null
   /** Those chats folded into the folders they stand in — the list the chip offers. */
@@ -26,6 +34,8 @@ export type RemoteTargetState = {
    * worktrees and skills on `conversation.create`. False until it answered.
    */
   reached: boolean
+  /** It starts a chat in a folder typed here (`new-chat-folder`); the chip then offers one. */
+  takesFolder: boolean
 }
 
 /**
@@ -86,11 +96,13 @@ export function RemoteProjectPicker({
   // dash on those would report an unfiled chat where there is a machine that
   // has not spoken yet, so they keep the plain solid glyph.
   const unfiled = (!target.picked || isRemoteNoProject(target.picked)) && target.projects !== null && !target.error
+  // A folder typed for it, offered by a machine that takes one, even with no project open there.
+  const folderOffered = target.takesFolder && !target.error && target.projects !== null
   return (
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel={copy.workspace.agentComposer.remoteProjectPicker.projectOn(target.connection.machineName)}
+      ariaLabel={copy.workspace.agentComposer.remoteProjectPicker.projectOn(target.target.name)}
       popupRole="menu"
       placement="bottom-start"
       surfaceClassName={`w-[280px] ${MENU_LIST_CLASS}`}
@@ -123,9 +135,7 @@ export function RemoteProjectPicker({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={copy.workspace.agentComposer.remoteProjectPicker.searchProjects}
-              aria-label={copy.workspace.agentComposer.remoteProjectPicker.searchProjectsOn(
-                target.connection.machineName,
-              )}
+              aria-label={copy.workspace.agentComposer.remoteProjectPicker.searchProjectsOn(target.target.name)}
             />
           </div>
         ) : null}
@@ -158,9 +168,11 @@ export function RemoteProjectPicker({
             {copy.workspace.agentComposer.remoteProjectPicker.loadingProjects}
           </div>
         ) : visibleProjects.length === 0 ? (
-          <div className="px-2.5 py-1.5 text-meta text-[color:var(--text-muted)]">
-            {needle ? 'No matching projects.' : 'No projects open on that machine.'}
-          </div>
+          folderOffered && !needle ? null : (
+            <div className="px-2.5 py-1.5 text-meta text-[color:var(--text-muted)]">
+              {needle ? 'No matching projects.' : 'No projects open on that machine.'}
+            </div>
+          )
         ) : (
           visibleProjects.map((project) => (
             <MenuOption
@@ -184,6 +196,26 @@ export function RemoteProjectPicker({
             </MenuOption>
           ))
         )}
+        {folderOffered ? (
+          <MenuOption
+            role="menuitemradio"
+            selected={isRemoteTypedFolder(target.picked)}
+            stacked
+            data-typed-folder-option="true"
+            onClick={() => {
+              onPick(REMOTE_TYPED_FOLDER)
+              setOpen(false)
+            }}
+            icon={<FolderTypeIcon className="mt-0.5 icon-xs shrink-0" color={null} />}
+          >
+            <span className="block text-body font-medium">
+              {copy.workspace.agentComposer.remoteProjectPicker.anotherFolder}
+            </span>
+            <span className="block text-meta text-[color:var(--text-subtle)]">
+              {copy.workspace.agentComposer.remoteProjectPicker.typeItsPathOn(target.target.name)}
+            </span>
+          </MenuOption>
+        ) : null}
       </>
     </Popover>
   )

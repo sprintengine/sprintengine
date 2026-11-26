@@ -1,10 +1,13 @@
 import React from 'react'
 
-import { LOCAL_HOST_ID, type ExecutionHostId, type ExecutionHostSummary } from '../../../../../shared/execution-host'
 import type { MachineRef } from '../../../../../shared/machine-identity'
-import type { SshEnvironmentSummary } from '../../../../../shared/ssh-environments'
-import type { MeshConnection } from '../../../../../shared/tailnet-mesh'
-import { hostMachineRef, sshMachineRef, useMachineIdentity } from '../../../hooks/useMachineIdentity'
+import {
+  environmentKey,
+  environmentOnThisComputer,
+  environmentRouteOf,
+  type EnvironmentEntry,
+} from '../../../../../shared/environments'
+import { useMachineIdentity } from '../../../hooks/useMachineIdentity'
 import { RemoteMachineGlyph } from '../../AppIcons'
 import { ChipButton, MachineGlyph, MENU_LIST_CLASS, MenuOption, Popover } from '../../ui'
 import { MENU_GROUP_LABEL_CLASS } from '../../ui/menuClasses'
@@ -33,97 +36,69 @@ function TriggerMachineMark({ machine }: { machine: MachineRef }) {
 
 /**
  * The machine a scheduled agent runs on, as a line and not a choice: one
- * being edited stays on the machine it was saved on, and one made in a
- * project on an SSH machine runs on that machine. Drawn as the trigger is,
+ * being edited stays on the machine it was saved on. Drawn as the trigger is,
  * its mark and its name, so the strip reads the same.
  */
-export function FixedMachineLine({ machineName, machine }: { machineName: string; machine?: MachineRef }) {
+export function FixedMachineLine({ machineName, machine }: { machineName: string; machine: MachineRef | null }) {
   return (
     <span
       data-machine-line="true"
       className="inline-flex h-control-xs min-w-0 items-center gap-1.5 px-2 text-meta text-[color:var(--text-subtle)]"
     >
-      <TriggerMachineMark machine={machine ?? { kind: 'paired', name: machineName }} />
+      {machine ? <TriggerMachineMark machine={machine} /> : null}
       <span className="min-w-0 truncate">{machineName}</span>
     </span>
   )
 }
 
 /**
- * The machine dropdown (remote-sessions-ux / new-chat-on-a-remote-machine):
- * This device is the first entry and the default; every other machine follows
- * wearing its own mark — its kind's drawing in its colour (owner ruling
- * 2026-10-04) — under "Other machines". One dropdown — the owner rejected a
- * separate Local/Remote switch as redundant.
- *
- * On Windows the machines on THIS computer lead it (owner decision
- * 2026-09-24): "This PC (Windows)", then each WSL distribution turned on in
- * Settings ▸ Machines ("WSL: Ubuntu", the default one marked), then a divider
- * and the paired machines. With one machine here (macOS, Linux, or Windows
- * with no distribution turned on) the first row is the "This device" it
+ * The machine dropdown (remote-sessions-ux / new-chat-on-a-remote-machine,
+ * design-environments PR 2): one list of environments, whatever kind of
+ * machine each is. This computer leads it and is the default; its WSL
+ * distributions follow it (owner decision 2026-09-24), then every other
+ * machine under "Other machines", alphabetically, each wearing its own mark
+ * (owner ruling 2026-10-04): an order that never moves with reachability. One
+ * dropdown: the owner rejected a separate Local/Remote switch as redundant.
+ * With nothing on this computer but itself, its row is the "This device" it
  * always was.
+ *
+ * A row that cannot be picked now (`reasonOf`: not answering, refused this
+ * computer, a Studio this app cannot speak to, a folder it cannot open) stays
+ * in the list, dimmed, with the reason as its second line.
  */
 export function MachineScopePicker({
-  machines,
-  selected,
+  environments,
+  selectedRoute,
   onSelect,
-  sshMachines = [],
-  selectedSshId = null,
-  onSelectSsh,
-  localHosts = [],
-  selectedHostId = LOCAL_HOST_ID,
-  onSelectHost,
-  hostDisabledReason,
+  reasonOf,
   availability,
   onOpen,
   projectName,
 }: {
-  machines: MeshConnection[]
-  selected: MeshConnection | null
-  onSelect: (connection: MeshConnection | null) => void
-  /** This computer's machines, this one first. One entry (or none) draws the plain "This device" row. */
-  localHosts?: ExecutionHostSummary[]
-  selectedHostId?: ExecutionHostId
-  onSelectHost?: (hostId: ExecutionHostId) => void
-  /** Why a machine here cannot be picked right now, or null. */
-  hostDisabledReason?: (host: ExecutionHostSummary) => string | null
+  /** Every machine to offer, in `orderEnvironmentsForPicking` order. */
+  environments: readonly EnvironmentEntry[]
+  /** The picked machine's route (`environmentRouteOf`). */
+  selectedRoute: string
+  onSelect: (environment: EnvironmentEntry) => void
+  /** Why a machine cannot be picked right now, or null. */
+  reasonOf?: (environment: EnvironmentEntry) => string | null
   /** Whether each machine holds the project in hand (one-project-across-machines); `none` lists it plainly. */
-  availability?: (machine: MeshConnection) => MachineAvailability
+  availability?: (environment: EnvironmentEntry) => MachineAvailability
   onOpen?: () => void
-  /** The project in hand, named in the dimmed rows' reasons and the list's heading. */
+  /** The project in hand, named in the rows' lines. */
   projectName?: string | null
-  /** SSH machines (phase 8), after this computer's: each its own Studio server. */
-  sshMachines?: SshEnvironmentSummary[]
-  selectedSshId?: string | null
-  onSelectSsh?: (id: string) => void
 }) {
   const [open, setOpen] = React.useState(false)
-  const selectedSsh = sshMachines.find((machine) => machine.id === selectedSshId) ?? null
-  const availabilityOf = (machine: MeshConnection): MachineAvailability => availability?.(machine) ?? { state: 'none' }
-  const chosen = (machine: MeshConnection): boolean => {
-    const state = availabilityOf(machine).state
-    return state !== 'lacks' && state !== 'unreachable'
-  }
   const rowKey = (event: React.KeyboardEvent<HTMLButtonElement>, activate: () => void) =>
     menuRadioRowKeyDown(event, '[data-machine-option="true"]', activate)
-  const hostRows = localHosts.length > 1 ? localHosts : []
-  const selectedHost = selected || selectedSsh ? null : (hostRows.find((host) => host.id === selectedHostId) ?? null)
-  // The machine the trigger names, as its mark knows it. This computer has none.
-  const selectedRef: MachineRef = selected
-    ? { kind: 'paired', name: selected.machineName }
-    : selectedSsh
-      ? sshMachineRef(selectedSsh)
-      : hostMachineRef(selectedHost?.id ?? null)
-  const localSelected =
-    selected === null && selectedSsh === null && (hostRows.length === 0 || selectedHostId === LOCAL_HOST_ID)
-  // This machine can be ruled out too: a folder inside a distribution runs there.
-  const localReason = hostRows[0] ? (hostDisabledReason?.(hostRows[0]) ?? null) : null
-  const activateLocal = (): void => {
-    if (localReason) return
-    if (hostRows.length > 0) onSelectHost?.(LOCAL_HOST_ID)
-    else onSelect(null)
-    setOpen(false)
-  }
+  const here = environments.filter(environmentOnThisComputer)
+  const away = environments.filter((environment) => !environmentOnThisComputer(environment))
+  const selected = environments.find((environment) => environmentRouteOf(environment) === selectedRoute) ?? null
+  // With nothing else on this computer, this machine is the plain "This device".
+  const nameOf = (environment: EnvironmentEntry): string =>
+    here.length <= 1 && environmentRouteOf(environment) === 'local'
+      ? appCopy.workspace.agentComposer.machineScopePicker.thisDevice
+      : environment.displayName
   const focusChecked = React.useCallback((surface: HTMLElement) => {
     const target =
       surface.querySelector<HTMLButtonElement>('[data-machine-option="true"][aria-checked="true"]:not([disabled])') ??
@@ -135,6 +110,49 @@ export function MachineScopePicker({
       })
     }
   }, [])
+  const row = (environment: EnvironmentEntry) => {
+    const route = environmentRouteOf(environment)
+    const reason = reasonOf?.(environment) ?? null
+    const state = availability?.(environment) ?? { state: 'none' as const }
+    const pickable = !reason && state.state !== 'lacks' && state.state !== 'unreachable'
+    const isSelected = route === selectedRoute
+    const activate = () => {
+      if (!pickable) return
+      onSelect(environment)
+      setOpen(false)
+    }
+    // With a project in hand the row says whether the machine has it: a
+    // copy's name when it does, the reason when it does not (dimmed, kept in
+    // the list: the menu spec's rule for a row that cannot be chosen).
+    const hint =
+      reason ??
+      (state.state === 'has'
+        ? `Has ${projectName ?? 'the project'}${state.workspace.folderPath ? ` at ${state.workspace.folderPath}` : ''}`
+        : state.state === 'lacks' || state.state === 'unreachable'
+          ? state.reason
+          : state.state === 'loading'
+            ? 'Asking what it holds…'
+            : null)
+    return (
+      <MenuOption
+        key={environmentKey(environment)}
+        role="menuitemradio"
+        selected={isSelected}
+        stacked={Boolean(hint)}
+        disabled={!pickable}
+        data-machine-option="true"
+        data-machine-route={route}
+        data-machine-availability={state.state}
+        tabIndex={isSelected ? 0 : -1}
+        onKeyDown={(event) => rowKey(event, activate)}
+        onClick={activate}
+        icon={<MachineSlot machine={environment.machine} className={`icon-xs shrink-0${hint ? ' mt-0.5' : ''}`} />}
+      >
+        <span className={hint ? 'block truncate text-body font-medium' : 'block truncate'}>{nameOf(environment)}</span>
+        {hint ? <span className="block text-meta leading-snug text-[color:var(--text-subtle)]">{hint}</span> : null}
+      </MenuOption>
+    )
+  }
   return (
     <Popover
       open={open}
@@ -151,175 +169,25 @@ export function MachineScopePicker({
         // The kit's quiet chip, the context strip's control (owner ruling
         // 2026-10-04): the machine's own mark, its name and the caret.
         <ChipButton ref={ref} variant="raised" onClick={togglePopover} data-machine-trigger="true" {...triggerProps}>
-          <TriggerMachineMark machine={selectedRef} />
-          {selected
-            ? selected.machineName
-            : selectedSsh
-              ? selectedSsh.label
-              : selectedHost && hostRows.length > 0
-                ? selectedHost.label
-                : 'This device'}
+          <TriggerMachineMark machine={selected?.machine ?? { kind: 'local' }} />
+          {selected ? nameOf(selected) : appCopy.workspace.agentComposer.machineScopePicker.thisDevice}
           <ChipCaretGlyph />
         </ChipButton>
       )}
     >
       {/* The surface is the menu; these are its rows. The leading slot is
-          all-or-nothing per the menu spec, so This device renders an empty slot
-          the width of the machine glyph rather than sliding its label left. */}
-      <MenuOption
-        role="menuitemradio"
-        selected={localSelected}
-        stacked={Boolean(localReason)}
-        disabled={Boolean(localReason)}
-        data-machine-option="true"
-        tabIndex={localSelected ? 0 : -1}
-        onKeyDown={(event) => rowKey(event, activateLocal)}
-        onClick={activateLocal}
-        icon={<span aria-hidden="true" className="icon-xs shrink-0" />}
-      >
-        {localReason ? (
-          <>
-            <span className="block truncate text-body font-medium">{hostRows[0]?.label}</span>
-            <span className="block text-meta leading-snug text-[color:var(--text-subtle)]">{localReason}</span>
-          </>
-        ) : (
-          (hostRows[0]?.label ?? 'This device')
-        )}
-      </MenuOption>
-      {hostRows
-        .filter((host) => host.id !== LOCAL_HOST_ID)
-        .map((host) => {
-          const reason = hostDisabledReason?.(host) ?? null
-          const isSelected = selected === null && host.id === selectedHostId
-          const activate = () => {
-            if (reason) return
-            onSelectHost?.(host.id)
-            setOpen(false)
-          }
-          return (
-            <MenuOption
-              key={host.id}
-              role="menuitemradio"
-              selected={isSelected}
-              stacked={Boolean(reason)}
-              disabled={Boolean(reason)}
-              data-machine-option="true"
-              data-machine-host={host.id}
-              tabIndex={isSelected ? 0 : -1}
-              onKeyDown={(event) => rowKey(event, activate)}
-              onClick={activate}
-              icon={
-                <MachineSlot
-                  machine={hostMachineRef(host.id)}
-                  className={`icon-xs shrink-0${reason ? ' mt-0.5' : ''}`}
-                />
-              }
-              trailing={
-                !reason && host.isDefaultDistro ? (
-                  <span className="shrink-0 text-micro text-[color:var(--text-disabled)]">default</span>
-                ) : null
-              }
-            >
-              <span className={reason ? 'block truncate text-body font-medium' : 'block truncate'}>{host.label}</span>
-              {reason ? (
-                <span className="block text-meta leading-snug text-[color:var(--text-subtle)]">{reason}</span>
-              ) : null}
-            </MenuOption>
-          )
-        })}
+          all-or-nothing per the menu spec, so this computer renders an empty
+          slot the width of the machine glyph rather than sliding its label left. */}
+      {here.map(row)}
       {/* Every machine not on this computer, under the one mark that means
           "another machine" in general. */}
-      {sshMachines.length > 0 || machines.length > 0 ? (
+      {away.length > 0 ? (
         <div className={`${MENU_GROUP_LABEL_CLASS} flex items-center gap-1.5 pb-1 pt-2`}>
           <RemoteMachineGlyph className="icon-xs shrink-0" />
           {appCopy.workspace.agentComposer.machineScopePicker.otherMachines}
         </div>
       ) : null}
-      {sshMachines.map((machine) => {
-        // A machine Studio cannot run on, or whose server this app cannot
-        // speak to, is listed with why, and cannot be picked.
-        const reason = machine.state === 'unsupported' || machine.state === 'version-blocked' ? machine.stateText : null
-        const isSelected = selected === null && machine.id === selectedSshId
-        const hint = reason ?? (machine.state === 'connected' ? null : machine.stateText)
-        const activate = () => {
-          if (reason) return
-          onSelectSsh?.(machine.id)
-          setOpen(false)
-        }
-        return (
-          <MenuOption
-            key={machine.id}
-            role="menuitemradio"
-            selected={isSelected}
-            stacked={Boolean(hint)}
-            disabled={Boolean(reason)}
-            data-machine-option="true"
-            data-machine-ssh={machine.id}
-            tabIndex={isSelected ? 0 : -1}
-            onKeyDown={(event) => rowKey(event, activate)}
-            onClick={activate}
-            icon={
-              <MachineSlot machine={sshMachineRef(machine)} className={`icon-xs shrink-0${hint ? ' mt-0.5' : ''}`} />
-            }
-          >
-            <span className={hint ? 'block truncate text-body font-medium' : 'block truncate'}>{machine.label}</span>
-            {hint ? <span className="block text-meta leading-snug text-[color:var(--text-subtle)]">{hint}</span> : null}
-          </MenuOption>
-        )
-      })}
-      {machines.map((machine) => {
-        const state = availabilityOf(machine)
-        const pickable = chosen(machine)
-        const activate = () => {
-          if (!pickable) return
-          onSelect(machine)
-          setOpen(false)
-        }
-        // With a project in hand the row says whether the machine has it:
-        // a copy's name when it does, the reason when it does not (dimmed,
-        // kept in the list — the menu spec's rule for a row that cannot be
-        // chosen). With none, the row is the plain machine line it always was.
-        const hint =
-          state.state === 'has'
-            ? `Has ${projectName ?? 'the project'}${state.workspace.folderPath ? ` at ${state.workspace.folderPath}` : ''}`
-            : state.state === 'lacks' || state.state === 'unreachable'
-              ? state.reason
-              : state.state === 'loading'
-                ? 'Asking what it holds…'
-                : null
-        return (
-          <MenuOption
-            key={machine.id}
-            role="menuitemradio"
-            selected={selected?.id === machine.id}
-            stacked={Boolean(hint)}
-            disabled={!pickable}
-            data-machine-option="true"
-            data-machine-availability={state.state}
-            tabIndex={selected?.id === machine.id ? 0 : -1}
-            onKeyDown={(event) => rowKey(event, activate)}
-            onClick={activate}
-            icon={
-              <MachineSlot
-                machine={{ kind: 'paired', name: machine.machineName }}
-                className={`icon-xs shrink-0${hint ? ' mt-0.5' : ''}`}
-              />
-            }
-            trailing={
-              hint ? null : (
-                <span className="shrink-0 font-mono text-micro text-[color:var(--text-disabled)]">
-                  {machine.endpoint}
-                </span>
-              )
-            }
-          >
-            <span className={hint ? 'block truncate text-body font-medium' : 'block truncate'}>
-              {machine.machineName}
-            </span>
-            {hint ? <span className="block text-meta leading-snug text-[color:var(--text-subtle)]">{hint}</span> : null}
-          </MenuOption>
-        )
-      })}
+      {away.map(row)}
     </Popover>
   )
 }

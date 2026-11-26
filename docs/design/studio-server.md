@@ -1247,7 +1247,11 @@ in `docs/design/studio-server/phase-8-ssh-remotes.md`.
 `environment.id` it last reported. The sidebar files every chat under its
 project, wherever it runs (owner ruling 2026-09-11): the machine is a glyph on
 the row, never a group of its own. Settings ▸ Machines and the machine
-dropdown in New chat list environments, whatever kind of machine each is.
+dropdown in New chat list environments, whatever kind of machine each is. A
+chat New chat starts on any machine but this computer and its WSL
+distributions is started by that environment's own `conversation.create`, by
+its route, in one of its projects or in a folder typed for it
+(`new-chat-folder`); the agent CLIs it offers are that machine's.
 
 _As built so far (2026-11-11)_: the types are in
 `@sprintengine/studio-protocol` (`environment.ts`: `EnvironmentDescriptor`,

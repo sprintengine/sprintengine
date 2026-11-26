@@ -1,7 +1,8 @@
 import React from 'react'
 
-import type { SshEnvironmentSummary } from '../../../../../shared/ssh-environments'
+import type { EnvironmentTarget } from '../../../studio/environmentStudio'
 import { containerHostWords, NewContainerForm, type ContainerApi } from '../../settings/ContainerMachinesSection'
+import { useSshMachines } from '../../settings/SshMachinesSection'
 import { ChipButton, ContainerGlyph, GhostButton, MenuOption, Popover } from '../../ui'
 import { ChipCaretGlyph } from './agentSpawnShared'
 import { copy } from '../../../../../shared/copy'
@@ -15,37 +16,39 @@ import { copy } from '../../../../../shared/copy'
  * is not in a container (this computer, or the SSH machine, distribution or
  * paired machine picked), every container with the machine it runs on, and
  * New container…, which makes one and picks it. Picking a container here is
- * picking it in the machine picker.
+ * picking it in the machine picker: the container is an environment like
+ * any other, by its route (`ssh:<id>`). The chip reads the saved machines
+ * itself, since making a container is the setup of that kind of machine.
  */
 export function ContainerChip({
   elsewhere,
-  containers,
-  machines,
-  selectedId,
+  selectedRoute,
   onSelect,
   onMade,
   api,
 }: {
   /** The machine the chat runs on outside a container, by name: the card's first row. Null for this computer. */
   elsewhere: string | null
-  /** The saved machines that are containers. */
-  containers: readonly SshEnvironmentSummary[]
-  /** Every saved machine: a container's host is named from them, and New container offers them. */
-  machines: readonly SshEnvironmentSummary[]
-  /** The container picked as the chat's machine, or null when the chat runs elsewhere. */
-  selectedId: string | null
-  /** A container picked, or null for the machine outside a container (`elsewhere`). */
-  onSelect: (id: string | null) => void
+  /** The route of the machine picked for the chat, or null for this computer. */
+  selectedRoute: string | null
+  /** A container picked, or null for leaving the container picked for this computer. */
+  onSelect: (container: EnvironmentTarget | null) => void
   /** New container made one: pick it, with the folder its clone landed in. */
-  onMade: (made: { id: string; folder: string | null }) => void
-  api: ContainerApi
+  onMade: (made: { container: EnvironmentTarget; folder: string | null }) => void
+  api: ContainerApi & NonNullable<Parameters<typeof useSshMachines>[0]>
 }) {
   const [open, setOpen] = React.useState(false)
   const [making, setMaking] = React.useState(false)
-  const selected = containers.find((container) => container.id === selectedId) ?? null
+  const { machines } = useSshMachines(api)
+  const containers = machines.filter((machine) => machine.container)
+  const routeOf = (id: string) => `ssh:${id}`
+  const selected = containers.find((container) => routeOf(container.id) === selectedRoute) ?? null
   const thisComputer = containerHostWords({ kind: 'local' }, machines)
   const pick = (id: string | null) => {
-    onSelect(id)
+    const container = id ? containers.find((candidate) => candidate.id === id) : null
+    // The machine outside a container is where the chat already is, unless a container was picked.
+    if (container) onSelect({ route: routeOf(container.id), name: container.label })
+    else if (selected) onSelect(null)
     setOpen(false)
   }
 
@@ -105,14 +108,16 @@ export function ContainerChip({
               onClick={() => pick(null)}
               icon={<span aria-hidden="true" className="icon-xs shrink-0" />}
             >
-              <span className="block truncate">{elsewhere ?? thisComputer.replace(/^this/u, 'This')}</span>
+              <span className="block truncate">
+                {(selected ? null : elsewhere) ?? thisComputer.replace(/^this/u, 'This')}
+              </span>
             </MenuOption>
             {containers.map((container) => (
               <MenuOption
                 key={container.id}
                 role="radio"
                 stacked
-                selected={container.id === selectedId}
+                selected={container.id === selected?.id}
                 disabled={container.working}
                 data-container-option={container.id}
                 onClick={() => pick(container.id)}
@@ -134,7 +139,7 @@ export function ContainerChip({
                 onMade={(made) => {
                   setMaking(false)
                   setOpen(false)
-                  onMade(made)
+                  onMade({ container: { route: routeOf(made.id), name: made.label || made.id }, folder: made.folder })
                 }}
               />
             </div>

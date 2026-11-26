@@ -16,7 +16,7 @@ import {
   settlePairedChat,
   visitPairedChat,
 } from '../../../renderer/src/studio/pairedChats'
-import { browsePairedMachine } from '../../../renderer/src/studio/pairedDiscovery'
+import { browseEnvironment } from '../../../renderer/src/studio/environmentDiscovery'
 import {
   closeEnvironmentStudio,
   pairedRoute,
@@ -368,7 +368,7 @@ test('a pairing that machine revokes closes the window’s client, and the next 
     const settled = await settlePairedChat(machine.machine, 'ws-1')
     assert.equal(!settled.ok && settled.code, 'unauthorized')
     // A browse says so, as the one failure pairing again fixes, not as a machine away.
-    const browse = await browsePairedMachine({ ...machine.machine })
+    const browse = await browseEnvironment(pairedTarget(machine.machine))
     assert.equal(browse.reachable, false)
     assert.equal(browse.unauthorized, true)
   } finally {
