@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, test, vi } from 'vitest'
 
 import type { ConversationEvent, ConversationEventType } from '../shared/conversation-runtime'
@@ -223,7 +223,7 @@ test('a write that has not settled is reported slow and waited for, and nothing 
 test('the chat logs keep what the log writes: a merged run is one row, read back as its deltas', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-event-log-'))
   try {
-    const filePath = join(root, 'nested', 'agent.jsonl')
+    const filePath = join(root, 'conversations', 'chat', 'agent.jsonl')
     const history = createChatLogs({ database: testChatDatabase() })
     const log = new ConversationEventLog({ flushDelayMs: 60_000, history })
     const emitted = [
@@ -367,7 +367,8 @@ test('partial tool output waits longer than deltas, but a delta behind it takes 
 test('findLast with a byte budget stops looking past it', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-event-log-'))
   try {
-    const filePath = join(root, 'agent.jsonl')
+    const filePath = join(root, 'conversations', 'chat', 'agent.jsonl')
+    await mkdir(dirname(filePath), { recursive: true })
     const old = { ...event('tool_started', { toolUseId: 'old' }), seq: 1 }
     const filler = Array.from({ length: 40 }, (_, index) => ({
       ...event('tool_output', { toolUseId: 'filler', output: 'x'.repeat(1024) }),
@@ -390,7 +391,8 @@ test('findLast with a byte budget stops looking past it', async () => {
 test('a reconnect behind by more bytes than a snapshot costs is sent a snapshot, however few events it missed', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-event-log-'))
   try {
-    const filePath = join(root, 'agent.jsonl')
+    const filePath = join(root, 'conversations', 'chat', 'agent.jsonl')
+    await mkdir(dirname(filePath), { recursive: true })
     const small = Array.from({ length: 4 }, (_, index) => ({
       ...event('user_message', { text: 'hi' }),
       seq: index + 1,
