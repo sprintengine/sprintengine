@@ -240,8 +240,10 @@ test('a symlink transcript is neither searched nor deleted through', async () =>
     await symlink(outside, path)
     const index = makeIndex()
     expect(await index.search({ ...key, query: 'private' })).toEqual([])
-    await expect(index.delete(key)).rejects.toThrow(/symbolic link/iu)
+    // Deleting the chat deletes its rows; the file the link names is never touched, nor ever read again.
+    await index.delete(key)
     expect(await readFile(outside, 'utf8')).toContain('private match')
+    expect(await index.list(key)).toEqual([])
   }))
 
 test('coalesced delta sequence ranges survive index rebuild', async () =>
