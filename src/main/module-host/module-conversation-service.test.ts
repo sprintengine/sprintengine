@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -687,6 +688,7 @@ test('a commandId reaches the runtime namespaced by the module, and a retried cr
 test('a retried send through the real runtime is carried out once and answered with the first result', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'module-conversation-receipts-'))
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
   })

@@ -577,16 +577,19 @@ schedule, a pull-request wake), which runs each as a command under the
 caller's `commandId`, or one made for a caller that gave none
 (`ConversationRuntime.runCommand`). Revert, rewind, fork, handoff, stopping
 one sub-agent and side questions are not commands of this kind yet: the hosts
-that take them remember their ids in memory. The chat's transcript is its one
-log: beside the events it holds each command's receipt, a line with no `type`
-that every reader passes over (`conversation-command-receipts.ts`).
+that take them remember their ids in memory. The chat's log, in the data
+folder's database (`server/db/chat-logs.ts`, `docs/data-folder.md`), is its
+one record: beside its events it holds each command's receipt, written in the
+same transaction as what the command committed
+(`conversation-command-receipts.ts`). A receipt is kept for as long as the
+chat; a retry however many commands later is still recognised.
 
 - **A turn command** (a send, a steer, a message to one sub-agent) is
   _accepted_ when its `user_message` and its receipt are committed in one
-  write. The provider turn is what it then does. The send is _answered_ when
+  transaction. The provider turn is what it then does. The send is _answered_ when
   that turn ends, as the protocol promises, and the answer is written to the
   log too. The turn is the command's effect, and the chat is listed in the
-  data directory's `conversation-outbox.json` before its message commits; if
+  database's open-turn list (`turn_outbox`) before its message commits; if
   Studio stops before the turn ends, the next start closes every listed chat's
   open turn as interrupted, in its log, without anyone opening the chat
   (`recoverInterruptedTurns`; on a WSL or SSH machine, the next start of that

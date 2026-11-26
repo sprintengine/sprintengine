@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -16,7 +17,11 @@ async function fixture(options: { fork?: boolean; forks?: ConversationRegistryLi
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-fork-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const adapter = createMockConversationProvider({ fork: options.fork ?? true })
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const added: Array<{ chat: { workspaceId: string; agentId: string }; newAgentId: string; name: string }> = []
   const taken = new Set<string>(['agent'])
   const forks: ConversationRegistryLink['forks'] =

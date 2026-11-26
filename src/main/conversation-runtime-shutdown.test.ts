@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -17,6 +18,7 @@ test('shutdown stops every open chat at once, not one after another', async () =
   const STOP_MS = 200
   const stopping: string[] = []
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     getProviderById: () => undefined,
     adapters: [
       {

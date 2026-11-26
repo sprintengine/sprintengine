@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -53,6 +54,7 @@ async function withRuntime(
 ): Promise<void> {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-lifecycle-'))
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters,
     getProviderById: () => undefined,
     secretStore: {
@@ -97,6 +99,7 @@ test('the hover card reads the first message and the newest turn, never the chat
 
 test('a chat child in the process tree is labelled with the CLI it runs', async () => {
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     getProviderById: () => undefined,
     adapters: [
       {
@@ -141,6 +144,7 @@ test("a chat's folder is in use while its provider child lives or a turn runs, a
     spawnedAt: 3,
   })
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     getProviderById: () => undefined,
     adapters: [
       {
@@ -348,7 +352,11 @@ test('the idle sweep rests while the machine sleeps', async () => {
     realClearInterval(timer)
   }) as typeof clearInterval
   try {
-    const runtime = new ConversationRuntime({ getProviderById: () => undefined, adapters: [echoProvider()] })
+    const runtime = new ConversationRuntime({
+      database: testChatDatabase(),
+      getProviderById: () => undefined,
+      adapters: [echoProvider()],
+    })
     runtime.startIdleSweep(activity)
     assert.equal(timers.size, 1)
     suspended = true
@@ -572,7 +580,11 @@ test('a chat started again after a restart hands its provider the lane each agen
     modelId: 'model',
   }
   const runtimeWith = (provider: ReturnType<typeof agentLaneProvider>) =>
-    new ConversationRuntime({ adapters: [provider.adapter], getProviderById: () => undefined })
+    new ConversationRuntime({
+      database: testChatDatabase(),
+      adapters: [provider.adapter],
+      getProviderById: () => undefined,
+    })
   try {
     const before = agentLaneProvider()
     const first = runtimeWith(before)

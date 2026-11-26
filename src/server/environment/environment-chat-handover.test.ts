@@ -59,7 +59,7 @@ test('a chat ran here lists its own files, those of its store only where the dis
   writeFileSync(join(dataDir, 'conversation-attachments', folder, 'odd name.png'), 'png')
   writeFileSync(join(dataDir, 'conversation-plans', folder, 'the-plan-abc.md'), '# plan')
 
-  const found = await chatSourceFiles({ dataDir, distro: 'Ubuntu', ...key })
+  const found = await chatSourceFiles({ dataDir, database: openTestDatabase(dataDir), distro: 'Ubuntu', ...key })
   assert.deepEqual(found.map((file) => `${file.place} ${file.path}`).sort(), [
     `attachments ${folder}/0f1e.png`,
     `plans ${folder}/the-plan-abc.md`,

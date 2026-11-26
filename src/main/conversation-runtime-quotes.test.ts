@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,6 +25,7 @@ const message = `Is this right? ${token} thanks`
 function runtimeRecording(turns: MockAdapterTurnInput[]) {
   const mock = createMockConversationProvider()
   return new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...mock,

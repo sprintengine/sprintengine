@@ -20,6 +20,7 @@ import { CLIENT_TOOLSETS_FILENAME, readClientToolsetsFile } from '../tools/clien
 import { EMBEDS_FILENAME, readEmbedsFile } from '../web/embeds'
 import { readWebSessionsFile, WEB_SESSIONS_FILENAME } from '../web/web-sessions'
 import type { RecordTableName } from './record-table'
+import { CONVERSATION_OUTBOX_FILENAME_FOR_IMPORT, readConversationOutboxFile } from '../../main/conversation-outbox'
 import type { DataFormatStep } from '../environment/data-format'
 import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from './database'
 import type { SyncConnection } from './sqlite'
@@ -288,6 +289,44 @@ export const DEVICE_AND_SESSION_RECORDS_STEP: DataFormatStep = {
     const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
     try {
       reportSkipped(importDeviceAndSessionRecords(connection, dataDir))
+    } finally {
+      connection.close()
+    }
+  },
+}
+
+/**
+ * Format 4: chat history. A chat's transcript is imported when the chat is
+ * first taken up, or by the background pass, not here (owner decision
+ * 2026-11-25: the first start opens at once). What the step brings in is the
+ * list of chats whose turn the last run may have left open, so this start
+ * closes them.
+ */
+export function importChatHistoryRecords(connection: SyncConnection, dataDir: string): FileImport[] {
+  const outbox = importFile(connection, dataDir, CONVERSATION_OUTBOX_FILENAME_FOR_IMPORT, (text) => {
+    if (text === null) return { records: 0, skipped: 0 }
+    const chats = readConversationOutboxFile(text)
+    if (!chats) return { records: 0, skipped: 1 }
+    let records = 0
+    for (const chat of chats)
+      records += connection.run(
+        'INSERT OR IGNORE INTO turn_outbox (workspace_root, workspace_id, agent_id) VALUES (?, ?, ?)',
+        [chat.workspaceRoot, chat.workspaceId, chat.agentId],
+      ).changes
+    return { records, skipped: 0 }
+  })
+  return outbox ? [outbox] : []
+}
+
+/** The format step that moves chat history: format 3 to 4. */
+export const CHAT_HISTORY_STEP: DataFormatStep = {
+  to: 4,
+  files: [],
+  database: true,
+  run(dataDir) {
+    const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
+    try {
+      reportSkipped(importChatHistoryRecords(connection, dataDir))
     } finally {
       connection.close()
     }

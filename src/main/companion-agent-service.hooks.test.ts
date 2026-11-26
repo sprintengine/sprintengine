@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -15,6 +16,7 @@ test('a companionâ€™s messages are marked for the prompt hooks as an extensionâ€
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'companion-hooks-'))
   const mock = createMockConversationProvider()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     // A turn that completes on its own, with no approval to answer.
     adapters: [{ ...mock, sendTurn: (input) => mock.sendTurn({ ...input, message: '/tools' }) }],
     getProviderById: () => undefined,

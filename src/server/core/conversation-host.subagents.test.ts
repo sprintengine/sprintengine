@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -18,7 +19,11 @@ const PARENT = { workspaceId: 'workspace', agentId: 'parent' }
 async function fixture() {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-subagents-'))
   const adapter = createMockConversationProvider()
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const conversation = { providerId: adapter.id, modelId: 'mock-model' }
   const record: ConversationListWorkspace = {
     name: 'Project',
@@ -166,6 +171,7 @@ test('the list goes on leaving a sub-agent out, while its parent is listed and i
 test('a host built without a way to hear them watches nothing', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-subagents-'))
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
   })

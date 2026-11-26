@@ -2,6 +2,7 @@
 // Files attached by path, from the send to the bubble: what the agent is told,
 // what the transcript keeps, and what a replayed bubble draws from it. The
 // runtime here is the real one, over a provider that records what it is handed.
+import { testChatDatabase } from '../../../../../../tests/studio-database'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -112,6 +113,7 @@ async function chat(sessions: 'stateful' | 'stateless', workspaceRoot?: string) 
   if (!workspaceRoot) folders.push(folder)
   const provider = recordingProvider(sessions)
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },

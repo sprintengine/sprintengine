@@ -125,6 +125,9 @@ async function withGateway(
   } finally {
     await audit.close()
     await server.stop()
+    // Its saves land and the database closes before its folder goes.
+    await devices.flush()
+    await testDatabaseAt(dir).close()
     rmSync(dir, { recursive: true, force: true })
   }
 }

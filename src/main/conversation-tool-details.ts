@@ -1,9 +1,8 @@
-import type { FileHandle } from 'node:fs/promises'
-import {
-  openConversationAppendFile,
-  readConversationStorage,
-  writeConversationStorage,
-} from './conversation-persistence'
+import { basename, dirname } from 'node:path'
+
+import { chatLogKey } from '../server/db/chat-logs'
+import type { StudioDatabase } from '../server/db/database'
+import { readConversationStorage } from './conversation-persistence'
 import type {
   ConversationToolDetail,
   ConversationToolDetailResult,
@@ -18,9 +17,19 @@ const TAIL_BYTES = MAX_DETAIL_BYTES - HEAD_BYTES - 1024
 /** Characters of output an event carries as its row preview. */
 export const TOOL_PREVIEW_CHARS = 4000
 
-/** Where a tool's streamed output accumulates, beside its JSON detail. */
-export function toolOutputStreamPath(detailPath: string): string {
+/** Where builds before the database kept a tool's streamed output, beside its detail: read once, by the import. */
+function legacyOutputPath(detailPath: string): string {
   return detailPath.replace(/\.json$/, '.output')
+}
+
+/**
+ * A detail's name in the database, from the path builds before it kept the
+ * detail at (`<store>/conversations/<chat>/<agent>.tools/<tool use>.json`):
+ * its log's name (`chatLogKey`) and the tool use's.
+ */
+function detailKey(path: string): { detail: string; log: string } {
+  const log = chatLogKey(dirname(path).replace(/\.tools$/u, '.jsonl'))
+  return { detail: `${log}/${basename(path).replace(/\.json$/u, '')}`, log }
 }
 
 /**
@@ -42,40 +51,167 @@ export function redactConversationValue<T>(value: T): T {
 }
 
 /**
- * A tool's detail. Output that streamed in is kept in its own append-only file
- * and the JSON records an empty output; the two are joined here.
+ * A tool's details in the data folder's database: its JSON detail
+ * (`tool_details`) and the output it streamed (`tool_outputs`, in parts), read
+ * by Studio when a tool row is expanded. Builds before the database kept them
+ * as files beside the transcript; a detail asked for that the database does
+ * not have is imported from its file once, if it is there.
  */
-export async function readToolDetail(workspaceRoot: string, filePath: string): Promise<ConversationToolDetailResult> {
-  try {
-    const detail = JSON.parse(
-      (await readConversationStorage(workspaceRoot, filePath, MAX_DETAIL_BYTES)).toString('utf8'),
-    ) as ConversationToolDetail
-    if (detail.output === '') {
-      const streamed = await readConversationStorage(
-        workspaceRoot,
-        toolOutputStreamPath(filePath),
-        MAX_DETAIL_BYTES + 1024,
-      ).catch((error) => {
+export class ToolDetailStore {
+  constructor(private readonly database?: StudioDatabase) {}
+
+  /** A tool's detail, with the output that streamed in joined to it. */
+  async read(workspaceRoot: string, path: string): Promise<ConversationToolDetailResult> {
+    const database = this.database
+    if (!database) return { ok: false, code: 'not_found', message: 'Tool detail is unavailable.' }
+    try {
+      const key = detailKey(path)
+      let row = await database.get<{ body: string }>('SELECT body FROM tool_details WHERE detail_key = ?', [key.detail])
+      if (!row && (await this.importLegacy(workspaceRoot, path)))
+        row = await database.get<{ body: string }>('SELECT body FROM tool_details WHERE detail_key = ?', [key.detail])
+      if (!row) return { ok: false, code: 'not_found', message: 'Tool detail is unavailable.' }
+      const detail = JSON.parse(row.body) as ConversationToolDetail
+      if (detail.output === '') {
+        const streamed = await this.output(key.detail)
+        if (streamed !== null) detail.output = streamed
+      }
+      return { ok: true, detail }
+    } catch {
+      return { ok: false, code: 'unavailable', message: 'Tool detail is unavailable.' }
+    }
+  }
+
+  /** Keep a tool's detail, redacted and clipped to the budget a detail keeps. */
+  async write(_workspaceRoot: string, path: string, value: ConversationToolDetail): Promise<void> {
+    if (!this.database) return
+    const key = detailKey(path)
+    await this.database.run(
+      `INSERT INTO tool_details (detail_key, log_key, body) VALUES (?, ?, ?)
+       ON CONFLICT (detail_key) DO UPDATE SET body = excluded.body`,
+      [key.detail, key.log, clippedDetail(value)],
+    )
+  }
+
+  /** A stream of the output a running tool appends. */
+  stream(path: string): ToolOutputStream {
+    return new ToolOutputStream(this, path)
+  }
+
+  /** Forget a tool's streamed output: its final output carries everything. */
+  async removeOutput(path: string): Promise<void> {
+    await this.database?.run('DELETE FROM tool_outputs WHERE detail_key = ?', [detailKey(path).detail])
+  }
+
+  /** Keep a tool's detail under another chat's name (a fork's copy), its streamed output included. */
+  async copy(from: string, to: string): Promise<void> {
+    if (!this.database) return
+    const source = detailKey(from)
+    const target = detailKey(to)
+    await this.database.batch([
+      {
+        sql: `INSERT OR REPLACE INTO tool_details (detail_key, log_key, body)
+              SELECT ?, ?, body FROM tool_details WHERE detail_key = ?`,
+        params: [target.detail, target.log, source.detail],
+      },
+      { sql: 'DELETE FROM tool_outputs WHERE detail_key = ?', params: [target.detail] },
+      {
+        sql: `INSERT INTO tool_outputs (detail_key, part, log_key, bytes)
+              SELECT ?, part, ?, bytes FROM tool_outputs WHERE detail_key = ?`,
+        params: [target.detail, target.log, source.detail],
+      },
+    ])
+  }
+
+  /** @internal The stream's parts, as it appends them. */
+  async appendOutput(path: string, part: number, bytes: Buffer): Promise<void> {
+    const key = detailKey(path)
+    await this.database?.run(
+      'INSERT OR REPLACE INTO tool_outputs (detail_key, part, log_key, bytes) VALUES (?, ?, ?, ?)',
+      [key.detail, part, key.log, bytes],
+    )
+  }
+
+  /** @internal Replace a stream's parts with one (its clipped head and tail). */
+  async replaceOutput(path: string, bytes: Buffer): Promise<void> {
+    const key = detailKey(path)
+    await this.database?.batch([
+      { sql: 'DELETE FROM tool_outputs WHERE detail_key = ?', params: [key.detail] },
+      {
+        sql: 'INSERT INTO tool_outputs (detail_key, part, log_key, bytes) VALUES (?, 0, ?, ?)',
+        params: [key.detail, key.log, bytes],
+      },
+    ])
+  }
+
+  /** @internal The first `limit` bytes of a stream's output, or null when it streamed none. */
+  async outputHead(path: string, limit: number): Promise<Buffer | null> {
+    const text = await this.outputBytes(detailKey(path).detail, limit)
+    return text
+  }
+
+  private async output(detail: string): Promise<string | null> {
+    const bytes = await this.outputBytes(detail, MAX_DETAIL_BYTES + 1024)
+    return bytes === null ? null : bytes.toString('utf8')
+  }
+
+  private async outputBytes(detail: string, limit: number): Promise<Buffer | null> {
+    const rows = await this.database!.all<{ bytes: Uint8Array }>(
+      'SELECT bytes FROM tool_outputs WHERE detail_key = ? ORDER BY part',
+      [detail],
+    )
+    if (rows.length === 0) return null
+    const parts: Buffer[] = []
+    let size = 0
+    for (const row of rows) {
+      if (size >= limit) break
+      const bytes = Buffer.from(row.bytes)
+      parts.push(bytes)
+      size += bytes.length
+    }
+    return Buffer.concat(parts).subarray(0, limit)
+  }
+
+  /** Bring in a detail builds before the database kept as a file, once; whether there was one. */
+  private async importLegacy(workspaceRoot: string, path: string): Promise<boolean> {
+    const database = this.database!
+    const key = detailKey(path)
+    const source = `tool:${key.detail}`
+    if (await database.get('SELECT 1 FROM imports WHERE source = ?', [source])) return false
+    const read = (file: string, limit: number) =>
+      readConversationStorage(workspaceRoot, file, limit).catch((error: unknown) => {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
         throw error
       })
-      if (streamed) detail.output = streamed.toString('utf8')
-    }
-    return { ok: true, detail }
-  } catch (error) {
-    return {
-      ok: false,
-      code: (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'not_found' : 'unavailable',
-      message: 'Tool detail is unavailable.',
-    }
+    const detail = await read(path, MAX_DETAIL_BYTES)
+    const output = detail ? await read(legacyOutputPath(path), MAX_DETAIL_BYTES + 1024) : null
+    await database.batch([
+      ...(detail
+        ? [
+            {
+              sql: 'INSERT OR IGNORE INTO tool_details (detail_key, log_key, body) VALUES (?, ?, ?)',
+              params: [key.detail, key.log, detail.toString('utf8')],
+            },
+          ]
+        : []),
+      ...(output
+        ? [
+            {
+              sql: 'INSERT OR IGNORE INTO tool_outputs (detail_key, part, log_key, bytes) VALUES (?, 0, ?, ?)',
+              params: [key.detail, key.log, output],
+            },
+          ]
+        : []),
+      {
+        sql: 'INSERT OR IGNORE INTO imports (source, imported_at, records, skipped) VALUES (?, ?, ?, 0)',
+        params: [source, Date.now(), detail ? 1 : 0],
+      },
+    ])
+    return detail !== null
   }
 }
 
-export async function writeToolDetail(
-  workspaceRoot: string,
-  filePath: string,
-  value: ConversationToolDetail,
-): Promise<void> {
+/** A detail as it is kept: redacted, and clipped to the budget with its JSON still valid. */
+function clippedDetail(value: ConversationToolDetail): string {
   const detail = redactConversationValue(value)
   let serialized = JSON.stringify(detail)
   if (Buffer.byteLength(serialized) > MAX_DETAIL_BYTES) {
@@ -93,7 +229,7 @@ export async function writeToolDetail(
       budget = Math.floor(budget * 0.8)
     }
   }
-  await writeConversationStorage(workspaceRoot, filePath, serialized)
+  return serialized
 }
 
 function clipValue(value: ConversationJsonValue, budget: number): string {
@@ -107,26 +243,29 @@ function clipValue(value: ConversationJsonValue, budget: number): string {
 }
 
 /**
- * A tool's output as it streams: each chunk is appended to the output file
- * once, and the row preview is the latest text. Re-sending and re-writing the
- * whole output per chunk made a long command quadratic in its own output. Past
- * the detail budget the file keeps its head, and `finish` rewrites it once as
- * head plus the most recent output, the way a clipped detail always reads.
+ * A tool's output as it streams: each chunk is kept once, as a part, and the
+ * row preview is the latest text. Re-sending and re-writing the whole output
+ * per chunk made a long command quadratic in its own output; chunks that come
+ * while a part is being written go together in the next. Past the detail
+ * budget the parts keep their head, and `finish` replaces them once with head
+ * plus the most recent output, the way a clipped detail always reads.
  */
 export class ToolOutputStream {
   tail = ''
   chars = 0
   totalBytes = 0
   clipped = false
-  private fileBytes = 0
+  private keptBytes = 0
   private recent: Buffer[] = []
   private recentBytes = 0
+  private queued: Buffer[] = []
+  private writing = false
+  private part = 0
   private writes: Promise<void> = Promise.resolve()
-  private file: Promise<FileHandle> | null = null
   private failed = false
 
   constructor(
-    private readonly workspaceRoot: string,
+    private readonly store: ToolDetailStore,
     readonly path: string,
   ) {}
 
@@ -140,16 +279,20 @@ export class ToolOutputStream {
     this.recentBytes += bytes.length
     while (this.recent.length > 1 && this.recentBytes - this.recent[0].length >= TAIL_BYTES)
       this.recentBytes -= this.recent.shift()!.length
-    const room = MAX_DETAIL_BYTES - this.fileBytes
+    const room = MAX_DETAIL_BYTES - this.keptBytes
     if (room < bytes.length) this.clipped = true
     if (room <= 0) return
     const chunk = bytes.length > room ? bytes.subarray(0, room) : bytes
-    this.fileBytes += chunk.length
+    this.keptBytes += chunk.length
+    this.queued.push(chunk)
+    if (this.writing) return
+    this.writing = true
     this.writes = this.writes.then(async () => {
-      if (this.failed) return
+      this.writing = false
+      const parts = this.queued.splice(0)
+      if (this.failed || parts.length === 0) return
       try {
-        this.file ??= openConversationAppendFile(this.workspaceRoot, this.path)
-        await (await this.file).writeFile(chunk)
+        await this.store.appendOutput(this.path, this.part++, Buffer.concat(parts))
       } catch {
         // The preview still streams; only the full output is lost.
         this.failed = true
@@ -157,27 +300,20 @@ export class ToolOutputStream {
     })
   }
 
-  /** Every chunk appended so far is on disk. */
+  /** Every chunk appended so far is kept. */
   settled(): Promise<void> {
     return this.writes
   }
 
-  /** Close the file, clipping it to head and tail if it overflowed. */
+  /** Done: clipped to head and tail if it overflowed. */
   async finish(): Promise<void> {
     await this.writes
-    const file = this.file
-    this.file = null
-    if (file) await file.then((handle) => handle.close()).catch(() => undefined)
-    if (!this.clipped || this.failed || !file) return
-    const head = (await readConversationStorage(this.workspaceRoot, this.path, MAX_DETAIL_BYTES)).subarray(
-      0,
-      HEAD_BYTES,
-    )
+    if (!this.clipped || this.failed) return
+    const head = ((await this.store.outputHead(this.path, MAX_DETAIL_BYTES)) ?? Buffer.alloc(0)).subarray(0, HEAD_BYTES)
     const tail = Buffer.concat(this.recent).subarray(-TAIL_BYTES)
-    await writeConversationStorage(
-      this.workspaceRoot,
+    await this.store.replaceOutput(
       this.path,
-      `${head.toString('utf8')}\n[clipped]\n${tail.toString('utf8')}`,
+      Buffer.from(`${head.toString('utf8')}\n[clipped]\n${tail.toString('utf8')}`),
     )
   }
 }
@@ -221,8 +357,8 @@ export class ToolDetailWriteQueue {
 
   constructor(
     private readonly deps: {
-      read: typeof readToolDetail
-      write: typeof writeToolDetail
+      read: ToolDetailStore['read']
+      write: ToolDetailStore['write']
       windowMs?: number
     },
   ) {}

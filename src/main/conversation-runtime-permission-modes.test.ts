@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -113,6 +114,7 @@ async function setup(permissionPreset: ConversationPermissionPreset, options: { 
   roots.add(workspaceRoot)
   const provider = askingProvider()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },

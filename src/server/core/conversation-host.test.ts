@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
@@ -40,7 +41,11 @@ async function fixture(
     ...createMockConversationProvider(),
     setPermissionPreset: async () => ({ ok: true as const }),
   }
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const defaults: Array<{ workspaceId: string; agentId: string }> = []
   const written: AgentChoicePatch[] = []
   const host = createConversationGatewayHost(

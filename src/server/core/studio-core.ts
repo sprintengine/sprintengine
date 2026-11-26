@@ -131,6 +131,9 @@ import { createWslMachineAccess, followCliPathsChanged } from '../wsl/wsl-machin
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
 import { openDataDirDatabase, takeDataDir } from './take-data-dir'
+import { chatKey, moveChatStatements } from '../db/chat-logs'
+import { conversationStorageSegment } from '../../main/conversation-index'
+import { workspaceStorePath } from '../../main/workspace-store'
 import { keepExtensionApprovalsIn } from '../../main/modules/extension-approvals'
 import { createStudioUsageLimitResumes, studioConversationUsageLimits } from './studio-usage-limit-resumes'
 import { studioPullRequestWakes } from './studio-pull-request-wakes'
@@ -268,6 +271,9 @@ export type StudioCore = ReturnType<typeof createStudioCore>
  * each device's own channel keeps its searches from superseding another's.
  */
 const TAILNET_FILE_SEARCH_SENDER = -1
+
+/** How long after start the background pass begins importing chat history: past the first start's busiest moments. */
+const HISTORY_PASS_DELAY_MS = 5_000
 
 export function createStudioCore(platform: StudioPlatform, options: StudioCoreOptions) {
   // Installed first, so a free function deep in the graph (the credential
@@ -522,6 +528,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   const chatInvoker = (chat: { workspaceId: string; agentId: string }) =>
     hookInvokers.ofAgent(workspaceRegistry.getRecord(chat.workspaceId)?.agents[chat.agentId])
   const conversationRuntime = new ConversationRuntime({
+    database,
     extensionHooks,
     chatInvoker,
     // A send that names who it is from (a launch's first message) runs as them.
@@ -531,7 +538,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     attachmentStore: new ConversationAttachmentStore(dataDir),
     uploadRoots: [join(dataDir, TAILNET_UPLOADS_DIRNAME), join(dataDir, WEB_UPLOADS_DIRNAME)],
     planStore: new ConversationPlanStore(dataDir),
-    outbox: new ConversationOutbox(dataDir),
+    outbox: new ConversationOutbox(database),
     heldChatMode: ({ workspaceId, agentId }) => {
       const agent = workspaceRegistry.getRecord(workspaceId)?.agents[agentId]
       return agent?.conversationModeHeld && agent.conversationMode !== 'default' ? agent.conversationMode : undefined
@@ -557,6 +564,36 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     void conversationRuntime.recoverInterruptedTurns().catch((error: unknown) => {
       console.warn('[studio-core] open turns could not be closed:', error instanceof Error ? error.message : error)
     })
+  // Every chat's history from before the database, imported in the
+  // background one chat at a time, so the first start opens at once and a
+  // chat opened meanwhile is imported as it is opened (owner decision
+  // 2026-11-25).
+  let historyPass: NodeJS.Timeout | null = null
+  let stopHistoryPass = false
+  if (dataDirLock)
+    historyPass = setTimeout(() => {
+      historyPass = null
+      void (async () => {
+        for (const record of workspaceRegistry.getRecords()) {
+          for (const [agentId, agent] of Object.entries(record.agents ?? {})) {
+            if (stopHistoryPass) return
+            if (!agent?.conversation) continue
+            const workspaceRoot = conversationWorkingRoot(agent, record.folderPath)
+            if (!workspaceRoot) continue
+            await conversationRuntime
+              .takeUpHistory({ workspaceRoot, workspaceId: record.id, agentId })
+              .catch((error: unknown) =>
+                console.warn(
+                  `[studio-core] the history of ${record.id}/${agentId} could not be imported:`,
+                  error instanceof Error ? error.message : error,
+                ),
+              )
+            await new Promise((resolve) => setImmediate(resolve))
+          }
+        }
+      })()
+    }, HISTORY_PASS_DELAY_MS)
+  historyPass?.unref()
   // Each project's state lives in its store in the person's home, on the
   // machine its chats run on (main/workspace-store.ts). An older build kept it
   // in `<project>/.sprintengine/`: moved out the first time a folder reaches
@@ -1195,7 +1232,21 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       for (const session of live) await conversations.stopSession({ sessionId: session.sessionId })
       await conversationRuntime.flushTranscripts()
     },
-    moveStorage: moveConversationStorage,
+    // The chat's rows go with its store folder: renamed to the new store's in one transaction, then its files.
+    moveStorage: async (workspaceId, fromFolder, toFolder) => {
+      const segment = conversationStorageSegment(workspaceId)
+      const from = chatKey(workspaceStorePath(fromFolder, 'conversations', segment))
+      const to = chatKey(workspaceStorePath(toFolder, 'conversations', segment))
+      if (from === to) return
+      // A store that already holds rows of this chat refuses the rename (its keys), and nothing moves.
+      await database.batch(moveChatStatements(from, to))
+      try {
+        await moveConversationStorage(workspaceId, fromFolder, toFolder)
+      } catch (error) {
+        await database.batch(moveChatStatements(to, from))
+        throw error
+      }
+    },
     log: (message) => {
       void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Conversation move', message })
     },
@@ -1649,7 +1700,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
           usageLimitResumes,
           pullRequests: pullRequests.record,
           scheduledImages: (prompt) => keptImagesIn(prompt, dataDir),
-          chatSources: (chat) => chatSourceFiles({ dataDir, ...chat }),
+          chatSources: (chat) => chatSourceFiles({ dataDir, database, ...chat }),
           approvalRules,
         }),
         log: (message) => {
@@ -1836,6 +1887,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       }
     }
     // Last, once every store has written: its close checkpoints the WAL.
+    stopHistoryPass = true
+    if (historyPass) clearTimeout(historyPass)
     stopKeepingApprovals()
     await database.close().catch(() => undefined)
     dataDirLock?.release()

@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -15,6 +16,7 @@ async function fixture(actions: Array<'reconnect' | 'enable' | 'disable' | 'sign
   const asked: Array<[string, string]> = []
   const mock = createMockConversationProvider(actions ? { mcpServerActions: actions } : {})
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...mock,

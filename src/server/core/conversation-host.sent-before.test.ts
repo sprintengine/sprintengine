@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -34,7 +35,11 @@ test('a send carried out before is found after a restart, by its receipt or as h
       {},
       { heldMessages },
     )
-  const before = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const before = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   try {
     const started = await before.startSession({
       ...key,
@@ -49,7 +54,11 @@ test('a send carried out before is found after a restart, by its receipt or as h
     await before.shutdown()
   }
   // Started again: no session is live, and nothing of the first run is in memory.
-  const after = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const after = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   try {
     const host = hostOf(after)
     assert.equal(await host.sentBefore(key, 'phone', 'phone:c1'), true, 'found by its receipt in the chat’s log')

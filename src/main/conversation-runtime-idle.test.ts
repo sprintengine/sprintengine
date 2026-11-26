@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -14,6 +15,7 @@ test('a chat says it is idle once its turn lets go, after the turn’s end, once
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-idle-runtime-'))
   const mock = createMockConversationProvider()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [{ ...mock, sendTurn: (input) => mock.sendTurn({ ...input, message: '/tools' }) }],
     getProviderById: () => undefined,
   })

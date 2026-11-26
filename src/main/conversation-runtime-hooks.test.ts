@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -44,6 +45,7 @@ async function harness(decide: Parameters<typeof fakeHooks>[0]) {
   const mock = createMockConversationProvider()
   const { hooks, heard } = fakeHooks(decide)
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...mock,

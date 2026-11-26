@@ -15,6 +15,7 @@ in `src/server/db/`.
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
 | 2            | a launched chat's first message, the "always allow" approval rules, the launch notices, the prompts a person sent each terminal agent |
 | 3            | the devices paired with this Studio and the machines it is paired with, browser sessions, embeds, linked local servers, apps' toolsets, file views, extension approvals |
+| 4            | chat history: each chat's events and command receipts, the chat list's rows, search, the list of turns a stop may have left open, and tools' details and streamed output |
 
 A paired machine's token is kept sealed by the platform's cipher, as its file
 kept it; an old file that still held one in plaintext is not imported, and
@@ -52,6 +53,26 @@ pool of readers, so a slow disk delays writes without holding up the server.
   only that latest copy. A step that fails, or that a crash cuts short, is put
   back from it before anything reads the data. The step that makes the database
   (format 2) has nothing to copy: the files it reads are the way back.
+
+## Chat history
+
+Each agent of a chat has one log, named as its transcript was
+(`<store>/<chat>/<agent>`, the store being the project's): its events by
+sequence number, a merged run of streamed text as one row, and its commands'
+receipts, each command one transaction. The chat list's row for each log and
+the search index (full text, by trigram, over what people said and agents
+replied, whole chats included) are folded from its events and kept beside
+them. A chat moved to another project has its rows renamed with its folder.
+
+The first start of format 4 opens at once. A chat's transcript from before
+the database is imported the first time the chat is taken up (opened, listed,
+searched, sent to), or by a background pass that goes through every chat a few
+seconds after start, one at a time. Each transcript is one transaction: a stop
+part way leaves nothing of it, and it is imported whole next time. Its numbers
+and its generation are kept, so a client that was following the chat before
+the upgrade carries on from its cursor. A line a crash tore or that does not
+read is skipped and counted. A tool's detail is imported the first time it is
+expanded. Pictures, plans and handoff notes stay files in the chat's folder.
 
 ## The first start of a new format
 

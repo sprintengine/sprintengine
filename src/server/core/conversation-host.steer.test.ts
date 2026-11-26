@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -21,7 +22,11 @@ async function fixture(options: { steer?: boolean; held?: boolean } = {}) {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-steer-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const adapter = createMockConversationProvider({ steer: options.steer ?? true })
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const holds: Array<{ text: string; source: string }> = []
   const carried: Array<ConversationHeldAttachments | undefined> = []
   const heldMessages: ConversationHeldMessages = {
@@ -327,6 +332,7 @@ async function openTurn() {
       })(),
   }
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [adapter],
     getProviderById: () => undefined,
     resolveSkills: async ({ skills }) => ({ ids: skills.map((skill) => skill.id) }),

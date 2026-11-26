@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -26,6 +27,7 @@ test('a remote send hands its skills to the runtime', async () => {
     },
   }
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [adapter],
     getProviderById: () => undefined,
     resolveSkills: async ({ skills }) => {

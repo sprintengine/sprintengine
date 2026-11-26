@@ -1,12 +1,14 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { workspaceStorePath } from './workspace-store'
-import { appendFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { test } from 'vitest'
 
 import type { ConversationEvent, ConversationEventType } from '../shared/conversation-runtime'
 import { ConversationRuntime } from './conversation-runtime'
+import { chatLogKey, createChatLogs, type ChatRow } from '../server/db/chat-logs'
 import type { ConversationProviderAdapter, MockAdapterSessionInput } from './providers/mock-conversation-provider'
 
 function runtimeEvent(
@@ -73,6 +75,7 @@ async function withRuntime(
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-persistence-'))
   const provider = streamingProvider(tokens)
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     secretStore: {
@@ -108,14 +111,21 @@ function transcriptFile(workspaceRoot: string): string {
   return workspaceStorePath(workspaceRoot, 'conversations', 'workspace', 'agent.jsonl')
 }
 
-/** The events on disk; a command's receipt is a line of the log too, with no `type`. */
+/** The events the database holds for the chat, in order. */
 async function readLines(workspaceRoot: string): Promise<Record<string, unknown>[]> {
-  const raw = await readFile(transcriptFile(workspaceRoot), 'utf-8')
-  return raw
-    .trim()
-    .split('\n')
-    .map((line) => JSON.parse(line) as Record<string, unknown>)
-    .filter((line) => typeof line.type === 'string')
+  const rows = await testChatDatabase().all<{ body: string }>(
+    'SELECT body FROM chat_events WHERE log_key = ? ORDER BY seq',
+    [chatLogKey(transcriptFile(workspaceRoot))],
+  )
+  return rows.map((row) => JSON.parse(row.body) as Record<string, unknown>)
+}
+
+/** Each stored row's numbers: a merged run's every delta's. */
+function seqsOf(rows: readonly ChatRow[]): number[] {
+  return rows.flatMap((row) => {
+    const parts = (JSON.parse(row.body) as { parts?: unknown[][] }).parts
+    return parts?.length ? parts.map((part) => part[3] as number) : [row.seq]
+  })
 }
 
 test('streamed deltas reach listeners only once written, and a batch of them is one record', async () => {
@@ -169,23 +179,20 @@ test('a crash with a batch still unwritten never leaves a published sequence num
   }
   const written: number[] = []
   let deltaWrites = 0
+  const logs = createChatLogs({ database: testChatDatabase() })
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     eventLog: {
       flushDelayMs: 1,
-      openStream: async () => ({
-        write: async (chunk) => {
-          // The second batch of deltas never lands: the process dies with it in flight.
-          if (chunk.includes('"content_delta"') && ++deltaWrites >= 2) return new Promise<void>(() => undefined)
-          for (const line of chunk.trim().split('\n')) {
-            const record = JSON.parse(line) as { seq?: number; parts?: unknown[][] }
-            if (record.seq === undefined) continue
-            written.push(record.seq, ...(record.parts ?? []).map((part) => part[3] as number))
-          }
-        },
-        close: async () => undefined,
-      }),
+      write: async (path, root, rows, receipts) => {
+        // The second batch of deltas never lands: the process dies with it in flight.
+        if (rows.some((row) => row.type === 'content_delta') && ++deltaWrites >= 2)
+          return new Promise<void>(() => undefined)
+        await logs.append(path, root, rows, receipts)
+        written.push(...seqsOf(rows))
+      },
     },
   })
   const published: number[] = []
@@ -263,24 +270,20 @@ test('after a write the disk refused, a restart numbers above every event a clie
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const provider = streamingProvider(['lost ', 'to ', 'the ', 'disk'])
   provider.release()
+  const logs = createChatLogs({ database: testChatDatabase() })
   const run = async (diskFills: boolean) => {
     let full = false
     const runtime = new ConversationRuntime({
+      database: testChatDatabase(),
       adapters: [provider.adapter],
       getProviderById: () => undefined,
       eventLog: {
         flushDelayMs: 1,
-        openStream: async (filePath) => {
-          await mkdir(dirname(filePath), { recursive: true })
-          return {
-            write: async (chunk) => {
-              // The disk fills mid-answer and stays full until the app is gone.
-              full ||= diskFills && chunk.includes('"content_delta"')
-              if (full) throw new Error('ENOSPC: no space left on device')
-              await appendFile(filePath, chunk)
-            },
-            close: async () => undefined,
-          }
+        write: async (path, root, rows, receipts) => {
+          // The disk fills mid-answer and stays full until the app is gone.
+          full ||= diskFills && rows.some((row) => row.type === 'content_delta')
+          if (full) throw new Error('ENOSPC: no space left on device')
+          await logs.append(path, root, rows, receipts)
         },
       },
     })
@@ -336,26 +339,19 @@ test('a turn whose events the log refuses stops its session, publishes nothing u
   provider.release()
   let full = false
   const onDisk = new Set<number>()
+  const logs = createChatLogs({ database: testChatDatabase() })
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     eventLog: {
       flushDelayMs: 1,
-      openStream: async (filePath) => {
-        await mkdir(dirname(filePath), { recursive: true })
-        return {
-          write: async (chunk) => {
-            // The disk fills as the reply starts streaming.
-            full ||= chunk.includes('"content_delta"')
-            if (full) throw new Error('ENOSPC: no space left on device')
-            await appendFile(filePath, chunk)
-            for (const line of chunk.trim().split('\n')) {
-              const seq = (JSON.parse(line) as { seq?: number }).seq
-              if (seq !== undefined) onDisk.add(seq)
-            }
-          },
-          close: async () => undefined,
-        }
+      write: async (path, root, rows, receipts) => {
+        // The disk fills as the reply starts streaming.
+        full ||= rows.some((row) => row.type === 'content_delta')
+        if (full) throw new Error('ENOSPC: no space left on device')
+        await logs.append(path, root, rows, receipts)
+        for (const seq of seqsOf(rows)) onDisk.add(seq)
       },
     },
   })
@@ -398,26 +394,14 @@ test('a turn whose events the log refuses stops its session, publishes nothing u
   }
 })
 
-test('ending a session leaves no stream open on its log, its answer written', async () => {
+test('ending a session writes its answer to the log, as its receipt', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-persistence-'))
   const provider = streamingProvider([])
   provider.release()
-  const open = new Set<number>()
-  let streams = 0
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
-    eventLog: {
-      openStream: async (filePath) => {
-        await mkdir(dirname(filePath), { recursive: true })
-        const id = ++streams
-        open.add(id)
-        return {
-          write: (chunk) => appendFile(filePath, chunk),
-          close: async () => void open.delete(id),
-        }
-      },
-    },
   })
   try {
     const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
@@ -425,9 +409,14 @@ test('ending a session leaves no stream open on its log, its answer written', as
     assert.ok(started.ok)
     const ended = await runtime.stopSession({ sessionId: started.session.sessionId, commandId: 'stop-1' })
     assert.ok(ended.ok)
-    assert.deepEqual([...open], [], 'a folder the chat leaves can be moved or removed at once')
-    const lines = (await readFile(transcriptFile(workspaceRoot), 'utf-8')).trim().split('\n')
-    assert.match(lines.at(-1)!, /"receipt":\{"id":"stop-1"/)
+    const receipts = await testChatDatabase().all<{ command_id: string }>(
+      'SELECT command_id FROM chat_receipts WHERE log_key = ?',
+      [chatLogKey(transcriptFile(workspaceRoot))],
+    )
+    assert.deepEqual(
+      receipts.map((row) => row.command_id),
+      ['stop-1'],
+    )
   } finally {
     await runtime.shutdown()
     await rm(workspaceRoot, { recursive: true, force: true })
