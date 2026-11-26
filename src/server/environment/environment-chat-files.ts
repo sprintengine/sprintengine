@@ -129,23 +129,26 @@ async function digestOf(path: string): Promise<string> {
   return hash.digest('hex')
 }
 
-/** What a hand-over asks of this Studio's chat history (`ChatLogs`). */
+/** What a hand-over asks of this Studio's chat history (the runtime's `adoptTranscript`, over `ChatLogs.adopt`). */
 export type AdoptedChatHistory = {
-  /** Whether a transcript brought (`incoming`) may take the place of the one at `path`: nothing here it lacks. */
-  supersedes(path: string, root: string, incoming: string): Promise<boolean>
-  /** Take up the transcript just put at `path`, again if what is imported here is an older copy. */
-  retake(path: string, root: string): Promise<void>
+  /**
+   * Take a transcript brought (`incoming`, or `path` itself when the file
+   * there came byte for byte) as the history of the log at `path`, put there
+   * in place of the file there: when what this Studio holds of the log is a
+   * beginning of it. False when it is not: this Studio's own, kept.
+   */
+  adopt(path: string, root: string, incoming: string): Promise<boolean>
 }
 
 /**
  * Write a chat's files where this Studio reads them. A file already there
  * with the same bytes is held; one with other bytes is this Studio's own,
- * kept, and named in `kept`, except a transcript this Studio holds nothing
- * more of than the one brought (a store shared with the desktop keeps the
- * copy from before the upgrade): the one brought takes its place. A
- * transcript is then taken up into this Studio's history. A part not to be
- * found refuses the chat, which the hand-over sends again; nothing
- * half-written is left in place.
+ * kept, and named in `kept`. A transcript goes through the chat's history:
+ * it takes the place of the file there when what this Studio holds of the
+ * chat is a beginning of it (a store shared with the desktop keeps the copy
+ * from before the upgrade, which this Studio may have imported), and is
+ * kept out when not. A part not to be found refuses the chat, which the
+ * hand-over sends again; nothing half-written is left in place.
  */
 export async function keepAdoptedChatFiles(
   dataDir: string,
@@ -154,15 +157,16 @@ export async function keepAdoptedChatFiles(
   history: AdoptedChatHistory,
 ): Promise<{ ok: true; kept: string[] } | { ok: false; reason: string }> {
   const kept: string[] = []
-  // A transcript that cannot be taken up now (refused by its store's confinement) is in place all the same: its first read tries again.
-  const retake = (target: string) => history.retake(target, chat.workspaceRoot).catch(() => undefined)
+  // Null when it could not be looked at now (its store's confinement refused the file there, say).
+  const adopted = (target: string, incoming: string) =>
+    history.adopt(target, chat.workspaceRoot, incoming).catch(() => null)
   for (const file of chat.files) {
     const target = adoptedChatFilePath(dataDir, chat, file)
     const transcript = file.place === 'store' && file.path === `${conversationStorageSegment(chat.agentId)}.jsonl`
     const there = await lstat(target).catch(() => null)
     const regular = there?.isFile() === true && !there.isSymbolicLink()
     if (there && regular && (await digestOf(target)) === file.sha256) {
-      if (transcript) await retake(target)
+      if (transcript && (await adopted(target, target)) === false) kept.push(file.path)
       continue
     }
     if (there && (!regular || !transcript)) {
@@ -195,13 +199,15 @@ export async function keepAdoptedChatFiles(
       await rm(temporary, { force: true })
       return { ok: false, reason: missing }
     }
-    if (there && !(await history.supersedes(target, chat.workspaceRoot, temporary).catch(() => false))) {
+    if (transcript) {
+      const taken = await adopted(target, temporary)
+      // Not looked at, and nothing there: put in place all the same, for its first read to take up.
+      if (taken === null && !there) await rename(temporary, target)
+      else if (taken !== true) kept.push(file.path)
       await rm(temporary, { force: true })
-      kept.push(file.path)
       continue
     }
     await rename(temporary, target)
-    if (transcript) await retake(target)
   }
   return { ok: true, kept }
 }

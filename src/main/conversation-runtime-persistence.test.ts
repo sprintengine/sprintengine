@@ -1,15 +1,19 @@
 import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { workspaceStorePath } from './workspace-store'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { test } from 'vitest'
 
 import type { ConversationEvent, ConversationEventType } from '../shared/conversation-runtime'
 import { ConversationRuntime } from './conversation-runtime'
 import { chatLogKey, createChatLogs, type ChatRow } from '../server/db/chat-logs'
-import type { ConversationProviderAdapter, MockAdapterSessionInput } from './providers/mock-conversation-provider'
+import {
+  createMockConversationProvider,
+  type ConversationProviderAdapter,
+  type MockAdapterSessionInput,
+} from './providers/mock-conversation-provider'
 
 function runtimeEvent(
   input: MockAdapterSessionInput,
@@ -416,6 +420,69 @@ test('ending a session writes its answer to the log, as its receipt', async () =
     assert.deepEqual(
       receipts.map((row) => row.command_id),
       ['stop-1'],
+    )
+  } finally {
+    await runtime.shutdown()
+    await rm(workspaceRoot, { recursive: true, force: true })
+  }
+})
+
+test('a chat whose history a hand-over replaced numbers its next event after the transcript it brought', async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-adopted-'))
+  const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
+  const path = workspaceStorePath(workspaceRoot, 'conversations', 'workspace', 'agent.jsonl')
+  const line = (seq: number, type: ConversationEventType, turnId: string) =>
+    `${JSON.stringify({
+      id: `e${seq}`,
+      seq,
+      sessionId: 'before',
+      workspaceId: 'workspace',
+      agentId: 'agent',
+      providerId: 'mock-provider',
+      modelId: 'mock-model',
+      createdAt: seq,
+      type,
+      payload: { turnId, ...(type === 'user_message' ? { text: `asked in ${turnId}` } : {}) },
+    })}\n`
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, line(1, 'user_message', 't1') + line(2, 'turn_completed', 't1'))
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [createMockConversationProvider()],
+    getProviderById: () => undefined,
+  })
+  try {
+    // Taken up here (as a read or a recovery at start takes it up): the runtime knows its last number.
+    await runtime.recoverTranscript(key)
+    // The desktop's copy goes two events further.
+    const incoming = `${path}.brought`
+    await writeFile(
+      incoming,
+      line(1, 'user_message', 't1') +
+        line(2, 'turn_completed', 't1') +
+        line(3, 'user_message', 't2') +
+        line(4, 'turn_completed', 't2'),
+    )
+    assert.equal(await runtime.adoptTranscript(path, workspaceRoot, incoming), true)
+
+    const again = await runtime.startSession({ ...key, providerId: 'mock-provider', modelId: 'mock-model' })
+    assert.ok(again.ok)
+    assert.equal((await runtime.sendTurn({ sessionId: again.session.sessionId, message: 'after it' })).ok, true)
+    const replay = await runtime.readTranscript(key, { all: true, closeOpenTurns: false })
+    assert.ok(replay.ok)
+    // Every event of the new session is in the log, numbered after the transcript's: none was refused
+    // for a number the transcript already had.
+    assert.deepEqual(
+      replay.events.slice(0, 7).map((event) => [event.seq, event.type]),
+      [
+        [1, 'user_message'],
+        [2, 'turn_completed'],
+        [3, 'user_message'],
+        [4, 'turn_completed'],
+        [5, 'session_started'],
+        [6, 'session_ready'],
+        [7, 'user_message'],
+      ],
     )
   } finally {
     await runtime.shutdown()

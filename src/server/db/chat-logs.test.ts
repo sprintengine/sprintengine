@@ -9,7 +9,7 @@ import { openTestDatabase } from '../../../tests/studio-database'
 import { ConversationIndex } from '../../main/conversation-index'
 import { ConversationTranscriptReader } from '../../main/conversation-transcript-reader'
 import { workspaceStorePath } from '../../main/workspace-store'
-import { chatGeneration, chatLogKey, createChatLogs, importSource } from './chat-logs'
+import { chatGeneration, chatLogKey, createChatLogs, IMPORT_PENDING, importSource } from './chat-logs'
 import type { StudioDatabase, StudioTransaction } from './database'
 
 // A chat's transcript from before the database, as old builds wrote it (and
@@ -114,11 +114,13 @@ test('an import commits a batch at a time; one a stop cuts short is not retried 
   await assert.rejects(cut.ensure(path, root), /the power went/u)
   // Its first batch was committed on its own, so other chats' writes were not held behind the whole file.
   assert.equal((await database.get<{ n: number }>('SELECT COUNT(*) AS n FROM chat_events'))?.n, 400)
-  assert.equal(
-    await database.get('SELECT 1 FROM imports WHERE source = ?', [importSource(chatLogKey(path))]),
-    undefined,
-    'not noted as imported',
+  assert.deepEqual(
+    await database.get('SELECT records FROM imports WHERE source = ?', [importSource(chatLogKey(path))]),
+    { records: IMPORT_PENDING },
+    'noted as under way, not imported',
   )
+  // Nothing reads them: the log itself is written with the last batch.
+  assert.equal(await database.get('SELECT 1 FROM chat_logs WHERE log_key = ?', [chatLogKey(path)]), undefined)
   // Not tried again on the next read.
   const before = transactions
   await assert.rejects(cut.info(path, root), /the power went/u)
@@ -204,4 +206,41 @@ test('a chat larger than the old read limit is imported whole, searched in its m
   }
   assert.equal(page.events[0]?.seq, 1, 'paged back to the first event')
   assert.ok(pages > 1)
+})
+
+test('a log begun here before a file came keeps its history: the file is noted and never read', async () => {
+  const { root, path } = await transcriptAt('')
+  await rm(path)
+  const database = openTestDatabase()
+  await createChatLogs({ database }).append(
+    path,
+    root,
+    [1, 2, 3].map((seq) => ({
+      seq,
+      firstSeq: seq,
+      type: 'user_message',
+      turnId: null,
+      body: event(seq, 'user_message'),
+    })),
+    [],
+  )
+  // A copy that stops short of it lands at its path (a hand-over, a restore).
+  await writeFile(path, `${event(1, 'user_message')}\n${event(2, 'user_message')}\n`)
+  assert.equal((await createChatLogs({ database }).info(path, root))?.lastSeq, 3)
+  assert.equal((await database.all('SELECT seq FROM chat_events WHERE log_key = ?', [chatLogKey(path)])).length, 3)
+})
+
+test('a delete asked for while a log is first taken up leaves nothing of it, whichever comes first', async () => {
+  const lines = Array.from({ length: 1200 }, (_, index) => event(index + 1, 'tool_output', { output: 'x' }))
+  for (const removeFirst of [false, true]) {
+    const { root, path } = await transcriptAt(`${lines.join('\n')}\n`)
+    const database = openTestDatabase()
+    const logs = createChatLogs({ database })
+    const removing = removeFirst ? logs.remove(path, root) : null
+    const reading = logs.ensure(path, root)
+    await (removing ?? logs.remove(path, root))
+    await reading
+    assert.equal(await logs.exists(path, root), false)
+    assert.equal((await database.get<{ n: number }>('SELECT COUNT(*) AS n FROM chat_events'))?.n, 0)
+  }
 })
