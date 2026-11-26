@@ -353,6 +353,49 @@ test('a page is cut where a turn begins, mid-turn only when the newest turn alon
   assert.ok(inside.bytes <= CONVERSATION_WIRE_PAGE_BYTES)
 })
 
+test('a turn the CLI took with no message is a turn the page can begin at, so a night of them is not dropped', () => {
+  const step = (seq: number, turnId: string) =>
+    event(seq, 'tool_output', { turnId, toolUseId: `u${seq}`, preview: 'p'.repeat(3900), truncated: true })
+  // The person's message, one or two steps before its turn's start.
+  const asked = (first: number, steps: number, between = false) => [
+    event(first, 'user_message', { turnId: `t${first}`, text: 'go' }),
+    ...(between ? [event(first + 1, 'subagent_message', { parentToolUseId: 'lane', text: 'still at it' })] : []),
+    event(first + (between ? 2 : 1), 'turn_started', { turnId: `t${first}` }),
+    ...Array.from({ length: steps }, (_, index) => step(first + (between ? 3 : 2) + index, `t${first}`)),
+  ]
+  // A background agent's result, which the CLI answers in a turn of its own.
+  const continued = (first: number, steps: number) => [
+    event(first, 'turn_started', { turnId: `s_cont_${first}` }),
+    ...Array.from({ length: steps }, (_, index) => step(first + 1 + index, `s_cont_${first}`)),
+  ]
+  // One message and then about 2.4 MB of turns of the CLI's own, then the
+  // next morning's message: the page reaches into the night, not just to the morning.
+  const night = [1000, 1150, 1300, 1450].flatMap((first) => continued(first, 149))
+  const events = [...asked(1, 50), ...night, ...asked(2000, 20, true)]
+  const bounded = boundConversationPage({ events, hasMore: false, beforeCursor: 1 })
+  const first = bounded.page.events[0]
+  assert.equal(first.type, 'turn_started', 'the page begins where one of the night’s turns does')
+  assert.ok(first.seq! < 2000, `the page reaches before the morning (${first.seq})`)
+  assert.equal(bounded.page.beforeCursor, first.seq)
+  assert.ok(bounded.bytes <= CONVERSATION_WIRE_PAGE_BYTES)
+  assert.ok(bounded.bytes > CONVERSATION_WIRE_PAGE_BYTES / 2, 'most of the budget is used')
+  // A turn the person's message opened begins at the message, even with a
+  // step between them: a budget that ends between the message and its
+  // turn's start keeps the newer turn whole rather than this one without
+  // its message.
+  const opened = [...asked(400, 10, true), ...asked(800, 10)]
+  const sizeOf = (from: number) =>
+    opened
+      .filter((item) => item.seq! >= from)
+      .reduce((sum, item) => sum + Buffer.byteLength(JSON.stringify(projectConversationEvent(item))), 0)
+  const morning = boundConversationPage({ events: opened, hasMore: false, beforeCursor: 400 }, sizeOf(402) + 1)
+  assert.deepEqual(
+    [morning.page.events[0].type, morning.page.events[0].seq],
+    ['user_message', 800],
+    'not the turn’s start without its message',
+  )
+})
+
 test('a result kept no detail for has its pictures bounded, and one too large is cut to fit', () => {
   const paths = Array.from({ length: 12 }, (_, index) => `/Users/dev/shot-${index}.png`)
   const shown = projectConversationEvent(event(1, 'tool_output', { output: 'ok', images: paths }))
