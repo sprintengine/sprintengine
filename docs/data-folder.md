@@ -70,6 +70,16 @@ you remove them by hand.
 
 ## Going back to an older build
 
+An older build is also what switching a nightly install to the stable channel
+can install (the updater allows that one downgrade). A build from before a
+format it does not read either refuses the folder (a Studio server) or, for a
+desktop from before the database (format 2), runs on the files the upgrade
+left behind: it cannot be told otherwise, since it was built before the
+database. What it writes to those files is not read when the newer build
+returns, because the newer build reads its database. So after such a
+downgrade, either stay on the older build, or treat what you did there as
+lost when you update again; the steps below are the same either way.
+
 1. Quit Studio (or stop the server).
 2. Move `studio.sqlite`, and any `studio.sqlite-wal` and `studio.sqlite-shm`
    beside it, out of the data folder.

@@ -432,14 +432,8 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       clientTools.close()
       await automationService.shutdown()
     },
-    initialize: async () => {
-      await core.whenDataDirFree
-      return automationService.initialize()
-    },
-    whenGatewayReady: async () => {
-      await core.whenDataDirFree
-      return automationService.whenGatewayReady()
-    },
+    initialize: () => automationService.initialize(),
+    whenGatewayReady: () => automationService.whenGatewayReady(),
   }
 }
 
