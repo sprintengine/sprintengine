@@ -103,7 +103,11 @@ export async function startWebFrontDoor(input: {
 }): Promise<WebFrontDoor> {
   const { core, gateway, rpc } = input
   const dataDir = core.platform.paths.dataDir()
-  const sessions = createWebSessionStore({ dataDir, environmentId: input.environmentId, log: input.log })
+  const sessions = createWebSessionStore({
+    database: core.database,
+    environmentId: input.environmentId,
+    log: input.log,
+  })
 
   let domains: ServerChatHandles | null = null
   domains = provideServerChat({
@@ -208,7 +212,7 @@ export async function startWebFrontDoor(input: {
 
   // Embeds: one conversation, read-only, framed by the pages their owner
   // named. Made, listed and revoked by `studio-server embed` (`embed-routes.ts`).
-  const embeds = createEmbedStore({ dataDir, log: input.log })
+  const embeds = createEmbedStore({ database: core.database, log: input.log })
   const stopEmbedRevocations = embeds.onRevoked((embedId) => listener.closeEmbedSockets(embedId))
   // A session or an embed that runs out is pruned when its store is next
   // read, and the prune is what closes its sockets with 4401. A tab's tunnel

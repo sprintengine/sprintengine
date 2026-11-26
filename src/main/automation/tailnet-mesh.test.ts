@@ -1,5 +1,6 @@
+import { savedRecordRows, testDatabaseAt } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -8,7 +9,8 @@ import type { TailnetScope } from '../../shared/tailnet'
 import type { MeshEvent } from '../../shared/tailnet-mesh'
 import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet/tailnet-devices'
 import { createTailnetMeshService, type TailnetMeshService } from './tailnet/tailnet-mesh-service'
-import { createTailnetMeshStore, TAILNET_MESH_FILENAME } from './tailnet/tailnet-mesh-store'
+import { createTailnetMeshStore } from './tailnet/tailnet-mesh-store'
+import { STUDIO_DATABASE_FILENAME } from '../../server/db/database'
 import { createTailnetGatewayServer, type TailnetGatewayServer } from './tailnet/tailnet-gateway-server'
 import { createTailnetPeerResolver } from './tailnet/tailnet-peer-identity'
 import { pairingUrl } from './tailnet/tailnet-service'
@@ -49,7 +51,7 @@ test('tailnet-mesh', async () => {
   async function startHarness(): Promise<Harness> {
     const remoteDir = mkdtempSync(join(tmpdir(), 'sprintengine-mesh-remote-'))
     const localDir = mkdtempSync(join(tmpdir(), 'sprintengine-mesh-local-'))
-    const devices = createTailnetDeviceStore({ resolveUserDataDir: () => remoteDir })
+    const devices = createTailnetDeviceStore({ database: testDatabaseAt(remoteDir) })
 
     const server = createTailnetGatewayServer({
       bindAddress: '127.0.0.1',
@@ -69,9 +71,9 @@ test('tailnet-mesh', async () => {
     const port = address.port
 
     const events: MeshEvent[] = []
-    const localDevices = createTailnetDeviceStore({ resolveUserDataDir: () => localDir })
+    const localDevices = createTailnetDeviceStore({ database: testDatabaseAt(localDir) })
     const mesh = createTailnetMeshService({
-      resolveUserDataDir: () => localDir,
+      database: testDatabaseAt(localDir),
       // A stand-in keychain, so the credential file is written the way the app
       // writes it: sealed, never as plaintext.
       createStore: (options) => createTailnetMeshStore({ ...options, cipher: createSecretCipherStandIn() }),
@@ -192,14 +194,17 @@ test('tailnet-mesh', async () => {
       // the renderer.
       assert.equal('deviceToken' in listed[0], false)
 
-      const storePath = join(harness.localDir, TAILNET_MESH_FILENAME)
-      const raw = readFileSync(storePath, 'utf8')
-      const stored = JSON.parse(raw) as { connections: Array<{ deviceId: string; sealedToken: string }> }
+      const rows = await savedRecordRows(harness.localDir, 'mesh_links')
+      const raw = rows.map((row) => row.body).join('\n')
+      const stored = {
+        connections: rows.map((row) => JSON.parse(row.body) as { deviceId: string; sealedToken: string }),
+      }
       assert.equal(typeof stored.connections[0].sealedToken, 'string')
       assert.equal('deviceToken' in stored.connections[0], false, 'the credential is sealed, never plaintext')
       assert.doesNotMatch(raw, /mctn_/u)
       if (process.platform !== 'win32') {
-        assert.equal(statSync(storePath).mode & 0o777, 0o600, 'the credential file is owner-only')
+        const database = join(harness.localDir, STUDIO_DATABASE_FILENAME)
+        assert.equal(statSync(database).mode & 0o777, 0o600, 'the database holding the credential is owner-only')
       }
 
       // The other machine sees exactly one device, named as this machine.

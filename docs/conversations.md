@@ -232,7 +232,7 @@ on the same block; today `editor.open_diff` opens one outside the chat.
 **Who writes.** The tool only opens the view. It resolves each path
 (absolute, `~/`, or relative to the agent's folder), checks the file is text
 and at most 2 MB, and writes down in Studio's data folder that this chat
-showed it (`server/file-views/file-views.ts`, `file-views.json`). It writes
+showed it (`server/file-views/file-views.ts`, the database's `file_views`). It writes
 no file, and it does not see what the person types. A save is the person's:
 their edit, sent by their own connection to the chat's Studio
 (`fileViews.write`, needing `conversation:operate`), for a path that chat

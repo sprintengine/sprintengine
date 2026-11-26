@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -244,6 +245,7 @@ test('automation', async () => {
       writeAutomationSettings(dir, { enabled: false })
       const service = createAutomationService({
         resolveUserDataDir: () => dir,
+        database: testDatabaseAt(dir),
         appVersion: '0.0.0-test',
         resolveBridgeScriptPath: () => BRIDGE_SCRIPT,
         resolveGatewayTools: () => [],

@@ -19,6 +19,7 @@ import {
   type TailnetScope,
 } from '../../../shared/tailnet'
 import type { TailnetPeerScan } from '../../../shared/tailnet-peers'
+import type { StudioDatabase } from '../../../server/db/database'
 import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet-devices'
 import {
   createTailnetGatewayServer,
@@ -154,6 +155,8 @@ export type TailnetRemoteService = {
 
 export type TailnetRemoteServiceOptions = {
   resolveUserDataDir: () => string
+  /** The data folder's database: the paired devices are kept in it. */
+  database: StudioDatabase
   serverName: string
   serverVersion: string
   resolveTools: (context?: McpConnectionContext) => McpToolRegistration[]
@@ -192,10 +195,7 @@ export type TailnetRemoteServiceOptions = {
    */
   interfaceWatchMs?: number
   createPeerScanner?: () => TailnetPeerScanner
-  createDeviceStore?: (options: {
-    resolveUserDataDir: () => string
-    log?: (message: string) => void
-  }) => TailnetDeviceStore
+  createDeviceStore?: (options: { database: StudioDatabase; log?: (message: string) => void }) => TailnetDeviceStore
   createPeerResolver?: () => TailnetPeerResolver
   /** This machine's MagicDNS name. Injected in tests; production asks `tailscale status`. */
   resolveSelfDnsName?: () => Promise<string | null>
@@ -218,7 +218,7 @@ const INTERFACE_WATCH_MS = 30_000
 
 export function createTailnetRemoteService(options: TailnetRemoteServiceOptions): TailnetRemoteService {
   const devices = (options.createDeviceStore ?? createTailnetDeviceStore)({
-    resolveUserDataDir: options.resolveUserDataDir,
+    database: options.database,
     log: options.log,
   })
   const peers = (options.createPeerResolver ?? (() => createTailnetPeerResolver({ log: options.log })))()

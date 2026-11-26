@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
@@ -362,7 +363,7 @@ async function startListener() {
       deviceMayName: async (folder) => folder === project || folder.startsWith(`${project}/`),
     }),
   ]
-  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => root })
+  const devices = createTailnetDeviceStore({ database: testDatabaseAt(root) })
   const server = createTailnetGatewayServer({
     bindAddress: '127.0.0.1',
     port: 0,

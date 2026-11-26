@@ -1,6 +1,4 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 
 import {
   STUDIO_SCOPES,
@@ -9,7 +7,8 @@ import {
   type StudioScope,
 } from '../../../packages/studio-protocol/src/public'
 import { hashSecret, secretsMatch } from '../../main/automation/tailnet/secret-hash'
-import { writeFileAtomicSync } from '../platform/atomic-file'
+import type { StudioDatabase } from '../db/database'
+import { createRecordTable } from '../db/record-table'
 
 // The browsers paired with this server, and how each proves it (phase 9 spec,
 // 6.2 and 6.3; decisions R14, R15 and R18).
@@ -33,6 +32,7 @@ import { writeFileAtomicSync } from '../platform/atomic-file'
 // - A ticket is the credential of a client that cannot send a cookie (the
 //   embed, an SDK client): single use, thirty seconds, kept as a hash.
 
+/** The file builds before the database kept the sessions in, under the data folder; read once, by the import. */
 export const WEB_SESSIONS_FILENAME = 'web-sessions.json'
 export const PAIRING_CODE_TTL_MS = 5 * 60 * 1000
 export const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000
@@ -59,7 +59,8 @@ export type WebSession = {
   lastSeenAt: string | null
 }
 
-type StoredSession = WebSession & { secretHash: string }
+/** A session as it is kept: its secret's hash beside what anyone may see. */
+export type StoredSession = WebSession & { secretHash: string }
 type PairingCode = { hash: string; expiresAtMs: number; route: WebRoute; owner: boolean }
 
 export type WebTicketSubject = { kind: 'session'; sessionId: string } | { kind: 'embed'; embedId: string }
@@ -171,14 +172,58 @@ function sanitizeName(name: string): string {
     .slice(0, 80)
 }
 
+/** The sessions these entries hold (rows' bodies, or a file's list), each held to what this store keeps. */
+function readWebSessions(entries: readonly unknown[]): StoredSession[] {
+  return entries.flatMap((entry): StoredSession[] => {
+    const value = entry as Partial<StoredSession> | null
+    if (
+      !value ||
+      typeof value.id !== 'string' ||
+      typeof value.secretHash !== 'string' ||
+      typeof value.createdAt !== 'string' ||
+      typeof value.expiresAt !== 'string'
+    )
+      return []
+    return [
+      {
+        id: value.id,
+        name: typeof value.name === 'string' ? sanitizeName(value.name) || 'Browser' : 'Browser',
+        kind: 'web',
+        route: value.route === 'tailnet' ? 'tailnet' : 'loopback',
+        owner: value.owner === true,
+        scopes: normalizeStudioScopes(value.scopes),
+        createdAt: value.createdAt,
+        expiresAt: value.expiresAt,
+        lastSeenAt: typeof value.lastSeenAt === 'string' ? value.lastSeenAt : null,
+        secretHash: value.secretHash,
+      },
+    ]
+  })
+}
+
+/** The sessions the file builds before the database wrote holds (the import); null for one that is not that. */
+export function readWebSessionsFile(raw: string): StoredSession[] | null {
+  const parsed = parseBody(raw) as { sessions?: unknown } | null
+  return parsed && Array.isArray(parsed.sessions) ? readWebSessions(parsed.sessions) : null
+}
+
+function parseBody(body: string): unknown {
+  try {
+    return JSON.parse(body) as unknown
+  } catch {
+    return null
+  }
+}
+
 export function createWebSessionStore(options: {
-  dataDir: string
+  /** The data folder's database: the sessions are kept in its `web_sessions` table. */
+  database: StudioDatabase
   environmentId: string
   now?: () => number
   log?: (message: string) => void
 }): WebSessionStore {
   const now = options.now ?? Date.now
-  const path = join(options.dataDir, WEB_SESSIONS_FILENAME)
+  const table = createRecordTable(options.database, 'web_sessions', options.log)
   const codes: PairingCode[] = []
   const tickets: Ticket[] = []
   const revokedListeners = new Set<(sessionId: string) => void>()
@@ -190,41 +235,11 @@ export function createWebSessionStore(options: {
   let sessions: StoredSession[] = load()
 
   function load(): StoredSession[] {
-    try {
-      const raw = JSON.parse(readFileSync(path, 'utf8')) as { sessions?: unknown }
-      if (!Array.isArray(raw.sessions)) return []
-      return raw.sessions.flatMap((entry): StoredSession[] => {
-        const value = entry as Partial<StoredSession> | null
-        if (
-          !value ||
-          typeof value.id !== 'string' ||
-          typeof value.secretHash !== 'string' ||
-          typeof value.createdAt !== 'string' ||
-          typeof value.expiresAt !== 'string'
-        )
-          return []
-        return [
-          {
-            id: value.id,
-            name: typeof value.name === 'string' ? sanitizeName(value.name) || 'Browser' : 'Browser',
-            kind: 'web',
-            route: value.route === 'tailnet' ? 'tailnet' : 'loopback',
-            owner: value.owner === true,
-            scopes: normalizeStudioScopes(value.scopes),
-            createdAt: value.createdAt,
-            expiresAt: value.expiresAt,
-            lastSeenAt: typeof value.lastSeenAt === 'string' ? value.lastSeenAt : null,
-            secretHash: value.secretHash,
-          },
-        ]
-      })
-    } catch {
-      return []
-    }
+    return readWebSessions(table.loadNow().map((row) => parseBody(row.body)))
   }
 
   function save(): void {
-    writeFileAtomicSync(path, `${JSON.stringify({ sessions }, null, 2)}\n`, { mode: 0o600, exactMode: true })
+    void table.save(sessions.map((session) => ({ id: session.id, body: JSON.stringify(session) })))
   }
 
   const view = ({ secretHash: _secretHash, ...session }: StoredSession): WebSession => ({

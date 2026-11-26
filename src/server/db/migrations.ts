@@ -1,4 +1,5 @@
 import { StudioDatabaseMigrationError, StudioDatabaseTooNewError, errorText } from './errors'
+import { recordTableSql } from './record-table'
 import type { SyncConnection } from './sqlite'
 
 // The database's layout, as a numbered list. Each migration runs in its own
@@ -62,6 +63,31 @@ export const STUDIO_MIGRATIONS: readonly Migration[] = [
         );
         CREATE INDEX agent_prompts_updated ON agent_prompts (updated_at);
       `),
+  },
+  {
+    id: 2,
+    name: 'device-and-session-records',
+    // One table per store, a row per record (`record-table.ts`): the devices
+    // paired with this Studio, the machines it is paired with, browser
+    // sessions, embeds, linked local servers, apps' toolsets, file views and
+    // extension approvals.
+    up: (db) =>
+      db.exec(
+        (
+          [
+            'devices',
+            'mesh_links',
+            'web_sessions',
+            'embeds',
+            'linked_servers',
+            'client_toolsets',
+            'file_views',
+            'extension_approvals',
+          ] as const
+        )
+          .map(recordTableSql)
+          .join('\n'),
+      ),
   },
 ]
 

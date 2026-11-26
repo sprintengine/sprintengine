@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../tests/studio-database'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -26,8 +27,11 @@ beforeEach(async () => {
     '<!doctype html><html><head><script src="./assets/embed.js"></script></head></html>',
   )
   writeFileSync(join(web, 'index.html'), '<!doctype html><html><head></head></html>')
-  sessions = createWebSessionStore({ dataDir: dir, environmentId: '05763914-5fa0-449b-96d7-15af49e0ec86' })
-  embeds = createEmbedStore({ dataDir: dir })
+  sessions = createWebSessionStore({
+    database: testDatabaseAt(dir),
+    environmentId: '05763914-5fa0-449b-96d7-15af49e0ec86',
+  })
+  embeds = createEmbedStore({ database: testDatabaseAt(dir) })
   const staticRoot = openWebStaticRoot(web)
   listener = createWebListener({
     sessions,

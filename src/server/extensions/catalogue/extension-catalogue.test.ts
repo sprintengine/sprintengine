@@ -1,3 +1,4 @@
+import { keepTestApprovalsIn } from '../../../../tests/studio-database'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
@@ -65,6 +66,7 @@ function setup() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'sprintengine-catalogue-')))
   dirs.push(root)
   const dataDir = join(root, 'data')
+  keepTestApprovalsIn(dataDir)
   const moduleRoot = join(root, 'extensions')
   mkdirSync(dataDir, { recursive: true })
   const served = new Map<string, unknown>()

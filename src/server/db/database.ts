@@ -60,6 +60,13 @@ export type StudioDatabase = {
    * transaction, which waits for it.
    */
   transaction<T>(work: (tx: StudioTransaction) => Promise<T>): Promise<T>
+  /**
+   * Rows read on this thread, at once: for the few small records a store
+   * loads as it is built (a list of paired devices), where its interface is
+   * synchronous. Never for anything large or on a hot path; it reads what was
+   * committed, like a reader, and is never held up by the writer.
+   */
+  readNow<T = SqlRow>(sql: string, params?: SqlParams): T[]
   /** Finish what is queued, checkpoint and close. Calls after it are refused. */
   close(): Promise<void>
 }
@@ -301,7 +308,10 @@ class WorkerDatabase implements StudioDatabase {
   private readonly readers: WorkerConnection[]
   // Writes, one at a time: each statement, batch and transaction in turn.
   private queue: Promise<unknown> = Promise.resolve()
-  private closed: Promise<void> | null = null
+  // Set once what was queued before the close has landed: calls after it are refused.
+  private closed = false
+  private shut: Promise<void> | null = null
+  private nowReader: SyncConnection | null = null
 
   constructor(
     readonly path: string,
@@ -383,14 +393,38 @@ class WorkerDatabase implements StudioDatabase {
     })
   }
 
+  readNow<T = SqlRow>(sql: string, params: SqlParams = []): T[] {
+    this.refuseClosed()
+    if (!this.nowReader) {
+      const reader = new SyncConnection(this.path, { readOnly: true })
+      try {
+        reader.exec(CONNECTION_PRAGMAS)
+      } catch (error) {
+        reader.close()
+        throw error
+      }
+      this.nowReader = reader
+    }
+    return this.nowReader.all<T>(sql, params)
+  }
+
   close(): Promise<void> {
-    this.closed ??= (async () => {
-      // Queued writes land first; then the readers, and the writer last, so
-      // its close checkpoints the WAL into the file and removes it.
-      await this.queue
+    this.shut ??= (async () => {
+      // Queued writes land first, those a store asked for in this same turn
+      // included (a save waiting on a promise); then the readers, and the
+      // writer last, so its close checkpoints the WAL into the file and
+      // removes it.
+      for (let settled: Promise<unknown> | null = null; settled !== this.queue;) {
+        settled = this.queue
+        await new Promise((resolve) => setImmediate(resolve))
+        await settled
+      }
+      this.closed = true
+      this.nowReader?.close()
+      this.nowReader = null
       await Promise.all(this.readers.map((reader) => reader.close()))
       await this.writer.close()
     })()
-    return this.closed
+    return this.shut
   }
 }

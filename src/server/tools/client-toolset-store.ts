@@ -1,7 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
-import { writeFileAtomicSync } from '../platform/atomic-file'
+import type { StudioDatabase } from '../db/database'
+import { createRecordTable } from '../db/record-table'
 
 import { STUDIO_TOOLSET_NAME_PATTERN } from '../../../packages/studio-protocol/src/public'
 
@@ -17,9 +15,10 @@ import { STUDIO_TOOLSET_NAME_PATTERN } from '../../../packages/studio-protocol/s
 // right: an owner is the person. Built-in toolsets are never bound; they are
 // the shell's.
 //
-// One small JSON file beside the paired apps, written whole and renamed over
-// (0600), read once at start.
+// A row per toolset in the data folder's database (`client_toolsets`), read
+// once at start.
 
+/** The file builds before the database kept the bindings in, under the data folder; read once, by the import. */
 export const CLIENT_TOOLSETS_FILENAME = 'client-toolsets.json'
 
 const MAX_BINDINGS = 512
@@ -51,64 +50,69 @@ export type ClientToolsetStore = {
 
 const same = (a: ConversationRef, b: ConversationRef) => a.workspaceId === b.workspaceId && a.agentId === b.agentId
 
-function read(path: string, log?: (message: string) => void): Map<string, ClientToolsetBinding> {
-  const out = new Map<string, ClientToolsetBinding>()
-  let raw: string
-  try {
-    raw = readFileSync(path, 'utf8')
-  } catch {
-    return out
+/** One binding as a row (or the file before the database) holds it, held to what this store keeps; null for anything else. */
+function readBinding(entry: unknown): ClientToolsetBinding | null {
+  const value = entry as Record<string, unknown> | null
+  if (
+    typeof value?.toolset !== 'string' ||
+    !STUDIO_TOOLSET_NAME_PATTERN.test(value.toolset) ||
+    typeof value.clientId !== 'string' ||
+    !value.clientId
+  )
+    return null
+  const conversations = Array.isArray(value.conversations)
+    ? (value.conversations as Array<Record<string, unknown>>)
+        .filter((ref) => typeof ref?.workspaceId === 'string' && typeof ref.agentId === 'string')
+        .map((ref) => ({ workspaceId: ref.workspaceId as string, agentId: ref.agentId as string }))
+        .slice(0, MAX_GRANTS_PER_TOOLSET)
+    : []
+  return {
+    toolset: value.toolset,
+    clientId: value.clientId,
+    title: typeof value.title === 'string' ? value.title.slice(0, 60) : value.toolset,
+    boundAt: typeof value.boundAt === 'string' ? value.boundAt : new Date(0).toISOString(),
+    conversations,
   }
+}
+
+/** The bindings the file builds before the database wrote holds (the import); null for one that is not that. */
+export function readClientToolsetsFile(raw: string): ClientToolsetBinding[] | null {
   try {
     const parsed = JSON.parse(raw) as { bindings?: unknown }
-    if (!Array.isArray(parsed.bindings)) return out
-    for (const entry of parsed.bindings as Array<Record<string, unknown>>) {
-      if (
-        typeof entry?.toolset !== 'string' ||
-        !STUDIO_TOOLSET_NAME_PATTERN.test(entry.toolset) ||
-        typeof entry.clientId !== 'string' ||
-        !entry.clientId
-      )
-        continue
-      const conversations = Array.isArray(entry.conversations)
-        ? (entry.conversations as Array<Record<string, unknown>>)
-            .filter((ref) => typeof ref?.workspaceId === 'string' && typeof ref.agentId === 'string')
-            .map((ref) => ({ workspaceId: ref.workspaceId as string, agentId: ref.agentId as string }))
-            .slice(0, MAX_GRANTS_PER_TOOLSET)
-        : []
-      out.set(entry.toolset, {
-        toolset: entry.toolset,
-        clientId: entry.clientId,
-        title: typeof entry.title === 'string' ? entry.title.slice(0, 60) : entry.toolset,
-        boundAt: typeof entry.boundAt === 'string' ? entry.boundAt : new Date(0).toISOString(),
-        conversations,
-      })
-    }
-  } catch (error) {
-    // Unreadable: nothing is bound, so the first app to offer a name takes it.
-    // That loses no authority an app had (a binding only ever refuses), and
-    // the file is left for someone to look at.
-    log?.(`Client toolset bindings could not be read: ${error instanceof Error ? error.message : String(error)}`)
+    if (!Array.isArray(parsed.bindings)) return null
+    return parsed.bindings.flatMap((entry) => {
+      const binding = readBinding(entry)
+      return binding ? [binding] : []
+    })
+  } catch {
+    return null
   }
-  return out
 }
 
 export function createClientToolsetStore(options: {
-  /** The data directory; absent, the bindings live in memory only (tests, a Studio with no disk of its own). */
-  dataDir?: () => string
+  /** The data folder's database; absent, the bindings live in memory only (tests, a Studio with no disk of its own). */
+  database?: StudioDatabase
   now?: () => Date
   log?: (message: string) => void
 }): ClientToolsetStore {
   const now = options.now ?? (() => new Date())
-  const path = () => (options.dataDir ? join(options.dataDir(), CLIENT_TOOLSETS_FILENAME) : null)
-  const initial = path()
-  const bindings = initial ? read(initial, options.log) : new Map<string, ClientToolsetBinding>()
+  const table = options.database ? createRecordTable(options.database, 'client_toolsets', options.log) : null
+  const bindings = new Map<string, ClientToolsetBinding>()
+  for (const row of table?.loadNow() ?? []) {
+    let binding: ClientToolsetBinding | null = null
+    try {
+      binding = readBinding(JSON.parse(row.body))
+    } catch {
+      binding = null
+    }
+    // Unreadable: not bound, so the first app to offer the name takes it.
+    // That loses no authority an app had (a binding only ever refuses).
+    if (binding) bindings.set(binding.toolset, binding)
+    else options.log?.(`The client toolset binding ${row.id} does not read; the name is free again.`)
+  }
 
   function persist(): void {
-    const target = path()
-    if (!target) return
-    const body = `${JSON.stringify({ version: 1, bindings: [...bindings.values()] }, null, 2)}\n`
-    writeFileAtomicSync(target, body, { mode: 0o600, exactMode: true })
+    void table?.save([...bindings.values()].map((binding) => ({ id: binding.toolset, body: JSON.stringify(binding) })))
   }
 
   const copy = (binding: ClientToolsetBinding): ClientToolsetBinding => ({

@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
@@ -472,7 +473,7 @@ function call(port: number, path: string, options: { method?: string; token?: st
 
 async function identityRead(machine: (() => { kind: string; color: string } | null) | undefined) {
   const devicesDir = mkdtempSync(join(tmpdir(), 'conversation-machine-devices-'))
-  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => devicesDir })
+  const devices = createTailnetDeviceStore({ database: testDatabaseAt(devicesDir) })
   const server = createTailnetGatewayServer({
     bindAddress: '127.0.0.1',
     port: 0,

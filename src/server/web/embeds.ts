@@ -1,11 +1,10 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { Duplex } from 'node:stream'
 
 import type { StudioGrant } from '../../../packages/studio-protocol/src/public'
 import { hashSecret, secretsMatch } from '../../main/automation/tailnet/secret-hash'
-import { writeFileAtomicSync } from '../platform/atomic-file'
+import type { StudioDatabase } from '../db/database'
+import { createRecordTable } from '../db/record-table'
 import { normalizeOrigin } from './web-origins'
 
 // Embeds (phase 9 spec, 5.4; decisions R58 and R59): another page shows one
@@ -29,6 +28,7 @@ import { normalizeOrigin } from './web-origins'
 // load into `frame-ancestors`. An embed with none cannot be framed at all.
 // Only the token's hash reaches disk (0600).
 
+/** The file builds before the database kept the embeds in, under the data folder; read once, by the import. */
 export const EMBEDS_FILENAME = 'embeds.json'
 export const EMBED_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000
 export const EMBED_MAX_TTL_MS = 30 * 24 * 60 * 60 * 1000
@@ -48,7 +48,8 @@ export type Embed = {
   expiresAt: string
 }
 
-type StoredEmbed = Embed & { tokenHash: string }
+/** An embed as it is kept: its token's hash beside what anyone may see. */
+export type StoredEmbed = Embed & { tokenHash: string }
 
 export type EmbedCreateInput = {
   conversation: { workspaceId?: unknown; agentId?: unknown }
@@ -71,41 +72,55 @@ export type EmbedStore = {
 
 const ID = /^[\w-]{1,200}$/u
 
+/** The embeds these entries hold (rows' bodies, or a file's list); one an older build could not serve as written is dropped. */
+function readEmbeds(entries: readonly unknown[]): StoredEmbed[] {
+  return entries.filter((entry): entry is StoredEmbed => {
+    const value = entry as Partial<StoredEmbed> | null
+    return (
+      typeof value?.embedId === 'string' &&
+      typeof value.tokenHash === 'string' &&
+      typeof value.expiresAt === 'string' &&
+      typeof value.conversation?.workspaceId === 'string' &&
+      typeof value.conversation.agentId === 'string' &&
+      Array.isArray(value.origins) &&
+      // An origin a policy could not carry as written is not served, from
+      // a record an older build wrote included.
+      value.origins.every((origin) => typeof origin === 'string' && normalizeOrigin(origin) === origin)
+    )
+  })
+}
+
+/** The embeds the file builds before the database wrote holds (the import); null for one that is not that. */
+export function readEmbedsFile(raw: string): StoredEmbed[] | null {
+  const parsed = parseBody(raw) as { embeds?: unknown } | null
+  return parsed && Array.isArray(parsed.embeds) ? readEmbeds(parsed.embeds) : null
+}
+
+function parseBody(body: string): unknown {
+  try {
+    return JSON.parse(body) as unknown
+  } catch {
+    return null
+  }
+}
+
 export function createEmbedStore(options: {
-  dataDir: string
+  /** The data folder's database: the embeds are kept in its `embeds` table. */
+  database: StudioDatabase
   now?: () => number
   log?: (message: string) => void
 }): EmbedStore {
   const now = options.now ?? Date.now
-  const path = join(options.dataDir, EMBEDS_FILENAME)
+  const table = createRecordTable(options.database, 'embeds', options.log)
   const revokedListeners = new Set<(embedId: string) => void>()
   let embeds: StoredEmbed[] = load()
 
   function load(): StoredEmbed[] {
-    try {
-      const raw = JSON.parse(readFileSync(path, 'utf8')) as { embeds?: unknown }
-      if (!Array.isArray(raw.embeds)) return []
-      return raw.embeds.filter((entry): entry is StoredEmbed => {
-        const value = entry as Partial<StoredEmbed> | null
-        return (
-          typeof value?.embedId === 'string' &&
-          typeof value.tokenHash === 'string' &&
-          typeof value.expiresAt === 'string' &&
-          typeof value.conversation?.workspaceId === 'string' &&
-          typeof value.conversation.agentId === 'string' &&
-          Array.isArray(value.origins) &&
-          // An origin a policy could not carry as written is not served, from
-          // a file an older build wrote included.
-          value.origins.every((origin) => typeof origin === 'string' && normalizeOrigin(origin) === origin)
-        )
-      })
-    } catch {
-      return []
-    }
+    return readEmbeds(table.loadNow().map((row) => parseBody(row.body)))
   }
 
   function save(): void {
-    writeFileAtomicSync(path, `${JSON.stringify({ embeds }, null, 2)}\n`, { mode: 0o600, exactMode: true })
+    void table.save(embeds.map((embed) => ({ id: embed.embedId, body: JSON.stringify(embed) })))
   }
 
   const live = (embed: StoredEmbed) => Date.parse(embed.expiresAt) > now()

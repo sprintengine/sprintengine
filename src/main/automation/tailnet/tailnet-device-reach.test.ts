@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -703,7 +704,7 @@ afterEach(() => {
 function deviceStore() {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-device-reach-'))
   dirs.push(dir)
-  return createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+  return createTailnetDeviceStore({ database: testDatabaseAt(dir) })
 }
 
 /** The grant a device paired with `scopes` holds on the Studio socket, as the endpoint builds it. */

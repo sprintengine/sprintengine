@@ -191,3 +191,30 @@ test('a migration that fails is rolled back alone, and the next start carries on
     await db.close()
   }
 })
+
+test('a store built at start reads at once, and a save asked for just before a close still lands', async () => {
+  const dir = folder()
+  const migrations: Migration[] = [
+    { id: 1, name: 'items', up: (c) => c.exec('CREATE TABLE items (id TEXT PRIMARY KEY, n INTEGER NOT NULL)') },
+  ]
+  const db = openStudioDatabase(dir, { migrations })
+  assert.deepEqual(db.readNow('SELECT id FROM items'), [])
+  await db.run("INSERT INTO items VALUES ('a', 1)")
+  assert.deepEqual(
+    db.readNow<{ id: string }>('SELECT id FROM items').map((row) => row.id),
+    ['a'],
+  )
+  // A store's save waits on a promise of its own before it reaches the writer.
+  void Promise.resolve().then(() => db.run("INSERT INTO items VALUES ('b', 2)"))
+  await db.close()
+  assert.throws(() => db.readNow('SELECT 1'), StudioDatabaseError)
+  const again = openStudioDatabase(dir, { migrations })
+  try {
+    assert.deepEqual(
+      again.readNow<{ id: string }>('SELECT id FROM items ORDER BY id').map((row) => row.id),
+      ['a', 'b'],
+    )
+  } finally {
+    await again.close()
+  }
+})

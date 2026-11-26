@@ -1,10 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { savedRecordRows, testDatabaseAt } from '../../../tests/studio-database'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 
-import { EMBED_MAX_TTL_MS, EMBEDS_FILENAME, createEmbedStore, embedFrameAllowed, gateEmbedFrames } from './embeds'
+import { EMBED_MAX_TTL_MS, createEmbedStore, embedFrameAllowed, gateEmbedFrames } from './embeds'
 
 let dataDir: string
 let now: number
@@ -14,15 +15,15 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(dataDir, { recursive: true, force: true }))
 
-const store = () => createEmbedStore({ dataDir, now: () => now })
+const store = () => createEmbedStore({ database: testDatabaseAt(dataDir), now: () => now })
 const conversation = { workspaceId: 'ws-1', agentId: 'agent-1' }
 
-test('an embed names one conversation, read-only, and its token is kept as a hash', () => {
+test('an embed names one conversation, read-only, and its token is kept as a hash', async () => {
   const embeds = store()
   const created = embeds.create({ conversation, origins: ['https://dashboard.example.com'] })
   if (!created.ok) throw new Error(created.message)
   expect(created.token).toMatch(/^mcemb_/u)
-  expect(readFileSync(join(dataDir, EMBEDS_FILENAME), 'utf8')).not.toContain(created.token)
+  expect((await savedRecordRows(dataDir, 'embeds')).map((row) => row.body).join('\n')).not.toContain(created.token)
   expect(embeds.authenticate(created.embed.embedId, created.token)?.conversation).toEqual(conversation)
   expect(embeds.authenticate(created.embed.embedId, 'mcemb_wrong')).toBeNull()
   expect(embeds.grantFor(created.embed.embedId)).toMatchObject({ owner: false, scopes: ['conversation:read'] })

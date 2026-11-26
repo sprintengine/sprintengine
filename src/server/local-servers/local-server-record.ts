@@ -19,28 +19,26 @@
 // BOUNDED. At most `MAX_SERVERS_PER_CONVERSATION` per conversation and
 // `MAX_SERVERS` in all; the oldest links go first.
 //
-// ONE FILE, `local-servers/linked.json` in the server's data directory,
-// replaced whole through a temporary file on every change. A file that is
-// missing is an empty record; one that cannot be read is kept aside as
-// `.corrupt` and the record starts empty, rather than being overwritten.
+// A ROW PER LINK in the data folder's database (`linked_servers`), the list
+// saved whole on every change. Builds before the database kept it in
+// `local-servers/linked.json`, which the import read once. A row that does
+// not read is skipped.
 
 import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, rename } from 'node:fs/promises'
 import { isIP } from 'node:net'
-import { dirname, isAbsolute, join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 import {
   STUDIO_LOCAL_SERVER_MAX_COMMAND,
   STUDIO_LOCAL_SERVER_MAX_URL,
 } from '../../../packages/studio-protocol/src/public'
-import { writeFileAtomically } from '../../main/config-file-write'
 import { isRecord } from '../../shared/records'
+import type { StudioDatabase } from '../db/database'
+import { createRecordTable } from '../db/record-table'
 
 const STORE_DIR = 'local-servers'
 const STORE_FILE = 'linked.json'
 const STORE_VERSION = 1
-/** How long after a write of the record fails it is tried again. */
-const WRITE_RETRY_MS = 5_000
 
 /** The most servers one conversation keeps linked; its oldest link goes first. */
 export const MAX_SERVERS_PER_CONVERSATION = 20
@@ -83,7 +81,8 @@ export type LocalServerLinkResult = {
 }
 
 export type LocalServerRecordOptions = {
-  dataDir: string
+  /** The data folder's database: the links are kept in its `linked_servers` table. */
+  database: StudioDatabase
   now?: () => number
   /** A new link's id; random and URL-safe unless given (tests). */
   newId?: () => string
@@ -116,7 +115,7 @@ export type LocalServerRecord = {
   dispose(): void
 }
 
-/** The file the record lives in. */
+/** The file builds before the database kept the record in, under the data folder; read once, by the import. */
 export function localServerStorePath(dataDir: string): string {
   return join(dataDir, STORE_DIR, STORE_FILE)
 }
@@ -196,18 +195,11 @@ export function createLocalServerRecord(options: LocalServerRecordOptions): Loca
     ((message: string, error?: unknown) => {
       console.warn(`[local-servers] ${message}`, error ?? '')
     })
-  const path = localServerStorePath(options.dataDir)
+  const table = createRecordTable(options.database, 'linked_servers', (message: string) => log(message))
   /** Oldest link first: insertion order is link order, and a re-link moves to the end. */
   const entries = new Map<string, LinkedLocalServer>()
   let load: Promise<void> | null = null
-  let writes: Promise<void> = Promise.resolve()
-  let dirty = false
   let disposed = false
-  let writeRetry: ReturnType<typeof setTimeout> | null = null
-  // The file is there but could not be read (locked by a scanner, a
-  // permission): nothing is written over it this run, or the next change
-  // would replace every stored link with what this run knows.
-  let unreadable = false
 
   function newestFirst(list: LinkedLocalServer[]): LinkedLocalServer[] {
     return list.reverse()
@@ -246,27 +238,10 @@ export function createLocalServerRecord(options: LocalServerRecordOptions): Loca
 
   function whenLoaded(): Promise<void> {
     load ??= (async () => {
-      let raw: string | null = null
-      try {
-        raw = await readFile(path, 'utf-8')
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-          unreadable = true
-          log('could not read the local server record; keeping what is linked this run in memory only', error)
-        }
-      }
-      if (raw === null || disposed) return
-      const stored = parseStoreFile(raw)
-      if (stored === null) {
-        // Truncated, hand-edited, or written by a version this build does not
-        // know: kept aside rather than overwritten by the next write.
-        log('the local server record could not be understood; keeping it aside as .corrupt', new Error(path))
-        await rename(path, `${path}.corrupt`).catch((error) => {
-          log('could not keep an unreadable local server record aside', error)
-        })
-        return
-      }
-      // Anything linked while the file was being read is newer, and wins its address.
+      const rows = await options.database.all<{ body: string }>('SELECT body FROM linked_servers ORDER BY position')
+      if (disposed) return
+      const stored = readLinkedServers(rows.map((row) => parseBody(row.body)))
+      // Anything linked while the rows were being read is newer, and wins its address.
       const taken = new Set([...entries.values()].map(identityOf))
       const linkedSinceStart = [...entries.values()]
       entries.clear()
@@ -278,35 +253,14 @@ export function createLocalServerRecord(options: LocalServerRecordOptions): Loca
       for (const entry of linkedSinceStart) put(entry)
       for (const key of conversationsOf([...entries.values()])) trim(key)
       trim()
+      if (linkedSinceStart.length > 0) persist()
     })().catch((error) => log('could not load the local server record', error))
     return load
   }
 
   function persist(): void {
-    dirty = true
-    writes = writes.then(
-      async () => {
-        if (!dirty || disposed || unreadable) return
-        dirty = false
-        const snapshot = { version: STORE_VERSION, servers: [...entries.values()] }
-        try {
-          await mkdir(dirname(path), { recursive: true })
-          await writeFileAtomically(path, `${JSON.stringify(snapshot, null, 2)}\n`)
-        } catch (error) {
-          log('could not write the local server record', error)
-          // Still to write: tried again, or what changed is lost until something else does.
-          dirty = true
-          if (!writeRetry && !disposed) {
-            writeRetry = setTimeout(() => {
-              writeRetry = null
-              if (dirty) persist()
-            }, WRITE_RETRY_MS)
-            writeRetry.unref?.()
-          }
-        }
-      },
-      () => undefined,
-    )
+    if (disposed) return
+    void table.save([...entries.values()].map((entry) => ({ id: entry.id, body: JSON.stringify(entry) })))
   }
 
   function link(key: LocalServerConversationKey, input: LocalServerLinkInput): LocalServerLinkResult {
@@ -384,12 +338,10 @@ export function createLocalServerRecord(options: LocalServerRecordOptions): Loca
     all: () => [...entries.values()],
     async flush() {
       await (load ?? Promise.resolve())
-      await writes
+      await table.flush()
     },
     dispose() {
       disposed = true
-      if (writeRetry) clearTimeout(writeRetry)
-      writeRetry = null
     },
   }
 }
@@ -400,24 +352,32 @@ function conversationsOf(list: LinkedLocalServer[]): LocalServerConversationKey[
   return [...seen.values()].map((entry) => ({ workspaceId: entry.workspaceId, agentId: entry.agentId }))
 }
 
-/** The stored links, or null when the file is not one this build can read. Entries it cannot read are skipped. */
-function parseStoreFile(raw: string): LinkedLocalServer[] | null {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return null
-  }
-  if (!isRecord(parsed) || parsed.version !== STORE_VERSION || !Array.isArray(parsed.servers)) return null
+/** The links these entries hold (rows' bodies, or a file's list); one that does not read, or a second with its id, is skipped. */
+function readLinkedServers(values: readonly unknown[]): LinkedLocalServer[] {
   const servers: LinkedLocalServer[] = []
   const ids = new Set<string>()
-  for (const value of parsed.servers) {
+  for (const value of values) {
     const entry = parseEntry(value)
     if (!entry || ids.has(entry.id)) continue
     ids.add(entry.id)
     servers.push(entry)
   }
   return servers
+}
+
+/** The links the file builds before the database wrote holds (the import); null when it is not one. */
+export function readLinkedServersFile(raw: string): LinkedLocalServer[] | null {
+  const parsed = parseBody(raw)
+  if (!isRecord(parsed) || parsed.version !== STORE_VERSION || !Array.isArray(parsed.servers)) return null
+  return readLinkedServers(parsed.servers)
+}
+
+function parseBody(body: string): unknown {
+  try {
+    return JSON.parse(body) as unknown
+  } catch {
+    return null
+  }
 }
 
 function parseEntry(value: unknown): LinkedLocalServer | null {

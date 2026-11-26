@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -47,7 +48,7 @@ async function pairedMachine(scopes: TailnetScope[] = ['workspace:read', 'conver
   const offer = peer.devices.offerPairing({ scopes })
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-remote-usage-'))
   const mesh = createTailnetMeshService({
-    resolveUserDataDir: () => dir,
+    database: testDatabaseAt(dir),
     resolveDeviceName: () => 'dev-macbook-air',
     resolvePeerName: async () => null,
   })

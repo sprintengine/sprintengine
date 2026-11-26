@@ -1,4 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { savedRecordRows, testDatabaseAt } from '../../../tests/studio-database'
+import { STUDIO_DATABASE_FILENAME } from '../db/database'
+import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
@@ -14,7 +16,6 @@ import {
   PAIRING_CODE_TTL_MS,
   SESSION_LIFETIME_MS,
   TICKET_TTL_MS,
-  WEB_SESSIONS_FILENAME,
   browserNameFromUserAgent,
   createWebSessionStore,
   webSessionCookieName,
@@ -30,7 +31,8 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(dataDir, { recursive: true, force: true }))
 
-const store = () => createWebSessionStore({ dataDir, environmentId: ENVIRONMENT, now: () => now })
+const store = () =>
+  createWebSessionStore({ database: testDatabaseAt(dataDir), environmentId: ENVIRONMENT, now: () => now })
 
 test('the cookie is named for the environment, so servers on one loopback do not share a jar entry', () => {
   expect(webSessionCookieName(ENVIRONMENT)).toBe('se_s_057639145fa0')
@@ -69,13 +71,12 @@ test('a browser that paired over the tailnet is the owner’s, but never offers 
   expect(exchanged.ok && sessions.grantFor(exchanged.session.id)?.scopes).not.toContain('tools:offer')
 })
 
-test('only the hash reaches disk, owner-only', () => {
+test('only the hash reaches disk, owner-only', async () => {
   const sessions = store()
   const exchanged = sessions.exchange(sessions.mintPairingCode().code, { route: 'loopback' })
-  const file = join(dataDir, WEB_SESSIONS_FILENAME)
-  const written = readFileSync(file, 'utf8')
+  const written = (await savedRecordRows(dataDir, 'web_sessions')).map((row) => row.body).join('\n')
   expect(exchanged.ok && written.includes(exchanged.secret)).toBe(false)
-  if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600)
+  if (process.platform !== 'win32') expect(statSync(join(dataDir, STUDIO_DATABASE_FILENAME)).mode & 0o777).toBe(0o600)
   // A second store over the same directory knows the session.
   expect(exchanged.ok && store().authenticate([exchanged.secret])?.id).toBe(exchanged.ok && exchanged.session.id)
 })
@@ -152,12 +153,13 @@ test('a phone browser is named for itself, not the engine its user agent also na
   expect(browserNameFromUserAgent(`${android} Chrome/140.0 Mobile Safari/537.36`)).toBe('Chrome on Android')
 })
 
-test('an owner’s browser and another browser are told apart by every remote check, from the session as stored', () => {
+test('an owner’s browser and another browser are told apart by every remote check, from the session as stored', async () => {
   const sessions = store()
   const owned = sessions.issue({ name: 'owner', route: 'loopback' })
   const guest = sessions.issue({ name: 'guest', route: 'loopback', owner: false })
   const tailnet = sessions.issue({ name: 'phone', route: 'tailnet' })
   if (!owned.ok || !guest.ok || !tailnet.ok) throw new Error('issue failed')
+  await savedRecordRows(dataDir, 'web_sessions')
   // Read back as a restarted server reads them: nothing here was migrated.
   const reloaded = store()
   const grant = (id: string) => reloaded.grantFor(id)!

@@ -1,7 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { mkdir, rename, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { resolve } from 'node:path'
 
 import { tierRank, type ExtensionTier } from '../../../packages/extension-sdk/src/manifest-schema'
 import { extensionHookApprovalLines, isExtensionHookPoint } from '../../../packages/extension-sdk/src/hooks'
@@ -9,6 +7,8 @@ import { EXTENSION_SIGNATURE_FILENAME } from '../../../packages/extension-sdk/sr
 import { providerOrigin } from '../../../packages/extension-sdk/src/agent-contributions'
 import type { ModuleFileDigests } from '../../shared/modules/manifest'
 import type { ExtensionManifest } from '../../shared/modules/third-party-manifest'
+import type { StudioDatabase } from '../../server/db/database'
+import { createRecordTable, type RecordTable } from '../../server/db/record-table'
 
 // What the person approved an extension for, on this machine.
 //
@@ -302,7 +302,8 @@ export function accessGrowth(approved: ExtensionAccess, next: ExtensionAccess): 
 
 // ── The store ────────────────────────────────────────────────────────────────
 
-const FILE_NAME = 'extension-approvals.json'
+/** The file builds before the database kept the approvals in, under the data folder; read once, by the import. */
+export const EXTENSION_APPROVALS_FILENAME = 'extension-approvals.json'
 
 const isTier = (value: unknown): value is ExtensionTier =>
   value === 'content' || value === 'declarative' || value === 'ui' || value === 'worker'
@@ -341,77 +342,94 @@ function readRecord(value: unknown): ExtensionApprovalRecord | null {
   }
 }
 
-/** Every approval on this machine, by install key. */
-export function readExtensionApprovalsSync(dataDir: string): Map<string, ExtensionApprovalRecord> {
-  const path = join(dataDir, FILE_NAME)
-  const approvals = new Map<string, ExtensionApprovalRecord>()
-  if (!existsSync(path)) return approvals
+/** The approvals the file builds before the database wrote holds, by install key (the import); null when it is not one. */
+export function readExtensionApprovalsFile(raw: string): Map<string, ExtensionApprovalRecord> | null {
+  let parsed: unknown
   try {
-    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return approvals
-    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-      const record = readRecord(value)
-      if (key.length > 0 && record) approvals.set(key, record)
-    }
+    parsed = JSON.parse(raw)
   } catch {
-    // Unreadable approves nothing.
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const approvals = new Map<string, ExtensionApprovalRecord>()
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    const record = readRecord(value)
+    if (key.length > 0 && record) approvals.set(key, record)
   }
   return approvals
 }
 
+// The approvals of the data folder a Studio server holds, kept in its
+// database (`extension_approvals`, a row per install key) and in memory:
+// read once when the server opens the database, and the authority after
+// that. Kept by the folder's path, since every reader here is handed one.
+// A folder no server here holds approves nothing, which is what the shell
+// reads (it only reveals an extension's folder, whatever its standing).
+type KeptApprovals = { approvals: Map<string, ExtensionApprovalRecord>; table: RecordTable; writes: Promise<unknown> }
+const kept = new Map<string, KeptApprovals>()
+
+/** Keep the approvals of `dataDir` in its database from now on; returns the way to stop (the server's shutdown). */
+export function keepExtensionApprovalsIn(dataDir: string, database: StudioDatabase): () => void {
+  const table = createRecordTable(database, 'extension_approvals')
+  const approvals = new Map<string, ExtensionApprovalRecord>()
+  for (const row of table.loadNow()) {
+    let record: ExtensionApprovalRecord | null = null
+    try {
+      record = readRecord(JSON.parse(row.body))
+    } catch {
+      record = null
+    }
+    // Unreadable approves nothing.
+    if (row.id.length > 0 && record) approvals.set(row.id, record)
+  }
+  const key = resolve(dataDir)
+  const entry: KeptApprovals = { approvals, table, writes: Promise.resolve() }
+  kept.set(key, entry)
+  return () => {
+    if (kept.get(key) === entry) kept.delete(key)
+  }
+}
+
+/** Every approval on this machine, by install key. */
+export function readExtensionApprovalsSync(dataDir: string): Map<string, ExtensionApprovalRecord> {
+  return new Map(kept.get(resolve(dataDir))?.approvals ?? [])
+}
+
 export type ApprovalWriteResult = { ok: true } | { ok: false; message: string }
 
-// Read-modify-write one at a time, so two approvals at once cannot lose one.
-let writeChain: Promise<unknown> = Promise.resolve()
-
-/** Record (or, with null, forget) the approval of one install key. */
+/** Record (or, with null, forget) the approval of one install key; resolves once it is committed. */
 export function writeExtensionApproval(
   dataDir: string,
   key: string,
   record: ExtensionApprovalRecord | null,
 ): Promise<ApprovalWriteResult> {
-  const run = writeChain.then(async (): Promise<ApprovalWriteResult> => {
-    const approvals = readExtensionApprovalsSync(dataDir)
-    if (record) approvals.set(key, record)
-    else if (!approvals.delete(key)) return { ok: true }
-    const path = join(dataDir, FILE_NAME)
-    try {
-      await mkdir(dataDir, { recursive: true })
-      const tmp = `${path}.${process.pid}.tmp`
-      const out: Record<string, ExtensionApprovalRecord> = {}
-      for (const name of [...approvals.keys()].sort()) out[name] = approvals.get(name)!
-      await writeFile(tmp, JSON.stringify(out), { mode: 0o600 })
-      await rename(tmp, path)
-      return { ok: true }
-    } catch (error) {
-      return { ok: false, message: error instanceof Error ? error.message : String(error) }
-    }
+  const entry = kept.get(resolve(dataDir))
+  if (!entry)
+    return Promise.resolve({ ok: false, message: 'No Studio server here keeps approvals for this data folder.' })
+  // One at a time, each from what the one before left, so two at once cannot
+  // lose one; held in memory only once it is committed.
+  const run = entry.writes.then(async (): Promise<ApprovalWriteResult> => {
+    const next = new Map(entry.approvals)
+    if (record) next.set(key, record)
+    else if (!next.delete(key)) return { ok: true }
+    const saved = await entry.table.save(
+      [...next.keys()].sort().map((name) => ({ id: name, body: JSON.stringify(next.get(name)) })),
+    )
+    if (!saved) return { ok: false, message: 'The approval could not be saved.' }
+    entry.approvals.clear()
+    for (const [name, value] of next) entry.approvals.set(name, value)
+    return { ok: true }
   })
-  writeChain = run.catch(() => undefined)
+  entry.writes = run.catch(() => undefined)
   return run
 }
 
 /**
- * The approvals as they stand now, for a check made at every host call: read
- * again only when the file changed, so an uninstall or a new approval holds
- * at the next call without a read per call.
+ * The approvals as they stand now, for a check made at every host call: an
+ * uninstall or a new approval holds at the next call.
  */
 export function createExtensionApprovalReader(dataDir: string): () => ReadonlyMap<string, ExtensionApprovalRecord> {
-  const path = join(dataDir, FILE_NAME)
-  let seen = ''
-  let approvals: ReadonlyMap<string, ExtensionApprovalRecord> = new Map()
-  return () => {
-    let stamp = 'missing'
-    try {
-      const info = statSync(path)
-      stamp = `${info.mtimeMs}:${info.size}:${info.ino}`
-    } catch {
-      // Missing: nothing is approved.
-    }
-    if (stamp !== seen) {
-      seen = stamp
-      approvals = readExtensionApprovalsSync(dataDir)
-    }
-    return approvals
-  }
+  const key = resolve(dataDir)
+  const none: ReadonlyMap<string, ExtensionApprovalRecord> = new Map()
+  return () => kept.get(key)?.approvals ?? none
 }
