@@ -1,4 +1,4 @@
-import { testDatabaseAt } from '../../../../tests/studio-database'
+import { closeTestDatabaseAt, testDatabaseAt } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
@@ -117,6 +117,7 @@ async function withGateway(run: (gateway: Gateway) => Promise<void>): Promise<vo
   } finally {
     oauth.dispose()
     await server.stop()
+    await closeTestDatabaseAt(dir)
     rmSync(dir, { recursive: true, force: true })
   }
 }
@@ -1080,6 +1081,7 @@ test('behind Tailscale Serve, only OAuth sign-in and OAuth MCP calls are served,
   } finally {
     oauth.dispose()
     await server.stop()
+    await closeTestDatabaseAt(dir)
     rmSync(dir, { recursive: true, force: true })
   }
 })
@@ -1139,6 +1141,7 @@ test('the service publishes HTTPS when asked, names it in the MCP URL, and takes
     assert.equal(refused.mcp?.url?.startsWith('http://'), true)
   } finally {
     await service.shutdown()
+    await closeTestDatabaseAt(dir)
     rmSync(dir, { recursive: true, force: true })
   }
 })
@@ -1275,6 +1278,7 @@ test('behind Tailscale Serve, a caller with no tailnet address, or one that came
   } finally {
     oauth.dispose()
     await server.stop()
+    await closeTestDatabaseAt(dir)
     rmSync(dir, { recursive: true, force: true })
   }
 })

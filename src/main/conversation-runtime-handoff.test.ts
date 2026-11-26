@@ -375,7 +375,12 @@ test('a handoff is refused while the agent waits on an answer', async () => {
     ],
   })
   const turn = chat.sendLater('test it')
-  await new Promise((resolve) => setTimeout(resolve, 20))
+  // The card is up once the session waits on it, however long its event takes to land.
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const listed = chat.runtime.listSessions()
+    if (listed.ok && listed.sessions.some((session) => session.status === 'awaiting_approval')) break
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
   const handed = await chat.runtime.handoffConversation({ key: chat.key })
   assert.deepEqual(handed, { ok: false, message: 'Answer what the agent is waiting on before handing the chat off.' })
   release()
