@@ -88,8 +88,6 @@ export type StudioTerminalHost = {
 
 export type StudioAgentTerminalsDeps = {
   platform: Pick<StudioPlatform, 'paths'>
-  /** Resolves once the data directory is this process's; the reporter's socket is opened then. */
-  whenDataDirFree: Promise<unknown>
   /** Whether this process opens the reporter's socket at all (it holds the directory, or is a desktop carrying on without). */
   reporterListens: boolean
   /** The data folder's database: the agents' prompts and the launch notices are kept in it. */
@@ -213,7 +211,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
       void writeDiagnosticLog({ ...diagnostic, source: 'workspace' })
     },
   })
-  if (deps.reporterListens) void deps.whenDataDirFree.then(() => agentState.start()).catch(() => undefined)
+  if (deps.reporterListens) void Promise.resolve(agentState.start()).catch(() => undefined)
 
   // The one way to type at a live agent, terminal or chat: concurrent prompts
   // serialise per session, and no window is needed.

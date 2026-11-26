@@ -551,15 +551,12 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   })
   conversationRuntime.startIdleSweep(powerActivity)
   // The turns the last run left open end now, in their chats' logs, rather
-  // than when someone next opens each chat: once the data directory is this
-  // process's alone (a server it took over may still be finishing those
-  // turns), and never by a process running without its lock.
+  // than when someone next opens each chat; never by a process running
+  // without its lock. (A server this one took over has exited by now.)
   if (dataDirLock)
-    void taken.whenFree
-      .then(() => conversationRuntime.recoverInterruptedTurns())
-      .catch((error: unknown) => {
-        console.warn('[studio-core] open turns could not be closed:', error instanceof Error ? error.message : error)
-      })
+    void conversationRuntime.recoverInterruptedTurns().catch((error: unknown) => {
+      console.warn('[studio-core] open turns could not be closed:', error instanceof Error ? error.message : error)
+    })
   // Each project's state lives in its store in the person's home, on the
   // machine its chats run on (main/workspace-store.ts). An older build kept it
   // in `<project>/.sprintengine/`: moved out the first time a folder reaches
@@ -680,7 +677,6 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // process cannot load the pty module (a WSL or SSH machine's server).
   agentTerminals = createStudioAgentTerminals({
     platform,
-    whenDataDirFree: taken.whenFree,
     // A desktop that could not take the directory carries on as builds
     // before the lock did, its reporter included; any other process listens
     // only with the lock, so two never share the socket.
@@ -1866,8 +1862,6 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     dataDirLock,
     /** The data folder's database (`server/db/`): the stores that moved out of files keep their records in it. */
     database,
-    /** Resolves once a Studio server this desktop displaced has exited; a gateway or socket opens after it. */
-    whenDataDirFree: taken.whenFree,
     agentLaunchSettings,
     hosts,
     workspaceRegistry,

@@ -27,7 +27,7 @@ export class StudioDatabaseDamagedError extends StudioDatabaseError {
 export class StudioDatabaseFolderError extends StudioDatabaseError {
   constructor(path: string, detail: string, cause?: unknown) {
     super(
-      `Studio cannot keep its database in ${dirname(path)}: ${detail}. That usually means the folder is on a network drive or a share. Start Studio with a data folder on a local disk (--data-dir, or SPRINTENGINE_USER_DATA_DIR).`,
+      `Studio cannot keep its database in ${dirname(path)}: ${detail}. That usually means the folder is on a network drive or a share. Start Studio with a data folder on a local disk: for the desktop app, set SPRINTENGINE_USER_DATA_DIR before it starts; for a Studio server, pass --data-dir.`,
       cause === undefined ? undefined : { cause },
     )
     this.name = 'StudioDatabaseFolderError'

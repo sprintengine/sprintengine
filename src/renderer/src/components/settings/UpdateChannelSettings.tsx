@@ -9,7 +9,12 @@ import { copy } from '../../../../shared/copy'
 // from main and writes it back there rather than into appSettings.
 const UPDATE_CHANNEL_HELP: Record<AppUpdateTrack, string> = {
   stable: 'Stable gets a release once it has already run as a nightly, so it changes less often.',
-  nightly: 'Nightly gets the newest changes from main a few times a day, before they reach stable.',
+  // Moving to stable from a newer nightly installs an older build
+  // (`applyUpdaterChannel`). A build from before a change to the data folder
+  // runs on what that change left behind (docs/data-folder.md), and what it
+  // writes is not read when the newer build returns.
+  nightly:
+    'Nightly gets the newest changes from main a few times a day, before they reach stable. Switching back to stable can install an older build: it runs on your chats and settings as they were when this one upgraded them, and what you change there is not kept when you update again.',
 }
 
 const HELP_ID = 'settings-update-channel-help'

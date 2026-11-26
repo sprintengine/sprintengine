@@ -357,16 +357,9 @@ export function createStudioRpc(
   gateway.linkStudio({
     attach: (stream, authenticator, budget) => void service.connectDevice(stream, authenticator, budget),
   })
-  // Like the gateway, it binds only once a Studio server this desktop
-  // displaced has gone: that server's listener still answers until then, and
-  // this one would refuse to start beside it.
-  return {
-    ...service,
-    start: async () => {
-      await core.whenDataDirFree
-      return service.start()
-    },
-  }
+  // A Studio server this desktop displaced has gone before the core was
+  // built (`take-data-dir.ts`), so its listener no longer answers.
+  return service
 }
 
 /**

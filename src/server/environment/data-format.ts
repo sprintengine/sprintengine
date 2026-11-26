@@ -1,4 +1,14 @@
-import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, rmSync } from 'node:fs'
+import {
+  closeSync,
+  copyFileSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+} from 'node:fs'
 import { dirname, isAbsolute, join, normalize, sep } from 'node:path'
 
 import { writeFileAtomicSync } from '../platform/atomic-file'
@@ -200,8 +210,17 @@ function runStep(dataDir: string, from: number, step: DataFormatStep, version: s
       `Moving this data from format ${from} to ${step.to} failed, so it was put back as it was: ${messageOf(error)}`,
     )
   }
+  // The commit point: once the marker is gone the step stands, and a crash
+  // in what follows leaves copies the next start drops as never started.
+  commit(backup)
   rmSync(backup, { recursive: true, force: true })
   if (database?.copy) keepOnlyDatabaseCopy(dataDir, database.copy)
+}
+
+/** Remove the marker, durably: what was done since it was written now stands. */
+function commit(backup: string): void {
+  rmSync(join(backup, MARKER), { force: true })
+  syncDirectory(backup)
 }
 
 /** Undo a step a crash interrupted, from its copies. True when there was one. */
@@ -233,20 +252,23 @@ function restoreInterrupted(dataDir: string): boolean {
   return true
 }
 
+/**
+ * Put the data back as the marker says it was. Safe to run again after a
+ * crash anywhere in it: nothing is deleted before every source it restores
+ * from is known to be there; the database is replaced by a rename, not
+ * removed first; and the copies are let go of only after the marker is gone.
+ */
 function restore(dataDir: string, marker: Marker): void {
   const backup = join(dataDir, MIGRATION_BACKUP_DIRNAME)
-  if (marker.database) {
-    // The database as it was before the step: its copy, which holds the WAL's
-    // commits, so the -wal and -shm files go; or none at all.
-    for (const path of studioDatabaseFiles(dataDir)) rmSync(path, { force: true })
-    if (marker.database.copy) {
-      const copy = join(dataDir, inside(marker.database.copy))
-      copyFileSync(copy, join(dataDir, STUDIO_DATABASE_FILENAME))
-      syncFile(join(dataDir, STUDIO_DATABASE_FILENAME))
-      // The copy of a step that did not happen; the one before it, if any, stays the kept one.
-      rmSync(copy, { force: true })
-    }
-  }
+  const copy = marker.database?.copy ? join(dataDir, inside(marker.database.copy)) : null
+  const missing = [
+    ...marker.files.filter((file) => file.existed).map((file) => join(backup, 'files', inside(file.path))),
+    ...(copy ? [copy] : []),
+  ].filter((path) => !existsSync(path))
+  if (missing.length > 0)
+    throw new StudioDataMigrationError(
+      `An interrupted format change cannot be undone: ${missing.join(', ')} is missing. Nothing was changed; Studio will not start on this data until it is put back by hand.`,
+    )
   for (const file of marker.files) {
     const path = inside(file.path)
     if (file.existed) {
@@ -255,7 +277,41 @@ function restore(dataDir: string, marker: Marker): void {
       syncFile(join(dataDir, path))
     } else rmSync(join(dataDir, path), { recursive: true, force: true })
   }
+  if (marker.database) {
+    // The database as it was before the step: its copy, which holds the WAL's
+    // commits, put in place by a rename once it is whole on disk; or none.
+    const [live, wal, shm] = studioDatabaseFiles(dataDir)
+    if (copy) {
+      const restoring = `${live}.restoring`
+      copyFileSync(copy, restoring)
+      syncFile(restoring)
+      rmSync(wal, { force: true })
+      rmSync(shm, { force: true })
+      renameSync(restoring, live)
+    } else for (const path of [live, wal, shm]) rmSync(path, { force: true })
+    syncDirectory(dataDir)
+  }
+  commit(backup)
+  // The copy of a step that did not happen; the one before it, if any, stays the kept one.
+  if (copy) rmSync(copy, { force: true })
   rmSync(backup, { recursive: true, force: true })
+}
+
+/** Make what was renamed or removed in a folder durable; a platform that cannot open a folder (Windows) skips it. */
+function syncDirectory(path: string): void {
+  let fd: number
+  try {
+    fd = openSync(path, 'r')
+  } catch {
+    return
+  }
+  try {
+    fsyncSync(fd)
+  } catch {
+    // Not supported for a folder here.
+  } finally {
+    closeSync(fd)
+  }
 }
 
 function syncFile(path: string): void {

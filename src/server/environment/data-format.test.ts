@@ -289,3 +289,67 @@ test('a database that cannot be copied stops the step before it changes anything
   assert.deepEqual(format(dir), { format: 2, writtenBy: '2.0.0' })
   assert.ok(!existsSync(join(dir, MIGRATION_BACKUP_DIRNAME)))
 })
+
+/** A folder as a crash in the middle of a database step leaves it: copy and marker written, the step's change made. */
+function crashedInStep(): string {
+  const dir = dataDir({ [DATA_FORMAT_FILENAME]: '{"format":2,"writtenBy":"2.0.0"}' })
+  addNote(dir, 'from format 2')
+  const crashed = join(dataDir(), 'crashed')
+  prepareDataFormat(dir, {
+    version: '3.0.0',
+    format: 3,
+    steps: [noteStep(3, 'by step 3', (at) => cpSync(at, crashed, { recursive: true }))],
+  })
+  return crashed
+}
+
+test('a restore a crash cut short runs again from the same copies, and only then lets them go', () => {
+  const crashed = crashedInStep()
+  const copy = join(crashed, DATABASE_COPIES_DIRNAME, 'studio-before-format-3.sqlite')
+  // The restore got as far as putting the database back, and stopped before its commit.
+  cpSync(copy, databaseIn(crashed))
+  rmSync(`${databaseIn(crashed)}-wal`, { force: true })
+  assert.ok(existsSync(join(crashed, MIGRATION_BACKUP_DIRNAME, 'marker.json')))
+  assert.ok(existsSync(copy), 'the copy is kept while the marker says the restore is not done')
+
+  assert.equal(prepareDataFormat(crashed, { version: '2.0.0', format: 2, steps: [] }).restored, true)
+  assert.deepEqual(notes(databaseIn(crashed)), ['from format 2'])
+  assert.ok(!existsSync(join(crashed, MIGRATION_BACKUP_DIRNAME)))
+  assert.ok(!existsSync(copy), 'the copy of a step that did not happen goes once the restore stands')
+  // Again: nothing left to undo, and the data stays as it is.
+  assert.equal(prepareDataFormat(crashed, { version: '2.0.0', format: 2, steps: [] }).restored, false)
+  assert.deepEqual(notes(databaseIn(crashed)), ['from format 2'])
+})
+
+test('a restore whose copy is missing refuses and deletes nothing', () => {
+  const crashed = crashedInStep()
+  rmSync(join(crashed, DATABASE_COPIES_DIRNAME, 'studio-before-format-3.sqlite'))
+  assert.throws(
+    () => prepareDataFormat(crashed, { version: '2.0.0', format: 2, steps: [] }),
+    /cannot be undone: .*studio-before-format-3\.sqlite is missing\. Nothing was changed/u,
+  )
+  assert.deepEqual(notes(databaseIn(crashed)), ['from format 2', 'by step 3'], 'the live database is left alone')
+  assert.ok(existsSync(join(crashed, MIGRATION_BACKUP_DIRNAME, 'marker.json')))
+})
+
+test('a step that crashed after its commit point stands, and its leftover copies are dropped', () => {
+  const dir = dataDir({ [DATA_FORMAT_FILENAME]: '{"format":2,"writtenBy":"2.0.0"}' })
+  addNote(dir, 'from format 2')
+  const crashed = join(dataDir(), 'crashed')
+  // Taken as the step ends: what a crash just after the marker went would leave.
+  prepareDataFormat(dir, {
+    version: '3.0.0',
+    format: 3,
+    steps: [
+      noteStep(3, 'by step 3', (at) => {
+        writeFileSync(join(at, DATA_FORMAT_FILENAME), '{"format":3,"writtenBy":"3.0.0"}')
+        cpSync(at, crashed, { recursive: true })
+        rmSync(join(crashed, MIGRATION_BACKUP_DIRNAME, 'marker.json'))
+      }),
+    ],
+  })
+  assert.equal(prepareDataFormat(crashed, { version: '3.0.0', format: 3, steps: [] }).restored, false)
+  assert.deepEqual(notes(databaseIn(crashed)), ['from format 2', 'by step 3'])
+  assert.deepEqual(format(crashed), { format: 3, writtenBy: '3.0.0' })
+  assert.ok(!existsSync(join(crashed, MIGRATION_BACKUP_DIRNAME)))
+})
