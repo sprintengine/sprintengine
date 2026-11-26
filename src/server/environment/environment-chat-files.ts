@@ -154,13 +154,15 @@ export async function keepAdoptedChatFiles(
   history: AdoptedChatHistory,
 ): Promise<{ ok: true; kept: string[] } | { ok: false; reason: string }> {
   const kept: string[] = []
+  // A transcript that cannot be taken up now (refused by its store's confinement) is in place all the same: its first read tries again.
+  const retake = (target: string) => history.retake(target, chat.workspaceRoot).catch(() => undefined)
   for (const file of chat.files) {
     const target = adoptedChatFilePath(dataDir, chat, file)
     const transcript = file.place === 'store' && file.path === `${conversationStorageSegment(chat.agentId)}.jsonl`
     const there = await lstat(target).catch(() => null)
     const regular = there?.isFile() === true && !there.isSymbolicLink()
     if (there && regular && (await digestOf(target)) === file.sha256) {
-      if (transcript) await history.retake(target, chat.workspaceRoot)
+      if (transcript) await retake(target)
       continue
     }
     if (there && (!regular || !transcript)) {
@@ -199,7 +201,7 @@ export async function keepAdoptedChatFiles(
       continue
     }
     await rename(temporary, target)
-    if (transcript) await history.retake(target, chat.workspaceRoot)
+    if (transcript) await retake(target)
   }
   return { ok: true, kept }
 }
