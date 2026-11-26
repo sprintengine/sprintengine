@@ -1,7 +1,7 @@
 import type { StudioWindowTicket } from '../../../shared/studio-connection'
 import type { WindowStudioSetup } from '../studio/windowStudioClient'
-import { returnToPairing, webSocketUrl } from './webLocation'
-import { WEB_CLOSE_REVOKED } from './webReconnect'
+import { returnToPairing, webPageUrl, webSocketUrl } from './webLocation'
+import { WEB_CLOSE_REVOKED, WEB_STUDIO_REOPENED_EVENT } from './webReconnect'
 
 // A web tab's connections to the Studio protocol: a WebSocket to `/ws` on the
 // server that served the tab, as a desktop window's goes to its own server's
@@ -19,10 +19,36 @@ export async function webStudioTicket(): Promise<StudioWindowTicket> {
   return { url: webSocketUrl('ws'), token: WEB_SESSION_CREDENTIAL }
 }
 
-/** How a tab's connections behave: its Studio is another machine, and a revoked session goes back to pairing. */
+/**
+ * Whether this browser is still paired: a socket refused at its upgrade (a
+ * browser removed while the tab slept is refused there, with a 401 the page
+ * cannot read) closes without a code, so the session is asked. Removed, the
+ * tab goes back to pairing; a server that is not there leaves the backoff to
+ * try again.
+ */
+export async function checkStillPaired(
+  fetcher: typeof fetch = fetch,
+  back: () => void = returnToPairing,
+): Promise<void> {
+  try {
+    const response = await fetcher(webPageUrl('api/session'), { credentials: 'same-origin', cache: 'no-store' })
+    if (response.status === 401) back()
+  } catch {
+    // The server is not there: the reconnect keeps trying.
+  }
+}
+
+/**
+ * How a tab's connections behave: its Studio is another machine; a revoked
+ * session goes back to pairing, whether the server said so (4401) or refused
+ * the socket at its upgrade; and a reconnect says the server may have been
+ * replaced, so the tab checks which bundle it serves (webBuildWatch.ts).
+ */
 export const WEB_STUDIO_SETUP: WindowStudioSetup = {
   anotherMachine: true,
-  onSocketClose: (code) => {
+  onSocketClose: (code, socket) => {
     if (code === WEB_CLOSE_REVOKED) returnToPairing()
+    else if (!socket.opened) void checkStillPaired()
   },
+  onReopen: () => window.dispatchEvent(new Event(WEB_STUDIO_REOPENED_EVENT)),
 }

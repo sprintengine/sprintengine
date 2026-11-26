@@ -982,7 +982,7 @@ function serveShellRequests(deps: {
   // The control channel is process-private, so whatever asks here is the
   // shell: its connection gets the shell role, which may offer the built-in
   // toolsets (phase 5, 7.2).
-  rpc.handle(SERVER_METHODS.shellConnect, (params) => deps.studioRpc.connectShell(tunnelPortFrames(takePort(params))))
+  rpc.handle(SERVER_METHODS.shellConnect, (params) => deps.studioRpc.connectShell(shellPortFrames(takePort(params))))
   rpc.handle(SERVER_METHODS.meshCheckReachability, async (params) => {
     const { connectionId } = (params ?? {}) as { connectionId?: unknown }
     await deps.gateway.mesh().checkReachability(typeof connectionId === 'string' ? connectionId : undefined)
@@ -1045,7 +1045,7 @@ function serveShellRequests(deps: {
 }
 
 /** A utility process's `MessagePortMain` as the frames a Studio connection reads and writes. */
-function tunnelPortFrames(port: MessagePortLike) {
+function shellPortFrames(port: MessagePortLike) {
   const closeListeners: Array<() => void> = []
   let closed = false
   const end = () => {

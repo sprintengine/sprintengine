@@ -35,11 +35,10 @@ import type { StudioCore } from '../core/studio-core'
 import type { StudioGateway } from '../core/studio-gateway'
 import type { StudioPlatform } from '../platform/platform'
 
-// The module kernel in the Studio server out of process (phase 6 spec, 12.2):
-// every module's server half, registered on the server's IPC tunnel, its MCP
-// tools on the server's gateway, its events and bell rows on the Studio RPC's
-// `module.*` streams. The same steps app-main.ts takes in process, over the server's own
-// services.
+// The module kernel in the desktop's Studio server (phase 6 spec, 12.2):
+// every module's server half, its MCP tools on the server's gateway, its
+// events and bell rows on the Studio RPC's `module.*` streams, over the
+// server's own services.
 //
 // What runs here is changed through the Studio RPC (`extension.setEnabled`,
 // `.install`, `.approve`, `.uninstall`, main/modules/module-lifecycle.ts):

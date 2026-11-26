@@ -28,8 +28,8 @@ import { SERVER_EVENTS, SERVER_METHODS, SHELL_METHODS, type ServerMirrorState } 
 
 // The desktop's server out of process, composed for real over a temp data
 // directory and driven the way the shell drives it: an envelope on the control
-// channel, the shell bridge served back, a window's port carrying tunnelled
-// IPC, the mirror the shell reads, and a drain at the end. No Electron: the
+// channel, the shell bridge served back, a window on its own listener, the
+// mirror the shell reads, and a drain at the end. No Electron: the
 // carrier is a fake parent port, and the shell is this test.
 
 const ROOT = join(__dirname, '..', '..', '..')
@@ -163,7 +163,7 @@ test('the desktop server composes, serves a window over its listener and the she
 
   // The shell's mirror reads from the server.
   const mirror = await shellRpc.call<ServerMirrorState>(SERVER_METHODS.mirrorSnapshot)
-  // A window writes the launch settings over the Studio protocol now, not this tunnel.
+  // A window writes the launch settings over the Studio protocol.
   assert.equal(typeof mirror.launchSettings.settings.cliRuntimes, 'object')
   assert.ok(Array.isArray(mirror.state.workspaces))
 
