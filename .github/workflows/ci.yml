@@ -45,7 +45,9 @@ jobs:
     name: Build (${{ matrix.os }})
     if: ${{ !inputs.release_gate && (github.event_name == 'workflow_dispatch' || github.event.repository.private == false) }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # macOS runs the whole suite (about 28 minutes on a loaded runner) before
+    # it builds; the other two finish in a few minutes.
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:

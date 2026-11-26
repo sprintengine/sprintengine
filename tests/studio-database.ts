@@ -51,6 +51,11 @@ export function testDatabaseAt(dataDir: string): StudioDatabase {
   return database
 }
 
+/** Close `dataDir`'s test database if one is open: before its folder is deleted, so no write still landing puts a file back mid-delete. */
+export async function closeTestDatabaseAt(dataDir: string): Promise<void> {
+  await byFolder.get(resolve(dataDir))?.close()
+}
+
 /** Keep extension approvals for `dataDir` in its test database, as a Studio server holding it does. */
 export function keepTestApprovalsIn(dataDir: string): void {
   const stop = keepExtensionApprovalsIn(dataDir, testDatabaseAt(dataDir))

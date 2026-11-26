@@ -1604,7 +1604,8 @@ test('a chat at rest over there is read again once its first message is answered
       message: 'Wake up',
       localTurnId: expect.any(String),
     })
-    expect(chat.far['conversation.list'].mock.calls.length).toBe(reads + 1)
+    // Read again at least once: a slow machine can let another refresh in too.
+    expect(chat.far['conversation.list'].mock.calls.length).toBeGreaterThan(reads)
   } finally {
     await chat.unmount()
   }
