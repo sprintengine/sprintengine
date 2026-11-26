@@ -178,6 +178,7 @@ class WorkerConnection {
   private started: Promise<void> | null = null
   private readonly pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>()
   private nextId = 0
+  private starting = 0
   private closing: Promise<void> | null = null
 
   constructor(
@@ -195,10 +196,16 @@ class WorkerConnection {
     if (generation !== undefined && (generation !== this.generation || !this.worker))
       throw new StudioDatabaseError('The database writer stopped during this transaction, so it was not committed.')
     const worker = this.start()
+    // Held while it starts, too: a request waiting on it keeps the process up.
+    this.starting += 1
+    worker.ref()
     try {
       await this.started
     } catch (error) {
       throw opening(this.path, error)
+    } finally {
+      this.starting -= 1
+      this.idle(worker)
     }
     if (this.worker !== worker)
       throw new StudioDatabaseError('The database connection stopped before the request was sent.')
@@ -254,9 +261,14 @@ class WorkerConnection {
     const waiting = this.pending.get(id)
     if (!waiting) return
     this.pending.delete(id)
-    if (this.pending.size === 0) this.worker?.unref()
+    if (this.worker) this.idle(this.worker)
     if (reply.error) waiting.reject(new StudioSqlError(reply.error))
     else waiting.resolve(reply.value)
+  }
+
+  /** Let the process exit past the thread once nothing waits on it. */
+  private idle(worker: Worker): void {
+    if (this.pending.size === 0 && this.starting === 0) worker.unref()
   }
 
   close(): Promise<void> {
