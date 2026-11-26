@@ -6,7 +6,11 @@ import { environmentRouteOf, type EnvironmentEntry } from '../../../../../shared
 import type { MachineRef } from '../../../../../shared/machine-identity'
 import type { ScheduledAgentView, ScheduledAgentsPause } from '../../../../../shared/scheduled-agents'
 import type { MeshScheduledAgentAction } from '../../../../../shared/tailnet-mesh'
-import { environmentStudioAvailable, pairedConnectionOf, type EnvironmentTarget } from '../../../studio/environmentStudio'
+import {
+  environmentStudioAvailable,
+  pairedConnectionOf,
+  type EnvironmentTarget,
+} from '../../../studio/environmentStudio'
 import { pairedScheduledAgents, scheduledAgentsOf } from '../../../studio/pairedSchedules'
 import { environmentConversationTransport } from '../../panels/agentChat/environmentChat'
 

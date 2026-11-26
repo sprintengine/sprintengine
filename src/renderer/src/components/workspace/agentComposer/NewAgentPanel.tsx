@@ -6,11 +6,7 @@ import {
   environmentWorkspaceCheckout,
   type EnvironmentBrowse,
 } from '../../../studio/environmentDiscovery'
-import {
-  environmentCommandId,
-  pairedRoute,
-  type EnvironmentTarget,
-} from '../../../studio/environmentStudio'
+import { environmentCommandId, pairedRoute, type EnvironmentTarget } from '../../../studio/environmentStudio'
 import { useEnvironments } from '../../../hooks/useEnvironments'
 import {
   environmentOnThisComputer,
