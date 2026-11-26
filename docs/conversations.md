@@ -623,9 +623,11 @@ that every reader passes over (`conversation-command-receipts.ts`).
   machine's folder never runs there: the scheduler reads it as waiting, and
   Run now is refused (`scheduleWaitsForHandOver`), until it is handed over
   (`environment-migration-stores.ts`, `handOverSchedulesWhenSaved`). The
-  desktop's Scheduled section lists each machine's schedules from that
-  machine's own server, on the route the window follows its chats on
-  (`sidebar/useRemoteScheduledAgents.ts`), and opens one in New chat's
+  desktop's Scheduled section lists the schedules of every machine in the
+  environment list that is answering, whatever kind of machine it is, from
+  that machine's own server on its route, kept current by its
+  `schedules.changed` push (`sidebar/useRemoteScheduledAgents.ts`); what this
+  desktop may do with them is its grant there. It opens one in New chat's
   editor, which saves, pauses and runs it on that machine by its route.
   Pause all and Resume all cover this device and each machine it owns whose
   schedules the section lists, and say which machine they could not reach.

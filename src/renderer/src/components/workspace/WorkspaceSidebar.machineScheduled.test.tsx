@@ -68,7 +68,24 @@ test('WorkspaceSidebar.machineScheduled', async () => {
     routes: [{ kind: 'ssh', machine: 'm1' }],
     machine: { kind: 'ssh', host: 'build-box' },
   }
-  let environments: unknown[] = [local, machine]
+  // A machine not answering is not asked: its schedules wait until it is back.
+  const asleep = {
+    ...machine,
+    environmentId: 'env-asleep',
+    displayName: 'asleep-box',
+    routes: [{ kind: 'ssh', machine: 'm2' }],
+    machine: { kind: 'ssh', host: 'asleep-box' },
+    connection: { state: 'offline', detail: null, lastReachedAt: null },
+  }
+  // A paired desktop is listed the same way, by its route, whatever kind of machine it is.
+  const desk = {
+    ...machine,
+    environmentId: 'env-desk',
+    displayName: 'mac-mini',
+    routes: [{ kind: 'tailnet', connection: 'c1' }],
+    machine: { kind: 'paired', name: 'mac-mini' },
+  }
+  let environments: unknown[] = [local, machine, asleep]
   const environmentsChanged = new Set<() => void>()
   domWindow.api = {
     platform: 'darwin',
@@ -87,21 +104,25 @@ test('WorkspaceSidebar.machineScheduled', async () => {
   const { fakePairedStudios } = await import('../../studio/environmentStudio.double')
   const studio = fakePairedStudios(domWindow.api as object, {
     'session.list': () => ({ sessions: [] }),
-    'schedules.list': () => ({
-      schedules: [
-        {
-          id: 'sa-box',
-          prompt: 'Triage the build',
-          schedule: { cron: '0 9 * * 1-5', timezone: 'UTC' },
-          folderPath: '/home/dev/proj',
-          cli: 'opencode',
-          createdAt,
-          updatedAt: createdAt,
-          nextRunAt: createdAt + 60 * 60 * 1000,
-        },
-      ],
-      pausedAll: null,
-    }),
+    // The paired desktop holds none: the box's are what the section shows.
+    'schedules.list': (_params, connectionId) =>
+      connectionId === 'c1'
+        ? { schedules: [], pausedAll: null }
+        : {
+            schedules: [
+              {
+                id: 'sa-box',
+                prompt: 'Triage the build',
+                schedule: { cron: '0 9 * * 1-5', timezone: 'UTC' },
+                folderPath: '/home/dev/proj',
+                cli: 'opencode',
+                createdAt,
+                updatedAt: createdAt,
+                nextRunAt: createdAt + 60 * 60 * 1000,
+              },
+            ],
+            pausedAll: null,
+          },
     'schedules.runNow': () => ({ workspaceId: 'run-1' }),
     'schedules.pauseAll': (params) => ({ pausedAll: { since: createdAt, until: params.until } }),
   })
@@ -187,6 +208,10 @@ test('WorkspaceSidebar.machineScheduled', async () => {
       ['sa-box'],
     )
     assert.ok(studio.calls.some((call) => call.connectionId === 'ssh:m1' && call.method === 'schedules.list'))
+    assert.ok(
+      !studio.calls.some((call) => call.connectionId === 'ssh:m2'),
+      'a machine that is not answering is not asked',
+    )
     const row = (): HTMLElement => scheduledRows()[0]!
     assert.match(
       row().getAttribute('aria-label') ?? '',
@@ -300,6 +325,17 @@ test('WorkspaceSidebar.machineScheduled', async () => {
     })
     await settle()
     assert.equal(scheduledRows().length, 0, "a forgotten machine's schedules are not listed")
+
+    // A paired desktop that comes to answer is asked on its route, as any other machine is.
+    environments = [local, desk]
+    act(() => {
+      for (const listener of [...environmentsChanged]) listener()
+    })
+    await settle()
+    assert.ok(
+      studio.calls.some((call) => call.connectionId === 'c1' && call.method === 'schedules.list'),
+      'a paired desktop is asked on its route, as any other machine is',
+    )
   } finally {
     act(() => {
       root.unmount()

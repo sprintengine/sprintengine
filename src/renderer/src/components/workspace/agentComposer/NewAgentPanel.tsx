@@ -6,12 +6,7 @@ import {
   environmentWorkspaceCheckout,
   type EnvironmentBrowse,
 } from '../../../studio/environmentDiscovery'
-import {
-  environmentCommandId,
-  pairedConnectionOf,
-  pairedRoute,
-  type EnvironmentTarget,
-} from '../../../studio/environmentStudio'
+import { environmentCommandId, pairedRoute, type EnvironmentTarget } from '../../../studio/environmentStudio'
 import { useEnvironments } from '../../../hooks/useEnvironments'
 import {
   environmentOnThisComputer,
@@ -144,7 +139,7 @@ import {
   type MachineBrowseEntry,
 } from './newChatMachines'
 import { RemoteProjectPicker, type RemoteTargetState } from './RemoteProjectPicker'
-import { announceRemoteScheduledChange, remoteScheduleActionWords } from '../sidebar/useRemoteScheduledAgents'
+import { remoteScheduleActionWords } from '../sidebar/useRemoteScheduledAgents'
 import { ComposerStrip } from './ComposerStrip'
 import { FrontTruncatedText } from '../../ui/FrontTruncatedText'
 import { ScheduledRuns } from './schedule/ScheduledRuns'
@@ -562,10 +557,6 @@ export default function NewAgentPanel({
       ? { id: editingRemote.connectionId, machineName: editingRemote.machineName }
       : { route: editingRemote.route, name: editingRemote.machineName }
     : null
-  // A paired desktop's list is re-read when told; another environment's follows its pushes.
-  const announceEditedOn = (on: { connectionId: string | null }) => {
-    if (on.connectionId) announceRemoteScheduledChange(on.connectionId)
-  }
   const [mode, setMode] = React.useState<NewAgentPanelMode>(editing ? 'scheduled' : initialMode)
   const extensionMode = mode === 'extension'
   // A scheduled agent's draft reopens on the schedule it was left with.
@@ -1755,7 +1746,6 @@ export default function NewAgentPanel({
       remoteCommandDone()
       if (folder !== null) lastTypedFolders.set(on.target.route, folder)
       if (once === null) rememberSchedule(cron)
-      announceEditedOn({ connectionId: pairedConnectionOf(on.target.route) })
       onScheduled?.(result.agent)
     } catch (error) {
       showToast({
@@ -1832,7 +1822,6 @@ export default function NewAgentPanel({
       }
       remoteCommandDone()
       if (once === null) rememberSchedule(cron)
-      announceEditedOn(on)
       onScheduled?.(result.agent)
     } catch (error) {
       showToast({
@@ -1945,7 +1934,6 @@ export default function NewAgentPanel({
             }
           : { tone: 'error', title: appCopy.workspace.agentComposer.newAgentPanel.didNotRun, description: ran.message },
       )
-      announceEditedOn(editingRemote)
       return
     }
     const result = await schedulesApi.runScheduledAgentNow(editing.id).catch((error: unknown) => ({
@@ -1998,7 +1986,6 @@ export default function NewAgentPanel({
             description: result.message,
           },
     )
-    announceEditedOn(editingRemote)
   }
 
   // A ⌘⏎ launch went out: the box empties for the next task, keeping every
