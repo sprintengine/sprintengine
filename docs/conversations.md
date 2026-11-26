@@ -540,7 +540,10 @@ draws them); a step's pictures as at most eight paths. A reader opening such
 a step reads the whole of it with `toolDetail`, and draws a cut change only
 from that. A snapshot, and each earlier page, is the newest of those
 projected events within 2 MiB, cut where a turn begins unless the newest
-turn alone is larger; older ones are one `loadEarlier` away. A reconnect
+turn alone is larger. A turn begins at the person's message, or where the CLI
+started one of its own (Claude Code answering a background agent's result), so
+a night of those is paged like any other turns rather than dropped whole with
+the agents it started. Older ones are one `loadEarlier` away. A reconnect
 further behind than 2 MiB of the log gets a snapshot rather than its
 catch-up, so a replay is bounded the same way, and a snapshot a session sends
 after its join (once a chat's server is back) is paced and split like a

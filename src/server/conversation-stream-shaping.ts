@@ -270,13 +270,47 @@ export function conversationDeltaKey(event: ConversationEvent): string | null {
 }
 
 /**
+ * Whether `event` is where a turn begins: the person's message, or the start
+ * of a turn no message opened. The CLI takes those turns on its own, to
+ * report a background agent's result and carry on from it, so a chat that
+ * works through the night has one message and many of these. Counting only
+ * messages made all of that one turn, too large for any page, and the cut
+ * fell after it: the page held none of the night's replies and none of the
+ * agents it started. A turn a message opened begins at the message, which is
+ * stored a step or two before the turn's start: the few events before a start
+ * are looked at for it (`TURN_MESSAGE_REACH`), by their type and turn alone.
+ */
+function beginsTurn(events: readonly ConversationEvent[], index: number): boolean {
+  const event = events[index]
+  if (event.type === 'user_message') return true
+  if (event.type !== 'turn_started') return false
+  const turnId = turnIdOf(event)
+  for (let back = index - 1; back >= 0 && back >= index - TURN_MESSAGE_REACH; back--) {
+    const before = events[back]
+    if (before.type !== 'user_message') continue
+    if (turnId === undefined || turnIdOf(before) === undefined || turnIdOf(before) === turnId) return false
+  }
+  return true
+}
+
+// How far before a turn's start its message may be stored. In every chat on
+// the machine this was built on it is the event before, or the one before
+// that, with a subagent's line between.
+const TURN_MESSAGE_REACH = 8
+
+function turnIdOf(event: ConversationEvent): string | undefined {
+  const turnId = event.payload?.turnId
+  return typeof turnId === 'string' && turnId ? turnId : undefined
+}
+
+/**
  * A page as it crosses a wire: its events projected, and only the newest of
  * them that fit the page budget. Anything older is left to `loadEarlier`,
  * with the page's `beforeCursor` moved to match. The cut falls where a turn
- * begins, so the oldest turn shown has its message and every step's start:
- * mid-turn only when the newest turn alone is over the budget. Measured from
- * the newest back, and only as far as the budget reaches: what is left
- * behind is never measured at all. Every projected event is within one
+ * begins (`beginsTurn`), so the oldest turn shown has its message, or its
+ * start, and every step's start: mid-turn only when the newest turn alone is
+ * over the budget. Measured from the newest back, and only as far as the
+ * budget reaches: what is left behind is never measured at all. Every projected event is within one
  * frame, so a page always holds many.
  */
 export function boundConversationPage(
@@ -299,7 +333,7 @@ export function boundConversationPage(
     bytes += size
     kept.push(event)
     sizes.push(size)
-    if (event.type === 'user_message') {
+    if (beginsTurn(events, index)) {
       whole = kept.length
       wholeBytes = bytes
     }
