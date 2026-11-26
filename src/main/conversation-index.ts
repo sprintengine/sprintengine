@@ -58,6 +58,8 @@ const text = (value: unknown) => (typeof value === 'string' ? value : '')
 
 const FOLD_ROWS = 512
 const MAX_HITS = 200
+// Search rows a query too short for the trigram index reads at a time.
+const SHORT_QUERY_PAGE = 256
 
 export class ConversationIndex {
   private queues = new Map<string, Promise<unknown>>()
@@ -125,42 +127,60 @@ export class ConversationIndex {
     })
     options.signal?.throwIfAborted()
     const chat = chatOf(input)
-    // A trigram index finds three characters or more; a shorter query reads the
-    // chat's rows, matched below with the same case folding as every hit is.
-    const rows =
+    // A trigram index finds three characters or more. A shorter query reads
+    // the chat's rows a page at a time, in the order hits are given, matched
+    // below with the same case folding as every hit is, until the hits are
+    // enough.
+    const pages =
       [...query].length >= 3
-        ? await this.database.all<Doc>(
-            `SELECT d.agent_id, d.turn_id, d.kind, d.seq, d.origin, d.body FROM chat_search
-             JOIN chat_search_docs d ON d.id = chat_search.rowid
-             WHERE chat_search MATCH ? AND d.chat_key = ? ORDER BY d.agent_id, d.seq, d.kind DESC LIMIT ?`,
-            [`"${query.replace(/"/g, '""')}"`, chat, MAX_HITS],
-          )
-        : await this.database.all<Doc>(
-            `SELECT agent_id, turn_id, kind, seq, origin, body FROM chat_search_docs
-             WHERE chat_key = ? ORDER BY agent_id, seq, kind DESC`,
-            [chat],
-          )
-    options.signal?.throwIfAborted()
+        ? (async function* (database: StudioDatabase) {
+            yield await database.all<Doc>(
+              `SELECT d.agent_id, d.turn_id, d.kind, d.seq, d.origin, d.body FROM chat_search
+               JOIN chat_search_docs d ON d.id = chat_search.rowid
+               WHERE chat_search MATCH ? AND d.chat_key = ? ORDER BY d.agent_id, d.seq, d.kind DESC LIMIT ?`,
+              [`"${query.replace(/"/g, '""')}"`, chat, MAX_HITS],
+            )
+          })(this.database)
+        : (async function* (database: StudioDatabase) {
+            const ids = await database.all<{ id: number }>(
+              'SELECT id FROM chat_search_docs WHERE chat_key = ? ORDER BY agent_id, seq, kind DESC',
+              [chat],
+            )
+            for (let at = 0; at < ids.length; at += SHORT_QUERY_PAGE) {
+              const page = ids.slice(at, at + SHORT_QUERY_PAGE).map((row) => row.id)
+              const rows = await database.all<Doc & { id: number }>(
+                `SELECT id, agent_id, turn_id, kind, seq, origin, body FROM chat_search_docs
+                 WHERE id IN (${page.map(() => '?').join(', ')})`,
+                page,
+              )
+              const byId = new Map(rows.map((row) => [row.id, row]))
+              yield page.flatMap((id) => byId.get(id) ?? [])
+            }
+          })(this.database)
     const hits: ConversationSearchHit[] = []
     const pending: ConversationSearchHit[] = []
-    for (const row of rows) {
+    for await (const rows of pages) {
+      options.signal?.throwIfAborted()
+      for (const row of rows) {
+        if (hits.length >= MAX_HITS) break
+        const offset = row.body.toLowerCase().indexOf(query)
+        if (offset < 0) continue
+        const snippet = `${offset > 80 ? '…' : ''}${row.body.slice(Math.max(0, offset - 80), offset + query.length + 100)}${row.body.length > offset + query.length + 100 ? '…' : ''}`
+        const hit: ConversationSearchHit = {
+          agentId: row.agent_id,
+          seq: row.seq,
+          ...(row.turn_id ? { turnId: row.turn_id } : {}),
+          snippet,
+          from: row.kind === 'agent' ? 'agent' : row.origin === 'studio' ? 'studio' : 'person',
+        }
+        hits.push(hit)
+        pending.push(hit)
+        if (pending.length >= 20) {
+          options.onBatch?.(pending.splice(0))
+          options.signal?.throwIfAborted()
+        }
+      }
       if (hits.length >= MAX_HITS) break
-      const offset = row.body.toLowerCase().indexOf(query)
-      if (offset < 0) continue
-      const snippet = `${offset > 80 ? '…' : ''}${row.body.slice(Math.max(0, offset - 80), offset + query.length + 100)}${row.body.length > offset + query.length + 100 ? '…' : ''}`
-      const hit: ConversationSearchHit = {
-        agentId: row.agent_id,
-        seq: row.seq,
-        ...(row.turn_id ? { turnId: row.turn_id } : {}),
-        snippet,
-        from: row.kind === 'agent' ? 'agent' : row.origin === 'studio' ? 'studio' : 'person',
-      }
-      hits.push(hit)
-      pending.push(hit)
-      if (pending.length >= 20) {
-        options.onBatch?.(pending.splice(0))
-        options.signal?.throwIfAborted()
-      }
     }
     if (pending.length) options.onBatch?.(pending)
     return hits
