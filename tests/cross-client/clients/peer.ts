@@ -11,7 +11,7 @@ import type { MeshConversationKey } from '../../../src/shared/tailnet-mesh'
 import type { Attachment, ChatRef, GateClient } from '../client'
 import type { Cutter } from '../cutter'
 import { openPairedWindow, pairedWindowApi } from '../../paired-window'
-import { createPairedChat } from '../../../src/renderer/src/studio/pairedDiscovery'
+import { createEnvironmentChat } from '../../../src/renderer/src/studio/environmentDiscovery'
 import { pairedTarget, withEnvironmentStudio } from '../../../src/renderer/src/studio/environmentStudio'
 import { createPairedChatTransport } from '../../../src/renderer/src/components/panels/agentChat/pairedChat'
 import type { ConversationTransport } from '../../../src/renderer/src/components/panels/agentChat/conversationTransport'
@@ -138,7 +138,7 @@ export async function peerClient(input: {
     async createChat(workspace, name) {
       // The way a paired desktop's window starts a chat: by the CLI its New
       // chat picked, on that machine's Studio. The fake provider has none (gaps.ts).
-      const created = await createPairedChat(machine, {
+      const created = await createEnvironmentChat(pairedTarget(machine), {
         workspaceId: workspace.workspaceId,
         cli: 'mock-provider',
         prompt: name,

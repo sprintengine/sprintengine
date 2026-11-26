@@ -13,6 +13,8 @@ import {
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
   STUDIO_SCHEDULES_CAPABILITY,
   STUDIO_WORKSPACES_CAPABILITY,
+  STUDIO_NEW_CHAT_FOLDER_CAPABILITY,
+  STUDIO_FILES_CAPABILITY,
   type StudioScope,
 } from '../../../../packages/studio-protocol/src/public'
 import { parseEnvironmentRoute } from '../../../../packages/studio-protocol/src/environment'
@@ -105,6 +107,8 @@ const ALL_CAPABILITIES = [
   STUDIO_SCHEDULES_CAPABILITY,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
   STUDIO_CANVAS_BOARDS_CAPABILITY,
+  STUDIO_NEW_CHAT_FOLDER_CAPABILITY,
+  STUDIO_FILES_CAPABILITY,
 ]
 
 const ALL_SCOPES: StudioScope[] = [

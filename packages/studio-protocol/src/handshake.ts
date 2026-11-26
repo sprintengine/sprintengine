@@ -425,6 +425,14 @@ export const STUDIO_PROCESSES_CAPABILITY = 'processes' as const
 export const STUDIO_BROWSER_TABS_CAPABILITY = 'browser-tabs' as const
 
 /**
+ * `conversation.create` takes `folder` in place of `workspaceId`: a new chat
+ * in a folder on that machine no workspace there names yet, as New chat starts
+ * one in a folder it browsed or typed. A connection held to the folders Studio
+ * knows names only one of those. Served with `conversation-create`.
+ */
+export const STUDIO_NEW_CHAT_FOLDER_CAPABILITY = 'new-chat-folder' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -495,6 +503,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_EXTENSION_EDITORS_CAPABILITY,
   STUDIO_PROCESSES_CAPABILITY,
   STUDIO_BROWSER_TABS_CAPABILITY,
+  STUDIO_NEW_CHAT_FOLDER_CAPABILITY,
 ] as const
 
 /**

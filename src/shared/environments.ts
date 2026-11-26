@@ -117,3 +117,33 @@ export function environmentOfRoute(
     environments.find((entry) => entry.routes.some((candidate) => formatEnvironmentRoute(candidate) === key)) ?? null
   )
 }
+
+/** The route an environment is reached by, best first, as the bridge names it (`formatEnvironmentRoute`). */
+export function environmentRouteOf(entry: Pick<EnvironmentEntry, 'routes'>): string {
+  return formatEnvironmentRoute(entry.routes[0]!)
+}
+
+/**
+ * Whether an environment runs on this computer: this machine, or a WSL
+ * distribution it hosts. Its folders are this computer's to browse (a
+ * distribution's through its share) and its terminals this computer's.
+ */
+export function environmentOnThisComputer(entry: Pick<EnvironmentEntry, 'routes'>): boolean {
+  const best = entry.routes[0]
+  return best?.kind === 'local' || best?.kind === 'wsl'
+}
+
+/**
+ * The machines a picker lists, in an order that never moves with
+ * reachability: this computer and its distributions as the list has them,
+ * then every other environment alphabetically, whatever its route.
+ */
+export function orderEnvironmentsForPicking<T extends Pick<EnvironmentEntry, 'routes' | 'displayName'>>(
+  entries: readonly T[],
+): T[] {
+  const here = entries.filter(environmentOnThisComputer)
+  const away = entries
+    .filter((entry) => !environmentOnThisComputer(entry))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }))
+  return [...here, ...away]
+}

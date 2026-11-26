@@ -3392,7 +3392,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     () =>
       pairedConnection && pairedWorkspaceId
         ? {
-            connectionId: pairedConnection,
+            route: environment.route!,
             workspaceId: pairedWorkspaceId,
             ...(environment.label ? { machineName: environment.label } : {}),
           }

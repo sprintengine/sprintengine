@@ -4531,8 +4531,10 @@ export const en = {
       nameTheRule: 'Name the rule.',
       chat: 'Chat',
     },
-    // src/renderer/src/studio/pairedDiscovery.ts
-    pairedDiscovery: {
+    // src/renderer/src/studio/environmentDiscovery.ts
+    environmentDiscovery: {
+      updateToStartInAFolder: (machineName: unknown) =>
+        `${machineName} can't start a chat in a folder named from here yet. Update Studio there, or pick one of its projects.`,
       thisPairingMayNotRead: "This pairing may not read that machine's workspaces.",
       nameTheWorkspaceWhoseCheckout: 'Name the workspace whose checkout to read.',
       nameTheWorkspaceWhoseSkills: 'Name the workspace whose skills to list.',
@@ -5276,6 +5278,7 @@ export const en = {
       machineScopePicker: {
         machineThisChatRunsOn: 'Machine this chat runs on',
         otherMachines: 'Other machines',
+        thisDevice: 'This device',
       },
       // src/renderer/src/components/workspace/agentComposer/NewAgentPanel.tsx
       newAgentPanel: {
@@ -5373,6 +5376,8 @@ export const en = {
       },
       // src/renderer/src/components/workspace/agentComposer/RemoteProjectPicker.tsx
       remoteProjectPicker: {
+        anotherFolder: 'Another folder…',
+        typeItsPathOn: (machineName: unknown) => `Type its path on ${machineName}`,
         projectOn: (machineName: unknown) => `Project on ${machineName}`,
         searchProjects: 'Search projects…',
         searchProjectsOn: (machineName: unknown) => `Search projects on ${machineName}`,

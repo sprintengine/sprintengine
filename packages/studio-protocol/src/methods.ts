@@ -612,11 +612,26 @@ export type StudioNewChatOptions = {
   effort?: string
 }
 
-/** A create as the protocol takes it: in a workspace, or (`noProject`) in a folder of its own. */
+/**
+ * A create as the protocol takes it: in a workspace, (`noProject`) in a folder
+ * of its own, or (`folder`) as a new chat in a folder on that machine that no
+ * workspace there names yet, the way New chat starts one in a folder it
+ * browsed or typed (`new-chat-folder`). A connection held to the folders
+ * Studio knows names only one of those.
+ */
 export type StudioConversationCreate = StudioNewChatOptions &
   (
-    | (ConversationCreateRequest & { noProject?: undefined })
-    | (Omit<ConversationCreateRequest, 'workspaceId'> & { workspaceId?: undefined; noProject: true })
+    | (ConversationCreateRequest & { noProject?: undefined; folder?: undefined })
+    | (Omit<ConversationCreateRequest, 'workspaceId'> & {
+        workspaceId?: undefined
+        noProject: true
+        folder?: undefined
+      })
+    | (Omit<ConversationCreateRequest, 'workspaceId'> & {
+        workspaceId?: undefined
+        noProject?: undefined
+        folder: string
+      })
   )
 
 export type StudioConversationCreateParams = StudioConversationCreate & { commandId: string }
@@ -627,8 +642,24 @@ const EFFORT_ID = /^[a-z][a-z0-9_-]{0,31}$/iu
 export function parseStudioConversationCreate(
   value: Record<string, unknown>,
 ): { ok: true; create: StudioConversationCreate } | { ok: false; message: string } {
-  const { commandId: _commandId, noProject, newChat, worktree, worktreeName, inWorktree, effort, ...request } = value
+  const {
+    commandId: _commandId,
+    noProject,
+    folder,
+    newChat,
+    worktree,
+    worktreeName,
+    inWorktree,
+    effort,
+    ...request
+  } = value
   if (noProject !== undefined && noProject !== true) return { ok: false, message: '"noProject", when given, is true.' }
+  if (folder !== undefined && (typeof folder !== 'string' || !folder.trim() || folder.length > 4096))
+    return { ok: false, message: '"folder" is a path of 1 to 4096 characters.' }
+  if (folder !== undefined && (noProject || request.workspaceId !== undefined))
+    return { ok: false, message: '"folder" takes the place of "workspaceId" and "noProject".' }
+  if (folder !== undefined && inWorktree !== undefined)
+    return { ok: false, message: 'A chat in a folder names no project worktree: ask for "worktree" instead.' }
   for (const [name, flag] of [
     ['newChat', newChat],
     ['worktree', worktree],
@@ -648,7 +679,7 @@ export function parseStudioConversationCreate(
     if (worktree || worktreeName !== undefined || inWorktree !== undefined)
       return { ok: false, message: 'A chat with no project has no checkout to take a worktree from.' }
   }
-  if (worktree && newChat !== true)
+  if (worktree && newChat !== true && folder === undefined)
     return { ok: false, message: '"worktree" starts a new chat: set "newChat" with it.' }
   if (worktreeName !== undefined && worktree !== true)
     return { ok: false, message: '"worktreeName" names a new worktree: set "worktree" with it.' }
@@ -658,7 +689,9 @@ export function parseStudioConversationCreate(
     return { ok: false, message: 'Ask for a new worktree or name one, not both.' }
   // The contract's own members, read by its own validator; a chat under no
   // project names no workspace, so it is read with a stand-in and given none.
-  const parsed = parseConversationCreateRequest(noProject ? { ...request, workspaceId: 'no-project' } : request)
+  const parsed = parseConversationCreateRequest(
+    noProject || folder !== undefined ? { ...request, workspaceId: 'no-project' } : request,
+  )
   if (!parsed.ok) return { ok: false, message: parsed.message }
   const options: StudioNewChatOptions = {
     ...(newChat === true ? { newChat: true } : {}),
@@ -670,6 +703,10 @@ export function parseStudioConversationCreate(
   if (noProject) {
     const { workspaceId: _standIn, ...rest } = parsed.request
     return { ok: true, create: { ...rest, ...options, noProject: true } }
+  }
+  if (typeof folder === 'string') {
+    const { workspaceId: _standIn, ...rest } = parsed.request
+    return { ok: true, create: { ...rest, ...options, folder: folder.trim() } }
   }
   return { ok: true, create: { ...parsed.request, ...options } }
 }

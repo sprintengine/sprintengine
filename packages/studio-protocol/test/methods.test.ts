@@ -237,3 +237,22 @@ test('a create takes New chat’s options, held to its rules, and "No project" i
   ])
     assert.equal(create(refused).ok, false, JSON.stringify(refused))
 })
+
+test('a create names a folder on that machine in place of a workspace, as a new chat there', () => {
+  const create = (params: Record<string, unknown>) =>
+    parseStudioMethodParams('conversation.create', { commandId: 'c-1', ...params })
+  assert.deepEqual(create({ folder: ' /home/dev/app ', prompt: 'hi', worktree: true, worktreeName: 'fix' }), {
+    ok: true,
+    params: { prompt: 'hi', folder: '/home/dev/app', worktree: true, worktreeName: 'fix', commandId: 'c-1' },
+  })
+  for (const refused of [
+    { folder: '/home/dev/app', workspaceId: 'ws-1' },
+    { folder: '/home/dev/app', noProject: true },
+    { folder: '/home/dev/app', inWorktree: '/home/dev/app-wt' },
+    { folder: '' },
+    { folder: '   ' },
+    { folder: 7 },
+    { folder: 'x'.repeat(4097) },
+  ])
+    assert.equal(create(refused).ok, false, JSON.stringify(refused))
+})

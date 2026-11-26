@@ -166,7 +166,11 @@ the names it carried for New chat on another machine (`new-chat-worktree`,
 `new-chat-skills`, `chat-create-pull-request`): a Studio that serves
 `conversation-create` takes `worktree`, `worktreeName`, `inWorktree`, `effort`,
 `skills` and `noProject` on `conversation.create`, and `cliRuntimes.list`
-answers each CLI's catalog. Every `conversation-` capability a Studio advertises
+answers each CLI's catalog. A Studio that also serves `new-chat-folder`
+(2026-11-25) takes `folder` in place of `workspaceId`: New chat's folder on
+another machine, browsed or typed, that no workspace there names yet; a client
+offers a typed folder only to a Studio that says it. Every `conversation-`
+capability a Studio advertises
 is one `@sprintengine/conversation-protocol` names, since its welcome lists
 them from the package (`studioRpcConversationCapabilities`).
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { pairedWorkspaceExtensions } from '../../../studio/pairedDiscovery'
+import { environmentWorkspaceExtensions } from '../../../studio/environmentDiscovery'
 
 import type { AgentCli, McpServerConfig, WorkspaceSkill } from '../../../../../shared/electron-api'
 import type { AgentMcpServer, AgentMcpServerStatus, SkillSource } from '../../../../../shared/skills'
@@ -237,7 +237,7 @@ export type SkillsAndMcpsPickerProps = {
    * machine's, listed by it for the project there. A skill a pick would
    * install is installed over there when the chat takes it.
    */
-  remote?: { connectionId: string; workspaceId: string }
+  remote?: { route: string; workspaceId: string }
   /**
    * A running chat's hand on its own servers: what its CLI lets it do
    * (`capabilities.mcpServerActions`) and the call that does it. Absent, the
@@ -907,7 +907,7 @@ function useCliMcpServers(
  * type-ahead reads a remote chat's skills through it too.
  */
 export function useRemoteExtensions(
-  remote: { connectionId: string; workspaceId: string; machineName?: string } | null,
+  remote: { route: string; workspaceId: string; machineName?: string } | null,
   cli: string | null,
   active: boolean,
   read = 0,
@@ -918,15 +918,15 @@ export function useRemoteExtensions(
     loading: boolean
     error: string | null
   }>({ skills: [], servers: [], loading: false, error: null })
-  const connectionId = remote?.connectionId ?? null
+  const route = remote?.route ?? null
   const workspaceId = remote?.workspaceId ?? null
   const machineName = remote?.machineName ?? 'That machine'
   useEffect(() => {
-    if (!active || !connectionId || !workspaceId) return
+    if (!active || !route || !workspaceId) return
     let cancelled = false
     setState((current) => ({ ...current, loading: true, error: null }))
     // Asked of that machine's Studio by this window itself.
-    pairedWorkspaceExtensions({ id: connectionId, machineName }, workspaceId, cli ?? undefined)
+    environmentWorkspaceExtensions({ route, name: machineName }, workspaceId, cli ?? undefined)
       .then((answer) => {
         if (cancelled) return
         setState(
@@ -947,7 +947,7 @@ export function useRemoteExtensions(
     return () => {
       cancelled = true
     }
-  }, [active, cli, connectionId, workspaceId, machineName, read])
+  }, [active, cli, route, workspaceId, machineName, read])
   return state
 }
 

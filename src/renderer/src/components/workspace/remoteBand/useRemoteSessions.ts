@@ -4,7 +4,8 @@ import { STUDIO_CONVERSATIONS_CAPABILITY } from '../../../../../../packages/stud
 import { useWindowPageVisible, windowActivity } from '../../../utils/windowActivity'
 import { useTailnetPresence, type TailnetPresence } from '../topbar/useTailnetPresence'
 import { publishRemoteConversationList } from './remoteConversationFacts'
-import { browsePairedMachine } from '../../../studio/pairedDiscovery'
+import { browseEnvironment, tailnetScopesOfGrant } from '../../../studio/environmentDiscovery'
+import type { MeshBrowse } from '../../../../../shared/tailnet-mesh'
 import { listPairedChats } from '../../../studio/pairedChats'
 import { environmentStudioAvailable, pairedTarget } from '../../../studio/environmentStudio'
 import { environmentChatSourceFor, onFollowedEnvironmentChats } from '../../../studio/environmentChats'
@@ -168,7 +169,13 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
         // one, asked of its Studio by this window itself.
         const machine = machinesRef.current.find((connection) => connection.id === connectionId)
         const result = wantBrowse
-          ? await browsePairedMachine(machine ?? { id: connectionId, machineName: 'That machine', scopes: [] })
+          ? await browseEnvironment(pairedTarget(machine ?? { id: connectionId, machineName: 'That machine' })).then(
+              (browse): MeshBrowse => ({
+                ...browse,
+                connectionId,
+                scopes: browse.reachable ? tailnetScopesOfGrant(browse.grantScopes) : (machine?.scopes ?? []),
+              }),
+            )
           : null
         // Its chats too, once it has answered. A pairing that may not read
         // them, or a machine that does not serve them, lists none.

@@ -32,8 +32,11 @@ Doc: `docs/conversations.md`. Tests: `src/main/conversation-runtime.test.ts`,
 `composerControls.tsx`, `composerContextPicker.tsx`; the slash commands in `src/main/conversation-commands/`.
 Tests: `src/renderer/src/components/panels/agentChat/ComposerField.test.tsx`.
 
-**New chat**: `src/renderer/src/components/workspace/agentComposer/NewAgentPanel.tsx`; the launch
-in `src/main/conversation-launch-service.ts`. Wire: `conversation.create` (capability `conversation-create`).
+**New chat**: `src/renderer/src/components/workspace/agentComposer/NewAgentPanel.tsx`, its machine picker
+over the one environment list (`src/renderer/src/hooks/useEnvironments.ts`), and the start on another
+machine in `src/renderer/src/studio/environmentDiscovery.ts`; the launch in
+`src/main/conversation-launch-service.ts`. Wire: `conversation.create` (capabilities `conversation-create`,
+`new-chat-folder`).
 Tests: `src/main/conversation-launch-service.test.ts`, `src/renderer/src/components/workspace/agentComposer/NewAgentPanel.test.tsx`.
 
 **Chat list and a chat's rest** (sidebar, settle, snooze, mark unread, star): `src/renderer/src/components/workspace/WorkspaceSidebar.tsx`,

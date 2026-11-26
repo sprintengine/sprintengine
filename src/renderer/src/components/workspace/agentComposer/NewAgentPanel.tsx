@@ -1,6 +1,25 @@
-import { machinePath, parseMachinePath } from '../../../../../shared/machine-paths'
-import { browsePairedMachine, pairedWorkspaceCheckout } from '../../../studio/pairedDiscovery'
-import { environmentCommandId } from '../../../studio/environmentStudio'
+import { machineRouteOfPath, machineSpellingOf } from '../../../../../shared/machine-spelling'
+import {
+  browseEnvironment,
+  environmentAgentAvailability,
+  environmentFolderIsRepository,
+  environmentWorkspaceCheckout,
+  type EnvironmentBrowse,
+} from '../../../studio/environmentDiscovery'
+import {
+  environmentCommandId,
+  pairedConnectionOf,
+  pairedRoute,
+  type EnvironmentTarget,
+} from '../../../studio/environmentStudio'
+import { useEnvironments } from '../../../hooks/useEnvironments'
+import {
+  environmentOnThisComputer,
+  environmentRouteOf,
+  orderEnvironmentsForPicking,
+  type EnvironmentEntry,
+} from '../../../../../shared/environments'
+import { environmentStatus } from '../../../../../shared/environment-status'
 import {
   createPairedScheduledAgent,
   pairedScheduledAgentAction,
@@ -8,7 +27,7 @@ import {
 } from '../../../studio/pairedSchedules'
 import React from 'react'
 import type { AgentCli, CliPermissionPreset, WorkspaceSkill } from '../../../../../shared/electron-api'
-import type { MeshBrowse, MeshConnection, MeshNewChatWorktree } from '../../../../../shared/tailnet-mesh'
+import type { MeshNewChatWorktree } from '../../../../../shared/tailnet-mesh'
 import type { ConversationImageAttachment } from '../../../../../shared/conversation-runtime'
 import { sameRepository, type RepositoryIdentity } from '../../../../../shared/repository-identity'
 import { folderIdentityKey, useFolderRepositoryIdentities } from '../useFolderRepositoryIdentities'
@@ -19,14 +38,10 @@ import {
   isWslHostId,
   LOCAL_HOST_ID,
   type ExecutionHostId,
-  type ExecutionHostSummary,
 } from '../../../../../shared/execution-host'
 import { distroOfUncPath, isWindowsPath, toWslPath } from '../../../../../shared/host-paths'
 import type { AgentCliAvailabilityMap } from '../../../../../shared/electron-api'
-import { useExecutionHosts } from '../../../hooks/useExecutionHosts'
 import { useFileDropTarget } from '../../../hooks/useFileDropTarget'
-import { useSshMachines } from '../../settings/SshMachinesSection'
-import { sshMachineRef } from '../../../hooks/useMachineIdentity'
 import { FolderIdentityIcon } from '../FolderIdentityIcon'
 import { useProjectColor } from '../../../hooks/useProjectColors'
 import { projectColorKey } from '../../../utils/projectColor'
@@ -86,6 +101,8 @@ import { EnginePickerChip } from './enginePicker'
 import { ProjectScopePicker } from './ProjectScopePicker'
 import {
   isRemoteNoProject,
+  isRemoteTypedFolder,
+  REMOTE_TYPED_FOLDER,
   remoteProjectMoved,
   remoteProjectOfFolder,
   remoteProjectOfWorkspace,
@@ -119,12 +136,11 @@ import {
   browseOf,
   defaultNewChatHostId,
   hostRefusesFolder,
-  lastSshFolders,
+  lastTypedFolders,
   machineAvailabilityOf,
   machineBrowseStale,
   machineCopyOf,
-  rememberedMachine,
-  sortMachines,
+  rememberedEnvironment,
   type MachineBrowseEntry,
 } from './newChatMachines'
 import { RemoteProjectPicker, type RemoteTargetState } from './RemoteProjectPicker'
@@ -170,7 +186,6 @@ import { filesApi } from '../../../studio/files'
 import { gitApi } from '../../../studio/git'
 import { extensionsApi, windowHasStudio } from '../../../studio/extensions'
 import { schedulesApi } from '../../../studio/schedules'
-import { tailnetApi } from '../../../studio/tailnet'
 import { copy as appCopy } from '../../../../../shared/copy'
 
 export type NewAgentLaunch = AgentComposerConfirm & {
@@ -201,12 +216,6 @@ export type NewAgentLaunch = AgentComposerConfirm & {
    * starts there rather than in the project.
    */
   extension?: { id: string; folder?: string }
-  /**
-   * A chat on an SSH machine (phase 8): its label, and the folder on it the
-   * chat runs in, as that machine spells it. A chat only: the machine's server
-   * runs no terminals.
-   */
-  environment?: { kind: 'ssh'; id: string; label: string; folder: string }
   /**
    * Start it and stay on New chat (⌘⏎, `chat.new.launchInBackground`): the
    * host starts the chat ⏎ would start, out of sight, and leaves the door up;
@@ -241,12 +250,7 @@ export function slowFolderHint(hostId: ExecutionHostId, folder: string | null | 
 
 // The machine helpers moved to ./newChatMachines; these stay importable from
 // the panel for the tests that reach them through it.
-export {
-  defaultNewChatHostId,
-  hostRefusesFolder,
-  resetRememberedMachineForTests,
-  sortMachines,
-} from './newChatMachines'
+export { defaultNewChatHostId, hostRefusesFolder, resetRememberedMachineForTests } from './newChatMachines'
 
 /** One choosable project scope: a folder some open workspace lives in. */
 export type NewAgentProjectOption = {
@@ -396,11 +400,23 @@ export type NewAgentPanelMode = 'chat' | 'scheduled' | 'extension'
  * always a chat agent, which runs in that machine's conversation runtime and is
  * followed from here; terminals do not cross the tailnet.
  */
+/**
+ * A chat New chat starts on another environment (design-environments PR 2):
+ * by its route, whatever kind of machine it is, through that environment's
+ * own `conversation.create`.
+ */
 export type RemoteNewChatLaunch = {
-  connectionId: string
+  /** The environment's route (`environmentRouteOf`). */
+  route: string
   machineName: string
   /** Start it in a folder of its own there: `remoteWorkspaceId` then names nothing. */
   noProject?: true
+  /**
+   * Start it in this folder there, as that machine spells it, which no
+   * workspace there names yet (`new-chat-folder`): `remoteWorkspaceId` then
+   * names nothing.
+   */
+  folder?: string
   remoteWorkspaceId: string
   remoteWorkspaceName: string
   /** The project's folder on that machine, as the gateway disclosed it. */
@@ -456,15 +472,32 @@ const NO_SCHEDULED_RUNS: readonly ScheduledRunEntry[] = []
 /** How long after the door mounts the chat's code is fetched: past its first paint, well before an Enter. */
 const PRELOAD_CHAT_AFTER_MS = 200
 
-/** How long the folder typed for an SSH machine stands still before that machine is asked whether it is a git repository. */
+/** How long the folder typed for another machine stands still before that machine is asked whether it is a git repository. */
 const MACHINE_FOLDER_SETTLE_MS = 400
 
 /** ⌘⏎ in the prompt: start the chat and stay on New chat (see the registry). */
 const LAUNCH_IN_BACKGROUND_COMMAND = 'chat.new.launchInBackground'
 
-/** A folder a person might type for a machine: a container's repositories are cloned into ~/work. */
-function machineFolderExample(machine: { container?: unknown }): string {
-  return machine.container ? '/home/node/work/repo' : '/home/dev/repo'
+/**
+ * A folder this computer names that is another machine's, not one it hosts
+ * (an SSH machine's `ssh://<id>/…`): that machine's route, and the folder as
+ * it spells it. Null for a folder here or in a WSL distribution's share.
+ */
+function farFolderOf(folder: string | null): { route: string; folder: string } | null {
+  const route = folder ? machineRouteOfPath(folder) : null
+  if (!folder || !route || isWslHostId(route)) return null
+  const spelled = machineSpellingOf(route)?.toMachine(folder) ?? null
+  return spelled ? { route, folder: spelled } : null
+}
+
+/** A folder a person might type for a machine. */
+const MACHINE_FOLDER_EXAMPLE = '/home/dev/repo'
+
+/** Whether a folder typed for another machine is a full path there (`/…`, or a Windows desktop's `C:\…`). */
+function typedFolderProblem(folder: string, machineName: string): string | null {
+  return /^(\/[^\0\n]*|[A-Za-z]:[\\/][^\0\n]*)$/u.test(folder.trim())
+    ? null
+    : `Type the folder's full path on ${machineName}, such as ${MACHINE_FOLDER_EXAMPLE}.`
 }
 
 // `/schedule` at the end of the prompt, and whatever follows it on that line.
@@ -550,15 +583,23 @@ export default function NewAgentPanel({
   const scheduledAgentsEnabled = useWorkspaceStore((s) =>
     selectModuleEnabled(s.appSettings.modules, 'scheduled-agents'),
   )
-  // The machines on THIS computer (this one, and the WSL distributions turned
-  // on in Settings ▸ Machines). Offered only where a launch creates its
-  // workspace — the door — because a workspace's machine is fixed once it
-  // exists. One entry on macOS and Linux, which draws exactly what it drew.
+  // Every machine this desktop knows, one list whatever kind each is
+  // (design-environments PR 2). Those on THIS computer (this one, and the WSL
+  // distributions turned on in Settings ▸ Machines) are offered only where a
+  // launch creates its workspace — the door — because a workspace's machine
+  // is fixed once it exists. One entry on macOS and Linux, which draws exactly
+  // what it drew.
   const hostChoosable = Boolean(onBrowseProject || onSelectProject)
-  const { listing: hostListing } = useExecutionHosts()
-  const localHosts: ExecutionHostSummary[] = hostChoosable ? (hostListing?.hosts ?? []) : []
+  const environments = useEnvironments()
+  const hereEnvironments = React.useMemo(
+    () => (hostChoosable ? environments.filter(environmentOnThisComputer) : []),
+    [environments, hostChoosable],
+  )
+  // A machine on this computer is named by its route, which is its host id.
+  const rememberedHost =
+    rememberedEnvironment.route && isWslHostId(rememberedEnvironment.route) ? rememberedEnvironment.route : null
   const [pickedHostId, setPickedHostId] = React.useState<ExecutionHostId | null>(() =>
-    editing ? editing.hostId : rememberedMachine.hostId,
+    editing ? editing.hostId : rememberedHost,
   )
   const scopeFolder = folderPath !== undefined ? folderPath : null
   // The machine chosen in this door, and the folder it was chosen for. It
@@ -568,88 +609,36 @@ export default function NewAgentPanel({
   const [chosenHost, setChosenHost] = React.useState<{ hostId: ExecutionHostId; folder: string | null } | null>(() =>
     editing?.hostId ? { hostId: editing.hostId, folder: folderPath ?? null } : null,
   )
-  // A remembered pick counts only while that machine is still offered: one
-  // turned off in Settings, or gone from WSL, falls back to this machine
-  // rather than launching somewhere the dropdown no longer shows.
+  // A remembered pick counts only while that machine is still offered and
+  // answering: one turned off in Settings, or gone from WSL, falls back to
+  // this machine rather than launching somewhere the dropdown no longer shows.
   const stillOffered = (id: ExecutionHostId | null): boolean =>
-    id === LOCAL_HOST_ID || (id !== null && localHosts.some((host) => host.id === id && host.state !== 'unavailable'))
+    id === LOCAL_HOST_ID ||
+    (id !== null &&
+      hereEnvironments.some((entry) => environmentRouteOf(entry) === id && environmentStatus(entry).kind !== 'offline'))
   const chosenForFolder =
     chosenHost && chosenHost.folder === scopeFolder && stillOffered(chosenHost.hostId) ? chosenHost.hostId : null
   const hostId: ExecutionHostId = hostChoosable
     ? defaultNewChatHostId(scopeFolder, stillOffered(pickedHostId) ? pickedHostId : null, chosenForFolder)
     : LOCAL_HOST_ID
   const pickLocalHost = (next: ExecutionHostId): void => {
-    const remembered = next === LOCAL_HOST_ID ? null : next
-    rememberedMachine.hostId = remembered
-    setPickedHostId(remembered)
+    rememberedEnvironment.route = next === LOCAL_HOST_ID ? null : next
+    setPickedHostId(next === LOCAL_HOST_ID ? null : next)
     setChosenHost({ hostId: next, folder: scopeFolder })
-    pickSsh(null)
   }
-  // SSH machines (phase 8): offered where a launch creates its workspace, as
-  // the machines on this computer are. A chat there runs in a folder on that
-  // machine, typed here; nothing on this computer is browsed for it.
-  const { machines: sshMachinesAll } = useSshMachines(
-    hostChoosable && window.api?.sshMachinesEnabled ? window.api : null,
-  )
-  // A container is a machine: it is listed here too (docs/design/container-chats.md).
-  const sshMachines = hostChoosable && !editing ? sshMachinesAll : []
-  const [pickedSshId, setPickedSshId] = React.useState<string | null>(() => (editing ? null : rememberedMachine.sshId))
-  const pickedSsh = sshMachines.find((machine) => machine.id === pickedSshId) ?? null
-  const [sshFolder, setSshFolder] = React.useState(() => (pickedSshId ? (lastSshFolders.get(pickedSshId) ?? '') : ''))
-  const pickSsh = (id: string | null): void => {
-    rememberedMachine.sshId = id
-    setPickedSshId(id)
-    setSshFolder(id ? (lastSshFolders.get(id) ?? '') : '')
-  }
-  const sshFolderProblem =
-    pickedSsh && !/^\/[^\0\n]*$/u.test(sshFolder.trim())
-      ? `Type the folder's full path on ${pickedSsh.label}, such as ${machineFolderExample(pickedSsh)}.`
-      : null
-  // The folder typed for the SSH machine, as it is sent: no trailing slash.
-  const sshFolderTyped = sshFolder.trim().replace(/(.)\/+$/u, '$1')
-  // Which agent CLIs the chosen WSL machine has: its own probe, one process
-  // for the lot, asked when the machine is picked — never on focus. This
-  // machine's answer stays the store's, exactly as before.
+  // Which agent CLIs the chosen machine has, when it is not this one: a WSL
+  // distribution's own probe, or another environment's Studio's, asked when
+  // the machine is picked — never on focus. This machine's answer stays the
+  // store's, exactly as before. Keyed by the machine it was asked of.
   const hostSettings = useWorkspaceStore((s) => s.appSettings.hosts)
   const catalogIds = useWorkspaceStore((s) => s.pluginCatalogEntries.map((entry) => entry.id).join('\u0000'))
   const [hostAvailability, setHostAvailability] = React.useState<{
-    hostId: ExecutionHostId
+    machine: string
     map: AgentCliAvailabilityMap
     status: 'loading' | 'ready' | 'error'
   } | null>(null)
-  React.useEffect(() => {
-    if (!isWslHostId(hostId) || !windowHasStudio()) {
-      setHostAvailability(null)
-      return
-    }
-    let cancelled = false
-    setHostAvailability({ hostId, map: {}, status: 'loading' })
-    const commands = hostSettings?.[hostId]?.cliCommands ?? {}
-    const cliRuntimes = Object.fromEntries(
-      catalogIds
-        .split('\u0000')
-        .filter(Boolean)
-        .map((cli) => [cli, { command: commands[cli] ?? '', hostId }]),
-    )
-    void extensionsApi
-      .pluginsDetectAvailability({ cliRuntimes })
-      .then((result) => {
-        if (cancelled) return
-        setHostAvailability(
-          result.ok ? { hostId, map: result.availability, status: 'ready' } : { hostId, map: {}, status: 'error' },
-        )
-      })
-      .catch(() => {
-        if (!cancelled) setHostAvailability({ hostId, map: {}, status: 'error' })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [hostId, hostSettings, catalogIds])
   const composer = useAgentComposer({
-    ...(hostAvailability && hostAvailability.hostId === hostId
-      ? { availability: { map: hostAvailability.map, status: hostAvailability.status } }
-      : {}),
+    ...(hostAvailability ? { availability: { map: hostAvailability.map, status: hostAvailability.status } } : {}),
     showTerminal: true,
     conversationAvailable: conversationModeEnabled,
     // A scheduled agent's runs are chats: a terminal needs someone at it. An
@@ -725,44 +714,48 @@ export default function NewAgentPanel({
   // below for why that inversion is the bug this replaces.
   const canChooseProject =
     Boolean(onBrowseProject) || Boolean(onSelectProject && projectOptions && projectOptions.length > 0)
-  // The machine dimension (remote-sessions-ux / new-chat-on-a-remote-machine).
-  // One dropdown: This device is the default entry, paired machines follow. A
-  // remote target swaps the project choice for the machine's own workspaces
-  // (fetched over the audited mesh client) and routes the launch remotely.
-  // What runs there is always a chat agent, in that machine's own conversation
-  // runtime, followed from here: terminals do not cross the tailnet, so a
-  // terminal agent or a bare terminal is this machine's only. Picking a machine
-  // turns the launch into a chat; picking Agent or Terminal after that returns
-  // it to This device rather than lying about where it would run.
-  const [remoteMachines, setRemoteMachines] = React.useState<MeshConnection[]>([])
+  // The machine dimension (remote-sessions-ux / new-chat-on-a-remote-machine,
+  // design-environments PR 2). One dropdown: This device is the default entry,
+  // every other environment follows, whatever its route. Another machine as
+  // the target swaps the project choice for that machine's own projects
+  // (asked of its Studio), or a folder typed for it, and routes the launch to
+  // its `conversation.create`. What runs there is always a chat agent, in that
+  // machine's own conversation runtime, followed from here: terminals do not
+  // cross to it, so a terminal agent or a bare terminal is this computer's
+  // only. Picking a machine turns the launch into a chat; picking Agent or
+  // Terminal after that returns it to This device rather than lying about
+  // where it would run.
   const [remoteTarget, setRemoteTarget] = React.useState<RemoteTargetState | null>(null)
+  // The folder typed for the machine aimed at, when no project of its own is picked.
+  const [typedFolder, setTypedFolder] = React.useState('')
   // What each paired machine holds, read once per machine per door open
   // (one-project-across-machines): the machine dropdown says which machines
   // have the project in hand, and a pick that keeps the project reads its
   // workspace off this rather than asking the machine again.
   const [machineBrowses, setMachineBrowses] = React.useState<Map<string, MachineBrowseEntry>>(() => new Map())
-  const browseMachine = React.useCallback((connection: MeshConnection): Promise<MeshBrowse> => {
+  const browseMachine = React.useCallback((target: EnvironmentTarget): Promise<EnvironmentBrowse> => {
     setMachineBrowses((current) => {
-      const existing = current.get(connection.id)
-      return existing && existing !== 'loading' ? current : new Map(current).set(connection.id, 'loading')
+      const existing = current.get(target.route)
+      return existing && existing !== 'loading' ? current : new Map(current).set(target.route, 'loading')
     })
     // Asked of that machine's Studio by this window itself.
-    return browsePairedMachine(connection)
+    return browseEnvironment(target)
       .then((browse) => {
-        setMachineBrowses((current) => new Map(current).set(connection.id, { browse, at: Date.now() }))
+        setMachineBrowses((current) => new Map(current).set(target.route, { browse, at: Date.now() }))
         return browse
       })
       .catch((error: unknown) => {
-        const failed: MeshBrowse = {
-          connectionId: connection.id,
+        const failed: EnvironmentBrowse = {
+          route: target.route,
           reachable: false,
           unreachableReason: error instanceof Error ? error.message : String(error),
           unauthorized: false,
-          scopes: connection.scopes,
           workspaces: [],
           gaps: [],
+          takesFolder: false,
+          grantScopes: [],
         }
-        setMachineBrowses((current) => new Map(current).set(connection.id, { browse: failed, at: Date.now() }))
+        setMachineBrowses((current) => new Map(current).set(target.route, { browse: failed, at: Date.now() }))
         return failed
       })
   }, [])
@@ -778,55 +771,17 @@ export default function NewAgentPanel({
   const remoteCapable = Boolean(onLaunchRemote)
   // The remembered machine is applied once, when the list first arrives.
   const rememberedApplied = React.useRef(false)
-  const seededProjectRef = React.useRef(remoteProject)
-  // A paired machine's schedule opens on that machine and its own project.
-  const editedOnRef = React.useRef(
-    editingRemote?.connectionId && editing
-      ? { connectionId: editingRemote.connectionId, folderPath: editing.folderPath }
-      : null,
+  const seededProjectRef = React.useRef(
+    remoteProject ? { route: pairedRoute(remoteProject.connectionId), workspaceId: remoteProject.workspaceId } : null,
   )
-  React.useEffect(() => {
-    if (!remoteCapable) return
-    let cancelled = false
-    const load = (): void => {
-      void tailnetApi
-        .meshListConnections()
-        .then((connections) => {
-          if (cancelled) return
-          const sorted = sortMachines(connections)
-          setRemoteMachines(sorted)
-          if (!rememberedApplied.current) {
-            rememberedApplied.current = true
-            // The machine a schedule being edited runs on is the only one it
-            // may open on; a paired machine's project asked for leads the
-            // remembered machine.
-            const editedOn = editedOnRef.current
-            if (editedOn) {
-              const machine = sorted.find((candidate) => candidate.id === editedOn.connectionId)
-              if (machine) pickRemoteMachineRef.current(machine, null, false)
-              return
-            }
-            const seeded = seededProjectRef.current
-              ? sorted.find((machine) => machine.id === seededProjectRef.current?.connectionId)
-              : null
-            const remembered = rememberedMachine.machineId
-              ? sorted.find((machine) => machine.id === rememberedMachine.machineId)
-              : null
-            if (seeded ?? remembered) pickRemoteMachineRef.current((seeded ?? remembered)!)
-          }
-        })
-        .catch(() => {})
-    }
-    load()
-    // A machine paired or forgotten while the door is open shows up live.
-    const unsubscribe = tailnetApi.onMeshEvent((event) => {
-      if (event.kind === 'machine-paired' || event.kind === 'machine-forgotten') load()
-    })
-    return () => {
-      cancelled = true
-      unsubscribe()
-    }
-  }, [remoteCapable])
+  // A folder in hand that is another machine's (an SSH machine's project's
+  // "New chat in project", `ssh://<id>/…`): New chat opens on that machine,
+  // in that folder as it spells it.
+  const seededFolderRef = React.useRef(farFolderOf(scopeFolder))
+  // Another machine's schedule opens on that machine and its own project.
+  const editedOnRef = React.useRef(
+    editingRemote && editing ? { route: editingRemote.route, folderPath: editing.folderPath } : null,
+  )
   // Chat agent is offered only where the workspace can host one; without it
   // there is nothing a paired machine could run for this launch.
   const chatAvailable =
@@ -843,28 +798,48 @@ export default function NewAgentPanel({
     if (chatOnly && composer.selection.kind !== 'conversation') composer.setSelection({ kind: 'conversation' })
   }, [composer, chatOnly])
   // An extension is made on this computer: the scaffold writes to its disk. A
-  // new scheduled agent may be made on a paired machine, run there by its
-  // scheduler; one being edited stays on the machine it was saved on — a
-  // paired machine's on that machine.
+  // new scheduled agent may be made on another machine, run there by its
+  // scheduler; one being edited stays on the machine it was saved on.
   const remoteSchedulable = scheduled && (editing === null || editingRemote !== null)
   const remoteChosenAway = !remoteSelectable || selection.kind !== 'conversation' || (chatOnly && !remoteSchedulable)
   React.useEffect(() => {
     if (remoteChosenAway) setRemoteTarget(null)
   }, [remoteChosenAway])
-  // A scheduled agent runs on this computer, and an extension is scaffolded on
-  // its disk, so the machine list drops the SSH machines for both; one picked
-  // before must go with them, or the strip would keep asking for a folder on
-  // that machine — and the press would start a plain chat there, with no
-  // agent saved or extension made in the project here.
-  const sshPickedWhileChatOnly = chatOnly && pickedSshId !== null
-  // The cube (docs/design/container-chats.md): beside Worktree, another way
-  // to pick the machine, offered wherever the machine picker offers SSH
-  // machines.
-  const containerOffered = Boolean(window.api?.sshMachinesEnabled) && hostChoosable && !editing && !chatOnly
   React.useEffect(() => {
-    if (sshPickedWhileChatOnly) pickSsh(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sshPickedWhileChatOnly])
+    // Applied once the list is read and a chat can be hosted at all: a pick
+    // made before the agent list arrives would be refused and lost.
+    const farRefused = !remoteSelectable || (chatOnly && !remoteSchedulable)
+    if (!remoteCapable || !chatAvailable || farRefused || rememberedApplied.current || environments.length === 0) return
+    const far = (route: string | null | undefined): EnvironmentEntry | null =>
+      route
+        ? (environments.find((entry) => !environmentOnThisComputer(entry) && environmentRouteOf(entry) === route) ??
+          null)
+        : null
+    const targetOf = (entry: EnvironmentEntry): EnvironmentTarget => ({
+      route: environmentRouteOf(entry),
+      name: entry.displayName,
+    })
+    // The machine a schedule being edited runs on is the only one it may open
+    // on; a project or folder asked for leads the remembered machine.
+    // A machine asked for that the list does not hold yet is waited for.
+    const editedOn = far(editedOnRef.current?.route)
+    if (editedOnRef.current) {
+      if (!editedOn) return
+      rememberedApplied.current = true
+      pickRemoteMachineRef.current(targetOf(editedOn), null, false)
+      return
+    }
+    const asked = seededProjectRef.current?.route ?? seededFolderRef.current?.route ?? null
+    const seeded = far(asked)
+    if (asked && !seeded) return
+    rememberedApplied.current = true
+    const remembered = far(rememberedEnvironment.route)
+    if (seeded) pickRemoteMachineRef.current(targetOf(seeded), undefined, false)
+    else if (remembered) pickRemoteMachineRef.current(targetOf(remembered))
+  }, [remoteCapable, chatAvailable, remoteSelectable, chatOnly, remoteSchedulable, environments])
+  // The cube (docs/design/container-chats.md): beside Worktree, another way
+  // to pick the machine, offered where SSH machines (and so containers) are.
+  const containerOffered = Boolean(window.api?.sshMachinesEnabled) && hostChoosable && !editing && !chatOnly
   // The project in hand, as an identity the next machine can be searched for:
   // the local folder's repository, or the remote project's as its machine
   // served it. Null when nothing is chosen or the folder has no remote.
@@ -920,13 +895,13 @@ export default function NewAgentPanel({
   const localIdentityRead = !workspaceRoot?.trim() || localIdentities.has(folderIdentityKey(workspaceRoot))
   const scopeProjectColor = useProjectColor(remoteTarget || localIdentityRead ? scopeProjectKey : null)
   const pickRemoteMachine = (
-    connection: MeshConnection | null,
+    target: EnvironmentTarget | null,
     keep: RepositoryIdentity | null = activeIdentity,
     // Opening a schedule on its machine is not choosing where the next chat goes.
     remember = true,
   ): void => {
-    if (remember) rememberedMachine.machineId = connection?.id ?? null
-    if (!connection) {
+    if (remember) rememberedEnvironment.route = target?.route ?? null
+    if (!target) {
       // Back to This device with a project in hand: keep it when a local clone
       // of the same repository is open here (changing the machine keeps the
       // project when it exists there); otherwise the line returns
@@ -945,22 +920,28 @@ export default function NewAgentPanel({
       setRemoteTarget(null)
       return
     }
-    // A paired machine runs chat agents only, so choosing one is choosing a
+    // Another machine runs chat agents only, so choosing one is choosing a
     // chat — and where no chat can be hosted, there is nothing to choose.
     if (!chatAvailable) return
     if (composer.selection.kind !== 'conversation') composer.setSelection({ kind: 'conversation' })
+    setTypedFolder(
+      seededFolderRef.current?.route === target.route
+        ? seededFolderRef.current.folder
+        : (lastTypedFolders.get(target.route) ?? ''),
+    )
     setRemoteTarget({
-      connection,
+      target,
       workspaces: null,
       projects: null,
       error: null,
       picked: null,
       checkout: null,
       reached: false,
+      takesFolder: false,
     })
-    void browseMachine(connection).then((browse) => {
+    void browseMachine(target).then((browse) => {
       setRemoteTarget((current) => {
-        if (current?.connection.id !== connection.id) return current
+        if (current?.target.route !== target.route) return current
         // A refused pairing does not answer either; it is said as itself, the
         // one failure pairing again fixes.
         if (browse.unauthorized) {
@@ -968,7 +949,7 @@ export default function NewAgentPanel({
             ...current,
             workspaces: [],
             projects: [],
-            error: 'That machine refused this pairing — re-pair from Settings → Remote.',
+            error: `${target.name} refused this computer. Set it up again in Settings ▸ Machines.`,
           }
         }
         if (!browse.reachable) {
@@ -987,6 +968,7 @@ export default function NewAgentPanel({
         if (browse.workspaces.length === 0 && workspaceGap) {
           return { ...current, workspaces: [], projects: [], error: workspaceGap.message }
         }
+        const takesFolder = browse.takesFolder
         // The machine's chats folded into the folders they stand in
         // (`remoteProjects`). What `workspace.list` serves is one entry per
         // open CONVERSATION over there, and this chip is choosing a project
@@ -1000,23 +982,34 @@ export default function NewAgentPanel({
         // keeps the project.
         const copy = machineCopyOf(browse, keep ?? activeIdentityRef.current)
         const kept = copy ? remoteProjectOfWorkspace(projects, browse.workspaces, copy.id) : null
-        // The project a paired machine's "New chat in project" asked for.
+        // The project another machine's "New chat in project" asked for: one
+        // of its projects, or a folder there none of them is yet.
         const seed = seededProjectRef.current
         const seeded =
-          seed?.connectionId === connection.id
-            ? remoteProjectOfWorkspace(projects, browse.workspaces, seed.workspaceId)
-            : null
+          seed?.route === target.route ? remoteProjectOfWorkspace(projects, browse.workspaces, seed.workspaceId) : null
+        const folderSeed = seededFolderRef.current?.route === target.route ? seededFolderRef.current.folder : null
+        const openThere = folderSeed ? remoteProjectOfFolder(projects, folderSeed) : null
+        const inFolder = folderSeed
+          ? openThere?.workspaceId
+            ? openThere
+            : takesFolder
+              ? REMOTE_TYPED_FOLDER
+              : null
+          : null
         // The project a schedule being edited there runs in.
         const editedOn = editedOnRef.current
-        const edited =
-          editedOn?.connectionId === connection.id ? remoteProjectOfFolder(projects, editedOn.folderPath) : null
+        const edited = editedOn?.route === target.route ? remoteProjectOfFolder(projects, editedOn.folderPath) : null
+        // A machine with no project open that takes a folder asks for one at once.
+        const typed = projects.length === 0 && takesFolder ? REMOTE_TYPED_FOLDER : null
         return {
           ...current,
           reached: true,
+          takesFolder,
           workspaces: browse.workspaces,
           projects,
           // A choice already made meanwhile is never overwritten by a late answer.
-          picked: current.picked ?? edited ?? seeded ?? kept ?? (projects.length === 1 ? projects[0]! : null),
+          picked:
+            current.picked ?? edited ?? seeded ?? inFolder ?? kept ?? (projects.length === 1 ? projects[0]! : typed),
         }
       })
     })
@@ -1028,20 +1021,19 @@ export default function NewAgentPanel({
   // the machine and the project, so a re-pick re-reads and a browse settling
   // does not. A refusal (a read-only pairing, a machine gone quiet) leaves the
   // branch unnamed rather than guessed.
-  const remoteConnectionId = remoteTarget?.connection.id ?? null
-  const remoteMachineName = remoteTarget?.connection.machineName ?? ''
+  const remoteRoute = remoteTarget?.target.route ?? null
+  const remoteMachineName = remoteTarget?.target.name ?? ''
   // `workspace.checkout` is keyed by workspace id, and a project's seat is one
   // of the chats standing in it — every chat in a folder answers for the folder.
-  const remotePickedId = remoteTarget?.picked?.workspaceId ?? null
+  const remotePickedId = remoteTarget?.picked?.workspaceId || null
   React.useEffect(() => {
-    if (!remoteConnectionId || !remotePickedId) return
+    if (!remoteRoute || !remotePickedId) return
     let cancelled = false
-    void pairedWorkspaceCheckout({ id: remoteConnectionId, machineName: remoteMachineName }, remotePickedId)
+    void environmentWorkspaceCheckout({ route: remoteRoute, name: remoteMachineName }, remotePickedId)
       .then((result) => {
         if (cancelled) return
         setRemoteTarget((current) => {
-          if (current?.connection.id !== remoteConnectionId || current.picked?.workspaceId !== remotePickedId)
-            return current
+          if (current?.target.route !== remoteRoute || current.picked?.workspaceId !== remotePickedId) return current
           return { ...current, checkout: result.ok ? result.checkout : null }
         })
       })
@@ -1049,7 +1041,62 @@ export default function NewAgentPanel({
     return () => {
       cancelled = true
     }
-  }, [remoteConnectionId, remoteMachineName, remotePickedId])
+  }, [remoteRoute, remoteMachineName, remotePickedId])
+  // The folder typed for the machine aimed at, as it is sent: no trailing slash.
+  const typingFolder = remoteTarget !== null && isRemoteTypedFolder(remoteTarget.picked)
+  const typedFolderSent = typedFolder.trim().replace(/(.)[\\/]+$/u, '$1')
+  const folderProblem = typingFolder ? typedFolderProblem(typedFolder, remoteMachineName) : null
+  // Whether that folder is a git repository there, asked of that machine once the typing pauses.
+  const [typedFolderGit, setTypedFolderGit] = React.useState<{ key: string; git: boolean } | null>(null)
+  const typedFolderKey = typingFolder && !folderProblem && remoteRoute ? `${remoteRoute}\u0000${typedFolderSent}` : null
+  React.useEffect(() => {
+    if (!typedFolderKey || !remoteRoute) return
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void environmentFolderIsRepository({ route: remoteRoute, name: remoteMachineName }, typedFolderSent).then(
+        (git) => {
+          if (!cancelled) setTypedFolderGit({ key: typedFolderKey, git })
+        },
+      )
+    }, MACHINE_FOLDER_SETTLE_MS)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [typedFolderKey, remoteRoute, remoteMachineName, typedFolderSent])
+  // Which agent CLIs the machine the chat runs on has: a WSL distribution's
+  // own probe, or another environment's own Studio's. Never this computer's
+  // list for a chat on another machine.
+  React.useEffect(() => {
+    const far = remoteRoute ? { route: remoteRoute, name: remoteMachineName } : null
+    if (!far && (!isWslHostId(hostId) || !windowHasStudio())) {
+      setHostAvailability(null)
+      return
+    }
+    let cancelled = false
+    const machine = far?.route ?? hostId
+    setHostAvailability({ machine, map: {}, status: 'loading' })
+    const clis = catalogIds.split('\u0000').filter(Boolean)
+    const asked: Promise<AgentCliAvailabilityMap | null> = far
+      ? environmentAgentAvailability(far, clis)
+      : extensionsApi
+          .pluginsDetectAvailability({
+            cliRuntimes: Object.fromEntries(
+              clis.map((cli) => [cli, { command: hostSettings?.[hostId]?.cliCommands?.[cli] ?? '', hostId }]),
+            ),
+          })
+          .then((result) => (result.ok ? result.availability : null))
+    void asked
+      .then((map) => {
+        if (!cancelled) setHostAvailability({ machine, map: map ?? {}, status: map ? 'ready' : 'error' })
+      })
+      .catch(() => {
+        if (!cancelled) setHostAvailability({ machine, map: {}, status: 'error' })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [remoteRoute, remoteMachineName, hostId, hostSettings, catalogIds])
   const activeBranch = useWorkspaceStore((s) => {
     const ws = s.workspaces.find((w) => w.id === workspaceId)
     return ws ? (resolveWorkspaceWorktree(ws)?.branch ?? null) : null
@@ -1105,11 +1152,7 @@ export default function NewAgentPanel({
     workspaceRunsHere(s.workspaces.find((w) => w.id === workspaceId)),
   )
   const filesAsCards =
-    clientSupports('drag-paths') &&
-    !pickedSsh &&
-    !remoteTarget &&
-    hostId === LOCAL_HOST_ID &&
-    (hostChoosable || tabWorkspaceRunsHere)
+    clientSupports('drag-paths') && !remoteTarget && hostId === LOCAL_HOST_ID && (hostChoosable || tabWorkspaceRunsHere)
   const [attachingCount, setAttachingCount] = React.useState(0)
 
   // Write-through to the parked draft: every change the person makes is safe
@@ -1150,10 +1193,9 @@ export default function NewAgentPanel({
   ])
 
   const insertPromptPath = (dropped: string) => {
-    // A file from the SSH machine this chat starts on is typed as that
-    // machine spells it: the agent runs there, not on this computer.
-    const onMachine = pickedSsh ? parseMachinePath(dropped) : null
-    const path = onMachine && onMachine.id === pickedSsh?.id ? onMachine.path : dropped
+    // A file from the machine this chat starts on is typed as that machine
+    // spells it: the agent runs there, not on this computer.
+    const path = (remoteRoute ? machineSpellingOf(remoteRoute)?.toMachine(dropped) : null) ?? dropped
     setPrompt((current) =>
       current.length === 0 || /\s$/.test(current) ? `${current}${quotePath(path)} ` : `${current} ${quotePath(path)} `,
     )
@@ -1376,62 +1418,50 @@ export default function NewAgentPanel({
     )
   }, [mentionPrefix])
 
-  // The folder a chat's worktree would be cut from: the project here, or the
-  // folder typed for an SSH machine, spelled as that machine's
-  // (`ssh://<id>/…`), whose own Studio cuts it from its own pool.
+  // The folder a chat's worktree would be cut from here: the project.
   // "No project" is a folder the app made, not a checkout, even where the
   // home folder above it happens to be a repository.
-  const worktreeSource = pickedSsh
-    ? sshFolderProblem
-      ? null
-      : machinePath(pickedSsh.id, sshFolderTyped)
-    : projectless
-      ? null
-      : (workspaceRoot ?? null)
-  // Worktree is offered only inside a git repo: absent, not disabled. A
-  // folder typed for a machine is asked about once the typing pauses, of
-  // that machine.
+  const worktreeSource = remoteTarget || projectless ? null : (workspaceRoot ?? null)
+  // Worktree is offered only inside a git repo: absent, not disabled.
   React.useEffect(() => {
     let cancelled = false
     if (!worktreeSource) return
-    const ask = () =>
-      void gitApi
-        .getGitRepoRoot(worktreeSource)
-        .then((root) => {
-          if (!cancelled) setGitRepoOf({ folder: worktreeSource, git: Boolean(root) })
-        })
-        .catch(() => {
-          if (!cancelled) setGitRepoOf({ folder: worktreeSource, git: false })
-        })
-    const timer = pickedSsh ? window.setTimeout(ask, MACHINE_FOLDER_SETTLE_MS) : null
-    if (!timer) ask()
+    void gitApi
+      .getGitRepoRoot(worktreeSource)
+      .then((root) => {
+        if (!cancelled) setGitRepoOf({ folder: worktreeSource, git: Boolean(root) })
+      })
+      .catch(() => {
+        if (!cancelled) setGitRepoOf({ folder: worktreeSource, git: false })
+      })
     return () => {
       cancelled = true
-      if (timer) window.clearTimeout(timer)
     }
-  }, [worktreeSource, pickedSsh])
+  }, [worktreeSource])
   const worktreeSourceIsGitRepo = worktreeSource !== null && gitRepoOf?.folder === worktreeSource && gitRepoOf.git
 
-  // A paired machine cuts a chat's worktree itself, from its own checkout of
-  // the project, named as asked, where the checkout it served is a git
-  // repository.
-  const remoteWorktreeOffered = !extensionMode && remoteTarget?.checkout?.git === true
+  // Another machine cuts a chat's worktree itself, from its own pool, named
+  // as asked, where the project it served, or the folder typed for it, is a
+  // git repository there.
+  const remoteWorktreeOffered =
+    !extensionMode &&
+    (typingFolder
+      ? typedFolderKey !== null && typedFolderGit?.key === typedFolderKey && typedFolderGit.git
+      : remoteTarget?.checkout?.git === true)
   // Worktree is offered only inside a git repository, for an agent: absent,
-  // not disabled. A repository here, or in the folder typed for an SSH
-  // machine; on a paired machine, one there that said it cuts worktrees for
-  // a chat started from here. An extension's folder is new.
+  // not disabled. A repository here; on another machine, one there. An
+  // extension's folder is new.
   const worktreeOffered = remoteTarget
     ? remoteWorktreeOffered
     : !extensionMode && selection.kind !== 'terminal' && worktreeSourceIsGitRepo
   // The worktree a chat started here will run in is made while the person
   // types, so Enter finds it ready: Worktree on with no name typed (a name is
-  // its own branch, made on Enter), for a chat that starts now. A paired
-  // machine cuts its own when the chat starts there, so it reserves none; an
-  // SSH machine's Studio is asked for one from its pool, as this computer's is.
+  // its own branch, made on Enter), for a chat that starts now. Another
+  // machine cuts its own when the chat starts there, so it reserves none.
   useNewChatWorktreeReservation({
     enabled: worktreeOffered && !remoteTarget && composer.worktreeName === '' && !scheduled && !editing,
     folderPath: worktreeSource,
-    hostId: pickedSsh || !hostChoosable ? null : hostId,
+    hostId: hostChoosable ? hostId : null,
   })
   // The chat Enter opens is drawn with code New chat does not use, so it is
   // fetched while the person types: a window's first chat then draws at once
@@ -1651,97 +1681,25 @@ export default function NewAgentPanel({
     remoteCommandRef.current = null
   }
 
-  // A scheduled agent on a paired machine: its project there, and its
-  // scheduler, which starts each run whether or not this computer is awake.
-  const scheduleRemote = async (text: string, target: RemoteTargetState) => {
-    const picked = target.picked
-    if (!picked || isRemoteNoProject(picked)) {
+  // A scheduled agent on another machine: its project there (or a folder
+  // there, as that machine spells it), and its scheduler, which starts each
+  // run whether or not this computer is awake. Saved there, it is that
+  // machine's from the first, never in this desktop's store; a machine not
+  // reached now refuses it in words, and nothing is made there on its return.
+  const scheduleOnEnvironment = async (text: string, on: RemoteTargetState) => {
+    const machineName = on.target.name
+    const picked = on.picked
+    const folder = isRemoteTypedFolder(picked) ? typedFolderSent : null
+    if (!picked || isRemoteNoProject(picked) || (folder !== null && folderProblem)) {
       showToast({
         tone: 'warn',
         title: appCopy.workspace.agentComposer.newAgentPanel.chooseAProject,
-        description: appCopy.workspace.agentComposer.newAgentPanel.schedulesOnRunInA(target.connection.machineName),
+        description: folderProblem ?? appCopy.workspace.agentComposer.newAgentPanel.schedulesOnRunInA(machineName),
       })
       return
     }
     // Pictures and files staged here are files on this computer, which a run
     // over there could not open.
-    if (images.length > 0 || files.length > 0) {
-      showToast({
-        tone: 'warn',
-        title: appCopy.workspace.agentComposer.newAgentPanel.notScheduled,
-        description: appCopy.workspace.agentComposer.newAgentPanel.schedulesOnCanTTake(target.connection.machineName),
-      })
-      return
-    }
-    const body = text.trim()
-    if (!body) {
-      showToast({
-        tone: 'warn',
-        title: appCopy.workspace.agentComposer.newAgentPanel.sayWhatItShouldDo,
-        description: appCopy.workspace.agentComposer.newAgentPanel.eachRunStartsFromThis,
-      })
-      promptRef.current?.focus()
-      return
-    }
-    if (once !== null && once <= Date.now()) {
-      showToast({
-        tone: 'warn',
-        title: appCopy.workspace.agentComposer.newAgentPanel.pickATimeAhead,
-        description: appCopy.workspace.agentComposer.newAgentPanel.thatTimeHasAlreadyPassed,
-      })
-      return
-    }
-    const confirm = buildLaunchConfirm(selection)
-    if (confirm.kind !== 'conversation' || !confirm.cli) return
-    setScheduleBusy(true)
-    try {
-      const draft = {
-        workspaceId: picked.workspaceId,
-        prompt: body,
-        cron,
-        timezone: scheduleTimezone,
-        ...(once !== null ? { once } : {}),
-        cli: confirm.cli,
-        model: confirm.model ?? null,
-        permissionPreset: effectivePreset,
-        worktreeName: confirm.worktree ? confirm.worktree.name : null,
-        skills: (confirm.skills ?? []).map((skill) => skill.id),
-        mcpServers: composer.mcpServers.map((server) => server.id),
-      }
-      const result = await createPairedScheduledAgent(
-        target.connection,
-        draft,
-        remoteCommandId(target.connection.id, draft),
-      )
-      if (!result.ok) {
-        showToast({
-          tone: 'error',
-          title: appCopy.workspace.agentComposer.newAgentPanel.notScheduled,
-          description: result.message,
-        })
-        return
-      }
-      remoteCommandDone()
-      if (once === null) rememberSchedule(cron)
-      announceRemoteScheduledChange(target.connection.id)
-      onScheduled?.(result.agent)
-    } catch (error) {
-      showToast({
-        tone: 'error',
-        title: appCopy.workspace.agentComposer.newAgentPanel.notScheduled,
-        description: error instanceof Error ? error.message : String(error),
-      })
-    } finally {
-      setScheduleBusy(false)
-    }
-  }
-
-  // A scheduled agent in a project on an SSH machine, made on that machine's
-  // own Studio (`schedules.create`, by its folder as the machine spells it):
-  // it is the machine's from the first, run by its scheduler, and never in
-  // this desktop's store. A machine not reached now refuses it in words.
-  const scheduleOnMachine = async (text: string, onMachine: { id: string; path: string }) => {
-    const machineName = sshMachinesAll.find((machine) => machine.id === onMachine.id)?.label ?? onMachine.id
     if (images.length > 0 || files.length > 0) {
       showToast({
         tone: 'warn',
@@ -1772,9 +1730,8 @@ export default function NewAgentPanel({
     if (confirm.kind !== 'conversation' || !confirm.cli) return
     setScheduleBusy(true)
     try {
-      const route = `ssh:${onMachine.id}`
       const draft = {
-        workspaceRoot: onMachine.path,
+        ...(folder !== null ? { workspaceRoot: folder } : { workspaceId: picked.workspaceId }),
         prompt: body,
         cron,
         timezone: scheduleTimezone,
@@ -1786,13 +1743,7 @@ export default function NewAgentPanel({
         skills: (confirm.skills ?? []).map((skill) => skill.id),
         mcpServers: composer.mcpServers.map((server) => server.id),
       }
-      // Made now or not at all: a machine away refuses it here, and nothing
-      // is made there on its return (`createPairedScheduledAgent`).
-      const result = await createPairedScheduledAgent(
-        { route, name: machineName },
-        draft,
-        remoteCommandId(route, draft),
-      )
+      const result = await createPairedScheduledAgent(on.target, draft, remoteCommandId(on.target.route, draft))
       if (!result.ok) {
         showToast({
           tone: 'error',
@@ -1802,7 +1753,9 @@ export default function NewAgentPanel({
         return
       }
       remoteCommandDone()
+      if (folder !== null) lastTypedFolders.set(on.target.route, folder)
       if (once === null) rememberSchedule(cron)
+      announceEditedOn({ connectionId: pairedConnectionOf(on.target.route) })
       onScheduled?.(result.agent)
     } catch (error) {
       showToast({
@@ -1899,12 +1852,7 @@ export default function NewAgentPanel({
       return
     }
     if (remoteTarget && !editing) {
-      await scheduleRemote(text, remoteTarget)
-      return
-    }
-    const onMachine = editing ? null : parseMachinePath(workspaceRoot?.trim() ?? '')
-    if (onMachine) {
-      await scheduleOnMachine(text, onMachine)
+      await scheduleOnEnvironment(text, remoteTarget)
       return
     }
     const folder = workspaceRoot?.trim()
@@ -2083,8 +2031,8 @@ export default function NewAgentPanel({
   const chatHasMessage = (text: string) => !isChatLaunch || text.trim() !== '' || images.length > 0 || files.length > 0
   const launch = (text: string, options: { stay?: boolean } = {}) => {
     if (!canLaunch || !extensionReady) return
-    // Staying applies to a chat or agent started now, here or over SSH; a
-    // scheduled agent, an extension and a paired machine's chat each close
+    // Staying applies to a chat or agent started now on this computer; a
+    // scheduled agent, an extension and another machine's chat each close
     // the door as ⏎ does.
     const stay = options.stay === true && launchesInBackground && !extensionMode
     if (scheduled) {
@@ -2094,46 +2042,19 @@ export default function NewAgentPanel({
     // A chat opens on the message that starts it. With nothing to send, New
     // chat stays where it is rather than opening a chat with nothing in it.
     if (!chatHasMessage(text)) return
-    if (pickedSsh) {
-      if (sshFolderProblem) {
-        showToast({
-          tone: 'warn',
-          title: appCopy.workspace.agentComposer.newAgentPanel.whichFolder,
-          description: sshFolderProblem,
-        })
-        return
-      }
-      const confirm = buildLaunchConfirm(selection)
-      if (confirm.kind === 'conversation') {
-        const providerId = confirm.cli ? conversationProviderForCli(confirm.cli) : null
-        if (!providerId) return
-        confirm.provider = {
-          providerId,
-          modelId: confirm.model ?? CONVERSATION_DEFAULT_MODEL_ID,
-          modelLabel: engineNames.modelLabel ?? engineNames.cliLabel,
-        }
-      }
-      const folder = sshFolderTyped
-      lastSshFolders.set(pickedSsh.id, folder)
-      // The images go with the first message: they are files on this
-      // computer, which the chat reads here and sends as bytes, as it does
-      // for an image pasted into an SSH chat.
-      const sshImages = images.map((image) => image.path)
-      const started = onLaunch({
-        ...confirm,
-        // Files on this computer are typed as their paths there, as before.
-        prompt: typedFiles(text.trim()),
-        ...(sshImages.length > 0 ? { images: sshImages } : {}),
-        environment: { kind: 'ssh', id: pickedSsh.id, label: pickedSsh.label, folder },
-        ...(stay ? { stay: true as const } : {}),
-      })
-      if (stay) keepOnNewChat(started, text, images)
-      return
-    }
     if (remoteTarget) {
       if (!remoteTarget.picked || !onLaunchRemote || remoteLaunching) return
       const confirm = buildLaunchConfirm(selection)
       if (confirm.kind !== 'conversation') return
+      const folder = isRemoteTypedFolder(remoteTarget.picked) ? typedFolderSent : null
+      if (folder !== null && folderProblem) {
+        showToast({
+          tone: 'warn',
+          title: appCopy.workspace.agentComposer.newAgentPanel.whichFolder,
+          description: folderProblem,
+        })
+        return
+      }
       // Attached files are files on this disk, and a path here typed into
       // that machine's prompt names nothing there, so their chips refuse
       // rather than vanish. Images travel as bytes with the launch, and skills
@@ -2148,19 +2069,21 @@ export default function NewAgentPanel({
         return
       }
       setRemoteLaunching(true)
+      if (folder !== null) lastTypedFolders.set(remoteTarget.target.route, folder)
       onLaunchRemote({
-        connectionId: remoteTarget.connection.id,
-        machineName: remoteTarget.connection.machineName,
+        route: remoteTarget.target.route,
+        machineName: remoteTarget.target.name,
         ...(isRemoteNoProject(remoteTarget.picked) ? { noProject: true as const } : {}),
+        ...(folder !== null ? { folder } : {}),
         remoteWorkspaceId: remoteTarget.picked.workspaceId,
-        remoteWorkspaceName: remoteTarget.picked.name,
-        remoteWorkspaceRoot: remoteTarget.picked.folderPath || null,
+        remoteWorkspaceName: folder ?? remoteTarget.picked.name,
+        remoteWorkspaceRoot: folder ?? (remoteTarget.picked.folderPath || null),
         prompt: text.trim(),
         cli: confirm.cli,
         cliModel: confirm.model ?? null,
         permissionPreset: effectivePreset,
         ...(confirm.reasoning ? { effort: confirm.reasoning } : {}),
-        branch: remoteTarget.checkout?.branch ?? null,
+        branch: folder !== null ? null : (remoteTarget.checkout?.branch ?? null),
         // A worktree cut for it from the default branch on origin, by its name.
         ...(confirm.worktree ? { worktree: { kind: 'new' as const, name: confirm.worktree.name.trim() } } : {}),
         remoteRepository: remoteTarget.picked.repository,
@@ -2219,10 +2142,10 @@ export default function NewAgentPanel({
   }
 
   React.useEffect(() => {
-    if (!canLaunch || (composer.noAgentCliInstalled && localHosts.length <= 1)) return
+    if (!canLaunch || (composer.noAgentCliInstalled && hereEnvironments.length <= 1)) return
     const id = requestAnimationFrame(() => promptRef.current?.focus())
     return () => cancelAnimationFrame(id)
-  }, [canLaunch, composer.noAgentCliInstalled, localHosts.length])
+  }, [canLaunch, composer.noAgentCliInstalled, hereEnvironments.length])
 
   // ── The static New chat box ───────────────────────────────────────────────
   // The field takes over the box as it mounts (`adoptBootInput` below). An
@@ -2424,7 +2347,7 @@ export default function NewAgentPanel({
   // No agent CLI at all, or (for a chat agent) none with a chat runtime: the
   // same install route either way, because installing a CLI is the answer to
   // both.
-  const terminalUnavailable = (composer.noAgentCliInstalled && localHosts.length <= 1) || chatUnavailable
+  const terminalUnavailable = (composer.noAgentCliInstalled && hereEnvironments.length <= 1) || chatUnavailable
   // A drag holding files lights the box as where they will land; a plain shell
   // takes none.
   const { active: dropActive, handlers: dropHandlers } = useFileDropTarget({
@@ -2450,7 +2373,6 @@ export default function NewAgentPanel({
     composer.skills.length === 0 &&
     composer.mcpServers.length === 0 &&
     hostId === LOCAL_HOST_ID &&
-    !pickedSsh &&
     !remoteTarget &&
     !isTerminalLaunch
   React.useEffect(() => {
@@ -2520,14 +2442,14 @@ export default function NewAgentPanel({
   // What the launch reads skills and MCP servers through: nothing for a plain shell.
   const skillsOffered = selection.kind !== 'terminal'
   const { skills: pickedSkills, setSkills, mcpServers: pickedMcpServers, setMcpServers } = composer
-  const remotePickedConnection = remoteTarget?.picked ? remoteTarget.connection.id : null
-  const remotePickedWorkspace = remoteTarget?.picked?.workspaceId ?? null
+  const remotePickedRoute = remoteTarget?.picked ? remoteTarget.target.route : null
+  const remotePickedWorkspace = remoteTarget?.picked?.workspaceId || null
   const remoteSkillsSource = React.useMemo(
     () =>
-      remotePickedConnection && remotePickedWorkspace
-        ? { connectionId: remotePickedConnection, workspaceId: remotePickedWorkspace, machineName: remoteMachineName }
+      remotePickedRoute && remotePickedWorkspace
+        ? { route: remotePickedRoute, workspaceId: remotePickedWorkspace, machineName: remoteMachineName }
         : null,
-    [remotePickedConnection, remotePickedWorkspace, remoteMachineName],
+    [remotePickedRoute, remotePickedWorkspace, remoteMachineName],
   )
   const plusSkills = React.useMemo(
     () =>
@@ -2587,18 +2509,32 @@ export default function NewAgentPanel({
   // Where the launch runs: the machine, the project, the worktree and the
   // branch. It replaces the machine · project line that sat above the box and
   // the Worktree chip that sat on its row (owner ruling 2026-10-04).
-  // A scheduled agent made in a project on an SSH machine is made on that
-  // machine (`scheduleOnMachine`), and the machine's scheduler runs it. The strip names that machine, as a line,
-  // where the picker would offer only this computer.
-  const scheduleMachinePath =
-    scheduled && !editingRemote && !remoteTarget ? parseMachinePath(workspaceRoot ?? '') : null
-  const scheduleMachine = scheduleMachinePath
-    ? (sshMachinesAll.find((machine) => machine.id === scheduleMachinePath.id) ?? null)
-    : null
-  const machinePickerShown =
-    !editingRemote &&
-    !scheduleMachine &&
-    ((remoteSelectable && remoteMachines.length > 0) || localHosts.length > 1 || sshMachines.length > 0)
+  // The machines the dropdown offers: this computer's (where a launch creates
+  // its workspace), and every other environment where a chat can go there.
+  const farOffered = remoteSelectable && (!chatOnly || remoteSchedulable)
+  const pickerEnvironments = orderEnvironmentsForPicking(
+    environments.filter((entry) =>
+      environmentOnThisComputer(entry)
+        ? environmentRouteOf(entry) === LOCAL_HOST_ID || hereEnvironments.includes(entry)
+        : farOffered,
+    ),
+  )
+  const machinePickerShown = !editingRemote && pickerEnvironments.length > 1
+  // Why a machine cannot be picked now: one not answering, refusing this
+  // computer or speaking another protocol says so (`environmentStatus`), and
+  // a WSL distribution cannot open a folder inside another.
+  const machineReason = (entry: EnvironmentEntry): string | null => {
+    const route = environmentRouteOf(entry)
+    if (isWslHostId(route)) {
+      const refused = hostRefusesFolder(route, scopeFolder)
+      if (refused) return refused
+    }
+    const status = environmentStatus(entry)
+    return status.kind === 'offline' || status.kind === 'signed-out' || status.kind === 'incompatible'
+      ? status.words
+      : null
+  }
+  const pickedRoute = remoteTarget?.target.route ?? hostId
   // The branch the launch runs on: the remote project's as its machine read
   // it, else this checkout's. An SSH machine's folder is typed, not read.
   // An extension's folder is new, or the person's own: the project's branch
@@ -2610,10 +2546,10 @@ export default function NewAgentPanel({
     extensionMode || (worktreeOffered && composer.worktreeName !== null)
       ? null
       : remoteTarget
-        ? (remoteTarget.checkout?.branch ?? null)
-        : pickedSsh
+        ? typingFolder
           ? null
-          : branch
+          : (remoteTarget.checkout?.branch ?? null)
+        : branch
   const projectControl = extensionMode ? (
     <ExtensionFolderChip
       folder={extensionFolderShown}
@@ -2621,20 +2557,6 @@ export default function NewAgentPanel({
       picked={extensionFolder !== null}
       onPick={() => void pickExtensionFolder()}
       onReset={() => setExtensionFolder(null)}
-    />
-  ) : pickedSsh ? (
-    <Input
-      aria-label={appCopy.workspace.agentComposer.newAgentPanel.folderOn(pickedSsh.label)}
-      value={sshFolder}
-      onChange={(event) => setSshFolder(event.target.value)}
-      placeholder={appCopy.workspace.agentComposer.newAgentPanel.folderOnSuchAs(
-        pickedSsh.label,
-        machineFolderExample(pickedSsh),
-      )}
-      size="sm"
-      variant="well"
-      fullWidth={false}
-      className="w-72 max-w-full font-mono"
     />
   ) : editingRemote && editing && !remoteTarget ? (
     // A paired machine's schedule, before that machine has been reached: its
@@ -2647,15 +2569,32 @@ export default function NewAgentPanel({
       <span className="min-w-0 truncate">{remoteProjectOfFolder([], editing.folderPath)?.name ?? 'Project'}</span>
     </span>
   ) : remoteTarget ? (
-    <RemoteProjectPicker
-      target={remoteTarget}
-      color={scopeProjectColor}
-      // A scheduled agent's runs start in a project over there, by its scheduler.
-      noProjectOffered={!scheduled && remoteTarget.reached}
-      onPick={(project) => {
-        setRemoteTarget((current) => (current ? { ...current, picked: project, checkout: null } : current))
-      }}
-    />
+    <>
+      <RemoteProjectPicker
+        target={remoteTarget}
+        color={scopeProjectColor}
+        // A scheduled agent's runs start in a project over there, by its scheduler.
+        noProjectOffered={!scheduled && remoteTarget.reached}
+        onPick={(project) => {
+          setRemoteTarget((current) => (current ? { ...current, picked: project, checkout: null } : current))
+        }}
+      />
+      {typingFolder ? (
+        <Input
+          aria-label={appCopy.workspace.agentComposer.newAgentPanel.folderOn(remoteMachineName)}
+          value={typedFolder}
+          onChange={(event) => setTypedFolder(event.target.value)}
+          placeholder={appCopy.workspace.agentComposer.newAgentPanel.folderOnSuchAs(
+            remoteMachineName,
+            MACHINE_FOLDER_EXAMPLE,
+          )}
+          size="sm"
+          variant="well"
+          fullWidth={false}
+          className="w-72 max-w-full font-mono"
+        />
+      ) : null}
+    </>
   ) : canChooseProject ? (
     <>
       <ProjectScopePicker
@@ -2711,12 +2650,7 @@ export default function NewAgentPanel({
     </span>
   ) : null
   const stripShown =
-    machinePickerShown ||
-    editingRemote !== null ||
-    scheduleMachine !== null ||
-    projectControl !== null ||
-    worktreeOffered ||
-    Boolean(stripBranch)
+    machinePickerShown || editingRemote !== null || projectControl !== null || worktreeOffered || Boolean(stripBranch)
 
   // The second line of the send's tooltip, where the door can stay: the chord
   // as this platform spells it, for the person who starts several in a row.
@@ -3151,54 +3085,52 @@ export default function NewAgentPanel({
             {/* One machine dropdown, this computer first (owner ruling
                 2026-09-03 — no separate Local/Remote switch). Shown whenever
                 there is another machine to pick. */}
-            {editingRemote ? <FixedMachineLine machineName={editingRemote.machineName} /> : null}
-            {scheduleMachine ? (
-              <FixedMachineLine machineName={scheduleMachine.label} machine={sshMachineRef(scheduleMachine)} />
+            {editingRemote ? (
+              <FixedMachineLine
+                machineName={editingRemote.machineName}
+                machine={
+                  environments.find((entry) => environmentRouteOf(entry) === editingRemote.route)?.machine ?? null
+                }
+              />
             ) : null}
             {machinePickerShown ? (
               <MachineScopePicker
-                // A new scheduled agent may run on a paired machine, by that
+                // A new scheduled agent may run on another machine, by that
                 // machine's scheduler; an extension is made on this computer.
-                machines={remoteSelectable && (!chatOnly || remoteSchedulable) ? remoteMachines : []}
-                selected={remoteTarget?.connection ?? null}
-                onSelect={(connection) => {
-                  pickSsh(null)
-                  pickRemoteMachine(connection)
+                environments={pickerEnvironments}
+                selectedRoute={pickedRoute}
+                onSelect={(entry) => {
+                  const route = environmentRouteOf(entry)
+                  if (environmentOnThisComputer(entry)) {
+                    // Any folder runs on the machine picked (owner ruling
+                    // 2026-10-03): This PC opens a folder inside a
+                    // distribution over its share, more slowly, and the hint
+                    // under the strip says so.
+                    pickRemoteMachine(null)
+                    pickLocalHost(route as ExecutionHostId)
+                  } else pickRemoteMachine({ route, name: entry.displayName })
                 }}
-                sshMachines={chatOnly ? [] : sshMachines}
-                selectedSshId={pickedSsh?.id ?? null}
-                onSelectSsh={(id) => {
-                  pickRemoteMachine(null)
-                  pickSsh(id)
-                }}
-                localHosts={localHosts}
-                selectedHostId={hostId}
-                onSelectHost={(next) => {
-                  pickRemoteMachine(null)
-                  pickLocalHost(next)
-                }}
-                hostDisabledReason={(host) => {
-                  // Any folder runs on the machine picked (owner ruling
-                  // 2026-10-03): This PC opens a folder inside a distribution
-                  // over its share, more slowly, and the hint under the strip
-                  // says so. Only another distribution cannot reach it.
-                  const refused = hostRefusesFolder(host.id, scopeFolder)
-                  if (refused) return refused
-                  if (host.state === 'unavailable') return host.reason ?? 'Not available.'
-                  return null
-                }}
-                availability={(machine) =>
-                  machineAvailabilityOf(machine, browseOf(machineBrowses.get(machine.id)), activeIdentity)
+                reasonOf={machineReason}
+                availability={(entry) =>
+                  environmentOnThisComputer(entry)
+                    ? { state: 'none' }
+                    : machineAvailabilityOf(
+                        entry,
+                        browseOf(machineBrowses.get(environmentRouteOf(entry))),
+                        activeIdentity,
+                      )
                 }
-                // With a project in hand, opening the list asks every machine
-                // what it holds — once, then again when the answer is old or
-                // was "not answering" (a machine asleep at the first open must
-                // be pickable once it wakes). Without a project there is
-                // nothing to filter by, and the list is the plain one.
+                // With a project in hand, opening the list asks every other
+                // machine what it holds — once, then again when the answer is
+                // old or was "not answering" (a machine asleep at the first
+                // open must be pickable once it wakes). Without a project
+                // there is nothing to filter by, and the list is the plain one.
                 onOpen={() => {
                   if (!activeIdentity) return
-                  for (const machine of remoteMachines) {
-                    if (machineBrowseStale(machineBrowses.get(machine.id))) void browseMachine(machine)
+                  for (const entry of pickerEnvironments) {
+                    if (environmentOnThisComputer(entry)) continue
+                    const target = { route: environmentRouteOf(entry), name: entry.displayName }
+                    if (machineBrowseStale(machineBrowses.get(target.route))) void browseMachine(target)
                   }
                 }}
                 projectName={activeIdentity?.name ?? null}
@@ -3213,27 +3145,20 @@ export default function NewAgentPanel({
               <ContainerChip
                 elsewhere={
                   remoteTarget
-                    ? remoteTarget.connection.machineName
-                    : pickedSsh && !pickedSsh.container
-                      ? pickedSsh.label
-                      : hostId !== LOCAL_HOST_ID && !pickedSsh
-                        ? (localHosts.find((host) => host.id === hostId)?.label ?? null)
-                        : null
+                    ? remoteTarget.target.name
+                    : hostId !== LOCAL_HOST_ID
+                      ? (hereEnvironments.find((entry) => environmentRouteOf(entry) === hostId)?.displayName ?? null)
+                      : null
                 }
-                containers={sshMachinesAll.filter((machine) => machine.container)}
-                machines={sshMachinesAll}
-                selectedId={pickedSsh?.container ? pickedSsh.id : null}
-                onSelect={(id) => {
-                  if (id) {
-                    pickRemoteMachine(null)
-                    pickSsh(id)
-                  } else if (pickedSsh?.container) pickLocalHost(LOCAL_HOST_ID)
-                  // Otherwise the chat already runs outside a container, where it is.
+                selectedRoute={remoteTarget?.target.route ?? null}
+                onSelect={(container) => {
+                  if (container) pickRemoteMachine(container)
+                  else pickRemoteMachine(null)
                 }}
-                onMade={({ id, folder }) => {
-                  pickRemoteMachine(null)
-                  pickSsh(id)
-                  if (folder) setSshFolder(folder)
+                onMade={({ container, folder }) => {
+                  if (folder) seededFolderRef.current = { route: container.route, folder }
+                  const listed = environments.find((entry) => environmentRouteOf(entry) === container.route)
+                  pickRemoteMachine(listed ? { route: container.route, name: listed.displayName } : container)
                 }}
                 api={window.api}
               />

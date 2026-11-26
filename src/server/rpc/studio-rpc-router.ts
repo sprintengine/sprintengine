@@ -770,6 +770,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     { grant, voice, context }: Asking,
   ): Promise<StudioRpcAnswer<'conversation.create'>> {
     const { commandId, ...request } = params
+    // A folder no workspace names yet: any for the owner's own connection,
+    // only one Studio knows for a connection held to those.
+    if (request.folder !== undefined && !(await mayName(request.folder, { grant, context })))
+      return refuse('not_found', UNKNOWN_FOLDER)
     if (request.allowedTools?.length && !ceilingAllowsUnaskedTools(grant.ceiling))
       return refuse(
         'ceiling_exceeded',

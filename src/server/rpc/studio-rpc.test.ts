@@ -9,7 +9,9 @@ import {
 } from '../conversation-stream-shaping'
 import type { ConversationSessionFrame } from '../../shared/conversation-runtime'
 import type { StudioUpdates } from '../update/studio-updates'
-import { studioCommandFingerprint } from './studio-rpc-router'
+import { STUDIO_SCOPES, type StudioGrant } from '../../../packages/studio-protocol/src/public'
+import { studioWindowGrant } from './studio-frame-port'
+import { createStudioRpcRouter, studioCommandFingerprint } from './studio-rpc-router'
 import {
   OWNER_TOKEN,
   connectLineClient,
@@ -865,4 +867,31 @@ test('a line over the client cap is refused under its id, and the connection sta
   const refused = await c.next(response('huge'))
   assert.equal(refused.t === 'res' && !refused.ok && refused.error.code, 'too_large')
   assert.equal((await request(c, 'after', 'server.info')).ok, true)
+})
+
+test('a create in a folder: any folder for the owner, only one Studio knows for a connection held to them', async () => {
+  const backend = createFakeBackend()
+  const router = createStudioRpcRouter({
+    backend,
+    info: () => ({}) as never,
+    chat: () => ({ isKnownFolder: async (path: string) => path.startsWith('/home/dev/app') }) as never,
+  })
+  cleanups.push(() => router.close())
+  const window = { connectionId: 'w', slot: 1, ownWindow: true }
+  const tailnet = { connectionId: 't', slot: 2, ownWindow: false, knownFoldersOnly: true }
+  const paired = { clientId: 'desk', name: 'desk', owner: false, scopes: [...STUDIO_SCOPES], ceiling: 'auto' }
+  const create = (folder: string, grant: StudioGrant, context: object, commandId: string) =>
+    router.handle(grant, 'conversation.create', { folder, commandId } as never, context as never) as Promise<{
+      ok: boolean
+      error?: { code: string }
+    }>
+  // Both reach the backend (whose fake knows only `ws-1`); the third is refused before it.
+  await create('/srv/elsewhere', studioWindowGrant(), window, 'f1')
+  await create('/home/dev/app', paired as StudioGrant, tailnet, 'f2')
+  const refused = await create('/srv/elsewhere', paired as StudioGrant, tailnet, 'f3')
+  assert.equal(!refused.ok && refused.error?.code, 'not_found')
+  assert.deepEqual(
+    backend.creates.map((made) => made.request.folder),
+    ['/srv/elsewhere', '/home/dev/app'],
+  )
 })

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { environmentsForTest } from '../../../hooks/environments.double'
 
 import { JSDOM } from 'jsdom'
 import { standInImageDecoding } from '../../../../../../tests/image-decoding'
@@ -136,6 +137,16 @@ test('NewAgentPanel interaction', async () => {
     },
     getGitRepoRoot: async () => '/proj',
     meshListConnections: async () => meshConnections,
+    // The one list New chat reads machines from, made from the records above.
+    environmentsList: async () => {
+      const api = (dom.window as unknown as { api: Record<string, unknown> }).api
+      const ssh =
+        api.sshMachinesEnabled && typeof api.sshEnvironmentsList === 'function'
+          ? await (api.sshEnvironmentsList as () => Promise<never[]>)()
+          : []
+      return environmentsForTest({ hosts: hostsAnswer.hosts as never, ssh, paired: meshConnections as never })
+    },
+    onEnvironmentsChanged: () => () => {},
     getGitRepositoryIdentity: async (folderPath: string) => localIdentityAnswer(folderPath),
     onMeshEvent: () => () => {},
     defaultWorkspaceParentDir: async () => '/w',
