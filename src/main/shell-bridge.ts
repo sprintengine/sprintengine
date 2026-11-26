@@ -13,15 +13,13 @@ import {
 } from '../server/shell-bridge/shell-bridge'
 
 // The shell's own `ShellBridge`: each member is the shell service that does
-// the thing. The server's code calls this directly when it runs in main (the
-// flag-off path), and the shell serves it over the control channel when the
-// server runs in a process of its own (serve-shell-bridge.ts), so the two paths
-// meet the same answers.
+// the thing. The shell serves it to the Studio server over the control
+// channel (serve-shell-bridge.ts).
 //
 // Everything is handed in, so a test builds one over stand-ins and the
 // contract suite runs the same cases against this and the remote one.
 
-export type InProcessShellBridgeDeps = {
+export type ShellBridgeDeps = {
   safeStorage: Pick<SafeStorage, 'isEncryptionAvailable' | 'encryptString' | 'decryptString'> &
     Partial<Pick<SafeStorage, 'getSelectedStorageBackend'>>
   /**
@@ -42,7 +40,7 @@ export type InProcessShellBridgeDeps = {
 
 const LAUNCHES_NOT_READY = 'Studio is still starting, so this agent’s launch could not be prepared yet.'
 
-export function createInProcessShellBridge(deps: InProcessShellBridgeDeps): ShellBridge {
+export function createShellBridge(deps: ShellBridgeDeps): ShellBridge {
   return {
     cipher: {
       available: async () => safeStorageProtects(deps.safeStorage),

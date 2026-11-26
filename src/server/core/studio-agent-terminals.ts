@@ -87,7 +87,7 @@ export type StudioTerminalHost = {
   diagnosticsEnabled?: boolean
   logMainPerfEvent?: TerminalRuntimeOptions['logMainPerfEvent']
   /** Whether a window may take over a running terminal's output (the pane pop-out guard). */
-  mayAttach?: (windowKey: string, sessionId: string) => boolean
+  mayAttach?: (windowKey: string, sessionId: string) => boolean | Promise<boolean>
   /** A launch went through: the shell's analytics hear its shape. */
   onLaunched?: (request: AgentLaunchRequest, result: Extract<AgentLaunchResult, { ok: true }>) => void
 }

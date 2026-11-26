@@ -5,20 +5,15 @@ import type { StudioServerStatus } from '../../../../shared/studio-server-status
 import { studioServerNotice, uptimeWords } from './studioServerWords'
 
 const base: StudioServerStatus = {
-  mode: 'out-of-process',
-  savedMode: 'out-of-process',
-  fromEnvironment: false,
   phase: 'running',
   reason: null,
   pid: 4242,
   restarts: 0,
   startedAt: 0,
-  fellBack: null,
 }
 
-test('a running server, and one inside the app, say nothing', () => {
+test('a running server says nothing', () => {
   assert.equal(studioServerNotice(base, { showStarting: true }), null)
-  assert.equal(studioServerNotice({ ...base, mode: 'in-process', phase: 'in-process' }, { showStarting: true }), null)
 })
 
 test('starting is said only once it has taken a moment; reconnecting always', () => {
@@ -34,7 +29,7 @@ test('starting is said only once it has taken a moment; reconnecting always', ()
   )
 })
 
-test('a stopped server says why and can be recovered; a fallback says why it runs inside the app', () => {
+test('a server that could not start says why and can be retried: there is nowhere else for it to run', () => {
   const stopped = studioServerNotice(
     { ...base, phase: 'stopped', reason: 'The Studio server failed to start 3 times.' },
     { showStarting: false },
@@ -42,11 +37,7 @@ test('a stopped server says why and can be recovered; a fallback says why it run
   assert.equal(stopped?.tone, 'error')
   assert.equal(stopped?.recoverable, true)
   assert.match(stopped?.message ?? '', /stopped\. The Studio server failed to start 3 times\./)
-  const fellBack = studioServerNotice(
-    { ...base, mode: 'in-process', phase: 'in-process', fellBack: 'The data directory is not writable.' },
-    { showStarting: false },
-  )
-  assert.match(fellBack?.message ?? '', /runs inside the app\. The data directory is not writable\./)
+  assert.doesNotMatch(stopped?.message ?? '', /inside the app/)
 })
 
 test('uptime in words', () => {

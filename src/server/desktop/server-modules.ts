@@ -28,6 +28,7 @@ import { watchUserModuleRoot } from '../../main/modules/user-module-watch'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import { createStudioModuleHub, type StudioModules } from '../rpc/studio-modules'
 import { createModuleRegistryMirror, type ModuleRegistryMirror } from '../../main/modules/registry-mirror'
+import type { ModuleRegistrySnapshot } from '../../shared/modules/registry-snapshot'
 import type { CapabilityManifest, ModuleResolutionErrorCode } from '../../shared/modules/manifest'
 import { resolveModuleEnablement } from '../../shared/modules/resolve'
 import type { StudioCore } from '../core/studio-core'
@@ -67,6 +68,8 @@ export function createServerModules(deps: {
   platform: StudioPlatform
   core: StudioCore
   log: (message: string) => void
+  /** Told of every registry a window reports: the shell's canvas tools read the Canvas switch from it. */
+  registryReported?: (snapshot: ModuleRegistrySnapshot) => void
 }): ServerModules {
   const { platform, core } = deps
   const dataDir = platform.paths.dataDir()
@@ -79,7 +82,7 @@ export function createServerModules(deps: {
   }
   const enabled = new Set<string>()
   const hub = createStudioModuleHub()
-  const registry = createModuleRegistryMirror()
+  const registry = createModuleRegistryMirror(deps.registryReported ? { onWrite: deps.registryReported } : {})
   hub.readRecentFrom(() => load?.kernel.recentNotifications() ?? [])
   // A module's declared methods, called over the Studio RPC's `extension.read` and `extension.operate`.
   hub.serveCallsFrom(async (request) =>

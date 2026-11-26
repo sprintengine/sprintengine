@@ -19,9 +19,8 @@ import { isAttentionEvent } from './agent-attention'
 // runtime's, whose chats (here, in WSL, on SSH machines) this desktop's Studio
 // holds, so they are addressed under its environment id.
 //
-// Pure: the events in, the notice out. The shell's bridge shows it, in process
-// or for the server in its own process alike, since every phase reaches the
-// shell either way.
+// Pure: the events in, the notice out. The shell's bridge shows it: every
+// phase reaches the shell from the server.
 
 export type ChatLabel = {
   /** The chat's title as the sidebar shows it. */

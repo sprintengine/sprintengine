@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { SshPreviewStatus } from '../../../../shared/ssh-preview'
 import type { StudioServerInfo, StudioServerStatus } from '../../../../shared/studio-server-status'
@@ -8,16 +8,15 @@ import { GhostButton, InlineNotice, Switch } from '../ui'
 import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 import { copy } from '../../../../shared/copy'
 
-// Settings → Agents → Studio server: the Advanced toggle that runs the server
-// in a process of its own (phase 6, off by default), and, while it does, what
-// it is doing in words, with the actions a person takes on it.
+// Settings → Agents → Studio server: what the server, in its own process, is
+// doing in words, with the actions a person takes on it.
 
 const SSH_TOGGLE_ID = 'settings-ssh-machines-preview'
 const SSH_TOGGLE_HELP_ID = 'settings-ssh-machines-preview-help'
 
 /**
  * SSH machines (phase 8), a preview until it is complete: off by default.
- * Read once at launch, like the process switch above it.
+ * Read once at launch.
  */
 export function SshMachinesPreviewSwitch() {
   const [status, setStatus] = useState<SshPreviewStatus | null>(null)
@@ -68,7 +67,7 @@ export function SshMachinesPreviewSwitch() {
         <InlineNotice
           tone="warn"
           action={
-            <GhostButton onClick={() => void window.api.studioServerRelaunch()}>
+            <GhostButton onClick={() => void window.api.restartApp?.()}>
               {copy.settings.studioServerSettings.restartNow}
             </GhostButton>
           }
@@ -80,11 +79,7 @@ export function SshMachinesPreviewSwitch() {
   )
 }
 
-const TOGGLE_ID = 'settings-studio-server-process'
-const TOGGLE_HELP_ID = 'settings-studio-server-process-help'
-
 const PHASE_WORDS: Record<StudioServerStatus['phase'], string> = {
-  'in-process': 'Inside the app',
   starting: 'Starting',
   running: 'Running',
   reconnecting: 'Reconnecting',
@@ -93,9 +88,8 @@ const PHASE_WORDS: Record<StudioServerStatus['phase'], string> = {
 }
 
 export function StudioServerSettings() {
-  const [status, setStatus] = useStudioServerStatus()
+  const [status] = useStudioServerStatus()
   const [info, setInfo] = useState<StudioServerInfo | null>(null)
-  const [pending, setPending] = useState(false)
 
   const running = status?.phase === 'running'
   useEffect(() => {
@@ -115,86 +109,31 @@ export function StudioServerSettings() {
     }
   }, [running, status?.pid])
 
-  const setOwnProcess = useCallback(
-    async (next: boolean) => {
-      if (pending) return
-      setPending(true)
-      try {
-        setStatus(await window.api.studioServerSetMode(next ? 'out-of-process' : 'in-process'))
-      } finally {
-        setPending(false)
-      }
-    },
-    [pending, setStatus],
-  )
-
   if (!status) return null
-  const restartNeeded = status.savedMode !== status.mode && !status.fromEnvironment
-  const outOfProcess = status.mode === 'out-of-process'
   return (
     <section className="space-y-3 pt-2">
       <SettingsSectionTitle>{copy.settings.studioServerSettings.studioServer}</SettingsSectionTitle>
       <SettingCard>
         <SettingsRow
-          label={copy.settings.studioServerSettings.runStudioServerInIts}
-          helpId={TOGGLE_HELP_ID}
+          label={PHASE_WORDS[status.phase]}
           help={
-            status.fromEnvironment
-              ? 'Set for this launch by SPRINTENGINE_SERVER_MODE.'
-              : 'Chats, the gateway and paired machines run apart from the windows. Takes effect after a restart.'
+            info
+              ? `Process ${info.pid}, up ${uptimeWords(info.uptimeMs)}, ${info.rssMb} MB` +
+                (status.restarts > 0 ? `, restarted ${status.restarts} time${status.restarts === 1 ? '' : 's'}` : '')
+              : status.reason
           }
         >
-          <Switch
-            id={TOGGLE_ID}
-            checked={status.savedMode === 'out-of-process'}
-            onChange={(next) => void setOwnProcess(next)}
-            disabled={pending || status.fromEnvironment}
-            ariaLabel={copy.settings.studioServerSettings.runStudioServerInIts}
-            ariaDescribedBy={TOGGLE_HELP_ID}
-          />
+          <span className="flex items-center gap-2">
+            <GhostButton onClick={() => void window.api.studioServerOpenLog()}>
+              {copy.settings.studioServerSettings.openLog}
+            </GhostButton>
+            <GhostButton onClick={() => void window.api.studioServerRestart()} disabled={!running}>
+              {copy.settings.studioServerSettings.restartServer}
+            </GhostButton>
+          </span>
         </SettingsRow>
-        {outOfProcess ? (
-          <SettingsRow
-            label={PHASE_WORDS[status.phase]}
-            help={
-              info
-                ? `Process ${info.pid}, up ${uptimeWords(info.uptimeMs)}, ${info.rssMb} MB` +
-                  (status.restarts > 0 ? `, restarted ${status.restarts} time${status.restarts === 1 ? '' : 's'}` : '')
-                : status.reason
-            }
-          >
-            <span className="flex items-center gap-2">
-              <GhostButton onClick={() => void window.api.studioServerOpenLog()}>
-                {copy.settings.studioServerSettings.openLog}
-              </GhostButton>
-              <GhostButton onClick={() => void window.api.studioServerRestart()} disabled={!running}>
-                {copy.settings.studioServerSettings.restartServer}
-              </GhostButton>
-            </span>
-          </SettingsRow>
-        ) : null}
         <SshMachinesPreviewSwitch />
       </SettingCard>
-      {restartNeeded ? (
-        <InlineNotice
-          tone="warn"
-          action={
-            <GhostButton onClick={() => void window.api.studioServerRelaunch()}>
-              {copy.settings.studioServerSettings.restartNow}
-            </GhostButton>
-          }
-        >
-          {status.savedMode === 'out-of-process'
-            ? 'Studio server moves to its own process after a restart.'
-            : 'Studio server moves back inside the app after a restart.'}
-        </InlineNotice>
-      ) : null}
-      {status.fellBack ? (
-        <InlineNotice tone="warn">
-          {copy.settings.studioServerSettings.studioServerCouldnTStart}
-          {status.fellBack}
-        </InlineNotice>
-      ) : null}
     </section>
   )
 }

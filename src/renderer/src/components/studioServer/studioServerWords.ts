@@ -12,13 +12,6 @@ export function studioServerNotice(
   options: { showStarting: boolean },
 ): StudioServerNotice {
   if (!status) return null
-  if (status.fellBack) {
-    return {
-      tone: 'warn',
-      message: copy.studioServer.studioServerWords.studioServerCouldnTStart(status.fellBack),
-      recoverable: false,
-    }
-  }
   switch (status.phase) {
     case 'starting':
       // A server that is up within a moment needs no sentence at all.

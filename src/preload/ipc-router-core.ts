@@ -2,7 +2,6 @@ import type { IpcRendererEvent } from 'electron'
 
 import { SERVER_IPC_CHANNELS, type ServerIpcChannel } from '../shared/ipc-channel-owners'
 import { SERVER_UNAVAILABLE_ERROR } from '../shared/server-port'
-import type { ServerMode } from '../shared/server-mode'
 
 // The preload's IPC, routed by who owns the channel (phase 6 spec, 6.2). Every
 // api module imports `ipc` from `ipc-router` instead of `ipcRenderer` from
@@ -10,10 +9,9 @@ import type { ServerMode } from '../shared/server-mode'
 // of Electron at runtime, so the web client builds the same router over a
 // browser's socket (src/renderer/src/web/webIpcRouter.ts).
 //
-// In process (the default) everything goes to `ipcRenderer`, exactly as
-// before. Out of process, a channel the server owns (SERVER_IPC_CHANNELS) goes
-// over this window's port to the server, which main hands the preload on
-// `studio-server:port`; every other channel stays with main. Listeners hear
+// A channel the server owns (SERVER_IPC_CHANNELS) goes over this window's
+// port to the server, which main hands the preload on `studio-server:port`;
+// every other channel stays with main. Listeners hear
 // both: a push arrives from whichever process owns its domain, so nothing has
 // to say which one a push channel belongs to.
 //
@@ -61,7 +59,6 @@ type ElectronIpcLike = {
 
 export type IpcRouterOptions = {
   ipcRenderer: ElectronIpcLike
-  mode: ServerMode
   table?: Readonly<Record<string, ServerIpcChannel>>
   queueLimit?: number
   queueTimeoutMs?: number
@@ -110,8 +107,7 @@ export function createIpcRouter(options: IpcRouterOptions): RendererIpc & {
   // Whether a port was ever attached: the first one has nothing to make again.
   let attachedBefore = false
 
-  const routesToServer = (channel: string): boolean =>
-    options.mode === 'out-of-process' && Object.hasOwn(table, channel)
+  const routesToServer = (channel: string): boolean => Object.hasOwn(table, channel)
 
   function addListener(channel: string, listener: Listener): void {
     let set = listeners.get(channel)

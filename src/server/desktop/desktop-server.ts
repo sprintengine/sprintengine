@@ -6,6 +6,11 @@ import { backgroundWorkOf, quitStopsOf } from '../core/background-work'
 
 import { SHELL_TOOLSETS, serverAutomationTools } from './shell-toolsets'
 import { shellArtifactsOverControl } from '../artifacts/artifacts-shell-bridge'
+import { shellCanvasOverControl } from '../canvas/canvas-shell-bridge'
+import { createAgentChangelistFeed } from '../../main/agent-changelist-feed'
+import { listTerminalRoots } from '../../main/terminal-runtime'
+import { announceChangelistsChanged } from '../git/changelist-events'
+import { getGitRepoWatch } from '../git/checkout-watch'
 import { shellExtensionOpenOverControl } from '../extensions/extension-open-bridge'
 import type { AgentLaunchRequest, AgentLaunchResult } from '../../shared/agent-launch'
 import { isRecord } from '../../shared/records'
@@ -39,12 +44,8 @@ import { SERVER_EXIT } from '../bootstrap/envelope'
 import type { RunningServer, ServerStart } from '../bootstrap/serve'
 import { runShutdownLegs } from '../bootstrap/serve'
 import { ControlRpcError } from '../bootstrap/control-rpc'
-import {
-  createStudioCore,
-  StudioDataDirBusyError,
-  StudioDataDirUnusableError,
-  studioBridgeScriptPath,
-} from '../core/studio-core'
+import { createStudioCore, StudioDataDirBusyError, StudioDataDirUnusableError } from '../core/studio-core'
+import { studioBridgeScriptPath } from '../platform/studio-paths'
 import { createStudioGateway, type StudioGateway } from '../core/studio-gateway'
 import { WORKTREE_QUIT_WAIT_MS } from '../core/studio-worktree-pool'
 import { createExtensionTools } from '../../main/automation/extension-tools'
@@ -62,6 +63,7 @@ import { createNodeStudioPaths } from '../platform/studio-paths'
 import { createRemoteShellBridge } from '../shell-bridge/remote'
 import { createShellSecretCipher, meshSealedTokens } from '../shell-bridge/shell-cipher'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from './gateway-backends'
+import { createWorkspaceExtensionsReader } from '../core/workspace-extensions-reader'
 import { provideServerChat } from './server-ipc'
 import {
   SERVER_EVENTS,
@@ -150,10 +152,18 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   let anyWindowVisible = true
   let workspaceWindowVisible = true
   let appFocused = false
+  // The desktop's workspace windows open now; none until the shell says.
+  let workspaceWindowIds: ReadonlySet<string> = new Set()
   rpc.on(SERVER_EVENTS.hintVisibility, (payload) => {
-    const hint = payload as { anyWindowVisible?: unknown; workspaceWindowVisible?: unknown } | null
+    const hint = payload as {
+      anyWindowVisible?: unknown
+      workspaceWindowVisible?: unknown
+      workspaceWindowIds?: unknown
+    } | null
     anyWindowVisible = hint?.anyWindowVisible !== false
     workspaceWindowVisible = hint?.workspaceWindowVisible !== false
+    if (Array.isArray(hint?.workspaceWindowIds))
+      workspaceWindowIds = new Set(hint.workspaceWindowIds.filter((id): id is string => typeof id === 'string'))
   })
   rpc.on(SERVER_EVENTS.hintFocus, (payload) => {
     appFocused = (payload as { appFocused?: unknown })?.appFocused === true
@@ -216,6 +226,12 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   // The terminal agents' pull request marks (below), bound once the Studio
   // socket they are read over exists.
   let terminalPullRequests: TerminalPullRequests | null = null
+  // Agent changelists: an agent's own list, holding exactly the lines it
+  // wrote; every client's `git.changelistsChanged` stream hears each change.
+  const agentChangelistFeed = createAgentChangelistFeed({
+    userDataDir: envelope.dataDir,
+    broadcast: (repoRoot) => announceChangelistsChanged(repoRoot),
+  })
   // The GitHub token the skills and the shell's own readers use: sealed by the shell's keychain.
   const githubTokenStore = new GitHubTokenStore()
   let core: ReturnType<typeof createStudioCore>
@@ -253,6 +269,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       // client of that machine's Studio, over a stream main opens on its door.
       ...(shellEnvironments ? { environmentClients: shellEnvironments } : {}),
       role: 'desktop',
+      // What an extension's `send` may type into besides its own terminals is
+      // what one of the desktop's workspace windows shows.
+      liveWorkspaceWindowIds: () => workspaceWindowIds,
       // The person's Scheduled agents switch turns the scheduler on and off,
       // through the module kernel (modules/scheduled-agents-switch.ts).
       scheduledAgentsSwitch: 'modules',
@@ -263,13 +282,40 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         launchPreparation: bridge.launches,
         isAppFocused: () => appFocused,
         onLaunched: (request, result) => bridge.analytics(agentLaunchedEvent(request, result)),
-        // Where each agent works and the tool calls that may have opened a
-        // pull request, for its marks: read below, once the socket exists.
         observers: {
+          // Each agent's own changelist, holding exactly the lines it wrote.
+          onAgentLaunched: (session) => agentChangelistFeed.onAgentLaunched(session),
+          onAgentFileEdit: (input) => {
+            // Under the workspace the process reports itself in, which is
+            // where the shell's editor tools look: an agent moved to another
+            // chat still names that one.
+            const { launchWorkspaceId, workspaceId, agentId } = input.session
+            rpc.emit(SERVER_EVENTS.agentFileWritten, {
+              workspaceId: launchWorkspaceId ?? workspaceId ?? null,
+              agentId,
+              path: input.path,
+            })
+            agentChangelistFeed.onAgentFileEdit(input)
+          },
+          onAgentSessionExit: (session) => agentChangelistFeed.onAgentSessionExit(session),
+          // Where each agent works and the tool calls that may have opened a
+          // pull request, for its marks: read below, once the socket exists.
           onObservedCheckoutResolved: (session, resolution) =>
             terminalPullRequests?.noteCheckoutResolved(session, resolution),
           onAgentToolCall: (session, toolCall) => terminalPullRequests?.noteToolCall(session, toolCall),
         },
+        // The git view re-reads a checkout an agent just worked in now,
+        // rather than at the next fallback sweep.
+        onCheckoutResolved: (facts) => {
+          if (facts.gitRoot) getGitRepoWatch().noteActivity(facts.gitRoot)
+        },
+        // A pane popped out may take over a running terminal only while its
+        // owner still has that terminal out there: the shell knows the pop-outs.
+        mayAttach: (windowKey, sessionId) =>
+          rpc.call<boolean>(SHELL_METHODS.terminalMayAttach, { windowKey, sessionId }).then(
+            (may) => may !== false,
+            () => true,
+          ),
       },
       // A WSL distribution's chats run on a Studio server inside it (phase
       // 7) when the person turned that on for it, as in process. With the
@@ -340,6 +386,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     platform,
     core,
     log,
+    // The shell's canvas tools hold to the person's Canvas switch, which a window reports here.
+    registryReported: (snapshot) => rpc.emit(SERVER_EVENTS.mirrorModuleRegistry, snapshot),
   })
   // `extension.open`'s window half: the windows are the shell's, asked over
   // the control channel (extension-open-bridge.ts).
@@ -414,6 +462,12 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
           listModuleContributedTools: () =>
             modules.mcpTools().map((tool) => ({ moduleId: tool.moduleId, toolName: tool.registration.name })),
           readMarketplaceRegistry: (input) => extensions.marketplace.read(input),
+          // What a paired machine's composer offers a chat here.
+          readWorkspaceExtensions: createWorkspaceExtensionsReader({
+            listWorkspaceSkills: (input) => core.agents.skills.workspaceSkills.listWorkspaceSkills(input),
+            agentCapabilities: (input) => core.agents.skills.agentCapabilities.resolve(input),
+            listSources: () => core.agents.skills.skills.listSources(),
+          }),
         }),
       ),
       // `artifacts.*`: publishing agents' pages from this machine's disk, over
@@ -509,6 +563,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       },
     },
     githubTokens: githubTokenStore,
+    // Another device's boards, through the shell's canvas service, which its
+    // windows and agents draw through too (canvas-shell-bridge.ts).
+    canvas: shellCanvasOverControl(rpc),
   })
   const domains = provideServerChat({
     core,
@@ -535,6 +592,11 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   terminals?.runtime.subscribeSessionsChanged(sendTerminalSessions)
   serveShellTerminalRequests(rpc, terminals, launchAgent)
   serveShellAgentRequests(rpc, core.agents)
+  // A chat the person starts from a window of the shell's own (a Canvas
+  // board's "Continue in new chat"), through the one launch service.
+  rpc.handle(SERVER_METHODS.conversationLaunch, (params) =>
+    core.conversationLaunchService.launch(params as Parameters<typeof core.conversationLaunchService.launch>[0]),
+  )
   // The terminal agents' pull request marks, read from this process's record
   // over a connection of its own, as every client reads them.
   terminalPullRequests = terminals
@@ -889,7 +951,10 @@ function serveShellRequests(deps: {
       .readPeekTranscript({ workspaceRoot, workspaceId: summary.workspaceId, agentId: summary.agentId })
       .catch(() => [])
   })
-  rpc.handle(SERVER_METHODS.conversationRoots, () => core.conversations.listLiveConversationRoots())
+  rpc.handle(SERVER_METHODS.liveRoots, () => [
+    ...listTerminalRoots(),
+    ...core.conversations.listLiveConversationRoots(),
+  ])
   rpc.handle(SERVER_METHODS.conversationsWorking, () => {
     const listed = core.conversations.listSessions()
     if (!listed.ok) return []

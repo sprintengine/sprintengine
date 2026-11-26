@@ -4142,10 +4142,8 @@ export const en = {
       sSHMachinesPreview: 'SSH machines (preview)',
       restartNow: 'Restart now',
       studioServer: 'Studio server',
-      runStudioServerInIts: 'Run Studio server in its own process',
       openLog: 'Open log',
       restartServer: 'Restart server',
-      studioServerCouldnTStart: "Studio server couldn't start on its own, so it runs inside the app. ",
     },
     // src/renderer/src/components/settings/StudioSkillsSettings.tsx
     studioSkillsSettings: {
@@ -4571,12 +4569,10 @@ export const en = {
   studioServer: {
     // src/renderer/src/components/studioServer/StudioServerBanner.tsx
     studioServerBanner: {
-      restartInCompatibilityMode: 'Restart in compatibility mode',
+      openLog: 'Open log',
     },
     // src/renderer/src/components/studioServer/studioServerWords.ts
     studioServerWords: {
-      studioServerCouldnTStart: (fellBack: unknown) =>
-        `Studio server couldn't start on its own, so it runs inside the app. ${fellBack}`,
       startingStudioServer: 'Starting Studio server…',
       reconnectingToStudioServer: 'Reconnecting to Studio server…',
       studioServerStopped: (value: unknown) => `Studio server stopped.${value}`,

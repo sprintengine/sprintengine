@@ -12,7 +12,6 @@ import { webShellIpc } from './webShellIpc'
 const posted: Array<{ t: string; id?: number; channel: string; args: unknown[] }> = []
 const router = createIpcRouter({
   ipcRenderer: webShellIpc,
-  mode: 'out-of-process',
   table: { ...SERVER_IPC_CHANNELS, ...WEB_TUNNEL_CHANNELS },
 })
 const port: RouterPort = {

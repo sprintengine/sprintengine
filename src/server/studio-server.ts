@@ -8,9 +8,9 @@ import {
   createStudioCore,
   StudioDataDirBusyError,
   StudioDataDirUnusableError,
-  studioBridgeScriptPath,
   type StudioCore,
 } from './core/studio-core'
+import { studioBridgeScriptPath } from './platform/studio-paths'
 import { createStudioGateway, type StudioGateway } from './core/studio-gateway'
 import { createStudioRpc } from './core/studio-rpc'
 import { createStudioChatBackend } from '../main/studio-rpc/studio-chat-backend'

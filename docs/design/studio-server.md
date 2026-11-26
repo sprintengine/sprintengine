@@ -8,8 +8,9 @@ landed"). Since 2026-11-12 the chat view runs on the
 protocol only: the variable, the window's conversation IPC and the
 `chat-over-studio` test project are gone. Phases 5 to 9 were built too, each
 recorded in its own spec: client tools (`client-tools`, 2026-10-02), the local
-server out of process (behind the Advanced toggle, in process still the
-default), a server inside each WSL distribution, SSH machines, and the web
+server out of process (behind the Advanced toggle at first; since 2026-11-25
+the only mode, with no in-process mode, toggle or fallback), a server inside
+each WSL distribution, SSH machines, and the web
 listener with its client (2026-10-03). Since 2026-11-13 every WSL distribution
 and SSH machine is an environment of its own, reached on the Studio protocol,
 and since 2026-11-14 the tailnet's conversation lane is gone: a paired device
@@ -1791,10 +1792,12 @@ It replaces "The render host (L)", withdrawn by ruling (f).
   listener move to the server; the data key handoff and the secret
   re-sealing; the shell offering its toolsets (`browser`, `canvas`, and
   `editor`, `tour` and `terminal` moved onto the same mechanism) over the
-  control channel; the in-process fallback flag.
+  control channel. (The in-process fallback flag this phase built is gone
+  since 2026-11-25: the server runs in its own process only.)
 - **Tests.** Spawn and crash-restart tests with a fake child; a packaged smoke
-  run (start, chat, quit, relaunch, resume); a single-writer test that fails if
-  main constructs a server-owned store; migration of sealed secrets.
+  run (`smoke:studio-server`: start, restart, quit, relaunch); a single-writer
+  test that fails if main's entry loads the core, the chats or the gateway
+  (`src/main/main-import-graph.test.ts`); migration of sealed secrets.
 - **Risks.** Two writers on one userData during the switch; agents mid-turn at
   app quit (drain); background mode semantics.
 

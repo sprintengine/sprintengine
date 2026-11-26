@@ -26,7 +26,6 @@ export * from '../../../preload/ipc-router-core'
 
 const router = createIpcRouter({
   ipcRenderer: webShellIpc,
-  mode: 'out-of-process',
   // Only what the server lets a web tab reach goes to it; every other channel
   // is the shell's, which in a tab refuses it here, in the missing-member report.
   table: {

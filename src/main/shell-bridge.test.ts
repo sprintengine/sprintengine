@@ -13,7 +13,7 @@ import {
   type ShellBridge,
   type ShellRevealTarget,
 } from '../server/shell-bridge/shell-bridge'
-import { createInProcessShellBridge } from './shell-bridge'
+import { createShellBridge } from './shell-bridge'
 import type { DecodedImage, ImageCodec } from './conversation-image-downscale'
 
 // The bridge's contract, run against both implementations: the shell's own
@@ -78,7 +78,7 @@ function shellHarness(): Harness & { shellBridge: ShellBridge } {
     open = resolve
   })
   const safeStorage = fakeSafeStorage()
-  const shellBridge = createInProcessShellBridge({
+  const shellBridge = createShellBridge({
     safeStorage,
     launches: () => launches,
     reveal: (target) => {

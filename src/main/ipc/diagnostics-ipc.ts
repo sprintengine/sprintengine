@@ -11,7 +11,6 @@ import { CHILD_PROCESS_SAMPLE_THROTTLE_MS, sampleChildProcessMetrics } from '../
 import { collectProcessMetrics, type RawProcessMetric } from '../process-metrics'
 import { sampleSystemMemory, SYSTEM_MEMORY_SAMPLE_THROTTLE_MS } from '../system-memory'
 import { sampleThreadCounts, THREAD_SAMPLE_THROTTLE_MS } from '../thread-counts'
-import { listTerminalRoots } from '../terminal-runtime'
 import { listRecentReapEvents } from '../terminal-reap-log'
 import { sampleWorkspaceMemory, WORKSPACE_MEMORY_SAMPLE_THROTTLE_MS, type TerminalRootInfo } from '../workspace-memory'
 
@@ -110,26 +109,23 @@ type DiagnosticsIpcDependencies = {
   writeDiagnosticLog(input: DiagnosticLogInput): Promise<DiagnosticLogEntry>
   openDiagnosticsLogsFolder(): Promise<{ opened: true; path: string }>
   openDiagnosticsWindow(): void
-  // Headless conversation child processes (Claude SDK sessions) — shaped like
-  // terminal roots so workspace-memory attribution covers them too.
-  listConversationRoots?: () => TerminalRootInfo[]
+  // The server's terminals and headless conversation child processes (Claude
+  // SDK sessions), shaped alike, for the per-workspace memory attribution.
+  listProcessRoots?: () => TerminalRootInfo[]
 }
 
-let listConversationRootsDep: (() => TerminalRootInfo[]) | undefined
+let listProcessRootsDep: (() => TerminalRootInfo[]) | undefined
 
 function collectAttributionRoots(): TerminalRootInfo[] {
-  const conversationRoots = (() => {
-    try {
-      return listConversationRootsDep?.() ?? []
-    } catch {
-      return []
-    }
-  })()
-  return [...listTerminalRoots(), ...conversationRoots]
+  try {
+    return listProcessRootsDep?.() ?? []
+  } catch {
+    return []
+  }
 }
 
 export function registerDiagnosticsIpc(ipcMain: IpcMain, deps: DiagnosticsIpcDependencies): void {
-  listConversationRootsDep = deps.listConversationRoots
+  listProcessRootsDep = deps.listProcessRoots
   ipcMain.handle('diagnostics:log', async (_, input: DiagnosticLogInput) => {
     return deps.writeDiagnosticLog(input)
   })

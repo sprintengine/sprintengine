@@ -17,8 +17,8 @@ import { isPathInsideOrEqual } from './path-containment'
 // imports, `imageMimeType` and the `.icns` reader, are pure): it takes its
 // filesystem and raster work as a `ProjectLogoIo`, so the ranking, the size
 // guard, and the SVG sanitizer are testable without a disk or an Electron
-// runtime. `createProjectLogoIo` in `src/main/project-logo-io.ts` is the real
-// one.
+// runtime. The server's file system hands it the plain one over Node's
+// `fs` (`plainProjectLogoIo`, server/files/studio-file-system.ts).
 
 // Ranked candidate filenames, first hit wins. Matched case-insensitively
 // against the repo's top-level entries — no recursive walk.

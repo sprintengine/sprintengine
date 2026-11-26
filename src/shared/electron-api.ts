@@ -20,7 +20,6 @@ import type {
   DockerStatus,
 } from './containers'
 import type { SshPreviewStatus } from './ssh-preview'
-import type { ServerMode } from './server-mode'
 import type { ChatExportInput, ChatExportResult } from './chat-export'
 import type { StudioServerInfo, StudioServerStatus } from './studio-server-status'
 import type { EditorRevealAck, EditorRevealRequest, EditorStateQuery, EditorStateReply } from './editor-reveal'
@@ -516,8 +515,6 @@ export type ElectronApi = {
   studioServerRetry: () => Promise<void>
   studioServerRestart: () => Promise<void>
   studioServerOpenLog: () => Promise<boolean>
-  studioServerSetMode: (mode: ServerMode) => Promise<StudioServerStatus>
-  studioServerRelaunch: (options?: { compatibility?: boolean }) => Promise<void>
   onStudioServerStatus: (cb: (status: StudioServerStatus) => void) => () => void
   updateGetChannel: () => Promise<AppUpdateChannelSetting>
   /** Save a channel choice, re-point the updater at it and check that channel. */

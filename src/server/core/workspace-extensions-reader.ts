@@ -1,6 +1,6 @@
-import type { AgentCapabilitiesInput, AgentCapabilitiesResult } from '../shared/skills'
-import type { SkillSourcesResult, WorkspaceSkillsListInput, WorkspaceSkillsListResult } from '../shared/ipc/skills'
-import type { WorkspaceExtensions } from '../shared/workspace-extensions'
+import type { AgentCapabilitiesInput, AgentCapabilitiesResult } from '../../shared/skills'
+import type { SkillSourcesResult, WorkspaceSkillsListInput, WorkspaceSkillsListResult } from '../../shared/ipc/skills'
+import type { WorkspaceExtensions } from '../../shared/workspace-extensions'
 
 /**
  * `workspace.extensions`' answer, from the readers the composer here uses: the

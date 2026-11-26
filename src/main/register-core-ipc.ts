@@ -51,32 +51,23 @@ import {
   openPanePopOutWindow,
 } from './window-factory'
 import type { AppServices } from './app-services'
-import { provideServerChat } from '../server/desktop/server-ipc'
 import { createFilesystemReadHandlers } from './filesystem-read'
 import { openDiagnosticsLogsFolder } from './diagnostics-folder'
 import { writeDiagnosticLog } from './diagnostics-service'
 
 export type CoreIpcOptions = {
-  /**
-   * The Studio server in a process of its own: its domains register there, on
-   * its IPC tunnel, and it mints the tickets a window's protocol connection to it presents.
-   */
-  server?: {
+  /** The Studio server, in a process of its own: it mints the tickets a window's connection to it presents. */
+  server: {
     windowTickets: StudioWindowTicketIssuer
   }
-}
-
-/** What registration hands back for the app's shutdown to finish. */
-export type CoreIpcHandles = {
-  conversationCommands: { dispose(): Promise<void> }
 }
 
 export function registerCoreIpc(
   ipcMain: IpcMain,
   services: AppServices,
   diagnosticsEnabled: boolean,
-  options: CoreIpcOptions = {},
-): CoreIpcHandles {
+  options: CoreIpcOptions,
+): void {
   registerWindowIpc(ipcMain, {
     createWorkspaceWindow: ({ windowId, bounds, isMaximized }) => {
       createMainWindow({ diagnosticsEnabled, windowId, bounds, isMaximized })
@@ -107,8 +98,8 @@ export function registerCoreIpc(
               (found) => found.isDirectory(),
               () => false,
             ),
-          // The person's own window.
-          launch: (request) => services.conversationLaunchService.launch({ ...request, startedBy: { kind: 'person' } }),
+          // The person's own window; the chat is the server's to start.
+          launch: (request) => services.launchConversation({ ...request, startedBy: { kind: 'person' } }),
           newProjectlessFolder: createProjectlessChatFolder,
         },
         input,
@@ -131,9 +122,8 @@ export function registerCoreIpc(
     },
   })
   registerToursIpc(ipcMain, services.tourService)
-  // A window's tickets come from the server that holds the chats, wherever it runs.
-  const windowTickets = options.server?.windowTickets ?? services.studioRpcService
-  if (windowTickets) registerStudioWindowTicketIpc(ipcMain, windowTickets)
+  // A window's tickets come from the server that holds the chats.
+  registerStudioWindowTicketIpc(ipcMain, options.server.windowTickets)
   registerAppMenuIpc(ipcMain)
   registerClipboardIpc(ipcMain)
   // Export chat (a chat tab's menu): the chat read by the window from its
@@ -174,7 +164,7 @@ export function registerCoreIpc(
     openDiagnosticsWindow: () => {
       createDiagnosticsWindow()
     },
-    listConversationRoots: () => services.conversations.listLiveConversationRoots(),
+    listProcessRoots: () => services.processes.lastRoots(),
   })
   registerUpdateIpc(ipcMain, { updateService: services.updateService })
   // A file attached to a message by path opens in its default app, and only
@@ -209,20 +199,6 @@ export function registerCoreIpc(
   })
   registerKeepAwakeIpc(ipcMain, services.keepAwakeStore, () => services.agentKeepAwake.refresh())
   registerBrowserTabAutoCloseIpc(ipcMain, services.browserTabAutoClose)
-  // The chat surface the Studio server serves: set up here while it runs in
-  // process, and by the server itself when it runs in a process of its own
-  // (src/server/desktop/server-ipc.ts).
-  const { automationService, studioRpcService, conversationTerminalHandoff } = services
-  const { conversationCommands } =
-    !options.server && automationService && studioRpcService && conversationTerminalHandoff
-      ? provideServerChat({
-          core: services.studioCore,
-          gateway: automationService,
-          studioRpc: studioRpcService,
-          terminalHandoff: (input) => conversationTerminalHandoff.handoff(input),
-        })
-      : // The server sets it up, and disposes its own command lists.
-        { conversationCommands: { dispose: async () => undefined } }
   // Showing an installed extension's folder in this computer's file manager.
   registerThirdPartyModuleIpc(ipcMain)
   // A window stages the frame documents its extensions' surfaces are drawn in.
@@ -231,7 +207,8 @@ export function registerCoreIpc(
   // Terminals are served over the Studio protocol (src/server/terminals/),
   // and a pane terminal moves between windows by re-attaching: the last
   // attach takes the pty's output. A pop-out's attach that crossed the
-  // owner's taking the tab back must not be the last word.
+  // owner's taking the tab back must not be the last word: the server asks
+  // the shell, which knows the pop-outs (SHELL_METHODS.terminalMayAttach).
   services.setTerminalAttachGuard((windowKey, sessionId) => {
     const id = webContentsIdOfWindowKey(windowKey)
     const contents = id === null ? undefined : webContents.fromId(id)
@@ -242,9 +219,8 @@ export function registerCoreIpc(
   // the runtime that owns one rather than with the core surfaces.
   registerConversationPeekIpc(ipcMain, services.conversationPeek)
 
-  // Compacting a terminal agent types at its prompt, through the control plane
-  // where the session runs (the core's in process, the server's out of process),
-  // which checks the session as it stands then.
+  // Compacting a terminal agent types at its prompt, through the server's
+  // control plane, which checks the session as it stands then.
   registerAgentCompactIpc(ipcMain, (sessionId) => services.shellTerminals.compact(sessionId))
 
   // Same reason: a terminal agent's pull request marks follow its session, so
@@ -253,5 +229,4 @@ export function registerCoreIpc(
   registerPullRequestIpc(ipcMain, {
     refreshPullRequestsForSession: (sessionId) => services.refreshPullRequestsForSession(sessionId),
   })
-  return { conversationCommands }
 }

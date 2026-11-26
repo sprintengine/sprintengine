@@ -9,35 +9,8 @@ import { registerAppLifecycle } from './app-lifecycle'
 import { createAppServices } from './app-services'
 import { ensureExtensionFolders } from './extension-folders'
 import { ignoreMacosTypeOfServiceEinval, raiseConnectAttemptTimeout } from './network-defaults'
-import { resolveModuleEnablement } from '../shared/modules/resolve'
-import { loadMainModules } from './module-host/load-modules'
-import { readModuleOverridesSync } from './module-host/enablement-store'
-import { ScheduledAgentsServiceToken } from './module-host/service-tokens'
-import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from './modules/agent-runtime-module'
-import type { CapabilityManifest } from '../shared/modules/manifest'
-import { SCHEDULED_AGENTS_MANIFEST, scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
-import type { ExtensionStandingContext } from './modules/module-signature'
-import { createExtensionApprovalReader } from './modules/extension-approvals'
-import { createExtensionFrameGrant } from './modules/extension-frame-grant'
-import { editorSaveDecision } from '../server/extensions/hooks/extension-hooks'
-import { readExtensionStandingContextSync } from './modules/extension-standing-context'
-import { catalogueNotification } from '../server/extensions/catalogue/extension-catalogue'
-import { frameStandingOf, installedStandingOf, planInstalledExtensions } from '../server/extensions/extension-plan'
-import { createExtensionDiscovery } from '../server/extensions/extension-discovery'
-import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
-import { resolveWorkerEntryPath, resolveExtensionSdkRoot } from '../server/extensions/workers/worker-process'
-import { join } from 'node:path'
 import { registerAppRestartIpc } from './ipc/app-restart-ipc'
 import { handleExtensionFrameScheme, stagedExtensionFrames } from './extension-frames/extension-frame-shell'
-import { defaultUserModuleRoot, discoverUserModulesSync } from './modules/user-module-registry'
-import { watchUserModuleRoot } from './modules/user-module-watch'
-import { readDevFoldersSync } from './modules/extension-dev-folders'
-import { createExtensionReloader } from '../server/extensions/extension-reload'
-import { watchDevFolders } from '../server/extensions/dev/dev-folder-watch'
-import type { ExtensionHookPoint } from '../../packages/extension-sdk/src/hooks'
-import { createModuleLifecycle, liveModuleIds } from './modules/module-lifecycle'
-import { readSurfaceImage } from './modules/extension-surface-entries'
-import { bundledRegistryIds } from './plugin-registry-instance'
 import { attachBuildSkewWatch, createBuildSkewWatch } from './build-skew'
 import { registerCoreIpc } from './register-core-ipc'
 import { markStartup } from './startup-timeline'
@@ -49,21 +22,13 @@ import { removeRetiredRelayState } from './retired-relay-state'
 import { studioPlatform } from '../server/platform/platform'
 import { SERVER_EVENTS, SERVER_METHODS } from '../server/desktop/server-methods'
 import type { AgentPhaseEvent } from '../shared/agent-runtime'
-import {
-  readServerMode,
-  SERVER_FALLBACK_ARGUMENT,
-  setSessionServerMode,
-  takeServerFallbackNote,
-  writeServerFallbackNote,
-  writeServerMode,
-} from './server-mode'
 import { readSshPreview, registerSshPreviewIpc, setSessionSshPreview } from './environments/ssh/ssh-preview'
 import { registerStudioServerIpc } from './ipc/studio-server-ipc'
 import { STUDIO_SERVER_CHANNELS } from '../shared/studio-server-status'
 import { createDesktopServerHost } from './server-supervisor/desktop-server-host'
 import { channelForVersion } from './update-channel-store'
 
-/** How long the boot's workspace pass waits for the Studio server out of process. */
+/** How long the boot's workspace pass waits for the Studio server. */
 const BOOT_SERVER_WAIT_MS = 15_000
 
 // The app proper, loaded by the entry (index.ts) only in the process that holds
@@ -91,362 +56,27 @@ ignoreMacosTypeOfServiceEinval()
 
 const DIAGNOSTICS_ENABLED = readStudioEnv('SPRINTENGINE_DIAGNOSTICS') === '1'
 
-// Where the Studio server runs this session: in this process, the default, or
-// in a utility process of its own (phase 6). Decided once, here, before any
-// service is built, so every store has one writer for the whole session.
-const serverMode = readServerMode(app.getPath('userData'))
-setSessionServerMode(serverMode.mode)
 // SSH machines, a preview until phase 8 is complete: off by default, and
-// with it off no SSH code runs. Fixed for the session, like the server mode.
+// with it off no SSH code runs. Fixed for the session.
 const sshPreview = readSshPreview(app.getPath('userData'))
 setSessionSshPreview(sshPreview.enabled)
-// A launch that follows one whose server could not start says why, once.
-const serverFellBack =
-  serverMode.source === 'fallback'
-    ? (takeServerFallbackNote(app.getPath('userData')) ?? 'The Studio server could not start.')
-    : null
-const serverHost =
-  serverMode.mode === 'out-of-process'
-    ? createDesktopServerHost({
-        buildStamp: mainBuildStamp.commit,
-        diagnosticsEnabled: DIAGNOSTICS_ENABLED,
-        version: app.getVersion(),
-        channel: channelForVersion(app.getVersion()) === 'nightly' ? 'nightly' : 'latest',
-      })
-    : null
-if (serverHost) {
-  console.info(`[studio-server] out of process (${serverMode.source})`)
-}
-const services = createAppServices(DIAGNOSTICS_ENABLED, serverHost?.link ?? null)
+// The Studio server, in a process of its own: it holds the core, the chats,
+// the stores and the extensions, one writer for each. This process is the
+// shell around the windows; it forks the server at ready and supervises it.
+// A server that cannot start is a failure every window shows, with its
+// reason, Retry and Open log: there is no other place for the chats to run.
+const serverHost = createDesktopServerHost({
+  buildStamp: mainBuildStamp.commit,
+  diagnosticsEnabled: DIAGNOSTICS_ENABLED,
+  version: app.getVersion(),
+  channel: channelForVersion(app.getVersion()) === 'nightly' ? 'nightly' : 'latest',
+})
+const services = createAppServices(DIAGNOSTICS_ENABLED, serverHost.link)
 
-const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
-  ...(serverHost
-    ? {
-        server: {
-          windowTickets: serverHost.windowTickets,
-        },
-      }
-    : {}),
+registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
+  server: { windowTickets: serverHost.windowTickets },
 })
 
-// Capability modules register their own IPC/services/sidecars through the host
-// kernel, gated by the user's enablement overrides (mirrored from the renderer
-// into userData). A disabled module skips registration entirely. The
-// agent-runtime core module seeds the shared services (terminal runtime, auth,
-// token stores) that the optional modules consume via the service bridge; the
-// resolver orders it first because every dependent declares
-// `dependsOn: ['agent-runtime']`. See docs/extension-authors/drop-in-extensions.md.
-const moduleOverrides = readModuleEnablementOverrides()
-// Every save in a development folder: read it again, and load what changed.
-// Out of process the server watches them (server-modules.ts).
-// The extensions on disk, discovered once per change (extension-discovery.ts):
-// a save reads its folder alone again.
-const extensionDiscovery = createExtensionDiscovery({
-  moduleRoot: defaultUserModuleRoot,
-  dataDir: app.getPath('userData'),
-})
-const devFolderWatch = watchDevFolders((folder) => {
-  extensionDiscovery.folderChanged(folder)
-  extensionWorkers.workers.reconcile()
-  void moduleLifecycle?.reproject(extensionDiscovery.current().modules)
-  void extensionReloader?.reload()
-})
-
-const extensionApprovals = createExtensionApprovalReader(app.getPath('userData'))
-// Every worker extension's code runs in a process of its own
-// (src/server/extensions/workers). Out of process the server holds them.
-const extensionWorkers = createExtensionWorkers({
-  entryPath: resolveWorkerEntryPath(),
-  sdkRoot: resolveExtensionSdkRoot(app.isPackaged ? process.resourcesPath : null, app.getAppPath()),
-  logDir: join(app.getPath('logs'), 'extensions'),
-  approvals: extensionApprovals,
-  installed: () => installedStandingOf(extensionDiscovery.current()),
-  // Switched off or no longer approved: its terminals stay open, the person's now.
-  released: (moduleId) => services.studioCore.extensionTerminals?.forget(moduleId),
-  toolsChanged: () => services.automationService?.notifyToolsListChanged(),
-  stateChanged: () => services.moduleHub.deliverChanged(),
-  // Read again, it is no longer loaded: registering it again asks again.
-  developmentFolderMoved: () => {
-    extensionDiscovery.invalidate()
-    void moduleLifecycle?.reproject(extensionDiscovery.current().modules)
-    void extensionReloader?.reload()
-    services.moduleHub.deliverChanged()
-  },
-})
-if (!serverHost) app.once('will-quit', () => void extensionWorkers.workers.close())
-// In process, the core's actions ask these workers' hooks; out of process the
-// server binds its own.
-if (!serverHost) services.studioCore.extensionHooks.bind(extensionWorkers.workers)
-if (!serverHost) services.studioCore.extensionEvents.bind(extensionWorkers.workers)
-// Terminal work an extension has on its way is held to its approval as it stands when carried out.
-if (!serverHost)
-  services.studioCore.extensionTerminals?.bindGrants((moduleId) => extensionWorkers.workers.grantOf(moduleId))
-const thirdPartyMainLoad = planInstalledExtensions(
-  discoverUserModulesSync(defaultUserModuleRoot(), readExtensionStanding()),
-  () => extensionWorkers.workers,
-)
-// Live-resolved main enablement, kept in step with the renderer's overrides (see
-// recomputeMainEnablement below). A module with no main runtime of its own — one
-// whose work rides another module's engine tick — is honored through this set
-// rather than through load/unload, so its toggle (and its dependency cascade)
-// takes effect without a reload. Declared before module construction so the
-// predicate can close over it; the set is filled in once the manifest list exists.
-const enabledMainModuleIds = new Set<string>()
-// The schedules are the core's; the kernel holds them under the person's
-// Scheduled agents switch. Out of process the server's kernel does
-// (server-modules.ts), and this process knows only the manifest.
-const scheduledAgentsModule = serverHost
-  ? null
-  : scheduledAgentsSwitchModule(
-      services.studioCore.scheduledAgents,
-      // Read only once a module asks, by which time `getModulePermissions` exists.
-      (moduleId): readonly string[] | undefined => getModulePermissions(moduleId),
-    )
-const activeMainModules = scheduledAgentsModule ? [scheduledAgentsModule] : []
-// Resolves any module id to the permissions it declared in its manifest, across
-// every module the app assembled. The companion registry gates attach on it.
-const moduleManifestsById = new Map<string, CapabilityManifest>(
-  [
-    AGENT_RUNTIME_MANIFEST,
-    SCHEDULED_AGENTS_MANIFEST,
-    ...thirdPartyMainLoad.modules.map((module) => module.manifest),
-  ].map((manifest) => [manifest.id, manifest]),
-)
-const getModulePermissions = (moduleId: string): readonly string[] | undefined =>
-  moduleManifestsById.get(moduleId)?.permissions
-// Extracted as a const (rather than inlined) so `mainModuleManifests` below can
-// reference its manifest for the enablement gate; constructed after
-// `getModulePermissions` so the companion-attach permission check is wired in.
-const agentRuntimeModule = createAgentRuntimeModule(services, {
-  getModulePermissions,
-  platform: studioPlatform(),
-  // A module's prompt that names no runtime answers on the person's choice.
-  getTextGenerationSettings: () => services.studioCore.textGenerationSettings.get(),
-})
-// Out of process every module's server half loads in the server
-// (src/server/desktop/server-modules.ts); the shell loads none and keeps an
-// empty kernel for the renderer-entry channel, which is the shell's.
-const moduleLoad = loadMainModules({
-  modules: serverHost ? [] : [agentRuntimeModule, ...activeMainModules, ...thirdPartyMainLoad.modules],
-  overrides: moduleOverrides,
-  // Skill directories a third-party module registers are resolved against —
-  // and must stay inside — its install folder.
-  moduleRoots: thirdPartyMainLoad.moduleRoots,
-  // What `getAssetPath` resolves: the files each module was verified with.
-  moduleVerifiedFiles: thirdPartyMainLoad.verifiedFiles,
-  moduleMcpTools: thirdPartyMainLoad.mcpTools,
-  // What each extension runs under; its calls are refused once that approval is gone.
-  extensionApprovals: thirdPartyMainLoad.approvals,
-  currentApprovals: extensionApprovals,
-  resolveFrameGrant: createExtensionFrameGrant({
-    approvals: extensionApprovals,
-    dataDir: app.getPath('userData'),
-    standing: (moduleId) => frameStandingOf(extensionDiscovery.current(), moduleId),
-    // A folder changed where no watcher heard it: discovery reads it again.
-    refresh: () => extensionDiscovery.invalidate(),
-  }),
-  onKernel: extensionWorkers.bind,
-  frameFileExclusions: () => [app.getPath('userData'), defaultUserModuleRoot()],
-  // A save in a custom text editor meets the save hooks as one in Studio's text editor does.
-  frameEditorSaveHooks: ({ invoker, ...event }) =>
-    editorSaveDecision(services.studioCore.extensionHooks, event, invoker),
-  frameOwnImage: (moduleId, path) =>
-    readSurfaceImage(
-      extensionDiscovery.current().modules.find((module) => module.key === moduleId),
-      path,
-    ),
-  ineligible: thirdPartyMainLoad.ineligible,
-  launchErrors: thirdPartyMainLoad.launchErrors,
-  // Module events reach every client following the Studio's `extension.events`
-  // stream; each window routes them to its own module's subscribers. Nothing
-  // is buffered for a client that connects later (shared/modules/events.ts).
-  deliverModuleEvent: (event) => services.moduleHub.deliverEvent(event),
-  // A module's notify is a bell row on `extension.notifications`; the kernel
-  // keeps the recent ones, which the stream sends a client first.
-  deliverModuleNotification: (notification) => services.moduleHub.deliverNotification(notification),
-  // A module tool that would shadow one of the gateway's own is refused at
-  // registration, naming the tool it collides with.
-  coreMcpToolNames: () => services.automationService?.coreToolNames() ?? [],
-})
-services.moduleHub.readRecentFrom(() => moduleLoad.kernel.recentNotifications())
-// A module's declared methods, called over the Studio RPC's `extension.read` and `extension.operate`.
-services.moduleHub.serveCallsFrom((request) => moduleLoad.kernel.callModuleMethod(request))
-// The host calls an extension's frames make: `extension.call`.
-services.moduleHub.serveFrameCallsFrom((request) => moduleLoad.kernel.callFrameMethod(request))
-// The manifest universe the enablement gate resolves against — every main module
-// present on this channel, so a module and its dependencies (scheduled agents,
-// agent-runtime) all resolve. Recompute mirrors the renderer's
-// resolution so the gate's answer matches what the user sees in Settings.
-const mainModuleManifests = [
-  agentRuntimeModule.manifest,
-  SCHEDULED_AGENTS_MANIFEST,
-  ...thirdPartyMainLoad.modules.map((module) => module.manifest),
-]
-const recomputeMainEnablement = (overrides: Record<string, boolean>): void => {
-  const { order } = resolveModuleEnablement(mainModuleManifests, overrides)
-  enabledMainModuleIds.clear()
-  for (const id of order) enabledMainModuleIds.add(id)
-}
-recomputeMainEnablement(moduleOverrides)
-// An extension's schedules are held to its permissions, and wait while it is not here.
-if (!serverHost)
-  services.studioCore.attachModules({
-    permissions: getModulePermissions,
-    loaded: () => [...enabledMainModuleIds],
-  })
-// What runs here, listed and changed over the Studio RPC (`module.*`). Out of
-// process the server's kernel holds the modules and serves it
-// (server-modules.ts); this process's kernel is empty.
-const moduleLifecycle = serverHost
-  ? null
-  : createModuleLifecycle({
-      dataDir: app.getPath('userData'),
-      moduleRoot: defaultUserModuleRoot,
-      // Uninstalled or killed: the terminals it opened close (extension-terminals.ts).
-      removing: (moduleId) => services.studioCore.extensionTerminals?.closeAll(moduleId),
-      // A worker whose approval is gone or changed stops, and the windows hear.
-      changed: () => {
-        extensionDiscovery.invalidate()
-        extensionWorkers.workers.reconcile()
-        services.moduleHub.deliverChanged()
-        devFolderWatch.follow(readDevFoldersSync(app.getPath('userData')))
-        void extensionReloader?.reload()
-      },
-      settingsChanged: (moduleId) => services.moduleHub.deliverSettingsChanged(moduleId),
-      // What this session's kernel holds, read only when an extension list is
-      // asked for, long after `moduleLoad` exists.
-      run: () => {
-        const { workers } = extensionWorkers
-        const tools = moduleLoad.kernel.mcpToolRegistrations()
-        return {
-          attached: (id) => workers.serves(id) && workers.status(id)?.state !== 'stopped',
-          worker: (id) => workers.status(id),
-          loadError: (id) => moduleLoad.report.errors.find((error) => error.id === id)?.message,
-          mcpTools: (id) => tools.filter((tool) => tool.moduleId === id).map((tool) => tool.registration.name),
-        }
-      },
-      registry: services.moduleRegistryMirror,
-      // An extension's provider may not take a built-in's id.
-      protectedProviderIds: bundledRegistryIds,
-      warn: (message) => console.warn(`[extensions] ${message}`),
-      applyEnablement: async (overrides) => {
-        const report = await moduleLoad.applyEnablement(overrides, {
-          liveModuleIds: liveModuleIds(Object.keys(thirdPartyMainLoad.moduleRoots), moduleLoad.report.errors),
-        })
-        // A module with no live-loadable main half takes its toggle through the
-        // enablement gate rather than module load/unload — refresh the resolved set.
-        // The rest of the change was applied even when one module's half failed,
-        // so the gate follows it either way.
-        recomputeMainEnablement(overrides)
-        // Module-contributed gateway tools follow enablement live: the
-        // gateway re-reads the registry and enablement per request, so only the
-        // connected MCP clients need a nudge to refresh their tool lists.
-        services.automationService?.notifyToolsListChanged()
-        const scheduledAgentsError = report.errors.find((error) => error.id === 'scheduled-agents')
-        if (scheduledAgentsError) return { ok: false, message: scheduledAgentsError.message }
-        return { ok: true }
-      },
-      // Kill-list and update notices ring the bell of every client, and are
-      // kept for one that follows the bell later.
-      catalogue: { notify: (notice) => services.moduleHub.deliverKeptNotification(catalogueNotification(notice)) },
-      view: () => {
-        const overrides = readModuleEnablementOverrides()
-        return {
-          manifests: () => mainModuleManifests,
-          enabled: (id) =>
-            overrides[id] ?? mainModuleManifests.find((manifest) => manifest.id === id)?.defaultEnabled ?? false,
-          running: (id) => moduleLoad.isRunning(id),
-          ineligible: (id) => thirdPartyMainLoad.ineligible[id],
-          loadError: (id) => moduleLoad.report.errors.find((error) => error.id === id)?.message,
-          declaredMethods: (id) => moduleLoad.kernel.declaredMethods(id),
-        }
-      },
-    })
-// The kill list and automatic updates, for as long as the app runs. The
-// quit stops them and lets go of the added catalogues' checkouts kept in
-// temporary folders (the `extension catalogue` shutdown leg).
-let extensionCatalogue: { dispose(): Promise<void> } | undefined
-if (moduleLifecycle) {
-  services.moduleHub.serveLifecycleFrom(moduleLifecycle)
-  const stopCatalogue = moduleLifecycle.catalogue.start()
-  extensionCatalogue = {
-    dispose: async () => {
-      stopCatalogue()
-      await moduleLifecycle.catalogue.dispose()
-    },
-  }
-}
-// Changes while the app runs load live: a development folder's save, an
-// install, an approval (src/server/extensions/extension-reload.ts). Out of
-// process the server does this.
-const extensionReloader = moduleLifecycle
-  ? createExtensionReloader({
-      plan: thirdPartyMainLoad,
-      discover: () => extensionDiscovery.current(),
-      workers: () => extensionWorkers.workers,
-      load: () => moduleLoad,
-      overrides: readModuleEnablementOverrides,
-      reloaded: ({ removed }) => {
-        for (const key of removed) moduleManifestsById.delete(key)
-        for (const module of thirdPartyMainLoad.modules) moduleManifestsById.set(module.manifest.id, module.manifest)
-        mainModuleManifests.splice(
-          2,
-          mainModuleManifests.length - 2,
-          ...thirdPartyMainLoad.modules.map((module) => module.manifest),
-        )
-        recomputeMainEnablement(readModuleEnablementOverrides())
-        services.automationService?.notifyToolsListChanged()
-        services.moduleHub.deliverChanged()
-      },
-      log: (message) => console.warn(`[extensions] ${message}`),
-    })
-  : null
-// A module copied into the drop-in folder while Studio runs is listed at once,
-// not after a reload. Out of process the server watches (server-modules.ts).
-if (moduleLifecycle) {
-  // A worker whose extension was removed from the folder (and its approval with it) stops.
-  // What extensions hand agents follows the folder too: a server whose files
-  // changed under its approval is retracted, not run until the next start.
-  const stopWatchingModules = watchUserModuleRoot(defaultUserModuleRoot(), () => {
-    extensionDiscovery.invalidate()
-    extensionWorkers.workers.reconcile()
-    void moduleLifecycle.reproject(extensionDiscovery.current().modules)
-    services.moduleHub.deliverChanged()
-    void extensionReloader?.reload()
-  })
-  app.once('will-quit', stopWatchingModules)
-  devFolderWatch.follow(readDevFoldersSync(app.getPath('userData')))
-  app.once('will-quit', () => devFolderWatch.close())
-}
-// Automation server ← Scheduled agents module: resolved per tool call so a live
-// module disable/enable cycle is reflected immediately (service absent ⇒ the
-// scheduled-agent tools say the module is off).
-services.setScheduledAgentsResolver(
-  () => moduleLoad.kernel.hostFor('@host').getService(ScheduledAgentsServiceToken) ?? null,
-)
-// Module enablement for gateway tools that belong to a capability module: the
-// resolved set is recomputed on every override the renderer pushes, so a module
-// switched off in Settings is off for MCP callers on their next call, not after
-// a restart (an owner ruling).
-services.setModuleEnabledResolver((moduleId) => enabledMainModuleIds.has(moduleId))
-// Module-contributed MCP tools ← the host kernel. The gateway was
-// constructed above, before loadMainModules ran; this seam hands it the live
-// registry, and the per-request evaluation makes the tools visible immediately.
-services.setModuleMcpToolsResolver(() => moduleLoad.kernel.mcpToolRegistrations())
-// The extension dev loop's tools (extension-dev-tools.ts), over this kernel.
-if (moduleLifecycle)
-  services.setExtensionDevBackend(() => ({
-    lifecycle: () => moduleLifecycle,
-    callModuleMethod: (request) => moduleLoad.kernel.callModuleMethod(request),
-    runHook: async (moduleId, point, event, invoker) => {
-      await extensionWorkers.workers.startForHook(moduleId)
-      return extensionWorkers.workers.runHook(moduleId, point as ExtensionHookPoint, event, invoker, 10_000)
-    },
-    emit: (moduleId, topic, payload) =>
-      services.moduleHub.deliverEvent({ sourceModuleId: moduleId, topic, payload, emittedAt: Date.now() }),
-    studioEvent: (moduleId, event, payload, invoker) =>
-      services.studioCore.extensionEvents.emitTo(moduleId, event, payload as never, invoker),
-  }))
 void app.whenReady().then(() => {
   // The hosted relay's leftover pairings and push tokens (retired-relay-state.ts).
   // Best effort and off the startup path; tailnet pairings are never touched.
@@ -483,50 +113,18 @@ if (DIAGNOSTICS_ENABLED) {
   if (extensionFolders.errors.length > 0) {
     console.warn('[modules] extension folder setup errors:', extensionFolders.errors)
   }
-  console.info(
-    '[modules] loaded:',
-    moduleLoad.report.loaded,
-    'manifest-only:',
-    moduleLoad.report.manifestOnly,
-    'disabled:',
-    moduleLoad.report.disabled,
-    'sidecars:',
-    moduleLoad.report.sidecars.map((s) => s.id),
-  )
-  if (moduleLoad.report.errors.length > 0) {
-    console.warn('[modules] load errors:', moduleLoad.report.errors)
-  }
-  if (thirdPartyMainLoad.launchErrors.length > 0) {
-    console.warn('[modules] rejected third-party modules:', thirdPartyMainLoad.launchErrors)
-  }
 }
 
-function readModuleEnablementOverrides(): Record<string, boolean> {
-  try {
-    return readModuleOverridesSync(app.getPath('userData'))
-  } catch {
-    return {}
-  }
-}
-
-function readExtensionStanding(): ExtensionStandingContext {
-  return readExtensionStandingContextSync(app.getPath('userData'))
-}
-
-// Everything above ran synchronously during entry evaluation: module
-// construction, sync user-module discovery, IPC registration. This mark closes
-// that phase, so a slow module registration shows up as its own segment rather
-// than hiding inside "app ready".
+// Everything above ran synchronously during entry evaluation: the services
+// and IPC registration. This mark closes that phase, so a slow registration
+// shows up as its own segment rather than hiding inside "app ready".
 markStartup('main.module-evaluated')
 
-// The server's phase in words for every window, the Advanced toggle and the
-// actions on it: registered in process too, where the toggle is all there is.
-const relaunchApp = (args: string[] = []): void => {
-  app.relaunch({
-    args: [...withoutDeepLinks(process.argv.slice(1)).filter((arg) => arg !== SERVER_FALLBACK_ARGUMENT), ...args],
-  })
-  // A restart the person asked for in Settings, or the server's fallback: the
-  // app comes straight back, so it is not a quit to ask about.
+// The server's phase in words for every window, and the actions on it.
+const relaunchApp = (): void => {
+  app.relaunch({ args: withoutDeepLinks(process.argv.slice(1)) })
+  // A restart the person asked for: the app comes straight back, so it is
+  // not a quit to ask about.
   services.quitConfirmation.quitWithoutAsking()
   app.quit()
 }
@@ -538,123 +136,71 @@ registerAppRestartIpc(ipcMain, {
 })
 registerSshPreviewIpc(ipcMain, sshPreview, app.getPath('userData'))
 registerStudioServerIpc(ipcMain, {
-  choice: serverMode,
-  supervisor: serverHost?.supervisor ?? null,
-  fellBack: serverFellBack,
-  readSavedMode: () => readServerMode(app.getPath('userData'), {}, []).mode,
-  writeSavedMode: (mode) => writeServerMode(app.getPath('userData'), mode),
-  openLog: async () => {
-    const path = serverHost?.log.currentPath() ?? app.getPath('logs')
-    return (await shell.openPath(path)) === ''
-  },
-  relaunch: ({ compatibility }) => {
-    if (compatibility) writeServerMode(app.getPath('userData'), 'in-process')
-    relaunchApp()
-  },
+  supervisor: serverHost.supervisor,
+  openLog: async () => (await shell.openPath(serverHost.log.currentPath() ?? app.getPath('logs'))) === '',
   publish: (status) => studioPlatform().clients.publish(STUDIO_SERVER_CHANNELS.changed, status),
 })
 
-if (serverHost) {
-  // Three failed boots with no server ever ready: this session goes on in
-  // process (decision O9), by starting again in process at once, never by
-  // building a second writer mid-session. The next ordinary launch tries the
-  // separate process again; the fallback launch says why, in words.
-  let fellBack = false
-  serverHost.supervisor.onState((state) => {
-    if (fellBack || state.kind !== 'failed' || !state.neverReady) return
-    fellBack = true
-    writeServerFallbackNote(app.getPath('userData'), state.reason)
-    relaunchApp([SERVER_FALLBACK_ARGUMENT])
-  })
-  // What the server asks of the shell: the keychain, notices, terminal
-  // launches, the integrations gate, a removed skill's Trash, Studio's own
-  // plugin in a workspace, which the shell installs, for artifacts a page's
-  // picture and the set-up question with no window showing, and the windows
-  // `extension.open` shows an extension in.
-  serverHost.serveShell(services.shellBridge, {
-    trash: (path) => shellTrash(path),
-    studioPluginStatus: (workspaceRoot) => services.studioPluginStatus(workspaceRoot),
-    artifacts: { thumbnailer: createElectronThumbnailer(), askNatively: askToSetUpArtifacts },
-    extensionOpener: services.extensionOpener,
-    browserTabs: services.browserTabs,
-  })
-}
+// What the server asks of the shell: the keychain, notices, terminal
+// launches, the integrations gate, a removed skill's Trash, Studio's own
+// plugin in a workspace, which the shell installs, for artifacts a page's
+// picture and the set-up question with no window showing, the windows
+// `extension.open` shows an extension in, the built-in browser's tabs, and
+// the machine's boards for other devices (`canvas.*`).
+serverHost.serveShell(services.shellBridge, {
+  trash: (path) => shellTrash(path),
+  studioPluginStatus: (workspaceRoot) => services.studioPluginStatus(workspaceRoot),
+  artifacts: { thumbnailer: createElectronThumbnailer(), askNatively: askToSetUpArtifacts },
+  extensionOpener: services.extensionOpener,
+  browserTabs: services.browserTabs,
+  canvas: services.canvasHost,
+})
 
 registerAppLifecycle({
   diagnosticsEnabled: DIAGNOSTICS_ENABLED,
   allowMultipleInstances: allowsMultipleInstances(app),
-  terminalRuntime: services.terminalLifecycle,
-  conversations: services.conversations,
-  conversationOwner: services.conversationOwner,
-  automationService: services.automationService ?? undefined,
-  studioRpcService: services.studioRpcService ?? undefined,
   agentStateService: services.agentStateService,
-  workspaceSyncService: services.workspaceSyncService,
   removeSessionIntegrations: services.removeSessionIntegrations,
-  releaseDataDir: () => (serverHost ? undefined : services.studioCore.dataDirLock?.release()),
   canvasService: services.canvasService,
-  worktreePool: services.worktreePool,
-  dependencyInstaller: services.dependencyInstaller,
   browserRecorder: services.browserRecorder,
-  desktopShell: serverHost ? services.desktopShell : null,
-  conversationCommands: coreIpc.conversationCommands,
+  desktopShell: services.desktopShell,
   onAgentAttentionReady: (attention) => services.setTourAttention((key) => attention.notify(key)),
   agentNotifier: services.agentNotifier,
   onChatLinksReady: (open) => services.setChatLinkOpener(open),
-  pullRequestRecord: services.pullRequestRecord,
-  ...(services.localServers ? { localServers: services.localServers } : {}),
-  ...(services.usageLimitResumes ? { usageLimitResumes: services.usageLimitResumes } : {}),
-  ...(services.scheduledMessages ? { scheduledMessages: services.scheduledMessages } : {}),
-  launchNotices: services.launchNotices ?? undefined,
   analytics: services.analytics,
-  // Out of process the server runs every module's startup and shutdown hooks.
-  ...(serverHost ? {} : { moduleKernel: moduleLoad.kernel }),
-  ...(extensionCatalogue ? { extensionCatalogue } : {}),
   updateService: services.updateService,
-  // The skill sources are the server's out of process: their hourly check runs there.
-  checkPluginSourceUpdates: serverHost
-    ? async () => {
-        if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.skillSourcesCheck)
-      }
-    : () => services.skillsService?.checkSourceUpdates() ?? Promise.resolve(),
-  // The hosted feeds are the Studio's: out of process the server fetches them.
-  refreshHostedFeeds: serverHost
-    ? async () => {
-        if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.hostedFeedsRefresh)
-      }
-    : async () => {
-        await services.studioCore.extensions?.feeds.refresh()
-      },
+  // The skill sources are the server's: their hourly check runs there.
+  checkPluginSourceUpdates: async () => {
+    if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.skillSourcesCheck)
+  },
+  // The hosted feeds are the Studio's: the server fetches them.
+  refreshHostedFeeds: async () => {
+    if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.hostedFeedsRefresh)
+  },
   startDeferredBootJobs: services.startDeferredBootJobs,
-  // Out of process the workspaces to prepare arrive with the server's first
-  // snapshot; the pass waits for it, inside the same boot budget.
-  prepareWorkspacesAtBoot: serverHost
-    ? () =>
-        serverHost.link
-          .whenServing(BOOT_SERVER_WAIT_MS)
-          .then(() => serverHost.mirror.whenLoaded())
-          .then(() => services.prepareWorkspacesAtBoot())
-    : services.prepareWorkspacesAtBoot,
-  ...(serverHost
-    ? {
-        server: {
-          start: () => serverHost.start(),
-          shutdown: (options) => serverHost.shutdown(options),
-          log: serverHost.log,
-          onAttentionPhase: (listener) =>
-            void serverHost.link.rpc.on(SERVER_EVENTS.attentionPhase, (event) => listener(event as AgentPhaseEvent)),
-          // The CLIs and their version check are the server's: the boot's
-          // detection waits for it to serve, inside the same budget.
-          detectClis: (which) =>
-            serverHost.link
-              .whenServing(BOOT_SERVER_WAIT_MS)
-              .then((serving) => (serving ? serverHost.link.rpc.call(SERVER_METHODS.cliDetect, { which }) : 0)),
-          refreshCliVersions: async () => {
-            if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.cliVersionsRefresh)
-          },
-        },
-      }
-    : {}),
+  // The workspaces to prepare arrive with the server's first snapshot; the
+  // pass waits for it, inside the same boot budget.
+  prepareWorkspacesAtBoot: () =>
+    serverHost.link
+      .whenServing(BOOT_SERVER_WAIT_MS)
+      .then(() => serverHost.mirror.whenLoaded())
+      .then(() => services.prepareWorkspacesAtBoot()),
+  server: {
+    start: () => serverHost.start(),
+    shutdown: (options) => serverHost.shutdown(options),
+    log: serverHost.log,
+    onAttentionPhase: (listener) =>
+      void serverHost.link.rpc.on(SERVER_EVENTS.attentionPhase, (event) => listener(event as AgentPhaseEvent)),
+    // The CLIs and their version check are the server's: the boot's
+    // detection waits for it to serve, inside the same budget.
+    detectClis: (which) =>
+      serverHost.link
+        .whenServing(BOOT_SERVER_WAIT_MS)
+        .then((serving) => (serving ? serverHost.link.rpc.call(SERVER_METHODS.cliDetect, { which }) : 0)),
+    refreshCliVersions: async () => {
+      if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.cliVersionsRefresh)
+    },
+  },
   backgroundMode: {
     isEnabled: () => services.backgroundModeStore.isEnabled(),
     readStatus: () => services.readBackgroundStatus(),
@@ -671,6 +217,4 @@ registerAppLifecycle({
         .state.workspaceWindows.find((windowState) => windowState.workspaceIds.includes(chatId))?.id ?? null,
     primaryWindowId: () => services.workspaceSyncService.getSnapshot().state.primaryWorkspaceWindowId,
   },
-  // ── extension-platform additions ──
-  ...(serverHost ? {} : { moduleLoadReady: moduleLoad.ready }),
 })

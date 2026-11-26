@@ -3,7 +3,9 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { createControlRpc, type ControlRpc } from '../../../server/bootstrap/control-rpc'
 import { createStudioCanvasDomain } from '../../../server/canvas/canvas-domain'
+import { serveCanvasShell, shellCanvasOverControl } from '../../../server/canvas/canvas-shell-bridge'
 import type { CanvasElement, CanvasScenePush } from '../../../shared/canvas/types'
 import type { McpToolRegistration } from '../../../shared/modules/mcp-tools'
 import { canvasBoardStoreDir } from '../../canvas/canvas-board-store'
@@ -17,9 +19,10 @@ import { createCanvasTools } from '../canvas-tools'
 import { deviceRig, type DeviceRig } from './tailnet-studio.test-helper'
 
 // The machine that holds the boards, for the canvas tests over the Studio
-// protocol: a real canvas service over a real folder, served by a real Studio
-// server through the real tailnet listener on loopback, as the desktop with
-// its server in process serves another device's boards.
+// protocol: a real canvas service over a real folder, the shell's, reached by
+// a real Studio server over a control channel as the desktop's server reaches
+// it (canvas-shell-bridge.ts), and served through the real tailnet listener on
+// loopback.
 
 export const FAR_CHAT = 'far-chat'
 export const MACHINE = 'mac-mini'
@@ -151,7 +154,11 @@ export async function farMachine(options: { canvas?: boolean } = {}) {
   const port = await freePort()
   // What crossed, call by call, with its size: what the tests count to see a picture sent once.
   const calls: Array<{ method: 'commit' | 'stage' | 'files' | 'read'; bytes: number }> = []
-  const domain = createStudioCanvasDomain(remote.host(service, toolsOver))
+  // The shell and the server, each end of the control channel between them.
+  const shellEnd: ControlRpc = createControlRpc((frame) => setImmediate(() => serverEnd.receive(frame)))
+  const serverEnd: ControlRpc = createControlRpc((frame) => setImmediate(() => shellEnd.receive(frame)))
+  const shellCanvas = serveCanvasShell(shellEnd, remote.host(service, toolsOver))
+  const domain = createStudioCanvasDomain(shellCanvasOverControl(serverEnd))
   const counted: typeof domain = {
     ...domain,
     commit: (connectionId, params) => {
@@ -184,6 +191,8 @@ export async function farMachine(options: { canvas?: boolean } = {}) {
     pictures,
     calls,
     port,
+    /** The server went: the shell forgets the boards it held for its devices. */
+    serverGone: () => shellCanvas.reset(),
     endpoint: { host: '127.0.0.1', port },
     stop: () => rig.gateway.stop(),
     restart: () => rig.gateway.start(),
