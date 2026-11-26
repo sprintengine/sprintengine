@@ -24,7 +24,7 @@ import type { SyncConnection } from './sqlite'
 // "nothing", its records would be lost to every later start.
 
 /** What one file brought in. */
-export type FileImport = { source: string; records: number; skipped: number }
+type FileImport = { source: string; records: number; skipped: number }
 
 type Imported = { records: number; skipped: number }
 
@@ -33,7 +33,7 @@ type Imported = { records: number; skipped: number }
  * before: `read` gets its text, or null when there is no such file, and
  * writes its records through `connection` inside the transaction.
  */
-export function importFile(
+function importFile(
   connection: SyncConnection,
   dataDir: string,
   source: string,
@@ -151,7 +151,7 @@ export function importChatSideRecords(connection: SyncConnection, dataDir: strin
 }
 
 /** Say what an import skipped, in the diagnostics log; nothing when it skipped nothing. */
-export function reportSkipped(imports: readonly FileImport[]): void {
+function reportSkipped(imports: readonly FileImport[]): void {
   const skipped = imports.filter((entry) => entry.skipped > 0)
   if (skipped.length === 0) return
   void writeDiagnosticLog({

@@ -73,7 +73,8 @@ function sqlite(): typeof import('node:sqlite') {
   } finally {
     process.emitWarning = emitWarning
   }
-  if (!driver) throw new Error(`This Node (${process.versions.node}) has no node:sqlite; Studio needs Node 22.13 or later.`)
+  if (!driver)
+    throw new Error(`This Node (${process.versions.node}) has no node:sqlite; Studio needs Node 22.13 or later.`)
   return driver
 }
 

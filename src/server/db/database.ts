@@ -2,12 +2,7 @@ import { chmodSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Worker } from 'node:worker_threads'
 
-import {
-  StudioDatabaseDamagedError,
-  StudioDatabaseError,
-  StudioDatabaseFolderError,
-  errorText,
-} from './errors'
+import { StudioDatabaseDamagedError, StudioDatabaseError, StudioDatabaseFolderError, errorText } from './errors'
 import { migrate, type Migration } from './migrations'
 import {
   CONNECTION_PRAGMAS,
@@ -114,7 +109,10 @@ export function prepareStudioDatabase(path: string, migrations?: readonly Migrat
       throw new StudioDatabaseFolderError(path, `it cannot use write-ahead logging there (${errorText(error)})`, error)
     }
     if (String(mode).toLowerCase() !== 'wal')
-      throw new StudioDatabaseFolderError(path, `it keeps the database in journal mode "${String(mode)}" there, not write-ahead logging`)
+      throw new StudioDatabaseFolderError(
+        path,
+        `it keeps the database in journal mode "${String(mode)}" there, not write-ahead logging`,
+      )
     connection.exec(CONNECTION_PRAGMAS)
     // A person's verbatim typing and their approval rules: the owner's alone.
     // SQLite gives the -wal and -shm files the same mode.
@@ -146,7 +144,7 @@ function opening(path: string, error: unknown): Error {
 }
 
 /** An error a worker sent back, with SQLite's code on it as `node:sqlite` gives it. */
-export class StudioSqlError extends Error {
+class StudioSqlError extends Error {
   readonly code?: string
   readonly errcode?: number
   readonly errstr?: string
@@ -197,20 +195,19 @@ class WorkerConnection {
     if (generation !== undefined && (generation !== this.generation || !this.worker))
       throw new StudioDatabaseError('The database writer stopped during this transaction, so it was not committed.')
     const worker = this.start()
-    const started = this.started!
-    const id = ++this.nextId
-    const reply = new Promise<unknown>((resolve, reject) => this.pending.set(id, { resolve, reject }))
-    worker.ref()
     try {
-      await started
+      await this.started
     } catch (error) {
-      this.settle(id, { id, error: { message: errorText(error) } })
       throw opening(this.path, error)
     }
-    if (this.worker !== worker) {
-      this.settle(id, { id, error: { message: 'The database connection stopped before the request was sent.' } })
-    } else worker.postMessage({ id, ...request })
-    return reply
+    if (this.worker !== worker)
+      throw new StudioDatabaseError('The database connection stopped before the request was sent.')
+    const id = ++this.nextId
+    return new Promise<unknown>((resolve, reject) => {
+      this.pending.set(id, { resolve, reject })
+      worker.ref()
+      worker.postMessage({ id, ...request })
+    })
   }
 
   private start(): Worker {

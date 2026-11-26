@@ -169,7 +169,8 @@ test("a database that cannot be opened stops a server's start in its own words a
   writeFileSync(join(dir, STUDIO_DATABASE_FILENAME), 'not a database\n'.repeat(300))
   assert.throws(
     () => openDataDirDatabase(dir, taken.lock),
-    (error: unknown) => error instanceof StudioDataDirUnusableError && /damaged or is not a SQLite database/u.test(error.message),
+    (error: unknown) =>
+      error instanceof StudioDataDirUnusableError && /damaged or is not a SQLite database/u.test(error.message),
   )
   assert.equal(taken.lock?.isHeld(), false, 'the lock is let go on refusal')
 })

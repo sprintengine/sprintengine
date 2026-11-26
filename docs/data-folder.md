@@ -11,8 +11,8 @@ folder's run lock (`run/studio.lock`) opens it, so there is one writer.
 it while the server runs) holds the records that moved out of files. Its code is
 in `src/server/db/`.
 
-| Since format | Records                                                                                              |
-| ------------ | ---------------------------------------------------------------------------------------------------- |
+| Since format | Records                                                                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
 | 2            | a launched chat's first message, the "always allow" approval rules, the launch notices, the prompts a person sent each terminal agent |
 
 What people or agent CLIs open by path stays a file: pictures (a first

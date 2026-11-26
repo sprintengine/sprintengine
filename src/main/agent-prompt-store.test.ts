@@ -242,8 +242,5 @@ test('ids that could name a path are refused', async () => {
   // A hostile id becomes a hash, never a path segment.
   await store.append({ workspaceId: '../../etc', agentId: 'passwd' }, { text: 'x', at: 1 })
   const keys = (await databaseAt(dir).all<{ key: string }>('SELECT key FROM agent_prompts')).map((row) => row.key)
-  assert.ok(
-    keys.length === 1 && keys.every((key) => /^[0-9a-f]{32}$/.test(key)),
-    keys.join(','),
-  )
+  assert.ok(keys.length === 1 && keys.every((key) => /^[0-9a-f]{32}$/.test(key)), keys.join(','))
 })

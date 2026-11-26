@@ -6,10 +6,7 @@ import { controlPlaneHooks } from '../extensions/hooks/control-plane-hooks'
 import { ownerInvoker, type ExtensionInvoker } from '../../main/module-host/extension-invocation'
 
 import { createAgentControlPlane } from '../../main/agent-control-plane'
-import {
-  createAgentLaunchNotices,
-  launchNoticesDatabaseStorage,
-} from '../../main/agent-launch-notices'
+import { createAgentLaunchNotices, launchNoticesDatabaseStorage } from '../../main/agent-launch-notices'
 import { createAgentLaunchService, type AgentLaunchService } from '../../main/agent-launch-service'
 import type { AgentCompactIpcDependencies } from '../../main/ipc/agent-compact-ipc'
 import { createAgentPromptStore, registeredAgentOwners } from '../../main/agent-prompt-store'

@@ -114,12 +114,15 @@ test('writes commit in order, a batch and a transaction land whole or not at all
 test('a damaged file, or one that is not a database, stops the open in words and is never read as empty', () => {
   const dir = folder()
   writeFileSync(pathIn(dir), 'these are not the records you are looking for\n'.repeat(200))
-  assert.throws(() => openStudioDatabase(dir), (error: unknown) => {
-    assert.ok(error instanceof StudioDatabaseDamagedError)
-    assert.match(error.message, /damaged or is not a SQLite database/u)
-    assert.match(error.message, /-wal and -shm/u)
-    return true
-  })
+  assert.throws(
+    () => openStudioDatabase(dir),
+    (error: unknown) => {
+      assert.ok(error instanceof StudioDatabaseDamagedError)
+      assert.match(error.message, /damaged or is not a SQLite database/u)
+      assert.match(error.message, /-wal and -shm/u)
+      return true
+    },
+  )
   // Left as it was: nothing wrote over it.
   assert.equal(statSync(pathIn(dir)).size, 9200)
 })
@@ -128,12 +131,15 @@ test('a folder where the database cannot use WAL is refused, saying to pick a lo
   const dir = folder()
   // SQLite cannot make its WAL file where a folder stands in its place.
   mkdirSync(`${pathIn(dir)}-wal`)
-  assert.throws(() => openStudioDatabase(dir), (error: unknown) => {
-    assert.ok(error instanceof StudioDatabaseFolderError)
-    assert.match(error.message, /write-ahead logging/u)
-    assert.match(error.message, /local disk/u)
-    return true
-  })
+  assert.throws(
+    () => openStudioDatabase(dir),
+    (error: unknown) => {
+      assert.ok(error instanceof StudioDatabaseFolderError)
+      assert.match(error.message, /write-ahead logging/u)
+      assert.match(error.message, /local disk/u)
+      return true
+    },
+  )
 })
 
 test('a database a newer Studio migrated is refused rather than written on', () => {
@@ -161,19 +167,24 @@ test('a migration that fails is rolled back alone, and the next start carries on
       },
     },
   ]
-  assert.throws(() => openStudioDatabase(dir, { migrations }), (error: unknown) => {
-    assert.ok(error instanceof StudioDatabaseMigrationError)
-    assert.match(error.message, /\(migration 2 "two" failed and was rolled back\): the power went/u)
-    return true
-  })
+  assert.throws(
+    () => openStudioDatabase(dir, { migrations }),
+    (error: unknown) => {
+      assert.ok(error instanceof StudioDatabaseMigrationError)
+      assert.match(error.message, /\(migration 2 "two" failed and was rolled back\): the power went/u)
+      return true
+    },
+  )
   assert.deepEqual(recorded(dir), [{ id: 1, name: 'one' }])
   fail = false
   const db = openStudioDatabase(dir, { migrations })
   try {
     assert.deepEqual(
-      (await db.all<{ name: string }>("SELECT name FROM sqlite_schema WHERE type = 'table' AND name IN ('one', 'two') ORDER BY name")).map(
-        (row) => row.name,
-      ),
+      (
+        await db.all<{ name: string }>(
+          "SELECT name FROM sqlite_schema WHERE type = 'table' AND name IN ('one', 'two') ORDER BY name",
+        )
+      ).map((row) => row.name),
       ['one', 'two'],
     )
   } finally {

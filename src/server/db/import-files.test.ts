@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict'
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
@@ -88,7 +98,10 @@ function legacyFolder(): string {
   writeFileSync(join(dir, 'agent-prompts', 'a.json'), JSON.stringify(promptFile('agent-a', 'session-a', 'hello a')))
   writeFileSync(join(dir, 'agent-prompts', 'b.json'), JSON.stringify(promptFile('agent-b', 'session-b', 'hello b')))
   // Torn by a crash mid-write.
-  writeFileSync(join(dir, 'agent-prompts', 'c.json'), JSON.stringify(promptFile('agent-c', 'session-c', 'hi')).slice(0, 40))
+  writeFileSync(
+    join(dir, 'agent-prompts', 'c.json'),
+    JSON.stringify(promptFile('agent-c', 'session-c', 'hi')).slice(0, 40),
+  )
   return dir
 }
 
@@ -111,7 +124,9 @@ const imported = (dir: string) => {
   const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
   try {
     return connection
-      .all<{ source: string; records: number; skipped: number }>('SELECT source, records, skipped FROM imports ORDER BY source')
+      .all<{ source: string; records: number; skipped: number }>(
+        'SELECT source, records, skipped FROM imports ORDER BY source',
+      )
       .map((row) => ({ ...row }))
   } finally {
     connection.close()
@@ -216,7 +231,8 @@ test('rollback: with the database moved aside and the format set back, an older 
 
   // The steps docs/data-folder.md gives: quit, move the database aside, set the format back.
   const aside = mkdtempSync(join(tmpdir(), 'se-import-aside-'))
-  for (const path of studioDatabaseFiles(dir)) if (existsSync(path)) renameSync(path, join(aside, path.slice(dir.length + 1)))
+  for (const path of studioDatabaseFiles(dir))
+    if (existsSync(path)) renameSync(path, join(aside, path.slice(dir.length + 1)))
   writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 1, writtenBy: '1.0.0' }))
   assert.deepEqual(prepareDataFormat(dir, { version: '1.0.0', format: 1, steps: [] }).format, 1)
   assert.deepEqual(snapshot(dir), before, 'the older build reads the files the upgrade left')
@@ -232,14 +248,21 @@ test('rollback: with the database moved aside and the format set back, an older 
   )
 })
 
-test('a file there that cannot be read stops the step rather than importing it as nothing', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, () => {
-  const dir = legacyFolder()
-  chmodSync(join(dir, 'conversation-approval-rules.json'), 0o000)
-  try {
-    assert.throws(() => prepareDataFormat(dir, { version: '2.0.0' }), StudioDataMigrationError)
-    assert.ok(!existsSync(join(dir, STUDIO_DATABASE_FILENAME)), 'the database the step made is gone')
-    assert.ok(!existsSync(join(dir, DATA_FORMAT_FILENAME)) || JSON.parse(readFileSync(join(dir, DATA_FORMAT_FILENAME), 'utf8')).format === 1)
-  } finally {
-    chmodSync(join(dir, 'conversation-approval-rules.json'), 0o600)
-  }
-})
+test(
+  'a file there that cannot be read stops the step rather than importing it as nothing',
+  { skip: process.platform === 'win32' || process.getuid?.() === 0 },
+  () => {
+    const dir = legacyFolder()
+    chmodSync(join(dir, 'conversation-approval-rules.json'), 0o000)
+    try {
+      assert.throws(() => prepareDataFormat(dir, { version: '2.0.0' }), StudioDataMigrationError)
+      assert.ok(!existsSync(join(dir, STUDIO_DATABASE_FILENAME)), 'the database the step made is gone')
+      assert.ok(
+        !existsSync(join(dir, DATA_FORMAT_FILENAME)) ||
+          JSON.parse(readFileSync(join(dir, DATA_FORMAT_FILENAME), 'utf8')).format === 1,
+      )
+    } finally {
+      chmodSync(join(dir, 'conversation-approval-rules.json'), 0o600)
+    }
+  },
+)
