@@ -228,3 +228,51 @@ test("a background agent's steps after its turn ended nest in its lane and leave
   for (const step of steps) state = applyEvent(state, step)
   assert.deepEqual(state.projection.entries, projection.entries, 'the live projection folds it the same way')
 })
+
+test('an agent heard from on a page that does not hold its launch is a lane, not an empty chat', () => {
+  // The page begins hours into the agent's work: its statuses, words and steps.
+  const page = [
+    ev('subagent_status', {
+      toolUseId: 'lane-1',
+      taskId: 'task-1',
+      status: 'running',
+      background: true,
+      subagentType: 'general-purpose',
+      description: 'Build the API',
+    }),
+    ev('subagent_message', { parentToolUseId: 'lane-1', text: 'Now the migrations.' }),
+    ev('tool_started', { toolCallId: 'bash-1', tool: 'Bash', name: 'Bash', parentToolUseId: 'lane-1' }),
+    ev('tool_output', { toolCallId: 'bash-1', toolUseId: 'bash-1', output: 'ok', parentToolUseId: 'lane-1' }),
+  ]
+  const projection = projectConversation(page)
+  assert.equal(projection.activeTurn, false, 'standing in for a lane starts no reply')
+  const [lane, ...rest] = tools(page)
+  assert.equal(rest.length, 0, 'its step is no row of its own')
+  assert.equal(lane?.id, 'lane-1')
+  assert.equal(lane?.subagentLane, true)
+  assert.equal(lane?.subagentType, 'general-purpose')
+  assert.equal(lane?.status, 'running')
+  assert.equal(lane?.agent?.description, 'Build the API')
+  assert.deepEqual(lane?.input, { description: 'Build the API' })
+  assert.equal(lane?.children?.[0]?.id, 'bash-1')
+  assert.equal(lane?.children?.[0]?.status, 'done')
+
+  // It ends as any lane does.
+  const [ended] = tools([
+    ...page,
+    ev('subagent_status', { toolUseId: 'lane-1', taskId: 'task-1', status: 'completed' }),
+  ])
+  assert.equal(ended?.status, 'done')
+
+  // The live projection comes to the same lane.
+  let state = createConversationProjectionState([])
+  for (const event of page) state = applyEvent(state, event)
+  assert.deepEqual(state.projection.entries, projection.entries)
+
+  // Once the page that launched it is read, the launch is the lane, and the stand-in goes.
+  const whole = [...launch('turn-1', 'lane-1'), ...page]
+  const lanes = tools(whole)
+  assert.equal(lanes.length, 1)
+  assert.equal(lanes[0]?.turnId, 'turn-1')
+  assert.equal(lanes[0]?.children?.[0]?.id, 'bash-1')
+})
