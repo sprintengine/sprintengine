@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 
 import type {
   ConversationEvent,
@@ -11,8 +10,6 @@ import { isSettledWorkspace } from '../../shared/workspace-lifecycle'
 import type { ConversationGatewayHost, ConversationUsageLimits } from './conversation-host'
 import {
   createUsageLimitResumer,
-  USAGE_LIMIT_RESUMES_FILE,
-  usageLimitResumeFileStorage,
   type UsageLimitResumer,
   type UsageLimitResumeStorage,
 } from '../../main/usage-limits/resume'
@@ -53,7 +50,8 @@ export type StudioUsageLimitResumesDeps = {
     rateLimit: (provider: UsageLimitProvider, now: number) => UsageRateLimitAnswer
     state: () => UsageLimitsState
   }
-  storage?: UsageLimitResumeStorage
+  /** Where the resumes are kept: the data folder's database (`createSnapshotStorage`). */
+  storage: UsageLimitResumeStorage
   now?: () => number
   log?: (message: string) => void
 }
@@ -66,7 +64,7 @@ export function createStudioUsageLimitResumes(deps: StudioUsageLimitResumesDeps)
   }
   let host: ReturnType<StudioUsageLimitResumesDeps['createHost']> | null = null
   return createUsageLimitResumer({
-    storage: deps.storage ?? usageLimitResumeFileStorage(join(deps.dataDir, USAGE_LIMIT_RESUMES_FILE)),
+    storage: deps.storage,
     onLimitHit: usage.onLimitHit,
     rateLimit: usage.rateLimit,
     limitKind: (provider, windowId) => {

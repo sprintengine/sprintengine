@@ -30,11 +30,10 @@
 // another machine carries it as it is. An older app reading the file drops it,
 // and what it does then is what it did before runs were written down.
 
-import { readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
-import { writeFileAtomically } from '../config-file-write'
+import type { SnapshotStorage } from '../../server/db/snapshot-storage'
 import {
   validateScheduledAgentDraft,
   withoutEmptyLabels,
@@ -71,12 +70,14 @@ export type ScheduledRunRecord = {
   chat?: { workspaceId: string; agentId: string }
 }
 
+/** The file builds before the database kept the schedules in, under the data folder; read once, by the import. */
 export function scheduledAgentsFilePath(userDataDir: string): string {
   return join(userDataDir, 'scheduled-agents.json')
 }
 
 export type ScheduledAgentsStoreOptions = {
-  filePath: string
+  /** Where the schedules and their runs are kept: one record in the data folder's database (`createSnapshotStorage`). */
+  storage: SnapshotStorage
   now?: () => number
   newId?: () => string
   warn?: (message: string) => void
@@ -148,21 +149,21 @@ export function createScheduledAgentsStore(options: ScheduledAgentsStoreOptions)
   const describe = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
   async function read(): Promise<void> {
-    let raw: string
+    let raw: string | null
     try {
-      raw = await readFile(options.filePath, 'utf8')
+      raw = await options.storage.read()
     } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return
-      unreadable = `Scheduled agents could not be read from ${options.filePath}, so no change is saved until they can be: ${describe(error)}`
+      unreadable = `Scheduled agents could not be read, so no change is saved until they can be: ${describe(error)}`
       options.warn?.(unreadable)
       return
     }
+    if (raw === null) return
     let parsed: ReturnType<typeof parseStoreFile>
     try {
       parsed = parseStoreFile(JSON.parse(raw), now(), options.warn)
     } catch (error) {
       parsed = null
-      options.warn?.(`Scheduled agents could not be read from ${options.filePath}: ${describe(error)}`)
+      options.warn?.(`Scheduled agents could not be read: ${describe(error)}`)
     }
     if (parsed) {
       agents = parsed.agents
@@ -171,16 +172,9 @@ export function createScheduledAgentsStore(options: ScheduledAgentsStoreOptions)
       runs = parsed.runs
       return
     }
-    // Truncated, hand-edited, or written by a version this build does not
-    // know: kept aside rather than overwritten by the next write.
-    const aside = `${options.filePath}.corrupt-${now()}`
-    try {
-      await rename(options.filePath, aside)
-      options.warn?.(`Scheduled agents that could not be understood were kept aside as ${aside}.`)
-    } catch (error) {
-      unreadable = `Scheduled agents in ${options.filePath} could not be understood or kept aside, so no change is saved: ${describe(error)}`
-      options.warn?.(unreadable)
-    }
+    // Written by a version this build does not know: never written over.
+    unreadable = 'Scheduled agents were written by a Studio this one does not read, so no change is saved.'
+    options.warn?.(unreadable)
   }
 
   const loaded = (): Promise<void> => (ready ??= read())
@@ -200,7 +194,7 @@ export function createScheduledAgentsStore(options: ScheduledAgentsStoreOptions)
     }
     writing = writing
       .catch(() => undefined)
-      .then(() => writeFileAtomically(options.filePath, `${JSON.stringify(snapshot, null, 2)}\n`))
+      .then(() => options.storage.write(JSON.stringify(snapshot)))
     return writing
   }
 

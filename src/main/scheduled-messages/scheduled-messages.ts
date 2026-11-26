@@ -1,5 +1,3 @@
-import { mkdir, readFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 import {
@@ -24,7 +22,6 @@ import {
   type ScheduledMessagesState,
   type ScheduledMessageUpdate,
 } from '../../shared/scheduled-messages'
-import { writeFileAtomically } from '../config-file-write'
 
 // Messages a person scheduled into an open chat, sent when their time comes.
 //
@@ -90,6 +87,7 @@ import { writeFileAtomically } from '../config-file-write'
 // answer offers it again under its id, before or after a restart here. A
 // message a paired machine scheduled keeps its command the same way.
 
+/** The file builds before the database kept the messages in, under the data folder; read once, by the import. */
 export const SCHEDULED_MESSAGES_FILE = 'scheduled-messages.json'
 const FORMAT_VERSION = 1
 
@@ -727,23 +725,6 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
       for (const unsubscribe of unsubscribers.splice(0)) unsubscribe()
       listeners.clear()
       await writing
-    },
-  }
-}
-
-/** The messages kept in `file`: a missing or unreadable one is an empty one. */
-export function scheduledMessagesFileStorage(file: string): ScheduledMessagesStorage {
-  return {
-    async read() {
-      try {
-        return await readFile(file, 'utf8')
-      } catch {
-        return null
-      }
-    },
-    async write(body) {
-      await mkdir(dirname(file), { recursive: true })
-      await writeFileAtomically(file, body)
     },
   }
 }
