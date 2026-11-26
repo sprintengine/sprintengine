@@ -1,10 +1,34 @@
-import { mkdtemp, mkdir, readFile, writeFile, appendFile, rm, symlink, stat, link } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, link } from 'node:fs/promises'
 import { workspaceStorePath } from './workspace-store'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { ConversationIndex, conversationIndexTranscriptPath, firstMessageTitle } from './conversation-index'
 import type { ConversationEvent } from '../shared/conversation-runtime'
+import { testChatDatabase } from '../../tests/studio-database'
+import { createChatLogs } from '../server/db/chat-logs'
+
+/** Events appended to a log after its import, as the runtime's log appends them. */
+async function appendEvents(key: { workspaceRoot: string }, path: string, events: ConversationEvent[]): Promise<void> {
+  await createChatLogs({ database: testChatDatabase() }).append(
+    path,
+    key.workspaceRoot,
+    events.map((item) => ({
+      seq: item.seq!,
+      firstSeq: item.seq!,
+      type: item.type,
+      turnId: typeof item.payload?.turnId === 'string' ? item.payload.turnId : null,
+      body: JSON.stringify(item),
+    })),
+    [],
+  )
+}
+
+/** An index over the test's database, as the runtime makes it. */
+function makeIndex(hooks: ConstructorParameters<typeof ConversationIndex>[2] = {}) {
+  const database = testChatDatabase()
+  return new ConversationIndex(database, createChatLogs({ database }), hooks)
+}
 
 async function fixture(
   run: (key: { workspaceRoot: string; workspaceId: string; agentId: string }, path: string) => Promise<void>,
@@ -40,27 +64,6 @@ function event(
 }
 const lines = (events: ConversationEvent[]) => `${events.map((value) => JSON.stringify(value)).join('\n')}\n`
 
-test('missing, corrupt and old-version caches rebuild from authoritative events', async () =>
-  fixture(async (key, path) => {
-    await writeFile(
-      path,
-      lines([
-        event(1, 'user_message', { turnId: 'turn', text: 'Build a useful chat' }),
-        event(2, 'turn_completed', { turnId: 'turn' }),
-      ]),
-    )
-    const index = new ConversationIndex(),
-      cache = workspaceStorePath(key.workspaceRoot, 'conversations', key.workspaceId, 'index.json')
-    expect(await index.list(key)).toMatchObject([
-      { agentId: 'agent', title: 'Build a useful chat', titleSource: 'first-message', turnCount: 1, lastSeq: 2 },
-    ])
-    for (const invalid of ['{broken', '{"version":0,"threads":[],"files":[]}']) {
-      await writeFile(cache, invalid)
-      expect((await index.list(key))[0]?.title).toBe('Build a useful chat')
-    }
-    expect(JSON.parse(await readFile(cache, 'utf8')).version).toBe(4)
-  }))
-
 test('conversation cost includes old turns and deduplicates completion records', async () =>
   fixture(async (key, path) => {
     await writeFile(
@@ -72,8 +75,8 @@ test('conversation cost includes old turns and deduplicates completion records',
         event(4, 'turn_completed', { turnId: 'third', costUsd: -1 }),
       ]),
     )
-    expect((await new ConversationIndex().list(key))[0]?.totalCostUsd).toBe(0.75)
-    expect((await new ConversationIndex().list(key))[0]?.totalCostUsd).toBe(0.75)
+    expect((await makeIndex().list(key))[0]?.totalCostUsd).toBe(0.75)
+    expect((await makeIndex().list(key))[0]?.totalCostUsd).toBe(0.75)
   }))
 
 test('user rename survives rebuild and always wins over a generated title', async () =>
@@ -86,7 +89,7 @@ test('user rename survives rebuild and always wins over a generated title', asyn
         event(3, 'session_updated', { conversationTitle: 'Generated later', titleSource: 'generated' }),
       ]),
     )
-    expect((await new ConversationIndex().list(key))[0]).toMatchObject({ title: 'My title', titleSource: 'user' })
+    expect((await makeIndex().list(key))[0]).toMatchObject({ title: 'My title', titleSource: 'user' })
     expect(firstMessageTitle('  one\n two  ')).toBe('one two')
     expect(firstMessageTitle('x'.repeat(100))).toHaveLength(60)
   }))
@@ -103,24 +106,12 @@ test('search joins split assistant deltas and returns a jumpable user-turn seque
     )
     const batches: unknown[] = []
     expect(
-      await new ConversationIndex().search(
+      await makeIndex().search(
         { ...key, query: 'ALPHA BETA' },
         { onBatch: (batch) => batches.push(batch) },
       ),
     ).toEqual([{ agentId: 'agent', seq: 1, turnId: 'turn', snippet: 'The alpha beta answer.', from: 'agent' }])
     expect(batches).toHaveLength(1)
-  }))
-
-test('refresh creates the cache and a later append invalidates a stale cache', async () =>
-  fixture(async (key, path) => {
-    await writeFile(path, lines([event(1, 'user_message', { turnId: 'one', text: 'First' })]))
-    const index = new ConversationIndex()
-    await index.refresh(key)
-    expect(
-      await stat(workspaceStorePath(key.workspaceRoot, 'conversations', key.workspaceId, 'index.json')),
-    ).toBeDefined()
-    await appendFile(path, lines([event(2, 'user_message', { turnId: 'two', text: 'Second' })]))
-    expect((await index.list(key))[0]?.turnCount).toBe(2)
   }))
 
 test('search caps hits, emits bounded batches and honours cancellation', async () =>
@@ -133,7 +124,7 @@ test('search caps hits, emits bounded batches and honours cancellation', async (
         ),
       ),
     )
-    const index = new ConversationIndex(),
+    const index = makeIndex(),
       batches: number[] = []
     expect(
       await index.search({ ...key, query: 'match' }, { onBatch: (batch) => batches.push(batch.length) }),
@@ -146,7 +137,7 @@ test('search caps hits, emits bounded batches and honours cancellation', async (
     })
   }))
 
-test('delete closes the transcript and removes only its log, detail directory and cache row', async () =>
+test('delete closes the log and removes only its rows; the files from before the database are left as they were', async () =>
   fixture(async (key, path) => {
     await writeFile(path, lines([event(1, 'user_message', { text: 'One' })]))
     const other = conversationIndexTranscriptPath({ ...key, agentId: 'other' })
@@ -155,7 +146,7 @@ test('delete closes the transcript and removes only its log, detail directory an
     await mkdir(tools)
     await writeFile(join(tools, 'tool.json'), '{}')
     const closed: string[] = [],
-      index = new ConversationIndex({
+      index = makeIndex({
         close: async (value) => {
           closed.push(value)
         },
@@ -163,9 +154,10 @@ test('delete closes the transcript and removes only its log, detail directory an
     await index.list(key)
     await index.delete(key)
     expect(closed).toEqual([path])
-    await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' })
-    await expect(stat(tools)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(await index.list(key)).toMatchObject([{ agentId: 'other' }])
+    expect(await index.search({ ...key, query: 'one' })).toEqual([])
+    // Imported once: the deleted log's old file is never taken up again.
+    expect(await readFile(path, 'utf8')).toContain('One')
     expect(await readFile(other, 'utf8')).toContain('Other')
   }))
 
@@ -181,7 +173,7 @@ test('cancellation during a streamed batch stops without leaking a stream error'
     )
     const controller = new AbortController()
     await expect(
-      new ConversationIndex().search(
+      makeIndex().search(
         { ...key, query: 'match' },
         {
           signal: controller.signal,
@@ -196,9 +188,9 @@ test('a symlink transcript is neither searched nor deleted through', async () =>
     const outside = join(key.workspaceRoot, 'private.jsonl')
     await writeFile(outside, lines([event(1, 'user_message', { text: 'private match' })]))
     await symlink(outside, path)
-    const index = new ConversationIndex()
+    const index = makeIndex()
     expect(await index.search({ ...key, query: 'private' })).toEqual([])
-    await expect(index.delete(key)).rejects.toThrow('symbolic link')
+    await expect(index.delete(key)).rejects.toThrow(/symbolic link/iu)
     expect(await readFile(outside, 'utf8')).toContain('private match')
   }))
 
@@ -219,23 +211,7 @@ test('coalesced delta sequence ranges survive index rebuild', async () =>
         event(4, 'turn_completed', { turnId: 'turn' }),
       ]),
     )
-    expect((await new ConversationIndex().list(key))[0]?.lastSeq).toBe(4)
-  }))
-
-test('a transcript past the read limit is listed and searched from its opening and its end', async () =>
-  fixture(async (key, path) => {
-    const events = [event(1, 'user_message', { turnId: 't0', text: 'Opening question' })]
-    for (let seq = 2; seq < 400; seq++)
-      events.push(event(seq, 'content_delta', { turnId: 't0', text: `filler ${'x'.repeat(200)}` }))
-    events.push(event(400, 'user_message', { turnId: 't1', text: 'Closing needle question' }))
-    events.push(event(401, 'turn_completed', { turnId: 't1' }))
-    await writeFile(path, lines(events))
-    const size = (await stat(path)).size
-    // Below the file, and far enough below it that the middle is skipped.
-    const index = new ConversationIndex({ maxTranscriptBytes: Math.floor(size / 4) })
-    const [thread] = await index.list(key)
-    expect(thread).toMatchObject({ agentId: 'agent', title: 'Opening question', lastSeq: 401 })
-    expect(await index.search({ ...key, query: 'needle' })).toMatchObject([{ agentId: 'agent', seq: 400 }])
+    expect((await makeIndex().list(key))[0]?.lastSeq).toBe(4)
   }))
 
 test('an unreadable transcript gets a row of its own instead of failing the whole list and search', async () =>
@@ -248,7 +224,7 @@ test('an unreadable transcript gets a row of its own instead of failing the whol
     const linked = join(tmpdir(), `conversation-index-link-${process.pid}-${Date.now()}`)
     await link(other, linked)
     try {
-      const threads = await new ConversationIndex().list(key)
+      const threads = await makeIndex().list(key)
       expect(threads.map((thread) => [thread.agentId, thread.title]).sort()).toEqual([
         ['agent', 'Readable chat'],
         ['other', 'Unreadable conversation'],
@@ -258,7 +234,7 @@ test('an unreadable transcript gets a row of its own instead of failing the whol
     }
     await link(other, linked)
     try {
-      expect(await new ConversationIndex().search({ ...key, query: 'readable' })).toMatchObject([{ agentId: 'agent' }])
+      expect(await makeIndex().search({ ...key, query: 'readable' })).toMatchObject([{ agentId: 'agent' }])
     } finally {
       await rm(linked, { force: true })
     }
@@ -273,7 +249,7 @@ test('an unreadable transcript whose file name is not valid percent-encoding sti
     const linked = join(tmpdir(), `conversation-index-link-${process.pid}-${Date.now()}`)
     await link(odd, linked)
     try {
-      const threads = await new ConversationIndex().list(key)
+      const threads = await makeIndex().list(key)
       expect(threads.map((thread) => [thread.agentId, thread.title]).sort()).toEqual([
         ['50%', 'Unreadable conversation'],
         ['agent', 'Readable chat'],
@@ -281,48 +257,6 @@ test('an unreadable transcript whose file name is not valid percent-encoding sti
     } finally {
       await rm(linked, { force: true })
     }
-  }))
-
-test('a listing reads only the transcripts that changed and keeps every other cached row', async () =>
-  fixture(async (key, path) => {
-    const folder = workspaceStorePath(key.workspaceRoot, 'conversations', key.workspaceId)
-    await writeFile(path, lines([event(1, 'user_message', { turnId: 'one', text: 'Busy chat' })]))
-    await writeFile(
-      join(folder, 'quiet.jsonl'),
-      lines([event(1, 'user_message', { turnId: 'one', text: 'Quiet chat' }, 'quiet')]),
-    )
-    const index = new ConversationIndex()
-    await index.list(key)
-    // Mark the quiet chat's cached row: it is served as cached only if its transcript is not read again.
-    const cachePath = join(folder, 'index.json')
-    const cache = JSON.parse(await readFile(cachePath, 'utf8'))
-    for (const thread of cache.threads) if (thread.agentId === 'quiet') thread.title = 'Served from the cache'
-    await writeFile(cachePath, JSON.stringify(cache))
-
-    await appendFile(path, lines([event(2, 'user_message', { turnId: 'two', text: 'Again' })]))
-    const threads = await index.list(key)
-    expect(threads.find((thread) => thread.agentId === 'quiet')?.title).toBe('Served from the cache')
-    expect(threads.find((thread) => thread.agentId === 'agent')).toMatchObject({ title: 'Busy chat', turnCount: 2 })
-  }))
-
-test('a transcript that grew is read on from where the last read ended', async () =>
-  fixture(async (key, path) => {
-    // The first line is longer than the bytes that identify the file, so the second can change below it.
-    const first = JSON.stringify(event(1, 'user_message', { turnId: 'one', text: `Opening ${'x'.repeat(600)}` }))
-    const second = JSON.stringify(event(2, 'user_message', { turnId: 'two', text: 'Second' }))
-    await writeFile(path, `${first}\n${second}\n`)
-    const index = new ConversationIndex()
-    expect((await index.list(key))[0]?.turnCount).toBe(2)
-
-    // Already read: blanking it now changes nothing an incremental read looks at.
-    const third = JSON.stringify(event(3, 'user_message', { turnId: 'three', text: 'Third' }))
-    await writeFile(path, `${first}\n${' '.repeat(second.length)}\n${third}\n`)
-    expect((await index.list(key))[0]).toMatchObject({ turnCount: 3, lastSeq: 3 })
-    expect((await index.refresh(key))?.turnCount).toBe(3)
-
-    // A new instance knows nothing it read before and reads the whole file.
-    await appendFile(path, lines([event(4, 'turn_completed', { turnId: 'three' })]))
-    expect((await new ConversationIndex().list(key))[0]?.turnCount).toBe(2)
   }))
 
 test('costs and turns are counted once across an append', async () =>
@@ -334,33 +268,15 @@ test('costs and turns are counted once across an append', async () =>
         event(2, 'turn_completed', { turnId: 'first', costUsd: 0.25 }),
       ]),
     )
-    const index = new ConversationIndex()
+    const index = makeIndex()
     expect((await index.list(key))[0]).toMatchObject({ turnCount: 1, totalCostUsd: 0.25 })
-    await appendFile(
-      path,
-      lines([
+    await appendEvents(key, path, ([
         event(3, 'turn_completed', { turnId: 'first', costUsd: 0.25 }),
         event(4, 'user_message', { turnId: 'second', text: 'Another' }),
         event(5, 'turn_completed', { turnId: 'second', costUsd: 0.5 }),
       ]),
     )
     expect((await index.list(key))[0]).toMatchObject({ turnCount: 2, totalCostUsd: 0.75, lastSeq: 5 })
-  }))
-
-test('a transcript deleted and written again under the same name is read whole', async () =>
-  fixture(async (key, path) => {
-    await writeFile(path, lines([event(1, 'user_message', { turnId: 'one', text: 'Old chat' })]))
-    const index = new ConversationIndex()
-    expect((await index.list(key))[0]?.title).toBe('Old chat')
-    await rm(path)
-    await writeFile(
-      path,
-      lines([
-        { ...event(1, 'user_message', { turnId: 'new', text: 'New chat' }), id: 'another-run' },
-        event(2, 'user_message', { turnId: 'next', text: 'More' }),
-      ]),
-    )
-    expect((await index.list(key))[0]).toMatchObject({ title: 'New chat', turnCount: 2 })
   }))
 
 test('a row says when its agent last finished a turn, a steered end aside, and keeps it across an append', async () =>
@@ -376,12 +292,12 @@ test('a row says when its agent last finished a turn, a steered end aside, and k
         event(5, 'session_updated', { conversationTitle: 'Renamed', titleSource: 'user' }),
       ]),
     )
-    const index = new ConversationIndex()
+    const index = makeIndex()
     const [first] = await index.list(key)
     expect(first?.lastTurnEndedAt).toBe(2000)
     // A rename moves `updatedAt`, never the turn end.
     expect(first?.updatedAt).toBe(5000)
-    await appendFile(path, lines([event(6, 'turn_failed', { turnId: 'two' })]))
+    await appendEvents(key, path, ([event(6, 'turn_failed', { turnId: 'two' })]))
     expect((await index.list(key))[0]?.lastTurnEndedAt).toBe(6000)
   }))
 
@@ -396,38 +312,19 @@ test('a chat keeps the opening of its last reply, cleared when the person writes
         event(4, 'turn_completed', { turnId: 'one' }),
       ]),
     )
-    const index = new ConversationIndex()
+    const index = makeIndex()
     expect((await index.list(key))[0]?.lastAssistantText).toBe('The answer is here.')
-    await appendFile(path, lines([event(5, 'user_message', { turnId: 'two', text: 'And then?' })]))
+    await appendEvents(key, path, ([event(5, 'user_message', { turnId: 'two', text: 'And then?' })]))
     expect((await index.list(key))[0]?.lastAssistantText).toBe('')
     // The opening only, as the runtime's session keeps it.
-    await appendFile(path, lines([event(6, 'content_delta', { turnId: 'two', text: 'x'.repeat(300) })]))
+    await appendEvents(key, path, ([event(6, 'content_delta', { turnId: 'two', text: 'x'.repeat(300) })]))
     expect((await index.list(key))[0]?.lastAssistantText).toHaveLength(240)
   }))
 
 test('a chat whose agent never finished a turn names no turn end', async () =>
   fixture(async (key, path) => {
     await writeFile(path, lines([event(1, 'user_message', { turnId: 'one', text: 'Question' })]))
-    expect('lastTurnEndedAt' in (await new ConversationIndex().list(key))[0]!).toBe(false)
-  }))
-
-test('a cache written before rows kept the turn end is read again, so older turns say when they ended', async () =>
-  fixture(async (key, path) => {
-    await writeFile(
-      path,
-      lines([
-        event(1, 'user_message', { turnId: 'one', text: 'Question' }),
-        event(2, 'turn_completed', { turnId: 'one' }),
-      ]),
-    )
-    const cache = workspaceStorePath(key.workspaceRoot, 'conversations', key.workspaceId, 'index.json')
-    // The file as the version before wrote it: the same fingerprint, a row
-    // with no turn end.
-    await new ConversationIndex().list(key)
-    const written = JSON.parse(await readFile(cache, 'utf8'))
-    for (const thread of written.threads) delete thread.lastTurnEndedAt
-    await writeFile(cache, JSON.stringify({ ...written, version: 2 }))
-    expect((await new ConversationIndex().list(key))[0]?.lastTurnEndedAt).toBe(2000)
+    expect('lastTurnEndedAt' in (await makeIndex().list(key))[0]!).toBe(false)
   }))
 
 test('search says who wrote each match, and reads past tool output it never parses', async () =>
@@ -441,7 +338,7 @@ test('search says who wrote each match, and reads past tool output it never pars
         event(4, 'user_message', { turnId: 'two', text: 'Wave check', origin: { kind: 'studio' } }),
       ]),
     )
-    const hits = await new ConversationIndex().search({ ...key, query: 'wave' })
+    const hits = await makeIndex().search({ ...key, query: 'wave' })
     expect(hits.map((hit) => [hit.seq, hit.from])).toEqual([
       [1, 'person'],
       [1, 'agent'],

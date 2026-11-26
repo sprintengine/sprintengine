@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
-import { open } from 'node:fs/promises'
+import type { FileHandle } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
+
+import { openConfinedExistingFile } from '../../main/conversation-file-access'
+import { conversationConfinementRoot } from '../../main/workspace-store'
 
 import type { StudioDatabase, StudioTransaction } from './database'
 import type { SqlParams } from './sqlite'
@@ -300,7 +302,31 @@ async function importTranscript(
   root: string,
   log?: (message: string) => void,
 ): Promise<void> {
-  const firstLine = await readFirstLine(path)
+  // Read through the store's confinement, as every transcript read was: a
+  // link out of the store, or a file a link shares, is refused, and the log
+  // is not taken up until it is put right.
+  let file: FileHandle | null
+  try {
+    file = await openConfinedExistingFile(await conversationConfinementRoot(root, path), path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    file = null
+  }
+  try {
+    await importFrom(db, key, file, root, log)
+  } finally {
+    await file?.close()
+  }
+}
+
+async function importFrom(
+  db: StudioDatabase,
+  key: string,
+  file: FileHandle | null,
+  root: string,
+  log?: (message: string) => void,
+): Promise<void> {
+  const firstLine = file ? await readFirstLine(file) : null
   let records = 0
   let skipped = 0
   await db.transaction(async (tx) => {
@@ -324,7 +350,7 @@ async function importTranscript(
         await writeRows(tx, key, root, rows.splice(0), receipts.splice(0))
       }
       let sinceYield = 0
-      for await (const line of readLines(path)) {
+      for await (const line of readLines(file!)) {
         if (!Buffer.isBuffer(line)) {
           skipped += 1
           continue
@@ -446,24 +472,13 @@ function readReceipt(value: unknown): ChatReceiptRow | null {
   return line as ChatReceiptRow
 }
 
-/** The first line of a file, as bytes (up to 64 KiB, as the reader hashed it); null when there is no file. */
-async function readFirstLine(path: string): Promise<Buffer | null> {
-  let file: Awaited<ReturnType<typeof open>>
-  try {
-    file = await open(path, 'r')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
-  try {
-    const buffer = Buffer.alloc(64 * 1024)
-    const { bytesRead } = await file.read(buffer, 0, buffer.length, 0)
-    const head = buffer.subarray(0, bytesRead)
-    const newline = head.indexOf(0x0a)
-    return newline < 0 ? head : head.subarray(0, newline)
-  } finally {
-    await file.close()
-  }
+/** The first line of a file, as bytes (up to 64 KiB, as the reader hashed it). */
+async function readFirstLine(file: FileHandle): Promise<Buffer> {
+  const buffer = Buffer.alloc(64 * 1024)
+  const { bytesRead } = await file.read(buffer, 0, buffer.length, 0)
+  const head = buffer.subarray(0, bytesRead)
+  const newline = head.indexOf(0x0a)
+  return newline < 0 ? head : head.subarray(0, newline)
 }
 
 /**
@@ -471,10 +486,10 @@ async function readFirstLine(path: string): Promise<Buffer | null> {
  * append a stop cut short (every write ended with one), whose events were
  * never published; it comes back as `torn`.
  */
-async function* readLines(path: string): AsyncGenerator<Buffer | { torn: true }> {
+async function* readLines(file: FileHandle): AsyncGenerator<Buffer | { torn: true }> {
   let carry: Buffer[] = []
   let carried = 0
-  for await (const chunk of createReadStream(path, { highWaterMark: 1024 * 1024 }) as AsyncIterable<Buffer>) {
+  for await (const chunk of file.createReadStream({ start: 0, highWaterMark: 1024 * 1024, autoClose: false }) as AsyncIterable<Buffer>) {
     let start = 0
     for (let end = chunk.indexOf(0x0a, start); end !== -1; end = chunk.indexOf(0x0a, start)) {
       const piece = chunk.subarray(start, end)

@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises'
+import { lstat, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type { StudioDatabase } from '../server/db/database'
@@ -82,13 +82,16 @@ export class ConversationIndex {
   async list(key: ConversationWorkspaceKey): Promise<ConversationThread[]> {
     requireWorkspace(key)
     return this.serialized(key, async () => {
-      const logs = await this.logsOf(key)
+      const { logs, unreadable } = await this.logsOf(key)
       for (const log of logs) await this.catchUp(key, log)
       const rows = await this.database.all<{ thread: string | null }>(
         'SELECT thread FROM chat_threads WHERE chat_key = ?',
         [chatOf(key)],
       )
-      return sorted(rows.flatMap((row) => (row.thread ? [JSON.parse(row.thread) as ConversationThread] : [])))
+      return sorted([
+        ...rows.flatMap((row) => (row.thread ? [JSON.parse(row.thread) as ConversationThread] : [])),
+        ...unreadable,
+      ])
     })
   }
   /** Refresh one completed turn without folding any other agent's log. */
@@ -117,7 +120,7 @@ export class ConversationIndex {
     if (!query) return []
     // What came since the last listing is indexed first.
     await this.serialized(input, async () => {
-      for (const log of await this.logsOf(input)) await this.catchUp(input, log)
+      for (const log of (await this.logsOf(input)).logs) await this.catchUp(input, log)
     })
     options.signal?.throwIfAborted()
     const chat = chatOf(input)
@@ -151,7 +154,10 @@ export class ConversationIndex {
       }
       hits.push(hit)
       pending.push(hit)
-      if (pending.length >= 20) options.onBatch?.(pending.splice(0))
+      if (pending.length >= 20) {
+        options.onBatch?.(pending.splice(0))
+        options.signal?.throwIfAborted()
+      }
     }
     if (pending.length) options.onBatch?.(pending)
     return hits
@@ -172,8 +178,12 @@ export class ConversationIndex {
    * run for transcripts builds before the database left there, and each is
    * imported before it is listed.
    */
-  private async logsOf(key: ConversationWorkspaceKey): Promise<string[]> {
+  private async logsOf(key: ConversationWorkspaceKey): Promise<{ logs: string[]; unreadable: ConversationThread[] }> {
     const chat = chatOf(key)
+    // A transcript that cannot be imported (a link out of the store) still
+    // gets a row, named from its file and dated from its last write, so one
+    // damaged chat does not hide every other agent of the chat.
+    const unreadable: ConversationThread[] = []
     if (!this.scanned.has(chat)) {
       // Waits out the store's one-time move, so a listing right after an upgrade sees what it brings.
       await workspaceStoreReady(key.workspaceRoot)
@@ -183,12 +193,32 @@ export class ConversationIndex {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
+      let failed = false
       for (const name of names) {
         const path = join(directory(key), name)
         await this.hooks.flush?.(path)
-        await this.history.ensure(path, key.workspaceRoot)
+        try {
+          await this.history.ensure(path, key.workspaceRoot)
+        } catch (error) {
+          failed = true
+          console.warn(`[conversation-index] ${name} could not be taken up:`, error instanceof Error ? error.message : error)
+          const at = await lstat(path).then((info) => info.mtimeMs, () => 0)
+          unreadable.push({
+            agentId: decodeAgent(`${chat}/${name.slice(0, -'.jsonl'.length)}`),
+            title: 'Unreadable conversation',
+            titleSource: 'first-message',
+            createdAt: at,
+            updatedAt: at,
+            turnCount: 0,
+            model: '',
+            providerId: '',
+            lastSeq: 0,
+            firstUserText: '',
+          })
+        }
       }
-      this.scanned.add(chat)
+      // Looked at again next time while one could not be taken up.
+      if (!failed) this.scanned.add(chat)
     }
     // Every key of this chat: `<chat>/` up to, not including, `<chat>0` ('0' follows '/').
     const rows = await this.database.all<{ log_key: string }>(
@@ -196,7 +226,7 @@ export class ConversationIndex {
       [`${chat}/`, `${chat}0`],
     )
     for (const row of rows) await this.hooks.flush?.(join(directory(key), `${row.log_key.slice(chat.length + 1)}.jsonl`))
-    return rows.map((row) => row.log_key)
+    return { logs: rows.map((row) => row.log_key), unreadable }
   }
   /** Fold what one log gained since its row was folded, and index it for search, in one transaction. */
   private async catchUp(key: ConversationWorkspaceKey, log: string): Promise<void> {
