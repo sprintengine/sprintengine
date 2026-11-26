@@ -8,6 +8,8 @@
   a folder on that machine that no workspace there names yet (New chat's
   browsed or typed folder on another machine). It takes `worktree` and
   `worktreeName` without `newChat`, never `inWorktree`; a folder that is not
+  a whole path (`/…`, `C:\…`, `\\…`) is refused `invalid_params` and one that
+  is is taken as one path (`a//b/./c/..` is `a/b`); a folder that is not
   there is refused `folder_missing`, and a connection held to the folders
   Studio knows is refused `not_found` for any other. A Studio that takes it
   says `new-chat-folder`.

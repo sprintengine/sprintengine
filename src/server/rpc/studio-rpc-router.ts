@@ -41,6 +41,7 @@ import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host
 import type { DistributionMachine } from '../wsl/distribution-machine'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
 import { createHash, randomBytes } from 'node:crypto'
+import { posix, win32 } from 'node:path'
 
 import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
 import { sanitizeEntryMessage } from '../../shared/modules/entry-messages'
@@ -779,9 +780,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     params: StudioMethodParams<'conversation.create'>,
     { grant, voice, context }: Asking,
   ): Promise<StudioRpcAnswer<'conversation.create'>> {
-    const { commandId, ...request } = params
-    // A folder no workspace names yet: any for the owner's own connection,
-    // only one Studio knows for a connection held to those.
+    const { commandId, ...asked } = params
+    // A folder no workspace names yet, as one path (`a//b/./c/..` is `a/b`),
+    // judged where it lands: any for the owner's own connection, only one
+    // Studio knows for a connection held to those.
+    const request = asked.folder !== undefined ? { ...asked, folder: oneFolderPath(asked.folder) } : asked
     if (request.folder !== undefined && !(await mayName(request.folder, { grant, context })))
       return refuse('not_found', UNKNOWN_FOLDER)
     if (request.allowedTools?.length && !ceilingAllowsUnaskedTools(grant.ceiling))
@@ -2761,6 +2764,13 @@ function withFolderNamesOnly(installed: ThirdPartyModuleListResult): ThirdPartyM
       }
     }),
   }
+}
+
+/** A folder as one path, with no trailing separator but a root's: the parser has held it to a whole path. */
+function oneFolderPath(folder: string): string {
+  const windows = /^[A-Za-z]:[\\/]/u.test(folder) || folder.startsWith('\\')
+  const normal = windows ? win32.normalize(folder) : posix.normalize(folder)
+  return normal.length > 1 && /[\\/]$/u.test(normal) && !/^[A-Za-z]:[\\/]$/u.test(normal) ? normal.slice(0, -1) : normal
 }
 
 /** Whether a connection names any path on this disk: an owner's, unless it is held to the folders Studio knows. */

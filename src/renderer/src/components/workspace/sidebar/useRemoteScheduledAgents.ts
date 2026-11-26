@@ -133,6 +133,8 @@ export function useRemoteScheduledAgents({
   const [lists, setLists] = useState<
     ReadonlyMap<string, { agents: ScheduledAgentView[]; pausedAll: ScheduledAgentsPause | null; operate: boolean }>
   >(() => new Map())
+  const listsRef = useRef(lists)
+  listsRef.current = lists
   const bridge = environmentStudioAvailable()
   // Every other machine that answers now; one that comes back is read again.
   const readable = useMemo(() => {
@@ -183,10 +185,18 @@ export function useRemoteScheduledAgents({
           params: {},
           capability: STUDIO_SCHEDULES_CAPABILITY,
           onPayload: (state) => {
+            // What this desktop may do there is the grant a list read says; a
+            // push before any read has answered (or after one failed) is read
+            // again whole, so its rows never show without their controls.
+            if (!listsRef.current.has(route)) {
+              read(route)
+              return
+            }
             const { agents, pausedAll } = scheduledAgentsOf(state)
-            setLists((current) =>
-              new Map(current).set(route, { agents, pausedAll, operate: current.get(route)?.operate ?? false }),
-            )
+            setLists((current) => {
+              const known = current.get(route)
+              return known ? new Map(current).set(route, { agents, pausedAll, operate: known.operate }) : current
+            })
           },
         }) ?? (() => undefined)
       )
@@ -194,7 +204,7 @@ export function useRemoteScheduledAgents({
     return () => {
       for (const stop of stops) stop()
     }
-  }, [pushedRoutes])
+  }, [pushedRoutes, read])
   const readableRoutes = readable.map(({ target }) => target.route).join('\u0000')
   // Read as each machine comes to answer; the push keeps it current after.
   useEffect(() => {

@@ -6889,6 +6889,12 @@ export const en = {
       theSoloLayoutTemplateIs3: (title: unknown) =>
         `The Solo layout template is missing. Find "${title}" under Remote in the sidebar.`,
       chatStartedOn: (machineName: unknown) => `Chat started on ${machineName}`,
+      openTheChat: 'Open',
+      itOpensHereOnceListed: (title: unknown, machineName: unknown) =>
+        `${title} opens here once this computer lists ${machineName}'s new chat.`,
+      chatNotListedHere: (machineName: unknown) => `${machineName}'s new chat is not listed here yet`,
+      itRunsThereNotListed: (title: unknown, machineName: unknown) =>
+        `${title} runs on ${machineName}. This computer has not listed it yet; Open tries again.`,
       in: (title: unknown, remoteWorkspaceName: unknown, value: unknown) =>
         `${title} in ${remoteWorkspaceName}${value}`,
       noOtherChatsAreWaiting: 'No other chats are waiting on you',

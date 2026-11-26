@@ -645,6 +645,11 @@ export type StudioConversationCreateParams = StudioConversationCreate & { comman
 
 const EFFORT_ID = /^[a-z][a-z0-9_-]{0,31}$/iu
 
+/** A path from a root: `/…`, a Windows drive's `C:\…`, or a share's `\\…`. */
+function isAbsoluteFolder(path: string): boolean {
+  return path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:[\\/]/u.test(path)
+}
+
 /** A create's members, read and held to New chat's rules; `commandId` is the caller's to read. */
 export function parseStudioConversationCreate(
   value: Record<string, unknown>,
@@ -663,6 +668,9 @@ export function parseStudioConversationCreate(
   if (noProject !== undefined && noProject !== true) return { ok: false, message: '"noProject", when given, is true.' }
   if (folder !== undefined && (typeof folder !== 'string' || !folder.trim() || folder.length > 4096))
     return { ok: false, message: '"folder" is a path of 1 to 4096 characters.' }
+  // A whole path there, never one the server would read against its own working folder.
+  if (typeof folder === 'string' && !isAbsoluteFolder(folder.trim()))
+    return { ok: false, message: '"folder" is a full path on that machine, such as /home/dev/app.' }
   if (folder !== undefined && (noProject || request.workspaceId !== undefined))
     return { ok: false, message: '"folder" takes the place of "workspaceId" and "noProject".' }
   if (folder !== undefined && inWorktree !== undefined)
