@@ -1,18 +1,13 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, open, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test, vi } from 'vitest'
 
 import type { ConversationEvent, ConversationEventType } from '../shared/conversation-runtime'
-import {
-  ConversationEventLog,
-  DEFAULT_DELTA_FLUSH_MS,
-  expandCoalescedDeltas,
-  truncateConversationLog,
-  writeWhole,
-  type AppendStream,
-} from './conversation-event-log'
+import { testChatDatabase } from '../../tests/studio-database'
+import { createChatLogs, type ChatReceiptRow, type ChatRow } from '../server/db/chat-logs'
+import { ConversationEventLog, DEFAULT_DELTA_FLUSH_MS, expandCoalescedDeltas } from './conversation-event-log'
 import { ConversationTranscriptReader } from './conversation-transcript-reader'
 
 let sequence = 0
@@ -28,33 +23,24 @@ function event(type: ConversationEventType, payload?: Record<string, unknown>): 
     modelId: 'model',
     type,
     createdAt: 1_000 + sequence,
+    seq: sequence,
     ...(payload ? { payload } : {}),
   }
 }
 
-/** An in-memory stream that records every write, so tests can count them. */
+/** A writer that records every batch, so tests can count them; a batch as the lines it would have been. */
 function recordingStreams() {
   const writes: string[] = []
-  const opened: string[] = []
-  let closed = 0
-  const openStream = async (filePath: string): Promise<AppendStream> => {
-    opened.push(filePath)
-    return {
-      write: async (chunk) => {
-        writes.push(chunk)
-      },
-      close: async () => {
-        closed += 1
-      },
-    }
+  const write = async (_path: string, _root: string, rows: readonly ChatRow[], receipts: readonly ChatReceiptRow[]) => {
+    writes.push(
+      [...rows.map((row) => row.body), ...receipts.map((receipt) => JSON.stringify({ receipt }))]
+        .map((line) => `${line}\n`)
+        .join(''),
+    )
   }
   return {
-    openStream,
+    write,
     writes,
-    opened,
-    get closed() {
-      return closed
-    },
     lines: () =>
       writes
         .join('')
@@ -74,7 +60,7 @@ afterEach(() => {
 
 test('a run of deltas is one write, flushed by the boundary that ends it', async () => {
   const streams = recordingStreams()
-  const log = new ConversationEventLog({ openStream: streams.openStream, flushDelayMs: 60_000 })
+  const log = new ConversationEventLog({ write: streams.write, flushDelayMs: 60_000 })
   await log.append('/t.jsonl', event('turn_started', { turnId: 't1' }))
   const deltas = ['Hel', 'lo', ', ', 'world'].map((text) =>
     log.append('/t.jsonl', event('content_delta', { turnId: 't1', text })),
@@ -91,12 +77,11 @@ test('a run of deltas is one write, flushed by the boundary that ends it', async
     ['turn_started', 'content_delta', 'turn_completed'],
   )
   assert.equal(lines[1].payload?.text, 'Hello, world')
-  assert.equal(streams.opened.length, 1, 'one stream for the whole turn')
 })
 
 test('reading a merged run back yields the exact deltas that were emitted', async () => {
   const streams = recordingStreams()
-  const log = new ConversationEventLog({ openStream: streams.openStream, flushDelayMs: 60_000 })
+  const log = new ConversationEventLog({ write: streams.write, flushDelayMs: 60_000 })
   const emitted = [
     event('reasoning_delta', { turnId: 't1', text: 'think' }),
     event('reasoning_delta', { turnId: 't1', text: 'ing…' }),
@@ -113,7 +98,7 @@ test('reading a merged run back yields the exact deltas that were emitted', asyn
 
 test('deltas of different turns or kinds never merge', async () => {
   const streams = recordingStreams()
-  const log = new ConversationEventLog({ openStream: streams.openStream, flushDelayMs: 60_000 })
+  const log = new ConversationEventLog({ write: streams.write, flushDelayMs: 60_000 })
   void log.append('/t.jsonl', event('content_delta', { turnId: 't1', text: 'a' }))
   void log.append('/t.jsonl', event('content_delta', { turnId: 't2', text: 'b' }))
   void log.append('/t.jsonl', event('reasoning_delta', { turnId: 't2', text: 'c' }))
@@ -128,7 +113,7 @@ test('deltas of different turns or kinds never merge', async () => {
 test('deltas are written within the short default window, not held for the next boundary', async () => {
   vi.useFakeTimers()
   const streams = recordingStreams()
-  const log = new ConversationEventLog({ openStream: streams.openStream })
+  const log = new ConversationEventLog({ write: streams.write })
   let settled = false
   void log.append('/t.jsonl', event('content_delta', { turnId: 't1', text: 'one ' }))
   void log.append('/t.jsonl', event('content_delta', { turnId: 't1', text: 'two ' })).then(() => {
@@ -151,20 +136,6 @@ test('deltas are written within the short default window, not held for the next 
   )
 })
 
-test('close flushes and releases the stream; the next append reopens it', async () => {
-  const streams = recordingStreams()
-  const log = new ConversationEventLog({ openStream: streams.openStream, flushDelayMs: 60_000 })
-  const kept = log.append('/t.jsonl', event('content_delta', { turnId: 't1', text: 'kept' }))
-  await log.close('/t.jsonl')
-  assert.equal(await kept, 'written')
-  assert.equal(streams.closed, 1)
-  assert.equal(streams.lines()[0].payload?.text, 'kept')
-  await log.append('/t.jsonl', event('turn_completed', { turnId: 't1' }))
-  assert.equal(streams.opened.length, 2)
-  await log.closeAll()
-  assert.equal(streams.closed, 2)
-})
-
 test('flush waits for a close of that file still in flight', async () => {
   // A write that only lands when the test says so: the idle sweep's `void
   // close()` has detached the log, and its last chunk is still on its way.
@@ -175,13 +146,10 @@ test('flush waits for a close of that file still in flight', async () => {
   })
   const log = new ConversationEventLog({
     flushDelayMs: 60_000,
-    openStream: async () => ({
-      write: async (chunk) => {
-        await gate
-        writes.push(chunk)
-      },
-      close: async () => undefined,
-    }),
+    write: async (_path, _root, rows) => {
+      await gate
+      writes.push(rows.map((row) => row.body).join('\n'))
+    },
   })
   void log.append('/t.jsonl', event('content_delta', { turnId: 't1', text: 'tail' }))
   const closing = log.close('/t.jsonl')
@@ -207,21 +175,15 @@ test('flush waits for a close of that file still in flight', async () => {
   assert.match(writes[0], /"text":"tail"/)
 })
 
-test('a failed write is reported, never thrown, and the next write reopens', async () => {
+test('a failed write is reported, never thrown, and the next write is tried afresh', async () => {
   const errors: unknown[] = []
   let attempt = 0
   const log = new ConversationEventLog({
     flushDelayMs: 60_000,
     onError: (_path, error) => errors.push(error),
-    openStream: async () => {
+    write: async () => {
       attempt += 1
-      const broken = attempt === 1
-      return {
-        write: async () => {
-          if (broken) throw new Error('disk gone')
-        },
-        close: async () => undefined,
-      }
+      if (attempt === 1) throw new Error('disk gone')
     },
   })
   assert.equal(await log.append('/t.jsonl', event('turn_started', { turnId: 't1' })), 'failed')
@@ -233,19 +195,14 @@ test('a failed write is reported, never thrown, and the next write reopens', asy
 
 test('a write that has not settled is reported slow and waited for, and nothing after it is answered first', async () => {
   let release: () => void = () => undefined
-  let opened = 0
   const stalled: number[] = []
   const log = new ConversationEventLog({
     slowWriteMs: 1,
     onStall: (_path, ms) => stalled.push(ms),
-    openStream: async () => {
-      opened += 1
-      return {
-        write: (chunk) =>
-          chunk.includes('turn_started') ? new Promise<void>((resolve) => (release = resolve)) : Promise.resolve(),
-        close: async () => undefined,
-      }
-    },
+    write: (_path, _root, rows) =>
+      rows.some((row) => row.type === 'turn_started')
+        ? new Promise<void>((resolve) => (release = resolve))
+        : Promise.resolve(),
   })
   const first = log.append('/t.jsonl', event('turn_started', { turnId: 't1' }))
   const second = log.append('/t.jsonl', event('turn_completed', { turnId: 't1' }))
@@ -260,15 +217,15 @@ test('a write that has not settled is reported slow and waited for, and nothing 
   release()
   assert.equal(await first, 'written', 'and what it held counts once it lands')
   assert.equal(await second, 'written')
-  assert.equal(opened, 1, 'on the same stream')
   await log.closeAll()
 })
 
-test('the default stream appends to a real file, creating its directory', async () => {
+test('the chat logs keep what the log writes: a merged run is one row, read back as its deltas', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-event-log-'))
   try {
     const filePath = join(root, 'nested', 'agent.jsonl')
-    const log = new ConversationEventLog({ flushDelayMs: 60_000 })
+    const history = createChatLogs({ database: testChatDatabase() })
+    const log = new ConversationEventLog({ flushDelayMs: 60_000, history })
     const emitted = [
       event('turn_started', { turnId: 't1' }),
       event('content_delta', { turnId: 't1', text: 'a' }),
@@ -277,34 +234,21 @@ test('the default stream appends to a real file, creating its directory', async 
     ]
     await Promise.all(emitted.map((item) => log.append(filePath, item, root)))
     await log.closeAll()
-    const raw = await readFile(filePath, 'utf-8')
-    assert.equal(raw.trim().split('\n').length, 3)
-    const replayed = raw
-      .trim()
-      .split('\n')
-      .flatMap((line) => expandCoalescedDeltas(JSON.parse(line) as ConversationEvent))
+    const rows = await history.oldest(filePath, root, 0, 100)
+    assert.equal(rows.length, 3)
+    assert.deepEqual(
+      rows.map((row) => [row.firstSeq, row.seq]),
+      [
+        [1, 1],
+        [2, 3],
+        [4, 4],
+      ],
+    )
+    const replayed = rows.flatMap((row) => expandCoalescedDeltas(JSON.parse(row.body) as ConversationEvent))
     assert.deepEqual(replayed, emitted)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test('an append after a torn last line starts a line of its own and stays readable', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-event-log-'))
-  try {
-    const filePath = join(root, 'agent.jsonl')
-    const first = { ...event('turn_started', { turnId: 't1' }), seq: 1 }
-    const torn = JSON.stringify({ ...event('content_delta', { turnId: 't1', text: 'lost' }), seq: 2 })
-    // What a crash or a full disk leaves behind: a record cut off mid-line.
-    await writeFile(filePath, `${JSON.stringify(first)}\n${torn.slice(0, 20)}`, { mode: 0o600 })
-    const log = new ConversationEventLog()
-    const next = { ...event('user_message', { text: 'hi' }), seq: 3 }
-    assert.equal(await log.append(filePath, next, root), 'written')
-    const after = { ...event('turn_completed', { turnId: 't1' }), seq: 4 }
-    assert.equal(await log.append(filePath, after, root), 'written')
-    await log.closeAll()
-    const seqs = (await new ConversationTranscriptReader().tail(root, filePath)).map((item) => item.seq)
-    assert.deepEqual(seqs, [1, 3, 4], 'every event reported written is readable')
+    // A number written twice is refused: the batch fails, and nothing of it is kept.
+    assert.equal(await log.append(filePath, { ...event('user_message', {}), seq: 4 }, root).catch(() => 'failed'), 'failed')
+    assert.equal((await history.oldest(filePath, root, 0, 100)).length, 3)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -312,7 +256,7 @@ test('an append after a torn last line starts a line of its own and stays readab
 
 test('an event and the receipt it commits with are one write, after the deltas queued before them', async () => {
   const streams = recordingStreams()
-  const log = new ConversationEventLog({ flushDelayMs: 60_000, openStream: streams.openStream })
+  const log = new ConversationEventLog({ flushDelayMs: 60_000, write: streams.write })
   void log.append('/t.jsonl', event('content_delta', { turnId: 't0', text: 'tail' }))
   const committed = log.append('/t.jsonl', event('user_message', { turnId: 't1', text: 'hi' }), undefined, [
     { receipt: { id: 'cmd-1', at: 1, turnId: 't1' } },
@@ -336,35 +280,6 @@ test('an event and the receipt it commits with are one write, after the deltas q
   )
 })
 
-test('a batch the disk takes only part of is cut back off the real file, opened to append', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-event-log-'))
-  try {
-    const path = join(root, 'agent.jsonl')
-    await writeFile(path, '{"seq":1}\n')
-    const appending = await open(path, 'a')
-    try {
-      // A disk that fills halfway through the write.
-      const filling = {
-        stat: () => appending.stat(),
-        writeFile: async (text: string) => {
-          await appending.appendFile(text.slice(0, text.length / 2))
-          throw new Error('ENOSPC: no space left on device')
-        },
-      }
-      // How the log's own stream cuts it, while its append handle stays open.
-      const cut = (size: number) => truncateConversationLog(root, path, size)
-      await assert.rejects(writeWhole(filling, '{"seq":2}\n{"receipt":{"id":"c"}}\n', cut), /ENOSPC/)
-      assert.equal(await readFile(path, 'utf8'), '{"seq":1}\n', 'nothing of the failed batch is left')
-      await appending.appendFile('{"seq":3}\n')
-      assert.equal(await readFile(path, 'utf8'), '{"seq":1}\n{"seq":3}\n', 'and the next append follows on')
-    } finally {
-      await appending.close()
-    }
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
 test('a merged record whose parts do not add up is read as one delta, not split wrongly', () => {
   const record = {
     ...event('content_delta', { turnId: 't1', text: 'abc' }),
@@ -386,13 +301,10 @@ test('an append settles only once its batch is on disk', async () => {
   })
   const writes: string[] = []
   const log = new ConversationEventLog({
-    openStream: async () => ({
-      write: async (chunk) => {
-        await gate
-        writes.push(chunk)
-      },
-      close: async () => undefined,
-    }),
+    write: async (_path, _root, rows) => {
+      await gate
+      writes.push(rows.map((row) => row.body).join('\n'))
+    },
   })
   let settled = false
   const appended = log.append('/t.jsonl', event('turn_started', { turnId: 't1' })).then((outcome) => {
@@ -409,7 +321,7 @@ test('an append settles only once its batch is on disk', async () => {
 
 test('a partial tool output replaces the queued one for its tool, and the final output replaces both', async () => {
   const streams = recordingStreams()
-  const log = new ConversationEventLog({ openStream: streams.openStream, flushDelayMs: 60_000 })
+  const log = new ConversationEventLog({ write: streams.write, flushDelayMs: 60_000 })
   const output = (preview: string, partial: boolean, toolUseId = 'tool-a') =>
     log.append('/t.jsonl', {
       ...event('tool_output', { turnId: 't1', toolUseId, preview, ...(partial ? { partial: true } : {}) }),
@@ -439,7 +351,7 @@ test('a partial tool output replaces the queued one for its tool, and the final 
 test('partial tool output waits longer than deltas, but a delta behind it takes it along', async () => {
   vi.useFakeTimers()
   const streams = recordingStreams()
-  const log = new ConversationEventLog({ openStream: streams.openStream, toolOutputFlushDelayMs: 500 })
+  const log = new ConversationEventLog({ write: streams.write, toolOutputFlushDelayMs: 500 })
   void log.append('/t.jsonl', event('tool_output', { turnId: 't1', toolUseId: 'a', preview: 'p', partial: true }))
   await vi.advanceTimersByTimeAsync(DEFAULT_DELTA_FLUSH_MS)
   assert.equal(streams.writes.length, 0)
@@ -450,18 +362,6 @@ test('partial tool output waits longer than deltas, but a delta behind it takes 
     streams.lines().map((line) => line.type),
     ['tool_output', 'content_delta'],
   )
-})
-
-test('closeAll also closes a stream an append opened while the first pass was closing', async () => {
-  const streams = recordingStreams()
-  const log = new ConversationEventLog({ openStream: streams.openStream })
-  await log.append('/a.jsonl', event('turn_started', { turnId: 't1' }))
-  const closing = log.closeAll()
-  const late = log.append('/b.jsonl', event('turn_started', { turnId: 't2' }))
-  await closing
-  assert.equal(await late, 'written')
-  assert.equal(streams.opened.length, 2)
-  assert.equal(streams.closed, 2)
 })
 
 test('findLast with a byte budget stops looking past it', async () => {
@@ -476,7 +376,7 @@ test('findLast with a byte budget stops looking past it', async () => {
     const recent = { ...event('tool_started', { toolUseId: 'recent' }), seq: 42 }
     const lines = [old, ...filler, recent].map((item) => JSON.stringify(item)).join('\n')
     await writeFile(filePath, `${lines}\n`, { mode: 0o600 })
-    const reader = new ConversationTranscriptReader()
+    const reader = new ConversationTranscriptReader(createChatLogs({ database: testChatDatabase() }))
     const find = (id: string, maxBytes?: number) =>
       reader.findLast(root, filePath, (item) => item.payload?.toolUseId === id, maxBytes)
     assert.equal((await find('recent', 4096))?.seq, 42)
@@ -501,14 +401,20 @@ test('a reconnect behind by more bytes than a snapshot costs is sent a snapshot,
     await writeFile(filePath, `${[...small, big, last].map((item) => JSON.stringify(item)).join('\n')}\n`, {
       mode: 0o600,
     })
-    const reader = new ConversationTranscriptReader({ catchUpEvents: 2000, catchUpBytes: 16 * 1024 })
+    const reader = new ConversationTranscriptReader(createChatLogs({ database: testChatDatabase() }), {
+      catchUpEvents: 2000,
+      catchUpBytes: 16 * 1024,
+    })
     const first = await reader.sync(root, filePath, {})
     const generation = first.generation
     const nearby = await reader.sync(root, filePath, { afterSeq: 5, generation })
     assert.equal(nearby.kind, 'events', 'one event behind, and small enough: the missed event')
     const behind = await reader.sync(root, filePath, { afterSeq: 4, generation })
     assert.equal(behind.kind, 'snapshot', 'two events behind, but more bytes than the budget: a snapshot')
-    const counted = new ConversationTranscriptReader({ catchUpEvents: 1, catchUpBytes: 1024 * 1024 })
+    const counted = new ConversationTranscriptReader(createChatLogs({ database: testChatDatabase() }), {
+      catchUpEvents: 1,
+      catchUpBytes: 1024 * 1024,
+    })
     assert.equal((await counted.sync(root, filePath, { afterSeq: 4, generation })).kind, 'snapshot', 'and by count')
   } finally {
     await rm(root, { recursive: true, force: true })
