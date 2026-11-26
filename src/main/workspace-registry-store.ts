@@ -16,11 +16,7 @@
  * session, and the next write writes every row that differs again.
  */
 import type { StudioDatabase } from '../server/db/database'
-import {
-  parseWorkspaceRegistryFile,
-  serializeWorkspaceRegistryContent,
-  type WorkspaceRegistryFile,
-} from '../shared/workspace-registry'
+import { parseWorkspaceRegistryFile, type WorkspaceRegistryFile } from '../shared/workspace-registry'
 
 /** The file builds before the database kept the registry in, under the data folder; read once, by the import. */
 export const WORKSPACE_REGISTRY_FILE_NAME = 'workspace-registry.json'
@@ -57,11 +53,15 @@ function headOf(file: WorkspaceRegistryFile): string {
 
 export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps): WorkspaceRegistryStore {
   const db = deps.database
-  // What the database holds now, row by row: a write changes only what differs.
+  // What the database holds now, row by row: a write changes only what differs,
+  // and one that differs in nothing is no write.
   let writtenHead: string | null = null
   let writtenRows = new Map<string, { position: number; body: string }>()
-  // The content key of the newest file accepted for writing, so an unchanged one is no write.
-  let acceptedContent: string | null = null
+  // Whether `writtenRows` is known to be every row there is: only once the
+  // registry loaded or a write replaced them all. Until then (none read, or
+  // one that did not read) the first write replaces every row, so a record
+  // left from the registry that did not read never comes back at a restart.
+  let rowsKnown = false
   let waiting: WorkspaceRegistryFile | null = null
   let writing: Promise<void> = Promise.resolve()
   let busy = false
@@ -144,7 +144,7 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps): 
     }
     writtenHead = head[0]!.body
     writtenRows = new Map(rows.map((row) => [row.id, { position: row.position, body: row.body }]))
-    acceptedContent = serializeWorkspaceRegistryContent(parsed.file)
+    rowsKnown = true
     return { status: 'loaded', file: parsed.file, droppedRecords: parsed.droppedRecords }
   }
 
@@ -161,36 +161,38 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps): 
   }
 
   async function persist(file: WorkspaceRegistryFile): Promise<void> {
-    const head = headOf(file)
-    const rows = new Map(
-      file.workspaces.map((record, position) => [record.id, { position, body: JSON.stringify(record) }]),
-    )
-    const statements: Array<{ sql: string; params: Array<string | number> }> = []
-    if (head !== writtenHead)
-      statements.push({
-        sql: 'INSERT INTO chat_registry (id, body) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET body = excluded.body',
-        params: [head],
-      })
-    for (const id of writtenRows.keys())
-      if (!rows.has(id)) statements.push({ sql: 'DELETE FROM chats WHERE id = ?', params: [id] })
-    for (const [id, row] of rows) {
-      const before = writtenRows.get(id)
-      if (before && before.body === row.body && before.position === row.position) continue
-      statements.push({
-        sql: `INSERT INTO chats (id, position, body) VALUES (?, ?, ?)
-              ON CONFLICT (id) DO UPDATE SET position = excluded.position, body = excluded.body`,
-        params: [id, row.position, row.body],
-      })
-    }
-    if (statements.length === 0) return
     try {
+      const head = headOf(file)
+      const rows = new Map(
+        file.workspaces.map((record, position) => [record.id, { position, body: JSON.stringify(record) }]),
+      )
+      const statements: Array<{ sql: string; params: Array<string | number> }> = []
+      if (head !== writtenHead)
+        statements.push({
+          sql: 'INSERT INTO chat_registry (id, body) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET body = excluded.body',
+          params: [head],
+        })
+      if (!rowsKnown) statements.push({ sql: 'DELETE FROM chats', params: [] })
+      const before = rowsKnown ? writtenRows : new Map<string, { position: number; body: string }>()
+      for (const id of before.keys())
+        if (!rows.has(id)) statements.push({ sql: 'DELETE FROM chats WHERE id = ?', params: [id] })
+      for (const [id, row] of rows) {
+        const was = before.get(id)
+        if (was && was.body === row.body && was.position === row.position) continue
+        statements.push({
+          sql: `INSERT INTO chats (id, position, body) VALUES (?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET position = excluded.position, body = excluded.body`,
+          params: [id, row.position, row.body],
+        })
+      }
+      if (statements.length === 0) return
       await db.batch(statements)
       writtenHead = head
       writtenRows = rows
+      rowsKnown = true
     } catch (error) {
       // Never a silent success: in-memory state stays authoritative for the
       // session, and the next write writes every row that differs again.
-      acceptedContent = null
       deps.logDiagnostic?.({
         level: 'warning',
         title: 'Workspace registry not persisted',
@@ -205,12 +207,15 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps): 
   function drain(): Promise<void> {
     busy = true
     writing = (async () => {
-      while (waiting) {
-        const file = waiting
-        waiting = null
-        await persist(file)
+      try {
+        while (waiting) {
+          const file = waiting
+          waiting = null
+          await persist(file)
+        }
+      } finally {
+        busy = false
       }
-      busy = false
     })()
     return writing
   }
@@ -219,14 +224,11 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps): 
     read,
     /**
      * Write a file: committed in its own transaction, behind any write in
-     * flight. A content-identical file is no write: the authority persists
-     * after every accepted mutation, and an unchanged registry is not a new
-     * revision.
+     * flight. Only the rows that differ from what was written are written, so
+     * an unchanged registry is no write; nothing serializes the whole file to
+     * find that out.
      */
     write(file) {
-      const content = serializeWorkspaceRegistryContent(file)
-      if (content === acceptedContent) return
-      acceptedContent = content
       waiting = file
       if (!busy) void drain()
     },
@@ -245,7 +247,9 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps): 
 /**
  * The registry the file builds before the database wrote holds, rows and
  * head apart (the import), read with the store's own parser: a record it
- * would drop is counted in `skipped`. Null when the file does not read.
+ * drops as malformed is counted in `skipped` (one of a retired mode is left
+ * out without being counted, as a load leaves it out quietly). Null when the
+ * file does not read.
  */
 export function readWorkspaceRegistryFile(
   raw: string,
@@ -260,7 +264,7 @@ export function readWorkspaceRegistryFile(
   return {
     head: headOf(parsed.file),
     records: parsed.file.workspaces.map((record) => ({ id: record.id, body: JSON.stringify(record) })),
-    skipped: parsed.droppedRecords.length + parsed.retiredRecordIds.length,
+    skipped: parsed.droppedRecords.length,
   }
 }
 
