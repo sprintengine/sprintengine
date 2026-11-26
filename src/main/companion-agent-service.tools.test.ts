@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -35,6 +36,7 @@ async function setup(): Promise<{
 }> {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'companion-tools-'))
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     secretStore: {

@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -72,6 +73,7 @@ test('a sent image is recorded by reference, replays after a restart, and goes w
   const conversation = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const create = () =>
     new ConversationRuntime({
+    database: testChatDatabase(),
       adapters: [createMockConversationProvider()],
       getProviderById: () => undefined,
       attachmentStore: new ConversationAttachmentStore(userData),
@@ -119,6 +121,7 @@ test('an attachment store that cannot write leaves the turn to go ahead without 
   // A file where the store's directory would go: every write fails.
   await writeFile(join(userData, 'conversation-attachments'), 'not a directory')
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     attachmentStore: new ConversationAttachmentStore(userData),
@@ -213,6 +216,7 @@ test('a sent image’s saved file is named to the agent, and its folder is one t
   const turns: Array<{ message: string }> = []
   const store = new ConversationAttachmentStore(userData)
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...mock,

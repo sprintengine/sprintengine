@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -153,6 +154,7 @@ test('conversationSeam', async () => {
         permissionCalls: string[]
       } = { base: null, sink: null, permissionCalls: [] }
       const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
         adapters: [createSinkAdapter(capture)],
         getProviderById: () => undefined,
         secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) } as never,
@@ -283,6 +285,7 @@ test('conversationSeam', async () => {
         permissionCalls: string[]
       } = { base: null, sink: null, permissionCalls: [] }
       const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
         adapters: [createSinkAdapter(capture)],
         getProviderById: () => undefined,
         secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) } as never,

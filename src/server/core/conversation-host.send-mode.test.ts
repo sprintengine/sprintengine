@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -17,7 +18,8 @@ async function fixture(options: { steer?: boolean } = {}) {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-send-mode-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const adapter = createMockConversationProvider({ steer: options.steer ?? true })
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
   const holds: string[] = []
   const heldMessages: ConversationHeldMessages = {
     hold: (_chat, text) => {
@@ -107,7 +109,8 @@ test('a steer in a mode of its own that the turn cannot take is refused busy, no
 test('a sub-agent is no chat of the list: it belongs to its parent', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-list-subagent-'))
   const adapter = createMockConversationProvider()
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
   const workspaceId = 'workspace'
   const host = createConversationGatewayHost(
     runtime,

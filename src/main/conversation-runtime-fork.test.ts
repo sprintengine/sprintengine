@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -143,6 +144,7 @@ async function setup(options: Parameters<typeof forkingProvider>[1] & { transcri
   }
   const open = () => {
     const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
       adapters: [forkingProvider(record, options)],
       getProviderById: () => undefined,
       secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },

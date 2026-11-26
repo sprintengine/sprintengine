@@ -1,4 +1,4 @@
-import { keepTestApprovalsIn } from '../../tests/studio-database'
+import { keepTestApprovalsIn, testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -165,6 +165,7 @@ function createChats() {
     payload: Record<string, unknown> = {},
   ): ConversationEvent => ({ id: '', ...base, type, createdAt: 0, payload })
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     getProviderById: () => undefined,
     secretStore: {
       getStatus: async () => ({ ok: false, message: 'unused' }),

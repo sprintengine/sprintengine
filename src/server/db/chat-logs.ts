@@ -13,9 +13,11 @@ import type { SqlParams } from './sqlite'
 // command committed. A merged run of deltas is one row, keyed by its last
 // delta's number, with its first's beside it, as it was one line on disk.
 //
-// A log is named by the last two parts of the transcript path builds before
-// the database wrote (`<chat>/<agent>`), so a chat that moves to another
-// project keeps its log. That file, where it is, is the log's history from
+// A log is named as the transcript builds before the database wrote was:
+// `<store>/<chat>/<agent>`, the store being the project's
+// (`~/.sprintengine/workspaces/<store>/conversations/<chat>/<agent>.jsonl`).
+// A chat moved to another project has its rows renamed with it
+// (`moveChatLogs`). That file, where it is, is the log's history from
 // before the upgrade: it is imported the first time the log is taken up (a
 // read, an append, a receipt lookup) or by the background pass, once, in one
 // transaction, and never read again (owner decision 2026-11-25). An import
@@ -44,9 +46,50 @@ export type ChatLogInfo = { generation: string; lastSeq: number }
 /** The generation of a log nothing was written to yet (the reader's word for it). */
 export const EMPTY_CHAT_GENERATION = 'empty'
 
-/** A log's identity in the database, from the path a transcript of it was kept at. */
+/** A chat's identity in the database, from its store folder (`<store>/conversations/<chat>`): `<store>/<chat>`. */
+export function chatKey(chatFolder: string): string {
+  return `${basename(dirname(dirname(chatFolder)))}/${basename(chatFolder)}`
+}
+
+/** A log's identity in the database, from the path a transcript of it was kept at: `<store>/<chat>/<agent>`. */
 export function chatLogKey(path: string): string {
-  return `${basename(dirname(path))}/${basename(path).replace(/\.jsonl$/u, '')}`
+  return `${chatKey(dirname(path))}/${basename(path).replace(/\.jsonl$/u, '')}`
+}
+
+/**
+ * The statements that rename a chat's rows from one store's name to
+ * another's (`<from>/…` to `<to>/…`): what moving its store folder to
+ * another project was for its files. One transaction.
+ */
+export function moveChatStatements(from: string, to: string): Array<{ sql: string; params: SqlParams }> {
+  const prefix = `${from}/`
+  const range = [prefix, `${from}0`] as const
+  const renamed = (column: string) => `? || substr(${column}, ${prefix.length + 1})`
+  const statements: Array<{ sql: string; params: SqlParams }> = []
+  for (const table of ['chat_logs', 'chat_events', 'chat_receipts', 'chat_threads', 'chat_search_docs', 'tool_outputs'])
+    statements.push({
+      sql: `UPDATE ${table} SET log_key = ${renamed('log_key')} WHERE log_key >= ? AND log_key < ?`,
+      params: [`${to}/`, ...range],
+    })
+  for (const table of ['chat_threads', 'chat_search_docs'])
+    statements.push({ sql: `UPDATE ${table} SET chat_key = ? WHERE chat_key = ?`, params: [to, from] })
+  statements.push({
+    sql: `UPDATE tool_details SET log_key = ${renamed('log_key')}, detail_key = ${renamed('detail_key')}
+          WHERE log_key >= ? AND log_key < ?`,
+    params: [`${to}/`, `${to}/`, ...range],
+  })
+  statements.push({
+    sql: `UPDATE tool_outputs SET detail_key = ${renamed('detail_key')} WHERE detail_key >= ? AND detail_key < ?`,
+    params: [`${to}/`, ...range],
+  })
+  // What was imported stays imported under its new name: the files move too.
+  for (const kind of ['transcript', 'tool'])
+    statements.push({
+      sql: `UPDATE imports SET source = ? || substr(source, ${kind.length + 1 + prefix.length + 1})
+            WHERE source >= ? AND source < ?`,
+      params: [`${kind}:${to}/`, `${kind}:${prefix}`, `${kind}:${from}0`],
+    })
+  return statements
 }
 
 /**

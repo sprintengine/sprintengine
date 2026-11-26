@@ -1,7 +1,7 @@
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { importSource } from '../db/chat-logs'
+import { chatLogKey, importSource } from '../db/chat-logs'
 import type { StudioDatabase } from '../db/database'
 
 import {
@@ -69,7 +69,7 @@ export async function chatSourceFiles(input: {
   }
   const inPlace = store !== null && distroOfUncPath(store)?.toLowerCase() === input.distro.toLowerCase()
   if (store && !inPlace) {
-    const log = `${conversationStorageSegment(input.workspaceId)}/${agent}`
+    const log = chatLogKey(join(store, `${agent}.jsonl`))
     const out = join(input.dataDir, HANDOVER_EXPORTS_DIRNAME, conversationStorageSegment(input.workspaceId), agent)
     await rm(out, { recursive: true, force: true })
     // Not imported here yet: its transcript and details are still the files builds before the database wrote.

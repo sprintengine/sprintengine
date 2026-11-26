@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -154,6 +155,7 @@ async function setup(script: { turn?: TurnScript; hold?: Promise<void> } = {}) {
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const open = async () => {
     const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
       adapters: [handingProvider(record, script)],
       getProviderById: () => undefined,
       secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },
@@ -413,6 +415,7 @@ test('a provider that cannot hand off is refused', async () => {
   const adapter = handingProvider(record)
   delete adapter.handoff
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [{ ...adapter, capabilities: { ...CAPABILITIES, handoff: false } }],
     getProviderById: () => undefined,
     secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },

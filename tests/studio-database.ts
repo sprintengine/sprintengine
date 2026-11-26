@@ -92,3 +92,12 @@ export async function savedRecordRows(
   await database.run('SELECT 1')
   return database.all<{ id: string; body: string }>(`SELECT id, body FROM ${table} ORDER BY position`)
 }
+
+/**
+ * The database a test's chats are kept in: the one beside the store home the
+ * test setup points every chat's store at, so a runtime made again in the
+ * same test file (a restart) reads the history the one before it wrote.
+ */
+export function testChatDatabase(): StudioDatabase {
+  return testDatabaseAt(process.env.SPRINTENGINE_STORE_HOME?.trim() || tmpdir())
+}

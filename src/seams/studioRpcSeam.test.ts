@@ -1,4 +1,4 @@
-import { testDatabaseAt } from '../../tests/studio-database'
+import { testDatabaseAt, testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -122,6 +122,7 @@ beforeAll(async () => {
     payload: Record<string, unknown> = {},
   ): ConversationEvent => ({ id: '', ...base, type, createdAt: 0, payload })
   runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     getProviderById: () => undefined,
     secretStore: {
       getStatus: async () => ({ ok: false, message: 'unused' }),

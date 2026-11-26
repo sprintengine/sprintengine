@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import {
   existsSync,
@@ -143,6 +144,7 @@ beforeAll(async () => {
 
   const provider = stepProvider()
   runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider],
     getProviderById: () => undefined,
     attachmentStore: new ConversationAttachmentStore(dataDir),

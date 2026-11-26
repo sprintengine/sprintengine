@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -109,6 +110,7 @@ function childProvider() {
 async function setup(now: () => number = () => 1_000) {
   const provider = childProvider()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     secretStore: {

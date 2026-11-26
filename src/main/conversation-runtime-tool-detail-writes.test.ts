@@ -1,3 +1,5 @@
+import { ToolDetailStore } from './conversation-tool-details'
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -7,17 +9,18 @@ import { ConversationRuntime } from './conversation-runtime'
 import { createMockConversationProvider } from './providers/mock-conversation-provider'
 import type { ConversationToolDetail } from '../shared/conversation-runtime'
 
-const detailWrites = vi.hoisted(() => [] as { path: string; output: unknown }[])
+const detailWrites: { path: string; output: unknown }[] = []
 
-vi.mock('./conversation-tool-details', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./conversation-tool-details')>()
-  return {
-    ...actual,
-    writeToolDetail: async (workspaceRoot: string, filePath: string, value: ConversationToolDetail) => {
-      detailWrites.push({ path: filePath, output: value.output })
-      await actual.writeToolDetail(workspaceRoot, filePath, value)
-    },
-  }
+// Every write of a detail, as the store is asked for it.
+const write = ToolDetailStore.prototype.write
+vi.spyOn(ToolDetailStore.prototype, 'write').mockImplementation(async function (
+  this: ToolDetailStore,
+  workspaceRoot: string,
+  filePath: string,
+  value: ConversationToolDetail,
+) {
+  detailWrites.push({ path: filePath, output: value.output })
+  await write.call(this, workspaceRoot, filePath, value)
 })
 
 const PARTIALS = 200
@@ -28,6 +31,7 @@ test('a running tool re-sent whole on every update is written a couple of times,
   const mock = createMockConversationProvider()
   const lines = Array.from({ length: PARTIALS }, (_, index) => `line ${index} `.repeat(40))
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...mock,
@@ -101,6 +105,7 @@ async function heldToolTurn() {
   let sawSecond!: () => void
   const second = new Promise<void>((resolve) => (sawSecond = resolve))
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...mock,

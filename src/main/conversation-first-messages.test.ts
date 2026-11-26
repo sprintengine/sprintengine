@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'vitest'
 
-import { openTestDatabase } from '../../tests/studio-database'
+import { openTestDatabase, testChatDatabase } from '../../tests/studio-database'
 import type { StudioDatabase } from '../server/db/database'
 
 import type { ConversationSessionActionResult, ConversationSessionSummary } from '../shared/conversation-runtime'
@@ -147,7 +147,8 @@ test('a first message a stop cut off is sent at the next start, and one that wen
     at: 1,
   })
   await mkdir(workspaceRoot)
-  const before = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const before = new ConversationRuntime({
+    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
   const sessions = new Map<string, string>()
   try {
     const store = storeAt(filePath)
@@ -178,6 +179,7 @@ test('a first message a stop cut off is sent at the next start, and one that wen
   }
   // Where the chat keeps the pictures its messages carried, so the transcript names them.
   const after = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [adapter],
     getProviderById: () => undefined,
     attachmentStore: new ConversationAttachmentStore(dir),
@@ -411,6 +413,7 @@ test('a first message sent again at the next start meets the prompt hooks as a r
     bind: () => undefined,
   }
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [adapter],
     getProviderById: () => undefined,
     extensionHooks: hooks,

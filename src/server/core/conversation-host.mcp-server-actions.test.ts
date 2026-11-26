@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -17,7 +18,8 @@ async function fixture(options: { start?: boolean } = {}) {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-mcp-server-actions-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const adapter = createMockConversationProvider({ mcpServerActions: ['reconnect', 'enable', 'disable', 'sign-in'] })
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
   const host = createConversationGatewayHost(
     runtime,
     (id) => (id === key.workspaceId ? workspaceRoot : null),

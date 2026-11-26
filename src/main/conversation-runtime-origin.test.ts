@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -16,6 +17,7 @@ test('a message Studio sends is recorded with its origin and is not the person w
   const mock = createMockConversationProvider()
   let clock = 1_000_000
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     now: () => clock,
     adapters: [
       {
@@ -74,6 +76,7 @@ test('a long reply keeps its opening for the sidebar and its end for a launch no
   const mock = createMockConversationProvider()
   const chunks = ['Opening words. ', ...Array.from({ length: 60 }, (_, index) => `Step ${index} done. `), 'All green.']
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...mock,

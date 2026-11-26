@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -3336,6 +3337,7 @@ test('a Stop after a message steered into the last reply leaves no stray turn an
   const h = scriptedHarness()
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'claude-stop-runtime-'))
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [h.adapter],
     getProviderById: () => undefined,
     secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },

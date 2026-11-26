@@ -1,3 +1,5 @@
+import { testChatDatabase } from '../../tests/studio-database'
+import { createChatLogs } from '../server/db/chat-logs'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -32,6 +34,7 @@ async function chat() {
   const clock = { now: Date.UTC(2026, 9, 20, 12, 15) }
   const mock = createMockConversationProvider()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     now: () => clock.now,
     // A turn that completes on its own, with no approval to answer.
     adapters: [{ ...mock, sendTurn: (input) => mock.sendTurn({ ...input, message: '/tools' }) }],
@@ -49,7 +52,7 @@ async function chat() {
   const receipts = async () => {
     await runtime.flushTranscripts()
     const log = workspaceStorePath(workspaceRoot, 'conversations', 'workspace', 'agent.jsonl')
-    return [...(await readConversationReceipts(workspaceRoot, log)).keys()]
+    return [...(await readConversationReceipts(createChatLogs({ database: testChatDatabase() }), workspaceRoot, log)).keys()]
   }
   return { runtime, sessionId: started.session.sessionId, clock, messages, receipts }
 }

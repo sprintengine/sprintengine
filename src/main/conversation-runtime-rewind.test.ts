@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -98,6 +99,7 @@ async function setup(options: { rewind?: boolean; cursors?: boolean } = {}) {
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const open = async () => {
     const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
       adapters: [rewindingProvider(record, options)],
       getProviderById: () => undefined,
       secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },

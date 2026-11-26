@@ -2,7 +2,7 @@ import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type { StudioDatabase } from '../server/db/database'
-import type { ChatLogs } from '../server/db/chat-logs'
+import { chatKey, type ChatLogs } from '../server/db/chat-logs'
 import { workspaceStorePath, workspaceStoreReady } from './workspace-store'
 import { CONVERSATION_MAX_REPLY_PREVIEW } from '../../packages/conversation-protocol/src/public'
 import {
@@ -69,7 +69,7 @@ export class ConversationIndex {
     private readonly hooks: { flush?: (path: string) => Promise<void>; close?: (path: string) => Promise<void> } = {},
   ) {}
   private async serialized<T>(key: ConversationWorkspaceKey, work: () => Promise<T>): Promise<T> {
-    const id = segment(key.workspaceId),
+    const id = chatOf(key),
       previous = this.queues.get(id) ?? Promise.resolve()
     const next = previous.catch(() => undefined).then(work)
     this.queues.set(id, next)
@@ -86,7 +86,7 @@ export class ConversationIndex {
       for (const log of logs) await this.catchUp(key, log)
       const rows = await this.database.all<{ thread: string | null }>(
         'SELECT thread FROM chat_threads WHERE chat_key = ?',
-        [segment(key.workspaceId)],
+        [chatOf(key)],
       )
       return sorted(rows.flatMap((row) => (row.thread ? [JSON.parse(row.thread) as ConversationThread] : [])))
     })
@@ -99,7 +99,7 @@ export class ConversationIndex {
       const path = conversationIndexTranscriptPath(key)
       await this.hooks.flush?.(path)
       await this.history.ensure(path, key.workspaceRoot)
-      const log = logKeyOf(key, segment(key.agentId))
+      const log = `${chatOf(key)}/${segment(key.agentId)}`
       await this.catchUp(key, log)
       const row = await this.database.get<{ thread: string | null }>('SELECT thread FROM chat_threads WHERE log_key = ?', [
         log,
@@ -120,7 +120,7 @@ export class ConversationIndex {
       for (const log of await this.logsOf(input)) await this.catchUp(input, log)
     })
     options.signal?.throwIfAborted()
-    const chat = segment(input.workspaceId)
+    const chat = chatOf(input)
     // A trigram index finds three characters or more; a shorter query reads the chat's rows.
     const rows =
       [...query].length >= 3
@@ -173,7 +173,7 @@ export class ConversationIndex {
    * imported before it is listed.
    */
   private async logsOf(key: ConversationWorkspaceKey): Promise<string[]> {
-    const chat = segment(key.workspaceId)
+    const chat = chatOf(key)
     if (!this.scanned.has(chat)) {
       // Waits out the store's one-time move, so a listing right after an upgrade sees what it brings.
       await workspaceStoreReady(key.workspaceRoot)
@@ -209,7 +209,7 @@ export class ConversationIndex {
     const fold = readFold(kept)
     const docs = new Map<string, Doc>()
     const replied = new Set<string>()
-    const path = join(directory(key), `${log.slice(log.indexOf('/') + 1)}.jsonl`)
+    const path = join(directory(key), `${log.slice(log.lastIndexOf('/') + 1)}.jsonl`)
     let folded = kept?.folded_seq ?? 0
     for (;;) {
       const rows = await this.history.oldest(path, key.workspaceRoot, folded, FOLD_ROWS)
@@ -238,7 +238,7 @@ export class ConversationIndex {
       if (fold.costs.size) fold.thread.totalCostUsd = [...fold.costs.values()].reduce((sum, cost) => sum + cost, 0)
       else delete fold.thread.totalCostUsd
     }
-    const chat = segment(key.workspaceId)
+    const chat = chatOf(key)
     const agentId = fold.thread?.agentId ?? decodeAgent(log)
     await this.database.transaction(async (tx) => {
       for (const turnId of replied) {
@@ -282,13 +282,14 @@ function requireWorkspace(key: ConversationWorkspaceKey): void {
   if (!key.workspaceRoot.trim() || !key.workspaceId.trim()) throw new Error('Workspace identity is required.')
 }
 
-function logKeyOf(key: ConversationWorkspaceKey, agentSegment: string): string {
-  return `${segment(key.workspaceId)}/${agentSegment}`
+/** A chat's name in the database: its store's and its own (`<store>/<chat>`). */
+function chatOf(key: ConversationWorkspaceKey): string {
+  return chatKey(directory(key))
 }
 
 /** The agent a log is named for. A name this app did not encode (`50%`) is used as it is. */
 function decodeAgent(log: string): string {
-  const name = log.slice(log.indexOf('/') + 1)
+  const name = log.slice(log.lastIndexOf('/') + 1)
   try {
     return decodeURIComponent(name)
   } catch {

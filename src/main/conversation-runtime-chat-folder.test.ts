@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -22,6 +23,7 @@ test('a session start and each turn ask for the chat’s folder first, and a ref
   let refusal: string | null = null
   const mock = createMockConversationProvider()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     // A turn that ends at once, so the session is resting before the next.
     adapters: [{ ...mock, sendTurn: (input) => mock.sendTurn({ ...input, message: '/tools' }) }],
     getProviderById: () => undefined,
@@ -81,6 +83,7 @@ test('the chat’s folder is held from the folder check until the turn is under 
   const reasons = async (): Promise<string[]> => (await leases.holders(workspaceRoot)).map((hold) => hold.reason)
   const mock = createMockConversationProvider()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...mock,
@@ -143,6 +146,7 @@ test('a turn whose folder is being returned waits for the return, then starts', 
   let asked = 0
   const mock = createMockConversationProvider()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [{ ...mock, sendTurn: (input) => mock.sendTurn({ ...input, message: '/tools' }) }],
     getProviderById: () => undefined,
     worktreeLeases: leases,
@@ -176,7 +180,8 @@ test('a turn whose folder is being returned waits for the return, then starts', 
 test('a revert holds its folder for its whole length, and waits for a return under way', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-chat-folder-'))
   const leases = createWorktreeLeases()
-  const runtime = new ConversationRuntime({ getProviderById: () => undefined, worktreeLeases: leases })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(), getProviderById: () => undefined, worktreeLeases: leases })
   try {
     const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
     const returning = exclusive(await leases.tryExclusive(workspaceRoot, 'the pool is returning this worktree'))
@@ -208,6 +213,7 @@ test('stopping a chat abandons its turn’s wait for the folder, and quitting ab
   let asked = 0
   const mock = createMockConversationProvider()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [{ ...mock, sendTurn: (input) => mock.sendTurn({ ...input, message: '/tools' }) }],
     getProviderById: () => undefined,
     worktreeLeases: leases,
@@ -260,6 +266,7 @@ test('Stop abandons a message waiting for its folder, and deleting a chat abando
   let asked = 0
   const mock = createMockConversationProvider()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [{ ...mock, sendTurn: (input) => mock.sendTurn({ ...input, message: '/tools' }) }],
     getProviderById: () => undefined,
     worktreeLeases: leases,
@@ -322,6 +329,7 @@ test('a send that loses the turn, or finds the folder held, is busy, and the sam
   let race: { holds: number } | null = null
   const leases = createWorktreeLeases()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     // A turn that ends when the test lets it.
     adapters: [
       {

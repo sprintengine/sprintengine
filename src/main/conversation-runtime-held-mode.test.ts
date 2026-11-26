@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -21,6 +22,7 @@ async function fixture(held: 'plan' | 'ask' | undefined, capabilities = {}) {
     return sendTurn(input)
   }
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [adapter],
     getProviderById: () => undefined,
     heldChatMode: () => held,

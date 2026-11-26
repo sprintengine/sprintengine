@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -103,7 +104,8 @@ async function fixture() {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-usage-limits-'))
   const key = { workspaceRoot, ...CHAT }
   const adapter = createMockConversationProvider()
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
   const resumes = resumesStandIn()
   const usage = usageStandIn()
   const host = createConversationGatewayHost(
@@ -192,6 +194,7 @@ test("Resume at reset reaches this machine's resumes, Always switches it on for 
 test('a desktop built without usage limits watches none and refuses the command in words', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-usage-limits-'))
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
   })

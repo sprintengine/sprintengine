@@ -1,3 +1,5 @@
+import { testChatDatabase } from '../../tests/studio-database'
+import { createChatLogs } from '../server/db/chat-logs'
 import assert from 'node:assert/strict'
 import { workspaceStorePath } from './workspace-store'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -25,13 +27,14 @@ afterEach(async () => {
 /** The command ids the chat's log holds receipts for. */
 async function receiptIds(root: string): Promise<string[]> {
   const log = workspaceStorePath(root, 'conversations', 'workspace', 'agent.jsonl')
-  return [...(await readConversationReceipts(root, log)).keys()]
+  return [...(await readConversationReceipts(createChatLogs({ database: testChatDatabase() }), root, log)).keys()]
 }
 
 test('a send refused as busy writes no receipt, and the same id runs once the turn is over', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-busy-receipts-'))
   roots.add(workspaceRoot)
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
   })

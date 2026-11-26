@@ -1,5 +1,6 @@
 import { basename, dirname } from 'node:path'
 
+import { chatLogKey } from '../server/db/chat-logs'
 import type { StudioDatabase } from '../server/db/database'
 import { readConversationStorage } from './conversation-persistence'
 import type {
@@ -23,11 +24,11 @@ function legacyOutputPath(detailPath: string): string {
 
 /**
  * A detail's name in the database, from the path builds before it kept the
- * detail at (`<chat>/<agent>.tools/<tool use>.json`): `<chat>/<agent>/<tool
- * use>`, its log's name and the tool use's.
+ * detail at (`<store>/conversations/<chat>/<agent>.tools/<tool use>.json`):
+ * its log's name (`chatLogKey`) and the tool use's.
  */
 function detailKey(path: string): { detail: string; log: string } {
-  const log = `${basename(dirname(dirname(path)))}/${basename(dirname(path)).replace(/\.tools$/u, '')}`
+  const log = chatLogKey(dirname(path).replace(/\.tools$/u, '.jsonl'))
   return { detail: `${log}/${basename(path).replace(/\.json$/u, '')}`, log }
 }
 

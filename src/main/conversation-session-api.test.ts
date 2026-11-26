@@ -38,7 +38,8 @@ function event(
 async function fixture(adapter = createMockConversationProvider()) {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
   const started = await runtime.startSession({ ...key, providerId: adapter.id, modelId: adapter.listModels()[0] })
   assert.equal(started.ok, true)
   return {
@@ -274,6 +275,7 @@ test('concurrent duplicate commands and receipts after restart produce one user 
     assert.deepEqual(first, second)
     await f.runtime.shutdown()
     const restarted = new ConversationRuntime({
+    database: testChatDatabase(),
       adapters: [createMockConversationProvider()],
       getProviderById: () => undefined,
     })
@@ -328,6 +330,7 @@ test('a command id named for a different command is refused, while the first run
     assert.equal('fingerprint' in (await send('/tools', 'fp-tools')), false)
     await f.runtime.shutdown()
     const restarted = new ConversationRuntime({
+    database: testChatDatabase(),
       adapters: [createMockConversationProvider()],
       getProviderById: () => undefined,
     })
@@ -373,6 +376,7 @@ test('a crash after a send is committed, before it is answered, never sends it t
   }
   const f = await fixture(adapter)
   const restarted = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
   })
@@ -422,11 +426,13 @@ test('a start closes every turn the last run left open, without anyone opening t
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const first = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [hanging],
     getProviderById: () => undefined,
     outbox: new ConversationOutbox(dataDir),
   })
   const restarted = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     outbox: new ConversationOutbox(dataDir),
@@ -484,6 +490,7 @@ test('a send goes when the list of open turns cannot be written: it is an aid, n
   const blocked = join(dataDir, 'data')
   await writeFile(blocked, 'not a directory')
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     outbox: new ConversationOutbox(blocked),
@@ -731,6 +738,7 @@ test('cold subscriptions persist crash recovery exactly once before snapshots an
   const key = { workspaceRoot: root, workspaceId: 'workspace', agentId: 'agent' }
   const path = workspaceStorePath(root, 'conversations', 'workspace', 'agent.jsonl')
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
   })
@@ -805,6 +813,7 @@ test('failed startup does not leave a zombie and a rejecting persister clears a 
     modelId: 'mock-model',
   }
   const brokenStart = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...createMockConversationProvider(),
@@ -817,6 +826,7 @@ test('failed startup does not leave a zombie and a rejecting persister clears a 
   })
   let writes = 0
   const brokenWrite = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     eventLog: {
@@ -872,6 +882,7 @@ test('remembered approvals auto-resolve later matching tools and persistence fai
     },
   }
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [adapter],
     getProviderById: () => undefined,
     approvalRules: new ConversationApprovalRuleStore(openTestDatabase(storeRoot)),
@@ -934,6 +945,7 @@ test('remembered approvals auto-resolve later matching tools and persistence fai
     const unreadable = openTestDatabase(join(storeRoot, 'unreadable'))
     await unreadable.close()
     const broken = new ConversationRuntime({
+    database: testChatDatabase(),
       adapters: [adapter],
       getProviderById: () => undefined,
       approvalRules: new ConversationApprovalRuleStore(unreadable),
@@ -1177,6 +1189,7 @@ test('a reconnect further behind than the catch-up budget gets a snapshot', asyn
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-behind-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     transcriptLimits: { catchUpEvents: 3 },
@@ -1245,6 +1258,7 @@ test('a transcript past the whole-file limit still subscribes, catches up, pages
   await writeFile(path, lines.join('\n') + '\n')
   const size = (await stat(path)).size
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     // Well under the file: before, any read past this failed outright.
@@ -1573,6 +1587,7 @@ test('a send the log cannot take is not published and not recorded, so the same 
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   let broken = false
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     eventLog: {
@@ -1637,6 +1652,7 @@ async function throttledRuntime(sendTurn: ConversationProviderAdapter['sendTurn'
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [adapter],
     getProviderById: () => undefined,
     // The log alone would write a running tool's preview every 20 ms here.
@@ -1792,6 +1808,7 @@ test('a chat’s prompt cache survives a restart: resumed from the transcript, i
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, lines.map((line) => JSON.stringify(line)).join('\n') + '\n')
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
   })

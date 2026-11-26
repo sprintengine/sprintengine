@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { workspaceStorePath } from './workspace-store'
 import { appendFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
@@ -73,6 +74,7 @@ async function withRuntime(
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-persistence-'))
   const provider = streamingProvider(tokens)
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     secretStore: {
@@ -170,6 +172,7 @@ test('a crash with a batch still unwritten never leaves a published sequence num
   const written: number[] = []
   let deltaWrites = 0
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     eventLog: {
@@ -266,6 +269,7 @@ test('after a write the disk refused, a restart numbers above every event a clie
   const run = async (diskFills: boolean) => {
     let full = false
     const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
       adapters: [provider.adapter],
       getProviderById: () => undefined,
       eventLog: {
@@ -337,6 +341,7 @@ test('a turn whose events the log refuses stops its session, publishes nothing u
   let full = false
   const onDisk = new Set<number>()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     eventLog: {
@@ -405,6 +410,7 @@ test('ending a session leaves no stream open on its log, its answer written', as
   const open = new Set<number>()
   let streams = 0
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     eventLog: {

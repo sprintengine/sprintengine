@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -13,6 +14,7 @@ test('context skills inject instructions into model context but persist only ide
   let messages: ConversationMessage[] | undefined
   const mock = createMockConversationProvider({ skills: 'context' })
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...mock,
@@ -162,6 +164,7 @@ test('a stateful chat opens with the skill invocation once, and later turns go w
   const sent: string[] = []
   const mock = createMockConversationProvider({ skills: 'context' })
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...mock,

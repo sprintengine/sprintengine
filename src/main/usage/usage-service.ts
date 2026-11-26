@@ -16,6 +16,7 @@ import type {
 import { resolveClaudeConfigDir } from '../claude-config-dir'
 import { codexHomeDir } from '../conversation-import/codex-sessions'
 import { conversationStorageSegment } from '../conversation-index'
+import { chatKey } from '../../server/db/chat-logs'
 import { STUDIO_DATABASE_FILENAME } from '../../server/db/database'
 import { workspaceStorePath } from '../workspace-store'
 import { aggregateUsage, type UsageSpeedRow } from './usage-aggregate'
@@ -453,7 +454,7 @@ export function studioDirs(workspaces: readonly UsageServiceWorkspace[]): UsageS
         // A folder on an SSH machine: its chats' usage is that machine's.
         continue
       }
-      dirs.set(dir, { dir, workspaceId: workspace.id, root, chatKey: conversationStorageSegment(workspace.id) })
+      dirs.set(dir, { dir, workspaceId: workspace.id, root, chatKey: chatKey(dir) })
     }
   }
   return [...dirs.values()]

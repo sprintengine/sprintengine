@@ -131,6 +131,9 @@ import { createWslMachineAccess, followCliPathsChanged } from '../wsl/wsl-machin
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
 import { openDataDirDatabase, takeDataDir } from './take-data-dir'
+import { chatKey, moveChatStatements } from '../db/chat-logs'
+import { conversationStorageSegment } from '../../main/conversation-index'
+import { workspaceStorePath } from '../../main/workspace-store'
 import { keepExtensionApprovalsIn } from '../../main/modules/extension-approvals'
 import { createStudioUsageLimitResumes, studioConversationUsageLimits } from './studio-usage-limit-resumes'
 import { studioPullRequestWakes } from './studio-pull-request-wakes'
@@ -1229,7 +1232,21 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       for (const session of live) await conversations.stopSession({ sessionId: session.sessionId })
       await conversationRuntime.flushTranscripts()
     },
-    moveStorage: moveConversationStorage,
+    // The chat's rows go with its store folder: renamed to the new store's in one transaction, then its files.
+    moveStorage: async (workspaceId, fromFolder, toFolder) => {
+      const segment = conversationStorageSegment(workspaceId)
+      const from = chatKey(workspaceStorePath(fromFolder, 'conversations', segment))
+      const to = chatKey(workspaceStorePath(toFolder, 'conversations', segment))
+      if (from === to) return
+      // A store that already holds rows of this chat refuses the rename (its keys), and nothing moves.
+      await database.batch(moveChatStatements(from, to))
+      try {
+        await moveConversationStorage(workspaceId, fromFolder, toFolder)
+      } catch (error) {
+        await database.batch(moveChatStatements(to, from))
+        throw error
+      }
+    },
     log: (message) => {
       void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Conversation move', message })
     },

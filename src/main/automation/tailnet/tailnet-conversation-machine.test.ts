@@ -1,4 +1,4 @@
-import { testDatabaseAt } from '../../../../tests/studio-database'
+import { testDatabaseAt, testChatDatabase } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
@@ -149,7 +149,8 @@ test("a chat's pull requests carry the number, state, link and title, and no mor
 async function listFixture(marks: ConversationListMarks) {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'conversation-machine-'))
   const adapter = createMockConversationProvider()
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
   const host = createConversationGatewayHost(
     runtime,
     (id) => (id === 'workspace' ? workspaceRoot : null),

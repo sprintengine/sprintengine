@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -19,7 +20,8 @@ async function fixture(options: { providerId?: string; start?: boolean; registry
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-composer-context-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const adapter = { ...createMockConversationProvider(), ...(options.providerId ? { id: options.providerId } : {}) }
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(), adapters: [adapter], getProviderById: () => undefined })
   const host = createConversationGatewayHost(
     runtime,
     (id) => (id === key.workspaceId ? workspaceRoot : null),
