@@ -433,7 +433,6 @@ export type ConversationPeek = {
   since: ConversationPeekMessage[]
 }
 
-
 export type StudioTerminalsMethodMap = {
   /** Every live session's snapshot. A client other than the app's own window is sent it projected (`projectTerminalSession`). */
   'terminal.list': { params: Record<string, never>; result: { sessions: TerminalSessionSnapshot[] } }

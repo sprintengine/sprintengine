@@ -228,7 +228,6 @@ test('a conversation peek reads its persisted first message and last exchange', 
   assert.equal(terminalReads, 0)
 })
 
-
 test('a quote in a message reads as its passage and comment, never as its address', () => {
   const token = quoteToken({
     turnId: 't1',

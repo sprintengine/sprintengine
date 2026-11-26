@@ -484,4 +484,3 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
     shutdown,
   }
 }
-
