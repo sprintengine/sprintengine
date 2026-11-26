@@ -757,3 +757,50 @@ test('a start whose wait fails sends nothing: what the failed plan would have ta
   await second.advance(MINUTE)
   assert.equal(second.sent.length, 0)
 })
+
+test('one scheduled while the saved messages are being read is saved with them, never over them', async () => {
+  const saved = memoryStorage()
+  const first = harness({ storage: saved })
+  await started(first)
+  first.scheduled.update({ kind: 'schedule', ...CHAT, text: 'Saved before.', sendAt: first.now() + HOUR })
+  await first.scheduled.dispose()
+
+  // The read is slow; a message is scheduled before it answers.
+  let answer: (body: string | null) => void = () => undefined
+  const writes: string[] = []
+  const second = harness({
+    storage: {
+      read: () => new Promise<string | null>((resolve) => (answer = resolve)),
+      write: async (body) => void writes.push(body),
+    },
+    idPrefix: 'b',
+  })
+  const starting = second.scheduled.start()
+  second.scheduled.update({ kind: 'schedule', ...OTHER, text: 'Scheduled meanwhile.', sendAt: second.now() + HOUR })
+  await Promise.resolve()
+  assert.deepEqual(writes, [], 'nothing is written before the saved messages are read')
+  answer(saved.body)
+  await starting
+  await second.scheduled.flush()
+  assert.deepEqual(
+    (JSON.parse(writes.at(-1)!) as { messages: Array<{ text: string }> }).messages.map((entry) => entry.text),
+    ['Saved before.', 'Scheduled meanwhile.'],
+  )
+})
+
+test('one scheduled while a read that then fails is running is never written over the saved messages', async () => {
+  let fail: (error: Error) => void = () => undefined
+  const writes: string[] = []
+  const h = harness({
+    storage: {
+      read: () => new Promise<string | null>((_resolve, reject) => (fail = reject)),
+      write: async (body) => void writes.push(body),
+    },
+  })
+  const starting = h.scheduled.start()
+  h.scheduled.update({ kind: 'schedule', ...CHAT, text: 'Scheduled meanwhile.', sendAt: h.now() + HOUR })
+  fail(new Error('database disk image is malformed'))
+  await starting
+  await h.scheduled.flush()
+  assert.deepEqual(writes, [])
+})

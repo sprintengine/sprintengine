@@ -93,8 +93,8 @@ At the first start of format 5 each of those files is imported once. One that
 its store's own parser would not read (torn by a crash, hand-edited) is
 skipped and counted, never brought in as an empty list, and the file stays as
 it was. A registry file skipped that way reads as unreadable, as it did
-before, not as a fresh folder. Records the registry's parser drops are counted
-as skipped too. The uninstaller's command line (`--remove-integrations`)
+before, not as a fresh folder. Records the registry's parser drops as
+malformed are counted as skipped too. The uninstaller's command line (`--remove-integrations`)
 reads the chat records' folders from the database, read-only, and from the old
 file beside it.
 

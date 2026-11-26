@@ -281,10 +281,19 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
   let writing: Promise<void> = Promise.resolve()
   // The saved messages could not be read: nothing is written over them.
   let unreadable = false
+  // Nothing is written before the saved messages are read: a write then
+  // would go over them before they are merged in. One asked for meanwhile is
+  // made by the merge, which writes the combined list.
+  let loaded = false
+  let savedWhileLoading = false
 
   // ── Keeping ──────────────────────────────────────────────────────────────
 
   function persist(): void {
+    if (!loaded) {
+      savedWhileLoading = true
+      return
+    }
     if (unreadable) return
     // One on its way is kept as it was before it left: should the app stop
     // mid-send, it is sent again rather than lost.
@@ -698,7 +707,8 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
     messages = [...saved.messages.filter((entry) => !known.has(entry.id)), ...fresh]
     heldSources = new Map([...saved.heldSources, ...heldSources])
     while (heldSources.size > MAX_HELD_SOURCES) heldSources.delete(heldSources.keys().next().value!)
-    if (dropStale() || repeated) persist()
+    loaded = true
+    if (dropStale() || repeated || savedWhileLoading) persist()
     const next = state()
     for (const listener of [...listeners]) listener(next)
     markLoaded()

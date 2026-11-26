@@ -766,6 +766,39 @@ test('schedules that cannot be read refuse every write, rather than replacing th
   }
 })
 
+test('a read that failed is tried again by the next change, and what it then reads is kept', async () => {
+  const file = tempFile()
+  try {
+    seedSchedules(file.path, JSON.stringify({ version: 1, agents: [agent()] }))
+    const kept = schedulesAt(file.path)
+    // Busy at the start and at the first change; answering from then on.
+    let failures = 2
+    const store = createScheduledAgentsStore({
+      storage: {
+        read: async () => {
+          if (failures-- > 0) throw new Error('database is locked')
+          return kept.read()
+        },
+        write: (body) => kept.write(body),
+      },
+      now: () => NOW,
+      newId: () => 'sa-2',
+    })
+    await store.load()
+    assert.deepEqual(store.list(), [])
+    await assert.rejects(store.create(draft()), /could not be read/u)
+    // The database answers now: the next change reads, then saves on top of what was there.
+    const created = await store.create(draft())
+    assert.equal(created.id, 'sa-2')
+    assert.deepEqual(
+      (JSON.parse(savedSchedules(file.path)) as { agents: ScheduledAgent[] }).agents.map((entry) => entry.id),
+      ['sa-1', 'sa-2'],
+    )
+  } finally {
+    file.cleanup()
+  }
+})
+
 test('schedules this build does not understand are never written over', async () => {
   const file = tempFile()
   try {

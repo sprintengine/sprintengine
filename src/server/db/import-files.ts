@@ -21,7 +21,7 @@ import { EMBEDS_FILENAME, readEmbedsFile } from '../web/embeds'
 import { readWebSessionsFile, WEB_SESSIONS_FILENAME } from '../web/web-sessions'
 import type { RecordTableName } from './record-table'
 import { readWorkspaceRegistryFile, WORKSPACE_REGISTRY_FILE_NAME } from '../../main/workspace-registry-store'
-import { scheduledAgentsFilePath, scheduledAgentsFileReads } from '../../main/scheduled-agents/store'
+import { SCHEDULED_AGENTS_FILE, scheduledAgentsFileReads } from '../../main/scheduled-agents/store'
 import { SCHEDULED_MESSAGES_FILE, scheduledMessagesFileReads } from '../../main/scheduled-messages/scheduled-messages'
 import { USAGE_LIMIT_RESUMES_FILE, usageLimitResumesFileReads } from '../../main/usage-limits/resume'
 import { CONVERSATION_OUTBOX_FILENAME_FOR_IMPORT, readConversationOutboxFile } from '../../main/conversation-outbox'
@@ -362,7 +362,7 @@ export function importChatRecords(connection: SyncConnection, dataDir: string): 
     }),
     ...(
       [
-        [relative(dataDir, scheduledAgentsFilePath(dataDir)), 'schedules', scheduledAgentsFileReads],
+        [SCHEDULED_AGENTS_FILE, 'schedules', scheduledAgentsFileReads],
         [SCHEDULED_MESSAGES_FILE, 'scheduled_messages', scheduledMessagesFileReads],
         [USAGE_LIMIT_RESUMES_FILE, 'usage_limit_resumes', usageLimitResumesFileReads],
       ] as const

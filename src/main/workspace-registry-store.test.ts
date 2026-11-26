@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, test } from 'vitest'
+import { afterEach, test, vi } from 'vitest'
 
 import {
   openStudioDatabase,
@@ -17,6 +17,20 @@ import {
   toWorkspaceRegistryRecord,
   type WorkspaceRegistryFile,
 } from '../shared/workspace-registry'
+
+// The whole-registry content key, counted: a write must not serialize the
+// whole registry to learn whether it changed (the row compare says so).
+const contentKeys = vi.hoisted(() => ({ count: 0 }))
+vi.mock('../shared/workspace-registry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../shared/workspace-registry')>()
+  return {
+    ...actual,
+    serializeWorkspaceRegistryContent: (...args: Parameters<typeof actual.serializeWorkspaceRegistryContent>) => {
+      contentKeys.count += 1
+      return actual.serializeWorkspaceRegistryContent(...args)
+    },
+  }
+})
 import type { Workspace } from '../shared/workspace'
 
 const dirs: string[] = []
@@ -84,15 +98,17 @@ function persistedName(dir: string): unknown {
   return (savedRegistry(dir)?.workspaces[0] as { name?: unknown } | undefined)?.name
 }
 
-test('a write whose content matches the last one is no write, whatever its revision', async () => {
+test('a write whose rows match what was written is no write, found without serializing the whole registry', async () => {
   const dir = tempDir()
   const db = counting(testDatabaseAt(dir))
   const store = createWorkspaceRegistryStore({ database: db.database })
+  contentKeys.count = 0
   store.write(registry('Alpha', 1))
   await store.flush()
-  store.write(registry('Alpha', 2))
+  store.write(registry('Alpha', 1))
   await store.flush()
-  assert.equal(db.batches.length, 1, 'no second write for the same content')
+  assert.equal(db.batches.length, 1, 'no second write for the same rows')
+  assert.equal(contentKeys.count, 0, 'no whole-registry content key on a write')
 })
 
 test('the registry read at start counts as already written', async () => {
@@ -102,7 +118,7 @@ test('the registry read at start counts as already written', async () => {
   const store = createWorkspaceRegistryStore({ database: db.database })
   assert.equal(store.read().status, 'loaded')
 
-  store.write(registry('Alpha', 4))
+  store.write(registry('Alpha', 3))
   await store.flush()
   assert.equal(db.batches.length, 0)
 
@@ -115,16 +131,17 @@ test('a change writes only the rows that changed', async () => {
   const dir = tempDir()
   const db = counting(testDatabaseAt(dir))
   const store = createWorkspaceRegistryStore({ database: db.database })
+  assert.equal(store.read().status, 'missing')
   store.write(registry('Alpha', 1, ['ws-2', 'ws-3']))
   await store.flush()
-  assert.deepEqual(db.batches, [4], 'the head and three records')
+  assert.deepEqual(db.batches, [5], 'the head, clearing rows none read, and three records')
 
   // A rename touches one record and the head's revision.
   const renamed = registry('Beta', 2, ['ws-2', 'ws-3'])
   renamed.workspaces = [renamed.workspaces[0]!, ...registry('Alpha', 1, ['ws-2', 'ws-3']).workspaces.slice(1)]
   store.write(renamed)
   await store.flush()
-  assert.deepEqual(db.batches, [4, 2])
+  assert.deepEqual(db.batches, [5, 2])
 
   // Removing a record deletes its row.
   store.write({ ...renamed, revision: 3, workspaces: renamed.workspaces.filter((entry) => entry.id !== 'ws-3') })
@@ -241,4 +258,46 @@ test('a record row that does not read is dropped by name; the rest load', () => 
     outcome.droppedRecords.map((entry) => entry.id),
     ['ws-2'],
   )
+})
+
+test('a write after a registry that did not read replaces every chat row, so none it left comes back', async () => {
+  const dir = tempDir()
+  seedRegistry(dir, registry('Alpha', 1, ['ws-old']))
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  connection.run("UPDATE chat_registry SET body = '{ torn' WHERE id = 1")
+  connection.close()
+  const store = createWorkspaceRegistryStore({ database: testDatabaseAt(dir) })
+  assert.equal(store.read().status, 'unreadable')
+
+  // The recovery seeds what the window had, without the old record.
+  store.write(registry('Recovered', 2))
+  await store.flush()
+  assert.deepEqual(
+    savedRegistry(dir)?.workspaces.map((entry) => (entry as { id: string }).id),
+    ['ws-1'],
+  )
+  const restarted = createWorkspaceRegistryStore({ database: testDatabaseAt(dir) }).read()
+  assert.equal(restarted.status, 'loaded')
+  assert.deepEqual(
+    restarted.status === 'loaded' ? restarted.file.workspaces.map((entry) => [entry.id, entry.name]) : null,
+    [['ws-1', 'Recovered']],
+  )
+})
+
+test('a write that throws before it reaches the database is reported, and later writes still land', async () => {
+  const dir = tempDir()
+  const titles: string[] = []
+  const store = createWorkspaceRegistryStore({
+    database: testDatabaseAt(dir),
+    logDiagnostic: (diagnostic) => titles.push(diagnostic.title),
+  })
+  const unserializable = registry('Alpha', 1)
+  ;(unserializable.workspaces[0] as unknown as { size: bigint }).size = 1n
+  store.write(unserializable)
+  await store.flush()
+  assert.deepEqual(titles, ['Workspace registry not persisted'])
+
+  store.write(registry('Beta', 2))
+  await store.flush()
+  assert.equal(persistedName(dir), 'Beta', 'the store is not left busy')
 })
