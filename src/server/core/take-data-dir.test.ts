@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
@@ -7,7 +7,7 @@ import { afterEach, test } from 'vitest'
 import type { DiagnosticLogInput } from '../../shared/ipc/diagnostics'
 import { createNodeStudioPlatform } from '../platform/platform'
 import { createUnavailableSecretCipher } from '../platform/secret-cipher'
-import { acquireDataDirLock, DATA_DIR_RECORD_FILE } from './data-dir'
+import { acquireDataDirLock, DATA_DIR_RECORD_FILE, DISPLACED_SERVER_FILE } from './data-dir'
 import { STUDIO_DATABASE_FILENAME } from '../db/database'
 import { STUDIO_DATA_FORMAT } from '../environment/data-format'
 import { openDataDirDatabase, StudioDataDirBusyError, StudioDataDirUnusableError, takeDataDir } from './take-data-dir'
@@ -131,6 +131,52 @@ test('a displaced server that does not exit is waited for, then refused, the loc
   )
   assert.equal(migrated, false)
   assert.equal(existsSync(join(dir, 'run', 'studio.lock')), false)
+})
+
+test('a displaced server outlasting the wait is remembered: every later start waits for it, and a server is refused, until it exits', () => {
+  const dir = dataDir()
+  assert.ok(acquireDataDirLock(dir, 'server', { pid: 4242 }).ok)
+  let running = true
+  let migrated = 0
+  const desktop = () =>
+    takeDataDir(platformAt(dir), 'desktop', {
+      acquire: (directory, role, deps) => acquireDataDirLock(directory, role, { ...deps, isRunning: () => running }),
+      isRunning: (pid) => pid === 4242 && running,
+      waitForServerMs: 20,
+      pollMs: 5,
+      prepareFormat: () => {
+        migrated += 1
+      },
+      log: () => undefined,
+    })
+  const refusal = (error: unknown) =>
+    error instanceof StudioDataDirUnusableError && /pid 4242\) still has/u.test(error.message)
+  assert.throws(desktop, refusal)
+  assert.ok(existsSync(join(dir, DISPLACED_SERVER_FILE)), 'its record outlives the refusal')
+  // The lock this start took is gone with it: the next start finds no holder, and waits for the record all the same.
+  assert.throws(desktop, refusal)
+  assert.throws(
+    () => takeDataDir(platformAt(dir), 'server', { isRunning: (pid) => pid === 4242 && running }),
+    (error: unknown) => error instanceof StudioDataDirBusyError && error.holder.pid === 4242,
+  )
+  assert.equal(migrated, 0, 'nothing was read while it ran')
+
+  running = false
+  const taken = desktop()
+  assert.ok(taken.lock?.isHeld())
+  assert.equal(migrated, 1)
+  assert.equal(existsSync(join(dir, DISPLACED_SERVER_FILE)), false, 'forgotten once its exit was seen')
+  taken.lock?.release()
+})
+
+test('a displaced server record that does not read holds every start until it is removed by hand', () => {
+  const dir = dataDir()
+  mkdirSync(join(dir, 'run'), { recursive: true })
+  writeFileSync(join(dir, DISPLACED_SERVER_FILE), 'not json')
+  assert.throws(
+    () => takeDataDir(platformAt(dir), 'desktop', { waitForServerMs: 10, pollMs: 5, log: () => undefined }),
+    (error: unknown) => error instanceof StudioDataDirUnusableError && /delete that file/u.test(error.message),
+  )
 })
 
 test('a server refuses a held directory, an unusable one, and sealing into a desktop one', () => {

@@ -8,6 +8,7 @@ import {
   readFileSync,
   readlinkSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -224,6 +225,67 @@ export function runningDataDirHolder(
   if (!(deps.isRunning ?? processIsRunning)(lock.pid)) return null
   const { token: _token, ...holder } = lock
   return holder
+}
+
+/**
+ * A Studio server a desktop took the directory from, kept until its exit is
+ * seen: `run/displaced-server.json`, its lock's record as it was. Written
+ * before the desktop waits for it, so a desktop that gives up waiting (or is
+ * stopped mid-wait) leaves it for the next start, which waits again before it
+ * reads anything; a server started meanwhile refuses while it still runs.
+ */
+export const DISPLACED_SERVER_FILE = join('run', 'displaced-server.json')
+
+export function recordDisplacedServer(dataDir: string, holder: DataDirHolder): void {
+  mkdirSync(join(dataDir, 'run'), { recursive: true, mode: 0o700 })
+  const path = join(dataDir, DISPLACED_SERVER_FILE)
+  const staged = `${path}.${randomUUID()}`
+  writeFileSync(staged, `${JSON.stringify(holder)}\n`, { mode: 0o600 })
+  renameSync(staged, path)
+}
+
+/**
+ * The displaced server, while it may still be running: on this machine,
+ * since this boot, its process alive. Once it is not, its record goes and
+ * this answers null. A record that does not read is taken as a server still
+ * running (and kept), rather than as none: guessing wrong would let two
+ * processes write the directory.
+ */
+export function displacedServerRunning(
+  dataDir: string,
+  deps: Pick<DataDirLockDeps, 'hostname' | 'isRunning' | 'boot' | 'pid'> = {},
+): DataDirHolder | null {
+  const path = join(dataDir, DISPLACED_SERVER_FILE)
+  let text: string
+  try {
+    text = readFileSync(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    return UNKNOWN_HOLDER
+  }
+  let holder: DataDirHolder
+  try {
+    const parsed = JSON.parse(text) as Partial<DataDirHolder>
+    if (typeof parsed.pid !== 'number' || typeof parsed.hostname !== 'string') return UNKNOWN_HOLDER
+    holder = {
+      role: 'server',
+      pid: parsed.pid,
+      hostname: parsed.hostname,
+      startedAt: typeof parsed.startedAt === 'string' ? parsed.startedAt : '',
+      ...(typeof parsed.boot === 'string' ? { boot: parsed.boot } : {}),
+    }
+  } catch {
+    return UNKNOWN_HOLDER
+  }
+  const gone = isAbandoned(holder, {
+    pid: deps.pid ?? process.pid,
+    host: deps.hostname ?? osHostname(),
+    boot: (deps.boot ?? pidBoot)(),
+    isRunning: deps.isRunning ?? processIsRunning,
+  })
+  if (!gone) return holder
+  rmSync(path, { force: true })
+  return null
 }
 
 function readLock(path: string): LockBody | 'unreadable' | null {

@@ -1,11 +1,14 @@
 import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 
 import type { DiagnosticLogInput } from '../../shared/ipc/diagnostics'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import type { StudioPlatform } from '../platform/platform'
-import { processIsRunning } from '../platform/process-alive'
 import {
   acquireDataDirLock,
+  DISPLACED_SERVER_FILE,
+  displacedServerRunning,
+  recordDisplacedServer,
   readDataDirSecrets,
   recordDataDirSecrets,
   type DataDirHolder,
@@ -69,6 +72,8 @@ export type TakeDataDirDeps = {
   acquire?: typeof acquireDataDirLock
   readSecrets?: typeof readDataDirSecrets
   record?: typeof recordDataDirSecrets
+  /** Keeps a displaced server's record until its exit is seen (`recordDisplacedServer`). */
+  recordDisplaced?: typeof recordDisplacedServer
   /** Brings the data to this build's format, or throws in words (`data-format.ts`). */
   prepareFormat?: (dataDir: string, version: string) => void
   log?: (diagnostic: DiagnosticLogInput) => void
@@ -103,7 +108,6 @@ function takeForDesktop(
     })
 
   let lock: DataDirLock | null = null
-  let displaced: number | null = null
   try {
     mkdirSync(dataDir, { recursive: true })
     const taken = acquire(dataDir, 'desktop', { takeOver: () => true })
@@ -116,7 +120,8 @@ function takeForDesktop(
           `A Studio server (pid ${server.pid}) was running against this app's data directory. ` +
             'The app has taken it over; the server stops, and the app waits for it before reading the data.',
         )
-        displaced = server.pid
+        // Kept until its exit is seen, by this start or a later one.
+        ;(deps.recordDisplaced ?? recordDisplacedServer)(dataDir, server)
       }
     } else {
       report('Data directory in use', taken.message)
@@ -128,11 +133,12 @@ function takeForDesktop(
       error,
     )
   }
-  if (displaced !== null && !waitForExit(displaced, deps)) {
+  // This start's displaced server, or one an earlier start gave up waiting
+  // for: nothing is read until it has gone.
+  const still = waitForDisplaced(dataDir, deps)
+  if (still) {
     lock?.release()
-    throw new StudioDataDirUnusableError(
-      `A Studio server (pid ${displaced}) still has the data directory ${dataDir} open after it was asked to stop. Stop it, then retry.`,
-    )
+    throw new StudioDataDirUnusableError(stillRunning(dataDir, still))
   }
 
   try {
@@ -181,6 +187,12 @@ function takeForServer(platform: StudioPlatform, deps: TakeDataDirDeps): TakenDa
   }
   if (!taken.ok) throw new StudioDataDirBusyError(taken.message, taken.holder)
   const lock = taken.lock
+  // A server the desktop displaced and has not yet seen exit: it may still be writing.
+  const still = displacedServerRunning(dataDir, { isRunning: deps.isRunning })
+  if (still) {
+    lock.release()
+    throw new StudioDataDirBusyError(stillRunning(dataDir, still), still)
+  }
   try {
     const sealedBy = (deps.readSecrets ?? readDataDirSecrets)(dataDir)
     if (sealedBy === 'desktop-keychain' && platform.secrets.available()) {
@@ -223,14 +235,22 @@ export function openDataDirDatabase(
   }
 }
 
-/** Wait on this thread for `pid` to exit, polling; false when it still runs at the deadline. */
-function waitForExit(pid: number, deps: TakeDataDirDeps): boolean {
-  const isRunning = deps.isRunning ?? processIsRunning
+/**
+ * Wait on this thread, polling, for a displaced server to be gone; the
+ * server still running at the deadline, or null once there is none.
+ */
+function waitForDisplaced(dataDir: string, deps: TakeDataDirDeps): DataDirHolder | null {
   const deadline = Date.now() + (deps.waitForServerMs ?? WAIT_FOR_SERVER_MS)
   const pause = new Int32Array(new SharedArrayBuffer(4))
-  while (isRunning(pid)) {
-    if (Date.now() >= deadline) return false
+  for (;;) {
+    const still = displacedServerRunning(dataDir, { isRunning: deps.isRunning })
+    if (!still || Date.now() >= deadline) return still
     Atomics.wait(pause, 0, 0, deps.pollMs ?? POLL_MS)
   }
-  return true
+}
+
+function stillRunning(dataDir: string, server: DataDirHolder): string {
+  return server.pid > 0
+    ? `A Studio server (pid ${server.pid}) still has the data directory ${dataDir} open after it was asked to stop. Stop it, then retry.`
+    : `${join(dataDir, DISPLACED_SERVER_FILE)} names a Studio server this app took the directory from, and does not read. Make sure no Studio server runs on ${dataDir}, delete that file, then retry.`
 }
