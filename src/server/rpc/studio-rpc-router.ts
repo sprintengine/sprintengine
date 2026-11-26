@@ -60,6 +60,7 @@ import {
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioProcesses } from '../processes/agent-process-domain'
 import { tabsForReader, type StudioBrowserTabs } from '../processes/browser-tabs'
+import type { StudioTerminalAgents } from '../terminals/terminal-agents'
 import type { StudioTerminalCaller, StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
@@ -84,6 +85,7 @@ import { createStudioArtifactsHandlers } from './studio-artifacts'
 import { createStudioAccessHandlers, type StudioAccessDomain } from './studio-access'
 import type { ExtensionInvoker } from '../../main/module-host/extension-invocation'
 import { createStudioWebDevicesHandlers, type StudioWebDevicesDomain } from './studio-web-devices'
+import { createStudioWebTabHandlers, type StudioWebTabDomain } from './studio-web-tab'
 import { createStudioTailnetHandlers, type StudioTailnetDomain } from './studio-tailnet'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
@@ -240,6 +242,8 @@ export type StudioRpcRouterOptions = {
   access?: StudioAccessDomain
   /** The web listener's paired browsers, once its front door gave them; until then `webDevices.*` is answered `unavailable`. */
   webDevices?: () => StudioWebDevicesDomain | null
+  /** A web tab's folder browser and previews, once its front door gave them; until then `webFolders.*` and `webPreviews.*` are `unavailable`. */
+  webTab?: () => StudioWebTabDomain | null
   /** The tailnet listener and the machines this one drives; without it, `tailnet.*` and `mesh.*` are answered `unavailable`. */
   tailnet?: StudioTailnetDomain
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
@@ -252,6 +256,12 @@ export type StudioRpcRouterOptions = {
   processes?: StudioProcesses
   /** The built-in browser's tabs, the shell's; without it, `browserTabs.*` is answered `unavailable`. */
   browserTabs?: StudioBrowserTabs
+  /**
+   * What a window asks of a session beside its pty: the peek card and a fresh
+   * read of its pull requests. Without it, `terminal.peek` and
+   * `terminal.refreshPullRequests` are `unavailable`.
+   */
+  terminalAgents?: StudioTerminalAgents
   /** The machines this desktop's computer offers; without it, `hosts.*` is answered `unavailable`. */
   hosts?: StudioHosts
   /** What a client reads before it starts a chat; without it, `workspaces.*` and `cliRuntimes.list` are `unavailable`. */
@@ -1060,6 +1070,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   })
   const webDevicesRouting = createStudioWebDevicesHandlers({
     webDevices: () => options.webDevices?.() ?? null,
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const webTabRouting = createStudioWebTabHandlers({
+    webTab: () => options.webTab?.() ?? null,
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
   })
@@ -2170,6 +2185,14 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         terminals.configure(policy)
         return {}
       }),
+    'terminal.peek': async ({ sessionId }) =>
+      options.terminalAgents
+        ? { ok: true, result: await options.terminalAgents.peek(sessionId) }
+        : unserved('terminal.peek'),
+    'terminal.refreshPullRequests': async ({ sessionId }) =>
+      options.terminalAgents
+        ? { ok: true, result: { asked: await options.terminalAgents.refreshPullRequests(sessionId) } }
+        : unserved('terminal.refreshPullRequests'),
 
     // ── Agent CLIs and launch settings ─────────────────────────────────────
 
@@ -2214,6 +2237,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // ── The browsers paired with the web listener ──────────────────────────
 
     ...webDevicesRouting,
+    // ── What a web tab asks of the Studio that served it ───────────────────
+
+    ...webTabRouting,
 
     // ── Who reaches this machine over the tailnet, and the machines it drives ──
 

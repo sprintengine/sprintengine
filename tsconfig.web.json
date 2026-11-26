@@ -18,7 +18,6 @@
     "src/preload/api-surface.ts",
     "src/preload/api/**/*",
     "src/preload/ipc-router.ts",
-    "src/preload/ipc-router-core.ts",
     // The canvas toolset a web tab offers runs the portable canvas service and
     // its tools in the page (src/renderer/src/web/canvas/), with node:crypto
     // and node:path swapped for the browser's at build time.

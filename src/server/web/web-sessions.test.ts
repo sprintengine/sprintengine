@@ -3,8 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 
-import { authorizeStudioMethod, authorizeStudioTopic } from '../../../packages/studio-protocol/src/public'
-import { WEB_TUNNEL_ACCESS, webTunnelAuthorizes, webTunnelPrincipal } from '../../shared/web-tunnel-access'
+import {
+  authorizeStudioAccess,
+  authorizeStudioMethod,
+  authorizeStudioTopic,
+} from '../../../packages/studio-protocol/src/public'
+import { WEB_HTTP_ACCESS, webSessionPrincipal } from '../../shared/web-http-access'
 
 import {
   PAIRING_CODE_TTL_MS,
@@ -178,10 +182,9 @@ test('an owner’s browser and another browser are told apart by every remote ch
     reason: 'unknown_method',
   })
 
-  // The tunnel: an owner's browser drives the domains a tab draws; another browser none.
-  const channels = Object.keys(WEB_TUNNEL_ACCESS)
-  const ownerTab = webTunnelPrincipal(reloaded.get(owned.session.id)!)
-  const guestTab = webTunnelPrincipal(reloaded.get(guest.session.id)!)
-  expect(webTunnelAuthorizes(ownerTab, 'web:previews:list')).toBe(true)
-  expect(channels.filter((channel) => webTunnelAuthorizes(guestTab, channel))).toEqual([])
+  // The upload route: an owner's browser stages a file for its composer; another browser none.
+  const ownerTab = webSessionPrincipal(reloaded.get(owned.session.id)!)
+  const guestTab = webSessionPrincipal(reloaded.get(guest.session.id)!)
+  expect(authorizeStudioAccess(ownerTab, WEB_HTTP_ACCESS.upload).ok).toBe(true)
+  expect(authorizeStudioAccess(guestTab, WEB_HTTP_ACCESS.upload).ok).toBe(false)
 })

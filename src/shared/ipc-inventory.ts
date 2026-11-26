@@ -1,19 +1,17 @@
 // Every channel between a window and main, said once: which way it goes, and
-// whether it stays on IPC (the desktop shell's own) or moves to the Studio
-// protocol. The target is IPC for the shell alone (windows, dialogs, updates,
-// revealing a file), with everything else a typed protocol method every
-// client reaches the same way, so a feature built for the local window is
-// built for a paired desktop, the phone and a browser tab too.
+// why it is the desktop shell's own. IPC carries the shell alone (windows,
+// dialogs, updates, revealing a file); everything else is a typed protocol
+// method every client reaches the same way, so a feature built for the local
+// window is built for a paired desktop, the phone and a browser tab too.
 //
-// The rule is held three ways:
+// The rule is held two ways:
 // - main refuses, at registration, any channel this table does not list
 //   (`mayRegisterIpcChannel`, used by `guardIpcSenders` in main's entry);
 // - `src/main/ipc-inventory.test.ts` drives every registration site, every
 //   module (an installed extension included) and every preload member, and
-//   holds what they register and use to this table both ways;
-// - the same test counts the server rows per area. A new server channel fails
-//   it: add a protocol method instead. Moving an area's channels off IPC
-//   deletes its rows and lowers its count.
+//   holds what they register and use to this table both ways. A row is a
+//   shell row, with its reason: a channel that is not the shell's is a
+//   protocol method instead.
 //
 // `invoke` is a renderer's `invoke` that main `handle`s, `send` a renderer's
 // fire-and-forget message that main listens `on`, `push` a message main
@@ -22,19 +20,11 @@
 
 export type IpcDirection = 'invoke' | 'send' | 'push'
 
-/** Where a server channel goes: the area of the Studio protocol that replaces it. */
-export type IpcServerArea = 'terminals' | 'web-tab'
-
-export type IpcInventoryRow =
-  | { readonly dir: IpcDirection; readonly shell: string }
-  | { readonly dir: IpcDirection; readonly server: IpcServerArea }
+export type IpcInventoryRow = { readonly dir: IpcDirection; readonly shell: string }
 
 const shell =
   (reason: string) =>
   (dir: IpcDirection): IpcInventoryRow => ({ dir, shell: reason })
-const server =
-  (area: IpcServerArea) =>
-  (dir: IpcDirection): IpcInventoryRow => ({ dir, server: area })
 
 const WINDOW = shell('It acts on a window of this app.')
 const DESKTOP = shell("It acts on this computer's desktop: a dialog, a menu, the clipboard or another app.")
@@ -62,11 +52,6 @@ const EXTENSION_OPEN = shell(
 const EXTENSION_LINK = shell(
   "An install link from the operating system: an extension's page opened in one of this app's windows, never an install.",
 )
-
-/** Moves to the protocol: terminals and the agents that run in them. */
-const terminals = server('terminals')
-/** Moves to the protocol: what a browser tab asks its server for: folders, previews, local servers. */
-const webTab = server('web-tab')
 
 export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   // ── The shell: stays on IPC ──
@@ -155,6 +140,7 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'app:startup-mark': BOOT('send'),
   'splash:progress': BOOT('push'),
   'browser:back': BROWSER_PANE('invoke'),
+  'browser:local-servers': BROWSER_PANE('invoke'),
   'browser:capture': BROWSER_PANE('invoke'),
   'browser:clear-cache': BROWSER_PANE('invoke'),
   'browser:clear-cookies': BROWSER_PANE('invoke'),
@@ -225,7 +211,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'attached-files:register': ATTACHED('invoke'),
   'studio-server:info': SERVER_PROCESS('invoke'),
   'studio-server:open-log': SERVER_PROCESS('invoke'),
-  'studio-server:port': SERVER_PROCESS('push'),
   'studio-server:restart': SERVER_PROCESS('invoke'),
   'studio-server:retry': SERVER_PROCESS('invoke'),
   'studio-server:status': SERVER_PROCESS('invoke'),
@@ -279,15 +264,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'extension-link:ready': EXTENSION_LINK('send'),
 
   // ── The server: moves to the Studio protocol ──
-  'agent:compact': terminals('invoke'),
-  'conversation-peek:read': terminals('invoke'),
-  'pullRequest:refreshForSession': terminals('invoke'),
-  'browser:local-servers': webTab('invoke'),
-  'web:browse-folders': webTab('invoke'),
-  'web:previews:changed': webTab('push'),
-  'web:previews:close': webTab('invoke'),
-  'web:previews:list': webTab('invoke'),
-  'web:previews:open': webTab('invoke'),
 }
 
 /** The row a channel falls under: its own, or the `:*` row whose prefix it begins with. */

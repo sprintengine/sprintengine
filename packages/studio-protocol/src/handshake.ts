@@ -385,6 +385,13 @@ export const STUDIO_ACCESS_CAPABILITY = 'access' as const
 export const STUDIO_WEB_DEVICES_CAPABILITY = 'web-devices' as const
 
 /**
+ * What a web tab asks of the Studio that served it (`web-tab.ts`): the folder
+ * browser and previews of an agent's dev server. Offered by a Studio that runs
+ * the web listener.
+ */
+export const STUDIO_WEB_TAB_CAPABILITY = 'web-tab' as const
+
+/**
  * Who reaches this machine over the tailnet, and the machines it reaches
  * (`tailnet.ts`): its listener's devices, offers, requests and shared dev
  * servers (`tailnet.*`, with the `tailnet.changed` stream), and pairing with
@@ -504,6 +511,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_PROCESSES_CAPABILITY,
   STUDIO_BROWSER_TABS_CAPABILITY,
   STUDIO_NEW_CHAT_FOLDER_CAPABILITY,
+  STUDIO_WEB_TAB_CAPABILITY,
 ] as const
 
 /**

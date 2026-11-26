@@ -8,9 +8,6 @@ import { studioServerApi } from './api/studio-server'
 import { buildStampApi } from './api/build-stamp'
 import { clipboardApi } from './api/clipboard'
 import { chatExportApi } from './api/chat-export'
-import { conversationPeekApi } from './api/conversation-peek'
-import { agentCompactApi } from './api/agent-compact'
-import { pullRequestApi } from './api/pull-request'
 import { filesystemApi } from './api/filesystem'
 import { gitApi } from './api/git'
 import { modulesApi } from './api/modules'
@@ -25,7 +22,6 @@ import { canvasApi } from './api/canvas'
 import { editorRevealApi } from './api/editor-reveal'
 import { extensionOpenApi } from './api/extension-open'
 import { toursApi } from './api/tours'
-import { previewsApi } from './api/previews'
 
 // Every `window.api` member the preload builds from its api modules: all of
 // them but the values it computes from its own process. One list, which
@@ -64,10 +60,6 @@ export const apiModules = {
   ...environmentsApi,
   ...gitApi,
   ...modulesApi,
-  ...conversationPeekApi,
-  ...agentCompactApi,
-  ...pullRequestApi,
   ...updateApi,
   ...appMenuApi,
-  ...previewsApi,
 } satisfies Omit<ElectronApi, ComputedApiMembers>

@@ -42,8 +42,6 @@ export const STUDIO_PERMISSIONS = [
   'extension:operate',
   // Change this machine's settings.
   'settings:write',
-  // Open a preview of a server an agent runs here.
-  'preview:operate',
   // Keep this machine's Studio itself: update it, which drains and restarts it.
   'environment:maintain',
 ] as const

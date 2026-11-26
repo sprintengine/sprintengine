@@ -1,3 +1,4 @@
+import type { StudioTerminalAgents } from '../terminals/terminal-agents'
 import { randomUUID } from 'node:crypto'
 import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
 import type { DistributionMachine } from '../wsl/distribution-machine'
@@ -102,6 +103,8 @@ export function createStudioRpc(
     machine?: DistributionMachine
     /** The built-in browser's tabs, where the shell around this Studio has the browser pane (a desktop). */
     browserTabs?: StudioBrowserTabs
+    /** The peek card and a pull request refresh for its sessions, where it runs terminals. */
+    terminalAgents?: StudioTerminalAgents
   } = {},
 ): StudioRpcService {
   // The dev servers this machine publishes on the tailnet: Settings and the
@@ -110,6 +113,7 @@ export function createStudioRpc(
   const service = createStudioRpcService({
     ...(options.hostKind ? { hostKind: options.hostKind } : {}),
     ...(options.browserTabs ? { browserTabs: options.browserTabs } : {}),
+    ...(options.terminalAgents ? { terminalAgents: options.terminalAgents } : {}),
     // A save the person made in an editor, on whichever client, meets this
     // Studio's extensions' hooks, as the connection that saved.
     editorSaveHooks: ({ path, text, grant, workspaceId, languageId }) =>

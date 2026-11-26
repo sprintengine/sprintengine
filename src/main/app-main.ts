@@ -19,11 +19,11 @@ import { allowsMultipleInstances } from './app-instance'
 import { writeDiagnosticLog } from './diagnostics-service'
 import { removeRetiredEntitlementCache } from './retired-entitlement-cache'
 import { removeRetiredRelayState } from './retired-relay-state'
-import { studioPlatform } from '../server/platform/platform'
 import { SERVER_EVENTS, SERVER_METHODS } from '../server/desktop/server-methods'
 import type { AgentPhaseEvent } from '../shared/agent-runtime'
 import { readSshPreview, registerSshPreviewIpc, setSessionSshPreview } from './environments/ssh/ssh-preview'
 import { registerStudioServerIpc } from './ipc/studio-server-ipc'
+import { broadcastToAllWindows } from './window-broadcast'
 import { STUDIO_SERVER_CHANNELS } from '../shared/studio-server-status'
 import { createDesktopServerHost } from './server-supervisor/desktop-server-host'
 import { channelForVersion } from './update-channel-store'
@@ -138,7 +138,7 @@ registerSshPreviewIpc(ipcMain, sshPreview, app.getPath('userData'))
 registerStudioServerIpc(ipcMain, {
   supervisor: serverHost.supervisor,
   openLog: async () => (await shell.openPath(serverHost.log.currentPath() ?? app.getPath('logs'))) === '',
-  publish: (status) => studioPlatform().clients.publish(STUDIO_SERVER_CHANNELS.changed, status),
+  publish: (status) => broadcastToAllWindows(STUDIO_SERVER_CHANNELS.changed, status),
 })
 
 // What the server asks of the shell: the keychain, notices, terminal

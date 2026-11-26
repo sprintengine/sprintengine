@@ -8,13 +8,10 @@ import type { StudioGateway } from '../core/studio-gateway'
 import { knownFolders } from '../files/known-folders'
 
 // The chat surface the Studio server serves every client, set up in one place
-// for each way the server runs: in process (main), in a process of its own
-// (desktop-server.ts) and behind the web front door. It used to also register
-// the `window.api` channels the server owned; every one of those is a Studio
-// protocol method now (the last were the machines this computer offers,
-// `hosts.*`), so nothing here touches IPC.
+// for each way the server runs: the desktop's, in a process of its own
+// (desktop-server.ts), and a standalone one behind the web front door.
 
-export type ServerDomainIpcDeps = {
+export type ServerChatDeps = {
   core: Pick<
     StudioCore,
     | 'workspaceRegistry'
@@ -29,11 +26,11 @@ export type ServerDomainIpcDeps = {
   terminalHandoff: ReturnType<typeof createConversationTerminalHandoff>['handoff']
 }
 
-export type ServerDomainIpcHandles = {
+export type ServerChatHandles = {
   conversationCommands: { dispose(): Promise<void> }
 }
 
-export function provideServerChat(deps: ServerDomainIpcDeps): ServerDomainIpcHandles {
+export function provideServerChat(deps: ServerChatDeps): ServerChatHandles {
   const { core } = deps
   const dataDir = () => core.platform.paths.dataDir()
   // The core's own `/` lists, which every window and a paired desktop read over the protocol.

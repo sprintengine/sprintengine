@@ -3,26 +3,11 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import { createIpcRouter, type RouterPort } from '../../../preload/ipc-router-core'
-import { SERVER_IPC_CHANNELS } from '../../../shared/ipc-channel-owners'
-import { WEB_TUNNEL_CHANNELS } from '../../../shared/web-client'
 import { webShellIpc } from './webShellIpc'
 
-// The tab's router over a port the test holds, in place of the tab's socket.
-const posted: Array<{ t: string; id?: number; channel: string; args: unknown[] }> = []
-const router = createIpcRouter({
-  ipcRenderer: webShellIpc,
-  table: { ...SERVER_IPC_CHANNELS, ...WEB_TUNNEL_CHANNELS },
-})
-const port: RouterPort = {
-  postMessage: (message) => void posted.push(message as (typeof posted)[number]),
-  addEventListener: () => undefined,
-  start: () => undefined,
-  close: () => undefined,
-}
-router.attachPort(port)
-vi.mock('./webIpcRouter', () => ({ ipc: router }))
-vi.mock('../../../preload/ipc-router', () => ({ ipc: router }))
+// The tab's IPC is the browser's stand-ins alone: no IPC leaves a web tab.
+vi.mock('./webIpcRouter', () => ({ ipc: webShellIpc }))
+vi.mock('../../../preload/ipc-router', () => ({ ipc: webShellIpc }))
 
 const { createWebApi } = await import('./createWebApi')
 const { apiModules } = await import('../../../preload/api-surface')
@@ -30,7 +15,6 @@ const { isUnsupportedOnThisClient, refusedChannels } = await import('./unsupport
 const { currentEnvironments, resetEnvironmentsForTests, useEnvironments } = await import('../hooks/useEnvironments')
 
 beforeEach(() => {
-  posted.length = 0
   vi.spyOn(console, 'info').mockImplementation(() => undefined)
 })
 afterEach(() => vi.restoreAllMocks())
@@ -58,7 +42,6 @@ test('a member a browser cannot do is a rejected promise, never a throw or undef
   }
   expect(isUnsupportedOnThisClient(thrown)).toBe(true)
   expect(refusedChannels()).toContain('pane-popout:open')
-  expect(posted).toHaveLength(0)
 })
 
 // The machines a desktop knows are its own state, as its window geometry is
@@ -70,7 +53,6 @@ test('the list of machines is the desktop’s: a tab is refused it, and draws no
   let refusal: unknown = null
   await api.environmentsList().catch((error: unknown) => (refusal = error))
   expect(isUnsupportedOnThisClient(refusal)).toBe(true)
-  expect(posted).toHaveLength(0)
 
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   const previous = (window as { api?: unknown }).api
@@ -110,7 +92,6 @@ test('the clipboard and links act in the browser, never on the server', async ()
   expect(await api.openExternal('https://example.com/docs')).toEqual({ ok: true })
   expect(opened).toHaveBeenCalledWith('https://example.com/docs', '_blank', 'noopener,noreferrer')
   expect((await api.openExternal('file:///Users/dev/secret')).ok).toBe(false)
-  expect(posted).toHaveLength(0)
 })
 
 test('boot reads find empty states', async () => {

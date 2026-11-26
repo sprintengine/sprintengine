@@ -114,22 +114,6 @@ test("Linux's plain-text safeStorage backend counts as no encryption, so secrets
   assert.equal(harness({ platform: 'darwin', backend: 'basic_text' }).platform.secrets.available(), true)
 })
 
-test('a broadcast reaches every live window and survives one that throws', () => {
-  const { platform, windows } = harness()
-  windows.push(
-    { destroyed: false, sent: [] },
-    { destroyed: true, sent: [] },
-    { destroyed: false, sent: [], throws: true },
-  )
-  windows.push({ destroyed: false, sent: [] })
-  platform.clients.publish('example:changed', [{ id: 'a' }])
-  assert.deepEqual(
-    windows.map((window) => window.sent.length),
-    [1, 0, 0, 1],
-  )
-  assert.deepEqual(windows[0].sent[0], ['example:changed', [{ id: 'a' }]])
-})
-
 test('a notice with the same key replaces the banner, and a click runs its action', () => {
   const { platform, banners } = harness()
   let opened = 0

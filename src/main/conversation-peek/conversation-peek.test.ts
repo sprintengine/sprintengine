@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import type { ConversationPeek } from '../../shared/conversation-peek'
 import type { ConversationEvent } from '../../shared/conversation-runtime'
 import { MAX_PEEK_FIRST_CHARS, MAX_PEEK_MESSAGE_CHARS, MAX_PEEK_MESSAGES } from '../../shared/conversation-peek'
-import { registerConversationPeekIpc } from '../ipc/conversation-peek-ipc'
 import {
   appendLivePeekPrompt,
   createConversationPeekService,
@@ -227,36 +226,6 @@ test('a conversation peek reads its persisted first message and last exchange', 
     ['Follow up', 'Final answer'],
   )
   assert.equal(terminalReads, 0)
-})
-
-// ── the IPC boundary ─────────────────────────────────────────────────────────
-
-test('the IPC reads by session id, answers a malformed payload as unknown, and opens nothing', async () => {
-  const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>()
-  const calls: string[] = []
-  registerConversationPeekIpc(
-    {
-      handle: (channel: string, handler: (event: unknown, payload: unknown) => unknown) =>
-        handlers.set(channel, handler),
-    } as unknown as Parameters<typeof registerConversationPeekIpc>[0],
-    {
-      readConversationPeek: async (sessionId) => {
-        calls.push(`read:${sessionId}`)
-        return { sessionId, source: 'none', first: null, since: [] }
-      },
-    },
-  )
-
-  assert.deepEqual([...handlers.keys()], ['conversation-peek:read'])
-  const read = handlers.get('conversation-peek:read')
-  assert.ok(read)
-  assert.equal(((await read({}, 'session-1')) as ConversationPeek).sessionId, 'session-1')
-
-  // A hover must never surface an error.
-  assert.equal(((await read({}, 42)) as ConversationPeek).source, 'unknown')
-  assert.equal(((await read({}, 'a'.repeat(600))) as ConversationPeek).source, 'unknown')
-  assert.equal(((await read({}, 'a\u0000b')) as ConversationPeek).source, 'unknown')
-  assert.deepEqual(calls, ['read:session-1'], 'no malformed payload reached the service')
 })
 
 test('a quote in a message reads as its passage and comment, never as its address', () => {

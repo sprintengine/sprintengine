@@ -9,7 +9,7 @@ import { refuse } from './unsupported'
 
 type Listener = (...args: any[]) => void
 
-/** `ipcRenderer`'s shape, for the router's channels that are not the server's. */
+/** `ipcRenderer`'s shape: every channel is the shell's, which a browser does not have. */
 export const webShellIpc = {
   invoke(channel: string): Promise<any> {
     return Promise.reject(refuse(channel))
@@ -21,6 +21,7 @@ export const webShellIpc = {
   // No main process pushes to a web tab, and the tab raises no shell push of
   // its own, so a subscription here has nothing to hear and nothing to keep.
   on(_channel: string, _listener: Listener): void {},
+  once(_channel: string, _listener: Listener): void {},
   removeListener(_channel: string, _listener: Listener): void {},
   removeAllListeners(_channel: string): void {},
 }

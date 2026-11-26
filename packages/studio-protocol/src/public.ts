@@ -62,6 +62,7 @@ export * from './artifacts-types.js'
 export * from './access.js'
 export * from './access-types.js'
 export * from './web-devices.js'
+export * from './web-tab.js'
 export * from './tailnet.js'
 export * from './tailnet-types.js'
 // What a Studio's machine has and lacks for the work it runs on its own.

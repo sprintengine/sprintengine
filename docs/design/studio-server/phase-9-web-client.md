@@ -1,6 +1,10 @@
 # Phase 9 — the web client and the embeddable conversation view
 
-Status: scoped, 2026-10-01; built on 2026-10-03, as section 14 records. This
+Status: scoped, 2026-10-01; built on 2026-10-03, as section 14 records.
+Since 2026-11-26 a tab reaches its Studio on `/ws` alone: `/ws/ipc` and the
+IPC tunnel are gone, and the folder browser and previews are the `web-tab`
+protocol methods (`webFolders.browse`, `webPreviews.*`). Where this file
+describes the tunnel as a live wire, it is history. This
 file hardens phase 9 of `docs/design/studio-server.md` (sections 9, 11 and
 13). Where the two disagree, this file states the change the parent needs, in
 section 12, and the parent is updated in the same change that lands the work.

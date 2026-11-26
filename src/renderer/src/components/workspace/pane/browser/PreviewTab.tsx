@@ -8,6 +8,7 @@ import { Input } from '../../../ui/Input'
 import { RefreshIcon } from '../../../ui/RefreshIcon'
 import { Select } from '../../../ui/Select'
 import { copy } from '../../../../../../shared/copy'
+import { closePreview, listPreviewPorts, onPreviewsChanged, openPreview } from '../../../../studio/webTab'
 
 // The web client's preview pane (phase 9 spec, 3.6; R77): what a browser tab
 // shows where the desktop shows its browser pane. It shows an agent's dev
@@ -43,7 +44,7 @@ export function PreviewTab({ active }: { active: boolean }): React.JSX.Element {
 
   const refreshPorts = useCallback(async () => {
     try {
-      setPorts((await window.api.previewsList()).ports)
+      setPorts((await listPreviewPorts()).ports)
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure))
     }
@@ -56,7 +57,7 @@ export function PreviewTab({ active }: { active: boolean }): React.JSX.Element {
   // A preview the server closed (idle, the browser removed) is gone from the pane too.
   useEffect(
     () =>
-      window.api.onPreviewsChanged((previews: PreviewSummary[]) => {
+      onPreviewsChanged((previews: PreviewSummary[]) => {
         const current = openedRef.current
         if (current && !previews.some((preview) => preview.previewId === current.previewId)) {
           setOpened(null)
@@ -70,7 +71,7 @@ export function PreviewTab({ active }: { active: boolean }): React.JSX.Element {
   useEffect(
     () => () => {
       const current = openedRef.current
-      if (current) void window.api.previewsClose(current.previewId).catch(() => undefined)
+      if (current) void closePreview(current.previewId).catch(() => undefined)
     },
     [],
   )
@@ -79,12 +80,12 @@ export function PreviewTab({ active }: { active: boolean }): React.JSX.Element {
     setError(null)
     const previous = openedRef.current
     try {
-      const answer = await window.api.previewsOpen({ port, typed })
+      const answer = await openPreview({ port, typed })
       if (!answer.ok) {
         setError(answer.message)
         return
       }
-      if (previous && previous.previewId !== answer.previewId) void window.api.previewsClose(previous.previewId)
+      if (previous && previous.previewId !== answer.previewId) void closePreview(previous.previewId)
       setOpened({ previewId: answer.previewId, origin: answer.origin, port })
       setPath('/')
       // The entry address spends the preview's one-time code for its cookie,

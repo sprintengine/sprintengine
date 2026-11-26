@@ -3,14 +3,11 @@ import { SERVER_EVENTS, SERVER_METHODS } from '../server/desktop/server-methods'
 import type { AgentLaunchRequest, AgentLaunchResult } from '../shared/agent-launch'
 import type { TerminalSessionSnapshot } from '../shared/electron-api'
 import type { ConversationPromptHookAs } from '../shared/conversation-runtime'
-import type { ConversationPeekSessionState } from './conversation-peek/service'
-import { type AgentCompactResult } from './ipc/agent-compact-ipc'
 
 // What the desktop's shell reads of the terminals and asks of them, which are
 // the Studio server's (src/server/core/studio-agent-terminals.ts): its tours
 // (a question typed at the author, a new author launched), keep-awake, the
-// tray, a quit's count of working agents, Compact on an agent tab and the
-// peek card. The server sends its sessions whole on every change and
+// tray and a quit's count of working agents. The server sends its sessions whole on every change and
 // answers the rest on the control channel.
 
 export type ShellTerminals = {
@@ -28,9 +25,6 @@ export type ShellTerminals = {
     hookAs: Omit<ConversationPromptHookAs, 'starter'>,
   ): Promise<{ ok: true; text: string } | { ok: false; message: string }>
   launch(request: AgentLaunchRequest): Promise<AgentLaunchResult>
-  /** Compact on an agent tab (agent-compact-ipc.ts), checked and typed where the session runs. */
-  compact(sessionId: unknown): Promise<AgentCompactResult>
-  peekState(sessionId: string): Promise<ConversationPeekSessionState | null>
 }
 
 /** A launch may cut a worktree and wait on its install first; past this the shell stops waiting. */
@@ -66,11 +60,5 @@ export function remoteShellTerminals(rpc: Pick<ControlRpc, 'on' | 'call'>): Shel
           code: 'server_unavailable',
           message: unanswered(error),
         })),
-    compact: (sessionId) =>
-      rpc
-        .call<AgentCompactResult>(SERVER_METHODS.agentCompact, { sessionId })
-        .catch((error: unknown): AgentCompactResult => ({ ok: false, message: unanswered(error) })),
-    peekState: (sessionId) =>
-      rpc.call<ConversationPeekSessionState | null>(SERVER_METHODS.terminalPeekState, { sessionId }).catch(() => null),
   }
 }

@@ -3,7 +3,6 @@ import type { SafeStorage } from 'electron'
 import type { TerminalLaunchPreparation } from '../server/terminals/terminal-launch-preparation'
 import type { Notifier } from '../server/platform/notifier'
 import { safeStorageProtects } from './platform/safe-storage-protects'
-import { downscaleConversationImage, type ImageCodec } from './conversation-image-downscale'
 import {
   utf8Bytes,
   utf8Text,
@@ -34,8 +33,6 @@ export type ShellBridgeDeps = {
   analytics: (event: ShellAnalyticsEvent) => void
   /** The shell's integrations gate: the launcher and plugin home written. */
   integrationsReady: () => Promise<void>
-  /** The image codec uploads are shrunk with (`nativeImage` in the app). */
-  imageCodec: ImageCodec
 }
 
 const LAUNCHES_NOT_READY = 'Studio is still starting, so this agent’s launch could not be prepared yet.'
@@ -73,8 +70,5 @@ export function createShellBridge(deps: ShellBridgeDeps): ShellBridge {
       deps.analytics(event)
     },
     integrationsReady: () => deps.integrationsReady(),
-    images: {
-      downscale: async (bytes, mediaType) => downscaleConversationImage(deps.imageCodec, bytes, mediaType),
-    },
   }
 }

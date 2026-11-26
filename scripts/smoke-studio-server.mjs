@@ -3,11 +3,11 @@
 // (phase 6 spec, 16.3). A sibling of measure-startup.mjs: it launches `out/`
 // with a temp profile, then
 //
-//   1. waits for the server's ready and for the window's port, and lists the
-//      gateway's tools: the shell's toolsets are there;
-//   2. SIGKILLs the server and waits for the restart and a fresh port, and
-//      lists again: the shell offered its toolsets to the new server, and the
-//      server answers its own terminal tools (the ptys are the server's);
+//   1. waits for the server's ready, and lists the gateway's tools: the
+//      shell's toolsets are there;
+//   2. SIGKILLs the server and waits for the restart, and lists again: the
+//      shell offered its toolsets to the new server, and the server answers
+//      its own terminal tools (the ptys are the server's);
 //   3. quits, and checks the app and its server are both gone in time;
 //   4. launches again on the same profile, and checks its server reads the
 //      same data directory: the same environment id.
@@ -208,22 +208,17 @@ try {
   say(`profile ${profile}`)
   const app = launch(profile)
   const ready = app.expect(/\[shell\] server ready \(pid (\d+)\)/, 'the server to be ready')
-  const brokered = app.expect(/\[shell\] brokered (window-\d+-\d+)/, "the window's port")
   const serverPid = Number((await ready)[1])
-  const firstClient = (await brokered)[1]
-  say(`server ${serverPid} ready; window port ${firstClient}`)
+  say(`server ${serverPid} ready`)
   const missingFirst = await missingShellTools(profile)
   if (missingFirst.length > 0) fail(`the gateway does not list the shell's ${missingFirst.join(', ')}`)
   else say("the gateway lists the shell's toolsets")
 
   const restarted = app.expect(/\[shell\] server ready \(pid (\d+)\)/, 'the server to come back')
-  const rebrokered = app.expect(/\[shell\] brokered (window-\d+-\d+)/, 'a fresh window port')
   process.kill(serverPid, 'SIGKILL')
   const nextPid = Number((await restarted)[1])
-  const nextClient = (await rebrokered)[1]
   if (nextPid === serverPid) fail('the restarted server has the old pid')
-  if (nextClient === firstClient) fail('the window kept its old port')
-  say(`killed ${serverPid}; server ${nextPid} ready; window port ${nextClient}`)
+  say(`killed ${serverPid}; server ${nextPid} ready`)
   const missingAfter = await missingShellTools(profile)
   if (missingAfter.length > 0) fail(`after the restart the gateway does not list ${missingAfter.join(', ')}`)
   else say('the shell offered its toolsets to the restarted server')

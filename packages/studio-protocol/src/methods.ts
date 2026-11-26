@@ -193,6 +193,12 @@ import {
   type StudioWebDevicesTopicMap,
 } from './web-devices.js'
 import {
+  STUDIO_WEB_TAB_METHODS,
+  STUDIO_WEB_TAB_TOPICS,
+  type StudioWebTabMethodMap,
+  type StudioWebTabTopicMap,
+} from './web-tab.js'
+import {
   STUDIO_TAILNET_METHODS,
   STUDIO_TAILNET_TOPICS,
   type StudioTailnetMethodMap,
@@ -341,6 +347,7 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioArtifactsMethodMap &
   StudioAccessMethodMap &
   StudioWebDevicesMethodMap &
+  StudioWebTabMethodMap &
   StudioTailnetMethodMap &
   StudioHostsMethodMap &
   StudioFileViewsMethodMap
@@ -843,6 +850,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_ARTIFACTS_METHODS,
   ...STUDIO_ACCESS_METHODS,
   ...STUDIO_WEB_DEVICES_METHODS,
+  ...STUDIO_WEB_TAB_METHODS,
   ...STUDIO_TAILNET_METHODS,
   ...STUDIO_HOSTS_METHODS,
   ...STUDIO_FILE_VIEWS_METHODS,
@@ -912,6 +920,7 @@ export type StudioTopicMap = {
   StudioArtifactsTopicMap &
   StudioAccessTopicMap &
   StudioWebDevicesTopicMap &
+  StudioWebTabTopicMap &
   StudioTailnetTopicMap &
   StudioHostsTopicMap &
   StudioEnvironmentAccessTopicMap
@@ -965,6 +974,7 @@ export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
   ...STUDIO_ARTIFACTS_TOPICS,
   ...STUDIO_ACCESS_TOPICS,
   ...STUDIO_WEB_DEVICES_TOPICS,
+  ...STUDIO_WEB_TAB_TOPICS,
   ...STUDIO_TAILNET_TOPICS,
   ...STUDIO_HOSTS_TOPICS,
   ...STUDIO_ENVIRONMENT_ACCESS_TOPICS,

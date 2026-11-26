@@ -1,7 +1,5 @@
 import { Duplex } from 'node:stream'
 
-import type { TunnelPort } from './ipc-tunnel'
-
 // A byte stream over a message port: how an SSH machine's relay stream (held
 // by main) reaches the desktop's server when it runs as a process of its own
 // (phase 8 with phase 6). Each chunk is one message, `{ b: bytes }`; `{ end }`
@@ -9,9 +7,18 @@ import type { TunnelPort } from './ipc-tunnel'
 // Either end uses it: main splices it onto the relay's stream, the server
 // reads its conversation wire from it.
 
+/** A `MessagePortMain` as the server reads it: messages each way, and its close. */
+export type MessagePortLike = {
+  postMessage(message: unknown): void
+  on(event: 'message', listener: (event: { data: unknown }) => void): unknown
+  on(event: 'close', listener: () => void): unknown
+  start(): void
+  close(): void
+}
+
 type PortMessage = { b?: Uint8Array; end?: true }
 
-export function portDuplex(port: TunnelPort): Duplex {
+export function portDuplex(port: MessagePortLike): Duplex {
   let closed = false
   const stream = new Duplex({
     allowHalfOpen: true,
@@ -57,7 +64,7 @@ export function portDuplex(port: TunnelPort): Duplex {
 }
 
 /** Bytes both ways between a stream and a port, until either ends. */
-export function splicePort(port: TunnelPort, stream: Duplex): void {
+export function splicePort(port: MessagePortLike, stream: Duplex): void {
   const over = portDuplex(port)
   stream.pipe(over)
   over.pipe(stream)
