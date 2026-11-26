@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { workspaceStorePath } from './workspace-store'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -121,6 +122,7 @@ test('companion-agent-service', async () => {
 
   function companionRuntime(adapter: ConversationProviderAdapter): ConversationRuntime {
     return new ConversationRuntime({
+      database: testChatDatabase(),
       adapters: [adapter],
       getProviderById: () => undefined,
       secretStore: unusedSecretStore(),
@@ -483,6 +485,7 @@ test('companion-agent-service', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'companion-'))
     try {
       const runtime = new ConversationRuntime({
+        database: testChatDatabase(),
         adapters: [createMockConversationProvider()],
         getProviderById: () => undefined,
         secretStore: unusedSecretStore(),

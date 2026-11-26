@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
+import { schedulesAt } from '../../../tests/studio-database'
 
 import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
 import type { McpConnectionContext, McpToolResult } from '../../shared/modules/mcp-tools'
@@ -50,7 +51,7 @@ async function harness(
   const dir = mkdtempSync(join(tmpdir(), 'sprintengine-schedule-pause-tools-'))
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
   const store = createScheduledAgentsStore({
-    filePath: join(dir, 'scheduled-agents.json'),
+    storage: schedulesAt(join(dir, 'scheduled-agents.json')),
     now: () => NOW,
     newId: () => 'sa-1',
   })

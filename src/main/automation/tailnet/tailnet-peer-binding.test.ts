@@ -1,6 +1,7 @@
+import { testDatabaseAt } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { request as httpRequest } from 'node:http'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { connect, createServer as createNetServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,7 +19,8 @@ import {
   type GatewayAuditRecord,
 } from '../gateway-audit'
 import { hashSecret } from './secret-hash'
-import { createTailnetDeviceStore, TAILNET_DEVICES_FILENAME, type TailnetDeviceStore } from './tailnet-devices'
+import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet-devices'
+import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from '../../../server/db/database'
 import { createTailnetGatewayServer, type TailnetGatewayServer } from './tailnet-gateway-server'
 import { createTailnetMeshService } from './tailnet-mesh-service'
 import { createTailnetPeerResolver, peerIdentityFromWhois, type TailnetPeerIdentity } from './tailnet-peer-identity'
@@ -60,7 +62,7 @@ type Gateway = {
   /** Who whois says is calling, for every call from here on. Null is whois failing. */
   callFrom(peer: TailnetPeerIdentity | null): void
   auditRecords(): Promise<GatewayAuditRecord[]>
-  storedDevices(): Array<{ id: string; node?: { stableNodeId: string; loginName: string | null } | null }>
+  storedDevices(): Promise<Array<{ id: string; node?: { stableNodeId: string; loginName: string | null } | null }>>
 }
 
 async function withGateway(
@@ -70,7 +72,7 @@ async function withGateway(
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-binding-'))
   setup.seedDir?.(dir)
   let caller: TailnetPeerIdentity | null = MAC_MINI
-  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+  const devices = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
   const audit = createGatewayAuditStore({ resolveUserDataDir: () => dir })
   const tool: McpToolRegistration = {
     name: 'workspace.list',
@@ -114,11 +116,18 @@ async function withGateway(
           .filter(Boolean)
           .map((line) => JSON.parse(line) as GatewayAuditRecord)
       },
-      storedDevices: () => JSON.parse(readFileSync(join(dir, TAILNET_DEVICES_FILENAME), 'utf8')).devices,
+      storedDevices: async () => {
+        await devices.flush()
+        const rows = await testDatabaseAt(dir).all<{ body: string }>('SELECT body FROM devices ORDER BY position')
+        return rows.map((row) => JSON.parse(row.body))
+      },
     })
   } finally {
     await audit.close()
     await server.stop()
+    // Its saves land and the database closes before its folder goes.
+    await devices.flush()
+    await testDatabaseAt(dir).close()
     rmSync(dir, { recursive: true, force: true })
   }
 }
@@ -249,7 +258,7 @@ test('a failed whois is retried after seconds, an answer is kept for minutes', a
 test('pairing by code binds the device to the node that redeemed it', async () => {
   await withGateway(async (gateway) => {
     const device = await pair(gateway)
-    const stored = gateway.storedDevices().find((entry) => entry.id === device.deviceId)
+    const stored = (await gateway.storedDevices()).find((entry) => entry.id === device.deviceId)
     assert.equal(stored?.node?.stableNodeId, MAC_MINI.stableNodeId)
     assert.equal(stored?.node?.loginName, MAC_MINI.loginName)
     // And the renderer's view of it is unchanged: no binding in the public device.
@@ -333,12 +342,12 @@ test('a device paired before bindings is bound on its first call and held to it'
       // With whois failing it is served as it always was, and stays unbound.
       gateway.callFrom(null)
       assert.equal((await call(gateway.port, 'GET', TAILNET_IDENTITY_PATH, { token })).status, 200)
-      assert.equal(gateway.storedDevices()[0].node ?? null, null)
+      assert.equal((await gateway.storedDevices())[0].node ?? null, null)
 
       // The first call whois can name binds it, on disk.
       gateway.callFrom(MAC_MINI)
       assert.equal((await call(gateway.port, 'GET', TAILNET_IDENTITY_PATH, { token })).status, 200)
-      assert.equal(gateway.storedDevices()[0].node?.stableNodeId, MAC_MINI.stableNodeId)
+      assert.equal((await gateway.storedDevices())[0].node?.stableNodeId, MAC_MINI.stableNodeId)
 
       // From then on it is enforced like any other.
       gateway.callFrom(BUILD_BOX)
@@ -349,25 +358,21 @@ test('a device paired before bindings is bound on its first call and held to it'
       assert.equal((await call(gateway.port, 'GET', TAILNET_IDENTITY_PATH, { token })).status, 401)
     },
     {
-      seedDir: (dir) =>
-        writeFileSync(
-          join(dir, TAILNET_DEVICES_FILENAME),
-          JSON.stringify({
-            version: 1,
-            devices: [
-              {
-                id: 'tnd_legacy',
-                name: 'dev-macbook-air',
-                scopes: ['workspace:read'],
-                createdAt: '2026-09-01T00:00:00.000Z',
-                lastSeenAt: null,
-                lastPeerNode: null,
-                origin: { kind: 'code', by: null },
-                tokenHash: hashSecret(token),
-              },
-            ],
-          }),
-        ),
+      seedDir: (dir) => {
+        const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+        const device = {
+          id: 'tnd_legacy',
+          name: 'dev-macbook-air',
+          scopes: ['workspace:read'],
+          createdAt: '2026-09-01T00:00:00.000Z',
+          lastSeenAt: null,
+          lastPeerNode: null,
+          origin: { kind: 'code', by: null },
+          tokenHash: hashSecret(token),
+        }
+        connection.run('INSERT INTO devices (id, position, body) VALUES (?, 0, ?)', [device.id, JSON.stringify(device)])
+        connection.close()
+      },
     },
   )
 })
@@ -386,7 +391,7 @@ test('an approved request binds the device to the node that asked', async () => 
       code: asked.body.comparisonCode,
     })
     assert.ok(approved.ok)
-    assert.equal(gateway.storedDevices()[0].node?.stableNodeId, MAC_MINI.stableNodeId)
+    assert.equal((await gateway.storedDevices())[0].node?.stableNodeId, MAC_MINI.stableNodeId)
 
     // Another node holding the collect secret is not handed the token, and
     // does not use the collect up either.
@@ -416,7 +421,7 @@ test('a request whois could not name is bound at collect, to the collecting node
       gateway.devices.approvePairRequest({ id: requestId, scopes: ['workspace:read'], code: asked.body.comparisonCode })
         .ok,
     )
-    assert.equal(gateway.storedDevices()[0].node ?? null, null, 'nothing to bind to yet')
+    assert.equal((await gateway.storedDevices())[0].node ?? null, null, 'nothing to bind to yet')
 
     gateway.callFrom(MAC_MINI)
     const collected = await call(
@@ -425,7 +430,7 @@ test('a request whois could not name is bound at collect, to the collecting node
       `${TAILNET_PAIR_REQUEST_PATH}?id=${encodeURIComponent(requestId)}&secret=${encodeURIComponent(secret)}`,
     )
     assert.equal(collected.body.status, 'approved')
-    assert.equal(gateway.storedDevices()[0].node?.stableNodeId, MAC_MINI.stableNodeId)
+    assert.equal((await gateway.storedDevices())[0].node?.stableNodeId, MAC_MINI.stableNodeId)
   })
 })
 
@@ -459,6 +464,7 @@ test('a reverse grant is bound to the machine being asked', async () => {
   writeTailnetSettings(dir, { enabled: true, port: await freePort(), notifications: true })
   const remote = createTailnetRemoteService({
     resolveUserDataDir: () => dir,
+    database: testDatabaseAt(dir),
     serverName: 'sprintengine-studio',
     serverVersion: '9.9.9',
     resolveTools: () => [],
@@ -467,7 +473,7 @@ test('a reverse grant is bound to the machine being asked', async () => {
     createPeerResolver: () => createTailnetPeerResolver({ runWhois: async () => BUILD_BOX }),
   })
   const mesh = createTailnetMeshService({
-    resolveUserDataDir: () => dir,
+    database: testDatabaseAt(dir),
     resolveDeviceName: () => 'dev-macbook-air',
     // Wired as the app wires them.
     resolvePeerName: (address) => remote.resolvePeerName(address),
@@ -480,7 +486,11 @@ test('a reverse grant is bound to the machine being asked', async () => {
     // Nothing listens on port 1, so the ask itself fails — after the reverse
     // half was minted, which is the moment under test.
     await mesh.requestPairing({ endpoint: '127.0.0.1:1', reverseScopes: ['workspace:read'] })
-    const stored = JSON.parse(readFileSync(join(dir, TAILNET_DEVICES_FILENAME), 'utf8')).devices
+    // Behind the mint's save on the one writer: once this answers, that save has landed.
+    await testDatabaseAt(dir).run('SELECT 1')
+    const stored = (await testDatabaseAt(dir).all<{ body: string }>('SELECT body FROM devices')).map((row) =>
+      JSON.parse(row.body),
+    )
     assert.equal(stored.length, 1)
     assert.equal(stored[0].origin.kind, 'reverse')
     assert.equal(stored[0].node.stableNodeId, BUILD_BOX.stableNodeId)

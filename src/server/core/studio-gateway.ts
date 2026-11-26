@@ -41,7 +41,8 @@ import { createPullRequestTools } from '../pull-requests/pull-request-tools'
 import { studioPullRequestCreationDeps } from '../pull-requests/pull-request-creation'
 import { createLocalServerTools } from '../local-servers/local-server-tools'
 import { createFileViewTools } from '../file-views/file-view-tools'
-import { studioBridgeScriptPath, type StudioCore } from './studio-core'
+import type { StudioCore } from './studio-core'
+import { studioBridgeScriptPath } from '../platform/studio-paths'
 import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
 import { isMachinePath } from '../../shared/machine-paths'
@@ -275,7 +276,7 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   let automation: ReturnType<typeof createAutomationService> | null = null
   const clientTools: ClientToolRegistry = createClientToolRegistry({
     store: createClientToolsetStore({
-      dataDir: () => platform.paths.dataDir(),
+      database: core.database,
       log: (message) => {
         void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Client tools', message })
       },
@@ -333,6 +334,7 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
 
   const automationService = createAutomationService({
     resolveUserDataDir: () => platform.paths.dataDir(),
+    database: core.database,
     appVersion: platform.identity.version(),
     resolveBridgeScriptPath: () => studioBridgeScriptPath(platform.paths),
     ...(options.onTailnetEvent ? { onTailnetEvent: options.onTailnetEvent } : {}),
@@ -430,14 +432,8 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       clientTools.close()
       await automationService.shutdown()
     },
-    initialize: async () => {
-      await core.whenDataDirFree
-      return automationService.initialize()
-    },
-    whenGatewayReady: async () => {
-      await core.whenDataDirFree
-      return automationService.whenGatewayReady()
-    },
+    initialize: () => automationService.initialize(),
+    whenGatewayReady: () => automationService.whenGatewayReady(),
   }
 }
 

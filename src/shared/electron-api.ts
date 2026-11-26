@@ -3,7 +3,6 @@ import type { AttachedFileBytes, AttachedFilePreview } from './attached-files'
 import type { ChatLink } from './deep-link'
 import type { ExtensionInstallLink } from './extension-install-link'
 import type { AgentNotificationMode } from './agent-notifications'
-import type { PreviewOpenAnswer, PreviewPort, PreviewSummary } from './web-client'
 import type {
   SshEnvironmentResult,
   SshEnvironmentSettings,
@@ -20,7 +19,6 @@ import type {
   DockerStatus,
 } from './containers'
 import type { SshPreviewStatus } from './ssh-preview'
-import type { ServerMode } from './server-mode'
 import type { ChatExportInput, ChatExportResult } from './chat-export'
 import type { StudioServerInfo, StudioServerStatus } from './studio-server-status'
 import type { EditorRevealAck, EditorRevealRequest, EditorStateQuery, EditorStateReply } from './editor-reveal'
@@ -36,7 +34,6 @@ import type {
   TourRevealRequest,
   TourSummary,
 } from './tours/tour-types'
-import type { ConversationPeek } from './conversation-peek'
 
 export type { ConversationPeek, ConversationPeekMessage, ConversationPeekSource } from './conversation-peek'
 export type { HostedSource, HostedSourceKind, HostedSourcesFeed } from './hosted-sources-feed'
@@ -204,12 +201,6 @@ export type ElectronApi = {
   hostPlatform: string
   /** What this shell can do (src/shared/client-capabilities.ts); ask `clientSupports`, not `typeof`. */
   clientCapabilities: readonly ClientCapability[]
-  /** The ports the server's agents listen on, for a preview (web client only; `previews`). */
-  previewsList: () => Promise<{ ports: PreviewPort[] }>
-  /** Open a preview of a port on the server's loopback, on an origin of its own. */
-  previewsOpen: (input: { port: number; typed?: boolean }) => Promise<PreviewOpenAnswer>
-  previewsClose: (previewId: string) => Promise<boolean>
-  onPreviewsChanged: (cb: (previews: PreviewSummary[]) => void) => () => void
   /** Whether this session has SSH machines (a preview, off by default; phase 8). */
   sshMachinesEnabled?: boolean
   isDevelopment: boolean
@@ -516,8 +507,6 @@ export type ElectronApi = {
   studioServerRetry: () => Promise<void>
   studioServerRestart: () => Promise<void>
   studioServerOpenLog: () => Promise<boolean>
-  studioServerSetMode: (mode: ServerMode) => Promise<StudioServerStatus>
-  studioServerRelaunch: (options?: { compatibility?: boolean }) => Promise<void>
   onStudioServerStatus: (cb: (status: StudioServerStatus) => void) => () => void
   updateGetChannel: () => Promise<AppUpdateChannelSetting>
   /** Save a channel choice, re-point the updater at it and check that channel. */
@@ -637,26 +626,6 @@ export type ElectronApi = {
    * path instead.
    */
   stageExtensionFrame?: (hash: string, html: string) => Promise<boolean>
-  // The conversation peek: what has been said in a chat the person is hovering
-  // rather than looking at — the first message and everything since, from the
-  // prompts this app captured. `source` says whether there is an answer, a
-  // runtime that reports nothing, or no record at all, because the card is
-  // required to say so rather than look broken. See `shared/conversation-peek.ts`.
-  readConversationPeek: (sessionId: string) => Promise<ConversationPeek>
-  // Compact a terminal agent's conversation: `/compact` at its prompt, once
-  // main has checked the prompt is Claude Code's, waiting and empty
-  // (terminalCompactBlocker in shared/prompt-cache.ts). Offered as its prompt
-  // cache expires, so the next message re-sends a summary rather than all of it.
-  compactAgentSession: (sessionId: string) => Promise<{ ok: true } | { ok: false; message: string }>
-  // The hover hook for a terminal agent's pull request marks: the shell asks
-  // the Studio server to look the session's branch up (once per key per hold)
-  // and re-read any state older than ~60s. The pull requests themselves arrive as a fresh
-  // `terminal.sessions` carrying the session's `pullRequests`, never as
-  // a return value, so one path owns the fact. The boolean says only whether
-  // there was anything to ask about — false for a session main cannot name, or
-  // one whose checkout has not resolved yet — so a caller that asks once per
-  // session can tell "asked" from "could not ask yet" and try again.
-  refreshPullRequestsForSession: (sessionId: string) => Promise<boolean>
   diagnosticsGetProcessMetrics: () => Promise<ProcessMetricsSnapshot>
   // Synchronous: returns the preload's accumulated IPC counters (empty channels
   // when diagnostics is disabled, since instrumentation is skipped entirely).

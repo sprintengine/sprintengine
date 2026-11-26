@@ -17,7 +17,9 @@ import {
   type ScheduledAgentsModuleRegistry,
   type ScheduledAgentsService,
 } from '../../main/scheduled-agents/service'
-import { createScheduledAgentsStore, scheduledAgentsFilePath } from '../../main/scheduled-agents/store'
+import { createScheduledAgentsStore } from '../../main/scheduled-agents/store'
+import type { StudioDatabase } from '../db/database'
+import { createSnapshotStorage } from '../db/snapshot-storage'
 import type { ExecutionHostId } from '../../shared/execution-host'
 import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { scheduledAgentTitle, type ScheduledAgent, type ScheduledAgentView } from '../../shared/scheduled-agents'
@@ -45,7 +47,9 @@ import type { StudioPlatform } from '../platform/platform'
 const SCHEDULED_RUN_CLIENT_ID = 'studio-scheduled-agents'
 
 export type StudioScheduledAgentsDeps = {
-  platform: Pick<StudioPlatform, 'paths' | 'clients'>
+  platform: Pick<StudioPlatform, 'paths'>
+  /** The data folder's database: the schedules and their runs are kept in it. */
+  database: StudioDatabase
   conversations: {
     listSessions(input: {
       workspaceId?: string
@@ -108,7 +112,7 @@ export function createStudioScheduledAgents(deps: StudioScheduledAgentsDeps): St
   const warn = (message: string) => console.warn(`[scheduled-agents] ${message}`)
   const dataDir = deps.platform.paths.dataDir()
   let getModulePermissions: (moduleId: string) => readonly string[] | undefined = () => undefined
-  const store = createScheduledAgentsStore({ filePath: scheduledAgentsFilePath(dataDir), warn })
+  const store = createScheduledAgentsStore({ storage: createSnapshotStorage(deps.database, 'schedules'), warn })
   // Late-bound: the scheduler reports a finished run to the service, which
   // is built around the scheduler.
   let service: ScheduledAgentsService | null = null

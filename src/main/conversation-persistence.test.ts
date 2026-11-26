@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import { test, expect, vi } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, symlink, link, open, rm, rename, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -9,12 +10,10 @@ import {
   removeConversationStorage,
   MAX_CONVERSATION_TRANSCRIPT_BYTES,
 } from './conversation-persistence'
-import { readToolDetail, writeToolDetail } from './conversation-tool-details'
-import { ConversationEventLog } from './conversation-event-log'
+import { ToolDetailStore } from './conversation-tool-details'
+import { createChatLogs } from '../server/db/chat-logs'
 import { ConversationRuntime } from './conversation-runtime'
 import { ConversationIndex } from './conversation-index'
-import type { ConversationEvent } from '../shared/conversation-runtime'
-import { createMockConversationProvider } from './providers/mock-conversation-provider'
 import { workspaceStorePath } from './workspace-store'
 
 vi.mock('node:fs/promises', async (original) => {
@@ -70,55 +69,32 @@ test('parent replacement during exclusive open never writes content or cleans up
   }
 })
 
-test('a linked log refuses commands, whose receipts it holds, and replay', async () => {
-  const f = await fixture()
-  const adapter = createMockConversationProvider()
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
-  try {
-    const key = { workspaceRoot: f.root, workspaceId: 'workspace', agentId: 'agent' }
-    const started = await runtime.startSession({ ...key, providerId: adapter.id, modelId: adapter.listModels()[0] })
-    expect(started.ok).toBe(true)
-    if (!started.ok) throw new Error('Session failed to start')
-    await runtime.flushTranscripts()
-    const folder = workspaceStorePath(f.root, 'conversations', 'workspace')
-    const outside = join(f.outside, 'agent.jsonl')
-    await writeFile(outside, '')
-    await rm(join(folder, 'agent.jsonl'))
-    await symlink(outside, join(folder, 'agent.jsonl'))
-    expect(
-      await runtime.sendTurn({ sessionId: started.session.sessionId, commandId: 'linked-command', message: 'unsafe' }),
-    ).toMatchObject({ ok: false, message: expect.stringContaining('Symbolic links') })
-    expect(await readFile(outside, 'utf8')).toBe('')
-    expect(await runtime.readTranscript(key)).toMatchObject({ ok: false })
-  } finally {
-    await runtime.shutdown()
-    await f.cleanup()
-  }
-})
-
 test('bounded descriptor reads and atomic updates keep regular conversation files usable', async () => {
   const f = await fixture()
   try {
-    const path = join(f.root, '.sprintengine/conversations/workspace/agent.tools/read.json')
-    await writeToolDetail(f.root, path, { input: { path: 'a.ts' }, output: 'first', status: 'ok', clipped: false })
-    await writeToolDetail(f.root, path, { input: { path: 'a.ts' }, output: 'second', status: 'ok', clipped: false })
-    expect(await readToolDetail(f.root, path)).toMatchObject({ ok: true, detail: { output: 'second' } })
+    const path = join(f.root, '.sprintengine/conversations/workspace/handoffs/agent-1.md')
+    await writeConversationStorage(f.root, path, 'first')
+    await writeConversationStorage(f.root, path, 'second')
+    expect((await readConversationStorage(f.root, path, 1024)).toString('utf8')).toBe('second')
     await expect(readConversationStorage(f.root, path, 1)).rejects.toThrow('limit')
     await removeConversationStorage(f.root, path)
-    expect(await readToolDetail(f.root, path)).toMatchObject({ ok: false, code: 'not_found' })
+    await expect(readConversationStorage(f.root, path, 1024)).rejects.toMatchObject({ code: 'ENOENT' })
   } finally {
     await f.cleanup()
   }
 })
 
-test('tool detail leaf symlinks and hard links never reveal or replace outside JSON', async () => {
+test('a detail file from before the database that is a link is never imported, nor what it points at changed', async () => {
   const f = await fixture()
   try {
     const secret = join(f.outside, 'secret.json')
     await writeFile(secret, JSON.stringify({ secret: 'outside sentinel' }))
     const folder = join(f.root, '.sprintengine/conversations/workspace/agent.tools')
     await mkdir(folder, { recursive: true })
-    const runtime = new ConversationRuntime({ adapters: [] })
+    const runtime = new ConversationRuntime({
+      database: testChatDatabase(),
+      adapters: [],
+    })
     for (const [name, create] of [
       ['symbolic', symlink],
       ['hard', link],
@@ -133,9 +109,6 @@ test('tool detail leaf symlinks and hard links never reveal or replace outside J
           toolUseId: name,
         }),
       ).toMatchObject({ ok: false })
-      await expect(
-        writeToolDetail(f.root, path, { input: {}, output: 'replacement', status: 'ok', clipped: false }),
-      ).rejects.toThrow()
       expect(await readFile(secret, 'utf8')).toContain('outside sentinel')
     }
     await runtime.shutdown()
@@ -170,11 +143,7 @@ test('exclusive creation refuses an existing file and append refuses external li
     await expect(openConversationAppendFile(f.root, target, true)).rejects.toMatchObject({ code: 'EEXIST' })
     expect(await readFile(target, 'utf8')).toBe('owned')
     await symlink(secret, join(f.root, 'linked.jsonl'))
-    const errors: unknown[] = []
-    const log = new ConversationEventLog({ onError: (_path, error) => errors.push(error) })
-    await log.append(join(f.root, 'linked.jsonl'), { type: 'turn_completed' } as ConversationEvent, f.root)
-    await log.closeAll()
-    expect(errors).toHaveLength(1)
+    await expect(openConversationAppendFile(f.root, join(f.root, 'linked.jsonl'))).rejects.toThrow()
     expect(await readFile(secret, 'utf8')).toBe('outside')
   } finally {
     await f.cleanup()
@@ -185,23 +154,52 @@ test('oversized detail files fail before allocating their contents and oversized
   const f = await fixture()
   try {
     const folder = workspaceStorePath(f.root, 'conversations', 'workspace')
-    await mkdir(join(folder, 'agent.tools'), { recursive: true })
+    await mkdir(join(folder, 'other.tools'), { recursive: true })
     for (const [path, size] of [
-      [join(folder, 'agent.tools/large.json'), 6 * 1024 * 1024],
+      [join(folder, 'other.tools/large.json'), 6 * 1024 * 1024],
       [join(folder, 'agent.jsonl'), MAX_CONVERSATION_TRANSCRIPT_BYTES + 1],
     ] as const) {
       const file = await open(path, 'wx')
       await file.truncate(size)
       await file.close()
     }
-    expect(await readToolDetail(f.root, join(folder, 'agent.tools/large.json'))).toMatchObject({ ok: false })
-    const runtime = new ConversationRuntime({ adapters: [] })
+    const database = testChatDatabase()
+    // A detail file is taken up only for a log the database has.
+    await createChatLogs({ database }).append(
+      join(folder, 'other.jsonl'),
+      f.root,
+      [
+        {
+          seq: 1,
+          firstSeq: 1,
+          type: 'user_message',
+          turnId: null,
+          body: JSON.stringify({ type: 'user_message', agentId: 'other', createdAt: 1, payload: {} }),
+        },
+      ],
+      [],
+    )
+    expect(await new ToolDetailStore(database).read(f.root, join(folder, 'other.tools/large.json'))).toMatchObject({
+      ok: false,
+      code: 'unavailable',
+    })
+    const runtime = new ConversationRuntime({
+      database: testChatDatabase(),
+      adapters: [],
+    })
     // A transcript past the old whole-file limit still opens: its end is read,
     // and a file with no complete line has no events yet.
     expect(
       await runtime.readTranscript({ workspaceRoot: f.root, workspaceId: 'workspace', agentId: 'agent' }),
     ).toMatchObject({ ok: true, events: [] })
-    expect(await new ConversationIndex().list({ workspaceRoot: f.root, workspaceId: 'workspace' })).toEqual([])
+    expect(
+      (
+        await new ConversationIndex(database, createChatLogs({ database })).list({
+          workspaceRoot: f.root,
+          workspaceId: 'workspace',
+        })
+      ).map((thread) => thread.agentId),
+    ).toEqual(['other'])
     await runtime.shutdown()
   } finally {
     await f.cleanup()

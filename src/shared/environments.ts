@@ -5,6 +5,10 @@ import {
   type EnvironmentId,
   type EnvironmentRoute,
 } from '../../packages/studio-protocol/src/environment'
+import type {
+  EnvironmentCompatibility,
+  EnvironmentConnection,
+} from '../../packages/client-runtime/src/environments/environmentStatus'
 import type { MachineRef } from './machine-identity'
 
 // The environments this desktop knows, as every window reads them: one list,
@@ -14,41 +18,13 @@ import type { MachineRef } from './machine-identity'
 // client's own state, like its window geometry, so it is shell IPC, not a
 // server method.
 
-/**
- * How this desktop's connection to an environment stands, as the owner of
- * its best route reports it. Today each route's owner reports its own (the
- * SSH machines, the paired desktops' reachability, the WSL distributions);
- * once every machine is a direct environment, its connection supervisor does.
- */
-export type EnvironmentConnection = {
-  state: EnvironmentConnectionState
-  /** The owner's words for the state, when it has better ones than the state's own ("Installing Studio server 0.4.0"). */
-  detail: string | null
-  /** Epoch ms the machine last answered, when known and it is not answering now. */
-  lastReachedAt: number | null
-  /** What fixes a `signed-out` machine, in the owner's words ("Pair again", "Sign in"). */
-  remedy?: string
-}
-
-export type EnvironmentConnectionState =
-  /** Answering. */
-  | 'up'
-  /** A first attempt, or a reconnect, is under way. */
-  | 'connecting'
-  /** Tried and not answering, or given up on until asked again. */
-  | 'offline'
-  /** It refused this desktop's credentials: a pairing revoked there, an SSH sign-in needed. */
-  | 'signed-out'
-  /** Not tried yet: nothing has needed it. */
-  | 'unknown'
-
-/**
- * Whether this desktop and the environment's server speak an overlapping
- * protocol window (`studioCompatibility`), from the window the server last
- * said it speaks; `unknown` before it has said. This machine is always
- * `compatible`.
- */
-export type EnvironmentCompatibility = 'compatible' | 'client-outdated' | 'server-outdated' | 'unknown'
+// How a connection to an environment stands, and whether it speaks this
+// app's protocol, are the client runtime's: the phone reads the same.
+export type {
+  EnvironmentCompatibility,
+  EnvironmentConnection,
+  EnvironmentConnectionState,
+} from '../../packages/client-runtime/src/environments/environmentStatus'
 
 /** One environment as this desktop knows it. */
 export type EnvironmentEntry = {
@@ -116,4 +92,34 @@ export function environmentOfRoute(
   return (
     environments.find((entry) => entry.routes.some((candidate) => formatEnvironmentRoute(candidate) === key)) ?? null
   )
+}
+
+/** The route an environment is reached by, best first, as the bridge names it (`formatEnvironmentRoute`). */
+export function environmentRouteOf(entry: Pick<EnvironmentEntry, 'routes'>): string {
+  return formatEnvironmentRoute(entry.routes[0]!)
+}
+
+/**
+ * Whether an environment runs on this computer: this machine, or a WSL
+ * distribution it hosts. Its folders are this computer's to browse (a
+ * distribution's through its share) and its terminals this computer's.
+ */
+export function environmentOnThisComputer(entry: Pick<EnvironmentEntry, 'routes'>): boolean {
+  const best = entry.routes[0]
+  return best?.kind === 'local' || best?.kind === 'wsl'
+}
+
+/**
+ * The machines a picker lists, in an order that never moves with
+ * reachability: this computer and its distributions as the list has them,
+ * then every other environment alphabetically, whatever its route.
+ */
+export function orderEnvironmentsForPicking<T extends Pick<EnvironmentEntry, 'routes' | 'displayName'>>(
+  entries: readonly T[],
+): T[] {
+  const here = entries.filter(environmentOnThisComputer)
+  const away = entries
+    .filter((entry) => !environmentOnThisComputer(entry))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }))
+  return [...here, ...away]
 }

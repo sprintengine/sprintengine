@@ -79,10 +79,14 @@ const nameOf = (machine: PairedMachine | EnvironmentTarget) => ('route' in machi
  */
 export async function pairedScheduledAgents(
   machine: PairedMachine | EnvironmentTarget,
-): Promise<MeshScheduledAgentsResult> {
-  const answer = await askSchedules(machine, (client) => client.rpc['schedules.list']({}))
+): Promise<MeshScheduledAgentsResult & ({ ok: true; operate: boolean } | { ok: false })> {
+  const answer = await askSchedules(machine, async (client) => ({
+    listed: await client.rpc['schedules.list']({}),
+    // Whether this desktop may run, pause, resume or close them there, as its grant says now.
+    operate: client.grant.scopes.includes('workspaces:operate'),
+  }))
   if (!answer.ok) return answer
-  return { ...scheduledAgentsOf(answer.value), canCreate: true, canEdit: true }
+  return { ...scheduledAgentsOf(answer.value.listed), canCreate: true, canEdit: true, operate: answer.value.operate }
 }
 
 /** Run now, pause, resume or close one of them there. */

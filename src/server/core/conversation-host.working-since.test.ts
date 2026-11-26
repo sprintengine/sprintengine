@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -99,6 +100,7 @@ async function chatOnTheMini() {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-working-since-'))
   const provider = backgroundAgentProvider()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     now: () => clock,
@@ -168,7 +170,8 @@ test('a chat stays working from the person’s message through the turns its bac
     chat.at(t1)
     chat.provider.wakes('cont_1')
     chat.provider.replies('cont_1')
-    await until(() => chat.summary().status === 'active')
+    // The turn's own phase lands with its turn_started, which can trail the session going active.
+    await until(() => chat.summary().status === 'active' && chat.summary().phase === 'running')
     chat.at(t1 + 5_000)
     const woken = await chat.listed()
     assert.equal(woken.phase, 'running')

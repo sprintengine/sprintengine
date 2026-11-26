@@ -3,7 +3,6 @@ import { readdir, stat } from 'fs/promises'
 import { basename, join } from 'node:path'
 import {
   MAX_CONVERSATION_METADATA_BYTES,
-  readConversationStorage,
   removeConversationStorage,
   writeConversationStorage,
 } from './conversation-persistence'
@@ -101,12 +100,10 @@ import {
   type WorkingStretch,
 } from '../shared/conversation/workingStretch'
 import {
-  readToolDetail,
-  writeToolDetail,
   redactConversationValue,
   ToolDetailWriteQueue,
+  ToolDetailStore,
   ToolOutputStream,
-  toolOutputStreamPath,
   TOOL_PREVIEW_CHARS,
 } from './conversation-tool-details'
 import {
@@ -121,6 +118,8 @@ import { parseConversationAttachedFiles, type ConversationAttachedFile } from '.
 import { worktreeLeases, type WorktreeBusy, type WorktreeHold, type WorktreeLeases } from './worktree-leases'
 import { ConversationCheckpoints } from './conversation-checkpoints'
 import { ConversationIndex } from './conversation-index'
+import { createChatLogs, type ChatLogs } from '../server/db/chat-logs'
+import type { StudioDatabase } from '../server/db/database'
 import type {
   ConversationWorkspaceKey,
   ConversationSearchInput,
@@ -329,6 +328,8 @@ function openProviderTurn(turnId: string, continuation: boolean): ProviderTurn {
 }
 
 export type ConversationRuntimeOptions = {
+  /** The data folder's database: every chat's log, receipts, rows, search and tool details are kept in it. */
+  database: StudioDatabase
   /**
    * The mode a chat's launch holds it to (`AgentState.conversationModeHeld`), if
    * any. Read at each send, because the chat's record is where it lives and a
@@ -491,11 +492,6 @@ const LAST_ASSISTANT_TAIL_CHARS = 320
 // renderer; the JSONL on disk keeps everything.
 const MAX_TRANSCRIPT_REPLAY_EVENTS = 2000
 
-// The most a step's detail, or its streamed output, can be on disk
-// (conversation-tool-details.ts), with room to spare: what a fork copies of
-// each.
-const MAX_FORKED_DETAIL_BYTES = 6 * 1024 * 1024
-
 // Stateful adapters that never read `fallbackHistory`: Claude Code resumes
 // its own session and has no use for the conversation replayed as text. The
 // history is up to a page of transcript, so it is not built for them.
@@ -505,11 +501,6 @@ const ADAPTERS_WITHOUT_FALLBACK_HISTORY: ReadonlySet<string> = new Set([CLAUDE_A
 // longer than this shows its newest part; the card draws a few hundred
 // characters of it either way.
 const PEEK_TURN_BYTES = 256 * 1024
-
-// How far back a picture request from a paired device looks for the step
-// that made the picture. The host keeps what it found, so only the first
-// request for a step pays for the scan.
-const TOOL_CALL_SCAN_BYTES = 32 * 1024 * 1024
 
 // Same cadence as the terminal runtime's stale-terminal sweep: often enough
 // that an idle child process does not outlive the threshold by much, rare
@@ -631,6 +622,8 @@ export class ConversationRuntime {
   private readonly toolDetails = new Map<string, ConversationToolDetail>()
   private readonly toolStreams = new Map<string, ToolOutputStream>()
   private readonly toolDetailWrites: ToolDetailWriteQueue
+  private readonly toolDetailStore: ToolDetailStore
+  private readonly history: ChatLogs
   private readonly toolPreviews = new Map<string, ToolPreviewThrottle>()
   private readonly toolPreviewIntervalMs: number
   private eventSequence = 0
@@ -641,7 +634,7 @@ export class ConversationRuntime {
   private idleSweepTimer: NodeJS.Timeout | null = null
   private idleSweepActivity: (() => void) | null = null
 
-  constructor(options: ConversationRuntimeOptions = {}) {
+  constructor(options: ConversationRuntimeOptions) {
     this.secretStore = options.secretStore ?? new ProviderSecretStore()
     this.getProviderById = options.getProviderById ?? getConversationProviderById
     // Every CLI chat is handed the app's gateway at launch, whichever agent runs it.
@@ -666,7 +659,12 @@ export class ConversationRuntime {
       this.adapters.set(adapter.id, adapter)
     }
     this.stat = options.stat ?? stat
+    this.history = createChatLogs({
+      database: options.database,
+      log: (message) => console.warn(`[conversation-runtime] ${message}`),
+    })
     this.eventLog = new ConversationEventLog({
+      history: this.history,
       onError: (filePath, error) => {
         console.warn(
           `[conversation-runtime] transcript write failed for ${filePath}:`,
@@ -676,17 +674,17 @@ export class ConversationRuntime {
       ...options.eventLog,
     })
     this.transcriptLimits = { ...DEFAULT_TRANSCRIPT_LIMITS, ...options.transcriptLimits }
-    this.transcripts = new ConversationTranscriptReader(this.transcriptLimits)
-    this.threadIndex = new ConversationIndex({
+    this.transcripts = new ConversationTranscriptReader(this.history, this.transcriptLimits)
+    this.threadIndex = new ConversationIndex(options.database, this.history, {
       flush: (path) => this.eventLog.flush(path),
       close: (path) => this.eventLog.close(path),
-      maxTranscriptBytes: this.transcriptLimits.fullReadBytes,
     })
     this.now = options.now ?? Date.now
     this.toolPreviewIntervalMs = options.toolPreviewIntervalMs ?? DEFAULT_TOOL_PREVIEW_INTERVAL_MS
+    this.toolDetailStore = new ToolDetailStore(options.database)
     this.toolDetailWrites = new ToolDetailWriteQueue({
-      read: readToolDetail,
-      write: writeToolDetail,
+      read: (root, path) => this.toolDetailStore.read(root, path),
+      write: (root, path, detail) => this.toolDetailStore.write(root, path, detail),
       ...(options.toolDetailWriteWindowMs !== undefined ? { windowMs: options.toolDetailWriteWindowMs } : {}),
     })
     this.randomId = options.randomId ?? (() => Math.random().toString(36).slice(2, 10))
@@ -702,7 +700,7 @@ export class ConversationRuntime {
     this.attachmentStore = options.attachmentStore ?? new ConversationAttachmentStore()
     this.uploadRoots = options.uploadRoots ?? []
     this.planStore = options.planStore ?? new ConversationPlanStore()
-    this.outbox = options.outbox ?? new ConversationOutbox()
+    this.outbox = options.outbox ?? new ConversationOutbox(options.database)
     // Startup-time epoch (not randomId — tests inject deterministic id
     // sequences that must not be consumed by construction).
     this.eventEpoch = this.now().toString(36)
@@ -834,10 +832,8 @@ export class ConversationRuntime {
         // The chat's worktree, given back while it sat idle, is brought back
         // before anything is spawned in it; a new chat's checkout is brought up
         // to date before its agent reads it.
-        const fresh = !(await stat(path).then(
-          () => true,
-          () => false,
-        ))
+        // Fresh: no history yet, its transcript from before the database included.
+        const fresh = !(await this.history.exists(path, input.workspaceRoot))
         const folder = await this.prepareChatFolder({
           workspaceId: input.workspaceId.trim(),
           workspaceRoot: input.workspaceRoot,
@@ -1899,8 +1895,6 @@ export class ConversationRuntime {
    */
   private lostCommit(session: RuntimeSession, event: ConversationEvent, options: EmitOptions = {}): void {
     const path = this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId)
-    // The reader's cached tail assumed the file only grows; a failed write was cut back.
-    this.transcripts.forget(path)
     // The message a send opens its turn with: nothing runs yet (a steer's
     // message joins a stream that does).
     if (event.type === 'user_message' && !session.providerTurn) return
@@ -1935,7 +1929,6 @@ export class ConversationRuntime {
   /** Append and publish an event outside any session's emissions, or fail saying the log did not take it. */
   private async commitOrThrow(root: string, path: string, event: ConversationEvent): Promise<void> {
     if (this.publish(event, await this.eventLog.append(path, event, root).catch(() => 'failed' as const))) return
-    this.transcripts.forget(path)
     throw new Error('The conversation could not be saved to disk.')
   }
 
@@ -3480,7 +3473,7 @@ export class ConversationRuntime {
   private loadReceipts(root: string, path: string): Promise<Map<string, ConversationCommandReceipt>> {
     const cached = this.receipts.get(path)
     if (cached) return cached
-    const loading = this.eventLog.flush(path).then(() => readConversationReceipts(root, path))
+    const loading = this.eventLog.flush(path).then(() => readConversationReceipts(this.history, root, path))
     this.receipts.set(path, loading)
     loading.catch(() => {
       if (this.receipts.get(path) === loading) this.receipts.delete(path)
@@ -3709,7 +3702,7 @@ export class ConversationRuntime {
     // and the newest output, which may still be waiting out its write's window.
     await this.toolStreams.get(path)?.settled()
     await this.toolDetailWrites.flush(path)
-    return readToolDetail(input.workspaceRoot, path)
+    return this.toolDetailStore.read(input.workspaceRoot, path)
   }
 
   /**
@@ -3770,25 +3763,15 @@ export class ConversationRuntime {
     const path = this.transcriptPath(input.workspaceRoot, input.workspaceId, input.agentId)
     try {
       await this.eventLog.flush(path)
-      const event = await this.transcripts.findLast(
-        input.workspaceRoot,
-        path,
-        (candidate) => candidate.type === 'tool_started' && candidate.payload?.toolUseId === input.toolUseId,
-        // A paired device asks for a step it was shown, so it is recent; a
-        // miss past this reads as an unknown step rather than scanning the
-        // whole transcript on every request.
-        TOOL_CALL_SCAN_BYTES,
-      )
+      // Found however far back it lies, by the log's type index.
+      const started = await this.history.findTool(path, input.workspaceRoot, 'tool_started', input.toolUseId)
+      const event = started ? (JSON.parse(started) as ConversationEvent) : undefined
       if (!event?.payload) return null
       const name = event.payload.name ?? event.payload.tool
       // A step announces itself before it is approved, so its end is read as
       // well: a declined read showed nothing, and must not serve its file.
-      const output = await this.transcripts.findLast(
-        input.workspaceRoot,
-        path,
-        (candidate) => candidate.type === 'tool_output' && candidate.payload?.toolUseId === input.toolUseId,
-        TOOL_CALL_SCAN_BYTES,
-      )
+      const ended = await this.history.findTool(path, input.workspaceRoot, 'tool_output', input.toolUseId)
+      const output = ended ? (JSON.parse(ended) as ConversationEvent) : undefined
       const status = output?.payload?.status
       return {
         name: typeof name === 'string' ? name : '',
@@ -3910,12 +3893,7 @@ export class ConversationRuntime {
       await this.attachmentStore.deleteConversation(input)
       await this.planStore.deleteConversation(input)
       await this.deleteHandoffFiles(input)
-      // Files an older build kept beside the transcript: receipts now live in
-      // the log, and nothing unwritten is published to need a lost number.
-      for (const sidecar of ['.receipts.json', '.receipts.json.corrupt', '.lost-seq.json'])
-        await removeConversationStorage(input.workspaceRoot, path.replace(/\.jsonl$/, sidecar))
       this.receipts.delete(path)
-      this.transcripts.forget(path)
       this.sequences.delete(path)
       this.unclosedLogs.delete(path)
       this.emissionTails.delete(path)
@@ -3954,7 +3932,7 @@ export class ConversationRuntime {
     if (event.type === 'tool_started') {
       // A step announced again mid-stream reads the output it has so far.
       await this.toolDetailWrites.flush(path)
-      const previous = await readToolDetail(session.workspaceRoot, path)
+      const previous = await this.toolDetailStore.read(session.workspaceRoot, path)
       const detail: ConversationToolDetail = previous.ok
         ? previous.detail
         : { input: {}, output: '', status: 'ok', clipped: false }
@@ -3978,7 +3956,7 @@ export class ConversationRuntime {
     const text = typeof output === 'string' ? output : JSON.stringify(output)
     let stream = this.toolStreams.get(path)
     if (append && !stream) {
-      stream = new ToolOutputStream(session.workspaceRoot, toolOutputStreamPath(path))
+      stream = this.toolDetailStore.stream(path)
       this.toolStreams.set(path, stream)
       session.toolDetailPaths.add(path)
     }
@@ -4039,7 +4017,7 @@ export class ConversationRuntime {
       await stream.finish()
       if (stream.clipped) detail.clipped = true
       // A final output that carries everything supersedes what streamed.
-      if (!append) await removeConversationStorage(session.workspaceRoot, stream.path).catch(() => undefined)
+      if (!append) await this.toolDetailStore.removeOutput(path).catch(() => undefined)
     }
     await this.toolDetailWrites.queue(session.workspaceRoot, path, detail, { mergeInput: !known })
     session.toolDetailPaths.delete(path)
@@ -4217,7 +4195,6 @@ export class ConversationRuntime {
    */
   private releaseTranscript(session: RuntimeSession): void {
     const path = this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId)
-    this.transcripts.forget(path)
     const tail = this.emissionTails.get(path)
     this.runInBackground(
       Promise.allSettled([tail, session.continuationTail]).then(() => {
@@ -4289,6 +4266,16 @@ export class ConversationRuntime {
    * and the chat list hear the end without anyone opening the chat. A chat
    * stays listed while its log cannot be written, for the next start.
    */
+  /**
+   * Bring a chat's history from before the database in now (`chat-logs.ts`),
+   * if it has any and was not imported yet: the background pass's step, so a
+   * chat nobody opens is searched and listed whole too.
+   */
+  async takeUpHistory(key: ConversationTranscriptInput): Promise<void> {
+    if (this.shutDown) return
+    await this.history.ensure(this.transcriptPath(key.workspaceRoot, key.workspaceId, key.agentId), key.workspaceRoot)
+  }
+
   recoverInterruptedTurns(): Promise<void> {
     // Waited for by a quit, so nothing is appended after the logs close.
     const recovering = this.recoverInterruptedTurnsNow()
@@ -4309,6 +4296,32 @@ export class ConversationRuntime {
       })
       if (closed) await this.outbox.settle(chat)
     }
+  }
+
+  /**
+   * A transcript a hand-over brings for the chat whose log is at `path`
+   * (`ChatLogs.adopt`): taken as its history when what this Studio holds of
+   * it is a beginning of it. A chat a session here is running keeps its
+   * own. Its writes so far land first, and what this runtime knew of the
+   * log (its last number, its receipts) goes with the rows it replaces, so
+   * the next event is numbered after the transcript's.
+   */
+  async adoptTranscript(path: string, root: string, incoming: string): Promise<boolean> {
+    const running = Array.from(this.sessions.values()).some(
+      (session) =>
+        session.status !== 'stopped' &&
+        this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId) === path,
+    )
+    if (running) return false
+    await this.emissionTails.get(path)
+    await this.eventLog.flush(path)
+    const adopted = await this.history.adopt(path, root, incoming)
+    if (adopted) {
+      // Read again from the log (`initializeSequence`) before anything is written to it.
+      this.sequences.delete(path)
+      this.receipts.delete(path)
+    }
+    return adopted
   }
 
   async recoverTranscript(input: ConversationTranscriptInput): Promise<void> {
@@ -4986,7 +4999,7 @@ export class ConversationRuntime {
       await this.eventLog.flush(forkPath)
       if ((await Promise.all(appended)).includes('failed')) {
         await this.eventLog.close(forkPath)
-        await removeConversationStorage(key.workspaceRoot, forkPath).catch(() => undefined)
+        await this.history.remove(forkPath, key.workspaceRoot).catch(() => undefined)
         return { ok: false, message: 'The fork could not be saved to disk.' }
       }
       this.sequences.set(forkPath, events.length)
@@ -5057,15 +5070,15 @@ export class ConversationRuntime {
       await this.eventLog.flush(path)
       if ((await Promise.all(appended)).includes('failed')) {
         await this.eventLog.close(path)
-        await removeConversationStorage(key.workspaceRoot, path).catch(() => undefined)
+        await this.history.remove(path, key.workspaceRoot).catch(() => undefined)
         return { ok: false, message: 'The imported conversation could not be saved to disk.' }
       }
       this.sequences.set(path, events.length)
       await this.eventLog.close(path)
       for (const [toolUseId, detail] of details)
-        await writeToolDetail(key.workspaceRoot, this.toolDetailPath({ ...key, toolUseId }), detail).catch(
-          () => undefined,
-        )
+        await this.toolDetailStore
+          .write(key.workspaceRoot, this.toolDetailPath({ ...key, toolUseId }), detail)
+          .catch(() => undefined)
       this.runInBackground(this.threadIndex.refresh(key).catch(() => undefined))
       return { ok: true }
     } catch (error) {
@@ -5091,13 +5104,9 @@ export class ConversationRuntime {
       const from = this.toolDetailPath({ ...key, toolUseId })
       const to = this.toolDetailPath({ ...key, agentId: newAgentId, toolUseId })
       await this.toolDetailWrites.flush(from)
-      for (const [source, target] of [
-        [from, to],
-        [toolOutputStreamPath(from), toolOutputStreamPath(to)],
-      ])
-        await readConversationStorage(key.workspaceRoot, source, MAX_FORKED_DETAIL_BYTES)
-          .then((content) => writeConversationStorage(key.workspaceRoot, target, content.toString('utf8')))
-          .catch(() => undefined)
+      // Read first, so a detail kept as a file before the database is brought in to be copied.
+      await this.toolDetailStore.read(key.workspaceRoot, from).catch(() => undefined)
+      await this.toolDetailStore.copy(from, to).catch(() => undefined)
     }
   }
 

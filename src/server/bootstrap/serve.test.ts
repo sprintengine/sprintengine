@@ -260,28 +260,24 @@ test('a shutdown sent while the server starts is carried out once it has', async
 test('a client attached before the server is ready reaches it once it is, with its port', async () => {
   const fake = fakeChannel()
   const attached: Array<[string, unknown]> = []
-  const detached: string[] = []
   const exit = serveOnChannel(fake.channel, {
     starters: {
       headless: async () =>
         fakeServer({
           attachClient: (attach, port) => attached.push([attach.clientId, port]),
-          detachClient: (clientId) => detached.push(clientId),
         }),
     },
     unwrapEnvelope: true,
     buildStamp: null,
     log: silent,
   })
-  const port = { name: 'window port' }
+  const port = { name: 'shell port' }
   fake.post({ t: 'envelope', envelope: ENVELOPE })
-  fake.post({ t: 'attach-client', clientId: 'w1', windowId: 'main', kind: 'desktop-window' }, [port])
+  fake.post({ t: 'attach-client', clientId: 'shell-1', kind: 'shell' }, [port])
   await fake.frame('ready')
-  assert.deepEqual(attached, [['w1', port]])
-  fake.post({ t: 'detach-client', clientId: 'w1' })
+  assert.deepEqual(attached, [['shell-1', port]])
   fake.post({ t: 'shutdown', drain: true, budgetMs: 1_000 })
   await exit
-  assert.deepEqual(detached, ['w1'])
 })
 
 test('a server that has to leave on its own stops and exits with its reason', async () => {
@@ -413,7 +409,7 @@ test('the parent-port carrier unwraps the envelope and hands ports through', asy
   })
   deliver({ data: { t: 'envelope', envelope: ENVELOPE } })
   const windowPort = { kind: 'MessagePortMain' }
-  deliver({ data: { t: 'attach-client', clientId: 'w', windowId: null, kind: 'desktop-window' }, ports: [windowPort] })
+  deliver({ data: { t: 'attach-client', clientId: 'w', kind: 'shell' }, ports: [windowPort] })
   await waitFor(() => posted.some((message) => (message as { t?: string }).t === 'ready'))
   assert.deepEqual(attached, [windowPort])
   deliver({ data: { t: 'shutdown', drain: true, budgetMs: 1_000 } })

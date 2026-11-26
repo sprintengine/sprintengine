@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { environmentsForTest } from '../../../hooks/environments.double'
 
 import { JSDOM } from 'jsdom'
 import { composerField, typeIntoComposer } from '../../../../../../tests/composer-field'
@@ -107,6 +108,16 @@ test('NewAgentPanel launch paths', async () => {
     },
     getGitRepoRoot: async () => '/proj',
     meshListConnections: async () => meshConnections,
+    // The one list New chat reads machines from, made from the records above.
+    environmentsList: async () => {
+      const api = (dom.window as unknown as { api: Record<string, unknown> }).api
+      const ssh =
+        api.sshMachinesEnabled && typeof api.sshEnvironmentsList === 'function'
+          ? await (api.sshEnvironmentsList as () => Promise<never[]>)()
+          : []
+      return environmentsForTest({ hosts: hostsAnswer.hosts as never, ssh, paired: meshConnections as never })
+    },
+    onEnvironmentsChanged: () => () => {},
     getGitRepositoryIdentity: async (folderPath: string) => localIdentityAnswer(folderPath),
     onMeshEvent: () => () => {},
     defaultWorkspaceParentDir: async () => '/w',
@@ -215,7 +226,12 @@ test('NewAgentPanel launch paths', async () => {
     const { act } = await import('react')
     const { createRoot } = await import('react-dom/client')
     const NewAgentPanel = (await import('./NewAgentPanel')).default
-    const { resetRememberedMachineForTests } = await import('./NewAgentPanel')
+    const { resetRememberedMachineForTests: resetMachine } = await import('./NewAgentPanel')
+    const { resetEnvironmentsForTests } = await import('../../../hooks/useEnvironments')
+    const resetRememberedMachineForTests = () => {
+      resetMachine()
+      resetEnvironmentsForTests()
+    }
     const { useWorkspaceStore } = await import('../../../store/workspaceStore')
     const { __resetCliPermissionPresetsForTest } = await import('../../ui/cliPermissionPresets')
 
@@ -404,12 +420,17 @@ test('NewAgentPanel launch paths', async () => {
       lastFailureSeenAt: null,
       nextRunAt: null,
     }
+    // What the door starts on another machine: its one launch there, by route.
+    const remoteLaunches: Array<Record<string, unknown>> = []
     const scheduleProps = (extra: Record<string, unknown> = {}) => ({
       initialSelection: { kind: 'conversation' },
       folderPath: '/proj',
       projectOptions: [],
       onSelectProject: () => {},
       onBrowseProject: () => {},
+      onLaunchRemote: async (launch: Record<string, unknown>) => {
+        remoteLaunches.push(launch)
+      },
       ...extra,
     })
 
@@ -481,7 +502,7 @@ test('NewAgentPanel launch paths', async () => {
       view.unmount()
     })
 
-    await check('turning Schedule on drops a picked SSH machine, so the strip and the saved agent agree', async () => {
+    await check('turning Schedule on keeps a picked SSH machine, whose own scheduler runs it', async () => {
       seedStore()
       const api = (dom.window as unknown as { api: Record<string, unknown> }).api
       const drafts: Array<Record<string, unknown>> = []
@@ -511,7 +532,7 @@ test('NewAgentPanel launch paths', async () => {
         const view = await render(scheduleProps())
         await settle()
         await click(view.container.querySelector('[data-machine-trigger="true"]')!)
-        await click(dom.window.document.querySelector('[data-machine-ssh="ssh-1"]')!)
+        await click(dom.window.document.querySelector('[data-machine-route="ssh:ssh-1"]')!)
         await settle()
         assert.ok(
           view.container.querySelector('[aria-label="Folder on build-box"]') !== null,
@@ -520,17 +541,37 @@ test('NewAgentPanel launch paths', async () => {
         const menu = await openOptions(view)
         await click(menu!.querySelector('[data-composer-schedule="true"]')!)
         assert.ok(view.container.querySelector('[data-schedule-tag="true"]') !== null, 'scheduled')
-        // A scheduled agent runs on this computer: the strip must not go on
-        // asking for a folder on a machine the schedule will never use.
-        assert.equal(
-          view.container.querySelector('[aria-label="Folder on build-box"]') !== null,
-          false,
-          'no SSH folder field while scheduled',
-        )
+        // A machine's own scheduler runs a schedule made there: the strip and
+        // the saved agent both name that machine and its folder.
+        const folder = view.container.querySelector<HTMLInputElement>('[aria-label="Folder on build-box"]')
+        assert.ok(folder, 'the SSH folder field stays while scheduled')
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!.call(
+            folder,
+            '/home/dev/app',
+          )
+          folder!.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+        })
+        const made: Array<{ connectionId: string; params: Record<string, unknown> }> = []
+        pairedStudio.answers['schedules.create'] = (params, connectionId) => {
+          made.push({ connectionId, params })
+          return {
+            schedule: {
+              id: 'sa-ssh',
+              prompt: params.prompt,
+              schedule: { cron: params.cron, timezone: params.timezone },
+              folderPath: params.workspaceRoot,
+              cli: params.cli,
+            },
+          }
+        }
         await typePrompt(view, 'Triage the new issues.')
         await click(sendOf(view)!)
         await settle()
-        assert.equal(drafts[0]?.folderPath, '/proj', 'the agent is saved for the project the strip shows')
+        assert.equal(drafts.length, 0, 'not saved in this desktop’s store')
+        assert.equal(made[0]?.connectionId, 'ssh:ssh-1', 'made on the machine picked')
+        assert.equal(made[0]?.params.workspaceRoot, '/home/dev/app', 'in the folder typed for it')
+        delete pairedStudio.answers['schedules.create']
         view.unmount()
       } finally {
         delete api.sshMachinesEnabled
@@ -571,7 +612,7 @@ test('NewAgentPanel launch paths', async () => {
           const chat = await render(scheduleProps())
           await settle()
           await click(chat.container.querySelector('[data-machine-trigger="true"]')!)
-          await click(dom.window.document.querySelector('[data-machine-ssh="ssh-1"]')!)
+          await click(dom.window.document.querySelector('[data-machine-route="ssh:ssh-1"]')!)
           await settle()
           assert.ok(chat.container.querySelector('[aria-label="Folder on build-box"]') !== null, 'picked')
           chat.unmount()
@@ -586,7 +627,7 @@ test('NewAgentPanel launch paths', async () => {
           const trigger = view.container.querySelector('[data-machine-trigger="true"]')
           if (trigger) await click(trigger)
           assert.equal(
-            dom.window.document.querySelector('[data-machine-ssh="ssh-1"]'),
+            dom.window.document.querySelector('[data-machine-route="ssh:ssh-1"]'),
             null,
             'nor an SSH machine to pick',
           )
@@ -601,7 +642,7 @@ test('NewAgentPanel launch paths', async () => {
           await settle()
           assert.equal(view.launches.length, 1)
           assert.deepEqual(view.launches[0]?.extension, { id: 'pr-radar' }, 'the extension is made here')
-          assert.equal(view.launches[0]?.environment, undefined, 'not a chat on the SSH machine')
+          assert.equal(remoteLaunches.length, 0, 'not a chat on the SSH machine')
           view.unmount()
         } finally {
           delete api.sshMachinesEnabled
@@ -865,13 +906,14 @@ test('NewAgentPanel launch paths', async () => {
       resetNewChatDraftsForTests()
       const api = (dom.window as unknown as { api: Record<string, unknown> }).api
       const asked: string[] = []
-      const repoRoot = api.getGitRepoRoot
-      // The machine's own Studio answers for its folders (`paneStudio.ts`); a
-      // folder of notes there is no repository.
-      api.getGitRepoRoot = async (folder: string) => {
-        asked.push(folder)
-        return folder.endsWith('/notes') ? null : folder
+      // The machine's own Studio answers for its folders; a folder of notes
+      // there is no repository.
+      pairedStudio.answers['files.repoRoot'] = (params, connectionId) => {
+        const folder = String(params.folderPath)
+        asked.push(`${connectionId} ${folder}`)
+        return { repoRoot: folder.endsWith('/notes') ? null : folder }
       }
+      remoteLaunches.length = 0
       api.sshMachinesEnabled = true
       api.sshEnvironmentsList = async () => [
         {
@@ -904,7 +946,7 @@ test('NewAgentPanel launch paths', async () => {
         const view = await render(scheduleProps({ draftKey: 'w' }))
         await settle()
         await click(view.container.querySelector('[data-machine-trigger="true"]')!)
-        await click(dom.window.document.querySelector('[data-machine-ssh="ssh-1"]')!)
+        await click(dom.window.document.querySelector('[data-machine-route="ssh:ssh-1"]')!)
         await settle()
         await typeFolder(view, '/home/dev/notes')
         assert.equal(
@@ -913,22 +955,23 @@ test('NewAgentPanel launch paths', async () => {
           'no Worktree for a folder that is not a repository there',
         )
         await typeFolder(view, '/home/dev/app/')
-        assert.ok(asked.includes('ssh://ssh-1/home/dev/app'), `the machine is asked of its folder: ${asked.join(', ')}`)
+        assert.ok(asked.includes('ssh:ssh-1 /home/dev/app'), `the machine is asked of its folder: ${asked.join(', ')}`)
         await nameWorktree(view, 'fix-login')
         await typePrompt(view, 'Fix the login.')
         await click(sendOf(view)!)
         await settle()
-        assert.equal(view.launches.length, 1)
-        assert.deepEqual(view.launches[0]?.environment, {
-          kind: 'ssh',
-          id: 'ssh-1',
-          label: 'build-box',
-          folder: '/home/dev/app',
-        })
-        assert.deepEqual(view.launches[0]?.worktree, { name: 'fix-login' }, 'the chat asks for its worktree there')
+        assert.equal(view.launches.length, 0, 'nothing starts on this computer')
+        assert.equal(remoteLaunches.length, 1)
+        assert.equal(remoteLaunches[0]?.route, 'ssh:ssh-1', 'the one launch, on that machine')
+        assert.equal(remoteLaunches[0]?.folder, '/home/dev/app', 'in its folder there, as it spells it')
+        assert.deepEqual(
+          remoteLaunches[0]?.worktree,
+          { kind: 'new', name: 'fix-login' },
+          'the chat asks for its worktree there',
+        )
         view.unmount()
       } finally {
-        api.getGitRepoRoot = repoRoot
+        delete pairedStudio.answers['files.repoRoot']
         delete api.sshMachinesEnabled
         delete api.sshEnvironmentsList
         resetRememberedMachineForTests()
@@ -992,7 +1035,10 @@ test('NewAgentPanel launch paths', async () => {
           assert.equal(chip()!.textContent, 'No container')
           // A container is a machine: the machine picker lists it too.
           await click(view.container.querySelector('[data-machine-trigger="true"]')!)
-          assert.ok(dom.window.document.querySelector('[data-machine-ssh="0123456789abcdef"]'), 'listed as a machine')
+          assert.ok(
+            dom.window.document.querySelector('[data-machine-route="ssh:0123456789abcdef"]'),
+            'listed as a machine',
+          )
           await click(view.container.querySelector('[data-machine-trigger="true"]')!)
           // Its card: this computer, each container with where it runs, and New container….
           await click(chip()!)
@@ -1007,7 +1053,6 @@ test('NewAgentPanel launch paths', async () => {
           assert.equal(chip()!.textContent, 'sandbox', 'the chip names the container picked')
           const folder = view.container.querySelector<HTMLInputElement>('[aria-label="Folder on sandbox"]')
           assert.ok(folder, 'the folder is typed as for any machine')
-          assert.match(folder.placeholder, /\/home\/node\/work\/repo/u)
           await act(async () => {
             const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!
             setter.call(folder, '/home/node/work/proj')
@@ -1016,20 +1061,16 @@ test('NewAgentPanel launch paths', async () => {
           await typePrompt(view, 'Fix the login.')
           await click(sendOf(view)!)
           await settle()
-          assert.equal(view.launches.length, 1)
-          assert.deepEqual(view.launches[0]?.environment, {
-            kind: 'ssh',
-            id: '0123456789abcdef',
-            label: 'sandbox',
-            folder: '/home/node/work/proj',
-          })
+          assert.equal(view.launches.length, 0)
+          assert.equal(remoteLaunches.at(-1)?.route, 'ssh:0123456789abcdef')
+          assert.equal(remoteLaunches.at(-1)?.folder, '/home/node/work/proj')
           view.unmount()
 
           // With an SSH machine picked, the card's first row is that machine, ticked, not this computer.
           const onSsh = await render(scheduleProps())
           await settle()
           await click(onSsh.container.querySelector('[data-machine-trigger="true"]')!)
-          await click(dom.window.document.querySelector('[data-machine-ssh="ssh-1"]')!)
+          await click(dom.window.document.querySelector('[data-machine-route="ssh:ssh-1"]')!)
           await settle()
           await click(onSsh.container.querySelector('[data-container-trigger="true"]')!)
           await settle()

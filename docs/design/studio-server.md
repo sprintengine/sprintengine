@@ -8,8 +8,9 @@ landed"). Since 2026-11-12 the chat view runs on the
 protocol only: the variable, the window's conversation IPC and the
 `chat-over-studio` test project are gone. Phases 5 to 9 were built too, each
 recorded in its own spec: client tools (`client-tools`, 2026-10-02), the local
-server out of process (behind the Advanced toggle, in process still the
-default), a server inside each WSL distribution, SSH machines, and the web
+server out of process (behind the Advanced toggle at first; since 2026-11-25
+the only mode, with no in-process mode, toggle or fallback), a server inside
+each WSL distribution, SSH machines, and the web
 listener with its client (2026-10-03). Since 2026-11-13 every WSL distribution
 and SSH machine is an environment of its own, reached on the Studio protocol,
 and since 2026-11-14 the tailnet's conversation lane is gone: a paired device
@@ -1247,7 +1248,11 @@ in `docs/design/studio-server/phase-8-ssh-remotes.md`.
 `environment.id` it last reported. The sidebar files every chat under its
 project, wherever it runs (owner ruling 2026-09-11): the machine is a glyph on
 the row, never a group of its own. Settings ▸ Machines and the machine
-dropdown in New chat list environments, whatever kind of machine each is.
+dropdown in New chat list environments, whatever kind of machine each is. A
+chat New chat starts on any machine but this computer and its WSL
+distributions is started by that environment's own `conversation.create`, by
+its route, in one of its projects or in a folder typed for it
+(`new-chat-folder`); the agent CLIs it offers are that machine's.
 
 _As built so far (2026-11-11)_: the types are in
 `@sprintengine/studio-protocol` (`environment.ts`: `EnvironmentDescriptor`,
@@ -1269,7 +1274,7 @@ Each entry carries how its connection stands, reported by the owner of each
 route today (the SSH machines' states, the paired desktops' reachability, the
 WSL distributions' states) and by its connection supervisor once the machines
 are direct environments, and a compatibility slot that `design-server-update`
-fills. `environmentStatus` (`src/shared/environment-status.ts`) turns that into
+fills. `environmentStatus` (`packages/client-runtime/src/environments/environmentStatus.ts`) turns that into
 the words, tone and one action every surface shows: Settings ▸ Machines lists
 every environment in one card, and the Remote popover, the Remote glyph's count
 and a paired machine's rows in the sidebar read the same status.
@@ -1791,10 +1796,12 @@ It replaces "The render host (L)", withdrawn by ruling (f).
   listener move to the server; the data key handoff and the secret
   re-sealing; the shell offering its toolsets (`browser`, `canvas`, and
   `editor`, `tour` and `terminal` moved onto the same mechanism) over the
-  control channel; the in-process fallback flag.
+  control channel. (The in-process fallback flag this phase built is gone
+  since 2026-11-25: the server runs in its own process only.)
 - **Tests.** Spawn and crash-restart tests with a fake child; a packaged smoke
-  run (start, chat, quit, relaunch, resume); a single-writer test that fails if
-  main constructs a server-owned store; migration of sealed secrets.
+  run (`smoke:studio-server`: start, restart, quit, relaunch); a single-writer
+  test that fails if main's entry loads the core, the chats or the gateway
+  (`src/main/main-import-graph.test.ts`); migration of sealed secrets.
 - **Risks.** Two writers on one userData during the switch; agents mid-turn at
   app quit (drain); background mode semantics.
 

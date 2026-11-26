@@ -193,6 +193,12 @@ import {
   type StudioWebDevicesTopicMap,
 } from './web-devices.js'
 import {
+  STUDIO_WEB_TAB_METHODS,
+  STUDIO_WEB_TAB_TOPICS,
+  type StudioWebTabMethodMap,
+  type StudioWebTabTopicMap,
+} from './web-tab.js'
+import {
   STUDIO_TAILNET_METHODS,
   STUDIO_TAILNET_TOPICS,
   type StudioTailnetMethodMap,
@@ -341,6 +347,7 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioArtifactsMethodMap &
   StudioAccessMethodMap &
   StudioWebDevicesMethodMap &
+  StudioWebTabMethodMap &
   StudioTailnetMethodMap &
   StudioHostsMethodMap &
   StudioFileViewsMethodMap
@@ -612,23 +619,62 @@ export type StudioNewChatOptions = {
   effort?: string
 }
 
-/** A create as the protocol takes it: in a workspace, or (`noProject`) in a folder of its own. */
+/**
+ * A create as the protocol takes it: in a workspace, (`noProject`) in a folder
+ * of its own, or (`folder`) as a new chat in a folder on that machine that no
+ * workspace there names yet, the way New chat starts one in a folder it
+ * browsed or typed (`new-chat-folder`). A connection held to the folders
+ * Studio knows names only one of those.
+ */
 export type StudioConversationCreate = StudioNewChatOptions &
   (
-    | (ConversationCreateRequest & { noProject?: undefined })
-    | (Omit<ConversationCreateRequest, 'workspaceId'> & { workspaceId?: undefined; noProject: true })
+    | (ConversationCreateRequest & { noProject?: undefined; folder?: undefined })
+    | (Omit<ConversationCreateRequest, 'workspaceId'> & {
+        workspaceId?: undefined
+        noProject: true
+        folder?: undefined
+      })
+    | (Omit<ConversationCreateRequest, 'workspaceId'> & {
+        workspaceId?: undefined
+        noProject?: undefined
+        folder: string
+      })
   )
 
 export type StudioConversationCreateParams = StudioConversationCreate & { commandId: string }
 
 const EFFORT_ID = /^[a-z][a-z0-9_-]{0,31}$/iu
 
+/** A path from a root: `/…`, a Windows drive's `C:\…`, or a share's `\\…`. */
+function isAbsoluteFolder(path: string): boolean {
+  return path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:[\\/]/u.test(path)
+}
+
 /** A create's members, read and held to New chat's rules; `commandId` is the caller's to read. */
 export function parseStudioConversationCreate(
   value: Record<string, unknown>,
 ): { ok: true; create: StudioConversationCreate } | { ok: false; message: string } {
-  const { commandId: _commandId, noProject, newChat, worktree, worktreeName, inWorktree, effort, ...request } = value
+  const {
+    commandId: _commandId,
+    noProject,
+    folder,
+    newChat,
+    worktree,
+    worktreeName,
+    inWorktree,
+    effort,
+    ...request
+  } = value
   if (noProject !== undefined && noProject !== true) return { ok: false, message: '"noProject", when given, is true.' }
+  if (folder !== undefined && (typeof folder !== 'string' || !folder.trim() || folder.length > 4096))
+    return { ok: false, message: '"folder" is a path of 1 to 4096 characters.' }
+  // A whole path there, never one the server would read against its own working folder.
+  if (typeof folder === 'string' && !isAbsoluteFolder(folder.trim()))
+    return { ok: false, message: '"folder" is a full path on that machine, such as /home/dev/app.' }
+  if (folder !== undefined && (noProject || request.workspaceId !== undefined))
+    return { ok: false, message: '"folder" takes the place of "workspaceId" and "noProject".' }
+  if (folder !== undefined && inWorktree !== undefined)
+    return { ok: false, message: 'A chat in a folder names no project worktree: ask for "worktree" instead.' }
   for (const [name, flag] of [
     ['newChat', newChat],
     ['worktree', worktree],
@@ -648,7 +694,7 @@ export function parseStudioConversationCreate(
     if (worktree || worktreeName !== undefined || inWorktree !== undefined)
       return { ok: false, message: 'A chat with no project has no checkout to take a worktree from.' }
   }
-  if (worktree && newChat !== true)
+  if (worktree && newChat !== true && folder === undefined)
     return { ok: false, message: '"worktree" starts a new chat: set "newChat" with it.' }
   if (worktreeName !== undefined && worktree !== true)
     return { ok: false, message: '"worktreeName" names a new worktree: set "worktree" with it.' }
@@ -658,7 +704,9 @@ export function parseStudioConversationCreate(
     return { ok: false, message: 'Ask for a new worktree or name one, not both.' }
   // The contract's own members, read by its own validator; a chat under no
   // project names no workspace, so it is read with a stand-in and given none.
-  const parsed = parseConversationCreateRequest(noProject ? { ...request, workspaceId: 'no-project' } : request)
+  const parsed = parseConversationCreateRequest(
+    noProject || folder !== undefined ? { ...request, workspaceId: 'no-project' } : request,
+  )
   if (!parsed.ok) return { ok: false, message: parsed.message }
   const options: StudioNewChatOptions = {
     ...(newChat === true ? { newChat: true } : {}),
@@ -670,6 +718,10 @@ export function parseStudioConversationCreate(
   if (noProject) {
     const { workspaceId: _standIn, ...rest } = parsed.request
     return { ok: true, create: { ...rest, ...options, noProject: true } }
+  }
+  if (typeof folder === 'string') {
+    const { workspaceId: _standIn, ...rest } = parsed.request
+    return { ok: true, create: { ...rest, ...options, folder: folder.trim() } }
   }
   return { ok: true, create: { ...parsed.request, ...options } }
 }
@@ -806,6 +858,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_ARTIFACTS_METHODS,
   ...STUDIO_ACCESS_METHODS,
   ...STUDIO_WEB_DEVICES_METHODS,
+  ...STUDIO_WEB_TAB_METHODS,
   ...STUDIO_TAILNET_METHODS,
   ...STUDIO_HOSTS_METHODS,
   ...STUDIO_FILE_VIEWS_METHODS,
@@ -875,6 +928,7 @@ export type StudioTopicMap = {
   StudioArtifactsTopicMap &
   StudioAccessTopicMap &
   StudioWebDevicesTopicMap &
+  StudioWebTabTopicMap &
   StudioTailnetTopicMap &
   StudioHostsTopicMap &
   StudioEnvironmentAccessTopicMap
@@ -928,6 +982,7 @@ export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
   ...STUDIO_ARTIFACTS_TOPICS,
   ...STUDIO_ACCESS_TOPICS,
   ...STUDIO_WEB_DEVICES_TOPICS,
+  ...STUDIO_WEB_TAB_TOPICS,
   ...STUDIO_TAILNET_TOPICS,
   ...STUDIO_HOSTS_TOPICS,
   ...STUDIO_ENVIRONMENT_ACCESS_TOPICS,

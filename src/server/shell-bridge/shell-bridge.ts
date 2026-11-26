@@ -57,16 +57,6 @@ export type ShellBridge = {
   analytics(event: ShellAnalyticsEvent): void
   /** Resolves once the shell has written the launcher and the plugin home; every agent launch waits on it. */
   integrationsReady(): Promise<void>
-  images: {
-    /**
-     * A picture a paired device uploaded, sized for the model by the
-     * composer's rules (src/main/conversation-image-downscale.ts) with the
-     * shell's `nativeImage`, which a utility process does not have. One it
-     * cannot shrink comes back as it was sent; this never rejects for the
-     * picture's sake.
-     */
-    downscale(bytes: Uint8Array, mediaType: string): Promise<{ bytes: Uint8Array; mediaType: string }>
-  }
 }
 
 /** The control-channel method and event names the bridge travels as. */
@@ -81,7 +71,6 @@ export const SHELL_BRIDGE_METHODS = {
   launchAgentStateHook: 'shell.launches.agentStateHook',
   revealTab: 'shell.reveal.tab',
   integrationsReady: 'shell.integrationsReady',
-  imageDownscale: 'shell.images.downscale',
 } as const
 
 export const SHELL_BRIDGE_EVENTS = {

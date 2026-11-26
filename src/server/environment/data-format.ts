@@ -1,7 +1,25 @@
-import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, rmSync } from 'node:fs'
+import {
+  closeSync,
+  copyFileSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+} from 'node:fs'
 import { dirname, isAbsolute, join, normalize, sep } from 'node:path'
 
 import { writeFileAtomicSync } from '../platform/atomic-file'
+import { copyStudioDatabase, databaseCopyName, keepOnlyDatabaseCopy } from '../db/copies'
+import { STUDIO_DATABASE_FILENAME, studioDatabaseFiles } from '../db/database'
+import {
+  CHAT_HISTORY_STEP,
+  CHAT_RECORDS_STEP,
+  CHAT_SIDE_RECORDS_STEP,
+  DEVICE_AND_SESSION_RECORDS_STEP,
+} from '../db/import-files'
 
 // The format a data directory's files are written in, and the one way it
 // changes (design-server-update, 8).
@@ -16,26 +34,53 @@ import { writeFileAtomicSync } from '../platform/atomic-file'
 // are copied to `<data>/migration-backup/` and a marker written durably
 // before it runs. A step that throws is undone from the copies and the server
 // refuses to start; a start that finds the marker (a crash mid-step) restores
-// the copies before anything reads the data. There is no step yet: the first
-// store change an older server cannot read adds one.
+// the copies before anything reads the data.
+//
+// A step that changes the database (`database: true`) is undone from a copy
+// of it rather than from `files`: `VACUUM INTO` before the step, so the copy
+// holds the WAL's commits too. That copy is kept once the step has worked, as
+// the one copy of the database Studio keeps (`db/copies.ts`); the one before
+// it goes. A step that makes the database (format 2) has nothing to copy:
+// the files it imports from are left as they were, and are the way back.
+//
+// Format 2: the data folder has a database (`studio.sqlite`), and a chat's
+// first message, the approval rules, the launch notices and the agents'
+// prompts are kept in it rather than in their files.
+//
+// Format 3: paired devices and machines, browser sessions, embeds, linked
+// local servers, apps' toolsets, file views and extension approvals too.
+//
+// Format 4: chat history (events, receipts, the chat list's rows, search,
+// the open-turn list, tool details). Each chat's transcript is imported when
+// it is first taken up, or by the background pass.
+//
+// Format 5: the chat records (the workspace registry), the schedules and
+// their runs, scheduled messages and usage-limit resumes.
 
 export const DATA_FORMAT_FILENAME = 'format.json'
 export const MIGRATION_BACKUP_DIRNAME = 'migration-backup'
 const MARKER = 'marker.json'
 
 /** The newest format this build reads and writes. */
-export const STUDIO_DATA_FORMAT = 1
+export const STUDIO_DATA_FORMAT = 5
 
 export type DataFormatStep = {
   /** The format the step brings the data to: one above the one before it. */
   to: number
   /** The files it changes, relative to the data directory; each is copied aside first. */
   files: readonly string[]
+  /** It changes the database: a copy is taken first, put back if the step fails, and kept once it works. */
+  database?: true
   run(dataDir: string): void
 }
 
 /** The steps this build knows, oldest first. */
-export const STUDIO_DATA_FORMAT_STEPS: readonly DataFormatStep[] = []
+export const STUDIO_DATA_FORMAT_STEPS: readonly DataFormatStep[] = [
+  CHAT_SIDE_RECORDS_STEP,
+  DEVICE_AND_SESSION_RECORDS_STEP,
+  CHAT_HISTORY_STEP,
+  CHAT_RECORDS_STEP,
+]
 
 /** Data written in a format this server does not read: it is updated, not the data rewritten. */
 export class StudioDataTooNewError extends Error {
@@ -53,7 +98,13 @@ export class StudioDataMigrationError extends Error {
   }
 }
 
-type Marker = { from: number; to: number; files: Array<{ path: string; existed: boolean }> }
+type Marker = {
+  from: number
+  to: number
+  files: Array<{ path: string; existed: boolean }>
+  /** A step that changes the database: the copy it is undone from, or null when there was no database before it. */
+  database?: { copy: string | null }
+}
 
 export type PreparedDataFormat = {
   format: number
@@ -145,8 +196,24 @@ function runStep(dataDir: string, from: number, step: DataFormatStep, version: s
     }
     return { path, existed }
   })
+  let database: Marker['database']
+  if (step.database) {
+    const copy = existsSync(join(dataDir, STUDIO_DATABASE_FILENAME)) ? databaseCopyName(step.to) : null
+    if (copy) {
+      try {
+        copyStudioDatabase(dataDir, copy)
+      } catch (error) {
+        // Nothing has changed yet; the copies of a step that never started go.
+        rmSync(backup, { recursive: true, force: true })
+        throw new StudioDataMigrationError(
+          `Studio could not copy its database before moving this data from format ${from} to ${step.to}, so nothing was changed: ${messageOf(error)}`,
+        )
+      }
+    }
+    database = { copy }
+  }
   // The marker last, so a backup without one is a copy that never started.
-  const marker: Marker = { from, to: step.to, files }
+  const marker: Marker = { from, to: step.to, files, ...(database ? { database } : {}) }
   writeFileAtomicSync(join(backup, MARKER), `${JSON.stringify(marker)}\n`, { mode: 0o600 })
   try {
     step.run(dataDir)
@@ -157,7 +224,17 @@ function runStep(dataDir: string, from: number, step: DataFormatStep, version: s
       `Moving this data from format ${from} to ${step.to} failed, so it was put back as it was: ${messageOf(error)}`,
     )
   }
+  // The commit point: once the marker is gone the step stands, and a crash
+  // in what follows leaves copies the next start drops as never started.
+  commit(backup)
   rmSync(backup, { recursive: true, force: true })
+  if (database?.copy) keepOnlyDatabaseCopy(dataDir, database.copy)
+}
+
+/** Remove the marker, durably: what was done since it was written now stands. */
+function commit(backup: string): void {
+  rmSync(join(backup, MARKER), { force: true })
+  syncDirectory(backup)
 }
 
 /** Undo a step a crash interrupted, from its copies. True when there was one. */
@@ -189,8 +266,23 @@ function restoreInterrupted(dataDir: string): boolean {
   return true
 }
 
+/**
+ * Put the data back as the marker says it was. Safe to run again after a
+ * crash anywhere in it: nothing is deleted before every source it restores
+ * from is known to be there; the database is replaced by a rename, not
+ * removed first; and the copies are let go of only after the marker is gone.
+ */
 function restore(dataDir: string, marker: Marker): void {
   const backup = join(dataDir, MIGRATION_BACKUP_DIRNAME)
+  const copy = marker.database?.copy ? join(dataDir, inside(marker.database.copy)) : null
+  const missing = [
+    ...marker.files.filter((file) => file.existed).map((file) => join(backup, 'files', inside(file.path))),
+    ...(copy ? [copy] : []),
+  ].filter((path) => !existsSync(path))
+  if (missing.length > 0)
+    throw new StudioDataMigrationError(
+      `An interrupted format change cannot be undone: ${missing.join(', ')} is missing. Nothing was changed; Studio will not start on this data until it is put back by hand.`,
+    )
   for (const file of marker.files) {
     const path = inside(file.path)
     if (file.existed) {
@@ -199,7 +291,41 @@ function restore(dataDir: string, marker: Marker): void {
       syncFile(join(dataDir, path))
     } else rmSync(join(dataDir, path), { recursive: true, force: true })
   }
+  if (marker.database) {
+    // The database as it was before the step: its copy, which holds the WAL's
+    // commits, put in place by a rename once it is whole on disk; or none.
+    const [live, wal, shm] = studioDatabaseFiles(dataDir)
+    if (copy) {
+      const restoring = `${live}.restoring`
+      copyFileSync(copy, restoring)
+      syncFile(restoring)
+      rmSync(wal, { force: true })
+      rmSync(shm, { force: true })
+      renameSync(restoring, live)
+    } else for (const path of [live, wal, shm]) rmSync(path, { force: true })
+    syncDirectory(dataDir)
+  }
+  commit(backup)
+  // The copy of a step that did not happen; the one before it, if any, stays the kept one.
+  if (copy) rmSync(copy, { force: true })
   rmSync(backup, { recursive: true, force: true })
+}
+
+/** Make what was renamed or removed in a folder durable; a platform that cannot open a folder (Windows) skips it. */
+function syncDirectory(path: string): void {
+  let fd: number
+  try {
+    fd = openSync(path, 'r')
+  } catch {
+    return
+  }
+  try {
+    fsyncSync(fd)
+  } catch {
+    // Not supported for a folder here.
+  } finally {
+    closeSync(fd)
+  }
 }
 
 function syncFile(path: string): void {

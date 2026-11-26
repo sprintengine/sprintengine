@@ -9,9 +9,7 @@
 // Node-free on purpose — this module is imported from the renderer and main.
 // The resampling policy (longest kept edge, the encodings and their quality)
 // is here too, though no boundary enforces it: the composer shrinks an image
-// with it in the renderer, and the desktop shrinks a paired device's upload
-// with it in main (src/main/conversation-image-downscale.ts), so a picture
-// reaches the model the same size whichever way it came.
+// with it in the renderer before it is sent.
 
 // The base64 image media types the Claude Agent SDK (and the Anthropic API)
 // accept. Offering anything else in the composer would only buy the user a

@@ -30,7 +30,7 @@ import { workspaceProjectRootOf } from '../../../../../shared/worktree-paths'
 // that container is a checkout the person made and keeps its own row. The
 // chats started without a project are not a project either, and are dropped.
 
-/** One project on a paired machine: a folder, and the chats standing in it. */
+/** One project on another machine: a folder, and the chats standing in it. */
 export type RemoteProject = {
   /** Stable across reads: the normalised folder path. */
   key: string
@@ -64,6 +64,24 @@ export const REMOTE_NO_PROJECT: RemoteProject = {
 
 export function isRemoteNoProject(project: RemoteProject | null | undefined): boolean {
   return project?.key === REMOTE_NO_PROJECT.key
+}
+
+/**
+ * The chip's answer for a folder typed for that machine, one no workspace
+ * there names yet: the folder is the field beside the chip, so the answer
+ * holds none of its own (`new-chat-folder`).
+ */
+export const REMOTE_TYPED_FOLDER: RemoteProject = {
+  key: 'typed-folder',
+  name: 'A folder there',
+  folderPath: '',
+  repository: null,
+  workspaceId: '',
+  conversationCount: 0,
+}
+
+export function isRemoteTypedFolder(project: RemoteProject | null | undefined): boolean {
+  return project?.key === REMOTE_TYPED_FOLDER.key
 }
 
 function normalizeFolder(value: string): string {

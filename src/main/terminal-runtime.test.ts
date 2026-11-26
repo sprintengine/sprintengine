@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { standIn } from '../../tests/stand-in'
+import { openTestDatabase } from '../../tests/studio-database'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1782,7 +1783,7 @@ test('terminal-runtime', async () => {
       }
     }
 
-    const agentPromptStore = createAgentPromptStore({ resolveUserDataDir: () => userDataDir })
+    const agentPromptStore = createAgentPromptStore({ database: openTestDatabase(userDataDir) })
     const runtimeOptions = {
       diagnosticsEnabled: false,
       logMainPerfEvent: () => undefined,

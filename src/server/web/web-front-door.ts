@@ -5,27 +5,15 @@ import { join } from 'node:path'
 import type { StudioRpcService } from '../../main/studio-rpc/studio-rpc-service'
 import type { StudioCore } from '../core/studio-core'
 import type { StudioGateway } from '../core/studio-gateway'
-import { provideServerChat, type ServerDomainIpcHandles } from '../desktop/server-ipc'
+import { provideServerChat, type ServerChatHandles } from '../desktop/server-chat'
 import { extensionFrameDocuments } from '../extensions/frames/frame-cache'
 import { createExtensionFrameRoute } from '../extensions/frames/frame-route'
-import { createIpcTunnel } from '../ipc/ipc-tunnel'
 import { writeFileAtomicSync } from '../platform/atomic-file'
-import type { LocalClientBus } from '../platform/client-bus'
 import type { StudioAuthenticator } from '../rpc/studio-rpc-types'
-import {
-  WEB_BROWSE_FOLDERS_CHANNEL,
-  type WebDevicesStatus,
-  WEB_PREVIEWS_CHANGED_CHANNEL,
-  WEB_PREVIEWS_CLOSE_CHANNEL,
-  WEB_PREVIEWS_LIST_CHANNEL,
-  WEB_PREVIEWS_OPEN_CHANNEL,
-} from '../../shared/web-client'
+import type { WebDevicesStatus } from '../../shared/web-client'
 import { createPreviewService } from './preview-service'
 import { createPairRequests } from './web-pair-requests'
-import { guardWebTunnelPort } from './web-tunnel-guard'
-import { webTunnelPrincipal } from '../../shared/web-tunnel-access'
-import { toolError, toolSuccess } from '../../shared/modules/mcp-tools'
-import { browseFolders, type FolderBrowserInput } from './folder-browser'
+import { browseFolders } from './folder-browser'
 import { createWebListener, type WebListener } from './web-listener'
 import { createWebSessionStore, type WebSessionStore } from './web-sessions'
 import { openWebStaticRoot, type WebStaticRoot } from './web-static'
@@ -41,17 +29,10 @@ import { createWebUploads } from './web-uploads'
 // unless `studio-server serve --web` asks for it, so a server nobody opened a
 // browser to answers no HTTP at all.
 //
-// A web tab is Studio's own renderer in a browser. It reaches the server two
-// ways, both over the listener and both behind its session cookie:
-//
-// - the Studio protocol (`/ws`), which the chat view rides as it does in a
-//   desktop window;
-// - the `window.api` domains the server owns, over the same IPC tunnel the
-//   desktop's windows use when the server runs out of process (`/ws/ipc`,
-//   owner sessions only). Phase 10 turns those channels into protocol methods
-//   one domain at a time; until then the tunnel is how the renderer's
-//   workspace list, launch settings and the rest reach a server it does not
-//   share a process with.
+// A web tab is Studio's own renderer in a browser. It reaches the server on
+// the Studio protocol (`/ws`) alone, behind its session cookie, as a desktop
+// window reaches its own: what only a tab asks (the folder browser, previews)
+// is the front door's, provided to the protocol once it starts (`web-tab`).
 //
 // The run file (`run/web.json`, 0600 in the owner-only `run/`) says where the
 // listener is and holds the key `studio-server pair` mints a code with: being
@@ -115,7 +96,6 @@ export async function startWebFrontDoor(input: {
   core: StudioCore
   gateway: StudioGateway
   rpc: StudioRpcService
-  clients: LocalClientBus
   environmentId: string
   version: string
   options: WebFrontDoorOptions
@@ -123,13 +103,13 @@ export async function startWebFrontDoor(input: {
 }): Promise<WebFrontDoor> {
   const { core, gateway, rpc } = input
   const dataDir = core.platform.paths.dataDir()
-  const sessions = createWebSessionStore({ dataDir, environmentId: input.environmentId, log: input.log })
+  const sessions = createWebSessionStore({
+    database: core.database,
+    environmentId: input.environmentId,
+    log: input.log,
+  })
 
-  // The tunnel's clients are web tabs. Everything the server publishes to its
-  // clients reaches them as the push it is in a desktop window.
-  const tunnel = createIpcTunnel({ log: input.log })
-  const stopForwarding = input.clients.subscribe((topic, payload, target) => tunnel.publish(topic, payload, target))
-  let domains: ServerDomainIpcHandles | null = null
+  let domains: ServerChatHandles | null = null
   domains = provideServerChat({
     core,
     gateway,
@@ -138,55 +118,50 @@ export async function startWebFrontDoor(input: {
     terminalHandoff: async () => ({ ok: false, message: 'Terminals are not available in a browser.' }),
   })
 
-  // The web tab's own channels, beside the domains every window reaches.
-  // A tailnet browser chooses among the workspaces the server knows (spec 6.5).
-  tunnel.registry.handle(WEB_BROWSE_FOLDERS_CHANNEL, (event, request: FolderBrowserInput) =>
-    onLoopback(event)
-      ? browseFolders(request ?? {})
-      : { ok: false, message: 'Folders are browsed from a browser on the machine Studio runs on.' },
-  )
-
   // Previews: an agent's dev server on an origin of its own, per session.
-  // Each tab's tunnel belongs to the session whose cookie opened it.
-  const sessionOfClient = new Map<string, string>()
-  // The loopback name each tab was opened on: its previews open on the same one.
-  const loopbackNameOfClient = new Map<string, '127.0.0.1' | 'localhost'>()
   let listenerPort: number | null = null
   const previews = createPreviewService({
     ownPorts: () => (listenerPort === null ? [] : [listenerPort]),
     studioOrigins: () => (listenerPort === null ? [] : listener.origins()),
     log: input.log,
   })
-  const sessionFor = (event: { caller: { clientId: string } }): string => {
-    const sessionId = sessionOfClient.get(event.caller.clientId)
-    if (!sessionId) throw new Error('This tab is not paired with Studio.')
-    return sessionId
-  }
-  const onLoopback = (event: { caller: { clientId: string } }): boolean =>
-    sessions.get(sessionOfClient.get(event.caller.clientId) ?? '')?.route === 'loopback'
-  // A preview exposes the server's loopback to the device, so a tailnet
-  // browser does not open one (R77: not granted to tailnet pairings by default).
-  tunnel.registry.handle(WEB_PREVIEWS_LIST_CHANNEL, (event) => {
-    sessionFor(event)
-    return onLoopback(event) ? previews.list() : { ports: [] }
+  // What only a web tab asks: the folder browser and previews, each as the
+  // asking browser, whose grant names its session (`web:<session id>`). Both
+  // show this machine, so a browser paired over the tailnet is told so in
+  // words (R77: previews are not granted to tailnet pairings by default).
+  const sessionOfClient = (clientId: string): string | null =>
+    clientId.startsWith('web:') ? clientId.slice('web:'.length) : null
+  const onLoopback = (clientId: string): boolean => sessions.get(sessionOfClient(clientId) ?? '')?.route === 'loopback'
+  const previewsChanged = new Set<() => void>()
+  const stopPreviewPushes = previews.onChanged(() => {
+    for (const listener of [...previewsChanged]) listener()
   })
-  tunnel.registry.handle(WEB_PREVIEWS_OPEN_CHANNEL, (event, request: { port?: unknown; typed?: unknown } | null) =>
-    onLoopback(event)
-      ? previews.open({
-          port: request?.port,
-          sessionId: sessionFor(event),
-          typed: request?.typed === true,
-          name: loopbackNameOfClient.get(event.caller.clientId) ?? '127.0.0.1',
-        })
-      : { ok: false, message: 'Previews open in a browser on the machine Studio runs on.' },
-  )
-  tunnel.registry.handle(WEB_PREVIEWS_CLOSE_CHANNEL, (event, request: { previewId?: unknown } | null) =>
-    typeof request?.previewId === 'string' ? previews.close(request.previewId, sessionFor(event)) : false,
-  )
-  const stopPreviewPushes = previews.onChanged((sessionId, open) => {
-    for (const [clientId, owner] of sessionOfClient) {
-      if (owner === sessionId) tunnel.publish(WEB_PREVIEWS_CHANGED_CHANNEL, open, { clientId })
-    }
+  rpc.provideWebTab({
+    browse: async (clientId, request) =>
+      onLoopback(clientId)
+        ? browseFolders(request)
+        : { ok: false, message: 'Folders are browsed from a browser on the machine Studio runs on.' },
+    ports: async (clientId) => (onLoopback(clientId) ? previews.list() : { ports: [] }),
+    open: async (clientId, request) => {
+      const sessionId = sessionOfClient(clientId)
+      if (!sessionId || !onLoopback(clientId))
+        return { ok: false, message: 'Previews open in a browser on the machine Studio runs on.' }
+      return previews.open({ port: request.port, sessionId, typed: request.typed === true, name: request.host })
+    },
+    close: async (clientId, previewId) => {
+      const sessionId = sessionOfClient(clientId)
+      return sessionId ? previews.close(previewId, sessionId) : false
+    },
+    previews: (clientId) => {
+      const sessionId = sessionOfClient(clientId)
+      return sessionId ? previews.previewsOf(sessionId) : []
+    },
+    onPreviewsChanged(listener) {
+      previewsChanged.add(listener)
+      return () => {
+        previewsChanged.delete(listener)
+      }
+    },
   })
   // A removed browser's previews close with it.
   const stopPreviewRevocations = sessions.onRevoked((sessionId) => void previews.closeSession(sessionId))
@@ -237,7 +212,7 @@ export async function startWebFrontDoor(input: {
 
   // Embeds: one conversation, read-only, framed by the pages their owner
   // named. Made, listed and revoked by `studio-server embed` (`embed-routes.ts`).
-  const embeds = createEmbedStore({ dataDir, log: input.log })
+  const embeds = createEmbedStore({ database: core.database, log: input.log })
   const stopEmbedRevocations = embeds.onRevoked((embedId) => listener.closeEmbedSockets(embedId))
   // A session or an embed that runs out is pruned when its store is next
   // read, and the prune is what closes its sockets with 4401. A tab's tunnel
@@ -294,37 +269,6 @@ export async function startWebFrontDoor(input: {
         })
       },
     },
-    tunnel: {
-      attach: (client, port, session, origin) => {
-        sessionOfClient.set(client.clientId, session.id)
-        loopbackNameOfClient.set(client.clientId, new URL(origin).hostname === 'localhost' ? 'localhost' : '127.0.0.1')
-        // What a tab may reach is the web client's share, and what it changes is audited.
-        tunnel.attach(
-          client,
-          guardWebTunnelPort(port, {
-            principal: webTunnelPrincipal(session),
-            audit: (entry) =>
-              gateway.gatewayAudit().record({
-                connection: {
-                  kind: 'studio-client',
-                  clientId: `web:${session.id}`,
-                  clientName: `Browser: ${session.name}`,
-                },
-                tool: entry.channel,
-                durationMs: entry.durationMs,
-                args: entry.workspaceId ? { workspaceId: entry.workspaceId } : {},
-                result: entry.ok ? toolSuccess({ ok: true }) : toolError('failed', 'The call did not succeed.'),
-              }),
-            log: input.log,
-          }),
-        )
-      },
-      detach: (clientId) => {
-        sessionOfClient.delete(clientId)
-        loopbackNameOfClient.delete(clientId)
-        tunnel.detach(clientId)
-      },
-    },
     extraRoutes: [
       createEmbedRoutes({
         embeds,
@@ -370,7 +314,6 @@ export async function startWebFrontDoor(input: {
     url,
     async stop() {
       clearInterval(expiry)
-      stopForwarding()
       stopPreviewPushes()
       stopPreviewRevocations()
       stopUploadRevocations()
@@ -380,7 +323,6 @@ export async function startWebFrontDoor(input: {
       await tailnet?.stop().catch(() => undefined)
       await previews.stop()
       await listener.stop()
-      for (const client of tunnel.clients()) tunnel.detach(client.clientId)
       await domains?.conversationCommands.dispose().catch(() => undefined)
       domains = null
       // Only this run's file: another server may have written its own since.

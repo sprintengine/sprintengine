@@ -1,3 +1,5 @@
+import { testChatDatabase } from '../../tests/studio-database'
+import { createChatLogs } from '../server/db/chat-logs'
 import assert from 'node:assert/strict'
 import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -31,11 +33,13 @@ test('a refusal keeps its words and code, never the event it carried', () => {
   assert.deepEqual(receipts.get('stop-1'), { answer: { ok: false, message: 'Nothing to stop.', code: 'idle' } })
 })
 
-test('the receipts are read from the log, past its events and a damaged or torn line', async () => {
+test('the receipts are read from the log, imported past its events and a damaged or torn line', async () => {
   const root = await mkdtemp(join(tmpdir(), 'conversation-command-receipts-'))
+  const history = createChatLogs({ database: testChatDatabase() })
   try {
     const path = workspaceStorePath(root, 'conversations', 'workspace', 'agent.jsonl')
-    assert.deepEqual([...(await readConversationReceipts(root, path)).keys()], [], 'no log, no receipts')
+    const other = workspaceStorePath(root, 'conversations', 'workspace', 'other.jsonl')
+    assert.deepEqual([...(await readConversationReceipts(history, root, other)).keys()], [], 'no log, no receipts')
     await mkdir(dirname(path), { recursive: true })
     const event = (seq: number) => JSON.stringify({ id: `e${seq}`, type: 'user_message', seq, payload: {} })
     await writeFile(
@@ -52,7 +56,7 @@ test('the receipts are read from the log, past its events and a damaged or torn 
     )
     // A crash mid-write leaves the last line without its end.
     await appendFile(path, JSON.stringify(receiptRecord('torn', 4, { turnId: 't2' })).slice(0, 30))
-    const receipts = await readConversationReceipts(root, path)
+    const receipts = await readConversationReceipts(history, root, path)
     assert.deepEqual([...receipts.keys()], ['b', 'a'], 'newest last, and nothing from a line that is not whole')
     assert.deepEqual(receipts.get('a'), { turnId: 't1', answer: { ok: true } })
   } finally {

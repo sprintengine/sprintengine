@@ -2,16 +2,16 @@
 // file it is kept in, the one timer, the wait on a busy chat, a refusal kept
 // with Retry, and the ways one is moved, sent early or let go.
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, test } from 'vitest'
+import { savedStoreRecord, snapshotStorageAt } from '../../../tests/studio-database'
 
 import type { ConversationEvent, ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { limitResetSendAt, parseScheduledMessageUpdate } from '../../shared/scheduled-messages'
 import {
   createScheduledMessages,
-  scheduledMessagesFileStorage,
   type ScheduledMessageCarried,
   type ScheduledMessageSendResult,
   type ScheduledMessagesStorage,
@@ -281,15 +281,15 @@ test('a deleted chat takes its scheduled messages with it', async () => {
 })
 
 test('one due while the app was closed goes out once it is open again, after the start’s grace', async () => {
-  const file = join(scratch, 'scheduled-messages.json')
-  const first = harness({ storage: scheduledMessagesFileStorage(file) })
+  const dir = mkdtempSync(join(scratch, 'db-'))
+  const first = harness({ storage: snapshotStorageAt(dir, 'scheduled_messages') })
   await started(first)
   first.scheduled.update({ kind: 'schedule', ...CHAT, text: 'Overnight job.', sendAt: first.now() + HOUR })
   await first.scheduled.dispose()
-  const saved = JSON.parse(readFileSync(file, 'utf8'))
+  const saved = JSON.parse(savedStoreRecord(dir, 'scheduled_messages')!)
   assert.equal(saved.messages[0].text, 'Overnight job.')
 
-  const second = harness({ storage: scheduledMessagesFileStorage(file), now: T0 + 10 * HOUR })
+  const second = harness({ storage: snapshotStorageAt(dir, 'scheduled_messages'), now: T0 + 10 * HOUR })
   await second.scheduled.start()
   assert.equal(second.scheduled.state().messages.length, 1, 'read back')
   assert.equal(second.sent.length, 0, 'not in the start’s first seconds: the app is still finding its chats')
@@ -301,14 +301,14 @@ test('one due while the app was closed goes out once it is open again, after the
 })
 
 test('a start told to wait sends nothing until it is let go, and what was taken out meanwhile never goes', async () => {
-  const file = join(scratch, 'scheduled-messages-held.json')
-  const first = harness({ storage: scheduledMessagesFileStorage(file) })
+  const dir = mkdtempSync(join(scratch, 'db-'))
+  const first = harness({ storage: snapshotStorageAt(dir, 'scheduled_messages') })
   await started(first)
   first.scheduled.update({ kind: 'schedule', ...CHAT, text: 'Handed over.', sendAt: first.now() + HOUR })
   first.scheduled.update({ kind: 'schedule', ...CHAT, text: 'Stays here.', sendAt: first.now() + HOUR })
   await first.scheduled.dispose()
 
-  const second = harness({ storage: scheduledMessagesFileStorage(file), now: T0 + 10 * HOUR, idPrefix: 'b' })
+  const second = harness({ storage: snapshotStorageAt(dir, 'scheduled_messages'), now: T0 + 10 * HOUR, idPrefix: 'b' })
   let letGo: () => void = () => undefined
   const plan = new Promise<void>((resolve) => (letGo = resolve))
   await second.scheduled.start({ after: plan })
@@ -741,13 +741,13 @@ test('a record from before held messages carried anything still loads, and one w
 })
 
 test('a start whose wait fails sends nothing: what the failed plan would have taken out may still be listed', async () => {
-  const file = join(scratch, 'scheduled-messages-failed-plan.json')
-  const first = harness({ storage: scheduledMessagesFileStorage(file) })
+  const dir = mkdtempSync(join(scratch, 'db-'))
+  const first = harness({ storage: snapshotStorageAt(dir, 'scheduled_messages') })
   await started(first)
   first.scheduled.update({ kind: 'schedule', ...CHAT, text: 'Maybe the machine’s.', sendAt: first.now() + HOUR })
   await first.scheduled.dispose()
 
-  const second = harness({ storage: scheduledMessagesFileStorage(file), now: T0 + 10 * HOUR, idPrefix: 'b' })
+  const second = harness({ storage: snapshotStorageAt(dir, 'scheduled_messages'), now: T0 + 10 * HOUR, idPrefix: 'b' })
   const failed = Promise.reject(new Error('The hand-over journal could not be read.'))
   await second.scheduled.start({ after: failed })
   await second.scheduled.loaded()
@@ -756,4 +756,51 @@ test('a start whose wait fails sends nothing: what the failed plan would have ta
   second.scheduled.update({ kind: 'send-now', id: held.id })
   await second.advance(MINUTE)
   assert.equal(second.sent.length, 0)
+})
+
+test('one scheduled while the saved messages are being read is saved with them, never over them', async () => {
+  const saved = memoryStorage()
+  const first = harness({ storage: saved })
+  await started(first)
+  first.scheduled.update({ kind: 'schedule', ...CHAT, text: 'Saved before.', sendAt: first.now() + HOUR })
+  await first.scheduled.dispose()
+
+  // The read is slow; a message is scheduled before it answers.
+  let answer: (body: string | null) => void = () => undefined
+  const writes: string[] = []
+  const second = harness({
+    storage: {
+      read: () => new Promise<string | null>((resolve) => (answer = resolve)),
+      write: async (body) => void writes.push(body),
+    },
+    idPrefix: 'b',
+  })
+  const starting = second.scheduled.start()
+  second.scheduled.update({ kind: 'schedule', ...OTHER, text: 'Scheduled meanwhile.', sendAt: second.now() + HOUR })
+  await Promise.resolve()
+  assert.deepEqual(writes, [], 'nothing is written before the saved messages are read')
+  answer(saved.body)
+  await starting
+  await second.scheduled.flush()
+  assert.deepEqual(
+    (JSON.parse(writes.at(-1)!) as { messages: Array<{ text: string }> }).messages.map((entry) => entry.text),
+    ['Saved before.', 'Scheduled meanwhile.'],
+  )
+})
+
+test('one scheduled while a read that then fails is running is never written over the saved messages', async () => {
+  let fail: (error: Error) => void = () => undefined
+  const writes: string[] = []
+  const h = harness({
+    storage: {
+      read: () => new Promise<string | null>((_resolve, reject) => (fail = reject)),
+      write: async (body) => void writes.push(body),
+    },
+  })
+  const starting = h.scheduled.start()
+  h.scheduled.update({ kind: 'schedule', ...CHAT, text: 'Scheduled meanwhile.', sendAt: h.now() + HOUR })
+  fail(new Error('database disk image is malformed'))
+  await starting
+  await h.scheduled.flush()
+  assert.deepEqual(writes, [])
 })

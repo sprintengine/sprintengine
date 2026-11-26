@@ -1,3 +1,4 @@
+import { keepTestApprovalsIn, testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -72,6 +73,7 @@ vi.mock('electron', () => import('../../tests/stubs/electron'))
 
 const scratch = mkdtempSync(join(tmpdir(), 'studio-module-lifecycle-'))
 const dataDir = join(scratch, 'data')
+keepTestApprovalsIn(dataDir)
 const moduleRoot = join(scratch, 'modules')
 const source = join(scratch, 'source', 'deck')
 const project = join(scratch, 'project')
@@ -163,6 +165,7 @@ function createChats() {
     payload: Record<string, unknown> = {},
   ): ConversationEvent => ({ id: '', ...base, type, createdAt: 0, payload })
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     getProviderById: () => undefined,
     secretStore: {
       getStatus: async () => ({ ok: false, message: 'unused' }),

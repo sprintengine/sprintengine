@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import {
   chmod,
@@ -57,7 +58,11 @@ async function repository() {
 test('revert locks all conversations sharing files until the transaction settles', async () => {
   const f = await repository()
   const adapter = createMockConversationProvider()
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   let release!: () => void
   let entered!: () => void
   const gate = new Promise<void>((resolve) => {
@@ -134,8 +139,16 @@ test('reverting a closed conversation persists markers and the next-send file-st
       ]
     },
   }
-  const initial = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const initial = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   try {
     assert.ok((await initial.startSession({ ...f.key, providerId: adapter.id, modelId: adapter.listModels()[0] })).ok)
     await initial.shutdown()
@@ -309,7 +322,11 @@ test('runtime captures lazily around writes, reports totals, blocks active rever
       yield { ...envelope, type: 'turn_completed', payload: { turnId: input.turnId } }
     },
   }
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   try {
     const started = await runtime.startSession({ ...f.key, providerId: 'mock-provider', modelId: 'mock-model' })
     assert.ok(started.ok)
@@ -796,7 +813,11 @@ test('a folder that becomes a repository after its chat started keeps checkpoint
       yield { ...envelope, type: 'turn_completed', payload: { turnId: input.turnId } }
     },
   }
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   try {
     const started = await runtime.startSession({ ...key, providerId: 'mock-provider', modelId: 'mock-model' })
     assert.ok(started.ok)

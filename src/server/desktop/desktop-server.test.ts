@@ -20,7 +20,6 @@ import { createMessageHub, type ServerControlChannel } from '../bootstrap/contro
 import type { ServerBootstrapEnvelope } from '../bootstrap/envelope'
 import { serveOnChannel } from '../bootstrap/serve'
 import { applyGatewayLaunchTokenChange, resolveGatewayLaunchToken } from '../core/gateway-launch-tokens'
-import type { TunnelPort } from '../ipc/ipc-tunnel'
 import { resetStudioPlatform } from '../platform/platform'
 import { serveShellBridge } from '../shell-bridge/serve-shell-bridge'
 import type { ShellBridge } from '../shell-bridge/shell-bridge'
@@ -29,8 +28,8 @@ import { SERVER_EVENTS, SERVER_METHODS, SHELL_METHODS, type ServerMirrorState } 
 
 // The desktop's server out of process, composed for real over a temp data
 // directory and driven the way the shell drives it: an envelope on the control
-// channel, the shell bridge served back, a window's port carrying tunnelled
-// IPC, the mirror the shell reads, and a drain at the end. No Electron: the
+// channel, the shell bridge served back, a window on its own listener, the
+// mirror the shell reads, and a drain at the end. No Electron: the
 // carrier is a fake parent port, and the shell is this test.
 
 const ROOT = join(__dirname, '..', '..', '..')
@@ -83,41 +82,10 @@ function shellBridge(): ShellBridge & { notices: unknown[]; prepared: string[] }
     notify: (notice) => notices.push(notice),
     analytics: () => undefined,
     integrationsReady: async () => undefined,
-    images: { downscale: async (bytes, mediaType) => ({ bytes, mediaType }) },
   }
 }
 
-/** The window's end of a port pair the test holds; the server holds the other. */
-function windowPort() {
-  const server = { message: [] as Array<(event: { data: unknown }) => void>, close: [] as Array<() => void> }
-  const received: Array<Record<string, any>> = []
-  const port: TunnelPort = {
-    postMessage: (message) => received.push(structuredClone(message) as Record<string, any>),
-    on: (event: 'message' | 'close', listener: any) => {
-      server[event].push(listener)
-      return port
-    },
-    start: () => undefined,
-    close: () => undefined,
-  }
-  let nextId = 1
-  return {
-    port,
-    received,
-    async invoke(channel: string, ...args: unknown[]): Promise<Record<string, any>> {
-      const id = nextId++
-      for (const listener of server.message) listener({ data: { t: 'ipc.invoke', id, channel, args } })
-      for (let tries = 0; tries < 2_000; tries++) {
-        const found = received.find((frame) => frame.t === 'ipc.result' && frame.id === id)
-        if (found) return found
-        await new Promise((resolve) => setTimeout(resolve, 5))
-      }
-      throw new Error(`no answer on ${channel}`)
-    },
-  }
-}
-
-test('the desktop server composes, serves a window over the tunnel and the shell over the control channel, and drains', async () => {
+test('the desktop server composes, serves a window over its listener and the shell over the control channel, and drains', async () => {
   const dataDir = join(scratch, 'profile')
   const hub = createMessageHub()
   const fromServer: Array<Record<string, any>> = []
@@ -172,15 +140,9 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   // Desktop role: the lock names the desktop, so the app's own server is never refused by its parent.
   assert.equal(JSON.parse(readFileSync(join(dataDir, 'run', 'studio.lock'), 'utf8')).role, 'desktop')
 
-  // A window attaches. Nothing it asks is tunnelled to the server's domains
-  // any more: its registry and this computer's machines are the Studio
-  // protocol's, on a ticket the shell buys for the window, then the window's
-  // own connection to the listener.
-  const window = windowPort()
-  hub.dispatch(
-    { t: 'attach-client', clientId: 'window-1-1', windowId: 'primary', kind: 'desktop-window', workspaceWindow: true },
-    [window.port],
-  )
+  // A window reaches its registry and this computer's machines on the Studio
+  // protocol, on a ticket the shell buys for it, over its own connection to
+  // the listener: no port of its own reaches the server.
   const studio = await windowStudio(shellRpc)
   const snapshot = await studio.request('workspaceSync.snapshot', {})
   assert.ok(Array.isArray(snapshot.state.workspaces))
@@ -198,11 +160,10 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   })
   assert.equal(launched.ok, false)
   assert.equal(launched.code, 'unknown_workspace', JSON.stringify(launched))
-  assert.equal(await shellRpc.call(SERVER_METHODS.terminalPeekState, { sessionId: 'none' }), null)
 
   // The shell's mirror reads from the server.
   const mirror = await shellRpc.call<ServerMirrorState>(SERVER_METHODS.mirrorSnapshot)
-  // A window writes the launch settings over the Studio protocol now, not this tunnel.
+  // A window writes the launch settings over the Studio protocol.
   assert.equal(typeof mirror.launchSettings.settings.cliRuntimes, 'object')
   assert.ok(Array.isArray(mirror.state.workspaces))
 
@@ -225,10 +186,7 @@ test('the desktop server composes, serves a window over the tunnel and the shell
 
   // The worktree pool is this server's: the shell's `agent.launch` has its
   // worktree cut here, from the pool, and listed among its leases. A window
-  // reaches the pool over the Studio protocol (`worktrees.*`), never this
-  // tunnel.
-  const tunnelled = await window.invoke('worktree-pool:settings-get')
-  assert.equal(tunnelled.ok, false, JSON.stringify(tunnelled))
+  // reaches the pool over the Studio protocol (`worktrees.*`).
   const repo = await gitProject(join(scratch, 'repos'))
   const cut = await shellRpc.call<{ worktreePath?: string; branch?: string; error?: string }>(
     SERVER_METHODS.createAgentWorktree,

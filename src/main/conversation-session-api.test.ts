@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { appendFile, mkdtemp, mkdir, readFile, rename, rm, writeFile, stat, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -14,6 +14,8 @@ import type {
   ConversationSessionSummary,
 } from '../shared/conversation-runtime'
 import { workspaceStorePath } from './workspace-store'
+import { openTestDatabase, testChatDatabase, testDatabaseAt } from '../../tests/studio-database'
+import { chatLogKey, createChatLogs } from '../server/db/chat-logs'
 import { ConversationApprovalRuleStore } from './conversation-approval-rules'
 import { ConversationOutbox } from './conversation-outbox'
 
@@ -37,7 +39,11 @@ function event(
 async function fixture(adapter = createMockConversationProvider()) {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const started = await runtime.startSession({ ...key, providerId: adapter.id, modelId: adapter.listModels()[0] })
   assert.equal(started.ok, true)
   return {
@@ -49,6 +55,25 @@ async function fixture(adapter = createMockConversationProvider()) {
       await rm(workspaceRoot, { recursive: true, force: true })
     },
   }
+}
+
+/** The rows a chat's log holds in the test database, each as stored. */
+async function storedRows(key: { workspaceRoot: string; workspaceId: string; agentId: string }): Promise<string[]> {
+  const path = workspaceStorePath(key.workspaceRoot, 'conversations', key.workspaceId, `${key.agentId}.jsonl`)
+  return (
+    await testChatDatabase().all<{ body: string }>('SELECT body FROM chat_events WHERE log_key = ? ORDER BY seq', [
+      chatLogKey(path),
+    ])
+  ).map((row) => row.body)
+}
+
+/** A tool's detail as the database keeps it, or '' when it keeps none. */
+async function storedDetail(key: { workspaceRoot: string; workspaceId: string; agentId: string }, toolUseId: string) {
+  const path = workspaceStorePath(key.workspaceRoot, 'conversations', key.workspaceId, `${key.agentId}.jsonl`)
+  const row = await testChatDatabase().get<{ body: string }>('SELECT body FROM tool_details WHERE detail_key = ?', [
+    `${chatLogKey(path)}/${toolUseId}`,
+  ])
+  return row?.body ?? ''
 }
 
 test('interrupt persists one terminal event when a provider closes only its send stream', async () => {
@@ -126,8 +151,8 @@ test('tool details preserve large outputs and edit inputs, redact secrets, and d
         apiKey: '[redacted]',
       })
     }
-    const path = workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace', 'agent.tools', 'edit.json')
-    assert.equal((await readFile(path, 'utf8')).includes('private-value'), false)
+    assert.equal((await storedDetail(f.key, 'edit')).includes('private-value'), false)
+    assert.ok((await storedDetail(f.key, 'edit')).length > 0)
     const missing = await f.runtime.getToolDetail({ ...f.key, toolUseId: 'missing' })
     assert.deepEqual(missing.ok ? null : missing.code, 'not_found')
     await f.runtime.stopSession({ sessionId: f.sessionId })
@@ -199,8 +224,7 @@ test('tool detail files are capped and preserve their head and tail', async () =
       assert.ok(String(result.detail.output).startsWith('HEAD'))
       assert.ok(String(result.detail.output).endsWith('TAIL'))
     }
-    const path = workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace', 'agent.tools', 'huge.json')
-    assert.ok((await stat(path)).size <= 5 * 1024 * 1024)
+    assert.ok(Buffer.byteLength(await storedDetail(f.key, 'huge')) <= 5 * 1024 * 1024)
   } finally {
     await f.cleanup()
   }
@@ -273,6 +297,7 @@ test('concurrent duplicate commands and receipts after restart produce one user 
     assert.deepEqual(first, second)
     await f.runtime.shutdown()
     const restarted = new ConversationRuntime({
+      database: testChatDatabase(),
       adapters: [createMockConversationProvider()],
       getProviderById: () => undefined,
     })
@@ -327,6 +352,7 @@ test('a command id named for a different command is refused, while the first run
     assert.equal('fingerprint' in (await send('/tools', 'fp-tools')), false)
     await f.runtime.shutdown()
     const restarted = new ConversationRuntime({
+      database: testChatDatabase(),
       adapters: [createMockConversationProvider()],
       getProviderById: () => undefined,
     })
@@ -372,6 +398,7 @@ test('a crash after a send is committed, before it is answered, never sends it t
   }
   const f = await fixture(adapter)
   const restarted = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
   })
@@ -421,14 +448,16 @@ test('a start closes every turn the last run left open, without anyone opening t
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const first = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [hanging],
     getProviderById: () => undefined,
-    outbox: new ConversationOutbox(dataDir),
+    outbox: new ConversationOutbox(testDatabaseAt(dataDir)),
   })
   const restarted = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
-    outbox: new ConversationOutbox(dataDir),
+    outbox: new ConversationOutbox(testDatabaseAt(dataDir)),
   })
   try {
     const started = await first.startSession({ ...key, providerId: hanging.id, modelId: 'mock-model' })
@@ -440,7 +469,11 @@ test('a start closes every turn the last run left open, without anyone opening t
     )
     void first.sendTurn({ sessionId: started.session.sessionId, commandId: 'phone-1', message: 'one effect' })
     await committed
-    assert.deepEqual(await new ConversationOutbox(dataDir).pending(), [key], 'listed before its turn began')
+    assert.deepEqual(
+      await new ConversationOutbox(testDatabaseAt(dataDir)).pending(),
+      [key],
+      'listed before its turn began',
+    )
 
     // The first process is gone without shutting down; the next one starts.
     const closed: ConversationEvent[] = []
@@ -451,7 +484,11 @@ test('a start closes every turn the last run left open, without anyone opening t
       [['turn_failed', 'interrupted']],
       'the turn is closed in the log and said, with no session started on the chat',
     )
-    assert.deepEqual(await new ConversationOutbox(dataDir).pending(), [], 'and the chat leaves the outbox')
+    assert.deepEqual(
+      await new ConversationOutbox(testDatabaseAt(dataDir)).pending(),
+      [],
+      'and the chat leaves the outbox',
+    )
     const replay = await restarted.readTranscript(key, { all: true, closeOpenTurns: false })
     assert.ok(replay.ok)
     assert.equal(replay.events.at(-1)?.type, 'turn_failed')
@@ -480,9 +517,11 @@ test('a send goes when the list of open turns cannot be written: it is an aid, n
   const dataDir = await mkdtemp(join(tmpdir(), 'conversation-outbox-'))
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
-  const blocked = join(dataDir, 'data')
-  await writeFile(blocked, 'not a directory')
+  // A database that takes nothing: the list cannot be written.
+  const blocked = openTestDatabase(join(dataDir, 'data'))
+  await blocked.close()
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     outbox: new ConversationOutbox(blocked),
@@ -612,12 +651,14 @@ test('legacy 5000-event logs get stable sequences and turn-aligned pages reachin
   const f = await fixture()
   try {
     await f.runtime.stopSession({ sessionId: f.sessionId })
-    const path = workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace', 'agent.jsonl')
+    // A chat from before sequence numbers, imported the first time it is opened.
+    const key = { ...f.key, agentId: 'legacy' }
+    const path = workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace', 'legacy.jsonl')
     const events = Array.from({ length: 5000 }, (_, index) => ({
       id: `legacy_${index}`,
       sessionId: 'old',
       workspaceId: 'workspace',
-      agentId: 'agent',
+      agentId: 'legacy',
       providerId: 'mock-provider',
       modelId: 'mock-model',
       createdAt: index,
@@ -628,7 +669,7 @@ test('legacy 5000-event logs get stable sequences and turn-aligned pages reachin
     await writeFile(path, events.map((e) => JSON.stringify(e)).join('\n') + '\n')
     const api = new ConversationSessionApi(f.runtime)
     const frames: ConversationSessionFrame[] = []
-    const subscription = api.subscribe({ key: f.key }, (frame) => frames.push(frame))
+    const subscription = api.subscribe({ key }, (frame) => frames.push(frame))
     await subscription.ready
     const snapshot = frames.find((frame) => frame.type === 'snapshot')
     assert.ok(snapshot?.type === 'snapshot')
@@ -636,7 +677,7 @@ test('legacy 5000-event logs get stable sequences and turn-aligned pages reachin
     assert.equal(snapshot.page.events.length, 50)
     let page = snapshot.page
     while (page.hasMore) {
-      const prior = await api.loadEarlier({ key: f.key, beforeCursor: page.beforeCursor!, turnLimit: 100 })
+      const prior = await api.loadEarlier({ key, beforeCursor: page.beforeCursor!, turnLimit: 100 })
       assert.ok(prior.ok)
       page = prior.page
       assert.equal(page.events[0].type, 'user_message')
@@ -730,6 +771,7 @@ test('cold subscriptions persist crash recovery exactly once before snapshots an
   const key = { workspaceRoot: root, workspaceId: 'workspace', agentId: 'agent' }
   const path = workspaceStorePath(root, 'conversations', 'workspace', 'agent.jsonl')
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
   })
@@ -804,6 +846,7 @@ test('failed startup does not leave a zombie and a rejecting persister clears a 
     modelId: 'mock-model',
   }
   const brokenStart = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...createMockConversationProvider(),
@@ -816,15 +859,13 @@ test('failed startup does not leave a zombie and a rejecting persister clears a 
   })
   let writes = 0
   const brokenWrite = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     eventLog: {
-      openStream: async () => ({
-        write: async () => {
-          if (++writes === 3) throw new Error('disk failed')
-        },
-        close: async () => {},
-      }),
+      write: async () => {
+        if (++writes === 3) throw new Error('disk failed')
+      },
       onError: (_path, error) => {
         throw error
       },
@@ -871,9 +912,10 @@ test('remembered approvals auto-resolve later matching tools and persistence fai
     },
   }
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [adapter],
     getProviderById: () => undefined,
-    approvalRules: new ConversationApprovalRuleStore(storeRoot),
+    approvalRules: new ConversationApprovalRuleStore(openTestDatabase(storeRoot)),
   })
   try {
     await writeFile(join(workspaceRoot, 'file.txt'), 'read me')
@@ -929,12 +971,14 @@ test('remembered approvals auto-resolve later matching tools and persistence fai
       )
     }
     approvalHints = {}
-    await mkdir(storeRoot, { recursive: true })
-    await writeFile(join(storeRoot, 'conversation-approval-rules.json'), '{bad')
+    // Rules that cannot be read (a database that takes nothing): never read as "none saved".
+    const unreadable = openTestDatabase(join(storeRoot, 'unreadable'))
+    await unreadable.close()
     const broken = new ConversationRuntime({
+      database: testChatDatabase(),
       adapters: [adapter],
       getProviderById: () => undefined,
-      approvalRules: new ConversationApprovalRuleStore(storeRoot),
+      approvalRules: new ConversationApprovalRuleStore(unreadable),
     })
     try {
       const session = await broken.startSession({
@@ -1175,6 +1219,7 @@ test('a reconnect further behind than the catch-up budget gets a snapshot', asyn
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-behind-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     transcriptLimits: { catchUpEvents: 3 },
@@ -1243,6 +1288,7 @@ test('a transcript past the whole-file limit still subscribes, catches up, pages
   await writeFile(path, lines.join('\n') + '\n')
   const size = (await stat(path)).size
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     // Well under the file: before, any read past this failed outright.
@@ -1395,11 +1441,7 @@ test('appended tool output streams a tail preview, coalesces in the transcript a
     assert.equal(final.payload?.truncated, true)
     assert.equal('outputMode' in final.payload!, false, 'published events always carry the whole preview')
     for (const partial of outputs.slice(0, -1)) assert.equal(String(partial.payload?.preview).length <= 4000, true)
-    const transcript = await readFile(
-      workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace', 'agent.jsonl'),
-      'utf8',
-    )
-    const persisted = transcript.split('\n').filter((line) => line.includes('"tool_output"'))
+    const persisted = (await storedRows(f.key)).filter((line) => line.includes('"tool_output"'))
     assert.ok(persisted.length < 10, `tool output is coalesced on disk (${persisted.length} records for 200 chunks)`)
     const detail = await f.runtime.getToolDetail({ ...f.key, toolUseId: 'cmd' })
     assert.ok(detail.ok)
@@ -1491,29 +1533,11 @@ test('a full final output replaces what streamed', async () => {
     const detail = await f.runtime.getToolDetail({ ...f.key, toolUseId: 'cmd' })
     assert.ok(detail.ok)
     assert.equal(detail.detail.output, 'complete output')
-    const streamed = workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace', 'agent.tools', 'cmd.output')
-    await assert.rejects(stat(streamed), { code: 'ENOENT' })
-  } finally {
-    await f.cleanup()
-  }
-})
-
-test('a log read that fails once does not fail every later command', async () => {
-  const f = await fixture()
-  try {
-    const folder = workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace')
-    const transcript = join(folder, 'agent.jsonl')
-    await f.runtime.flushTranscripts()
-    // The log is briefly a link to somewhere else, which conversation storage never follows.
-    await mkdir(join(folder, 'elsewhere'), { recursive: true })
-    await rename(transcript, join(folder, 'elsewhere', 'agent.jsonl'))
-    await symlink(join(folder, 'elsewhere', 'agent.jsonl'), transcript)
-    const refused = await f.runtime.sendTurn({ sessionId: f.sessionId, commandId: 'first', message: '/tools' })
-    assert.equal(refused.ok, false)
-    await rm(transcript)
-    await rename(join(folder, 'elsewhere', 'agent.jsonl'), transcript)
-    const accepted = await f.runtime.sendTurn({ sessionId: f.sessionId, commandId: 'second', message: '/tools' })
-    assert.equal(accepted.ok, true, accepted.ok ? '' : accepted.message)
+    const path = workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace', 'agent.jsonl')
+    const parts = await testChatDatabase().all('SELECT part FROM tool_outputs WHERE detail_key = ?', [
+      `${chatLogKey(path)}/cmd`,
+    ])
+    assert.deepEqual(parts, [], 'what streamed is let go of')
   } finally {
     await f.cleanup()
   }
@@ -1524,7 +1548,12 @@ test('a damaged receipt line is passed over instead of refusing commands', async
   try {
     await f.runtime.flushTranscripts()
     const transcript = workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace', 'agent.jsonl')
-    await appendFile(transcript, '{"receipt":{"id":"half\n{"receipt":{"id":"after-corruption","at":"never"}}\n')
+    // A receipt whose body does not read, under the id the next command uses.
+    await testChatDatabase().run('INSERT INTO chat_receipts (log_key, command_id, at, body) VALUES (?, ?, 0, ?)', [
+      chatLogKey(transcript),
+      'after-corruption',
+      '{"id":"half',
+    ])
     const result = await f.runtime.sendTurn({
       sessionId: f.sessionId,
       commandId: 'after-corruption',
@@ -1570,19 +1599,15 @@ test('a send the log cannot take is not published and not recorded, so the same 
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-unwritable-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   let broken = false
+  const logs = createChatLogs({ database: testChatDatabase() })
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     eventLog: {
-      openStream: async (filePath) => {
-        await mkdir(dirname(filePath), { recursive: true })
-        return {
-          write: async (chunk) => {
-            if (broken) throw new Error('disk failed')
-            await appendFile(filePath, chunk)
-          },
-          close: async () => {},
-        }
+      write: async (path, root, rows, receipts) => {
+        if (broken) throw new Error('disk failed')
+        await logs.append(path, root, rows, receipts)
       },
       onError: (_path, error) => {
         throw error
@@ -1635,6 +1660,7 @@ async function throttledRuntime(sendTurn: ConversationProviderAdapter['sendTurn'
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [adapter],
     getProviderById: () => undefined,
     // The log alone would write a running tool's preview every 20 ms here.
@@ -1646,9 +1672,7 @@ async function throttledRuntime(sendTurn: ConversationProviderAdapter['sendTurn'
   const published: ConversationEvent[] = []
   runtime.onEvent((value) => published.push(value))
   const persistedPreviews = async () =>
-    (await readFile(workspaceStorePath(workspaceRoot, 'conversations', 'workspace', 'agent.jsonl'), 'utf8'))
-      .split('\n')
-      .filter((line) => line.includes('"tool_output"') && line.includes('"partial":true'))
+    (await storedRows(key)).filter((line) => line.includes('"tool_output"') && line.includes('"partial":true'))
   return {
     runtime,
     key,
@@ -1790,6 +1814,7 @@ test('a chat’s prompt cache survives a restart: resumed from the transcript, i
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, lines.map((line) => JSON.stringify(line)).join('\n') + '\n')
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
   })

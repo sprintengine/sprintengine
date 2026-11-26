@@ -8,7 +8,7 @@ By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Getting set up
 
-You need **Node 22** (22.12 or later) and npm. The repository carries a
+You need **Node 22** (22.13 or later, for its built-in `node:sqlite`) and npm. The repository carries a
 `.nvmrc`, so `nvm use` picks the right version; CI reads the same file. Node 24
 works too. Odd-numbered releases (23, 25) are short-lived and are left out of
 `engines` on purpose: `npm ci` on one of them prints `EBADENGINE` warnings, and
@@ -26,7 +26,8 @@ npm run dev
 start without it.
 
 `npm run dev` starts the Electron main process and the renderer dev server
-together. It takes port 5173 by default; if that port is busy it moves to the
+together; main forks the Studio server (`out/main/studio-server.js`, built with
+main) as a process of its own, as the packaged app does. It takes port 5173 by default; if that port is busy it moves to the
 next free one and gives that instance its own user-data directory, so you can
 run more than one dev build side by side. Set `SPRINTENGINE_RENDERER_PORT` to
 pin a port, or `SPRINTENGINE_USER_DATA_DIR` to pin a profile.

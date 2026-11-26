@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 
-import type { AppServices } from '../app-services'
+import type { StudioCore } from '../../server/core/studio-core'
 import type { MainHost } from '../module-host/main-host'
 import { createModuleActivityRegistry } from '../module-host/module-activity'
 import { createModuleBacklogRegistry } from '../module-host/module-backlog'
@@ -19,7 +19,7 @@ import { sharedUsageService } from '../usage/usage-service'
 
 export function provideHostDataServices(
   host: MainHost,
-  services: Pick<AppServices, 'workspaceSyncService' | 'conversations'>,
+  services: Pick<StudioCore, 'workspaceSyncService' | 'conversations'>,
   options: {
     dataDir: () => string
   },

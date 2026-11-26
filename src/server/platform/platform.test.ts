@@ -48,16 +48,6 @@ test('the node platform seals with a key file in the data directory and fans out
     'a second server on the same data directory opens what the first sealed',
   )
 
-  const published: Array<[string, unknown]> = []
-  const stop = platform.clients.subscribe((topic, payload) => published.push([topic, payload]))
-  platform.clients.subscribe(() => {
-    throw new Error('one listener failing')
-  })
-  platform.clients.publish('example:changed', [{ id: 'a' }])
-  stop()
-  platform.clients.publish('example:changed', [])
-  assert.deepEqual(published, [['example:changed', [{ id: 'a' }]]])
-
   const notices: StudioNotice[] = []
   platform.notifier.subscribe((notice) => notices.push(notice))
   platform.notifier.notify({ key: 'pair', title: 'Pairing request', body: 'From build-box' })

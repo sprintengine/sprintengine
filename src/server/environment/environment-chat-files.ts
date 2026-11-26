@@ -129,23 +129,48 @@ async function digestOf(path: string): Promise<string> {
   return hash.digest('hex')
 }
 
+/** What a hand-over asks of this Studio's chat history (the runtime's `adoptTranscript`, over `ChatLogs.adopt`). */
+export type AdoptedChatHistory = {
+  /**
+   * Take a transcript brought (`incoming`, or `path` itself when the file
+   * there came byte for byte) as the history of the log at `path`, put there
+   * in place of the file there: when what this Studio holds of the log is a
+   * beginning of it. False when it is not: this Studio's own, kept.
+   */
+  adopt(path: string, root: string, incoming: string): Promise<boolean>
+}
+
 /**
  * Write a chat's files where this Studio reads them. A file already there
  * with the same bytes is held; one with other bytes is this Studio's own,
- * kept, and named in `kept`. A part not to be found refuses the chat, which
- * the hand-over sends again; nothing half-written is left in place.
+ * kept, and named in `kept`. A transcript goes through the chat's history:
+ * it takes the place of the file there when what this Studio holds of the
+ * chat is a beginning of it (a store shared with the desktop keeps the copy
+ * from before the upgrade, which this Studio may have imported), and is
+ * kept out when not. A part not to be found refuses the chat, which the
+ * hand-over sends again; nothing half-written is left in place.
  */
 export async function keepAdoptedChatFiles(
   dataDir: string,
   chat: AdoptedChat,
   partOf: (sha256: string) => Promise<Buffer | null>,
+  history: AdoptedChatHistory,
 ): Promise<{ ok: true; kept: string[] } | { ok: false; reason: string }> {
   const kept: string[] = []
+  // Null when it could not be looked at now (its store's confinement refused the file there, say).
+  const adopted = (target: string, incoming: string) =>
+    history.adopt(target, chat.workspaceRoot, incoming).catch(() => null)
   for (const file of chat.files) {
     const target = adoptedChatFilePath(dataDir, chat, file)
+    const transcript = file.place === 'store' && file.path === `${conversationStorageSegment(chat.agentId)}.jsonl`
     const there = await lstat(target).catch(() => null)
-    if (there) {
-      if (!there.isFile() || there.isSymbolicLink() || (await digestOf(target)) !== file.sha256) kept.push(file.path)
+    const regular = there?.isFile() === true && !there.isSymbolicLink()
+    if (there && regular && (await digestOf(target)) === file.sha256) {
+      if (transcript && (await adopted(target, target)) === false) kept.push(file.path)
+      continue
+    }
+    if (there && (!regular || !transcript)) {
+      kept.push(file.path)
       continue
     }
     await mkdir(dirname(target), { recursive: true, mode: 0o700 })
@@ -173,6 +198,14 @@ export async function keepAdoptedChatFiles(
     if (missing) {
       await rm(temporary, { force: true })
       return { ok: false, reason: missing }
+    }
+    if (transcript) {
+      const taken = await adopted(target, temporary)
+      // Not looked at, and nothing there: put in place all the same, for its first read to take up.
+      if (taken === null && !there) await rename(temporary, target)
+      else if (taken !== true) kept.push(file.path)
+      await rm(temporary, { force: true })
+      continue
     }
     await rename(temporary, target)
   }

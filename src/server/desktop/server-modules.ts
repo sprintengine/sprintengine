@@ -28,17 +28,17 @@ import { watchUserModuleRoot } from '../../main/modules/user-module-watch'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import { createStudioModuleHub, type StudioModules } from '../rpc/studio-modules'
 import { createModuleRegistryMirror, type ModuleRegistryMirror } from '../../main/modules/registry-mirror'
+import type { ModuleRegistrySnapshot } from '../../shared/modules/registry-snapshot'
 import type { CapabilityManifest, ModuleResolutionErrorCode } from '../../shared/modules/manifest'
 import { resolveModuleEnablement } from '../../shared/modules/resolve'
 import type { StudioCore } from '../core/studio-core'
 import type { StudioGateway } from '../core/studio-gateway'
 import type { StudioPlatform } from '../platform/platform'
 
-// The module kernel in the Studio server out of process (phase 6 spec, 12.2):
-// every module's server half, registered on the server's IPC tunnel, its MCP
-// tools on the server's gateway, its events and bell rows on the Studio RPC's
-// `module.*` streams. The same steps app-main.ts takes in process, over the server's own
-// services.
+// The module kernel in the desktop's Studio server (phase 6 spec, 12.2):
+// every module's server half, its MCP tools on the server's gateway, its
+// events and bell rows on the Studio RPC's `module.*` streams, over the
+// server's own services.
 //
 // What runs here is changed through the Studio RPC (`extension.setEnabled`,
 // `.install`, `.approve`, `.uninstall`, main/modules/module-lifecycle.ts):
@@ -67,6 +67,8 @@ export function createServerModules(deps: {
   platform: StudioPlatform
   core: StudioCore
   log: (message: string) => void
+  /** Told of every registry a window reports: the shell's canvas tools read the Canvas switch from it. */
+  registryReported?: (snapshot: ModuleRegistrySnapshot) => void
 }): ServerModules {
   const { platform, core } = deps
   const dataDir = platform.paths.dataDir()
@@ -79,7 +81,7 @@ export function createServerModules(deps: {
   }
   const enabled = new Set<string>()
   const hub = createStudioModuleHub()
-  const registry = createModuleRegistryMirror()
+  const registry = createModuleRegistryMirror(deps.registryReported ? { onWrite: deps.registryReported } : {})
   hub.readRecentFrom(() => load?.kernel.recentNotifications() ?? [])
   // A module's declared methods, called over the Studio RPC's `extension.read` and `extension.operate`.
   hub.serveCallsFrom(async (request) =>

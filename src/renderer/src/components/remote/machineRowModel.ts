@@ -1,6 +1,6 @@
 // What a machine row says about a machine, wherever one is drawn: its short
 // name and its platform word. How it stands is the environment list's
-// (`src/shared/environment-status.ts`).
+// (`packages/client-runtime/src/environments/environmentStatus.ts`).
 
 /**
  * The name a row shows for a machine. A tailnet FQDN

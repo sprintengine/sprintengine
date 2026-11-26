@@ -8,6 +8,7 @@ import {
 import type {
   AgentCli,
   CliRuntimeSettings,
+  ConversationPeek,
   TerminalPromptUndelivered,
   TerminalSessionSnapshot,
   TerminalSessionsDelta,
@@ -68,9 +69,7 @@ async function terminalsClient(sessionId?: string): Promise<StudioClient> {
   if (!api) throw new Error('This window has no Studio connection.')
   const client = await windowStudioClient(api)
   if (!client.supports(STUDIO_TERMINALS_CAPABILITY))
-    throw new Error(
-      'This Studio does not serve terminals while it runs in its own process (a preview setting). Turn that off in Settings to use them.',
-    )
+    throw new Error('This Studio does not run terminals on its machine: its terminal module did not load.')
   const follow = sessionId === undefined ? undefined : follows.get(sessionId)
   if (follow) subscribeOn(follow, client)
   return client
@@ -407,6 +406,20 @@ export async function setTerminalReapExempt(sessionId: string, exempt: boolean):
 /** The machine's reaper policy: the idle-suspend threshold and how many recent terminals always run. */
 export async function configureTerminals(policy: { idleSuspendMs?: number; keepRecentAlive?: number }): Promise<void> {
   await (await terminalsClient()).request('terminal.configure', policy)
+}
+
+/**
+ * A hover on a terminal agent's line: ask the Studio to read its pull
+ * requests again. False for a session it cannot name yet (its checkout has not
+ * resolved), so the caller may ask again later.
+ */
+export async function refreshTerminalPullRequests(sessionId: string): Promise<boolean> {
+  return (await (await terminalsClient()).request('terminal.refreshPullRequests', { sessionId })).asked
+}
+
+/** The peek of a terminal agent's or a chat's session: its first message and the ones since. */
+export async function readSessionPeek(sessionId: string): Promise<ConversationPeek> {
+  return (await terminalsClient()).request('terminal.peek', { sessionId })
 }
 
 export async function takeUndeliveredPrompts(): Promise<TerminalPromptUndelivered[]> {

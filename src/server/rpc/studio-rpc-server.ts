@@ -26,6 +26,7 @@ import {
   STUDIO_ARTIFACTS_CAPABILITY,
   STUDIO_ACCESS_CAPABILITY,
   STUDIO_WEB_DEVICES_CAPABILITY,
+  STUDIO_WEB_TAB_CAPABILITY,
   STUDIO_TAILNET_CAPABILITY,
   STUDIO_EXECUTION_HOSTS_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
@@ -80,6 +81,8 @@ import type { StudioExtensions } from '../extensions/extensions-domain'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import type { StudioAccessDomain } from './studio-access'
 import type { StudioWebDevicesDomain } from './studio-web-devices'
+import type { StudioWebTabDomain } from './studio-web-tab'
+import type { StudioTerminalAgents } from '../terminals/terminal-agents'
 import type { StudioTailnetDomain } from './studio-tailnet'
 import type { SignIns } from '../machine/machine-sign-in'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
@@ -192,6 +195,10 @@ export type StudioRpcServerOptions = {
   access?: StudioAccessDomain
   /** The web listener's paired browsers, read when asked. Advertised as `web-devices` only while it gives one. */
   webDevices?: () => StudioWebDevicesDomain | null
+  /** A web tab's folder browser and previews, read when asked. Advertised as `web-tab` only while it gives one. */
+  webTab?: () => StudioWebTabDomain | null
+  /** The peek card and a pull request refresh for its sessions (`terminal.peek`, `terminal.refreshPullRequests`). */
+  terminalAgents?: StudioTerminalAgents
   /** The tailnet listener and the machines this one drives. Advertised as `tailnet` only when given. */
   tailnet?: StudioTailnetDomain
   /** The pull requests the conversations opened, for owners. Advertised as `pull-requests` and `pull-request-tool-calls` only when given. */
@@ -362,6 +369,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_ARTIFACTS_CAPABILITY || options.artifacts !== undefined) &&
         (capability !== STUDIO_ACCESS_CAPABILITY || options.access !== undefined) &&
         (capability !== STUDIO_WEB_DEVICES_CAPABILITY || (options.webDevices?.() ?? null) !== null) &&
+        (capability !== STUDIO_WEB_TAB_CAPABILITY || (options.webTab?.() ?? null) !== null) &&
         (capability !== STUDIO_TAILNET_CAPABILITY || options.tailnet !== undefined) &&
         (capability !== STUDIO_EXECUTION_HOSTS_CAPABILITY || options.hosts !== undefined) &&
         (chat() !== null || !(STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(capability)) &&
@@ -394,12 +402,14 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.artifacts ? { artifacts: options.artifacts } : {}),
     ...(options.access ? { access: options.access } : {}),
     ...(options.webDevices ? { webDevices: options.webDevices } : {}),
+    ...(options.webTab ? { webTab: options.webTab } : {}),
     ...(options.tailnet ? { tailnet: options.tailnet } : {}),
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
     ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
     ...(options.localServers ? { localServers: options.localServers } : {}),
     ...(options.processes ? { processes: options.processes } : {}),
     ...(options.browserTabs ? { browserTabs: options.browserTabs } : {}),
+    ...(options.terminalAgents ? { terminalAgents: options.terminalAgents } : {}),
     ...(options.hosts ? { hosts: options.hosts } : {}),
     ...(options.discovery ? { discovery: options.discovery } : {}),
     ...(options.readiness ? { readiness: options.readiness } : {}),
@@ -469,6 +479,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.artifacts ? { artifacts: options.artifacts } : {}),
         ...(options.access ? { access: options.access } : {}),
         ...(options.webDevices ? { webDevices: options.webDevices } : {}),
+        ...(options.webTab ? { webTab: options.webTab } : {}),
         ...(options.tailnet ? { tailnet: options.tailnet } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
@@ -526,6 +537,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.artifacts ? { artifacts: options.artifacts } : {}),
         ...(options.access ? { access: options.access } : {}),
         ...(options.webDevices ? { webDevices: options.webDevices } : {}),
+        ...(options.webTab ? { webTab: options.webTab } : {}),
         ...(options.tailnet ? { tailnet: options.tailnet } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,

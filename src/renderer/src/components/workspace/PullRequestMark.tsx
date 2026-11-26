@@ -20,6 +20,7 @@ import {
   pullRequestWatchWords,
 } from '../../../../shared/git/pull-request-watch'
 import { copy as appCopy } from '../../../../shared/copy'
+import { refreshTerminalPullRequests } from '../../studio/terminals'
 
 // The pull request mark a conversation wears, in the two places it is drawn:
 // the sidebar's agent line and the conversation peek's head line (epic
@@ -318,18 +319,16 @@ export function refreshPullRequestsForLine(sessionId: string, branch: string | n
   // synchronous and would otherwise fire an IPC per event while the first
   // promise was still in flight.
   askedAt.set(key, now)
-  const answer = window.api?.refreshPullRequestsForSession?.(sessionId)
-  void Promise.resolve(answer).then(
+  void refreshTerminalPullRequests(sessionId).then(
     (accepted) => {
-      // Main answers whether there was anything to ask about — false for a
-      // session it cannot name, or one whose observed checkout has not resolved
-      // yet. A question that was never put is not an ask, so it does not spend
-      // the minute; the next hover, by which time the checkout may have
-      // resolved, puts it again. (`undefined` is an older preload that answered
-      // nothing, and is read as an ask that was taken.)
+      // The Studio answers whether there was anything to ask about — false
+      // for a session it cannot name, or one whose observed checkout has not
+      // resolved yet. A question that was never put is not an ask, so it does
+      // not spend the minute; the next hover, by which time the checkout may
+      // have resolved, puts it again.
       if (accepted === false) askedAt.delete(key)
     },
-    // A rejected call reached nobody. Forget it, or a main process that was
+    // A rejected call reached nobody. Forget it, or a server that was
     // restarting during the hover would cost this window a silent minute.
     () => askedAt.delete(key),
   )

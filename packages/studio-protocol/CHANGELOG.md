@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### Added (New chat in a folder)
+
+- `conversation.create` takes `folder` in place of `workspaceId`: a new chat in
+  a folder on that machine that no workspace there names yet (New chat's
+  browsed or typed folder on another machine). It takes `worktree` and
+  `worktreeName` without `newChat`, never `inWorktree`; a folder that is not
+  a whole path (`/…`, `C:\…`, `\\…`) is refused `invalid_params` and one that
+  is is taken as one path (`a//b/./c/..` is `a/b`); a folder that is not
+  there is refused `folder_missing`, and a connection held to the folders
+  Studio knows is refused `not_found` for any other. A Studio that takes it
+  says `new-chat-folder`.
+
+### Added (a web tab's own asks, and two terminal methods)
+
+- Capability `web-tab`, offered by a Studio that runs the web listener:
+  `webFolders.browse` (the folder browser that stands in for the native
+  folder picker), `webPreviews.list`, `.open` (under `commandId`, naming the
+  loopback `host` the tab was opened on) and `.close`, and the
+  `webPreviews.changed` stream (this browser's open previews, whole, at
+  subscribing and on every change). Each is an owner's, a web tab included,
+  and a browser paired over the tailnet is shown no folder and no port. They
+  replace the web tab's tunnelled `web:browse-folders` and `web:previews:*`
+  channels; `/ws/ipc` is gone.
+- `terminal.peek` (a session's peek card: a terminal agent's captured
+  prompts, or a chat's first message and newest turn) and
+  `terminal.refreshPullRequests` (a hover on a terminal agent's line), both
+  an owner's, with the terminals' reason. They replace the window's
+  `conversation-peek:read` and `pullRequest:refreshForSession` IPC.
+
+### Removed
+
+- The permission `preview:operate`: no method needs it (the previews are
+  owner-only methods of `web-tab`).
+
 ### Added (components panels)
 
 - An extension's contributions entry carries `development: true` when it is

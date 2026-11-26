@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, realpath, stat } from 'node:fs/promises'
-import { isAbsolute, join, resolve } from 'node:path'
+import { readFile, realpath, stat } from 'node:fs/promises'
+import { isAbsolute, resolve } from 'node:path'
 
 import {
   STUDIO_FILE_VIEW_MAX_BYTES,
@@ -11,7 +11,8 @@ import {
 import { writeFileAtomically } from '../../main/config-file-write'
 import { withFileWriteTurn } from '../../main/file-write-queue'
 import { expandHomePath } from '../../main/home-path'
-import { writeFileAtomic } from '../platform/atomic-file'
+import type { StudioDatabase } from '../db/database'
+import { createRecordTable } from '../db/record-table'
 
 // The files a chat's agent showed the person in the chat (`file.view`), and
 // their reads and saves (`fileViews.*` on the Studio protocol).
@@ -26,8 +27,8 @@ import { writeFileAtomic } from '../platform/atomic-file'
 // it, and the person chose to change it. A path no view of the chat showed is
 // answered as not there, whatever the client may otherwise name.
 //
-// The ledger is kept on disk (`file-views.json` in Studio's data folder), so
-// a view in yesterday's chat still saves after a restart. It is bounded: a
+// The ledger is kept in the data folder's database (`file_views`, a row per
+// chat), so a view in yesterday's chat still saves after a restart. It is bounded: a
 // chat keeps its most recent MAX_PATHS_PER_CHAT files, and the ledger its most
 // recent MAX_CHATS chats; a view whose file fell out is read-only until its
 // agent shows it again.
@@ -46,7 +47,8 @@ export const FILE_VIEW_MAX_NOTE_CHARS = 200
 
 const MAX_PATHS_PER_CHAT = 64
 const MAX_CHATS = 500
-const LEDGER_FILE = 'file-views.json'
+/** The file builds before the database kept the ledger in, under the data folder; read once, by the import. */
+export const FILE_VIEWS_FILENAME = 'file-views.json'
 const LEDGER_VERSION = 1
 /** How much of a file is looked at to tell text from bytes. */
 const TEXT_SNIFF_BYTES = 8_192
@@ -71,7 +73,8 @@ export type FileViewFailure = { path: string; reason: string }
 export type FileViewRefusal = { ok: false; code: 'not_found' | 'too_large' | 'unavailable'; message: string }
 
 export type FileViewsDeps = {
-  dataDir: string
+  /** The data folder's database: the ledger is kept in its `file_views` table. */
+  database: StudioDatabase
   /** The folder a chat works in, for a path its agent gave relative to it; null when it has none. */
   folderOf(chat: FileViewChat): string | null
   home?: string
@@ -80,7 +83,8 @@ export type FileViewsDeps = {
 
 type Ledger = { version: number; chats: Record<string, { at: number; paths: string[] }> }
 
-const chatId = (chat: FileViewChat) => `${chat.workspaceId}\u0000${chat.agentId}`
+// A row's id: both ids, spelled so neither can run into the other.
+const chatId = (chat: FileViewChat) => JSON.stringify([chat.workspaceId, chat.agentId])
 const sha256 = (bytes: Uint8Array | string) => createHash('sha256').update(bytes).digest('hex')
 const errorCode = (error: unknown) => (error as NodeJS.ErrnoException | undefined)?.code
 
@@ -107,31 +111,60 @@ export function readHighlights(value: unknown, lines: number): FileViewHighlight
   return ranges.sort((a, b) => a.from - b.from)
 }
 
+/** One chat's entry of the ledger, as a row (or the file before the database) holds it; null for anything else. */
+function readLedgerChat(entry: unknown): { at: number; paths: string[] } | null {
+  if (!entry || typeof entry !== 'object' || !Array.isArray((entry as { paths?: unknown }).paths)) return null
+  const { at, paths } = entry as { at?: unknown; paths: unknown[] }
+  return {
+    at: typeof at === 'number' ? at : 0,
+    paths: paths.filter((path): path is string => typeof path === 'string'),
+  }
+}
+
+/** The chats the file builds before the database wrote holds, by chat id (the import); null when it is not one. */
+export function readFileViewsFile(raw: string): Array<{ id: string; at: number; paths: string[] }> | null {
+  let parsed: Partial<Ledger> | null
+  try {
+    parsed = JSON.parse(raw) as Partial<Ledger>
+  } catch {
+    return null
+  }
+  if (parsed?.version !== LEDGER_VERSION || !parsed.chats || typeof parsed.chats !== 'object') return null
+  return Object.entries(parsed.chats).flatMap(([key, entry]) => {
+    // The file named a chat by its two ids with a NUL between them.
+    const [workspaceId, agentId, ...rest] = key.split('\u0000')
+    const chat = readLedgerChat(entry)
+    return chat && workspaceId && agentId && rest.length === 0
+      ? [{ id: chatId({ workspaceId, agentId }), ...chat }]
+      : []
+  })
+}
+
 export type FileViews = ReturnType<typeof createFileViews>
 
 export function createFileViews(deps: FileViewsDeps) {
   const now = deps.now ?? Date.now
-  const ledgerPath = join(deps.dataDir, LEDGER_FILE)
-  let ledger: Ledger | null = null
-  let writing: Promise<void> = Promise.resolve()
+  const table = createRecordTable(deps.database, 'file_views')
+  let ledger: Promise<Ledger> | null = null
 
-  async function load(): Promise<Ledger> {
-    if (ledger) return ledger
-    try {
-      const parsed = JSON.parse(await readFile(ledgerPath, 'utf8')) as Partial<Ledger>
-      const chats: Ledger['chats'] = {}
-      if (parsed?.version === LEDGER_VERSION && parsed.chats && typeof parsed.chats === 'object')
-        for (const [id, entry] of Object.entries(parsed.chats)) {
-          if (!entry || typeof entry !== 'object' || !Array.isArray(entry.paths)) continue
-          chats[id] = {
-            at: typeof entry.at === 'number' ? entry.at : 0,
-            paths: entry.paths.filter((path): path is string => typeof path === 'string'),
+  function load(): Promise<Ledger> {
+    ledger ??= deps.database
+      .all<{ id: string; body: string }>('SELECT id, body FROM file_views ORDER BY position')
+      .then((rows) => {
+        const chats: Ledger['chats'] = {}
+        for (const row of rows) {
+          let entry: unknown = null
+          try {
+            entry = JSON.parse(row.body)
+          } catch {
+            entry = null
           }
+          const chat = readLedgerChat(entry)
+          if (chat) chats[row.id] = chat
         }
-      ledger ??= { version: LEDGER_VERSION, chats }
-    } catch {
-      ledger ??= { version: LEDGER_VERSION, chats: {} }
-    }
+        return { version: LEDGER_VERSION, chats }
+      })
+      .catch(() => ({ version: LEDGER_VERSION, chats: {} }))
     return ledger
   }
 
@@ -146,14 +179,7 @@ export function createFileViews(deps: FileViewsDeps) {
       ids.sort((a, b) => kept.chats[a]!.at - kept.chats[b]!.at)
       for (const old of ids.slice(0, ids.length - MAX_CHATS)) delete kept.chats[old]
     }
-    const snapshot = JSON.stringify(kept)
-    writing = writing
-      .catch(() => undefined)
-      .then(async () => {
-        await mkdir(deps.dataDir, { recursive: true })
-        await writeFileAtomic(ledgerPath, snapshot, { mode: 0o600 })
-      })
-    await writing
+    await table.save(Object.entries(kept.chats).map(([key, entry]) => ({ id: key, body: JSON.stringify(entry) })))
   }
 
   /** Whether the chat showed this real path. */

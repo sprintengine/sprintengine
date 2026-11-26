@@ -1,14 +1,13 @@
 import type { ExtensionHooks } from '../../server/extensions/hooks/extension-hooks'
 import type { ExtensionTerminalRegistry } from '../../../packages/extension-sdk/src/terminals'
-import type { AppServices } from '../app-services'
+import type { StudioCore } from '../../server/core/studio-core'
+import type { GitHubTokenStore } from '../github-token-store'
 import type { StudioPlatform } from '../../server/platform/platform'
 import type { ConversationCliRuntimeOverrides } from '../../shared/conversation-runtime'
 import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import type { TextGenerationSettings } from '../../shared/text-generation/contract'
 import {
-  AgentControlPlaneToken,
-  AgentLaunchServiceToken,
   AgentLaunchSettingsToken,
   ChatRuntimesToken,
   CompanionAgentServiceToken,
@@ -22,8 +21,6 @@ import {
   ModuleAppStateToken,
   ModuleSecretsServiceToken,
   ModuleStorageToken,
-  SprintEngineAuthToken,
-  TerminalRuntimeToken,
   TerminalsModuleServiceToken,
   TextGenerationModuleServiceToken,
   WorkspaceContextToken,
@@ -87,29 +84,23 @@ export const AGENT_RUNTIME_MANIFEST: CapabilityManifest = {
   core: true,
 }
 
-/**
- * What the module seeds. The shell's own services (terminals, the control
- * plane that types at them, the terminal launch, the account) are present in
- * process and absent in the Studio server out of process, where no module of
- * the app's consumes them and none is on the third-party list.
- */
+/** What the module seeds: the Studio server's core, where the modules load (server-modules.ts). */
 export type AgentRuntimeServices = Pick<
-  AppServices,
+  StudioCore,
   | 'agentLaunchSettings'
-  | 'githubTokenStore'
   | 'workspaceSyncService'
   | 'workspaceRegistry'
   | 'conversations'
   | 'conversationLaunchService'
   | 'conversationModelCatalog'
   | 'createConversationHost'
-> &
-  Partial<Pick<AppServices, 'terminalRuntime' | 'agentControlPlane' | 'agentLaunchService' | 'sprintengineAuth'>> & {
-    /** Extensions' agent hooks, where the core runs in this process. */
-    extensionHooks?: ExtensionHooks | null
-    /** The terminals extensions' workers reach, where the core runs in this process. */
-    extensionTerminals?: ExtensionTerminalRegistry | null
-  }
+> & {
+  githubTokenStore: GitHubTokenStore
+  /** Extensions' agent hooks. */
+  extensionHooks?: ExtensionHooks | null
+  /** The terminals extensions' workers reach. */
+  extensionTerminals?: ExtensionTerminalRegistry | null
+}
 
 export function createAgentRuntimeModule(
   services: AgentRuntimeServices,
@@ -128,10 +119,6 @@ export function createAgentRuntimeModule(
   return {
     manifest: AGENT_RUNTIME_MANIFEST,
     registerMain(host) {
-      const { terminalRuntime, agentControlPlane, agentLaunchService, sprintengineAuth } = services
-      if (terminalRuntime) host.provideService(TerminalRuntimeToken, () => terminalRuntime)
-      if (agentControlPlane) host.provideService(AgentControlPlaneToken, () => agentControlPlane)
-      if (agentLaunchService) host.provideService(AgentLaunchServiceToken, () => agentLaunchService)
       const { extensionTerminals } = services
       // Its five methods alone: what it keeps of each extension's terminals is Studio's.
       if (extensionTerminals)
@@ -144,7 +131,6 @@ export function createAgentRuntimeModule(
         }))
       host.provideService(AgentLaunchSettingsToken, () => services.agentLaunchSettings)
       host.provideService(GitHubTokenStoreToken, () => services.githubTokenStore)
-      if (sprintengineAuth) host.provideService(SprintEngineAuthToken, () => sprintengineAuth)
       host.provideService(WorkspaceSyncServiceToken, () => services.workspaceSyncService)
       host.provideService(WorkspaceRegistryToken, () => services.workspaceRegistry)
       // Programmatic workspace creation, minted in main's registry.

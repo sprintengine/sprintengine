@@ -7,12 +7,13 @@ import { createFakeBackend } from '../../../server/rpc/studio-rpc.test-helper'
 import type { ConversationSendTurnInput } from '../../../shared/conversation-runtime'
 import type { TailnetScope } from '../../../shared/tailnet'
 import {
-  browsePairedMachine,
-  createPairedChat,
-  pairedWorkspaceCheckout,
-  pairedWorkspaceExtensions,
+  browseEnvironment,
+  createEnvironmentChat,
+  environmentWorkspaceCheckout,
+  environmentWorkspaceExtensions,
   tailnetScopesOfGrant,
-} from '../../../renderer/src/studio/pairedDiscovery'
+} from '../../../renderer/src/studio/environmentDiscovery'
+import { pairedTarget } from '../../../renderer/src/studio/environmentStudio'
 import { pairedWindow } from '../../../../tests/paired-window'
 import { deviceRig } from './tailnet-studio.test-helper'
 
@@ -91,10 +92,16 @@ async function pairedMachine(scopes: TailnetScope[] = ['workspace:read', 'conver
 test('a browse reads its projects, the scopes its grant carries now, and what of its chats it keeps', async () => {
   const machine = await pairedMachine()
   try {
-    const browse = await browsePairedMachine(machine.machine)
+    const browse = await browseEnvironment(pairedTarget(machine.machine))
     assert.equal(browse.reachable, true)
     assert.deepEqual(browse.gaps, [])
-    assert.deepEqual(browse.scopes, ['workspace:read', 'conversation:read', 'conversation:operate'])
+    assert.deepEqual(tailnetScopesOfGrant(browse.grantScopes), [
+      'workspace:read',
+      'conversation:read',
+      'conversation:operate',
+    ])
+    // A Studio of this version starts a chat in a folder named from here.
+    assert.equal(browse.takesFolder, true)
     assert.deepEqual(
       browse.workspaces.map((workspace) => [
         workspace.id,
@@ -116,7 +123,7 @@ test('a browse reads its projects, the scopes its grant carries now, and what of
 test('a pairing that may not read its projects is told so, not shown an empty machine', async () => {
   const machine = await pairedMachine(['conversation:read'])
   try {
-    const browse = await browsePairedMachine(machine.machine)
+    const browse = await browseEnvironment(pairedTarget(machine.machine))
     assert.equal(browse.reachable, true)
     assert.deepEqual(browse.workspaces, [])
     assert.equal(browse.gaps[0]?.code, 'scope_required')
@@ -128,7 +135,7 @@ test('a pairing that may not read its projects is told so, not shown an empty ma
 test('a project’s checkout and what a chat there can use are read member by member', async () => {
   const machine = await pairedMachine()
   try {
-    const checkout = await pairedWorkspaceCheckout(machine.machine, 'ws-1')
+    const checkout = await environmentWorkspaceCheckout(pairedTarget(machine.machine), 'ws-1')
     assert.deepEqual(checkout, {
       ok: true,
       checkout: {
@@ -143,7 +150,7 @@ test('a project’s checkout and what a chat there can use are read member by me
         worktrees: [{ path: '/Users/dev/parser-wt', branch: 'fix', isMain: false }],
       },
     })
-    const extensions = await pairedWorkspaceExtensions(machine.machine, 'ws-1', 'claude-code')
+    const extensions = await environmentWorkspaceExtensions(pairedTarget(machine.machine), 'ws-1', 'claude-code')
     assert.ok(extensions.ok)
     assert.deepEqual(
       extensions.extensions.skills.map((skill) => skill.id),
@@ -162,7 +169,7 @@ test('a project’s checkout and what a chat there can use are read member by me
 test('New chat starts a chat there as a new one, with its worktree, effort and skills, in one create', async () => {
   const machine = await pairedMachine()
   try {
-    const created = await createPairedChat(machine.machine, {
+    const created = await createEnvironmentChat(pairedTarget(machine.machine), {
       workspaceId: 'ws-1',
       cli: 'claude-code',
       prompt: 'Fix the parser',
@@ -189,12 +196,12 @@ test('New chat starts a chat there as a new one, with its worktree, effort and s
       skills: ['gh-triage'],
     })
     // One in a worktree the project has, by its path; one under no project, naming no workspace.
-    await createPairedChat(machine.machine, {
+    await createEnvironmentChat(pairedTarget(machine.machine), {
       workspaceId: 'ws-1',
       worktree: { kind: 'existing', path: '/Users/dev/parser-wt' },
     })
     assert.equal(machine.backend.creates[1]?.request.inWorktree, '/Users/dev/parser-wt')
-    const refused = await createPairedChat(machine.machine, { noProject: true, cli: 'claude-code' })
+    const refused = await createEnvironmentChat(pairedTarget(machine.machine), { noProject: true, cli: 'claude-code' })
     assert.equal(machine.backend.creates[2]?.request.noProject, true)
     assert.equal(machine.backend.creates[2]?.request.workspaceId, undefined)
     // The fake machine has no folder for it, and says so in its own words.
@@ -207,7 +214,7 @@ test('New chat starts a chat there as a new one, with its worktree, effort and s
 test('a chat started with pictures takes its first message with them, staged there under its session', async () => {
   const machine = await pairedMachine()
   try {
-    const created = await createPairedChat(machine.machine, {
+    const created = await createEnvironmentChat(pairedTarget(machine.machine), {
       workspaceId: 'ws-1',
       prompt: 'What is on this screen?',
       images: [{ id: 'img-1', name: 'screen.png', mediaType: 'image/png', byteLength: 8, dataBase64: 'iVBORw0KGgo=' }],

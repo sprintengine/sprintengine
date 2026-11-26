@@ -25,6 +25,7 @@ import type { AgentCli, WorkspaceId } from '../../../shared/workspace'
 import { useWorkspaceStore } from './workspaceStore'
 import { windowChatServices } from '../components/panels/agentChat/windowChat'
 import { agentSettingsApi } from '../studio/agentSettings'
+import { readSessionPeek } from '../studio/terminals'
 import { copy } from '../../../shared/copy'
 
 export type GeneratedTitleRequesterDeps = {
@@ -177,14 +178,13 @@ export async function regenerateWorkspaceTitle(
 export function regenerateStoreWorkspaceTitle(id: WorkspaceId): Promise<RegenerateTitleResult> {
   return regenerateWorkspaceTitle(id, {
     firstPrompt: async (workspaceId) => {
-      const api = typeof window !== 'undefined' ? window.api : undefined
-      if (!api?.readConversationPeek) return null
       const listed = await windowChatServices().sessions.list({ workspaceId })
       if (!listed.ok) return null
       // Oldest first: the chat's first message is in its first session's transcript.
       const sessions = [...listed.sessions].sort((a, b) => a.createdAt - b.createdAt)
       for (const session of sessions) {
-        const peek = await api.readConversationPeek(session.sessionId)
+        const peek = await readSessionPeek(session.sessionId).catch(() => null)
+        if (!peek) continue
         if (peek.first?.text.trim()) return peek.first.text
       }
       return null

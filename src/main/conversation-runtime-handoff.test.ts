@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -154,6 +155,7 @@ async function setup(script: { turn?: TurnScript; hold?: Promise<void> } = {}) {
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const open = async () => {
     const runtime = new ConversationRuntime({
+      database: testChatDatabase(),
       adapters: [handingProvider(record, script)],
       getProviderById: () => undefined,
       secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },
@@ -373,7 +375,12 @@ test('a handoff is refused while the agent waits on an answer', async () => {
     ],
   })
   const turn = chat.sendLater('test it')
-  await new Promise((resolve) => setTimeout(resolve, 20))
+  // The card is up once the session waits on it, however long its event takes to land.
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const listed = chat.runtime.listSessions()
+    if (listed.ok && listed.sessions.some((session) => session.status === 'awaiting_approval')) break
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
   const handed = await chat.runtime.handoffConversation({ key: chat.key })
   assert.deepEqual(handed, { ok: false, message: 'Answer what the agent is waiting on before handing the chat off.' })
   release()
@@ -413,6 +420,7 @@ test('a provider that cannot hand off is refused', async () => {
   const adapter = handingProvider(record)
   delete adapter.handoff
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [{ ...adapter, capabilities: { ...CAPABILITIES, handoff: false } }],
     getProviderById: () => undefined,
     secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },

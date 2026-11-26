@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -56,6 +57,7 @@ function memoryStore(initial: StoredMeshConnection[]): TailnetMeshStore {
     updateScopes: () => undefined,
     markConnected: () => undefined,
     noteEnvironment: () => false,
+    flush: async () => undefined,
     forget(id) {
       const before = connections.length
       connections = connections.filter((entry) => entry.id !== id)
@@ -104,7 +106,7 @@ function startMesh(connections: StoredMeshConnection[] = [connection]): Harness 
   const looking = { value: true }
   const store = memoryStore(connections)
   const mesh = createTailnetMeshService({
-    resolveUserDataDir: () => dir,
+    database: testDatabaseAt(dir),
     resolveDeviceName: () => 'dev-macbook-air',
     resolvePeerName: async () => null,
     createStore: () => store,

@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import type { IpcMain } from 'electron'
 import { test } from 'vitest'
 
-import type { ServerMode } from '../../shared/server-mode'
 import type { StudioServerStatus } from '../../shared/studio-server-status'
 import type { SupervisorState } from '../server-supervisor/supervisor'
 import { registerStudioServerIpc, studioServerPhase } from './studio-server-ipc'
@@ -21,53 +20,83 @@ test('each supervisor state is one phase in words', () => {
     [{ kind: 'starting', attempt: 1 }, 'starting'],
     [{ kind: 'ready', ready: {} as never }, 'running'],
     [{ kind: 'backoff', attempt: 2, delayMs: 1_000, exit: { code: 70, signal: null } }, 'reconnecting'],
-    [{ kind: 'failed', reason: 'x', exit: null, neverReady: false }, 'stopped'],
+    [{ kind: 'failed', reason: 'x', exit: null }, 'stopped'],
     [{ kind: 'stopping' }, 'stopping'],
     [{ kind: 'stopped' }, 'stopped'],
   ]
   for (const [state, phase] of phases) assert.equal(studioServerPhase(state), phase, state.kind)
 })
 
-test('in process, the status is the mode, and the toggle writes the next launch’s', async () => {
+function fakeSupervisor(initial: SupervisorState) {
+  const listeners: Array<(state: SupervisorState) => void> = []
+  const calls: string[] = []
+  const supervisor = {
+    state: initial,
+    health: { pid: 4321, restarts: 2, lastExit: null, lastFatal: null, loopLagMs: null, startedAt: 1_000 },
+    onState: (listener: (state: SupervisorState) => void) => {
+      listeners.push(listener)
+      return () => undefined
+    },
+    retry: () => void calls.push('retry'),
+    restart: (why: string) => void calls.push(`restart: ${why}`),
+    call: async () => ({}) as never,
+  }
+  return {
+    supervisor,
+    calls,
+    move(state: SupervisorState) {
+      supervisor.state = state
+      for (const listener of listeners) listener(state)
+    },
+  }
+}
+
+test('a server that cannot start is said stopped, with its reason, and every window is told', async () => {
   const ipc = fakeIpc()
-  let saved: ServerMode = 'in-process'
+  const fake = fakeSupervisor({ kind: 'starting', attempt: 1 })
   const published: StudioServerStatus[] = []
   registerStudioServerIpc(ipc.ipcMain, {
-    choice: { mode: 'in-process', source: 'default' },
-    supervisor: null,
-    fellBack: null,
-    readSavedMode: () => saved,
-    writeSavedMode: (mode) => {
-      saved = mode
-    },
+    supervisor: fake.supervisor as never,
     openLog: async () => true,
-    relaunch: () => undefined,
     publish: (status) => published.push(status),
   })
+  assert.equal(((await ipc.invoke('studio-server:status')) as StudioServerStatus).phase, 'starting')
+  fake.move({
+    kind: 'failed',
+    reason: 'The Studio server failed to start 3 times. The data directory is not writable.',
+    exit: { code: 70, signal: null },
+  })
   const status = (await ipc.invoke('studio-server:status')) as StudioServerStatus
-  assert.equal(status.phase, 'in-process')
-  assert.equal(await ipc.invoke('studio-server:info'), null)
-  const next = (await ipc.invoke('studio-server:set-mode', 'out-of-process')) as StudioServerStatus
-  assert.equal(next.savedMode, 'out-of-process')
-  assert.equal(next.mode, 'in-process', 'this session keeps its mode')
-  assert.equal(published.length, 1)
-  await assert.rejects(Promise.resolve().then(() => ipc.invoke('studio-server:set-mode', 'sideways')))
+  assert.deepEqual(status, {
+    phase: 'stopped',
+    reason: 'The Studio server failed to start 3 times. The data directory is not writable.',
+    pid: 4321,
+    restarts: 2,
+    startedAt: 1_000,
+  })
+  assert.deepEqual(published.at(-1), status)
+  // Nothing to switch to: no mode, no fallback, no relaunch into another one.
+  assert.equal(Object.hasOwn(status, 'mode'), false)
+  assert.equal(Object.hasOwn(status, 'fellBack'), false)
+  assert.equal(await ipc.invoke('studio-server:info'), null, 'a stopped server has no info')
+  await ipc.invoke('studio-server:retry')
+  assert.deepEqual(fake.calls, ['retry'])
 })
 
-test('a relaunch in compatibility mode is asked for by name', async () => {
+test('only the one mode’s channels are served', () => {
   const ipc = fakeIpc()
-  const relaunched: unknown[] = []
-  registerStudioServerIpc(ipc.ipcMain, {
-    choice: { mode: 'out-of-process', source: 'settings' },
-    supervisor: null,
-    fellBack: null,
-    readSavedMode: () => 'out-of-process',
-    writeSavedMode: () => undefined,
+  const channels: string[] = []
+  registerStudioServerIpc({ handle: (channel: string) => void channels.push(channel) } as unknown as IpcMain, {
+    supervisor: fakeSupervisor({ kind: 'idle' }).supervisor as never,
     openLog: async () => true,
-    relaunch: (options) => relaunched.push(options),
     publish: () => undefined,
   })
-  await ipc.invoke('studio-server:relaunch', { compatibility: true })
-  await ipc.invoke('studio-server:relaunch', {})
-  assert.deepEqual(relaunched, [{ compatibility: true }, { compatibility: false }])
+  void ipc
+  assert.deepEqual(channels.sort(), [
+    'studio-server:info',
+    'studio-server:open-log',
+    'studio-server:restart',
+    'studio-server:retry',
+    'studio-server:status',
+  ])
 })

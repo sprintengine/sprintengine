@@ -46,6 +46,12 @@ retried on its own (`run/update-failed.json`). Bump `MUX_VERSION` whenever a
 frame does. A number once on `main` is spent, even before a release, since a
 nightly may already carry it: two changes made side by side take one each.
 
+The control channel between the desktop app's main process and its own Studio
+server (`SERVER_METHODS`, `SHELL_METHODS` and `SERVER_EVENTS` in
+`src/server/desktop/server-methods.ts`) is private too: main forks that server
+from the same build at every start, so both ends always match. A change to it
+needs no bump.
+
 There was a fourth, the conversation backend wire (`BACKEND_WIRE_VERSION`, last
 9), which carried a WSL distribution's chats to the desktop's router while a
 per-distribution switch sent them there. It went on 2026-11-13 with the router
@@ -160,7 +166,11 @@ the names it carried for New chat on another machine (`new-chat-worktree`,
 `new-chat-skills`, `chat-create-pull-request`): a Studio that serves
 `conversation-create` takes `worktree`, `worktreeName`, `inWorktree`, `effort`,
 `skills` and `noProject` on `conversation.create`, and `cliRuntimes.list`
-answers each CLI's catalog. Every `conversation-` capability a Studio advertises
+answers each CLI's catalog. A Studio that also serves `new-chat-folder`
+(2026-11-25) takes `folder` in place of `workspaceId`: New chat's folder on
+another machine, browsed or typed, that no workspace there names yet; a client
+offers a typed folder only to a Studio that says it. Every `conversation-`
+capability a Studio advertises
 is one `@sprintengine/conversation-protocol` names, since its welcome lists
 them from the package (`studioRpcConversationCapabilities`).
 
@@ -194,8 +204,9 @@ id. `canvas.openRequests` tells a device an agent's `canvas.open` in the
 workspaces it follows. Looking needs `workspaces:read` (a device's
 `workspace:read`); `canvas.commit`, `canvas.stage` and `canvas.takePen` need
 `workspaces:operate` (`workspace:operate`). Only a Studio given the machine's
-canvas service advertises `canvas-boards` (today the desktop with its server in
-process); a client of one that does not says to update or open Studio there.
+canvas service advertises `canvas-boards` (a desktop: its server reaches the
+shell's canvas service over their control channel); a client of one that does
+not says to update or open Studio there.
 There is no fallback to the old socket or tools: a machine on an older build
 shows its boards to a current desktop or phone once it is updated.
 
@@ -525,8 +536,8 @@ a refused call answers `not_permitted` or `approval_required`.
 
 The trust store (`trusted-modules.json`) is gone, and nothing reads it:
 earlier grants approve nothing, and every extension above `content` waits for
-the person's approval once. Approvals live in `extension-approvals.json` in
-the data folder. A bundle's or a provider's signed manifest is trusted only by
+the person's approval once. Approvals live in the data folder's database
+(`extension_approvals`). A bundle's or a provider's signed manifest is trusted only by
 a trusted publisher key; the person's grant of a manifest is gone with the
 store.
 
@@ -1288,6 +1299,24 @@ Same build on both ends: a web tab's 7 `web:devices:*` tunnel channels are gone,
 and so are its 3 `web:embeds:*` channels, which nothing called (embeds are made
 with `studio-server embed`).
 
+`web-tab` (2026-11-26) is what a web tab asks of the Studio that served it,
+offered only by a Studio that runs the web listener, once its front door has
+started: `webFolders.browse` (the folder browser that stands in for the native
+folder picker), `webPreviews.list`, `.open` (under a command id, naming the
+loopback `host` the tab was opened on) and `.close`, and the
+`webPreviews.changed` stream (this browser's open previews, whole at
+subscribing and on each change). Each is an owner's, an owner's web tab
+included, and a browser paired over the tailnet is shown no folder and no
+port. Same build on both ends: a web tab's `web:browse-folders` and 4
+`web:previews:*` tunnel channels are gone, and with them `/ws/ipc`: a tab
+reaches its Studio on `/ws` alone. `terminal.peek` and
+`terminal.refreshPullRequests` (owner-only, as every `terminal.*` method)
+replace a window's `conversation-peek:read` and `pullRequest:refreshForSession`
+IPC; its `agent:compact` channel had no caller and has no method. IPC between
+a window and the desktop app's main process now carries the shell's own
+channels only (`src/shared/ipc-inventory.ts`), and the permission
+`preview:operate`, which no method needs, is gone.
+
 `tailnet` (2026-11-13) is who reaches a Studio over the tailnet, and the
 machines it drives: its listener (`tailnet.status`, `.liveState`,
 `.setEnabled`, `.setHttps`, `.offerPairing`, `.cancelPairing`,
@@ -1375,8 +1404,17 @@ reads ("this data was written by Studio X; update this server"), so a server
 rolled back to an older tree never rewrites what a newer one wrote. A format
 changes only through a step in that file, which copies the files it touches
 aside first and is undone if it fails or is interrupted. Format 1 is the
-layout every build before the marker wrote; the first store change an older
-server cannot read adds format 2.
+layout every build before the marker wrote. Format 2 adds the data folder's
+database (`studio.sqlite`) and moves a chat's first message, the approval
+rules, the launch notices and the agents' prompts into it. Format 3 moves the
+device and session records (paired devices and machines, browser sessions,
+embeds, linked local servers, apps' toolsets, file views, extension approvals).
+Format 4 moves chat history (each chat's events and receipts, the chat list's
+rows, search, the open-turn list and tools' details); a chat's old transcript
+is imported when the chat is first taken up, keeping its numbers and
+generation, so a client's cursor carries over. Format 5 moves the chat records
+(the workspace registry, a row per chat), the schedules and their runs, the
+scheduled messages and the usage-limit resumes. `docs/data-folder.md` says what is in it and how to go back to an older build.
 
 **The `incompatible` frame, `update.status`, `update.start`, their params,
 results and codes never change shape**, since they are what two ends that

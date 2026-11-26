@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
@@ -7,8 +7,10 @@ import { afterEach, test } from 'vitest'
 import type { DiagnosticLogInput } from '../../shared/ipc/diagnostics'
 import { createNodeStudioPlatform } from '../platform/platform'
 import { createUnavailableSecretCipher } from '../platform/secret-cipher'
-import { acquireDataDirLock, DATA_DIR_RECORD_FILE } from './data-dir'
-import { StudioDataDirBusyError, StudioDataDirUnusableError, takeDataDir } from './take-data-dir'
+import { acquireDataDirLock, DATA_DIR_RECORD_FILE, DISPLACED_SERVER_FILE } from './data-dir'
+import { STUDIO_DATABASE_FILENAME } from '../db/database'
+import { STUDIO_DATA_FORMAT } from '../environment/data-format'
+import { openDataDirDatabase, StudioDataDirBusyError, StudioDataDirUnusableError, takeDataDir } from './take-data-dir'
 
 const directories: string[] = []
 function dataDir(): string {
@@ -60,14 +62,19 @@ test('the desktop starts whatever the lock or the record throws: no permission, 
 })
 
 test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
-  'the desktop starts in a data directory it cannot write, and a server is refused it',
+  'a data directory nothing can write is refused to the desktop and to a server: its records cannot be kept there',
   () => {
     const dir = dataDir()
     chmodSync(dir, 0o500)
     const logged: DiagnosticLogInput[] = []
-    const taken = takeDataDir(platformAt(dir), 'desktop', { log: (diagnostic) => logged.push(diagnostic) })
-    assert.equal(taken.lock, null)
-    assert.ok(logged.some((entry) => /EACCES/.test(entry.details ?? '')))
+    assert.throws(
+      () => takeDataDir(platformAt(dir), 'desktop', { log: (diagnostic) => logged.push(diagnostic) }),
+      StudioDataDirUnusableError,
+    )
+    assert.ok(
+      logged.some((entry) => /EACCES/.test(entry.details ?? '')),
+      'the lock it could not take is said too',
+    )
     assert.throws(() => takeDataDir(platformAt(dir), 'server'), StudioDataDirUnusableError)
   },
 )
@@ -82,26 +89,94 @@ test('the desktop takes over a lock a previous desktop run left, whatever its ho
   assert.deepEqual(logged, [])
 })
 
-test('the desktop displaces a running server and waits for it to exit before opening its sockets', async () => {
+test('the desktop displaces a running server and waits for it to exit before it reads the data', () => {
   const dir = dataDir()
   assert.ok(acquireDataDirLock(dir, 'server', { pid: 4242 }).ok)
-  let running = true
+  let looks = 0
+  let formatAt = -1
   const logged: DiagnosticLogInput[] = []
   const taken = takeDataDir(platformAt(dir), 'desktop', {
-    acquire: (directory, role, deps) =>
-      acquireDataDirLock(directory, role, { ...deps, isRunning: (pid) => pid === 4242 && running }),
-    isRunning: (pid) => pid === 4242 && running,
+    acquire: (directory, role, deps) => acquireDataDirLock(directory, role, { ...deps, isRunning: () => true }),
+    // The server is still writing for its first few looks.
+    isRunning: (pid) => pid === 4242 && ++looks < 4,
     pollMs: 5,
+    prepareFormat: () => {
+      formatAt = looks
+    },
     log: (diagnostic) => logged.push(diagnostic),
   })
   assert.ok(taken.lock?.isHeld())
   assert.match(logged[0]!.message, /pid 4242/)
-  let free = false
-  void taken.whenFree.then(() => (free = true))
-  await new Promise((resolve) => setTimeout(resolve, 30))
-  assert.equal(free, false, 'still waiting while the server runs')
+  assert.equal(formatAt, 4, 'the data is migrated only once the server has gone')
+  taken.lock?.release()
+})
+
+test('a displaced server that does not exit is waited for, then refused, the lock let go', () => {
+  const dir = dataDir()
+  assert.ok(acquireDataDirLock(dir, 'server', { pid: 4242 }).ok)
+  let migrated = false
+  assert.throws(
+    () =>
+      takeDataDir(platformAt(dir), 'desktop', {
+        acquire: (directory, role, deps) => acquireDataDirLock(directory, role, { ...deps, isRunning: () => true }),
+        isRunning: () => true,
+        waitForServerMs: 30,
+        pollMs: 5,
+        prepareFormat: () => {
+          migrated = true
+        },
+        log: () => undefined,
+      }),
+    (error: unknown) => error instanceof StudioDataDirUnusableError && /pid 4242\) still has/u.test(error.message),
+  )
+  assert.equal(migrated, false)
+  assert.equal(existsSync(join(dir, 'run', 'studio.lock')), false)
+})
+
+test('a displaced server outlasting the wait is remembered: every later start waits for it, and a server is refused, until it exits', () => {
+  const dir = dataDir()
+  assert.ok(acquireDataDirLock(dir, 'server', { pid: 4242 }).ok)
+  let running = true
+  let migrated = 0
+  const desktop = () =>
+    takeDataDir(platformAt(dir), 'desktop', {
+      acquire: (directory, role, deps) => acquireDataDirLock(directory, role, { ...deps, isRunning: () => running }),
+      isRunning: (pid) => pid === 4242 && running,
+      waitForServerMs: 20,
+      pollMs: 5,
+      prepareFormat: () => {
+        migrated += 1
+      },
+      log: () => undefined,
+    })
+  const refusal = (error: unknown) =>
+    error instanceof StudioDataDirUnusableError && /pid 4242\) still has/u.test(error.message)
+  assert.throws(desktop, refusal)
+  assert.ok(existsSync(join(dir, DISPLACED_SERVER_FILE)), 'its record outlives the refusal')
+  // The lock this start took is gone with it: the next start finds no holder, and waits for the record all the same.
+  assert.throws(desktop, refusal)
+  assert.throws(
+    () => takeDataDir(platformAt(dir), 'server', { isRunning: (pid) => pid === 4242 && running }),
+    (error: unknown) => error instanceof StudioDataDirBusyError && error.holder.pid === 4242,
+  )
+  assert.equal(migrated, 0, 'nothing was read while it ran')
+
   running = false
-  await taken.whenFree
+  const taken = desktop()
+  assert.ok(taken.lock?.isHeld())
+  assert.equal(migrated, 1)
+  assert.equal(existsSync(join(dir, DISPLACED_SERVER_FILE)), false, 'forgotten once its exit was seen')
+  taken.lock?.release()
+})
+
+test('a displaced server record that does not read holds every start until it is removed by hand', () => {
+  const dir = dataDir()
+  mkdirSync(join(dir, 'run'), { recursive: true })
+  writeFileSync(join(dir, DISPLACED_SERVER_FILE), 'not json')
+  assert.throws(
+    () => takeDataDir(platformAt(dir), 'desktop', { waitForServerMs: 10, pollMs: 5, log: () => undefined }),
+    (error: unknown) => error instanceof StudioDataDirUnusableError && /delete that file/u.test(error.message),
+  )
 })
 
 test('a server refuses a held directory, an unusable one, and sealing into a desktop one', () => {
@@ -136,7 +211,7 @@ test('a server refuses a held directory, an unusable one, and sealing into a des
   assert.equal(existsSync(join(desktop, DATA_DIR_RECORD_FILE)), false)
 })
 
-test('a server refuses data newer than it reads and lets the lock go; the desktop says so and runs', () => {
+test('data newer than this build reads is refused to a server and to the desktop, and the lock let go', () => {
   const newer = dataDir()
   writeFileSync(join(newer, 'format.json'), JSON.stringify({ format: 99, writtenBy: '9.0.0' }))
   assert.throws(
@@ -146,14 +221,29 @@ test('a server refuses data newer than it reads and lets the lock go; the deskto
       /written by Studio 9\.0\.0.*Update this server/u.test(error.message),
   )
   assert.equal(existsSync(join(newer, 'run', 'studio.lock')), false, 'the lock is let go on refusal')
-  const logged: DiagnosticLogInput[] = []
-  const taken = takeDataDir(platformAt(newer), 'desktop', { log: (diagnostic) => logged.push(diagnostic) })
-  assert.ok(taken.lock?.isHeld())
-  assert.ok(logged.some((entry) => entry.title === 'Data directory format' && /9\.0\.0/u.test(entry.message)))
-  taken.lock?.release()
+  assert.throws(
+    () => takeDataDir(platformAt(newer), 'desktop', { log: () => undefined }),
+    (error: unknown) => error instanceof StudioDataDirUnusableError && /written by Studio 9\.0\.0/u.test(error.message),
+  )
+  assert.equal(existsSync(join(newer, 'run', 'studio.lock')), false, 'the desktop lets it go too')
 
-  // A directory with no marker is marked with this build's format as it is taken.
+  // A directory with no marker is brought to this build's format as it is taken.
   const fresh = dataDir()
   takeDataDir(platformAt(fresh), 'server').lock?.release()
-  assert.deepEqual(JSON.parse(readFileSync(join(fresh, 'format.json'), 'utf8')), { format: 1, writtenBy: '1.0.0' })
+  assert.deepEqual(JSON.parse(readFileSync(join(fresh, 'format.json'), 'utf8')), {
+    format: STUDIO_DATA_FORMAT,
+    writtenBy: '1.0.0',
+  })
+})
+
+test("a database that cannot be opened stops a server's start in its own words and lets the lock go", () => {
+  const dir = dataDir()
+  const taken = takeDataDir(platformAt(dir), 'server')
+  writeFileSync(join(dir, STUDIO_DATABASE_FILENAME), 'not a database\n'.repeat(300))
+  assert.throws(
+    () => openDataDirDatabase(dir, taken.lock),
+    (error: unknown) =>
+      error instanceof StudioDataDirUnusableError && /damaged or is not a SQLite database/u.test(error.message),
+  )
+  assert.equal(taken.lock?.isHeld(), false, 'the lock is let go on refusal')
 })

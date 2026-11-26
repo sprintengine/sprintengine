@@ -1,11 +1,14 @@
 import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 
 import type { DiagnosticLogInput } from '../../shared/ipc/diagnostics'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import type { StudioPlatform } from '../platform/platform'
-import { processIsRunning } from '../platform/process-alive'
 import {
   acquireDataDirLock,
+  DISPLACED_SERVER_FILE,
+  displacedServerRunning,
+  recordDisplacedServer,
   readDataDirSecrets,
   recordDataDirSecrets,
   type DataDirHolder,
@@ -14,6 +17,7 @@ import {
 } from './data-dir'
 import { errorMessage } from '../../shared/errors'
 import { prepareDataFormat } from '../environment/data-format'
+import { openStudioDatabase, type StudioDatabase } from '../db/database'
 
 // How a core takes its data directory: the run lock, then the record of whose
 // cipher seals it. The two roles answer a problem in opposite ways.
@@ -22,25 +26,27 @@ import { prepareDataFormat } from '../environment/data-format'
 // keychain sealed while its own cipher could seal into it. It exits and says
 // why, since running anyway would make it a second writer.
 //
-// The desktop always starts. Whatever is wrong with the directory's lock or
-// record (no permission, a full disk, a file an antivirus holds open) is
-// reported and the app runs without them, as builds before either existed did.
+// The desktop's server starts whatever is wrong with the directory's lock or
+// record (no permission, a full disk, a file an antivirus holds open): that
+// is reported and it runs without them, as builds before either existed did.
 // And the desktop wins the directory: it holds Electron's single-instance lock
 // for this profile (or is a dev build given a profile of its own), so a lock
 // naming a desktop is a previous run's, whatever its process id or its host
 // name says (a Mac's host name changes with the network). A lock naming a
 // Studio server is taken over too; the server sees it lost its lock and stops,
-// and the desktop waits for it to exit before opening its own sockets.
+// and the desktop waits for it to exit before it touches the data: a server
+// still writing records after they were moved into the database would lose
+// them.
 //
-// Then the data's format (`data-format.ts`): a server refuses data newer than
-// it reads, or a format step that failed; the desktop says so and runs, as it
-// does for everything else here.
+// Then the data's format (`data-format.ts`), the same for both roles: data
+// newer than this build reads, or a format step that failed, refuses the
+// start in its own words, the lock given back. The stores live in the
+// database the format guards, so running on would start them without their
+// records, and what they wrote could stand in the way of a correct import.
 
 export type TakenDataDir = {
   /** Null only in a desktop that could not take it, and runs without, as builds before the lock did. */
   lock: DataDirLock | null
-  /** Resolves once a server this desktop displaced has exited (at once when there was none). */
-  whenFree: Promise<void>
 }
 
 /** Another process holds the data directory. Thrown to a server, which exits rather than run as a second writer. */
@@ -66,11 +72,13 @@ export type TakeDataDirDeps = {
   acquire?: typeof acquireDataDirLock
   readSecrets?: typeof readDataDirSecrets
   record?: typeof recordDataDirSecrets
+  /** Keeps a displaced server's record until its exit is seen (`recordDisplacedServer`). */
+  recordDisplaced?: typeof recordDisplacedServer
   /** Brings the data to this build's format, or throws in words (`data-format.ts`). */
   prepareFormat?: (dataDir: string, version: string) => void
   log?: (diagnostic: DiagnosticLogInput) => void
   isRunning?: (pid: number) => boolean
-  /** How long the desktop waits for a displaced server to exit, and how often it looks. */
+  /** How long the desktop waits for a displaced server to exit, and how often it looks; it waits on this thread, before anything is served. */
   waitForServerMs?: number
   pollMs?: number
 }
@@ -100,7 +108,6 @@ function takeForDesktop(
     })
 
   let lock: DataDirLock | null = null
-  let whenFree: Promise<void> = Promise.resolve()
   try {
     mkdirSync(dataDir, { recursive: true })
     const taken = acquire(dataDir, 'desktop', { takeOver: () => true })
@@ -111,9 +118,10 @@ function takeForDesktop(
         report(
           'A Studio server had this data directory open',
           `A Studio server (pid ${server.pid}) was running against this app's data directory. ` +
-            'The app has taken it over; the server stops, and the app waits for it before opening its sockets.',
+            'The app has taken it over; the server stops, and the app waits for it before reading the data.',
         )
-        whenFree = waitForExit(server.pid, deps)
+        // Kept until its exit is seen, by this start or a later one.
+        ;(deps.recordDisplaced ?? recordDisplacedServer)(dataDir, server)
       }
     } else {
       report('Data directory in use', taken.message)
@@ -124,6 +132,13 @@ function takeForDesktop(
       'The app runs without its data directory lock, so a Studio server started against it is not refused.',
       error,
     )
+  }
+  // This start's displaced server, or one an earlier start gave up waiting
+  // for: nothing is read until it has gone.
+  const still = waitForDisplaced(dataDir, deps)
+  if (still) {
+    lock?.release()
+    throw new StudioDataDirUnusableError(stillRunning(dataDir, still))
   }
 
   try {
@@ -147,9 +162,11 @@ function takeForDesktop(
   try {
     prepareFormat(deps)(dataDir, platform.identity.version())
   } catch (error) {
-    report('Data directory format', errorMessage(error))
+    lock?.release()
+    // Its own words: "this data was written by Studio X; update this server".
+    throw new StudioDataDirUnusableError(errorMessage(error))
   }
-  return { lock, whenFree }
+  return { lock }
 }
 
 function prepareFormat(deps: TakeDataDirDeps): (dataDir: string, version: string) => void {
@@ -170,6 +187,12 @@ function takeForServer(platform: StudioPlatform, deps: TakeDataDirDeps): TakenDa
   }
   if (!taken.ok) throw new StudioDataDirBusyError(taken.message, taken.holder)
   const lock = taken.lock
+  // A server the desktop displaced and has not yet seen exit: it may still be writing.
+  const still = displacedServerRunning(dataDir, { isRunning: deps.isRunning })
+  if (still) {
+    lock.release()
+    throw new StudioDataDirBusyError(stillRunning(dataDir, still), still)
+  }
   try {
     const sealedBy = (deps.readSecrets ?? readDataDirSecrets)(dataDir)
     if (sealedBy === 'desktop-keychain' && platform.secrets.available()) {
@@ -190,20 +213,44 @@ function takeForServer(platform: StudioPlatform, deps: TakeDataDirDeps): TakenDa
     // Its own words: "this data was written by Studio X; update this server".
     throw new StudioDataDirUnusableError(errorMessage(error))
   }
-  return { lock, whenFree: Promise.resolve() }
+  return { lock }
 }
 
-function waitForExit(pid: number, deps: TakeDataDirDeps): Promise<void> {
-  const isRunning = deps.isRunning ?? processIsRunning
+/**
+ * The data folder's database, opened once its format is this build's. One
+ * that cannot be opened (damaged, on a file system without WAL, changed by a
+ * newer Studio) stops the start in its own words, the lock given back: there
+ * is no way to run without it, and none to run on an empty one in its place.
+ */
+export function openDataDirDatabase(
+  dataDir: string,
+  lock: DataDirLock | null,
+  open: (dataDir: string) => StudioDatabase = openStudioDatabase,
+): StudioDatabase {
+  try {
+    return open(dataDir)
+  } catch (error) {
+    lock?.release()
+    throw new StudioDataDirUnusableError(errorMessage(error))
+  }
+}
+
+/**
+ * Wait on this thread, polling, for a displaced server to be gone; the
+ * server still running at the deadline, or null once there is none.
+ */
+function waitForDisplaced(dataDir: string, deps: TakeDataDirDeps): DataDirHolder | null {
   const deadline = Date.now() + (deps.waitForServerMs ?? WAIT_FOR_SERVER_MS)
-  return new Promise((resolve) => {
-    const look = () => {
-      if (!isRunning(pid) || Date.now() >= deadline) {
-        resolve()
-        return
-      }
-      setTimeout(look, deps.pollMs ?? POLL_MS)
-    }
-    look()
-  })
+  const pause = new Int32Array(new SharedArrayBuffer(4))
+  for (;;) {
+    const still = displacedServerRunning(dataDir, { isRunning: deps.isRunning })
+    if (!still || Date.now() >= deadline) return still
+    Atomics.wait(pause, 0, 0, deps.pollMs ?? POLL_MS)
+  }
+}
+
+function stillRunning(dataDir: string, server: DataDirHolder): string {
+  return server.pid > 0
+    ? `A Studio server (pid ${server.pid}) still has the data directory ${dataDir} open after it was asked to stop. Stop it, then retry.`
+    : `${join(dataDir, DISPLACED_SERVER_FILE)} names a Studio server this app took the directory from, and does not read. Make sure no Studio server runs on ${dataDir}, delete that file, then retry.`
 }

@@ -15,7 +15,7 @@
     "url": "https://github.com/sprintengine/sprintengine/issues"
   },
   "engines": {
-    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+    "node": "^22.13.0 || ^24.0.0 || >=26.0.0"
   },
   "scripts": {
     "start": "node scripts/dev.js",
@@ -75,7 +75,7 @@
     "catalogue:cli-entries": "esbuild resources/marketplace/generate-cli-entries.ts --bundle --platform=node --format=cjs --packages=external --outfile=node_modules/.cache/sprintengine/marketplace-cli-entries-generate.cjs && node node_modules/.cache/sprintengine/marketplace-cli-entries-generate.cjs",
     "measure:startup": "node scripts/measure-startup.mjs",
     "measure:typeable": "node scripts/measure-time-to-typeable.mjs",
-    "smoke:server-mode": "node scripts/smoke-server-mode.mjs",
+    "smoke:studio-server": "node scripts/smoke-studio-server.mjs",
     "report:source-size": "node scripts/report-source-size.mjs",
     "report:copy": "node scripts/report-copy.mjs",
     "postinstall": "node scripts/fix-node-pty-permissions.js && node node_modules/electron/install.js"

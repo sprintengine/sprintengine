@@ -1,3 +1,4 @@
+import { keepTestApprovalsIn } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -71,6 +72,7 @@ function standings(dataDir: string) {
 
 function setup() {
   const dataDir = mkdtempSync(join(tmpdir(), 'frame-grant-'))
+  keepTestApprovalsIn(dataDir)
   dirs.push(dataDir)
   const discovered = standings(dataDir)
   // A components panel's images, as the server reads them (readSurfaceImage).
@@ -159,6 +161,7 @@ test('a frame drawn before an update that asks for more is refused the new permi
 
 test('an approval that shrank holds an older frame to what is left', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'frame-grant-'))
+  keepTestApprovalsIn(dataDir)
   dirs.push(dataDir)
   const grant = createExtensionFrameGrant({
     approvals: createExtensionApprovalReader(dataDir),

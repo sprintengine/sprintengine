@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { changePairedChat, settlePairedChat, visitPairedChat } from '../../studio/pairedChats'
-import { environmentStudioAvailable } from '../../studio/environmentStudio'
+import { environmentStudioAvailable, pairedConnectionOf } from '../../studio/environmentStudio'
 import { pairedScheduledAgentAction } from '../../studio/pairedSchedules'
 import { ChatGlyph, NewChatIcon, RemoteMachineGlyph, ScheduleGlyph, resolveEnabledWorkspaceType } from '../AppIcons'
 import CliIcon from '../CliIcon'
@@ -88,7 +88,8 @@ import {
   type Workspace,
   type WorkspaceId,
 } from '../../../../shared/workspace'
-import type { MeshConnection, MeshConversationChange } from '../../../../shared/tailnet-mesh'
+import type { MeshConversationChange } from '../../../../shared/tailnet-mesh'
+import { environmentRouteOf } from '../../../../shared/environments'
 import { usePendingEditorReveal } from '../../utils/agentEditorReveal'
 import { hasHighlightOverride, isStarred } from '../../utils/highlight'
 import { projectColorKey, projectHue, resolveProjectColor, type ProjectColor } from '../../utils/projectColor'
@@ -440,7 +441,6 @@ const STATUS_WORKING_SHELF_KEY = '__status_working__'
 const STATUS_WORKING_SHELF_ID = 'ws-status-working-chats'
 const NO_WORKING_IDS: ReadonlySet<string> = new Set()
 const NO_WORKING_REMOTE: readonly RemoteConversation[] = []
-const NO_MESH_CONNECTIONS: readonly MeshConnection[] = []
 
 const DRAG_MIME_WORKSPACE = 'application/x-sprintengine-workspace'
 const DRAG_MIME_FOLDER = 'application/x-sprintengine-folder'
@@ -1509,15 +1509,20 @@ function WorkspaceSidebar({
   // What a link to one of their chats opens (`remoteChatLinks.ts`).
   useEffect(() => publishRemoteChatLinkTargets(remoteGroups, environments), [remoteGroups, environments])
   // Each other machine's scheduled agents, beside this computer's in the
-  // Scheduled section: a paired desktop's, and an SSH machine's this window
-  // follows chats on. They run there, by its scheduler, and are driven from
-  // here. Off with this computer's module, as the section is; a paired
-  // desktop's also off the tailnet.
+  // Scheduled section: every environment that answers, whatever kind of
+  // machine it is. They run there, by its scheduler, and are driven from
+  // here. Off with this computer's module, as the section is; a machine
+  // reached over the tailnet also off while this device is off it.
+  const scheduledEnvironments = useMemo(
+    () =>
+      remoteLink === 'down'
+        ? environments.filter((entry) => pairedConnectionOf(environmentRouteOf(entry)) === null)
+        : environments,
+    [environments, remoteLink],
+  )
   const remoteScheduled = useRemoteScheduledAgents({
     enabled: scheduledAgentsEnabled,
-    connections: remoteLink === 'down' ? NO_MESH_CONNECTIONS : remotePresence.mesh,
-    browses: remoteBrowses,
-    environments,
+    environments: scheduledEnvironments,
   })
   const refreshRemoteScheduled = remoteScheduled.refresh
   const actOnRemoteScheduled = useCallback(

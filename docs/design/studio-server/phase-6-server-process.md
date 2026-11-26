@@ -15,6 +15,18 @@ browser and no canvas. Phase 5 is now client tools
 as the `browser` and `canvas` toolsets it offers, not as `ShellBridge`
 members, and the canvas service is the shell's.
 
+## Implementation status (2026-11-25)
+
+**The only mode.** The server always runs in its own process. The in-process
+mode, `SPRINTENGINE_SERVER_MODE`, `server-mode.json`, the Advanced toggle, the
+boot fallback (7.1, O9) and "Restart in compatibility mode" are deleted
+(decision R04 is void). A server that cannot start is the `stopped` phase every
+window shows, with the server's reason, Retry and Open log. Main's entry never
+loads the core, the chats or the gateway (`src/main/main-import-graph.test.ts`).
+The smoke is `scripts/smoke-studio-server.mjs` (`npm run smoke:studio-server`),
+and `measure-startup.mjs` has no `--server-mode`. Below, "in process" describes
+the mode as it was, and "out of process" is the app as it is.
+
 ## Implementation status (2026-10-03)
 
 Built, behind `SPRINTENGINE_SERVER_MODE` and the Advanced toggle, with in
@@ -560,7 +572,7 @@ interface CallerContext {
     A listener hears a push from either side, since a push comes from
     whichever process owns its domain; only invokes and sends need routing.
   - The server's domains are registered in one function,
-    `registerServerDomainIpc` (`src/server/desktop/server-ipc.ts`), which main
+    `registerServerDomainIpc` (`src/server/desktop/server-chat.ts`), which main
     calls on `ipcMain` in process and the server calls on its tunnel out of
     process, so both modes register the same handlers.
 - **Classification completeness.** A test fails when a channel the server

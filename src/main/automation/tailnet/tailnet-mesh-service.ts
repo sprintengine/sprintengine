@@ -23,6 +23,7 @@ import {
   type MeshRequestPairingResult,
   type MeshForgetMachineResult,
 } from '../../../shared/tailnet-mesh'
+import type { StudioDatabase } from '../../../server/db/database'
 import { createTailnetMeshStore, type StoredMeshConnection, type TailnetMeshStore } from './tailnet-mesh-store'
 import type { TailnetPeerIdentity } from './tailnet-peer-identity'
 import { createPeerStudios, peerRefusal, peerStudioTicket, type PeerStudioTarget } from './tailnet-peer-studio'
@@ -193,7 +194,8 @@ export type MeshUsageResult =
 const USAGE_IDENTITY_TIMEOUT_MS = 5_000
 
 export type TailnetMeshServiceOptions = {
-  resolveUserDataDir: () => string
+  /** The data folder's database: the machines this one is paired with are kept in it. */
+  database: StudioDatabase
   /** This machine's name, as the other end will list the pairing. */
   resolveDeviceName?: () => string
   /** Tailscale node name for an address, so a machine is listed by name rather than by IP. */
@@ -250,7 +252,7 @@ export type TailnetMeshServiceOptions = {
   pairPollMs?: number
   reachabilityIntervalMs?: number
   reachabilityTimeoutMs?: number
-  createStore?: (options: { resolveUserDataDir: () => string; log?: (message: string) => void }) => TailnetMeshStore
+  createStore?: (options: { database: StudioDatabase; log?: (message: string) => void }) => TailnetMeshStore
   log?: (message: string) => void
 }
 
@@ -259,7 +261,7 @@ type MeshEventBody = MeshEvent extends infer E ? (E extends MeshEvent ? Omit<E, 
 
 export function createTailnetMeshService(options: TailnetMeshServiceOptions): TailnetMeshService {
   const store = (options.createStore ?? createTailnetMeshStore)({
-    resolveUserDataDir: options.resolveUserDataDir,
+    database: options.database,
     log: options.log,
   })
   const deviceName = () => (options.resolveDeviceName ?? defaultDeviceName)()

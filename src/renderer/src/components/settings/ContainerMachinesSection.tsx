@@ -90,7 +90,7 @@ export function NewContainerForm({
   /** Every saved machine: the SSH machines a container may run on, and the one being made, whose row says its step. */
   machines: readonly SshEnvironmentSummary[]
   /** Made: the new machine's id, and the folder the clone landed in. */
-  onMade?: (made: { id: string; folder: string | null }) => void
+  onMade?: (made: { id: string; label: string; folder: string | null }) => void
   initialHost?: ContainerHost
 }): React.JSX.Element {
   const hosts = containerHosts(machines)
@@ -155,10 +155,11 @@ export function NewContainerForm({
         return
       }
       if (made.cloneFailed) setNote(`${label.trim()} is made, but the clone did not work: ${made.cloneFailed}`)
+      const madeLabel = label.trim()
       setLabel('')
       setClone('')
       setAsked((count) => count + 1)
-      onMade?.({ id: made.id, folder: made.folder })
+      onMade?.({ id: made.id, label: madeLabel, folder: made.folder })
     } catch (error) {
       setProblem(error instanceof Error ? error.message : String(error))
     } finally {

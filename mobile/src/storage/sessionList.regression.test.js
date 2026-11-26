@@ -21,6 +21,7 @@ const {
   sweepRelayRecords,
 } = require(path.join(buildRoot, "src/storage/relayCleanup.js"));
 const {
+  desktopStatus,
   fleetHeadline,
   orderSessionsForFleet,
   summarizeSnapshotForFleet,
@@ -472,4 +473,22 @@ test("a corrupt starred-projects value degrades to no stars, never to a crash", 
     "/repos/a",
     "/repos/b",
   ]);
+});
+
+test("a desktop's state reads in the words every machine list uses, with its one action", () => {
+  const now = Date.parse("2026-06-11T01:00:00.000Z");
+  const at = (overrides) => desktopStatus(makeSession(overrides), now);
+  assert.deepEqual([at({ status: "online" }).kind, at({ status: "online" }).words], ["ready", "Connected"]);
+  const away = at({ status: "offline", lastSeenAt: "2026-06-11T00:56:00.000Z" });
+  assert.deepEqual([away.kind, away.words, away.actionLabel], ["offline", "Not answering · 4 min", "Retry"]);
+  const revoked = at({ status: "revoked" });
+  assert.deepEqual([revoked.kind, revoked.tone, revoked.words, revoked.actionLabel], [
+    "signed-out",
+    "danger",
+    "Revoked this device",
+    "Pair again",
+  ]);
+  assert.equal(at({ status: "stale" }).words, "Session expired");
+  // A pairing stored before it had a status is taken as answering.
+  assert.equal(at({}).kind, "ready");
 });

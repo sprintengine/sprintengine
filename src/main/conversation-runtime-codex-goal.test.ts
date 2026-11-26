@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -62,6 +63,7 @@ async function codexChat() {
     },
   })
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [adapter],
     getProviderById: () => undefined,
     secretStore: {

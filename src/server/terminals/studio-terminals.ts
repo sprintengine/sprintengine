@@ -87,9 +87,10 @@ export type StudioTerminalsOptions = {
    * Whether a window may take over the output of a session that runs. A pane
    * popped out into its own window may only while its owner still has that
    * terminal out there: a re-attach it sent before it heard the tab was taken
-   * back must not be the last word. Absent: any may.
+   * back must not be the last word. Absent: any may. Asked of the shell,
+   * which knows the pop-outs, so it may answer later.
    */
-  mayAttach?: (windowKey: string, sessionId: string) => boolean
+  mayAttach?: (windowKey: string, sessionId: string) => boolean | Promise<boolean>
   /** Applied beside the terminals' threshold: the headless chats idle out on the same setting. */
   onIdleSuspendMs?: (value: number) => void
 }
@@ -115,24 +116,25 @@ export function createStudioTerminals(options: StudioTerminalsOptions): StudioTe
   // in another window), and the next pane that follows it takes it over.
   const stranger = (): TerminalViewer => ({ isGone: () => true, deliver: () => undefined })
 
-  function start(
+  async function start(
     params: TerminalOpenParams,
     caller: StudioTerminalCaller,
     how: 'open' | 'resume',
   ): Promise<TerminalSpawnResult> {
-    // Only a window's connection is asked about: a pop-out is a window.
+    // Only a window's connection is asked about, and only of a session that
+    // runs: a pop-out is a window.
     const refused =
       options.mayAttach !== undefined &&
       caller.windowKey !== undefined &&
-      !options.mayAttach(caller.windowKey, params.sessionId) &&
-      runtime.listTerminals().some((session) => session.sessionId === params.sessionId)
+      runtime.listTerminals().some((session) => session.sessionId === params.sessionId) &&
+      !(await options.mayAttach(caller.windowKey, params.sessionId))
     if (refused)
-      return Promise.resolve({
+      return {
         ok: false,
         sessionId: params.sessionId,
         message: 'This terminal is shown in another window.',
         exitCode: 1,
-      })
+      }
     const viewer = viewerOf(params.sessionId, caller) ?? stranger()
     return how === 'open' ? runtime.spawnTerminal(viewer, params) : runtime.resumeTerminal(viewer, params)
   }

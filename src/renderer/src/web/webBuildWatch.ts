@@ -1,7 +1,7 @@
 import { WEB_BUILD_META } from '../../../shared/web-client'
 import { showToast, useToastStore } from '../store/toastStore'
 import { isWindowVisible } from '../utils/windowActivity'
-import { WEB_TUNNEL_REOPENED_EVENT, watchWebReconnectTriggers } from './webReconnect'
+import { WEB_STUDIO_REOPENED_EVENT, watchWebReconnectTriggers } from './webReconnect'
 import { webPageUrl } from './webLocation'
 import { copy } from '../../../shared/copy'
 
@@ -10,7 +10,7 @@ import { copy } from '../../../shared/copy'
 // at load; after the server is upgraded, or its web client rebuilt, the tab
 // keeps working inside the protocol window, but its next lazily loaded chunk
 // may be gone. So the tab asks which bundle is served whenever it comes back
-// (its tunnel reopened, the page visible or online again) and every few
+// (its Studio connection reopened, the page visible or online again) and every few
 // minutes while it is seen, and offers a reload once per new bundle: the
 // app-update toast's form in a browser, where the update is a reload away.
 
@@ -70,13 +70,13 @@ export function startWebBuildWatch(): () => void {
     }
   }
   const onReopened = () => void check()
-  window.addEventListener(WEB_TUNNEL_REOPENED_EVENT, onReopened)
+  window.addEventListener(WEB_STUDIO_REOPENED_EVENT, onReopened)
   const stopTriggers = watchWebReconnectTriggers(onReopened)
   const timer = setInterval(() => {
     if (isWindowVisible()) void check()
   }, POLL_MS)
   return () => {
-    window.removeEventListener(WEB_TUNNEL_REOPENED_EVENT, onReopened)
+    window.removeEventListener(WEB_STUDIO_REOPENED_EVENT, onReopened)
     stopTriggers()
     clearInterval(timer)
   }

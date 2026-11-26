@@ -1,30 +1,37 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test, vi } from 'vitest'
+
+import {
+  openStudioDatabase,
+  prepareStudioDatabase,
+  STUDIO_DATABASE_FILENAME,
+  type StudioDatabase,
+} from '../server/db/database'
+import { savedRegistry, seedRegistry, testDatabaseAt } from '../../tests/studio-database'
 import { createWorkspaceRegistryStore, WORKSPACE_REGISTRY_FILE_NAME } from './workspace-registry-store'
 import {
   emptyWorkspaceRegistryFile,
-  parseWorkspaceRegistryFile,
-  serializeWorkspaceRegistryFile,
   toWorkspaceRegistryRecord,
   type WorkspaceRegistryFile,
 } from '../shared/workspace-registry'
-import type { Workspace } from '../shared/workspace'
 
-const fileWrites = vi.hoisted(() => ({ count: 0 }))
-
-vi.mock('fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('fs/promises')>()
+// The whole-registry content key, counted: a write must not serialize the
+// whole registry to learn whether it changed (the row compare says so).
+const contentKeys = vi.hoisted(() => ({ count: 0 }))
+vi.mock('../shared/workspace-registry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../shared/workspace-registry')>()
   return {
     ...actual,
-    writeFile: (...args: Parameters<typeof actual.writeFile>) => {
-      fileWrites.count += 1
-      return actual.writeFile(...args)
+    serializeWorkspaceRegistryContent: (...args: Parameters<typeof actual.serializeWorkspaceRegistryContent>) => {
+      contentKeys.count += 1
+      return actual.serializeWorkspaceRegistryContent(...args)
     },
   }
 })
+import type { Workspace } from '../shared/workspace'
 
 const dirs: string[] = []
 
@@ -38,171 +45,259 @@ function tempDir(): string {
   return dir
 }
 
-function registry(name: string, revision: number): WorkspaceRegistryFile {
-  const workspace = {
-    id: 'ws-1',
-    name,
-    mode: 'standard',
-    folderPath: '/repo',
-    templateId: 'solo',
-    layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
-    agents: {},
-    worktreeState: { containerPath: null, entries: {}, updatedAt: null },
-    editorState: { openFiles: [], activeFilePath: null },
-    createdAt: 1_000,
-  } as Workspace
+function workspace(id: string, name: string, revision: number) {
+  return toWorkspaceRegistryRecord(
+    {
+      id,
+      name,
+      mode: 'standard',
+      folderPath: '/repo',
+      templateId: 'solo',
+      layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
+      agents: {},
+      worktreeState: { containerPath: null, entries: {}, updatedAt: null },
+      editorState: { openFiles: [], activeFilePath: null },
+      createdAt: 1_000,
+    } as Workspace,
+    revision,
+  )
+}
+
+function registry(name: string, revision: number, others: string[] = []): WorkspaceRegistryFile {
   return {
     ...emptyWorkspaceRegistryFile(5_000),
     revision,
-    workspaces: [toWorkspaceRegistryRecord(workspace, revision)],
+    workspaces: [workspace('ws-1', name, revision), ...others.map((id) => workspace(id, id, 1))],
     activeWorkspaceId: 'ws-1',
   }
 }
 
-function persistedName(dir: string): string | undefined {
-  const parsed = parseWorkspaceRegistryFile(JSON.parse(readFileSync(join(dir, WORKSPACE_REGISTRY_FILE_NAME), 'utf8')))
-  return parsed?.file.workspaces[0]?.name
+/** The database, with each batch it was asked to write counted, and a way to make the next ones fail. */
+function counting(database: StudioDatabase) {
+  const batches: number[] = []
+  let failing = false
+  const wrapped: StudioDatabase = {
+    ...database,
+    readNow: (sql, params) => database.readNow(sql, params),
+    batch: async (statements) => {
+      batches.push(statements.length)
+      if (failing) throw new Error('disk I/O error')
+      return database.batch(statements)
+    },
+  }
+  return {
+    database: wrapped,
+    batches,
+    fail: (value: boolean) => {
+      failing = value
+    },
+  }
 }
 
-test('a write whose content matches the last one is a no-op, whatever its revision', async () => {
+function persistedName(dir: string): unknown {
+  return (savedRegistry(dir)?.workspaces[0] as { name?: unknown } | undefined)?.name
+}
+
+test('a write whose rows match what was written is no write, found without serializing the whole registry', async () => {
   const dir = tempDir()
-  const store = createWorkspaceRegistryStore({ resolveUserDataDir: () => dir, persistDebounceMs: 0 })
+  const db = counting(testDatabaseAt(dir))
+  const store = createWorkspaceRegistryStore({ database: db.database })
+  contentKeys.count = 0
   store.write(registry('Alpha', 1))
   await store.flush()
-  rmSync(join(dir, WORKSPACE_REGISTRY_FILE_NAME))
-
-  store.write(registry('Alpha', 2))
+  store.write(registry('Alpha', 1))
   await store.flush()
-  assert.equal(existsSync(join(dir, WORKSPACE_REGISTRY_FILE_NAME)), false, 'no second write for the same content')
+  assert.equal(db.batches.length, 1, 'no second write for the same rows')
+  assert.equal(contentKeys.count, 0, 'no whole-registry content key on a write')
 })
 
-test('the file loaded at boot counts as already written', async () => {
+test('the registry read at start counts as already written', async () => {
   const dir = tempDir()
-  writeFileSync(join(dir, WORKSPACE_REGISTRY_FILE_NAME), serializeWorkspaceRegistryFile(registry('Alpha', 3)))
-  const store = createWorkspaceRegistryStore({ resolveUserDataDir: () => dir, persistDebounceMs: 0 })
+  seedRegistry(dir, registry('Alpha', 3))
+  const db = counting(testDatabaseAt(dir))
+  const store = createWorkspaceRegistryStore({ database: db.database })
   assert.equal(store.read().status, 'loaded')
-  rmSync(join(dir, WORKSPACE_REGISTRY_FILE_NAME))
 
-  store.write(registry('Alpha', 4))
+  store.write(registry('Alpha', 3))
   await store.flush()
-  assert.equal(existsSync(join(dir, WORKSPACE_REGISTRY_FILE_NAME)), false)
+  assert.equal(db.batches.length, 0)
 
   store.write(registry('Beta', 5))
   await store.flush()
   assert.equal(persistedName(dir), 'Beta')
 })
 
-test('a change reverted inside the debounce replaces the pending write', async () => {
+test('a change writes only the rows that changed', async () => {
   const dir = tempDir()
-  const store = createWorkspaceRegistryStore({ resolveUserDataDir: () => dir, persistDebounceMs: 60_000 })
-  store.write(registry('Alpha', 1))
+  const db = counting(testDatabaseAt(dir))
+  const store = createWorkspaceRegistryStore({ database: db.database })
+  assert.equal(store.read().status, 'missing')
+  store.write(registry('Alpha', 1, ['ws-2', 'ws-3']))
   await store.flush()
+  assert.deepEqual(db.batches, [5], 'the head, clearing rows none read, and three records')
 
+  // A rename touches one record and the head's revision.
+  const renamed = registry('Beta', 2, ['ws-2', 'ws-3'])
+  renamed.workspaces = [renamed.workspaces[0]!, ...registry('Alpha', 1, ['ws-2', 'ws-3']).workspaces.slice(1)]
+  store.write(renamed)
+  await store.flush()
+  assert.deepEqual(db.batches, [5, 2])
+
+  // Removing a record deletes its row.
+  store.write({ ...renamed, revision: 3, workspaces: renamed.workspaces.filter((entry) => entry.id !== 'ws-3') })
+  await store.flush()
+  assert.deepEqual(
+    savedRegistry(dir)?.workspaces.map((entry) => (entry as { id: string }).id),
+    ['ws-1', 'ws-2'],
+  )
+})
+
+test('writes asked for while one is being written are written once, the newest', async () => {
+  const dir = tempDir()
+  const db = counting(testDatabaseAt(dir))
+  const store = createWorkspaceRegistryStore({ database: db.database })
+  store.write(registry('Alpha', 1))
+  store.write(registry('Beta', 2))
+  store.write(registry('Gamma', 3))
+  store.write(registry('Delta', 4))
+  await store.flush()
+  assert.equal(db.batches.length, 2, 'the first, then the newest of those that waited')
+  assert.equal(persistedName(dir), 'Delta')
+})
+
+test('a change reverted while another is being written ends on what memory holds', async () => {
+  const dir = tempDir()
+  const store = createWorkspaceRegistryStore({ database: testDatabaseAt(dir) })
+  store.write(registry('Alpha', 1))
   store.write(registry('Beta', 2))
   store.write(registry('Alpha', 3))
   await store.flush()
-  assert.equal(persistedName(dir), 'Alpha', 'the disk ends on what memory holds, not on the reverted change')
+  assert.equal(persistedName(dir), 'Alpha')
 })
 
-test('a failed write does not make the same content look persisted', async () => {
-  let dir = '/dev/null/not-a-directory'
+test('a failed write warns, and the retry of the same content still writes', async () => {
+  const dir = tempDir()
+  const db = counting(testDatabaseAt(dir))
   const diagnostics: string[] = []
   const store = createWorkspaceRegistryStore({
-    resolveUserDataDir: () => dir,
+    database: db.database,
     logDiagnostic: (diagnostic) => diagnostics.push(diagnostic.title),
-    persistDebounceMs: 0,
   })
+  db.fail(true)
   store.write(registry('Alpha', 1))
   await store.flush()
   assert.deepEqual(diagnostics, ['Workspace registry not persisted'])
+  assert.equal(savedRegistry(dir), null)
 
-  dir = tempDir()
+  db.fail(false)
   store.write(registry('Alpha', 2))
   await store.flush()
   assert.equal(persistedName(dir), 'Alpha', 'the retry of identical content still writes')
 })
 
-test('visit stamps every ten seconds are written once per lazy interval, and quit writes the last', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+test('whenWritten settles once the change is committed, with no delay to wait out', async () => {
+  const dir = tempDir()
+  const store = createWorkspaceRegistryStore({ database: testDatabaseAt(dir) })
+  store.write(registry('Alpha', 1))
+  store.write(registry('Beta', 2))
+  await store.whenWritten()
+  assert.equal(persistedName(dir), 'Beta')
+})
+
+test('a snooze survives a quit a moment after it: a new process reads it', async () => {
+  const dir = tempDir()
+  const first = openStudioDatabase(dir, { readers: 1 })
+  const store = createWorkspaceRegistryStore({ database: first })
+  store.write(registry('Snoozed', 1))
+  await store.whenWritten()
+  // The process goes away without closing the database: what was committed is in its log.
+  const after = openStudioDatabase(dir, { readers: 1 })
   try {
-    const dir = tempDir()
-    const store = createWorkspaceRegistryStore({
-      resolveUserDataDir: () => dir,
-      persistDebounceMs: 250,
-      lazyPersistMs: 60_000,
-    })
-    fileWrites.count = 0
-    for (let stamp = 1; stamp <= 18; stamp++) {
-      store.write(registry(`Visited ${stamp}`, stamp), { lazy: true })
-      await vi.advanceTimersByTimeAsync(10_000)
-    }
-    store.write(registry('Visited at quit', 19), { lazy: true })
-    await store.flush()
-    assert.equal(persistedName(dir), 'Visited at quit', 'quit writes the stamp still waiting')
-    // One per minute of stamping, and the one at quit.
-    assert.ok(fileWrites.count <= 4, `${fileWrites.count} writes for 19 stamps over three minutes`)
+    const outcome = createWorkspaceRegistryStore({ database: after }).read()
+    assert.equal(outcome.status, 'loaded')
+    assert.equal(outcome.status === 'loaded' ? outcome.file.workspaces[0]?.name : null, 'Snoozed')
   } finally {
-    vi.useRealTimers()
+    await after.close()
+    await first.close()
   }
 })
 
-test('an ordinary write takes a waiting lazy one with it on its own short debounce', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-  try {
-    const dir = tempDir()
-    const store = createWorkspaceRegistryStore({
-      resolveUserDataDir: () => dir,
-      persistDebounceMs: 250,
-      lazyPersistMs: 60_000,
-    })
-    store.write(registry('Visited', 1), { lazy: true })
-    await vi.advanceTimersByTimeAsync(1_000)
-    assert.equal(existsSync(join(dir, WORKSPACE_REGISTRY_FILE_NAME)), false, 'a lazy write waits')
+test('none is missing; a registry file the import could not read is unreadable, not an empty list', () => {
+  const fresh = tempDir()
+  assert.deepEqual(createWorkspaceRegistryStore({ database: testDatabaseAt(fresh) }).read(), { status: 'missing' })
 
-    store.write(registry('Renamed', 2))
-    // A stamp landing inside the short debounce does not push it back.
-    store.write(registry('Renamed and visited', 3), { lazy: true })
-    await vi.advanceTimersByTimeAsync(250)
-    await store.flush()
-    assert.equal(persistedName(dir), 'Renamed and visited')
-  } finally {
-    vi.useRealTimers()
-  }
+  const damaged = tempDir()
+  const connection = prepareStudioDatabase(join(damaged, STUDIO_DATABASE_FILENAME))
+  connection.run('INSERT INTO imports (source, imported_at, records, skipped) VALUES (?, 1, 0, 1)', [
+    WORKSPACE_REGISTRY_FILE_NAME,
+  ])
+  connection.close()
+  const titles: string[] = []
+  const outcome = createWorkspaceRegistryStore({
+    database: testDatabaseAt(damaged),
+    logDiagnostic: (diagnostic) => titles.push(diagnostic.title),
+  }).read()
+  assert.equal(outcome.status, 'unreadable')
+  assert.deepEqual(titles, ['Workspace registry parse failed'])
 })
 
-test('whenWritten settles only once the change is on disk, on the write delay, and not for a lazy change', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-  try {
-    const dir = tempDir()
-    const store = createWorkspaceRegistryStore({
-      resolveUserDataDir: () => dir,
-      persistDebounceMs: 250,
-      lazyPersistMs: 60_000,
-    })
-    store.write(registry('Alpha', 1))
-    let written = false
-    const waiting = store.whenWritten().then(() => {
-      written = true
-    })
-    await vi.advanceTimersByTimeAsync(100)
-    assert.equal(written, false, 'not before the write delay has run')
-    assert.equal(existsSync(join(dir, WORKSPACE_REGISTRY_FILE_NAME)), false)
-    // A burst still writes once: a change meanwhile moves the write, and the wait with it.
-    store.write(registry('Beta', 2))
-    await vi.advanceTimersByTimeAsync(200)
-    assert.equal(written, false)
-    await vi.advanceTimersByTimeAsync(100)
-    await waiting
-    assert.equal(persistedName(dir), 'Beta', 'settled with the change on disk')
+test('a record row that does not read is dropped by name; the rest load', () => {
+  const dir = tempDir()
+  seedRegistry(dir, registry('Alpha', 1, ['ws-2']))
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  connection.run("UPDATE chats SET body = '{ torn' WHERE id = 'ws-2'")
+  connection.close()
+  const outcome = createWorkspaceRegistryStore({ database: testDatabaseAt(dir) }).read()
+  assert.equal(outcome.status, 'loaded')
+  if (outcome.status !== 'loaded') return
+  assert.deepEqual(
+    outcome.file.workspaces.map((entry) => entry.id),
+    ['ws-1'],
+  )
+  assert.deepEqual(
+    outcome.droppedRecords.map((entry) => entry.id),
+    ['ws-2'],
+  )
+})
 
-    store.write(registry('Visited', 3), { lazy: true })
-    let lazyWritten = false
-    await store.whenWritten().then(() => {
-      lazyWritten = true
-    })
-    assert.equal(lazyWritten, true, 'nothing waits on a lazy change')
-    assert.equal(persistedName(dir), 'Beta')
-  } finally {
-    vi.useRealTimers()
-  }
+test('a write after a registry that did not read replaces every chat row, so none it left comes back', async () => {
+  const dir = tempDir()
+  seedRegistry(dir, registry('Alpha', 1, ['ws-old']))
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  connection.run("UPDATE chat_registry SET body = '{ torn' WHERE id = 1")
+  connection.close()
+  const store = createWorkspaceRegistryStore({ database: testDatabaseAt(dir) })
+  assert.equal(store.read().status, 'unreadable')
+
+  // The recovery seeds what the window had, without the old record.
+  store.write(registry('Recovered', 2))
+  await store.flush()
+  assert.deepEqual(
+    savedRegistry(dir)?.workspaces.map((entry) => (entry as { id: string }).id),
+    ['ws-1'],
+  )
+  const restarted = createWorkspaceRegistryStore({ database: testDatabaseAt(dir) }).read()
+  assert.equal(restarted.status, 'loaded')
+  assert.deepEqual(
+    restarted.status === 'loaded' ? restarted.file.workspaces.map((entry) => [entry.id, entry.name]) : null,
+    [['ws-1', 'Recovered']],
+  )
+})
+
+test('a write that throws before it reaches the database is reported, and later writes still land', async () => {
+  const dir = tempDir()
+  const titles: string[] = []
+  const store = createWorkspaceRegistryStore({
+    database: testDatabaseAt(dir),
+    logDiagnostic: (diagnostic) => titles.push(diagnostic.title),
+  })
+  const unserializable = registry('Alpha', 1)
+  ;(unserializable.workspaces[0] as unknown as { size: bigint }).size = 1n
+  store.write(unserializable)
+  await store.flush()
+  assert.deepEqual(titles, ['Workspace registry not persisted'])
+
+  store.write(registry('Beta', 2))
+  await store.flush()
+  assert.equal(persistedName(dir), 'Beta', 'the store is not left busy')
 })

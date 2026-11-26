@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
+import { savedSchedules, schedulesAt, seedSchedules } from '../../../tests/studio-database'
 
 import type { ConversationLaunchRequest } from '../conversation-launch-service'
 import {
@@ -85,14 +86,14 @@ function fakeTime(start: number) {
 test('the store keeps scheduled agents in the app data file and reads them back', async () => {
   const file = tempFile()
   try {
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-1' })
+    const store = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW, newId: () => 'sa-1' })
     await store.load()
     assert.deepEqual(store.list(), [])
     const created = await store.create(draft(), 'weather-deck')
     assert.equal(created.id, 'sa-1')
     assert.equal(created.ownerModuleId, 'weather-deck')
 
-    const reread = createScheduledAgentsStore({ filePath: file.path, now: () => NOW })
+    const reread = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW })
     await reread.load()
     assert.deepEqual(reread.list(), [created])
   } finally {
@@ -103,7 +104,7 @@ test('the store keeps scheduled agents in the app data file and reads them back'
 test('a hand-edited entry that no longer validates is skipped, not scheduled', async () => {
   const file = tempFile()
   try {
-    writeFileSync(
+    seedSchedules(
       file.path,
       JSON.stringify({
         version: 1,
@@ -111,7 +112,11 @@ test('a hand-edited entry that no longer validates is skipped, not scheduled', a
       }),
     )
     const warnings: string[] = []
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, warn: (m) => warnings.push(m) })
+    const store = createScheduledAgentsStore({
+      storage: schedulesAt(file.path),
+      now: () => NOW,
+      warn: (m) => warnings.push(m),
+    })
     await store.load()
     assert.deepEqual(
       store.list().map((entry) => entry.id),
@@ -126,14 +131,14 @@ test('a hand-edited entry that no longer validates is skipped, not scheduled', a
 test('a failed run says so until it is seen', async () => {
   const file = tempFile()
   try {
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-1' })
+    const store = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW, newId: () => 'sa-1' })
     await store.load()
     await store.create(draft())
     await store.recordRun('sa-1', { at: NOW, ok: false, message: 'gh: authentication required' })
     assert.equal(store.get('sa-1')?.lastFailureSeenAt, null)
     await store.markFailureSeen('sa-1')
     assert.equal(store.get('sa-1')?.lastFailureSeenAt, NOW)
-    const saved = JSON.parse(readFileSync(file.path, 'utf8')) as { agents: ScheduledAgent[] }
+    const saved = JSON.parse(savedSchedules(file.path)) as { agents: ScheduledAgent[] }
     assert.equal(saved.agents[0]?.lastFailureSeenAt, NOW)
   } finally {
     file.cleanup()
@@ -530,7 +535,7 @@ test('a run whose first message is refused is a failed run, whenever the refusal
 test('a started run that failed after all is recorded as failed, only while it is the last run', async () => {
   const file = tempFile()
   try {
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-1' })
+    const store = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW, newId: () => 'sa-1' })
     await store.load()
     await store.create(draft())
     await store.recordRun('sa-1', { at: NOW, ok: true, workspaceId: 'run-1' })
@@ -567,7 +572,11 @@ test('the service validates every write and an extension reaches only its own', 
   const file = tempFile()
   try {
     let id = 0
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => `sa-${++id}` })
+    const store = createScheduledAgentsStore({
+      storage: schedulesAt(file.path),
+      now: () => NOW,
+      newId: () => `sa-${++id}`,
+    })
     await store.load()
     const scheduler = schedulerWithRunRecords({
       list: () => store.list(),
@@ -615,7 +624,11 @@ test("an extension's schedule goes no looser than the extension, or the agent ca
   const file = tempFile()
   try {
     let id = 0
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => `sa-${++id}` })
+    const store = createScheduledAgentsStore({
+      storage: schedulesAt(file.path),
+      now: () => NOW,
+      newId: () => `sa-${++id}`,
+    })
     await store.load()
     const ran: string[] = []
     const scheduler = schedulerWithRunRecords({
@@ -675,7 +688,7 @@ test("an extension's schedule goes no looser than the extension, or the agent ca
 test("Run now says why it did not run when the last run's chat is still working", async () => {
   const file = tempFile()
   try {
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-1' })
+    const store = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW, newId: () => 'sa-1' })
     await store.load()
     await store.create(draft())
     await store.recordRun('sa-1', { at: NOW, ok: true, workspaceId: 'run-1' })
@@ -702,12 +715,12 @@ test("Run now says why it did not run when the last run's chat is still working"
 test('a write before the file was read waits for it, so the file keeps what it had', async () => {
   const file = tempFile()
   try {
-    writeFileSync(file.path, JSON.stringify({ version: 1, agents: [agent()] }))
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-2' })
+    seedSchedules(file.path, JSON.stringify({ version: 1, agents: [agent()] }))
+    const store = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW, newId: () => 'sa-2' })
     // The window's create arrives before the scheduler's sidecar loads the store.
     const [created] = await Promise.all([store.create(draft()), store.load()])
     assert.equal(created.id, 'sa-2')
-    const saved = JSON.parse(readFileSync(file.path, 'utf8')) as { agents: ScheduledAgent[] }
+    const saved = JSON.parse(savedSchedules(file.path)) as { agents: ScheduledAgent[] }
     assert.deepEqual(
       saved.agents.map((entry) => entry.id),
       ['sa-1', 'sa-2'],
@@ -717,14 +730,22 @@ test('a write before the file was read waits for it, so the file keeps what it h
   }
 })
 
-test('a file that is there but cannot be read refuses every write, rather than replacing it', async () => {
-  if (process.platform === 'win32' || process.getuid?.() === 0) return
+test('schedules that cannot be read refuse every write, rather than replacing them', async () => {
   const file = tempFile()
   try {
     const before = JSON.stringify({ version: 1, agents: [agent()] })
-    writeFileSync(file.path, before)
-    chmodSync(file.path, 0o000)
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-2' })
+    seedSchedules(file.path, before)
+    const kept = schedulesAt(file.path)
+    const store = createScheduledAgentsStore({
+      storage: {
+        read: async () => {
+          throw new Error('database disk image is malformed')
+        },
+        write: (body) => kept.write(body),
+      },
+      now: () => NOW,
+      newId: () => 'sa-2',
+    })
     await store.load()
     await assert.rejects(store.create(draft()), /could not be read/u)
     const scheduler = schedulerWithRunRecords({
@@ -739,34 +760,62 @@ test('a file that is there but cannot be read refuses every write, rather than r
     const answer = await service.create(draft())
     assert.equal(answer.ok, false, 'the caller is told, not thrown at')
     assert.deepEqual(store.list(), [], 'nothing is scheduled that is not saved')
-    chmodSync(file.path, 0o600)
-    assert.equal(readFileSync(file.path, 'utf8'), before)
+    assert.equal(savedSchedules(file.path), before)
   } finally {
     file.cleanup()
   }
 })
 
-test('a file that cannot be understood is kept aside, and the list starts empty', async () => {
+test('a read that failed is tried again by the next change, and what it then reads is kept', async () => {
   const file = tempFile()
   try {
-    writeFileSync(file.path, '{"version":1,"agents":[{"id":"sa-1",')
+    seedSchedules(file.path, JSON.stringify({ version: 1, agents: [agent()] }))
+    const kept = schedulesAt(file.path)
+    // Busy at the start and at the first change; answering from then on.
+    let failures = 2
+    const store = createScheduledAgentsStore({
+      storage: {
+        read: async () => {
+          if (failures-- > 0) throw new Error('database is locked')
+          return kept.read()
+        },
+        write: (body) => kept.write(body),
+      },
+      now: () => NOW,
+      newId: () => 'sa-2',
+    })
+    await store.load()
+    assert.deepEqual(store.list(), [])
+    await assert.rejects(store.create(draft()), /could not be read/u)
+    // The database answers now: the next change reads, then saves on top of what was there.
+    const created = await store.create(draft())
+    assert.equal(created.id, 'sa-2')
+    assert.deepEqual(
+      (JSON.parse(savedSchedules(file.path)) as { agents: ScheduledAgent[] }).agents.map((entry) => entry.id),
+      ['sa-1', 'sa-2'],
+    )
+  } finally {
+    file.cleanup()
+  }
+})
+
+test('schedules this build does not understand are never written over', async () => {
+  const file = tempFile()
+  try {
+    const newer = JSON.stringify({ version: 99, agents: [{ id: 'sa-1' }] })
+    seedSchedules(file.path, newer)
     const warnings: string[] = []
     const store = createScheduledAgentsStore({
-      filePath: file.path,
+      storage: schedulesAt(file.path),
       now: () => NOW,
       newId: () => 'sa-2',
       warn: (message) => warnings.push(message),
     })
     await store.load()
     assert.deepEqual(store.list(), [])
-    assert.equal(readFileSync(`${file.path}.corrupt-${NOW}`, 'utf8'), '{"version":1,"agents":[{"id":"sa-1",')
-    assert.ok(warnings.some((message) => message.includes('.corrupt-')))
-    await store.create(draft())
-    const saved = JSON.parse(readFileSync(file.path, 'utf8')) as { agents: ScheduledAgent[] }
-    assert.deepEqual(
-      saved.agents.map((entry) => entry.id),
-      ['sa-2'],
-    )
+    assert.ok(warnings.some((message) => message.includes('does not read')))
+    await assert.rejects(store.create(draft()), /no change is saved/u)
+    assert.equal(savedSchedules(file.path), newer)
   } finally {
     file.cleanup()
   }
@@ -776,12 +825,12 @@ test('an entry that no longer validates is written back as it was, not dropped b
   const file = tempFile()
   try {
     const invalid = { ...agent({ id: 'sa-9' }), schedule: { cron: '0 25 * * *', timezone: 'UTC' } }
-    writeFileSync(file.path, JSON.stringify({ version: 1, agents: [agent(), invalid] }))
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-2' })
+    seedSchedules(file.path, JSON.stringify({ version: 1, agents: [agent(), invalid] }))
+    const store = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW, newId: () => 'sa-2' })
     await store.load()
     await store.create(draft())
     await store.remove('sa-1')
-    const saved = JSON.parse(readFileSync(file.path, 'utf8')) as { agents: unknown[] }
+    const saved = JSON.parse(savedSchedules(file.path)) as { agents: unknown[] }
     assert.deepEqual(saved.agents, [{ ...agent({ id: 'sa-2' }), createdAt: NOW, updatedAt: NOW }, invalid])
   } finally {
     file.cleanup()
@@ -941,7 +990,7 @@ test('a one-time schedule its machine cannot run yet runs once it can, late rath
 test('the list says what a waiting schedule waits for, and Run now says it in words', async () => {
   const file = tempFile()
   try {
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-1' })
+    const store = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW, newId: () => 'sa-1' })
     await store.load()
     await store.create(draft({ cli: 'codex' }))
     const waitingFor = (entry: ScheduledAgent) => (entry.cli === 'codex' ? 'Codex is not signed in on build-box' : null)
@@ -968,7 +1017,7 @@ test('the list says what a waiting schedule waits for, and Run now says it in wo
 test('a scheduled agent another Studio kept is kept here under its own id, read as this store reads its file', async () => {
   const file = tempFile()
   try {
-    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-new' })
+    const store = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW, newId: () => 'sa-new' })
     const scheduler = schedulerWithRunRecords({
       list: () => store.list(),
       run: async () => ({ at: NOW, ok: true, workspaceId: 'w' }),
@@ -991,7 +1040,7 @@ test('a scheduled agent another Studio kept is kept here under its own id, read 
     assert.equal(broken.ok ? null : broken.reason, 'invalid')
 
     // On disk, as this store would have written it.
-    const reread = createScheduledAgentsStore({ filePath: file.path, now: () => NOW })
+    const reread = createScheduledAgentsStore({ storage: schedulesAt(file.path), now: () => NOW })
     await reread.load()
     assert.deepEqual(
       reread.list().map((entry) => entry.id),

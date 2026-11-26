@@ -15,8 +15,6 @@ import type {
 } from './conversation-host'
 import {
   createScheduledMessages,
-  SCHEDULED_MESSAGES_FILE,
-  scheduledMessagesFileStorage,
   type ScheduledMessageCarried,
   type ScheduledMessages,
   type ScheduledMessagesStorage,
@@ -79,7 +77,8 @@ export type StudioScheduledMessagesDeps = {
   workspaceRecord: (workspaceId: string) => { agents: Record<string, unknown> } | null
   /** A conversation host whose sends are recorded as the person's. */
   createHost: () => Pick<ConversationGatewayHost, 'resolveKey' | 'command'>
-  storage?: ScheduledMessagesStorage
+  /** Where the messages are kept: the data folder's database (`createSnapshotStorage`). */
+  storage: ScheduledMessagesStorage
   now?: () => number
   log?: (message: string) => void
 }
@@ -87,7 +86,7 @@ export type StudioScheduledMessagesDeps = {
 export function createStudioScheduledMessages(deps: StudioScheduledMessagesDeps): ScheduledMessages {
   let host: ReturnType<StudioScheduledMessagesDeps['createHost']> | null = null
   return createScheduledMessages({
-    storage: deps.storage ?? scheduledMessagesFileStorage(join(deps.dataDir, SCHEDULED_MESSAGES_FILE)),
+    storage: deps.storage,
     listSessions: () => {
       const listed = deps.conversations.listSessions()
       return listed.ok ? listed.sessions : []

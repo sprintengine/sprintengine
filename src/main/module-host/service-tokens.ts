@@ -1,4 +1,5 @@
-import type { AppServices } from '../app-services'
+import type { StudioCore } from '../../server/core/studio-core'
+import type { GitHubTokenStore } from '../github-token-store'
 import type { ModuleWorkspaceContextService, ModuleWorkspaceService } from '../modules/module-workspace-service'
 import type { ModuleStorageRegistry } from './module-storage'
 import type { ModuleWorkspaceGitInfoResult } from '../../shared/modules/workspace-view'
@@ -22,35 +23,21 @@ import {
 import type { ModuleAppStateMirror } from './module-app-state-mirror'
 
 // Tokens for the shared services that capability modules consume across module
-// boundaries (instead of importing the concrete instances). index.ts seeds the
-// kernel with the live AppServices instances via loadMainModules' provideServices
-// hook; modules call host.requireService(<token>).
-export const TerminalRuntimeToken =
-  createServiceToken<NonNullable<AppServices['terminalRuntime']>>('core.terminal-runtime')
-// The single main-process path that drives an agent session: send,
-// submit, interrupt, read, wait — serialized per session, dispatched per
-// transport. Consumers resolve this instead of writing to a pty themselves.
-export const AgentControlPlaneToken =
-  createServiceToken<NonNullable<AppServices['agentControlPlane']>>('core.agent-control-plane')
-// The single main-process path that COMPOSES an agent launch: CLI and
-// permission defaults, connector resolution, naming, spawn.
-// Consumers resolve this instead of asking a renderer to launch for them, which
-// is what made every headless agent launch fail for want of an open window.
-export const AgentLaunchServiceToken =
-  createServiceToken<NonNullable<AppServices['agentLaunchService']>>('core.agent-launch-service')
-export const GitHubTokenStoreToken = createServiceToken<AppServices['githubTokenStore']>('core.github-token-store')
+// boundaries (instead of importing the concrete instances). The Studio server
+// seeds the kernel with its core's instances through the agent-runtime module
+// (server-modules.ts); modules call host.requireService(<token>).
+export const GitHubTokenStoreToken = createServiceToken<GitHubTokenStore>('core.github-token-store')
 // The main-owned agent-launch settings (CLI runtimes, permission preset, MCP
 // servers, knowledge roots, last-selected CLI) that main-side spawns read.
 export const AgentLaunchSettingsToken =
-  createServiceToken<AppServices['agentLaunchSettings']>('core.agent-launch-settings')
-export const SprintEngineAuthToken = createServiceToken<AppServices['sprintengineAuth']>('core.sprintengine-auth')
+  createServiceToken<StudioCore['agentLaunchSettings']>('core.agent-launch-settings')
 export const WorkspaceSyncServiceToken =
-  createServiceToken<AppServices['workspaceSyncService']>('core.workspace-sync-service')
+  createServiceToken<StudioCore['workspaceSyncService']>('core.workspace-sync-service')
 // The authoritative workspace registry. Modules that need to READ the
 // durable record — the phone's scope resolver, a workspace-scoped surface —
 // resolve this rather than reaching for the bus, which only carries events.
 // Creation still goes through WorkspaceServiceToken below, which writes here.
-export const WorkspaceRegistryToken = createServiceToken<AppServices['workspaceRegistry']>('core.workspace-registry')
+export const WorkspaceRegistryToken = createServiceToken<StudioCore['workspaceRegistry']>('core.workspace-registry')
 // The host-internal chat services: the one path that starts a chat in main (a
 // module's `create`, an automation run's agent, a paired machine's New chat)
 // and the chats they run as (the core's conversation backend; the key keeps the
@@ -58,13 +45,13 @@ export const WorkspaceRegistryToken = createServiceToken<AppServices['workspaceR
 // key is on the third-party service list; a module reaches chats through the
 // moduleId-scoped ConversationModuleServiceToken below.
 export const ConversationLaunchServiceToken =
-  createServiceToken<AppServices['conversationLaunchService']>('core.conversation-launch')
-export const ConversationRuntimeToken = createServiceToken<AppServices['conversations']>('core.conversation-runtime')
+  createServiceToken<StudioCore['conversationLaunchService']>('core.conversation-launch')
+export const ConversationRuntimeToken = createServiceToken<StudioCore['conversations']>('core.conversation-runtime')
 // A conversation host: the chats' ordinary send, which resumes a chat at rest
 // from its record, as a paired device's send does. For first-party work that
 // sends to a chat it did not just start (a scheduled run finished after a
 // restart). First-party only.
-export const ConversationHostToken = createServiceToken<AppServices['createConversationHost']>('core.conversation-host')
+export const ConversationHostToken = createServiceToken<StudioCore['createConversationHost']>('core.conversation-host')
 // Scheduled agents: the one door every caller — the New chat panel, an
 // extension, an agent's MCP call — creates and changes them through.
 export const ScheduledAgentsServiceToken = createServiceToken<ScheduledAgentsService>('scheduled-agents.service')

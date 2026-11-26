@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
+import { savedSchedules, schedulesAt, seedSchedules } from '../../../tests/studio-database'
 
 import type { ConversationLaunchRequest, ConversationLaunchResult } from '../conversation-launch-service'
 import { cronForInstant, type ScheduledAgentDraft } from '../../shared/scheduled-agents'
@@ -136,7 +137,7 @@ function chatWorld() {
 async function boot(file: string, world: ReturnType<typeof chatWorld>, now: number) {
   let clock = now
   const timers: { callback: () => void; at: number }[] = []
-  const store = createScheduledAgentsStore({ filePath: file, now: () => clock })
+  const store = createScheduledAgentsStore({ storage: schedulesAt(file), now: () => clock })
   await store.load()
   const outcomes = createScheduledRunOutcomes({
     store,
@@ -219,16 +220,15 @@ const recordsOnDisk = (file: string): ScheduledRunRecord[] => Object.values(runs
 
 /** Whether the file still lists that schedule. */
 const agentOnDisk = (file: string, id: string): boolean =>
-  (JSON.parse(readFileSync(file, 'utf8')) as { agents?: { id: string }[] }).agents?.some((agent) => agent.id === id) ??
-  false
+  (JSON.parse(savedSchedules(file)) as { agents?: { id: string }[] }).agents?.some((agent) => agent.id === id) ?? false
 
 /** The file's run records, as the next process (or a hand-over) reads them. */
 function runsOnDisk(file: string): Record<string, ScheduledRunRecord> {
-  return (JSON.parse(readFileSync(file, 'utf8')) as { runs?: Record<string, ScheduledRunRecord> }).runs ?? {}
+  return (JSON.parse(savedSchedules(file)) as { runs?: Record<string, ScheduledRunRecord> }).runs ?? {}
 }
 
 async function seed(file: string, schedule: ScheduledAgentDraft['schedule']): Promise<string> {
-  const store = createScheduledAgentsStore({ filePath: file, now: () => NOW - 2 * HOUR })
+  const store = createScheduledAgentsStore({ storage: schedulesAt(file), now: () => NOW - 2 * HOUR })
   const created = await store.create(draft({ schedule }))
   return created.id
 }
@@ -385,7 +385,9 @@ test('a missed start time: a one-time schedule runs once, a repeating one waits 
   const file = tempFile()
   const world = chatWorld()
   const once = await seed(file, onceAt(NOW - HOUR))
-  const repeating = (await createScheduledAgentsStore({ filePath: file, now: () => NOW - 2 * HOUR }).create(draft())).id
+  const repeating = (
+    await createScheduledAgentsStore({ storage: schedulesAt(file), now: () => NOW - 2 * HOUR }).create(draft())
+  ).id
   // The app was closed through both times; nothing was on its way.
   const started = await boot(file, world, NOW)
   await started.advanceTo(NOW)
@@ -409,7 +411,7 @@ test('a missed start time: a one-time schedule runs once, a repeating one waits 
 
 test('run records are plain entries keyed by command id; one this build would not write is dropped, not sent', async () => {
   const file = tempFile()
-  writeFileSync(
+  seedSchedules(
     file,
     JSON.stringify({
       version: 1,
@@ -425,7 +427,7 @@ test('run records are plain entries keyed by command id; one this build would no
       },
     }),
   )
-  const store = createScheduledAgentsStore({ filePath: file, now: () => NOW })
+  const store = createScheduledAgentsStore({ storage: schedulesAt(file), now: () => NOW })
   await store.load()
   assert.deepEqual(store.runs(), {
     'scheduled-run:a': {
@@ -449,7 +451,7 @@ test('run records are plain entries keyed by command id; one this build would no
 
 test('the images a run on its way names are kept, though its schedule is gone', async () => {
   const file = tempFile()
-  const store = createScheduledAgentsStore({ filePath: file, now: () => NOW })
+  const store = createScheduledAgentsStore({ storage: schedulesAt(file), now: () => NOW })
   const id = (await store.create(draft({ prompt: 'Look at /data/scheduled-images/abc/shot.png' }))).id
   await store.beginRun('scheduled-run:a', {
     scheduledAgentId: id,

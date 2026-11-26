@@ -3,7 +3,10 @@ import React from 'react'
 import type { TailnetPresence } from './useTailnetPresence'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
-import { environmentAnswering, environmentStatus } from '../../../../../shared/environment-status'
+import {
+  environmentAnswering,
+  environmentStatus,
+} from '../../../../../../packages/client-runtime/src/environments/environmentStatus'
 
 // The Remote glyph's own vocabulary — state, tooltip, ink, and the settings
 // opener the account menu's row needs. Split out of `RemotePopover.tsx` so the

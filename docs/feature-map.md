@@ -32,8 +32,11 @@ Doc: `docs/conversations.md`. Tests: `src/main/conversation-runtime.test.ts`,
 `composerControls.tsx`, `composerContextPicker.tsx`; the slash commands in `src/main/conversation-commands/`.
 Tests: `src/renderer/src/components/panels/agentChat/ComposerField.test.tsx`.
 
-**New chat**: `src/renderer/src/components/workspace/agentComposer/NewAgentPanel.tsx`; the launch
-in `src/main/conversation-launch-service.ts`. Wire: `conversation.create` (capability `conversation-create`).
+**New chat**: `src/renderer/src/components/workspace/agentComposer/NewAgentPanel.tsx`, its machine picker
+over the one environment list (`src/renderer/src/hooks/useEnvironments.ts`), and the start on another
+machine in `src/renderer/src/studio/environmentDiscovery.ts`; the launch in
+`src/main/conversation-launch-service.ts`. Wire: `conversation.create` (capabilities `conversation-create`,
+`new-chat-folder`).
 Tests: `src/main/conversation-launch-service.test.ts`, `src/renderer/src/components/workspace/agentComposer/NewAgentPanel.test.tsx`.
 
 **Chat list and a chat's rest** (sidebar, settle, snooze, mark unread, star): `src/renderer/src/components/workspace/WorkspaceSidebar.tsx`,
@@ -150,6 +153,15 @@ Wire: `files.*` (`packages/studio-protocol/src/file-system.ts`).
 
 **Git and pull requests**: `src/server/git/studio-git.ts`, `src/server/pull-requests/`, the panel
 `src/renderer/src/components/panels/GitPanel.tsx`. Doc: `docs/design/agent-changes.md`.
+
+**The data folder's database** (`studio.sqlite` in each data folder): opening, the worker connections and the damaged-file and
+folder errors in `src/server/db/database.ts`, chat history (logs, receipts, the one-time import of old transcripts) in
+`src/server/db/chat-logs.ts`, the chat records (the workspace registry's rows) in `src/main/workspace-registry-store.ts`,
+stores kept whole as one row (schedules, scheduled messages, usage-limit resumes) in `src/server/db/snapshot-storage.ts`,
+the layout in `src/server/db/migrations.ts`, the one copy in
+`src/server/db/copies.ts`, the format steps and their imports in `src/server/environment/data-format.ts` and
+`src/server/db/import-files.ts`. Doc: `docs/data-folder.md`. Tests: `src/server/db/database.test.ts`,
+`src/server/db/import-files.test.ts`, `src/server/db/chat-logs.test.ts`, `src/server/environment/data-format.test.ts`.
 
 ## Panes beside the chat
 

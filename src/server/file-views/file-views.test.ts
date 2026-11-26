@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, chmod, writeFile } from 'node:fs/promises'
@@ -26,7 +27,7 @@ async function fixture() {
   await mkdir(join(project, 'src'), { recursive: true })
   await writeFile(join(home, '.claude', 'CLAUDE.md'), '# Rules\n\nBe brief.\n')
   await writeFile(join(project, 'src', 'app.ts'), 'export const a = 1\nexport const b = 2\n')
-  const make = () => createFileViews({ dataDir: data, home, folderOf: () => project })
+  const make = () => createFileViews({ database: testDatabaseAt(data), home, folderOf: () => project })
   return { root, home, project, data, views: make(), make }
 }
 

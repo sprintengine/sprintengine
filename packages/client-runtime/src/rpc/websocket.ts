@@ -29,8 +29,12 @@ export type WebSocketTransportOptions = {
   ticket: () => Promise<StudioWebSocketTicket>
   /** The WebSocket to use; the global one when not given. */
   WebSocket?: StudioWebSocketConstructor
-  /** Hears each socket's close code: a Studio may say why it closed one (a revoked session, say). */
-  onSocketClose?: (code: number) => void
+  /**
+   * Hears each socket's close code: a Studio may say why it closed one (a
+   * revoked session, say). `opened` is false for a socket refused at its
+   * upgrade, whose close carries no code a page can read (1006).
+   */
+  onSocketClose?: (code: number, socket: { opened: boolean }) => void
   /**
    * How long a socket may take to open before it is given up and the
    * connection fails, so a reconnect tries again (default ten seconds). A
@@ -55,6 +59,7 @@ export function webSocketTransport(options: WebSocketTransportOptions): StudioTr
     // Frames heard before the client listens wait here, in order.
     const early: string[] = []
     let closed = false
+    let opened = false
     socket.addEventListener('message', (event) => {
       if (typeof event.data !== 'string') return
       if (messageListeners.length === 0) early.push(event.data)
@@ -73,11 +78,14 @@ export function webSocketTransport(options: WebSocketTransportOptions): StudioTr
         settle(new Error('Studio did not answer in time.'))
         socket.close()
       }, options.openTimeoutMs ?? OPEN_TIMEOUT_MS)
-      socket.addEventListener('open', () => settle())
+      socket.addEventListener('open', () => {
+        opened = true
+        settle()
+      })
       socket.addEventListener('error', () => settle(new Error('Studio could not be reached.')))
       socket.addEventListener('close', (event) => {
         settle(new Error(`Studio refused the connection (${event.code}).`))
-        options.onSocketClose?.(event.code)
+        options.onSocketClose?.(event.code, { opened })
         if (closed) return
         closed = true
         // Heard after the current frame, as a socket's close is elsewhere.

@@ -54,8 +54,6 @@ export type SupervisorState =
       kind: 'failed'
       reason: string
       exit: ServerExit | null
-      /** Never reached ready this session: the boot-time fallback to in process applies (decision O9). */
-      neverReady: boolean
     }
   | { kind: 'stopping' }
   | { kind: 'stopped' }
@@ -158,7 +156,6 @@ export function createServerSupervisor(deps: SupervisorDeps): ServerSupervisor {
   let childAlive = false
   let attempt = 0
   let failedBoots = 0
-  let everReady = false
   let crashes: number[] = []
   const health: ServerHealth = {
     pid: null,
@@ -266,7 +263,6 @@ export function createServerSupervisor(deps: SupervisorDeps): ServerSupervisor {
         if (state.kind !== 'starting') return
         if (bootTimer) clearTimeout(bootTimer)
         bootTimer = null
-        everReady = true
         failedBoots = 0
         health.pid = frame.pid
         setState({ kind: 'ready', ready: frame })
@@ -336,7 +332,6 @@ export function createServerSupervisor(deps: SupervisorDeps): ServerSupervisor {
         kind: 'failed',
         reason: health.lastFatal ?? why ?? `The Studio server exited with code ${exit.code}.`,
         exit,
-        neverReady: !everReady,
       })
       return
     }
@@ -351,7 +346,6 @@ export function createServerSupervisor(deps: SupervisorDeps): ServerSupervisor {
             ? `The Studio server failed to start ${failedBoots} times.${health.lastFatal ? ` ${health.lastFatal}` : ''}`
             : `The Studio server stopped ${crashes.length} times in two minutes.`,
         exit,
-        neverReady: !everReady,
       })
       return
     }

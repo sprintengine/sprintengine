@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { once } from 'node:events'
@@ -194,6 +195,7 @@ test('tailnet-live-events', async () => {
     const events = eventCollector()
     const service = createTailnetRemoteService({
       resolveUserDataDir: () => userDataDir,
+      database: testDatabaseAt(userDataDir),
       serverName: 'sprintengine-studio',
       serverVersion: '9.9.9',
       resolveTools: testTools,
@@ -220,6 +222,7 @@ test('tailnet-live-events', async () => {
     const events = eventCollector()
     const service = createTailnetRemoteService({
       resolveUserDataDir: () => userDataDir,
+      database: testDatabaseAt(userDataDir),
       serverName: 'sprintengine-studio',
       serverVersion: '9.9.9',
       resolveTools: testTools,
@@ -348,6 +351,7 @@ test('tailnet-live-events', async () => {
     const events = eventCollector()
     const service = createTailnetRemoteService({
       resolveUserDataDir: () => userDataDir,
+      database: testDatabaseAt(userDataDir),
       serverName: 'sprintengine-studio',
       serverVersion: '9.9.9',
       resolveTools: testTools,
@@ -393,6 +397,7 @@ test('tailnet-live-events', async () => {
     const events = eventCollector()
     const service = createTailnetRemoteService({
       resolveUserDataDir: () => userDataDir,
+      database: testDatabaseAt(userDataDir),
       serverName: 'sprintengine-studio',
       serverVersion: '9.9.9',
       resolveTools: testTools,
@@ -435,6 +440,7 @@ test('tailnet-live-events', async () => {
     const events = eventCollector()
     const service = createTailnetRemoteService({
       resolveUserDataDir: () => userDataDir,
+      database: testDatabaseAt(userDataDir),
       serverName: 'sprintengine-studio',
       serverVersion: '9.9.9',
       resolveTools: testTools,
@@ -480,6 +486,7 @@ test('tailnet-live-events', async () => {
     const events = eventCollector()
     const service = createTailnetRemoteService({
       resolveUserDataDir: () => userDataDir,
+      database: testDatabaseAt(userDataDir),
       serverName: 'sprintengine-studio',
       serverVersion: '9.9.9',
       resolveTools: testTools,

@@ -261,14 +261,18 @@ watch a pull request in another if you can.
    **Expect:** two servers, one on `data/` and one on `data-<id>/`, and both
    reply.
 
-## G. Out of process
+## G. The desktop's server process
 
-1. Settings: turn on "Run Studio server in its own process" and restart.
-2. Open a WSL chat and send a message.
-   **Expect:** it replies: the desktop's server process supervises the
-   distribution's server as the app does in process.
+The desktop's Studio server always runs in a process of its own; every
+section above runs there.
+
+1. Open Settings › Agents › Studio server.
+   **Expect:** "Running", with the server's process id and uptime.
+2. End that process (Task Manager), with a WSL chat open.
+   **Expect:** every window says it is reconnecting, then the chat carries
+   on: the restarted server supervises the distribution's server again.
 3. Open Settings › Machines.
-   **Expect:** the "Studio server" row for each distribution, as in process.
+   **Expect:** the "Studio server" row for each distribution.
 
 ## H. Files, Git and terminals of a WSL workspace
 
@@ -360,8 +364,7 @@ distribution's own Studio server's. Run every step that is listed.
     **Expect:** it lists what that CLI has installed in the distribution (its
     `CLAUDE_CONFIG_DIR` or `CODEX_HOME` respected), and the distribution's
     Studio server was started to answer.
-15. Quit the app, start it with "Run Studio server in its own process" on,
-    and repeat 13 and 14.
+15. Quit the app, start it again, and repeat 13 and 14.
     **Expect:** the same.
 16. In a WSL distribution's terminal, install or remove an agent CLI (for
     example `npm i -g @openai/codex`), then open the agent picker for a WSL

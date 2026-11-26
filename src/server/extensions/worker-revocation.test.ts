@@ -5,6 +5,7 @@
 // one discovery, the workers, the kernel and the hooks, over one data folder,
 // with real worker processes.
 
+import { keepTestApprovalsIn } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -117,6 +118,7 @@ afterEach(async () => {
 function studioFor(): Studio {
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'worker-revocation-')))
   const dataDir = join(scratch, 'data')
+  keepTestApprovalsIn(dataDir)
   const moduleRoot = join(scratch, 'extensions')
   mkdirSync(dataDir, { recursive: true })
   const urls = extensionCatalogueUrls('https://catalogue.example.com/main')

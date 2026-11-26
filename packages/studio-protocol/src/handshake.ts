@@ -385,6 +385,13 @@ export const STUDIO_ACCESS_CAPABILITY = 'access' as const
 export const STUDIO_WEB_DEVICES_CAPABILITY = 'web-devices' as const
 
 /**
+ * What a web tab asks of the Studio that served it (`web-tab.ts`): the folder
+ * browser and previews of an agent's dev server. Offered by a Studio that runs
+ * the web listener.
+ */
+export const STUDIO_WEB_TAB_CAPABILITY = 'web-tab' as const
+
+/**
  * Who reaches this machine over the tailnet, and the machines it reaches
  * (`tailnet.ts`): its listener's devices, offers, requests and shared dev
  * servers (`tailnet.*`, with the `tailnet.changed` stream), and pairing with
@@ -423,6 +430,14 @@ export const STUDIO_PROCESSES_CAPABILITY = 'processes' as const
  * a desktop whose shell has the browser pane.
  */
 export const STUDIO_BROWSER_TABS_CAPABILITY = 'browser-tabs' as const
+
+/**
+ * `conversation.create` takes `folder` in place of `workspaceId`: a new chat
+ * in a folder on that machine no workspace there names yet, as New chat starts
+ * one in a folder it browsed or typed. A connection held to the folders Studio
+ * knows names only one of those. Served with `conversation-create`.
+ */
+export const STUDIO_NEW_CHAT_FOLDER_CAPABILITY = 'new-chat-folder' as const
 
 /**
  * Every Studio capability this version of the package knows, in the order
@@ -495,6 +510,8 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_EXTENSION_EDITORS_CAPABILITY,
   STUDIO_PROCESSES_CAPABILITY,
   STUDIO_BROWSER_TABS_CAPABILITY,
+  STUDIO_NEW_CHAT_FOLDER_CAPABILITY,
+  STUDIO_WEB_TAB_CAPABILITY,
 ] as const
 
 /**

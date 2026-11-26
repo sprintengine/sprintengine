@@ -1,5 +1,3 @@
-import { mkdir, readFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 import {
@@ -24,7 +22,6 @@ import {
   type ScheduledMessagesState,
   type ScheduledMessageUpdate,
 } from '../../shared/scheduled-messages'
-import { writeFileAtomically } from '../config-file-write'
 
 // Messages a person scheduled into an open chat, sent when their time comes.
 //
@@ -90,6 +87,7 @@ import { writeFileAtomically } from '../config-file-write'
 // answer offers it again under its id, before or after a restart here. A
 // message a paired machine scheduled keeps its command the same way.
 
+/** The file builds before the database kept the messages in, under the data folder; read once, by the import. */
 export const SCHEDULED_MESSAGES_FILE = 'scheduled-messages.json'
 const FORMAT_VERSION = 1
 
@@ -281,10 +279,22 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
   // Nothing goes out before this: the start's grace, then the stagger.
   let quietUntil = 0
   let writing: Promise<void> = Promise.resolve()
+  // The saved messages could not be read: nothing is written over them.
+  let unreadable = false
+  // Nothing is written before the saved messages are read: a write then
+  // would go over them before they are merged in. One asked for meanwhile is
+  // made by the merge, which writes the combined list.
+  let loaded = false
+  let savedWhileLoading = false
 
   // ── Keeping ──────────────────────────────────────────────────────────────
 
   function persist(): void {
+    if (!loaded) {
+      savedWhileLoading = true
+      return
+    }
+    if (unreadable) return
     // One on its way is kept as it was before it left: should the app stop
     // mid-send, it is sent again rather than lost.
     const kept = messages.map(({ retryAt: _retryAt, sending: _sending, ...entry }) => entry)
@@ -666,7 +676,15 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
     }
     quietUntil = now() + STARTUP_GRACE_MS
     unsubscribers.push(deps.onConversationEvent(onConversationEvent))
-    const saved = readSaved(await deps.storage.read().catch(() => null))
+    const saved = readSaved(
+      await deps.storage.read().catch((error: unknown) => {
+        unreadable = true
+        log(
+          `The scheduled messages could not be read, so no change is saved until they can be: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        return null
+      }),
+    )
     if (!running) return
     // One scheduled while the file was being read is newer than the file.
     const known = new Set(messages.map((entry) => entry.id))
@@ -689,7 +707,8 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
     messages = [...saved.messages.filter((entry) => !known.has(entry.id)), ...fresh]
     heldSources = new Map([...saved.heldSources, ...heldSources])
     while (heldSources.size > MAX_HELD_SOURCES) heldSources.delete(heldSources.keys().next().value!)
-    if (dropStale() || repeated) persist()
+    loaded = true
+    if (dropStale() || repeated || savedWhileLoading) persist()
     const next = state()
     for (const listener of [...listeners]) listener(next)
     markLoaded()
@@ -731,24 +750,17 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
   }
 }
 
-/** The messages kept in `file`: a missing or unreadable one is an empty one. */
-export function scheduledMessagesFileStorage(file: string): ScheduledMessagesStorage {
-  return {
-    async read() {
-      try {
-        return await readFile(file, 'utf8')
-      } catch {
-        return null
-      }
-    },
-    async write(body) {
-      await mkdir(dirname(file), { recursive: true })
-      await writeFileAtomically(file, body)
-    },
+// ── The file ──────────────────────────────────────────────────────────────
+
+/** Whether `text` (the file builds before the database kept) reads as saved messages: what the import brings in. */
+export function scheduledMessagesFileReads(text: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return isRecord(parsed) && parsed.version === FORMAT_VERSION && Array.isArray(parsed.messages)
+  } catch {
+    return false
   }
 }
-
-// ── The file ──────────────────────────────────────────────────────────────
 
 function readSaved(text: string | null): { messages: Pending[]; heldSources: Map<string, string> } {
   const none = { messages: [], heldSources: new Map<string, string>() }

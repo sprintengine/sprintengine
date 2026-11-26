@@ -7,8 +7,8 @@ import {
   onPairedCanvasPush,
   windowPairedCanvas,
 } from '../../../../studio/pairedCanvas'
-import { createPairedChat } from '../../../../studio/pairedDiscovery'
-import { environmentStudioAvailable } from '../../../../studio/environmentStudio'
+import { createEnvironmentChat } from '../../../../studio/environmentDiscovery'
+import { environmentStudioAvailable, pairedTarget } from '../../../../studio/environmentStudio'
 import { canvasContinuePrompt, parseCanvasBoardId } from '../../../../../../shared/canvas/paths'
 import type {
   CanvasBoardRef,
@@ -305,8 +305,8 @@ async function continuePaired(
   workspaceId: string,
   board: CanvasPickerBoard,
 ): Promise<CanvasResult<void>> {
-  const created = await createPairedChat(
-    { id: source.connectionId, machineName: source.machineName },
+  const created = await createEnvironmentChat(
+    pairedTarget({ id: source.connectionId, machineName: source.machineName }),
     {
       workspaceId: board.workspaceId ?? source.remoteWorkspaceId,
       prompt: canvasContinuePrompt(board.name, board.id ?? board.path),

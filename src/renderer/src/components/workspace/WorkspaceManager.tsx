@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { createPairedChat } from '../../studio/pairedDiscovery'
+import { createEnvironmentChat } from '../../studio/environmentDiscovery'
+import { pairedConnectionOf } from '../../studio/environmentStudio'
+import { openEnvironmentChatWhenListed } from './environmentChatOpening'
 import { StudioServerBanner } from '../studioServer/StudioServerBanner'
 import { hostIdForFolder, isWslHostId, LOCAL_HOST_ID, type ExecutionHostId } from '../../../../shared/execution-host'
 import { isProjectlessChatsRoot, PROJECTLESS_CHATS_LABEL } from '../../../../shared/projectless-chats'
@@ -64,7 +66,6 @@ import { conversationSummaryPhase } from '../../../../shared/conversation/phase'
 import { meshConversationSessionId } from '../../../../shared/tailnet-mesh'
 import { newAgentId, newAgentIdSuffix } from '../../../../shared/agent-ids'
 import { nextNewChatName } from '../../../../shared/workspace-title'
-import { machinePath } from '../../../../shared/machine-paths'
 import { combinedAgentActivity, conversationFinishedAt, conversationLastInputAt } from './sidebar/conversationLines'
 import type {
   AgentCli,
@@ -178,7 +179,7 @@ import {
   type RemoteWindowPlace,
 } from './remoteBand/remoteSessionsModel'
 import { useSurfaceView } from './surfaceView'
-import type { NewAgentLaunch, NewAgentPanelMode, RemoteNewChatLaunch } from './agentComposer/NewAgentPanel'
+import type { NewAgentPanelMode, RemoteNewChatLaunch } from './agentComposer/NewAgentPanel'
 import { useScheduledAgents } from '../../store/scheduledAgentsStore'
 import { remoteScheduledAgentNow, useRemoteScheduledAgent } from './sidebar/useRemoteScheduledAgents'
 import { formatRunTimes } from './agentComposer/schedule/scheduleEditor'
@@ -2924,76 +2925,6 @@ export default function WorkspaceManager() {
   // conversation runtime patch instead of a CLI. The seed names no tab, so the
   // solo workspace names the agent from the shared pool as it does a terminal
   // agent's. The prompt rides the seed as the chat's first message.
-  // A chat on an SSH machine (phase 8): a solo workspace on that machine, in
-  // the folder typed for it there; its chat runs on that machine's server.
-  // Only a chat goes there: the server runs no terminals (ruling a). With
-  // Worktree on, it starts as a chat here does (`confirmNewChatWith`): in the
-  // worktree New chat already made, or at once, waiting on the one that
-  // machine's own Studio is cutting from its pool. Its folders are spelled as
-  // that machine's (`ssh://<id>/…`), so nothing on this computer mistakes one
-  // for its own, and none is a project this computer's pickers offer.
-  const confirmSshNewChat = (
-    confirm: AgentComposerConfirm,
-    environment: NonNullable<NewAgentLaunch['environment']>,
-    startupPrompt?: string,
-    // The images staged beside the prompt, files on this computer: the chat
-    // reads them here and sends their bytes, wherever it runs.
-    startupImages?: string[],
-    // ⌘⏎: started out of sight, and New chat stays up for the next one.
-    background?: boolean,
-  ): Promise<WorkspaceId | null> => {
-    if (confirm.kind !== 'conversation') {
-      showToast({
-        tone: 'warn',
-        title: appCopy.workspace.workspaceManager.onlyAChatRunsOn(environment.label),
-        description: appCopy.workspace.workspaceManager.terminalsOnlyRunOnThis,
-      })
-      return Promise.resolve(null)
-    }
-    const onlyAChat = () => null
-    return confirmNewChatWith(
-      {
-        makeExtension: async () => null,
-        makeWorktree: (folder, name) => obtainNewChatWorktree(folder, name, null),
-        takeReadyWorktree: (folder, name) => takeReadyNewChatWorktree(folder, name, null),
-        makeProjectlessFolder: async () => null,
-        startTerminal: onlyAChat,
-        startGeneral: onlyAChat,
-        startConversation: (conversation, folderPath, prompt, worktree, images, _files, inBackground, pending) => {
-          const seed = conversationNewChatSeed(conversation, {
-            prompt,
-            images,
-            permissionPreset: resolveCliPermissionPreset(conversation.cli, agentSpawnPermissionPreset),
-            ...cliPermissionModeLaunch(conversation.cli),
-          })
-          if (!seed) return null
-          setLastNewChatAgent({ kind: 'conversation' })
-          return createSoloChatWorkspace({
-            folderPath,
-            seedAgent: {
-              agentPatch: { ...seed.agentPatch, ...(pending ? { chatPendingWorktree: pending } : {}) },
-            },
-            environment: { kind: 'ssh', id: environment.id, label: environment.label },
-            ...(worktree ? { worktree } : {}),
-            ...(inBackground ? { background: inBackground } : {}),
-          })
-        },
-        prepareWorktree: (workspaceId) => void prepareNewChatWorktree(workspaceId),
-        titleFromPrompt: (workspaceId, prompt) =>
-          void generatedWorkspaceTitleRequester().titleFromPrompt(workspaceId, prompt),
-        recordProjectUse: () => undefined,
-        closePanel: closeNewChatPanel,
-      },
-      {
-        confirm,
-        scopedFolder: machinePath(environment.id, environment.folder),
-        startupPrompt,
-        startupImages,
-        background,
-      },
-    )
-  }
-
   const openConversationInNewChat = (
     folderPath: string | null | undefined,
     confirm: Parameters<typeof conversationNewChatSeed>[0] & { cli?: AgentCli },
@@ -4088,22 +4019,28 @@ export default function WorkspaceManager() {
     ],
   )
 
-  // A chat agent started on a paired machine (remote-sessions-ux /
-  // new-chat-on-a-remote-machine): it is created THERE, on that machine's
-  // Studio, by this window's own client of it (`createPairedChat`) — cli,
-  // prompt, model, and preset forwarded verbatim, so the remote's
-  // own refusals (a scope, a CLI it lacks) surface word for word — and runs in
-  // that machine's conversation runtime. What opens here is the same chat pane
-  // the Remote band opens for one of its chats, following it by workspace and
-  // agent id. A failure leaves the panel open with the remote's message as a
-  // toast; no phantom row.
-  const confirmRemoteNewChat = useCallback(
+  // A chat agent started on another environment (remote-sessions-ux /
+  // new-chat-on-a-remote-machine, design-environments PR 2), whatever kind of
+  // machine it is: it is created THERE, on that machine's Studio, by this
+  // window's own client of it (`createEnvironmentChat`) — cli, prompt, model,
+  // and preset forwarded verbatim, so the machine's own refusals (a scope, a
+  // CLI it lacks, a folder it does not have) surface word for word — and runs
+  // in that machine's conversation runtime. What opens here is the chat by its
+  // address: this desktop's copy of it where it keeps one, else the same chat
+  // pane the sidebar opens for one of that machine's chats, following it by
+  // workspace and agent id. A failure leaves the panel open with the
+  // machine's message as a toast; no phantom row.
+  const confirmEnvironmentNewChat = useCallback(
     async (launch: RemoteNewChatLaunch): Promise<void> => {
       // Asked of that machine's Studio by this window itself.
-      const created = await createPairedChat(
-        { id: launch.connectionId, machineName: launch.machineName },
+      const created = await createEnvironmentChat(
+        { route: launch.route, name: launch.machineName },
         {
-          ...(launch.noProject ? { noProject: true } : { workspaceId: launch.remoteWorkspaceId }),
+          ...(launch.noProject
+            ? { noProject: true }
+            : launch.folder
+              ? { folder: launch.folder }
+              : { workspaceId: launch.remoteWorkspaceId }),
           ...(launch.cli ? { cli: launch.cli } : {}),
           ...(launch.prompt ? { prompt: launch.prompt } : {}),
           ...(launch.cliModel ? { cliModel: launch.cliModel } : {}),
@@ -4141,6 +4078,42 @@ export default function WorkspaceManager() {
             ? { path: null, branch: null }
             : null)
       const branch = ranIn ? ranIn.branch : launch.branch
+      const started = () =>
+        showToast({
+          tone: 'good',
+          title: appCopy.workspace.workspaceManager.chatStartedOn(launch.machineName),
+          description: appCopy.workspace.workspaceManager.in(
+            created.title,
+            launch.remoteWorkspaceName,
+            branch ? ` · ${branch}` : '',
+          ),
+        })
+      // A machine whose chats this desktop keeps a copy of (an SSH machine, a
+      // WSL distribution) lists the new one here by the id it answered: that
+      // record is the chat, opened in this window.
+      const connectionId = pairedConnectionOf(launch.route)
+      if (!connectionId) {
+        // The chat is that machine's; this desktop lists it once its copy of
+        // the machine's records holds it. Opened then, in this window.
+        const chatId = created.workspaceId
+        await openEnvironmentChatWhenListed({
+          chatId,
+          toastId: `environment-chat:${launch.route}:${chatId}`,
+          title: created.title,
+          machineName: launch.machineName,
+          closePanel: closeNewChatPanel,
+          started,
+          openHere: () => {
+            const state = useWorkspaceStore.getState()
+            if (!state.workspaces.some((workspace) => workspace.id === chatId)) return false
+            const holder = state.workspaceWindows.find((entry) => entry.workspaceIds.includes(chatId))
+            if (holder && holder.id !== workspaceWindowId) moveWorkspaceToWindow(chatId, workspaceWindowId, holder.id)
+            setActiveWorkspaceForWindow(workspaceWindowId, chatId)
+            return true
+          },
+        })
+        return
+      }
       if (!SOLO_CHAT_TEMPLATE) {
         showToast({
           tone: 'error',
@@ -4157,7 +4130,7 @@ export default function WorkspaceManager() {
         name: created.title,
         folderPath: null,
         remoteOrigin: {
-          connectionId: launch.connectionId,
+          connectionId,
           machineName: launch.machineName,
           // The chat that was created, not the project's seat it was created
           // from: settle, visit and bring-back ask about this id, and the
@@ -4176,7 +4149,7 @@ export default function WorkspaceManager() {
         seedAgent: {
           tabName: created.title,
           meshConversation: {
-            connectionId: launch.connectionId,
+            connectionId,
             machineName: launch.machineName,
             remoteWorkspaceId: created.workspaceId,
             remoteAgentId: created.agentId,
@@ -4185,17 +4158,9 @@ export default function WorkspaceManager() {
         },
       })
       closeNewChatPanel()
-      showToast({
-        tone: 'good',
-        title: appCopy.workspace.workspaceManager.chatStartedOn(launch.machineName),
-        description: appCopy.workspace.workspaceManager.in(
-          created.title,
-          launch.remoteWorkspaceName,
-          branch ? ` · ${branch}` : '',
-        ),
-      })
+      started()
     },
-    [addWorkspace, closeNewChatPanel, workspaceWindowId],
+    [addWorkspace, closeNewChatPanel, moveWorkspaceToWindow, setActiveWorkspaceForWindow, workspaceWindowId],
   )
 
   // Optional workspaceId targets a single workspace's panel. The mode-scoped
@@ -5586,22 +5551,20 @@ export default function WorkspaceManager() {
                               forceSelection={newChatPanelState.forcedSelection}
                               permissionPreset={agentSpawnPermissionPreset}
                               launchesInBackground
-                              onLaunch={({ prompt, images, files, extension, environment, stay, ...confirm }) => {
+                              onLaunch={({ prompt, images, files, extension, stay, ...confirm }) => {
                                 // Each closes the panel (and forgets the draft)
                                 // itself, unless ⌘⏎ started it out of sight.
                                 const background = stay === true
                                 const start = async () =>
-                                  environment
-                                    ? confirmSshNewChat(confirm, environment, prompt, images, background)
-                                    : confirmNewChat(
-                                        confirm,
-                                        newChatPanelState.folderPath,
-                                        prompt,
-                                        extension,
-                                        images,
-                                        files,
-                                        background,
-                                      )
+                                  confirmNewChat(
+                                    confirm,
+                                    newChatPanelState.folderPath,
+                                    prompt,
+                                    extension,
+                                    images,
+                                    files,
+                                    background,
+                                  )
                                 // One confirm at a time, as for ⏎: refused before it
                                 // starts, and the panel hands the prompt back.
                                 if (background)
@@ -5614,7 +5577,7 @@ export default function WorkspaceManager() {
                               // The promise itself, not a void wrapper: the panel's
                               // one-launch-at-a-time guard waits on it, and a wrapper
                               // returning undefined released the guard a microtask later.
-                              onLaunchRemote={confirmRemoteNewChat}
+                              onLaunchRemote={confirmEnvironmentNewChat}
                               onCloneProject={cloneNewChatProject}
                               onClose={closeNewChatPanel}
                               // The parked draft lives per window; the panel seeds

@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -18,6 +19,7 @@ async function fixture(options: { capability?: boolean; ceiling?: 'manual' | 'au
   const capability = options.capability ?? true
   const mock = createMockConversationProvider({ messageSubagent: capability })
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [
       {
         ...mock,
@@ -126,6 +128,7 @@ test('a sub-agent cannot be switched past its ceiling, by any path, and may go s
 test('the mock provider’s `/subagent` leaves an agent running whose lane a message reaches', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'message-subagent-mock-'))
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
   })

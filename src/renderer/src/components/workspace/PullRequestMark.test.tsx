@@ -3,7 +3,11 @@ import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
 
 import { pullRequestStateLabel, type BranchPullRequest } from '../../../../shared/git/pull-request'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('PullRequestMark', async () => {
   // The pull request mark, in the one module both surfaces draw it from (epic
@@ -40,9 +44,10 @@ test('PullRequestMark', async () => {
     openExternal: async (url: string) => {
       opened.push(url)
     },
-    refreshPullRequestsForSession: async (sessionId: string) => {
-      refreshed.push(sessionId)
-    },
+  }
+  terminalsDouble.refreshTerminalPullRequests = async (sessionId: string) => {
+    refreshed.push(sessionId)
+    return true
   }
 
   const NOW = 1_800_000_000_000
@@ -334,9 +339,8 @@ test('PullRequestMark', async () => {
       // a call that reached nobody at all, are both re-asked on the next hover.
       resetPullRequestRefreshes()
       refreshed.length = 0
-      const api = (dom.window as unknown as { api: Record<string, unknown> }).api
-      const settled = api.refreshPullRequestsForSession
-      api.refreshPullRequestsForSession = async (sessionId: string) => {
+      const settled = terminalsDouble.refreshTerminalPullRequests
+      terminalsDouble.refreshTerminalPullRequests = async (sessionId: string) => {
         refreshed.push(sessionId)
         return false
       }
@@ -345,9 +349,9 @@ test('PullRequestMark', async () => {
       refreshPullRequestsForLine('session-1', 'agent/x', NOW + 1)
       await sleep(0)
       assert.deepEqual(refreshed, ['session-1', 'session-1'], 'a refusal is not an ask')
-      api.refreshPullRequestsForSession = async (sessionId: string) => {
+      terminalsDouble.refreshTerminalPullRequests = async (sessionId: string) => {
         refreshed.push(sessionId)
-        throw new Error('main is restarting')
+        throw new Error('the server is restarting')
       }
       refreshed.length = 0
       resetPullRequestRefreshes()
@@ -356,7 +360,7 @@ test('PullRequestMark', async () => {
       refreshPullRequestsForLine('session-2', 'agent/x', NOW + 1)
       await sleep(0)
       assert.deepEqual(refreshed, ['session-2', 'session-2'], 'a call that reached nobody is re-asked')
-      api.refreshPullRequestsForSession = settled
+      terminalsDouble.refreshTerminalPullRequests = settled
     })
 
     // ── the menu ──────────────────────────────────────────────────────────────

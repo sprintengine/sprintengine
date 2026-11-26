@@ -1,5 +1,3 @@
-import { join } from 'node:path'
-
 import type { ExtensionHooks } from '../extensions/hooks/extension-hooks'
 import type { ConversationPromptHookAs } from '../../shared/conversation-runtime'
 import type { AgentStarter } from '../../shared/agent-state'
@@ -8,14 +6,10 @@ import { controlPlaneHooks } from '../extensions/hooks/control-plane-hooks'
 import { ownerInvoker, type ExtensionInvoker } from '../../main/module-host/extension-invocation'
 
 import { createAgentControlPlane } from '../../main/agent-control-plane'
-import {
-  createAgentLaunchNotices,
-  LAUNCH_NOTICES_FILE,
-  launchNoticesFileStorage,
-} from '../../main/agent-launch-notices'
+import { createAgentLaunchNotices, launchNoticesDatabaseStorage } from '../../main/agent-launch-notices'
 import { createAgentLaunchService, type AgentLaunchService } from '../../main/agent-launch-service'
-import type { AgentCompactIpcDependencies } from '../../main/ipc/agent-compact-ipc'
 import { createAgentPromptStore, registeredAgentOwners } from '../../main/agent-prompt-store'
+import type { StudioDatabase } from '../db/database'
 import { resolveAgentStateSocketPath } from '../../main/agent-state-service'
 import { resolveCheckoutForCwd, type ResolvedCheckoutFacts } from '../../main/checkout-resolve'
 import { cliResumeCapabilities } from '../../main/cli-resume-capabilities'
@@ -87,17 +81,17 @@ export type StudioTerminalHost = {
   diagnosticsEnabled?: boolean
   logMainPerfEvent?: TerminalRuntimeOptions['logMainPerfEvent']
   /** Whether a window may take over a running terminal's output (the pane pop-out guard). */
-  mayAttach?: (windowKey: string, sessionId: string) => boolean
+  mayAttach?: (windowKey: string, sessionId: string) => boolean | Promise<boolean>
   /** A launch went through: the shell's analytics hear its shape. */
   onLaunched?: (request: AgentLaunchRequest, result: Extract<AgentLaunchResult, { ok: true }>) => void
 }
 
 export type StudioAgentTerminalsDeps = {
   platform: Pick<StudioPlatform, 'paths'>
-  /** Resolves once the data directory is this process's; the reporter's socket is opened then. */
-  whenDataDirFree: Promise<unknown>
   /** Whether this process opens the reporter's socket at all (it holds the directory, or is a desktop carrying on without). */
   reporterListens: boolean
+  /** The data folder's database: the agents' prompts and the launch notices are kept in it. */
+  database: StudioDatabase
   workspaceRegistry: Pick<WorkspaceRegistryService, 'getRecord' | 'getState' | 'subscribe' | 'needsHydration'>
   workspaceSyncService: WorkspaceSyncService
   agentLaunchSettings: Pick<AgentLaunchSettingsStore, 'get'>
@@ -149,7 +143,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
   // An agent's captured prompts outlive its session, for the conversation
   // peek; an agent removed from the registry takes them with it.
   const agentPrompts = createAgentPromptStore({
-    resolveUserDataDir: () => dataDir,
+    database: deps.database,
     agentExists: ({ workspaceId, agentId }) => {
       const record = workspaceRegistry.getRecord(workspaceId)
       if (record) return Object.hasOwn(record.agents, agentId)
@@ -217,7 +211,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
       void writeDiagnosticLog({ ...diagnostic, source: 'workspace' })
     },
   })
-  if (deps.reporterListens) void deps.whenDataDirFree.then(() => agentState.start()).catch(() => undefined)
+  if (deps.reporterListens) void Promise.resolve(agentState.start()).catch(() => undefined)
 
   // The one way to type at a live agent, terminal or chat: concurrent prompts
   // serialise per session, and no window is needed.
@@ -291,7 +285,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
       return record ? isSettledWorkspace(record) : false
     },
     // Kept across a restart: a parent still hears of a child the quit stopped.
-    storage: launchNoticesFileStorage(join(dataDir, LAUNCH_NOTICES_FILE)),
+    storage: launchNoticesDatabaseStorage(deps.database),
     log: log('Launch notices'),
   })
   deps.subagents.onStopped((chat) => launchNotices.subagentStopped(chat))
@@ -486,17 +480,5 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
     hookPrompt,
     stopAgentState,
     shutdown,
-  }
-}
-
-/** What Compact on an agent tab reads and types through: the session as this runtime sees it, and the control plane. */
-export function compactDeps(terminals: StudioAgentTerminals): AgentCompactIpcDependencies {
-  return {
-    findTerminal: (sessionId) =>
-      terminals.runtime.sessions.listTerminals().find((session) => session.sessionId === sessionId) ?? null,
-    sendPrompt: async (sessionId, text, precondition) => {
-      const result = await terminals.controlPlane.send({ sessionId }, text, { submit: true, precondition })
-      return result.ok ? { ok: true } : { ok: false, message: result.message }
-    },
   }
 }

@@ -52,7 +52,7 @@ import { createConversationLaunchService, SUBAGENT_TASK_ORIGIN } from '../../mai
 import {
   createPendingFirstMessages,
   FIRST_MESSAGE_CLIENT_ID,
-  FIRST_MESSAGES_FILENAME,
+  FIRST_MESSAGE_IMAGES_DIRNAME,
   recoverFirstMessages,
   recoveryHookAs,
 } from '../../main/conversation-first-messages'
@@ -109,7 +109,6 @@ import { installedStudioPlatform, installStudioPlatform, type StudioPlatform } f
 import { createStudioExtensions, type StudioExtensionsDeps } from '../extensions/extensions-domain'
 import { createStudioArtifacts, type StudioArtifactsShell } from '../artifacts/artifacts-domain'
 import { listKnownWorkspaceRoots } from '../../main/workspace-roots'
-import type { StudioPaths } from '../platform/studio-paths'
 import { createPullRequestDomain } from '../pull-requests/pull-request-domain'
 import { createLocalServerDomain } from '../local-servers/local-server-domain'
 import { createAgentProcessDomain } from '../processes/agent-process-domain'
@@ -131,7 +130,12 @@ import { createWslTerminalSessions, terminalHostOf, type WslTerminalSessions } f
 import { createWslMachineAccess, followCliPathsChanged } from '../wsl/wsl-machine-client'
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
-import { takeDataDir } from './take-data-dir'
+import { openDataDirDatabase, takeDataDir } from './take-data-dir'
+import { chatKey, moveChatStatements } from '../db/chat-logs'
+import { createSnapshotStorage } from '../db/snapshot-storage'
+import { conversationStorageSegment } from '../../main/conversation-index'
+import { workspaceStorePath } from '../../main/workspace-store'
+import { keepExtensionApprovalsIn } from '../../main/modules/extension-approvals'
 import { createStudioUsageLimitResumes, studioConversationUsageLimits } from './studio-usage-limit-resumes'
 import { studioPullRequestWakes } from './studio-pull-request-wakes'
 import { createStudioScheduledAgents } from './studio-scheduled-agents'
@@ -269,6 +273,9 @@ export type StudioCore = ReturnType<typeof createStudioCore>
  */
 const TAILNET_FILE_SEARCH_SENDER = -1
 
+/** How long after start the background pass begins importing chat history: past the first start's busiest moments. */
+const HISTORY_PASS_DELAY_MS = 5_000
+
 export function createStudioCore(platform: StudioPlatform, options: StudioCoreOptions) {
   // Installed first, so a free function deep in the graph (the credential
   // store, a resource lookup) reads this platform even when the caller has not
@@ -277,6 +284,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   const dataDir = platform.paths.dataDir()
   const taken = takeDataDir(platform, options.role)
   const dataDirLock = taken.lock
+  // Opened once the data is in this build's format, before any store is
+  // built; refused, in words, when it is damaged or cannot be kept there.
+  const database = openDataDirDatabase(dataDir, dataDirLock)
+  // Extensions' approvals are read by the folder's path wherever they are checked.
+  const stopKeepingApprovals = keepExtensionApprovalsIn(dataDir, database)
 
   const logDiagnostic =
     (source: 'agents' | 'workspace') =>
@@ -388,7 +400,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // The authoritative workspace registry. Routing lives in the record, so no
   // side-map of names, folders or modes is needed beside it.
   const workspaceRegistryStore = createWorkspaceRegistryStore({
-    resolveUserDataDir: () => platform.paths.dataDir(),
+    database,
     logDiagnostic: logDiagnostic('workspace'),
   })
   const workspaceRegistry = createWorkspaceRegistryService({
@@ -496,7 +508,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // children behind them, transcripts, the thread index and checkpoints. Owned
   // here so the owner's shutdown disposes its child processes.
   // The saved approvals, which a revoked app's tools leave with it.
-  const approvalRules = new ConversationApprovalRuleStore(dataDir)
+  const approvalRules = new ConversationApprovalRuleStore(database)
   // Extensions' agent hooks: bound to the workers once the module kernel holds
   // them (server-modules.ts, app-main.ts), and run as each action's invoker.
   const extensionHooks = createExtensionHooks()
@@ -517,6 +529,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   const chatInvoker = (chat: { workspaceId: string; agentId: string }) =>
     hookInvokers.ofAgent(workspaceRegistry.getRecord(chat.workspaceId)?.agents[chat.agentId])
   const conversationRuntime = new ConversationRuntime({
+    database,
     extensionHooks,
     chatInvoker,
     // A send that names who it is from (a launch's first message) runs as them.
@@ -526,7 +539,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     attachmentStore: new ConversationAttachmentStore(dataDir),
     uploadRoots: [join(dataDir, TAILNET_UPLOADS_DIRNAME), join(dataDir, WEB_UPLOADS_DIRNAME)],
     planStore: new ConversationPlanStore(dataDir),
-    outbox: new ConversationOutbox(dataDir),
+    outbox: new ConversationOutbox(database),
     heldChatMode: ({ workspaceId, agentId }) => {
       const agent = workspaceRegistry.getRecord(workspaceId)?.agents[agentId]
       return agent?.conversationModeHeld && agent.conversationMode !== 'default' ? agent.conversationMode : undefined
@@ -546,15 +559,42 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   })
   conversationRuntime.startIdleSweep(powerActivity)
   // The turns the last run left open end now, in their chats' logs, rather
-  // than when someone next opens each chat: once the data directory is this
-  // process's alone (a server it took over may still be finishing those
-  // turns), and never by a process running without its lock.
+  // than when someone next opens each chat; never by a process running
+  // without its lock. (A server this one took over has exited by now.)
   if (dataDirLock)
-    void taken.whenFree
-      .then(() => conversationRuntime.recoverInterruptedTurns())
-      .catch((error: unknown) => {
-        console.warn('[studio-core] open turns could not be closed:', error instanceof Error ? error.message : error)
-      })
+    void conversationRuntime.recoverInterruptedTurns().catch((error: unknown) => {
+      console.warn('[studio-core] open turns could not be closed:', error instanceof Error ? error.message : error)
+    })
+  // Every chat's history from before the database, imported in the
+  // background one chat at a time, so the first start opens at once and a
+  // chat opened meanwhile is imported as it is opened (owner decision
+  // 2026-11-25).
+  let historyPass: NodeJS.Timeout | null = null
+  let stopHistoryPass = false
+  if (dataDirLock)
+    historyPass = setTimeout(() => {
+      historyPass = null
+      void (async () => {
+        for (const record of workspaceRegistry.getRecords()) {
+          for (const [agentId, agent] of Object.entries(record.agents ?? {})) {
+            if (stopHistoryPass) return
+            if (!agent?.conversation) continue
+            const workspaceRoot = conversationWorkingRoot(agent, record.folderPath)
+            if (!workspaceRoot) continue
+            await conversationRuntime
+              .takeUpHistory({ workspaceRoot, workspaceId: record.id, agentId })
+              .catch((error: unknown) =>
+                console.warn(
+                  `[studio-core] the history of ${record.id}/${agentId} could not be imported:`,
+                  error instanceof Error ? error.message : error,
+                ),
+              )
+            await new Promise((resolve) => setImmediate(resolve))
+          }
+        }
+      })()
+    }, HISTORY_PASS_DELAY_MS)
+  historyPass?.unref()
   // Each project's state lives in its store in the person's home, on the
   // machine its chats run on (main/workspace-store.ts). An older build kept it
   // in `<project>/.sprintengine/`: moved out the first time a folder reaches
@@ -675,11 +715,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // process cannot load the pty module (a WSL or SSH machine's server).
   agentTerminals = createStudioAgentTerminals({
     platform,
-    whenDataDirFree: taken.whenFree,
     // A desktop that could not take the directory carries on as builds
     // before the lock did, its reporter included; any other process listens
     // only with the lock, so two never share the socket.
     reporterListens: dataDirLock !== null || options.role === 'desktop',
+    database,
     workspaceRegistry,
     workspaceSyncService,
     agentLaunchSettings,
@@ -791,7 +831,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // A launched chat's first message, written down until it is answered, and
   // sent at the next start when a stop cut it off (conversation-first-messages.ts).
   const firstMessages = createPendingFirstMessages({
-    filePath: join(dataDir, FIRST_MESSAGES_FILENAME),
+    database,
+    imagesRoot: join(dataDir, FIRST_MESSAGE_IMAGES_DIRNAME),
     warn: (message) => void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'New chats', message }),
   })
   const conversationLaunchService = createConversationLaunchService({
@@ -954,7 +995,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // folder; a folder on another machine is not one to run in here.
   const localFolder = (folder: string | null | undefined) => (folder && !isMachinePath(folder) ? folder : null)
   const localServers = createLocalServerDomain({
-    dataDir,
+    database,
     conversationFolder: (key) => {
       const listed = conversations.listSessions({ workspaceId: key.workspaceId, agentId: key.agentId })
       const latest = listed.ok ? [...listed.sessions].sort((a, b) => b.updatedAt - a.updatedAt)[0] : undefined
@@ -1192,7 +1233,21 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       for (const session of live) await conversations.stopSession({ sessionId: session.sessionId })
       await conversationRuntime.flushTranscripts()
     },
-    moveStorage: moveConversationStorage,
+    // The chat's rows go with its store folder: renamed to the new store's in one transaction, then its files.
+    moveStorage: async (workspaceId, fromFolder, toFolder) => {
+      const segment = conversationStorageSegment(workspaceId)
+      const from = chatKey(workspaceStorePath(fromFolder, 'conversations', segment))
+      const to = chatKey(workspaceStorePath(toFolder, 'conversations', segment))
+      if (from === to) return
+      // A store that already holds rows of this chat refuses the rename (its keys), and nothing moves.
+      await database.batch(moveChatStatements(from, to))
+      try {
+        await moveConversationStorage(workspaceId, fromFolder, toFolder)
+      } catch (error) {
+        await database.batch(moveChatStatements(to, from))
+        throw error
+      }
+    },
     log: (message) => {
       void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Conversation move', message })
     },
@@ -1240,7 +1295,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     settlement.dispose()
   }
   // The composer's `/` lists, one set for the process, made on first ask: a
-  // window's `conversation-commands:list` (server-ipc.ts) and a paired
+  // window's `conversation-commands:list` (server-chat.ts) and a paired
   // desktop's read of a chat here (`conversation-commands`) share its probes,
   // their limits and its disk cache.
   let commandLists: ConversationCommandsService | null = null
@@ -1404,6 +1459,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // through the same send a paired device's does, marked as Studio's.
   const usageLimitResumes = createStudioUsageLimitResumes({
     dataDir,
+    storage: createSnapshotStorage(database, 'usage_limit_resumes'),
     conversations,
     workspaceRecord: (workspaceId) => workspaceRegistry.getRecord(workspaceId),
     createHost: (hostOptions) => createConversationHost(hostOptions),
@@ -1442,7 +1498,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // which the person saves from the chat (`fileViews.*`): kept here, beside
   // the chats, so a paired device and a browser tab save on this machine.
   const fileViews = createFileViews({
-    dataDir,
+    database,
     folderOf: ({ workspaceId, agentId }) => {
       const record = workspaceRegistry.getRecord(workspaceId)
       return conversationWorkingRoot(record?.agents[agentId], record?.folderPath) ?? null
@@ -1479,6 +1535,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // send a paired device's takes, as the person's own words.
   const scheduledMessages = createStudioScheduledMessages({
     dataDir,
+    storage: createSnapshotStorage(database, 'scheduled_messages'),
     conversations,
     workspaceRecord: (workspaceId) => workspaceRegistry.getRecord(workspaceId),
     createHost: () => createConversationHost(),
@@ -1602,6 +1659,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // run in its chats from its worktree pool, whatever kind of server it is.
   const scheduledAgents = createStudioScheduledAgents({
     platform,
+    database,
     // Nothing runs before the hand-over's first plan has finished, however
     // the scheduler is started: here, or by the desktop's Scheduled agents
     // switch (modules/scheduled-agents-switch.ts), which starts it with no
@@ -1646,7 +1704,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
           usageLimitResumes,
           pullRequests: pullRequests.record,
           scheduledImages: (prompt) => keptImagesIn(prompt, dataDir),
-          chatSources: (chat) => chatSourceFiles({ dataDir, ...chat }),
+          chatSources: (chat) => chatSourceFiles({ dataDir, database, ...chat }),
           approvalRules,
         }),
         log: (message) => {
@@ -1832,6 +1890,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         // Best effort, leg by leg: the process is leaving either way.
       }
     }
+    // Last, once every store has written: its close checkpoints the WAL.
+    stopHistoryPass = true
+    if (historyPass) clearTimeout(historyPass)
+    stopKeepingApprovals()
+    await database.close().catch(() => undefined)
     dataDirLock?.release()
   }
 
@@ -1854,8 +1917,13 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     role: options.role,
     /** Null only in a desktop that could not take the directory and carried on, as builds before the lock did. */
     dataDirLock,
-    /** Resolves once a Studio server this desktop displaced has exited; a gateway or socket opens after it. */
-    whenDataDirFree: taken.whenFree,
+    /** The data folder's database (`server/db/`): the stores that moved out of files keep their records in it. */
+    database,
+    /** The chats' history in it (`server/db/chat-logs.ts`), as the runtime writes it: what a hand-over brings goes through it. */
+    chatHistory: {
+      adopt: (path: string, root: string, incoming: string) =>
+        conversationRuntime.adoptTranscript(path, root, incoming),
+    },
     agentLaunchSettings,
     hosts,
     workspaceRegistry,
@@ -1911,16 +1979,6 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     stopAutoCompact,
     shutdown,
   }
-}
-
-/**
- * The stdio bridge agents run to reach the gateway: shipped under
- * `resources/automation`, which an installed build unpacks into its resources
- * directory and a source checkout keeps at its root.
- */
-export function studioBridgeScriptPath(paths: StudioPaths): string {
-  const root = paths.isPackaged() ? paths.resourcesDir() : join(paths.appRoot() ?? process.cwd(), 'resources')
-  return join(root ?? '', 'automation', 'mcp-stdio-bridge.mjs')
 }
 
 /** `gh` on this machine: its command, and whether it holds a sign-in (`gh auth token`). */

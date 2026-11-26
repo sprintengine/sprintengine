@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../tests/studio-database'
 import { createMcpHttpRoutes } from './mcp-http-routes'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http'
@@ -22,7 +23,6 @@ let sessions: WebSessionStore
 let listener: WebListener
 let port: number
 let connected: Array<{ stream: Duplex; who: unknown }>
-let tunnelled: string[]
 let pairRequests: PairRequests
 const MINT_KEY = 'mint-key-for-the-test-only-0123456789'
 // The names `studio-server mcp-token` asked a token for, through the listener's mint route.
@@ -41,9 +41,11 @@ beforeEach(async () => {
   const script = 'console.log("app")'.repeat(100)
   writeFileSync(join(web, 'assets', 'app-abc123.js'), script)
   writeFileSync(join(web, 'assets', 'app-abc123.js.br'), brotliCompressSync(script))
-  sessions = createWebSessionStore({ dataDir: dir, environmentId: '05763914-5fa0-449b-96d7-15af49e0ec86' })
+  sessions = createWebSessionStore({
+    database: testDatabaseAt(dir),
+    environmentId: '05763914-5fa0-449b-96d7-15af49e0ec86',
+  })
   connected = []
-  tunnelled = []
   listener = createWebListener({
     sessions,
     staticRoot: openWebStaticRoot(web),
@@ -54,7 +56,6 @@ beforeEach(async () => {
     uploads: createWebUploads({ dataDir: dir }),
     version: 'test',
     studio: { connect: (stream, who) => connected.push({ stream, who }) },
-    tunnel: { attach: (client) => tunnelled.push(client.clientId), detach: () => undefined },
     extraRoutes: [
       createMcpHttpRoutes({
         mintKey: MINT_KEY,
@@ -235,12 +236,12 @@ test('a cookie alone with no Origin does not upgrade', async () => {
   expect(status).toBe(403)
 })
 
-test('a ticket in the address does not stand in for an Origin where a cookie admits the socket', async () => {
+test('a ticket in the address does not stand in for an Origin anywhere but the Studio socket', async () => {
   const { cookie } = await pair()
-  const { status, socket } = await upgrade('/ws/ipc?ticket=anything', { Cookie: cookie })
+  const { status, socket } = await upgrade('/elsewhere?ticket=anything', { Cookie: cookie })
   socket.destroy()
   expect(status).toBe(403)
-  expect(tunnelled).toHaveLength(0)
+  expect(connected).toHaveLength(0)
 })
 
 test('a same-origin upgrade with the session is served as that session', async () => {
@@ -279,17 +280,12 @@ test('revoking a browser closes its sockets with 4401', async () => {
   socket.destroy()
 })
 
-test('the window.api tunnel is an owner session’s only', async () => {
+test('there is no IPC tunnel: a tab reaches its Studio on the Studio socket alone', async () => {
   const owner = await pair()
-  const ok = await upgrade('/ws/ipc?windowId=primary', { Cookie: owner.cookie, Origin: own() })
-  ok.socket.destroy()
-  expect(ok.status).toBe(101)
-  const reader = sessions.issue({ route: 'loopback', owner: false })
-  if (!reader.ok) throw new Error('not paired')
-  const refused = await upgrade('/ws/ipc', { Cookie: `${sessions.cookieName}=${reader.secret}`, Origin: own() })
-  refused.socket.destroy()
-  expect(refused.status).toBe(403)
-  expect(tunnelled).toHaveLength(1)
+  const gone = await upgrade('/ws/ipc?windowId=primary', { Cookie: owner.cookie, Origin: own() })
+  gone.socket.destroy()
+  expect(gone.status).toBe(404)
+  expect(connected).toHaveLength(0)
 })
 
 test('studio-server pair mints a link with the run file key, and a browser cannot', async () => {

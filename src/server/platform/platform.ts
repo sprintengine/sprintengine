@@ -1,12 +1,11 @@
 import { join } from 'node:path'
 
 import { createStaticAppIdentity, type AppIdentity } from './app-identity'
-import { createLocalClientBus, type LocalClientBus, type ClientBus } from './client-bus'
 import { createLocalNotifier, type LocalNotifier, type Notifier } from './notifier'
 import { createKeyFileSecretCipher, type SecretCipher } from './secret-cipher'
 import { createNodeStudioPaths, type NodeStudioPathsOptions, type StudioPaths } from './studio-paths'
 
-// Everything server-bound code used to take from Electron, behind five small
+// Everything server-bound code used to take from Electron, behind four small
 // interfaces. The process that hosts the server installs one platform before it
 // builds anything: Electron main installs `createElectronPlatform`
 // (src/main/platform/electron-platform.ts) as the first thing its entry does,
@@ -20,7 +19,6 @@ import { createNodeStudioPaths, type NodeStudioPathsOptions, type StudioPaths } 
 export type StudioPlatform = {
   paths: StudioPaths
   secrets: SecretCipher
-  clients: ClientBus
   notifier: Notifier
   identity: AppIdentity
 }
@@ -55,7 +53,7 @@ export function resetStudioPlatform(): void {
   installed = null
 }
 
-export type NodeStudioPlatform = StudioPlatform & { clients: LocalClientBus; notifier: LocalNotifier }
+export type NodeStudioPlatform = StudioPlatform & { notifier: LocalNotifier }
 
 export type NodeStudioPlatformOptions = NodeStudioPathsOptions & {
   version: string
@@ -68,7 +66,6 @@ export function createNodeStudioPlatform(options: NodeStudioPlatformOptions): No
   return {
     paths: createNodeStudioPaths(options),
     secrets: options.secrets ?? createKeyFileSecretCipher({ keyPath: join(options.dataDir, 'run', 'secret-key') }),
-    clients: createLocalClientBus(),
     notifier: createLocalNotifier(),
     identity: createStaticAppIdentity({ version: options.version }),
   }

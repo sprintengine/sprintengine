@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -120,6 +121,7 @@ function boot(workspaceRoot: string, agents: Record<string, AgentState>, extensi
   const provider = recordingProvider()
   const record = { name: 'Project', createdAt: 1, agents } as unknown as ConversationListWorkspace
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     ...(extensionHooks ? { extensionHooks, starterInvoker: () => ownerInvoker(null, 'the parent agent') } : {}),

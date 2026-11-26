@@ -1,7 +1,6 @@
 // SSH machines are a preview until phase 8 is complete: off by default, and
 // with it off no SSH code runs and Settings looks as it did before. The
-// switch is read once at boot, like the server's own process switch
-// (server-mode.ts): a session either has SSH machines or does not.
+// switch is read once at boot: a session either has SSH machines or does not.
 
 /** Overrides the saved switch for dev and CI: `on` or `off`. */
 export const SSH_PREVIEW_ENV = 'SPRINTENGINE_SSH_MACHINES'

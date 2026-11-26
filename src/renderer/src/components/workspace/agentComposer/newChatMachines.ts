@@ -6,18 +6,18 @@ import {
   type ExecutionHostId,
 } from '../../../../../shared/execution-host'
 import { sameRepository, type RepositoryIdentity } from '../../../../../shared/repository-identity'
-import type { MeshBrowse, MeshConnection, MeshWorkspace } from '../../../../../shared/tailnet-mesh'
+import type { MeshWorkspace } from '../../../../../shared/tailnet-mesh'
+import type { EnvironmentBrowse } from '../../../studio/environmentDiscovery'
 
 // New chat's machine dimension, apart from the panel that draws it: which
-// paired machine holds the project in hand, which machine on this computer a
-// folder runs on, how the machine list is ordered, and the machines picked
-// last this session.
+// environment holds the project in hand, which machine on this computer a
+// folder runs on, and the machine picked last this session.
 
 /**
- * Whether a paired machine holds the project in hand (one-project-across-
- * machines): the machine dropdown lists each machine with this, so picking
- * one keeps the project instead of asking for it again. `unknown` before the
- * machine has been asked; `none` when there is no project to match.
+ * Whether another environment holds the project in hand (one-project-across-
+ * machines): the machine dropdown lists each one with this, so picking one
+ * keeps the project instead of asking for it again. `loading` before it has
+ * been asked; `none` when there is no project to match.
  */
 export type MachineAvailability =
   | { state: 'none' }
@@ -26,11 +26,11 @@ export type MachineAvailability =
   | { state: 'lacks'; reason: string }
   | { state: 'unreachable'; reason: string }
 
-/** A machine's last browse, stamped so a stale or failed one is asked again. */
-export type MachineBrowseEntry = 'loading' | { browse: MeshBrowse; at: number }
+/** An environment's last browse, stamped so a stale or failed one is asked again. */
+export type MachineBrowseEntry = 'loading' | { browse: EnvironmentBrowse; at: number }
 const MACHINE_BROWSE_HOLD_MS = 30_000
 
-export function browseOf(entry: MachineBrowseEntry | undefined): MeshBrowse | 'loading' | undefined {
+export function browseOf(entry: MachineBrowseEntry | undefined): EnvironmentBrowse | 'loading' | undefined {
   return entry === 'loading' || entry === undefined ? entry : entry.browse
 }
 
@@ -41,7 +41,10 @@ export function machineBrowseStale(entry: MachineBrowseEntry | undefined, now = 
 }
 
 /** Which of a machine's workspaces is the repository in hand, if any. */
-export function machineCopyOf(browse: MeshBrowse, identity: RepositoryIdentity | null): MeshWorkspace | null {
+export function machineCopyOf(
+  browse: Pick<EnvironmentBrowse, 'workspaces'>,
+  identity: RepositoryIdentity | null,
+): MeshWorkspace | null {
   if (!identity) return null
   const copies = browse.workspaces.filter((workspace) => sameRepository(workspace.repository, identity))
   // A plain checkout over a worktree of the same repository (its worktrees
@@ -53,50 +56,42 @@ export function machineCopyOf(browse: MeshBrowse, identity: RepositoryIdentity |
 }
 
 export function machineAvailabilityOf(
-  machine: MeshConnection,
-  browse: MeshBrowse | 'loading' | undefined,
+  machine: { displayName: string },
+  browse: EnvironmentBrowse | 'loading' | undefined,
   identity: RepositoryIdentity | null,
 ): MachineAvailability {
   if (!identity) return { state: 'none' }
   if (browse === undefined || browse === 'loading') return { state: 'loading' }
   if (!browse.reachable) {
-    return { state: 'unreachable', reason: browse.unreachableReason ?? `${machine.machineName} is not answering.` }
+    return { state: 'unreachable', reason: browse.unreachableReason ?? `${machine.displayName} is not answering.` }
   }
   if (browse.unauthorized)
     return {
       state: 'unreachable',
-      reason: `${machine.machineName} refused this pairing — re-pair from Settings → Remote.`,
+      reason: `${machine.displayName} refused this computer. Set it up again in Settings ▸ Machines.`,
     }
   const copy = machineCopyOf(browse, identity)
   if (copy) return { state: 'has', workspace: copy }
   const gap = browse.gaps.find((entry) => entry.part === 'workspaces')
   if (gap) return { state: 'lacks', reason: gap.message }
-  return { state: 'lacks', reason: `No copy of ${identity.name} on ${machine.machineName}.` }
+  return { state: 'lacks', reason: `No copy of ${identity.name} on ${machine.displayName}.` }
 }
 
-// The machines picked last, for THIS session only (never persisted), held in
-// one object because the panel that writes them lives in another module.
-export const rememberedMachine: {
-  // The paired machine: reopening New chat keeps the target a person just
-  // used, while a fresh app start opens on This device — a remote is never
-  // preselected on first open.
-  machineId: string | null
-  // The same, for a machine on this computer (a WSL distribution). Null
-  // follows the folder: a folder inside a distribution defaults to it,
-  // anything else here.
-  hostId: ExecutionHostId | null
-  // The SSH machine.
-  sshId: string | null
-} = { machineId: null, hostId: null, sshId: null }
-// The folder typed for each SSH machine, for this session.
-export const lastSshFolders = new Map<string, string>()
+// The machine picked last, for THIS session only (never persisted), held in
+// one object because the panel that writes it lives in another module. By its
+// route, whatever kind of machine it is: reopening New chat keeps the target a
+// person just used, while a fresh app start opens on this computer, and
+// another machine is never preselected on first open. Null follows the
+// folder: a folder inside a WSL distribution defaults to it, anything else
+// here.
+export const rememberedEnvironment: { route: string | null } = { route: null }
+// The folder typed for each environment, by its route, for this session.
+export const lastTypedFolders = new Map<string, string>()
 
 /** Test seam: forget the session's remembered machine. */
 export function resetRememberedMachineForTests(): void {
-  rememberedMachine.machineId = null
-  rememberedMachine.hostId = null
-  rememberedMachine.sshId = null
-  lastSshFolders.clear()
+  rememberedEnvironment.route = null
+  lastTypedFolders.clear()
 }
 
 /**
@@ -124,10 +119,4 @@ export function hostRefusesFolder(host: ExecutionHostId, folder: string | null |
   const folderHost = hostIdForFolder(folder)
   if (!folderHost || !isWslHostId(host) || host === folderHost) return null
   return `WSL: ${distroOfHostId(host)} cannot open a folder inside ${distroOfHostId(folderHost)}.`
-}
-
-// This device first, then paired machines alphabetically — a list that
-// reorders as pairings come and go is one nobody can learn.
-export function sortMachines(machines: MeshConnection[]): MeshConnection[] {
-  return [...machines].sort((a, b) => a.machineName.localeCompare(b.machineName, undefined, { sensitivity: 'base' }))
 }

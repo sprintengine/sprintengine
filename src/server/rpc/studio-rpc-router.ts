@@ -41,6 +41,7 @@ import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host
 import type { DistributionMachine } from '../wsl/distribution-machine'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
 import { createHash, randomBytes } from 'node:crypto'
+import { posix, win32 } from 'node:path'
 
 import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
 import { sanitizeEntryMessage } from '../../shared/modules/entry-messages'
@@ -60,6 +61,7 @@ import {
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioProcesses } from '../processes/agent-process-domain'
 import { tabsForReader, type StudioBrowserTabs } from '../processes/browser-tabs'
+import type { StudioTerminalAgents } from '../terminals/terminal-agents'
 import type { StudioTerminalCaller, StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
@@ -84,6 +86,7 @@ import { createStudioArtifactsHandlers } from './studio-artifacts'
 import { createStudioAccessHandlers, type StudioAccessDomain } from './studio-access'
 import type { ExtensionInvoker } from '../../main/module-host/extension-invocation'
 import { createStudioWebDevicesHandlers, type StudioWebDevicesDomain } from './studio-web-devices'
+import { createStudioWebTabHandlers, type StudioWebTabDomain } from './studio-web-tab'
 import { createStudioTailnetHandlers, type StudioTailnetDomain } from './studio-tailnet'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
@@ -240,6 +243,8 @@ export type StudioRpcRouterOptions = {
   access?: StudioAccessDomain
   /** The web listener's paired browsers, once its front door gave them; until then `webDevices.*` is answered `unavailable`. */
   webDevices?: () => StudioWebDevicesDomain | null
+  /** A web tab's folder browser and previews, once its front door gave them; until then `webFolders.*` and `webPreviews.*` are `unavailable`. */
+  webTab?: () => StudioWebTabDomain | null
   /** The tailnet listener and the machines this one drives; without it, `tailnet.*` and `mesh.*` are answered `unavailable`. */
   tailnet?: StudioTailnetDomain
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
@@ -252,6 +257,12 @@ export type StudioRpcRouterOptions = {
   processes?: StudioProcesses
   /** The built-in browser's tabs, the shell's; without it, `browserTabs.*` is answered `unavailable`. */
   browserTabs?: StudioBrowserTabs
+  /**
+   * What a window asks of a session beside its pty: the peek card and a fresh
+   * read of its pull requests. Without it, `terminal.peek` and
+   * `terminal.refreshPullRequests` are `unavailable`.
+   */
+  terminalAgents?: StudioTerminalAgents
   /** The machines this desktop's computer offers; without it, `hosts.*` is answered `unavailable`. */
   hosts?: StudioHosts
   /** What a client reads before it starts a chat; without it, `workspaces.*` and `cliRuntimes.list` are `unavailable`. */
@@ -769,7 +780,13 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     params: StudioMethodParams<'conversation.create'>,
     { grant, voice, context }: Asking,
   ): Promise<StudioRpcAnswer<'conversation.create'>> {
-    const { commandId, ...request } = params
+    const { commandId, ...asked } = params
+    // A folder no workspace names yet, as one path (`a//b/./c/..` is `a/b`),
+    // judged where it lands: any for the owner's own connection, only one
+    // Studio knows for a connection held to those.
+    const request = asked.folder !== undefined ? { ...asked, folder: oneFolderPath(asked.folder) } : asked
+    if (request.folder !== undefined && !(await mayName(request.folder, { grant, context })))
+      return refuse('not_found', UNKNOWN_FOLDER)
     if (request.allowedTools?.length && !ceilingAllowsUnaskedTools(grant.ceiling))
       return refuse(
         'ceiling_exceeded',
@@ -1056,6 +1073,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   })
   const webDevicesRouting = createStudioWebDevicesHandlers({
     webDevices: () => options.webDevices?.() ?? null,
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const webTabRouting = createStudioWebTabHandlers({
+    webTab: () => options.webTab?.() ?? null,
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
   })
@@ -2166,6 +2188,14 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         terminals.configure(policy)
         return {}
       }),
+    'terminal.peek': async ({ sessionId }) =>
+      options.terminalAgents
+        ? { ok: true, result: await options.terminalAgents.peek(sessionId) }
+        : unserved('terminal.peek'),
+    'terminal.refreshPullRequests': async ({ sessionId }) =>
+      options.terminalAgents
+        ? { ok: true, result: { asked: await options.terminalAgents.refreshPullRequests(sessionId) } }
+        : unserved('terminal.refreshPullRequests'),
 
     // ── Agent CLIs and launch settings ─────────────────────────────────────
 
@@ -2210,6 +2240,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // ── The browsers paired with the web listener ──────────────────────────
 
     ...webDevicesRouting,
+    // ── What a web tab asks of the Studio that served it ───────────────────
+
+    ...webTabRouting,
 
     // ── Who reaches this machine over the tailnet, and the machines it drives ──
 
@@ -2731,6 +2764,13 @@ function withFolderNamesOnly(installed: ThirdPartyModuleListResult): ThirdPartyM
       }
     }),
   }
+}
+
+/** A folder as one path, with no trailing separator but a root's: the parser has held it to a whole path. */
+function oneFolderPath(folder: string): string {
+  const windows = /^[A-Za-z]:[\\/]/u.test(folder) || folder.startsWith('\\')
+  const normal = windows ? win32.normalize(folder) : posix.normalize(folder)
+  return normal.length > 1 && /[\\/]$/u.test(normal) && !/^[A-Za-z]:[\\/]$/u.test(normal) ? normal.slice(0, -1) : normal
 }
 
 /** Whether a connection names any path on this disk: an owner's, unless it is held to the folders Studio knows. */

@@ -8,9 +8,9 @@ import {
   createStudioCore,
   StudioDataDirBusyError,
   StudioDataDirUnusableError,
-  studioBridgeScriptPath,
   type StudioCore,
 } from './core/studio-core'
+import { studioBridgeScriptPath } from './platform/studio-paths'
 import { createStudioGateway, type StudioGateway } from './core/studio-gateway'
 import { createStudioRpc } from './core/studio-rpc'
 import { createStudioChatBackend } from '../main/studio-rpc/studio-chat-backend'
@@ -316,7 +316,6 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
         core,
         gateway: started,
         rpc,
-        clients: platform.clients,
         environmentId: readStudioEnvironmentId(options.dataDir),
         version: options.version,
         options: options.web,

@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { workspaceStorePath } from './workspace-store'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -103,6 +104,7 @@ async function setup(options: { rewind?: boolean; cursors?: boolean } = {}) {
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const open = async () => {
     const runtime = new ConversationRuntime({
+      database: testChatDatabase(),
       adapters: [rewindingProvider(record, options)],
       getProviderById: () => undefined,
       secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },
@@ -178,6 +180,7 @@ test('a terminal is never handed a CLI session another provider wrote', async ()
   }
   await writeFile(join(dir, 'agent.jsonl'), JSON.stringify(other) + '\n', 'utf-8')
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [rewindingProvider({ starts: [], rewinds: [] })],
     getProviderById: () => undefined,
     secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },
@@ -276,6 +279,7 @@ async function workingChat() {
   roots.add(workspaceRoot)
   const record = { interrupts: 0, denied: [] as string[], disposed: 0 }
   const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     adapters: [workingProvider(record)],
     getProviderById: () => undefined,
     secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },

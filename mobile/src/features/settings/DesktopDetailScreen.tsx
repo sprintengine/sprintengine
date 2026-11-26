@@ -12,7 +12,7 @@ import { STUDIO_PROTOCOL_VERSION } from "../../../../packages/studio-protocol/sr
 import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { space, typography, type Theme, fontWeight } from "../../theme/tokens";
-import { sessionDisplayStatus, sessionStatusLabel } from "../fleet/fleetLogic";
+import { desktopStatus, desktopStatusDotTone, sessionDisplayStatus } from "../fleet/fleetLogic";
 import { DesktopBrowserTabs } from "./DesktopBrowserTabs";
 import { copy } from "../../../../src/shared/copy";
 
@@ -65,8 +65,8 @@ export function DesktopDetailScreen({
     );
   }
 
-  const status = sessionDisplayStatus(session);
-  const isRevoked = status === "revoked";
+  const status = desktopStatus(session);
+  const isRevoked = sessionDisplayStatus(session) === "revoked";
   const scopes = session.tailnetScopes;
 
   // The desktop takes no revoke from a phone: forgetting removes the pairing
@@ -79,9 +79,9 @@ export function DesktopDetailScreen({
       onBack={onBack}
       subtitle={
         <View style={styles.statusLine}>
-          <StatusDot tone={status === "online" ? "good" : status === "revoked" ? "danger" : "neutral"} />
+          <StatusDot tone={desktopStatusDotTone(status)} />
           <Text style={styles.statusText}>
-            {sessionStatusLabel[status]}{copy.phone.settings.desktopDetailScreen.tailnet}</Text>
+            {status.words}{copy.phone.settings.desktopDetailScreen.tailnet}</Text>
         </View>
       }
       title={session.desktopName}

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
+import { testDatabaseAt } from '../../../../tests/studio-database'
 
 import { connect, webSocketTransport, type StudioClient } from '../../../../packages/client-runtime/src/public'
 import { createWorkspaceRegistryService } from '../../../main/workspace-registry-service'
@@ -44,7 +45,7 @@ function studio(dataDir: string, options: { writesHang?: boolean } = {}) {
   let registry: ReturnType<typeof createWorkspaceRegistryService>
   let open: MemoryChannelEnd | null = null
   const boot = (hang: boolean) => {
-    const real = createWorkspaceRegistryStore({ resolveUserDataDir: () => dataDir, persistDebounceMs: 60_000 })
+    const real = createWorkspaceRegistryStore({ database: testDatabaseAt(dataDir) })
     // A write that never lands: the kill comes in the middle of it.
     const never = () => new Promise<void>(() => undefined)
     const store: WorkspaceRegistryStore = hang ? { ...real, flush: never, whenWritten: never } : real

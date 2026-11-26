@@ -172,7 +172,7 @@ function common() {
     platform: 'node',
     format: 'cjs',
     // Electron's own Node is 24; the floor is what the repository supports.
-    target: 'node22.12',
+    target: 'node22.13',
     plugins: [shellOnlyGuard],
     logLevel: 'warning',
   }

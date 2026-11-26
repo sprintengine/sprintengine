@@ -1,6 +1,4 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
+import type { StudioDatabase } from '../db/database'
 import type { SecretCipher } from '../platform/secret-cipher'
 import { utf8Bytes, utf8Text, type ShellBridge } from './shell-bridge'
 
@@ -65,21 +63,15 @@ export function createShellSecretCipher(bridge: ShellBridge, options: { availabl
   }
 }
 
-/** The sealed tokens the mesh store opens synchronously when it is built: the ones to prime. */
-export function meshSealedTokens(dataDir: string): Buffer[] {
-  for (const name of ['tailnet-mesh-connections.json', 'tailnet-fleet-connections.json']) {
-    let parsed: unknown
+/** The sealed tokens the mesh store opens synchronously when it is built (its `mesh_links` rows): the ones to prime. */
+export function meshSealedTokens(database: Pick<StudioDatabase, 'readNow'>): Buffer[] {
+  return database.readNow<{ body: string }>('SELECT body FROM mesh_links ORDER BY position').flatMap((row) => {
+    let sealed: unknown
     try {
-      parsed = JSON.parse(readFileSync(join(dataDir, name), 'utf8'))
+      sealed = (JSON.parse(row.body) as { sealedToken?: unknown } | null)?.sealedToken
     } catch {
-      continue
+      return []
     }
-    const connections = (parsed as { connections?: unknown }).connections
-    if (!Array.isArray(connections)) return []
-    return connections.flatMap((entry) => {
-      const sealed = (entry as { sealedToken?: unknown } | null)?.sealedToken
-      return typeof sealed === 'string' && sealed.length > 0 ? [Buffer.from(sealed, 'base64')] : []
-    })
-  }
-  return []
+    return typeof sealed === 'string' && sealed.length > 0 ? [Buffer.from(sealed, 'base64')] : []
+  })
 }

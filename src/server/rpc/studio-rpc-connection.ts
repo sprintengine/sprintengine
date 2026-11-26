@@ -63,6 +63,7 @@ import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioExtensions } from '../extensions/extensions-domain'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import type { StudioWebDevicesDomain } from './studio-web-devices'
+import type { StudioWebTabDomain } from './studio-web-tab'
 import type { StudioModules } from './studio-modules'
 import type { ExtensionEvents } from '../extensions/events/extension-events'
 import { invokerOfGrant } from '../extensions/hooks/hook-invokers'
@@ -197,6 +198,8 @@ export type StudioRpcConnectionOptions = {
   access?: StudioAccessDomain
   /** The web listener's paired browsers: the `webDevices.changed` stream. */
   webDevices?: () => StudioWebDevicesDomain | null
+  /** A web tab's previews: the `webPreviews.changed` stream. */
+  webTab?: () => StudioWebTabDomain | null
   /** The tailnet listener and the machines this one drives: the `tailnet.changed` and `mesh.changed` streams. */
   tailnet?: StudioTailnetDomain
   /** The CLIs on this machine: the `cliRuntimes.*` and `cliVersions.changed` streams. */
@@ -1661,6 +1664,24 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
           ? (deliver) => {
               deliver(currentMesh(tailnet))
               return tailnet.mesh.onChanged(deliver)
+            }
+          : null,
+      )
+    },
+    // This browser's open previews, whole, then again on every change.
+    'webPreviews.changed': (id) => {
+      const domain = options.webTab?.() ?? null
+      subscribeFeed(
+        id,
+        'webPreviews.changed',
+        domain
+          ? (deliver) => {
+              const shown = () => {
+                const clientId = liveGrant()?.clientId
+                if (clientId) deliver(domain.previews(clientId))
+              }
+              shown()
+              return domain.onPreviewsChanged(shown)
             }
           : null,
       )

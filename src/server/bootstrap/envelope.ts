@@ -64,8 +64,8 @@ export function serverExitRetryable(exit: { code: number | null; signal?: string
 export type ServerSecretsMode =
   /**
    * The desktop shell is the cipher: `safeStorage` behind the control
-   * channel, so every sealed file stays byte-identical to what an
-   * in-process build writes. `available` is the shell's answer at fork time.
+   * channel, so every sealed file is byte-identical to what the shell itself
+   * seals. `available` is the shell's answer at fork time.
    */
   | { kind: 'shell'; available: boolean }
   /** An owner-only key file in `<dataDir>/run/` (0600 in a 0700 directory), for a server with no shell. */
@@ -200,19 +200,15 @@ export type SupervisorToServer =
   | {
       t: 'attach-client'
       clientId: string
-      windowId: string | null
       /**
-       * A window's IPC tunnel; the shell's own Studio protocol session (its
-       * ticket follows as the answer to `studio.connect-shell`), which offers
-       * its toolsets; or a stream on an SSH machine's relay, which main holds
-       * (phase 8). A window's own protocol connection is a WebSocket to the
-       * server's window listener, not a port.
+       * The shell's own Studio protocol session (its ticket follows as the
+       * answer to `studio.connect-shell`), which offers its toolsets; or a
+       * stream on an SSH machine's relay, which main holds (phase 8). A
+       * window's protocol connection is a WebSocket to the server's window
+       * listener, never a port.
        */
-      kind: 'desktop-window' | 'shell' | 'ssh-stream'
-      /** A workspace window (not Diagnostics or an aux view): the `workspace-windows` push target. */
-      workspaceWindow?: boolean
+      kind: 'shell' | 'ssh-stream'
     }
-  | { t: 'detach-client'; clientId: string }
 
 export type EnvelopeParseResult = { ok: true; envelope: ServerBootstrapEnvelope } | { ok: false; message: string }
 

@@ -1,3 +1,4 @@
+import { testDatabaseAt, testChatDatabase } from '../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -121,6 +122,7 @@ beforeAll(async () => {
     payload: Record<string, unknown> = {},
   ): ConversationEvent => ({ id: '', ...base, type, createdAt: 0, payload })
   runtime = new ConversationRuntime({
+    database: testChatDatabase(),
     getProviderById: () => undefined,
     secretStore: {
       getStatus: async () => ({ ok: false, message: 'unused' }),
@@ -160,7 +162,7 @@ beforeAll(async () => {
     send: (input) => runtime.sendTurn(input),
   })
   const audit = createGatewayAuditStore({ resolveUserDataDir: () => userData })
-  fileViews = createFileViews({ dataDir: userData, folderOf: () => folder })
+  fileViews = createFileViews({ database: testDatabaseAt(userData), folderOf: () => folder })
   service = createStudioRpcService({
     fileViews,
     // The platform's pieces, as a standalone server would install them.
@@ -465,6 +467,12 @@ test('every method the server serves has its call in the SDK, under the same sco
     'terminal.setReapExempt': 'request',
     'terminal.takeUndeliveredPrompts': 'request',
     'terminal.configure': 'request',
+    'terminal.peek': 'request',
+    'terminal.refreshPullRequests': 'request',
+    'webFolders.browse': 'request',
+    'webPreviews.list': 'request',
+    'webPreviews.open': 'request',
+    'webPreviews.close': 'request',
     // Updates are asked like any method on a normal connection, and through
     // `openStudioUpdateSession` on one kept for them.
     'update.status': 'request',

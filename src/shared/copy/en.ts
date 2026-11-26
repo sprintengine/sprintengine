@@ -4142,10 +4142,8 @@ export const en = {
       sSHMachinesPreview: 'SSH machines (preview)',
       restartNow: 'Restart now',
       studioServer: 'Studio server',
-      runStudioServerInIts: 'Run Studio server in its own process',
       openLog: 'Open log',
       restartServer: 'Restart server',
-      studioServerCouldnTStart: "Studio server couldn't start on its own, so it runs inside the app. ",
     },
     // src/renderer/src/components/settings/StudioSkillsSettings.tsx
     studioSkillsSettings: {
@@ -4533,8 +4531,10 @@ export const en = {
       nameTheRule: 'Name the rule.',
       chat: 'Chat',
     },
-    // src/renderer/src/studio/pairedDiscovery.ts
-    pairedDiscovery: {
+    // src/renderer/src/studio/environmentDiscovery.ts
+    environmentDiscovery: {
+      updateToStartInAFolder: (machineName: unknown) =>
+        `${machineName} can't start a chat in a folder named from here yet. Update Studio there, or pick one of its projects.`,
       thisPairingMayNotRead: "This pairing may not read that machine's workspaces.",
       nameTheWorkspaceWhoseCheckout: 'Name the workspace whose checkout to read.',
       nameTheWorkspaceWhoseSkills: 'Name the workspace whose skills to list.',
@@ -4571,12 +4571,10 @@ export const en = {
   studioServer: {
     // src/renderer/src/components/studioServer/StudioServerBanner.tsx
     studioServerBanner: {
-      restartInCompatibilityMode: 'Restart in compatibility mode',
+      openLog: 'Open log',
     },
     // src/renderer/src/components/studioServer/studioServerWords.ts
     studioServerWords: {
-      studioServerCouldnTStart: (fellBack: unknown) =>
-        `Studio server couldn't start on its own, so it runs inside the app. ${fellBack}`,
       startingStudioServer: 'Starting Studio server…',
       reconnectingToStudioServer: 'Reconnecting to Studio server…',
       studioServerStopped: (value: unknown) => `Studio server stopped.${value}`,
@@ -5280,6 +5278,7 @@ export const en = {
       machineScopePicker: {
         machineThisChatRunsOn: 'Machine this chat runs on',
         otherMachines: 'Other machines',
+        thisDevice: 'This device',
       },
       // src/renderer/src/components/workspace/agentComposer/NewAgentPanel.tsx
       newAgentPanel: {
@@ -5377,6 +5376,8 @@ export const en = {
       },
       // src/renderer/src/components/workspace/agentComposer/RemoteProjectPicker.tsx
       remoteProjectPicker: {
+        anotherFolder: 'Another folder…',
+        typeItsPathOn: (machineName: unknown) => `Type its path on ${machineName}`,
         projectOn: (machineName: unknown) => `Project on ${machineName}`,
         searchProjects: 'Search projects…',
         searchProjectsOn: (machineName: unknown) => `Search projects on ${machineName}`,
@@ -6888,6 +6889,12 @@ export const en = {
       theSoloLayoutTemplateIs3: (title: unknown) =>
         `The Solo layout template is missing. Find "${title}" under Remote in the sidebar.`,
       chatStartedOn: (machineName: unknown) => `Chat started on ${machineName}`,
+      openTheChat: 'Open',
+      itOpensHereOnceListed: (title: unknown, machineName: unknown) =>
+        `${title} opens here once this computer lists ${machineName}'s new chat.`,
+      chatNotListedHere: (machineName: unknown) => `${machineName}'s new chat is not listed here yet`,
+      itRunsThereNotListed: (title: unknown, machineName: unknown) =>
+        `${title} runs on ${machineName}. This computer has not listed it yet; Open tries again.`,
       in: (title: unknown, remoteWorkspaceName: unknown, value: unknown) =>
         `${title} in ${remoteWorkspaceName}${value}`,
       noOtherChatsAreWaiting: 'No other chats are waiting on you',

@@ -98,3 +98,19 @@ test("an offline device keeps reaching a desktop window's own Studio, and a web 
     vi.unstubAllGlobals()
   }
 })
+
+test('a connection that opens again after a drop is told to the window, and its first open is not', async () => {
+  const win: { api: Record<string, unknown> } = { api: {} }
+  const loopback = installStudioLoopback(win) as StudioLoopback
+  let reopened = 0
+  configureWindowStudio(win.api, { onReopen: () => void reopened++ })
+  const client = await windowStudioClient(win.api as never)
+  expect(client.state).toBe('open')
+  expect(reopened).toBe(0)
+  loopback.drop()
+  for (let tries = 0; (client.state !== 'open' || loopback.connections() < 2) && tries < 200; tries++)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  expect(client.state).toBe('open')
+  expect(reopened).toBe(1)
+  client.close()
+})

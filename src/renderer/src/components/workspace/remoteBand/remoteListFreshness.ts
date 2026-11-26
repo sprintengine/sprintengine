@@ -1,5 +1,5 @@
 import type { MeshMachineReachability } from '../../../../../shared/tailnet-mesh'
-import type { EnvironmentStatusKind } from '../../../../../shared/environment-status'
+import type { EnvironmentStatusKind } from '../../../../../../packages/client-runtime/src/environments/environmentStatus'
 import { formatRelativeMs, formatRelativeMsAgo } from '../../../utils/relativeTime'
 import { copy } from '../../../../../shared/copy'
 

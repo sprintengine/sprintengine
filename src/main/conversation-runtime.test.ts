@@ -1,7 +1,9 @@
+import { testChatDatabase } from '../../tests/studio-database'
+import { chatLogKey } from '../server/db/chat-logs'
 import assert from 'node:assert/strict'
 import { workspaceStorePath } from './workspace-store'
 import { once } from 'node:events'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,8 +30,8 @@ import { test } from 'vitest'
 // collector closes them, which newer Node versions report as an error.
 const liveRuntimes = new Set<ConversationRuntime>()
 class TrackedConversationRuntime extends ConversationRuntime {
-  constructor(options?: ConstructorParameters<typeof ConversationRuntime>[0]) {
-    super(options)
+  constructor(options: Omit<ConstructorParameters<typeof ConversationRuntime>[0], 'database'> = {}) {
+    super({ database: testChatDatabase(), ...options })
     liveRuntimes.add(this)
   }
 }
@@ -2308,21 +2310,18 @@ test('conversation-runtime', async () => {
     workspaceId: string,
     agentId: string,
   ): Promise<Record<string, any>[]> {
-    const content = await readFile(
-      workspaceStorePath(
-        workspaceRoot,
-        'conversations',
-        encodeURIComponent(workspaceId.replace(/[\\/]/g, '-')),
-        `${agentId}.jsonl`,
-      ),
-      'utf-8',
+    const path = workspaceStorePath(
+      workspaceRoot,
+      'conversations',
+      encodeURIComponent(workspaceId.replace(/[\\/]/g, '-')),
+      `${agentId}.jsonl`,
     )
-    // A command's receipt is a line of the log too, with no `type`.
-    return content
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line) as Record<string, any>)
-      .filter((line) => typeof line.type === 'string')
+    // The log's rows, in order, as the database keeps them; merged runs split back into their deltas.
+    const rows = await testChatDatabase().all<{ body: string }>(
+      'SELECT body FROM chat_events WHERE log_key = ? ORDER BY seq',
+      [chatLogKey(path)],
+    )
+    return rows.map((row) => JSON.parse(row.body) as Record<string, any>)
   }
 
   function openAiProvider(baseUrl: string): LoadedConversationProvider {

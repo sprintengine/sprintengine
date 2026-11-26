@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { request as httpRequest } from 'node:http'
@@ -147,6 +148,7 @@ test('tailnet-pairing-roundtrip', async () => {
     writeTailnetSettings(userDataDir, { enabled: true, port, notifications: true })
     const service = createTailnetRemoteService({
       resolveUserDataDir: () => userDataDir,
+      database: testDatabaseAt(userDataDir),
       serverName: 'sprintengine-studio',
       serverVersion: '9.9.9',
       resolveTools: testTools,

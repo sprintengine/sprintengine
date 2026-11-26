@@ -22,6 +22,8 @@ import {
 } from '../../server/desktop/server-methods'
 import { serveShellBridge } from '../../server/shell-bridge/serve-shell-bridge'
 import { serveArtifactsShell } from '../../server/artifacts/artifacts-shell-bridge'
+import { serveCanvasShell } from '../../server/canvas/canvas-shell-bridge'
+import type { StudioCanvasHost } from '../../server/canvas/canvas-domain'
 import { serveExtensionOpen } from '../../server/extensions/extension-open-bridge'
 import type { ExtensionOpener } from '../../shared/extension-open'
 import type { ArtifactThumbnailer } from '../artifacts/artifacts-service'
@@ -30,10 +32,8 @@ import type { ShellBridge } from '../../server/shell-bridge/shell-bridge'
 import type { StudioWindowTicket } from '../../shared/studio-connection'
 import type { StudioWindowTicketIssuer } from '../ipc/studio-window-ticket-ipc'
 import { isCanvasWorkerWindow } from '../canvas/canvas-worker-window'
-import { isAppRendererUrl } from '../ipc/ipc-sender'
-import { isWorkspaceWindowWebContents } from '../window-factory'
+import { isWorkspaceWindowWebContents, listWorkspaceWindows, workspaceWindowIdOf } from '../window-factory'
 import { writeDiagnosticLog } from '../diagnostics-service'
-import { createPortBroker, type PortBroker } from './port-broker'
 import type { ShellServerLink } from './remote-core'
 import { createServerLog, type ServerLog } from './server-log'
 import { createServerStateMirror, type ServerStateMirror } from './server-mirror'
@@ -42,27 +42,27 @@ import { forkUtilityServer } from './utility-launcher'
 import { prefixedId } from '../../shared/random-id'
 import type { StudioBrowserTabs } from '../../server/processes/browser-tabs'
 
-// The shell's half of the Studio server out of process, put together: the
+// The shell's half of the Studio server, in its own process, put together: the
 // supervisor that forks and watches it, the log its output goes to, the port
-// broker that hands every app window its port, the mirror of what the shell
+// the mirror of what the shell
 // reads synchronously, the shell bridge and the two caches the server asks
 // about, and the hints the shell sends (power, focus, visibility).
 //
-// Built at boot, before any window, when the session's mode is out of process;
-// forked at `ready`, which is the earliest a utility process can start.
+// Built at boot, before any window; forked at `ready`, which is the earliest a
+// utility process can start.
 
 export type DesktopServerHost = {
   supervisor: ServerSupervisor
   link: ShellServerLink
   mirror: ServerStateMirror
-  broker: PortBroker
   log: ServerLog
   /** Fork the server and start sending hints. At app ready. */
   start(): void
   /**
    * Answer the server's requests of the shell: the bridge, its Trash, Studio's
    * plugin it installs, for artifacts a page's picture and the set-up
-   * question asked natively, and `extension.open`'s windows.
+   * question asked natively, `extension.open`'s windows, the built-in
+   * browser's tabs, and the canvas service's boards for other devices.
    */
   serveShell(
     bridge: ShellBridge,
@@ -73,6 +73,8 @@ export type DesktopServerHost = {
       extensionOpener: ExtensionOpener
       /** The built-in browser's tabs, which the server lists and closes from any client. */
       browserTabs: StudioBrowserTabs
+      /** The canvas service as other devices reach it, every board held to where its file really is. */
+      canvas: StudioCanvasHost
     },
   ): void
   /** Tickets for the windows' connections to the server's window listener, once it is serving. */
@@ -130,13 +132,6 @@ export function createDesktopServerHost(options: {
     log: say,
   })
   const mirror = createServerStateMirror({ rpc: supervisor.rpc, log: say })
-  const broker = createPortBroker({
-    supervisor,
-    createChannel: () => new MessageChannelMain(),
-    isAppDocument: isAppRendererUrl,
-    isWorkspaceWindow: (window) => isWorkspaceWindowWebContents(window.webContents as Electron.WebContents),
-    log: say,
-  })
   // Every ready (the first and each restart's) starts the mirror over.
   supervisor.onReady(() => {
     void mirror.load().catch((error: unknown) => say(`mirror did not load: ${String(error)}`))
@@ -162,6 +157,9 @@ export function createDesktopServerHost(options: {
       anyWindowVisible: showing.length > 0,
       // Only a workspace window can answer an artifacts set-up question; a pop-out cannot.
       workspaceWindowVisible: showing.some((win) => isWorkspaceWindowWebContents(win.webContents)),
+      // The workspace windows open now, shown or not: what an extension's
+      // `send` may type into besides its own terminals is what one of them shows.
+      workspaceWindowIds: listWorkspaceWindows().map(workspaceWindowIdOf),
     })
     supervisor.rpc.emit(SERVER_EVENTS.hintFocus, { appFocused: windows.some((win) => win.isFocused()) })
   }
@@ -181,7 +179,6 @@ export function createDesktopServerHost(options: {
     app.on('browser-window-focus', sendWindowHints)
     app.on('browser-window-blur', sendWindowHints)
     app.on('browser-window-created', (_event, window) => {
-      broker.attachWindow(window)
       for (const event of ['show', 'hide', 'minimize', 'restore', 'closed'] as const)
         window.on(event as 'show', sendWindowHints)
     })
@@ -199,27 +196,23 @@ export function createDesktopServerHost(options: {
       }
       const { port1, port2 } = new MessageChannelMain()
       const clientId = prefixedId('shell', 6)
-      if (!supervisor.post({ t: 'attach-client', clientId, windowId: null, kind: 'shell' }, [port1])) {
+      if (!supervisor.post({ t: 'attach-client', clientId, kind: 'shell' }, [port1])) {
         port2.close()
         throw new Error('Studio server is restarting.')
       }
       const { ticket } = await supervisor.call<ShellConnectResult>(SERVER_METHODS.shellConnect, { clientId })
       return messagePortTransport(port2, { token: ticket })
     },
-    attachSshPort: (clientId, port) =>
-      supervisor.post({ t: 'attach-client', clientId, windowId: null, kind: 'ssh-stream' }, [port]),
+    attachSshPort: (clientId, port) => supervisor.post({ t: 'attach-client', clientId, kind: 'ssh-stream' }, [port]),
   }
 
   return {
     supervisor,
     link,
     mirror,
-    broker,
     log,
     start() {
       startHints()
-      // Windows created before this (none, in the boot order) are attached too.
-      for (const window of BrowserWindow.getAllWindows()) broker.attachWindow(window)
       supervisor.start()
     },
     serveShell(bridge, caches) {
@@ -239,6 +232,12 @@ export function createDesktopServerHost(options: {
       supervisor.rpc.handle(SHELL_METHODS.browserTabsClose, async (params) => {
         const tabId = (params as { tabId?: unknown } | null)?.tabId
         return typeof tabId === 'string' && tabId.length > 0 ? caches.browserTabs.close(tabId) : false
+      })
+      // A server that stopped held boards open for devices that are gone with
+      // it: its subscribers go, and the next server makes its own.
+      const canvas = serveCanvasShell(supervisor.rpc, caches.canvas)
+      supervisor.onState((state) => {
+        if (state.kind !== 'ready') canvas.reset()
       })
     },
     windowTickets: {

@@ -185,13 +185,12 @@ test('an exit that says the directory, envelope or build is wrong is not retried
     fake.latest().exit({ code })
     assert.equal(supervisor.state.kind, 'failed', `code ${code}`)
     assert.equal(supervisor.state.kind === 'failed' && supervisor.state.reason, `refused with ${code}`)
-    assert.equal(supervisor.state.kind === 'failed' && supervisor.state.neverReady, true)
     await vi.advanceTimersByTimeAsync(60_000)
     assert.equal(fake.children.length, 1, 'never forked again')
   }
 })
 
-test('three failed boots give up, and say the session never had a server', async () => {
+test('three failed boots give up, with the reason in words, and fork nothing more', async () => {
   const { supervisor, fake } = setup()
   supervisor.start()
   fake.latest().exit({ code: 70 })
@@ -200,8 +199,10 @@ test('three failed boots give up, and say the session never had a server', async
   await vi.advanceTimersByTimeAsync(1_000)
   fake.latest().exit({ code: 70 })
   assert.equal(supervisor.state.kind, 'failed')
-  assert.equal(supervisor.state.kind === 'failed' && supervisor.state.neverReady, true)
   assert.match(supervisor.state.kind === 'failed' ? supervisor.state.reason : '', /failed to start 3 times/)
+  // A give-up is a failure of the one mode: nothing starts again until Retry.
+  await vi.advanceTimersByTimeAsync(60_000)
+  assert.equal(fake.children.length, 3)
 })
 
 test('a boot that never says ready is killed at the budget and counts as a failed boot', async () => {
@@ -222,7 +223,6 @@ test('five crashes in two minutes give up even when each boot succeeded', async 
     if (supervisor.state.kind === 'backoff') await vi.advanceTimersByTimeAsync(supervisor.state.delayMs)
   }
   assert.equal(supervisor.state.kind, 'failed')
-  assert.equal(supervisor.state.kind === 'failed' && supervisor.state.neverReady, false)
   assert.match(supervisor.state.kind === 'failed' ? supervisor.state.reason : '', /5 times in two minutes/)
 })
 
@@ -462,7 +462,7 @@ test('control requests reach the server that is running, and fail while none is'
 test('a frame posted with a port goes only to a server that is ready', () => {
   const { supervisor, fake } = setup()
   supervisor.start()
-  const attach = { t: 'attach-client', clientId: 'w1', windowId: 'primary', kind: 'desktop-window' } as const
+  const attach = { t: 'attach-client', clientId: 'shell-1', kind: 'shell' } as const
   assert.equal(supervisor.post(attach, [{}]), false)
   ready(fake.latest())
   assert.equal(supervisor.post(attach, [{}]), true)

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, rm, rmdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -288,11 +288,20 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
           return { ok: false, code: 'launch_failed', message: `The chat's folder could not be made: ${message}` }
         }
       }
+      // A folder no workspace names yet must be one on this machine: said
+      // here, before a launch would start a CLI in nothing.
+      if (request.folder !== undefined) {
+        const found = await stat(request.folder).catch(() => null)
+        if (!found?.isDirectory())
+          return { ok: false, code: 'folder_missing', message: `There is no folder ${request.folder} on this machine.` }
+      }
       const launched = await deps.launch({
         startedBy,
         ...(projectlessFolder
           ? { newChatIn: { folderPath: projectlessFolder } }
-          : { workspaceId: request.workspaceId, ...(request.newChat ? { newChat: true } : {}) }),
+          : request.folder !== undefined
+            ? { newChatIn: { folderPath: request.folder }, newChat: true }
+            : { workspaceId: request.workspaceId, ...(request.newChat ? { newChat: true } : {}) }),
         ...(request.worktree ? { newWorktree: true } : {}),
         ...(request.worktreeName ? { worktreeName: request.worktreeName } : {}),
         ...(request.inWorktree ? { existingWorktreePath: request.inWorktree } : {}),

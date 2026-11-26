@@ -181,7 +181,7 @@ test('an agent record written while the server is away is held, in order, and se
   assert.deepEqual(seen.at(-1), 'write Third')
 })
 
-test("the core proxy answers the shell's members and refuses the server's by name", () => {
+test("the shell's core is its slice: the mirror, the machines, and the chats' folders", () => {
   const { shell } = pair()
   const mirror = createServerStateMirror({ rpc: shell })
   const core = createRemoteCore({
@@ -195,18 +195,27 @@ test("the core proxy answers the shell's members and refuses the server's by nam
     },
   })
   assert.equal(core.workspaceRegistry.getRecords().length, 0)
-  assert.equal(core.conversations.listSessions().ok, true)
-  assert.equal(core.dataDirLock, null)
-  assert.throws(() => core.createConversationHost, /server's/)
-  assert.throws(() => core.conversationLaunchService.launch({} as never), /server's/)
+  // The chats and terminals are the server's: the shell's slice holds only their process roots.
+  assert.deepEqual(core.processes.lastRoots(), [])
+  assert.deepEqual(Object.keys(core).sort(), [
+    'agentLaunchSettings',
+    'conversationOwner',
+    'hosts',
+    'processes',
+    'workspaceRegistry',
+    'workspaceSyncService',
+  ])
   installHostRegistry(null)
   installGitHostResolver(null)
 })
 
-test("Diagnostics reads the folders the server's chats run in, one poll behind", async () => {
+test("Diagnostics reads the server's terminal and chat process roots, one poll behind; the browser asks now", async () => {
   const { shell, server } = pair()
-  const roots = [{ sessionId: 'chat-1', rootPid: 4242, workspaceId: 'acme' }]
-  server.handle(SERVER_METHODS.conversationRoots, () => roots)
+  const roots = [
+    { sessionId: 'terminal-1', rootPid: 4141, workspaceId: 'acme' },
+    { sessionId: 'chat-1', rootPid: 4242, workspaceId: 'acme' },
+  ]
+  server.handle(SERVER_METHODS.liveRoots, () => roots)
   let serving = true
   const core = createRemoteCore({
     rpc: shell,
@@ -218,12 +227,14 @@ test("Diagnostics reads the folders the server's chats run in, one poll behind",
       throw new Error('not in this test')
     },
   })
-  assert.deepEqual(core.conversations.listLiveConversationRoots(), [])
+  assert.deepEqual(core.processes.lastRoots(), [])
   await settle()
-  assert.deepEqual(core.conversations.listLiveConversationRoots(), roots)
-  // A server that is not serving has no chats to attribute.
+  assert.deepEqual(core.processes.lastRoots(), roots)
+  assert.deepEqual(await core.processes.roots(), roots)
+  // A server that is not serving has no processes to attribute.
   serving = false
-  assert.deepEqual(core.conversations.listLiveConversationRoots(), [])
+  assert.deepEqual(core.processes.lastRoots(), [])
+  assert.deepEqual(await core.processes.roots(), [])
   installHostRegistry(null)
   installGitHostResolver(null)
 })

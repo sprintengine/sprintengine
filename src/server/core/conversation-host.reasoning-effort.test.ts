@@ -1,3 +1,4 @@
+import { testChatDatabase } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -19,7 +20,11 @@ async function fixture(options: { efforts?: string[] | null; start?: boolean } =
   const adapter = createMockConversationProvider({
     reasoningEfforts: options.efforts === undefined ? ['low', 'high'] : options.efforts,
   })
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   let effort: string | undefined = 'low'
   const written: AgentChoicePatch[] = []
   const host = createConversationGatewayHost(

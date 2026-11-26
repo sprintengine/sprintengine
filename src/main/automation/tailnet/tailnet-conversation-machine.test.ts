@@ -1,3 +1,4 @@
+import { testDatabaseAt, testChatDatabase } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
@@ -148,7 +149,11 @@ test("a chat's pull requests carry the number, state, link and title, and no mor
 async function listFixture(marks: ConversationListMarks) {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'conversation-machine-'))
   const adapter = createMockConversationProvider()
-  const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const runtime = new ConversationRuntime({
+    database: testChatDatabase(),
+    adapters: [adapter],
+    getProviderById: () => undefined,
+  })
   const host = createConversationGatewayHost(
     runtime,
     (id) => (id === 'workspace' ? workspaceRoot : null),
@@ -472,7 +477,7 @@ function call(port: number, path: string, options: { method?: string; token?: st
 
 async function identityRead(machine: (() => { kind: string; color: string } | null) | undefined) {
   const devicesDir = mkdtempSync(join(tmpdir(), 'conversation-machine-devices-'))
-  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => devicesDir })
+  const devices = createTailnetDeviceStore({ database: testDatabaseAt(devicesDir) })
   const server = createTailnetGatewayServer({
     bindAddress: '127.0.0.1',
     port: 0,

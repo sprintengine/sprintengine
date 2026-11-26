@@ -59,6 +59,8 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * client reads that way.
  * The browsers paired with the web listener (`web-devices.ts`): who may reach
  * this Studio from a browser.
+ * What a web tab asks of the Studio that served it (`web-tab.ts`): this
+ * machine's folders and the ports its agents listen on.
  * The machines this computer offers (`hosts.ts`): a refresh starts WSL here.
  * A method joins this list with its reason, in the change that makes it an
  * owner's; anything else reaches a paired client by its scope.
@@ -256,6 +258,12 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'webDevices.approve',
   'webDevices.decline',
   'webDevices.changed',
+  // What a web tab asks of the Studio that served it: this machine's folders and its agents' ports.
+  'webFolders.browse',
+  'webPreviews.list',
+  'webPreviews.open',
+  'webPreviews.close',
+  'webPreviews.changed',
 ]
 
 const entries = (): Array<[StudioMethod | StudioTopic, StudioAccess, 'method' | 'topic']> => [

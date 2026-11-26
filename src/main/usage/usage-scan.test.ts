@@ -1,3 +1,4 @@
+import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from '../../server/db/database'
 import assert from 'node:assert/strict'
 import { createReadStream } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
@@ -186,34 +187,47 @@ test('Codex: an older rollout is read from its running totals, differenced', asy
   assert.equal(entries[0]!.title, 'Second line')
 })
 
-test('Studio transcripts: usage, reported cost and the CLI session each turn ran', async () => {
+test('Studio chats: usage, reported cost and the CLI session each turn ran, from the database', async () => {
   const root = join(home, 'project')
   const dir = join(root, '.sprintengine', 'conversations', 'ws-1')
-  await mkdir(dir, { recursive: true })
-  roots.studioDirs = [{ dir, workspaceId: 'ws-1', root }]
-  await writeFile(join(dir, 'index.json'), JSON.stringify({ threads: [{ agentId: 'chat 1', title: 'Release notes' }] }))
-  const turn = (minutes: number, payload: Record<string, unknown>) => ({
+  const dataDir = join(home, 'data')
+  roots.studioDirs = [{ dir, workspaceId: 'ws-1', root, chatKey: 'store-1/ws-1' }]
+  roots.studioDatabase = join(dataDir, STUDIO_DATABASE_FILENAME)
+  const turn = (seq: number, minutes: number, payload: Record<string, unknown>) => ({
     type: 'turn_completed',
+    seq,
     providerId: 'cursor-agent',
     modelId: 'auto',
     createdAt: Date.parse(at(minutes)),
     payload,
   })
-  await writeFile(
-    join(dir, 'chat%201.jsonl'),
-    jsonl([
-      { type: 'user_message', createdAt: Date.parse(at(0)), payload: { text: 'hello' } },
-      turn(1, {
-        usage: { inputTokens: 12, outputTokens: 30, cacheReadTokens: 500 },
-        costUsd: 0.25,
-        providerCursor: { sessionId: 'cli-9' },
-      }),
-      // An older turn: no usage, a cost.
-      turn(2, { costUsd: 0.1 }),
-      // Nothing to count.
-      turn(3, {}),
-    ]),
+  const events = [
+    { type: 'user_message', seq: 1, createdAt: Date.parse(at(0)), payload: { text: 'hello' } },
+    turn(2, 1, {
+      usage: { inputTokens: 12, outputTokens: 30, cacheReadTokens: 500 },
+      costUsd: 0.25,
+      providerCursor: { sessionId: 'cli-9' },
+    }),
+    // An older turn: no usage, a cost.
+    turn(3, 2, { costUsd: 0.1 }),
+    // Nothing to count.
+    turn(4, 3, {}),
+  ]
+  const connection = prepareStudioDatabase(roots.studioDatabase)
+  connection.run(
+    "INSERT INTO chat_logs (log_key, workspace_root, generation, last_seq) VALUES ('store-1/ws-1/chat%201', ?, 'g', 4)",
+    [root],
   )
+  for (const event of events)
+    connection.run(
+      "INSERT INTO chat_events (log_key, seq, first_seq, type, turn_id, bytes, body) VALUES ('store-1/ws-1/chat%201', ?, ?, ?, NULL, 1, ?)",
+      [event.seq, event.seq, event.type, JSON.stringify(event)],
+    )
+  connection.run(
+    "INSERT INTO chat_threads (log_key, chat_key, folded_seq, thread, fold) VALUES ('store-1/ws-1/chat%201', 'store-1/ws-1', 4, ?, '{}')",
+    [JSON.stringify({ agentId: 'chat 1', title: 'Release notes' })],
+  )
+  connection.close()
   const { entries } = await scan()
   assert.equal(entries.length, 1)
   const [entry] = entries

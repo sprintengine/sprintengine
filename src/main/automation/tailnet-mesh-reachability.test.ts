@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -62,7 +63,7 @@ test('tailnet-mesh-reachability', async () => {
   /** One "machine": a listener with its device store, and a mesh that can ask others. */
   async function startMachine(name: string, options: { reachabilityIntervalMs?: number } = {}): Promise<Machine> {
     const dir = mkdtempSync(join(tmpdir(), `sprintengine-reach-${name}-`))
-    const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+    const devices = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
     const events: MeshEvent[] = []
     // The mesh is built first so the listener's reverse-grant hook can reach it.
     let mesh: TailnetMeshService
@@ -85,7 +86,7 @@ test('tailnet-mesh-reachability', async () => {
     const port = server.address()?.port ?? 0
     assert.ok(port > 0)
     mesh = createTailnetMeshService({
-      resolveUserDataDir: () => dir,
+      database: testDatabaseAt(dir),
       resolveDeviceName: () => name,
       resolvePeerName: async () => null,
       onEvent: (event) => events.push(event),

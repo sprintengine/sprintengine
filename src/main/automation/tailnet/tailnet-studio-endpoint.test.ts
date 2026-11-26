@@ -1,3 +1,4 @@
+import { testDatabaseAt } from '../../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { connect as connectTcp } from 'node:net'
@@ -72,7 +73,7 @@ const DISCOVERY: StudioDiscovery = {
 
 async function rig(clock: { now: number } | null = null, tools: McpToolRegistration[] = []): Promise<Rig> {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-studio-'))
-  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+  const devices = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
   const studio = await startTestServer({ backend: createFakeBackend(['agent-1']), discovery: DISCOVERY })
   const build = (port: number) =>
     createTailnetGatewayServer({
@@ -478,7 +479,7 @@ async function stubbornStream(
 
 test('a stream evicted past its budget is served nothing more, and let go of, though its client ignores the close', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-stream-evicted-'))
-  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+  const devices = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
   let calls = 0
   const gateway = createTailnetGatewayServer({
     bindAddress: '127.0.0.1',
@@ -554,7 +555,7 @@ test('a device holds only its newest tickets', async () => {
 
 test('a tool stream that sends faster than it is answered is closed, not queued for without end', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-stream-queue-'))
-  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+  const devices = createTailnetDeviceStore({ database: testDatabaseAt(dir) })
   let started = 0
   const never = new Promise<never>(() => undefined)
   const gateway = createTailnetGatewayServer({

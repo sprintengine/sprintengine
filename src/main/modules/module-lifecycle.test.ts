@@ -1,3 +1,4 @@
+import { keepTestApprovalsIn } from '../../../tests/studio-database'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -94,6 +95,7 @@ test('a module is listed with its switch, whether it runs, why not, and what it 
 
 test('switches sent together are each kept, applied in order, and null is back to the default', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'module-lifecycle-'))
+  keepTestApprovalsIn(dataDir)
   dirs.push(dataDir)
   const applied: Array<Record<string, boolean>> = []
   const lifecycle = createModuleLifecycle({
@@ -121,6 +123,7 @@ test('switches sent together are each kept, applied in order, and null is back t
 
 test('a switch that cannot be applied now is still kept for the next start, and says why', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'module-lifecycle-'))
+  keepTestApprovalsIn(dataDir)
   dirs.push(dataDir)
   const lifecycle = createModuleLifecycle({
     dataDir,
@@ -139,6 +142,7 @@ test('a switch that cannot be applied now is still kept for the next start, and 
 
 test('a registry a window reports is held to its shape; nothing installed offers nothing and draws no frame', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'module-lifecycle-'))
+  keepTestApprovalsIn(dataDir)
   dirs.push(dataDir)
   const registry = createModuleRegistryMirror()
   const lifecycle = createModuleLifecycle({
@@ -164,6 +168,7 @@ test('a registry a window reports is held to its shape; nothing installed offers
 
 test('an approved extension’s surface is drawn from its verified entry, in the theme asked for, and kept for the web route', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'module-lifecycle-'))
+  keepTestApprovalsIn(dataDir)
   dirs.push(dataDir)
   const root = join(dataDir, 'modules')
   const folder = writeExtensionFolder(join(root, 'local.deck'), {
@@ -218,6 +223,7 @@ test('an approved extension’s surface is drawn from its verified entry, in the
 
 test('a frame is refused once a file deep in its installed folder changes, though no watcher told discovery', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'module-lifecycle-'))
+  keepTestApprovalsIn(dataDir)
   dirs.push(dataDir)
   const root = join(dataDir, 'modules')
   const folder = writeExtensionFolder(join(root, 'local.deck'), {
@@ -272,6 +278,7 @@ test('a frame is refused once a file deep in its installed folder changes, thoug
 
 test('a development folder registered over an installed extension waits for the person, who approves it in its place; removing it forgets its approval under every key', async () => {
   const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'module-lifecycle-')))
+  keepTestApprovalsIn(dataDir)
   dirs.push(dataDir)
   const root = join(dataDir, 'modules')
   const deck = (files: Record<string, string>) => ({
@@ -347,6 +354,7 @@ test('a development folder registered over an installed extension waits for the 
 
 test('an uninstall whose Settings values cannot be forgotten says so, and forgets the rest', async () => {
   const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'module-lifecycle-')))
+  keepTestApprovalsIn(dataDir)
   dirs.push(dataDir)
   const root = join(dataDir, 'modules')
   const source = writeExtensionFolder(join(dataDir, 'src'), {

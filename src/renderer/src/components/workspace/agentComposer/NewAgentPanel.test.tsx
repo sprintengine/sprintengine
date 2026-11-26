@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { environmentsForTest } from '../../../hooks/environments.double'
 
 import { EXTENSION_IDEAS } from './extensionIdeas'
 import { JSDOM } from 'jsdom'
@@ -136,6 +137,16 @@ test('NewAgentPanel', async () => {
     },
     getGitRepoRoot: async () => '/proj',
     meshListConnections: async () => meshConnections,
+    // The one list New chat reads machines from, made from the records above.
+    environmentsList: async () => {
+      const api = (dom.window as unknown as { api: Record<string, unknown> }).api
+      const ssh =
+        api.sshMachinesEnabled && typeof api.sshEnvironmentsList === 'function'
+          ? await (api.sshEnvironmentsList as () => Promise<never[]>)()
+          : []
+      return environmentsForTest({ hosts: hostsAnswer.hosts as never, ssh, paired: meshConnections as never })
+    },
+    onEnvironmentsChanged: () => () => {},
     getGitRepositoryIdentity: async (folderPath: string) => localIdentityAnswer(folderPath),
     onMeshEvent: () => () => {},
     defaultWorkspaceParentDir: async () => '/w',
@@ -195,6 +206,7 @@ test('NewAgentPanel', async () => {
   // `machineCheckout` does.
   const { fakePairedStudios } = await import('../../../studio/environmentStudio.double')
   const { StudioError } = await import('../../../../../../packages/client-runtime/src/public')
+  const { STUDIO_AGENT_SETTINGS_CAPABILITY } = await import('../../../../../../packages/studio-protocol/src/public')
   const pairedStudio = fakePairedStudios((dom.window as unknown as { api: object }).api, {
     'workspaces.list': (_params, connectionId) => {
       const browse = machineBrowse(connectionId)
@@ -245,7 +257,12 @@ test('NewAgentPanel', async () => {
     const { act } = await import('react')
     const { createRoot } = await import('react-dom/client')
     const NewAgentPanel = (await import('./NewAgentPanel')).default
-    const { resetRememberedMachineForTests, sortMachines } = await import('./NewAgentPanel')
+    const { resetRememberedMachineForTests: resetMachine } = await import('./NewAgentPanel')
+    const { resetEnvironmentsForTests } = await import('../../../hooks/useEnvironments')
+    const resetRememberedMachineForTests = () => {
+      resetMachine()
+      resetEnvironmentsForTests()
+    }
     const { useWorkspaceStore } = await import('../../../store/workspaceStore')
     const { projectHue } = await import('../../../utils/projectColor')
     const { useToastStore } = await import('../../../store/toastStore')
@@ -1541,10 +1558,6 @@ test('NewAgentPanel', async () => {
         seedStore()
         resetRememberedMachineForTests()
         meshConnections = [machine('m2', 'Studio'), machine('m1', 'Air'), machine('m3', 'mini')]
-        assert.deepEqual(
-          sortMachines(meshConnections as never).map((m) => m.machineName),
-          ['Air', 'mini', 'Studio'],
-        )
         const view = await remoteRender()
         await settle()
         const trigger = machineTrigger(view)
@@ -1815,6 +1828,8 @@ test('NewAgentPanel', async () => {
           ['No project', 'Chat in a folder of its own'],
           ['alpha', '/Users/dev/alpha'],
           ['beta', '/Users/dev/beta'],
+          // A folder there none of its chats stands in yet, typed by its path.
+          ['Another folder…', 'Type its path on Air'],
         ])
         view.unmount()
       },
@@ -1859,11 +1874,6 @@ test('NewAgentPanel', async () => {
             (row.querySelector('span.min-w-0')?.textContent ?? '').trim(),
           )
           assert.deepEqual(rows.slice(0, 3), ['This PC (Windows)', 'WSL: Ubuntu', 'WSL: Debian'])
-          assert.match(
-            menu.querySelector('[data-machine-host="wsl:Ubuntu"]')?.textContent ?? '',
-            /default$/u,
-            'the default distribution is marked',
-          )
           await click(buttonWithText(menu, 'WSL: Debian'))
           await settle()
           assert.equal(machineTrigger(view)?.textContent?.trim(), 'WSL: Debian')
@@ -1902,7 +1912,7 @@ test('NewAgentPanel', async () => {
           await settle()
           assert.equal(machineTrigger(inDistro)?.textContent?.trim(), 'WSL: Ubuntu', 'the folder names its machine')
           const distroMenu = await openMachineMenu(inDistro)
-          const debian = [...distroMenu.querySelectorAll<HTMLButtonElement>('[data-machine-host="wsl:Debian"]')][0]
+          const debian = [...distroMenu.querySelectorAll<HTMLButtonElement>('[data-machine-route="wsl:Debian"]')][0]
           assert.equal(debian?.disabled, true, 'another distribution cannot take a folder inside this one')
           assert.match(debian?.textContent ?? '', /cannot open a folder inside Ubuntu/u)
           // This PC can take it (owner ruling 2026-10-03): the pick wins over
@@ -1954,7 +1964,7 @@ test('NewAgentPanel', async () => {
         await settle()
         assert.equal(machineTrigger(view)?.textContent?.trim(), 'WSL: Ubuntu')
         const menu = await openMachineMenu(view)
-        const ubuntu = menu.querySelector<HTMLButtonElement>('[data-machine-host="wsl:Ubuntu"]')
+        const ubuntu = menu.querySelector<HTMLButtonElement>('[data-machine-route="wsl:Ubuntu"]')
         assert.equal(ubuntu?.disabled, false, 'a chat may pick the distribution')
         assert.doesNotMatch(ubuntu?.textContent ?? '', /run on This PC/u)
         await act(async () => {
@@ -2018,7 +2028,7 @@ test('NewAgentPanel', async () => {
         assert.equal(machineTrigger(view)?.textContent?.trim(), 'WSL: Ubuntu')
         assert.doesNotMatch(view.text(), /This PC only|Pick Claude Code/u, 'nothing says the chat cannot run there')
         const menu = await openMachineMenu(view)
-        const ubuntu = menu.querySelector<HTMLButtonElement>('[data-machine-host="wsl:Ubuntu"]')
+        const ubuntu = menu.querySelector<HTMLButtonElement>('[data-machine-route="wsl:Ubuntu"]')
         assert.equal(ubuntu?.disabled, false, 'a Codex chat may pick the distribution')
         assert.doesNotMatch(ubuntu?.textContent ?? '', /run on This PC/u)
         await act(async () => {
@@ -2044,6 +2054,89 @@ test('NewAgentPanel', async () => {
         resetRememberedMachineForTests()
       }
     })
+
+    // The agent picker for a chat on another machine lists that machine's
+    // agent CLIs, asked of its own Studio, never this computer's.
+    await check(
+      'a chat on another machine starts with an agent CLI that machine has, not one this computer has',
+      async () => {
+        const codex = {
+          id: 'codex',
+          displayName: 'Codex',
+          source: 'bundled',
+          version: 1,
+          binary: 'codex',
+          resumeSession: true,
+          sessionIdFromCaller: true,
+        }
+        const claude = { ...codex, id: 'claude-code', displayName: 'Claude Code', binary: 'claude' }
+        seedStore({ plugins: [claude, codex] })
+        useWorkspaceStore.setState({
+          cliAvailability: {
+            'claude-code': { cli: 'claude-code', installed: true, resolvedPath: '/usr/bin/claude', version: '1' },
+            codex: { cli: 'codex', installed: false, resolvedPath: null, version: null },
+          } as never,
+          cliAvailabilityStatus: 'ready' as never,
+        })
+        resetRememberedMachineForTests()
+        meshConnections = [machine('m1', 'Air')]
+        machineBrowse = (id) => ({
+          connectionId: id,
+          reachable: true,
+          unreachableReason: null,
+          unauthorized: false,
+          scopes: [],
+          workspaces: [workspace('w1', 'alpha', '/srv/alpha')],
+          gaps: [],
+        })
+        const asked: string[] = []
+        pairedStudio.capabilities.add(STUDIO_AGENT_SETTINGS_CAPABILITY)
+        pairedStudio.answers['cliRuntimes.detect'] = (params, connectionId) => {
+          asked.push(`${connectionId} ${String(params.cli)}`)
+          const installed = params.cli === 'codex'
+          return {
+            cli: params.cli,
+            binary: String(params.cli),
+            installed,
+            version: null,
+            resolvedPath: null,
+            hostId: 'local',
+            error: null,
+          }
+        }
+        try {
+          const remoteLaunches: Array<Record<string, unknown>> = []
+          const view = await remoteRender({
+            initialSelection: { kind: 'conversation' },
+            onLaunchRemote: async (launch: Record<string, unknown>) => {
+              remoteLaunches.push(launch)
+            },
+          })
+          await settle()
+          await pickMachine(view, 'Air')
+          await settle()
+          assert.ok(asked.includes('m1 codex'), `that machine is asked which CLIs it has: ${asked.join(', ')}`)
+          const field = composerField(view.container)
+          await act(async () => {
+            typeIntoComposer(field, 'hi')
+          })
+          await act(async () => {
+            field.dispatchEvent(
+              new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+            )
+          })
+          await settle()
+          assert.equal(remoteLaunches.length, 1)
+          assert.equal(remoteLaunches[0]?.cli, 'codex', 'the CLI that machine has')
+          view.unmount()
+        } finally {
+          pairedStudio.capabilities.delete(STUDIO_AGENT_SETTINGS_CAPABILITY)
+          delete pairedStudio.answers['cliRuntimes.detect']
+          useWorkspaceStore.setState({ cliAvailability: {} as never })
+          resetRememberedMachineForTests()
+        }
+      },
+    )
 
     await check('unreachable, unauthorized and workspace-gap machines say their real reason', async () => {
       seedStore()
@@ -2072,7 +2165,7 @@ test('NewAgentPanel', async () => {
         return text
       }
       assert.ok((await reasonFor('Down')).includes('Down is asleep.'), 'unreachable carries the machine’s reason')
-      assert.ok(/refused this pairing/.test(await reasonFor('Revoked')), 'unauthorized says re-pair')
+      assert.ok(/refused this computer/.test(await reasonFor('Revoked')), 'unauthorized says set it up again')
       assert.ok(
         (await reasonFor('Gap')).includes('may not list workspaces'),
         'a scope gap is the gap’s message, never "no workspaces"',
@@ -3617,6 +3710,15 @@ test('NewAgentPanel', async () => {
       'a schedule in a project on an SSH machine names that machine on the strip, not This device',
       async () => {
         seedStore()
+        resetRememberedMachineForTests()
+        // No project of its own is open on the machine yet.
+        machineBrowse = () => ({
+          reachable: true,
+          unreachableReason: null,
+          unauthorized: false,
+          workspaces: [],
+          gaps: [],
+        })
         const api = (dom.window as unknown as { api: Record<string, unknown> }).api
         const before = { enabled: api.sshMachinesEnabled, list: api.sshEnvironmentsList }
         api.sshMachinesEnabled = true
@@ -3624,7 +3726,7 @@ test('NewAgentPanel', async () => {
           { id: 'm1', label: 'dev@build-box', destination: 'dev@build-box', resolved: null, state: 'connected' },
         ]
         try {
-          const door = await scheduleDoor({ folderPath: 'ssh://m1/home/dev/proj' })
+          const door = await scheduleDoor({ folderPath: 'ssh://m1/home/dev/proj', onLaunchRemote: async () => {} })
           await settle()
           const toggle = await scheduleRow(door.view)
           await act(async () => {
@@ -3632,12 +3734,18 @@ test('NewAgentPanel', async () => {
           })
           await settle()
           assert.ok(door.view.container.querySelector('[data-schedule-tag="true"]'), 'scheduled')
+          // The project's machine is picked, as one picked by hand would be,
+          // with its folder there as that machine spells it.
           assert.equal(
-            door.view.container.querySelector('[data-machine-line]')?.textContent,
+            machineTrigger(door.view)?.textContent?.trim(),
             'dev@build-box',
             'the strip names the machine the project is on',
           )
-          assert.equal(machineTrigger(door.view), undefined, 'and offers no machine to pick in its place')
+          assert.equal(
+            door.view.container.querySelector<HTMLInputElement>('input[aria-label^="Folder on"]')?.value,
+            '/home/dev/proj',
+            'in its folder there',
+          )
           // Saved, it is made on that machine, by its folder there: never in this desktop's store.
           const made: Array<{ connectionId: string; params: Record<string, unknown> }> = []
           // The first try's answer is lost: the retry is the same command there.

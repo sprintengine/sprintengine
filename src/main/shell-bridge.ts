@@ -3,7 +3,6 @@ import type { SafeStorage } from 'electron'
 import type { TerminalLaunchPreparation } from '../server/terminals/terminal-launch-preparation'
 import type { Notifier } from '../server/platform/notifier'
 import { safeStorageProtects } from './platform/safe-storage-protects'
-import { downscaleConversationImage, type ImageCodec } from './conversation-image-downscale'
 import {
   utf8Bytes,
   utf8Text,
@@ -13,15 +12,13 @@ import {
 } from '../server/shell-bridge/shell-bridge'
 
 // The shell's own `ShellBridge`: each member is the shell service that does
-// the thing. The server's code calls this directly when it runs in main (the
-// flag-off path), and the shell serves it over the control channel when the
-// server runs in a process of its own (serve-shell-bridge.ts), so the two paths
-// meet the same answers.
+// the thing. The shell serves it to the Studio server over the control
+// channel (serve-shell-bridge.ts).
 //
 // Everything is handed in, so a test builds one over stand-ins and the
 // contract suite runs the same cases against this and the remote one.
 
-export type InProcessShellBridgeDeps = {
+export type ShellBridgeDeps = {
   safeStorage: Pick<SafeStorage, 'isEncryptionAvailable' | 'encryptString' | 'decryptString'> &
     Partial<Pick<SafeStorage, 'getSelectedStorageBackend'>>
   /**
@@ -36,13 +33,11 @@ export type InProcessShellBridgeDeps = {
   analytics: (event: ShellAnalyticsEvent) => void
   /** The shell's integrations gate: the launcher and plugin home written. */
   integrationsReady: () => Promise<void>
-  /** The image codec uploads are shrunk with (`nativeImage` in the app). */
-  imageCodec: ImageCodec
 }
 
 const LAUNCHES_NOT_READY = 'Studio is still starting, so this agent’s launch could not be prepared yet.'
 
-export function createInProcessShellBridge(deps: InProcessShellBridgeDeps): ShellBridge {
+export function createShellBridge(deps: ShellBridgeDeps): ShellBridge {
   return {
     cipher: {
       available: async () => safeStorageProtects(deps.safeStorage),
@@ -75,8 +70,5 @@ export function createInProcessShellBridge(deps: InProcessShellBridgeDeps): Shel
       deps.analytics(event)
     },
     integrationsReady: () => deps.integrationsReady(),
-    images: {
-      downscale: async (bytes, mediaType) => downscaleConversationImage(deps.imageCodec, bytes, mediaType),
-    },
   }
 }

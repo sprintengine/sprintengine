@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 
@@ -8,8 +7,7 @@ import {
   authorizeStudioAccess,
 } from '../../../packages/studio-protocol/src/public'
 import { secretsMatch } from '../../main/automation/tailnet/secret-hash'
-import { WEB_HTTP_ACCESS, webTunnelPrincipal } from '../../shared/web-tunnel-access'
-import type { TunnelClient, TunnelPort } from '../ipc/ipc-tunnel'
+import { WEB_HTTP_ACCESS, webSessionPrincipal } from '../../shared/web-http-access'
 import { gateWebRequest, normalizeOrigin, requestOrigin, type WebOriginPolicy } from './web-origins'
 import {
   AUTHENTICATED_HEADERS,
@@ -27,7 +25,6 @@ import {
   WEB_CLOSE_REVOKED,
   acceptWebSocket,
   refuseUpgrade,
-  tunnelPortOf,
   webSocketKeyOf,
   webSocketStream,
   type WebSocketPeer,
@@ -51,7 +48,6 @@ import type { WebUploads } from './web-uploads'
 //   POST /api/logout                         forget this browser
 //   GET  /, any app route                    the app (session, else to /pair)
 //   WS   /ws                                 the Studio protocol (cookie, or ?ticket=)
-//   WS   /ws/ipc                             the window.api domains the server owns (owner cookie)
 //
 // Every request names this listener in `Host`; every upgrade and every
 // request that is not a GET carries one of its origins exactly (web-origins).
@@ -62,12 +58,6 @@ const MAX_JSON_BODY_BYTES = 16 * 1024
 export type WebStudioAttach = {
   /** Serve a Studio protocol connection over this stream for a browser session or a ticket's subject. */
   connect(stream: Duplex, who: { session: WebSession } | { ticket: WebTicketSubject }): void
-}
-
-export type WebTunnelAttach = {
-  /** A tab's tunnel, the browser session it belongs to, and the origin the tab was opened on. */
-  attach(client: TunnelClient, port: TunnelPort, session: WebSession, origin: string): void
-  detach(clientId: string): void
 }
 
 /** A route a later part of the server adds (the embed's pages, previews' entry), tried before the app's fallback. */
@@ -90,7 +80,6 @@ export type WebListenerOptions = {
   /** A secret only a process that can read the run file holds: what `studio-server pair` proves itself with. */
   mintKey: string
   studio: WebStudioAttach
-  tunnel?: WebTunnelAttach | null
   /** Pairing by approval: a browser asks, the owner types the digits it shows. */
   pairRequests?: PairRequests | null
   /** Files an owner's tab drops into a message, saved on the server for the agent to read by path. */
@@ -325,7 +314,7 @@ export function createWebListener(options: WebListenerOptions): WebListener {
 
     if (url.pathname === '/api/upload' && method === 'POST' && options.uploads) {
       const session = sessionOf(request)
-      if (!session || !authorizeStudioAccess(webTunnelPrincipal(session), WEB_HTTP_ACCESS.upload).ok) {
+      if (!session || !authorizeStudioAccess(webSessionPrincipal(session), WEB_HTTP_ACCESS.upload).ok) {
         sendJson(response, session ? 403 : 401, { ok: false, message: 'Only a paired owner browser can upload.' })
         return
       }
@@ -442,8 +431,8 @@ export function createWebListener(options: WebListenerOptions): WebListener {
         host: request.headers.host,
         origin: typeof request.headers.origin === 'string' ? request.headers.origin : undefined,
         upgrade: true,
-        // Only where a ticket is what admits the socket: `/ws/ipc` admits by
-        // the cookie alone, so a `?ticket=` there must not stand in for an Origin.
+        // Only where a ticket is what admits the socket: elsewhere a
+        // `?ticket=` must not stand in for an Origin.
         ticket: ticket !== null && url.pathname === '/ws',
       },
       policy(),
@@ -466,32 +455,6 @@ export function createWebListener(options: WebListenerOptions): WebListener {
       const peer = acceptWebSocket(socket, key.key, head)
       hold(session.id, peer)
       options.studio.connect(webSocketStream(peer), { session })
-      return
-    }
-
-    if (url.pathname === '/ws/ipc') {
-      const tunnel = options.tunnel
-      if (!tunnel) return refuseUpgrade(socket, 404, 'not_found')
-      // The tunnelled domains are the owner's: they have no scopes of their own.
-      const session = sessionOf(request)
-      if (!session) return refuseUpgrade(socket, 401, 'unauthorized')
-      if (!session.owner) return refuseUpgrade(socket, 403, 'owner_required')
-      const peer = acceptWebSocket(socket, key.key, head)
-      hold(session.id, peer)
-      const windowId = url.searchParams.get('windowId')
-      const clientId = `web-${session.id.slice(0, 8)}-${randomBytes(6).toString('hex')}`
-      tunnel.attach(
-        {
-          clientId,
-          windowId: windowId && /^[\w-]{1,64}$/u.test(windowId) ? windowId : null,
-          kind: 'web-tab',
-          workspaceWindow: true,
-        },
-        tunnelPortOf(peer),
-        session,
-        requestOrigin(request.headers.host ?? '', policy()),
-      )
-      peer.onClose(() => tunnel.detach(clientId))
       return
     }
 

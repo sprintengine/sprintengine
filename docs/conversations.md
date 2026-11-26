@@ -232,7 +232,7 @@ on the same block; today `editor.open_diff` opens one outside the chat.
 **Who writes.** The tool only opens the view. It resolves each path
 (absolute, `~/`, or relative to the agent's folder), checks the file is text
 and at most 2 MB, and writes down in Studio's data folder that this chat
-showed it (`server/file-views/file-views.ts`, `file-views.json`). It writes
+showed it (`server/file-views/file-views.ts`, the database's `file_views`). It writes
 no file, and it does not see what the person types. A save is the person's:
 their edit, sent by their own connection to the chat's Studio
 (`fileViews.write`, needing `conversation:operate`), for a path that chat
@@ -580,16 +580,19 @@ schedule, a pull-request wake), which runs each as a command under the
 caller's `commandId`, or one made for a caller that gave none
 (`ConversationRuntime.runCommand`). Revert, rewind, fork, handoff, stopping
 one sub-agent and side questions are not commands of this kind yet: the hosts
-that take them remember their ids in memory. The chat's transcript is its one
-log: beside the events it holds each command's receipt, a line with no `type`
-that every reader passes over (`conversation-command-receipts.ts`).
+that take them remember their ids in memory. The chat's log, in the data
+folder's database (`server/db/chat-logs.ts`, `docs/data-folder.md`), is its
+one record: beside its events it holds each command's receipt, written in the
+same transaction as what the command committed
+(`conversation-command-receipts.ts`). A receipt is kept for as long as the
+chat; a retry however many commands later is still recognised.
 
 - **A turn command** (a send, a steer, a message to one sub-agent) is
   _accepted_ when its `user_message` and its receipt are committed in one
-  write. The provider turn is what it then does. The send is _answered_ when
+  transaction. The provider turn is what it then does. The send is _answered_ when
   that turn ends, as the protocol promises, and the answer is written to the
   log too. The turn is the command's effect, and the chat is listed in the
-  data directory's `conversation-outbox.json` before its message commits; if
+  database's open-turn list (`turn_outbox`) before its message commits; if
   Studio stops before the turn ends, the next start closes every listed chat's
   open turn as interrupted, in its log, without anyone opening the chat
   (`recoverInterruptedTurns`; on a WSL or SSH machine, the next start of that
@@ -613,7 +616,7 @@ that every reader passes over (`conversation-command-receipts.ts`).
   (`scheduled-agents/run-recovery.ts`).
 - **Where background work runs.** Every Studio server runs its own schedules
   and pull request watches, with its scheduled messages and usage-limit
-  resumes: the desktop's (in process or out), a standalone server, a WSL
+  resumes: the desktop's (in its own process), a standalone server, a WSL
   distribution's and an SSH machine's (`server/core/studio-scheduled-agents.ts`,
   composed by `createStudioCore`). A schedule runs on the server whose store
   holds it, in its chats, from its worktree pool. New chat makes a schedule
@@ -626,9 +629,11 @@ that every reader passes over (`conversation-command-receipts.ts`).
   machine's folder never runs there: the scheduler reads it as waiting, and
   Run now is refused (`scheduleWaitsForHandOver`), until it is handed over
   (`environment-migration-stores.ts`, `handOverSchedulesWhenSaved`). The
-  desktop's Scheduled section lists each machine's schedules from that
-  machine's own server, on the route the window follows its chats on
-  (`sidebar/useRemoteScheduledAgents.ts`), and opens one in New chat's
+  desktop's Scheduled section lists the schedules of every machine in the
+  environment list that is answering, whatever kind of machine it is, from
+  that machine's own server on its route, kept current by its
+  `schedules.changed` push (`sidebar/useRemoteScheduledAgents.ts`); what this
+  desktop may do with them is its grant there. It opens one in New chat's
   editor, which saves, pauses and runs it on that machine by its route.
   Pause all and Resume all cover this device and each machine it owns whose
   schedules the section lists, and say which machine they could not reach.
@@ -666,10 +671,10 @@ that every reader passes over (`conversation-command-receipts.ts`).
   and spends nothing; the client starts the chat again and resends under the
   same id, which the receipt answers. A keyed send asks the conversation host
   whether it was held or carried out before its uploads are staged.
-- A launched chat's first message is written down whole, its pictures in the
-  folder beside it (`conversation-first-messages.json`,
-  `conversation-first-messages/`), and flushed to the disk before the chat is
-  made, under an id derived from the launch's. One that cannot be written
+- A launched chat's first message is written down whole, in the data
+  folder's database (`docs/data-folder.md`) with its pictures in
+  `conversation-first-messages/`, and committed before the chat is made,
+  under an id derived from the launch's. One that cannot be written
   refuses the launch. It is kept until the chat has answered it for good
   (taken, or refused in an answer its log keeps). A refusal the log did not
   keep, such as a busy chat or an agent that would not start, keeps it, and
