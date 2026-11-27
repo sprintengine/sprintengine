@@ -66,6 +66,14 @@ interactive part.
 
 - Top of the content region, directly under the panel's chrome, full width of
   the column it describes — not the screen, if the panel is one pane of many.
+- Never above the window's band, the 36px top row. That row is the window's
+  chrome, the drag region and the home of the caption buttons. A strip over it
+  pushes the band down and reads as an error printed on the title bar.
+- A condition about the whole window rather than one panel (the Studio server
+  starting, reconnecting or stopped) sits at the **foot of the workspace
+  card**, full width of the card, inside its rounded bottom corners. The
+  card's top is not free: the band floats over the layout's top row of tab
+  strips there. (Owner ruling 2026-11-27.)
 - One line. The message states the condition ("Feed unavailable"), not the
   exception; detail belongs behind the action or in an `inline-notice` at the
   failure site. A banner that needs to wrap is carrying a paragraph that
