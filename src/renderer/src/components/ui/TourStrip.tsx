@@ -79,10 +79,7 @@ export function TourStrip({
           {pointer.index + 1} →
         </ChipButton>
       ) : null}
-      <Tooltip
-        content={playing ? copy.ui.tourStrip.pause : copy.ui.tourStrip.playAdvanceAtReadingPace}
-        placement="bottom"
-      >
+      <Tooltip content={playing ? copy.ui.tourStrip.pauseTour : copy.ui.tourStrip.playTour} placement="bottom">
         <IconButton
           aria-label={playing ? copy.ui.tourStrip.pauseTour : copy.ui.tourStrip.playTour}
           pressed={playing}

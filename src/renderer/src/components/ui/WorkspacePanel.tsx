@@ -16,7 +16,6 @@ export type WorkspacePanelHandle = {
 
 type Props = {
   title: string
-  subtitle?: string
   titleId?: string
   onClose?: () => void
   closeLabel?: string
@@ -30,7 +29,6 @@ type Props = {
 export const WorkspacePanel = forwardRef<WorkspacePanelHandle, Props>(function WorkspacePanel(
   {
     title,
-    subtitle,
     titleId,
     onClose,
     closeLabel = 'Close',
@@ -64,7 +62,6 @@ export const WorkspacePanel = forwardRef<WorkspacePanelHandle, Props>(function W
     >
       <PanelHeader
         title={title}
-        subtitle={subtitle}
         titleId={headingId}
         primaryAction={onClose ? <CloseIconButton size="md" aria-label={closeLabel} onClick={onClose} /> : undefined}
       />

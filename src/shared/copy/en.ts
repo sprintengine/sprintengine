@@ -4672,7 +4672,6 @@ export const en = {
       code: (languageName: unknown, filename: unknown) => `${languageName} code, ${filename}`,
       code2: (languageName: unknown) => `${languageName} code`,
       codeActions: 'Code actions',
-      pasteIntoTerminalItRuns: 'Paste into terminal — it runs when you press Enter',
       pasteIntoTerminal: 'Paste into terminal',
       wrapLines: 'Wrap lines',
       showSource: 'Show source',
@@ -4877,8 +4876,6 @@ export const en = {
       stepOf: (value: unknown, count: unknown) => `Step ${value} of ${count}`,
       tourSteps: 'Tour steps',
       agentPointsToStep: 'Agent points to step ',
-      pause: 'Pause',
-      playAdvanceAtReadingPace: 'Play — advance at reading pace',
       pauseTour: 'Pause tour',
       playTour: 'Play tour',
       followAgent: 'Follow agent',
@@ -4912,21 +4909,19 @@ export const en = {
       allMachines: 'All machines',
       thisMachine: (label: unknown) => `${label} (this machine)`,
       period: 'Period',
-      readTheLogsAgain: 'Read the logs again',
       refreshUsage: 'Refresh usage',
       usage: 'Usage',
       usageCouldNotBeRead: 'Usage could not be read',
       tryAgain: 'Try again',
-      readingYourAgentsSessionLogs: "Reading your agents' session logs…",
+      readingYourAgentsSessionLogs: 'Loading usage…',
       noUsageInThisPeriod: 'No usage in this period',
       noAgentSessionsOnThis: 'No agent sessions on this machine yet',
       pickALongerPeriodTo: 'Pick a longer period to see earlier sessions.',
-      usageAppearsOnceClaudeCode: 'Usage appears once Claude Code, Codex, OpenCode, Gemini or Grok runs here.',
+      usageAppearsOnceClaudeCode:
+        'When Claude Code, Codex, OpenCode, Gemini or Grok runs on this machine, its usage will show here.',
       overview: 'Overview',
       byAgent: 'By agent',
       aPIEstimate: 'API estimate',
-      fromASyncedFolderRestored: 'From a synced folder, restored backup or WSL share',
-      countedOnceAcrossMachines: ' counted once across machines',
       machines: 'Machines',
       askingYourOtherMachines: 'Asking your other machines',
       usageByMachine: 'Usage by machine',
@@ -4960,7 +4955,7 @@ export const en = {
     usageLimitsView: {
       noUsageLimitsReportedYet: 'No usage limits reported yet',
       theyAppearAfterASubscription:
-        'They appear after a subscription chat runs a turn, or a Claude terminal shows its status line.',
+        'When a subscription chat finishes a turn, or a Claude terminal shows its status line, its limits will show here.',
     },
   },
   utils: {
@@ -5076,12 +5071,10 @@ export const en = {
       notResumed: 'Not resumed',
       schedulePaused: 'Schedule paused',
       scheduleResumed: 'Schedule resumed',
-      nextRunMissedRunsAren: (whenWords: unknown) => `Next run ${whenWords}. Missed runs aren't made up.`,
+      nextRun: (whenWords: unknown) => `Next run ${whenWords}.`,
       runsAgainOnceScheduledAgents: 'Runs again once scheduled agents are unpaused.',
-      noRunsUntilThenRunning: (where: unknown) => `No runs until then; running ones carry on.${where}`,
       scheduledAgentsResumed: 'Scheduled agents resumed',
       notResumed2: (join: unknown) => `Not resumed: ${join}`,
-      eachRunsAtItsNext: 'Each runs at its next time. Ones you paused yourself stay paused.',
     },
     // src/renderer/src/utils/settingsUpdateBadges.ts
     settingsUpdateBadges: {
@@ -5180,7 +5173,6 @@ export const en = {
     // src/renderer/src/web/FolderBrowserDialog.tsx
     folderBrowserDialog: {
       chooseAFolder: 'Choose a folder',
-      foldersOnTheMachineStudio: 'Folders on the machine Studio runs on.',
       folderPath: 'Folder path',
       folders: 'Folders',
       gitRepository: 'Git repository',
@@ -5194,7 +5186,6 @@ export const en = {
     // src/renderer/src/web/webBuildWatch.ts
     webBuildWatch: {
       studioWasUpdated: 'Studio was updated',
-      reloadThisTabToUse: 'Reload this tab to use it. Until then, it keeps working.',
       later: 'Later',
       reload: 'Reload',
     },

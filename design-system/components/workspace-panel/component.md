@@ -3,7 +3,7 @@
 The full-height content surface: one [panel header](../panel-header/component.md)
 band, an optional category rail, and a scrolling body whose text is capped to a
 reading measure and centred. It is what a settings surface, a wizard step or a
-managed list is built *inside* — the frame, not the content. Extracted from the
+managed list is built _inside_ — the frame, not the content. Extracted from the
 shipped `WorkspacePanel` primitive
 (`src/renderer/src/components/ui/WorkspacePanel.tsx`).
 
@@ -16,14 +16,14 @@ of a dialog in another.
 
 ## Anatomy
 
-| Part | Class | Required |
-|---|---|---|
-| Panel | `.ds-workspace-panel` | yes — a `<section>` named by its header, `bg.app`, full height, flex column |
-| Header | `.ds-panel-header` | yes — the panel-header band, unchanged; the close affordance is its primary action |
-| Body | `.ds-workspace-panel-body` | yes — the row (or column) holding the rail and the scroller |
-| Rail | `.ds-workspace-panel-rail` | no — an `<aside>` of categories, `bg.surface-raised`, one hairline against the scroller |
-| Scroller | `.ds-workspace-panel-scroll` | yes — the one scroll container; the header never scrolls with it |
-| Measure | `.ds-workspace-panel-measure` | yes — the capped, centred column the content sits in |
+| Part     | Class                         | Required                                                                                |
+| -------- | ----------------------------- | --------------------------------------------------------------------------------------- |
+| Panel    | `.ds-workspace-panel`         | yes — a `<section>` named by its header, `bg.app`, full height, flex column             |
+| Header   | `.ds-panel-header`            | yes — the panel-header band, unchanged; the close affordance is its primary action      |
+| Body     | `.ds-workspace-panel-body`    | yes — the row (or column) holding the rail and the scroller                             |
+| Rail     | `.ds-workspace-panel-rail`    | no — an `<aside>` of categories, `bg.surface-raised`, one hairline against the scroller |
+| Scroller | `.ds-workspace-panel-scroll`  | yes — the one scroll container; the header never scrolls with it                        |
+| Measure  | `.ds-workspace-panel-measure` | yes — the capped, centred column the content sits in                                    |
 
 **One band of chrome, and it is the shared one.** The panel does not draw its
 own title row: it composes `panel-header`, which is what makes "one header" true
@@ -39,7 +39,7 @@ the same class of value as the side pane's rails.
 
 **The rail is a column of categories, never a list of things.** It is
 `space.xs` of padding around rows the consumer supplies, 192px wide at panel
-width, and it stacks *above* the body on a narrow window rather than shrinking:
+width, and it stacks _above_ the body on a narrow window rather than shrinking:
 a rail thinner than its longest label is a rail nobody can read.
 
 ## Variants
@@ -61,13 +61,13 @@ a rail thinner than its longest label is a rail nobody can read.
 
 ## States
 
-| State | Treatment |
-|---|---|
-| Rest | `bg.app` ground under a `bg.surface` header band; the rail one tone step up at `bg.surface-raised` |
-| Mounted | The panel takes focus once, on the section itself (`tabindex="-1"`), so the keyboard starts inside the surface rather than wherever it was |
-| Mounted without focus | Opt-out for a panel mounting behind something else — focus stays where the person left it |
-| Scrolled | Only the scroller moves. The header band and the rail stay put |
-| Narrow | The rail unstacks above the body; the measure keeps its inset and gives up its cap |
+| State                 | Treatment                                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Rest                  | `bg.app` ground under a `bg.surface` header band; the rail one tone step up at `bg.surface-raised`                                         |
+| Mounted               | The panel takes focus once, on the section itself (`tabindex="-1"`), so the keyboard starts inside the surface rather than wherever it was |
+| Mounted without focus | Opt-out for a panel mounting behind something else — focus stays where the person left it                                                  |
+| Scrolled              | Only the scroller moves. The header band and the rail stay put                                                                             |
+| Narrow                | The rail unstacks above the body; the measure keeps its inset and gives up its cap                                                         |
 
 The panel has no hover, selected or disabled state. It is a frame; every state
 belongs to something inside it.
@@ -120,11 +120,6 @@ being focusable and named by its own heading.
 
 ## Known drift
 
-- **The header still accepts a subtitle here.** `WorkspacePanel` forwards a
-  `subtitle` to `PanelHeader`, and the panel-header entry rules that band to
-  "no status chips, no counts line, no subtitle sentence" — a scope word is the
-  ceiling. Every consumer passing prose in that slot is a redesign signal, and
-  the prop should narrow to the header's `scope` shape.
 - The 192px rail width and the 760px measure are computed layout values with no
   comment in the source saying what they line up with. They are legitimate
   measures rather than missing tokens, but the principles ask an off-scale
