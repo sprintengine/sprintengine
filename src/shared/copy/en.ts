@@ -2619,6 +2619,10 @@ export const en = {
       },
       // mobile/src/features/conversations/conversationParts.tsx
       conversationParts: {
+        thinking: 'Thinking',
+        thinkingNow: 'Thinking…',
+        reasoning: 'Reasoning',
+        linkCannotBeOpened: 'This link cannot be opened from a conversation.',
         failed: (summary: unknown, failed: unknown) => `${summary}, ${failed} failed`,
         sideQuestion: (question: unknown) => `Side question: ${question}`,
         sideQuestion2: 'Side question',
@@ -2633,6 +2637,7 @@ export const en = {
       },
       // mobile/src/features/conversations/ConversationScreen.tsx
       conversationScreen: {
+        commandOutput: 'Command output',
         chat: 'Chat',
         viewChangedFiles: 'View changed files',
         branch: 'Branch',

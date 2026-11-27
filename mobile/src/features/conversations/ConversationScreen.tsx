@@ -2206,7 +2206,7 @@ const ConversationItem = memo(function ConversationItem({
       <Text style={styles.meta}>{row.output}</Text>
     ) : (
       <View style={styles.commandBox}>
-        <Text style={styles.commandHead}>{row.command ? `/${row.command}` : "Command output"}</Text>
+        <Text style={styles.commandHead}>{row.command ? `/${row.command}` : appCopy.phone.conversations.conversationScreen.commandOutput}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.commandBody}>
           <Text selectable style={styles.commandText}>
             {row.output}
