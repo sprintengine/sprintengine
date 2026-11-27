@@ -133,7 +133,7 @@ test('a folder that lists quickly simply opens', async () => {
   expect(document.querySelector('[aria-label="Loading folder"]')).toBeNull()
 })
 
-test('a chat on an SSH machine says its files open in a later version, and offers no folder of this computer', async () => {
+test('a chat on an SSH machine says its folder is on that machine, and offers no folder of this computer', async () => {
   const workspaceId = useWorkspaceStore.getState().addWorkspace(template, {
     name: 'Proj',
     folderPath: 'ssh://machine-1/home/dev/proj',
@@ -157,7 +157,7 @@ test('a chat on an SSH machine says its files open in a later version, and offer
   )
   await settle()
 
-  expect(host.textContent).toContain('Files on dev@build-box open in a later version')
+  expect(host.textContent).toContain("This chat's folder is on dev@build-box and can't be browsed from here.")
   expect(host.textContent).not.toContain('No folder open')
   const buttons = Array.from(host.querySelectorAll('button')).map((button) => button.textContent?.trim())
   expect(buttons).not.toContain('Open folder')

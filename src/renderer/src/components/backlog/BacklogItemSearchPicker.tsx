@@ -103,17 +103,13 @@ export function BacklogItemSearchPicker({
           autoFocus
         />
       </div>
-      {/* Copy a person reads is readable ink: the helper line is `text-muted`,
-          and a list that came back empty is the kit's list-density empty state
-          — never disabled ink, which is certified only to a non-text floor. */}
+      {/* A list that came back empty is the kit's list-density empty state —
+          never disabled ink, which is certified only to a non-text floor. Before
+          a query the field's placeholder says what to type. */}
       {!hasQuery ? (
         options.length === 0 ? (
           <EmptyState density="list" title={noOptionsMessage} />
-        ) : (
-          <p className="px-2.5 py-2 text-meta text-[color:var(--text-muted)]">
-            {copy.backlog.backlogItemSearchPicker.typeAnItemIDOr}
-          </p>
-        )
+        ) : null
       ) : visible.length === 0 ? (
         <EmptyState density="list" title={copy.backlog.backlogItemSearchPicker.noMatchingItems} />
       ) : (
@@ -167,8 +163,7 @@ export function BacklogItemSearchPicker({
           })}
           {remaining > 0 ? (
             <p className="px-2.5 py-1.5 text-micro text-[color:var(--text-muted)]">
-              {remaining}
-              {copy.backlog.backlogItemSearchPicker.moreRefineTheSearch}
+              {copy.backlog.backlogItemSearchPicker.moreMatch(remaining)}
             </p>
           ) : null}
         </div>

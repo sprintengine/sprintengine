@@ -94,7 +94,6 @@ export const en = {
     // src/renderer/src/components/auxWindows/DiffViewer.tsx
     diffViewer: {
       thisFileCannotBeRead: 'This file cannot be read from here.',
-      showInTheAppEsc: 'Show in the app (Esc just closes this window)',
       showInTheApp: 'Show in the app',
       diffSettings: 'Diff settings',
       wordWrap: 'Word wrap',
@@ -288,9 +287,11 @@ export const en = {
     // src/renderer/src/components/backlog/BacklogItemSearchPicker.tsx
     backlogItemSearchPicker: {
       clearItemSearch: 'Clear item search',
-      typeAnItemIDOr: 'Type an item ID or name.',
       noMatchingItems: 'No matching items.',
-      moreRefineTheSearch: ' more — refine the search.',
+      moreMatch: (remaining: number) =>
+        remaining === 1
+          ? '1 more item matches. Type more to narrow the list.'
+          : `${remaining} more items match. Type more to narrow the list.`,
     },
     // src/renderer/src/components/backlog/BacklogLinksSection.tsx
     backlogLinksSection: {
@@ -432,7 +433,6 @@ export const en = {
       workspaces: 'Workspaces',
       subsystems: 'Subsystems',
       performanceDiagnostics: 'Performance Diagnostics',
-      devPolling: 'dev · polling ',
       clearMemoryBaseline: 'Clear memory baseline',
       markCurrentMetricsAsBaseline: 'Mark current metrics as baseline',
       copyDiagnosticsReportToClipboard: 'Copy diagnostics report to clipboard',
@@ -471,8 +471,6 @@ export const en = {
       threads: 'Threads',
       fDs: 'FDs',
       processMetricsUnavailable: 'Process metrics unavailable.',
-      electronRowsWorkingSetChild:
-        "Electron rows: working set; child rows: OS RSS. Not macOS physical footprint, so Activity Monitor may differ. CPU % is since the last sample. FD counts aren't collected.",
       memoryTrend: 'Memory trend',
       reportedProcessMemory2: 'Reported process memory ',
       rendererJSHeap: 'renderer JS heap ',
@@ -501,8 +499,7 @@ export const en = {
       fPS: 'FPS ',
       longFramesRecorded: 'Long frames recorded',
       longFrames: 'Long frames ',
-      frameDurationsMsSpikesAre: 'Frame durations (ms) — spikes are stutters',
-      perFrameJankNoSingle: 'Per-frame jank no single >50ms task shows. GPU draw stalls may read low; check DevTools.',
+      frameDurationsMs: 'Frame durations (ms)',
       perfEvents: 'Perf events (',
       scope: 'Scope',
       event: 'Event',
@@ -524,15 +521,11 @@ export const en = {
       runtimeVisibleButWorkspaceIs: 'Runtime-visible but workspace is hidden',
       noTerminalSessions: 'No terminal sessions.',
       reapedTerminals: 'Reaped terminals (',
-      idleAgentsSuspendedByThe:
-        'Idle agents suspended by the reaper or disposed after 24h stale. Newest first; cleared on restart. Reopening one resumes it.',
       reaped: 'Reaped',
       reason: 'Reason',
       idleUnseen: 'Idle / unseen',
       nothingReapedYetThisSession: 'Nothing reaped yet this session.',
       workspaces2: 'Workspaces (',
-      rSSOfEachWorkspaceS:
-        'RSS of each workspace\'s agent and terminal processes. Shared app overhead isn\'t counted, so these sum to less than the app total. "Live for" counts from the oldest live terminal.',
       active: 'Active',
       idle: 'Idle',
       hiddenVis: 'Hidden+vis',
@@ -575,12 +568,8 @@ export const en = {
   environments: {
     // src/renderer/src/components/environments/NotOnMachineYet.tsx
     notOnMachineYet: {
-      filesOnOpenInA: (machine: unknown) => `Files on ${machine} open in a later version`,
-      thisChatSFolderIs: (machine: unknown) =>
-        `This chat's folder is on ${machine}. Browsing it from here comes in a later version.`,
-      areNotAvailableForSSH: (what: unknown) => `${what} are not available for SSH machines yet`,
-      chatsFilesAndGitRun: (machine: unknown, toLowerCase: unknown) =>
-        `Chats, files and git run on ${machine}; ${toLowerCase} don't yet.`,
+      thisChatSFolderIs: (machine: unknown) => `This chat's folder is on ${machine} and can't be browsed from here.`,
+      onCannotBeOpened: (what: unknown, machine: unknown) => `${what} on ${machine} can't be opened from here.`,
     },
     // src/renderer/src/components/environments/SshPromptDialog.tsx
     sshPromptDialog: {
@@ -598,7 +587,6 @@ export const en = {
       password: 'Password',
       code: 'Code',
       passphrase: 'Passphrase',
-      studioDoesnTKeepIt: "Studio doesn't keep it. Add the key to ssh-agent to skip this.",
       cancel: 'Cancel',
     },
   },
@@ -606,7 +594,6 @@ export const en = {
     // src/renderer/src/components/extensions/buildExtensionPaletteProvider.ts
     buildExtensionPaletteProvider: {
       buildYourOwnExtension: 'Build your own extension',
-      anAgentBuildsItWith: 'An agent builds it with you in a chat',
     },
     // src/renderer/src/components/extensions/ExtensionEditorView.tsx
     extensionEditorView: {
@@ -668,10 +655,7 @@ export const en = {
       search: 'Search',
       noCardsMatchThisSearch: 'No cards match this search.',
       orGoStraightToThe: 'Or go straight to the parts',
-      the: 'The ',
-      thingsTheStudioIsMade: ' things the studio is made of.',
       buildYourOwnExtension: 'Build your own extension',
-      describeItAndAnAgent: 'Describe it and an agent builds it with you, using the SDK.',
     },
     components: {
       // src/renderer/src/components/extensions/components/componentsContent.tsx
@@ -728,7 +712,6 @@ export const en = {
       allowInteractiveDemo: 'Allow interactive demo',
       preview2: (pageTitle: unknown) => `Preview · ${pageTitle}`,
       buildingThisPage: 'Building this page…',
-      refreshesAsTheFileIs: 'Refreshes as the file is written.',
       thisFileIsnTOn: 'This file isn’t on disk',
       itMayHaveBeenRemoved: 'It may have been removed or not written yet. Pick another file, or reload.',
       thisFileCanTBe: 'This file can’t be previewed',
@@ -764,7 +747,7 @@ export const en = {
     },
     // src/renderer/src/modules/ModuleContributionBoundary.tsx
     moduleContributionBoundary: {
-      hitAProblemAndStopped: (label: unknown) => `${label} hit a problem and stopped. The rest of the app is fine.`,
+      hitAProblemAndStopped: (label: unknown) => `${label} hit a problem and stopped.`,
       from: (moduleId: unknown) => `From ${moduleId}`,
       tryAgain: 'Try again',
     },
@@ -794,7 +777,6 @@ export const en = {
       bringingOverYourExistingSetup: 'Bringing over your existing setup…',
       adoptionFailed: 'Adoption failed',
       couldnTBringOverYour: 'Couldn’t bring over your existing setup.',
-      youCanAddItLater: 'You can add it later from Settings.',
       adoptedExistingSetup: 'Adopted existing setup',
     },
     // src/renderer/src/components/onboarding/conversationImport.ts
@@ -847,7 +829,6 @@ export const en = {
       couldNotReadInstalledSkills: 'Could not read installed skills.',
       installedSkills: 'Installed skills',
       backToInstalledSkills: 'Back to installed skills',
-      otherInstallationsStayInPlace: ' Other installations stay in place.',
       moveToTrash: 'Move to Trash',
       cancel: 'Cancel',
       useInAgent: 'Use in agent',
@@ -862,7 +843,8 @@ export const en = {
       projectSkills: 'Project skills',
       globalSkills: 'Global skills',
       showMore: 'Show more',
-      installedHereRunningAgentsMay: 'Installed here. Running agents may need a restart to see changes.',
+      runningAgentsMayNeedARestart:
+        'Agents that are already running may need a restart before they see a skill you add or remove.',
     },
     // src/renderer/src/components/palette/scheduledAgentsCommands.ts
     scheduledAgentsCommands: {
@@ -870,13 +852,10 @@ export const en = {
       pauseAllScheduledAgents: (toLowerCase: unknown, slice: unknown) =>
         `Pause all scheduled agents ${toLowerCase}${slice}`,
       pauseAllScheduledAgents2: 'Pause all scheduled agents',
-      untilRunsAlreadyGoingCarry: (hint: unknown) => `Until ${hint}. Runs already going carry on.`,
-      runsAlreadyGoingCarryOn: 'Runs already going carry on.',
+      until: (hint: unknown) => `Until ${hint}.`,
       resume: 'Resume',
       pause: 'Pause',
       schedule: (value: unknown, title: unknown) => `${value} schedule: ${title}`,
-      runsNextAtItsNext: 'Runs next at its next time',
-      noRunsAtItsTimes: 'No runs at its times until resumed',
     },
   },
   panels: {

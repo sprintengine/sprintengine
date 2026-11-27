@@ -178,10 +178,8 @@ export function SshPromptDialogBody({
               />
             </Field>
           ) : null}
-          {request.kind === 'passphrase' ? (
-            <p className={MUTED}>{appCopy.environments.sshPromptDialog.studioDoesnTKeepIt}</p>
-          ) : null}
         </ModalBody>
+
         <ModalFooter>
           <ModalButton type="button" onClick={cancel} autoFocus={!needsInput(request)}>
             {appCopy.environments.sshPromptDialog.cancel}

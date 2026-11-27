@@ -49,9 +49,7 @@ export function scheduledAgentPaletteCommands(
           choice.label.slice(1),
         ),
         searchLabel: copy.palette.scheduledAgentsCommands.pauseAllScheduledAgents2,
-        description: choice.hint
-          ? copy.palette.scheduledAgentsCommands.untilRunsAlreadyGoingCarry(choice.hint)
-          : copy.palette.scheduledAgentsCommands.runsAlreadyGoingCarryOn,
+        description: choice.hint ? copy.palette.scheduledAgentsCommands.until(choice.hint) : undefined,
         keywords: `${KEYWORDS} pause all`,
         run: () => actions.pauseAll(choice),
       }))
@@ -65,9 +63,6 @@ export function scheduledAgentPaletteCommands(
         title,
       ),
       searchLabel: title,
-      description: paused
-        ? copy.palette.scheduledAgentsCommands.runsNextAtItsNext
-        : copy.palette.scheduledAgentsCommands.noRunsAtItsTimes,
       keywords: `${KEYWORDS} ${paused ? 'resume unpause' : 'pause'}`,
       run: () => actions.setPaused(agent, !paused),
     }

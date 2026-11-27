@@ -479,10 +479,6 @@ export default function DiagnosticsContent({ headerActions }: Props) {
           <span className="text-sm font-semibold text-[color:var(--text-strong)]">
             {appCopy.diagnostics.diagnosticsContent.performanceDiagnostics}
           </span>
-          <span className="text-micro text-[color:var(--text-muted)]">
-            {appCopy.diagnostics.diagnosticsContent.devPolling}
-            {PROCESS_METRICS_POLL_MS}ms
-          </span>
         </div>
         <div className="flex items-center gap-1.5">
           <GhostButton
@@ -684,9 +680,6 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                 {appCopy.diagnostics.diagnosticsContent.processMetricsUnavailable}
               </p>
             )}
-            <p className="mt-1 text-micro text-[color:var(--text-subtle)]">
-              {appCopy.diagnostics.diagnosticsContent.electronRowsWorkingSetChild}
-            </p>
           </section>
 
           {/* Memory trend + baseline diff */}
@@ -892,15 +885,9 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               <span>worst {msOrDash(frameStats.maxMs)} ms</span>
               <span className="text-[color:var(--text-subtle)]">{frameStats.frameCount} frames</span>
               <span className="text-[color:var(--text-muted)]">
-                <Sparkline
-                  values={frameDurations}
-                  title={appCopy.diagnostics.diagnosticsContent.frameDurationsMsSpikesAre}
-                />
+                <Sparkline values={frameDurations} title={appCopy.diagnostics.diagnosticsContent.frameDurationsMs} />
               </span>
             </div>
-            <p className="mt-0.5 text-micro text-[color:var(--text-subtle)]">
-              {appCopy.diagnostics.diagnosticsContent.perFrameJankNoSingle}
-            </p>
           </section>
 
           {/* Perf events rollup */}
@@ -1045,9 +1032,6 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               {appCopy.diagnostics.diagnosticsContent.reapedTerminals}
               {metrics?.reapEvents?.length ?? 0})
             </h2>
-            <p className="mb-2 text-micro text-[color:var(--text-subtle)]">
-              {appCopy.diagnostics.diagnosticsContent.idleAgentsSuspendedByThe}
-            </p>
             {metrics?.reapEvents && metrics.reapEvents.length > 0 ? (
               <Table>
                 <thead>
@@ -1104,9 +1088,7 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               {appCopy.diagnostics.diagnosticsContent.workspaces2}
               {workspacesByMemory.length})
             </h2>
-            <p className="mb-2 text-micro text-[color:var(--text-subtle)]">
-              {appCopy.diagnostics.diagnosticsContent.rSSOfEachWorkspaceS}
-            </p>
+
             {workspacesByMemory.length > 0 ? (
               <Table>
                 <thead>

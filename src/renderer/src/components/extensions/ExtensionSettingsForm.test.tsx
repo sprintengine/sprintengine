@@ -88,7 +88,7 @@ test('a connection that may not change settings sees them read only, with their 
   studio.writable = false
   act(() => root!.render(<ExtensionSettingsForm extensionKey="local.tally" settings={SETTINGS} />))
   await flush()
-  expect(host!.textContent).toMatch(/Read only here/)
+  expect(host!.textContent).toMatch(/each setting shows its default and can’t be changed here/)
   expect(indent().readOnly).toBe(true)
   expect(indent().value).toBe('2')
   expect(studio.reads).toBe(0)
