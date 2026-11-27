@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import { mkdir, open, readFile, readdir, rm, stat, utimes } from 'fs/promises'
+import { mkdir, open, readFile, rm, stat, utimes } from 'fs/promises'
 import { hostname } from 'os'
 import { join } from 'path'
 import {
@@ -20,18 +20,21 @@ import { comparablePath, distroOfUncPath } from '../../shared/host-paths'
 import { isRecord } from '../../shared/records'
 import { writeFileAtomic } from '../../server/platform/atomic-file'
 import { processIsRunning } from '../../server/platform/process-alive'
+import type { StudioDatabase } from '../../server/db/database'
 
 /**
- * The pool's durable records: one JSON file per pool under
- * `userData/worktree-pool/`, the settings beside them, and a lock file in each
- * pool's slot container that keeps a second Studio off the same slots.
+ * The pool's durable records: a row per pool in the server's database
+ * (`pool_records`), the settings in `<data>/worktree-pool/settings.json`, and a
+ * lock file in each pool's slot container that keeps a second Studio off the
+ * same slots. The lock stays a file beside the slots: the Studio it keeps out
+ * may be another data folder's, another profile's or another machine's, which
+ * never opens this one's database.
  *
- * Every record is written whole, to a temporary file that is then renamed over
- * the old one, so a crash leaves either the previous record or the new one and
- * never half of each. A slot's `op` is written BEFORE the git step it names
- * starts and cleared after it ends, which is what lets startup tell a slot
- * that was mid-operation from one that was at rest (worktree-pool-service's
- * recovery).
+ * Every record is written whole, in one transaction, so a crash leaves either
+ * the previous record or the new one and never half of each. A slot's `op` is
+ * committed BEFORE the git step it names starts and cleared after it ends,
+ * which is what lets startup tell a slot that was mid-operation from one that
+ * was at rest (worktree-pool-service's recovery).
  */
 
 export const POOL_RECORD_VERSION = 3
@@ -283,8 +286,8 @@ function parseSlot(value: unknown): SlotRecord | null {
   }
 }
 
-/** A pool record from disk, or null when the file is missing, unreadable or not one of ours. */
-function parsePoolRecord(text: string): PoolRecord | null {
+/** A pool record as stored, or null when it is unreadable or not one of ours. */
+export function parsePoolRecord(text: string): PoolRecord | null {
   let value: unknown
   try {
     value = JSON.parse(text)
@@ -376,51 +379,30 @@ function normalizeDependencyInstall(value: unknown): Record<string, WorktreeDepe
   return out
 }
 
-export function createPoolStore(userDataDir: string): PoolStore {
-  const dir = join(userDataDir, 'worktree-pool')
-  const settingsPath = join(dir, 'settings.json')
-  // One write chain per file: two transitions of one pool in quick succession
-  // land in order, and the later always wins.
-  const chains = new Map<string, Promise<void>>()
+/** Builds before the database kept each pool's record in `<data>/worktree-pool/pool-<id>.json`; read once, by the import. */
+export const POOL_RECORD_FILE_PATTERN = /^pool-([0-9a-f]{16})\.json$/u
+export const POOL_DIR_NAME = 'worktree-pool'
 
-  const chained = (path: string, content: string): Promise<void> => {
-    const previous = chains.get(path) ?? Promise.resolve()
-    const next = previous
-      .catch(() => {})
-      .then(async () => {
-        await mkdir(dir, { recursive: true })
-        await writeFileAtomic(path, content)
-      })
-    chains.set(path, next)
-    // Dropped however the write ends: a failed one is the caller's to see,
-    // not an unhandled rejection of this bookkeeping.
-    const forget = (): void => {
-      if (chains.get(path) === next) chains.delete(path)
-    }
-    void next.then(forget, forget)
-    return next
-  }
+export function createPoolStore(options: { dataDir: string; database: StudioDatabase }): PoolStore {
+  const dir = join(options.dataDir, POOL_DIR_NAME)
+  const settingsPath = join(dir, 'settings.json')
+  // The settings file's writes, one after another: the later always wins. The
+  // records need none: the database's one writer commits in the order asked.
+  let settingsWrites: Promise<void> = Promise.resolve()
 
   return {
     dir,
     async readAll() {
-      let names: string[] = []
-      try {
-        names = await readdir(dir)
-      } catch {
-        return []
-      }
-      const out: Array<{ poolId: string; record: PoolRecord | null }> = []
-      for (const name of names) {
-        const match = /^pool-([0-9a-f]{16})\.json$/u.exec(name)
-        if (!match) continue
-        const text = await readFile(join(dir, name), 'utf8').catch(() => null)
-        out.push({ poolId: match[1], record: text === null ? null : parsePoolRecord(text) })
-      }
-      return out
+      const rows = await options.database.all<{ pool_id: string; body: string }>(
+        'SELECT pool_id, body FROM pool_records ORDER BY pool_id',
+      )
+      return rows.map((row) => ({ poolId: row.pool_id, record: parsePoolRecord(row.body) }))
     },
-    write(record) {
-      return chained(join(dir, `pool-${record.poolId}.json`), `${JSON.stringify(record, null, 2)}\n`)
+    async write(record) {
+      await options.database.run(
+        'INSERT INTO pool_records (pool_id, body) VALUES (?, ?) ON CONFLICT (pool_id) DO UPDATE SET body = excluded.body',
+        [record.poolId, JSON.stringify(record)],
+      )
     },
     async readSettings() {
       const text = await readFile(settingsPath, 'utf8').catch(() => null)
@@ -432,7 +414,15 @@ export function createPoolStore(userDataDir: string): PoolStore {
       }
     },
     writeSettings(settings) {
-      return chained(settingsPath, `${JSON.stringify(normalizePoolSettings(settings), null, 2)}\n`)
+      const content = `${JSON.stringify(normalizePoolSettings(settings), null, 2)}\n`
+      const next = settingsWrites
+        .catch(() => {})
+        .then(async () => {
+          await mkdir(dir, { recursive: true })
+          await writeFileAtomic(settingsPath, content)
+        })
+      settingsWrites = next
+      return next
     },
   }
 }

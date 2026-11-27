@@ -196,3 +196,14 @@ export function savedSchedules(file: string): string {
 export function seedSchedules(file: string, body: string): void {
   seedStoreRecord(dirname(file), 'schedules', body)
 }
+
+/** `database` with some of its calls replaced (a write refused, a read failing), the rest its own. */
+export function databaseWith(database: StudioDatabase, overrides: Partial<StudioDatabase>): StudioDatabase {
+  return new Proxy(database, {
+    get(target, key) {
+      if (Object.hasOwn(overrides, key)) return overrides[key as keyof StudioDatabase]
+      const value: unknown = Reflect.get(target, key)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+}
