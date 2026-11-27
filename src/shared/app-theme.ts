@@ -96,7 +96,7 @@ export const APP_THEMES: readonly AppThemeDescriptor[] = [
       bgSurface: '#080808',
       bgSurfaceRaised: '#0c0c0c',
       accent: '#3f9468',
-      textStrong: '#ececec',
+      textStrong: '#f4f4f4',
     },
   },
   {

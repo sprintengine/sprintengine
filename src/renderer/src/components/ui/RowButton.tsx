@@ -91,6 +91,17 @@ const RESTING: Record<RowButtonVariant, string> = {
     'disabled:hover:bg-transparent disabled:hover:text-[color:var(--text-muted)]',
 }
 
+// A navigation row — `nav`, the rail's rhythm: the settings tabs, the sidebar's
+// doors — rests in the muted ink and takes the strongest ink and a medium weight
+// when it is the one chosen, so the place you are is the one bright line in the
+// list and the rest recede (owner, 2026-11-27). The settings tabs drew exactly
+// this before they moved onto this primitive; a resting nav row in the body ink
+// sat a shade under the selected one and the list read as one grey.
+const RESTING_NAV =
+  'text-[color:var(--text-muted)] hover:bg-[color:var(--bg-hover)] hover:text-[color:var(--text-strong)] ' +
+  'disabled:hover:bg-transparent disabled:hover:text-[color:var(--text-muted)]'
+const SELECTED_NAV = `${SELECTED} font-medium`
+
 // `flush` draws no ground at any state — the wrapper it sits in owns the fill —
 // so it takes the ink half of the pair and nothing else.
 const RESTING_FLUSH =
@@ -141,7 +152,15 @@ export const RowButton = React.forwardRef<HTMLButtonElement, RowButtonProps>(fun
         'flex w-full items-center gap-2 text-left transition-colors',
         DENSITY[density],
         variant === 'dashed' ? 'border border-dashed border-[color:var(--border-default)]' : '',
-        selected === true ? SELECTED : density === 'flush' ? RESTING_FLUSH : RESTING[variant],
+        selected === true
+          ? density === 'nav'
+            ? SELECTED_NAV
+            : SELECTED
+          : density === 'flush'
+            ? RESTING_FLUSH
+            : density === 'nav' && variant === 'plain'
+              ? RESTING_NAV
+              : RESTING[variant],
         'disabled:cursor-not-allowed disabled:opacity-45',
         'aria-disabled:cursor-not-allowed aria-disabled:opacity-45',
         DENSITY_FOCUS[density],

@@ -22,9 +22,9 @@
   --ref-color-ink-850: #141414;
   --ref-color-ink-825: #181818;
   --ref-color-ink-800: #1c1c1c;
-  --ref-color-paper-100: #ececec;
-  --ref-color-paper-200: #d8d8d8;
-  --ref-color-paper-400: #a8a8a8;
+  --ref-color-paper-100: #f4f4f4;
+  --ref-color-paper-200: #d0d0d0;
+  --ref-color-paper-400: #949494;
   --ref-color-paper-500: #808080;
   --ref-color-paper-600: #646464;
   --ref-color-white: #ffffff;
@@ -7718,6 +7718,15 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 .ds-row-button--nav {
   min-height: var(--sem-size-control-sm);
   padding: var(--sem-space-2xs) var(--sem-space-sm);
+  color: var(--sem-color-text-muted);
+}
+
+/* A navigation list is a contrast hierarchy: resting rows recede in the muted
+ * ink and the chosen one is the bright line, in the strongest ink at a medium
+ * weight, so the place you are is the first thing the eye finds. */
+.ds-row-button--nav[aria-current='true'] {
+  color: var(--sem-color-text-primary);
+  font-weight: var(--sem-font-weight-medium);
 }
 
 /* bleed — a full-bleed row in a list that reaches its container's edges. No
@@ -14115,9 +14124,9 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <div class="catalog-token-row"><span class="catalog-chip-pair"><span class="catalog-chip" style="background: var(--ref-color-ink-850)"></span></span><div class="catalog-token-text"><p class="catalog-token-name"><code>ref.color.ink-850</code><code class="catalog-token-value">#141414</code></p><p class="catalog-token-meta">Hover step on dark, neutral. Also the composer's lifted ground. Was #18181c (2026-11-27). Source: dark --bg-hover.</p></div></div>
 <div class="catalog-token-row"><span class="catalog-chip-pair"><span class="catalog-chip" style="background: var(--ref-color-ink-825)"></span></span><div class="catalog-token-text"><p class="catalog-token-name"><code>ref.color.ink-825</code><code class="catalog-token-value">#181818</code></p><p class="catalog-token-meta">Active (pressed) step on dark, and the resting selection, neutral. Was #1c2024 (2026-11-27). Source: dark --bg-active.</p></div></div>
 <div class="catalog-token-row"><span class="catalog-chip-pair"><span class="catalog-chip" style="background: var(--ref-color-ink-800)"></span></span><div class="catalog-token-text"><p class="catalog-token-name"><code>ref.color.ink-800</code><code class="catalog-token-value">#1c1c1c</code></p><p class="catalog-token-meta">Selected step on dark, neutral. Was #24242c (2026-11-27). Source: dark --bg-selected.</p></div></div>
-<div class="catalog-token-row"><span class="catalog-chip-pair"><span class="catalog-chip" style="background: var(--ref-color-paper-100)"></span></span><div class="catalog-token-text"><p class="catalog-token-name"><code>ref.color.paper-100</code><code class="catalog-token-value">#ececec</code></p><p class="catalog-token-meta">Brightest text ink on dark surfaces. Source: dark --text-strong.</p></div></div>
-<div class="catalog-token-row"><span class="catalog-chip-pair"><span class="catalog-chip" style="background: var(--ref-color-paper-200)"></span></span><div class="catalog-token-text"><p class="catalog-token-name"><code>ref.color.paper-200</code><code class="catalog-token-value">#d8d8d8</code></p><p class="catalog-token-meta">Body text ink on dark surfaces, neutral. Source: dark --text-default. Lifted from #c8c8d0 (2026-11-04) so a reply reads firmly; channels evened from #d4d4dc (2026-11-27).</p></div></div>
-<div class="catalog-token-row"><span class="catalog-chip-pair"><span class="catalog-chip" style="background: var(--ref-color-paper-400)"></span></span><div class="catalog-token-text"><p class="catalog-token-name"><code>ref.color.paper-400</code><code class="catalog-token-value">#a8a8a8</code></p><p class="catalog-token-meta">Muted text ink on dark surfaces, neutral. Source: dark --text-muted / --tone-neutral. Channels evened from #a8a8b0 (2026-11-27).</p></div></div>
+<div class="catalog-token-row"><span class="catalog-chip-pair"><span class="catalog-chip" style="background: var(--ref-color-paper-100)"></span></span><div class="catalog-token-text"><p class="catalog-token-name"><code>ref.color.paper-100</code><code class="catalog-token-value">#f4f4f4</code></p><p class="catalog-token-meta">Brightest text ink on dark surfaces: the thing that matters, such as a selected row, a setting's label or a section title. Lifted from #ececec (2026-11-27) so it stands clearly above the body and muted inks. Source: dark --text-strong.</p></div></div>
+<div class="catalog-token-row"><span class="catalog-chip-pair"><span class="catalog-chip" style="background: var(--ref-color-paper-200)"></span></span><div class="catalog-token-text"><p class="catalog-token-name"><code>ref.color.paper-200</code><code class="catalog-token-value">#d0d0d0</code></p><p class="catalog-token-meta">Body text ink on dark surfaces, neutral. Source: dark --text-default. Was #d4d4dc, and #c8c8d0 before 2026-11-04; set a clear step under the strongest ink (2026-11-27) so the bright thing on a page is the one that matters.</p></div></div>
+<div class="catalog-token-row"><span class="catalog-chip-pair"><span class="catalog-chip" style="background: var(--ref-color-paper-400)"></span></span><div class="catalog-token-text"><p class="catalog-token-name"><code>ref.color.paper-400</code><code class="catalog-token-value">#949494</code></p><p class="catalog-token-meta">Muted text ink on dark surfaces, neutral: descriptions, metadata and resting navigation rows. Source: dark --text-muted / --tone-neutral. Lowered from #a8a8b0 (2026-11-27), which sat close enough to the body ink that a page read as one grey; 6.4:1 on the raised surface and 5.6:1 on a selected row, so it still clears AA.</p></div></div>
 <div class="catalog-token-row"><span class="catalog-chip-pair"><span class="catalog-chip" style="background: var(--ref-color-paper-500)"></span></span><div class="catalog-token-text"><p class="catalog-token-name"><code>ref.color.paper-500</code><code class="catalog-token-value">#808080</code></p><p class="catalog-token-meta">Subtle text ink on dark surfaces, neutral. Source: dark --text-subtle. Channels evened from #808088 (2026-11-27).</p></div></div>
 <div class="catalog-token-row"><span class="catalog-chip-pair"><span class="catalog-chip" style="background: var(--ref-color-paper-600)"></span></span><div class="catalog-token-text"><p class="catalog-token-name"><code>ref.color.paper-600</code><code class="catalog-token-value">#646464</code></p><p class="catalog-token-meta">Disabled text ink on dark surfaces, neutral. Tuned to clear the 3:1 non-text contrast floor on bg.surface. Channels evened from #626269 (2026-11-27).</p></div></div>
 <div class="catalog-token-row"><span class="catalog-chip-pair"><span class="catalog-chip" style="background: var(--ref-color-white)"></span></span><div class="catalog-token-text"><p class="catalog-token-name"><code>ref.color.white</code><code class="catalog-token-value">#ffffff</code></p><p class="catalog-token-meta">Pure white. Source: light --bg-surface / light --text-on-accent.</p></div></div>
@@ -40150,7 +40159,7 @@ window.addEventListener('resize', repositionAll)
 <ul><li><strong>Default</strong> — no modifier. <code>border.default</code>-free, transparent, <code>radius.overlay</code>, <code>space.xs</code>/<code>space.sm</code> inset. The inset row inside a padded rail.</li><li><strong><code>--dashed</code></strong> — a 1px dashed <code>border.default</code> and <code>text.muted</code> ink. The &quot;New …&quot; affordance, which the [list surface anatomy](../../foundations/principles.md) puts first and full width at the very top of every rail. This is the <strong>only dashed edge in the system</strong>, and the condition is load-bearing: the row is a place for a thing that does not exist yet. A dashed edge anywhere else is decoration.</li></ul>
 <h4>Density</h4>
 <p>Four steps, and each is a statement about what the row TOUCHES.</p>
-<p>| Density | Radius | Ground | Focus ring | For | |---|---|---|---|---| | <code>row</code> (default) | <code>radius.overlay</code> | its own | outset | an inset row in a padded rail | | <code>--nav</code> | <code>radius.overlay</code> | its own | outset | the sidebar's rhythm — a <code>size.control.sm</code> floor so a one-line door row matches the controls above it | | <code>--bleed</code> | none | its own | <strong>inset</strong> | a full-bleed row in a list that reaches its container's edges | | <code>--flush</code> | none | <strong>none</strong> | <strong>inset</strong> | one of two targets inside a wrapper that owns the fill |</p>
+<p>| Density | Radius | Ground | Focus ring | For | |---|---|---|---|---| | <code>row</code> (default) | <code>radius.overlay</code> | its own | outset | an inset row in a padded rail | | <code>--nav</code> | <code>radius.overlay</code> | its own | outset | the sidebar's rhythm — a <code>size.control.sm</code> floor so a one-line door row matches the controls above it. Rests in <code>text.muted</code>; the chosen row takes <code>text.primary</code> at the medium weight, so the place you are is the one bright line | | <code>--bleed</code> | none | its own | <strong>inset</strong> | a full-bleed row in a list that reaches its container's edges | | <code>--flush</code> | none | <strong>none</strong> | <strong>inset</strong> | one of two targets inside a wrapper that owns the fill |</p>
 <p>Two rules produce that table, and neither is a preference:</p>
 <ul><li><strong>A full-bleed row draws no radius.</strong> An inset rounded fill inside a padded surface reads as a card nested in a card, and every other row list in the system fills to its own inset instead (see [menu](../menu/component.md), which makes the same call for the same reason).</li><li><strong>A full-bleed row takes the ring INWARD.</strong> The row touches its container's edge, so an outset ring at <code>focus.ring-offset</code> is clipped by it. This is the carve-out <code>principles.md</code> already names for a control that clips its own overflow.</li></ul>
 <h4>States</h4>
@@ -40225,6 +40234,15 @@ window.addEventListener('resize', repositionAll)
 .ds-row-button--nav {
   min-height: var(--sem-size-control-sm);
   padding: var(--sem-space-2xs) var(--sem-space-sm);
+  color: var(--sem-color-text-muted);
+}
+
+/* A navigation list is a contrast hierarchy: resting rows recede in the muted
+ * ink and the chosen one is the bright line, in the strongest ink at a medium
+ * weight, so the place you are is the first thing the eye finds. */
+.ds-row-button--nav[aria-current='true'] {
+  color: var(--sem-color-text-primary);
+  font-weight: var(--sem-font-weight-medium);
 }
 
 /* bleed — a full-bleed row in a list that reaches its container's edges. No

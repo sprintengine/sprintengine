@@ -33,18 +33,18 @@
       },
       "paper-100": {
         "$type": "color",
-        "$value": "#ececec",
-        "$description": "Brightest text ink on dark surfaces. Source: dark --text-strong."
+        "$value": "#f4f4f4",
+        "$description": "Brightest text ink on dark surfaces: the thing that matters, such as a selected row, a setting's label or a section title. Lifted from #ececec (2026-11-27) so it stands clearly above the body and muted inks. Source: dark --text-strong."
       },
       "paper-200": {
         "$type": "color",
-        "$value": "#d8d8d8",
-        "$description": "Body text ink on dark surfaces, neutral. Source: dark --text-default. Lifted from #c8c8d0 (2026-11-04) so a reply reads firmly; channels evened from #d4d4dc (2026-11-27)."
+        "$value": "#d0d0d0",
+        "$description": "Body text ink on dark surfaces, neutral. Source: dark --text-default. Was #d4d4dc, and #c8c8d0 before 2026-11-04; set a clear step under the strongest ink (2026-11-27) so the bright thing on a page is the one that matters."
       },
       "paper-400": {
         "$type": "color",
-        "$value": "#a8a8a8",
-        "$description": "Muted text ink on dark surfaces, neutral. Source: dark --text-muted / --tone-neutral. Channels evened from #a8a8b0 (2026-11-27)."
+        "$value": "#949494",
+        "$description": "Muted text ink on dark surfaces, neutral: descriptions, metadata and resting navigation rows. Source: dark --text-muted / --tone-neutral. Lowered from #a8a8b0 (2026-11-27), which sat close enough to the body ink that a page read as one grey; 6.4:1 on the raised surface and 5.6:1 on a selected row, so it still clears AA."
       },
       "paper-500": {
         "$type": "color",
