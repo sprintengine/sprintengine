@@ -312,7 +312,6 @@ export function ScheduledAgentRow({
           ) : null}
           {onTogglePause ? (
             <MenuItem
-              hint={ownPause ? undefined : copy.workspace.sidebar.scheduledAgentRow.runsGoingCarryOn}
               onClick={() => select('toggle-pause')}
               icon={ownPause ? <PlayGlyph className="icon-sm" /> : <PauseGlyph className="icon-sm" />}
             >

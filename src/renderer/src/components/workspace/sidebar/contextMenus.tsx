@@ -515,11 +515,7 @@ export function WorkspaceContextMenu({
                 this stops its next runs from here, and leaves this chat (and any
                 run still going) as it is. */}
             {schedule ? (
-              <ChatMenuItem
-                hint={schedule.paused ? undefined : appCopy.workspace.sidebar.contextMenus.thisChatCarriesOn}
-                tooltip={tips.schedule(schedule.paused)}
-                onClick={() => onSelect('toggle-schedule-pause')}
-              >
+              <ChatMenuItem tooltip={tips.schedule(schedule.paused)} onClick={() => onSelect('toggle-schedule-pause')}>
                 {schedule.paused ? 'Resume this schedule' : 'Pause this schedule'}
               </ChatMenuItem>
             ) : null}

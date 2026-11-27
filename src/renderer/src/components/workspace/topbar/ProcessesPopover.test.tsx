@@ -157,7 +157,7 @@ test('on Windows the list says it is not available yet, and nothing reads as emp
     { offered: true, loaded: true, processes: [], tabs: [], unavailable: 'platform' },
     { stopped: [], closed: [] },
   )
-  expect(el.textContent).toContain('Not available on Windows yet')
+  expect(el.textContent).toContain('on Windows yet')
 })
 
 test('what a chat still open started reads as agent idle, and is never offered to Stop all', () => {

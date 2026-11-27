@@ -941,11 +941,7 @@ export function PluginsCatalogue({
   ) : tabId === INSTALLED_TAB_ID ? (
     <CatalogueHead
       name="Installed"
-      stateLine={
-        workspaceRoot
-          ? 'The MCP servers configured on this machine, grouped by where they came from.'
-          : 'The MCP servers configured on this machine. Open a workspace to install into one.'
-      }
+      stateLine={workspaceRoot ? undefined : 'To install an MCP server, open a workspace first.'}
     />
   ) : activeSource ? (
     <CatalogueHead

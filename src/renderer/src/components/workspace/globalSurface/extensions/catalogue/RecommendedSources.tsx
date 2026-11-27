@@ -144,9 +144,6 @@ export function RecommendedSources({
         label={appCopy.workspace.globalSurface.extensions.catalogue.recommendedSources.recommendedSources}
         count={offered.length}
       />
-      <p className="text-meta leading-4 text-[color:var(--text-subtle)]">
-        {appCopy.workspace.globalSurface.extensions.catalogue.recommendedSources.placesToGetSkillsAnd}
-      </p>
       {failure ? (
         <InlineNotice
           tone="error"
