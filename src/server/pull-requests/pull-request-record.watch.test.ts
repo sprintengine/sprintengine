@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { test } from 'vitest'
 
+import { savedRecordRows, testDatabaseAt } from '../../../tests/studio-database'
 import type { PullRequestStateRead } from '../../main/github/branch-pull-request'
 import type { PullRequestWatchRead, WatchedCheck } from '../../main/github/pull-request-watch-read'
 import {
   createPullRequestRecord,
-  pullRequestStorePath,
   RATE_LIMIT_FALLBACK_HOLD_MS,
   RATE_LIMIT_MAX_HOLD_MS,
   WATCH_MAX_AGE_MS,
@@ -91,6 +91,11 @@ const watchRead = (overrides: Partial<WatchRead> = {}): WatchRead => ({
   ...overrides,
 })
 
+/** The record's rows as stored, each as its body. */
+async function storedRows(dataDir: string): Promise<unknown[]> {
+  return (await savedRecordRows(dataDir, 'pull_requests')).map((row) => JSON.parse(row.body) as unknown)
+}
+
 async function setUp(extra: Partial<PullRequestRecordOptions> = {}) {
   const userDataDir = await mkdtemp(join(tmpdir(), 'sprintengine-pr-watch-'))
   const clock = clockOf()
@@ -99,7 +104,7 @@ async function setUp(extra: Partial<PullRequestRecordOptions> = {}) {
   const news: PullRequestWatchNewsEvent[] = []
   let nextWatchRead: PullRequestWatchRead = watchRead()
   const options: PullRequestRecordOptions = {
-    userDataDir,
+    database: testDatabaseAt(userDataDir),
     reads: {
       readPullRequestState: async (url) => {
         stateReads.push(url)
@@ -269,12 +274,8 @@ test('a watch outlives a restart, stored on its pull request’s row', async () 
   await first.record.watch(CHAT, { url: PR })
   await first.record.flush()
   first.record.dispose()
-  const stored = JSON.parse(await readFile(pullRequestStorePath(first.userDataDir), 'utf8')) as {
-    version: number
-    pullRequests: Array<{ url: string; watch?: { startedAt: number; view: { waitingOn: string } } }>
-  }
-  assert.equal(stored.version, 2, 'an optional member, not a new file format')
-  assert.equal(stored.pullRequests[0].watch?.startedAt, NOW)
+  const stored = (await storedRows(first.userDataDir)) as Array<{ url: string; watch?: { startedAt: number } }>
+  assert.equal(stored[0].watch?.startedAt, NOW, 'an optional member of the row')
 
   const reopened = createPullRequestRecord({ ...first.options, loadStoredOnStart: true })
   await reopened.whenLoaded()
@@ -292,11 +293,12 @@ test('news its chat was not told is stored with the watch state that found it, a
   await first.probe()
   assert.equal(first.news.length, 1)
   first.record.dispose()
-  const stored = JSON.parse(await readFile(pullRequestStorePath(first.userDataDir), 'utf8')) as {
-    pullRequests: Array<{ watch?: { view: { waitingOn: string } }; untold?: Array<{ wake: { news: unknown[] } }> }>
-  }
-  assert.equal(stored.pullRequests[0].watch?.view.waitingOn, 'checks-failed', 'the watch moved past it')
-  assert.equal(stored.pullRequests[0].untold?.[0]?.wake.news.length, 1, 'in the same file, the same write')
+  const stored = (await storedRows(first.userDataDir)) as Array<{
+    watch?: { view: { waitingOn: string } }
+    untold?: Array<{ wake: { news: unknown[] } }>
+  }>
+  assert.equal(stored[0].watch?.view.waitingOn, 'checks-failed', 'the watch moved past it')
+  assert.equal(stored[0].untold?.[0]?.wake.news.length, 1, 'in the same row, the same write')
 
   // The process went before the chat was told: the next one has it to tell.
   const reopened = createPullRequestRecord({ ...first.options, loadStoredOnStart: true })
@@ -393,12 +395,10 @@ test('a head no check reports on is told once, and neither watching again nor a 
   await anHour(() => first.record.flush())
   assert.deepEqual(told(), ['no-checks'])
 
-  // The wait is not stored: the watch on file is as an older build wrote it.
+  // The wait is not stored: the watch on record is as an older build wrote it.
   first.record.dispose()
-  const stored = JSON.parse(await readFile(pullRequestStorePath(first.userDataDir), 'utf8')) as {
-    pullRequests: Array<{ watch?: Record<string, unknown> }>
-  }
-  assert.deepEqual(Object.keys(stored.pullRequests[0].watch ?? {}).sort(), [
+  const stored = (await storedRows(first.userDataDir)) as Array<{ watch?: Record<string, unknown> }>
+  assert.deepEqual(Object.keys(stored[0].watch ?? {}).sort(), [
     'behind',
     'commentWakes',
     'conflicting',

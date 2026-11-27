@@ -1414,7 +1414,9 @@ rows, search, the open-turn list and tools' details); a chat's old transcript
 is imported when the chat is first taken up, keeping its numbers and
 generation, so a client's cursor carries over. Format 5 moves the chat records
 (the workspace registry, a row per chat), the schedules and their runs, the
-scheduled messages and the usage-limit resumes. `docs/data-folder.md` says what is in it and how to go back to an older build.
+scheduled messages and the usage-limit resumes. Format 6 moves the pull
+request record (a row per pull request, with its watch and the news its chat
+was not told yet). `docs/data-folder.md` says what is in it and how to go back to an older build.
 
 **The `incompatible` frame, `update.status`, `update.start`, their params,
 results and codes never change shape**, since they are what two ends that

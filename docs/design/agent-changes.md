@@ -329,9 +329,9 @@ because D8 changes where part of this lives.
 - **Freshness.** The watch holds at two minutes instead of climbing to 32
   (`src/main/github/pull-request-watch-poller.ts:49`). A window focus re-reads
   every stale open pull request on the record. Stored records load at start.
-- **Restart.** The record is one file, `pull-requests/opened.json`. The
-  per-repository files the branch lookups wrote are read once: what a capture
-  filed under a conversation stays, what a lookup found goes.
+- **Restart.** The record is a row per pull request in the server's database
+  (`pull_requests`). The files builds before it wrote are imported once: what a
+  capture filed under a conversation stays, what a lookup found goes.
 
 Follow-ups:
 

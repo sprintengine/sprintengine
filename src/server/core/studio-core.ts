@@ -949,7 +949,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // (`pull_request.watch`) wakes its chat through the same send a resume
   // after a usage limit takes, marked as Studio's (studio-pull-request-wakes.ts).
   const pullRequests = createPullRequestDomain({
-    dataDir,
+    database,
     conversations,
     wakes: studioPullRequestWakes({
       conversations,

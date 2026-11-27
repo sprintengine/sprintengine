@@ -811,12 +811,15 @@ the shell's own client forwards its terminal agents' calls and checkouts, and
 puts the lists the server answers on the terminal snapshot, which carries them
 to the peek and the tooltips as before.
 
-**Storage.** One file, `pull-requests/opened.json` in the server's data
-directory. The files the branch-lookup rule wrote (one per repository, and
-`conversations.json`) are read once at the first start: a row a capture filed
-under a conversation is kept (one that named only its workspace is worn by
-every conversation in it, until its agent links it again), every row a branch
-lookup found is dropped, and the old files are removed.
+**Storage.** A row per pull request in the server's database
+(`pull_requests`), with its watch and the news its chat was not told yet; a
+change writes only the rows it changed. Builds before the database kept it in
+`pull-requests/opened.json`, and before that in a file per repository written
+by the branch-lookup rule; the format step imports them once and leaves them
+as they were. From the per-repository files only a row a capture filed under a
+conversation is kept (one that named only its workspace is worn by every
+conversation in it, until its agent links it again); every row a branch lookup
+found is dropped.
 
 ### 6.9 Local servers: a server domain (owner ruling 2026-10-04)
 

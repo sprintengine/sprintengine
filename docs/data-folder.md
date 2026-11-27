@@ -11,11 +11,11 @@ folder's run lock (`run/studio.lock`) opens it, so there is one writer.
 it while the server runs) holds the records that moved out of files. Its code is
 in `src/server/db/`.
 
-| Since format | Records                                                                                                                               |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| 2            | a launched chat's first message, the "always allow" approval rules, the launch notices, the prompts a person sent each terminal agent |
-| 3            | the devices paired with this Studio and the machines it is paired with, browser sessions, embeds, linked local servers, apps' toolsets, file views, extension approvals |
-| 4            | chat history: each chat's events and command receipts, the chat list's rows, search, the list of turns a stop may have left open, and tools' details and streamed output |
+| Since format | Records                                                                                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2            | a launched chat's first message, the "always allow" approval rules, the launch notices, the prompts a person sent each terminal agent                                                |
+| 3            | the devices paired with this Studio and the machines it is paired with, browser sessions, embeds, linked local servers, apps' toolsets, file views, extension approvals              |
+| 4            | chat history: each chat's events and command receipts, the chat list's rows, search, the list of turns a stop may have left open, and tools' details and streamed output             |
 | 5            | the chat records (the workspace registry: a row per chat, and one for its windows, active chat and revision), the schedules with their runs, scheduled messages, usage-limit resumes |
 
 A paired machine's token is kept sealed by the platform's cipher, as its file
@@ -100,6 +100,16 @@ before, not as a fresh folder. Records the registry's parser drops as
 malformed are counted as skipped too. The uninstaller's command line (`--remove-integrations`)
 reads the chat records' folders from the database, read-only, and from the old
 file beside it.
+
+## Pull requests
+
+The pull request record is a row per pull request (`pull_requests`): who
+opened it, its state as last read, the watch an agent asked for and the news
+its chat was not told yet. A change writes only the rows it changed. At the
+first start of format 6, `pull-requests/opened.json` is imported once; a
+folder without one has the per-repository files of the rule before it
+imported instead (only the pull requests a chat opened). A file that does not
+read is skipped and counted, and every file stays as it was.
 
 ## The first start of a new format
 

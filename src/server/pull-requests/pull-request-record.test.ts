@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict'
-import { chmod, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { test } from 'vitest'
 
+import { savedRecordRows, seedRecordRows, testDatabaseAt } from '../../../tests/studio-database'
 import type { PullRequestStateRead } from '../../main/github/branch-pull-request'
+import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME, type StudioDatabase } from '../db/database'
+import { importPullRequestRecords } from '../db/import-files'
 import {
   createPullRequestRecord,
   GH_MISSING_HOLD_MS,
-  pullRequestStorePath,
   type PullRequestRecordChange,
   type PullRequestRecordOptions,
 } from './pull-request-record'
@@ -81,7 +83,7 @@ function recordOver(
   const changes: PullRequestRecordChange[] = []
   const clock = makeClock()
   const record = createPullRequestRecord({
-    userDataDir,
+    database: testDatabaseAt(userDataDir),
     reads: {
       readPullRequestState: async (url) => {
         reads.push(url)
@@ -203,7 +205,7 @@ test('a read that could not be made changes nothing, and a missing gh holds ever
   const reads: string[] = []
   const clock = makeClock()
   const record = createPullRequestRecord({
-    userDataDir: dir,
+    database: testDatabaseAt(dir),
     reads: {
       readPullRequestState: async (url) => {
         reads.push(url)
@@ -252,8 +254,10 @@ test('the record survives a restart', async () => {
   await first.record.flush()
   first.record.dispose()
 
-  const stored = JSON.parse(await readFile(pullRequestStorePath(dir), 'utf-8')) as { version: number }
-  assert.equal(stored.version, 2)
+  assert.deepEqual(
+    (await savedRecordRows(dir, 'pull_requests')).map((row) => row.id),
+    [PR_12],
+  )
 
   const second = recordOver(dir, {})
   await second.record.whenLoaded()
@@ -264,35 +268,89 @@ test('the record survives a restart', async () => {
   second.record.dispose()
 })
 
-test('a write that failed is tried again, and a re-read that learned nothing writes nothing', async () => {
-  const dir = await freshUserDataDir()
-  const store = join(dir, 'pull-requests')
-  await mkdir(store, { recursive: true })
-  // The folder refuses writes for a while, as a full or locked disk does.
-  await chmod(store, 0o500)
-  const { record, clock } = recordOver(dir, { [PR_12]: opened() })
-  try {
-    await record.noteOpened(CHAT, { url: PR_12 })
-    await record.flush()
-    assert.equal(await readdir(store).then((names) => names.includes('opened.json')), false)
-  } finally {
-    await chmod(store, 0o700)
-  }
-  clock.advance(5_000)
-  clock.fireDue()
-  await record.flush()
-  const stored = JSON.parse(await readFile(pullRequestStorePath(dir), 'utf-8')) as { pullRequests: unknown[] }
-  assert.equal(stored.pullRequests.length, 1)
+/** A pull request as a row stores it. */
+function storedRow(url: string, extra: Record<string, unknown> = {}) {
+  return { url, state: 'open', title: 'A stored one', openedAt: NOW - 1, stateAt: NOW - 1, ...extra }
+}
 
-  // The same reading again: nothing new to keep, so the file is not written.
-  await writeFile(pullRequestStorePath(dir), 'left alone\n')
+/** `dir`'s test database, with its writes counted, and refused or its reads failing while asked to. */
+function flakyDatabase(dir: string) {
+  const database = testDatabaseAt(dir)
+  const state = { batches: 0, refuseWrites: false, failReads: false }
+  const flaky = new Proxy(database, {
+    get(target, key) {
+      if (key === 'batch')
+        return (statements: Parameters<StudioDatabase['batch']>[0]) => {
+          state.batches += 1
+          return state.refuseWrites ? Promise.reject(new Error('disk full')) : target.batch(statements)
+        }
+      if (key === 'all' && state.failReads) return () => Promise.reject(new Error('disk I/O error'))
+      const value: unknown = Reflect.get(target, key)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+  return { database: flaky, state }
+}
+
+test('a write that failed is written by the next one, and a re-read that learned nothing writes nothing', async () => {
+  const dir = await freshUserDataDir()
+  const { database, state } = flakyDatabase(dir)
+  const PR_13 = 'https://github.com/acme/app/pull/13'
+  const { record } = recordOver(dir, { [PR_12]: opened(), [PR_13]: opened({ number: 13 }) }, { database })
+  await record.whenLoaded()
+  state.refuseWrites = true
+  await record.noteOpened(CHAT, { url: PR_12 })
+  await record.flush()
+  assert.deepEqual(await savedRecordRows(dir, 'pull_requests'), [])
+
+  state.refuseWrites = false
+  await record.noteOpened(CHAT, { url: PR_13 })
+  await record.flush()
+  assert.deepEqual(
+    (await savedRecordRows(dir, 'pull_requests')).map((row) => row.id),
+    [PR_12, PR_13],
+  )
+
+  // The same reading again: nothing new to keep, so nothing is written.
+  const before = state.batches
   await record.refresh(PR_12)
   await record.flush()
-  assert.equal(await readFile(pullRequestStorePath(dir), 'utf-8'), 'left alone\n')
+  assert.equal(state.batches, before)
   record.dispose()
 })
 
-test('the branch-lookup files migrate: what a conversation opened stays, what a lookup found goes', async () => {
+test('a change writes only its own row', async () => {
+  const dir = await freshUserDataDir()
+  const { database } = flakyDatabase(dir)
+  const PR_13 = 'https://github.com/acme/app/pull/13'
+  const answers = { [PR_12]: opened(), [PR_13]: opened({ number: 13 }) }
+  const { record } = recordOver(dir, answers, { database })
+  await record.noteOpened(CHAT, { url: PR_12 })
+  await record.noteOpened(CHAT, { url: PR_13 })
+  await record.flush()
+  const statements: string[] = []
+  const watching = new Proxy(database, {
+    get(target, key) {
+      const value: unknown = Reflect.get(target, key)
+      if (key === 'batch')
+        return (batch: Parameters<StudioDatabase['batch']>[0]) => {
+          statements.push(...batch.map((statement) => String(statement.params?.[0] ?? statement.sql)))
+          return target.batch(batch)
+        }
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+  record.dispose()
+  const again = recordOver(dir, answers, { database: watching })
+  await again.record.whenLoaded()
+  answers[PR_13] = opened({ number: 13, state: 'merged' })
+  await again.record.refresh(PR_13)
+  await again.record.flush()
+  assert.deepEqual(statements, [PR_13])
+  again.record.dispose()
+})
+
+test('the branch-lookup files are imported: what a conversation opened stays, what a lookup found goes', async () => {
   const dir = await freshUserDataDir()
   const store = join(dir, 'pull-requests')
   await mkdir(store, { recursive: true })
@@ -324,6 +382,12 @@ test('the branch-lookup files migrate: what a conversation opened stays, what a 
     }),
   )
   await writeFile(join(store, 'conversations.json'), JSON.stringify({ version: 1, conversations: [] }))
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  try {
+    importPullRequestRecords(connection, dir)
+  } finally {
+    connection.close()
+  }
 
   const { record, reads } = recordOver(dir, {})
   await record.whenLoaded()
@@ -337,7 +401,11 @@ test('the branch-lookup files migrate: what a conversation opened stays, what a 
   assert.equal(kept.headRefName, 'feature/marks', 'its branch comes from the bucket it sat in')
   assert.equal(record.forConversation(OTHER_AGENT).length, 1)
   assert.deepEqual(reads, [], 'a merged one is not read again')
-  assert.deepEqual((await readdir(store)).sort(), ['opened.json'], 'the old files are gone')
+  assert.deepEqual(
+    (await readdir(store)).sort(),
+    ['app-0123456789abcdef.json', 'conversations.json'],
+    'the old files stay as they were',
+  )
 
   // The agent that opened it says so, and it is that conversation's alone.
   const claimed = await record.noteOpened(CHAT, { url: kept.url })
@@ -347,36 +415,37 @@ test('the branch-lookup files migrate: what a conversation opened stays, what a 
   record.dispose()
 })
 
-// A file mode locks nothing on Windows, or for root.
-test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
-  'a record that is there but cannot be read is not written over',
-  async () => {
-    const dir = await freshUserDataDir()
-    await mkdir(join(dir, 'pull-requests'), { recursive: true })
-    const stored = '{"version": 2, "pullRequests": []}'
-    await writeFile(pullRequestStorePath(dir), stored)
-    await chmod(pullRequestStorePath(dir), 0o000)
-    const { record } = recordOver(dir, { [PR_12]: opened() })
-    await record.whenLoaded()
-    await record.noteOpened(CHAT, { url: PR_12 })
-    await record.flush()
-    await chmod(pullRequestStorePath(dir), 0o600)
-    assert.equal(await readFile(pullRequestStorePath(dir), 'utf8'), stored)
-    assert.equal(record.forConversation(CHAT).length, 1)
-    record.dispose()
-  },
-)
-
-test('an unreadable record is kept aside, not overwritten', async () => {
+test('a record that could not be read is not written over', async () => {
   const dir = await freshUserDataDir()
-  await mkdir(join(dir, 'pull-requests'), { recursive: true })
-  await writeFile(pullRequestStorePath(dir), '{"version": 99')
-  const { record } = recordOver(dir, { [PR_12]: opened() })
+  const kept = storedRow('https://github.com/acme/app/pull/7', { openedByWorkspaceId: 'ws-1' })
+  seedRecordRows(dir, 'pull_requests', [{ id: kept.url, body: kept }])
+  const { database, state } = flakyDatabase(dir)
+  state.failReads = true
+  const { record } = recordOver(dir, { [PR_12]: opened() }, { database })
   await record.whenLoaded()
+  state.failReads = false
   await record.noteOpened(CHAT, { url: PR_12 })
   await record.flush()
-  const names = await readdir(join(dir, 'pull-requests'))
-  assert.ok(names.includes('opened.json.corrupt'))
+  assert.deepEqual(
+    (await savedRecordRows(dir, 'pull_requests')).map((row) => row.id),
+    [kept.url],
+  )
   assert.equal(record.forConversation(CHAT).length, 1)
+  record.dispose()
+})
+
+test('a row that does not read is dropped, and the others load', async () => {
+  const dir = await freshUserDataDir()
+  const good = storedRow(PR_12, { openedByWorkspaceId: 'ws-1', openedByAgentId: 'agent-1' })
+  seedRecordRows(dir, 'pull_requests', [
+    { id: 'https://github.com/acme/app/pull/5', body: { url: 'not a pull request' } },
+    { id: PR_12, body: good },
+  ])
+  const { record } = recordOver(dir, {})
+  await record.whenLoaded()
+  assert.deepEqual(
+    record.forConversation(CHAT).map((entry) => entry.url),
+    [PR_12],
+  )
   record.dispose()
 })
