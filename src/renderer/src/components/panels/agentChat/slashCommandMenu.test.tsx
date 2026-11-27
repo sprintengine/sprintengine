@@ -215,19 +215,19 @@ test('a failed listing shows the error', async () => {
 test('the footer points at $ for Studio skills where the chat takes them', async () => {
   const withSkills = await renderMenu({ rows: [command('compact')], skillsHint: true })
   try {
-    expect(withSkills.body.textContent).toContain('$ for Studio skills')
+    expect(withSkills.body.textContent).toContain('Type $ to pick a Studio skill.')
   } finally {
     await withSkills.unmount()
   }
   const without = await renderMenu({ rows: [command('compact')] })
   try {
-    expect(without.body.textContent).not.toContain('$ for Studio skills')
+    expect(without.body.textContent).not.toContain('Studio skill')
   } finally {
     await without.unmount()
   }
 })
 
-test('the listbox holds the rows alone; the status line and key hints sit outside it', async () => {
+test('the listbox holds the rows alone; the status line and the skills hint sit outside it', async () => {
   const menu = await renderMenu({
     rows: [command('model', 'app')],
     status: { cliLabel: 'Claude Code', loading: true, answered: false, reportedCount: 0 },
@@ -238,7 +238,7 @@ test('the listbox holds the rows alone; the status line and key hints sit outsid
     expect(listbox.id).toBe('commands')
     expect(Array.from(listbox.children).every((child) => child.getAttribute('role') === 'option')).toBe(true)
     expect(listbox.querySelector('[role="status"]')).toBeNull()
-    expect(listbox.textContent).not.toContain('esc dismiss')
+    expect(listbox.textContent).not.toContain('Studio skill')
   } finally {
     await menu.unmount()
   }

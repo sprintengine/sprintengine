@@ -1825,7 +1825,7 @@ test('NewAgentPanel', async () => {
         )
         assert.deepEqual(rows, [
           // A chat under no project, which every machine on the protocol takes.
-          ['No project', 'Chat in a folder of its own'],
+          ['No project'],
           ['alpha', '/Users/dev/alpha'],
           ['beta', '/Users/dev/beta'],
           // A folder there none of its chats stands in yet, typed by its path.

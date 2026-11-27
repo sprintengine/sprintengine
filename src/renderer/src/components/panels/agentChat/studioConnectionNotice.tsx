@@ -36,7 +36,7 @@ export function useWindowStudioConnection(): WindowStudioState | null {
 export function studioConnectionWords(state: WindowStudioState | null): string | null {
   switch (state) {
     case 'reconnecting':
-      return 'Reconnecting to Studio… The chat picks up where it left off.'
+      return 'Reconnecting to Studio…'
     // Neither tries again by itself: the window's next use of the chat does.
     case 'parked':
       return 'This window lost its connection to Studio. It tries again the next time you use the chat.'

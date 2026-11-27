@@ -1314,7 +1314,7 @@ test('Edit from here over there leaves the files alone where that machine does n
     await chat.act(async () => buttons(chat, 'Edit from here')[0]!.click())
     await settle(chat)
     expect(chat.far['conversation.revert']).not.toHaveBeenCalled()
-    expect(dialog(chat)!.textContent).toContain('Files are left as they are.')
+    expect(dialog(chat)!.textContent).not.toContain('Also restore')
     await chat.act(async () => dialogButton(chat, 'Edit from here')!.click())
     await settle(chat)
     expect(chat.far['conversation.rewind']).toHaveBeenCalledOnce()

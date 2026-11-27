@@ -187,7 +187,6 @@ export function SideQuestionDrawer({
   chatName,
   canAsk,
   kept,
-  shortcut,
   continueInChat,
 }: {
   state: SideQuestionState
@@ -204,8 +203,6 @@ export function SideQuestionDrawer({
    * drawer says so.
    */
   kept: boolean
-  /** The chord that opens it, said in the empty drawer. */
-  shortcut?: string | null
   /**
    * Fork the chat at its newest reply with the question in the fork's
    * composer. Absent where the chat cannot be forked here; `disabled` says
@@ -279,9 +276,8 @@ export function SideQuestionDrawer({
         {entries.length === 0 ? (
           <p className="text-body leading-5 text-[color:var(--text-muted)]">
             {kept
-              ? 'Ask about this chat. The agent answers from the conversation so far, without tools, and its work goes on meanwhile. The question and its answer stay out of the agent’s conversation, and the chat keeps them as a side question you can open again.'
-              : 'Ask about this chat. The agent answers from the conversation so far, without tools, and its work goes on meanwhile. The question and its answer stay out of the chat: the Studio on the machine it runs on does not keep side questions yet, so closing this lets them go.'}
-            {shortcut ? ` ${shortcut} opens it from the composer.` : ''}
+              ? copy.panels.agentChat.sideQuestion.askAboutThisChat
+              : copy.panels.agentChat.sideQuestion.askAboutThisChatNotKept}
           </p>
         ) : null}
         {entries.map((entry) => (

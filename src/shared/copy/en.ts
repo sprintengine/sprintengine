@@ -976,7 +976,6 @@ export const en = {
       // src/renderer/src/components/panels/agentChat/composerContextPicker.tsx
       composerContextPicker: {
         mentionAWorkspaceFile: 'Mention a workspace file',
-        chooseEnterOrTabAttach: '↑↓ choose · enter or tab attach · esc dismiss',
         remove: (name: unknown) => `Remove ${name}`,
         openSkill: 'Open skill',
         attachedContext: 'Attached context',
@@ -1070,14 +1069,7 @@ export const en = {
         conversationReplayed: (title: unknown) => `${title} conversation, replayed`,
         showEarlierMessages: 'Show earlier messages',
         endOfTheConversation: 'End of the conversation',
-        pause: 'Pause',
-        play: 'Play',
-        rightArrow: 'Right arrow',
-        nextMessage: 'Next message',
-        leftArrow: 'Left arrow',
-        previousMessage: 'Previous message',
         fromTheStart: 'From the start',
-        leave: 'Leave',
       },
       // src/renderer/src/components/panels/agentChat/conversationVisual.tsx
       conversationVisual: {
@@ -1122,7 +1114,6 @@ export const en = {
         n1File: '1 file',
         files: (length: unknown) => `${length} files`,
         alsoRestoreToBeforeThis: (value: unknown) => `Also restore ${value} to before this message`,
-        filesAreLeftAsThey: 'Files are left as they are.',
       },
       // src/renderer/src/components/panels/agentChat/followUpDispatch.ts
       followUpDispatch: {
@@ -1280,8 +1271,7 @@ export const en = {
         stashedPrompts: 'Stashed prompts',
         nothingStashed: 'Nothing stashed. ',
         withSomethingTypedSetsIt: ' with something typed sets it aside here.',
-        chooseEnterRestore: '↑↓ choose · enter restore · ',
-        deleteEscClose: ' delete · esc close',
+        pressToDelete: (keys: string) => `Press ${keys} to delete the highlighted prompt.`,
       },
       // src/renderer/src/components/panels/agentChat/pullRequestHost.ts
       pullRequestHost: {
@@ -1348,6 +1338,10 @@ export const en = {
         askASideQuestion: 'Ask a side question',
         ask: 'Ask',
         sideQuestionsArenTAvailable: "Side questions aren't available here right now.",
+        askAboutThisChat:
+          'Ask about this chat. The agent answers from the conversation so far without stopping its work, and the question stays out of its conversation.',
+        askAboutThisChatNotKept:
+          'Ask about this chat. The agent answers from the conversation so far without stopping its work. The machine this chat runs on does not keep side questions, so they are gone once you close this.',
         sideQuestion2: (question: unknown) => `Side question: ${question}`,
       },
       // src/renderer/src/components/panels/agentChat/slashCommandMenu.tsx
@@ -1358,8 +1352,7 @@ export const en = {
         sendsItAsTyped: '”. ⏎ sends it as typed.',
         reportedNoCommands: ' reported no commands',
         commands: 'Commands',
-        chooseOrTabInsertEsc: '↑↓ choose · ⏎ or tab insert · esc dismiss',
-        forStudioSkills: '$ for Studio skills',
+        forStudioSkills: 'Type $ to pick a Studio skill.',
       },
       // src/renderer/src/components/panels/agentChat/storedAttachments.tsx
       storedAttachments: {
@@ -1494,7 +1487,6 @@ export const en = {
         aheadOfPaceAtThis: 'Ahead of pace: at this rate it runs out first',
         noUsageLimitsYetThey: 'No usage limits yet. They appear after a Claude or Codex subscription turn.',
         usageLimits: 'Usage limits',
-        claudeAndCodexSubscriptionsAs: 'Claude and Codex subscriptions, as last reported',
       },
       // src/renderer/src/components/panels/agentChat/useChatQuotes.tsx
       useChatQuotes: {
@@ -1541,7 +1533,6 @@ export const en = {
       theSessionWasNotRestarted: 'The session was not restarted',
       noAgentSessionToRestart: 'No agent session to restart',
       agentSessionRestarted: 'Agent session restarted',
-      yourNextMessageStartsIt: 'Your next message starts it again, history intact.',
       isnTRunningSendA: (assistantName: unknown) =>
         `${assistantName} isn't running. Send a message to see what fills the window.`,
       theCLI: 'The CLI',
@@ -5350,11 +5341,7 @@ export const en = {
         searchProjects: 'Search projects…',
         searchProjects2: 'Search projects',
         browse: 'Browse…',
-        pickAFolderOnDisk: 'Pick a folder on disk.',
-        cloneARepositoryAndOpen: 'Clone a repository and open it here.',
         newProject: 'New project',
-        startOneHereAndPut: 'Start one here, and put it on GitHub if you like.',
-        chatInAFolderOf: 'Chat in a folder of its own.',
       },
       // src/renderer/src/components/workspace/agentComposer/RemoteProjectPicker.tsx
       remoteProjectPicker: {
@@ -5363,7 +5350,6 @@ export const en = {
         projectOn: (machineName: unknown) => `Project on ${machineName}`,
         searchProjects: 'Search projects…',
         searchProjectsOn: (machineName: unknown) => `Search projects on ${machineName}`,
-        chatInAFolderOf: 'Chat in a folder of its own',
         loadingProjects: 'Loading projects…',
       },
       schedule: {
@@ -5400,7 +5386,6 @@ export const en = {
         scheduleSlashPicker: {
           scheduleThisAgent: 'Schedule this agent',
           recent: 'Recent',
-          chooseScheduleEscDismiss: '↑↓ choose · ⏎ schedule · esc dismiss',
         },
         // src/renderer/src/components/workspace/agentComposer/schedule/ScheduledRuns.tsx
         scheduledRuns: {
