@@ -328,7 +328,7 @@ test('designSystemAxes', async () => {
       // chrome rule, the diff to the one over its code, the composer pickers,
       // the account menu, the plugin and skill dialogs and Settings' footers
       // separated by space and edge fades instead.
-      'components/auxWindows': 4,
+      'components/auxWindows': 2,
       'components/backlog': 1,
       'components/diagnostics': 8,
       'components/htmlArtifact': 2,
