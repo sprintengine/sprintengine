@@ -9,24 +9,24 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
   "dark": {
     "colorScheme": "dark",
     "tokens": {
-      "--bg-app": "#08080c",
+      "--bg-app": "#040404",
       "--bg-surface": "#080808",
       "--bg-surface-raised": "#0c0c0c",
-      "--bg-hover": "#18181c",
-      "--bg-selected": "#24242c",
-      "--border-subtle": "rgba(252, 252, 252, 0.08)",
-      "--border-default": "rgba(252, 252, 252, 0.11)",
-      "--border-strong": "rgba(252, 252, 252, 0.14)",
+      "--bg-hover": "#141414",
+      "--bg-selected": "#1c1c1c",
+      "--border-subtle": "rgba(252, 252, 252, 0.11)",
+      "--border-default": "rgba(252, 252, 252, 0.14)",
+      "--border-strong": "rgba(252, 252, 252, 0.18)",
       "--text-strong": "#ececec",
-      "--text-default": "#d4d4dc",
-      "--text-muted": "#a8a8b0",
-      "--text-subtle": "#808088",
-      "--text-disabled": "#626269",
-      "--text-on-accent": "#08080c",
+      "--text-default": "#d8d8d8",
+      "--text-muted": "#a8a8a8",
+      "--text-subtle": "#808080",
+      "--text-disabled": "#646464",
+      "--text-on-accent": "#040404",
       "--accent-primary": "#3f9468",
       "--accent-primary-soft": "rgba(63, 148, 104, 0.14)",
       "--focus-ring": "2px solid #3f9468",
-      "--tone-neutral": "#a8a8b0",
+      "--tone-neutral": "#a8a8a8",
       "--tone-accent": "#3f9468",
       "--tone-warn": "#fcc030",
       "--tone-good": "#72ba88",
@@ -40,7 +40,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--chart-6": "#e253ae",
       "--chart-7": "#7e6cf7",
       "--chart-8": "#0da4cf",
-      "--chart-other": "#a8a8b0",
+      "--chart-other": "#a8a8a8",
       "--motion-normal": "180ms",
       "--motion-ease": "cubic-bezier(0.2, 0.8, 0.2, 1)"
     }
@@ -235,7 +235,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--chart-6": "#e253ae",
       "--chart-7": "#7e6cf7",
       "--chart-8": "#0da4cf",
-      "--chart-other": "#a8a8b0",
+      "--chart-other": "#a8a8a8",
       "--motion-normal": "180ms",
       "--motion-ease": "cubic-bezier(0.2, 0.8, 0.2, 1)"
     }
@@ -260,7 +260,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--accent-primary": "#5c7cfc",
       "--accent-primary-soft": "rgba(92, 124, 252, 0.16)",
       "--focus-ring": "2px solid #5c7cfc",
-      "--tone-neutral": "#a8a8b0",
+      "--tone-neutral": "#a8a8a8",
       "--tone-accent": "#3f9468",
       "--tone-warn": "#fcc030",
       "--tone-good": "#72ba88",
@@ -274,7 +274,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--chart-6": "#e253ae",
       "--chart-7": "#7e6cf7",
       "--chart-8": "#0da4cf",
-      "--chart-other": "#a8a8b0",
+      "--chart-other": "#a8a8a8",
       "--motion-normal": "180ms",
       "--motion-ease": "cubic-bezier(0.2, 0.8, 0.2, 1)"
     }
@@ -313,7 +313,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--chart-6": "#e253ae",
       "--chart-7": "#7e6cf7",
       "--chart-8": "#0da4cf",
-      "--chart-other": "#a8a8b0",
+      "--chart-other": "#a8a8a8",
       "--motion-normal": "180ms",
       "--motion-ease": "cubic-bezier(0.2, 0.8, 0.2, 1)"
     }
@@ -338,7 +338,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--accent-primary": "#e8a850",
       "--accent-primary-soft": "rgba(232, 168, 80, 0.14)",
       "--focus-ring": "2px solid #e8a850",
-      "--tone-neutral": "#a8a8b0",
+      "--tone-neutral": "#a8a8a8",
       "--tone-accent": "#e8a850",
       "--tone-warn": "#fcc030",
       "--tone-good": "#72ba88",
@@ -352,7 +352,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--chart-6": "#e253ae",
       "--chart-7": "#7e6cf7",
       "--chart-8": "#0da4cf",
-      "--chart-other": "#a8a8b0",
+      "--chart-other": "#a8a8a8",
       "--motion-normal": "180ms",
       "--motion-ease": "cubic-bezier(0.2, 0.8, 0.2, 1)"
     }
@@ -377,7 +377,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--accent-primary": "#7cb4fc",
       "--accent-primary-soft": "rgba(124, 180, 252, 0.14)",
       "--focus-ring": "2px solid #7cb4fc",
-      "--tone-neutral": "#a8a8b0",
+      "--tone-neutral": "#a8a8a8",
       "--tone-accent": "#7cb4fc",
       "--tone-warn": "#fcc030",
       "--tone-good": "#72ba88",
@@ -391,7 +391,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--chart-6": "#e253ae",
       "--chart-7": "#7e6cf7",
       "--chart-8": "#0da4cf",
-      "--chart-other": "#a8a8b0",
+      "--chart-other": "#a8a8a8",
       "--motion-normal": "180ms",
       "--motion-ease": "cubic-bezier(0.2, 0.8, 0.2, 1)"
     }
@@ -416,7 +416,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--accent-primary": "#d488a0",
       "--accent-primary-soft": "rgba(212, 136, 160, 0.14)",
       "--focus-ring": "2px solid #d488a0",
-      "--tone-neutral": "#a8a8b0",
+      "--tone-neutral": "#a8a8a8",
       "--tone-accent": "#d488a0",
       "--tone-warn": "#fcc030",
       "--tone-good": "#72ba88",
@@ -430,7 +430,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--chart-6": "#e253ae",
       "--chart-7": "#7e6cf7",
       "--chart-8": "#0da4cf",
-      "--chart-other": "#a8a8b0",
+      "--chart-other": "#a8a8a8",
       "--motion-normal": "180ms",
       "--motion-ease": "cubic-bezier(0.2, 0.8, 0.2, 1)"
     }
@@ -469,7 +469,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--chart-6": "#e253ae",
       "--chart-7": "#7e6cf7",
       "--chart-8": "#0da4cf",
-      "--chart-other": "#a8a8b0",
+      "--chart-other": "#a8a8a8",
       "--motion-normal": "180ms",
       "--motion-ease": "cubic-bezier(0.2, 0.8, 0.2, 1)"
     }
@@ -508,7 +508,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--chart-6": "#e253ae",
       "--chart-7": "#7e6cf7",
       "--chart-8": "#0da4cf",
-      "--chart-other": "#a8a8b0",
+      "--chart-other": "#a8a8a8",
       "--motion-normal": "180ms",
       "--motion-ease": "cubic-bezier(0.2, 0.8, 0.2, 1)"
     }
@@ -547,7 +547,7 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
       "--chart-6": "#e253ae",
       "--chart-7": "#7e6cf7",
       "--chart-8": "#0da4cf",
-      "--chart-other": "#a8a8b0",
+      "--chart-other": "#a8a8a8",
       "--motion-normal": "180ms",
       "--motion-ease": "cubic-bezier(0.2, 0.8, 0.2, 1)"
     }

@@ -20,7 +20,7 @@ const SPLASH_HEIGHT = 320
 // The plate's darkest base (--bg-app in the dark ramp). Painted by the OS from
 // the first frame, so the ~395 KB backdrop decoding behind it never shows as a
 // white rectangle. This is the "no white flash" guarantee, not a nicety.
-const SPLASH_BACKGROUND_COLOR = '#08080c'
+const SPLASH_BACKGROUND_COLOR = '#040404'
 
 let splashWindow: BrowserWindow | null = null
 // The last line pushed, re-sent once the document has loaded: a push made

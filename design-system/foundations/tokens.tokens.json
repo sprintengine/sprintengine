@@ -3,8 +3,8 @@
     "color": {
       "ink-950": {
         "$type": "color",
-        "$value": "#08080c",
-        "$description": "Darkest warm ink. Source: dark --bg-app / dark --text-on-accent."
+        "$value": "#040404",
+        "$description": "The dark window: near-black and neutral, a hair above pure black so the floor stays off an OLED panel's lowest drive level. Was the faintly blue #08080c (2026-11-27). Source: dark --bg-app / dark --text-on-accent."
       },
       "ink-900": {
         "$type": "color",
@@ -18,18 +18,18 @@
       },
       "ink-850": {
         "$type": "color",
-        "$value": "#18181c",
-        "$description": "Hover ink step. Source: dark --bg-hover."
+        "$value": "#141414",
+        "$description": "Hover step on dark, neutral. Also the composer's lifted ground. Was #18181c (2026-11-27). Source: dark --bg-hover."
       },
       "ink-825": {
         "$type": "color",
-        "$value": "#1c2024",
-        "$description": "Active ink step. Source: dark --bg-active."
+        "$value": "#181818",
+        "$description": "Active (pressed) step on dark, and the resting selection, neutral. Was #1c2024 (2026-11-27). Source: dark --bg-active."
       },
       "ink-800": {
         "$type": "color",
-        "$value": "#24242c",
-        "$description": "Selected ink step. Source: dark --bg-selected."
+        "$value": "#1c1c1c",
+        "$description": "Selected step on dark, neutral. Was #24242c (2026-11-27). Source: dark --bg-selected."
       },
       "paper-100": {
         "$type": "color",
@@ -38,23 +38,23 @@
       },
       "paper-200": {
         "$type": "color",
-        "$value": "#d4d4dc",
-        "$description": "Body text ink on dark surfaces. Source: dark --text-default. Lifted from #c8c8d0 (2026-11-04) so a reply reads at about 90% of the strongest ink rather than 84%."
+        "$value": "#d8d8d8",
+        "$description": "Body text ink on dark surfaces, neutral. Source: dark --text-default. Lifted from #c8c8d0 (2026-11-04) so a reply reads firmly; channels evened from #d4d4dc (2026-11-27)."
       },
       "paper-400": {
         "$type": "color",
-        "$value": "#a8a8b0",
-        "$description": "Muted text ink on dark surfaces. Source: dark --text-muted / --tone-neutral. Lifted from #9c9ca4 (2026-11-04): help text and metadata were the faintest copy a person is asked to read."
+        "$value": "#a8a8a8",
+        "$description": "Muted text ink on dark surfaces, neutral. Source: dark --text-muted / --tone-neutral. Channels evened from #a8a8b0 (2026-11-27)."
       },
       "paper-500": {
         "$type": "color",
-        "$value": "#808088",
-        "$description": "Subtle text ink on dark surfaces. Source: dark --text-subtle. Lifted from #707078 (2026-11-04) along with the rest of the ramp."
+        "$value": "#808080",
+        "$description": "Subtle text ink on dark surfaces, neutral. Source: dark --text-subtle. Channels evened from #808088 (2026-11-27)."
       },
       "paper-600": {
         "$type": "color",
-        "$value": "#626269",
-        "$description": "Disabled text ink on dark surfaces. Tuned to clear the 3:1 non-text contrast floor (3.23:1 on bg.surface)."
+        "$value": "#646464",
+        "$description": "Disabled text ink on dark surfaces, neutral. Tuned to clear the 3:1 non-text contrast floor on bg.surface. Channels evened from #626269 (2026-11-27)."
       },
       "white": {
         "$type": "color",
@@ -582,7 +582,7 @@
               "use": "Section dividers and quiet card edges \u2014 borders carry the structure, not shadows.",
               "modes": {
                 "light": "rgba(32, 36, 40, 0.10)",
-                "dark": "rgba(252, 252, 252, 0.08)"
+                "dark": "rgba(252, 252, 252, 0.11)"
               }
             }
           }
@@ -598,7 +598,7 @@
               "use": "Input borders, popover edges, clear hairlines.",
               "modes": {
                 "light": "rgba(32, 36, 40, 0.20)",
-                "dark": "rgba(252, 252, 252, 0.11)"
+                "dark": "rgba(252, 252, 252, 0.14)"
               }
             }
           }
@@ -614,7 +614,7 @@
               "use": "Hover-emphasized edges, structural separators, ghost-button borders.",
               "modes": {
                 "light": "rgba(32, 36, 40, 0.30)",
-                "dark": "rgba(252, 252, 252, 0.14)"
+                "dark": "rgba(252, 252, 252, 0.18)"
               }
             }
           }
@@ -796,7 +796,7 @@
               "doNotUse": "Default panel chrome.",
               "modes": {
                 "light": "rgba(100, 108, 120, 0.14)",
-                "dark": "rgba(156, 156, 164, 0.18)"
+                "dark": "rgba(160, 160, 160, 0.18)"
               }
             }
           }
@@ -949,7 +949,7 @@
               "doNotUse": "Combining with backdrop-filter blur \u2014 full-viewport blur re-renders every frame and tanks pointer framerate.",
               "modes": {
                 "light": "rgba(20, 24, 28, 0.42)",
-                "dark": "rgba(8, 8, 12, 0.7)"
+                "dark": "rgba(0, 0, 0, 0.7)"
               }
             }
           }
@@ -1243,7 +1243,7 @@
         },
         "other": {
           "$type": "color",
-          "$value": "{ref.color.paper-500}",
+          "$value": "#808088",
           "$description": "The neutral for a chart's \"Other\" bucket: everything past the eighth series, folded into one. Grey on purpose, so the bucket never reads as a ninth identity.",
           "$extensions": {
             "com.sprintengine": {
@@ -1251,7 +1251,7 @@
               "use": "The fill or stroke of the folded \"Other\" series of a categorical chart, and of a series that is deliberately de-emphasised beside the ones being compared.",
               "doNotUse": "A real series of its own, text, borders, backgrounds, or a status.",
               "modes": {
-                "light": "{ref.color.paper-500}",
+                "light": "#808088",
                 "dark": "{ref.color.paper-400}"
               }
             }

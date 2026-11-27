@@ -4,17 +4,17 @@
  * :root carries the light (default) mode; [data-mode="dark"] overrides the
  * tokens whose values differ in dark mode. */
 :root {
-  --ref-color-ink-950: #08080c;
+  --ref-color-ink-950: #040404;
   --ref-color-ink-900: #080808;
   --ref-color-ink-875: #0c0c0c;
-  --ref-color-ink-850: #18181c;
-  --ref-color-ink-825: #1c2024;
-  --ref-color-ink-800: #24242c;
+  --ref-color-ink-850: #141414;
+  --ref-color-ink-825: #181818;
+  --ref-color-ink-800: #1c1c1c;
   --ref-color-paper-100: #ececec;
-  --ref-color-paper-200: #d4d4dc;
-  --ref-color-paper-400: #a8a8b0;
-  --ref-color-paper-500: #808088;
-  --ref-color-paper-600: #626269;
+  --ref-color-paper-200: #d8d8d8;
+  --ref-color-paper-400: #a8a8a8;
+  --ref-color-paper-500: #808080;
+  --ref-color-paper-600: #646464;
   --ref-color-white: #ffffff;
   --ref-color-mist-100: #eaeef2;
   --ref-color-mist-150: #f0f0f4;
@@ -112,7 +112,7 @@
   --sem-color-chart-6: #bf308f;
   --sem-color-chart-7: #7e6cf7;
   --sem-color-chart-8: #0581a3;
-  --sem-color-chart-other: var(--ref-color-paper-500);
+  --sem-color-chart-other: #808088;
   --sem-color-scaffold-ink: var(--ref-color-violet-500);
   --sem-color-scaffold-soft: rgba(137, 87, 229, 0.16);
   --sem-color-find-match: #ffe9a8;
@@ -218,9 +218,9 @@
   --sem-color-text-subtle: var(--ref-color-paper-500);
   --sem-color-text-disabled: var(--ref-color-paper-600);
   --sem-color-text-on-accent: var(--ref-color-ink-950);
-  --sem-color-border-subtle: rgba(252, 252, 252, 0.08);
-  --sem-color-border-default: rgba(252, 252, 252, 0.11);
-  --sem-color-border-strong: rgba(252, 252, 252, 0.14);
+  --sem-color-border-subtle: rgba(252, 252, 252, 0.11);
+  --sem-color-border-default: rgba(252, 252, 252, 0.14);
+  --sem-color-border-strong: rgba(252, 252, 252, 0.18);
   --sem-color-border-focus: var(--ref-color-green-500);
   --sem-color-accent-primary: var(--ref-color-green-500);
   --sem-color-accent-hover: var(--ref-color-green-400);
@@ -230,7 +230,7 @@
   --sem-color-status-good: var(--ref-color-sage-400);
   --sem-color-status-warn: var(--ref-color-amber-400);
   --sem-color-status-danger: var(--ref-color-clay-400);
-  --sem-color-status-neutral-soft: rgba(156, 156, 164, 0.18);
+  --sem-color-status-neutral-soft: rgba(160, 160, 160, 0.18);
   --sem-color-status-good-soft: rgba(114, 186, 136, 0.18);
   --sem-color-status-warn-soft: rgba(252, 192, 48, 0.18);
   --sem-color-status-danger-soft: rgba(209, 126, 117, 0.18);
@@ -239,7 +239,7 @@
   --sem-color-diff-removed: var(--ref-color-clay-400);
   --sem-color-diff-changed: rgba(94, 160, 242, 0.14);
   --sem-color-diff-changed-strong: rgba(94, 160, 242, 0.34);
-  --sem-color-overlay-scrim: rgba(8, 8, 12, 0.7);
+  --sem-color-overlay-scrim: rgba(0, 0, 0, 0.7);
   --sem-color-mark-blue: var(--ref-color-blue-400);
   --sem-color-mark-yellow: var(--ref-color-amber-400);
   --sem-color-mark-orange: var(--ref-color-orange-400);

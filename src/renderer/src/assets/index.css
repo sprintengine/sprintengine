@@ -2010,6 +2010,16 @@ samp,
 :root:not([data-theme]),
 :root[data-theme="dark"] {
   --agent-surface: var(--bg-app);
+  /* Dark is near-black and neutral throughout (2026-11-27): every grey has
+     equal channels, so nothing reads warm or blue beside the black window.
+     The literals below are the shared block's, which every other dark theme
+     inherits with its own tint, so Dark restates them here rather than
+     changing them there. The terminal sits under the window's ground as it
+     always has, which on a ground this dark is black itself. */
+  --terminal-bg: #000000;
+  --scrollbar-thumb: #242424;
+  --scrollbar-thumb-hover: #303030;
+  --tone-error-ink: #040404;
 }
 
 /* Light-theme legibility: deepen lane strokes and pull pill labels to

@@ -92,7 +92,7 @@ export const APP_THEMES: readonly AppThemeDescriptor[] = [
     resolved: 'dark',
     description: 'Calm neutral ink, green accent',
     swatches: {
-      bgApp: '#08080c',
+      bgApp: '#040404',
       bgSurface: '#080808',
       bgSurfaceRaised: '#0c0c0c',
       accent: '#3f9468',
