@@ -99,6 +99,15 @@ function BackGlyph({ className }: { className?: string }) {
 
 type TabMenuState = { x: number; y: number; tabId: string }
 
+// Where the strip and the body stand inside the floating card: the card's
+// inset plus its 1px hairline, so neither paints over the edge. Spelled out in
+// full, never assembled, so Tailwind finds each class in the source.
+const PANE_CARD_INNER_X = 'left-[calc(var(--pane-float-inset)+1px)] right-[calc(var(--pane-float-inset)+1px)]'
+const PANE_CARD_INNER_TOP = 'top-[calc(var(--pane-float-inset)+1px)]'
+const PANE_CARD_INNER_STRIP = 'mx-[calc(var(--pane-float-inset)+1px)] mt-[calc(var(--pane-float-inset)+1px)]'
+const PANE_CARD_INNER_BODY = 'mx-[calc(var(--pane-float-inset)+1px)] mb-[calc(var(--pane-float-inset)+1px)]'
+const PANE_CARD_INNER_BODY_TOP = 'mt-[calc(var(--pane-float-inset)+1px)]'
+
 type WorkspacePaneProps = {
   workspaceId: string
   active: boolean
@@ -283,13 +292,17 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
       {...{ [WORKSPACE_PANE_DATA_ATTRIBUTE]: workspaceId }}
       className="relative flex h-full min-h-0 flex-col"
     >
-      {/* The card's ground runs to the top of the window behind the strip, so
-          the column is one piece from the window's top edge to its foot. It is
-          the ground and not the card that goes up: the strip keeps its row, and
-          a terminal or a browser under it keeps its size. */}
+      {/* The card: a panel floating beside the chat (2026-11-27), standing in
+          from the window's edges and its top by --pane-float-inset on every
+          side, on the raised surface with a hairline round it, and its strip
+          inside it. The column still takes its width in the row, so the chat
+          reflows beside the card rather than running under it. It is the
+          ground and not the body that draws the edge: the strip and the body
+          stand inside it by the hairline's width, and a terminal or a browser
+          in the body keeps its size. */}
       <div
         aria-hidden="true"
-        className="absolute bottom-[var(--shell-card-gap)] left-[var(--shell-card-gap)] right-[var(--shell-card-gap)] top-0 rounded-[var(--shell-card-radius)] bg-[color:var(--bg-surface)]"
+        className="absolute inset-[var(--pane-float-inset)] rounded-[var(--shell-card-radius)] border border-[color:var(--border-default)] bg-[color:var(--bg-surface-raised)]"
       />
       {/* The strip: the pane's one band of chrome, on the header's 36px
           baseline, standing on the card. Its empty run drags the window; the
@@ -308,7 +321,9 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
       <div
         data-pane-strip={stripFloats ? 'floating' : 'band'}
         className={`app-drag h-[36px] shrink-0 items-end pl-1.5 pr-1 ${narrow && showsMenu ? 'hidden' : 'flex'} ${
-          stripFloats ? 'absolute inset-x-0 top-0 z-[var(--z-sticky)]' : 'relative'
+          stripFloats
+            ? `absolute ${PANE_CARD_INNER_X} ${PANE_CARD_INNER_TOP} z-[var(--z-sticky)]`
+            : `relative ${PANE_CARD_INNER_STRIP}`
         }`}
         inert={collapsedWithFloatingPlayer}
       >
@@ -445,8 +460,10 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
           its other side, so the two gaps in the shell cannot drift apart. It
           takes the same gap on its RIGHT, against the window edge. */}
       <div
-        className={`relative min-h-0 flex-1 overflow-hidden ml-[var(--shell-card-gap)] mr-[var(--shell-card-gap)] mb-[var(--shell-card-gap)] ${
-          stripFloats ? 'rounded-[var(--shell-card-radius)]' : 'rounded-b-[var(--shell-card-radius)]'
+        className={`relative min-h-0 flex-1 overflow-hidden ${PANE_CARD_INNER_BODY} ${
+          stripFloats
+            ? `${PANE_CARD_INNER_BODY_TOP} rounded-[var(--shell-card-radius)]`
+            : 'rounded-b-[var(--shell-card-radius)]'
         }`}
       >
         {tabs.length > 0 ? (

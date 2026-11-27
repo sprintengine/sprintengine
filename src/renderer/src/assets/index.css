@@ -282,6 +282,14 @@
      has, which is all this needs: the frost showing through is the separator,
      not the distance. */
   --shell-card-gap: var(--sem-space-2xs);
+  /* How far the right-hand pane's card stands in from the window's edges and
+     from the top of the window (2026-11-27). The pane is a panel floating
+     beside the chat, a rounded card on a hairline with the window's black
+     showing round it on every side, rather than a column docked full height
+     against the edge. Its column still reserves its width, so the transcript
+     reflows beside it and never runs under it. A step wider than the shell's
+     card gap, because here the black round the card is what says it floats. */
+  --pane-float-inset: var(--sem-space-sm);
   /* And the one radius those cards share — including the per-tabset terminal
      cards inside the workspace card, which are cards of the same family and
      must not round by a different amount. It reads --sem-radius-shell-lg, a
