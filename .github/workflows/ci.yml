@@ -75,10 +75,11 @@ jobs:
       # Windows runs only the test files measured there. The Linux suite is the
       # js-tests job below, so a broken test no longer hides a broken build.
       # The CLI spawn test starts real batch and PowerShell shims, which only
-      # Windows has.
-      - name: Test mobile control command and CLI spawn
+      # Windows has. The flush tests cover a file flushed to the disk, which
+      # Windows allows only through a handle that may write to it.
+      - name: Test mobile control command, CLI spawn and flushing to the disk
         if: runner.os == 'Windows'
-        run: npx vitest run src/main/mobile/control/command.test.ts src/main/providers/cli-child-process.windows.test.ts
+        run: npx vitest run src/main/mobile/control/command.test.ts src/main/providers/cli-child-process.windows.test.ts src/server/platform/atomic-file.test.ts src/server/db/copies.test.ts
 
       # macOS is where the app is developed and most of it is used, and the whole
       # suite has been measured green there: the terminal, PTY and path handling

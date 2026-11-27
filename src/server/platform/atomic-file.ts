@@ -30,9 +30,18 @@ export type AtomicWriteOptions = {
   durable?: boolean
 }
 
+// Flushing to the disk. Windows flushes a file only through a handle that may
+// write to it (FlushFileBuffers needs write access; a read-only handle fails
+// with EPERM and stopped the server at start), so there a file is opened
+// read-write for its flush, never truncated. Elsewhere a read-only handle
+// flushes, and keeps working for a file whose mode forbids writing. A folder
+// cannot be opened at all on Windows, and its flush is passed over.
+
+const FILE_FLUSH_FLAGS = process.platform === 'win32' ? 'r+' : 'r'
+
 /** Flush a file, or a folder's entries, to the disk; a folder that cannot be opened for it (Windows) is passed over. */
 async function flushToDisk(path: string, folder = false): Promise<void> {
-  const handle = await open(path, 'r').catch((error: unknown) => {
+  const handle = await open(path, folder ? 'r' : FILE_FLUSH_FLAGS).catch((error: unknown) => {
     if (folder) return null
     throw error
   })
@@ -46,18 +55,28 @@ async function flushToDisk(path: string, folder = false): Promise<void> {
   }
 }
 
-function flushToDiskSync(path: string, folder = false): void {
+/** Flush a file's bytes to the disk. */
+export function flushFileSync(path: string): void {
+  const fd = openSync(path, FILE_FLUSH_FLAGS)
+  try {
+    fsyncSync(fd)
+  } finally {
+    closeSync(fd)
+  }
+}
+
+/** Flush a folder's entries (what was renamed or removed in it) to the disk; a platform that cannot (Windows) skips it. */
+export function flushFolderSync(path: string): void {
   let fd: number
   try {
     fd = openSync(path, 'r')
-  } catch (error) {
-    if (folder) return
-    throw error
+  } catch {
+    return
   }
   try {
     fsyncSync(fd)
-  } catch (error) {
-    if (!folder) throw error
+  } catch {
+    // Not supported for a folder here.
   } finally {
     closeSync(fd)
   }
@@ -132,7 +151,7 @@ export function writeFileAtomicSync(path: string, data: string, options: AtomicW
     if (options.exactMode && options.mode !== undefined && process.platform !== 'win32') {
       chmodSync(temporary, options.mode)
     }
-    if (options.durable) flushToDiskSync(temporary)
+    if (options.durable) flushFileSync(temporary)
     for (let attempt = 0; ; attempt++) {
       try {
         renameSync(temporary, path)
@@ -142,7 +161,7 @@ export function writeFileAtomicSync(path: string, data: string, options: AtomicW
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, renameRetryDelayMs(attempt))
       }
     }
-    if (options.durable) flushToDiskSync(dirname(path), true)
+    if (options.durable) flushFolderSync(dirname(path))
   } catch (error) {
     try {
       unlinkSync(temporary)

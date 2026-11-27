@@ -1,17 +1,7 @@
-import {
-  closeSync,
-  copyFileSync,
-  existsSync,
-  fsyncSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-} from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize, sep } from 'node:path'
 
-import { writeFileAtomicSync } from '../platform/atomic-file'
+import { flushFileSync, flushFolderSync, writeFileAtomicSync } from '../platform/atomic-file'
 import { copyStudioDatabase, databaseCopyName, keepOnlyDatabaseCopy } from '../db/copies'
 import { STUDIO_DATABASE_FILENAME, studioDatabaseFiles } from '../db/database'
 import {
@@ -192,7 +182,7 @@ function runStep(dataDir: string, from: number, step: DataFormatStep, version: s
     if (existed) {
       mkdirSync(dirname(join(backup, 'files', path)), { recursive: true, mode: 0o700 })
       copyFileSync(join(dataDir, path), join(backup, 'files', path))
-      syncFile(join(backup, 'files', path))
+      flushFileSync(join(backup, 'files', path))
     }
     return { path, existed }
   })
@@ -234,7 +224,7 @@ function runStep(dataDir: string, from: number, step: DataFormatStep, version: s
 /** Remove the marker, durably: what was done since it was written now stands. */
 function commit(backup: string): void {
   rmSync(join(backup, MARKER), { force: true })
-  syncDirectory(backup)
+  flushFolderSync(backup)
 }
 
 /** Undo a step a crash interrupted, from its copies. True when there was one. */
@@ -288,7 +278,7 @@ function restore(dataDir: string, marker: Marker): void {
     if (file.existed) {
       mkdirSync(dirname(join(dataDir, path)), { recursive: true })
       copyFileSync(join(backup, 'files', path), join(dataDir, path))
-      syncFile(join(dataDir, path))
+      flushFileSync(join(dataDir, path))
     } else rmSync(join(dataDir, path), { recursive: true, force: true })
   }
   if (marker.database) {
@@ -298,43 +288,17 @@ function restore(dataDir: string, marker: Marker): void {
     if (copy) {
       const restoring = `${live}.restoring`
       copyFileSync(copy, restoring)
-      syncFile(restoring)
+      flushFileSync(restoring)
       rmSync(wal, { force: true })
       rmSync(shm, { force: true })
       renameSync(restoring, live)
     } else for (const path of [live, wal, shm]) rmSync(path, { force: true })
-    syncDirectory(dataDir)
+    flushFolderSync(dataDir)
   }
   commit(backup)
   // The copy of a step that did not happen; the one before it, if any, stays the kept one.
   if (copy) rmSync(copy, { force: true })
   rmSync(backup, { recursive: true, force: true })
-}
-
-/** Make what was renamed or removed in a folder durable; a platform that cannot open a folder (Windows) skips it. */
-function syncDirectory(path: string): void {
-  let fd: number
-  try {
-    fd = openSync(path, 'r')
-  } catch {
-    return
-  }
-  try {
-    fsyncSync(fd)
-  } catch {
-    // Not supported for a folder here.
-  } finally {
-    closeSync(fd)
-  }
-}
-
-function syncFile(path: string): void {
-  const fd = openSync(path, 'r')
-  try {
-    fsyncSync(fd)
-  } finally {
-    closeSync(fd)
-  }
 }
 
 function messageOf(error: unknown): string {

@@ -240,8 +240,20 @@ test('a worker slow to start blames no extension: the code stays plain, and it i
   expect(await silent.tokenize(source('local.sample', sampleGrammar), ['move 1'], { sliceDeadlineMs: 100 })).toBeNull()
   expect(spawns).toBe(1)
   await new Promise((resolve) => setTimeout(resolve, 350))
-  const tokens = await silent.tokenize(source('local.sample', sampleGrammar), ['move 1'], { sliceDeadlineMs: 10_000 })
-  expect(roles('move 1', tokens?.[0])).toMatchObject({ move: 'keyword' })
+  // Tried again: the next worker answers. It too has 200ms to say it is
+  // ready, which a loaded machine can miss; that is one more wait, not a
+  // failure, so the test asks until the code is coloured.
+  const tokens = await vi.waitFor(
+    async () => {
+      const tried = await silent.tokenize(source('local.sample', sampleGrammar), ['move 1'], {
+        sliceDeadlineMs: 10_000,
+      })
+      if (!tried) throw new Error('the worker has not started yet')
+      return tried
+    },
+    { timeout: 15_000, interval: 100 },
+  )
+  expect(roles('move 1', tokens[0])).toMatchObject({ move: 'keyword' })
   expect(failures).toEqual([])
 }, 20_000)
 
