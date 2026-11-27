@@ -21,11 +21,12 @@ import type {
   MeshSettleConversationResult,
   MeshVisitConversationResult,
 } from '../../../shared/tailnet-mesh'
-import { askEnvironment, environmentCommandId, pairedTarget, type PairedMachine } from './environmentStudio'
+import { askEnvironment, environmentCommandId, type EnvironmentTarget } from './environmentStudio'
 import { copy } from '../../../shared/copy'
 
-// A paired machine's chats' records, asked by this window of that machine's
-// Studio itself (`chat-lifecycle`, `approval-rules`, `pull-request-watch`):
+// The records of the chats another environment holds (a paired desktop, an SSH
+// machine, a WSL distribution, any route the window reaches), asked by this
+// window of that environment's Studio itself, by its target (`chat-lifecycle`, `approval-rules`, `pull-request-watch`):
 // their rest and read clock, the row menu's marks, rename, Auto compact,
 // delete and its plan, a search of what was said, the "always allow" rules
 // and Stop watching. Each is that machine's to keep, by the chat's workspace
@@ -43,9 +44,9 @@ const lifecycleUnsupported = (doing: string) => (machineName: string) => ({
  * reaches a send, else follow them. Asked on the window's one connection to
  * that machine, the one its chat source follows.
  */
-export async function listPairedChats(machine: PairedMachine): Promise<MeshConversationListResult> {
+export async function listEnvironmentChats(target: EnvironmentTarget): Promise<MeshConversationListResult> {
   const answer = await askEnvironment(
-    pairedTarget(machine),
+    target,
     STUDIO_CONVERSATIONS_CAPABILITY,
     (machineName) => ({
       code: 'conversations_unsupported',
@@ -63,14 +64,14 @@ export async function listPairedChats(machine: PairedMachine): Promise<MeshConve
 }
 
 /** Settle a chat there, or bring it back with `settled: false`. */
-export async function settlePairedChat(
-  machine: PairedMachine,
+export async function settleEnvironmentChat(
+  target: EnvironmentTarget,
   workspaceId: string,
   settled = true,
 ): Promise<MeshSettleConversationResult> {
   if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedChats.nameTheRemoteChat }
   const answer = await askEnvironment(
-    pairedTarget(machine),
+    target,
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
     lifecycleUnsupported(settled ? 'settle its chats' : 'bring its chats back'),
     (client) =>
@@ -87,13 +88,13 @@ export async function settlePairedChat(
  * Say a chat there is on screen here. No time is sent: the visit is now, and
  * that machine stamps it with its own clock, which a finish there is read by.
  */
-export async function visitPairedChat(
-  machine: PairedMachine,
+export async function visitEnvironmentChat(
+  target: EnvironmentTarget,
   workspaceId: string,
 ): Promise<MeshVisitConversationResult> {
   if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedChats.nameTheRemoteChat }
   const answer = await askEnvironment(
-    pairedTarget(machine),
+    target,
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
     lifecycleUnsupported('keep its chats’ read state for a chat read here'),
     (client) => client.rpc['conversation.visit']({ workspaceId }),
@@ -107,8 +108,8 @@ export async function visitPairedChat(
  * method under a command id; Stop watching is the pull request's
  * (`pullRequests.unwatch`).
  */
-export async function changePairedChat(
-  machine: PairedMachine,
+export async function changeEnvironmentChat(
+  target: EnvironmentTarget,
   workspaceId: string,
   change: MeshConversationChange,
 ): Promise<MeshChangeConversationResult> {
@@ -116,7 +117,7 @@ export async function changePairedChat(
   if (change.kind === 'unwatch-pull-request') {
     const { agentId, url } = change
     const answer = await askEnvironment(
-      pairedTarget(machine),
+      target,
       STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
       (machineName) => ({
         code: 'row_menu_unsupported',
@@ -129,7 +130,7 @@ export async function changePairedChat(
   const call = chatChangeOf(change)
   if (!call) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedChats.thatIsNotAChange }
   const answer = await askEnvironment(
-    pairedTarget(machine),
+    target,
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
     (machineName) => ({
       code: 'row_menu_unsupported',
@@ -146,22 +147,22 @@ const deleteUnsupported = (machineName: string) => ({
 })
 
 /** What deleting a settled chat there would do, as that machine plans it. */
-export async function pairedChatDeletePlan(
-  machine: PairedMachine,
+export async function environmentChatDeletePlan(
+  target: EnvironmentTarget,
   workspaceId: string,
 ): Promise<MeshConversationDeletePlanResult> {
   if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedChats.nameTheRemoteChat }
-  const answer = await askEnvironment(
-    pairedTarget(machine),
-    STUDIO_CHAT_LIFECYCLE_CAPABILITY,
-    deleteUnsupported,
-    (client) => client.rpc['conversation.deletePlan']({ workspaceId }),
+  const answer = await askEnvironment(target, STUDIO_CHAT_LIFECYCLE_CAPABILITY, deleteUnsupported, (client) =>
+    client.rpc['conversation.deletePlan']({ workspaceId }),
   )
   return answer.ok ? deletePlanOf(workspaceId, answer.value as unknown as Record<string, unknown>) : answer
 }
 
 /** What was said in that machine's chats, as its own palette finds it. */
-export async function searchPairedChats(machine: PairedMachine, query: string): Promise<MeshConversationSearchResult> {
+export async function searchEnvironmentChats(
+  target: EnvironmentTarget,
+  query: string,
+): Promise<MeshConversationSearchResult> {
   const asked = query.trim()
   if (asked.length < STUDIO_CHAT_SEARCH_MIN_CHARS || asked.length > STUDIO_CHAT_SEARCH_MAX_CHARS) {
     return {
@@ -174,7 +175,7 @@ export async function searchPairedChats(machine: PairedMachine, query: string): 
     }
   }
   const answer = await askEnvironment(
-    pairedTarget(machine),
+    target,
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
     (machineName) => ({
       code: 'search_unsupported',
@@ -191,12 +192,9 @@ const rulesUnsupported = (machineName: string) => ({
 })
 
 /** The "always allow" rules that machine's chats run with, for Settings. */
-export async function pairedApprovalRules(machine: PairedMachine): Promise<MeshApprovalRulesResult> {
-  const answer = await askEnvironment(
-    pairedTarget(machine),
-    STUDIO_APPROVAL_RULES_CAPABILITY,
-    rulesUnsupported,
-    (client) => client.rpc['conversation.approvalRules']({}),
+export async function environmentApprovalRules(target: EnvironmentTarget): Promise<MeshApprovalRulesResult> {
+  const answer = await askEnvironment(target, STUDIO_APPROVAL_RULES_CAPABILITY, rulesUnsupported, (client) =>
+    client.rpc['conversation.approvalRules']({}),
   )
   if (!answer.ok) return answer
   if (!answer.value.ok) return { ok: false, code: 'unavailable', message: answer.value.message }
@@ -204,16 +202,13 @@ export async function pairedApprovalRules(machine: PairedMachine): Promise<MeshA
 }
 
 /** Revoke one of them there: its chats ask again. */
-export async function revokePairedApprovalRule(
-  machine: PairedMachine,
+export async function revokeEnvironmentApprovalRule(
+  target: EnvironmentTarget,
   ruleId: string,
 ): Promise<MeshRevokeApprovalRuleResult> {
   if (!ruleId) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedChats.nameTheRule }
-  const answer = await askEnvironment(
-    pairedTarget(machine),
-    STUDIO_APPROVAL_RULES_CAPABILITY,
-    rulesUnsupported,
-    (client) => client.rpc['conversation.revokeApprovalRule']({ commandId: environmentCommandId(), ruleId }),
+  const answer = await askEnvironment(target, STUDIO_APPROVAL_RULES_CAPABILITY, rulesUnsupported, (client) =>
+    client.rpc['conversation.revokeApprovalRule']({ commandId: environmentCommandId(), ruleId }),
   )
   if (!answer.ok) return answer
   return answer.value.ok ? { ok: true, ruleId } : { ok: false, code: 'unavailable', message: answer.value.message }

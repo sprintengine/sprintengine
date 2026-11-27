@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { changePairedChat, settlePairedChat, visitPairedChat } from '../../studio/pairedChats'
-import { environmentStudioAvailable, pairedConnectionOf } from '../../studio/environmentStudio'
+import { changeEnvironmentChat, settleEnvironmentChat, visitEnvironmentChat } from '../../studio/environmentChatRecords'
+import { environmentStudioAvailable, pairedConnectionOf, pairedTarget } from '../../studio/environmentStudio'
 import { pairedScheduledAgentAction } from '../../studio/pairedSchedules'
 import { ChatGlyph, NewChatIcon, RemoteMachineGlyph, ScheduleGlyph, resolveEnabledWorkspaceType } from '../AppIcons'
 import CliIcon from '../CliIcon'
@@ -1758,8 +1758,8 @@ function WorkspaceSidebar({
         })
       }
       setSettlingRemote((current) => new Set(current).add(conversation.key))
-      void settlePairedChat(
-        { id: conversation.connectionId, machineName: conversation.machineName },
+      void settleEnvironmentChat(
+        pairedTarget({ id: conversation.connectionId, machineName: conversation.machineName }),
         conversation.workspaceId,
       )
         .then((answer) => {
@@ -1818,7 +1818,7 @@ function WorkspaceSidebar({
         if (marks) settlePending(false)
         showToast({ tone: 'error', title: remoteChangeRefusedTitle(change, target.title), description: message })
       }
-      void changePairedChat(pairedMachineOf(target.connectionId), target.workspaceId, change)
+      void changeEnvironmentChat(pairedTarget(pairedMachineOf(target.connectionId)), target.workspaceId, change)
         .then((answer) => {
           if (!answer.ok) {
             refused(answer.message)
@@ -1928,9 +1928,10 @@ function WorkspaceSidebar({
         // The machine stamps the visit with its own clock, which this one's
         // may not agree with.
         stamp: () => {
-          void visitPairedChat({ id: origin.connectionId, machineName: origin.machineName }, chatWorkspaceId).catch(
-            () => undefined,
-          )
+          void visitEnvironmentChat(
+            pairedTarget({ id: origin.connectionId, machineName: origin.machineName }),
+            chatWorkspaceId,
+          ).catch(() => undefined)
         },
         // The "New" divider weighs the machine's visit clock, as its list said
         // it before this opening's first stamp, against the replies that
@@ -2100,8 +2101,8 @@ function WorkspaceSidebar({
             : appCopy.workspace.workspaceSidebar.wasNotBroughtBack(workspace.name),
           description: message,
         })
-      void settlePairedChat(
-        { id: origin.connectionId, machineName: origin.machineName },
+      void settleEnvironmentChat(
+        pairedTarget({ id: origin.connectionId, machineName: origin.machineName }),
         remoteOriginChatWorkspaceId(origin),
         settled,
       )

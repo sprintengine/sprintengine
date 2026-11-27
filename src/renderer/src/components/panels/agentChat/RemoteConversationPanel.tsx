@@ -37,7 +37,7 @@ import { ConversationChatBody } from '../AgentChatView'
 import { remoteFileCountsOf } from '../../workspace/terminalLines'
 import { environmentChatSourceFor, type EnvironmentChatSource } from '../../../studio/environmentChats'
 import { pairedTarget, type EnvironmentRefusal } from '../../../studio/environmentStudio'
-import { listPairedChats } from '../../../studio/pairedChats'
+import { listEnvironmentChats } from '../../../studio/environmentChatRecords'
 import { ChatViewErrorBoundary } from './ChatViewErrorBoundary'
 import { useStudioChatHeld } from './chatServerHeld'
 import { publishRemoteChat } from './remoteChatRegistry'
@@ -461,7 +461,7 @@ export default function RemoteConversationPanel({
   useEffect(() => {
     if (link !== 'live') return
     let cancelled = false
-    void listPairedChats({ id: connectionId, machineName }).then((result) => {
+    void listEnvironmentChats(pairedTarget({ id: connectionId, machineName })).then((result) => {
       if (cancelled || !result.ok) return
       // The pane's tab reads its mark, model and clock off this list too.
       publishRemoteConversationList(connectionId, result.conversations)

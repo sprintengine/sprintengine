@@ -6,7 +6,7 @@ import { useTailnetPresence, type TailnetPresence } from '../topbar/useTailnetPr
 import { publishRemoteConversationList } from './remoteConversationFacts'
 import { browseEnvironment, tailnetScopesOfGrant } from '../../../studio/environmentDiscovery'
 import type { MeshBrowse } from '../../../../../shared/tailnet-mesh'
-import { listPairedChats } from '../../../studio/pairedChats'
+import { listEnvironmentChats } from '../../../studio/environmentChatRecords'
 import { environmentStudioAvailable, pairedTarget } from '../../../studio/environmentStudio'
 import { environmentChatSourceFor, onFollowedEnvironmentChats } from '../../../studio/environmentChats'
 import { environmentConversationTransport } from '../../panels/agentChat/environmentChat'
@@ -181,7 +181,9 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
         // them, or a machine that does not serve them, lists none.
         const listed =
           wantList && (result === null || result.reachable)
-            ? await listPairedChats(machine ?? { id: connectionId, machineName: 'That machine' }).catch(() => null)
+            ? await listEnvironmentChats(
+                pairedTarget(machine ?? { id: connectionId, machineName: 'That machine' }),
+              ).catch(() => null)
             : null
         // The tab of a pane open on one of these chats draws from the same list.
         if (listed?.ok) publishRemoteConversationList(connectionId, listed.conversations)

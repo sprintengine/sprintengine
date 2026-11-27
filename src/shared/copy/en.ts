@@ -4539,7 +4539,7 @@ export const en = {
       nameTheWorkspaceWhoseBoards: 'Name the workspace whose boards to list.',
       nameTheBoardToShow: 'Name the board to show.',
     },
-    // src/renderer/src/studio/pairedChats.ts
+    // src/renderer/src/studio/environmentChatRecords.ts
     pairedChats: {
       canTFromHereYet: (machineName: unknown, doing: unknown) =>
         `${machineName} can’t ${doing} from here yet. Update Studio there.`,

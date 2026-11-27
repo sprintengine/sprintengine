@@ -1,8 +1,9 @@
 import React, { useCallback, useState } from 'react'
-import { changePairedChat, pairedChatDeletePlan } from '../studio/pairedChats'
+import { changeEnvironmentChat, environmentChatDeletePlan } from '../studio/environmentChatRecords'
 import {
   environmentCommandId,
   environmentStudioAvailable,
+  pairedTarget,
   withEnvironmentStudio,
   type EnvironmentTarget,
 } from '../studio/environmentStudio'
@@ -186,7 +187,7 @@ export function useDeleteSettledChats(): {
       const chatThere = remoteOriginChatWorkspaceId(origin)
       setDeleting((current) => new Set([...current, workspaceId]))
       try {
-        const plan = await pairedChatDeletePlan(machine, chatThere)
+        const plan = await environmentChatDeletePlan(pairedTarget(machine), chatThere)
         const refused = !plan.ok ? plan.message : plan.refused
         if (!plan.ok || refused) {
           failed(refused ?? 'Nothing could be deleted.')
@@ -220,7 +221,7 @@ export function useDeleteSettledChats(): {
             tone: 'danger',
           })
           if (!confirmed) return false
-          const deleted = await changePairedChat(machine, chatThere, { kind: 'delete' })
+          const deleted = await changeEnvironmentChat(pairedTarget(machine), chatThere, { kind: 'delete' })
           if (!deleted.ok) {
             failed(deleted.message)
             return false

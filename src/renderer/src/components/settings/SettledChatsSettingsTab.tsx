@@ -17,8 +17,8 @@ import { createSettledChatsSelector, type SettledChatEntry } from './settledChat
 import { remoteOriginChatWorkspaceId } from '../workspace/remoteBand/remoteSessionsModel'
 import { useStableCallback } from '../../hooks/useStableCallback'
 import { useDeleteSettledChats } from '../../hooks/useDeleteSettledChats'
-import { settlePairedChat } from '../../studio/pairedChats'
-import { environmentStudioAvailable } from '../../studio/environmentStudio'
+import { settleEnvironmentChat } from '../../studio/environmentChatRecords'
+import { environmentStudioAvailable, pairedTarget } from '../../studio/environmentStudio'
 import { copy } from '../../../../shared/copy'
 
 const SETTLED_PAGE = 100
@@ -130,8 +130,8 @@ export function SettledChatsSettingsTab({
           title: copy.settings.settledChatsSettingsTab.theChatWasNotBrought,
           description: message,
         })
-      void settlePairedChat(
-        { id: origin.connectionId, machineName: origin.machineName },
+      void settleEnvironmentChat(
+        pairedTarget({ id: origin.connectionId, machineName: origin.machineName }),
         remoteOriginChatWorkspaceId(origin),
         false,
       )
