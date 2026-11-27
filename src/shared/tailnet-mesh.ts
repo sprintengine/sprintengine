@@ -234,8 +234,8 @@ export type MeshConversationManageChange =
  * (`chat-lifecycle`): the chat renamed there, so every device lists it by the
  * new name; its Auto compact switched there, the machine that runs it
  * compacting it by itself; a settled chat deleted there for good, its plan
- * read first (`pairedChatDeletePlan`); and what was said in its chats
- * found from here (`searchPairedChats`). `unwatchPullRequest`:
+ * read first (`environmentChatDeletePlan`); and what was said in its chats
+ * found from here (`searchEnvironmentChats`). `unwatchPullRequest`:
  * `pull-request-watch`, a watch of the chat's pull request ended there
  * (`pullRequests.unwatch`), where its listed pull request says it is watched.
  */

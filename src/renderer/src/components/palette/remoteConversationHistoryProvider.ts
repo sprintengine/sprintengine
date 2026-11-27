@@ -7,8 +7,8 @@ import {
 import { CONVERSATION_SEARCH_MIN_QUERY } from './conversationHistoryProvider'
 import { bestConversationHit } from './conversationSnippet'
 import type { PaletteCommand, PaletteResultProvider } from './paletteProvider'
-import { searchPairedChats } from '../../studio/pairedChats'
-import { environmentStudioAvailable } from '../../studio/environmentStudio'
+import { searchEnvironmentChats } from '../../studio/environmentChatRecords'
+import { environmentStudioAvailable, pairedTarget } from '../../studio/environmentStudio'
 
 // What was said in the paired machines' chats, beside this computer's
 // (`conversationHistoryProvider.ts`): each machine that takes a search from
@@ -42,8 +42,8 @@ export function createRemoteConversationHistoryProvider(
       let failure: string | null = null
       let answered = false
       for (const machine of getMachines()) {
-        const found: MeshConversationSearchResult = await searchPairedChats(
-          { id: machine.connectionId, machineName: machine.machineName },
+        const found: MeshConversationSearchResult = await searchEnvironmentChats(
+          pairedTarget({ id: machine.connectionId, machineName: machine.machineName }),
           query,
         )
         if (epoch !== generation) return []
