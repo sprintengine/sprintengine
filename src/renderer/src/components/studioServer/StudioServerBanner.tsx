@@ -6,7 +6,7 @@ import { useStudioServerStatus } from './useStudioServerStatus'
 import { studioServerNotice } from './studioServerWords'
 import { copy } from '../../../../shared/copy'
 
-// The strip across the top of a workspace window while the Studio server is
+// The strip across the foot of the workspace card while the Studio server is
 // not there: starting (only once it has taken a noticeable moment),
 // reconnecting after a crash, or stopped. Everything the shell owns keeps
 // working meanwhile (terminals, the git panel, the file explorer); the strip
