@@ -5268,8 +5268,6 @@ export default function WorkspaceManager() {
       <React.Suspense fallback={null}>
         <ToastHost />
       </React.Suspense>
-      {/* The Studio server's state in words while it is not there (phase 6). */}
-      <StudioServerBanner />
       <WorkspaceFolderReveal activeWorkspace={activeWorkspace} activeWorkspaceId={windowActiveWorkspaceId} />
       <AccountSurfaces
         sessionsOpen={sessionsOpen}
@@ -5755,6 +5753,12 @@ export default function WorkspaceManager() {
                     </Modal>
                   ) : null}
                 </div>
+                {/* The Studio server's state in words while it is not there, at
+                    the foot of the card it is about. Not above the band: a strip
+                    over the window's top row is chrome, pushes the band down and
+                    runs under the Windows caption buttons, and at the card's top
+                    the band floats over it. */}
+                <StudioServerBanner />
               </div>
             </div>
             <WorkspaceBand
