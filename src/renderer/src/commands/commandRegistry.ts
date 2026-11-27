@@ -70,6 +70,18 @@ export const COMMAND_REGISTRY = [
     defaultKeybindings: ['Primary+P'],
     handlerPath: { kind: 'workspace-manager', handler: 'setCommandPaletteOpen(true, "files")' },
   }),
+  // Open file…: any one file on this computer, picked in its open dialog, in a
+  // workspace or not, opened where the person opens files (renderer
+  // utils/openAnyFile.ts). Unbound here, because ⌘O is the workspace folder's
+  // reveal and ⌘⇧O the code editor's toggle; the editor window, where no chat
+  // or workspace chord competes, binds it to ⌘O itself.
+  command({
+    id: 'file.open',
+    title: appCopy.commands.commandRegistry.openFile,
+    category: 'command_palette',
+    scopes: ['global'],
+    handlerPath: { kind: 'workspace-manager', handler: 'openAnyFile(windowActiveWorkspaceId)' },
+  }),
   // Find in Path. The same overlay `commandPalette.open` raises, opened filtered
   // to the file-backed groups — a snippet of code should not be ranked against
   // command and workspace rows. Global scope, like the palette itself: with no

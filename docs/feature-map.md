@@ -169,6 +169,14 @@ the layout in `src/server/db/migrations.ts`, the one copy in
 `src/main/automation/editor-tools.ts`. Tests: `src/renderer/src/components/panels/EditorPanel.diskSync.test.tsx`,
 `src/main/automation/editor-tools.test.ts`.
 
+**Editor window** (a file beside its folder's tree, in a window of its own): `src/renderer/src/components/auxWindows/ExternalEditorWindow.tsx`,
+its tree `src/renderer/src/components/auxWindows/EditorFileTree.tsx`, opened by
+`src/renderer/src/utils/openFileSurface.ts`. **Open file…** (any one file on this computer, in a workspace or not; the
+window's button and ⌘O, and the palette's `file.open`): `src/renderer/src/utils/openAnyFile.ts`, the dialog
+`fs:dialog:open-file` in `src/main/ipc/menu-dialog-ipc.ts`. Tests:
+`src/renderer/src/components/auxWindows/ExternalEditorWindow.diskSync.test.tsx`,
+`src/renderer/src/components/auxWindows/EditorFileTree.test.tsx`, `src/renderer/src/utils/openAnyFile.test.ts`.
+
 **Workspace pane** (tabs, browser, canvas, documents): `src/renderer/src/components/workspace/pane/WorkspacePane.tsx`.
 
 **Browser pane**: `src/main/browser/`, agents' tools in `src/main/automation/browser-tools.ts`.

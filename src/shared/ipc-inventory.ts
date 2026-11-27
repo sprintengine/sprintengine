@@ -102,6 +102,7 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'chat-export:save': shell(
     "This computer's save dialog, print window, clipboard and disk, writing a chat its Studio read.",
   )('invoke'),
+  'fs:dialog:open-file': DESKTOP('invoke'),
   'fs:dialog:open-project-icon': DESKTOP('invoke'),
   'fs:dialog:opendir': DESKTOP('invoke'),
   'git:save-patch': DESKTOP('invoke'),

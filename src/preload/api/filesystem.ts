@@ -56,6 +56,7 @@ export const filesystemApi = {
   openDir: (options?: { defaultPath?: string }) => ipcRenderer.invoke('fs:dialog:opendir', options),
   openProjectIconFile: (options?: { defaultPath?: string }) =>
     ipcRenderer.invoke('fs:dialog:open-project-icon', options),
+  openFileDialog: (options?: { defaultPath?: string }) => ipcRenderer.invoke('fs:dialog:open-file', options),
   showMenubarMenu: (label: string, position?: { x?: number; y?: number }) =>
     ipcRenderer.invoke('app:show-menubar-menu', label, position),
 } satisfies Pick<
@@ -77,5 +78,6 @@ export const filesystemApi = {
   | 'openFolderInTarget'
   | 'openDir'
   | 'openProjectIconFile'
+  | 'openFileDialog'
   | 'showMenubarMenu'
 >

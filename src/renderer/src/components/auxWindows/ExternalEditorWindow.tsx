@@ -71,6 +71,7 @@ import { filesApi } from '../../studio/files'
 import { gitApi } from '../../studio/git'
 import { isPathOrChild } from '../../utils/paths'
 import { copy as appCopy } from '../../../../shared/copy'
+import { canOpenAnyFile, pickAnyFile } from '../../utils/openAnyFile'
 
 // Match EditorPanel: above this size the rendered preview is disabled and the
 // file falls back to the Monaco source view so a huge document can't hang the
@@ -573,6 +574,13 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
         saveActive()
         return
       }
+      // ⌘O here, where no chat or workspace chord competes for it.
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && isLetterKey(event, 'o')) {
+        if (!canOpenAnyFile()) return
+        event.preventDefault()
+        void openAnyFileRef.current()
+        return
+      }
       if (event.key === 'Escape') {
         // Inside the files column Escape means "back to the file", never
         // "close the window" — whichever of its controls has focus.
@@ -618,6 +626,47 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
     </Tooltip>
   )
 
+  // Open file…: any one file on this computer, from its open dialog, as a tab
+  // here, in this workspace's folder or not. A file outside the tree's folder
+  // shows as its pinned "Outside this workspace" row, and the tree stays where
+  // it is. A shell with no open dialog offers no button.
+  const openFileOffered = canOpenAnyFile()
+  const openAnyFileHere = useCallback(async () => {
+    const start = activePathRef.current ? splitTreePath(activePathRef.current).directory : undefined
+    const path = await pickAnyFile(start || undefined)
+    if (path) openFromTree(path, splitTreePath(path).name || path)
+  }, [openFromTree])
+  const openAnyFileRef = useRef(openAnyFileHere)
+  openAnyFileRef.current = openAnyFileHere
+  const openFileButton = openFileOffered ? (
+    <Tooltip
+      content={appCopy.auxWindows.externalEditorWindow.openFileShortcut(isMac ? '⌘O' : 'Ctrl+O')}
+      placement="bottom"
+    >
+      <IconButton
+        onClick={() => void openAnyFileHere()}
+        aria-label={appCopy.auxWindows.externalEditorWindow.openFile}
+        className="app-no-drag shrink-0"
+      >
+        <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
+          <path
+            d="M9 2.5H4.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6L9 2.5z"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M8 11V7.5M6.5 9 8 7.5 9.5 9"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </IconButton>
+    </Tooltip>
+  ) : null
+
   const tabItems: TabItem[] = tabs.map((tab) => {
     const agent = agentHere(tab.path)
     return {
@@ -662,6 +711,8 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
             }`}
           >
             {filesToggle}
+            <div className="min-w-0 flex-1 self-stretch" aria-hidden="true" />
+            {openFileButton}
           </div>
           <EditorFileTree
             rootPath={treeRoot}
@@ -730,6 +781,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
           }`}
         >
           {treePrefs.visible ? null : filesToggle}
+          {treePrefs.visible ? null : openFileButton}
           <TabsScroller className="flex min-w-0 flex-1 items-center self-stretch">
             <Tabs
               ariaLabel={appCopy.auxWindows.externalEditorWindow.openFiles}

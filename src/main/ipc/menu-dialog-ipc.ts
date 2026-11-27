@@ -1,5 +1,5 @@
 import { stat } from 'node:fs/promises'
-import { BrowserWindow, Menu, app, dialog, type IpcMain } from 'electron'
+import { BrowserWindow, Menu, app, dialog, type IpcMain, type OpenDialogOptions } from 'electron'
 
 export const TEST_OPEN_DIR_ENV = 'SPRINTENGINE_TEST_OPEN_DIR'
 
@@ -52,6 +52,22 @@ export function registerMenuDialogIpc(ipcMain: IpcMain): void {
         ? { defaultPath: options.defaultPath }
         : {}),
     })
+    return result.filePaths[0] ?? null
+  })
+
+  // Any one file, for the editor's Open file…: wherever it is on this
+  // computer, in a workspace or not. The editor reads it through the window's
+  // Studio, which is this computer's.
+  ipcMain.handle('fs:dialog:open-file', async (event, options?: { defaultPath?: string }) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const dialogOptions: OpenDialogOptions = {
+      properties: ['openFile'],
+      title: 'Open File',
+      ...(typeof options?.defaultPath === 'string' && options.defaultPath.trim()
+        ? { defaultPath: options.defaultPath }
+        : {}),
+    }
+    const result = win ? await dialog.showOpenDialog(win, dialogOptions) : await dialog.showOpenDialog(dialogOptions)
     return result.filePaths[0] ?? null
   })
 

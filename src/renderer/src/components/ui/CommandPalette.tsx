@@ -105,6 +105,7 @@ import {
 } from '../palette/InstalledSkillsPanel'
 import { OVERLAY_SHELL_CHROME_CLASS, overlayWidthStyle } from './tokens'
 import { isImeKey } from '../../utils/imeKey'
+import { canOpenAnyFile } from '../../utils/openAnyFile'
 import { agentSetupApi } from '../../studio/agentSetup'
 import { agentSkillsApi } from '../../studio/agentSkills'
 import { filesApi } from '../../studio/files'
@@ -644,6 +645,22 @@ export default function CommandPalette({
     // dialog, the one place to read them with no Claude or Codex chat open,
     // gone with the setting that hides them.
     const usageCommands: UngroupedCommand[] = [
+      // Any one file on this computer, from its open dialog: a shell's own
+      // dialog, so a window whose shell has none (a browser tab) lists none.
+      ...(canOpenAnyFile()
+        ? [
+            {
+              id: 'file.open',
+              label: appCopy.ui.commandPalette.openFile,
+              keywords: 'open file browse disk pick outside workspace editor',
+              shortcut: shortcutFor('file.open'),
+              run: () => {
+                onRunCommand('file.open')
+                onClose()
+              },
+            },
+          ]
+        : []),
       {
         id: 'usage.show',
         label: appCopy.ui.commandPalette.showUsage,
