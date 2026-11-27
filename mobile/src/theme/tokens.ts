@@ -266,7 +266,7 @@ const darkColors: ThemeColors = {
   chart6: "#e253ae",
   chart7: "#7e6cf7",
   chart8: "#0da4cf",
-  chartOther: "#a8a8b0",
+  chartOther: "#949494",
   bgWell: "rgba(252,252,252,0.06)",
 };
 
