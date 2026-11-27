@@ -1,3 +1,4 @@
+import type { StudioDatabase } from '../db/database'
 import type {
   StudioPullRequest,
   StudioPullRequestOwner,
@@ -100,7 +101,8 @@ export type PullRequestDomain = StudioPullRequests & {
 }
 
 export type PullRequestDomainOptions = {
-  dataDir: string
+  /** The server's database, which keeps the record. */
+  database: StudioDatabase
   /** The chats: their events, the folder each session works in, and a tool's whole output. */
   conversations: {
     onEvent(listener: (event: ConversationEvent) => void): () => void
@@ -112,7 +114,7 @@ export type PullRequestDomainOptions = {
   /** The record, built here unless given (tests). */
   record?: PullRequestRecord
   /** Passed to the record this builds. */
-  recordOptions?: Omit<PullRequestRecordOptions, 'userDataDir' | 'onRecordChanged'>
+  recordOptions?: Omit<PullRequestRecordOptions, 'database' | 'onRecordChanged'>
   /** The checkout a folder is in and the branch it is on; null when it is not a checkout on a branch. */
   resolveCheckout?(path: string): Promise<PullRequestCheckout | null>
   /**
@@ -166,7 +168,7 @@ export function createPullRequestDomain(options: PullRequestDomainOptions): Pull
     createPullRequestRecord({
       loadStoredOnStart: true,
       ...options.recordOptions,
-      userDataDir: options.dataDir,
+      database: options.database,
       onRecordChanged: (change) => publish(change),
       // With nobody to wake, news is not kept for anyone.
       ...(wakes ? { onWatchNews: (news: PullRequestWatchNewsEvent) => wakes.deliver(news) } : {}),

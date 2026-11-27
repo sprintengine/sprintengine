@@ -71,16 +71,15 @@
 // request, so it outlives a restart, and ends when the pull request merges or
 // closes, or when it is stopped.
 //
-// ONE FILE. Every pull request on the record is in `pull-requests/opened.json`
-// in the server's data directory. The files written before this rule — one per
-// repository, holding every branch lookup's rows, and the conversations'
-// `conversations.json` — are read once: the rows a capture filed under a
-// conversation are kept (a capture from before the agent was known names the
-// workspace alone, and is worn by every conversation in it), the rows a branch
-// lookup found are dropped, and the old files are removed.
+// A ROW PER PULL REQUEST. The record is the `pull_requests` table of the
+// server's database (`record-table.ts`), a row per pull request with its watch
+// and the news its chat was not told yet, written as it changes: only the rows
+// that changed. Builds before the database kept it in `pull-requests/opened.json`,
+// and before that a file per repository; the format step brings those in once
+// (`importPullRequestRecords`) and leaves them as they were.
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, readdir, rename, stat, unlink } from 'node:fs/promises'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { classifyPullRequestUrl } from '../../shared/git/pr-url'
@@ -92,7 +91,8 @@ import {
 } from '../../shared/git/pull-request'
 import { isRecord } from '../../shared/records'
 import { createPullRequestUntoldWakes, type PullRequestWakeMessage } from './pull-request-untold'
-import { writeFileAtomically } from '../../main/config-file-write'
+import type { StudioDatabase } from '../db/database'
+import { createRecordTable, type RecordRow } from '../db/record-table'
 import {
   readPullRequestState as readPullRequestStateDefault,
   readRateLimitReset as readRateLimitResetDefault,
@@ -122,12 +122,13 @@ import {
 } from './pull-request-watch'
 
 const STORE_DIR = 'pull-requests'
-const STORE_FILE = 'opened.json'
+/** The file builds before the database kept the record in, under the data folder; read once, by the import. */
+export const PULL_REQUEST_RECORD_FILE = `${STORE_DIR}/opened.json`
 const STORE_VERSION = 2
-/** The version of the per-repository files this replaces, read once to migrate. */
+/** The version of the per-repository files `opened.json` replaced, read by the import when there is no `opened.json`. */
 const LEGACY_STORE_VERSION = 1
-/** The file the replaced rule kept its conversations' checkouts in; removed by the migration. */
-const LEGACY_CONVERSATIONS_FILE = 'conversations.json'
+/** Files beside those that are not pull request records: the conversations' checkouts of the rule before, and the chat folders. */
+const LEGACY_NOT_RECORDS = new Set(['conversations.json', 'chat-folders.json'])
 
 /**
  * How long every read is skipped once `gh` turned out not to be installed. A
@@ -185,12 +186,6 @@ export const MAX_PULL_REQUESTS = 5_000
 /** The most conversations whose own checkout is remembered; the least recently active go first. */
 export const MAX_CONVERSATIONS = 2_000
 
-/** How long after a write of the record fails it is tried again. */
-const WRITE_RETRY_MS = 5_000
-
-/** A `<name>.<uuid>.tmp` left by a write that died must be older than this before it is swept. */
-const TEMP_FILE_SWEEP_MIN_AGE_MS = 60 * 60 * 1000
-
 /** A conversation: a workspace and one agent in it. */
 export type PullRequestConversationKey = { workspaceId: string; agentId: string }
 
@@ -204,7 +199,8 @@ export type PullRequestRecordChange = {
 }
 
 export type PullRequestRecordOptions = {
-  userDataDir: string
+  /** The server's database: the record is its `pull_requests` table. */
+  database: StudioDatabase
   /** The GitHub reads, injected so tests never spawn `gh`. */
   reads?: {
     readPullRequestState?: typeof readPullRequestStateDefault
@@ -360,11 +356,6 @@ export type PullRequestRecord = {
   dispose(): void
 }
 
-/** The file the record lives in. */
-export function pullRequestStorePath(userDataDir: string): string {
-  return join(userDataDir, STORE_DIR, STORE_FILE)
-}
-
 type Home = { checkout: PullRequestCheckout; at: number }
 
 export function createPullRequestRecord(options: PullRequestRecordOptions): PullRequestRecord {
@@ -432,16 +423,15 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
   const rateLimitLookups = new Map<string, Promise<void>>()
   let load: Promise<void> | null = null
   let writes: Promise<unknown> = Promise.resolve()
-  // Whether the last write reached the file: a wake's id must be on disk before its send.
+  const table = createRecordTable(options.database, 'pull_requests', (message) => warn(message, null))
+  // Whether the last write was committed: a wake's id must be stored before its send.
   let lastWriteOk = true
   // What chats have not been told, stored on the rows (pull-request-untold.ts).
   const untold = createPullRequestUntoldWakes()
   let dirty = false
-  let writeRetry: unknown = null
   let disposed = false
-  // The file is there but could not be read (locked by a scanner, a
-  // permission): nothing is written over it this run, or the next change
-  // would replace every stored pull request with what this run knows.
+  // The rows could not be read: nothing is written this run, or the next
+  // change would replace every stored pull request with what this run knows.
   let unreadable = false
 
   // Every `gh` read passes through here. See MAX_CONCURRENT_GITHUB_READS.
@@ -572,38 +562,18 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
 
   function whenLoaded(): Promise<void> {
     load ??= (async () => {
-      await sweepStaleTempFiles(options.userDataDir)
-      const path = pullRequestStorePath(options.userDataDir)
-      let raw: string | null = null
+      let stored: StoredRow[] = []
       try {
-        raw = await readFile(path, 'utf-8')
+        stored = (await table.load()).flatMap((row) => {
+          const parsed = parseStoredRow(parseJson(row.body))
+          return parsed ? [parsed] : []
+        })
       } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-          unreadable = true
-          warn('could not read the pull request record; keeping what is recorded this run in memory only', error)
-        }
-      }
-      let stored: StoredRow[] | null
-      let migrated: string[] = []
-      if (unreadable) stored = []
-      else if (raw === null) {
-        const legacy = await readLegacyStores(options.userDataDir, warn)
-        stored = legacy.entries.map((entry) => ({ entry, watch: null, untold: null }))
-        migrated = legacy.files
-      } else {
-        stored = parseStoreFile(raw)
-        if (stored === null) {
-          // Truncated, hand-edited, or written by a version this build does
-          // not know: kept aside rather than overwritten by the next write.
-          warn('the pull request record could not be understood; keeping it aside as .corrupt', new Error(path))
-          await rename(path, `${path}.corrupt`).catch((error) => {
-            warn('could not keep an unreadable pull request record aside', error)
-          })
-          stored = []
-        }
+        unreadable = true
+        warn('could not read the pull request record; keeping what is recorded this run in memory only', error)
       }
       if (disposed) return
-      // Anything recorded while the file was being read is newer.
+      // Anything recorded while the rows were being read is newer.
       for (const { entry, watch: stillWatched, untold: untoldNews } of stored) {
         if (entries.has(entry.url)) continue
         put(entry)
@@ -615,15 +585,24 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
       }
       trim()
       for (const entry of entries.values()) if (isWatchable(entry)) watch.arm(entry.url)
-      if (migrated.length > 0) {
-        persist()
-        // The old files go once the new one is written: a migration that died
-        // half way runs again at the next start.
-        await writes
-        for (const file of migrated) await unlink(file).catch(() => undefined)
-      }
     })().catch((error) => warn('could not load the pull request record', error))
     return load
+  }
+
+  /** The record as rows: each pull request with its watch and the news its chat was not told yet. */
+  function storedRows(): RecordRow[] {
+    return [...entries.values()].map((entry) => {
+      const watched = watches.get(entry.url)
+      const news = untold.of(entry.url)
+      return {
+        id: entry.url,
+        body: JSON.stringify({
+          ...entry,
+          ...(watched ? { watch: watched } : {}),
+          ...(news.length > 0 ? { untold: news } : {}),
+        }),
+      }
+    })
   }
 
   function persist(): void {
@@ -632,37 +611,9 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
       async () => {
         if (!dirty || disposed || unreadable) return
         dirty = false
-        // A watch rides on its pull request's row, an optional member an older
-        // build reads past (it drops it on its next write, and watches nothing).
-        const snapshot = {
-          version: STORE_VERSION,
-          pullRequests: [...entries.values()].map((entry) => {
-            const watched = watches.get(entry.url)
-            const news = untold.of(entry.url)
-            return {
-              ...entry,
-              ...(watched ? { watch: watched } : {}),
-              // News its chat was not told yet, written with the watch state
-              // that saw it; an older build reads past it.
-              ...(news.length > 0 ? { untold: news } : {}),
-            }
-          }),
-        }
-        try {
-          await mkdir(join(options.userDataDir, STORE_DIR), { recursive: true })
-          await writeFileAtomically(pullRequestStorePath(options.userDataDir), `${JSON.stringify(snapshot, null, 2)}\n`)
-          lastWriteOk = true
-        } catch (error) {
-          lastWriteOk = false
-          warn('could not write the pull request record', error)
-          // Still to write: tried again, or what changed is lost until something else does.
-          dirty = true
-          if (writeRetry === null && !disposed)
-            writeRetry = timers.setTimeout(() => {
-              writeRetry = null
-              if (dirty) persist()
-            }, WRITE_RETRY_MS)
-        }
+        // A failed write is logged by the table, and its rows are written
+        // again by the next one: a change, or a wake that needs them stored.
+        lastWriteOk = await table.save(storedRows())
       },
       () => undefined,
     )
@@ -1273,11 +1224,12 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
         await whenLoaded()
         const message = untold.next(conversation, () => `pull-request-watch:${randomUUID()}`)
         if (!message) return null
-        if (message.stamped) {
+        // Stamped now, or by a call whose write failed: written before it goes.
+        if (message.stamped || !lastWriteOk) {
           persist()
           await writes
         }
-        // A send under an id the file does not hold could be made again
+        // A send under an id the record does not hold could be made again
         // under another after a restart, and the chat told twice. A record
         // that could not be read keeps everything in memory, and sends.
         if (disposed) return null
@@ -1315,8 +1267,6 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
     },
     dispose() {
       disposed = true
-      if (writeRetry !== null) timers.clearTimeout(writeRetry)
-      writeRetry = null
       watch.dispose()
       while (waitingReads.length > 0) waitingReads.shift()?.()
       refreshHolds.clear()
@@ -1378,26 +1328,42 @@ function sameReading(a: BranchPullRequest, b: BranchPullRequest): boolean {
 /** A stored row: the pull request, and the watch an agent asked for on it, if any. */
 type StoredRow = { entry: BranchPullRequest; watch: PullRequestWatchState | null; untold: unknown }
 
-/** The record's file, or null when this build cannot read it. Malformed rows are dropped. */
-function parseStoreFile(raw: string): StoredRow[] | null {
-  let parsed: unknown
+function parseJson(text: string): unknown {
   try {
-    parsed = JSON.parse(raw)
+    return JSON.parse(text)
   } catch {
     return null
   }
+}
+
+/** A stored row: the pull request, its watch and its untold news. Null when it is not a well-formed pull request. */
+function parseStoredRow(row: unknown): StoredRow | null {
+  const entry = parseEntry(row, null)
+  if (!entry || !isRecord(row)) return null
+  return { entry, watch: parsePullRequestWatchState(row.watch), untold: row.untold }
+}
+
+/**
+ * The rows of an `opened.json` builds before the database wrote, as the
+ * import stores them (each as the file held it); null when this build cannot
+ * read it. A row that is not a well-formed pull request is counted, not kept.
+ */
+export function pullRequestRecordFileRows(text: string): { rows: RecordRow[]; skipped: number } | null {
+  const parsed = parseJson(text)
   if (!isRecord(parsed) || parsed.version !== STORE_VERSION || !Array.isArray(parsed.pullRequests)) return null
-  const rows: StoredRow[] = []
+  const rows: RecordRow[] = []
+  const seen = new Set<string>()
+  let skipped = 0
   for (const row of parsed.pullRequests) {
-    const entry = parseEntry(row, null)
-    if (entry)
-      rows.push({
-        entry,
-        watch: isRecord(row) ? parsePullRequestWatchState(row.watch) : null,
-        untold: isRecord(row) ? row.untold : null,
-      })
+    const stored = parseStoredRow(row)
+    if (!stored || seen.has(stored.entry.url)) {
+      skipped += 1
+      continue
+    }
+    seen.add(stored.entry.url)
+    rows.push({ id: stored.entry.url, body: JSON.stringify(row) })
   }
-  return rows
+  return { rows, skipped }
 }
 
 /**
@@ -1409,41 +1375,33 @@ function ghRepoOf(repoKey: string): string {
 }
 
 /**
- * The files the branch-lookup rule wrote, read once: one per repository,
- * `{ version: 1, repoKey, branches: { <branch>: rows } }`. Only a row a
- * conversation's capture filed (`openedByWorkspaceId`) is kept; everything a
- * branch lookup found is dropped. Returns the files to remove once the new one
- * is written, the conversations file among them.
+ * The files the branch-lookup rule wrote before `opened.json`, as the import
+ * stores them: one per repository, `{ version: 1, repoKey, branches: {
+ * <branch>: rows } }`. Only a row a conversation's capture filed
+ * (`openedByWorkspaceId`) is kept; everything a branch lookup found is
+ * dropped. A file that does not read is counted and left where it is.
  */
-async function readLegacyStores(
-  userDataDir: string,
-  warn: (message: string, error: unknown) => void,
-): Promise<{ entries: BranchPullRequest[]; files: string[] }> {
-  const dir = join(userDataDir, STORE_DIR)
+export function legacyPullRequestRows(dataDir: string): { rows: RecordRow[]; skipped: number } {
+  const dir = join(dataDir, STORE_DIR)
   let names: string[] = []
   try {
-    names = await readdir(dir)
+    names = readdirSync(dir)
   } catch {
-    return { entries: [], files: [] }
+    return { rows: [], skipped: 0 }
   }
   const kept = new Map<string, BranchPullRequest>()
-  const files: string[] = []
-  for (const name of names) {
-    if (!name.endsWith('.json') || name === STORE_FILE) continue
-    const path = join(dir, name)
-    if (name === LEGACY_CONVERSATIONS_FILE) {
-      files.push(path)
+  let skipped = 0
+  for (const name of names.sort()) {
+    if (!name.endsWith('.json') || LEGACY_NOT_RECORDS.has(name) || `${STORE_DIR}/${name}` === PULL_REQUEST_RECORD_FILE)
       continue
-    }
     let parsed: unknown
     try {
-      parsed = JSON.parse(await readFile(path, 'utf-8'))
-    } catch (error) {
-      warn('an old pull request record could not be read, and is left where it is', error)
+      parsed = JSON.parse(readFileSync(join(dir, name), 'utf-8'))
+    } catch {
+      skipped += 1
       continue
     }
     if (!isRecord(parsed) || parsed.version !== LEGACY_STORE_VERSION || !isRecord(parsed.branches)) continue
-    files.push(path)
     for (const [branch, rows] of Object.entries(parsed.branches)) {
       if (!Array.isArray(rows)) continue
       for (const row of rows) {
@@ -1452,7 +1410,7 @@ async function readLegacyStores(
       }
     }
   }
-  return { entries: [...kept.values()], files }
+  return { rows: [...kept.values()].map((entry) => ({ id: entry.url, body: JSON.stringify(entry) })), skipped }
 }
 
 // The file survives restarts and a person can edit it, so it is read as
@@ -1494,31 +1452,6 @@ function parseEntry(raw: unknown, branch: string | null): BranchPullRequest | nu
     ...(workspaceId ? { openedByWorkspaceId: workspaceId } : {}),
     ...(agentId ? { openedByAgentId: agentId } : {}),
     ...(headRefName ? { headRefName } : {}),
-  }
-}
-
-/** Swept at the first load: a `.tmp` nothing is writing any more. */
-async function sweepStaleTempFiles(userDataDir: string): Promise<void> {
-  const dir = join(userDataDir, STORE_DIR)
-  let names: string[] = []
-  try {
-    names = await readdir(dir)
-  } catch {
-    return
-  }
-  // Wall-clock, not an injected clock: this is a file's age, and a write in
-  // flight RIGHT NOW must not have its temp file pulled out from under it.
-  const cutoff = Date.now() - TEMP_FILE_SWEEP_MIN_AGE_MS
-  for (const name of names) {
-    if (!name.endsWith('.tmp')) continue
-    const path = join(dir, name)
-    try {
-      const info = await stat(path)
-      if (info.mtimeMs > cutoff) continue
-      await unlink(path)
-    } catch {
-      // Already gone, or not ours to remove. Either is fine.
-    }
   }
 }
 

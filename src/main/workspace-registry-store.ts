@@ -15,7 +15,8 @@
  * degrades to a warning diagnostic, memory still authoritative for the
  * session, and the next write writes every row that differs again.
  */
-import type { StudioDatabase } from '../server/db/database'
+import type { SqlStatement, StudioDatabase } from '../server/db/database'
+import { rowChangeStatements } from '../server/db/record-table'
 import { parseWorkspaceRegistryFile, type WorkspaceRegistryFile } from '../shared/workspace-registry'
 
 /** The file builds before the database kept the registry in, under the data folder; read once, by the import. */
@@ -166,25 +167,13 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps): 
       const rows = new Map(
         file.workspaces.map((record, position) => [record.id, { position, body: JSON.stringify(record) }]),
       )
-      const statements: Array<{ sql: string; params: Array<string | number> }> = []
+      const statements: SqlStatement[] = []
       if (head !== writtenHead)
         statements.push({
           sql: 'INSERT INTO chat_registry (id, body) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET body = excluded.body',
           params: [head],
         })
-      if (!rowsKnown) statements.push({ sql: 'DELETE FROM chats', params: [] })
-      const before = rowsKnown ? writtenRows : new Map<string, { position: number; body: string }>()
-      for (const id of before.keys())
-        if (!rows.has(id)) statements.push({ sql: 'DELETE FROM chats WHERE id = ?', params: [id] })
-      for (const [id, row] of rows) {
-        const was = before.get(id)
-        if (was && was.body === row.body && was.position === row.position) continue
-        statements.push({
-          sql: `INSERT INTO chats (id, position, body) VALUES (?, ?, ?)
-                ON CONFLICT (id) DO UPDATE SET position = excluded.position, body = excluded.body`,
-          params: [id, row.position, row.body],
-        })
-      }
+      statements.push(...rowChangeStatements('chats', rowsKnown ? writtenRows : null, rows))
       if (statements.length === 0) return
       await db.batch(statements)
       writtenHead = head

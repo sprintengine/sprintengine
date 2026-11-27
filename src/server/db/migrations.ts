@@ -195,6 +195,12 @@ export const STUDIO_MIGRATIONS: readonly Migration[] = [
         CREATE TABLE store_records (name TEXT PRIMARY KEY, body TEXT NOT NULL);
       `),
   },
+  {
+    id: 5,
+    name: 'pull-request-record',
+    // The pull request record, a row per pull request (`record-table.ts`).
+    up: (db) => db.exec(recordTableSql('pull_requests')),
+  },
 ]
 
 /** Run the migrations `connection` has not had, in order; returns the ids it ran. */

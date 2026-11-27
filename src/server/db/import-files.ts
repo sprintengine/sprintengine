@@ -26,6 +26,11 @@ import { SCHEDULED_MESSAGES_FILE, scheduledMessagesFileReads } from '../../main/
 import { USAGE_LIMIT_RESUMES_FILE, usageLimitResumesFileReads } from '../../main/usage-limits/resume'
 import { CONVERSATION_OUTBOX_FILENAME_FOR_IMPORT, readConversationOutboxFile } from '../../main/conversation-outbox'
 import type { DataFormatStep } from '../environment/data-format'
+import {
+  legacyPullRequestRows,
+  PULL_REQUEST_RECORD_FILE,
+  pullRequestRecordFileRows,
+} from '../pull-requests/pull-request-record'
 import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from './database'
 import type { SyncConnection } from './sqlite'
 
@@ -389,6 +394,44 @@ export const CHAT_RECORDS_STEP: DataFormatStep = {
     const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
     try {
       reportSkipped(importChatRecords(connection, dataDir))
+    } finally {
+      connection.close()
+    }
+  },
+}
+
+/**
+ * Format 6: the pull request record, a row per pull request. From
+ * `pull-requests/opened.json` as its store read it; with none, from the
+ * per-repository files the rule before it wrote (only the rows a chat's
+ * capture filed), which that store used to read once and delete. Both are
+ * left as they were.
+ */
+export function importPullRequestRecords(connection: SyncConnection, dataDir: string): FileImport[] {
+  const imported = importFile(connection, dataDir, PULL_REQUEST_RECORD_FILE, (text) => {
+    const read = text === null ? legacyPullRequestRows(dataDir) : pullRequestRecordFileRows(text)
+    if (!read) return { records: 0, skipped: 1 }
+    let records = 0
+    for (const [position, row] of read.rows.entries())
+      records += connection.run('INSERT OR IGNORE INTO pull_requests (id, position, body) VALUES (?, ?, ?)', [
+        row.id,
+        position,
+        row.body,
+      ]).changes
+    return { records, skipped: read.skipped }
+  })
+  return imported ? [imported] : []
+}
+
+/** The format step that moves the pull request record: format 5 to 6. */
+export const PULL_REQUEST_RECORD_STEP: DataFormatStep = {
+  to: 6,
+  files: [],
+  database: true,
+  run(dataDir) {
+    const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
+    try {
+      reportSkipped(importPullRequestRecords(connection, dataDir))
     } finally {
       connection.close()
     }
