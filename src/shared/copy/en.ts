@@ -172,6 +172,7 @@ export const en = {
       dockCurrentFileBackInto: 'Dock current file back into the workspace',
       dockIntoWorkspace: 'Dock into workspace',
       files: 'Files',
+      openFiles: 'Open files',
       outsideThisWorkspace: 'Outside this workspace',
       outsideThisFolder: 'Outside this folder',
       resizeFiles: 'Resize files',

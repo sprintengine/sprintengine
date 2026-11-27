@@ -120,8 +120,10 @@ export function EditorFileTree({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* One chrome band: the root it shows, and the two ways to narrow it. */}
-      <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-[color:var(--border-default)] pl-2 pr-1.5">
+      {/* The root it shows, and the two ways to narrow it: a heading over the
+          tree rather than a ruled-off band, so the column reads as one piece
+          from the window's top to its foot. */}
+      <div className="flex h-[36px] shrink-0 items-center gap-1 pl-2 pr-1.5">
         <Tooltip content={rootPath ?? ''} placement="bottom" wrapperClassName="flex min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-2 text-meta">
             <FileTreeFolderIcon />
