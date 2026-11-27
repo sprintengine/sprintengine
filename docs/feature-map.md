@@ -65,8 +65,9 @@ task in its same CLI session with `subagent.resume`, and its row counts the roun
 `src/server/core/subagent-resume.test.ts` (a resume end to end, through the host and the runtime).
 
 **Plugin offers in a chat** (`plugin.offer`): `src/main/automation/plugin-tools.ts`,
-`src/renderer/src/components/panels/agentChat/pluginOffer/PluginOfferCard.tsx`.
-Tests: `src/main/automation/plugin-tools.test.ts`.
+`src/renderer/src/components/panels/agentChat/pluginOffer/PluginOfferCard.tsx`; the phone's card, which
+says to install it on the desktop, in `mobile/src/features/conversations/ShownStepCards.tsx`.
+Tests: `src/main/automation/plugin-tools.test.ts`, `mobile/src/features/conversations/shownSteps.regression.test.js`.
 
 **Scheduled messages and usage-limit resumes**: `src/main/scheduled-messages/scheduled-messages.ts`,
 `src/server/core/studio-scheduled-messages.ts`, `src/main/usage-limits/`.

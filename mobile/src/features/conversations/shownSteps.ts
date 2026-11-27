@@ -1,5 +1,6 @@
 import {
   isFileView,
+  isPluginOffer,
   type RowTool,
 } from "../../../../packages/conversation-timeline/src/public";
 import { clipLines, EXPANDED_LINES, type ClippedText } from "./toolOutput";
@@ -7,8 +8,9 @@ import { clipLines, EXPANDED_LINES, type ClippedText } from "./toolOutput";
 // The steps an agent took to show the person something, drawn as cards of
 // their own rather than as steps of its work, as the desktop draws them
 // (`stepShownToUser` in conversation-timeline's turnFolds.ts): the files it
-// showed with Studio's `file.view`. A picture it generated is the other,
-// drawn by `conversationImageLogic.ts`.
+// showed with Studio's `file.view`, and a plugin it offered with
+// `plugin.offer`. A picture it generated is the third, drawn by
+// `conversationImageLogic.ts`.
 //
 // A card is drawn only where the phone can draw it; anywhere else the call
 // stays the ordinary step it was, folded with the turn's work. So the rows
@@ -21,14 +23,17 @@ export type ShownCards = {
 };
 
 /** Which card a step is drawn as here, or null for its ordinary step. */
-export type ShownCard = "file-view";
+export type ShownCard = "file-view" | "plugin-offer";
 
 /**
  * The card a step is drawn as. A call that failed is its step, as on the
- * desktop, and a file view needs the desktop to serve the file.
+ * desktop; a plugin offer needs nothing from the desktop (its card is read
+ * from the call's own answer), and a file view needs the desktop to serve
+ * the file.
  */
 export function shownCard(tool: Pick<RowTool, "name" | "serverName" | "status">, cards: ShownCards): ShownCard | null {
   if (tool.status === "error") return null;
+  if (isPluginOffer(tool)) return "plugin-offer";
   if (cards.fileViews && isFileView(tool)) return "file-view";
   return null;
 }
@@ -171,4 +176,26 @@ export function fileViewLanguage(name: string): string | undefined {
     patch: "patch",
   };
   return known[extension];
+}
+
+// ── A plugin offered ───────────────────────────────────────────────────────
+
+/** A plugin an agent offered, as Studio's answer to the call named it. */
+export type PluginOffer = { name: string; description: string; source: string };
+
+/**
+ * The plugin a `plugin.offer` call showed, read from Studio's answer to it
+ * (its catalogue's name, description and source, never anything the agent
+ * wrote), or null where the answer names none: a call still running, failed,
+ * or cut short. The call then stays its step.
+ */
+export function pluginOffer(tool: Pick<RowTool, "output" | "status">): PluginOffer | null {
+  if (tool.status === "running" || tool.status === "error") return null;
+  const answer = parsed(tool.output);
+  if (!answer || answer.ok !== true || typeof answer.name !== "string" || !answer.name.trim()) return null;
+  return {
+    name: answer.name.trim(),
+    description: typeof answer.description === "string" ? answer.description.trim() : "",
+    source: typeof answer.source === "string" ? answer.source.trim() : "",
+  };
 }

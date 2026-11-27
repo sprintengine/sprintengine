@@ -433,7 +433,8 @@ the turn as it happened: each run of steps, and what the agent said between
 them. The agents a turn sent off stay cards of their own under it, the reply
 after the last step stays as written, and what the agent made for you to look
 at stays in view and is not counted as a step: a picture it generated (or
-prose that shows one), and the files it showed you (below). A finished turn that changed files says
+prose that shows one), the files it showed you and a plugin it offered you
+(below). A finished turn that changed files says
 how many and the lines in and out ("3 files changed · +42 −7"), from the
 desktop's checkpoint summary, and opens them when the desktop kept a
 checkpoint; a checkpoint that changed nothing leaves no row. Where a desktop
@@ -705,9 +706,10 @@ does not store credentials or image bytes.
 ### What an agent showed you
 
 An agent shows you files with Studio's `file.view` tool ("show me my
-CLAUDE.md", or code it wants looked at). They are a card under the turn's
-line, open or closed, in place of its step, as on the desktop
-(`ShownStepCards.tsx`, the rules in `shownSteps.ts`), read only on the phone.
+CLAUDE.md", or code it wants looked at) and offers you a plugin with
+`plugin.offer`. Each is a card under the turn's line, open or closed, in
+place of its step, as on the desktop (`ShownStepCards.tsx`, the rules in
+`shownSteps.ts`). Both are read only on the phone.
 
 The files card has a tab for each file where there are several (a file's
 name, or as much of its folder as tells two of one name apart), then the
@@ -731,6 +733,14 @@ pairing may follow its chats (`fileViews` in `chatOffers.ts`); and the step
 leaves the turn's fold only together with its card, so anywhere else the
 call stays an ordinary step, folded and counted. A call still running, one
 that failed, or one whose answer names no file is its step.
+
+The plugin card is read from Studio's answer to the call, never from
+anything the agent wrote: the plugin's name, its catalogue's description and
+the source it comes from. It has no Install button. Installing a plugin is
+an owner's method on the desktop (`skillPlugins.install`), which no paired
+device holds, and it runs the plugin's servers there, so the card says to
+install it in Studio on that desktop. A call that failed, or whose answer
+names no plugin, is its step.
 
 ### A message queued on the desktop
 
@@ -900,8 +910,8 @@ an agent's news and a usage-limit resume, between the person's, and opens on
 "New" above the agent's news; `sprintengine://verify/chat/ws-files` holds a
 message with a PDF, a DOCX on a Windows drive, a spreadsheet on a
 Windows share and a file of no kind the phone names, each a card under the
-bubble, then a turn that showed two files (one with lines pointed at), a
-card under the turn's line. Both rest under Earlier too. In the conversation fixture
+bubble, then a turn that showed two files (one with lines pointed at) and
+offered a plugin, each a card under the turn's line. Both rest under Earlier too. In the conversation fixture
 (`EXPO_PUBLIC_VERIFY_CONVERSATION=1`), a running agent's screen offers "Stop
 this agent", and the agent then reports itself stopped. Do not distribute the fixture build as the normal app.
 

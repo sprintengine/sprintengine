@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ConversationApi, ConversationFileView } from "../../api/desktopConversations";
 import type { PhoneChatOffers } from "../../api/chatOffers";
 import { SourceBlock } from "../../components/document/SourceBlock";
-import { FileTypeGlyph, iconSize } from "../../components/glyphs";
+import { FileTypeGlyph, LibraryGlyph, iconSize } from "../../components/glyphs";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { fontWeight, radius, space, typography, type Theme } from "../../theme/tokens";
@@ -15,6 +15,7 @@ import {
   fileViewFiles,
   fileViewLabels,
   fileViewLanguage,
+  pluginOffer,
   shownCard,
   type FileViewFile,
 } from "./shownSteps";
@@ -23,12 +24,16 @@ import { copy } from "../../../../src/shared/copy";
 
 // What an agent showed the person, drawn as a card of its own rather than a
 // step of its work, as the desktop draws it: the files it showed with
-// Studio's `file.view`. A card the phone cannot draw (an answer that names
-// nothing) leaves the call its ordinary step (`ToolStepRow`).
+// Studio's `file.view`, and a plugin it offered with `plugin.offer`. A card
+// the phone cannot draw (an answer that names nothing) leaves the call its
+// ordinary step (`ToolStepRow`).
 //
-// It is read only here. A shown file is the live file on the machine the
+// Both are read only here. A shown file is the live file on the machine the
 // chat runs on; the phone reads it (`fileViews.read`, which needs only
-// `conversation:read`) and says that editing it is the desktop's.
+// `conversation:read`) and says that editing it is the desktop's. A plugin
+// installs on the desktop alone: `skillPlugins.install` is an owner's method,
+// which no paired device holds, so the card says where it is installed rather
+// than offering a button that would be refused.
 
 const t = copy.phone.conversations.shownStepCards;
 
@@ -57,7 +62,7 @@ export function useChatFileViews(
 export type ShownCardSource = {
   /** The chat's shown files; null where the desktop does not serve them. */
   fileViews?: ChatFileViews | null;
-  /** The paired desktop's name, which the card says editing is on. */
+  /** The paired desktop's name, which the cards say editing and installing are on. */
   desktopName?: string | null;
   /** The chat the card is in: a shown file is kept by chat and path. */
   chat: string;
@@ -66,6 +71,7 @@ export type ShownCardSource = {
 /** Whether a step is drawn as a card here, rather than its ordinary step. */
 export function drawsAsCard(tool: RowTool, source: ShownCardSource): boolean {
   const card = shownCard(tool, { fileViews: !!source.fileViews });
+  if (card === "plugin-offer") return pluginOffer(tool) !== null;
   if (card === "file-view") return fileViewFiles(tool).length > 0;
   return false;
 }
@@ -73,6 +79,10 @@ export function drawsAsCard(tool: RowTool, source: ShownCardSource): boolean {
 /** The card a step is drawn as, or null where it stays its step (`drawsAsCard`). */
 export const ShownStepCard = memo(function ShownStepCard({ tool, source }: { tool: RowTool; source: ShownCardSource }) {
   const card = shownCard(tool, { fileViews: !!source.fileViews });
+  if (card === "plugin-offer") {
+    const offer = pluginOffer(tool);
+    return offer ? <PluginOfferCard offer={offer} desktopName={source.desktopName ?? null} /> : null;
+  }
   if (card === "file-view" && source.fileViews) {
     const files = fileViewFiles(tool);
     return files.length ? (
@@ -257,6 +267,39 @@ function ShownFile({
   );
 }
 
+// ── A plugin offered ───────────────────────────────────────────────────────
+
+function PluginOfferCard({
+  offer,
+  desktopName,
+}: {
+  offer: { name: string; description: string; source: string };
+  desktopName: string | null;
+}) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <View accessibilityLabel={t.plugin(offer.name)} style={[styles.card, styles.plugin]}>
+      <View style={styles.head}>
+        <View style={styles.pluginIcon}>
+          <LibraryGlyph tone="textMuted" size={iconSize.md} />
+        </View>
+        <View style={styles.headWords}>
+          <Text numberOfLines={1} style={styles.name}>
+            {offer.name}
+          </Text>
+          {offer.source ? (
+            <Text numberOfLines={1} style={styles.meta}>
+              {t.from(offer.source)}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+      {offer.description ? <Text style={styles.description}>{offer.description}</Text> : null}
+      <Text style={styles.quiet}>{t.installOnDesktop(desktopName ?? t.theDesktop)}</Text>
+    </View>
+  );
+}
+
 const createStyles = ({ colors }: Theme) =>
   StyleSheet.create({
     card: {
@@ -267,6 +310,7 @@ const createStyles = ({ colors }: Theme) =>
       backgroundColor: colors.bgSurfaceRaised,
       overflow: "hidden",
     },
+    plugin: { paddingHorizontal: space.lg, paddingVertical: space.md, gap: space.sm },
     tabs: {
       flexDirection: "row",
       flexWrap: "wrap",
@@ -291,6 +335,16 @@ const createStyles = ({ colors }: Theme) =>
     name: { ...typography.body, fontSize: 14, fontWeight: fontWeight.emphasis, color: colors.textPrimary },
     path: { fontFamily: monoFontFamily, fontSize: 12, lineHeight: 16, color: colors.textSubtle },
     readOnly: { ...typography.micro, color: colors.textMuted },
+    meta: { ...typography.meta, color: colors.textMuted },
+    description: { ...typography.body, fontSize: 14, color: colors.textDefault },
+    pluginIcon: {
+      width: iconSize.lg + space.md,
+      height: iconSize.lg + space.md,
+      borderRadius: radius.control,
+      backgroundColor: colors.bgHover,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     marks: { gap: space["3xs"] },
     // The lines the agent pointed at, marked in the agent violet the desktop
     // marks them in; the words stay in the text inks.

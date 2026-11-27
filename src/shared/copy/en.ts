@@ -2909,6 +2909,10 @@ export const en = {
         tryAgain: 'Try again',
         theDesktop: 'the desktop',
         editOnDesktop: (desktop: unknown) => `To edit it, open this chat in Studio on ${desktop}.`,
+        plugin: (name: unknown) => `Plugin ${name}`,
+        from: (source: unknown) => `From ${source}`,
+        installOnDesktop: (desktop: unknown) =>
+          `Install it in Studio on ${desktop}. A plugin is installed on the computer the chat runs on, not from a phone.`,
       },
       // mobile/src/features/conversations/snoozeLogic.ts
       snoozeLogic: {

@@ -7,13 +7,14 @@ const {
   fileViewLabels,
   fileViewLanguage,
   phoneShownToUser,
+  pluginOffer,
   shownCard,
 } = require("../../../.mobile-test-build/mobile/src/features/conversations/shownSteps.js");
 const { phoneChatOffers } = require("../../../.mobile-test-build/mobile/src/api/chatOffers.js");
 
-// What an agent showed the person (files with Studio's `file.view`) is a card
-// of its own under the turn's line, as on the desktop, and not a step of its
-// work. A step leaves the fold only together
+// What an agent showed the person (files with Studio's `file.view`, a plugin
+// with `plugin.offer`) is a card of its own under the turn's line, as on the
+// desktop, and not a step of its work. A step leaves the fold only together
 // with its card: where the phone cannot draw the card, the call stays the
 // ordinary step it was, folded and counted.
 
@@ -31,9 +32,10 @@ const SHOWN = {
     { path: "/Users/dev/app/CLAUDE.md", name: "CLAUDE.md", lines: 4, highlights: [] },
   ],
 };
+const OFFERED = { ok: true, sourceId: "acme", source: "Acme plugins", pluginId: "sheets", name: "Sheets", description: "Reads spreadsheets." };
 
-// A turn that read a file, showed two and replied.
-function shownTurn({ viewStatus = "ok" } = {}) {
+// A turn that read a file, showed two, offered a plugin and replied.
+function shownTurn({ viewStatus = "ok", offerStatus = "ok" } = {}) {
   const turnId = "turn";
   return [
     event("user_message", { turnId, text: "show me the notes" }),
@@ -47,6 +49,13 @@ function shownTurn({ viewStatus = "ok" } = {}) {
       output: viewStatus === "error" ? "No file could be shown." : JSON.stringify(SHOWN),
       ...(viewStatus === "error" ? { isError: true, status: "error" } : {}),
     }),
+    event("tool_started", { turnId, toolUseId: "offer", name: "mcp__sprintengine-studio__plugin_offer", ...STUDIO, input: { sourceId: "acme", pluginId: "sheets" } }),
+    event("tool_output", {
+      turnId,
+      toolUseId: "offer",
+      output: offerStatus === "error" ? "unknown_plugin" : JSON.stringify(OFFERED),
+      ...(offerStatus === "error" ? { isError: true, status: "error" } : {}),
+    }),
     event("content_delta", { turnId, text: "Here they are." }),
     event("turn_completed", { turnId }),
   ];
@@ -55,16 +64,16 @@ function shownTurn({ viewStatus = "ok" } = {}) {
 const foldOf = (rows) => rows.find((row) => row.kind === "fold");
 const foldedSteps = (fold) => fold.parts.flatMap((part) => (part.kind === "tools" ? part.tools : []));
 
-test("with the desktop serving shown files, the file view is the person's, not counted as a step", () => {
+test("with the desktop serving shown files, the file view and the plugin offer are the person's, not counted as steps", () => {
   const { rows } = projectPhoneConversation(shownTurn(), { fileViews: true });
   const fold = foldOf(rows);
   assert.match(fold.label, /· 1 step$/u, "only the read is work");
   // The cards' steps ride with the fold's parts, for the view to draw under its line.
-  assert.deepEqual(foldedSteps(fold).map((tool) => tool.id), ["read", "view"]);
+  assert.deepEqual(foldedSteps(fold).map((tool) => tool.id), ["read", "view", "offer"]);
   assert.match(rows.find((row) => row.kind === "message" && row.role === "assistant").text, /^Here they are/u);
 });
 
-test("without it, the file view stays an ordinary step in the fold, counted", () => {
+test("without it, the file view stays an ordinary step in the fold, counted; the plugin offer needs nothing of the desktop", () => {
   const { rows } = projectPhoneConversation(shownTurn(), { fileViews: false });
   assert.match(foldOf(rows).label, /· 2 steps$/u, "the read and the file view");
   // The default, before the desktop has said anything, is the same.
@@ -72,10 +81,10 @@ test("without it, the file view stays an ordinary step in the fold, counted", ()
 });
 
 test("a call that failed is its step, counted and failed, with or without the card", () => {
-  const { rows } = projectPhoneConversation(shownTurn({ viewStatus: "error" }), { fileViews: true });
+  const { rows } = projectPhoneConversation(shownTurn({ viewStatus: "error", offerStatus: "error" }), { fileViews: true });
   const fold = foldOf(rows);
-  assert.match(fold.label, /· 2 steps$/u);
-  assert.equal(fold.failed, 1);
+  assert.match(fold.label, /· 3 steps$/u);
+  assert.equal(fold.failed, 2);
 });
 
 test("a turn whose only steps showed the person something has no fold", () => {
@@ -98,8 +107,9 @@ test("a card is Studio's call alone, under any runtime's spelling, and never a f
     assert.equal(shownCard({ name, status: "ok" }, cards), "file-view", name);
   assert.equal(shownCard({ name: "file_view", serverName: "sprintengine-studio", status: "ok" }, cards), "file-view");
   assert.equal(shownCard({ name: "mcp__other__file_view", status: "ok" }, cards), null, "another server's tool of the name");
+  assert.equal(shownCard({ name: "mcp__sprintengine-studio__plugin_offer", status: "ok" }, { fileViews: false }), "plugin-offer");
   assert.equal(shownCard({ name: "mcp__sprintengine-studio__file_view", status: "ok" }, { fileViews: false }), null);
-  assert.equal(shownCard({ name: "mcp__sprintengine-studio__file_view", status: "error" }, cards), null);
+  assert.equal(shownCard({ name: "mcp__sprintengine-studio__plugin_offer", status: "error" }, cards), null);
   assert.equal(phoneShownToUser({ name: "GenerateImage", status: "ok" }, { fileViews: false }), true, "a picture, as before");
   assert.equal(phoneShownToUser({ name: "Read", status: "ok" }, cards), false);
 });
@@ -150,6 +160,18 @@ test("a card opens where the agent pointed, and Show all reads the file from its
   assert.equal(fileViewExcerpt("", [], false).total, 0);
   assert.equal(fileViewLanguage("grants.ts"), "ts");
   assert.equal(fileViewLanguage("pairing.md"), undefined);
+});
+
+test("a plugin offer is drawn from Studio's answer, and only from one that names a plugin", () => {
+  assert.deepEqual(pluginOffer({ status: "ok", output: JSON.stringify(OFFERED) }), {
+    name: "Sheets",
+    description: "Reads spreadsheets.",
+    source: "Acme plugins",
+  });
+  assert.equal(pluginOffer({ status: "ok", output: JSON.stringify({ ok: false, name: "Sheets" }) }), null);
+  assert.equal(pluginOffer({ status: "ok", output: JSON.stringify({ ok: true }) }), null);
+  assert.equal(pluginOffer({ status: "running", output: JSON.stringify(OFFERED) }), null);
+  assert.equal(pluginOffer({ status: "ok", output: "not json" }), null);
 });
 
 test("shown files are read where the desktop serves them and this pairing follows its chats", () => {

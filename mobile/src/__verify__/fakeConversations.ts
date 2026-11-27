@@ -284,8 +284,8 @@ const verifyNoticesConversation: ConversationThread = {
 /**
  * A message with files attached by path: a PDF, a DOCX on a Windows
  * drive, a spreadsheet on a Windows share, and a file of no kind the phone
- * names; then a turn that showed the person two files, drawn as a card.
- * Under Earlier too.
+ * names; then a turn that showed the person two files and offered a plugin,
+ * drawn as cards. Under Earlier too.
  */
 const verifyFilesConversation: ConversationThread = {
   ...verifyNoticesConversation,
@@ -977,8 +977,8 @@ function filesTurns(): ConversationEvent[] {
 }
 
 // What an agent showed the person: two files with Studio's `file.view`, the
-// lines it pointed at marked. The phone draws them as a card under the
-// turn's line, read only.
+// lines it pointed at marked, and a plugin it offered with `plugin.offer`.
+// The phone draws each as a card under the turn's line, read only.
 function shownTurn(
   said: (turnId: string, type: string, payload: Record<string, unknown>, agoMs: number) => ConversationEvent,
   day: number,
@@ -993,14 +993,25 @@ function shownTurn(
     ],
     shown: "The files are open in the chat, in tabs, for the person to read and edit.",
   };
+  const offered = {
+    ok: true,
+    sourceId: "acme-plugins",
+    source: "Acme plugins",
+    pluginId: "sheets",
+    name: "Sheets",
+    description: "Read and write spreadsheets: open a workbook, read a range, and add rows.",
+    shown: "The card is in the chat. The person installs it from there, or not.",
+  };
   return [
-    said(turn, "user_message", { text: "Show me what the pairing notes say a phone may do." }, 2 * day + 40 * minutes),
+    said(turn, "user_message", { text: "Show me what the pairing notes say a phone may do, and find something that reads the budget." }, 2 * day + 40 * minutes),
     said(turn, "turn_started", {}, 2 * day + 40 * minutes),
     said(turn, "tool_started", { toolUseId: "shown-read", name: "Read", input: { path: FAKE_SHOWN_FILES[0].path } }, 2 * day + 39 * minutes),
     said(turn, "tool_output", { toolUseId: "shown-read", output: "…", status: "ok" }, 2 * day + 39 * minutes),
     said(turn, "tool_started", { toolUseId: "shown-view", name: "mcp__sprintengine-studio__file_view", ...studio, input: { files: shown.files.map(({ path, highlights }) => ({ path, highlights })) } }, 2 * day + 38 * minutes),
     said(turn, "tool_output", { toolUseId: "shown-view", output: JSON.stringify(shown, null, 2), status: "ok" }, 2 * day + 38 * minutes),
-    said(turn, "content_delta", { text: "Lines 9 to 12 of the notes say what a paired phone may do." }, 2 * day + 36 * minutes),
+    said(turn, "tool_started", { toolUseId: "shown-offer", name: "mcp__sprintengine-studio__plugin_offer", ...studio, input: { sourceId: "acme-plugins", pluginId: "sheets" } }, 2 * day + 37 * minutes),
+    said(turn, "tool_output", { toolUseId: "shown-offer", output: JSON.stringify(offered, null, 2), status: "ok" }, 2 * day + 37 * minutes),
+    said(turn, "content_delta", { text: "Lines 9 to 12 of the notes say what a paired phone may do. Sheets reads the budget workbook; install it if you want me to compare it line by line." }, 2 * day + 36 * minutes),
     said(turn, "turn_completed", { durationMs: 4 * minutes }, 2 * day + 36 * minutes),
   ];
 }
