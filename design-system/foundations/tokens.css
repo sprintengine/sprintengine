@@ -5,8 +5,8 @@
  * tokens whose values differ in dark mode. */
 :root {
   --ref-color-ink-950: #08080c;
-  --ref-color-ink-900: #0c0c10;
-  --ref-color-ink-875: #101418;
+  --ref-color-ink-900: #080808;
+  --ref-color-ink-875: #0c0c0c;
   --ref-color-ink-850: #18181c;
   --ref-color-ink-825: #1c2024;
   --ref-color-ink-800: #24242c;

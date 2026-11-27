@@ -8,13 +8,13 @@
       },
       "ink-900": {
         "$type": "color",
-        "$value": "#0c0c10",
-        "$description": "Ink step above 950. Source: dark --bg-surface."
+        "$value": "#080808",
+        "$description": "Panel surface on dark, a hair above the window: the sidebar, the settings sheet, the modal shell. Neutral (equal channels) and near-black, because a lighter, faintly blue grey here read as a grey slab beside the black conversation (2026-11-27). Was #0c0c10. Source: dark --bg-surface."
       },
       "ink-875": {
         "$type": "color",
-        "$value": "#101418",
-        "$description": "Raised ink step. Source: dark --bg-surface-raised."
+        "$value": "#0c0c0c",
+        "$description": "Raised surface on dark: popovers, menus, the notification and account panels, the cards a pane lists its rows on. One small neutral step above the panel surface; edges come from the hairline borders, not from a lighter fill. Was #101418, which read as a slate-grey slab (2026-11-27). Source: dark --bg-surface-raised."
       },
       "ink-850": {
         "$type": "color",

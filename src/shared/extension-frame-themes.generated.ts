@@ -10,8 +10,8 @@ export const EXTENSION_FRAME_THEMES: Readonly<Record<string, ExtensionFrameTheme
     "colorScheme": "dark",
     "tokens": {
       "--bg-app": "#08080c",
-      "--bg-surface": "#0c0c10",
-      "--bg-surface-raised": "#101418",
+      "--bg-surface": "#080808",
+      "--bg-surface-raised": "#0c0c0c",
       "--bg-hover": "#18181c",
       "--bg-selected": "#24242c",
       "--border-subtle": "rgba(252, 252, 252, 0.08)",
