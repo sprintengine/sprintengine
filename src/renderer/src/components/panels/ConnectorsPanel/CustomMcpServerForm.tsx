@@ -200,7 +200,7 @@ export function CustomMcpServerForm({ activeWorkspaceRoot }: { activeWorkspaceRo
       <ManageLine>
         {mcpMessage ||
           (activeWorkspaceRoot
-            ? 'Changes apply automatically across Claude Code, Codex, and other terminal agents. Existing terminals keep their current config until relaunched.'
+            ? 'Terminals that are already running keep their old MCP settings until you restart them.'
             : 'Open a workspace folder to sync MCPs to terminal agents.')}
       </ManageLine>
     </section>

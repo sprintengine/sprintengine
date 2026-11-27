@@ -76,11 +76,7 @@ export function BacklogCreateDialog({
               size="md"
             />
           </Field>
-          <Field
-            label={copy.panels.backlogCreateDialog.description}
-            htmlFor="backlog-create-item-description"
-            help="Capture the intent — the what and why. Leave implementation to the plan."
-          >
+          <Field label={copy.panels.backlogCreateDialog.description} htmlFor="backlog-create-item-description">
             <Textarea
               value={draft.description}
               rows={4}

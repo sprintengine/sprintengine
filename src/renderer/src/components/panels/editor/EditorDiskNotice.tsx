@@ -30,7 +30,6 @@ export function EditorDiskNotice({
         <InlineNotice
           tone="warn"
           title={copy.panels.editor.editorDiskNotice.changedOnDisk}
-          hint={copy.panels.editor.editorDiskNotice.reloadTakesTheDiskVersion}
           action={
             <>
               <OutlineButton size="xs" onClick={onReload}>

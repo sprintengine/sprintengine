@@ -115,11 +115,7 @@ export function ChangelistDialog({
             }}
           />
         </Field>
-        <Field
-          label={copy.panels.git.changelistDialog.comment}
-          htmlFor={commentId}
-          help="Offered as the commit message when this list is the active one."
-        >
+        <Field label={copy.panels.git.changelistDialog.comment} htmlFor={commentId}>
           <Textarea
             id={commentId}
             value={comment}
