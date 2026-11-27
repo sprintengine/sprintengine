@@ -248,8 +248,10 @@ the Studio the chat lives on (capability `file-views`), so a paired desktop's
 chat, an SSH or WSL machine's, and a browser tab all edit the file on the
 machine that holds it. A view that cannot drive the chat shows the files read
 only, and a Studio from before the capability says to update it. An embedded
-conversation, which has no editor of the app's own, and the phone draw the
-call as its ordinary step for now.
+conversation, which has no editor of the app's own, draws the call as its
+ordinary step. The phone draws a read-only card of each file, read with
+`fileViews.read`, and says that editing it is on the desktop
+(`mobile/docs/conversations.md`, "What an agent showed you").
 
 ### Quotes
 

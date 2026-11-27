@@ -39,6 +39,7 @@ import {
   subagentStartFacts,
 } from "./subagentLogic";
 import { cliForChatProvider } from "./launchLogic";
+import { drawsAsCard, ShownStepCard, type ChatFileViews } from "./ShownStepCards";
 import type { usePhoneConversation } from "./usePhoneConversation";
 import { copy } from "../../../../src/shared/copy";
 
@@ -58,6 +59,10 @@ export type StepDetailSource = {
   sentImages?: SentImages | null;
   /** The chat the steps are in (`toolDetailChat`): a step's id is unique only within it. */
   chat: string;
+  /** The files the chat's agent showed, read from the desktop; null or absent where it does not serve them. */
+  fileViews?: ChatFileViews | null;
+  /** The paired desktop's name, where a card says something is done there. */
+  desktopName?: string | null;
 };
 
 // Fetched details outlive the rows that asked: a row scrolled out of the
@@ -160,8 +165,12 @@ export function ToolGroup({ tools, source }: { tools: RowTool[]; source: StepDet
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
-  const settled = tools.filter((tool) => tool.status !== "running");
-  const running = tools.filter((tool) => tool.status === "running");
+  // What the agent showed the person is a card of its own, never one of the
+  // run's steps (`ShownStepCards.tsx`).
+  const cards = tools.filter((tool) => drawsAsCard(tool, source));
+  const steps = cards.length ? tools.filter((tool) => !cards.includes(tool)) : tools;
+  const settled = steps.filter((tool) => tool.status !== "running");
+  const running = steps.filter((tool) => tool.status === "running");
   const group = describeToolGroup(settled);
   const summary = [group.head, ...group.rest].join(" · ");
   return (
@@ -207,6 +216,9 @@ export function ToolGroup({ tools, source }: { tools: RowTool[]; source: StepDet
       {running.map((tool) => (
         <ToolStepRow key={tool.id} tool={tool} source={source} />
       ))}
+      {cards.map((tool) => (
+        <ShownStepCard key={tool.id} tool={tool} source={source} />
+      ))}
     </View>
   );
 }
@@ -235,8 +247,8 @@ export const ThinkingRow = memo(function ThinkingRow({
   const [open, setOpen] = useState(false);
   const preview = useMemo(() => (open ? "" : reasoningPreview(text)), [open, text]);
   // Held, so an open thought is not parsed again for a new handler.
-  const onLinkBlocked = useCallback(() => onNotice("This link cannot be opened from a conversation."), [onNotice]);
-  const label = live ? "Thinking\u2026" : "Thinking";
+  const onLinkBlocked = useCallback(() => onNotice(copy.phone.conversations.conversationParts.linkCannotBeOpened), [onNotice]);
+  const label = live ? copy.phone.conversations.conversationParts.thinkingNow : copy.phone.conversations.conversationParts.thinking;
   return (
     <View>
       <Pressable
@@ -291,8 +303,8 @@ export const ReasoningBox = memo(function ReasoningBox({
   const [open, setOpen] = useState(true);
   const scroll = useRef<ScrollView>(null);
   const atEnd = useRef(true);
-  const onLinkBlocked = useCallback(() => onNotice("This link cannot be opened from a conversation."), [onNotice]);
-  const label = "Reasoning";
+  const onLinkBlocked = useCallback(() => onNotice(copy.phone.conversations.conversationParts.linkCannotBeOpened), [onNotice]);
+  const label = copy.phone.conversations.conversationParts.reasoning;
   const preview = useMemo(() => (open ? "" : reasoningPreview(texts.at(-1) ?? "")), [open, texts]);
   return (
     <View style={styles.reasoningBox}>
@@ -365,7 +377,7 @@ export function SideQuestionRow({
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
-  const onLinkBlocked = useCallback(() => onNotice("This link cannot be opened from a conversation."), [onNotice]);
+  const onLinkBlocked = useCallback(() => onNotice(copy.phone.conversations.conversationParts.linkCannotBeOpened), [onNotice]);
   return (
     <View style={styles.steps}>
       <Pressable
@@ -421,7 +433,7 @@ export function AgentNoticeRow({
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
-  const onLinkBlocked = useCallback(() => onNotice("This link cannot be opened from a conversation."), [onNotice]);
+  const onLinkBlocked = useCallback(() => onNotice(copy.phone.conversations.conversationParts.linkCannotBeOpened), [onNotice]);
   const title = agentNoticeTitle(notice);
   const reply = notice.reply?.trim() ?? "";
   const time = at ? new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
@@ -505,8 +517,17 @@ export function TurnFold({
   // Held, so an open turn's prose is not parsed again each time its fold
   // takes another step.
   const { onNotice } = source;
-  const onLinkBlocked = useCallback(() => onNotice("This link cannot be opened from a conversation."), [onNotice]);
-  const steps = parts.flatMap((part) => (part.kind === "tools" ? part.tools : []));
+  const onLinkBlocked = useCallback(() => onNotice(copy.phone.conversations.conversationParts.linkCannotBeOpened), [onNotice]);
+  // What the agent showed the person stays out of the fold, a card under its
+  // line whether the fold is open or not, as the desktop draws it.
+  const all = parts.flatMap((part) => (part.kind === "tools" ? part.tools : []));
+  const cards = all.filter((tool) => drawsAsCard(tool, source));
+  const steps = cards.length ? all.filter((tool) => !cards.includes(tool)) : all;
+  const folded = cards.length
+    ? parts
+        .map((part) => (part.kind === "tools" ? { ...part, tools: part.tools.filter((tool) => !cards.includes(tool)) } : part))
+        .filter((part) => part.kind !== "tools" || part.tools.length > 0)
+    : parts;
   const group = describeToolGroup(steps);
   const running = steps.filter((tool) => tool.status === "running");
   return (
@@ -530,7 +551,7 @@ export function TurnFold({
       </Pressable>
       {open ? (
         <View style={styles.rail}>
-          {parts.map((part) =>
+          {folded.map((part) =>
             part.kind === "tools" ? (
               <ToolGroup key={part.id} tools={part.tools} source={source} />
             ) : part.kind === "reasoning" ? (
@@ -566,6 +587,9 @@ export function TurnFold({
           ))}
         </>
       )}
+      {cards.map((tool) => (
+        <ShownStepCard key={tool.id} tool={tool} source={source} />
+      ))}
     </View>
   );
 }

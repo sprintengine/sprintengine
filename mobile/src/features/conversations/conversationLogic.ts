@@ -28,6 +28,7 @@ import { keepUnchanged } from "./keepUnchanged";
 import { formatDuration, isSubagentStart } from "./subagentLogic";
 import { formatTokenCount } from "./promptCache";
 import { parseSentImages } from "./sentPhotos";
+import { phoneShownToUser, type ShownCards } from "./shownSteps";
 import { withoutStudioNoticePrefix } from "./studioNotice";
 import { copy } from "../../../../src/shared/copy";
 
@@ -147,15 +148,28 @@ export const PHONE_PROJECTION: ConversationProjectionOptions = { sessionEndSettl
 
 /**
  * How the phone lays the rows out: durations on its own clock, a Studio
- * subagent's start kept in view, its reading of a sent picture, and Studio's
- * notices without the name they open with.
+ * subagent's start kept in view, the steps it draws as cards held out of the
+ * fold (`phoneShownToUser`), its reading of a sent picture, and Studio's
+ * notices without the name they open with. A step is held out of the fold
+ * only where its card can be drawn, so the options follow what the chat's
+ * desktop serves (`ShownCards`).
  */
-export const PHONE_ROWS: ConversationRowsOptions = {
+export function phoneRowsOptions(cards: ShownCards): ConversationRowsOptions {
+  return cards.fileViews ? PHONE_ROWS_WITH_FILE_VIEWS : PHONE_ROWS;
+}
+
+const phoneRowsFor = (cards: ShownCards): ConversationRowsOptions => ({
   formatDuration,
   staysInView: isSubagentStart,
+  shownToUser: (tool) => phoneShownToUser(tool, cards),
   sentImages: parseSentImages,
   studioNoticeText: withoutStudioNoticePrefix,
-};
+});
+const PHONE_ROWS = phoneRowsFor({ fileViews: false });
+const PHONE_ROWS_WITH_FILE_VIEWS = phoneRowsFor({ fileViews: true });
+
+/** What a chat draws as cards before its desktop has said what it serves: only what needs nothing of it. */
+export const NO_SHOWN_CARDS: ShownCards = { fileViews: false };
 
 /** Sends the phone has not seen echoed are its courier's, never the projection's. */
 export const NO_LOCAL_TURNS: UserTurn[] = [];
@@ -167,8 +181,12 @@ export type PhoneConversation = ConversationRows & {
 };
 
 /** The phone's rows for a projection, with the context ring's reading beside them. */
-export function phoneRows(projection: ConversationProjection, context: ContextReading | null): PhoneConversation {
-  return { ...deriveConversationRows(projection, PHONE_ROWS), context };
+export function phoneRows(
+  projection: ConversationProjection,
+  context: ContextReading | null,
+  cards: ShownCards = NO_SHOWN_CARDS,
+): PhoneConversation {
+  return { ...deriveConversationRows(projection, phoneRowsOptions(cards)), context };
 }
 
 /**
@@ -182,10 +200,14 @@ export function foldable(events: readonly ConversationEvent[]): readonly Project
 }
 
 /** A chat's events as the phone draws them, folded whole. */
-export function projectPhoneConversation(events: readonly ConversationEvent[]): PhoneConversation {
+export function projectPhoneConversation(
+  events: readonly ConversationEvent[],
+  cards: ShownCards = NO_SHOWN_CARDS,
+): PhoneConversation {
   return phoneRows(
     projectConversation(foldable(events), NO_LOCAL_TURNS, PHONE_PROJECTION),
     events.reduce<ContextReading | null>(applyContextEvent, null),
+    cards,
   );
 }
 

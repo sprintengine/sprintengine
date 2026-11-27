@@ -101,12 +101,11 @@ export interface ThemeColors {
    * re-states per theme, so both themes carry the same hex here. It only ever
    * inks the `done_merged` branch glyph (LifecycleGlyph), never text.
    *
-   * This is the tightest pair in the pack: against the surface it is *closest*
-   * to — Dark `bgSelected` — it clears the 3:1 non-text floor (WCAG 1.4.11)
-   * at ~3.12:1, with little margin. It is kept anyway because
+   * Against the surface it is *closest* to — Dark `bgSelected` — it clears the
+   * 3:1 non-text floor (WCAG 1.4.11) at ~3.7:1. It is kept as it is because
    * merged-purple is cross-app identity, not theme ink; re-tinting it per theme
    * would make the same merged task read as two different states across apps.
-   * `glyphContrast.regression.test.js` pins that exact pair, so any tweak to
+   * `glyphContrast.regression.test.js` checks that pair by name, so a tweak to
    * `bgSelected` fails CI rather than quietly dropping the glyph below the floor.
    */
   toneMerged: string;
@@ -180,40 +179,41 @@ export interface ThemeColors {
   bgWell: string;
 }
 
-// Dark — the site's `dark:bg-neutral-950` page. Canvas #0a0a0a, cards
-// neutral-900 with a neutral-800 ring, text neutral-100/300/400.
+// Dark — near black, every grey neutral (R = G = B), matched to the desktop's
+// dark theme: the hierarchy is tiny neutral steps and hairline borders, and
+// the ink does the work. Primary ink near white for what matters, muted ink
+// clearly quieter for what describes it.
 const darkColors: ThemeColors = {
-  bgApp: "#0a0a0a",
-  bgSurface: "#171717",
-  bgSurfaceRaised: "#1c1c1c",
-  bgHover: "#202020",
-  bgActive: "#262626",
-  // Neutral, and no lighter than this: merged-purple (toneMerged) must keep 3:1
-  // on the lightest surface a row passes through, and it sits at ~3.1:1 here.
-  bgSelected: "#2a2a2a",
-  bgSelectedResting: "#242424",
-  bgSurfaceSelected: "#222222",
+  bgApp: "#040404",
+  bgSurface: "#080808",
+  bgSurfaceRaised: "#0c0c0c",
+  bgHover: "#141414",
+  bgActive: "#181818",
+  bgSelected: "#1c1c1c",
+  bgSelectedResting: "#181818",
+  bgSurfaceSelected: "#181818",
 
-  agentSurface: "#1c1c1c",
-  agentInset: "#202020",
-  composerSurface: "#202020",
-  // #202020 at 55% over #1c1c1c.
-  composerSurfaceEnd: "#1e1e1e",
+  agentSurface: "#0c0c0c",
+  agentInset: "#141414",
+  composerSurface: "#141414",
+  // #141414 at 55% over #0c0c0c.
+  composerSurfaceEnd: "#101010",
 
-  borderSubtle: "rgba(245,245,245,0.08)",
-  borderDefault: "rgba(245,245,245,0.12)",
-  borderStrong: "rgba(245,245,245,0.18)",
+  borderSubtle: "rgba(255,255,255,0.11)",
+  borderDefault: "rgba(255,255,255,0.14)",
+  borderStrong: "rgba(255,255,255,0.18)",
   borderFocus: "rgba(63,148,104,0.6)",
-  overlayScrim: "rgba(0,0,0,0.6)",
+  overlayScrim: "rgba(0,0,0,0.7)",
 
-  textPrimary: "#f5f5f5",
-  textDefault: "#d4d4d4",
-  textMuted: "#a3a3a3",
-  // The site's neutral-500 (#737373) reads at ~3.3:1 as 11px identifiers on a
-  // hovered row; lifted to the darkest grey that clears 4.5:1 on bgSelected.
-  textSubtle: "#929292",
-  // Inks the idea/archived glyphs (3:1 informational floor on bgSelected).
-  textDisabled: "#767676",
+  textPrimary: "#f4f4f4",
+  textDefault: "#d0d0d0",
+  textMuted: "#949494",
+  // The desktop's #808080 reads at ~4.3:1 as 11–13px identifiers on a
+  // selected row; lifted to the darkest grey that clears 4.5:1 on bgSelected.
+  textSubtle: "#848484",
+  // Inks the idea, canceled and archived glyphs: the desktop's #646464 is
+  // ~2.9:1 on bgSelected, under the 3:1 non-text floor; this clears it.
+  textDisabled: "#686868",
   textOnAccent: "#0a0a0a",
 
   accentPrimary: "#3f9468",
@@ -243,12 +243,13 @@ const darkColors: ThemeColors = {
   buttonBg: "#f5f5f5",
   buttonInk: "#171717",
   buttonOutline: "#404040",
-  cardRing: "#262626",
+  // White at 0.11 over the page, as the desktop's subtle border lands.
+  cardRing: "#1d1d1d",
   cardShadowColor: "#000000",
   toastEdge: "rgba(255,255,255,0.09)",
 
   // The desktop declares violet once for both themes, as it does merged-purple:
-  // ~3.1:1 on bgSelected, the same tight pair toneMerged sits on.
+  // ~3.7:1 on bgSelected, the same pair toneMerged sits on.
   markBlue: "#5ea0f2",
   markTeal: "#2dd4bf",
   markCyan: "#22d3ee",

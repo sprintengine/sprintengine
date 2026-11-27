@@ -2,7 +2,6 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const {
   STUDIO_NOTICE_PREFIX,
-  readMessageOrigin,
   withoutStudioNoticePrefix,
 } = require("../../../.mobile-test-build/mobile/src/features/conversations/studioNotice.js");
 const { projectPhoneConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
@@ -31,21 +30,6 @@ function exchange(turnId, start, end, message) {
   ];
 }
 const RESUME = { text: `${STUDIO_NOTICE_PREFIX} Continue where you left off — your usage limit has reset.`, origin: { kind: "studio", reason: "usage-resume" } };
-
-test("a message without an origin is the person's; a studio origin is Studio's, with its reason when it is known", () => {
-  assert.equal(readMessageOrigin(undefined), null);
-  assert.deepEqual(readMessageOrigin({ kind: "studio" }), { kind: "studio" });
-  assert.deepEqual(readMessageOrigin({ kind: "studio", reason: "agent-notice" }), { kind: "studio", reason: "agent-notice" });
-  assert.deepEqual(readMessageOrigin({ kind: "studio", reason: "usage-resume" }), { kind: "studio", reason: "usage-resume" });
-  // A reason a newer desktop sends is still Studio's; only the reason is dropped.
-  assert.deepEqual(readMessageOrigin({ kind: "studio", reason: "nightly-digest" }), { kind: "studio" });
-  assert.deepEqual(readMessageOrigin({ kind: "studio", reason: 7 }), { kind: "studio" });
-});
-
-test("an origin in any other shape is the person's message, as before the member existed", () => {
-  for (const value of [null, "studio", 1, true, [], [{ kind: "studio" }], {}, { kind: "Studio" }, { kind: "person" }, { reason: "agent-notice" }])
-    assert.equal(readMessageOrigin(value), null, JSON.stringify(value));
-});
 
 test("the row leaves out the name Studio's words open with, and nothing else", () => {
   assert.equal(withoutStudioNoticePrefix(RESUME.text), "Continue where you left off — your usage limit has reset.");
@@ -78,10 +62,14 @@ test("Studio's message is its own row, never the person's bubble", () => {
     ],
   );
   assert.ok(studio.every((row) => !("files" in row) && !("role" in row)));
-  // A malformed origin leaves the message the person's, with its words as written.
-  const odd = projectPhoneConversation(exchange("t4", 400, 410, { text: "mine", origin: "studio" })).rows;
-  assert.equal(odd[0].kind, "message");
-  assert.equal(odd[0].role, "user");
+  // An origin in any other shape leaves the message the person's, with its
+  // words as written, as every message before the member existed was.
+  for (const origin of ["studio", 1, [], [{ kind: "studio" }], {}, { kind: "Studio" }, { kind: "person" }, { reason: "agent-notice" }]) {
+    const odd = projectPhoneConversation(exchange("t4", 400, 410, { text: "mine", origin })).rows;
+    assert.equal(odd[0].kind, "message", JSON.stringify(origin));
+    assert.equal(odd[0].role, "user", JSON.stringify(origin));
+    assert.equal(odd[0].text, "mine");
+  }
 });
 
 test("Studio's message still opens a turn: the chat works, and a send it acknowledges leaves the queue", () => {

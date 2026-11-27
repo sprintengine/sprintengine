@@ -79,13 +79,16 @@ const createStyles = ({ colors }: Theme) =>
     segmentPressed: {
       backgroundColor: colors.bgHover,
     },
+    // A tab at rest is muted and the chosen one is the strongest ink at medium
+    // weight, as the desktop's navigation rows are and the phone's other tabs
+    // (DocumentModeToggle, the schedule sheet's) already were.
     label: {
       ...typography.body,
-      color: colors.textDefault,
+      fontWeight: fontWeight.medium,
+      color: colors.textMuted,
       flexShrink: 1,
     },
     labelOn: {
       color: colors.textPrimary,
-      fontWeight: fontWeight.emphasis,
     },
   });

@@ -77,22 +77,17 @@ test("every lifecycle glyph clears the 3:1 non-text floor on every surface, in b
   assert.deepEqual(failures, [], `glyph tones below ${nonTextContrastFloor}:1:\n  ${failures.join("\n  ")}`);
 });
 
-test("the tightest glyph pair is Dark merged-on-selected, and it still clears the floor", () => {
+test("merged-purple keeps the floor on Dark's selected row, and the tightest pair is the disabled ink there", () => {
   // done_merged wears --tone-merged, a cross-app identity colour that must not be
-  // re-themed. It has the thinnest margin in the pack, so it is pinned here: if a
-  // future bgSelected tweak pushes it under, this names the exact pair.
+  // re-themed, so its pair with Dark bgSelected is checked by name.
   //
-  // The guard used to carry a hardcoded upper bound (`< 3.05`) whose only job was
-  // to notice when this stopped being the tightest pair — and it fired the moment
-  // a later change neutralized `bgSelected`, for a change that moved the margin the SAFE
-  // way (3.0004 -> 3.1088). It now finds the tightest pair itself, so it asserts
-  // the fact it always meant to and needs no retuning when a value legitimately
-  // moves.
+  // It used to be the tightest pair in the pack (~3.1:1 on #2a2a2a). The
+  // near-black dark theme put bgSelected at #1c1c1c, which widened it to ~3.7:1,
+  // and the disabled ink (idea, canceled, archived) now sits closest to the
+  // floor, at ~3.06:1. The guard finds the tightest pair itself, so a value that
+  // moves names the pair that moved rather than needing a retuned bound.
   const ratio = contrast(THEMES.dark.toneMerged, THEMES.dark.bgSelected);
-  assert.ok(
-    ratio >= nonTextContrastFloor,
-    `Dark done_merged on bgSelected fell to ${ratio.toFixed(4)}:1`,
-  );
+  assert.ok(ratio >= nonTextContrastFloor, `Dark done_merged on bgSelected fell to ${ratio.toFixed(4)}:1`);
 
   let tightest = { label: "dark done_merged on bgSelected", ratio };
   for (const [themeName, colors] of Object.entries(THEMES)) {
@@ -107,9 +102,10 @@ test("the tightest glyph pair is Dark merged-on-selected, and it still clears th
   }
   assert.equal(
     tightest.label,
-    "dark done_merged on bgSelected",
+    "dark idea on bgSelected",
     `a tighter pair appeared: ${tightest.label} at ${tightest.ratio.toFixed(4)}:1 — pin THAT one instead`,
   );
+  assert.ok(tightest.ratio >= nonTextContrastFloor);
 });
 
 // --- Identity color family (the epic wheel) ---------------------------------

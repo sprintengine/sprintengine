@@ -265,20 +265,35 @@ between them. The tray shows it as a chip with its kind's glyph, and the
 message, once the desktop has it, as a file card (below). A desktop without
 the capability takes pictures only, and no File row is drawn.
 
-A message Studio sent the chat itself, rather than you, is Studio's quiet
-line, not your bubble: an agent the chat launched reporting back, or a resume
-once a usage limit that stopped the chat has reset. The desktop records it as
-any other `user_message`, since the agent is handed it as a turn, and marks it
-with an `origin` (`{ kind: 'studio', reason }`) on the payload. The phone
-reads that optional member off the payload (`studioNotice.ts`), whose shape
-the desktop's contract leaves open: a `studio` origin whose reason this phone does
-not know is still Studio's, and an origin in any other shape, or none, is
-yours, as every message before the member was. The row reads "SprintEngine
-Studio · …" in the note's ink, without the bracketed name the agent's copy of
-the words opens with, and has nothing to act on. It is never you writing: the
-list orders by the desktop's `lastUserMessageAt`, which leaves it out, and it
-is no bubble of yours. The "New" divider goes above it when the reply it
-opened is the first unseen one, since it is news too.
+A message Studio sent the chat itself, rather than you, is never your
+bubble. The desktop records it as any other `user_message`, since the agent
+is handed it as a turn, and marks it with an `origin` (`{ kind: 'studio',
+reason }`) on the payload. The shared projection reads that member
+(conversation-protocol's `readConversationMessageOrigin`) and lays the message
+out as Studio's row: a `studio` origin whose reason the phone does not know is
+still Studio's, and an origin in any other shape, or none, is yours, as every
+message before the member was. The phone says the row its own way
+(`studioNotice.ts`), without the bracketed name the agent's copy of the words
+opens with:
+
+- News from an agent the chat launched (`agent-notice`) is a step per agent,
+  as on the desktop: the logo of the harness it runs on, "Sub-agent Reviewer
+  finished" and when, closed until tapped; open, it is the agent's reply as
+  Markdown on the steps' rail (`AgentNoticeRow`). The words the chat's agent
+  was handed (which id, the reply quoted as untrusted output) are for that
+  agent, not for you.
+- The `/compact` Studio sent an idle chat before its prompt cache expired
+  (`auto-compact`), or once the chat's own agent asked for one
+  (`agent-compact`), is drawn by its compaction's divider alone
+  ("Context compacted · automatically, before the cache expired", "… at the
+  agent's request"), not as a row of its own.
+- Anything else, such as a resume once a usage limit that stopped the chat
+  has reset, is Studio's quiet line: "SprintEngine Studio · …" in the note's
+  ink, with nothing to act on.
+
+It is never you writing: the list orders by the desktop's
+`lastUserMessageAt`, which leaves it out. The "New" divider goes above it
+when the reply it opened is the first unseen one, since it is news too.
 
 Files you attached to a message by path on the desktop travel beside your
 words (`files`, each `{ path }`, on the `user_message`), never in them, and
@@ -431,15 +446,17 @@ Each turn's work rests behind one line, as on the desktop: "Worked for 2m 14s
 stopped after…", with how many steps went wrong in error ink. Tapping it opens
 the turn as it happened: each run of steps, and what the agent said between
 them. The agents a turn sent off stay cards of their own under it, the reply
-after the last step stays as written, and a picture the agent generated (or
-prose that shows one) stays in view. A finished turn that changed files says
+after the last step stays as written, and what the agent made for you to look
+at stays in view and is not counted as a step: a picture it generated (or
+prose that shows one), the files it showed you and a plugin it offered you
+(below). A finished turn that changed files says
 how many and the lines in and out ("3 files changed · +42 −7"), from the
 desktop's checkpoint summary, and opens them when the desktop kept a
 checkpoint; a checkpoint that changed nothing leaves no row. Where a desktop
 reports the files a step changed (`fileChanges` on a finished step) and kept
 no summary, the count is taken from those: each step once, however often it
 is reported, and never from a partial output. A turn whose only steps made
-pictures has no fold, as on the desktop.
+pictures or showed you something has no fold, as on the desktop.
 
 The rows are not the phone's own reading of the events. A chat's events are
 folded by the projection every client folds (`projectConversation` in
@@ -563,16 +580,25 @@ copied is decided in `copyText.ts`. It is a native module, so it needs a
 build of the app made after it was added: on an older build Copy says so
 rather than the chat failing to open.
 
-What the model thought on its way to a reply (`reasoning_delta`) is a quiet
-row of its own, where in the turn it thought it: a bulb, "Thinking" and the
-first line of the thought, closed, or "Thinking…" while it is the last thing
-the running turn has said. Tapping it opens the thought as Markdown in the
-muted ink on the steps' rail. One stretch of thinking is one row however many
-deltas it came in; a step after it starts the next, and thinking either side
-of words with no step between is one row, ahead of the words. Thinking before
-a turn's last step folds with the turn's work, as its prose does, and the
-thinking after it stays in view above the reply. A stretch that never says
-anything leaves no row. The thought is never part of a copied reply.
+What the model thought on its way to a reply (`reasoning_delta`) is out in
+the open while its turn works (owner ruling 2026-11-20): an agent's thinking
+often says what it is about to do, and its later words assume you read it.
+Every stretch of the working turn's thinking so far is one box, "Reasoning",
+just after the turn's line, drawn open with each stretch as Markdown in the
+muted ink, a rule between them (`ReasoningBox`). It follows the newest words
+down unless you have scrolled up inside it to read, and a tap closes it to its
+heading and the first line of the latest thought. It stands where it was
+first drawn, so the reply starting does not move it.
+
+Once the turn settles the box goes, and each stretch is a quiet row of its
+own, where in the turn it thought it: a bulb, "Thinking" and the first line of
+the thought, closed until tapped, then the thought on the steps' rail. One
+stretch is one row however many deltas it came in; a step after it starts the
+next, and thinking either side of words with no step between is one row,
+ahead of the words. Thinking before the turn's last step folds with the turn's
+work, as its prose does, and the thinking after it stays in view above the
+reply. A stretch that never says anything leaves no row. The thought is never
+part of a copied reply.
 
 While the provider waits to retry a failed model call (`turn_retrying`), the
 working line says why and how far along it is ("Couldn't authenticate ·
@@ -700,6 +726,45 @@ only what the rule below allows. A message over the desktop's size
 limit is refused before it is queued, and a send the desktop refuses is shown
 as not sent, with the reason, until it is removed. The cache is bounded and
 does not store credentials or image bytes.
+
+### What an agent showed you
+
+An agent shows you files with Studio's `file.view` tool ("show me my
+CLAUDE.md", or code it wants looked at) and offers you a plugin with
+`plugin.offer`. Each is a card under the turn's line, open or closed, in
+place of its step, as on the desktop (`ShownStepCards.tsx`, the rules in
+`shownSteps.ts`). Both are read only on the phone.
+
+The files card has a tab for each file where there are several (a file's
+name, or as much of its folder as tells two of one name apart), then the
+file's kind, name and whole path, "Read only", the lines the agent pointed at
+with its note on each, marked in the agent violet, and the file's text, coloured as
+code is by its extension. It opens where the agent pointed (two lines above
+its first range) or at the top, 18 lines of it, and "Show all" reads it from
+its top, up to 600 lines; Copy copies the whole file. The text is the live
+file on the machine the chat runs on, read through the chat
+(`fileViews.read`, by the path the call's answer named), so it needs only
+the pairing's `conversation:read`; what was read is kept by chat and path
+while the app runs, up to 8 MB, and read again when the chat is opened
+again. A file the desktop no longer has, or one too large, says so; anything
+else says the desktop's words, with "Try again". Editing is the desktop's:
+the card says to open the chat in Studio on that desktop to edit it. The
+phone has no editor, and a save would have to stand up to a file changed on
+disk since, which the desktop's editor is built around.
+
+The card is drawn only where the desktop advertises `file-views` and the
+pairing may follow its chats (`fileViews` in `chatOffers.ts`); and the step
+leaves the turn's fold only together with its card, so anywhere else the
+call stays an ordinary step, folded and counted. A call still running, one
+that failed, or one whose answer names no file is its step.
+
+The plugin card is read from Studio's answer to the call, never from
+anything the agent wrote: the plugin's name, its catalogue's description and
+the source it comes from. It has no Install button. Installing a plugin is
+an owner's method on the desktop (`skillPlugins.install`), which no paired
+device holds, and it runs the plugin's servers there, so the card says to
+install it in Studio on that desktop. A call that failed, or whose answer
+names no plugin, is its step.
 
 ### A message queued on the desktop
 
@@ -869,7 +934,8 @@ an agent's news and a usage-limit resume, between the person's, and opens on
 "New" above the agent's news; `sprintengine://verify/chat/ws-files` holds a
 message with a PDF, a DOCX on a Windows drive, a spreadsheet on a
 Windows share and a file of no kind the phone names, each a card under the
-bubble. Both rest under Earlier too. In the conversation fixture
+bubble, then a turn that showed two files (one with lines pointed at) and
+offered a plugin, each a card under the turn's line. Both rest under Earlier too. In the conversation fixture
 (`EXPO_PUBLIC_VERIFY_CONVERSATION=1`), a running agent's screen offers "Stop
 this agent", and the agent then reports itself stopped. Do not distribute the fixture build as the normal app.
 
@@ -948,7 +1014,9 @@ a desktop that advertises `conversation-subagents` names in `subagents` frames
 or waiting on you, come first, oldest first, then the finished ones newest
 first, each with the logo of the harness it runs on and its status in the
 desktop's words ("Working · 42s", "Waiting on you", "Done in 1m 4s", "Failed
-after 9s") and "Read-only" for one started to read and report. Only the chat's
+after 9s"; one its parent gave another task with `subagent.resume` leads with
+its round and is timed from it, "Round 2 · Done in 40s") and "Read-only" for
+one started to read and report. Only the chat's
 own are listed: an agent's own subagents are under it, by going into it, so a
 nested agent is never listed at the top. A desktop without the capability
 lists the agents the CLI spawned, as before, and the screen says the others

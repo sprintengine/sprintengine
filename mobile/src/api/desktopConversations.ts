@@ -194,7 +194,25 @@ export interface ConversationApi {
    * step's picture and a sent one never change.
    */
   picture(ref: ConversationImageRef): Promise<ConversationPicture>;
+  /**
+   * A file the chat's agent showed in the chat (`file.view`), read on the
+   * desktop through the chat (`fileViews.read`, `file-views`): the desktop
+   * answers only for a path that chat showed.
+   */
+  fileView(ref: ConversationFileViewRef): Promise<ConversationFileView>;
 }
+
+/** A file a chat showed: the chat, and the path its `file.view` answer named. */
+export type ConversationFileViewRef = { workspaceId: string; agentId: string; path: string };
+
+/**
+ * A shown file's text, or why there is none: `gone` (the desktop no longer
+ * has the file, or the chat never showed it), `too_large`, or `unavailable`
+ * for anything else, with the desktop's words.
+ */
+export type ConversationFileView =
+  | { ok: true; text: string }
+  | { ok: false; problem: ConversationImageProblem; message: string };
 
 const TURN_ENDS = ["turn_completed", "turn_failed", "session_stopped", "session_closed"];
 /** The first page a chat opens on, and each earlier one. */
@@ -240,7 +258,23 @@ export function createDesktopConversationsApi(
     uploadImage: async (file) => upload(await studio(), file, "picture"),
     uploadFile: async (file) => upload(await studio(), file, "attachment"),
     picture: (ref) => picture(target, studio, ref),
+    fileView: (ref) => fileView(studio, ref),
   };
+}
+
+/** A shown file read from the desktop, each time it is asked: the file is live there, not a copy. */
+async function fileView(studio: () => Promise<StudioClient>, ref: ConversationFileViewRef): Promise<ConversationFileView> {
+  try {
+    const client = await studio();
+    const read = await client.request("fileViews.read", {
+      key: { workspaceId: ref.workspaceId, agentId: ref.agentId },
+      path: ref.path,
+    });
+    return { ok: true, text: read.text };
+  } catch (error) {
+    const { code, message } = refusalOf(error);
+    return { ok: false, problem: code === "not_found" ? "gone" : code === "too_large" ? "too_large" : "unavailable", message };
+  }
 }
 
 function openStream(input: {
