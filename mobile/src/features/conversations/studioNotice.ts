@@ -1,44 +1,12 @@
 // A message Studio sent a chat itself, rather than the person: news from an
-// agent the chat launched (`agent-notice`), a resume once a usage limit
-// that stopped the chat has reset (`usage-resume`), or the `/compact` it sent
-// an idle chat just before its prompt cache expired (`auto-compact`), which
-// the chat draws as its compaction's divider and not as a row of its own. The desktop records it as
-// a `user_message` like any other, since the agent is handed it as a turn,
-// and marks it with an `origin` on the payload (the desktop's
-// `readConversationMessageOrigin`, conversation-protocol's events.ts).
-//
-// `origin` is an optional payload member the contract leaves open on the
-// event, so it is read here off the payload, defensively: anything but
-// `{ kind: 'studio' }` is the person's message, as every message recorded
-// before the member existed is. A reason this phone does not know is still
-// Studio's; only the reason is dropped.
-//
-// Such a message is not the person's: the chat draws it as Studio's quiet row,
-// not their bubble, and it is never "the person wrote" for anything that reads
-// that (the desktop's `lastUserMessageAt`, which the list orders by, leaves it
-// out the same way).
-
-export type StudioMessageReason = "agent-notice" | "usage-resume" | "auto-compact" | "agent-message";
-
-/** Who a `user_message` came from when it was not the person. */
-export type MessageOrigin = { kind: "studio"; reason?: StudioMessageReason };
-
-const STUDIO_MESSAGE_REASONS: readonly string[] = [
-  "agent-notice",
-  "usage-resume",
-  "auto-compact",
-  "agent-message",
-] satisfies StudioMessageReason[];
-
-/** A `user_message` payload's `origin`, or null for the person's own message. */
-export function readMessageOrigin(value: unknown): MessageOrigin | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const origin = value as { kind?: unknown; reason?: unknown };
-  if (origin.kind !== "studio") return null;
-  return typeof origin.reason === "string" && STUDIO_MESSAGE_REASONS.includes(origin.reason)
-    ? { kind: "studio", reason: origin.reason as StudioMessageReason }
-    : { kind: "studio" };
-}
+// agent the chat launched, a resume once a usage limit that stopped the chat
+// has reset, or the `/compact` it sent an idle chat. The desktop records it
+// as a `user_message` like any other, since the agent is handed it as a
+// turn, and marks it with an `origin` on the payload. The shared projection
+// reads that member (conversation-protocol's `readConversationMessageOrigin`)
+// and lays the message out as Studio's row (`kind: 'studio'`), so the phone
+// keeps only how the row says it: under Studio's name, without the name the
+// words open with.
 
 /** The name Studio's notice row is said under. */
 export const STUDIO_NAME = "SprintEngine Studio";
