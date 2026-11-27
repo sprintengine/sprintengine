@@ -42,6 +42,7 @@ import { subscribeCliVersionAdvisoryChanges } from '../../store/slices/cliVersio
 import { discoveredModelAdditions, newModelsNotice, sourceUpdatesNotice } from '../../utils/feedNotifications'
 import { getRendererHost, onThirdPartyRendererModulesLoaded, selectModuleEnabled } from '../../modules'
 import { resolveNotificationActions as resolveNotificationActionsFor } from '../../utils/notificationActions'
+import { canOpenAnyFile, openAnyFile } from '../../utils/openAnyFile'
 import {
   deriveWorkspaceIdleSince,
   deriveWorkspaceLastInputAt,
@@ -4499,6 +4500,11 @@ export default function WorkspaceManager() {
       }
       if (commandId === 'terminal.stop' && windowActiveWorkspaceId) {
         return stopActiveTerminal(windowActiveWorkspaceId, terminalSessions)
+      }
+      if (commandId === 'file.open') {
+        if (!canOpenAnyFile()) return false
+        void openAnyFile({ workspaceId: windowActiveWorkspaceId ?? '' })
+        return true
       }
       if (commandId === 'workspace.folder.reveal') {
         if (!windowActiveWorkspaceId) return false

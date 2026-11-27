@@ -172,6 +172,9 @@ export const en = {
       dockCurrentFileBackInto: 'Dock current file back into the workspace',
       dockIntoWorkspace: 'Dock into workspace',
       files: 'Files',
+      openFiles: 'Open files',
+      openFile: 'Open file…',
+      openFileShortcut: (shortcut: unknown) => `Open file… (${shortcut})`,
       outsideThisWorkspace: 'Outside this workspace',
       outsideThisFolder: 'Outside this folder',
       resizeFiles: 'Resize files',
@@ -345,6 +348,7 @@ export const en = {
       openCommandPalette: 'Open command palette',
       searchEverywhere: 'Search everywhere',
       goToFile: 'Go to file',
+      openFile: 'Open file…',
       searchInFiles: 'Search in files',
       newChat: 'New chat',
       newChatWithoutAProject: 'New chat without a project',
@@ -2619,6 +2623,10 @@ export const en = {
       },
       // mobile/src/features/conversations/conversationParts.tsx
       conversationParts: {
+        thinking: 'Thinking',
+        thinkingNow: 'Thinking…',
+        reasoning: 'Reasoning',
+        linkCannotBeOpened: 'This link cannot be opened from a conversation.',
         failed: (summary: unknown, failed: unknown) => `${summary}, ${failed} failed`,
         sideQuestion: (question: unknown) => `Side question: ${question}`,
         sideQuestion2: 'Side question',
@@ -2633,6 +2641,7 @@ export const en = {
       },
       // mobile/src/features/conversations/ConversationScreen.tsx
       conversationScreen: {
+        commandOutput: 'Command output',
         chat: 'Chat',
         viewChangedFiles: 'View changed files',
         branch: 'Branch',
@@ -2892,6 +2901,27 @@ export const en = {
         opensThePictureFullScreen: 'Opens the picture full screen.',
         showItsName: 'Show its name',
         onTheDesktop: (label: unknown) => `${label}, on the desktop`,
+      },
+      // mobile/src/features/conversations/ShownStepCards.tsx
+      shownStepCards: {
+        filesShown: 'Files shown in this chat',
+        file: (path: unknown) => `File ${path}`,
+        readOnly: 'Read only',
+        opening: 'Opening…',
+        empty: 'Empty file',
+        lines: (from: unknown, to: unknown, total: unknown) => `Lines ${from}–${to} of ${total}`,
+        pointedAt: (from: number, to: number) => (from === to ? `Line ${from}` : `Lines ${from}–${to}`),
+        showLess: 'Show less',
+        gone: 'This file is no longer on the desktop.',
+        tooLarge: 'This file is too large to show here.',
+        couldNotOpen: 'Could not open this file.',
+        tryAgain: 'Try again',
+        theDesktop: 'the desktop',
+        editOnDesktop: (desktop: unknown) => `To edit it, open this chat in Studio on ${desktop}.`,
+        plugin: (name: unknown) => `Plugin ${name}`,
+        from: (source: unknown) => `From ${source}`,
+        installOnDesktop: (desktop: unknown) =>
+          `Install it in Studio on ${desktop}. A plugin is installed on the computer the chat runs on, not from a phone.`,
       },
       // mobile/src/features/conversations/snoozeLogic.ts
       snoozeLogic: {
@@ -4676,6 +4706,7 @@ export const en = {
       newChatIn: (folderDisplayName: unknown) => `New chat in ${folderDisplayName}`,
       newChat: 'New chat',
       goToFile: 'Go to file',
+      openFile: 'Open file…',
       searchProjectContents: 'Search project contents',
       openSettings: 'Open settings',
       openRemoteConnections: 'Open remote connections',

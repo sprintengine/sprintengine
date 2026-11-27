@@ -73,6 +73,7 @@
     "src/features/projects/worktreeProjectLogic.ts",
     "src/features/notices/noticesLogic.ts",
     "src/features/conversations/conversationLogic.ts",
+    "src/features/conversations/shownSteps.ts",
     "src/features/conversations/conversationImageLogic.ts",
     "src/features/conversations/conversationListLogic.ts",
     "src/features/conversations/launchLogic.ts",

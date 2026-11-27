@@ -50,10 +50,12 @@ and the rest sweep in `src/main/automation/workspace-settlement-sweep.ts`. Wire:
 `src/main/automation/conversation-self-compact.test.ts`.
 
 **Files shown in a chat** (`file.view`, the inline editor): tool and ledger in `src/server/file-views/`,
-card in `src/renderer/src/components/panels/agentChat/fileView/FileViewCard.tsx`. Wire: `fileViews.*`
+card in `src/renderer/src/components/panels/agentChat/fileView/FileViewCard.tsx`; the phone's read-only
+card in `mobile/src/features/conversations/ShownStepCards.tsx`. Wire: `fileViews.*`
 (capability `file-views`, `packages/studio-protocol/src/file-views.ts`). Doc: `docs/conversations.md`
 ("Files shown in the chat"). Tests: `src/server/file-views/file-views.test.ts`,
-`src/renderer/src/components/panels/agentChat/fileView/FileViewCard.test.tsx`.
+`src/renderer/src/components/panels/agentChat/fileView/FileViewCard.test.tsx`,
+`mobile/src/features/conversations/shownSteps.regression.test.js`.
 
 **Sub-agents** (a chat's agents as chats of their own): `src/main/subagent-lifecycle.ts`,
 `src/main/automation/subagent-tools.ts`; in the view `src/renderer/src/components/panels/agentChat/SubagentChatHost.tsx`
@@ -63,8 +65,9 @@ task in its same CLI session with `subagent.resume`, and its row counts the roun
 `src/server/core/subagent-resume.test.ts` (a resume end to end, through the host and the runtime).
 
 **Plugin offers in a chat** (`plugin.offer`): `src/main/automation/plugin-tools.ts`,
-`src/renderer/src/components/panels/agentChat/pluginOffer/PluginOfferCard.tsx`.
-Tests: `src/main/automation/plugin-tools.test.ts`.
+`src/renderer/src/components/panels/agentChat/pluginOffer/PluginOfferCard.tsx`; the phone's card, which
+says to install it on the desktop, in `mobile/src/features/conversations/ShownStepCards.tsx`.
+Tests: `src/main/automation/plugin-tools.test.ts`, `mobile/src/features/conversations/shownSteps.regression.test.js`.
 
 **Scheduled messages and usage-limit resumes**: `src/main/scheduled-messages/scheduled-messages.ts`,
 `src/server/core/studio-scheduled-messages.ts`, `src/main/usage-limits/`.
@@ -168,6 +171,14 @@ the layout in `src/server/db/migrations.ts`, the one copy in
 **Editor pane** (and `editor.open`): `src/renderer/src/components/panels/EditorPanel.tsx`,
 `src/main/automation/editor-tools.ts`. Tests: `src/renderer/src/components/panels/EditorPanel.diskSync.test.tsx`,
 `src/main/automation/editor-tools.test.ts`.
+
+**Editor window** (a file beside its folder's tree, in a window of its own): `src/renderer/src/components/auxWindows/ExternalEditorWindow.tsx`,
+its tree `src/renderer/src/components/auxWindows/EditorFileTree.tsx`, opened by
+`src/renderer/src/utils/openFileSurface.ts`. **Open file…** (any one file on this computer, in a workspace or not; the
+window's button and ⌘O, and the palette's `file.open`): `src/renderer/src/utils/openAnyFile.ts`, the dialog
+`fs:dialog:open-file` in `src/main/ipc/menu-dialog-ipc.ts`. Tests:
+`src/renderer/src/components/auxWindows/ExternalEditorWindow.diskSync.test.tsx`,
+`src/renderer/src/components/auxWindows/EditorFileTree.test.tsx`, `src/renderer/src/utils/openAnyFile.test.ts`.
 
 **Workspace pane** (tabs, browser, canvas, documents): `src/renderer/src/components/workspace/pane/WorkspacePane.tsx`.
 

@@ -55,6 +55,15 @@ export type TabItem<T extends string = string> = {
    * across the app. Say it in `ariaLabel` too; the pill is drawn for the eye.
    */
   agent?: boolean
+  /**
+   * A document tab with unsaved edits (a file in an editor). On a closable
+   * strip its close glyph gives way to the unsaved mark, named by
+   * `modifiedLabel`: a tab whose edits would be lost is not closed by one click
+   * in the strip, so it is saved, or closed from wherever asks first.
+   */
+  modified?: boolean
+  /** The unsaved mark's accessible name ("Unsaved changes"). */
+  modifiedLabel?: string
 }
 
 type TabsProps<T extends string = string> = {
@@ -519,6 +528,19 @@ export function Tabs<T extends string = string>({
           )
         }
         if (!closable) return tab
+        if (item.modified)
+          return (
+            <span key={item.id} className="group/tab relative inline-flex shrink-0">
+              {tab}
+              <span
+                role="img"
+                aria-label={item.modifiedLabel}
+                className="pointer-events-none absolute right-2 top-1/2 inline-flex size-icon-sm -translate-y-1/2 items-center justify-center text-[color:var(--tone-warn)]"
+              >
+                •
+              </span>
+            </span>
+          )
         return (
           <span key={item.id} className="group/tab relative inline-flex shrink-0">
             {tab}

@@ -45,6 +45,10 @@ transparent 1px edge, so being chosen never reflows the row. The row keeps
   "A count on a tab is not a badge on a tab" below. Never on `--icon-only`, and
   never on a closable tab — that tab's trailing padding is already spoken for by
   its close glyph, and two things docked in one corner is neither of them.
+- **Unsaved** — a closable document tab (a file in an editor) with edits not
+  yet saved. Its close glyph gives way to the unsaved mark in `status.warn`,
+  named "Unsaved changes" for assistive technology, so edits are never lost to
+  one click in the strip: the file is saved first, or closed from wherever asks.
 - **`--reorderable`** — the person's order, not the product's (the workspace
   pane's strip). A tab dragged sideways lands in the slot it is dropped in,
   and the focused tab moves one place with Alt+Shift+Left/Right. The strip is

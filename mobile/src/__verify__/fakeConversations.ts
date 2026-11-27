@@ -284,7 +284,8 @@ const verifyNoticesConversation: ConversationThread = {
 /**
  * A message with files attached by path: a PDF, a DOCX on a Windows
  * drive, a spreadsheet on a Windows share, and a file of no kind the phone
- * names. Under Earlier too.
+ * names; then a turn that showed the person two files and offered a plugin,
+ * drawn as cards. Under Earlier too.
  */
 const verifyFilesConversation: ConversationThread = {
   ...verifyNoticesConversation,
@@ -293,9 +294,9 @@ const verifyFilesConversation: ConversationThread = {
   sessionId: "session-files",
   title: "Compare the quarter against the plan",
   chatTitle: "Compare the quarter against the plan",
-  updatedAt: at(2 * 24 * 60 * minutes + 50 * minutes),
-  lastUserMessageAt: at(2 * 24 * 60 * minutes + 55 * minutes),
-  lastTurnEndedAt: at(2 * 24 * 60 * minutes + 50 * minutes),
+  updatedAt: at(2 * 24 * 60 * minutes + 36 * minutes),
+  lastUserMessageAt: at(2 * 24 * 60 * minutes + 40 * minutes),
+  lastTurnEndedAt: at(2 * 24 * 60 * minutes + 36 * minutes),
   lastVisitedAt: at(2 * 24 * 60 * minutes + 45 * minutes),
 };
 
@@ -971,8 +972,89 @@ function filesTurns(): ConversationEvent[] {
       2 * day + 51 * minutes,
     ),
     said("files-compare", "turn_completed", { durationMs: 5 * minutes }, 2 * day + 50 * minutes),
+    ...shownTurn(said, day),
   ];
 }
+
+// What an agent showed the person: two files with Studio's `file.view`, the
+// lines it pointed at marked, and a plugin it offered with `plugin.offer`.
+// The phone draws each as a card under the turn's line, read only.
+function shownTurn(
+  said: (turnId: string, type: string, payload: Record<string, unknown>, agoMs: number) => ConversationEvent,
+  day: number,
+): ConversationEvent[] {
+  const turn = "files-shown";
+  const studio = { serverName: "sprintengine-studio" };
+  const shown = {
+    ok: true,
+    files: [
+      { path: FAKE_SHOWN_FILES[0].path, name: "pairing.md", lines: 24, highlights: [{ from: 9, to: 12, note: "What a phone may do once paired" }] },
+      { path: FAKE_SHOWN_FILES[1].path, name: "grants.ts", lines: 12, highlights: [] },
+    ],
+    shown: "The files are open in the chat, in tabs, for the person to read and edit.",
+  };
+  const offered = {
+    ok: true,
+    sourceId: "acme-plugins",
+    source: "Acme plugins",
+    pluginId: "sheets",
+    name: "Sheets",
+    description: "Read and write spreadsheets: open a workbook, read a range, and add rows.",
+    shown: "The card is in the chat. The person installs it from there, or not.",
+  };
+  return [
+    said(turn, "user_message", { text: "Show me what the pairing notes say a phone may do, and find something that reads the budget." }, 2 * day + 40 * minutes),
+    said(turn, "turn_started", {}, 2 * day + 40 * minutes),
+    said(turn, "tool_started", { toolUseId: "shown-read", name: "Read", input: { path: FAKE_SHOWN_FILES[0].path } }, 2 * day + 39 * minutes),
+    said(turn, "tool_output", { toolUseId: "shown-read", output: "…", status: "ok" }, 2 * day + 39 * minutes),
+    said(turn, "tool_started", { toolUseId: "shown-view", name: "mcp__sprintengine-studio__file_view", ...studio, input: { files: shown.files.map(({ path, highlights }) => ({ path, highlights })) } }, 2 * day + 38 * minutes),
+    said(turn, "tool_output", { toolUseId: "shown-view", output: JSON.stringify(shown, null, 2), status: "ok" }, 2 * day + 38 * minutes),
+    said(turn, "tool_started", { toolUseId: "shown-offer", name: "mcp__sprintengine-studio__plugin_offer", ...studio, input: { sourceId: "acme-plugins", pluginId: "sheets" } }, 2 * day + 37 * minutes),
+    said(turn, "tool_output", { toolUseId: "shown-offer", output: JSON.stringify(offered, null, 2), status: "ok" }, 2 * day + 37 * minutes),
+    said(turn, "content_delta", { text: "Lines 9 to 12 of the notes say what a paired phone may do. Sheets reads the budget workbook; install it if you want me to compare it line by line." }, 2 * day + 36 * minutes),
+    said(turn, "turn_completed", { durationMs: 4 * minutes }, 2 * day + 36 * minutes),
+  ];
+}
+
+/** The files the fixture's agent showed, as the fake desktop serves them. */
+const FAKE_SHOWN_FILES = [
+  {
+    path: "/Users/dev/code/app/docs/pairing.md",
+    text: [
+      "# Pairing a phone",
+      "",
+      "Studio pairs a phone with a one-time link, shown as a QR code.",
+      "The link is single-use and expires after ten minutes.",
+      "",
+      "## What a phone may do",
+      "",
+      "Each pairing carries a grant, chosen when the link is made:",
+      "- read chats: follow every chat and read the files an agent showed",
+      "- drive chats: send, steer, stop, and answer approvals",
+      "- manage chats: settle, snooze and mark unread",
+      "A phone never installs plugins or opens a terminal: those are the desktop's.",
+      "",
+      "## Revoking",
+      "",
+      "Revoke a phone from the Remote page; its next request is refused.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "/Users/dev/code/app/src/pairing/grants.ts",
+    text: [
+      "export type Grant = 'read' | 'drive' | 'manage'",
+      "",
+      "export const PHONE_GRANTS: readonly Grant[] = ['read', 'drive', 'manage']",
+      "",
+      "/** Whether a grant may send to a chat. */",
+      "export function maySend(grants: readonly Grant[]): boolean {",
+      "  return grants.includes('drive')",
+      "}",
+      "",
+    ].join("\n"),
+  },
+];
 
 /** The streaming chat's reply, in the pieces it arrives in. */
 const RICH_LIVE_PIECES = [
@@ -1286,6 +1368,12 @@ export const fakeConversationsApi: ConversationApi = {
   },
   async picture() {
     return { ok: true, uri: fixturePicture };
+  },
+  async fileView({ path }) {
+    const file = FAKE_SHOWN_FILES.find((candidate) => candidate.path === path);
+    return file
+      ? { ok: true, text: file.text }
+      : { ok: false, problem: "gone", message: "This chat showed no such file." };
   },
 };
 

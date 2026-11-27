@@ -599,6 +599,8 @@ export type ElectronApi = {
   openDir: (options?: { defaultPath?: string }) => Promise<string | null>
   /** The file dialog for a project's icon, filtered to images. */
   openProjectIconFile: (options?: { defaultPath?: string }) => Promise<string | null>
+  /** This computer's open dialog for any one file; null when it was cancelled. */
+  openFileDialog?: (options?: { defaultPath?: string }) => Promise<string | null>
   showMenubarMenu: (label: string, position?: { x?: number; y?: number }) => Promise<boolean>
   clipboardReadText: () => Promise<string>
   clipboardWriteText: (text: string) => Promise<void>

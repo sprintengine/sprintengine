@@ -58,7 +58,7 @@ Four steps, and each is a statement about what the row TOUCHES.
 | Density | Radius | Ground | Focus ring | For |
 |---|---|---|---|---|
 | `row` (default) | `radius.overlay` | its own | outset | an inset row in a padded rail |
-| `--nav` | `radius.overlay` | its own | outset | the sidebar's rhythm — a `size.control.sm` floor so a one-line door row matches the controls above it |
+| `--nav` | `radius.overlay` | its own | outset | the sidebar's rhythm — a `size.control.sm` floor so a one-line door row matches the controls above it. Rests in `text.muted`; the chosen row takes `text.primary` at the medium weight, so the place you are is the one bright line |
 | `--bleed` | none | its own | **inset** | a full-bleed row in a list that reaches its container's edges |
 | `--flush` | none | **none** | **inset** | one of two targets inside a wrapper that owns the fill |
 

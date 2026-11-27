@@ -19,20 +19,17 @@ import { configureMonacoLanguages } from '../../utils/patchLanguage'
 import { TITLE_BAR_HEIGHT, TRAFFIC_LIGHT_INSET } from '../workspace/AppTitleBar'
 import { WindowCloseButton } from '../workspace/WindowControls'
 import {
-  AGENT_TAB_CLASS,
-  AGENT_TAB_RING_CLASS,
   AgentEdge,
-  AgentPill,
-  CloseIconButton,
   EmptyState,
   GhostButton,
   IconButton,
   InlineNotice,
-  RowButton,
   Spinner,
+  Tabs,
   TabsScroller,
   Tooltip,
   useConfirmDialog,
+  type TabItem,
 } from '../ui'
 import {
   createExternalFileLoadingBuffer,
@@ -74,6 +71,7 @@ import { filesApi } from '../../studio/files'
 import { gitApi } from '../../studio/git'
 import { isPathOrChild } from '../../utils/paths'
 import { copy as appCopy } from '../../../../shared/copy'
+import { canOpenAnyFile, pickAnyFile } from '../../utils/openAnyFile'
 
 // Match EditorPanel: above this size the rendered preview is disabled and the
 // file falls back to the Monaco source view so a huge document can't hang the
@@ -576,6 +574,13 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
         saveActive()
         return
       }
+      // ⌘O here, where no chat or workspace chord competes for it.
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && isLetterKey(event, 'o')) {
+        if (!canOpenAnyFile()) return
+        event.preventDefault()
+        void openAnyFileRef.current()
+        return
+      }
       if (event.key === 'Escape') {
         // Inside the files column Escape means "back to the file", never
         // "close the window" — whichever of its controls has focus.
@@ -589,290 +594,326 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [saveActive])
 
-  return (
-    <div className="flex h-screen w-screen flex-col bg-[color:var(--bg-app)] text-[color:var(--text-default)]">
-      <div
-        className={`app-drag flex ${TITLE_BAR_HEIGHT} shrink-0 items-center gap-1 border-b border-[color:var(--border-default)] bg-[color:var(--bg-surface)] ${
-          // The close caption fills the right-hand corner on win/linux, so the
-          // strip's own end padding would only push it off the edge.
-          isMac ? `pr-2 ${TRAFFIC_LIGHT_INSET}` : 'pl-2'
-        }`}
+  // The tree's switch: first in the band over the column it opens, the same
+  // mark and the same place as the app sidebar's. With the column hidden it
+  // leads the tab strip instead.
+  const filesToggle = (
+    <Tooltip
+      content={
+        treePrefs.visible
+          ? appCopy.auxWindows.externalEditorWindow.hideFiles
+          : appCopy.auxWindows.externalEditorWindow.showFiles
+      }
+      placement="bottom"
+    >
+      <IconButton
+        tone={treePrefs.visible ? 'strong' : 'subtle'}
+        onClick={() => updateTreePrefs({ ...treePrefs, visible: !treePrefs.visible })}
+        aria-label={
+          treePrefs.visible
+            ? appCopy.auxWindows.externalEditorWindow.hideFiles
+            : appCopy.auxWindows.externalEditorWindow.showFiles
+        }
+        aria-pressed={treePrefs.visible}
+        aria-controls={treePrefs.visible ? 'editor-window-files' : undefined}
+        className="app-no-drag shrink-0"
       >
-        {/* The tree's switch sits first in the strip, over the column it
-            opens — the same mark and the same place as the app sidebar's. */}
-        <Tooltip
-          content={
-            treePrefs.visible
-              ? appCopy.auxWindows.externalEditorWindow.hideFiles
-              : appCopy.auxWindows.externalEditorWindow.showFiles
-          }
-          placement="bottom"
+        <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
+          <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M6 3V13" stroke="currentColor" strokeWidth="1.5" />
+        </svg>
+      </IconButton>
+    </Tooltip>
+  )
+
+  // Open file…: any one file on this computer, from its open dialog, as a tab
+  // here, in this workspace's folder or not. A file outside the tree's folder
+  // shows as its pinned "Outside this workspace" row, and the tree stays where
+  // it is. A shell with no open dialog offers no button.
+  const openFileOffered = canOpenAnyFile()
+  const openAnyFileHere = useCallback(async () => {
+    const start = activePathRef.current ? splitTreePath(activePathRef.current).directory : undefined
+    const path = await pickAnyFile(start || undefined)
+    if (path) openFromTree(path, splitTreePath(path).name || path)
+  }, [openFromTree])
+  const openAnyFileRef = useRef(openAnyFileHere)
+  openAnyFileRef.current = openAnyFileHere
+  const openFileButton = openFileOffered ? (
+    <Tooltip
+      content={appCopy.auxWindows.externalEditorWindow.openFileShortcut(isMac ? '⌘O' : 'Ctrl+O')}
+      placement="bottom"
+    >
+      <IconButton
+        onClick={() => void openAnyFileHere()}
+        aria-label={appCopy.auxWindows.externalEditorWindow.openFile}
+        className="app-no-drag shrink-0"
+      >
+        <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
+          <path
+            d="M9 2.5H4.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6L9 2.5z"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M8 11V7.5M6.5 9 8 7.5 9.5 9"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </IconButton>
+    </Tooltip>
+  ) : null
+
+  const tabItems: TabItem[] = tabs.map((tab) => {
+    const agent = agentHere(tab.path)
+    return {
+      id: tab.path,
+      label: tab.name,
+      tooltip: tab.path,
+      closeLabel: appCopy.auxWindows.externalEditorWindow.close(tab.name),
+      agent,
+      ...(agent ? { ariaLabel: appCopy.auxWindows.externalEditorWindow.anAgentIsUsingThis(tab.name) } : {}),
+      modified: isDirty(buffers[tab.path]),
+      modifiedLabel: appCopy.auxWindows.externalEditorWindow.unsavedChanges,
+    }
+  })
+
+  // Two columns, one line between them (2026-11-27). The files column runs
+  // from the window's top to its foot, with the traffic lights in its top
+  // corner; the tabs are the editor column's own band, over the file they
+  // switch. The window used to lay a full-width title strip over both, ruled
+  // off from them, with a second rule under the tree's heading: four lines
+  // where the eye needs one.
+  return (
+    <div className="flex h-screen w-screen bg-[color:var(--bg-surface)] text-[color:var(--text-default)]">
+      {treePrefs.visible ? (
+        <aside
+          ref={treeColumnRef}
+          id="editor-window-files"
+          aria-label={appCopy.auxWindows.externalEditorWindow.files}
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape' || event.defaultPrevented) return
+            event.preventDefault()
+            returnFocusToEditor()
+          }}
+          // Never more than half the window: the file is the point.
+          className="relative flex max-w-[50%] shrink-0 flex-col border-r border-[color:var(--border-subtle)]"
+          style={{ width: clampEditorTreeWidth(treeDragWidthRef.current ?? treePrefs.width) }}
         >
-          <IconButton
-            tone={treePrefs.visible ? 'strong' : 'subtle'}
-            onClick={() => updateTreePrefs({ ...treePrefs, visible: !treePrefs.visible })}
-            aria-label={
-              treePrefs.visible
-                ? appCopy.auxWindows.externalEditorWindow.hideFiles
-                : appCopy.auxWindows.externalEditorWindow.showFiles
+          {/* The window's top band over this column: it drags the window,
+                and on macOS leaves the traffic lights their corner. */}
+          <div
+            className={`app-drag flex ${TITLE_BAR_HEIGHT} shrink-0 items-center gap-1 pr-1.5 ${
+              isMac ? TRAFFIC_LIGHT_INSET : 'pl-2'
+            }`}
+          >
+            {filesToggle}
+            <div className="min-w-0 flex-1 self-stretch" aria-hidden="true" />
+            {openFileButton}
+          </div>
+          <EditorFileTree
+            rootPath={treeRoot}
+            workspaceId={activeTab?.workspaceId ?? null}
+            outsideLabel={
+              activeTab?.rootPath
+                ? appCopy.auxWindows.externalEditorWindow.outsideThisWorkspace
+                : appCopy.auxWindows.externalEditorWindow.outsideThisFolder
             }
-            aria-pressed={treePrefs.visible}
-            aria-controls={treePrefs.visible ? 'editor-window-files' : undefined}
+            activePath={activePath}
+            onOpenFile={openFromTree}
+            onReturnFocus={returnFocusToEditor}
+            // A rename or move from the tree's menu: this window's tabs, and
+            // what they hold, follow the file to where it went — the
+            // workspace window's own tabs are its business, not this one's.
+            onPathMoved={(fromPath, toPath) => {
+              const move = (path: string) => movedTreePath(path, fromPath, toPath)
+              const rekey = <T,>(record: Record<string, T>): Record<string, T> =>
+                Object.fromEntries(Object.entries(record).map(([path, value]) => [move(path), value]))
+              setTabs((prev) =>
+                prev.map((tab) =>
+                  move(tab.path) === tab.path
+                    ? tab
+                    : { ...tab, path: move(tab.path), name: splitTreePath(move(tab.path)).name },
+                ),
+              )
+              setBuffers(rekey)
+              setDiskNotices(rekey)
+              setActivePath((current) => (current ? move(current) : current))
+            }}
+          />
+          {/* Drag the right edge to resize — the side-pane's resizable
+                variant, with the workspace columns' drag underneath. */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={appCopy.auxWindows.externalEditorWindow.resizeFiles}
+            aria-valuemin={EDITOR_TREE_MIN_WIDTH}
+            aria-valuemax={EDITOR_TREE_MAX_WIDTH}
+            aria-valuenow={treePrefs.width}
+            tabIndex={0}
+            onPointerDown={handleTreeResizePointerDown}
+            onKeyDown={handleTreeResizeKeyDown}
+            onDoubleClick={() => updateTreePrefs({ ...treePrefs, width: EDITOR_TREE_DEFAULT_WIDTH })}
+            className="group absolute right-0 top-0 z-[var(--z-pane)] h-full w-1.5 translate-x-1/2 cursor-col-resize focus-visible:focus-ring"
+          >
+            <span
+              aria-hidden="true"
+              className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[color:var(--accent-primary)] transition-opacity ${
+                treeResizing ? 'opacity-100' : 'opacity-0 group-hover:opacity-60 group-focus-visible:opacity-100'
+              }`}
+            />
+          </div>
+        </aside>
+      ) : null}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          className={`app-drag flex ${TITLE_BAR_HEIGHT} shrink-0 items-center gap-1 ${
+            // With the files column hidden this band is the window's top-left
+            // corner, and the traffic lights are in it.
+            !treePrefs.visible && isMac ? TRAFFIC_LIGHT_INSET : 'pl-2'
+          } ${
+            // The close caption fills the right-hand corner on win/linux, so
+            // the band's own end padding would only push it off the edge.
+            isMac ? 'pr-2' : ''
+          }`}
+        >
+          {treePrefs.visible ? null : filesToggle}
+          {treePrefs.visible ? null : openFileButton}
+          <TabsScroller className="flex min-w-0 flex-1 items-center self-stretch">
+            <Tabs
+              ariaLabel={appCopy.auxWindows.externalEditorWindow.openFiles}
+              className="app-no-drag"
+              idPrefix="editor-window"
+              items={tabItems}
+              value={activePath ?? ''}
+              onChange={(path) => setActivePath(path)}
+              onCloseItem={closeTab}
+              onItemAuxClick={(path, event) => {
+                if (event.button !== 1 || isDirty(buffersRef.current[path])) return
+                event.preventDefault()
+                closeTab(path)
+              }}
+              borderless
+            />
+          </TabsScroller>
+          <GhostButton
+            size="xs"
+            onClick={() => void dockActive()}
+            disabled={!activeTab}
+            aria-label={appCopy.auxWindows.externalEditorWindow.dockCurrentFileBackInto}
             className="app-no-drag shrink-0"
           >
             <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
-              <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M6 3V13" stroke="currentColor" strokeWidth="1.5" />
+              <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+              <path d="M6 3v10" stroke="currentColor" strokeWidth="1.4" />
             </svg>
-          </IconButton>
-        </Tooltip>
-        <TabsScroller className="flex min-w-0 flex-1 items-center gap-1">
-          {tabs.map((tab) => {
-            const selected = tab.path === activePath
-            const agent = agentHere(tab.path)
-            return (
-              <div
-                key={tab.path}
-                // The same pill every tab strip wears (`tab-pill` in index.css),
-                // hand-placed only because the close and the unsaved mark are
-                // siblings of the tab's own button.
-                className={`app-no-drag group/tab tab-pill flex h-control-xs min-w-0 shrink-0 items-center gap-1.5 self-center pl-3 pr-1 text-meta transition-colors ${
-                  agent ? `${selected ? AGENT_TAB_RING_CLASS : AGENT_TAB_CLASS} ` : ''
-                }${selected ? 'tab-pill--selected' : ''}`}
-              >
-                <Tooltip content={tab.path} placement="bottom" wrapperClassName="flex min-w-0">
-                  {/* `flush`: the tab chip around it owns the fill and the radius,
-                      and this is one of the two targets inside it. Its ring is
-                      inset, which the scrolling strip needs — an outset one at
-                      either end is clipped by the overflow container. */}
-                  <RowButton
-                    density="flush"
-                    onClick={() => setActivePath(tab.path)}
-                    className="max-w-[200px]"
-                    aria-label={
-                      agent ? appCopy.auxWindows.externalEditorWindow.anAgentIsUsingThis(tab.name) : undefined
-                    }
-                  >
-                    <span className="min-w-0 truncate">{tab.name}</span>
-                  </RowButton>
-                </Tooltip>
-                {agent ? <AgentPill /> : null}
-                <span
-                  className={`inline-flex size-icon-lg shrink-0 items-center justify-center ${
-                    isDirty(buffers[tab.path])
-                      ? ''
-                      : // Revealed on hover AND on keyboard focus inside the tab
-                        // (Tab → close button): hover-only is a bug, not a style.
-                        'opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100'
-                  }`}
-                >
-                  {isDirty(buffers[tab.path]) ? (
-                    <span
-                      className="text-[color:var(--tone-warn)]"
-                      role="img"
-                      aria-label={appCopy.auxWindows.externalEditorWindow.unsavedChanges}
-                    >
-                      •
-                    </span>
-                  ) : (
-                    <CloseIconButton
-                      size="2xs"
-                      onClick={() => closeTab(tab.path)}
-                      aria-label={appCopy.auxWindows.externalEditorWindow.close(tab.name)}
-                    />
-                  )}
-                </span>
-              </div>
-            )
-          })}
-        </TabsScroller>
-        <GhostButton
-          size="xs"
-          onClick={() => void dockActive()}
-          disabled={!activeTab}
-          aria-label={appCopy.auxWindows.externalEditorWindow.dockCurrentFileBackInto}
-          className="app-no-drag shrink-0"
-        >
-          <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
-            <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-            <path d="M6 3v10" stroke="currentColor" strokeWidth="1.4" />
-          </svg>
-          {appCopy.auxWindows.externalEditorWindow.dockIntoWorkspace}
-        </GhostButton>
-        {/* The window is frameless on win/linux, so it draws its own way out;
-            macOS keeps its native traffic lights on the left. */}
-        {isMac ? null : (
-          <div className="app-no-drag flex shrink-0 items-stretch self-stretch">
-            <WindowCloseButton onClick={() => void closeWindow()} />
-          </div>
-        )}
-      </div>
-
-      <div className="flex min-h-0 flex-1">
-        {treePrefs.visible ? (
-          <aside
-            ref={treeColumnRef}
-            id="editor-window-files"
-            aria-label={appCopy.auxWindows.externalEditorWindow.files}
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape' || event.defaultPrevented) return
-              event.preventDefault()
-              returnFocusToEditor()
-            }}
-            // Never more than half the window: the file is the point.
-            className="relative flex max-w-[50%] shrink-0 flex-col border-r border-[color:var(--border-default)] bg-[color:var(--bg-surface)]"
-            style={{ width: clampEditorTreeWidth(treeDragWidthRef.current ?? treePrefs.width) }}
-          >
-            <EditorFileTree
-              rootPath={treeRoot}
-              workspaceId={activeTab?.workspaceId ?? null}
-              outsideLabel={
-                activeTab?.rootPath
-                  ? appCopy.auxWindows.externalEditorWindow.outsideThisWorkspace
-                  : appCopy.auxWindows.externalEditorWindow.outsideThisFolder
-              }
-              activePath={activePath}
-              onOpenFile={openFromTree}
-              onReturnFocus={returnFocusToEditor}
-              // A rename or move from the tree's menu: this window's tabs, and
-              // what they hold, follow the file to where it went — the
-              // workspace window's own tabs are its business, not this one's.
-              onPathMoved={(fromPath, toPath) => {
-                const move = (path: string) => movedTreePath(path, fromPath, toPath)
-                const rekey = <T,>(record: Record<string, T>): Record<string, T> =>
-                  Object.fromEntries(Object.entries(record).map(([path, value]) => [move(path), value]))
-                setTabs((prev) =>
-                  prev.map((tab) =>
-                    move(tab.path) === tab.path
-                      ? tab
-                      : { ...tab, path: move(tab.path), name: splitTreePath(move(tab.path)).name },
-                  ),
-                )
-                setBuffers(rekey)
-                setDiskNotices(rekey)
-                setActivePath((current) => (current ? move(current) : current))
-              }}
-            />
-            {/* Drag the right edge to resize — the side-pane's resizable
-                variant, with the workspace columns' drag underneath. */}
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label={appCopy.auxWindows.externalEditorWindow.resizeFiles}
-              aria-valuemin={EDITOR_TREE_MIN_WIDTH}
-              aria-valuemax={EDITOR_TREE_MAX_WIDTH}
-              aria-valuenow={treePrefs.width}
-              tabIndex={0}
-              onPointerDown={handleTreeResizePointerDown}
-              onKeyDown={handleTreeResizeKeyDown}
-              onDoubleClick={() => updateTreePrefs({ ...treePrefs, width: EDITOR_TREE_DEFAULT_WIDTH })}
-              className="group absolute right-0 top-0 z-[var(--z-pane)] h-full w-1.5 translate-x-1/2 cursor-col-resize focus-visible:focus-ring"
-            >
-              <span
-                aria-hidden="true"
-                className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[color:var(--accent-primary)] transition-opacity ${
-                  treeResizing ? 'opacity-100' : 'opacity-0 group-hover:opacity-60 group-focus-visible:opacity-100'
-                }`}
-              />
+            {appCopy.auxWindows.externalEditorWindow.dockIntoWorkspace}
+          </GhostButton>
+          {/* The window is frameless on win/linux, so it draws its own way
+                out; macOS keeps its native traffic lights on the left. */}
+          {isMac ? null : (
+            <div className="app-no-drag flex shrink-0 items-stretch self-stretch">
+              <WindowCloseButton onClick={() => void closeWindow()} />
             </div>
-          </aside>
+          )}
+        </div>
+        {activePath && diskNotices[activePath] ? (
+          <EditorDiskNotice
+            notice={diskNotices[activePath]}
+            onReload={() => {
+              const path = activePath
+              void readFileOnDisk(filesApi, path).then((read) => {
+                if (read.kind === 'content') takeDiskContent(path, read.content)
+                else if (read.kind === 'missing') setDiskNotice(path, { kind: 'deleted' })
+              })
+            }}
+            onKeepMine={() => {
+              // What is on disk becomes the baseline: the notice goes, the
+              // tab stays unsaved, and the next save overwrites on purpose.
+              const notice = diskNotices[activePath]
+              const path = activePath
+              if (notice?.kind === 'changed') {
+                setBuffers((prev) => {
+                  const current = prev[path]
+                  if (!current || current.kind !== 'text') return prev
+                  return { ...prev, [path]: { ...current, saved: notice.content } }
+                })
+              }
+              setDiskNotice(path, null)
+            }}
+          />
         ) : null}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {activePath && diskNotices[activePath] ? (
-            <EditorDiskNotice
-              notice={diskNotices[activePath]}
-              onReload={() => {
-                const path = activePath
-                void readFileOnDisk(filesApi, path).then((read) => {
-                  if (read.kind === 'content') takeDiskContent(path, read.content)
-                  else if (read.kind === 'missing') setDiskNotice(path, { kind: 'deleted' })
-                })
-              }}
-              onKeepMine={() => {
-                // What is on disk becomes the baseline: the notice goes, the
-                // tab stays unsaved, and the next save overwrites on purpose.
-                const notice = diskNotices[activePath]
-                const path = activePath
-                if (notice?.kind === 'changed') {
-                  setBuffers((prev) => {
-                    const current = prev[path]
-                    if (!current || current.kind !== 'text') return prev
-                    return { ...prev, [path]: { ...current, saved: notice.content } }
-                  })
+        <div ref={contentRef} tabIndex={-1} className="relative min-h-0 min-w-0 flex-1 outline-none">
+          {isMarkdown && activeTextBuffer ? (
+            <div className="absolute right-3 top-3 z-10">
+              <Tooltip
+                content={
+                  markdownPreviewTooLarge
+                    ? appCopy.auxWindows.externalEditorWindow.markdownPreviewDisabledForLarge
+                    : showPreview
+                      ? appCopy.auxWindows.externalEditorWindow.editMarkdownSource
+                      : appCopy.auxWindows.externalEditorWindow.previewMarkdown
                 }
-                setDiskNotice(path, null)
-              }}
-            />
-          ) : null}
-          <div ref={contentRef} tabIndex={-1} className="relative min-h-0 min-w-0 flex-1 outline-none">
-            {isMarkdown && activeTextBuffer ? (
-              <div className="absolute right-3 top-3 z-10">
-                <Tooltip
-                  content={
-                    markdownPreviewTooLarge
-                      ? appCopy.auxWindows.externalEditorWindow.markdownPreviewDisabledForLarge
-                      : showPreview
-                        ? appCopy.auxWindows.externalEditorWindow.editMarkdownSource
-                        : appCopy.auxWindows.externalEditorWindow.previewMarkdown
+                placement="bottom"
+              >
+                <IconButton
+                  aria-label={
+                    showPreview
+                      ? appCopy.auxWindows.externalEditorWindow.editMarkdownSource
+                      : appCopy.auxWindows.externalEditorWindow.previewMarkdown
                   }
-                  placement="bottom"
+                  onClick={() => setMarkdownMode((mode) => (mode === 'preview' ? 'source' : 'preview'))}
+                  disabled={markdownPreviewTooLarge}
+                  className="border border-[color:var(--border-default)] bg-[color:var(--bg-surface-raised)]"
                 >
-                  <IconButton
-                    aria-label={
-                      showPreview
-                        ? appCopy.auxWindows.externalEditorWindow.editMarkdownSource
-                        : appCopy.auxWindows.externalEditorWindow.previewMarkdown
-                    }
-                    onClick={() => setMarkdownMode((mode) => (mode === 'preview' ? 'source' : 'preview'))}
-                    disabled={markdownPreviewTooLarge}
-                    className="border border-[color:var(--border-default)] bg-[color:var(--bg-surface-raised)]"
-                  >
-                    {showPreview ? (
-                      <svg viewBox="0 0 16 16" className="icon-sm" fill="none" aria-hidden="true">
-                        <path
-                          d="M2.5 11.75L2.5 13.5h1.75L12 5.75 10.25 4 2.5 11.75z"
-                          stroke="currentColor"
-                          strokeWidth="1.4"
-                          strokeLinejoin="round"
-                        />
-                        <path d="M9.25 5L11 6.75" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                      </svg>
-                    ) : (
-                      <svg viewBox="0 0 16 16" className="icon-sm" fill="none" aria-hidden="true">
-                        <path
-                          d="M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4S1.5 8 1.5 8z"
-                          stroke="currentColor"
-                          strokeWidth="1.4"
-                          strokeLinejoin="round"
-                        />
-                        <circle cx="8" cy="8" r="1.75" stroke="currentColor" strokeWidth="1.4" />
-                      </svg>
-                    )}
-                  </IconButton>
-                </Tooltip>
-              </div>
-            ) : null}
-            {renderBody(
-              activeTab,
-              activeBuffer,
-              activePath,
-              setBuffers,
-              showPreview,
-              monacoTheme,
-              codeFontFamily,
-              (editor) => {
-                editorRef.current = editor
-                editor.onDidDispose(() => {
-                  if (editorRef.current === editor) editorRef.current = null
-                })
-                editor.onKeyDown(() => {
-                  lastKeyAtRef.current = Date.now()
-                })
-                landActive()
-              },
-            )}
-            {activeAgentHere ? <AgentEdge /> : null}
-          </div>
+                  {showPreview ? (
+                    <svg viewBox="0 0 16 16" className="icon-sm" fill="none" aria-hidden="true">
+                      <path
+                        d="M2.5 11.75L2.5 13.5h1.75L12 5.75 10.25 4 2.5 11.75z"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinejoin="round"
+                      />
+                      <path d="M9.25 5L11 6.75" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 16 16" className="icon-sm" fill="none" aria-hidden="true">
+                      <path
+                        d="M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4S1.5 8 1.5 8z"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinejoin="round"
+                      />
+                      <circle cx="8" cy="8" r="1.75" stroke="currentColor" strokeWidth="1.4" />
+                    </svg>
+                  )}
+                </IconButton>
+              </Tooltip>
+            </div>
+          ) : null}
+          {renderBody(
+            activeTab,
+            activeBuffer,
+            activePath,
+            setBuffers,
+            showPreview,
+            monacoTheme,
+            codeFontFamily,
+            (editor) => {
+              editorRef.current = editor
+              editor.onDidDispose(() => {
+                if (editorRef.current === editor) editorRef.current = null
+              })
+              editor.onKeyDown(() => {
+                lastKeyAtRef.current = Date.now()
+              })
+              landActive()
+            },
+          )}
+          {activeAgentHere ? <AgentEdge /> : null}
         </div>
       </div>
     </div>

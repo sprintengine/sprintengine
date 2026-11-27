@@ -70,6 +70,7 @@ import { uploadEach } from "./photoPicks";
 import { pickChatFile } from "./pickChatFile";
 import { attachmentsOnlyText, rememberSentFile, sentFileName, splitSentUploads } from "./chatFiles";
 import { useChatImages, useSentImages } from "./ConversationImage";
+import { useChatFileViews } from "./ShownStepCards";
 import { SentPhotoSquares } from "./SentPhotoSquares";
 import { ChatPage, type ChatPageRow } from "./ChatPage";
 import { serverWords, usageMeta, usageSub, usageTone, usageWindow } from "./chatPanelLogic";
@@ -288,6 +289,8 @@ export function ConversationScreen({
   const images = useChatImages(chat.offers, chat.api, thread);
   // The pictures the person sent, where the desktop serves them too.
   const sentImages = useSentImages(chat.offers, chat.api, thread);
+  // The files the chat's agent showed, where the desktop serves them here.
+  const fileViews = useChatFileViews(chat.offers, chat.api, thread);
   // The pushed agent, plan and changes screens read this chat's state from here
   // rather than opening a second socket (see liveConversation.ts).
   usePublishConversation(
@@ -902,8 +905,17 @@ export function ConversationScreen({
   const live = chat.state === "live";
   const stepChat = toolDetailChat(deviceId, thread.workspaceId, thread.agentId);
   const source = useMemo<StepDetailSource>(
-    () => ({ request: chat.request, live, onNotice: chat.setNotice, images, sentImages, chat: stepChat }),
-    [chat.request, live, chat.setNotice, images, sentImages, stepChat],
+    () => ({
+      request: chat.request,
+      live,
+      onNotice: chat.setNotice,
+      images,
+      sentImages,
+      chat: stepChat,
+      fileViews,
+      desktopName: session?.desktopName ?? null,
+    }),
+    [chat.request, live, chat.setNotice, images, sentImages, stepChat, fileViews, session?.desktopName],
   );
   const cliModel = cliModelLabel(activeThread);
   // Where it runs and its pull request, from the list as it last read: a pull
@@ -2194,7 +2206,7 @@ const ConversationItem = memo(function ConversationItem({
       <Text style={styles.meta}>{row.output}</Text>
     ) : (
       <View style={styles.commandBox}>
-        <Text style={styles.commandHead}>{row.command ? `/${row.command}` : "Command output"}</Text>
+        <Text style={styles.commandHead}>{row.command ? `/${row.command}` : appCopy.phone.conversations.conversationScreen.commandOutput}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.commandBody}>
           <Text selectable style={styles.commandText}>
             {row.output}
