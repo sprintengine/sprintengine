@@ -1,5 +1,7 @@
-import { chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readdirSync, renameSync, rmSync } from 'node:fs'
+import { chmodSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+
+import { flushFileSync } from '../platform/atomic-file'
 
 import { STUDIO_DATABASE_FILENAME } from './database'
 import { SyncConnection } from './sqlite'
@@ -35,12 +37,7 @@ export function copyStudioDatabase(dataDir: string, relative: string): void {
     connection.close()
   }
   if (process.platform !== 'win32') chmodSync(partial, 0o600)
-  const fd = openSync(partial, 'r')
-  try {
-    fsyncSync(fd)
-  } finally {
-    closeSync(fd)
-  }
+  flushFileSync(partial)
   renameSync(partial, target)
 }
 
