@@ -98,7 +98,6 @@ export function ConversationAgentsScreen({
       ) : !working.length && !finished.length ? (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>{copy.phone.conversations.conversationAgentsScreen.noSubagentsYet}</Text>
-          <Text style={styles.meta}>{copy.phone.conversations.conversationAgentsScreen.subagentsThisChatSendsOff}</Text>
         </View>
       ) : (
         <>

@@ -169,7 +169,6 @@ export function CanvasBoardScreen({
             <SkeletonBlock label={copy.phone.canvas.canvasBoardScreen.askingForThisBoard(machine)} style={styles.placeholder} />
           )}
         </View>
-        <Text style={styles.note}>{copy.phone.canvas.canvasBoardScreen.aPictureOfThisBoard}{machine}{copy.phone.canvas.canvasBoardScreen.toChangeItContinueIn}</Text>
         <View style={styles.actions}>
           {canContinue ? (
             <PrimaryButton
@@ -223,7 +222,6 @@ const createStyles = ({ colors }: Theme) =>
     },
     problemTitle: { ...typography.body, color: colors.textPrimary },
     problemBody: { ...typography.meta, color: colors.textMuted },
-    note: { ...typography.meta, color: colors.textMuted, paddingTop: space.md },
     actions: { gap: space.sm, paddingTop: space.lg },
     footnote: { ...typography.meta, color: colors.textSubtle, paddingTop: space.sm },
   });

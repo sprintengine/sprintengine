@@ -1,16 +1,10 @@
 import { ScrollView } from "react-native";
 
 import { ScreenFrame, useListContentStyle } from "../../components/Screen";
-import { SettingsChoice, SettingsNote } from "../../components/SettingsRow";
+import { SettingsChoice } from "../../components/SettingsRow";
 import { space } from "../../theme/tokens";
 import { CHAT_GROUPING_LABEL, CHAT_GROUPINGS, type ChatGrouping } from "../conversations/chatGrouping";
 import { copy } from "../../../../src/shared/copy";
-
-const groupingNote: Record<ChatGrouping, string> = {
-  recent: "Newest message first, with chats at rest for a day under Earlier.",
-  project: "Under their projects, the project last written in first.",
-  date: "Under Today, Yesterday, the previous 7 and 30 days, and Older, by when you last wrote in each.",
-};
 
 const groupingAccessibilityLabel: Record<ChatGrouping, string> = {
   recent: "List chats newest first",
@@ -44,7 +38,6 @@ export function ChatGroupingScreen({
             selected={option === grouping}
           />
         ))}
-        <SettingsNote>{groupingNote[grouping]}</SettingsNote>
       </ScrollView>
     </ScreenFrame>
   );

@@ -2243,12 +2243,10 @@ export const en = {
         updated: 'Updated ',
         excerpt: 'Excerpt',
         noExcerptOpenItOn: 'No excerpt. Open it on the desktop.',
-        excerptOnlyTheFullDocument: 'Excerpt only. The full document is on the desktop.',
         triage: 'Triage',
         type: 'Type',
         difficulty: 'Difficulty',
         criticality: 'Criticality',
-        eachChangeIsSentOn: 'Each change is sent on tap.',
         updating: 'Updating…',
         markReady: 'Mark ready',
         moveBackToIdea: 'Move back to idea',
@@ -2296,8 +2294,6 @@ export const en = {
         opensThePictureFullScreen: 'Opens the picture full screen.',
         theBoard: (name: unknown) => `The board ${name}`,
         askingForThisBoard: (machine: unknown) => `Asking ${machine} for this board`,
-        aPictureOfThisBoard: 'A picture of this board on ',
-        toChangeItContinueIn: '. To change it, continue in a new chat there.',
         starting: 'Starting…',
         continueInANewChat: 'Continue in a new chat',
         refreshing: 'Refreshing…',
@@ -2488,19 +2484,16 @@ export const en = {
         browser: 'Browser',
         canvas: 'Canvas',
         library: 'Library',
-        whatTheAgentTouchesShows: 'What the agent touches shows up here.',
+        whatTheAgentTouchesShows:
+          'When the agent changes files, starts subagents or opens a page or board, they will be listed here.',
         fromYou: 'From you',
         fromTheAgent: 'From the agent',
         thisDesktopDoesnTSend: "This desktop doesn't send pictures yet.",
         usage: 'Usage',
-        asTheAgentLastReported: 'As the agent last reported it to the desktop.',
         aPageInTheDesktop: "A page in the desktop's browser",
-        drivenInTheDesktopS:
-          "Driven in the desktop's browser. A localhost page opens there, or here under Web pages once shared.",
         aBoardOnTheDesktop: 'A board on the desktop',
-        theAgentDidnTName: "The agent didn't name the board. Its picture is among the desktop's boards.",
         theDesktopSBoards: "The desktop's boards",
-        drawnOnADesktopBoard: 'Drawn on a desktop board. Open its Canvas there to see it.',
+        drawnOnADesktopBoard: 'To see this board, open Canvas on the desktop.',
         backToTheChat: 'Back to the chat',
         back: 'Back',
       },
@@ -2548,7 +2541,7 @@ export const en = {
         agentWorking: 'Agent working',
         now: 'Now ',
         steps: 'Steps',
-        sentViaTheMainChat: 'Sent via the main chat. Read at its next step.',
+        sentViaTheMainChat: 'The subagent reads this at its next step.',
         subagents: 'Subagents · ',
         report: 'Report',
         toReachThisSubagentSpeak: 'To reach this subagent, speak to the main chat.',
@@ -2563,7 +2556,6 @@ export const en = {
         subagents: 'Subagents',
         openTheChatToFollow: 'Open the chat to follow its subagents.',
         noSubagentsYet: 'No subagents yet',
-        subagentsThisChatSendsOff: 'Subagents this chat sends off to work show up here.',
         olderSubagentsAreInEarlier: 'Older subagents are in earlier turns. Load them in the chat.',
         updateTheDesktopToSee: 'Update the desktop to see subagents started with Studio.',
       },
@@ -2681,7 +2673,8 @@ export const en = {
         theMainChat: 'the main chat',
         theParentAgent: 'the parent agent',
         goTo: (value: unknown) => `Go to ${value}`,
-        readOnlyPairWithConversation: 'Read-only. Pair with conversation control to send or respond.',
+        readOnlyPairWithConversation:
+          'This phone can only read this chat. To send or respond, pair again with conversation control.',
         access: 'Access',
         markUnread: 'Mark unread',
         settle: 'Settle',
@@ -2829,11 +2822,11 @@ export const en = {
         describeATaskIn: (projectName: unknown) => `Describe a task in ${projectName}`,
         access: (label: unknown) => `Access, ${label}`,
         desktopDefault: 'Desktop default',
+        desktopDefaultModel: 'The desktop uses the CLI and model it used last.',
         done: 'Done',
         agentAndModel: 'Agent and model',
         access2: 'Access',
         runOn: 'Run on',
-        theChatSAgentRuns: "The chat's agent runs on this machine.",
         lookingFor: 'Looking for ',
         there: ' there…',
       },
@@ -2876,7 +2869,6 @@ export const en = {
         done: 'Done',
         backToTheChat: 'Back to the chat',
         quoteFromThisReply: 'Quote from this reply',
-        selectWordsThenQuoteSelect: 'Select words, then Quote. Select nothing to quote the whole reply.',
         selectTheWordsToQuote: 'Select the words to quote.',
         theReply: 'The reply',
         quoteSelection: 'Quote selection',
@@ -3008,7 +3000,7 @@ export const en = {
       // mobile/src/features/pairing/PairingScanner.tsx
       pairingScanner: {
         cameraAccess: 'Camera access',
-        scansTheSquareInStudio: 'Scans the square in Studio’s Remote settings. No image leaves this phone.',
+        scansTheSquareInStudio: 'The camera is used to scan the square in Studio → Settings → Remote.',
         allowCamera: 'Allow camera',
         openSettings: 'Open Settings',
         enterTheLinkInstead: 'Enter the link instead',
@@ -3051,7 +3043,6 @@ export const en = {
         starred: 'Starred',
         allProjects: 'All projects',
         desktop2: 'Desktop',
-        manageDesktopsInSettings: 'Manage desktops in Settings.',
         switchesTheWholeAppTo: 'Switches the whole app to this project',
         unstar: (name: unknown) => `Unstar ${name}`,
         star: (name: unknown) => `Star ${name}`,
@@ -3139,8 +3130,7 @@ export const en = {
         scheduled: 'Scheduled',
         newScheduledAgent: 'New scheduled agent',
         readingTheDesktopsScheduledAgents: "Reading the desktops' scheduled agents",
-        noScheduledAgentsYetEach:
-          'No scheduled agents yet. Each starts a chat on the desktop on schedule, even while this phone sleeps.',
+        noScheduledAgentsYetEach: 'No scheduled agents yet.',
         runNowPauseResumeOr: 'Run now, pause, resume or close it.',
         in: (title: unknown, projectName: unknown, scheduleStatusLine: unknown) =>
           `${title}, in ${projectName}. ${scheduleStatusLine}.`,
@@ -3149,6 +3139,7 @@ export const en = {
         resumeSchedule: 'Resume schedule',
         pauseSchedule: 'Pause schedule',
         closeSchedule: 'Close schedule',
+        closeScheduleKeepsChats: 'This stops the schedule for good. The chats it started are kept.',
       },
       // mobile/src/features/scheduled/sendTime.ts
       sendTime: {
@@ -3162,7 +3153,6 @@ export const en = {
       // mobile/src/features/session/SessionStatusScreen.tsx
       sessionStatusScreen: {
         desktopConnected: 'Desktop connected',
-        pairedOverYourTailnet: 'Paired over your tailnet.',
         continue: 'Continue',
         reconnectDesktop: 'Reconnect desktop',
         pairAgainToKeepDriving: 'Pair again to keep driving it from this phone.',
@@ -3183,8 +3173,6 @@ export const en = {
         useAppearance: (value: unknown) => `Use ${value} appearance`,
         agents: 'Agents',
         agentCharacters: 'Agent characters',
-        drawSubagentsAsLittleCharacters:
-          'Draw subagents as little characters that move as they work and change with the seasons.',
         couldnTSaveThisChoice: "Couldn't save this choice; it lasts until you close the app.",
       },
       // mobile/src/features/settings/ChatGroupingScreen.tsx
@@ -3221,7 +3209,7 @@ export const en = {
         pairAnotherDesktop: 'Pair another desktop',
         forgetThisDesktop: 'Forget this desktop',
         removesThisDesktopFromThis:
-          'Removes this desktop from this phone only. To end pairing on the desktop, revoke this phone there.',
+          'This removes the desktop from this phone only. To end the pairing on the desktop too, revoke this phone there.',
       },
       // mobile/src/features/settings/DesktopsScreen.tsx
       desktopsScreen: {
@@ -3250,6 +3238,10 @@ export const en = {
         groupChats: (value: unknown) => `Group chats: ${value}`,
         groupChats2: 'Group chats',
         steerWhileAnAgentWorks: 'Steer while an agent works',
+        steerOn:
+          'A message you send while the agent works goes into its current turn. Long-press send to queue it instead.',
+        steerOff:
+          'A message you send while the agent works waits until the turn ends. Long-press send to steer it in now.',
       },
     },
     updates: {
@@ -3291,7 +3283,6 @@ export const en = {
           "No web pages shared yet. Share a dev server from a desktop's browser tab and it shows here.",
         openOnInYourBrowser: (label: unknown, shortMachineName: unknown) =>
           `Open ${label} on ${shortMachineName} in your browser`,
-        theseOpenInYourBrowser: "These open in your browser while this phone is on the desktop's tailnet.",
       },
     },
   },
