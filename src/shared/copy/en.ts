@@ -2893,6 +2893,23 @@ export const en = {
         showItsName: 'Show its name',
         onTheDesktop: (label: unknown) => `${label}, on the desktop`,
       },
+      // mobile/src/features/conversations/ShownStepCards.tsx
+      shownStepCards: {
+        filesShown: 'Files shown in this chat',
+        file: (path: unknown) => `File ${path}`,
+        readOnly: 'Read only',
+        opening: 'Opening…',
+        empty: 'Empty file',
+        lines: (from: unknown, to: unknown, total: unknown) => `Lines ${from}–${to} of ${total}`,
+        pointedAt: (from: number, to: number) => (from === to ? `Line ${from}` : `Lines ${from}–${to}`),
+        showLess: 'Show less',
+        gone: 'This file is no longer on the desktop.',
+        tooLarge: 'This file is too large to show here.',
+        couldNotOpen: 'Could not open this file.',
+        tryAgain: 'Try again',
+        theDesktop: 'the desktop',
+        editOnDesktop: (desktop: unknown) => `To edit it, open this chat in Studio on ${desktop}.`,
+      },
       // mobile/src/features/conversations/snoozeLogic.ts
       snoozeLogic: {
         in1Hour: 'In 1 hour',

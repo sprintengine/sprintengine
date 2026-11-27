@@ -42,6 +42,8 @@ export type PhoneChatOffers = ChatCapabilities & {
   stopAgents: boolean;
   /** The desktop names the chat's sub-agents (the chats this one started). */
   subagents: boolean;
+  /** The files a chat's agent showed are read from the desktop (`fileViews.read`), drawn as a card of each. */
+  fileViews: boolean;
   /** Settle, Mark unread, Snooze and visit stamps: the Studio keeps its chats' rest (`chat-lifecycle`) and the grant reaches it. */
   manage: boolean;
 };
@@ -64,6 +66,7 @@ export function phoneChatOffers(welcome: Pick<StudioWelcomeFrame, "capabilities"
     plans: serves(CONVERSATION_PLANS_CAPABILITY),
     stopAgents: !!welcome && serves(CONVERSATION_STOP_SUBAGENT_CAPABILITY) && studioOffers(welcome, "conversation.stopSubagent"),
     subagents: follow && serves(CONVERSATION_SUBAGENTS_CAPABILITY),
+    fileViews: follow && studioOffers(welcome!, "fileViews.read"),
     manage: !!welcome && studioOffers(welcome, "conversation.markUnread"),
   };
 }

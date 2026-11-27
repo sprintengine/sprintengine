@@ -25,6 +25,8 @@ interface SourceBlockProps {
    * has nowhere to offer it.
    */
   copyable?: boolean;
+  /** What Copy puts on the clipboard, where the block draws only part of it: a shown file's whole text. */
+  copyText?: string;
 }
 
 /**
@@ -32,13 +34,22 @@ interface SourceBlockProps {
  * wrapped: indentation is meaning, and a wrapped fence misreports the document.
  * Shared by the markdown `fence`/`code_block` rules and the HTML source tab.
  */
-export function SourceBlock({ content, language, accessibilityLabel, header, action, note, copyable = true }: SourceBlockProps) {
+export function SourceBlock({
+  content,
+  language,
+  accessibilityLabel,
+  header,
+  action,
+  note,
+  copyable = true,
+  copyText,
+}: SourceBlockProps) {
   const styles = useThemedStyles(createStyles);
   const tokens = useMemo(() => highlightSource(content, language), [content, language]);
 
   return (
     <View style={[styles.block, header ? styles.well : null]}>
-      {header ? <WellHeader action={action} copy={copyable ? content : null} label={header} /> : null}
+      {header ? <WellHeader action={action} copy={copyable ? (copyText ?? content) : null} label={header} /> : null}
       <ScrollView
         contentContainerStyle={styles.content}
         horizontal

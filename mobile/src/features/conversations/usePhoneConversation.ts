@@ -291,6 +291,8 @@ export function usePhoneConversation(
   const watchesSubagents = offers.subagents;
   // Whether a quote goes as its token, which the desktop expands for its agent.
   const quoteTokens = offers.quotes;
+  // Whether the files a chat's agent showed are read from here, as a card each.
+  const showsFileViews = offers.fileViews;
   // Read by a send as it is made: a turn running, and messages the phone holds.
   const turnBusyRef = useRef(false);
   const phoneQueuedRef = useRef(0);
@@ -315,13 +317,14 @@ export function usePhoneConversation(
       : createConversationProjectionState(foldable(events), NO_LOCAL_TURNS, PHONE_PROJECTION);
     const context = followContext(held?.context ?? null, events);
     folding.current = { state, context };
-    const projected = phoneRows(state.projection, context.reading);
+    // A step held out of its turn's fold only where the phone draws its card.
+    const projected = phoneRows(state.projection, context.reading, { fileViews: showsFileViews });
     const rows = keepUnchangedRows(shown.current.rows, projected.rows);
     const lanes = keepUnchanged(shown.current.lanes, projected.lanes, (lane) => lane.id);
     const changedTurns = keepUnchanged(shown.current.changedTurns, projected.changedTurns, (turn) => turn.id);
     shown.current = { rows, lanes, changedTurns };
     return { ...projected, rows, lanes, changedTurns };
-  }, [events]);
+  }, [events, showsFileViews]);
   turnBusyRef.current = projection.turnBusy;
   phoneQueuedRef.current = queued.length;
   const cacheKey = useMemo(

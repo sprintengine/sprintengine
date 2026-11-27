@@ -431,15 +431,16 @@ Each turn's work rests behind one line, as on the desktop: "Worked for 2m 14s
 stopped after…", with how many steps went wrong in error ink. Tapping it opens
 the turn as it happened: each run of steps, and what the agent said between
 them. The agents a turn sent off stay cards of their own under it, the reply
-after the last step stays as written, and a picture the agent generated (or
-prose that shows one) stays in view. A finished turn that changed files says
+after the last step stays as written, and what the agent made for you to look
+at stays in view and is not counted as a step: a picture it generated (or
+prose that shows one), and the files it showed you (below). A finished turn that changed files says
 how many and the lines in and out ("3 files changed · +42 −7"), from the
 desktop's checkpoint summary, and opens them when the desktop kept a
 checkpoint; a checkpoint that changed nothing leaves no row. Where a desktop
 reports the files a step changed (`fileChanges` on a finished step) and kept
 no summary, the count is taken from those: each step once, however often it
 is reported, and never from a partial output. A turn whose only steps made
-pictures has no fold, as on the desktop.
+pictures or showed you something has no fold, as on the desktop.
 
 The rows are not the phone's own reading of the events. A chat's events are
 folded by the projection every client folds (`projectConversation` in
@@ -701,6 +702,36 @@ limit is refused before it is queued, and a send the desktop refuses is shown
 as not sent, with the reason, until it is removed. The cache is bounded and
 does not store credentials or image bytes.
 
+### What an agent showed you
+
+An agent shows you files with Studio's `file.view` tool ("show me my
+CLAUDE.md", or code it wants looked at). They are a card under the turn's
+line, open or closed, in place of its step, as on the desktop
+(`ShownStepCards.tsx`, the rules in `shownSteps.ts`), read only on the phone.
+
+The files card has a tab for each file where there are several (a file's
+name, or as much of its folder as tells two of one name apart), then the
+file's kind, name and whole path, "Read only", the lines the agent pointed at
+with its note on each, marked in the agent violet, and the file's text, coloured as
+code is by its extension. It opens where the agent pointed (two lines above
+its first range) or at the top, 18 lines of it, and "Show all" reads it from
+its top, up to 600 lines; Copy copies the whole file. The text is the live
+file on the machine the chat runs on, read through the chat
+(`fileViews.read`, by the path the call's answer named), so it needs only
+the pairing's `conversation:read`; what was read is kept by chat and path
+while the app runs, up to 8 MB, and read again when the chat is opened
+again. A file the desktop no longer has, or one too large, says so; anything
+else says the desktop's words, with "Try again". Editing is the desktop's:
+the card says to open the chat in Studio on that desktop to edit it. The
+phone has no editor, and a save would have to stand up to a file changed on
+disk since, which the desktop's editor is built around.
+
+The card is drawn only where the desktop advertises `file-views` and the
+pairing may follow its chats (`fileViews` in `chatOffers.ts`); and the step
+leaves the turn's fold only together with its card, so anywhere else the
+call stays an ordinary step, folded and counted. A call still running, one
+that failed, or one whose answer names no file is its step.
+
 ### A message queued on the desktop
 
 A desktop that advertises `conversation-queued-sends` holds a message queued
@@ -869,7 +900,8 @@ an agent's news and a usage-limit resume, between the person's, and opens on
 "New" above the agent's news; `sprintengine://verify/chat/ws-files` holds a
 message with a PDF, a DOCX on a Windows drive, a spreadsheet on a
 Windows share and a file of no kind the phone names, each a card under the
-bubble. Both rest under Earlier too. In the conversation fixture
+bubble, then a turn that showed two files (one with lines pointed at), a
+card under the turn's line. Both rest under Earlier too. In the conversation fixture
 (`EXPO_PUBLIC_VERIFY_CONVERSATION=1`), a running agent's screen offers "Stop
 this agent", and the agent then reports itself stopped. Do not distribute the fixture build as the normal app.
 

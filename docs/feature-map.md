@@ -50,10 +50,12 @@ and the rest sweep in `src/main/automation/workspace-settlement-sweep.ts`. Wire:
 `src/main/automation/conversation-self-compact.test.ts`.
 
 **Files shown in a chat** (`file.view`, the inline editor): tool and ledger in `src/server/file-views/`,
-card in `src/renderer/src/components/panels/agentChat/fileView/FileViewCard.tsx`. Wire: `fileViews.*`
+card in `src/renderer/src/components/panels/agentChat/fileView/FileViewCard.tsx`; the phone's read-only
+card in `mobile/src/features/conversations/ShownStepCards.tsx`. Wire: `fileViews.*`
 (capability `file-views`, `packages/studio-protocol/src/file-views.ts`). Doc: `docs/conversations.md`
 ("Files shown in the chat"). Tests: `src/server/file-views/file-views.test.ts`,
-`src/renderer/src/components/panels/agentChat/fileView/FileViewCard.test.tsx`.
+`src/renderer/src/components/panels/agentChat/fileView/FileViewCard.test.tsx`,
+`mobile/src/features/conversations/shownSteps.regression.test.js`.
 
 **Sub-agents** (a chat's agents as chats of their own): `src/main/subagent-lifecycle.ts`,
 `src/main/automation/subagent-tools.ts`; in the view `src/renderer/src/components/panels/agentChat/SubagentChatHost.tsx`
