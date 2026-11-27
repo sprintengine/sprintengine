@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { writeFileAtomic, writeFileAtomicSync } from './atomic-file'
+import { flushFileSync, flushFolderSync, writeFileAtomic, writeFileAtomicSync } from './atomic-file'
 
 let dir: string
 
@@ -24,6 +24,15 @@ describe.each([
     await write(path, 'new')
     expect(await readFile(path, 'utf8')).toBe('new')
     expect(await readdir(dir)).toEqual(['store.json'])
+  })
+
+  test('a durable write flushes the new file and its folder before it returns', async () => {
+    // Windows flushes a file only through a handle that may write to it.
+    const path = join(dir, 'journal.json')
+    await writeFile(path, 'old')
+    await write(path, 'new', { durable: true })
+    expect(await readFile(path, 'utf8')).toBe('new')
+    expect(await readdir(dir)).toEqual(['journal.json'])
   })
 
   test('a write that fails removes its temporary file and rethrows', async () => {
@@ -55,4 +64,12 @@ describe.each([
     }
     expect((await stat(path)).mode & 0o777).toBe(0o600)
   })
+})
+
+test('a file and its folder flush to the disk without changing the file', async () => {
+  const path = join(dir, 'copy.sqlite')
+  await writeFile(path, 'bytes')
+  flushFileSync(path)
+  flushFolderSync(dir)
+  expect(await readFile(path, 'utf8')).toBe('bytes')
 })
