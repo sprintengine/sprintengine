@@ -2551,6 +2551,22 @@ samp,
   }
 }
 
+/* A code editor stands on the theme's own surface, not on the editor
+   library's built-in grey (#1e1e1e under its dark base theme), which read as
+   a grey slab beside the near-black panels around it (2026-11-27). The
+   library writes its colours as custom properties on its own root classes;
+   these four are the grounds, restated one step more specific so they win
+   over the library's sheet whenever it is injected. Text, selection and diff
+   colours stay the library's, which are drawn to sit on a dark or a light
+   ground. */
+:root .monaco-editor,
+:root .monaco-diff-editor {
+  --vscode-editor-background: var(--bg-surface);
+  --vscode-editorGutter-background: var(--bg-surface);
+  --vscode-editorStickyScroll-background: var(--bg-surface);
+  --vscode-minimap-background: var(--bg-surface);
+}
+
 .monaco-editor .agent-reveal-range {
   animation: agent-reveal-range var(--motion-pulse) var(--motion-ease) forwards;
 }
