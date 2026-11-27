@@ -38,8 +38,11 @@ import {
   importChatRecords,
   importChatSideRecords,
   importPullRequestRecords,
+  importWorktreeRecords,
   PULL_REQUEST_RECORD_STEP,
+  WORKTREE_RECORDS_STEP,
 } from './import-files'
+import { createPoolStore, POOL_RECORD_VERSION } from '../../main/worktree-pool/pool-store'
 import { PULL_REQUEST_RECORD_FILE } from '../pull-requests/pull-request-record'
 import { createSnapshotStorage } from './snapshot-storage'
 import { createWorkspaceRegistryStore } from '../../main/workspace-registry-store'
@@ -762,4 +765,79 @@ test('a pull request import a crash cut short is put back and runs again whole a
     [pullRequest(1).url, pullRequest(2).url],
     'the half-done import is gone; the whole one is in',
   )
+})
+
+// ── Format 7: the worktree records ────────────────────────────────────────────
+
+const poolRecord = (poolId: string) => ({
+  version: POOL_RECORD_VERSION,
+  poolId,
+  repoRoot: '/Users/dev/app',
+  commonDir: '/Users/dev/app/.git',
+  hostId: 'local',
+  slots: [],
+})
+
+/** A folder in format 6 with a branch ledger and pool records, as a build before the database wrote them. */
+function worktreeFolder(): string {
+  const dir = join(mkdtempSync(join(tmpdir(), 'se-import-worktrees-')), 'data')
+  mkdirSync(join(dir, 'worktree-pool'), { recursive: true })
+  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 6, writtenBy: '6.0.0' }))
+  writeFileSync(
+    join(dir, 'worktree-branches.json'),
+    JSON.stringify({
+      version: 1,
+      repos: {
+        '/Users/dev/new/.git': { updatedAt: 20, branches: ['feat/b', 'feat/a'] },
+        '/Users/dev/old/.git': { updatedAt: 10, branches: ['feat/c'] },
+      },
+    }),
+  )
+  writeFileSync(
+    join(dir, 'worktree-pool', 'pool-0123456789abcdef.json'),
+    JSON.stringify(poolRecord('0123456789abcdef')),
+  )
+  writeFileSync(join(dir, 'worktree-pool', 'pool-fedcba9876543210.json'), '{ torn')
+  writeFileSync(join(dir, 'worktree-pool', 'settings.json'), JSON.stringify({ maxSlots: 4 }))
+  return dir
+}
+
+test('format 7 brings the branch ledger and each pool record in, and leaves every file as it was', async () => {
+  const dir = worktreeFolder()
+  const before = snapshot(dir)
+  assert.deepEqual(prepareDataFormat(dir, { version: '7.0.0' }), {
+    format: STUDIO_DATA_FORMAT,
+    migrated: formatsFrom(WORKTREE_RECORDS_STEP.to),
+    restored: false,
+  })
+  assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
+  assert.deepEqual(imported(dir), [
+    { source: 'worktree-branches.json', records: 3, skipped: 0 },
+    { source: 'worktree-pool/pool-0123456789abcdef.json', records: 1, skipped: 0 },
+    { source: 'worktree-pool/pool-fedcba9876543210.json', records: 0, skipped: 1 },
+  ])
+
+  const database = openTestDatabase(dir)
+  assert.deepEqual(
+    await database.all('SELECT repo, branch FROM worktree_branches ORDER BY seq'),
+    [
+      { repo: '/Users/dev/old/.git', branch: 'feat/c' },
+      { repo: '/Users/dev/new/.git', branch: 'feat/b' },
+      { repo: '/Users/dev/new/.git', branch: 'feat/a' },
+    ],
+    'the oldest repository first, each in the order its branches were recorded',
+  )
+  const pools = await createPoolStore({ dataDir: dir, database }).readAll()
+  assert.deepEqual(
+    pools.map((pool) => [pool.poolId, pool.record?.repoRoot]),
+    [['0123456789abcdef', '/Users/dev/app']],
+  )
+
+  // A second run brings nothing in twice.
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  try {
+    assert.deepEqual(importWorktreeRecords(connection, dir), [])
+  } finally {
+    connection.close()
+  }
 })

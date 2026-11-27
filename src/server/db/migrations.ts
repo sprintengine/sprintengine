@@ -201,6 +201,22 @@ export const STUDIO_MIGRATIONS: readonly Migration[] = [
     // The pull request record, a row per pull request (`record-table.ts`).
     up: (db) => db.exec(recordTableSql('pull_requests')),
   },
+  {
+    id: 6,
+    name: 'worktree-records',
+    up: (db) =>
+      db.exec(`
+        -- The branches Studio made for worktrees (worktree-branch-ledger.ts), numbered in the order recorded.
+        CREATE TABLE worktree_branches (
+          seq INTEGER PRIMARY KEY,
+          repo TEXT NOT NULL,
+          branch TEXT NOT NULL,
+          UNIQUE (repo, branch)
+        );
+        -- Each worktree pool's record (worktree-pool/pool-store.ts), written whole.
+        CREATE TABLE pool_records (pool_id TEXT PRIMARY KEY, body TEXT NOT NULL);
+      `),
+  },
 ]
 
 /** Run the migrations `connection` has not had, in order; returns the ids it ran. */

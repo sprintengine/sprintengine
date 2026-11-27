@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, test } from 'vitest'
 
-import { createWorktreeBranchLedger } from './worktree-branch-ledger'
+import { testDatabaseAt } from '../../tests/studio-database'
+import {
+  createWorktreeBranchLedger,
+  installWorktreeBranchLedger,
+  readWorktreeBranchesFile,
+  worktreeBranchLedger,
+} from './worktree-branch-ledger'
 
 const execFileAsync = promisify(execFile)
 const env = {
@@ -53,7 +59,7 @@ async function dataDir(): Promise<string> {
   return dir
 }
 
-const ledgerIn = (dir: string | null) => createWorktreeBranchLedger({ dataDir: () => dir, log: () => {} })
+const ledgerIn = (dir: string) => createWorktreeBranchLedger({ database: testDatabaseAt(dir), log: () => {} })
 
 test('a branch recorded is read back for its repository, and for no other', async () => {
   const ledger = ledgerIn(await dataDir())
@@ -83,20 +89,28 @@ test('a missing record reads as empty', async () => {
   assert.equal((await ledgerIn(await dataDir()).branches(repo)).size, 0)
 })
 
-test('a corrupt or foreign record reads as empty, and the next write replaces it', async () => {
-  const dir = await dataDir()
-  const file = join(dir, 'worktree-branches.json')
-  for (const content of [
-    '{ not json',
-    '[]',
-    '{"version":99,"repos":{}}',
-    '{"version":1,"repos":{"x":{"branches":"no"}}}',
-  ]) {
-    await writeFile(file, content)
-    assert.equal((await ledgerIn(dir).branches(repo)).size, 0, content)
-  }
-  await ledgerIn(dir).record(repo, 'feat/chat-1')
-  assert.deepEqual([...(await ledgerIn(dir).branches(repo))], ['feat/chat-1'])
+test('a ledger file this build cannot read is not imported', () => {
+  for (const content of ['{ not json', '[]', '{"version":99,"repos":{}}'])
+    assert.equal(readWorktreeBranchesFile(content), null, content)
+  assert.deepEqual(readWorktreeBranchesFile('{"version":1,"repos":{"x":{"branches":"no"}}}'), [])
+})
+
+test('the ledger file is read oldest repository first, each with its branches in order', () => {
+  assert.deepEqual(
+    readWorktreeBranchesFile(
+      JSON.stringify({
+        version: 1,
+        repos: {
+          '/new/.git': { updatedAt: 20, branches: ['b', 'a', 'b'] },
+          '/old/.git': { updatedAt: 10, branches: ['c', ''] },
+        },
+      }),
+    ),
+    [
+      { repo: '/old/.git', branches: ['c'] },
+      { repo: '/new/.git', branches: ['b', 'a'] },
+    ],
+  )
 })
 
 test('a forgotten branch is struck off, and a repository with none left is dropped', async () => {
@@ -107,7 +121,7 @@ test('a forgotten branch is struck off, and a repository with none left is dropp
   await ledger.forget(repo, ['feat/a'])
   assert.deepEqual([...(await ledger.branches(repo))], ['feat/b'])
   await ledger.forget(repo, ['feat/b'])
-  assert.deepEqual(JSON.parse(await readFile(join(dir, 'worktree-branches.json'), 'utf8')), { version: 1, repos: {} })
+  assert.deepEqual(await testDatabaseAt(dir).all('SELECT * FROM worktree_branches'), [])
 })
 
 test('changes made together all land, in order', async () => {
@@ -117,18 +131,36 @@ test('changes made together all land, in order', async () => {
   assert.deepEqual([...(await ledger.branches(repo))], ['feat/a', 'feat/c', 'feat/d'])
 })
 
-test('a write from another process in between is kept', async () => {
+test('a write from another ledger in between is kept', async () => {
   const dir = await dataDir()
   await ledgerIn(dir).record(repo, 'feat/a')
-  // Another process's ledger over the same file.
+  // Another ledger over the same database.
   await ledgerIn(dir).record(repo, 'feat/b')
   assert.deepEqual([...(await ledgerIn(dir).branches(repo))], ['feat/a', 'feat/b'])
 })
 
-test('with no data directory, nothing is kept and nothing is known', async () => {
-  const ledger = ledgerIn(null)
+test('with no server in the process, nothing is kept and nothing is known', async () => {
+  installWorktreeBranchLedger(null)
+  await worktreeBranchLedger().record(repo, 'feat/a')
+  assert.equal((await worktreeBranchLedger().branches(repo)).size, 0)
+
+  // The one a server installs is the one every caller reaches.
+  const installed = ledgerIn(await dataDir())
+  installWorktreeBranchLedger(installed)
+  try {
+    await worktreeBranchLedger().record(repo, 'feat/b')
+    assert.deepEqual([...(await installed.branches(repo))], ['feat/b'])
+  } finally {
+    installWorktreeBranchLedger(null)
+  }
+})
+
+test('a branch recorded again is the newest, and each repository keeps its newest names', async () => {
+  const ledger = ledgerIn(await dataDir())
   await ledger.record(repo, 'feat/a')
-  assert.equal((await ledger.branches(repo)).size, 0)
+  await ledger.record(repo, 'feat/b')
+  await ledger.record(repo, 'feat/a')
+  assert.deepEqual([...(await ledger.branches(repo))], ['feat/b', 'feat/a'])
 })
 
 test('a folder that is not a repository records nothing', async () => {

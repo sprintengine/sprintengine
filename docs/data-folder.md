@@ -111,6 +111,21 @@ folder without one has the per-repository files of the rule before it
 imported instead (only the pull requests a chat opened). A file that does not
 read is skipped and counted, and every file stays as it was.
 
+## Worktrees
+
+The branches Studio made for worktrees, which the agent worktree cleanup may
+delete, are a row each (`worktree_branches`), numbered in the order they were
+recorded. Each worktree pool's record is a row (`pool_records`), written whole
+in one transaction; a slot's step in progress is committed before the git
+step it names starts, so a start after a crash knows what was cut short. The
+pool settings stay a file (`worktree-pool/settings.json`), and so does each
+pool's lock, `.pool.lock` in its slot folder: another Studio sharing the slots
+(another data folder, profile or machine) must see it, and it never opens
+this database. At the first start of format 7, `worktree-branches.json` and
+each `worktree-pool/pool-<id>.json` are imported once; a file that does not
+read is skipped and counted (that pool's slots are adopted as held on next
+use), and every file stays as it was.
+
 ## The first start of a new format
 
 `<data>/format.json` says which format the folder is in

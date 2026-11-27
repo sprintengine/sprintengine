@@ -12,6 +12,7 @@ import { createGitWorktree, removeGitWorktree, restoreGitWorktree } from '../git
 import { listGitWorktrees } from '../git-worktree-list'
 import { installWorktreePool } from './active-pool'
 import { createDependencyInstaller, DEPENDENCY_INSTALL_RECORD, installDependencyInstaller } from './dependency-install'
+import { databaseWith, testDatabaseAt } from '../../../tests/studio-database'
 import { acquireInstanceLock, createPoolStore, POOL_RECORD_VERSION, poolIdFor, type PoolRecord } from './pool-store'
 import { agentLeaseKey } from '../../shared/ipc/worktree-pool'
 import type { McpConnectionContext } from '../../shared/modules/mcp-tools'
@@ -61,6 +62,26 @@ let caseDir = ''
 let origin = ''
 let repo = ''
 let container = ''
+/** The pool store of the data folder `dataDir`: its records in that folder's test database. */
+const poolStoreAt = (dataDir: string) => createPoolStore({ dataDir, database: testDatabaseAt(dataDir) })
+
+/** A pool's record as `dataDir`'s database holds it. */
+async function storedPoolRecord(dataDir: string, poolId: string): Promise<PoolRecord> {
+  const row = await testDatabaseAt(dataDir).get<{ body: string }>('SELECT body FROM pool_records WHERE pool_id = ?', [
+    poolId,
+  ])
+  assert.ok(row, `pool ${poolId} has a record`)
+  return JSON.parse(row.body) as PoolRecord
+}
+
+/** Put a pool's record in `dataDir`'s database, as a crash would have left it. */
+async function storePoolRecord(dataDir: string, record: PoolRecord): Promise<void> {
+  await testDatabaseAt(dataDir).run('UPDATE pool_records SET body = ? WHERE pool_id = ?', [
+    JSON.stringify(record),
+    record.poolId,
+  ])
+}
+
 let userData = ''
 let caseNumber = 0
 
@@ -109,7 +130,7 @@ function makeService(
   const chats = options.chats
   const clock = { offset: 0 }
   const prefix = options.branchPrefix
-  const store = createPoolStore(options.userData ?? userData)
+  const store = poolStoreAt(options.userData ?? userData)
   const failWrite = options.failWrite
   const stallWrite = options.stallWrite
   const service = createWorktreePoolService({
@@ -1303,7 +1324,7 @@ test('measuring takes no pool’s lock: a pool this run has not used keeps its s
 test('a measurement is not announced to the windows; a lease is', async () => {
   let changes = 0
   const service = createWorktreePoolService({
-    store: createPoolStore(userData),
+    store: poolStoreAt(userData),
     log: () => {},
     timers: false,
     fetchFreshMs: 0,
@@ -1428,8 +1449,7 @@ test('recovery removes a half-made slot, returns an interrupted lease, and resum
   await returnAll(harness, [a.path])
   // b and c are idle; a is still leased. Now forge what a crash leaves.
   const poolId = poolIdFor(join(repo, '.git'), 'local')
-  const recordPath = join(userData, 'worktree-pool', `pool-${poolId}.json`)
-  const record = JSON.parse(await readFile(recordPath, 'utf8')) as PoolRecord
+  const record = await storedPoolRecord(userData, poolId)
   assert.equal(record.version, POOL_RECORD_VERSION)
   const base = await git(repo, 'rev-parse', 'origin/main')
   const moved = await pushToOrigin('moved.txt', 'moved\n')
@@ -1444,7 +1464,7 @@ test('recovery removes a half-made slot, returns an interrupted lease, and resum
     }
     if (slot.path === c.path) slot.op = { kind: 'reset', startedAt: 0, pid: 1, fromSha: base, toSha: moved }
   }
-  await writeFile(recordPath, JSON.stringify(record))
+  await storePoolRecord(userData, record)
   await harness.service.shutdown()
 
   const restarted = makeService()
@@ -1475,15 +1495,14 @@ test('a reset interrupted over a tree someone then edited is held, not re-run', 
   const first = await lease(harness, 'first')
   await returnAll(harness)
   const poolId = poolIdFor(join(repo, '.git'), 'local')
-  const recordPath = join(userData, 'worktree-pool', `pool-${poolId}.json`)
-  const record = JSON.parse(await readFile(recordPath, 'utf8')) as PoolRecord
+  const record = await storedPoolRecord(userData, poolId)
   const base = await git(repo, 'rev-parse', 'origin/main')
   const moved = await pushToOrigin('moved.txt', 'moved\n')
   await git(repo, 'fetch', '-q', 'origin')
   await git(first.path, 'update-ref', '--no-deref', 'HEAD', moved, base)
   await writeFile(join(first.path, 'theirs.txt'), 'written while the app was down\n')
   record.slots[0].op = { kind: 'reset', startedAt: 0, pid: 1, fromSha: base, toSha: moved }
-  await writeFile(recordPath, JSON.stringify(record))
+  await storePoolRecord(userData, record)
   await harness.service.shutdown()
 
   const restarted = makeService()
@@ -1568,7 +1587,7 @@ test('a slot from before slots were named after their project is still adopted, 
   const legacy = join(container, 'pool-01')
   await git(repo, 'worktree', 'move', first.path, legacy)
   const poolId = poolIdFor(join(repo, '.git'), 'local')
-  await rm(join(userData, 'worktree-pool', `pool-${poolId}.json`))
+  await testDatabaseAt(userData).run('DELETE FROM pool_records WHERE pool_id = ?', [poolId])
 
   const restarted = makeService()
   const next = await lease(restarted, 'next')
@@ -1764,7 +1783,7 @@ test('a .worktreeinclude copy that fails is logged and the lease goes ahead', as
     () => Promise.resolve({ ok: false, message: 'source unreadable' }),
   ]
   const service = createWorktreePoolService({
-    store: createPoolStore(userData),
+    store: poolStoreAt(userData),
     log: (line) => lines.push(line),
     timers: false,
     fetchFreshMs: 0,
@@ -1822,9 +1841,13 @@ test('a fresh worktree made because the pool declined forks from the base the po
 })
 
 test('a record that cannot be written fails its caller and nothing else (no unhandled rejection)', async () => {
-  // A file where the store's folder should be: every write fails.
+  // A file where the settings' folder should be, and a database that refuses writes: every write fails.
   await writeFile(join(caseDir, 'not-a-folder'), '')
-  const store = createPoolStore(join(caseDir, 'not-a-folder'))
+  const database = testDatabaseAt(join(caseDir, 'refusing'))
+  const store = createPoolStore({
+    dataDir: join(caseDir, 'not-a-folder'),
+    database: databaseWith(database, { run: () => Promise.reject(new Error('disk full')) }),
+  })
   const record = { poolId: '0123456789abcdef', slots: [] } as unknown as PoolRecord
   await assert.rejects(store.write(record))
   await assert.rejects(store.writeSettings({} as never))

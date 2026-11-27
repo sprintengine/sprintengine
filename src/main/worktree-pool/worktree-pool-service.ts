@@ -592,7 +592,16 @@ export function createWorktreePoolService(deps: WorktreePoolServiceDeps) {
 
   function load(): Promise<void> {
     loaded ??= (async () => {
-      for (const { poolId, record } of await deps.store.readAll()) {
+      let stored: Awaited<ReturnType<PoolStore['readAll']>> = []
+      try {
+        stored = await deps.store.readAll()
+      } catch (error) {
+        // Read as none: each pool's slots are adopted as held on next use, as an unreadable record's are.
+        log(
+          `pool records unreadable (${error instanceof Error ? error.message : String(error)}); slots are adopted as held on next use`,
+        )
+      }
+      for (const { poolId, record } of stored) {
         if (!record || record.poolId !== poolId) {
           log(`pool ${poolId}: record unreadable; its slots are adopted as held on next use`)
           continue

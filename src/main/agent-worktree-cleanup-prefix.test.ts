@@ -10,7 +10,8 @@ import { cleanupAgentWorktrees, type AgentWorktreeCleanupDeps } from './agent-wo
 import { setAgentWorktreeLockProfile } from './agent-worktree-lock'
 import { createGitWorktree } from './git'
 import { createNodeStudioPlatform, installStudioPlatform, resetStudioPlatform } from '../server/platform/platform'
-import { createWorktreeBranchLedger } from './worktree-branch-ledger'
+import { databaseWith, testDatabaseAt } from '../../tests/studio-database'
+import { createWorktreeBranchLedger, installWorktreeBranchLedger } from './worktree-branch-ledger'
 
 /**
  * What the cleanup takes as Studio's once the person may choose the branch
@@ -54,6 +55,7 @@ beforeAll(async () => {
 })
 
 afterEach(() => {
+  installWorktreeBranchLedger(null)
   setAgentWorktreeLockProfile(null)
   resetStudioPlatform()
 })
@@ -91,7 +93,7 @@ async function localBranches(repo: string): Promise<string[]> {
   return (await git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads')).split('\n').filter(Boolean).sort()
 }
 
-const ledgerIn = (profile: string) => createWorktreeBranchLedger({ dataDir: () => profile, log: () => {} })
+const ledgerIn = (profile: string) => createWorktreeBranchLedger({ database: testDatabaseAt(profile), log: () => {} })
 
 function deps(profile: string): AgentWorktreeCleanupDeps {
   return { log: () => {}, now: later, ledger: ledgerIn(profile) }
@@ -142,18 +144,27 @@ test('the record a previous run wrote still lets the cleanup delete Studio’s b
   await ledgerIn(profile).record(repo, 'feat/chat-1')
   const report = await cleanupAgentWorktrees(
     { repoRoot: repo, protectedPaths: [], keepBranches: [] },
-    { log: () => {}, now: later, ledger: createWorktreeBranchLedger({ dataDir: () => profile }) },
+    { log: () => {}, now: later, ledger: ledgerIn(profile) },
   )
   assert.deepEqual(report.deletedBranches, ['feat/chat-1'])
 })
 
 test('with no record, or one that cannot be read, only agent/ branches are deleted', async () => {
-  for (const content of [null, '{ corrupt', '{"version":1,"repos":[]}']) {
+  for (const unreadable of [false, true]) {
     const { repo, profile } = await makeRepo()
-    if (content !== null) await writeFile(join(profile, 'worktree-branches.json'), content)
     await mergedBranches(repo, 'feat/chat-1', 'chat-ab12', 'agent/b')
-    const report = await cleanup(repo, profile)
-    assert.deepEqual(report.deletedBranches, ['agent/b'], String(content))
+    const database = testDatabaseAt(profile)
+    const ledger = createWorktreeBranchLedger({
+      database: unreadable
+        ? databaseWith(database, { all: () => Promise.reject(new Error('disk I/O error')) })
+        : database,
+      log: () => {},
+    })
+    const report = await cleanupAgentWorktrees(
+      { repoRoot: repo, protectedPaths: [], keepBranches: [] },
+      { log: () => {}, now: later, ledger },
+    )
+    assert.deepEqual(report.deletedBranches, ['agent/b'], String(unreadable))
     assert.deepEqual(await localBranches(repo), ['chat-ab12', 'feat/chat-1', 'main'])
   }
 })
@@ -207,6 +218,8 @@ test('a worktree under agent/ is an agent’s, recorded or not', async () => {
 test('a worktree Studio makes records its branch, which the cleanup then deletes once merged', async () => {
   const { repo, container, profile } = await makeRepo()
   installStudioPlatform(createNodeStudioPlatform({ dataDir: profile, packaged: false, version: '0.0.0' }))
+  // The ledger the profile's Studio server keeps, as its core installs it.
+  installWorktreeBranchLedger(ledgerIn(profile))
   setAgentWorktreeLockProfile('/Users/dev/profile-a')
   const made = await createGitWorktree({
     repoRoot: repo,

@@ -18,6 +18,7 @@ import { holdIfIdle, WORKTREE_POOL_OWNER, worktreeLeases } from '../../main/work
 import { headlessTerminalViewer } from '../terminals/terminal-viewer'
 import { bindGatewayConversation } from '../tools/client-tool-gateway'
 import { createNodeStudioPlatform, resetStudioPlatform } from '../platform/platform'
+import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME } from '../db/database'
 import { createStudioCore } from './studio-core'
 import { createStudioGateway } from './studio-gateway'
 import { studioPullRequestWakes } from './studio-pull-request-wakes'
@@ -282,10 +283,17 @@ test('worktree.lease and worktree.release are the core gateway’s, install wher
     await gateway.shutdown()
     await core.shutdown()
     shutDown = true
-    const recordPath = join(dataDir, 'worktree-pool', `pool-${poolIdFor(join(repo, '.git'), 'local')}.json`)
-    const record = JSON.parse(await readFile(recordPath, 'utf8')) as PoolRecord
-    for (const slot of record.slots) if (slot.path === cut) slot.op = { kind: 'lease', startedAt: 0, pid: 1 }
-    await writeFile(recordPath, JSON.stringify(record))
+    const poolId = poolIdFor(join(repo, '.git'), 'local')
+    const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
+    try {
+      const row = connection.get<{ body: string }>('SELECT body FROM pool_records WHERE pool_id = ?', [poolId])
+      assert.ok(row, 'the pool has a record')
+      const record = JSON.parse(row.body) as PoolRecord
+      for (const slot of record.slots) if (slot.path === cut) slot.op = { kind: 'lease', startedAt: 0, pid: 1 }
+      connection.run('UPDATE pool_records SET body = ? WHERE pool_id = ?', [JSON.stringify(record), poolId])
+    } finally {
+      connection.close()
+    }
 
     // The server starts again over the same data directory: the first use
     // of its pool finishes the interrupted lease as a return.

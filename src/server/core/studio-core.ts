@@ -482,6 +482,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // core's in every mode, beside the agents that work in the slots.
   const worktrees = createStudioWorktreePool({
     platform,
+    database,
     workspaceRegistry,
     workspaceSyncService,
     // Read when a step asks, long after `conversations` below is set.
