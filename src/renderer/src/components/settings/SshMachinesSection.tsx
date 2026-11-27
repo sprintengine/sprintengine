@@ -167,10 +167,7 @@ export function SshMachineDetail({
         </SettingCard>
       ) : null}
       <div className="divide-y divide-[color:var(--border-subtle)]">
-        <SettingsRow
-          label={copy.settings.sshMachinesSection.reachedAs}
-          help="What your SSH config resolves it to. Your config decides; Studio only reads it."
-        >
+        <SettingsRow label={copy.settings.sshMachinesSection.reachedAs}>
           <span className="font-mono text-body text-[color:var(--text-default)]">
             {resolved
               ? `${resolved.user}@${resolved.hostname}:${resolved.port}${resolved.proxyJump ? ` via ${resolved.proxyJump}` : ''}`
@@ -178,27 +175,16 @@ export function SshMachineDetail({
           </span>
         </SettingsRow>
         {machine.server ? (
-          <SettingsRow
-            label={copy.settings.sshMachinesSection.studioServer}
-            help={
-              machine.server.origin === 'bootstrap'
-                ? `Started by ${machine.server.startedBy || 'Studio'}. It keeps running when you disconnect, so a chat left working carries on.`
-                : 'Started outside this app; this app never stops or replaces it unasked.'
-            }
-          >
+          <SettingsRow label={copy.settings.sshMachinesSection.studioServer}>
             <span className="font-mono text-body text-[color:var(--text-default)]">{machine.server.version}</span>
           </SettingsRow>
         ) : null}
         <SettingToggle
           label={copy.settings.sshMachinesSection.keepTheServerRunning}
-          description={copy.settings.sshMachinesSection.otherwiseItStopsWhenIdle}
           enabled={machine.settings.keepRunning}
           onChange={(keepRunning) => write({ keepRunning })}
         />
-        <SettingsRow
-          label={copy.settings.sshMachinesSection.browserTabsNetwork}
-          help={`What this machine's browser tabs reach through ${machine.label}. With everything, its localhost is the machine's.`}
-        >
+        <SettingsRow label={copy.settings.sshMachinesSection.browserTabsNetwork}>
           <Select
             ariaLabel={copy.settings.sshMachinesSection.browserTabTrafficThrough(machine.label)}
             items={PANE_TRAFFIC_ITEMS}
@@ -208,13 +194,12 @@ export function SshMachineDetail({
         </SettingsRow>
         <SettingToggle
           label={copy.settings.sshMachinesSection.downloadNodeJsOnThe}
-          description={copy.settings.sshMachinesSection.forAMachineOnA}
           enabled={machine.settings.remoteDownload}
           onChange={(remoteDownload) => write({ remoteDownload })}
         />
         <SettingsRow
           label={copy.settings.sshMachinesSection.installDirectory}
-          help="Only for a home mounted noexec: where the runtime and server go instead."
+          help={copy.settings.sshMachinesSection.setThisOnlyWhenNoexec}
           htmlFor={installId}
         >
           <Input
@@ -357,11 +342,7 @@ export function AddSshMachine({ api }: { api: Api }): React.JSX.Element {
   }
   return (
     <div className="space-y-2">
-      <SettingsRow
-        label={copy.settings.sshMachinesSection.addSSHMachine}
-        help="An alias from your SSH config, or user@host:port."
-        htmlFor={fieldId}
-      >
+      <SettingsRow label={copy.settings.sshMachinesSection.addSSHMachine} htmlFor={fieldId}>
         <span className="flex items-center gap-2">
           <Input
             id={fieldId}
@@ -374,7 +355,7 @@ export function AddSshMachine({ api }: { api: Api }): React.JSX.Element {
               if (isImeKey(event)) return
               if (event.key === 'Enter' && text.trim()) void check(text)
             }}
-            placeholder="build-box"
+            placeholder={copy.settings.sshMachinesSection.aliasOrUserHostPort}
             size="md"
             variant="well"
             fullWidth={false}

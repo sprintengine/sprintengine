@@ -306,19 +306,11 @@ function RegistrySwitchRow({
   disabled?: boolean
 }) {
   if (descriptor.field.type !== 'switch') return null
-  return (
-    <SettingToggle
-      label={descriptor.label}
-      description={descriptor.help}
-      enabled={checked}
-      onChange={onChange}
-      disabled={disabled}
-    />
-  )
+  return <SettingToggle label={descriptor.label} enabled={checked} onChange={onChange} disabled={disabled} />
 }
 
 // Number input for terminal-memory settings ("Pause idle terminals after",
-// "Always keep running"). Edits live in local string state so a half-typed or
+// "Recent terminals never paused"). Edits live in local string state so a half-typed or
 // briefly-empty value isn't clamped/rounded out from under the user; the store
 // (which clamps to the field's min/max) is written on blur or Enter. A
 // blank/invalid commit reverts to the persisted value.
@@ -336,7 +328,7 @@ function CommittedNumberField({
     setDraft(String(value))
   }, [value])
   if (descriptor.field.type !== 'number') return null
-  const { min, max, step } = descriptor.field
+  const { min, max, step, unit } = descriptor.field
   const commit = (): void => {
     // Revert a blank/whitespace field to the persisted value — `Number('')` is 0
     // (finite), which would otherwise clamp to the field floor rather than
@@ -355,7 +347,7 @@ function CommittedNumberField({
     setDraft(String(clamped))
   }
   return (
-    <SettingsRow label={descriptor.label} help={descriptor.help} htmlFor={descriptor.id}>
+    <SettingsRow label={descriptor.label} htmlFor={descriptor.id}>
       <Input
         id={descriptor.id}
         type="number"
@@ -375,6 +367,7 @@ function CommittedNumberField({
         fullWidth={false}
         className={`w-20 text-right ${MONO_FIELD}`}
       />
+      {unit ? <span className="text-body text-[color:var(--text-muted)]">{unit}</span> : null}
     </SettingsRow>
   )
 }
@@ -1064,6 +1057,9 @@ export default function SettingsPanel({
   // Write-only token entry: render the input only when nothing is saved or the
   // user is replacing; a saved token reads as meta text plus Replace/Clear.
   const githubTokenInputVisible = githubTokenStatus !== null && (githubTokenEditing || !githubTokenStatus.configured)
+  const cadenceLine = skillRepoTransport
+    ? sourceUpdateCadenceLine(githubTokenStatus?.configured === true, skillRepoTransport)
+    : null
 
   const activeTab = visibleSettingsTabs.find((tab) => tab.id === activeSettingsTab) ?? visibleSettingsTabs[0]
   // The bar's trailing slot, which each page's header portals its meta and
@@ -1201,10 +1197,7 @@ export default function SettingsPanel({
           <section className="space-y-3">
             <SettingsSectionTitle>{appCopy.settings.settingsPanel.interface}</SettingsSectionTitle>
             <SettingCard>
-              <SettingsRow
-                label={appCopy.settings.settingsPanel.chatList}
-                help="How each window groups its chats: under their project, by status with working chats folded away at the foot of the list, by date under Today, Yesterday and earlier, or all together, most recently messaged first. The filter beside New chat changes it for one window."
-              >
+              <SettingsRow label={appCopy.settings.settingsPanel.chatList}>
                 <SegmentedControl<ChatListView>
                   ariaLabel={appCopy.settings.settingsPanel.chatList}
                   items={[
@@ -1221,7 +1214,6 @@ export default function SettingsPanel({
                   keeps them still), so it is the person's to turn on. */}
               <SettingToggle
                 label={appCopy.settings.settingsPanel.workingSection}
-                description={appCopy.settings.settingsPanel.moveWorkingChatsIntoA}
                 enabled={sidebarWorkingSection}
                 onChange={setSidebarWorkingSection}
               />
@@ -1229,7 +1221,6 @@ export default function SettingsPanel({
                   sidebar, for someone who keeps it collapsed. */}
               <SettingToggle
                 label={appCopy.settings.settingsPanel.showSidebarAtTheEdge}
-                description={appCopy.settings.settingsPanel.whenCollapsedPointAtThe}
                 enabled={sidebarHoverReveal}
                 onChange={setSidebarHoverReveal}
               />
@@ -1238,10 +1229,7 @@ export default function SettingsPanel({
                   window is the default: the file on its own, with a tree
                   beside it that says where it lives. The in-app tab stays a
                   choice, and this row is the only thing that changes it. */}
-              <SettingsRow
-                label={appCopy.settings.settingsPanel.openFilesIn}
-                help="The editor window shows the file on its own, beside a file tree. In the app opens it as a tab next to your terminals."
-              >
+              <SettingsRow label={appCopy.settings.settingsPanel.openFilesIn}>
                 <SegmentedControl<'window' | 'app'>
                   ariaLabel={appCopy.settings.settingsPanel.openFilesIn}
                   items={[
@@ -1252,14 +1240,7 @@ export default function SettingsPanel({
                   onChange={(value) => setOpenFilesInExternalWindow(value === 'window')}
                 />
               </SettingsRow>
-              <SettingsRow
-                label={appCopy.settings.settingsPanel.windowMaterial}
-                help={
-                  isMac
-                    ? 'Glass frosts the sidebar and title bar. Tinted gives them a faint wash of colour.'
-                    : 'Tinted gives the sidebar and title bar a faint wash of colour.'
-                }
-              >
+              <SettingsRow label={appCopy.settings.settingsPanel.windowMaterial}>
                 {/* A value choice, so the kit's segmented control: one tab stop,
                     arrow keys, and a neutral selected segment — not an
                     aria-pressed pair painted with the accent. Glass needs the
@@ -1279,19 +1260,16 @@ export default function SettingsPanel({
               </SettingsRow>
               <SettingToggle
                 label={appCopy.settings.settingsPanel.agentCharacters}
-                description={appCopy.settings.settingsPanel.showWorkingAgentsAsLittle}
                 enabled={agentCharacters}
                 onChange={setAppearanceAgentCharacters}
               />
               <SettingToggle
                 label={appCopy.settings.settingsPanel.showSubscriptionUsageLimits}
-                description={appCopy.settings.settingsPanel.showHowMuchOfYour}
                 enabled={usageLimits}
                 onChange={setAppearanceUsageLimits}
               />
               <SettingToggle
                 label={appCopy.settings.settingsPanel.quietProjectIcons}
-                description={appCopy.settings.settingsPanel.grayProjectIconsColouredOnly}
                 enabled={quietProjectIcons}
                 onChange={setAppearanceQuietProjectIcons}
               />
@@ -1340,7 +1318,6 @@ export default function SettingsPanel({
             {updateState ? (
               <SettingToggle
                 label={appCopy.settings.settingsPanel.downloadUpdatesAutomatically}
-                description={appCopy.settings.settingsPanel.offYouReToldAbout}
                 enabled={updateState.autoDownload}
                 onChange={(enabled) => void setAutoDownload(enabled)}
               />
@@ -1453,18 +1430,14 @@ export default function SettingsPanel({
                   </p>
                 ) : null}
 
-                {/* The cadence, said where the token that used to decide it
-                    lives. On the API fallback, without a token,
-                    GitHub allows 60 requests an hour for the whole machine, so
-                    plugin sources are checked once a day rather than hourly.
-                    Over git the check is a `ls-remote` the limit does not
-                    count, so it is hourly whatever this field says (owner
+                {/* The cadence, said where the token that decides it lives, and
+                    only when it is slower than hourly: on the API fallback,
+                    without a token, plugin sources are checked once a day. Over
+                    git the check is hourly whatever this field says (owner
                     ruling, 2026-09-08) — a person who finds updates slow to
                     appear should read why here, not guess. */}
-                {skillRepoTransport ? (
-                  <p className="text-meta leading-4 text-[color:var(--text-subtle)]">
-                    {sourceUpdateCadenceLine(githubTokenStatus?.configured === true, skillRepoTransport)}
-                  </p>
+                {cadenceLine ? (
+                  <p className="text-meta leading-4 text-[color:var(--text-subtle)]">{cadenceLine}</p>
                 ) : null}
               </div>
             }
@@ -1497,7 +1470,6 @@ export default function SettingsPanel({
           <SettingCard>
             <SettingToggle
               label={appCopy.settings.settingsPanel.checkForCLIUpdates}
-              description={appCopy.settings.settingsPanel.offersUpdateWhenANewer}
               enabled={checkCliVersions}
               onChange={setCheckCliVersions}
             />
@@ -1749,10 +1721,7 @@ function ProfileSection({
   if (!authState.authenticated) {
     return (
       <div className="space-y-2">
-        <SettingsRow
-          label={appCopy.settings.settingsPanel.notSignedIn}
-          help="Signing in is optional. Every feature works without an account."
-        >
+        <SettingsRow label={appCopy.settings.settingsPanel.notSignedIn}>
           <PrimaryButton size="md" onClick={onSignIn} disabled={pending || authState.status === 'checking'}>
             {appCopy.settings.settingsPanel.signIn}
           </PrimaryButton>

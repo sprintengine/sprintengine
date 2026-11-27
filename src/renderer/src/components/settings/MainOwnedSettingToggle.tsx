@@ -14,7 +14,7 @@ export function MainOwnedSettingToggle({
   write,
 }: {
   label: string
-  description: string
+  description?: string
   read: (() => Promise<boolean | null>) | undefined
   write: (enabled: boolean) => Promise<boolean | null>
 }) {

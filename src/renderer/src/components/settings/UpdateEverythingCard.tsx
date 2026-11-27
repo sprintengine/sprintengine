@@ -106,12 +106,7 @@ export function UpdateEverythingCard() {
         </OutlineButton>
       </SettingsRow>
       {items && items.length === 0 ? (
-        <SettingsRow
-          label={copy.settings.updateEverythingCard.nothingToUpdate}
-          help="Every CLI with an updater was already current."
-        >
-          {null}
-        </SettingsRow>
+        <SettingsRow label={copy.settings.updateEverythingCard.nothingToUpdate}>{null}</SettingsRow>
       ) : null}
       {items
         ? groupByMachine(items).map(([hostId, machineItems]) => (

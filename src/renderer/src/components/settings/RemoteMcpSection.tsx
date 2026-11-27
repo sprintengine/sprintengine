@@ -47,7 +47,7 @@ export function RemoteMcpSection({
     <section className="space-y-2">
       <SettingsSectionTitle count={clients.length}>{copy.settings.remoteMcpSection.mCPClients}</SettingsSectionTitle>
       <SettingCard>
-        <SettingsRow label={copy.settings.remoteMcpSection.mCPURL} help={mcpUrlHelp(mcp)} stacked>
+        <SettingsRow label={copy.settings.remoteMcpSection.mCPURL} help={mcpUrlHelp(mcp) ?? undefined} stacked>
           {url ? (
             <div className="flex min-w-0 items-center gap-1.5">
               <code className="min-w-0 flex-1 select-all truncate font-mono text-meta text-[color:var(--text-default)]">
@@ -68,10 +68,7 @@ export function RemoteMcpSection({
         {/* A registration is a signed client id, held by the client and not
             here, so the only way to take them back is to stop honouring all
             of them. Signed-in clients are revoked on their own rows. */}
-        <SettingsRow
-          label={copy.settings.remoteMcpSection.clientRegistrations}
-          help="Every client that registered can ask to sign in. Reset makes each one register again first; signed-in clients keep working."
-        >
+        <SettingsRow label={copy.settings.remoteMcpSection.clientRegistrations}>
           <OutlineButton size="sm" disabled={busy || !status?.running} onClick={onResetRegistrations}>
             {copy.settings.remoteMcpSection.reset}
           </OutlineButton>

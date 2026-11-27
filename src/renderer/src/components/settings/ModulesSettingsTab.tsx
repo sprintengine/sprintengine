@@ -514,7 +514,6 @@ export function ModulesSettingsTab(): JSX.Element {
                   ? () =>
                       void promptDialog({
                         title: 'Add a catalogue',
-                        body: 'The HTTPS or SSH URL of a git repository holding catalogue.json at its root, read at its main branch.',
                         inputLabel: 'Git URL',
                         placeholder: 'https://github.com/acme/studio-catalogue.git',
                         required: true,

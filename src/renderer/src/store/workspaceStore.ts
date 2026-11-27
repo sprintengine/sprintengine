@@ -1518,7 +1518,7 @@ export const studioModuleSwitchStore: ModuleSwitchStore = {
 windowModuleSwitches(studioModuleSwitchStore)
 
 // Mirror the "Pause idle terminals after" setting (minutes → ms) and the
-// "Always keep running" recency floor to the Studio's reaper (`terminal.configure`),
+// "Recent terminals never paused" recency floor to the Studio's reaper (`terminal.configure`),
 // so its next idle sweep uses the person's values. The window is the source of
 // truth: they are sent on startup, on every change, and again whenever the
 // window's connection opens (a restarted server starts from its defaults). A

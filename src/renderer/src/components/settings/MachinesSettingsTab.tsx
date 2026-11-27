@@ -245,7 +245,6 @@ export function MachinesSettingsTab({
           <SettingsSectionTitle count={offDistros.length}>
             {copy.settings.machinesSettingsTab.wSLDistributionsNotTurnedOn}
           </SettingsSectionTitle>
-          <p className={MUTED}>{copy.settings.machinesSettingsTab.turnOneOnToOffer}</p>
           <SettingCard as="ul" ariaLabel={copy.settings.machinesSettingsTab.wSLDistributionsNotTurnedOn}>
             {offDistros.map((host) => (
               <ProviderRow
@@ -273,7 +272,6 @@ export function MachinesSettingsTab({
       {sshOn ? (
         <section className="space-y-2">
           <SettingsSectionTitle>{copy.settings.machinesSettingsTab.newContainer}</SettingsSectionTitle>
-          <p className={MUTED}>{copy.settings.machinesSettingsTab.aDockerContainerOnThis}</p>
           <NewContainerForm api={window.api} machines={sshMachines} />
         </section>
       ) : null}
@@ -281,7 +279,6 @@ export function MachinesSettingsTab({
       {sshOn ? (
         <section className="space-y-2">
           <SettingsSectionTitle>{copy.settings.machinesSettingsTab.addAnSSHMachine}</SettingsSectionTitle>
-          <p className={MUTED}>{copy.settings.machinesSettingsTab.studioInstallsAndRunsIts}</p>
           <AddSshMachine api={window.api} />
         </section>
       ) : null}
@@ -387,11 +384,7 @@ function MachineDetail({
   return (
     <div className="space-y-4">
       <div className="divide-y divide-[color:var(--border-subtle)]">
-        <SettingsRow
-          label={copy.settings.machinesSettingsTab.shell}
-          help="The shell a plain terminal opens, and the one an agent's tab ends in."
-          htmlFor={`machine-shell-${host.id}`}
-        >
+        <SettingsRow label={copy.settings.machinesSettingsTab.shell} htmlFor={`machine-shell-${host.id}`}>
           <Input
             id={`machine-shell-${host.id}`}
             aria-label={copy.settings.machinesSettingsTab.shell2(host.label)}
@@ -404,12 +397,7 @@ function MachineDetail({
             className={ROW_FIELD}
           />
         </SettingsRow>
-        <SettingsRow
-          label={copy.settings.machinesSettingsTab.environment}
-          help="Exported into every terminal and agent on this machine. One NAME=value per line."
-          htmlFor={`machine-env-${host.id}`}
-          stacked
-        >
+        <SettingsRow label={copy.settings.machinesSettingsTab.environment} htmlFor={`machine-env-${host.id}`} stacked>
           <Textarea
             id={`machine-env-${host.id}`}
             aria-label={copy.settings.machinesSettingsTab.environment2(host.label)}

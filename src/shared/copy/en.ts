@@ -3338,12 +3338,9 @@ export const en = {
     agentBrowserSettings: {
       builtInBrowser: 'Built-in browser',
       letAgentsUseTheBuilt: 'Let agents use the built-in browser',
-      agentsCanOpenReadAnd: 'Agents can open, read and click pages. Running agents pick this up next session.',
+      agentsCanOpenReadAnd: 'Agents that are already running pick up this change in their next session.',
       showThePageWhileAn: 'Show the page while an agent uses it',
-      withThePaneClosedFloat: 'With the pane closed, float the agent’s page or board over the chat.',
       closeUnusedTabs: 'Close tabs left unused',
-      closeUnusedTabsHelp:
-        'A tab nobody has used, in a chat whose agent has not worked for as long, is closed. The tab on screen never is.',
       closeUnusedTabsAfter: 'Close browser tabs left unused after',
       afterHours: (hours: number) =>
         hours % 24 === 0
@@ -3372,15 +3369,13 @@ export const en = {
       didNotUpdate: (displayName: unknown) => `${displayName} did not update.`,
       updateOutput: (displayName: unknown) => `${displayName} update output`,
       commandOverride: 'Command override',
-      runs: 'Runs ',
-      whenBlank: ' when blank.',
       commandOverrideOn: (displayName: unknown, label: unknown) => `${displayName} command override on ${label}`,
       commandOverride2: (displayName: unknown) => `${displayName} command override`,
       aPIKeyIsSaved: (displayName: unknown) => `${displayName} API key is saved`,
       aPIKey: ' API key',
       pasteAPIKey: 'Paste API key',
       setByAnEnvironmentVariable: 'Set by an environment variable. Change it there.',
-      keptUntilTheAppQuits: 'Kept until the app quits.',
+      keptUntilTheAppQuits: 'Studio keeps this key only until you quit the app.',
     },
     // src/renderer/src/components/settings/AgentNotificationsSetting.tsx
     agentNotificationsSetting: {
@@ -3412,19 +3407,17 @@ export const en = {
       gitHubPages: 'GitHub Pages',
       cloudflarePages: 'Cloudflare Pages',
       artifacts: 'Artifacts',
-      agentsPublishMockupsPrototypesAnd:
-        'Agents publish mockups, prototypes and reports to a site you can open on any device. Earlier versions are kept.',
       setUpArtifactsInThe: 'Set up artifacts in the desktop app on the publishing machine.',
       host: 'Host',
       whereArtifactsAreHosted: 'Where artifacts are hosted',
-      offAgentsCanTPublish: 'Off: agents can’t publish artifacts.',
       saved: 'Saved.',
       theGalleryIsAt: 'The gallery is at',
       repository: 'Repository',
       theSiteIsPublicEven:
-        'The site is public even if the repository is private (unless GitHub Enterprise Cloud limits it). Private repositories need a paid plan.',
+        'Anyone can open the site, even when the repository is private, unless GitHub Enterprise Cloud limits it. Private repositories need a paid plan.',
       aPIToken: 'API token',
-      needsCloudflarePagesEditPermission: 'Needs Cloudflare Pages Edit permission. Kept in secure storage',
+      needsCloudflarePagesEditPermission: 'The token needs the Cloudflare Pages Edit permission.',
+      keptForThisSession: 'Secure storage is unavailable, so Studio keeps the token for this session only.',
       createAToken: 'Create a token',
       pagesEditToken: 'Pages Edit token',
       cancel: 'Cancel',
@@ -3436,6 +3429,8 @@ export const en = {
       project: 'Project',
       sourceRepository: 'Source repository',
       gitGithubComAcmeArtifacts: 'git@github.com:acme/artifacts.git',
+      studioKeepsTheSiteSource:
+        'Studio keeps the site’s source and history in this repository. Without one, the source stays on this computer.',
       theSiteIsPublicTo:
         'The site is public. To require sign-in, add a self-hosted app in Zero Trust ▸ Access ▸ Applications for',
       pagesDev: '.pages.dev',
@@ -3456,7 +3451,7 @@ export const en = {
       couldNotVerifyThisExtension: 'Could not verify this extension.',
       provides: 'Provides',
       openAWorkspaceToInstall: 'Open a workspace to install this extension.',
-      addsItsSkillsToThis: 'Adds its skills to this workspace for your agent CLIs. Slash commands work in Claude only.',
+      addsItsSkillsToThis: 'Its slash commands work only in Claude Code.',
       viewSource: 'View source',
       cancel: 'Cancel',
       skills: 'Skills · ',
@@ -3536,6 +3531,7 @@ export const en = {
       startColima: 'Start Colima',
       name: 'Name',
       clone: 'Clone',
+      ownerRepoOrAddress: 'owner/repo or a git address',
       theFirstContainerOn: 'The first container on ',
       buildsStudioSImageWhich: ' builds Studio’s image, which takes a few minutes.',
       makeContainer: 'Make container',
@@ -3576,8 +3572,6 @@ export const en = {
     // src/renderer/src/components/settings/ConversationApprovalSettings.tsx
     conversationApprovalSettings: {
       rememberedChatPermissions: 'Remembered chat permissions',
-      eachGrantCoversOneTool:
-        'Each grant covers one tool and matcher. Revoked ones ask again. Chat-only grants end with the chat session.',
       retry: 'Retry',
       loadingChatPermissions: 'Loading chat permissions',
       revoke: (label: unknown) => `Revoke ${label}`,
@@ -3589,7 +3583,7 @@ export const en = {
     conversationImportSettings: {
       importConversations: 'Import conversations',
       chooseSessions: 'Choose sessions…',
-      picksSessionsFromTheLast: 'Picks sessions from the last 30 days. Ones already imported are left as is.',
+      picksSessionsFromTheLast: 'Only sessions from the last 30 days are listed.',
       close: 'Close',
       cancel: 'Cancel',
     },
@@ -3638,7 +3632,6 @@ export const en = {
       takesOver: 'Takes over',
       runsInPlaceOf: (command: unknown, builtIn: unknown) => `${command} runs in place of ${builtIn}`,
       letItTakeOver: 'Let it take over Studio’s actions',
-      letItTakeOverHint: 'Off: Studio runs its own. If it fails or is slow, Studio runs its own anyway.',
       hooks: 'Hooks',
       hooksThisComputerOnly: 'Applies to chats on this computer only, not to chats in WSL or on SSH machines',
       forAgents: 'For your agents and chats',
@@ -3669,6 +3662,8 @@ export const en = {
       whenISendWhileAn: 'When I send while an agent is working',
       queue: 'Queue',
       steer: 'Steer',
+      queueSendsYourMessage: (chord: string) =>
+        `Queue sends your message when the agent's turn ends. Steer gives it to the agent while it works. ${chord} does the other for one message.`,
     },
     // src/renderer/src/components/settings/FontAppearanceRows.tsx
     fontAppearanceRows: {
@@ -3703,7 +3698,6 @@ export const en = {
     // src/renderer/src/components/settings/KeepAwakeSetting.tsx
     keepAwakeSetting: {
       keepTheComputerAwakeWhile: 'Keep the computer awake while agents work',
-      noSleepWhileAnAgent: 'No sleep while an agent is mid-turn. The display can still lock.',
     },
     // src/renderer/src/components/settings/KeyboardShortcutsTab.tsx
     keyboardShortcutsTab: {
@@ -3800,16 +3794,11 @@ export const en = {
       machines: 'Machines',
       wSLDidNotAnswer: 'WSL did not answer.',
       wSLDistributionsNotTurnedOn: 'WSL distributions not turned on',
-      turnOneOnToOffer: 'Turn one on to offer it in New chat. Workspaces inside a distribution run there anyway.',
       noWSLDistributionsInstallOne: 'No WSL distributions. Install one with ',
       wslInstall: 'wsl --install',
       newContainer: 'New container',
-      aDockerContainerOnThis:
-        'A Docker container on this computer or an SSH machine, used as a machine of its own: clone repositories in it and run chats there. It is kept until you delete it.',
       addAnSSHMachine: 'Add an SSH machine',
-      studioInstallsAndRunsIts:
-        'Studio installs and runs its server on the machine. Uses your SSH config and keys; stores no passwords.',
-      pairedOverTheTailnetManage: 'Paired over the tailnet. Manage it in Remote.',
+      pairedOverTheTailnetManage: 'This machine is paired over the tailnet.',
       remoteSettings: 'Remote settings',
       agentCLIsOnThisMachine: (label: unknown) => `Agent CLIs on this machine, ${label}`,
       agentCLIsOnThisMachine2: 'Agent CLIs on this machine',
@@ -3818,7 +3807,7 @@ export const en = {
       bashLi: 'bash -li',
       environment: 'Environment',
       environment2: (label: unknown) => `${label} environment`,
-      nAMEValue: 'NAME=value',
+      nAMEValue: 'NAME=value, one per line',
       studioServer: 'Studio server',
       serverConnection: (label: unknown) => `Server connection, ${label}`,
     },
@@ -3908,15 +3897,13 @@ export const en = {
       conversationProviders: 'Conversation providers',
       aPIKeyIsSaved: (displayName: unknown) => `${displayName} API key is saved`,
       setFromTheEnvironment: 'Set from the environment.',
-      keptForThisSessionOnly: 'Kept for this session only.',
+      keptForThisSessionOnly: 'Studio keeps this key only until you quit the app.',
       aPIKey: ' API key',
       pasteAPIKey: 'Paste API key',
     },
     // src/renderer/src/components/settings/QuitConfirmationSetting.tsx
     quitConfirmationSetting: {
       askBeforeQuittingWhileAgents: 'Ask before quitting while agents are working',
-      quittingStopsRunningAgentsSchedules:
-        'Quitting stops running agents, schedules and pull request watches until you reopen.',
     },
     // src/renderer/src/components/settings/RemoteMcpSection.tsx
     remoteMcpSection: {
@@ -3995,10 +3982,8 @@ export const en = {
       byStatus: 'By status',
       byDate: 'By date',
       allChats: 'All chats',
-      workingSection: 'Working section',
-      moveWorkingChatsIntoA: 'Move working chats into a section at the top until they finish or need you.',
+      workingSection: 'Move working chats to the top',
       showSidebarAtTheEdge: 'Show sidebar at the edge',
-      whenCollapsedPointAtThe: 'When collapsed, point at the window’s left edge to show the sidebar.',
       openFilesIn: 'Open files in',
       editorWindow: 'Editor window',
       inTheApp: 'In the app',
@@ -4006,15 +3991,11 @@ export const en = {
       glass: 'Glass',
       tinted: 'Tinted',
       solid: 'Solid',
-      agentCharacters: 'Agent characters',
-      showWorkingAgentsAsLittle: 'Show working agents as little characters in the Files tree.',
+      agentCharacters: 'Show working agents as characters in the Files tree',
       showSubscriptionUsageLimits: 'Show subscription usage limits',
-      showHowMuchOfYour: 'Show how much of your plan’s 5-hour and weekly limits Claude or Codex has used.',
-      quietProjectIcons: 'Quiet project icons',
-      grayProjectIconsColouredOnly: 'Gray project icons, coloured only on the chat you point at or open.',
+      quietProjectIcons: 'Gray out project icons',
       fonts: 'Fonts',
       downloadUpdatesAutomatically: 'Download updates automatically',
-      offYouReToldAbout: 'Off: you’re told about updates and download them yourself.',
       accessToken: 'Access token',
       fineGrainedGitHubToken: 'Fine-grained GitHub token',
       cancel: 'Cancel',
@@ -4022,7 +4003,6 @@ export const en = {
       replace: 'Replace',
       clear: 'Clear',
       checkForCLIUpdates: 'Check for CLI updates',
-      offersUpdateWhenANewer: 'Offers Update when a newer version is published.',
       memory: 'Memory',
       done: 'Done',
       settings: 'Settings',
@@ -4038,22 +4018,18 @@ export const en = {
       keepRunningWhenTheLast: 'Keep running when the last window closes',
       shareAnonymousUsageData: 'Share anonymous usage data',
       pauseIdleTerminalsAfter: 'Pause idle terminals after',
-      alwaysKeepRunning: 'Always keep running',
+      minutes: 'minutes',
+      alwaysKeepRunning: 'Recent terminals never paused',
     },
     // src/renderer/src/components/settings/SettledChatsSettingsTab.tsx
     settledChatsSettingsTab: {
       settleAfterQuietDays: 'Settle after quiet days',
+      appliesToChatsWithAutoSettle: 'This applies only to chats you turned Auto-settle on for, from the chat’s menu.',
       theChatWasNotBrought: 'The chat was not brought back',
       settledChats: 'Settled chats',
       settleWhenItsPullRequests: 'Settle when its pull requests merge',
-      withAutoSettleOnA:
-        'With Auto-settle on, a chat settles once its pull requests are merged or closed, never mid-run. Its worktree is freed and restored when you return.',
       keepChatsWithAnOpen: 'Keep chats with an open pull request',
-      withAutoSettleOnA2: (quietDays: unknown) =>
-        `With Auto-settle on, a chat with an open or draft pull request doesn't settle after ${quietDays} without activity.`,
       autoCompactIdleChats: 'Auto compact idle chats',
-      idleClaudeChatsOver100k:
-        'Idle Claude chats over 100k tokens compact before their prompt cache expires, so coming back costs less. Your history stays visible.',
       noSettledChats: 'No settled chats.',
       settleAChatFromIts: (quietDays: unknown) =>
         `Settle a chat from its menu, or let Auto-settle do it after ${quietDays} without activity.`,
@@ -4088,12 +4064,12 @@ export const en = {
       reachedAs: 'Reached as',
       studioServer: 'Studio server',
       keepTheServerRunning: 'Keep the server running',
-      otherwiseItStopsWhenIdle: 'Otherwise it stops when idle for five minutes with no clients or pending work.',
       browserTabsNetwork: "Browser tabs' network",
       browserTabTrafficThrough: (label: unknown) => `Browser tab traffic through ${label}`,
       downloadNodeJsOnThe: 'Download Node.js on the machine',
-      forAMachineOnA: 'For a machine on a faster network. Checked against a pinned digest.',
       installDirectory: 'Install directory',
+      setThisOnlyWhenNoexec:
+        'Set this only when the machine’s home folder is mounted noexec. Studio then installs its runtime and server here.',
       localShareSprintengineStudio: '~/.local/share/sprintengine-studio',
       stopTheStudioServerOn: (label: unknown) => `Stop the Studio server on ${label}?`,
       runningChatsGetAMinute: 'Running chats get a minute to finish.',
@@ -4112,6 +4088,7 @@ export const en = {
         `The containers stay on ${label}, untracked. Only do this if ${label} is gone.`,
       forgetTheRecords: 'Forget the records',
       addSSHMachine: 'Add SSH machine',
+      aliasOrUserHostPort: 'SSH alias or user@host:port',
       check: 'Check',
       fromYourSSHConfig: 'From your SSH config:',
       studioWillConnectTo: 'Studio will connect to',
@@ -4129,7 +4106,7 @@ export const en = {
     // src/renderer/src/components/settings/StudioSkillsSettings.tsx
     studioSkillsSettings: {
       studioSkills: 'Studio skills',
-      skillsThatTeachAgentsTo: 'Skills that teach agents to use this app. Changes apply when an agent next launches.',
+      skillsThatTeachAgentsTo: 'An agent picks up changes here the next time it launches.',
       thatChangeWasNotSaved: 'That change was not saved.',
       switchItAgainToRetry: 'Switch it again to retry.',
       loadingStudioSkills: 'Loading Studio skills',
@@ -4162,8 +4139,6 @@ export const en = {
       myOwnInstructions: 'My own instructions',
       textGeneration: 'Text generation',
       nameChatsWithYourAgent: 'Name chats with your agent',
-      yourAgentCLITitlesEach:
-        "Your agent CLI titles each chat, using its subscription. Off: your prompt's first words name it.",
       textGenerationModel: 'Text generation model',
       noSupportedCLIInstalled: 'No supported CLI installed',
       commitAndPullRequestStyle: 'Commit and pull request style',
@@ -4225,6 +4200,8 @@ export const en = {
       updateChannel: 'Update channel',
       stable: 'Stable',
       nightly: 'Nightly',
+      switchingBackToStable:
+        'Switching back to Stable can install an older build, and what you change while on it is not kept when you update again.',
     },
     // src/renderer/src/components/settings/UpdateEverythingCard.tsx
     updateEverythingCard: {
@@ -4235,7 +4212,6 @@ export const en = {
     // src/renderer/src/components/settings/UsageLimitResumeSettings.tsx
     usageLimitResumeSettings: {
       resumeAfterUsageLimits: 'Resume after usage limits',
-      claudeAndCodexChatsCarry: 'Claude and Codex chats carry on once their usage limit resets. Off: you choose.',
     },
     // src/renderer/src/components/settings/useThirdPartyExtensions.ts
     useThirdPartyExtensions: {
@@ -4255,7 +4231,6 @@ export const en = {
     // src/renderer/src/components/settings/WorktreesFreeSpaceDialog.tsx
     worktreesFreeSpaceDialog: {
       freeUpSpace: 'Free up space',
-      skipsAnythingInUseOr: 'Skips anything in use or with uncommitted work. Branches are kept.',
       whatToRemove: 'What to remove',
       removeExtraReadyWorktrees: (bytesOf: unknown) => `Remove extra ready worktrees · ${bytesOf}`,
       theMostRecentOnePer: (names: unknown) => `${names}. The most recent one per project stays.`,
@@ -4337,9 +4312,7 @@ export const en = {
       onDisk: 'On disk',
       pool: 'Pool',
       reuseWorktreesForNewChats: 'Reuse worktrees for new chats',
-      newChatsAndAgentsReuse:
-        'New chats and agents reuse a pooled worktree, reset to the default branch, with installs kept. Turning it off removes the ready ones.',
-      readyWorktreesToKeep: 'Ready worktrees to keep',
+      readyWorktreesToKeep: 'Ready worktrees to keep per project',
       mostWorktreesPerProject: 'Most worktrees per project',
       giveBackIdleWorktreesAfter: 'Give back idle worktrees after',
       diskLimit: 'Disk limit',
@@ -4388,7 +4361,7 @@ export const en = {
       moreFor: (name: unknown) => `More for ${name}`,
       installDependenciesWhenTheLockfile: 'Install dependencies when the lockfile changes',
       reinstallsBeforeAnAgentStarts:
-        "Reinstalls before an agent starts if the lockfile changed. Runs the project's install scripts as you, so only turn on for code you trust.",
+        "This runs the project's install scripts as you, so turn it on only for code you trust.",
       installCommand: 'Install command',
       installCommandFor: (projectName: unknown) => `Install command for ${projectName}`,
       fromTheLockfile: 'From the lockfile',

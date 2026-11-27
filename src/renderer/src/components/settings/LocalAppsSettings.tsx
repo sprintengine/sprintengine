@@ -274,11 +274,7 @@ export function LocalAppsSettings() {
 
       {draft ? (
         <SettingCard>
-          <SettingsRow
-            label={copy.settings.localAppsSettings.pairAnApp}
-            help="Name it, and choose what it may do."
-            stacked
-          >
+          <SettingsRow label={copy.settings.localAppsSettings.pairAnApp} stacked>
             <div className="space-y-3">
               <Field label={copy.settings.localAppsSettings.name} htmlFor={nameId}>
                 <Input
