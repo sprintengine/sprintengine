@@ -265,20 +265,35 @@ between them. The tray shows it as a chip with its kind's glyph, and the
 message, once the desktop has it, as a file card (below). A desktop without
 the capability takes pictures only, and no File row is drawn.
 
-A message Studio sent the chat itself, rather than you, is Studio's quiet
-line, not your bubble: an agent the chat launched reporting back, or a resume
-once a usage limit that stopped the chat has reset. The desktop records it as
-any other `user_message`, since the agent is handed it as a turn, and marks it
-with an `origin` (`{ kind: 'studio', reason }`) on the payload. The phone
-reads that optional member off the payload (`studioNotice.ts`), whose shape
-the desktop's contract leaves open: a `studio` origin whose reason this phone does
-not know is still Studio's, and an origin in any other shape, or none, is
-yours, as every message before the member was. The row reads "SprintEngine
-Studio · …" in the note's ink, without the bracketed name the agent's copy of
-the words opens with, and has nothing to act on. It is never you writing: the
-list orders by the desktop's `lastUserMessageAt`, which leaves it out, and it
-is no bubble of yours. The "New" divider goes above it when the reply it
-opened is the first unseen one, since it is news too.
+A message Studio sent the chat itself, rather than you, is never your
+bubble. The desktop records it as any other `user_message`, since the agent
+is handed it as a turn, and marks it with an `origin` (`{ kind: 'studio',
+reason }`) on the payload. The shared projection reads that member
+(conversation-protocol's `readConversationMessageOrigin`) and lays the message
+out as Studio's row: a `studio` origin whose reason the phone does not know is
+still Studio's, and an origin in any other shape, or none, is yours, as every
+message before the member was. The phone says the row its own way
+(`studioNotice.ts`), without the bracketed name the agent's copy of the words
+opens with:
+
+- News from an agent the chat launched (`agent-notice`) is a step per agent,
+  as on the desktop: the logo of the harness it runs on, "Sub-agent Reviewer
+  finished" and when, closed until tapped; open, it is the agent's reply as
+  Markdown on the steps' rail (`AgentNoticeRow`). The words the chat's agent
+  was handed (which id, the reply quoted as untrusted output) are for that
+  agent, not for you.
+- The `/compact` Studio sent an idle chat before its prompt cache expired
+  (`auto-compact`), or once the chat's own agent asked for one
+  (`agent-compact`), is drawn by its compaction's divider alone
+  ("Context compacted · automatically, before the cache expired", "… at the
+  agent's request"), not as a row of its own.
+- Anything else, such as a resume once a usage limit that stopped the chat
+  has reset, is Studio's quiet line: "SprintEngine Studio · …" in the note's
+  ink, with nothing to act on.
+
+It is never you writing: the list orders by the desktop's
+`lastUserMessageAt`, which leaves it out. The "New" divider goes above it
+when the reply it opened is the first unseen one, since it is news too.
 
 Files you attached to a message by path on the desktop travel beside your
 words (`files`, each `{ path }`, on the `user_message`), never in them, and
@@ -565,16 +580,25 @@ copied is decided in `copyText.ts`. It is a native module, so it needs a
 build of the app made after it was added: on an older build Copy says so
 rather than the chat failing to open.
 
-What the model thought on its way to a reply (`reasoning_delta`) is a quiet
-row of its own, where in the turn it thought it: a bulb, "Thinking" and the
-first line of the thought, closed, or "Thinking…" while it is the last thing
-the running turn has said. Tapping it opens the thought as Markdown in the
-muted ink on the steps' rail. One stretch of thinking is one row however many
-deltas it came in; a step after it starts the next, and thinking either side
-of words with no step between is one row, ahead of the words. Thinking before
-a turn's last step folds with the turn's work, as its prose does, and the
-thinking after it stays in view above the reply. A stretch that never says
-anything leaves no row. The thought is never part of a copied reply.
+What the model thought on its way to a reply (`reasoning_delta`) is out in
+the open while its turn works (owner ruling 2026-11-20): an agent's thinking
+often says what it is about to do, and its later words assume you read it.
+Every stretch of the working turn's thinking so far is one box, "Reasoning",
+just after the turn's line, drawn open with each stretch as Markdown in the
+muted ink, a rule between them (`ReasoningBox`). It follows the newest words
+down unless you have scrolled up inside it to read, and a tap closes it to its
+heading and the first line of the latest thought. It stands where it was
+first drawn, so the reply starting does not move it.
+
+Once the turn settles the box goes, and each stretch is a quiet row of its
+own, where in the turn it thought it: a bulb, "Thinking" and the first line of
+the thought, closed until tapped, then the thought on the steps' rail. One
+stretch is one row however many deltas it came in; a step after it starts the
+next, and thinking either side of words with no step between is one row,
+ahead of the words. Thinking before the turn's last step folds with the turn's
+work, as its prose does, and the thinking after it stays in view above the
+reply. A stretch that never says anything leaves no row. The thought is never
+part of a copied reply.
 
 While the provider waits to retry a failed model call (`turn_retrying`), the
 working line says why and how far along it is ("Couldn't authenticate ·
@@ -990,7 +1014,9 @@ a desktop that advertises `conversation-subagents` names in `subagents` frames
 or waiting on you, come first, oldest first, then the finished ones newest
 first, each with the logo of the harness it runs on and its status in the
 desktop's words ("Working · 42s", "Waiting on you", "Done in 1m 4s", "Failed
-after 9s") and "Read-only" for one started to read and report. Only the chat's
+after 9s"; one its parent gave another task with `subagent.resume` leads with
+its round and is timed from it, "Round 2 · Done in 40s") and "Read-only" for
+one started to read and report. Only the chat's
 own are listed: an agent's own subagents are under it, by going into it, so a
 nested agent is never listed at the top. A desktop without the capability
 lists the agents the CLI spawned, as before, and the screen says the others
