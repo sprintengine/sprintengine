@@ -327,7 +327,7 @@ const createStyles = ({ colors }: Theme) =>
       maxWidth: "100%",
     },
     tabActive: { backgroundColor: colors.bgSelected, borderColor: colors.borderDefault },
-    tabText: { ...typography.meta, fontFamily: monoFontFamily, fontSize: 12.5, color: colors.textMuted },
+    tabText: { ...typography.meta, fontFamily: monoFontFamily, fontSize: 12.5, fontWeight: fontWeight.medium, color: colors.textMuted },
     tabTextActive: { color: colors.textPrimary },
     file: { paddingHorizontal: space.md, paddingVertical: space.md, gap: space.xs },
     head: { flexDirection: "row", alignItems: "center", gap: space.md },
