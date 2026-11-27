@@ -2533,7 +2533,7 @@ test('a pairing that may only read has no box in a sub-agent over there, only th
     await chat.act(async () => chat.emit({ type: 'subagents', subagents: [farChild] }))
     await chat.act(async () => panelRow(chat.host, 'Reviewer')!.click())
     const bar = chat.host.querySelector('[data-subagent-blocked]')
-    expect(bar?.textContent).toContain('may follow this chat on mac-mini but not drive it')
+    expect(bar?.textContent).toContain('lets you read this chat on mac-mini but not send to it')
     await chat.act(async () => bar!.querySelector('button')!.click())
     expect(chat.host.querySelector('[data-subagent-header]')).toBeNull()
   } finally {

@@ -310,7 +310,7 @@ function RegistrySwitchRow({
 }
 
 // Number input for terminal-memory settings ("Pause idle terminals after",
-// "Recent terminals never paused"). Edits live in local string state so a half-typed or
+// "Number of recent terminals that are never paused"). Edits live in local string state so a half-typed or
 // briefly-empty value isn't clamped/rounded out from under the user; the store
 // (which clamps to the field's min/max) is written on blur or Enter. A
 // blank/invalid commit reverts to the persisted value.

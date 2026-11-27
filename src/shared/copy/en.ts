@@ -1525,7 +1525,7 @@ export const en = {
       theChatCouldNotBe: 'The chat could not be started to answer it.',
       theChatSSessionEnded: 'The chat’s session ended. Ask again to start it.',
       thisChatCannotBeRestarted: 'This chat cannot be restarted from here',
-      thisWindowMayReadThis: 'This window may read this chat but not drive it.',
+      thisWindowMayReadThis: 'This window can read this chat but not send to it.',
       updateStudioOnToRestart: (label: unknown) => `Update Studio on ${label} to restart its chats.`,
       itsServerDoesnTSupport: "Its server doesn't support restarts.",
       theAgentIsStillWorking: 'The agent is still working',
@@ -2639,7 +2639,7 @@ export const en = {
         message: 'Message',
         reply: 'Reply…',
         toReachThisSubagentSpeak: 'To reach this subagent, speak to ',
-        thisPairingMayFollowThe: 'This pairing may follow the chat but not drive it.',
+        thisPairingMayFollowThe: 'This pairing lets you read this chat but not send to it.',
         theMainChat: 'the main chat',
         theParentAgent: 'the parent agent',
         goTo: (value: unknown) => `Go to ${value}`,
@@ -4019,7 +4019,7 @@ export const en = {
       shareAnonymousUsageData: 'Share anonymous usage data',
       pauseIdleTerminalsAfter: 'Pause idle terminals after',
       minutes: 'minutes',
-      alwaysKeepRunning: 'Recent terminals never paused',
+      alwaysKeepRunning: 'Number of recent terminals that are never paused',
     },
     // src/renderer/src/components/settings/SettledChatsSettingsTab.tsx
     settledChatsSettingsTab: {
@@ -5835,7 +5835,6 @@ export const en = {
       // src/renderer/src/components/workspace/globalSurface/surfaceErrorBoundary.tsx
       surfaceErrorBoundary: {
         hitAProblemAndStopped: (surfaceLabel: unknown) => `${surfaceLabel} hit a problem and stopped.`,
-        theRestOfTheApp: 'The rest of the app is fine. Reload or close it.',
         reloadSurface: 'Reload surface',
         close: 'Close',
       },
