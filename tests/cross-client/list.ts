@@ -1,4 +1,5 @@
 import { STUDIO_CHAT_ROWS_CAPABILITY } from '../../packages/studio-protocol/src/handshake'
+import { answered, type DesktopAgent } from './agent-by-address'
 import type { StudioClient } from '../../packages/client-runtime/src/public'
 import type { StudioWorkspace } from '../../packages/studio-protocol/src/workspaces'
 
@@ -74,4 +75,20 @@ export async function settleReadsBack(from: ListReach, reaches: readonly ListRea
     client.request('conversation.settle', { workspaceId: chatId, commandId: `list-settle-${from.who}` }),
   )
   await everyList(reaches, chatId, (row) => typeof row.settledAt === 'number', 'it is settled')
+}
+
+/**
+ * A star taken off and a settle undone by an agent on the desktop, naming the
+ * chat by its address, read back in every list: the machine's own record moved.
+ */
+export async function agentTidyReadsBack(
+  agent: DesktopAgent,
+  reaches: readonly ListReach[],
+  chatId: string,
+): Promise<void> {
+  const chat = agent.addressOf(chatId)
+  answered(agent.who, 'unstar', await agent.call('conversation.highlight', { chat, starred: false }))
+  await everyList(reaches, chatId, (row) => row.highlight?.starred !== true, 'its star is off')
+  answered(agent.who, 'un-settle', await agent.call('conversation.settle', { chat, settled: false }))
+  await everyList(reaches, chatId, (row) => row.settledAt == null, 'it is back from settled')
 }

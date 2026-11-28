@@ -19,7 +19,8 @@ import { GATE_WINDOW_ORIGIN, MOCK_PROVIDER } from './client'
 import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type GateEvent } from './feed'
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
-import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
+import { agentTidyReadsBack, listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
+import { agentCreatesThere, desktopAgentReaching, type DesktopAgent } from './agent-by-address'
 import { linkTo, openedByLink } from './open'
 import { agentDiscoveredThere, discoveredThere, type AgentToolCall } from './discover'
 
@@ -191,6 +192,15 @@ export async function runSshLeg(input: {
     return machineStudioClient(await windowClient, machineSpellingOf('ssh:gate')!)
   }
   const parts = createStudioConversationParts(windowStudio)
+  // An agent on the desktop, its gateway reaching the machine on the window's client (agent-by-address.ts).
+  const byDesktopAgent = async (work: (agent: DesktopAgent) => Promise<void>) => {
+    const agent = await desktopAgentReaching({ who: 'build-box', route: 'ssh:gate', client: windowStudio })
+    try {
+      await work(agent)
+    } finally {
+      await agent.close()
+    }
+  }
   let stopFollowing: () => void = () => undefined
   try {
     sshd.exec('mkdir -p /home/dev/repo', 'dev')
@@ -249,6 +259,8 @@ export async function runSshLeg(input: {
       sessionId = await newChatThere({ leg: 'ssh', label: 'build-box', client: await windowStudio(), parts, key })
       follow()
       await feed.until((each) => each.syncs > 0, 'the chat followed', 30_000)
+      // An agent on the desktop starts one in the same project by the machine's environment id.
+      await byDesktopAgent((agent) => agentCreatesThere(agent, key.workspaceId))
     })
 
     const first = 'turn on build-box'
@@ -455,6 +467,8 @@ export async function runSshLeg(input: {
       await listedAtItsAddress([window], key.workspaceId)
       await markReadsBack(window, [window], key.workspaceId)
       await settleReadsBack(window, [window], key.workspaceId)
+      // An agent on the desktop unstars and brings it back by its address: the machine's record moves.
+      await byDesktopAgent((agent) => agentTidyReadsBack(agent, [window], key.workspaceId))
     })
 
     // open: the window is handed the chat's link and opens it on the Studio it names.
