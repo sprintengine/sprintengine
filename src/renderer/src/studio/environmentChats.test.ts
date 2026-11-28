@@ -39,7 +39,7 @@ function fakeEnvironment(environmentId: string, listed: ConversationSessionSumma
       if (method === 'conversation.list') return { conversations: [] }
       assert.equal(method, 'session.list')
       lists += 1
-      return { ok: true, sessions: listed }
+      return { ok: true, sessions: [...listed] }
     },
     rpc: { 'workspaces.list': async () => ({ workspaces: [] }) },
     subscribe: (_topic: string, _params: unknown, listener: { onPayload(payload: unknown): void }) => {

@@ -109,10 +109,17 @@ export function withEnvironmentSessions(
           if (!following.has(source.route)) following.set(source.route, source.onLifecycleEvent(listener))
       }
       sync()
-      // A followed environment added or dropped, or one of them listed again.
+      // A followed environment added or dropped, or its sessions listed again;
+      // its rows moving (`environmentChats.ts`) is not the session list's news.
+      const sessionsOf = () =>
+        new Map(followedEnvironmentChats().map((source) => [source.route, source.snapshot().sessions]))
+      let seen = sessionsOf()
       const stopFollowed = onFollowedEnvironmentChats(() => {
         sync()
-        onReconnected?.()
+        const now = sessionsOf()
+        const moved = now.size !== seen.size || [...now].some(([route, sessions]) => seen.get(route) !== sessions)
+        seen = now
+        if (moved) onReconnected?.()
       })
       return () => {
         stopFollowed()
