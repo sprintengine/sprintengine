@@ -1,6 +1,7 @@
 import { testDatabaseAt } from '../../../tests/studio-database'
 import { createMcpHttpRoutes } from './mcp-http-routes'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { TEMP_REMOVAL } from '../../../tests/temp-folders'
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -81,7 +82,8 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await listener.stop()
-  rmSync(dir, { recursive: true, force: true })
+  // The server's database may still be closing a file as it stops.
+  rmSync(dir, TEMP_REMOVAL)
 })
 
 type Answer = { status: number; headers: IncomingHttpHeaders; body: string }
