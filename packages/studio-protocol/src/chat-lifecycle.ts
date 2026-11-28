@@ -45,7 +45,8 @@ const SEEN =
   '"seen" is the chat as its row was drawn: { settledAt, snoozedUntil } (epoch ms or null) and activityAt (epoch ms).'
 const LAST_INPUT_AT = '"lastInputAt" is the person\'s last keystroke in the chat, in epoch milliseconds.'
 
-const epochMs = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+const epochMs = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 
 /** `seen` and, on a settle, `lastInputAt`, each absent when not sent; refused when sent malformed. */
 export function studioChatSeenParams(
@@ -240,9 +241,10 @@ export const STUDIO_CHAT_LIFECYCLE_METHODS: StudioMethodTable<StudioChatLifecycl
   'conversation.snooze': {
     ...operating,
     params: withMember((value) => {
-      if (
-        !(value.until === null || (typeof value.until === 'number' && Number.isSafeInteger(value.until) && value.until > 0))
-      )
+      if (!(
+        value.until === null ||
+        (typeof value.until === 'number' && Number.isSafeInteger(value.until) && value.until > 0)
+      ))
         return refuse('"until" is when it wakes, in epoch milliseconds, or null to wake it now.')
       const seen = studioChatSeenParams(value, false)
       return seen.ok ? studioParams({ until: value.until as number | null, ...seen.params }) : seen
