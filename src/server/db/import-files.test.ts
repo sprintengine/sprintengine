@@ -33,10 +33,12 @@ import {
 import { prepareStudioDatabase, STUDIO_DATABASE_FILENAME, studioDatabaseFiles } from './database'
 import { DATABASE_COPIES_DIRNAME } from './copies'
 import {
+  ADOPTIONS_STEP,
   CHAT_RECORDS_STEP,
   CHAT_SIDE_RECORDS_STEP,
   importChatRecords,
   importChatSideRecords,
+  importAdoptions,
   importPullRequestRecords,
   importWorktreeRecords,
   PULL_REQUEST_RECORD_STEP,
@@ -840,4 +842,51 @@ test('format 7 brings the branch ledger and each pool record in, and leaves ever
   } finally {
     connection.close()
   }
+})
+
+// ── Format 8: the hand-over's adoption ledger ─────────────────────────────────
+
+test('format 8 brings the adoption ledger in, pending marks and all, once, and leaves the file as it was', async () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'se-import-adoptions-')), 'data')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 7, writtenBy: '7.0.0' }))
+  writeFileSync(
+    join(dir, 'environment-adoptions.json'),
+    JSON.stringify({
+      v: 1,
+      records: {
+        'workspace:ws-1': { digest: 'd1', migrationId: 'm-1', at: 5 },
+        'schedule:sa-1': { digest: 'd2', migrationId: 'm-1', at: 6, pending: true },
+        'schedule:broken': { migrationId: 'm-1' },
+      },
+    }),
+  )
+  const before = snapshot(dir)
+  assert.deepEqual(prepareDataFormat(dir, { version: '8.0.0' }), {
+    format: STUDIO_DATA_FORMAT,
+    migrated: formatsFrom(ADOPTIONS_STEP.to),
+    restored: false,
+  })
+  assert.deepEqual(snapshot(dir), before, 'no file changed, moved or deleted')
+  const database = openTestDatabase(dir)
+  assert.deepEqual(await database.all('SELECT key, digest, migration_id, at, pending FROM adoptions ORDER BY key'), [
+    { key: 'schedule:sa-1', digest: 'd2', migration_id: 'm-1', at: 6, pending: 1 },
+    { key: 'workspace:ws-1', digest: 'd1', migration_id: 'm-1', at: 5, pending: 0 },
+  ])
+  const connection = prepareStudioDatabase(join(dir, STUDIO_DATABASE_FILENAME))
+  try {
+    assert.deepEqual(importAdoptions(connection, dir), [], 'a second run brings nothing in twice')
+  } finally {
+    connection.close()
+  }
+})
+
+test('an adoption ledger this build cannot read is skipped and left as it was', () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'se-import-adoptions-')), 'data')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, DATA_FORMAT_FILENAME), JSON.stringify({ format: 7, writtenBy: '7.0.0' }))
+  writeFileSync(join(dir, 'environment-adoptions.json'), '{"v":1,"records":')
+  prepareDataFormat(dir, { version: '8.0.0' })
+  assert.deepEqual(imported(dir), [{ source: 'environment-adoptions.json', records: 0, skipped: 1 }])
+  assert.equal(readFileSync(join(dir, 'environment-adoptions.json'), 'utf8'), '{"v":1,"records":')
 })

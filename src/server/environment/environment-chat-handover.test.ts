@@ -245,7 +245,7 @@ function handOverRig() {
       keepUntold: () => undefined,
     },
   }
-  const adoption = createEnvironmentAdoption({ dataDir: machineDir, stores: adoptionStores })
+  const adoption = createEnvironmentAdoption({ dataDir: machineDir, database: machineDatabase, stores: adoptionStores })
   const staged = new Map<string, Buffer>()
   let uploads = 0
   let partsCalls = 0

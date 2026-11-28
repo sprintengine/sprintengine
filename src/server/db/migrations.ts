@@ -232,6 +232,21 @@ export const STUDIO_MIGRATIONS: readonly Migration[] = [
         );
       `),
   },
+  {
+    id: 8,
+    name: 'adoptions',
+    // What a hand-over kept here under which digest (environment-adoption.ts), a row per record.
+    up: (db) =>
+      db.exec(`
+        CREATE TABLE adoptions (
+          key TEXT PRIMARY KEY,
+          digest TEXT NOT NULL,
+          migration_id TEXT NOT NULL,
+          at INTEGER NOT NULL,
+          pending INTEGER NOT NULL
+        );
+      `),
+  },
 ]
 
 /** Run the migrations `connection` has not had, in order; returns the ids it ran. */
