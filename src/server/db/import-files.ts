@@ -27,6 +27,7 @@ import { USAGE_LIMIT_RESUMES_FILE, usageLimitResumesFileReads } from '../../main
 import { CONVERSATION_OUTBOX_FILENAME_FOR_IMPORT, readConversationOutboxFile } from '../../main/conversation-outbox'
 import type { DataFormatStep } from '../environment/data-format'
 import { readWorktreeBranchesFile, WORKTREE_BRANCHES_FILE } from '../../main/worktree-branch-ledger'
+import { ADOPTIONS_LEDGER_FILE, readAdoptionsLedgerFile } from '../environment/environment-adoption'
 import { parsePoolRecord, POOL_DIR_NAME, POOL_RECORD_FILE_PATTERN } from '../../main/worktree-pool/pool-store'
 import {
   legacyPullRequestRows,
@@ -495,6 +496,41 @@ export const WORKTREE_RECORDS_STEP: DataFormatStep = {
     const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
     try {
       reportSkipped(importWorktreeRecords(connection, dataDir))
+    } finally {
+      connection.close()
+    }
+  },
+}
+
+/**
+ * Format 8: what a hand-over kept here under which digest
+ * (`environment-adoptions.json`), a row per record, pending marks included.
+ */
+export function importAdoptions(connection: SyncConnection, dataDir: string): FileImport[] {
+  const imported = importFile(connection, dataDir, ADOPTIONS_LEDGER_FILE, (text) => {
+    if (text === null) return { records: 0, skipped: 0 }
+    const entries = readAdoptionsLedgerFile(text)
+    if (!entries) return { records: 0, skipped: 1 }
+    let records = 0
+    for (const { key, entry } of entries)
+      records += connection.run(
+        'INSERT OR IGNORE INTO adoptions (key, digest, migration_id, at, pending) VALUES (?, ?, ?, ?, ?)',
+        [key, entry.digest, entry.migrationId, entry.at, entry.pending ? 1 : 0],
+      ).changes
+    return { records, skipped: 0 }
+  })
+  return imported ? [imported] : []
+}
+
+/** The format step that moves the hand-over's adoption ledger: format 7 to 8. */
+export const ADOPTIONS_STEP: DataFormatStep = {
+  to: 8,
+  files: [],
+  database: true,
+  run(dataDir) {
+    const connection = prepareStudioDatabase(join(dataDir, STUDIO_DATABASE_FILENAME))
+    try {
+      reportSkipped(importAdoptions(connection, dataDir))
     } finally {
       connection.close()
     }

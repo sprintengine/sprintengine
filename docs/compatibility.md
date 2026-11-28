@@ -1037,8 +1037,8 @@ records: [{ kind, id, digest, body }] }` → `{ held, conflicts }`, the shell's)
 desktop kept for a machine's chats, kept by that machine's Studio from then on. The kinds are
 `workspace`, `schedule`, `scheduled-message`, `usage-limit-resume` and `pull-request`, each
 going into its own store through that store's own way in. `digest` is the sha-256 of the body
-as canonical JSON (keys sorted, no spaces). It is safe to repeat: a ledger,
-`environment-adoptions.json` (0600), says what was kept under which digest. A record kept
+as canonical JSON (keys sorted, no spaces). It is safe to repeat: a ledger in the
+machine's database (`adoptions`, a row per record) says what was kept under which digest. A record kept
 under the same digest is held again and nothing is written; one already here under another,
 or by another way in, is left as it is and reported in `conflicts`. The answer comes once the
 stores and the ledger are written. What a hand-over is about to keep goes in the ledger first,
@@ -1417,7 +1417,9 @@ generation, so a client's cursor carries over. Format 5 moves the chat records
 scheduled messages and the usage-limit resumes. Format 6 moves the pull
 request record (a row per pull request, with its watch and the news its chat
 was not told yet). Format 7 moves the worktree records (the branches Studio
-made for worktrees, and each worktree pool's record). `docs/data-folder.md` says what is in it and how to go back to an older build.
+made for worktrees, and each worktree pool's record). Format 8 moves the
+hand-over's adoption ledger (what a machine kept from a desktop, under which digest).
+`docs/data-folder.md` says what is in it and how to go back to an older build.
 
 **The `incompatible` frame, `update.status`, `update.start`, their params,
 results and codes never change shape**, since they are what two ends that

@@ -126,6 +126,15 @@ each `worktree-pool/pool-<id>.json` are imported once; a file that does not
 read is skipped and counted (that pool's slots are adopted as held on next
 use), and every file stays as it was.
 
+## Hand-over
+
+What a machine's Studio kept from a desktop's hand-over, under which digest,
+is a row per record (`adoptions`); a record about to be kept is marked
+pending first, so a hand-over repeated after a crash is held, not reported as
+already here. At the first start of format 8, `environment-adoptions.json` is
+imported once; a file that does not read is skipped and counted, and stays as
+it was. The parts a hand-over stages ahead of its chats stay files.
+
 ## Moving a chat, and what a start clears away
 
 Moving a chat to another project renames its history's rows to the new

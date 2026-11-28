@@ -381,6 +381,7 @@ function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
   const primaryWindow = () => core.workspaceRegistry.getState().primaryWorkspaceWindowId
   return createEnvironmentAdoption({
     dataDir,
+    database: core.database,
     stores: {
       chatHistory: core.chatHistory,
       flush: async () => {

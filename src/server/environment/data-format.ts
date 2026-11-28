@@ -11,6 +11,7 @@ import {
   DEVICE_AND_SESSION_RECORDS_STEP,
   PULL_REQUEST_RECORD_STEP,
   WORKTREE_RECORDS_STEP,
+  ADOPTIONS_STEP,
 } from '../db/import-files'
 
 // The format a data directory's files are written in, and the one way it
@@ -53,13 +54,15 @@ import {
 //
 // Format 7: the worktree records: the branches Studio made for worktrees, and
 // each worktree pool's record.
+//
+// Format 8: the hand-over's adoption ledger, a row per record kept.
 
 export const DATA_FORMAT_FILENAME = 'format.json'
 export const MIGRATION_BACKUP_DIRNAME = 'migration-backup'
 const MARKER = 'marker.json'
 
 /** The newest format this build reads and writes. */
-export const STUDIO_DATA_FORMAT = 7
+export const STUDIO_DATA_FORMAT = 8
 
 export type DataFormatStep = {
   /** The format the step brings the data to: one above the one before it. */
@@ -79,6 +82,7 @@ export const STUDIO_DATA_FORMAT_STEPS: readonly DataFormatStep[] = [
   CHAT_RECORDS_STEP,
   PULL_REQUEST_RECORD_STEP,
   WORKTREE_RECORDS_STEP,
+  ADOPTIONS_STEP,
 ]
 
 /** Data written in a format this server does not read: it is updated, not the data rewritten. */

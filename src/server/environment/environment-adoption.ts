@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
 import { respellPromptPath } from '../../main/scheduled-agents/prompt-images'
-import { writeFileAtomicSync } from '../platform/atomic-file'
+import type { StudioDatabase } from '../db/database'
 import { keepAdoptedChatFiles, readAdoptedChat, type AdoptedChatHistory } from './environment-chat-files'
 
 import {
@@ -26,7 +26,7 @@ import {
 //
 // Each record goes into the store that keeps its kind, through that store's
 // own way in, so it is held to what this Studio would have written itself.
-// A ledger beside the stores (`environment-adoptions.json`) says which record
+// A ledger in the database (`adoptions`, a row per record) says which record
 // was kept under which digest, so a hand-over repeated after a crash is held
 // again without a second copy, and one that differs from what is here is
 // reported rather than written over: this Studio's copy wins.
@@ -118,7 +118,8 @@ export type EnvironmentAdoption = {
   }): Promise<StudioAdoptResult>
 }
 
-const LEDGER_FILE = 'environment-adoptions.json'
+/** The file builds before the database kept the ledger in, under the data folder; read once, by the import. */
+export const ADOPTIONS_LEDGER_FILE = 'environment-adoptions.json'
 /** Where the parts a hand-over staged ahead of its chats wait, one folder per migration. */
 const PARTS_DIR = join('environment-adoptions', 'parts')
 /** A migration's parts nobody has touched for this long are let go. */
@@ -130,9 +131,46 @@ const PARTS_KEPT_MS = 7 * 24 * 60 * 60_000
  * store's write but before the ledger's, so a repeat knows the copy already in
  * the store is its own.
  */
-type Ledger = {
-  v: 1
-  records: Record<string, { digest: string; migrationId: string; at: number; pending?: true }>
+type LedgerEntry = { digest: string; migrationId: string; at: number; pending?: true }
+type Ledger = { v: 1; records: Record<string, LedgerEntry> }
+
+/**
+ * The ledger file builds before the database wrote, as the import brings it
+ * in: its entries by `kind:id`. Null when this build cannot read it.
+ */
+export function readAdoptionsLedgerFile(text: string): Array<{ key: string; entry: LedgerEntry }> | null {
+  let parsed: Partial<Ledger> | null
+  try {
+    parsed = JSON.parse(text) as Partial<Ledger> | null
+  } catch {
+    return null
+  }
+  if (!parsed || parsed.v !== 1 || !parsed.records || typeof parsed.records !== 'object') return null
+  const entries: Array<{ key: string; entry: LedgerEntry }> = []
+  for (const [key, value] of Object.entries(parsed.records)) {
+    const entry = value as Partial<LedgerEntry> | null
+    if (!key || !entry || typeof entry.digest !== 'string' || typeof entry.migrationId !== 'string') continue
+    entries.push({
+      key,
+      entry: {
+        digest: entry.digest,
+        migrationId: entry.migrationId,
+        at: typeof entry.at === 'number' && Number.isFinite(entry.at) ? entry.at : 0,
+        ...(entry.pending === true ? { pending: true as const } : {}),
+      },
+    })
+  }
+  return entries
+}
+
+/** The statement that keeps one ledger entry. */
+function adoptionRowStatement(key: string, entry: LedgerEntry): { sql: string; params: Array<string | number> } {
+  return {
+    sql: `INSERT INTO adoptions (key, digest, migration_id, at, pending) VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT (key) DO UPDATE SET digest = excluded.digest, migration_id = excluded.migration_id,
+            at = excluded.at, pending = excluded.pending`,
+    params: [key, entry.digest, entry.migrationId, entry.at, entry.pending ? 1 : 0],
+  }
 }
 
 /** Why a record was not kept; `exists` says its id is already in its store. */
@@ -245,31 +283,55 @@ async function carriedOf(
 }
 
 export function createEnvironmentAdoption(deps: {
+  /** Where the staged parts wait. */
   dataDir: string
+  /** The server's database: the ledger is its `adoptions` table. */
+  database: StudioDatabase
   stores: EnvironmentAdoptionStores
   now?: () => number
   log?: (message: string) => void
 }): EnvironmentAdoption {
   const now = deps.now ?? Date.now
-  const path = join(deps.dataDir, LEDGER_FILE)
   const { stores } = deps
   // One hand-over at a time: two would read the same ledger and each write it.
   let queue: Promise<unknown> = Promise.resolve()
 
-  function readLedger(): Ledger {
-    try {
-      const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<Ledger>
-      if (parsed && parsed.v === 1 && parsed.records && typeof parsed.records === 'object')
-        return { v: 1, records: parsed.records }
-    } catch {
-      // None yet, or unreadable: the stores themselves still refuse a second copy of an id.
-    }
-    return { v: 1, records: {} }
+  // The ledger as last read or written, to write only what a call changed.
+  let written = new Map<string, string>()
+
+  async function readLedger(): Promise<Ledger> {
+    const rows = await deps.database.all<{
+      key: string
+      digest: string
+      migration_id: string
+      at: number
+      pending: number
+    }>('SELECT key, digest, migration_id, at, pending FROM adoptions')
+    const records: Ledger['records'] = {}
+    for (const row of rows)
+      records[row.key] = {
+        digest: row.digest,
+        migrationId: row.migration_id,
+        at: row.at,
+        ...(row.pending ? { pending: true as const } : {}),
+      }
+    written = new Map(Object.entries(records).map(([key, entry]) => [key, JSON.stringify(entry)]))
+    return { v: 1, records }
   }
 
-  function writeLedger(ledger: Ledger): void {
-    mkdirSync(dirname(path), { recursive: true })
-    writeFileAtomicSync(path, `${JSON.stringify(ledger)}\n`, { mode: 0o600, exactMode: true, durable: true })
+  /** Commit what changed in the ledger since it was read: one transaction, before the call answers. */
+  async function writeLedger(ledger: Ledger): Promise<void> {
+    const statements: Array<{ sql: string; params: Array<string | number> }> = []
+    for (const key of written.keys())
+      if (!(key in ledger.records)) statements.push({ sql: 'DELETE FROM adoptions WHERE key = ?', params: [key] })
+    const next = new Map<string, string>()
+    for (const [key, entry] of Object.entries(ledger.records)) {
+      const body = JSON.stringify(entry)
+      next.set(key, body)
+      if (written.get(key) !== body) statements.push(adoptionRowStatement(key, entry))
+    }
+    if (statements.length) await deps.database.batch(statements)
+    written = next
   }
 
   const partsOf = (migrationId: string) => join(deps.dataDir, PARTS_DIR, migrationId)
@@ -461,7 +523,7 @@ export function createEnvironmentAdoption(deps: {
       await keepParts(input.migrationId, input.files ?? new Map())
       return { held: [], conflicts: [] }
     }
-    const ledger = readLedger()
+    const ledger = await readLedger()
     const held: StudioAdoptResult['held'] = []
     const conflicts: StudioAdoptResult['conflicts'] = []
     // Not taken, and not this Studio's own copy either: the desktop keeps it and sends it again.
@@ -489,7 +551,7 @@ export function createEnvironmentAdoption(deps: {
           at: now(),
           pending: true,
         }
-      writeLedger(ledger)
+      await writeLedger(ledger)
     }
     for (const record of records) {
       const key = keyOf(record)
@@ -545,7 +607,7 @@ export function createEnvironmentAdoption(deps: {
     // again: every way in here refuses a second copy, and the pending marks
     // written first answer what it had kept as held, not as another copy.
     await stores.flush()
-    writeLedger(ledger)
+    await writeLedger(ledger)
     // A held chat's parts are in place now: nothing waits for the sweep.
     for (const part of usedParts) await rm(join(partsOf(input.migrationId), part), { force: true })
     usedParts.clear()

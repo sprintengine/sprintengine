@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
 
 import { MAX_ADOPTED_PART_BYTES, type StudioAdoptedRecord } from '../../../packages/studio-protocol/src/public'
-import { openTestDatabase } from '../../../tests/studio-database'
+import { databaseWith, openTestDatabase, testDatabaseAt } from '../../../tests/studio-database'
 import { workspaceStorePath } from '../../main/workspace-store'
 import { createChatLogs, type ChatLogs } from '../db/chat-logs'
 import {
@@ -125,8 +125,9 @@ function rig() {
   const dataDir = mkdtempSync(join(tmpdir(), 'environment-adoption-'))
   dirs.push(dataDir)
   const fake = fakeStores()
-  const adoption = createEnvironmentAdoption({ dataDir, stores: fake.stores, now: () => 1_000 })
-  return { ...fake, adoption, dataDir }
+  const database = testDatabaseAt(dataDir)
+  const adoption = createEnvironmentAdoption({ dataDir, database, stores: fake.stores, now: () => 1_000 })
+  return { ...fake, adoption, dataDir, database }
 }
 
 function record(kind: StudioAdoptedRecord['kind'], id: string, body: Record<string, unknown>): StudioAdoptedRecord {
@@ -189,9 +190,10 @@ test('each kind goes into its own store, a workspace first, and the answer waits
     'watch a1 https://github.com/o/r/pull/1',
     'flush',
   ])
-  const ledger = join(dataDir, 'environment-adoptions.json')
-  assert.equal(statSync(ledger).mode & 0o777, 0o600)
-  assert.ok(JSON.parse(readFileSync(ledger, 'utf8')).records['workspace:ws-1'])
+  assert.ok(
+    (await testDatabaseAt(dataDir).all("SELECT key FROM adoptions WHERE key = 'workspace:ws-1' AND pending = 0"))
+      .length,
+  )
 })
 
 test('a hand-over repeated is held again with nothing written twice; one that differs keeps this Studio’s copy', async () => {
@@ -225,7 +227,7 @@ test('a hand-over that stopped after its stores but before its ledger is held wh
   stores.flush = flush
   calls.length = 0
   // The desktop's journal sends it again, to the Studio started afresh.
-  const restarted = createEnvironmentAdoption({ dataDir, stores, now: () => 2_000 })
+  const restarted = createEnvironmentAdoption({ dataDir, database: testDatabaseAt(dataDir), stores, now: () => 2_000 })
   const again = await restarted.adopt({ migrationId: 'm-1', records })
   assert.deepEqual(
     again.held.map((entry) => entry.id),
@@ -233,10 +235,21 @@ test('a hand-over that stopped after its stores but before its ledger is held wh
   )
   assert.deepEqual(again.conflicts, [], 'its own copies, not another way in')
   assert.deepEqual(calls, ['flush'], 'nothing kept a second time')
-  const ledger = JSON.parse(readFileSync(join(dataDir, 'environment-adoptions.json'), 'utf8')) as {
-    records: Record<string, { pending?: true }>
-  }
-  assert.equal(ledger.records['workspace:ws-1']?.pending, undefined, 'kept, no longer pending')
+  const [kept] = await testDatabaseAt(dataDir).all<{ pending: number }>(
+    "SELECT pending FROM adoptions WHERE key = 'workspace:ws-1'",
+  )
+  assert.equal(kept?.pending, 0, 'kept, no longer pending')
+})
+
+test('a ledger that cannot be read fails the hand-over, which keeps nothing and comes again', async () => {
+  const { calls, stores, dataDir } = rig()
+  const adoption = createEnvironmentAdoption({
+    dataDir,
+    database: databaseWith(testDatabaseAt(dataDir), { all: () => Promise.reject(new Error('disk I/O error')) }),
+    stores,
+  })
+  await assert.rejects(adoption.adopt({ migrationId: 'm-1', records: [record('workspace', 'ws-1', WORKSPACE)] }))
+  assert.deepEqual(calls, [], 'nothing is kept without the ledger to say so')
 })
 
 test('what does not read, does not match its digest, or is already here by another way is reported, not kept', async () => {
