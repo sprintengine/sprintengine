@@ -54,8 +54,12 @@ export type PullRequestWakeSendResult = { ok: boolean; code?: string; message?: 
 export type PullRequestWakesDeps = {
   listSessions(): ConversationSessionSummary[]
   onConversationEvent(listener: (event: ConversationEvent) => void): () => void
-  /** The chat as its record says: null once deleted; `settled` once the person put it away. */
-  chat(key: PullRequestConversationKey): { settled: boolean } | null
+  /**
+   * The chat as its record says: null once deleted; `settled` once the person
+   * put it away; `pending` while it runs here before its record has reached
+   * this Studio (a hand-over not delivered yet), so its news waits for it.
+   */
+  chat(key: PullRequestConversationKey): { settled: boolean } | 'pending' | null
   /** Send a turn through the chat's normal send path, marked as Studio's. */
   send(key: PullRequestConversationKey, text: string, commandId: string): Promise<PullRequestWakeSendResult>
   /** The news chats have not been told, kept by the record. */
@@ -149,6 +153,11 @@ export function createPullRequestWakes(deps: PullRequestWakesDeps): PullRequestW
   async function flush(entry: Waiting): Promise<void> {
     if (disposed || entry.sending || waiting.get(idOf(entry.key)) !== entry) return
     const chat = deps.chat(entry.key)
+    // Its news waits for its record: the records moving looks at it again (`pruneWatches`).
+    if (chat === 'pending') {
+      drop(entry)
+      return
+    }
     if (!chat || chat.settled) {
       drop(entry)
       deps.untold.forget(entry.key)
@@ -228,7 +237,10 @@ export function createPullRequestWakes(deps: PullRequestWakesDeps): PullRequestW
     async resume() {
       // A chat the records do not name yet (they may still be loading) keeps
       // its news for the next start, rather than being taken for deleted.
-      for (const key of await deps.untold.chats()) if (deps.chat(key)) lookAt(key)
+      for (const key of await deps.untold.chats()) {
+        const chat = deps.chat(key)
+        if (chat && chat !== 'pending') lookAt(key)
+      }
     },
     wake() {
       for (const entry of waiting.values()) {

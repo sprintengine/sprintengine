@@ -149,7 +149,6 @@ import { createStudioScheduledAgents } from './studio-scheduled-agents'
 import { keptImagesIn } from '../../main/scheduled-agents/prompt-images'
 import { createEnvironmentReadiness } from '../environment/environment-readiness'
 import { sharedGhRunner } from '../../main/github/gh'
-import { createPullRequestChatFolders } from '../pull-requests/pull-request-chat-folders'
 import { createStudioScheduledMessages, studioHeldMessages, studioScheduledSends } from './studio-scheduled-messages'
 import { AGENT_COMPACT_ORIGIN, createStudioAutoCompact, sendStudioCompaction } from './studio-auto-compact'
 import { createConversationSelfCompact } from '../../main/automation/conversation-self-compact'
@@ -989,14 +988,6 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       conversations,
       workspaceRecord: (workspaceId) => workspaceRegistry.getRecord(workspaceId),
       workspaceRemoved: (workspaceId) => isWorkspaceTombstoned(workspaceRegistry.getTombstones(), workspaceId),
-      // A WSL distribution's server and an SSH machine's hold no record of
-      // their chats: a watched one's folder is kept here for its wakes.
-      chatFolders: createPullRequestChatFolders({
-        dataDir,
-        log: (message) => {
-          void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Pull request watch', message })
-        },
-      }),
       // Called only once a wake goes, long after the core is composed.
       createHost: (hostOptions) => createConversationHost(hostOptions),
       log: (message) => {

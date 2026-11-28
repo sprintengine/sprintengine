@@ -127,7 +127,7 @@ export const PULL_REQUEST_RECORD_FILE = `${STORE_DIR}/opened.json`
 const STORE_VERSION = 2
 /** The version of the per-repository files `opened.json` replaced, read by the import when there is no `opened.json`. */
 const LEGACY_STORE_VERSION = 1
-/** Files beside those that are not pull request records: the conversations' checkouts of the rule before, and the chat folders. */
+/** Files beside those that are not pull request records: the conversations' checkouts of the rule before, and the chat folders older builds kept. */
 const LEGACY_NOT_RECORDS = new Set(['conversations.json', 'chat-folders.json'])
 
 /**
