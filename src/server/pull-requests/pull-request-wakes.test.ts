@@ -62,7 +62,7 @@ function setUp(overrides: Partial<PullRequestWakesDeps> = {}, untold = createPul
   const gone: string[] = []
   let listener: ((event: ConversationEvent) => void) | null = null
   let sessions = [session()]
-  let chat: { settled: boolean } | null = { settled: false }
+  let chat: { settled: boolean } | 'pending' | null = { settled: false }
   let answer: { ok: boolean; code?: string; message?: string } = { ok: true }
   const wakes = createPullRequestWakes({
     listSessions: () => sessions,
@@ -99,7 +99,7 @@ function setUp(overrides: Partial<PullRequestWakesDeps> = {}, untold = createPul
     sent,
     gone,
     setSessions: (next: ConversationSessionSummary[]) => void (sessions = next),
-    setChat: (next: { settled: boolean } | null) => void (chat = next),
+    setChat: (next: { settled: boolean } | 'pending' | null) => void (chat = next),
     setAnswer: (next: typeof answer) => void (answer = next),
     emit: (event: Partial<ConversationEvent>) =>
       listener?.({
@@ -277,4 +277,19 @@ test('at a start, a chat the records do not name yet keeps its news', async () =
   assert.deepEqual(sent, [])
   assert.deepEqual(gone, [], 'its watches are not stopped either')
   assert.equal(untold.chats().length, 1)
+})
+
+test('news for a chat that runs here before its record has come waits for the record, and goes once it is there', async () => {
+  const { wakes, sent, gone, untold, setChat, tell } = setUp()
+  setChat('pending')
+  tell(wake(234, [{ kind: 'behind' }]))
+  await settle()
+  assert.deepEqual(sent, [])
+  assert.deepEqual(gone, [], 'its watches are not stopped')
+  assert.equal(untold.chats().length, 1, 'its news is kept')
+  // The hand-over delivered the record: the records moving looks at it again.
+  setChat({ settled: false })
+  wakes.lookAt(CHAT)
+  await settle()
+  assert.equal(sent.length, 1)
 })

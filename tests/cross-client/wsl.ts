@@ -25,7 +25,8 @@ import { GATE_WINDOW_ORIGIN, MOCK_PROVIDER, type GateClient } from './client'
 import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type GateEvent } from './feed'
 import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
-import { listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
+import { agentTidyReadsBack, listedAtItsAddress, markReadsBack, settleReadsBack, type ListReach } from './list'
+import { agentCreatesThere, desktopAgentReaching, type DesktopAgent } from './agent-by-address'
 import { linkTo, openedByLink } from './open'
 import { agentDiscoveredThere, discoveredThere } from './discover'
 
@@ -273,6 +274,15 @@ export async function runWslLeg(input: {
     return routeStudioClient(await windowClient, ROUTE)
   }
   const parts = createStudioConversationParts(windowStudio)
+  // An agent on the desktop, its gateway reaching the machine on the window's client (agent-by-address.ts).
+  const byDesktopAgent = async (work: (agent: DesktopAgent) => Promise<void>) => {
+    const agent = await desktopAgentReaching({ who: DISTRO, route: ROUTE, client: windowStudio })
+    try {
+      await work(agent)
+    } finally {
+      await agent.close()
+    }
+  }
   // The chat as the window names it: its folder spelled as Windows opens it.
   const key = { workspaceRoot: spelling.fromMachine(repo), workspaceId: 'w-wsl', agentId: 'wsl-chat' }
   const feed = new Feed('wsl')
@@ -317,6 +327,8 @@ export async function runWslLeg(input: {
       sessionId = await newChatThere({ leg: 'wsl', label: DISTRO, client, parts, key })
       stopFollowing = followChat(parts, key, feed)
       await feed.until((each) => each.syncs > 0, 'the chat followed', 30_000)
+      // An agent on the desktop starts one in the same project by the machine's environment id.
+      await byDesktopAgent((agent) => agentCreatesThere(agent, key.workspaceId))
     })
 
     const first = 'turn in WSL'
@@ -480,6 +492,8 @@ export async function runWslLeg(input: {
       await listedAtItsAddress([window], key.workspaceId)
       await markReadsBack(window, [window], key.workspaceId)
       await settleReadsBack(window, [window], key.workspaceId)
+      // An agent on the desktop unstars and brings it back by its address: the machine's record moves.
+      await byDesktopAgent((agent) => agentTidyReadsBack(agent, [window], key.workspaceId))
     })
 
     // open: the window is handed the chat's link and opens it on the Studio it names.

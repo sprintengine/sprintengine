@@ -144,7 +144,8 @@ export type ConversationChatToolsDeps = {
 
 type Target = ChatTarget & { workspaceId: string; agentId: string; title: string | null }
 
-function targetSchema(): Record<string, unknown> {
+/** The `chat` and `workspaceId` members every tool that names one chat takes (`chatRefOf` reads them). */
+export function chatRefSchema(): Record<string, unknown> {
   return {
     chat: {
       type: 'string',
@@ -157,6 +158,12 @@ function targetSchema(): Record<string, unknown> {
       type: 'string',
       description: 'A chat on this machine, by its workspace id from workspace.list. Give this or `chat`.',
     },
+  }
+}
+
+function targetSchema(): Record<string, unknown> {
+  return {
+    ...chatRefSchema(),
     agentId: {
       type: 'string',
       description: "Which of the chat's agents; may be left out when it has only one, or when a link names one.",
@@ -165,7 +172,7 @@ function targetSchema(): Record<string, unknown> {
 }
 
 /** The chat the arguments name, by `chat` (an address or a link) or by `workspaceId` (one on this machine). */
-function chatRefOf(
+export function chatRefOf(
   args: Record<string, unknown>,
 ): { ok: true; ref: ChatRef; agentId: string | null } | { ok: false; code: string; message: string } {
   const invalid = (message: string) => ({ ok: false as const, code: 'invalid_arguments', message })

@@ -7,6 +7,9 @@ import {
 } from '../../shared/modules/mcp-tools'
 import type { WorkspaceRegistryActor } from '../../shared/workspace-registry'
 import type { ConversationLifecycle } from './conversation-lifecycle'
+import { chatRefOf, chatRefSchema, type ChatRef } from './conversation-chat-tools'
+import { parseChatLink } from '../../../packages/studio-protocol/src/chat-link'
+import { isEnvironmentId, parseChatAddress } from '../../../packages/studio-protocol/src/environment'
 import type { ConversationMove } from './conversation-move'
 import type { ConversationSelfCompact } from './conversation-self-compact'
 import { parseCliPermissionPreset } from '../../shared/cli-permission-preset'
@@ -16,7 +19,7 @@ import {
   CONVERSATION_HIGHLIGHT_COLORS as HIGHLIGHT_COLORS,
   isConversationHighlightColor,
 } from '../../../packages/conversation-protocol/src/public'
-import type { ConversationLaunchService } from '../conversation-launch-service'
+import type { ConversationLaunchRequest, ConversationLaunchService } from '../conversation-launch-service'
 import type { WorktreeDependencyInstallView } from '../../shared/ipc/worktree-pool'
 import {
   launchingAgentOf,
@@ -39,7 +42,7 @@ import {
  * `conversation:operate` — the grant that already lets a paired device send
  * into, stop and approve this machine's chats (tailnet-scopes.ts maps the
  * `conversation.` family by this classification). Settling one, saying it was
- * looked at and marking it unread write the desktop's own record of the chat,
+ * looked at and marking it unread write the chat's record where it lives,
  * so they need the same grant. A visit is left out of the audit all the same
  * (`isAuditedCall`): one is stamped every few seconds while a chat is on screen.
  */
@@ -60,26 +63,67 @@ const EFFORT_ID = /^[a-z0-9_-]{1,40}$/i
 const SKILL_ID = /^[\w.-]{1,200}(?::[\w.-]{1,200})?$/
 const MAX_CREATE_SKILLS = 32
 
+/** The row menu's lifecycle calls a tool makes, on whichever Studio holds the chat. */
+type LifecycleCall = 'settle' | 'visit' | 'markUnread' | 'snooze' | 'highlight' | 'setAutoSettle'
+/** A lifecycle answer, refused in any Studio's words. */
+type AnsweredAnywhere<R> = R extends { ok: false } ? { ok: false; code: string; message: string } : R
+export type ChatLifecycleCalls = {
+  [K in LifecycleCall]: (
+    ...args: Parameters<ConversationLifecycle[K]>
+  ) =>
+    | AnsweredAnywhere<Awaited<ReturnType<ConversationLifecycle[K]>>>
+    | Promise<AnsweredAnywhere<Awaited<ReturnType<ConversationLifecycle[K]>>>>
+}
+
+/**
+ * Where a chat, or a project to start one in, lives: this core (`route` null)
+ * or another environment's Studio, and its id there (null for a new chat with
+ * no project).
+ */
+export type ChatPlace =
+  { ok: true; route: string | null; workspaceId: string | null } | { ok: false; code: string; message: string }
+
+/** A chat started on another environment's Studio: what its `conversation.create` carries. */
+export type EnvironmentLaunchRequest = Omit<
+  ConversationLaunchRequest,
+  'workspaceId' | 'newChatIn' | 'subagentOf' | 'attachments' | 'scheduledAgentId' | 'ownerModuleId'
+> &
+  ({ workspaceId: string; noProject?: undefined } | { noProject: true; workspaceId?: undefined })
+
+/** The other environments this computer reaches, as the conversation tools ask them (environment-chat-calls.ts). */
+export type ConversationEnvironments = {
+  /**
+   * Where the chat (or project) an address names lives: the one lookup every
+   * chat tool goes through. A null `chatId` names the environment alone.
+   */
+  place(
+    where: { environmentId: string | null; chatId: string | null },
+    caller?: McpConnectionContext,
+  ): Promise<ChatPlace>
+  /** The lifecycle calls on the Studio a route reaches. */
+  lifecycle(route: string): ChatLifecycleCalls
+  /** Start a chat on the Studio a route reaches. */
+  launch(route: string, request: EnvironmentLaunchRequest): ReturnType<ConversationLaunchService['launch']>
+}
+
 export type ConversationToolsDeps = {
   /** Makes the folder a chat with no project runs in. Absent, the one on this machine's disk. */
   makeProjectlessFolder?: (prompt: string | null) => Promise<string>
+  /** Starts a chat on this core. */
+  launch: (request: ConversationLaunchRequest) => ReturnType<ConversationLaunchService['launch']>
   /**
-   * Starts the chat. Handed the caller, so a launch that would leave this
-   * machine (a workspace another environment holds) can refuse a paired
-   * device (environment-chat-calls.ts).
+   * The other environments a chat may be on. Absent, every chat is this
+   * core's and an address naming another environment is refused.
    */
-  launch: (
-    request: Parameters<ConversationLaunchService['launch']>[0],
-    caller?: McpConnectionContext,
-  ) => ReturnType<ConversationLaunchService['launch']>
+  environments?: ConversationEnvironments
   /** The calling agent's own preset, which a chat it starts may not exceed (launch-permission-cap.ts). */
   resolveAgentPermissionPreset: AgentPermissionResolver
   /** Who started a calling agent, as its record keeps it: what a chat it starts keeps as its own starter. */
   agentStarterOf?: AgentStarterResolver
   /** A CLI's permission modes as `cli.runtime.list` gives them, for a caller that names one. */
   permissionModesOf?: (cli: string) => readonly CliPermissionModeSpec[]
-  /** A chat's rest and visit clock, written to the desktop's own record (conversation-lifecycle.ts). */
-  lifecycle: Pick<ConversationLifecycle, 'settle' | 'visit' | 'markUnread' | 'snooze' | 'highlight' | 'setAutoSettle'>
+  /** This core's own chats' rest and visit clock, written to their records (conversation-lifecycle.ts). */
+  lifecycle: ChatLifecycleCalls
   /**
    * Moving a chat to another folder, and the project it is in
    * (conversation-move.ts). Absent where this process cannot move a chat's
@@ -115,6 +159,20 @@ function lifecycleActor(context: McpConnectionContext | undefined): WorkspaceReg
   return context?.metadata.kind === 'remote-tailnet' ? 'mobile' : 'gateway'
 }
 
+const NO_OTHER_ENVIRONMENTS = {
+  ok: false as const,
+  code: 'unknown_environment',
+  message: 'This process reaches no other machine.',
+}
+
+/** The environment `conversation.create`'s `environment` names: its id, or a chat address's or link's. */
+function environmentIdOf(value: unknown): string | null {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  return (
+    parseChatLink(raw)?.environmentId ?? parseChatAddress(raw)?.environmentId ?? (isEnvironmentId(raw) ? raw : null)
+  )
+}
+
 /**
  * A worktree's dependency install as a caller is told about it: where it is,
  * with no path on this machine (the caller may be a paired device).
@@ -132,6 +190,72 @@ export function installProjection(view: WorktreeDependencyInstallView): Record<s
 }
 
 export function createConversationTools(deps: ConversationToolsDeps): McpToolRegistration[] {
+  // Where a chat or project lives, by one lookup: this core, or another environment's Studio.
+  const placeOf = async (
+    ref: { environmentId: string | null; chatId: string | null },
+    context: McpConnectionContext | undefined,
+  ): Promise<ChatPlace> => {
+    if (deps.environments) return deps.environments.place(ref, context)
+    return ref.environmentId === null ? { ok: true, route: null, workspaceId: ref.chatId } : NO_OTHER_ENVIRONMENTS
+  }
+  // The lifecycle of the chat the arguments name, on the Studio that holds it.
+  const lifecycleOf = async (
+    args: Record<string, unknown>,
+    context: McpConnectionContext | undefined,
+  ): Promise<
+    { ok: true; workspaceId: string; lifecycle: ChatLifecycleCalls } | { ok: false; code: string; message: string }
+  > => {
+    const named = chatRefOf(args)
+    if (!named.ok) return named
+    const place = await placeOf(named.ref satisfies ChatRef, context)
+    if (!place.ok) return place
+    const workspaceId = place.workspaceId ?? named.ref.chatId
+    const elsewhere = place.route && deps.environments ? deps.environments.lifecycle(place.route) : null
+    return { ok: true, workspaceId, lifecycle: elsewhere ?? deps.lifecycle }
+  }
+  // A started chat as the caller is told of it, linked to the calling agent
+  // so it hears when the chat's turn ends, unless it asked not to.
+  const launchedAnswer = (
+    launched: Awaited<ReturnType<ConversationLaunchService['launch']>>,
+    notifyParent: boolean,
+    context: McpConnectionContext | undefined,
+  ) => {
+    if (!launched.ok) return toolError(launched.code, launched.message)
+    const parent = launchingAgentOf(context)
+    const linked: LaunchLinkResult | null = !notifyParent
+      ? null
+      : !parent
+        ? { linked: false, reason: NOT_TOLD_NOT_AN_AGENT }
+        : !deps.linkLaunchedAgent
+          ? { linked: false, reason: NOT_TOLD_UNAVAILABLE }
+          : deps.linkLaunchedAgent({
+              parent,
+              child: {
+                workspaceId: launched.workspaceId,
+                agentId: launched.agentId,
+                sessionId: launched.sessionId,
+                transport: 'conversation',
+                name: launched.name,
+              },
+            })
+    return toolSuccess({
+      conversation: {
+        workspaceId: launched.workspaceId,
+        agentId: launched.agentId,
+        name: launched.name,
+        cli: launched.cli,
+        providerId: launched.providerId,
+        modelId: launched.modelId,
+        sessionId: launched.sessionId,
+      },
+      notifyParent: linked?.linked === true,
+      ...(linked && !linked.linked ? { notifyParentReason: linked.reason } : {}),
+      ...(launched.dependencyInstall ? { dependencyInstall: installProjection(launched.dependencyInstall) } : {}),
+      // Where the chat runs, when that is a worktree: a paired machine's
+      // pane names the branch, and its row the worktree, from this.
+      ...(launched.worktree ? { worktree: launched.worktree } : {}),
+    })
+  }
   return [
     {
       name: 'conversation.create',
@@ -151,6 +275,13 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
         type: 'object',
         properties: {
           workspaceId: { type: 'string', description: 'Workspace id from workspace.list.' },
+          environment: {
+            type: 'string',
+            description:
+              'Start the chat on another machine this computer reaches (an SSH machine or a WSL distribution): ' +
+              'its environment id, or the address or link of a chat there, whose environment is taken. ' +
+              '"workspaceId" then names a project there, and "noProject" makes the folder there. Omitted, this machine.',
+          },
           noProject: {
             type: 'boolean',
             description:
@@ -262,6 +393,13 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
           return toolError('invalid_arguments', 'A chat with no project has no checkout to take a worktree from.')
         }
         if (!noProject && !workspaceId) return toolError('invalid_arguments', '"workspaceId" is required.')
+        const environmentId = args.environment === undefined ? null : environmentIdOf(args.environment)
+        if (args.environment !== undefined && !environmentId) {
+          return toolError(
+            'invalid_arguments',
+            '"environment" must be an environment id, or the address or link of a chat on that machine.',
+          )
+        }
         for (const key of [
           'cli',
           'cliModel',
@@ -341,6 +479,43 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
           launchPermissionCeiling(context, deps.resolveAgentPermissionPreset),
         )
         if ('refused' in capped) return toolError(capped.refused.code, capped.refused.message)
+        // Where the chat starts: this core, or the machine the environment (or,
+        // until the copies go, a copy's record) says holds the project.
+        const place = await placeOf({ environmentId, chatId: noProject ? null : workspaceId }, context)
+        if (!place.ok) return toolError(place.code, place.message)
+        const request: Omit<ConversationLaunchRequest, 'workspaceId' | 'newChat' | 'newChatIn'> = {
+          startedBy: gatewayCallerStarter(context, deps.resolveAgentPermissionPreset, deps.agentStarterOf),
+          // An agent's words, not a person's: the extensions' prompt hooks check them.
+          promptHookAs: { inputKind: 'launch', from: 'agent' },
+          ...(args.worktree === true ? { newWorktree: true } : {}),
+          ...(typeof args.worktreeName === 'string' && args.worktreeName.trim()
+            ? { worktreeName: args.worktreeName.trim() }
+            : {}),
+          ...(typeof args.inWorktree === 'string' && args.inWorktree.trim()
+            ? { existingWorktreePath: args.inWorktree.trim() }
+            : {}),
+          ...(typeof args.effort === 'string' ? { reasoningEffort: args.effort.trim() } : {}),
+          ...(typeof args.cli === 'string' ? { cli: args.cli } : {}),
+          ...(typeof args.cliModel === 'string' ? { cliModel: args.cliModel } : {}),
+          ...(typeof args.prompt === 'string' ? { prompt: args.prompt } : {}),
+          ...(Array.isArray(args.skills) && args.skills.length > 0 ? { skills: args.skills as string[] } : {}),
+          ...(typeof args.name === 'string' ? { name: args.name } : {}),
+          ...(capped.permissionPreset ? { permissionPreset: capped.permissionPreset } : {}),
+          ...(namedMode?.ok && namedMode.permissionMode ? { permissionMode: namedMode.permissionMode } : {}),
+          ...(args.mode === 'plan' || args.mode === 'ask' ? { mode: args.mode } : {}),
+        }
+        // The project, under its id where it is; a new chat of its own there when asked for.
+        const project = {
+          workspaceId: place.workspaceId ?? workspaceId,
+          ...(args.newChat === true ? { newChat: true } : {}),
+        }
+        if (place.route && deps.environments) {
+          const launchedThere = await deps.environments.launch(place.route, {
+            ...request,
+            ...(noProject ? { noProject: true as const } : project),
+          })
+          return launchedAnswer(launchedThere, args.notifyParent !== false, context)
+        }
         // Made last, so a call refused above leaves no empty folder behind.
         let projectlessFolder: string | null = null
         if (noProject) {
@@ -352,75 +527,17 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
             return toolError('launch_failed', `The chat's folder could not be made: ${message}`)
           }
         }
-        const launched = await deps.launch(
-          {
-            startedBy: gatewayCallerStarter(context, deps.resolveAgentPermissionPreset, deps.agentStarterOf),
-            // An agent's words, not a person's: the extensions' prompt hooks check them.
-            promptHookAs: { inputKind: 'launch', from: 'agent' },
-            ...(projectlessFolder
-              ? { newChatIn: { folderPath: projectlessFolder } }
-              : { workspaceId, ...(args.newChat === true ? { newChat: true } : {}) }),
-            ...(args.worktree === true ? { newWorktree: true } : {}),
-            ...(typeof args.worktreeName === 'string' && args.worktreeName.trim()
-              ? { worktreeName: args.worktreeName.trim() }
-              : {}),
-            ...(typeof args.inWorktree === 'string' && args.inWorktree.trim()
-              ? { existingWorktreePath: args.inWorktree.trim() }
-              : {}),
-            ...(typeof args.effort === 'string' ? { reasoningEffort: args.effort.trim() } : {}),
-            ...(typeof args.cli === 'string' ? { cli: args.cli } : {}),
-            ...(typeof args.cliModel === 'string' ? { cliModel: args.cliModel } : {}),
-            ...(typeof args.prompt === 'string' ? { prompt: args.prompt } : {}),
-            ...(Array.isArray(args.skills) && args.skills.length > 0 ? { skills: args.skills as string[] } : {}),
-            ...(typeof args.name === 'string' ? { name: args.name } : {}),
-            ...(capped.permissionPreset ? { permissionPreset: capped.permissionPreset } : {}),
-            ...(namedMode?.ok && namedMode.permissionMode ? { permissionMode: namedMode.permissionMode } : {}),
-            ...(args.mode === 'plan' || args.mode === 'ask' ? { mode: args.mode } : {}),
-          },
-          context,
-        )
-        if (!launched.ok) return toolError(launched.code, launched.message)
-        const parent = launchingAgentOf(context)
-        const linked: LaunchLinkResult | null =
-          args.notifyParent === false
-            ? null
-            : !parent
-              ? { linked: false, reason: NOT_TOLD_NOT_AN_AGENT }
-              : !deps.linkLaunchedAgent
-                ? { linked: false, reason: NOT_TOLD_UNAVAILABLE }
-                : deps.linkLaunchedAgent({
-                    parent,
-                    child: {
-                      workspaceId: launched.workspaceId,
-                      agentId: launched.agentId,
-                      sessionId: launched.sessionId,
-                      transport: 'conversation',
-                      name: launched.name,
-                    },
-                  })
-        return toolSuccess({
-          conversation: {
-            workspaceId: launched.workspaceId,
-            agentId: launched.agentId,
-            name: launched.name,
-            cli: launched.cli,
-            providerId: launched.providerId,
-            modelId: launched.modelId,
-            sessionId: launched.sessionId,
-          },
-          notifyParent: linked?.linked === true,
-          ...(linked && !linked.linked ? { notifyParentReason: linked.reason } : {}),
-          ...(launched.dependencyInstall ? { dependencyInstall: installProjection(launched.dependencyInstall) } : {}),
-          // Where the chat runs, when that is a worktree: a paired machine's
-          // pane names the branch, and its row the worktree, from this.
-          ...(launched.worktree ? { worktree: launched.worktree } : {}),
+        const launched = await deps.launch({
+          ...request,
+          ...(projectlessFolder ? { newChatIn: { folderPath: projectlessFolder } } : project),
         })
+        return launchedAnswer(launched, args.notifyParent !== false, context)
       },
     },
     {
       name: 'conversation.settle',
       description:
-        "Settle a chat on this machine, as its row menu's Settle does: it leaves the chat list, its agents' " +
+        "Settle a chat, on this machine or one it reaches, as its row menu's Settle does: it leaves the chat list, its agents' " +
         'processes end, and the next message to it resumes it. With settled: false it is brought back, and ' +
         'held out of the automatic settle until it sees new activity. Refused with "working" while an agent ' +
         'in the chat is working, with one exception: an agent settling its own chat, while its own turn is ' +
@@ -431,21 +548,19 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
       inputSchema: {
         type: 'object',
         properties: {
-          workspaceId: { type: 'string', description: "The chat's workspaceId, from the conversation list." },
+          ...chatRefSchema(),
           settled: { type: 'boolean', description: 'false brings a settled chat back. Defaults to true.' },
         },
-        required: ['workspaceId'],
         additionalProperties: false,
       },
       handler: async (args, context) => {
-        if (typeof args.workspaceId !== 'string' || !args.workspaceId.trim()) {
-          return toolError('invalid_arguments', '"workspaceId" is required.')
-        }
         if (args.settled !== undefined && typeof args.settled !== 'boolean') {
           return toolError('invalid_arguments', '"settled" must be a boolean when provided.')
         }
-        const settled = deps.lifecycle.settle(
-          args.workspaceId.trim(),
+        const at = await lifecycleOf(args, context)
+        if (!at.ok) return toolError(at.code, at.message)
+        const settled = await at.lifecycle.settle(
+          at.workspaceId,
           args.settled !== false,
           lifecycleActor(context),
           launchingAgentOf(context),
@@ -462,34 +577,32 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
     {
       name: 'conversation.visit',
       description:
-        'Say that a person has a chat on this machine on screen, so its "finished, unseen" mark clears on ' +
+        'Say that a person has a chat on screen, so its "finished, unseen" mark clears on ' +
         "every device. Moves the chat's lastVisitedAt forward to visitedAt (now when omitted, and never past " +
         'now); an earlier time changes nothing. It is not activity: the chat keeps its place in the list and ' +
         'a settled chat stays settled.',
       inputSchema: {
         type: 'object',
         properties: {
-          workspaceId: { type: 'string', description: "The chat's workspaceId, from the conversation list." },
+          ...chatRefSchema(),
           visitedAt: {
             type: 'number',
             description: 'When the person had it on screen, in epoch milliseconds. Defaults to now.',
           },
         },
-        required: ['workspaceId'],
         additionalProperties: false,
       },
       handler: async (args, context) => {
-        if (typeof args.workspaceId !== 'string' || !args.workspaceId.trim()) {
-          return toolError('invalid_arguments', '"workspaceId" is required.')
-        }
         if (
           args.visitedAt !== undefined &&
           !(typeof args.visitedAt === 'number' && Number.isFinite(args.visitedAt) && args.visitedAt >= 0)
         ) {
           return toolError('invalid_arguments', '"visitedAt" must be a time in epoch milliseconds when provided.')
         }
-        const visited = deps.lifecycle.visit(
-          args.workspaceId.trim(),
+        const at = await lifecycleOf(args, context)
+        if (!at.ok) return toolError(at.code, at.message)
+        const visited = await at.lifecycle.visit(
+          at.workspaceId,
           args.visitedAt as number | undefined,
           lifecycleActor(context),
         )
@@ -500,7 +613,7 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
     {
       name: 'conversation.mark_unread',
       description:
-        'Mark a chat on this machine unread, as its row menu\'s Mark unread does: its "finished, unseen" mark ' +
+        'Mark a chat unread, as its row menu\'s Mark unread does: its "finished, unseen" mark ' +
         "comes back on every device, and the next opening's divider sits above its latest reply. Moves the " +
         "chat's lastVisitedAt BACK, to its latest finish less a millisecond; the one call that moves it back. " +
         'A chat already unread from further back is left as it is. Refused with "nothing_finished" when no ' +
@@ -508,16 +621,14 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
       inputSchema: {
         type: 'object',
         properties: {
-          workspaceId: { type: 'string', description: "The chat's workspaceId, from the conversation list." },
+          ...chatRefSchema(),
         },
-        required: ['workspaceId'],
         additionalProperties: false,
       },
       handler: async (args, context) => {
-        if (typeof args.workspaceId !== 'string' || !args.workspaceId.trim()) {
-          return toolError('invalid_arguments', '"workspaceId" is required.')
-        }
-        const marked = await deps.lifecycle.markUnread(args.workspaceId.trim(), lifecycleActor(context))
+        const at = await lifecycleOf(args, context)
+        if (!at.ok) return toolError(at.code, at.message)
+        const marked = await at.lifecycle.markUnread(at.workspaceId, lifecycleActor(context))
         if (!marked.ok) return toolError(marked.code, marked.message)
         return toolSuccess(marked)
       },
@@ -525,30 +636,29 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
     {
       name: 'conversation.snooze',
       description:
-        "Snooze a chat on this machine, as its row menu's Snooze does: it leaves the chat list for its " +
+        "Snooze a chat, on this machine or one it reaches, as its row menu's Snooze does: it leaves the chat list for its " +
         "project's Snoozed shelf until `until`, and its agents' processes are paused. With until: null it " +
         'wakes now, as Wake now does. Refused with "working" while an agent in the chat is working, and ' +
         'with "settled" for a settled chat. Waking a chat that is awake changes nothing.',
       inputSchema: {
         type: 'object',
         properties: {
-          workspaceId: { type: 'string', description: "The chat's workspaceId, from the conversation list." },
+          ...chatRefSchema(),
           until: {
             type: ['number', 'null'],
             description: 'When it wakes, in epoch milliseconds and still ahead; null wakes it now.',
           },
         },
-        required: ['workspaceId', 'until'],
+        required: ['until'],
         additionalProperties: false,
       },
       handler: async (args, context) => {
-        if (typeof args.workspaceId !== 'string' || !args.workspaceId.trim()) {
-          return toolError('invalid_arguments', '"workspaceId" is required.')
-        }
         if (args.until !== null && !(typeof args.until === 'number' && Number.isFinite(args.until))) {
           return toolError('invalid_arguments', '"until" must be a time in epoch milliseconds, or null to wake.')
         }
-        const snoozed = deps.lifecycle.snooze(args.workspaceId.trim(), args.until, lifecycleActor(context))
+        const at = await lifecycleOf(args, context)
+        if (!at.ok) return toolError(at.code, at.message)
+        const snoozed = await at.lifecycle.snooze(at.workspaceId, args.until, lifecycleActor(context))
         if (!snoozed.ok) return toolError(snoozed.code, snoozed.message)
         return toolSuccess(snoozed)
       },
@@ -556,13 +666,13 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
     {
       name: 'conversation.highlight',
       description:
-        "Star a chat on this machine, or give its row a highlight color, as its row menu's Star and " +
+        "Star a chat, on this machine or one it reaches, or give its row a highlight color, as its row menu's Star and " +
         'Highlight color do. A starred chat is listed in the Starred section. Name either or both; one left ' +
         'out stays as it is. color: null clears the color.',
       inputSchema: {
         type: 'object',
         properties: {
-          workspaceId: { type: 'string', description: "The chat's workspaceId, from the conversation list." },
+          ...chatRefSchema(),
           starred: { type: 'boolean', description: 'true stars the chat, false unstars it.' },
           color: {
             type: ['string', 'null'],
@@ -570,13 +680,9 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
             description: "The row's highlight color, or null for none.",
           },
         },
-        required: ['workspaceId'],
         additionalProperties: false,
       },
       handler: async (args, context) => {
-        if (typeof args.workspaceId !== 'string' || !args.workspaceId.trim()) {
-          return toolError('invalid_arguments', '"workspaceId" is required.')
-        }
         if (args.starred !== undefined && typeof args.starred !== 'boolean') {
           return toolError('invalid_arguments', '"starred" must be a boolean when provided.')
         }
@@ -586,8 +692,10 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
         if (args.starred === undefined && args.color === undefined) {
           return toolError('invalid_arguments', 'Name "starred", "color", or both.')
         }
-        const marked = deps.lifecycle.highlight(
-          args.workspaceId.trim(),
+        const at = await lifecycleOf(args, context)
+        if (!at.ok) return toolError(at.code, at.message)
+        const marked = await at.lifecycle.highlight(
+          at.workspaceId,
           {
             ...(args.starred !== undefined ? { starred: args.starred } : {}),
             ...(args.color !== undefined ? { color: args.color } : {}),
@@ -601,27 +709,26 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
     {
       name: 'conversation.auto_settle',
       description:
-        "Switch Auto-settle on or off for a chat on this machine, as its row menu's Auto-settle does. With it " +
+        "Switch Auto-settle on or off for a chat, on this machine or one it reaches, as its row menu's Auto-settle does. With it " +
         'on, the chat settles by itself after the quiet days set in Settings (three unless changed), or once ' +
         'its pull requests land. Off by ' +
         'default. Settles nothing at once.',
       inputSchema: {
         type: 'object',
         properties: {
-          workspaceId: { type: 'string', description: "The chat's workspaceId, from the conversation list." },
+          ...chatRefSchema(),
           enabled: { type: 'boolean', description: 'true switches it on, false off.' },
         },
-        required: ['workspaceId', 'enabled'],
+        required: ['enabled'],
         additionalProperties: false,
       },
       handler: async (args, context) => {
-        if (typeof args.workspaceId !== 'string' || !args.workspaceId.trim()) {
-          return toolError('invalid_arguments', '"workspaceId" is required.')
-        }
         if (typeof args.enabled !== 'boolean') {
           return toolError('invalid_arguments', '"enabled" must be a boolean.')
         }
-        const set = deps.lifecycle.setAutoSettle(args.workspaceId.trim(), args.enabled, lifecycleActor(context))
+        const at = await lifecycleOf(args, context)
+        if (!at.ok) return toolError(at.code, at.message)
+        const set = await at.lifecycle.setAutoSettle(at.workspaceId, args.enabled, lifecycleActor(context))
         if (!set.ok) return toolError(set.code, set.message)
         return toolSuccess(set)
       },

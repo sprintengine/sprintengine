@@ -4,7 +4,7 @@ import { test } from 'vitest'
 
 import { StudioError, type StudioClient } from '../../../packages/client-runtime/src/public'
 import type { EnvironmentClients } from '../../shared/environment-clients'
-import { environmentCommand, environmentPage, launchWhereItLives } from './environment-chat-calls'
+import { chatEnvironments, environmentCommand, environmentPage } from './environment-chat-calls'
 
 // The desktop's own callers (the gateway's conversation tools) acting on a
 // chat an SSH machine holds: the same protocol method a window sends, on this
@@ -80,7 +80,35 @@ test('a machine that cannot be reached, or refuses, is answered in words', async
   assert.ok(!unread.ok)
 })
 
-test("a chat in a machine's workspace is created there; one in this core's workspace is launched here", async () => {
+test("a chat is placed on the machine its address or its copy's record names; this core's own is here", async () => {
+  const { clients } = machine(() => ({}))
+  const environments = chatEnvironments({
+    clients,
+    ownEnvironmentId: () => 'env-here',
+    routesOf: async (id) => (id === 'env-ssh' ? [ROUTE] : []),
+    recordOf: (workspaceId) => (workspaceId === 'w1' ? { environment: { kind: 'ssh', id: 'build-box' } } : {}),
+  })
+  assert.deepEqual(await environments.place({ environmentId: 'env-ssh', chatId: 'w9' }), {
+    ok: true,
+    route: ROUTE,
+    workspaceId: 'w9',
+  })
+  // A copy's id (until the copies go) is its machine's chat, under the same id.
+  assert.deepEqual(await environments.place({ environmentId: null, chatId: 'w1' }), {
+    ok: true,
+    route: ROUTE,
+    workspaceId: 'w1',
+  })
+  assert.deepEqual(await environments.place({ environmentId: 'env-here', chatId: 'w-local' }), {
+    ok: true,
+    route: null,
+    workspaceId: 'w-local',
+  })
+  const unknown = await environments.place({ environmentId: 'env-gone', chatId: 'w1' })
+  assert.ok(!unknown.ok && unknown.code === 'unknown_environment')
+})
+
+test("a chat started on a machine is that machine's conversation.create, answered as this core's launch answers", async () => {
   const { clients, asked } = machine(() => ({
     conversation: {
       workspaceId: 'w1',
@@ -92,16 +120,13 @@ test("a chat in a machine's workspace is created there; one in this core's works
       modelId: 'm',
     },
   }))
-  const launchedHere: string[] = []
-  const launch = launchWhereItLives(
+  const environments = chatEnvironments({
     clients,
-    (workspaceId) => (workspaceId === 'w1' ? { environment: { kind: 'ssh', id: 'build-box' } } : {}),
-    async (request) => {
-      launchedHere.push(String(request.workspaceId))
-      return { ok: false, code: 'here', message: 'launched here' }
-    },
-  )
-  const there = await launch({
+    ownEnvironmentId: () => 'env-here',
+    routesOf: null,
+    recordOf: () => null,
+  })
+  const there = await environments.launch(ROUTE, {
     workspaceId: 'w1',
     newChat: true,
     prompt: 'Go',
@@ -117,8 +142,6 @@ test("a chat in a machine's workspace is created there; one in this core's works
     cli: 'claude-code',
     prompt: 'Go',
   })
-  await launch({ workspaceId: 'w-local', cli: 'claude-code' })
-  assert.deepEqual(launchedHere, ['w-local'])
-  const refused = await launch({ workspaceId: 'w1', ownerModuleId: 'acme.mod' })
-  assert.ok(!refused.ok && refused.code === 'invalid_arguments')
+  const away = await environments.launch('ssh:other-box', { noProject: true })
+  assert.ok(!away.ok && away.code === 'unavailable')
 })

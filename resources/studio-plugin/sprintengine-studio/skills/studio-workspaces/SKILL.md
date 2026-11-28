@@ -115,6 +115,14 @@ not reachable from these tools.
 None of them works on your own chat. They are served to agents on this
 machine only.
 
+The row menu's tools (`conversation_settle`, `conversation_visit`,
+`conversation_mark_unread`, `conversation_snooze`, `conversation_highlight`,
+`conversation_auto_settle`) name the chat the same way, by `chat` or
+`workspaceId`, and change it on the machine that holds it. To start a chat on
+an SSH machine or WSL distribution, give `conversation_create` its
+`environment` (the environment id from a chat's address there, or the address
+or link itself) beside `workspaceId` or `noProject`.
+
 ## The browser pane
 
 `browser_open` with a `url` puts a page in the workspace's browser pane;
