@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { changeEnvironmentChat, settleEnvironmentChat, visitEnvironmentChat } from '../../studio/environmentChatRecords'
-import { environmentStudioAvailable, pairedConnectionOf, reachedOverTailnet } from '../../studio/environmentStudio'
+import { environmentStudioAvailable, pairedConnectionOf } from '../../studio/environmentStudio'
 import { pairedScheduledAgentAction } from '../../studio/pairedSchedules'
 import { ChatGlyph, NewChatIcon, RemoteMachineGlyph, ScheduleGlyph, resolveEnabledWorkspaceType } from '../AppIcons'
 import CliIcon from '../CliIcon'
@@ -109,13 +109,10 @@ import { useWorkspaceMachineRef } from '../../hooks/useMachineIdentity'
 import { distroOfHostId, isWslHostId } from '../../../../shared/execution-host'
 import { useStableCallback } from '../../hooks/useStableCallback'
 import { useRemoteSessions } from './remoteBand/useRemoteSessions'
-import type { WorkspaceMode } from '../../../../shared/workspace-mode'
 import { workspaceLastUserMessageAt } from '../../utils/workspaceRecency'
 import { useEnvironments } from '../../hooks/useEnvironments'
-import { environmentIdOfRoute } from './remoteBand/environmentChatsNow'
+import { useEnvironmentChatRows } from './remoteBand/useEnvironmentChatRows'
 import {
-  chatRecordsByAddress,
-  environmentChatRows,
   isEnvironmentRecord,
   openSpecOfConversation,
   remoteRowActivity,
@@ -1428,28 +1425,12 @@ function WorkspaceSidebar({
   // once, as a local Star flips at once, until a list read after the
   // environment took them stands in for them (`withPendingRemoteMarks`).
   const [pendingRemoteMarks, setPendingRemoteMarks] = useState<ReadonlyMap<string, PendingRemoteMarks>>(() => new Map())
-  // The records here of other environments' chats, by address: what opening a
-  // row focuses. A route's environment id is the one its rows are keyed by:
-  // its own Studio's, else the list's.
-  const idOfRoute = useMemo(
-    () => environmentIdOfRoute(environments, environmentSources),
-    [environments, environmentSources],
-  )
-  const chatRecords = useMemo(() => chatRecordsByAddress(workspaces, idOfRoute), [workspaces, idOfRoute])
+  // Every other environment's rows, as the palette lists them too
+  // (`useEnvironmentChatRows`), with the marks asked and not yet read back.
+  const listedEnvironmentRows = useEnvironmentChatRows(workspaces, moduleOverrides)
   const environmentRows = useMemo(
-    () =>
-      withPendingRemoteMarks(
-        environmentChatRows({
-          sources: environmentSources,
-          environments,
-          records: chatRecords,
-          hiddenMode: (mode) => mode !== null && isHiddenFromRail({ mode: mode as WorkspaceMode }, moduleOverrides),
-          onTailnet: remoteLink !== 'down',
-          reachedOverTailnet,
-        }),
-        pendingRemoteMarks,
-      ),
-    [environmentSources, environments, chatRecords, moduleOverrides, remoteLink, pendingRemoteMarks],
+    () => withPendingRemoteMarks(listedEnvironmentRows, pendingRemoteMarks),
+    [listedEnvironmentRows, pendingRemoteMarks],
   )
   const readAtOfRoute = useCallback(
     (route: string) => environmentSources.find((source) => source.route === route)?.entry.at ?? null,

@@ -40,7 +40,12 @@ import {
   type ExtensionSourceRow,
 } from '../palette/extensionsProvider'
 import { createConversationHistoryProvider } from '../palette/conversationHistoryProvider'
-import { isEnvironmentRecord, type RemoteSessionOpenSpec } from '../workspace/remoteBand/remoteSessionsModel'
+import {
+  isEnvironmentRecord,
+  openSpecOfConversation,
+  type RemoteSessionOpenSpec,
+} from '../workspace/remoteBand/remoteSessionsModel'
+import { useEnvironmentChatRows } from '../workspace/remoteBand/useEnvironmentChatRows'
 import { chatSearchPlaces } from '../palette/chatSearchPlaces'
 import { paletteBackdropIsConversation } from '../palette/paletteBackdrop'
 import {
@@ -49,6 +54,7 @@ import {
   chatProjectName,
   chatPullRequestShown,
   chatSearchKeywords,
+  environmentChatFacts,
   mergeChatPullRequests,
   sameChatPullRequests,
 } from '../palette/chatSearchTerms'
@@ -298,6 +304,14 @@ export default function CommandPalette({
   const openExtensionsSurface = useWorkspaceStore((state) => state.openExtensionsSurface)
   const keybindingSettings = useWorkspaceStore((state) => state.appSettings.keybindings)
   const moduleEnablement = useWorkspaceStore((state) => state.appSettings.modules)
+  // Every other environment's chats, by address, as the sidebar lists them
+  // (`useEnvironmentChatRows`): each a switch row of its own, and drawn with
+  // its project and pull requests from its environment's row.
+  const environmentRows = useEnvironmentChatRows(workspaces, moduleEnablement)
+  const environmentChats = useMemo(
+    () => new Map(environmentRows.map((row) => [row.key, { row, facts: environmentChatFacts(row) }])),
+    [environmentRows],
+  )
   const usageLimitsShown = useWorkspaceStore((state) => state.appSettings.appearance.usageLimits)
   // Scheduled agents, for their pause rows: gone with their module.
   const scheduledAgents = useScheduledAgents()
@@ -730,8 +744,11 @@ export default function CommandPalette({
       // every project — including the historical ones no workspace holds. The
       // folder path rides `description` so typing a path filters here too,
       // preserving the sidebar's path matching.
+      // This computer's own chats: a record this window keeps of another
+      // environment's chat (an SSH copy, a paired chat attached here) is not
+      // a row; that chat's row is its environment's, below.
       ...workspaces
-        .filter((workspace) => !isHiddenFromRail(workspace, moduleEnablement))
+        .filter((workspace) => !isHiddenFromRail(workspace, moduleEnablement) && !isEnvironmentRecord(workspace))
         .map((workspace): Command => ({
           id: workspaceSwitchRowId(workspace.id),
           // The chat's own title, the way the sidebar lists it: the group
@@ -759,6 +776,29 @@ export default function CommandPalette({
             onClose()
           },
         })),
+      // Every other environment's chats, by address, opened as their sidebar
+      // row opens them. The id is the one its environment's search rows wear
+      // (`chatSearchPlaces.ts`), so a match on what was said folds into it.
+      ...[...environmentChats.values()].map(
+        ({ row, facts }): Command => ({
+          id: workspaceSwitchRowId(row.key),
+          label: row.title,
+          keywords: [
+            'switch to',
+            row.machineName,
+            facts.folderPath,
+            chatSearchKeywords(facts.pullRequests, facts.branch),
+          ]
+            .filter(Boolean)
+            .join(' '),
+          mark: { kind: 'chat', workspaceId: row.key, mode: 'standard' },
+          group: 'agents',
+          run: () => {
+            onOpenEnvironmentChat?.(openSpecOfConversation(row))
+            onClose()
+          },
+        }),
+      ),
       ...registryCommands,
       // Actions — the five verbs the launcher opens on (owner rulings
       // 2026-09-11): start a chat, find a file, search the project's text,
@@ -857,6 +897,8 @@ export default function CommandPalette({
     ]
   }, [
     workspaces,
+    environmentChats,
+    onOpenEnvironmentChat,
     activeWorkspace,
     activeWorkspaceId,
     activeFolderPath,
@@ -1496,8 +1538,15 @@ export default function CommandPalette({
   }
 
   const renderChatRow = (command: Command, mark: Extract<PaletteRowMark, { kind: 'chat' }>): React.ReactNode => {
+    // This computer's chat by its id, another environment's by its address.
     const workspace = workspaceById.get(mark.workspaceId as WorkspaceId)
-    const pullRequests = chatPullRequests.get(mark.workspaceId) ?? []
+    const elsewhere = workspace ? undefined : environmentChats.get(mark.workspaceId)?.facts
+    const chat = workspace
+      ? { folderPath: workspace.folderPath, branch: chatBranch(workspace), project: chatProjectName(workspace) }
+      : elsewhere
+        ? { folderPath: elsewhere.folderPath, branch: elsewhere.branch, project: elsewhere.project }
+        : null
+    const pullRequests = elsewhere?.pullRequests ?? chatPullRequests.get(mark.workspaceId) ?? []
     // The pull request the query names when it names one, so a search for
     // `#482` shows which chat holds it; otherwise the one the sidebar shows.
     const pullRequest = chatPullRequestShown(pullRequests, query)
@@ -1505,17 +1554,14 @@ export default function CommandPalette({
     const said = command.conversationMatch
     const shaped = said ? shapeSnippet(said.snippet, q) : null
     const reason =
-      !shaped && workspace
-        ? chatMatchReason(
-            { name: command.label, folderPath: workspace.folderPath, pullRequests, branch: chatBranch(workspace) },
-            q,
-          )
+      !shaped && chat
+        ? chatMatchReason({ name: command.label, folderPath: chat.folderPath, pullRequests, branch: chat.branch }, q)
         : null
     return (
       <ConversationResultRow
         title={command.label}
         query={q}
-        project={workspace ? chatProjectName(workspace) : null}
+        project={chat?.project ?? null}
         pullRequest={pullRequest ? { number: pullRequest.number, state: pullRequest.state } : null}
         line={
           shaped && said

@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import type { BranchPullRequest } from '../../../../shared/git/pull-request'
 import type { Workspace } from '../../../../shared/workspace'
 import { commandMatchesQuery } from '../commandPaletteSearch'
+import type { RemoteConversation } from '../workspace/remoteBand/remoteSessionsModel'
 import {
   chatBranch,
   chatMatchReason,
@@ -9,6 +10,7 @@ import {
   chatPullRequestBadge,
   chatPullRequestShown,
   chatSearchKeywords,
+  environmentChatFacts,
   mergeChatPullRequests,
   pullRequestSearchTerms,
   sameChatPullRequests,
@@ -71,12 +73,9 @@ test('a chat with neither adds no keywords', () => {
   expect(chatSearchKeywords([], null)).toBe('')
 })
 
-test('the branch is the worktree the chat was cut on, else its remote checkout', () => {
+test('the branch is the worktree the chat was cut on', () => {
   expect(chatBranch({ worktree: { branch: ' agent/retry ' } })).toBe('agent/retry')
-  expect(
-    chatBranch({ remoteOrigin: remoteOrigin({ mode: 'worktree', branch: 'agent/remote', worktreePath: null }) }),
-  ).toBe('agent/remote')
-  expect(chatBranch({ worktree: null, remoteOrigin: null })).toBeNull()
+  expect(chatBranch({ worktree: null })).toBeNull()
   expect(chatBranch({ worktree: { branch: '  ' } })).toBeNull()
 })
 
@@ -118,17 +117,6 @@ test('a chat whose only pull request closed unmerged wears no badge unless it is
   expect(chatPullRequestBadge([], '#12482')).toBeUndefined()
 })
 
-function remoteOrigin(checkout: { mode: 'current' | 'worktree'; branch: string | null; worktreePath: string | null }) {
-  return {
-    connectionId: 'mesh-1',
-    machineName: 'mac-mini',
-    workspaceId: 'remote-1',
-    workspaceName: 'app',
-    workspaceRoot: '/Users/dev/app',
-    checkout,
-  }
-}
-
 test('a chat found by its pull request says so under its title, with the title the word was in', () => {
   const chat = {
     name: 'Fix open issues for production',
@@ -161,4 +149,34 @@ test('a chat names its project as the sidebar does: the project a worktree was c
   expect(chatProjectName(worktree)).toBe('app')
   expect(chatProjectName({ folderPath: '/Users/dev/app/' } as unknown as Workspace)).toBe('app')
   expect(chatProjectName({ folderPath: null } as unknown as Workspace)).toBeNull()
+})
+
+// Another environment's chat is a palette row by its address, from its
+// environment's own row: the same row and project the sidebar draws, found by
+// its folder there, its branch and its pull requests.
+test("another environment's chat is a switch row at its address, found by its folder, branch and pull requests", () => {
+  const listed = {
+    key: 'env-ssh:rw1',
+    title: 'Parser review',
+    machineName: 'build-box',
+    workspaceRoot: '/home/dev/.sprintengine-worktrees/app/pool-02',
+    projectFolder: '/home/dev/app',
+    agents: [
+      { branch: ' agent/parser ', pullRequests: [pullRequest({ number: 77 })] },
+      { branch: null, pullRequests: [pullRequest({ number: 77 }), pullRequest({ number: 78, url: 'https://github.com/acme/app/pull/78' })] },
+    ],
+  } as unknown as RemoteConversation
+  const facts = environmentChatFacts(listed)
+  expect(facts.project).toBe('app')
+  expect(facts.branch).toBe('agent/parser')
+  expect(facts.pullRequests.map((entry) => entry.number)).toEqual([77, 78])
+  expect(facts.folderPath).toBe('/home/dev/.sprintengine-worktrees/app/pool-02')
+  const row = chatRow([facts.folderPath, chatSearchKeywords(facts.pullRequests, facts.branch)].join(' '))
+  expect(commandMatchesQuery(row, '#78')).toBe(true)
+  expect(commandMatchesQuery(row, 'agent/parser')).toBe(true)
+  expect(commandMatchesQuery(row, 'pool-02')).toBe(true)
+  // A chat with no folder there is named by its machine, as its sidebar header is.
+  expect(environmentChatFacts({ ...listed, workspaceRoot: null, projectFolder: null, agents: [] }).project).toBe(
+    'build-box',
+  )
 })
