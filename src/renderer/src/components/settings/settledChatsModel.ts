@@ -1,23 +1,38 @@
-import type { Workspace, WorkspaceId } from '../../../../shared/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import type { ModuleEnablementOverrides } from '../../../../shared/modules/manifest'
 import { isSettledWorkspace } from '../../utils/workspaceSettle'
 import { isHiddenFromRail } from '../../utils/workspaceVisibility'
-import { remoteGroupDisplayName } from '../workspace/sidebar/folderGroups'
-import { remoteConversationTitle } from '../workspace/remoteBand/remoteSessionsModel'
+import { folderDisplayName, remoteProjectName } from '../workspace/sidebar/folderGroups'
+import {
+  isEnvironmentRecord,
+  openSpecOfConversation,
+  remoteConversationTitle,
+  type RemoteConversation,
+  type RemoteSessionOpenSpec,
+} from '../workspace/remoteBand/remoteSessionsModel'
 
-// Settings ▸ Settled chats reads the same record the sidebar's Settled shelf
-// did (`settledAt`) — there is no second store of old chats, only a second
-// place to look at the one there is.
+// Settings ▸ Settled chats reads the same rest the sidebar does (`settledAt`),
+// where each chat is: this computer's chats from its records, every other
+// environment's from what that environment lists (`environmentChatRows`'
+// `settled`). There is no second store of old chats, only a second place to
+// look at the ones there are.
 
 export type SettledChatEntry = {
-  id: WorkspaceId
+  /** Its key in the list: this computer's chat's id, or another environment's chat's address. */
+  key: string
+  /** Its id where it is. */
+  chatId: string
   /** The row title the sidebar would have drawn. */
   title: string
   /** The project the sidebar would have filed it under. */
   project: string
   settledAt: number
-  /** The paired machine it lives on, for a chat opened here from one; deleting it takes this computer's record only. */
-  remoteMachine: string | null
+  /**
+   * The environment that holds it, when that is not this computer: what
+   * opening, bringing back and deleting it ask there. Null for this
+   * computer's own chat.
+   */
+  environment: RemoteSessionOpenSpec | null
 }
 
 /** One workspace's entry, or null when it is not a settled chat the rail would draw. */
@@ -25,17 +40,38 @@ function settledChatEntry(
   workspace: Workspace,
   moduleOverrides: ModuleEnablementOverrides | undefined,
 ): SettledChatEntry | null {
-  if (!isSettledWorkspace(workspace) || isHiddenFromRail(workspace, moduleOverrides)) return null
+  // A record of another environment's chat is that environment's to list.
+  if (!isSettledWorkspace(workspace) || isHiddenFromRail(workspace, moduleOverrides) || isEnvironmentRecord(workspace))
+    return null
   return {
-    id: workspace.id,
+    key: workspace.id,
+    chatId: workspace.id,
     title: remoteConversationTitle(workspace),
-    project: remoteGroupDisplayName(workspace),
+    project: folderDisplayName(workspace.folderPath),
     settledAt: workspace.settledAt as number,
-    remoteMachine: workspace.remoteOrigin?.machineName ?? null,
+    environment: null,
   }
 }
 
-const bySettledAt = (a: SettledChatEntry, b: SettledChatEntry) => b.settledAt - a.settledAt
+export const bySettledAt = (a: SettledChatEntry, b: SettledChatEntry) => b.settledAt - a.settledAt
+
+/** Another environment's settled chats (`environmentChatRows`' `settled` rows), as entries. */
+export function environmentSettledChats(rows: readonly RemoteConversation[]): SettledChatEntry[] {
+  return rows.flatMap((row) =>
+    typeof row.settledAt === 'number'
+      ? [
+          {
+            key: row.key,
+            chatId: row.workspaceId,
+            title: row.title,
+            project: remoteProjectName(row.workspaceRoot, row.machineName),
+            settledAt: row.settledAt,
+            environment: openSpecOfConversation(row),
+          },
+        ]
+      : [],
+  )
+}
 
 /**
  * Every settled chat the rail would draw, most recently settled first: the
@@ -57,13 +93,7 @@ export function listSettledChats(
 }
 
 function entriesEqual(a: SettledChatEntry, b: SettledChatEntry): boolean {
-  return (
-    a.id === b.id &&
-    a.title === b.title &&
-    a.project === b.project &&
-    a.settledAt === b.settledAt &&
-    a.remoteMachine === b.remoteMachine
-  )
+  return a.key === b.key && a.title === b.title && a.project === b.project && a.settledAt === b.settledAt
 }
 
 /**
@@ -80,7 +110,7 @@ export function createSettledChatsSelector(): (
   let readFor: ModuleEnablementOverrides | undefined
   let read = new WeakMap<Workspace, SettledChatEntry | null>()
   let previous: SettledChatEntry[] = []
-  let previousById = new Map<WorkspaceId, SettledChatEntry>()
+  let previousById = new Map<string, SettledChatEntry>()
   return (workspaces, moduleOverrides) => {
     if (moduleOverrides !== readFor) {
       readFor = moduleOverrides
@@ -91,7 +121,7 @@ export function createSettledChatsSelector(): (
       let entry = read.get(workspace)
       if (entry === undefined) {
         entry = settledChatEntry(workspace, moduleOverrides)
-        const prior = entry ? previousById.get(entry.id) : undefined
+        const prior = entry ? previousById.get(entry.key) : undefined
         if (entry && prior && entriesEqual(prior, entry)) entry = prior
         read.set(workspace, entry)
       }
@@ -102,7 +132,7 @@ export function createSettledChatsSelector(): (
       return previous
     }
     previous = entries
-    previousById = new Map(entries.map((entry) => [entry.id, entry]))
+    previousById = new Map(entries.map((entry) => [entry.key, entry]))
     return entries
   }
 }

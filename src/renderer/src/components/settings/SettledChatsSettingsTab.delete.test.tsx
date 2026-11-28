@@ -123,7 +123,7 @@ async function render(): Promise<void> {
   await act(async () =>
     root.render(
       <ConfirmDialogProvider>
-        <SettledChatsSettingsTab onOpenChat={() => {}} />
+        <SettledChatsSettingsTab onOpenChat={() => {}} onOpenEnvironmentChat={() => {}} />
       </ConfirmDialogProvider>,
     ),
   )
@@ -172,19 +172,18 @@ test('Select all and Delete takes every settled chat in one confirmation that co
     (input) => input.closest('label')?.textContent === 'Select all',
   )
   await act(async () => selectAll?.click())
-  expect(host.textContent).toContain('3 selected')
+  expect(host.textContent).toContain('2 selected')
   const bulk = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
-    (candidate) => candidate.textContent === 'Delete 3 chats',
+    (candidate) => candidate.textContent === 'Delete 2 chats',
   )
   await act(async () => bulk?.click())
   await flush()
-  expect(planned).toEqual([['w3', 'w4', 'w2']])
-  expect(dialog()?.textContent).toContain('Delete 3 settled chats?')
-  expect(dialog()?.textContent).toContain('1 of them runs on a paired machine')
-  await act(async () => dialogButton('Delete 3 chats')?.click())
+  expect(planned).toEqual([['w3', 'w2']])
+  expect(dialog()?.textContent).toContain('Delete 2 settled chats?')
+  await act(async () => dialogButton('Delete 2 chats')?.click())
   await flush()
-  expect(deleted).toEqual([['w3', 'w4', 'w2']])
-  expect(fixtures.toasts.at(-1)).toEqual({ tone: 'good', title: 'Deleted 3 chats' })
+  expect(deleted).toEqual([['w3', 'w2']])
+  expect(fixtures.toasts.at(-1)).toEqual({ tone: 'good', title: 'Deleted 2 chats' })
 })
 
 test('ticking rows deletes just those', async () => {
@@ -206,25 +205,16 @@ test('ticking rows deletes just those', async () => {
   expect(host.textContent).not.toContain('selected')
 })
 
-test("a paired machine's chat offers Remove, says it stays on that machine, and asks before removing it here", async () => {
+test("this computer's record of a paired machine's chat is not listed: that machine lists its own", async () => {
   await render()
-  const remove = button('Remove Look at the flaky test')
-  expect(remove?.textContent).toBe('Remove')
-  // The tooltip says what the button does before it is pressed.
-  await act(async () => {
-    remove?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-    await new Promise((resolve) => setTimeout(resolve, 260))
-  })
-  expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
-    'Removes this chat from this computer only. The chat, its history and its worktree stay on mac-mini',
-  )
-  await act(async () => remove?.click())
-  await flush()
-  expect(dialog()?.textContent).toContain('Remove “Look at the flaky test” from this computer?')
-  expect(dialog()?.textContent).toContain('stay on mac-mini')
-  await act(async () => dialogButton('Remove')?.click())
-  await flush()
-  expect(deleted).toEqual([['w4']])
+  expect(host.textContent).not.toContain('Look at the flaky test')
+  expect(button('Remove Look at the flaky test')).toBeNull()
+})
+
+test("another environment's chat is deleted there, and its Delete says so", async () => {
+  const { settledChatDeleteTooltip } = await import('./SettledChatsSettingsTab')
+  expect(settledChatDeleteTooltip('mac-mini')).toContain('Deletes this chat and its history on mac-mini')
+  expect(settledChatDeleteTooltip(null)).toContain('Deletes this chat and its history for good')
 })
 
 test('a chat main will not delete is not offered a confirmation; the toast says why', async () => {

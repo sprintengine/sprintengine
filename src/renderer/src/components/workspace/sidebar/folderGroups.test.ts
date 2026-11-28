@@ -7,7 +7,6 @@ import {
   folderDisplayName,
   newChatProjectTarget,
   projectKeyOf,
-  remoteGroupDisplayName,
   remoteProjectFolder,
   remoteProjectName,
   resolveGroups,
@@ -90,13 +89,6 @@ test('chats started without a project on every machine share one "No project" he
 
 const SLOT = '/Users/dev/.sprintengine-worktrees/demo-app/demo-app-04'
 
-function openedFrom(id: string, workspaceRoot: string | null): Workspace {
-  return {
-    ...chat(id, null),
-    remoteOrigin: { connectionId: 'c1', machineName: 'mac-mini', workspaceId: id, workspaceRoot, repository: null },
-  } as unknown as Workspace
-}
-
 test('a chat in a pool slot on a paired machine is named for its project', () => {
   assert.equal(remoteProjectName(SLOT, 'mac-mini'), 'demo-app')
   assert.equal(remoteProjectName(`${SLOT}/`, 'mac-mini'), 'demo-app', 'a trailing separator changes nothing')
@@ -105,7 +97,6 @@ test('a chat in a pool slot on a paired machine is named for its project', () =>
     'demo-app',
     'on a Windows machine too',
   )
-  assert.equal(remoteGroupDisplayName(openedFrom('a', SLOT)), 'demo-app', 'a row opened here too')
   assert.equal(remoteProjectFolder(SLOT), '/Users/dev/demo-app')
 })
 
@@ -124,10 +115,4 @@ test('a folder on a paired machine that is not an app-made worktree keeps its ow
 test('the slots of a project with no repository share one header with its checkout', () => {
   const folders = [SLOT, '/Users/dev/.sprintengine-worktrees/demo-app/demo-app-07', '/Users/dev/demo-app']
   assert.equal(new Set(folders.map((folder) => key('env-mini', remoteProjectFolder(folder)))).size, 1)
-})
-
-test('a record of an SSH machine’s worktree chat is named for its project', () => {
-  const environment = { id: 'env1', label: 'build-box' }
-  const worktree = { ...chat('a', SLOT), environment } as unknown as Workspace
-  assert.equal(remoteGroupDisplayName(worktree), 'demo-app')
 })

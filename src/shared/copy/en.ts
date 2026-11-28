@@ -685,9 +685,6 @@ export const en = {
     useDeleteSettledChats: {
       theChatWasNotDeleted: 'The chat was not deleted',
       theChatsWereNotDeleted: 'The chats were not deleted',
-      deleteOn: (title: unknown, machineName: unknown) => `Delete “${title}” on ${machineName}?`,
-      delete: 'Delete',
-      deletedOn: (title: unknown, machineName: unknown) => `Deleted “${title}” on ${machineName}`,
     },
     // src/renderer/src/hooks/useWorkspaceFolderStatus.ts
     useWorkspaceFolderStatus: {

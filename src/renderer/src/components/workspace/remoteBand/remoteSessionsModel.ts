@@ -289,6 +289,8 @@ export type RemoteConversation = {
   highlight: WorkspaceHighlight | null
   /** When the chat wakes, while it is snoozed over there. */
   snoozedUntil: number | null
+  /** When its environment settled it: only on a row of the settled chats (`environmentChatRows`' `settled`). */
+  settledAt?: number
   /** Auto-settle is on for the chat over there. */
   autoSettle: boolean
   /** Its environment keeps its rest and read state, and this device may write them: Settle and visits are asked of it. */
@@ -679,8 +681,14 @@ export function environmentChatRows(input: {
   hiddenMode?: (mode: string | null) => boolean
   onTailnet?: boolean
   reachedOverTailnet?: (route: string) => boolean
+  /**
+   * The chats each environment has settled instead, each with its `settledAt`,
+   * for Settings ▸ Settled chats: the rows the sidebar leaves out, by the
+   * same environments and the same hidden kinds.
+   */
+  settled?: boolean
 }): RemoteConversation[] {
-  const { environments, records, hiddenMode, onTailnet = true, reachedOverTailnet } = input
+  const { environments, records, hiddenMode, onTailnet = true, reachedOverTailnet, settled = false } = input
   const reachable = input.sources.filter((followed) => onTailnet || !reachedOverTailnet?.(followed.route))
   const resolved = reachable.map((followed) => {
     const route = parseEnvironmentRoute(followed.route)
@@ -734,6 +742,13 @@ export function environmentChatRows(input: {
     const machine: MachineRef = environment?.machine ?? { kind: 'paired', name: source.machineName }
     const rest = { writes, lastKnown, records, machine }
     const chats: RemoteConversation[] = []
+    if (settled) {
+      for (const workspace of browse?.workspaces ?? [])
+        if (typeof workspace.settledAt === 'number' && !hiddenMode?.(workspace.mode))
+          chats.push({ ...chatOf(source, workspace, [], rest), settledAt: workspace.settledAt })
+      lists.push(chats)
+      continue
+    }
     const drawn = new Set<string>()
     for (const workspace of browse?.workspaces ?? []) {
       if (resting.has(workspace.id) || hiddenMode?.(workspace.mode)) continue
