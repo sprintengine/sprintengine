@@ -3,13 +3,14 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import { wslConnectionReport } from '../../../../shared/environment-connections'
+import { sshConnection, wslConnectionReport } from '../../../../shared/environment-connections'
 import type { EnvironmentEntry } from '../../../../shared/environments'
 import {
   executionHostStateWords,
   type ExecutionHostSettings,
   type HostsListResult,
 } from '../../../../shared/execution-host'
+import { DEFAULT_SSH_ENVIRONMENT_SETTINGS } from '../../../../shared/ssh-environments'
 
 const fixtures = vi.hoisted(() => ({
   state: {
@@ -366,4 +367,53 @@ test('every machine is one list: a paired desktop and an SSH machine sit beside 
   expect(retries).toEqual(['tailnet:tnc_1'])
   await act(async () => host.querySelector<HTMLElement>('[aria-label="Pair again, old-box"]')!.click())
   expect(remote).toBe(1)
+})
+
+test('Sign in on an SSH machine whose host key is not known yet connects it, so ssh can ask about the key', async () => {
+  const api = (window as unknown as { api: Record<string, unknown> }).api
+  // A background try in BatchMode stopped at the unknown host key: the machine waits on the person.
+  const box = {
+    id: 'm_box',
+    label: 'build-box',
+    destination: 'dev@build-box',
+    resolved: { hostname: '192.0.2.10', user: 'dev', port: 22, proxyJump: null },
+    environmentId: null,
+    settings: { ...DEFAULT_SSH_ENVIRONMENT_SETTINGS },
+    addedAt: 0,
+    state: 'needs-sign-in' as const,
+    stateText: "build-box isn't a known host yet. Connect to check its fingerprint.",
+    working: false,
+    action: 'connect' as const,
+    server: null,
+    notes: [],
+  }
+  api.sshMachinesEnabled = true
+  api.sshEnvironmentsList = async () => [box]
+  api.sshEnvironmentSuggestions = async () => []
+  api.onSshEnvironmentsChanged = () => () => {}
+  api.containerDockerStatus = async () => ({ state: 'missing', words: '', imageReady: false, canStart: null })
+  others = [
+    {
+      environmentId: null,
+      displayName: 'build-box',
+      routes: [{ kind: 'ssh', machine: 'm_box' }],
+      machine: { kind: 'ssh', host: '192.0.2.10' },
+      descriptor: null,
+      connection: sshConnection(box),
+      compatibility: 'unknown',
+    },
+  ]
+  await act(async () =>
+    root.render(
+      <ConfirmDialogProvider>
+        <MachinesSettingsTab />
+      </ConfirmDialogProvider>,
+    ),
+  )
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+  const signIn = host.querySelector<HTMLElement>('[aria-label="Sign in, build-box"]')
+  expect(signIn).not.toBeNull()
+  // The person's click is the interactive connect: ssh asks about the key through Studio's dialog.
+  await act(async () => signIn!.click())
+  expect(retries).toEqual(['ssh:m_box'])
 })

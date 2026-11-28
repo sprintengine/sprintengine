@@ -183,7 +183,11 @@ export function MachinesSettingsTab({
             })
             const isOpen = expanded === key
             const act = (): void => {
-              if (status.action === 'retry') void retryEnvironment(entry)
+              // An SSH machine's Sign in is the person's own connect: ssh may
+              // then ask them (a new host key, a password) in Studio's dialogs,
+              // which a background try never does.
+              if (status.action === 'retry' || (best.kind === 'ssh' && status.kind === 'signed-out'))
+                void retryEnvironment(entry)
               else if (best.kind === 'tailnet') onOpenRemoteSettings?.()
               else setExpanded(key)
             }

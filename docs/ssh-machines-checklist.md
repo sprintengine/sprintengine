@@ -16,7 +16,8 @@ examples call it `build-box`, with a user `dev`.
    `~/.ssh/config`), then Check.
    Expect: the route it resolves to, `dev@<host>:<port>`, and the jump host if
    your config names one. Nothing has connected yet.
-2. Add it; it joins the Machines list. Connect it from its row.
+2. Add it; it joins the Machines list. Press Connect on its row (Sign in, when
+   a try in the background already found its host key unknown).
    Expect, on a first connection: "New machine: build-box" with the key type
    and the SHA-256 fingerprint. Cancel is focused, not Trust.
 3. Check the fingerprint against the machine (`ssh-keygen -lf
