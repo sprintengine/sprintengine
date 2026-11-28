@@ -129,7 +129,10 @@ test('each row carries what its chat’s row draws, and leaves out what it has n
 })
 
 test('asked for its own chats only, it leaves out what another environment holds', async () => {
-  const copy = workspace('ws-copy', { folderPath: '/home/dev/app', environment: { kind: 'ssh', id: 'build-box', label: 'dev@build-box' } })
+  const copy = workspace('ws-copy', {
+    folderPath: '/home/dev/app',
+    environment: { kind: 'ssh', id: 'build-box', label: 'dev@build-box' },
+  })
   WORKSPACES.push(copy)
   try {
     assert.ok(

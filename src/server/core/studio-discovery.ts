@@ -48,10 +48,7 @@ function readDiscoveryToolResult(result: McpToolResult): StudioDiscoveryAnswer<R
   return { ok: true, value: structured }
 }
 
-export function createStudioDiscovery(
-  chats: StudioWorkspaceList,
-  tools: () => McpToolRegistration[],
-): StudioDiscovery {
+export function createStudioDiscovery(chats: StudioWorkspaceList, tools: () => McpToolRegistration[]): StudioDiscovery {
   async function call(
     name: string,
     args: Record<string, unknown>,
