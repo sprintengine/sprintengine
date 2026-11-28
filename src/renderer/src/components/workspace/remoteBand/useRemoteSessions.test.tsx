@@ -11,7 +11,7 @@ import { useRemoteSessions, type RemoteSessions } from './useRemoteSessions'
 // source's (`environmentChats.ts`, whose tests hold the reads, the pushes and
 // the clock), shaped here by pairing as the band draws them.
 
-test('each paired machine’s rows come from its chat source, shaped by pairing', async () => {
+test('each followed environment’s rows come from its chat source, shaped as the rows read them', async () => {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'http://localhost/',
     pretendToBeVisual: true,
@@ -51,6 +51,9 @@ test('each paired machine’s rows come from its chat source, shaped by pairing'
     'session.list': () => ({ ok: true, sessions: [] }),
   })
   const lists = () => studio.calls.filter((call) => call.method === 'conversation.list').length
+  // The window follows every listed environment (`useFollowWindowEnvironments`); this hook shapes what each read.
+  const { followEnvironmentChats } = await import('../../../studio/environmentChats')
+  followEnvironmentChats([{ route: 'tailnet:c1', name: 'mac-mini' }])
 
   let latest: RemoteSessions | null = null
   function Probe() {
@@ -70,9 +73,13 @@ test('each paired machine’s rows come from its chat source, shaped by pairing'
       root.render(createElement(Probe))
     })
     await settle()
-    const entry = latest!.browses.get('c1')
-    assert.ok(entry, 'the paired machine has its entry')
-    assert.equal(entry.browse?.connectionId, 'c1')
+    const [view] = latest!.sources
+    assert.ok(view, 'the paired machine has its entry')
+    assert.deepEqual(
+      [view.route, view.machineName, view.connectionId, view.live],
+      ['tailnet:c1', 'mac-mini', 'c1', true],
+    )
+    const { entry } = view
     assert.ok(entry.browse?.scopes.includes('conversation:operate'), 'its scopes as its grant says them now')
     assert.equal(entry.conversations?.length, 1)
     assert.equal(entry.lifecycle, true)
@@ -81,14 +88,15 @@ test('each paired machine’s rows come from its chat source, shaped by pairing'
     assert.equal(entry.listFailure, null)
     assert.equal(lists(), 1, 'read once, by its source')
 
-    const before = latest!.browses
+    const before = latest!.sources
     await settle()
-    assert.equal(latest!.browses, before, 'nothing moved: the same entries')
+    assert.equal(latest!.sources, before, 'nothing moved: the same entries')
 
-    await act(async () => latest!.refresh('c1'))
+    await act(async () => latest!.refresh('tailnet:c1'))
     await settle()
     assert.equal(lists(), 2, 'Refresh reads the machine again')
   } finally {
     act(() => root.unmount())
+    followEnvironmentChats([])
   }
 })

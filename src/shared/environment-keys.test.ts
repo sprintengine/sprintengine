@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { formatEnvironmentRoute, parseChatAddress } from '../../packages/studio-protocol/src/environment'
+import { formatEnvironmentRoute } from '../../packages/studio-protocol/src/environment'
 import {
-  chatAddressKeyOfRemoteChat,
   chatAddressOfWorkspace,
   environmentRouteOfHostId,
   environmentRouteOfMachinePath,
@@ -21,7 +20,6 @@ import {
 import { emptyExecutionHostSettings, LOCAL_HOST_ID, wslHostId, type ExecutionHostId } from './execution-host'
 import { machineIdOf } from './machine-identity'
 import { machinePath, parseMachinePath } from './machine-paths'
-import { remoteChatKey } from '../renderer/src/components/workspace/remoteBand/remoteSessionsModel'
 
 const LOCAL_ID = '6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b'
 const PAIRED_ID = '3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a'
@@ -106,11 +104,6 @@ test("a chat's address today: this desktop's for every record it holds, the pair
     ),
     null,
   )
-  // The remote chat key (`<pairing>:<chat>`) maps onto the same address.
-  assert.equal(remoteChatKey('tnc_1', 'ws_there'), 'tnc_1:ws_there')
-  const key = chatAddressKeyOfRemoteChat('tnc_1', 'ws_there', environments.ofRoute)
-  assert.deepEqual(parseChatAddress(key), { environmentId: PAIRED_ID, chatId: 'ws_there' })
-  assert.equal(chatAddressKeyOfRemoteChat('tnc_2', 'ws_there', environments.ofRoute), null)
 })
 
 test("today's records are sources, and each machine's mark id follows from its source", () => {

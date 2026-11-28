@@ -578,7 +578,7 @@ export function RemoteConversationContextMenu({
   /** Its agent finished something nobody has been marked as missing, and the machine takes Mark unread. */
   canMarkUnread: boolean
   isDetachedWindow: boolean
-  /** The chat's link, by its address on its machine (`chatLinkOfRemoteChat`); null while that machine's id is not known. */
+  /** The chat's link, by its address on its environment; null while that environment's id is not known. */
   chatLink: string | null
   starred: boolean
   color: HighlightColor | null

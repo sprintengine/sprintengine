@@ -1,4 +1,3 @@
-import type { MeshMachineReachability } from '../../../../../shared/tailnet-mesh'
 import type { EnvironmentStatusKind } from '../../../../../../packages/client-runtime/src/environments/environmentStatus'
 import { formatRelativeMs, formatRelativeMsAgo } from '../../../utils/relativeTime'
 import { copy } from '../../../../../shared/copy'
@@ -37,21 +36,19 @@ export type RemoteLastKnown = {
  * Whether a machine's rows are a last-known list, and why.
  *
  * The window's own newest read decides first: a read that failed makes the
- * list last-known whatever main's background check says, because the check
- * can pass while the read is refused. A read that succeeded after main's last
- * check is believed over that check. Otherwise how the machine stands
- * (`environmentStatus`) decides, as it did when these rows were dimmed.
+ * list last-known whatever the environment list says, because a machine can
+ * read as connected while the read is refused, and a read that answered is
+ * current whatever the list says. Before the window has read it, how the
+ * machine stands (`environmentStatus`) decides.
  */
 export function remoteLastKnownOf(
   entry: { listedAt?: number; listFailure?: EnvironmentListFailure | null } | undefined,
   status: EnvironmentStatusKind | null,
-  reach?: MeshMachineReachability,
 ): RemoteLastKnown | null {
   const since = entry?.listedAt ?? null
   const failure = entry?.listFailure ?? null
   if (failure) return { reason: failure.kind === 'unauthorized' ? 'signed-out' : 'not-answering', since }
-  const checkedAt = reach?.checkedAt ?? null
-  if (since !== null && checkedAt !== null && since > checkedAt) return null
+  if (entry?.listFailure === null) return null
   if (status === 'signed-out') return { reason: 'signed-out', since }
   if (status === 'offline') return { reason: 'not-answering', since }
   if (status === 'incompatible') return { reason: 'outdated', since }
