@@ -23,6 +23,7 @@ import { workspaceLastUserMessageAt } from '../../../utils/workspaceRecency'
 import { finishedUnseen } from '../../../../../shared/workspace-lifecycle'
 import type { Tone } from '../../ui'
 import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
+import type { MachineRef } from '../../../../../shared/machine-identity'
 import {
   formatChatAddress,
   isEnvironmentId,
@@ -251,6 +252,8 @@ export type RemoteConversation = {
    */
   connectionId: string | null
   machineName: string
+  /** How its machine is drawn, as the environment list says it. */
+  machine: MachineRef
   /** The chat's name over there. */
   title: string
   /** The chat's id there. */
@@ -588,6 +591,7 @@ function chatOf(
     writes: RemoteRowWrites
     lastKnown: RemoteLastKnown | null
     records: ReadonlyMap<string, string>
+    machine: MachineRef
   },
 ): RemoteConversation {
   const lead = agents[0] ?? null
@@ -608,6 +612,7 @@ function chatOf(
     environmentId: source.environmentId,
     connectionId: source.connectionId,
     machineName: source.machineName,
+    machine: rest.machine,
     // The list says the chat's title fresher than the browse does.
     title: lead?.chatTitle ?? workspace?.name ?? appCopy.workspace.remoteBand.remoteSessionsModel.conversation,
     workspaceId: chatId,
@@ -710,7 +715,9 @@ export function environmentChatRows(input: {
       if (agents) agents.push(row)
       else agentsByChat.set(conversation.workspaceId, [row])
     }
-    const rest = { writes, lastKnown, records }
+    // An environment the list does not name (a route only a copy here names) is drawn as a machine of that name.
+    const machine: MachineRef = environment?.machine ?? { kind: 'paired', name: source.machineName }
+    const rest = { writes, lastKnown, records, machine }
     const chats: RemoteConversation[] = []
     const drawn = new Set<string>()
     for (const workspace of browse?.workspaces ?? []) {

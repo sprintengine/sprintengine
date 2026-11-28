@@ -1637,14 +1637,23 @@ function WorkspaceSidebar({
         conversation.workspaceId,
       )
         .then((answer) => {
-          if (!answer.ok) restore(answer.message)
+          if (!answer.ok) {
+            restore(answer.message)
+            return
+          }
+          // A chat attached here rests here too, so a window that has it in
+          // front moves on, as a local Settle takes a row (a copy's rest is
+          // mirrored from its machine).
+          const held = conversation.attachedWorkspaceId
+          if (held && useWorkspaceStore.getState().workspaces.some((w) => w.id === held && w.remoteOrigin))
+            settleWorkspaceById(held)
           // Read again, so the list that no longer names it is what clears
           // the hidden key.
-          else refreshRemote(conversation.route)
+          refreshRemote(conversation.route)
         })
         .catch((error: unknown) => restore(error instanceof Error ? error.message : String(error)))
     },
-    [refreshRemote],
+    [refreshRemote, settleWorkspaceById],
   )
 
   // The row menu on another environment's chat: its star, colour, sleep and
@@ -3024,25 +3033,28 @@ function WorkspaceSidebar({
   ) => {
     const rowKey = `${options?.keyPrefix ?? ''}remote-session-${conversation.key}`
     const open = () => onOpenRemoteSession?.(openSpecOfConversation(conversation))
-    const agent = conversation.agents[0]!
+    // The record here that holds the chat is the window's chat in front: the row is the current one.
+    const active =
+      !globalSurfaceActive &&
+      conversation.attachedWorkspaceId !== null &&
+      conversation.attachedWorkspaceId === activeWorkspaceId
     const needsAttention = conversation.activity === 'needs-input'
-    const unseenDone = !needsAttention && remoteRowFinishUnseen(conversation, now)
-    const scheduledAgentId = conversation.agents.find((row) => row.scheduledAgentId)?.scheduledAgentId ?? null
+    const unseenDone = !needsAttention && !active && remoteRowFinishUnseen(conversation, now)
+    const scheduledAgentId = conversation.scheduledAgentId
     const working = conversation.activity === 'working'
     const flatProject = options?.flatProject ?? null
     const starred = conversation.highlight?.starred === true
     const highlighted = hasHighlightOverride(conversation.highlight)
     const asleepUntil = options?.snoozed ? conversation.snoozedUntil : null
     const surface = needsAttention
-      ? attentionRowClass(false)
+      ? attentionRowClass(active)
       : unseenDone
-        ? doneRowClass(false)
-        : `${highlighted ? inactiveHighlightClass(conversation) : ''} text-[color:var(--text-default)] hover:bg-[color:var(--bg-surface-raised)] hover:text-[color:var(--text-strong)]`
+        ? doneRowClass(active)
+        : active
+          ? activeRowClass(conversation)
+          : `${highlighted ? inactiveHighlightClass(conversation) : ''} text-[color:var(--text-default)] hover:bg-[color:var(--bg-surface-raised)] hover:text-[color:var(--text-strong)]`
     const lines = conversation.agents.map(lineOfRemoteRow)
-    const machine: RowMachine = {
-      ref: { kind: 'paired', name: conversation.machineName },
-      name: conversation.machineName,
-    }
+    const machine: RowMachine = { ref: conversation.machine, name: conversation.machineName }
     // The local rows' hover-and-focus-revealed actions, in the same place:
     // "More actions", then Settle, which waits while the agent works.
     const actions = (
@@ -3078,7 +3090,7 @@ function WorkspaceSidebar({
               {WAKE_ALARM_GLYPH}
             </IconButton>
           </Tooltip>
-        ) : agent.lifecycle ? (
+        ) : conversation.lifecycle ? (
           <Tooltip
             content={
               working
@@ -3104,7 +3116,7 @@ function WorkspaceSidebar({
     )
     // The flat stream's seat rides the project line, as a local row's does;
     // in the tree the first agent line's own seat carries the actions.
-    const idleSince = lines[0]!.idleSince
+    const idleSince = lines[0]?.idleSince ?? (working ? null : conversation.lastTurnEndedAt)
     const idleText = !working && idleSince !== null ? formatRelativeMs(idleSince, now) : ''
     const flatSeat = (
       <span className={ROW_SEAT_CLASS}>
@@ -3127,7 +3139,7 @@ function WorkspaceSidebar({
           ) : working ? (
             <>
               <WorkingMark label={activityLabel('working')} />
-              {lines[0]!.workingSince !== null ? <WorkingElapsed since={lines[0]!.workingSince} /> : null}
+              {lines[0]?.workingSince != null ? <WorkingElapsed since={lines[0].workingSince} /> : null}
             </>
           ) : idleText ? (
             <RowTooltip
@@ -3153,7 +3165,9 @@ function WorkspaceSidebar({
       <div
         key={rowKey}
         data-row-key={rowKey}
-        data-remote-session={agent.sessionId}
+        data-remote-session={conversation.agents[0]?.sessionId}
+        data-chat-address={conversation.key}
+        aria-current={active ? 'true' : undefined}
         data-remote-conversation={conversation.key}
         data-remote-activity={conversation.activity}
         tabIndex={rovingKey === rowKey ? 0 : -1}
@@ -3245,7 +3259,7 @@ function WorkspaceSidebar({
             <span className="sr-only">
               {appCopy.workspace.workspaceSidebar.on}
               {conversation.machineName}
-              {appCopy.workspace.workspaceSidebar.notOpenHere}
+              {conversation.attachedWorkspaceId === null ? appCopy.workspace.workspaceSidebar.notOpenHere : null}
             </span>
             {asleepUntil !== null ? (
               <span className="sr-only">{appCopy.workspace.workspaceSidebar.snoozed}</span>
