@@ -158,7 +158,7 @@ export function PairRequestCard({
           id={helpId}
           className={`mt-1 text-micro ${codeError ? 'text-[color:var(--tone-error)]' : 'text-[color:var(--text-subtle)]'}`}
         >
-          {codeError ?? `Allow enables at six digits. ${PAIR_REQUEST_CODE_ATTEMPTS} wrong codes decline the request.`}
+          {codeError ?? `After ${PAIR_REQUEST_CODE_ATTEMPTS} wrong codes, the request is declined.`}
         </p>
       </div>
       <div className="pb-2">

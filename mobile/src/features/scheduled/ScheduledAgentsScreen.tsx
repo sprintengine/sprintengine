@@ -190,13 +190,13 @@ export function ScheduledAgentsScreen({
       <BottomSheet onClose={() => setPicked(null)} title={picked?.agent.title ?? copy.phone.scheduled.scheduledAgentsScreen.scheduledAgent} visible={picked !== null}>
         {picked ? (
           <View style={styles.sheet}>
-            <SheetOption label={copy.phone.scheduled.scheduledAgentsScreen.runNow} onPress={() => act("run")} sub="Starts its chat now, paused or not." />
+            <SheetOption label={copy.phone.scheduled.scheduledAgentsScreen.runNow} onPress={() => act("run")} />
             {picked.agent.paused ? (
-              <SheetOption label={copy.phone.scheduled.scheduledAgentsScreen.resumeSchedule} onPress={() => act("resume")} sub="It runs again at its next time." />
+              <SheetOption label={copy.phone.scheduled.scheduledAgentsScreen.resumeSchedule} onPress={() => act("resume")} />
             ) : (
-              <SheetOption label={copy.phone.scheduled.scheduledAgentsScreen.pauseSchedule} onPress={() => act("pause")} sub="No runs at its times until resumed." />
+              <SheetOption label={copy.phone.scheduled.scheduledAgentsScreen.pauseSchedule} onPress={() => act("pause")} />
             )}
-            <SheetOption label={copy.phone.scheduled.scheduledAgentsScreen.closeSchedule} onPress={() => act("delete")} sub="Stops it for good. Its chats stay." />
+            <SheetOption label={copy.phone.scheduled.scheduledAgentsScreen.closeSchedule} onPress={() => act("delete")} sub={copy.phone.scheduled.scheduledAgentsScreen.closeScheduleKeepsChats} />
           </View>
         ) : null}
       </BottomSheet>

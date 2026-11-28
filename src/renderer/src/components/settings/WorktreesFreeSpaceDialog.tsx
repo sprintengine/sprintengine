@@ -62,12 +62,7 @@ export function FreeSpaceDialog({
 
   return (
     <Modal open onClose={onClose} labelledBy={titleId} size="standard">
-      <ModalHeader
-        title={copy.settings.worktreesFreeSpaceDialog.freeUpSpace}
-        subtitle={copy.settings.worktreesFreeSpaceDialog.skipsAnythingInUseOr}
-        titleId={titleId}
-        onClose={onClose}
-      />
+      <ModalHeader title={copy.settings.worktreesFreeSpaceDialog.freeUpSpace} titleId={titleId} onClose={onClose} />
       <ModalBody>
         <DescribedCheckRowList ariaLabel={copy.settings.worktreesFreeSpaceDialog.whatToRemove}>
           <DescribedCheckRow

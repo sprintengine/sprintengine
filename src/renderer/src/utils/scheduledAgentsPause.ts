@@ -1,10 +1,10 @@
 // Pausing scheduled agents, as every surface in a window offers it: a
 // schedule's row and its menu, the sidebar menu of a chat a schedule started,
 // the schedule's editor and the command palette. One set of words and one set
-// of calls, so each place says the same thing about what a pause does — a
-// paused schedule starts nothing at its times, a run already going carries on,
-// Run now still runs it, and nothing missed while paused is made up — and
-// each confirms it the same way.
+// of calls, so each place confirms a pause the same way. What a pause does —
+// a paused schedule starts nothing at its times, a run already going carries
+// on, Run now still runs it, and nothing missed while paused is made up — is
+// the scheduler's rule; the confirmation says only what happened and where.
 
 import type { ScheduledAgentView, ScheduledAgentsPause } from '../../../shared/scheduled-agents'
 import { showToast } from '../store/toastStore'
@@ -77,9 +77,6 @@ export function pausedSinceWords(pausedAt: number, now: number): string {
   })}`
 }
 
-/** What pausing one does, for its confirmation. */
-const PAUSE_SCHEDULE_HINT = 'It starts no run at its times until you resume it. A run already going carries on.'
-
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 /** Pause or resume one, and say so. True when it took. */
@@ -96,11 +93,7 @@ export async function setScheduledAgentPaused(agent: ScheduledAgentView, paused:
     return false
   }
   if (paused) {
-    showToast({
-      tone: 'neutral',
-      title: copy.utils.scheduledAgentsPause.schedulePaused,
-      description: PAUSE_SCHEDULE_HINT,
-    })
+    showToast({ tone: 'neutral', title: copy.utils.scheduledAgentsPause.schedulePaused })
     return true
   }
   const next = result.agent.nextRunAt
@@ -109,7 +102,7 @@ export async function setScheduledAgentPaused(agent: ScheduledAgentView, paused:
     title: copy.utils.scheduledAgentsPause.scheduleResumed,
     description:
       next !== null
-        ? copy.utils.scheduledAgentsPause.nextRunMissedRunsAren(whenWords(next, Date.now()))
+        ? copy.utils.scheduledAgentsPause.nextRun(whenWords(next, Date.now()))
         : copy.utils.scheduledAgentsPause.runsAgainOnceScheduledAgents,
   })
   return true
@@ -163,7 +156,7 @@ export async function pauseAllScheduledAgents(choice: PauseAllChoice): Promise<b
     title: scheduledAgentsPauseWords(result.pause, Date.now()),
     description: machines.missed.length
       ? `${where.trim()} Not paused: ${machines.missed.join(' ')} Its schedules keep running there.`.trim()
-      : copy.utils.scheduledAgentsPause.noRunsUntilThenRunning(where),
+      : where.trim() || undefined,
   })
   return true
 }
@@ -190,7 +183,7 @@ export async function resumeAllScheduledAgents(): Promise<boolean> {
     title: copy.utils.scheduledAgentsPause.scheduledAgentsResumed,
     description: machines.missed.length
       ? copy.utils.scheduledAgentsPause.notResumed2(machines.missed.join(' '))
-      : copy.utils.scheduledAgentsPause.eachRunsAtItsNext,
+      : undefined,
   })
   return true
 }

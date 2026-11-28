@@ -43,11 +43,6 @@ export function ChatAppToolsMenuItems({
             key={toolset.name}
             checked={granted}
             disabled={grants === null}
-            hint={
-              granted
-                ? copy.workspace.chatAppToolsMenuItems.thisChatMayUseThem
-                : copy.workspace.chatAppToolsMenuItems.onlyTheChatsItStarts
-            }
             onClick={() => {
               onDone()
               void setConversationToolGrant({ workspaceId, agentId }, toolset.name, !granted).catch(() => undefined)

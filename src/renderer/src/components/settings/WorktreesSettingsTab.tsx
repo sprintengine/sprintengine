@@ -741,15 +741,10 @@ export function WorktreesSettingsTab({
       <SettingCard className="mb-6">
         <SettingToggle
           label={appCopy.settings.worktreesSettingsTab.reuseWorktreesForNewChats}
-          description={appCopy.settings.worktreesSettingsTab.newChatsAndAgentsReuse}
           enabled={settings.enabled}
           onChange={(enabled) => void setPoolEnabled(enabled)}
         />
-        <SettingRow
-          label={appCopy.settings.worktreesSettingsTab.readyWorktreesToKeep}
-          help="Per project. When a chat is done and its worktree comes back, any beyond this are removed, longest unused first."
-          disabled={!settings.enabled}
-        >
+        <SettingRow label={appCopy.settings.worktreesSettingsTab.readyWorktreesToKeep} disabled={!settings.enabled}>
           <Select
             ariaLabel={appCopy.settings.worktreesSettingsTab.readyWorktreesToKeep}
             items={KEEP_IDLE_ITEMS}
@@ -758,11 +753,7 @@ export function WorktreesSettingsTab({
             onChange={(value) => void updateSettings({ keepIdle: Number(value) })}
           />
         </SettingRow>
-        <SettingRow
-          label={appCopy.settings.worktreesSettingsTab.mostWorktreesPerProject}
-          help="Counting the ones in use. Past this a new chat still gets a worktree, but a fresh one that is removed when the chat is done, not kept for reuse."
-          disabled={!settings.enabled}
-        >
+        <SettingRow label={appCopy.settings.worktreesSettingsTab.mostWorktreesPerProject} disabled={!settings.enabled}>
           <Select
             ariaLabel={appCopy.settings.worktreesSettingsTab.mostWorktreesPerProject}
             items={MAX_SLOT_ITEMS}
@@ -773,7 +764,6 @@ export function WorktreesSettingsTab({
         </SettingRow>
         <SettingRow
           label={appCopy.settings.worktreesSettingsTab.giveBackIdleWorktreesAfter}
-          help="A chat's worktree goes back to the pool once it has sat this long clean, with every commit pushed and nothing running in it. Its branch is kept, and opening the chat checks it out again in the same place. A new chat that finds the pool full takes back one that is not in use rather than waiting."
           disabled={!settings.enabled}
         >
           <Select
@@ -791,11 +781,7 @@ export function WorktreesSettingsTab({
             onChange={(value) => void updateSettings({ idleReturnMinutes: Number(value) })}
           />
         </SettingRow>
-        <SettingRow
-          label={appCopy.settings.worktreesSettingsTab.diskLimit}
-          help="For all of the pool's worktrees together. Past it, the longest-unused ready ones are removed. Nothing in use or holding work is ever removed, and worktrees outside the pool don't count."
-          disabled={!settings.enabled}
-        >
+        <SettingRow label={appCopy.settings.worktreesSettingsTab.diskLimit} disabled={!settings.enabled}>
           <Select
             ariaLabel={appCopy.settings.worktreesSettingsTab.diskLimit}
             items={
@@ -815,10 +801,7 @@ export function WorktreesSettingsTab({
             onChange={(value) => void updateSettings({ diskLimitGb: value === 'none' ? null : Number(value) })}
           />
         </SettingRow>
-        <SettingRow
-          label={appCopy.settings.worktreesSettingsTab.location}
-          help="Next to each project, in a folder of its own."
-        >
+        <SettingRow label={appCopy.settings.worktreesSettingsTab.location}>
           <code className="rounded-[var(--radius-chip)] bg-[color:var(--bg-well)] px-2 py-1 font-mono text-meta text-[color:var(--text-default)]">
             {'<project>/../.sprintengine-worktrees/<project>/'}
           </code>
@@ -1360,11 +1343,7 @@ function DependencyInstallSettings({
         onChange={(next) => onChange({ enabled: next, command: install?.command ?? null })}
       />
       {enabled ? (
-        <SettingRow
-          label={appCopy.settings.worktreesSettingsTab.installCommand}
-          help="Empty uses the lockfile's own: npm ci, pnpm install --frozen-lockfile, yarn install with --frozen-lockfile or --immutable, or bun install --frozen-lockfile. A command of your own runs again whenever any lockfile changes."
-          disabled={disabled}
-        >
+        <SettingRow label={appCopy.settings.worktreesSettingsTab.installCommand} disabled={disabled}>
           <Input
             size="sm"
             aria-label={appCopy.settings.worktreesSettingsTab.installCommandFor(projectName)}
@@ -1411,11 +1390,7 @@ function BranchPrefixSetting() {
   // A name git keeps for itself, or a common remote's, said as it is typed.
   const warning = worktreeBranchPrefixWarning(draft)
   return (
-    <SettingRow
-      label={appCopy.settings.worktreesSettingsTab.branchPrefix}
-      htmlFor={inputId}
-      help="What each new worktree’s branch starts with, or nothing when empty. Your own branches can share it: Studio only ever deletes a branch it made, once its work is merged and no chat uses it."
-    >
+    <SettingRow label={appCopy.settings.worktreesSettingsTab.branchPrefix} htmlFor={inputId}>
       <div className="flex flex-col items-end gap-1">
         <Input
           id={inputId}

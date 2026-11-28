@@ -281,7 +281,7 @@ export function CodeBlock(props: CodeBlockProps) {
         <div className="ds-code-block__actions" role="group" aria-label={appCopy.ui.codeBlock.codeActions}>
           {props.actions}
           {command && onPaste ? (
-            <Tooltip content={appCopy.ui.codeBlock.pasteIntoTerminalItRuns}>
+            <Tooltip content={appCopy.ui.codeBlock.pasteIntoTerminal}>
               <IconButton
                 size="xs"
                 tone="subtle"

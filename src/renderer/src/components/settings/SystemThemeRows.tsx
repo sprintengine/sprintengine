@@ -19,10 +19,7 @@ export function SystemThemeRows() {
   if (theme !== 'system') return null
   return (
     <SettingCard>
-      <SettingsRow
-        label={copy.settings.systemThemeRows.inLightMode}
-        help="The theme System uses while the OS is set to light."
-      >
+      <SettingsRow label={copy.settings.systemThemeRows.inLightMode}>
         <Select<ResolvedAppTheme>
           ariaLabel={copy.settings.systemThemeRows.themeInLightMode}
           items={systemThemeChoices('light').map((id) => ({ value: id, label: labelOf(id) }))}
@@ -30,10 +27,7 @@ export function SystemThemeRows() {
           onChange={(next) => setSystemTheme('light', next)}
         />
       </SettingsRow>
-      <SettingsRow
-        label={copy.settings.systemThemeRows.inDarkMode}
-        help="The theme System uses while the OS is set to dark."
-      >
+      <SettingsRow label={copy.settings.systemThemeRows.inDarkMode}>
         <Select<ResolvedAppTheme>
           ariaLabel={copy.settings.systemThemeRows.themeInDarkMode}
           items={systemThemeChoices('dark').map((id) => ({ value: id, label: labelOf(id) }))}

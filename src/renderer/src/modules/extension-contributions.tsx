@@ -446,7 +446,6 @@ function registerContributions(
     host.registerSettingsSection({
       id: extensionSurfaceId(key, 'settings'),
       label: extension.name,
-      description: 'Settings it declares',
       icon: extensionGlyph('settings'),
       order: surfaces.settingsSections.length,
       Component: function ExtensionDeclaredSettings() {

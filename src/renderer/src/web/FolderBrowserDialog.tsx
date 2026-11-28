@@ -61,12 +61,7 @@ export function FolderBrowserDialog({
 
   return (
     <Modal open onClose={() => onDone(null)} labelledBy={titleId} size="standard" layout="panel">
-      <ModalHeader
-        titleId={titleId}
-        title={copy.web.folderBrowserDialog.chooseAFolder}
-        subtitle={copy.web.folderBrowserDialog.foldersOnTheMachineStudio}
-        onClose={() => onDone(null)}
-      />
+      <ModalHeader titleId={titleId} title={copy.web.folderBrowserDialog.chooseAFolder} onClose={() => onDone(null)} />
       <ModalBody className="flex min-h-0 flex-1 flex-col gap-3">
         <form
           onSubmit={(event) => {

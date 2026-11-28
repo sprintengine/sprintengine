@@ -206,7 +206,7 @@ export function ProcessesPopover({
     view.unavailable === 'not-allowed' ? (
       <EmptyState density="list" title={words.notAllowed} body={words.notAllowedBody} />
     ) : view.unavailable === 'platform' ? (
-      <EmptyState density="list" title={words.notOnWindows} body={words.notOnWindowsBody} />
+      <EmptyState density="list" title={words.notOnWindows} />
     ) : view.unavailable === 'failed' && tabs.length === 0 ? (
       <EmptyState density="list" title={words.couldNotRead} body={words.couldNotReadBody} />
     ) : (

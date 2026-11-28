@@ -314,7 +314,7 @@ test('$ still opens the skill picker, and the command menu names it in its foote
   const menu = await mountCommandPicker()
   try {
     await menu.render('/')
-    expect(menu.dom.window.document.body.textContent).toContain('$ for Studio skills')
+    expect(menu.dom.window.document.body.textContent).toContain('Type $ to pick a Studio skill.')
     await menu.render('please use $rev')
     expect(menu.picker().trigger?.kind).toBe('skill')
     expect(menu.dom.window.document.querySelector('[role="menu"][aria-label="Use a skill"]')).not.toBeNull()

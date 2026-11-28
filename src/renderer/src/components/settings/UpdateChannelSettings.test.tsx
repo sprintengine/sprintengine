@@ -87,7 +87,7 @@ afterEach(async () => {
   await act(async () => root.unmount())
 })
 
-test('shows the channel main resolved, with the sentence for that channel', async () => {
+test('shows the channel main resolved, with the warning nightly carries', async () => {
   install({
     updateGetChannel: async () => ({ channel: 'nightly', chosen: false }),
     updateSetChannel: async (channel) => resultFor(channel),
@@ -98,7 +98,7 @@ test('shows the channel main resolved, with the sentence for that channel', asyn
   assert.equal(radio('Nightly').getAttribute('aria-checked'), 'true')
   assert.equal(radio('Stable').getAttribute('aria-checked'), 'false')
   const help = container.querySelector(`#${group.getAttribute('aria-describedby')}`)!
-  assert.match(help.textContent ?? '', /^Nightly gets the newest changes from main/)
+  assert.match(help.textContent ?? '', /^Switching back to Stable can install an older build/)
 })
 
 test('picking a channel saves it through main and hands back the state its check produced', async () => {
@@ -115,14 +115,14 @@ test('picking a channel saves it through main and hands back the state its check
   assert.equal(results.length, 1)
   assert.equal(results[0].state.channel, 'nightly')
   assert.equal(radio('Nightly').getAttribute('aria-checked'), 'true')
-  assert.match(container.textContent ?? '', /Nightly gets the newest changes/)
+  assert.match(container.textContent ?? '', /Switching back to Stable/)
 
   // Picking the channel already selected is not another check.
   await act(async () => radio('Nightly').click())
   assert.deepEqual(setCalls, ['nightly'])
   await act(async () => radio('Stable').click())
   assert.deepEqual(setCalls, ['nightly', 'stable'])
-  assert.match(container.textContent ?? '', /Stable gets a release once it has already run as a nightly/)
+  assert.doesNotMatch(container.textContent ?? '', /Switching back to Stable/)
 })
 
 test('a pick main refuses goes back to the channel that was showing', async () => {

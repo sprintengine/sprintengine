@@ -51,7 +51,7 @@ test('a dropped connection is told in words after a moment, and the words go onc
     await act(async () => loopback.drop())
     expect(host.textContent, 'a blip says nothing').toBe('')
     await until(() => host.textContent !== '', 'the reconnecting row')
-    expect(host.textContent).toBe('Reconnecting to Studio… The chat picks up where it left off.')
+    expect(host.textContent).toBe('Reconnecting to Studio…')
     expect(host.querySelector('[role="status"]')).not.toBeNull()
 
     // Back: the row goes.

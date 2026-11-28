@@ -94,7 +94,6 @@ export const en = {
     // src/renderer/src/components/auxWindows/DiffViewer.tsx
     diffViewer: {
       thisFileCannotBeRead: 'This file cannot be read from here.',
-      showInTheAppEsc: 'Show in the app (Esc just closes this window)',
       showInTheApp: 'Show in the app',
       diffSettings: 'Diff settings',
       wordWrap: 'Word wrap',
@@ -288,9 +287,11 @@ export const en = {
     // src/renderer/src/components/backlog/BacklogItemSearchPicker.tsx
     backlogItemSearchPicker: {
       clearItemSearch: 'Clear item search',
-      typeAnItemIDOr: 'Type an item ID or name.',
       noMatchingItems: 'No matching items.',
-      moreRefineTheSearch: ' more — refine the search.',
+      moreMatch: (remaining: number) =>
+        remaining === 1
+          ? '1 more item matches. Type more to narrow the list.'
+          : `${remaining} more items match. Type more to narrow the list.`,
     },
     // src/renderer/src/components/backlog/BacklogLinksSection.tsx
     backlogLinksSection: {
@@ -432,7 +433,6 @@ export const en = {
       workspaces: 'Workspaces',
       subsystems: 'Subsystems',
       performanceDiagnostics: 'Performance Diagnostics',
-      devPolling: 'dev · polling ',
       clearMemoryBaseline: 'Clear memory baseline',
       markCurrentMetricsAsBaseline: 'Mark current metrics as baseline',
       copyDiagnosticsReportToClipboard: 'Copy diagnostics report to clipboard',
@@ -471,8 +471,6 @@ export const en = {
       threads: 'Threads',
       fDs: 'FDs',
       processMetricsUnavailable: 'Process metrics unavailable.',
-      electronRowsWorkingSetChild:
-        "Electron rows: working set; child rows: OS RSS. Not macOS physical footprint, so Activity Monitor may differ. CPU % is since the last sample. FD counts aren't collected.",
       memoryTrend: 'Memory trend',
       reportedProcessMemory2: 'Reported process memory ',
       rendererJSHeap: 'renderer JS heap ',
@@ -501,8 +499,7 @@ export const en = {
       fPS: 'FPS ',
       longFramesRecorded: 'Long frames recorded',
       longFrames: 'Long frames ',
-      frameDurationsMsSpikesAre: 'Frame durations (ms) — spikes are stutters',
-      perFrameJankNoSingle: 'Per-frame jank no single >50ms task shows. GPU draw stalls may read low; check DevTools.',
+      frameDurationsMs: 'Frame durations (ms)',
       perfEvents: 'Perf events (',
       scope: 'Scope',
       event: 'Event',
@@ -524,15 +521,11 @@ export const en = {
       runtimeVisibleButWorkspaceIs: 'Runtime-visible but workspace is hidden',
       noTerminalSessions: 'No terminal sessions.',
       reapedTerminals: 'Reaped terminals (',
-      idleAgentsSuspendedByThe:
-        'Idle agents suspended by the reaper or disposed after 24h stale. Newest first; cleared on restart. Reopening one resumes it.',
       reaped: 'Reaped',
       reason: 'Reason',
       idleUnseen: 'Idle / unseen',
       nothingReapedYetThisSession: 'Nothing reaped yet this session.',
       workspaces2: 'Workspaces (',
-      rSSOfEachWorkspaceS:
-        'RSS of each workspace\'s agent and terminal processes. Shared app overhead isn\'t counted, so these sum to less than the app total. "Live for" counts from the oldest live terminal.',
       active: 'Active',
       idle: 'Idle',
       hiddenVis: 'Hidden+vis',
@@ -575,12 +568,8 @@ export const en = {
   environments: {
     // src/renderer/src/components/environments/NotOnMachineYet.tsx
     notOnMachineYet: {
-      filesOnOpenInA: (machine: unknown) => `Files on ${machine} open in a later version`,
-      thisChatSFolderIs: (machine: unknown) =>
-        `This chat's folder is on ${machine}. Browsing it from here comes in a later version.`,
-      areNotAvailableForSSH: (what: unknown) => `${what} are not available for SSH machines yet`,
-      chatsFilesAndGitRun: (machine: unknown, toLowerCase: unknown) =>
-        `Chats, files and git run on ${machine}; ${toLowerCase} don't yet.`,
+      thisChatSFolderIs: (machine: unknown) => `This chat's folder is on ${machine} and can't be browsed from here.`,
+      onCannotBeOpened: (what: unknown, machine: unknown) => `${what} on ${machine} can't be opened from here.`,
     },
     // src/renderer/src/components/environments/SshPromptDialog.tsx
     sshPromptDialog: {
@@ -598,7 +587,6 @@ export const en = {
       password: 'Password',
       code: 'Code',
       passphrase: 'Passphrase',
-      studioDoesnTKeepIt: "Studio doesn't keep it. Add the key to ssh-agent to skip this.",
       cancel: 'Cancel',
     },
   },
@@ -606,7 +594,6 @@ export const en = {
     // src/renderer/src/components/extensions/buildExtensionPaletteProvider.ts
     buildExtensionPaletteProvider: {
       buildYourOwnExtension: 'Build your own extension',
-      anAgentBuildsItWith: 'An agent builds it with you in a chat',
     },
     // src/renderer/src/components/extensions/ExtensionEditorView.tsx
     extensionEditorView: {
@@ -668,10 +655,7 @@ export const en = {
       search: 'Search',
       noCardsMatchThisSearch: 'No cards match this search.',
       orGoStraightToThe: 'Or go straight to the parts',
-      the: 'The ',
-      thingsTheStudioIsMade: ' things the studio is made of.',
       buildYourOwnExtension: 'Build your own extension',
-      describeItAndAnAgent: 'Describe it and an agent builds it with you, using the SDK.',
     },
     components: {
       // src/renderer/src/components/extensions/components/componentsContent.tsx
@@ -728,7 +712,6 @@ export const en = {
       allowInteractiveDemo: 'Allow interactive demo',
       preview2: (pageTitle: unknown) => `Preview · ${pageTitle}`,
       buildingThisPage: 'Building this page…',
-      refreshesAsTheFileIs: 'Refreshes as the file is written.',
       thisFileIsnTOn: 'This file isn’t on disk',
       itMayHaveBeenRemoved: 'It may have been removed or not written yet. Pick another file, or reload.',
       thisFileCanTBe: 'This file can’t be previewed',
@@ -764,7 +747,7 @@ export const en = {
     },
     // src/renderer/src/modules/ModuleContributionBoundary.tsx
     moduleContributionBoundary: {
-      hitAProblemAndStopped: (label: unknown) => `${label} hit a problem and stopped. The rest of the app is fine.`,
+      hitAProblemAndStopped: (label: unknown) => `${label} hit a problem and stopped.`,
       from: (moduleId: unknown) => `From ${moduleId}`,
       tryAgain: 'Try again',
     },
@@ -794,7 +777,6 @@ export const en = {
       bringingOverYourExistingSetup: 'Bringing over your existing setup…',
       adoptionFailed: 'Adoption failed',
       couldnTBringOverYour: 'Couldn’t bring over your existing setup.',
-      youCanAddItLater: 'You can add it later from Settings.',
       adoptedExistingSetup: 'Adopted existing setup',
     },
     // src/renderer/src/components/onboarding/conversationImport.ts
@@ -847,7 +829,6 @@ export const en = {
       couldNotReadInstalledSkills: 'Could not read installed skills.',
       installedSkills: 'Installed skills',
       backToInstalledSkills: 'Back to installed skills',
-      otherInstallationsStayInPlace: ' Other installations stay in place.',
       moveToTrash: 'Move to Trash',
       cancel: 'Cancel',
       useInAgent: 'Use in agent',
@@ -862,7 +843,8 @@ export const en = {
       projectSkills: 'Project skills',
       globalSkills: 'Global skills',
       showMore: 'Show more',
-      installedHereRunningAgentsMay: 'Installed here. Running agents may need a restart to see changes.',
+      runningAgentsMayNeedARestart:
+        'Agents that are already running may need a restart before they see a skill you add or remove.',
     },
     // src/renderer/src/components/palette/scheduledAgentsCommands.ts
     scheduledAgentsCommands: {
@@ -870,13 +852,10 @@ export const en = {
       pauseAllScheduledAgents: (toLowerCase: unknown, slice: unknown) =>
         `Pause all scheduled agents ${toLowerCase}${slice}`,
       pauseAllScheduledAgents2: 'Pause all scheduled agents',
-      untilRunsAlreadyGoingCarry: (hint: unknown) => `Until ${hint}. Runs already going carry on.`,
-      runsAlreadyGoingCarryOn: 'Runs already going carry on.',
+      until: (hint: unknown) => `Until ${hint}.`,
       resume: 'Resume',
       pause: 'Pause',
       schedule: (value: unknown, title: unknown) => `${value} schedule: ${title}`,
-      runsNextAtItsNext: 'Runs next at its next time',
-      noRunsAtItsTimes: 'No runs at its times until resumed',
     },
   },
   panels: {
@@ -997,7 +976,6 @@ export const en = {
       // src/renderer/src/components/panels/agentChat/composerContextPicker.tsx
       composerContextPicker: {
         mentionAWorkspaceFile: 'Mention a workspace file',
-        chooseEnterOrTabAttach: '↑↓ choose · enter or tab attach · esc dismiss',
         remove: (name: unknown) => `Remove ${name}`,
         openSkill: 'Open skill',
         attachedContext: 'Attached context',
@@ -1091,14 +1069,7 @@ export const en = {
         conversationReplayed: (title: unknown) => `${title} conversation, replayed`,
         showEarlierMessages: 'Show earlier messages',
         endOfTheConversation: 'End of the conversation',
-        pause: 'Pause',
-        play: 'Play',
-        rightArrow: 'Right arrow',
-        nextMessage: 'Next message',
-        leftArrow: 'Left arrow',
-        previousMessage: 'Previous message',
         fromTheStart: 'From the start',
-        leave: 'Leave',
       },
       // src/renderer/src/components/panels/agentChat/conversationVisual.tsx
       conversationVisual: {
@@ -1143,7 +1114,6 @@ export const en = {
         n1File: '1 file',
         files: (length: unknown) => `${length} files`,
         alsoRestoreToBeforeThis: (value: unknown) => `Also restore ${value} to before this message`,
-        filesAreLeftAsThey: 'Files are left as they are.',
       },
       // src/renderer/src/components/panels/agentChat/followUpDispatch.ts
       followUpDispatch: {
@@ -1301,8 +1271,7 @@ export const en = {
         stashedPrompts: 'Stashed prompts',
         nothingStashed: 'Nothing stashed. ',
         withSomethingTypedSetsIt: ' with something typed sets it aside here.',
-        chooseEnterRestore: '↑↓ choose · enter restore · ',
-        deleteEscClose: ' delete · esc close',
+        pressToDelete: (keys: string) => `Press ${keys} to delete the highlighted prompt.`,
       },
       // src/renderer/src/components/panels/agentChat/pullRequestHost.ts
       pullRequestHost: {
@@ -1369,6 +1338,10 @@ export const en = {
         askASideQuestion: 'Ask a side question',
         ask: 'Ask',
         sideQuestionsArenTAvailable: "Side questions aren't available here right now.",
+        askAboutThisChat:
+          'Ask about this chat. The agent answers from the conversation so far without stopping its work, and the question stays out of its conversation.',
+        askAboutThisChatNotKept:
+          'Ask about this chat. The agent answers from the conversation so far without stopping its work. The machine this chat runs on does not keep side questions, so they are gone once you close this.',
         sideQuestion2: (question: unknown) => `Side question: ${question}`,
       },
       // src/renderer/src/components/panels/agentChat/slashCommandMenu.tsx
@@ -1379,8 +1352,7 @@ export const en = {
         sendsItAsTyped: '”. ⏎ sends it as typed.',
         reportedNoCommands: ' reported no commands',
         commands: 'Commands',
-        chooseOrTabInsertEsc: '↑↓ choose · ⏎ or tab insert · esc dismiss',
-        forStudioSkills: '$ for Studio skills',
+        forStudioSkills: 'Type $ to pick a Studio skill.',
       },
       // src/renderer/src/components/panels/agentChat/storedAttachments.tsx
       storedAttachments: {
@@ -1515,7 +1487,6 @@ export const en = {
         aheadOfPaceAtThis: 'Ahead of pace: at this rate it runs out first',
         noUsageLimitsYetThey: 'No usage limits yet. They appear after a Claude or Codex subscription turn.',
         usageLimits: 'Usage limits',
-        claudeAndCodexSubscriptionsAs: 'Claude and Codex subscriptions, as last reported',
       },
       // src/renderer/src/components/panels/agentChat/useChatQuotes.tsx
       useChatQuotes: {
@@ -1554,7 +1525,7 @@ export const en = {
       theChatCouldNotBe: 'The chat could not be started to answer it.',
       theChatSSessionEnded: 'The chat’s session ended. Ask again to start it.',
       thisChatCannotBeRestarted: 'This chat cannot be restarted from here',
-      thisWindowMayReadThis: 'This window may read this chat but not drive it.',
+      thisWindowMayReadThis: 'This window can read this chat but not send to it.',
       updateStudioOnToRestart: (label: unknown) => `Update Studio on ${label} to restart its chats.`,
       itsServerDoesnTSupport: "Its server doesn't support restarts.",
       theAgentIsStillWorking: 'The agent is still working',
@@ -1562,7 +1533,6 @@ export const en = {
       theSessionWasNotRestarted: 'The session was not restarted',
       noAgentSessionToRestart: 'No agent session to restart',
       agentSessionRestarted: 'Agent session restarted',
-      yourNextMessageStartsIt: 'Your next message starts it again, history intact.',
       isnTRunningSendA: (assistantName: unknown) =>
         `${assistantName} isn't running. Send a message to see what fills the window.`,
       theCLI: 'The CLI',
@@ -1675,9 +1645,7 @@ export const en = {
       openAProjectFolderTo: 'Open a project folder to use the backlog.',
       backlogFolderNotFound: 'Backlog folder not found',
       noBacklogFolder: 'No backlog folder',
-      isnTThereRightNow: (root: unknown) =>
-        `${root} isn't there right now. Nothing is lost: reconnect it, pick another folder, or use the default.`,
-      createOneOrPointTo: 'Create one, or point to a folder you already use.',
+      isnTThereRightNow: (root: unknown) => `${root} isn't there right now.`,
       createBacklogFolder: 'Create backlog folder',
       useTheDefault: 'Use the default',
       couldnTReadTheBacklog: 'Couldn’t read the backlog folder.',
@@ -1778,7 +1746,7 @@ export const en = {
         updateTheAppAndRestart2: 'Update the app and restart to see installed extensions.',
         nothingInstalledMatches: (value: unknown) => `Nothing installed matches “${value}”.`,
         nothingInstalledYet: 'Nothing installed yet.',
-        mCPServersSkillsAndPlugins: 'MCP servers, skills and plugins you add appear here.',
+        mCPServersSkillsAndPlugins: 'When you add an MCP server, skill or plugin, it will be listed here.',
         continued: (label: unknown) => `${label} (continued)`,
         installedS: (value: unknown) => `Installed ${value}s`,
         newChat: 'New chat',
@@ -1795,11 +1763,10 @@ export const en = {
       // src/renderer/src/components/panels/editor/EditorDiskNotice.tsx
       editorDiskNotice: {
         changedOnDisk: 'Changed on disk',
-        reloadTakesTheDiskVersion: 'Reload takes the disk version; Keep mine overwrites it on next save',
         reload: 'Reload',
         keepMine: 'Keep mine',
         deletedOnDisk: 'Deleted on disk',
-        stillOpenHereSavingWrites: 'Still open here; saving writes it back',
+        stillOpenHereSavingWrites: 'If you save, the file is written back to disk.',
         overwrite: (fileName: unknown) => `Overwrite ${fileName}?`,
         itChangedOnDiskSince: 'It changed on disk since it was opened. Saving replaces that version with yours.',
         overwrite2: 'Overwrite',
@@ -1833,7 +1800,7 @@ export const en = {
       folderName: 'Folder name',
       create: 'Create',
       moveToTrash: 'Move to Trash?',
-      movesToTheTrashYou: (targetLabel: unknown) => `Moves ${targetLabel} to the Trash. You can restore it from there.`,
+      movesToTheTrashYou: (targetLabel: unknown) => `Moves ${targetLabel} to the Trash.`,
       moveToTrash2: 'Move to Trash',
       thisFolderCouldNotBe: 'This folder could not be read.',
       searching: 'Searching…',
@@ -1951,7 +1918,6 @@ export const en = {
         moveToAnotherChangelist2: 'Move to another changelist',
         stashAllChanges: 'Stash all changes…',
         stashAllChanges2: 'Stash all changes',
-        writingACommitMessagePress: 'Writing a commit message… Press to stop',
         stopWritingTheCommitMessage: 'Stop writing the commit message',
         writeCommitMessage: (unavailableReason: unknown) => `Write commit message — ${unavailableReason}`,
         writeCommitMessageFromThe: 'Write commit message from the checked files',
@@ -2028,7 +1994,7 @@ export const en = {
       restartTheAppToEnable: 'Restart the app to enable the commit graph.',
       unableToLoadTheCommit: 'Unable to load the commit graph.',
       replaceYourCommitMessage: 'Replace your commit message?',
-      yourAgentWritesANew: 'Your agent writes a new one from the checked files. You can edit it before committing.',
+      yourAgentWritesANew: 'Your agent writes a new one from the checked files.',
       replaceMessage: 'Replace message',
       discardChangesInFiles: (length: unknown) => `Discard changes in ${length} files?`,
       discardChangesTo: (relativePath: unknown) => `Discard changes to ${relativePath}?`,
@@ -2069,7 +2035,6 @@ export const en = {
       cherryPick: 'Cherry-pick',
       revert: (shortHash: unknown) => `Revert ${shortHash}?`,
       thisCreatesANewCommit: 'This creates a new commit that undoes “',
-      historyIsKeptNothingIs: '”. History is kept; nothing is rewritten.',
       revertCommit: 'Revert commit',
       resetTo: (currentBranch: unknown, shortHash: unknown) => `Reset ${currentBranch} to ${shortHash}?`,
       thisMoves: 'This moves ',
@@ -2078,8 +2043,6 @@ export const en = {
       hardReset: 'Hard reset',
       reset2: 'Reset',
       deleteBranch: (branchName: unknown) => `Delete branch ${branchName}?`,
-      deletesTheLocalBranch: 'Deletes the local branch ',
-      unmergedBranchesNeedAForce: '. Unmerged branches need a force delete.',
       deleteBranch2: 'Delete branch',
       isNotFullyMerged: (branchName: unknown) => `${branchName} is not fully merged`,
       hasCommitsNotMergedAnywhere: ' has commits not merged anywhere else. Force-deleting makes them unreachable.',
@@ -2104,12 +2067,9 @@ export const en = {
       commitsMadeHereAreEasy: '”. Commits made here are easy to lose without a branch.',
       checkoutCommit: 'Checkout commit',
       newBranchFrom: (shortHash: unknown) => `New branch from ${shortHash}`,
-      createsABranchAt: 'Creates a branch at “',
-      andSwitchesToIt: '” and switches to it.',
       branchName: 'Branch name',
       createSwitch: 'Create & switch',
       newTagAt: (shortHash: unknown) => `New tag at ${shortHash}`,
-      tags: 'Tags “',
       tagName: 'Tag name',
       createTag: 'Create tag',
       openAFolderToUse: 'Open a folder to use Git controls.',
@@ -2253,12 +2213,10 @@ export const en = {
         updated: 'Updated ',
         excerpt: 'Excerpt',
         noExcerptOpenItOn: 'No excerpt. Open it on the desktop.',
-        excerptOnlyTheFullDocument: 'Excerpt only. The full document is on the desktop.',
         triage: 'Triage',
         type: 'Type',
         difficulty: 'Difficulty',
         criticality: 'Criticality',
-        eachChangeIsSentOn: 'Each change is sent on tap.',
         updating: 'Updating…',
         markReady: 'Mark ready',
         moveBackToIdea: 'Move back to idea',
@@ -2306,8 +2264,6 @@ export const en = {
         opensThePictureFullScreen: 'Opens the picture full screen.',
         theBoard: (name: unknown) => `The board ${name}`,
         askingForThisBoard: (machine: unknown) => `Asking ${machine} for this board`,
-        aPictureOfThisBoard: 'A picture of this board on ',
-        toChangeItContinueIn: '. To change it, continue in a new chat there.',
         starting: 'Starting…',
         continueInANewChat: 'Continue in a new chat',
         refreshing: 'Refreshing…',
@@ -2498,19 +2454,16 @@ export const en = {
         browser: 'Browser',
         canvas: 'Canvas',
         library: 'Library',
-        whatTheAgentTouchesShows: 'What the agent touches shows up here.',
+        whatTheAgentTouchesShows:
+          'When the agent changes files, starts subagents or opens a page or board, they will be listed here.',
         fromYou: 'From you',
         fromTheAgent: 'From the agent',
         thisDesktopDoesnTSend: "This desktop doesn't send pictures yet.",
         usage: 'Usage',
-        asTheAgentLastReported: 'As the agent last reported it to the desktop.',
         aPageInTheDesktop: "A page in the desktop's browser",
-        drivenInTheDesktopS:
-          "Driven in the desktop's browser. A localhost page opens there, or here under Web pages once shared.",
         aBoardOnTheDesktop: 'A board on the desktop',
-        theAgentDidnTName: "The agent didn't name the board. Its picture is among the desktop's boards.",
         theDesktopSBoards: "The desktop's boards",
-        drawnOnADesktopBoard: 'Drawn on a desktop board. Open its Canvas there to see it.',
+        drawnOnADesktopBoard: 'To see this board, open Canvas on the desktop.',
         backToTheChat: 'Back to the chat',
         back: 'Back',
       },
@@ -2558,7 +2511,7 @@ export const en = {
         agentWorking: 'Agent working',
         now: 'Now ',
         steps: 'Steps',
-        sentViaTheMainChat: 'Sent via the main chat. Read at its next step.',
+        sentViaTheMainChat: 'The subagent reads this at its next step.',
         subagents: 'Subagents · ',
         report: 'Report',
         toReachThisSubagentSpeak: 'To reach this subagent, speak to the main chat.',
@@ -2573,7 +2526,6 @@ export const en = {
         subagents: 'Subagents',
         openTheChatToFollow: 'Open the chat to follow its subagents.',
         noSubagentsYet: 'No subagents yet',
-        subagentsThisChatSendsOff: 'Subagents this chat sends off to work show up here.',
         olderSubagentsAreInEarlier: 'Older subagents are in earlier turns. Load them in the chat.',
         updateTheDesktopToSee: 'Update the desktop to see subagents started with Studio.',
       },
@@ -2687,11 +2639,12 @@ export const en = {
         message: 'Message',
         reply: 'Reply…',
         toReachThisSubagentSpeak: 'To reach this subagent, speak to ',
-        thisPairingMayFollowThe: 'This pairing may follow the chat but not drive it.',
+        thisPairingMayFollowThe: 'This pairing lets you read this chat but not send to it.',
         theMainChat: 'the main chat',
         theParentAgent: 'the parent agent',
         goTo: (value: unknown) => `Go to ${value}`,
-        readOnlyPairWithConversation: 'Read-only. Pair with conversation control to send or respond.',
+        readOnlyPairWithConversation:
+          'This phone can only read this chat. To send or respond, pair again with conversation control.',
         access: 'Access',
         markUnread: 'Mark unread',
         settle: 'Settle',
@@ -2839,11 +2792,11 @@ export const en = {
         describeATaskIn: (projectName: unknown) => `Describe a task in ${projectName}`,
         access: (label: unknown) => `Access, ${label}`,
         desktopDefault: 'Desktop default',
+        desktopDefaultModel: 'The desktop uses the CLI and model it used last.',
         done: 'Done',
         agentAndModel: 'Agent and model',
         access2: 'Access',
         runOn: 'Run on',
-        theChatSAgentRuns: "The chat's agent runs on this machine.",
         lookingFor: 'Looking for ',
         there: ' there…',
       },
@@ -2886,7 +2839,6 @@ export const en = {
         done: 'Done',
         backToTheChat: 'Back to the chat',
         quoteFromThisReply: 'Quote from this reply',
-        selectWordsThenQuoteSelect: 'Select words, then Quote. Select nothing to quote the whole reply.',
         selectTheWordsToQuote: 'Select the words to quote.',
         theReply: 'The reply',
         quoteSelection: 'Quote selection',
@@ -3018,7 +2970,7 @@ export const en = {
       // mobile/src/features/pairing/PairingScanner.tsx
       pairingScanner: {
         cameraAccess: 'Camera access',
-        scansTheSquareInStudio: 'Scans the square in Studio’s Remote settings. No image leaves this phone.',
+        scansTheSquareInStudio: 'The camera is used to scan the square in Studio → Settings → Remote.',
         allowCamera: 'Allow camera',
         openSettings: 'Open Settings',
         enterTheLinkInstead: 'Enter the link instead',
@@ -3061,7 +3013,6 @@ export const en = {
         starred: 'Starred',
         allProjects: 'All projects',
         desktop2: 'Desktop',
-        manageDesktopsInSettings: 'Manage desktops in Settings.',
         switchesTheWholeAppTo: 'Switches the whole app to this project',
         unstar: (name: unknown) => `Unstar ${name}`,
         star: (name: unknown) => `Star ${name}`,
@@ -3149,8 +3100,7 @@ export const en = {
         scheduled: 'Scheduled',
         newScheduledAgent: 'New scheduled agent',
         readingTheDesktopsScheduledAgents: "Reading the desktops' scheduled agents",
-        noScheduledAgentsYetEach:
-          'No scheduled agents yet. Each starts a chat on the desktop on schedule, even while this phone sleeps.',
+        noScheduledAgentsYetEach: 'No scheduled agents yet.',
         runNowPauseResumeOr: 'Run now, pause, resume or close it.',
         in: (title: unknown, projectName: unknown, scheduleStatusLine: unknown) =>
           `${title}, in ${projectName}. ${scheduleStatusLine}.`,
@@ -3159,6 +3109,7 @@ export const en = {
         resumeSchedule: 'Resume schedule',
         pauseSchedule: 'Pause schedule',
         closeSchedule: 'Close schedule',
+        closeScheduleKeepsChats: 'This stops the schedule for good. The chats it started are kept.',
       },
       // mobile/src/features/scheduled/sendTime.ts
       sendTime: {
@@ -3172,7 +3123,6 @@ export const en = {
       // mobile/src/features/session/SessionStatusScreen.tsx
       sessionStatusScreen: {
         desktopConnected: 'Desktop connected',
-        pairedOverYourTailnet: 'Paired over your tailnet.',
         continue: 'Continue',
         reconnectDesktop: 'Reconnect desktop',
         pairAgainToKeepDriving: 'Pair again to keep driving it from this phone.',
@@ -3193,8 +3143,6 @@ export const en = {
         useAppearance: (value: unknown) => `Use ${value} appearance`,
         agents: 'Agents',
         agentCharacters: 'Agent characters',
-        drawSubagentsAsLittleCharacters:
-          'Draw subagents as little characters that move as they work and change with the seasons.',
         couldnTSaveThisChoice: "Couldn't save this choice; it lasts until you close the app.",
       },
       // mobile/src/features/settings/ChatGroupingScreen.tsx
@@ -3231,7 +3179,7 @@ export const en = {
         pairAnotherDesktop: 'Pair another desktop',
         forgetThisDesktop: 'Forget this desktop',
         removesThisDesktopFromThis:
-          'Removes this desktop from this phone only. To end pairing on the desktop, revoke this phone there.',
+          'This removes the desktop from this phone only. To end the pairing on the desktop too, revoke this phone there.',
       },
       // mobile/src/features/settings/DesktopsScreen.tsx
       desktopsScreen: {
@@ -3260,6 +3208,10 @@ export const en = {
         groupChats: (value: unknown) => `Group chats: ${value}`,
         groupChats2: 'Group chats',
         steerWhileAnAgentWorks: 'Steer while an agent works',
+        steerOn:
+          'A message you send while the agent works goes into its current turn. Long-press send to queue it instead.',
+        steerOff:
+          'A message you send while the agent works waits until the turn ends. Long-press send to steer it in now.',
       },
     },
     updates: {
@@ -3301,7 +3253,6 @@ export const en = {
           "No web pages shared yet. Share a dev server from a desktop's browser tab and it shows here.",
         openOnInYourBrowser: (label: unknown, shortMachineName: unknown) =>
           `Open ${label} on ${shortMachineName} in your browser`,
-        theseOpenInYourBrowser: "These open in your browser while this phone is on the desktop's tailnet.",
       },
     },
   },
@@ -3387,12 +3338,9 @@ export const en = {
     agentBrowserSettings: {
       builtInBrowser: 'Built-in browser',
       letAgentsUseTheBuilt: 'Let agents use the built-in browser',
-      agentsCanOpenReadAnd: 'Agents can open, read and click pages. Running agents pick this up next session.',
+      agentsCanOpenReadAnd: 'Agents that are already running pick up this change in their next session.',
       showThePageWhileAn: 'Show the page while an agent uses it',
-      withThePaneClosedFloat: 'With the pane closed, float the agent’s page or board over the chat.',
       closeUnusedTabs: 'Close tabs left unused',
-      closeUnusedTabsHelp:
-        'A tab nobody has used, in a chat whose agent has not worked for as long, is closed. The tab on screen never is.',
       closeUnusedTabsAfter: 'Close browser tabs left unused after',
       afterHours: (hours: number) =>
         hours % 24 === 0
@@ -3421,15 +3369,13 @@ export const en = {
       didNotUpdate: (displayName: unknown) => `${displayName} did not update.`,
       updateOutput: (displayName: unknown) => `${displayName} update output`,
       commandOverride: 'Command override',
-      runs: 'Runs ',
-      whenBlank: ' when blank.',
       commandOverrideOn: (displayName: unknown, label: unknown) => `${displayName} command override on ${label}`,
       commandOverride2: (displayName: unknown) => `${displayName} command override`,
       aPIKeyIsSaved: (displayName: unknown) => `${displayName} API key is saved`,
       aPIKey: ' API key',
       pasteAPIKey: 'Paste API key',
       setByAnEnvironmentVariable: 'Set by an environment variable. Change it there.',
-      keptUntilTheAppQuits: 'Kept until the app quits.',
+      keptUntilTheAppQuits: 'Studio keeps this key only until you quit the app.',
     },
     // src/renderer/src/components/settings/AgentNotificationsSetting.tsx
     agentNotificationsSetting: {
@@ -3461,19 +3407,17 @@ export const en = {
       gitHubPages: 'GitHub Pages',
       cloudflarePages: 'Cloudflare Pages',
       artifacts: 'Artifacts',
-      agentsPublishMockupsPrototypesAnd:
-        'Agents publish mockups, prototypes and reports to a site you can open on any device. Earlier versions are kept.',
       setUpArtifactsInThe: 'Set up artifacts in the desktop app on the publishing machine.',
       host: 'Host',
       whereArtifactsAreHosted: 'Where artifacts are hosted',
-      offAgentsCanTPublish: 'Off: agents can’t publish artifacts.',
       saved: 'Saved.',
       theGalleryIsAt: 'The gallery is at',
       repository: 'Repository',
       theSiteIsPublicEven:
-        'The site is public even if the repository is private (unless GitHub Enterprise Cloud limits it). Private repositories need a paid plan.',
+        'Anyone can open the site, even when the repository is private, unless GitHub Enterprise Cloud limits it. Private repositories need a paid plan.',
       aPIToken: 'API token',
-      needsCloudflarePagesEditPermission: 'Needs Cloudflare Pages Edit permission. Kept in secure storage',
+      needsCloudflarePagesEditPermission: 'The token needs the Cloudflare Pages Edit permission.',
+      keptForThisSession: 'Secure storage is unavailable, so Studio keeps the token for this session only.',
       createAToken: 'Create a token',
       pagesEditToken: 'Pages Edit token',
       cancel: 'Cancel',
@@ -3485,6 +3429,8 @@ export const en = {
       project: 'Project',
       sourceRepository: 'Source repository',
       gitGithubComAcmeArtifacts: 'git@github.com:acme/artifacts.git',
+      studioKeepsTheSiteSource:
+        'Studio keeps the site’s source and history in this repository. Without one, the source stays on this computer.',
       theSiteIsPublicTo:
         'The site is public. To require sign-in, add a self-hosted app in Zero Trust ▸ Access ▸ Applications for',
       pagesDev: '.pages.dev',
@@ -3505,7 +3451,7 @@ export const en = {
       couldNotVerifyThisExtension: 'Could not verify this extension.',
       provides: 'Provides',
       openAWorkspaceToInstall: 'Open a workspace to install this extension.',
-      addsItsSkillsToThis: 'Adds its skills to this workspace for your agent CLIs. Slash commands work in Claude only.',
+      addsItsSkillsToThis: 'Its slash commands work only in Claude Code.',
       viewSource: 'View source',
       cancel: 'Cancel',
       skills: 'Skills · ',
@@ -3585,6 +3531,7 @@ export const en = {
       startColima: 'Start Colima',
       name: 'Name',
       clone: 'Clone',
+      ownerRepoOrAddress: 'owner/repo or a git address',
       theFirstContainerOn: 'The first container on ',
       buildsStudioSImageWhich: ' builds Studio’s image, which takes a few minutes.',
       makeContainer: 'Make container',
@@ -3625,8 +3572,6 @@ export const en = {
     // src/renderer/src/components/settings/ConversationApprovalSettings.tsx
     conversationApprovalSettings: {
       rememberedChatPermissions: 'Remembered chat permissions',
-      eachGrantCoversOneTool:
-        'Each grant covers one tool and matcher. Revoked ones ask again. Chat-only grants end with the chat session.',
       retry: 'Retry',
       loadingChatPermissions: 'Loading chat permissions',
       revoke: (label: unknown) => `Revoke ${label}`,
@@ -3638,7 +3583,7 @@ export const en = {
     conversationImportSettings: {
       importConversations: 'Import conversations',
       chooseSessions: 'Choose sessions…',
-      picksSessionsFromTheLast: 'Picks sessions from the last 30 days. Ones already imported are left as is.',
+      picksSessionsFromTheLast: 'Only sessions from the last 30 days are listed.',
       close: 'Close',
       cancel: 'Cancel',
     },
@@ -3687,7 +3632,6 @@ export const en = {
       takesOver: 'Takes over',
       runsInPlaceOf: (command: unknown, builtIn: unknown) => `${command} runs in place of ${builtIn}`,
       letItTakeOver: 'Let it take over Studio’s actions',
-      letItTakeOverHint: 'Off: Studio runs its own. If it fails or is slow, Studio runs its own anyway.',
       hooks: 'Hooks',
       hooksThisComputerOnly: 'Applies to chats on this computer only, not to chats in WSL or on SSH machines',
       forAgents: 'For your agents and chats',
@@ -3718,6 +3662,8 @@ export const en = {
       whenISendWhileAn: 'When I send while an agent is working',
       queue: 'Queue',
       steer: 'Steer',
+      queueSendsYourMessage: (chord: string) =>
+        `Queue sends your message when the agent's turn ends. Steer gives it to the agent while it works. ${chord} does the other for one message.`,
     },
     // src/renderer/src/components/settings/FontAppearanceRows.tsx
     fontAppearanceRows: {
@@ -3752,7 +3698,6 @@ export const en = {
     // src/renderer/src/components/settings/KeepAwakeSetting.tsx
     keepAwakeSetting: {
       keepTheComputerAwakeWhile: 'Keep the computer awake while agents work',
-      noSleepWhileAnAgent: 'No sleep while an agent is mid-turn. The display can still lock.',
     },
     // src/renderer/src/components/settings/KeyboardShortcutsTab.tsx
     keyboardShortcutsTab: {
@@ -3849,16 +3794,11 @@ export const en = {
       machines: 'Machines',
       wSLDidNotAnswer: 'WSL did not answer.',
       wSLDistributionsNotTurnedOn: 'WSL distributions not turned on',
-      turnOneOnToOffer: 'Turn one on to offer it in New chat. Workspaces inside a distribution run there anyway.',
       noWSLDistributionsInstallOne: 'No WSL distributions. Install one with ',
       wslInstall: 'wsl --install',
       newContainer: 'New container',
-      aDockerContainerOnThis:
-        'A Docker container on this computer or an SSH machine, used as a machine of its own: clone repositories in it and run chats there. It is kept until you delete it.',
       addAnSSHMachine: 'Add an SSH machine',
-      studioInstallsAndRunsIts:
-        'Studio installs and runs its server on the machine. Uses your SSH config and keys; stores no passwords.',
-      pairedOverTheTailnetManage: 'Paired over the tailnet. Manage it in Remote.',
+      pairedOverTheTailnetManage: 'This machine is paired over the tailnet.',
       remoteSettings: 'Remote settings',
       agentCLIsOnThisMachine: (label: unknown) => `Agent CLIs on this machine, ${label}`,
       agentCLIsOnThisMachine2: 'Agent CLIs on this machine',
@@ -3867,7 +3807,7 @@ export const en = {
       bashLi: 'bash -li',
       environment: 'Environment',
       environment2: (label: unknown) => `${label} environment`,
-      nAMEValue: 'NAME=value',
+      nAMEValue: 'NAME=value, one per line',
       studioServer: 'Studio server',
       serverConnection: (label: unknown) => `Server connection, ${label}`,
     },
@@ -3957,15 +3897,13 @@ export const en = {
       conversationProviders: 'Conversation providers',
       aPIKeyIsSaved: (displayName: unknown) => `${displayName} API key is saved`,
       setFromTheEnvironment: 'Set from the environment.',
-      keptForThisSessionOnly: 'Kept for this session only.',
+      keptForThisSessionOnly: 'Studio keeps this key only until you quit the app.',
       aPIKey: ' API key',
       pasteAPIKey: 'Paste API key',
     },
     // src/renderer/src/components/settings/QuitConfirmationSetting.tsx
     quitConfirmationSetting: {
       askBeforeQuittingWhileAgents: 'Ask before quitting while agents are working',
-      quittingStopsRunningAgentsSchedules:
-        'Quitting stops running agents, schedules and pull request watches until you reopen.',
     },
     // src/renderer/src/components/settings/RemoteMcpSection.tsx
     remoteMcpSection: {
@@ -4044,10 +3982,8 @@ export const en = {
       byStatus: 'By status',
       byDate: 'By date',
       allChats: 'All chats',
-      workingSection: 'Working section',
-      moveWorkingChatsIntoA: 'Move working chats into a section at the top until they finish or need you.',
+      workingSection: 'Move working chats to the top',
       showSidebarAtTheEdge: 'Show sidebar at the edge',
-      whenCollapsedPointAtThe: 'When collapsed, point at the window’s left edge to show the sidebar.',
       openFilesIn: 'Open files in',
       editorWindow: 'Editor window',
       inTheApp: 'In the app',
@@ -4055,15 +3991,11 @@ export const en = {
       glass: 'Glass',
       tinted: 'Tinted',
       solid: 'Solid',
-      agentCharacters: 'Agent characters',
-      showWorkingAgentsAsLittle: 'Show working agents as little characters in the Files tree.',
+      agentCharacters: 'Show working agents as characters in the Files tree',
       showSubscriptionUsageLimits: 'Show subscription usage limits',
-      showHowMuchOfYour: 'Show how much of your plan’s 5-hour and weekly limits Claude or Codex has used.',
-      quietProjectIcons: 'Quiet project icons',
-      grayProjectIconsColouredOnly: 'Gray project icons, coloured only on the chat you point at or open.',
+      quietProjectIcons: 'Gray out project icons',
       fonts: 'Fonts',
       downloadUpdatesAutomatically: 'Download updates automatically',
-      offYouReToldAbout: 'Off: you’re told about updates and download them yourself.',
       accessToken: 'Access token',
       fineGrainedGitHubToken: 'Fine-grained GitHub token',
       cancel: 'Cancel',
@@ -4071,7 +4003,6 @@ export const en = {
       replace: 'Replace',
       clear: 'Clear',
       checkForCLIUpdates: 'Check for CLI updates',
-      offersUpdateWhenANewer: 'Offers Update when a newer version is published.',
       memory: 'Memory',
       done: 'Done',
       settings: 'Settings',
@@ -4087,22 +4018,18 @@ export const en = {
       keepRunningWhenTheLast: 'Keep running when the last window closes',
       shareAnonymousUsageData: 'Share anonymous usage data',
       pauseIdleTerminalsAfter: 'Pause idle terminals after',
-      alwaysKeepRunning: 'Always keep running',
+      minutes: 'minutes',
+      alwaysKeepRunning: 'Number of recent terminals that are never paused',
     },
     // src/renderer/src/components/settings/SettledChatsSettingsTab.tsx
     settledChatsSettingsTab: {
       settleAfterQuietDays: 'Settle after quiet days',
+      appliesToChatsWithAutoSettle: 'This applies only to chats you turned Auto-settle on for, from the chat’s menu.',
       theChatWasNotBrought: 'The chat was not brought back',
       settledChats: 'Settled chats',
       settleWhenItsPullRequests: 'Settle when its pull requests merge',
-      withAutoSettleOnA:
-        'With Auto-settle on, a chat settles once its pull requests are merged or closed, never mid-run. Its worktree is freed and restored when you return.',
       keepChatsWithAnOpen: 'Keep chats with an open pull request',
-      withAutoSettleOnA2: (quietDays: unknown) =>
-        `With Auto-settle on, a chat with an open or draft pull request doesn't settle after ${quietDays} without activity.`,
       autoCompactIdleChats: 'Auto compact idle chats',
-      idleClaudeChatsOver100k:
-        'Idle Claude chats over 100k tokens compact before their prompt cache expires, so coming back costs less. Your history stays visible.',
       noSettledChats: 'No settled chats.',
       settleAChatFromIts: (quietDays: unknown) =>
         `Settle a chat from its menu, or let Auto-settle do it after ${quietDays} without activity.`,
@@ -4137,12 +4064,12 @@ export const en = {
       reachedAs: 'Reached as',
       studioServer: 'Studio server',
       keepTheServerRunning: 'Keep the server running',
-      otherwiseItStopsWhenIdle: 'Otherwise it stops when idle for five minutes with no clients or pending work.',
       browserTabsNetwork: "Browser tabs' network",
       browserTabTrafficThrough: (label: unknown) => `Browser tab traffic through ${label}`,
       downloadNodeJsOnThe: 'Download Node.js on the machine',
-      forAMachineOnA: 'For a machine on a faster network. Checked against a pinned digest.',
       installDirectory: 'Install directory',
+      setThisOnlyWhenNoexec:
+        'Set this only when the machine’s home folder is mounted noexec. Studio then installs its runtime and server here.',
       localShareSprintengineStudio: '~/.local/share/sprintengine-studio',
       stopTheStudioServerOn: (label: unknown) => `Stop the Studio server on ${label}?`,
       runningChatsGetAMinute: 'Running chats get a minute to finish.',
@@ -4161,6 +4088,7 @@ export const en = {
         `The containers stay on ${label}, untracked. Only do this if ${label} is gone.`,
       forgetTheRecords: 'Forget the records',
       addSSHMachine: 'Add SSH machine',
+      aliasOrUserHostPort: 'SSH alias or user@host:port',
       check: 'Check',
       fromYourSSHConfig: 'From your SSH config:',
       studioWillConnectTo: 'Studio will connect to',
@@ -4178,7 +4106,7 @@ export const en = {
     // src/renderer/src/components/settings/StudioSkillsSettings.tsx
     studioSkillsSettings: {
       studioSkills: 'Studio skills',
-      skillsThatTeachAgentsTo: 'Skills that teach agents to use this app. Changes apply when an agent next launches.',
+      skillsThatTeachAgentsTo: 'An agent picks up changes here the next time it launches.',
       thatChangeWasNotSaved: 'That change was not saved.',
       switchItAgainToRetry: 'Switch it again to retry.',
       loadingStudioSkills: 'Loading Studio skills',
@@ -4211,8 +4139,6 @@ export const en = {
       myOwnInstructions: 'My own instructions',
       textGeneration: 'Text generation',
       nameChatsWithYourAgent: 'Name chats with your agent',
-      yourAgentCLITitlesEach:
-        "Your agent CLI titles each chat, using its subscription. Off: your prompt's first words name it.",
       textGenerationModel: 'Text generation model',
       noSupportedCLIInstalled: 'No supported CLI installed',
       commitAndPullRequestStyle: 'Commit and pull request style',
@@ -4274,6 +4200,8 @@ export const en = {
       updateChannel: 'Update channel',
       stable: 'Stable',
       nightly: 'Nightly',
+      switchingBackToStable:
+        'Switching back to Stable can install an older build, and what you change while on it is not kept when you update again.',
     },
     // src/renderer/src/components/settings/UpdateEverythingCard.tsx
     updateEverythingCard: {
@@ -4284,7 +4212,6 @@ export const en = {
     // src/renderer/src/components/settings/UsageLimitResumeSettings.tsx
     usageLimitResumeSettings: {
       resumeAfterUsageLimits: 'Resume after usage limits',
-      claudeAndCodexChatsCarry: 'Claude and Codex chats carry on once their usage limit resets. Off: you choose.',
     },
     // src/renderer/src/components/settings/useThirdPartyExtensions.ts
     useThirdPartyExtensions: {
@@ -4304,7 +4231,6 @@ export const en = {
     // src/renderer/src/components/settings/WorktreesFreeSpaceDialog.tsx
     worktreesFreeSpaceDialog: {
       freeUpSpace: 'Free up space',
-      skipsAnythingInUseOr: 'Skips anything in use or with uncommitted work. Branches are kept.',
       whatToRemove: 'What to remove',
       removeExtraReadyWorktrees: (bytesOf: unknown) => `Remove extra ready worktrees · ${bytesOf}`,
       theMostRecentOnePer: (names: unknown) => `${names}. The most recent one per project stays.`,
@@ -4386,9 +4312,7 @@ export const en = {
       onDisk: 'On disk',
       pool: 'Pool',
       reuseWorktreesForNewChats: 'Reuse worktrees for new chats',
-      newChatsAndAgentsReuse:
-        'New chats and agents reuse a pooled worktree, reset to the default branch, with installs kept. Turning it off removes the ready ones.',
-      readyWorktreesToKeep: 'Ready worktrees to keep',
+      readyWorktreesToKeep: 'Ready worktrees to keep per project',
       mostWorktreesPerProject: 'Most worktrees per project',
       giveBackIdleWorktreesAfter: 'Give back idle worktrees after',
       diskLimit: 'Disk limit',
@@ -4437,7 +4361,7 @@ export const en = {
       moreFor: (name: unknown) => `More for ${name}`,
       installDependenciesWhenTheLockfile: 'Install dependencies when the lockfile changes',
       reinstallsBeforeAnAgentStarts:
-        "Reinstalls before an agent starts if the lockfile changed. Runs the project's install scripts as you, so only turn on for code you trust.",
+        "This runs the project's install scripts as you, so turn it on only for code you trust.",
       installCommand: 'Install command',
       installCommandFor: (projectName: unknown) => `Install command for ${projectName}`,
       fromTheLockfile: 'From the lockfile',
@@ -4672,7 +4596,6 @@ export const en = {
       code: (languageName: unknown, filename: unknown) => `${languageName} code, ${filename}`,
       code2: (languageName: unknown) => `${languageName} code`,
       codeActions: 'Code actions',
-      pasteIntoTerminalItRuns: 'Paste into terminal — it runs when you press Enter',
       pasteIntoTerminal: 'Paste into terminal',
       wrapLines: 'Wrap lines',
       showSource: 'Show source',
@@ -4877,8 +4800,6 @@ export const en = {
       stepOf: (value: unknown, count: unknown) => `Step ${value} of ${count}`,
       tourSteps: 'Tour steps',
       agentPointsToStep: 'Agent points to step ',
-      pause: 'Pause',
-      playAdvanceAtReadingPace: 'Play — advance at reading pace',
       pauseTour: 'Pause tour',
       playTour: 'Play tour',
       followAgent: 'Follow agent',
@@ -4912,21 +4833,19 @@ export const en = {
       allMachines: 'All machines',
       thisMachine: (label: unknown) => `${label} (this machine)`,
       period: 'Period',
-      readTheLogsAgain: 'Read the logs again',
       refreshUsage: 'Refresh usage',
       usage: 'Usage',
       usageCouldNotBeRead: 'Usage could not be read',
       tryAgain: 'Try again',
-      readingYourAgentsSessionLogs: "Reading your agents' session logs…",
+      readingYourAgentsSessionLogs: 'Loading usage…',
       noUsageInThisPeriod: 'No usage in this period',
       noAgentSessionsOnThis: 'No agent sessions on this machine yet',
       pickALongerPeriodTo: 'Pick a longer period to see earlier sessions.',
-      usageAppearsOnceClaudeCode: 'Usage appears once Claude Code, Codex, OpenCode, Gemini or Grok runs here.',
+      usageAppearsOnceClaudeCode:
+        'When Claude Code, Codex, OpenCode, Gemini or Grok runs on this machine, its usage will show here.',
       overview: 'Overview',
       byAgent: 'By agent',
       aPIEstimate: 'API estimate',
-      fromASyncedFolderRestored: 'From a synced folder, restored backup or WSL share',
-      countedOnceAcrossMachines: ' counted once across machines',
       machines: 'Machines',
       askingYourOtherMachines: 'Asking your other machines',
       usageByMachine: 'Usage by machine',
@@ -4960,7 +4879,7 @@ export const en = {
     usageLimitsView: {
       noUsageLimitsReportedYet: 'No usage limits reported yet',
       theyAppearAfterASubscription:
-        'They appear after a subscription chat runs a turn, or a Claude terminal shows its status line.',
+        'When a subscription chat finishes a turn, or a Claude terminal shows its status line, its limits will show here.',
     },
   },
   utils: {
@@ -5076,12 +4995,10 @@ export const en = {
       notResumed: 'Not resumed',
       schedulePaused: 'Schedule paused',
       scheduleResumed: 'Schedule resumed',
-      nextRunMissedRunsAren: (whenWords: unknown) => `Next run ${whenWords}. Missed runs aren't made up.`,
+      nextRun: (whenWords: unknown) => `Next run ${whenWords}.`,
       runsAgainOnceScheduledAgents: 'Runs again once scheduled agents are unpaused.',
-      noRunsUntilThenRunning: (where: unknown) => `No runs until then; running ones carry on.${where}`,
       scheduledAgentsResumed: 'Scheduled agents resumed',
       notResumed2: (join: unknown) => `Not resumed: ${join}`,
-      eachRunsAtItsNext: 'Each runs at its next time. Ones you paused yourself stay paused.',
     },
     // src/renderer/src/utils/settingsUpdateBadges.ts
     settingsUpdateBadges: {
@@ -5180,7 +5097,6 @@ export const en = {
     // src/renderer/src/web/FolderBrowserDialog.tsx
     folderBrowserDialog: {
       chooseAFolder: 'Choose a folder',
-      foldersOnTheMachineStudio: 'Folders on the machine Studio runs on.',
       folderPath: 'Folder path',
       folders: 'Folders',
       gitRepository: 'Git repository',
@@ -5194,7 +5110,6 @@ export const en = {
     // src/renderer/src/web/webBuildWatch.ts
     webBuildWatch: {
       studioWasUpdated: 'Studio was updated',
-      reloadThisTabToUse: 'Reload this tab to use it. Until then, it keeps working.',
       later: 'Later',
       reload: 'Reload',
     },
@@ -5399,11 +5314,7 @@ export const en = {
         searchProjects: 'Search projects…',
         searchProjects2: 'Search projects',
         browse: 'Browse…',
-        pickAFolderOnDisk: 'Pick a folder on disk.',
-        cloneARepositoryAndOpen: 'Clone a repository and open it here.',
         newProject: 'New project',
-        startOneHereAndPut: 'Start one here, and put it on GitHub if you like.',
-        chatInAFolderOf: 'Chat in a folder of its own.',
       },
       // src/renderer/src/components/workspace/agentComposer/RemoteProjectPicker.tsx
       remoteProjectPicker: {
@@ -5412,7 +5323,6 @@ export const en = {
         projectOn: (machineName: unknown) => `Project on ${machineName}`,
         searchProjects: 'Search projects…',
         searchProjectsOn: (machineName: unknown) => `Search projects on ${machineName}`,
-        chatInAFolderOf: 'Chat in a folder of its own',
         loadingProjects: 'Loading projects…',
       },
       schedule: {
@@ -5449,7 +5359,6 @@ export const en = {
         scheduleSlashPicker: {
           scheduleThisAgent: 'Schedule this agent',
           recent: 'Recent',
-          chooseScheduleEscDismiss: '↑↓ choose · ⏎ schedule · esc dismiss',
         },
         // src/renderer/src/components/workspace/agentComposer/schedule/ScheduledRuns.tsx
         scheduledRuns: {
@@ -5570,8 +5479,6 @@ export const en = {
     },
     // src/renderer/src/components/workspace/ChatAppToolsMenuItems.tsx
     chatAppToolsMenuItems: {
-      thisChatMayUseThem: 'This chat may use them',
-      onlyTheChatsItStarts: 'Only the chats it starts',
       toolsFrom: 'Tools from ',
     },
     // src/renderer/src/components/workspace/ChatExportMenuItems.tsx
@@ -5664,7 +5571,6 @@ export const en = {
           chooseAnotherFolder: 'Choose another folder',
           readingYourDesignSystems: 'Reading your design systems…',
           couldnTReadYourDesign: 'Couldn’t read your design system library.',
-          thisIsUsuallyTemporary: 'This is usually temporary.',
           noDesignSystemsYet: 'No design systems yet',
           cloneADesignSystemS: 'Clone a design system’s Git repo, then point at its folder to see it here.',
           selectADesignSystemTo: 'Select a design system to see it.',
@@ -5736,7 +5642,6 @@ export const en = {
           // src/renderer/src/components/workspace/globalSurface/extensions/catalogue/RecommendedSources.tsx
           recommendedSources: {
             recommendedSources: 'Recommended sources',
-            placesToGetSkillsAnd: 'Places to get skills and plugins. Recommended, not published, by Studio.',
             thatSourceWasNotAdded: 'That source was not added.',
             addAsASource: (repo: unknown) => `Add ${repo} as a source`,
             adding: 'Adding',
@@ -5793,7 +5698,7 @@ export const en = {
             hookCommands: (length: unknown) => `${length} hook commands`,
             declares: (value: unknown) => `Declares ${value}`,
             hooksRunOnYourMachine:
-              'Hooks run on your machine as the agent works. Installing here copies no hooks. Unsigned and unreviewed.',
+              'Installing here does not copy its hooks. Hooks run on your machine while the agent works, and nobody has signed or reviewed these.',
             openOnGitHub: 'Open on GitHub',
             remove: (name: unknown) => `Remove ${name}`,
             install: (name: unknown) => `Install ${name}`,
@@ -5849,7 +5754,6 @@ export const en = {
           },
           // src/renderer/src/components/workspace/globalSurface/extensions/skills/SkillPage.tsx
           skillPage: {
-            installsToYourHomeFolder: 'Installs to your home folder, for every agent CLI in every chat and project.',
             installed: 'Installed',
             thisProjectOnly: 'This project only',
             noDescription: 'No description',
@@ -5892,17 +5796,15 @@ export const en = {
             whatShouldTheSkillDo: 'What should the skill do?',
             readingGitHub: 'Reading GitHub…',
             gitHubCouldNotBeReached: 'GitHub could not be reached.',
-            nothingIsListedThisIs: 'Nothing is listed — this is not an empty result.',
             tryAgain: 'Try again',
-            starsOnlyAddAGitHub: 'Stars only. Add a GitHub token to include plugin repos.',
+            starsOnlyAddAGitHub:
+              'This list is sorted by stars only. Add a GitHub token to include plugin repositories.',
             nothingWasReturnedForThis: 'Nothing was returned for this list.',
             searchInsideSkillFilesE: 'Search inside skill files, e.g. “extract text from PDFs”',
             typeAtLeastCharacters: (minLength: unknown) => `Type at least ${minLength} characters.`,
             searchingGitHub: 'Searching GitHub…',
             thatSearchDidNotRun: 'That search did not run.',
-            notTheSameAsNo: 'Not the same as no results',
             resultsFor: (query: unknown) => `Results for “${query}”`,
-            skillsByGitHubRelevance: 'Skills, by GitHub relevance',
             nothingWasReturnedForThis2: 'Nothing was returned for this search.',
             added: 'Added',
             scan: (repo: unknown) => `Scan ${repo}`,
@@ -5910,7 +5812,7 @@ export const en = {
             openOnGitHub: (repo: unknown) => `Open ${repo} on GitHub`,
             manifest: 'Manifest',
             openInOnGitHub: (path: unknown, repo: unknown) => `Open ${path} in ${repo} on GitHub`,
-            needsAGitHubTokenMost: 'Needs a GitHub token. Most starred works without one.',
+            needsAGitHubTokenMost: 'The Most starred list works without one.',
             addAGitHubToken: 'Add a GitHub token',
           },
           // src/renderer/src/components/workspace/globalSurface/extensions/skills/skillsSurfaceModel.ts
@@ -5933,7 +5835,6 @@ export const en = {
       // src/renderer/src/components/workspace/globalSurface/surfaceErrorBoundary.tsx
       surfaceErrorBoundary: {
         hitAProblemAndStopped: (surfaceLabel: unknown) => `${surfaceLabel} hit a problem and stopped.`,
-        theRestOfTheApp: 'The rest of the app is fine. Reload or close it.',
         reloadSurface: 'Reload surface',
         close: 'Close',
       },
@@ -5965,7 +5866,6 @@ export const en = {
       couldNotOpenTheLink: 'Could not open the link',
       run: (title: unknown) => `Run ${title}?`,
       anAgentSuggestedThisCommand: 'An agent suggested this command. It runs as you, in this folder.',
-      youAreAskedAgainIf: 'You are asked again if the agent changes it.',
       run2: 'Run',
       sharedOnYourTailnetLink: 'Shared on your tailnet — link copied',
       couldNotShareThisServer: 'Could not share this server',
@@ -6034,19 +5934,12 @@ export const en = {
         couldNotReadTheDesign: 'Could not read the design-system library.',
         thisFolderAlreadyHasA: 'This folder already has a ',
         directoryAttachingLeavesItAs: 'directory. Attaching leaves it as is.',
-        copiesAReleasedBundleInto: 'Copies a released bundle into',
-        agentsHereFollowIt: '; agents here follow it.',
         designSystemToAttach: 'Design system to attach',
         none: 'None',
-        startWithoutADesignSystem: 'Start without a design system.',
         readingYourLibrary: 'Reading your library…',
         theDesignSystemLibraryCould: 'The design-system library could not be read: ',
         noDesignSystemsInYour: 'No design systems in your library yet. Browse to a bundle below.',
         browseToABundleFolder: 'Browse to a bundle folder…',
-        checkedAsABundleBefore: (FOLDER_ATTACH_TRUST_COPY: unknown) =>
-          `Checked as a bundle before copying. ${FOLDER_ATTACH_TRUST_COPY}`,
-        anyReleasedBundleOnDisk: (FOLDER_ATTACH_TRUST_COPY: unknown) =>
-          `Any released bundle on disk. ${FOLDER_ATTACH_TRUST_COPY}`,
         inTheLibraryCouldNot: ' in the library could not be read and',
         notListed: ' not listed.',
         chooseADifferentFolder: 'Choose a different folder…',
@@ -6064,7 +5957,6 @@ export const en = {
         newProject: ' New project',
         name: 'Name',
         projectName: 'Project name',
-        aLocalFolderWithA: 'A local folder with a README and a first commit.',
         makeItIn: 'Make it in',
         changeWhereItIsMade: (parentDir: unknown) => `${parentDir} — change where it is made`,
         chooseWhereToMakeIt: 'Choose where to make it',
@@ -6237,10 +6129,10 @@ export const en = {
           noBoardsOnThisMachine: 'No boards on this machine yet.',
           noBoardsYet: 'No boards yet.',
           boardsOnShowUpHere: (machineName: unknown) =>
-            `Boards on ${machineName} show up here. You and its agents can both draw on them.`,
-          boardsDrawnByAgentsOn: (machineName: unknown) => `Boards drawn by agents on ${machineName} show up here.`,
-          boardsLiveOutsideYourRepository:
-            'Boards live outside your repository; you and your agents can both draw on them. Export one to a folder to add it.',
+            `When you or an agent on ${machineName} makes a board, it will be listed here.`,
+          boardsDrawnByAgentsOn: (machineName: unknown) =>
+            `When an agent on ${machineName} draws a board, it will be listed here.`,
+          boardsLiveOutsideYourRepository: 'When you or an agent makes a board, it will be listed here.',
           boardsInThisProject: 'Boards in this project',
         },
         // src/renderer/src/components/workspace/pane/canvas/canvasBoardSource.ts
@@ -6265,14 +6157,10 @@ export const en = {
         // src/renderer/src/components/workspace/pane/canvas/CanvasExportDialog.tsx
         canvasExportDialog: {
           export: (boardName: unknown) => `Export ${boardName}`,
-          saveACopyToA: 'Save a copy to a folder, e.g. to add it to the repo. The original stays in the app.',
           filesToExport: 'Files to export',
           boardFile: 'Board file',
-          theEditableBoardForThe: 'The editable board, for the Canvas or any compatible editor.',
           pNGImage: 'PNG image',
-          aPictureForAREADME: 'A picture for a README or pull request.',
           sVGImage: 'SVG image',
-          theSamePictureAsA: 'The same picture as a vector, sharp at any size.',
           theBoardWasNotExported: 'The board was not exported',
           cancel: 'Cancel',
         },
@@ -6337,7 +6225,8 @@ export const en = {
           readingTheChat: 'Reading the chat…',
           couldnTReadThisChat: "Couldn't read this chat.",
           noPicturesYet: 'No pictures yet',
-          picturesYouAttachAndScreenshots: 'Pictures you attach and screenshots the agent takes show up here.',
+          picturesYouAttachAndScreenshots:
+            'When you attach a picture or the agent takes a screenshot, it will appear here.',
           whosePictures: 'Whose pictures',
           pictures: 'Pictures',
           noPicturesFromHereYet: 'No pictures from here yet.',
@@ -6456,9 +6345,6 @@ export const en = {
         panelUnavailable: 'Panel unavailable',
         itsFeatureMayBeOff: 'Its feature may be off, or the tab is out of date.',
         shownInASeparateWindow: 'Shown in a separate window',
-        isOpenInItsOwn: (paneTabLabel: unknown) => `${paneTabLabel} is open in its own window.`,
-        isOpenInItsOwn2: (paneTabLabel: unknown) =>
-          `${paneTabLabel} is open in its own window. Bring it back to show it here.`,
         showWindow: 'Show window',
         bringBack: 'Bring back',
         loadingPane: 'Loading pane',
@@ -6573,7 +6459,6 @@ export const en = {
         moveToMainWindow: 'Move to Main Window',
         moveToNewWindow: 'Move to New Window',
         stopWatching: 'Stop watching #',
-        thisChatCarriesOn: 'This chat carries on',
         deleteChat: 'Delete chat…',
         chatActionsOn: (title: unknown, machineName: unknown) => `Chat actions: ${title} on ${machineName}`,
         folderActions: (displayName: unknown) => `Folder actions: ${displayName}`,
@@ -6594,9 +6479,8 @@ export const en = {
         imageFile: 'Image file',
         monogram: 'Monogram',
         iconFor: (name: unknown) => `Icon for ${name}`,
-        shownInTheSidebarAnd: 'Shown in the sidebar and project picker on this machine',
         iconSource: 'Icon source',
-        sVGPNGJPEGGIFWebP: 'SVG, PNG, JPEG, GIF, WebP, ICO or ICNS, up to 1 MB.',
+        sVGPNGJPEGGIFWebP: 'Use an SVG, PNG, JPEG, GIF, WebP, ICO or ICNS file of up to 1 MB.',
         letters: 'Letters',
         monogramColor: 'Monogram color',
         cancel: 'Cancel',
@@ -6638,7 +6522,6 @@ export const en = {
         scheduledAgentActions: (title: unknown) => `Scheduled agent actions: ${title}`,
         open: 'Open',
         runNow: 'Run now',
-        runsGoingCarryOn: 'Runs going carry on',
         closeSchedule: 'Close schedule',
       },
       // src/renderer/src/components/workspace/sidebar/ScheduledPauseControls.tsx
@@ -6696,14 +6579,10 @@ export const en = {
       answerItFromTheRemote: 'Answer it from the Remote glyph.',
       remoteStoppedServing: 'Remote stopped serving',
       remoteIsServingAgain: 'Remote is serving again',
-      machinePaired: 'Machine paired',
-      isInYourMesh: (machineName: unknown) => `${machineName} is in your mesh.`,
-      machineRemoved: 'Machine removed',
-      wasRemovedFromYourMesh: (machineName: unknown) => `${machineName} was removed from your mesh.`,
+      machinePaired: (machineName: unknown) => `${machineName} joined your mesh`,
+      machineRemoved: (machineName: unknown) => `${machineName} was removed from your mesh`,
       declined: (machine: unknown) => `${machine} declined`,
-      someoneThereSaidNo: 'Someone there said no.',
       didNotAnswerInTime: (machine: unknown) => `${machine} did not answer in time`,
-      askAgainWhenSomeoneIs: 'Ask again when someone is at it.',
       pairingWithDidNotComplete: (machine: unknown) => `Pairing with ${machine} did not complete`,
       revokedThisDevice: (machineName: unknown) => `${machineName} revoked this device`,
       pairAgainFromTheMesh: 'Pair again from the Mesh to reconnect.',
@@ -6769,25 +6648,21 @@ export const en = {
       processesPopover: {
         processes: 'Processes',
         nothingRunning: 'Nothing agents started is running',
-        nothingRunningBody: 'Programs and browser tabs agents leave open show up here.',
-        notOnWindows: 'Not available on Windows yet',
-        notOnWindowsBody: 'Studio cannot read which programs its agents started on Windows yet.',
+        nothingRunningBody: 'When an agent leaves a program or browser tab open, it will be listed here.',
+        notOnWindows: 'Studio cannot list the programs its agents start on Windows yet.',
         couldNotRead: 'Could not read this machine’s programs',
         couldNotReadBody: 'Studio will try again in a moment.',
         browserTabs: 'Browser tabs',
         programs: 'Programs agents started',
         chatNoLongerOpen: 'Chat no longer open',
         leftBehind: 'Left behind',
-        leftBehindHint:
-          'The chat that started it was settled or removed, and this kept running. That can be on purpose, a report server say; stop it when you no longer need it.',
+        leftBehindHint: 'The chat that started it was settled or removed, and this kept running.',
         agentIdle: 'Agent idle',
-        agentIdleHint:
-          'Its chat is still open and its agent is resting. This keeps running for when the chat picks up again.',
+        agentIdleHint: 'Its chat is still open and its agent is resting.',
         onItsOwn: 'Running on its own',
-        onItsOwnHint:
-          'Its agent is still running, but this runs apart from it and will keep running after the chat ends.',
+        onItsOwnHint: 'This runs apart from its agent and keeps running after the chat ends.',
         withItsAgent: 'With its agent',
-        withItsAgentHint: 'Its agent is running it now; stopping it may interrupt the agent’s work.',
+        withItsAgentHint: 'Stopping it may interrupt the agent’s work.',
         playingSound: 'Playing sound',
         inView: 'On screen',
         running: (age: unknown) => `running ${age}`,
@@ -6933,7 +6808,6 @@ export const en = {
       signInDidNotOpen: 'Sign-in did not open',
       stopTheSessionIn: (label: unknown) => `Stop the session in ${label}?`,
       stopAllSessionsIn: (length: unknown, label: unknown) => `Stop all ${length} sessions in ${label}?`,
-      theListedTerminalsAndAgents: 'The listed terminals and agents will be stopped.',
       stopAll: 'Stop all',
       thatLinkMatchesChatsOn: 'That link matches chats on more than one machine',
       openTheChatFromThe: (join: unknown) => `Open the chat from the sidebar: ${join}.`,
@@ -6957,7 +6831,6 @@ export const en = {
       itsChatIsInThe: 'Its chat is in the list.',
       didNotRun: 'Did not run',
       scheduledAgentClosed: 'Scheduled agent closed',
-      itWillNotRunAgain: 'It will not run again.',
       notClosed: 'Not closed',
       wasNotSettled: (title: unknown) => `${title} was not settled`,
       notMarkedUnread: 'Not marked unread',
@@ -7082,7 +6955,8 @@ export const en = {
       openAsWorkspace: 'Open as workspace',
       releaseAgentLock: 'Release agent lock…',
       removeWorktree: 'Remove worktree',
-      onlyTheDefaultCheckoutAdd: 'Only the default checkout. Add a worktree to run agents in parallel.',
+      onlyTheDefaultCheckoutAdd:
+        'This repository has only its default checkout. Add a worktree to run agents side by side.',
     },
   },
 }

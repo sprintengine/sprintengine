@@ -34,10 +34,7 @@ export function AgentNotificationsSetting() {
   }, [])
   if (mode === null) return null
   return (
-    <SettingsRow
-      label={copy.settings.agentNotificationsSetting.notifyWhenAChatFinishes}
-      help="While you are in another app. Click the notification to open the chat."
-    >
+    <SettingsRow label={copy.settings.agentNotificationsSetting.notifyWhenAChatFinishes}>
       <SegmentedControl<AgentNotificationMode>
         ariaLabel={copy.settings.agentNotificationsSetting.notifyWhenAChatFinishes}
         items={ITEMS}

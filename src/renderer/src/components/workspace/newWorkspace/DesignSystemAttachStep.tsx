@@ -49,12 +49,6 @@ export type DesignSystemAttachStepProps = {
   workspaceRoot: string
   selection: DesignSystemAttachSource | null
   onSelect: (source: DesignSystemAttachSource | null) => void
-  /**
-   * The wizard lede explains the copy-at-create mechanics; the Settings
-   * section already carries that meaning in its own chrome, so it suppresses
-   * the paragraph rather than restating it with different timing.
-   */
-  variant?: 'create' | 'settings'
 }
 
 function sourceKey(source: DesignSystemAttachSource | null): string {
@@ -74,12 +68,7 @@ export function clearStaleAttachSelection(input: {
   if (input.existingBundle === true && input.selection != null) input.onSelect(null)
 }
 
-export function DesignSystemAttachStep({
-  workspaceRoot,
-  selection,
-  onSelect,
-  variant = 'create',
-}: DesignSystemAttachStepProps) {
+export function DesignSystemAttachStep({ workspaceRoot, selection, onSelect }: DesignSystemAttachStepProps) {
   const [library, setLibrary] = useState<LibraryState>({ kind: 'loading' })
   // null = pre-check still running. True renders the conflict state: attach
   // never overwrites, so an existing design-system/ disables the picker.
@@ -156,13 +145,6 @@ export function DesignSystemAttachStep({
 
   return (
     <div className="flex flex-col gap-2">
-      {variant === 'create' ? (
-        <p className="text-meta leading-5 text-[color:var(--text-muted)]">
-          {appCopy.workspace.newWorkspace.designSystemAttachStep.copiesAReleasedBundleInto}{' '}
-          <span className="font-mono text-[color:var(--text-default)]">design-system/</span>
-          {appCopy.workspace.newWorkspace.designSystemAttachStep.agentsHereFollowIt}
-        </p>
-      ) : null}
       <div
         role="group"
         aria-label={appCopy.workspace.newWorkspace.designSystemAttachStep.designSystemToAttach}
@@ -171,7 +153,6 @@ export function DesignSystemAttachStep({
         <AttachChoiceRow
           active={selectedKey === 'none'}
           title={appCopy.workspace.newWorkspace.designSystemAttachStep.none}
-          detail={appCopy.workspace.newWorkspace.designSystemAttachStep.startWithoutADesignSystem}
           onSelect={() => onSelect(null)}
         />
         {library.kind === 'loading' ? (
@@ -213,11 +194,7 @@ export function DesignSystemAttachStep({
               : appCopy.workspace.newWorkspace.designSystemAttachStep.browseToABundleFolder
           }
           titleMono={folderSelection != null}
-          detail={
-            folderSelection
-              ? appCopy.workspace.newWorkspace.designSystemAttachStep.checkedAsABundleBefore(FOLDER_ATTACH_TRUST_COPY)
-              : appCopy.workspace.newWorkspace.designSystemAttachStep.anyReleasedBundleOnDisk(FOLDER_ATTACH_TRUST_COPY)
-          }
+          detail={FOLDER_ATTACH_TRUST_COPY}
           detailWraps
           onSelect={() => void chooseFolder()}
         />
@@ -260,7 +237,7 @@ function AttachChoiceRow({
   active: boolean
   title: string
   titleMono?: boolean
-  detail: string
+  detail?: string
   /** Trust copy must stay readable, so the browse row wraps instead of truncating. */
   detailWraps?: boolean
   onSelect: () => void
@@ -284,13 +261,15 @@ function AttachChoiceRow({
       >
         {title}
       </span>
-      <span
-        className={`min-w-0 max-w-full text-meta leading-4 text-[color:var(--text-muted)] ${
-          detailWraps ? '' : 'truncate'
-        }`}
-      >
-        {detail}
-      </span>
+      {detail ? (
+        <span
+          className={`min-w-0 max-w-full text-meta leading-4 text-[color:var(--text-muted)] ${
+            detailWraps ? '' : 'truncate'
+          }`}
+        >
+          {detail}
+        </span>
+      ) : null}
     </CardButton>
   )
 }

@@ -14,7 +14,6 @@ import { FloatingPlayerChrome, useFloatRect } from './FloatingPlayer'
 import { clientSupports } from '../../../clientCapabilities'
 import { AgentEdge, EmptyState, OpenInWindowGlyph, OutlineButton, PrimaryButton } from '../../ui'
 import { bringBackPaneTab, showPanePopOut } from './popout/panePopOutHost'
-import { paneTabLabel } from './paneTabItem'
 import { useRecordingTabIds } from './browser/recordingTabs'
 import { useAgentPresentTabIds } from './agentPresence'
 import { createPairedDiffSource } from '../../auxWindows/diffViewerSource'
@@ -110,13 +109,6 @@ function PanePoppedOutPlaceholder({ workspaceId, tab }: { workspaceId: string; t
       <EmptyState
         glyph={<OpenInWindowGlyph className="icon-lg" />}
         title={appCopy.workspace.pane.workspacePaneBody.shownInASeparateWindow}
-        body={
-          // A diff is only ever shown in its window (diffShowsInWindow), so
-          // there is nothing to bring back.
-          tab.kind === 'diff'
-            ? appCopy.workspace.pane.workspacePaneBody.isOpenInItsOwn(paneTabLabel(tab))
-            : appCopy.workspace.pane.workspacePaneBody.isOpenInItsOwn2(paneTabLabel(tab))
-        }
         action={
           <>
             {popOutId ? (

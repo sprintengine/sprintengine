@@ -217,12 +217,11 @@ export function SlashCommandMenu({
           </div>
           {notice}
         </ScrollArea>
-        <div className="flex items-center gap-2 px-2.5 py-1.5 text-micro text-[color:var(--text-subtle)]">
-          <span>{copy.panels.agentChat.slashCommandMenu.chooseOrTabInsertEsc}</span>
-          {skillsHint ? (
-            <span className="ml-auto">{copy.panels.agentChat.slashCommandMenu.forStudioSkills}</span>
-          ) : null}
-        </div>
+        {skillsHint ? (
+          <div className="px-2.5 py-1.5 text-micro text-[color:var(--text-subtle)]">
+            {copy.panels.agentChat.slashCommandMenu.forStudioSkills}
+          </div>
+        ) : null}
       </Popover>
     </div>
   )

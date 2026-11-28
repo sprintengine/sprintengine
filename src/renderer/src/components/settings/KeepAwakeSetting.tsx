@@ -9,7 +9,6 @@ export function KeepAwakeSetting() {
   return (
     <MainOwnedSettingToggle
       label={copy.settings.keepAwakeSetting.keepTheComputerAwakeWhile}
-      description={copy.settings.keepAwakeSetting.noSleepWhileAnAgent}
       read={window.api?.getKeepAwake}
       write={(enabled) => window.api.setKeepAwake(enabled)}
     />

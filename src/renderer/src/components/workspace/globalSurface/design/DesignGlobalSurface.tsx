@@ -742,7 +742,6 @@ function DesignSurfaceBody({
       <SurfaceCanvasState
         kind="error"
         title={appCopy.workspace.globalSurface.design.designGlobalSurface.couldnTReadYourDesign}
-        hint={appCopy.workspace.globalSurface.design.designGlobalSurface.thisIsUsuallyTemporary}
         detail={loadError ?? undefined}
         onRetry={onRetry}
       />
@@ -840,14 +839,14 @@ function brokenTitle(failure: DesignSystemBundleReadFailure): string {
   }
 }
 
-function brokenHint(failure: DesignSystemBundleReadFailure): string {
+// Only where the next step is not already one of the buttons beside it.
+function brokenHint(failure: DesignSystemBundleReadFailure): string | undefined {
   switch (failure) {
     case 'missing':
-      return 'It may have moved or been renamed. Point the library at its new location, or forget it.'
+    case 'invalid-manifest':
+      return undefined
     case 'no-manifest':
       return 'A design system is a folder holding design-system.json.'
-    case 'invalid-manifest':
-      return 'The folder is there, but its design-system.json does not parse.'
     case 'unreadable':
       return 'Check the folder’s permissions, or forget it.'
   }

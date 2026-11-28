@@ -229,16 +229,6 @@ function useDesignSystemLibraryCount(): { ready: boolean; count: number } {
   return state
 }
 
-/**
- * The count, as a word. English up to ten and digits past it, because the studio
- * is not going to have eleven parts and a sentence reading "the 6 things" is a
- * sentence nobody wrote on purpose.
- */
-function tileCountWord(count: number): string {
-  const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
-  return WORDS[count] ?? String(count)
-}
-
 /** The id the search field says it filters, and the grid it filters. */
 const CARD_GRID_ID = 'extensions-home-cards'
 
@@ -527,28 +517,15 @@ export default function ExtensionsHomeSurface(): JSX.Element {
             point of sectioning them. */}
         <section aria-labelledby={hasCardRegion ? PARTS_HEADING_ID : undefined} className="space-y-2.5">
           {hasCardRegion ? (
-            <div className="flex items-baseline gap-2.5">
-              {/* h2, one level under the door's own name and one ABOVE the h3
-                  each card titles itself with: this labels a section, and a
-                  heading list that ranked it level with the cards' own titles
-                  would read the label as a sibling of their content. Drawn
-                  quietly all the same — the level is the outline, not the
-                  type. */}
-              <h2 id={PARTS_HEADING_ID} className="m-0 text-meta font-semibold text-[color:var(--text-strong)]">
-                {appCopy.extensions.extensionsHomeSurface.orGoStraightToThe}
-              </h2>
-              <p className="m-0 text-meta text-[color:var(--text-muted)]">
-                {/* Counted, never typed. It said "five" from 2026-09-05 until
-                    2026-09-06, and item 2470 made it six by splitting the run
-                    doors — the sentence then sat directly above six tiles
-                    miscounting them. A module being off makes it four or five
-                    again, so the only number that can stay true is the one the
-                    rows themselves give. */}
-                {appCopy.extensions.extensionsHomeSurface.the}
-                {tileCountWord(tiles.length)}
-                {appCopy.extensions.extensionsHomeSurface.thingsTheStudioIsMade}
-              </p>
-            </div>
+            /* h2, one level under the door's own name and one ABOVE the h3
+               each card titles itself with: this labels a section, and a
+               heading list that ranked it level with the cards' own titles
+               would read the label as a sibling of their content. Drawn
+               quietly all the same — the level is the outline, not the
+               type. */
+            <h2 id={PARTS_HEADING_ID} className="m-0 text-meta font-semibold text-[color:var(--text-strong)]">
+              {appCopy.extensions.extensionsHomeSurface.orGoStraightToThe}
+            </h2>
           ) : null}
           {/* Column counts that DIVIDE the row, named at container breakpoints —
             the same idiom `CardGrid` above uses, and for the same reason: the
@@ -600,9 +577,6 @@ function BuildExtensionPlate({ onOpen }: { onOpen: () => void }): JSX.Element {
     <CardButton variant="bordered" onClick={onOpen} className="px-4 py-3">
       <span className="text-body font-semibold text-[color:var(--text-strong)]">
         {appCopy.extensions.extensionsHomeSurface.buildYourOwnExtension}
-      </span>
-      <span className="mt-0.5 text-meta text-[color:var(--text-muted)]">
-        {appCopy.extensions.extensionsHomeSurface.describeItAndAnAgent}
       </span>
     </CardButton>
   )

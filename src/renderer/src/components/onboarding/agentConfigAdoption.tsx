@@ -84,9 +84,6 @@ export function AgentConfigAdoptionStatus({ adoption }: { adoption: AgentConfigA
             {copy.onboarding.agentConfigAdoption.couldnTBringOverYour}
           </p>
           <p className="mt-0.5 text-micro leading-5 text-[color:var(--text-muted)]">{adoption.message}</p>
-          <p className="mt-0.5 text-micro leading-5 text-[color:var(--text-subtle)]">
-            {copy.onboarding.agentConfigAdoption.youCanAddItLater}
-          </p>
         </div>
       </div>
     )

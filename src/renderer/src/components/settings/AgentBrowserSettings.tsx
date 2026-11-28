@@ -27,7 +27,6 @@ export function AgentBrowserSettings() {
         />
         <SettingToggle
           label={copy.settings.agentBrowserSettings.showThePageWhileAn}
-          description={copy.settings.agentBrowserSettings.withThePaneClosedFloat}
           enabled={autoFloat}
           onChange={setAutoFloat}
         />

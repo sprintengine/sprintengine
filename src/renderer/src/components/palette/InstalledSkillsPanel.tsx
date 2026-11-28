@@ -364,8 +364,8 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
                   ? 'Move this link to Trash? The source folder stays in place.'
                   : `Move this ${detail.scope} installation to Trash?`}
                 {detail.scope === 'global' ? ' This affects every project using this installation.' : ''}
-                {appCopy.palette.installedSkillsPanel.otherInstallationsStayInPlace}
               </p>
+
               <div className="flex gap-2">
                 <OutlineButton tone="danger" disabled={busy} busy={busy} onClick={() => void removeSkill(detail)}>
                   {appCopy.palette.installedSkillsPanel.moveToTrash}
@@ -495,7 +495,7 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
         </>
       )}
       <p className="px-4 py-2 text-micro text-[color:var(--text-muted)]">
-        {appCopy.palette.installedSkillsPanel.installedHereRunningAgentsMay}
+        {appCopy.palette.installedSkillsPanel.runningAgentsMayNeedARestart}
       </p>
     </section>
   )

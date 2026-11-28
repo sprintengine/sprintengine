@@ -148,14 +148,17 @@ test('the section shows the URL to give a client and lists the clients let in, a
 })
 
 test('the help lines say what each state means', () => {
-  assert.match(mcpUrlHelp(STATUS.mcp!), /You approve each one here/u)
+  assert.equal(mcpUrlHelp(STATUS.mcp!), null)
   assert.match(
-    mcpUrlHelp({ ...STATUS.mcp!, https: { enabled: false, state: 'off', origin: null, message: null } }),
+    mcpUrlHelp({ ...STATUS.mcp!, https: { enabled: false, state: 'off', origin: null, message: null } }) ?? '',
     /only over HTTPS/u,
   )
-  assert.match(mcpUrlHelp(null), /Turn on remote control/u)
-  assert.match(mcpHttpsHelp({ enabled: true, state: 'error', origin: null, message: 'Port 443 is taken.' }), /443/u)
-  assert.match(mcpHttpsHelp({ enabled: false, state: 'off', origin: null, message: null }), /Tailscale Serve/u)
+  assert.match(mcpUrlHelp(null) ?? '', /Turn on remote control/u)
+  assert.match(
+    mcpHttpsHelp({ enabled: true, state: 'error', origin: null, message: 'Port 443 is taken.' }) ?? '',
+    /443/u,
+  )
+  assert.equal(mcpHttpsHelp({ enabled: false, state: 'off', origin: null, message: null }), undefined)
   assert.equal(signInEnds(null, NOW), null)
   assert.equal(signInEnds('2026-11-04T11:00:00.000Z', NOW), 'Ends tomorrow')
   assert.equal(signInEnds('2026-11-01T00:00:00.000Z', NOW), 'Sign-in ended')

@@ -161,7 +161,6 @@ function ProjectIconDialogBody({
       <ModalHeader
         titleId="project-icon-title"
         title={copy.workspace.sidebar.projectIconDialog.iconFor(name)}
-        subtitle={copy.workspace.sidebar.projectIconDialog.shownInTheSidebarAnd}
         onClose={onClose}
       />
       <ModalBody className="flex flex-col gap-4">
@@ -181,11 +180,9 @@ function ProjectIconDialogBody({
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
-            {mode === 'detected' ? (
+            {mode === 'detected' && !detectedSrc ? (
               <p className="text-meta text-[color:var(--text-muted)]">
-                {detectedSrc
-                  ? 'The logo found in the project’s folder.'
-                  : 'No logo was found in the project’s folder, so it shows the folder glyph.'}
+                No logo was found in the project’s folder, so the folder icon is shown.
               </p>
             ) : null}
 

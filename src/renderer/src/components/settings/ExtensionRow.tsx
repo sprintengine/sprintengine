@@ -98,7 +98,6 @@ export function ExtensionTakeover({ module }: { module: ThirdPartyModuleView }):
   const on = useExtensionReplacementSwitches((state) => state.off[key] !== true)
   const setTakesOver = useExtensionReplacementSwitches((state) => state.setTakesOver)
   const labelId = useId()
-  const hintId = useId()
   const lines = extensionReplacementLines(module.extension)
   if (lines.length === 0) return null
   const t = copy.settings.extensionRow
@@ -111,20 +110,10 @@ export function ExtensionTakeover({ module }: { module: ThirdPartyModuleView }):
         ))}
       </ul>
       <div className="mt-2 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div id={labelId} className="text-meta text-[color:var(--text-strong)]">
-            {t.letItTakeOver}
-          </div>
-          <div id={hintId} className="text-meta text-[color:var(--text-subtle)]">
-            {t.letItTakeOverHint}
-          </div>
+        <div id={labelId} className="min-w-0 text-meta text-[color:var(--text-strong)]">
+          {t.letItTakeOver}
         </div>
-        <Switch
-          checked={on}
-          ariaLabelledBy={labelId}
-          ariaDescribedBy={hintId}
-          onChange={(next) => setTakesOver(key, next)}
-        />
+        <Switch checked={on} ariaLabelledBy={labelId} onChange={(next) => setTakesOver(key, next)} />
       </div>
     </section>
   )

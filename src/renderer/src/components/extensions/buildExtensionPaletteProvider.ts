@@ -17,8 +17,8 @@ export function createBuildExtensionPaletteProvider(): PaletteResultProvider {
       const command: PaletteCommand = {
         id: BUILD_EXTENSION_PALETTE_ROW_ID,
         label: copy.extensions.buildExtensionPaletteProvider.buildYourOwnExtension,
-        description: copy.extensions.buildExtensionPaletteProvider.anAgentBuildsItWith,
-        keywords: 'new extension, create extension, make an extension, write a module, plugin, sdk, template, scaffold',
+        keywords:
+          'new extension, create extension, make an extension, write a module, plugin, sdk, template, scaffold, agent, chat',
         group: 'extensions',
         run: () => {
           context.close()

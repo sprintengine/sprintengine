@@ -484,24 +484,21 @@ export function ConversationsScreen({
           <SheetOption
             label={appCopy.phone.conversations.conversationsScreen.markUnread}
             onPress={() => markUnread(menuRow)}
-            sub={`Shows its latest reply as new again, here and on ${menuRow.desktopName}.`}
           />
         ) : null}
         {menuRow && !isChatSnoozed(menuRow.thread, now) && snoozeOffered(menuRow) ? (
           <SheetOption
             label={appCopy.phone.conversations.conversationsScreen.snooze}
             onPress={() => askSnooze(menuRow)}
-            sub="Puts it on the Snoozed shelf until a time you choose."
           />
         ) : null}
         {menuRow?.snoozable && isChatSnoozed(menuRow.thread, now) ? (
-          <SheetOption label={appCopy.phone.conversations.conversationsScreen.wakeNow} onPress={() => wake(menuRow)} sub="Brings it back to the list." />
+          <SheetOption label={appCopy.phone.conversations.conversationsScreen.wakeNow} onPress={() => wake(menuRow)} />
         ) : null}
         {menuRow?.settleable ? (
           <SheetOption
             label={appCopy.phone.conversations.conversationsScreen.settle}
             onPress={() => settle(menuRow)}
-            sub={`Moves it to Settled on ${menuRow.desktopName}, and off this list.`}
           />
         ) : null}
       </BottomSheet>

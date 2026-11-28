@@ -723,11 +723,7 @@ export default function WorktreeManager({
         <>
           {creating ? (
             <div className="mb-3 space-y-3 rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface-raised)] p-3">
-              <Field
-                label={appCopy.worktree.worktreeManager.name}
-                htmlFor="worktree-name"
-                help="Folder name under the worktree container."
-              >
+              <Field label={appCopy.worktree.worktreeManager.name} htmlFor="worktree-name">
                 <Input
                   variant="well"
                   value={worktreeName}
