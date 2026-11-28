@@ -338,8 +338,9 @@ export type ListedChat = {
 
 /** A chat this window keeps no record of, read off its environment's list and driven over its transport. */
 export function useListedChat({ workspaceId, agentId: remoteAgentId, chat, subagent }: ListedChatInput): ListedChat {
-  const target = chat.environment
-  const machineName = target.name
+  // Held by its route and name: a tab's chat is read afresh on every render.
+  const { route, name: machineName } = chat.environment
+  const target = useMemo(() => ({ route, name: machineName }), [route, machineName])
   const { connectionId, title } = chat.listed
   const remoteWorkspaceId = chat.chatId
   const key = useMemo<MeshConversationKey>(
