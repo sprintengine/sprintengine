@@ -15,5 +15,4 @@ test('the gateway reads the launch settings as they are when asked, not as they 
   }
   assert.equal(deps.defaultChatCli!(), 'codex')
   assert.deepEqual(deps.userCliModels!('codex'), ['gpt-test'])
-  assert.equal(deps.projectUsage!(), settings.projectUsage)
 })

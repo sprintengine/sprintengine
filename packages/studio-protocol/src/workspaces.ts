@@ -16,7 +16,8 @@ import { STUDIO_WORKSPACES_CAPABILITY } from './handshake.js'
 // Each answers what the Studio's gateway tools of the same purpose answer
 // (`workspace.list`, `cli.runtime.list`, `workspace.checkout`,
 // `workspace.extensions`), from the same services, so a client on the protocol
-// and an agent on MCP read one thing. A row carries the members named here and
+// and an agent on MCP read one thing. `workspaces.list` is every Studio's own
+// list of the chats it holds, with or without a desktop around it. A row carries the members named here and
 // may carry more; a client reads what it knows and passes over the rest.
 //
 // Reads, on `workspaces:read`, behind the `workspaces` capability. A workspace

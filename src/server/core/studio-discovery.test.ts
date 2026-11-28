@@ -12,33 +12,42 @@ function tool(name: string, handler: McpToolRegistration['handler']): McpToolReg
 }
 
 const asked: Array<[string, Record<string, unknown>]> = []
-const discovery = createStudioDiscovery(() => [
-  tool(STUDIO_DISCOVERY_TOOLS.workspaces, async () =>
-    toolSuccess({
-      workspaces: [
-        { id: 'ws-1', name: 'App', folderPath: '/Users/dev/app', projectHue: 210, settledAt: null },
-        { name: 'no id' },
-      ],
+const listed: Array<{ ownOnly: boolean }> = []
+const discovery = createStudioDiscovery(
+  {
+    list: async (options) => {
+      listed.push(options)
+      return {
+        workspaces: [{ id: 'ws-1', name: 'App', folderPath: '/Users/dev/app', projectHue: 210, settledAt: null }],
+        activeWorkspaceId: null,
+        primaryWindowId: null,
+      }
+    },
+  },
+  () => [
+    tool(STUDIO_DISCOVERY_TOOLS.runtimes, async (args) => {
+      asked.push(['runtimes', args])
+      return args.cli === 'nope'
+        ? toolSuccess({ error: { code: 'unknown_cli', message: 'No agent CLI "nope".' } })
+        : toolSuccess({ clis: [{ id: 'claude', agentSelectable: true }, 'junk'] })
     }),
-  ),
-  tool(STUDIO_DISCOVERY_TOOLS.runtimes, async (args) => {
-    asked.push(['runtimes', args])
-    return args.cli === 'nope'
-      ? toolSuccess({ error: { code: 'unknown_cli', message: 'No agent CLI "nope".' } })
-      : toolSuccess({ clis: [{ id: 'claude', agentSelectable: true }, 'junk'] })
-  }),
-  tool(STUDIO_DISCOVERY_TOOLS.checkout, async (args) =>
-    args.workspaceId === 'ws-1'
-      ? toolSuccess({ workspaceId: 'ws-1', git: true, branch: 'main' })
-      : toolError('unknown_workspace', 'Workspace "ws-9" is not known to the running app.'),
-  ),
-])
+    tool(STUDIO_DISCOVERY_TOOLS.checkout, async (args) =>
+      args.workspaceId === 'ws-1'
+        ? toolSuccess({ workspaceId: 'ws-1', git: true, branch: 'main' })
+        : toolError('unknown_workspace', 'Workspace "ws-9" is not known to the running app.'),
+    ),
+  ],
+)
 
-test('each read is the tool’s answer, with the rows a client cannot read left out', async () => {
+test('the chats are this Studio’s own list, without what another environment holds', async () => {
   assert.deepEqual(
     (await discovery.workspaces()).map((workspace) => [workspace.id, workspace.projectHue]),
     [['ws-1', 210]],
   )
+  assert.deepEqual(listed, [{ ownOnly: true }])
+})
+
+test('each other read is the tool’s answer, with the rows a client cannot read left out', async () => {
   assert.deepEqual(await discovery.runtimes(), { ok: true, value: { clis: [{ id: 'claude', agentSelectable: true }] } })
   const checkout = await discovery.checkout('ws-1')
   assert.equal(checkout.ok && checkout.value.branch, 'main')

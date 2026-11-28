@@ -1,17 +1,20 @@
 import type {
   StudioCliRuntime,
-  StudioWorkspace,
   StudioWorkspaceCheckout,
   StudioWorkspaceExtensions,
 } from '../../../packages/studio-protocol/src/public'
 import type { McpToolRegistration, McpToolResult } from '../../shared/modules/mcp-tools'
 import type { StudioDiscovery, StudioDiscoveryAnswer } from '../rpc/studio-rpc-types'
+import type { StudioWorkspaceList } from '../workspaces/studio-workspace-list'
 
-// What a Studio protocol client reads before it starts a chat, answered by the
-// gateway's own tools of the same purpose: `workspace.list`, `cli.runtime.list`,
-// `workspace.checkout` and `workspace.extensions`. One implementation, so the
-// phone and a paired desktop on the protocol read exactly what an agent on MCP
-// reads, and a change to one is a change to both.
+// What a Studio protocol client reads before it starts a chat. The chats
+// themselves are this Studio's own list (`studio-workspace-list.ts`), which
+// every Studio serves from its records and the gateway's `workspace.list`
+// tool answers too. The rest is answered by the gateway's own tools of the
+// same purpose: `cli.runtime.list`, `workspace.checkout` and
+// `workspace.extensions`. One implementation each, so the phone and a paired
+// desktop on the protocol read exactly what an agent on MCP reads, and a
+// change to one is a change to both.
 //
 // The tools are asked with no connection context: these are reads of this
 // machine's own state, the same for every caller. Who may ask is the
@@ -19,7 +22,6 @@ import type { StudioDiscovery, StudioDiscoveryAnswer } from '../rpc/studio-rpc-t
 
 /** The tools this reads, by name; a Studio without one answers that read `unavailable`. */
 export const STUDIO_DISCOVERY_TOOLS = {
-  workspaces: 'workspace.list',
   runtimes: 'cli.runtime.list',
   checkout: 'workspace.checkout',
   extensions: 'workspace.extensions',
@@ -46,7 +48,10 @@ function readDiscoveryToolResult(result: McpToolResult): StudioDiscoveryAnswer<R
   return { ok: true, value: structured }
 }
 
-export function createStudioDiscovery(tools: () => McpToolRegistration[]): StudioDiscovery {
+export function createStudioDiscovery(
+  chats: StudioWorkspaceList,
+  tools: () => McpToolRegistration[],
+): StudioDiscovery {
   async function call(
     name: string,
     args: Record<string, unknown>,
@@ -56,14 +61,10 @@ export function createStudioDiscovery(tools: () => McpToolRegistration[]): Studi
     return readDiscoveryToolResult(await tool.handler(args))
   }
   return {
-    async workspaces() {
-      const answer = await call(STUDIO_DISCOVERY_TOOLS.workspaces, {})
-      if (!answer.ok) throw new Error(answer.message)
-      const rows = Array.isArray(answer.value.workspaces) ? answer.value.workspaces : []
-      return rows.filter(
-        (row): row is StudioWorkspace => record(row) && typeof row.id === 'string' && typeof row.name === 'string',
-      )
-    },
+    // Whoever asks on the protocol is outside this Studio: a chat another
+    // environment holds is reached there, never listed through here
+    // (design-wsl-ssh-direct PR 1d, decision 7).
+    workspaces: async () => (await chats.list({ ownOnly: true })).workspaces,
     async runtimes(cli) {
       const answer = await call(STUDIO_DISCOVERY_TOOLS.runtimes, cli ? { cli } : {})
       if (!answer.ok) return answer

@@ -1,4 +1,5 @@
 import { testDatabaseAt } from '../../../../tests/studio-database'
+import { createStudioWorkspaceList } from '../../../server/workspaces/studio-workspace-list'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
@@ -317,6 +318,8 @@ async function startListener() {
       getWorkspaceSyncSnapshot: () => snapshot,
       listTerminalSessions: () => [],
       readRepositoryIdentity: async () => null,
+      listWorkspaces: createStudioWorkspaceList({ snapshot: () => snapshot, readRepositoryIdentity: async () => null })
+        .list,
       resolveAgentPermissionPreset: () => null,
       createWorkspace: (input: { folderPath?: string }) => {
         created.push(input.folderPath)
