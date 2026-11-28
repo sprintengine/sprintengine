@@ -21,7 +21,7 @@ import { STUDIO_WORKSPACE_SYNC_CAPABILITY } from './handshake.js'
 // module chat's run state.
 //
 // Beside the registry: the one-time hydration from a window's own stored copy
-// (`workspaceRegistry.*`), the window's backup of that copy
+// (`workspaceRegistry.*`), the window's backup of its own settings
 // (`workspaceBackup.*`), and the folders a chat started without a project runs
 // in (`projectlessChats.*`).
 //
@@ -73,7 +73,7 @@ export type StudioWorkspaceRegistryHydrateResult = {
   droppedRecordIds?: string[]
 }
 
-/** The window's backup of its stored copy. */
+/** The window's backup of its own settings. */
 export type StudioWorkspaceBackupPayload = { version: number; writtenAt: string; data: unknown }
 export type StudioWorkspaceBackupReadResult =
   | { ok: true; payload: StudioWorkspaceBackupPayload }

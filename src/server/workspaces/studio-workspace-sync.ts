@@ -52,14 +52,8 @@ type Core = Pick<
 
 export function createStudioWorkspaceSync(core: Core): StudioWorkspaceSync {
   const sync = core.workspaceSyncService
-  // A window's own stored copy, written beside the registry it backs up; at
-  // most one registry serialization every ten seconds, the newest written
-  // when the interval ends.
-  const backup = createWorkspaceBackupService({
-    resolveUserDataDir: () => core.platform.paths.dataDir(),
-    readRegistry: () => core.workspaceRegistry.getState(),
-    minRegistryIntervalMs: 10_000,
-  })
+  // A window's backup of the settings it keeps in its own storage.
+  const backup = createWorkspaceBackupService({ resolveUserDataDir: () => core.platform.paths.dataDir() })
   const listeners = new Set<(event: StudioWorkspaceSyncEvent) => void>()
   let unsubscribe: (() => void) | null = null
   const asEvent = (event: unknown) => event as StudioWorkspaceSyncEvent
