@@ -34,7 +34,7 @@ test('every item of a chat’s menu, here or on a paired machine, has a tooltip'
   const React = await import('react')
   const { act } = React
   const { createRoot } = await import('react-dom/client')
-  const { WorkspaceContextMenu, EnvironmentChatContextMenu } = await import('./sidebar/contextMenus')
+  const { EnvironmentChatContextMenu } = await import('./sidebar/contextMenus')
 
   const now = Date.now()
   const base = {
@@ -53,21 +53,33 @@ test('every item of a chat’s menu, here or on a paired machine, has a tooltip'
     workspaceRoot: '/Users/dev/parser',
   }
   const noop = () => {}
-  const local = (workspace: Partial<Workspace>, extra: Record<string, unknown> = {}) =>
-    React.createElement(WorkspaceContextMenu, {
+  // This computer's chat: the one chat menu, with what the window holds of it.
+  const local = (given: Partial<Workspace>, extra: Record<string, unknown> = {}) => {
+    const workspace = { ...base, ...given } as Workspace
+    const { schedule = null, canDelete = false, ...rest } = extra
+    return React.createElement(EnvironmentChatContextMenu, {
       x: 0,
       y: 0,
-      workspace: { ...base, ...workspace } as Workspace,
+      title: workspace.name,
+      machineName: 'This computer',
+      canSettle: true,
+      marks: true,
+      canMarkUnread: false,
+      starred: false,
+      color: null,
+      snoozedUntil: typeof workspace.snoozedUntil === 'number' ? workspace.snoozedUntil : null,
+      autoSettle: workspace.autoSettleEnabled === true,
+      local: { workspace, moduleOverrides: {}, schedule, canDelete },
       chatLink: 'sprintengine://chat/env-here/ws1',
-      moduleOverrides: {},
       isDetachedWindow: false,
       now,
       working: false,
       onClose: noop,
       onSelect: noop,
       onPickColor: noop,
-      ...extra,
-    })
+      ...rest,
+    } as Parameters<typeof EnvironmentChatContextMenu>[0])
+  }
   const remote = (extra: Record<string, unknown> = {}) =>
     React.createElement(EnvironmentChatContextMenu, {
       x: 0,

@@ -114,6 +114,7 @@ import { workspaceLastUserMessageAt } from '../../utils/workspaceRecency'
 import { useEnvironments } from '../../hooks/useEnvironments'
 import { useEnvironmentChatRows } from './remoteBand/useEnvironmentChatRows'
 import { localChatRows } from './sidebar/localChatRows'
+import { WINDOW_STUDIO_TARGET } from '../../studio/environmentChats'
 import {
   isEnvironmentRecord,
   openSpecOfConversation,
@@ -243,7 +244,6 @@ import { TerminalLineView } from './sidebar/TerminalLineView'
 import {
   FolderContextMenu,
   EnvironmentChatContextMenu,
-  WorkspaceContextMenu,
   autoCompactSwitchOf,
   canRegenerateTitleOf,
   workspaceTypeRowActions,
@@ -4198,44 +4198,45 @@ function WorkspaceSidebar({
           onSelect={runBulkAction}
         />
       ) : null}
-      {contextMenu ? (
-        <WorkspaceContextMenu
+      {contextMenu && railWorkspaceById.has(contextMenu.workspaceId) ? (
+        // This computer's chat: the one chat menu, as its row draws it, with
+        // what the window holds of it.
+        <EnvironmentChatContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          // As the rail draws it: a paired machine's chat wears that machine's marks.
-          workspace={
-            railWorkspaceById.get(contextMenu.workspaceId) ?? workspaceById.get(contextMenu.workspaceId) ?? null
-          }
-          chatLink={(() => {
-            const workspace =
-              railWorkspaceById.get(contextMenu.workspaceId) ?? workspaceById.get(contextMenu.workspaceId)
-            return workspace ? chatLinkOfWorkspace(workspace, environments) : null
+          {...(() => {
+            const workspace = railWorkspaceById.get(contextMenu.workspaceId)!
+            // A chat a schedule here started: its menu pauses (or resumes)
+            // that schedule. Only while the schedule is still in the list.
+            const scheduledAgentId = workspace.scheduledAgentId
+            const agent = scheduledAgentId ? scheduledAgents.find((entry) => entry.id === scheduledAgentId) : null
+            return {
+              title: workspace.name,
+              starred: isStarred(workspace.highlight),
+              color: workspace.highlight?.color ?? null,
+              snoozedUntil: typeof workspace.snoozedUntil === 'number' ? workspace.snoozedUntil : null,
+              autoSettle: workspace.autoSettleEnabled === true,
+              chatLink: chatLinkOfWorkspace(workspace, environments),
+              autoCompact: autoCompactSwitchOf(workspace, autoCompactByDefault),
+              canMarkUnread: canMarkWorkspaceUnread(workspace),
+              local: {
+                workspace,
+                moduleOverrides,
+                schedule: agent ? { paused: agent.pausedAt !== undefined } : null,
+                canDelete: onDeleteSettledChat !== undefined,
+              },
+            }
           })()}
-          moduleOverrides={moduleOverrides}
+          machineName={WINDOW_STUDIO_TARGET.name}
+          canSettle
+          marks
           isDetachedWindow={isDetachedWindow}
           now={now}
           working={rowIsWorking(contextMenu.workspaceId)}
-          autoCompact={(() => {
-            const workspace = workspaceById.get(contextMenu.workspaceId)
-            return workspace ? autoCompactSwitchOf(workspace, autoCompactByDefault) : null
-          })()}
-          canMarkUnread={(() => {
-            const workspace = workspaceById.get(contextMenu.workspaceId)
-            return workspace ? canMarkWorkspaceUnread(workspace) : false
-          })()}
           watchedPullRequestNumber={watchedPullRequestOfRow(contextMenu.workspaceId)?.pr.number ?? null}
-          schedule={(() => {
-            // A chat a schedule here started: its menu pauses (or resumes)
-            // that schedule. Only while the schedule is still in the list.
-            const scheduledAgentId = workspaceById.get(contextMenu.workspaceId)?.scheduledAgentId
-            const agent = scheduledAgentId ? scheduledAgents.find((entry) => entry.id === scheduledAgentId) : null
-            return agent ? { paused: agent.pausedAt !== undefined } : null
-          })()}
-          canDelete={onDeleteSettledChat !== undefined}
           onClose={() => setContextMenu(null)}
           onSelect={(action) => {
-            const workspace =
-              railWorkspaceById.get(contextMenu.workspaceId) ?? workspaceById.get(contextMenu.workspaceId)
+            const workspace = railWorkspaceById.get(contextMenu.workspaceId)
             if (!workspace) {
               setContextMenu(null)
               return
@@ -4454,7 +4455,8 @@ function WorkspaceSidebar({
                       openSpecOfConversation(conversation),
                       action === 'move-to-new-window' ? 'new-window' : 'main-window',
                     )
-                  else changeRemoteChatMarks(target, conversation, action)
+                  else if (action === 'wake' || action.startsWith('snooze:'))
+                    changeRemoteChatMarks(target, conversation, action as ChatMarkChange)
                 }}
                 onPickColor={(color) => changeRemoteChatMarks(target, conversation, { color })}
               />
