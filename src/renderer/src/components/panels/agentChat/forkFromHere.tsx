@@ -14,7 +14,6 @@ import { GhostButton, Tooltip } from '../../ui'
 import { showToast } from '../../../store/toastStore'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { placeSpawnedAgentTab } from '../../workspace/manager/layoutTabActions'
-import { pairedConnectionOf } from '../../../studio/environmentStudio'
 import { SOLO_CHAT_TEMPLATE_ID } from '../../../../../shared/layouts/templates'
 import { meshConversationSessionId, type MeshConversationPaneSpec } from '../../../../../shared/tailnet-mesh'
 import { LAYOUT_TEMPLATES } from '../../../layouts/templates'
@@ -200,9 +199,10 @@ function ForkFromHereButton({
  * working folder), named after it beside its workspace's other chats, and
  * answers where it is and what it called it: it opens by that address, in the
  * tab after this one's once its record has arrived, with a message forked
- * before in its composer. A paired desktop's fork opens as a pane onto that
- * machine (`openPairedFork`), as its chats do here. The address must be on
- * the chat's own machine: a fork is made beside the chat it came from.
+ * before in its composer. A chat whose record this window does not keep hands
+ * in how its forks open (`ForkOpener`): a paired desktop's opens as a pane onto
+ * that machine (`pairedForkOpener`), as its chats do here. The address must be
+ * on the chat's own machine: a fork is made beside the chat it came from.
  */
 export async function forkChat(input: {
   transport: Pick<ConversationTransport, 'fork' | 'environment'>
@@ -213,6 +213,8 @@ export async function forkChat(input: {
   /** The chat's name, for a fork its server does not name. */
   name?: string
   target: ForkFromHereTarget
+  /** How the fork opens, for a chat whose record this window does not keep; else by its record here. */
+  open?: ForkOpener
 }): Promise<void> {
   const { key, target } = input
   if (!input.transport.fork) throw new Error('This chat cannot be forked here.')
@@ -229,18 +231,8 @@ export async function forkChat(input: {
   const lost = 'Forked, but couldn’t find it. Reload the window.'
   if (!forked.name || (environment.id !== null && forked.address.environmentId !== environment.id))
     throw new Error(lost)
-  const connectionId = pairedConnectionOf(environment.route)
-  if (connectionId) {
-    await openPairedFork({
-      connectionId,
-      machineName: environment.label,
-      workspaceId: key.workspaceId,
-      remoteWorkspaceId: forked.address.chatId,
-      agentId: key.agentId,
-      newAgentId: forked.address.agentId,
-      name: forked.name,
-      target,
-    })
+  if (input.open) {
+    await input.open({ key, address: forked.address, name: forked.name, target })
     return
   }
   if (forked.address.chatId !== key.workspaceId) throw new Error(lost)
@@ -304,6 +296,29 @@ async function openFork(
  * composer; the files it attached by path stay behind, since those paths are
  * on that machine's disk.
  */
+/** How a fork a chat's server made opens here: its chat as the view names it, and where the fork is. */
+export type ForkOpener = (forked: {
+  key: ConversationKey
+  address: ConversationAddress
+  name: string
+  target: ForkFromHereTarget
+}) => Promise<void>
+
+/** How a paired desktop's chat's forks open here: as panes onto that machine (`openPairedFork`). */
+export function pairedForkOpener(machine: { connectionId: string; machineName: string | null }): ForkOpener {
+  return ({ key, address, name, target }) =>
+    openPairedFork({
+      connectionId: machine.connectionId,
+      machineName: machine.machineName,
+      workspaceId: key.workspaceId,
+      remoteWorkspaceId: address.chatId,
+      agentId: key.agentId,
+      newAgentId: address.agentId,
+      name,
+      target,
+    })
+}
+
 async function openPairedFork(input: {
   /** The pairing the machine is reached by, and what it is called. */
   connectionId: string

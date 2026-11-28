@@ -282,7 +282,12 @@ async function mountChat({
   dom.window.document.body.appendChild(host)
   const root = createRoot(host)
   const { ConfirmDialogProvider } = await import('../../ui/ConfirmDialog')
-  const bareChatView = () => createElement(AgentChatView, { workspaceId: 'workspace', agentId: 'agent' })
+  const bareChatView = () =>
+    createElement(AgentChatView, {
+      workspaceId: 'workspace',
+      agentId: 'agent',
+      chat: { environment: null, chatId: 'workspace' },
+    })
   const chatView = () => (confirmDialogs ? createElement(ConfirmDialogProvider, null, bareChatView()) : bareChatView())
   function FrontChat() {
     return useWorkspaceStore((state) => state.activeWorkspaceId) === 'workspace' ? chatView() : null

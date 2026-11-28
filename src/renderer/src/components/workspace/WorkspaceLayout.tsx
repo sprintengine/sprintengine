@@ -108,7 +108,9 @@ import {
 } from '../../../../shared/tailnet-mesh'
 import { remoteConversationFactsKey, useRemoteConversationFacts } from './remoteBand/remoteConversationFacts'
 import { isImeKey } from '../../utils/imeKey'
-import { agentPanelChunk } from '../panels/agentPanelChunks'
+import { agentPanelChunk, AgentChatView } from '../panels/agentPanelChunks'
+import { ChatViewErrorBoundary } from '../panels/agentChat/ChatViewErrorBoundary'
+import { paneChatOfPairedTab, type PairedChatTabConfig } from '../panels/agentChat/paneChat'
 import { filesApi } from '../../studio/files'
 import { copy } from '../../../../shared/copy'
 
@@ -196,7 +198,6 @@ const AgentPanel = agentPanelChunk.Component
 const EditorPanel = React.lazy(() => import('../panels/EditorPanel'))
 const GitConflictResolverPanel = React.lazy(() => import('../panels/GitConflictResolverPanel'))
 const PlainTerminalPanel = React.lazy(() => import('../panels/PlainTerminalPanel'))
-const RemoteConversationPanel = React.lazy(() => import('../panels/agentChat/RemoteConversationPanel'))
 // Files, Git and the Skills aside are no longer FlexLayout components: Files
 // and Git are workspace-pane tabs (pane/WorkspacePaneBody.tsx) and the Skills
 // aside was retired (browser-pane epic). Store v73 strips their tabs from
@@ -822,34 +823,23 @@ function WorkspaceLayoutBody({
             renderNewAgentPanelRef.current?.(node.getId(), (config as { agentName?: string } | undefined)?.agentName) ??
             null
           )
-        // A conversation on another machine, in the regular chat view. Core
-        // chrome, not a module: tailnet remote control is a built-in opt-in
-        // feature, and a pane that vanished with a module toggle would strand a
-        // person mid-conversation on another machine. (The Fleet panel, retired
-        // on 2026-09-05, and the remote terminal pane, retired on 2026-09-29,
-        // left persisted tabs behind; both take the default branch's
-        // unavailable surface.)
+        // A chat on a paired machine, in the one chat pane by its address
+        // there (`paneChatOfPairedTab`). Core chrome, not a module: tailnet
+        // remote control is a built-in opt-in feature, and a pane that
+        // vanished with a module toggle would strand a person mid-conversation
+        // on another machine. (The Fleet panel, retired on 2026-09-05, and the
+        // remote terminal pane, retired on 2026-09-29, left persisted tabs
+        // behind; both take the default branch's unavailable surface.)
         case MESH_CONVERSATION_COMPONENT: {
-          const remote = config as
-            | {
-                connectionId?: string
-                machineName?: string
-                remoteWorkspaceId?: string
-                remoteAgentId?: string
-                title?: string
-              }
-            | undefined
-          return remote?.connectionId && remote.remoteWorkspaceId && remote.remoteAgentId
+          const opened = paneChatOfPairedTab(config as PairedChatTabConfig | undefined)
+          return opened
             ? timedPanel(
-                'RemoteConversationPanel',
-                <RemoteConversationPanel
-                  workspaceId={workspaceId}
-                  connectionId={remote.connectionId}
-                  machineName={remote.machineName ?? 'Remote machine'}
-                  remoteWorkspaceId={remote.remoteWorkspaceId}
-                  remoteAgentId={remote.remoteAgentId}
-                  title={remote.title}
-                />,
+                'AgentChatView',
+                <ChatViewErrorBoundary
+                  chatKey={`${opened.chat.environment?.route}:${opened.chat.chatId}:${opened.agentId}`}
+                >
+                  <AgentChatView workspaceId={workspaceId} agentId={opened.agentId} chat={opened.chat} />
+                </ChatViewErrorBoundary>,
               )
             : DISABLED_SURFACE
         }

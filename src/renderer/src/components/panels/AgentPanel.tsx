@@ -21,7 +21,7 @@ import { revealBacklogItemInPane } from '../workspace/pane/backlogPaneReveal'
 import { requestPaletteOpen } from '../palette/paletteOpenRequest'
 import { CliInstallCta } from '../workspace/cliInstallRoute'
 import { ChatViewErrorBoundary } from './agentChat/ChatViewErrorBoundary'
-import { EnvironmentChatScope } from './agentChat/EnvironmentChatScope'
+import { paneChatOfRecord } from './agentChat/paneChat'
 import { AgentChatView } from './agentPanelChunks'
 import { setTerminalReapExempt, suspendTerminal } from '../../studio/terminals'
 import { copy } from '../../../../shared/copy'
@@ -73,6 +73,9 @@ export function agentPaneMountsTerminal(input: { agentCliUnavailable: boolean })
 
 export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKillTerminalOnUnmount }: Props) {
   const agent = useWorkspaceStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.agents[agentId])
+  // The chat this pane shows, by where it lives: read off its record here in this one place.
+  const environment = useWorkspaceStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.environment)
+  const chat = useMemo(() => paneChatOfRecord({ id: workspaceId, environment }), [workspaceId, environment])
   const cliRuntimes = useWorkspaceStore((s) => s.appSettings.cliRuntimes)
   const pluginCatalogEntries = useWorkspaceStore((s) => s.pluginCatalogEntries)
   const pluginCatalogStatus = useWorkspaceStore((s) => s.pluginCatalogStatus)
@@ -202,9 +205,7 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
     return (
       <ChatViewErrorBoundary chatKey={`${workspaceId}:${agentId}`}>
         <React.Suspense fallback={null}>
-          <EnvironmentChatScope workspaceId={workspaceId}>
-            <AgentChatView workspaceId={workspaceId} agentId={agentId} />
-          </EnvironmentChatScope>
+          <AgentChatView workspaceId={workspaceId} agentId={agentId} chat={chat} />
         </React.Suspense>
       </ChatViewErrorBoundary>
     )

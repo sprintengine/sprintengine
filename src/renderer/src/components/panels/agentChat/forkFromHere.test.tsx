@@ -8,7 +8,7 @@ import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { useToastStore } from '../../../store/toastStore'
 import { addAgentTabAfter, registerModel, unregisterModel } from '../../../utils/modelRegistry'
 import { composerDraftStore } from './draftStore'
-import { forkChat, takeForkedAttachments } from './forkFromHere'
+import { forkChat, pairedForkOpener, takeForkedAttachments } from './forkFromHere'
 import { forkName, forkedAgentPatch } from '../../../../../shared/conversation/fork'
 
 const WS = 'fork-from-here-ws'
@@ -328,7 +328,9 @@ function remoteSetup(options: { mounted?: boolean; listedTitle?: string } = {}) 
       }
     },
   }
-  return { ...t, model, forks, transport }
+  // The pane hands in how its forks open: as panes onto that machine.
+  const open = pairedForkOpener({ connectionId: 'connection', machineName: 'mac-mini' })
+  return { ...t, model, forks, transport, open }
 }
 
 const meshTabsOf = (model: Model) => {
@@ -347,6 +349,7 @@ test('a chat on a paired machine forks over there, and the fork opens here in th
   try {
     await forkChat({
       transport: t.transport,
+      open: t.open,
       key: { workspaceRoot: '', workspaceId: REMOTE_WS, agentId: 'remote-agent' },
       providerId: 'claude-agent',
       name: 'Atlas',
@@ -392,6 +395,7 @@ test('a remote fork whose chat has no pane mounted here opens as a chat of its o
   try {
     await forkChat({
       transport: t.transport,
+      open: t.open,
       key: { workspaceRoot: '', workspaceId: REMOTE_WS, agentId: 'remote-agent' },
       providerId: 'claude-agent',
       name: 'Atlas',
